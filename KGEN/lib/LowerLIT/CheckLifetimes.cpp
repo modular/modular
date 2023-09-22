@@ -963,7 +963,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
   }
 
-  // The lit.ownership.mark.destroyed op consumes the whole object bit of a
+  // The lit.ownership.mark_destroyed op consumes the whole object bit of a
   // value only, but not its fields.
   if (auto markDestroyed = dyn_cast<LIT::OwnershipMarkDestroyedOp>(op)) {
     if (auto valueRef = valueSet.getValueRef(markDestroyed.getValue())) {
@@ -987,7 +987,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
   }
 
-  // lit.ownership.end.lifetime consumes its operand then defines its result.
+  // lit.ownership.end_lifetime consumes its operand then defines its result.
   if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
     // Operand use already checked above.
     checkConsume(ownershipEnd.getOperand(), op);
@@ -1578,7 +1578,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
-  // The lit.ownership.mark.destroyed op consumes the whole object bit of a
+  // The lit.ownership.mark_destroyed op consumes the whole object bit of a
   // value only, but not its fields.    This ensures the sub-fields are
   // destroyed but the full object is not.  It is used in destructors primarily.
   if (auto markDestroyed = dyn_cast<LIT::OwnershipMarkDestroyedOp>(op)) {

@@ -337,7 +337,7 @@ fn useResultParams(i: Int):
   # CHECK: kgen.call @"$parameters"::@"no_result_param{{.*}}"<{{.*}}42{{.*}}>()
   no_result_param[42]()
 
-  # CHECK: lit.alias.fwd.decl "[[XYZ:.*]]" : !Int
+  # CHECK: lit.alias.fwd_decl "[[XYZ:.*]]" : !Int
   alias xyz: Int
 
   # Normal result and multi parameter results.  This forward references xyz
@@ -354,7 +354,7 @@ fn useResultParams(i: Int):
   no_result_param[xyz+1]()
 
   # Function call with only a result parameter.
-  # CHECK: lit.alias.fwd.decl "[[C:.*]]" : index
+  # CHECK: lit.alias.fwd_decl "[[C:.*]]" : index
   alias c : __mlir_type.index
   # CHECK: kgen.call @"$parameters"::@"just_result_params{{.*}}"<[] -> [[C]]>()
   just_result_params[() -> c]()
@@ -363,7 +363,7 @@ fn useResultParams(i: Int):
 fn testParamInIf(c: Bool):
     # CHECK: hlcf.if
     if c:
-        # CHECK-NEXT: alias.fwd.decl "[[X:.*]]"
+        # CHECK-NEXT: alias.fwd_decl "[[X:.*]]"
         alias x: __mlir_type.index
         # CHECK-NEXT: call {{.*}}<[] -> [[X]]>
         just_result_params[() -> x]()

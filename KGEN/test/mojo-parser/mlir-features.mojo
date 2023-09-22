@@ -6,6 +6,7 @@
 
 # RUN: kgen-translate -import-mojo %s -verify-diagnostics | FileCheck %s
 
+
 # CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16 borrow, %y: f8E5M2 borrow)
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
@@ -29,9 +30,7 @@ fn mlirMagicTest(
 
     # CHECK-NEXT: %idxConstant = lit.varlet.decl
     # CHECK: index.constant 42
-    var idxConstant = __mlir_op.`index.constant`[
-        value : Int(42).value
-    ]()
+    var idxConstant = __mlir_op.`index.constant`[value : Int(42).value]()
 
     # CHECK: [[TMP:%.*]] = pop.load %idxConstant
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
@@ -105,6 +104,7 @@ fn testAttrConcatWithoutType[
 # Show conversion of lvalue address into a pointer.
 # Issue #6825: Expose a way to get the address of an lvalue
 
+
 # CHECK-LABEL: lit.struct.decl @MyPointer
 # CHECK-SAME: <[[ELTYPE:.*]]: type>
 @register_passable
@@ -123,7 +123,7 @@ fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type : MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
-    # CHECK-NEXT: lit.ownership.def.lvalue %arg
+    # CHECK-NEXT: lit.ownership.def_lvalue %arg
     # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:type [[T]]>(%arg)
     # CHECK-NEXT: lit.return %0
 
@@ -135,9 +135,7 @@ fn structured_for_loop() -> __mlir_type.index:
         # CHECK-NEXT: %idx1 = index.constant 1
         # CHECK-NEXT: %1 = index.add %arg0, %idx1
         # CHECK-NEXT: hlcf.continue %1 : index
-        __mlir_op.`hlcf.continue`(
-            __mlir_op.`index.add`(i, Int(1).value)
-        )
+        __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, Int(1).value))
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[

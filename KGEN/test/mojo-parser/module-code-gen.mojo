@@ -60,7 +60,7 @@ fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
 # CHECK-NEXT:      lit.struct.field field2 : index
 # CHECK-NEXT:      lit.func @"__del__
 # CHECK-NEXT:      [[VAR0:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT:      lit.ownership.mark.destroyed %self
+# CHECK-NEXT:      lit.ownership.mark_destroyed %self
 # CHECK-NEXT:      lit.return [[VAR0]] : !lit.none
 # CHECK-NEXT:      lit.end_func
 # CHECK-NEXT:      }
@@ -99,7 +99,7 @@ fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
 # CHECK-NEXT:      [[W8:%.*]] = lit.load.consume [[W7]] : !kgen.pointer<index>
 # CHECK-NEXT:      pop.store [[W8]], [[W6]] : !kgen.pointer<index>
 # CHECK-NEXT:      [[W9:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT:      lit.ownership.mark.destroyed %existing
+# CHECK-NEXT:      lit.ownership.mark_destroyed %existing
 # CHECK-NEXT:      lit.return %9 : !lit.none
 # CHECK-NEXT:      lit.end_func
 # CHECK-NEXT: }
@@ -162,7 +162,7 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT: [[IS_NULL:%.*]] = index.cmp eq([[INDEX_IMPL]], %index0)
 # CHECK-NEXT: hlcf.if [[IS_NULL]] {
 # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT: lit.ownership.mark.destroyed %self
+# CHECK-NEXT: lit.ownership.mark_destroyed %self
 # CHECK-NEXT: lit.return
 # CHECK-NEXT: hlcf.yield
 # CHECK-NEXT: } else {
@@ -172,7 +172,7 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT: [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
 # CHECK-NEXT: kgen.call_signature [[DTOR]]([[OPAQUE_IMPL]])
 # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT: lit.ownership.mark.destroyed %self
+# CHECK-NEXT: lit.ownership.mark_destroyed %self
 # CHECK-NEXT: lit.return %8 : !lit.none
 # CHECK-NEXT: lit.end_func
 
@@ -221,7 +221,7 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:   [[V0:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
 # CHECK-NEXT:   pop.store %pointer, [[V0]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:   [[V3:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT:   lit.ownership.mark.destroyed %existing
+# CHECK-NEXT:   lit.ownership.mark_destroyed %existing
 
 # CHECK: lit.func @"returns_escaping_closure({{.*}}::String)"
 # CHECK-SAME: (%__result__: !kgen.pointer<{{.*}}> byref_result, %m: !kgen.pointer<!String> borrow_in_mem) -> !lit.none

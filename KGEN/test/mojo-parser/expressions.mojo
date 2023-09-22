@@ -963,7 +963,7 @@ struct MemoryOnlyIntArray:
 
 # CHECK-LABEL: lit.func @"testMemoryOnlyIntArray
 fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
-  # CHECK: %0 = lit.ownership.end.lifetime %moi
+  # CHECK: %0 = lit.ownership.end_lifetime %moi
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, %0)
   arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"

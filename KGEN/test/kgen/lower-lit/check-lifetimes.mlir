@@ -346,7 +346,7 @@ lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@Ha
     // CHECK: %[[VAR4:.*]] = lit.struct.gep %self[uninitialized] : <@S> from <@HasMemFields>
     // CHECK: %[[VAR5:.*]] = kgen.call @S::@__del__(%[[VAR4]]) : (!kgen.pointer<@S> owned_in_mem) -> !lit.none
     // CHECK-NOT: kgen.call @HasMemFields::@__del__(%self) : (!kgen.pointer<@HasMemFields> owned_in_mem) -> !lit.none
-    lit.ownership.mark.destroyed %self : !kgen.pointer<@HasMemFields>
+    lit.ownership.mark_destroyed %self : !kgen.pointer<@HasMemFields>
     %none = kgen.param.constant: !lit.none = <#lit.none>
     kgen.return %none : !lit.none
   }

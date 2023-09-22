@@ -231,10 +231,10 @@ def PackageOp : LITOp<"package", [
 // PackageLinkOp
 //===----------------------------------------------------------------------===//
 
-def PackageLinkOp : LITOp<"package_link", [Symbol]> {
-  let summary = "mojo source package";
+def PackageLinkOp : LITOp<"package.link", [Symbol]> {
+  let summary = "link to a precompiled package's artifacts";
   let description = [{
-    A `lit.package_link` defines a link to the compiled artifacts of a package.
+    A `lit.package.link` defines a link to the compiled artifacts of a package.
     It contains a reference to the generated archive and the post elaboration
     body, providing an anchor for functions and other operations defined within
     the package during the lowering pipeline. It may also contain the pre
@@ -244,7 +244,7 @@ def PackageLinkOp : LITOp<"package_link", [Symbol]> {
     Example:
 
     ```mlir
-    lit.package_link @foo compiledFor(#M.target<...>)
+    lit.package.link @foo compiledFor(#M.target<...>)
       archive(dense_resource<...> : tensor<...xi8>)
       pre_elaboration(dense_resource<...> : tensor<...xi8>)
       post_elaboration(dense_resource<...> : tensor<...xi8>)
@@ -738,7 +738,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 // TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
 def Builtin_LocationAttr : Builtin_Attr<"Location", []> {}
 
-def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl", [ASTDeclInterface]> {
+def LIT_AliasForwardDeclOp : LITOp<"alias.fwd_decl", [ASTDeclInterface]> {
   let summary = "`alias x: T` declaration for a callee return parameter";
 
   let description = [{
@@ -1431,7 +1431,7 @@ def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
 // OwnershipDefLValueOp
 //===----------------------------------------------------------------------===//
 
-def LIT_OwnershipDefLValueOp : LITOp<"ownership.def.lvalue"> {
+def LIT_OwnershipDefLValueOp : LITOp<"ownership.def_lvalue"> {
   let summary = "A definition of a memory object, marking implicit mutation";
   let description = [{
     This op looks like a def of the pointee at the specified address, which
@@ -1439,7 +1439,7 @@ def LIT_OwnershipDefLValueOp : LITOp<"ownership.def.lvalue"> {
     operation is a noop that is removed by the LowerLIT pass.
 
     ```mlir
-    lit.ownership.def.lvalue %0 : !somestring
+    lit.ownership.def_lvalue %0 : !somestring
     ```
   }];
   let arguments = (ins AnyType:$value);
@@ -1451,7 +1451,7 @@ def LIT_OwnershipDefLValueOp : LITOp<"ownership.def.lvalue"> {
 // OwnershipEndLifetimeOp
 //===----------------------------------------------------------------------===//
 
-def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end.lifetime",
+def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end_lifetime",
                                        [AllTypesMatch<["value", "newValue"]>]> {
   let summary = "End the lifetime of a tracked value and start a new lifetime";
   let description = [{
@@ -1461,7 +1461,7 @@ def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end.lifetime",
     This works with both register and memory values.
 
     ```mlir
-    %1 = lit.ownership.end.lifetime %0 : !somestring
+    %1 = lit.ownership.end_lifetime %0 : !somestring
     ```
   }];
 
@@ -1475,7 +1475,7 @@ def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end.lifetime",
 // OwnershipMakePointerLValue
 //===----------------------------------------------------------------------===//
 
-def LIT_OwnershipMakePointerLValue : LITOp<"ownership.make.pointer.lvalue",
+def LIT_OwnershipMakePointerLValue : LITOp<"ownership.make_pointer_lvalue",
                                         [AllTypesMatch<["ptr", "valuePtr"]>]> {
   let summary = "Project a pointer address as an tracked LValue";
   let description = [{
@@ -1486,7 +1486,7 @@ def LIT_OwnershipMakePointerLValue : LITOp<"ownership.make.pointer.lvalue",
     This works with memory values.
 
     ```mlir
-    %1 = lit.ownership.make.pointer.lvalue %0 : !kgen.pointer<@MyStruct>
+    %1 = lit.ownership.make_pointer_lvalue %0 : !kgen.pointer<@MyStruct>
     ```
   }];
 
@@ -1504,7 +1504,7 @@ def LIT_OwnershipMakePointerLValue : LITOp<"ownership.make.pointer.lvalue",
 // OwnershipMarkDestroyedOp
 //===----------------------------------------------------------------------===//
 
-def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
+def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
   let summary = "Mark a value as not need a dtor to run";
   let description = [{
     This op informs CheckLifetimes that the specified value does not need its
@@ -1513,7 +1513,7 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
     destroyed.
 
     ```mlir
-    lit.ownership.mark.destroyed %0 : !somestring
+    lit.ownership.mark_destroyed %0 : !somestring
     ```
   }];
 
@@ -1528,12 +1528,12 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
 
 def LIT_HandleVariantOp : LITOp<"handle_variant",
     [DeclareOpInterfaceMethods<ControlFlowNode>]> {
-  let summary = "Handle the call to a throwing function responsible for initializing a value.";
+  let summary = "handle the return of a throwing function";
   let description = [{
     The `lit.handle_variant` op represents an if statement paired with a set of
-    conditionally initialized values. The success region of the `lit.handle_variant`
-    op is executed upon a successful initialization of all values. The error region
-    of the `lit.handle_variant` is executed otherwise.
+    conditionally initialized values. The success region of the
+    `lit.handle_variant` op is executed upon a successful initialization of all
+    values. The error region of the `lit.handle_variant` is executed otherwise.
 
     Example:
 
@@ -1564,8 +1564,9 @@ def LIT_HandleVariantOp : LITOp<"handle_variant",
                  SizedRegion<1>:$errorRegion);
 
   let assemblyFormat = [{
-    $variant (`,` $maybeInitializedValues^)? `:` functional-type(operands, results)
-    $successRegion `else` $errorRegion attr-dict
+    $variant (`,` $maybeInitializedValues^)? `:`
+    functional-type(operands, results) $successRegion `else` $errorRegion
+    attr-dict
   }];
   let hasVerifier = 1;
 }
