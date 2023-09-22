@@ -130,6 +130,14 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   case ValueInputConvention::OwnedInMem:
+    // TODO(#21861): support variadic arguments
+    if (isa<VariadicType>(bbArg.getType())) {
+      mlir::emitError(
+          bbArg.getLoc(),
+          "passing variadic arguments of memory-only types as `owned` is not "
+          "supported yet (hint: pass as `borrowed` if possible)");
+      return;
+    }
     isIndirect = true;
     startsUninit = false;
     endsUninit = true;
@@ -152,6 +160,15 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     isFullObjectLiveOnEntry = true;
     break;
   case ValueInputConvention::ByRef:
+    // TODO(#21861): support variadic arguments
+    if (isa<VariadicType>(bbArg.getType())) {
+      mlir::emitError(bbArg.getLoc(),
+                      "passing variadic arguments by reference is not "
+                      "supported yet (hint: pass register-passable types as "
+                      "`owned` or `borrowed` and memory-only types as "
+                      "`borrowed` if possible)");
+      return;
+    }
     isIndirect = true;
     startsUninit = false;
     endsUninit = false;

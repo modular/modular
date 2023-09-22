@@ -560,3 +560,43 @@ lit.func @eatErrorRef() {
   }
   kgen.return
 }
+
+// -----
+
+// COM: Check variadic arguments.
+
+!RegPassable = !kgen.declref<@RegPassable>
+lit.struct.decl @RegPassable attributes {registerPassable = 1 : i8}  {}
+
+lit.func @reg_passable_owned(%a: !kgen.variadic<!RegPassable>) vararg {
+  lit.end_func
+}
+
+// COM: TODO(#21861): support variadic arguments
+// expected-error @below {{passing variadic arguments by reference is not supported yet (hint: pass register-passable types as `owned` or `borrowed` and memory-only types as `borrowed` if possible)}}
+lit.func @reg_passable_inout(%a: !kgen.variadic<pointer<!RegPassable>> byref) vararg {
+  lit.end_func
+}
+
+lit.func @"reg_passable_borrowed(,$test::RegPassable*)"(%a: !kgen.variadic<!RegPassable> borrow) vararg {
+  lit.end_func
+}
+
+!MemOnly = !kgen.declref<@MemOnly>
+lit.struct.decl @MemOnly {}
+
+// COM: TODO(#21861): support variadic arguments
+// expected-error @below {{passing variadic arguments of memory-only types as `owned` is not supported yet (hint: pass as `borrowed` if possible)}}
+lit.func @"mem_only_owned(,$test::MemOnly*)"(%a: !kgen.variadic<pointer<!MemOnly>> owned_in_mem) vararg {
+  lit.end_func
+}
+
+// COM: TODO(#21861): support variadic arguments
+// expected-error @below {{passing variadic arguments by reference is not supported yet (hint: pass register-passable types as `owned` or `borrowed` and memory-only types as `borrowed` if possible)}}
+lit.func @"mem_only_inout(,$test::MemOnly&*)"(%a: !kgen.variadic<pointer<!MemOnly>> byref) vararg {
+  lit.end_func
+}
+
+lit.func @"mem_only_borrowed(,$test::MemOnly*)"(%a: !kgen.variadic<pointer<!MemOnly>> borrow_in_mem) vararg {
+  lit.end_func
+}
