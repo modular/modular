@@ -1102,6 +1102,20 @@ void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
 }
 
 //===----------------------------------------------------------------------===//
+// TraitDeclOp
+//===----------------------------------------------------------------------===//
+
+DebugInfo::DIScopeAttr TraitDeclOp::getLocScope() {
+  return getTopLevelScope(*this);
+}
+
+void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
+                        StringAttr name) {
+  build(builder, result, name, /*docString=*/nullptr);
+  result.regions[0]->push_back(new Block());
+}
+
+//===----------------------------------------------------------------------===//
 // TryOp
 //===----------------------------------------------------------------------===//
 
@@ -1550,6 +1564,17 @@ LogicalResult LIT::ExternFuncOp::verify() {
   if (!getParentOp().isExternal())
     return emitOpError("expected an external parent function");
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// TraitFuncOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult LIT::TraitFuncOp::verify() {
+  if (llvm::isa_and_present<TraitDeclOp>(getParentOp()->getParentOp()))
+    return success();
+
+  return emitOpError("expected a parent function in a trait");
 }
 
 //===----------------------------------------------------------------------===//

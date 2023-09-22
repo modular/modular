@@ -41,6 +41,15 @@ lit.struct.decl @SomeStruct<ty: dtype> {
   }
 }
 
+// CHECK-LABEL: lit.trait.decl @T {
+lit.trait.decl @T {
+  // CHECK: lit.func @f{{.*}}
+  // CHECK-NEXT:  lit.trait_func
+  lit.func @f() -> !lit.none {
+    lit.trait_func
+  }
+}
+
 // CHECK-LABEL: @noneTypeAndValue
 lit.func @noneTypeAndValue() -> !lit.none {
   // CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>

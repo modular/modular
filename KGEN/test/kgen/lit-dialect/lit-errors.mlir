@@ -348,3 +348,9 @@ lit.func @wrong_error_return(%arg0: i32) -> !pop.variant<index> {
 
 // expected-error @below {{specified `declNameLoc` without `declName`}}
 lit.unresolved_import @module as @newModule declNameLoc(loc(unknown))
+
+// -----
+lit.func @f() -> !lit.none {
+  // expected-error @below {{'lit.trait_func' op expected a parent function in a trait}}
+  lit.trait_func
+}

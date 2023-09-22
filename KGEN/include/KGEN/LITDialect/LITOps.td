@@ -554,6 +554,57 @@ def LIT_StructGEPOp : LITOp<"struct.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// TraitDeclOp
+//===----------------------------------------------------------------------===//
+
+def LIT_TraitDeclOp : LITOp<"trait.decl", [
+    IsolatedFromAbove, Symbol, SymbolTable, SingleBlock,
+    ASTDeclInterface, NoTerminator,
+    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
+  ]> {
+  let summary = "Trait declaration.";
+  let description = [{
+    The `lit.trait.decl` operation is a top-level operation used to declare
+    LIT trait types. Trait declarations are named with a symbol.
+    The body contains `lit.trait.field` operations that declare the contents
+    of the struct.
+
+    Example:
+
+    ```mlir
+    lit.trait.decl @Trait {
+      lit.func @f() -> !lit.none {
+        lit.trait_func
+      }
+    }
+    ```
+
+    TODO: Add parameter declarations support.
+    TODO: Add decorators support.
+  }];
+
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    OptionalAttr<LIT_DocStringAttr>:$docString
+  );
+
+  let regions = (region SizedRegion<1>:$fields);
+  let assemblyFormat = "$sym_name attr-dict-with-keyword $fields";
+
+  let builders = [
+    // Create a trait with a region but no body block. The caller must create
+    // it and fill it in.
+    OpBuilder<(ins "StringAttr":$name)>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the decl name of the struct.
+    StringAttr getDeclName() { return getSymNameAttr(); }
+  }];
+
+}
+
+//===----------------------------------------------------------------------===//
 // TryOp
 //===----------------------------------------------------------------------===//
 
@@ -1075,6 +1126,33 @@ def LIT_ExternFuncOp : LITOp<"extern_func", [Terminator,
   let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// TraitFuncOp
+//===----------------------------------------------------------------------===//
+
+def LIT_TraitFuncOp : LITOp<"trait_func", [Terminator,
+    HasParent<"LIT::FuncOp">]> {
+  let summary = "Denotes a trait function.";
+  let description = [{
+    The `lit.trait_func` operation denotes the end of a `lit.func` body,
+    indicating that the function is a trait function whose body is empty.
+
+    Example:
+
+    ```mlir
+    lit.trait.decl @Trait {
+      lit.func @f() -> !lit.none {
+        lit.trait_func
+      }
+    }
+    ```
+  }];
+
+  let assemblyFormat = "attr-dict";
+  let hasVerifier = 1;
+}
+
 
 //===----------------------------------------------------------------------===//
 // ReturnOp
