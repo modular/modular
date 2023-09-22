@@ -165,22 +165,16 @@ SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
                             effects, getMetadata());
 }
 
-static bool isVarArgKind(FnEffects effects, size_t numInputs, size_t index) {
-  // If the function has keyword varargs, the vararg index is the second last.
-  // Otherwise, it's the last.
-  return (index + 1 + effects.hasKWVarArgs()) == numInputs;
-}
-
 bool SignatureType::isVarArg(size_t index) {
   if (!getFnEffects().hasVarArgs())
     return false;
-  return isVarArgKind(getFnEffects(), getNumInputs(), index);
+  return getFnEffects().isVarArg(getNumInputs(), index);
 }
 
 bool SignatureType::isPackVarArg(size_t index) {
   if (!getFnEffects().hasPackVarArgs())
     return false;
-  return isVarArgKind(getFnEffects(), getNumInputs(), index);
+  return getFnEffects().isVarArg(getNumInputs(), index);
 }
 
 bool SignatureType::isKWVarArg(size_t index) {
@@ -370,13 +364,19 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
            << values.getNumInputs() << " arguments";
   }
 
+  // If the signature has metadata, defer to it for further verification.
+  // Otherwise, run the standard KGEN signature verification.
+  if (metadata) {
+    return metadata.verifySignature(emitError, inputParams, resultParams,
+                                    values, inputConventions, effects);
+  }
+
   // Verify input convention and argument types.
   for (auto [i, argType, conv] :
        llvm::enumerate(values.getInputs(), inputConventions)) {
     Type type = argType;
     // Verify variadics.
-    if (effects.hasVarArgs() &&
-        isVarArgKind(effects, values.getNumInputs(), i)) {
+    if (effects.hasVarArgs() && effects.isVarArg(values.getNumInputs(), i)) {
       auto variadic = ::dyn_cast<VariadicType>(type);
       if (!variadic) {
         return emitError() << "argument #" << i
@@ -387,32 +387,19 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
       type = variadic.getElementAsType();
     }
     // Verify argument conventions.
-    switch (conv) {
-    case ValueInputConvention::BorrowedInMem:
-    case ValueInputConvention::ByRef:
-    case ValueInputConvention::ByRefResult:
-    case ValueInputConvention::InitSelf:
-    case ValueInputConvention::OwnedInMem:
+    if (hasAddress(conv)) {
       if (::isa<PointerType>(type))
         break;
-      if (type.getDialect().getNamespace() == "lit")
-        break; // lit.ref is also ok, but we can't check it directly.
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)
              << "' in signature type should be a `!kgen.pointer` but got: "
              << type;
-    default:
-      break;
     }
   }
 
   // If the function throws an error, make sure it has one variant result.
   if (effects.isThrows() && values.getNumResults() != 1)
     return emitError() << "a function that throws should have 1 result";
-
-  if (metadata)
-    return metadata.verifySignature(emitError, inputParams, resultParams,
-                                    values, inputConventions, effects);
 
   return success();
 }
@@ -426,6 +413,20 @@ std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
 std::optional<int64_t>
 SignatureType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
+}
+
+bool SignatureType::hasAddress(ValueInputConvention conv) {
+  switch (conv) {
+  case ValueInputConvention::OwnedInReg:
+  case ValueInputConvention::BorrowedInReg:
+    return false;
+  case ValueInputConvention::OwnedInMem:
+  case ValueInputConvention::BorrowedInMem:
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::ByRefResult:
+  case ValueInputConvention::InitSelf:
+    return true;
+  }
 }
 
 //===----------------------------------------------------------------------===//

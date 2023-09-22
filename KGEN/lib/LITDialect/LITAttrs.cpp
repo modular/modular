@@ -84,21 +84,32 @@ LogicalResult FnMetadataAttr::verifySignature(
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
     FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
     FnEffects effects) const {
-  // Verify default arguments.
-  ArrayRef<TypedAttr> defaults = getDefaultArguments();
-  if (defaults.size() > values.getNumInputs()) {
-    return emitError() << "there are more default arguments than inputs : "
-                       << defaults.size() << " > " << values.getNumInputs();
-  }
-  for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
-    size_t index = values.getInputs().size() - defaults.size() + defaultsIndex;
-    Type expected = values.getInputs()[index];
-    if (value.getType() != expected) {
-      return emitError() << "argument #" << index << " has type " << expected
-                         << " but default argument has type "
-                         << value.getType();
+  // Verify default arguments and parameters.
+  auto verifyDefaults = [emitError](ArrayRef<TypedAttr> defaults,
+                                    ArrayRef<Type> types,
+                                    StringRef kind) -> LogicalResult {
+    if (defaults.size() > types.size()) {
+      return emitError() << "there are more default " << kind
+                         << "s than inputs : " << defaults.size() << " > "
+                         << types.size();
     }
-  }
+    for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
+      size_t index = types.size() - defaults.size() + defaultsIndex;
+      Type expected = types[index];
+      if (value.getType() != expected) {
+        return emitError() << kind << " #" << index << " has type " << expected
+                           << " but default " << kind << " has type "
+                           << value.getType();
+      }
+    }
+    return success();
+  };
+
+  if (failed(verifyDefaults(getDefaultArguments(), values.getInputs(),
+                            "argument")) ||
+      failed(
+          verifyDefaults(getDefaultParameters(), inputParamTypes, "parameter")))
+    return failure();
 
   // Verify input conventions.
   size_t numInputConv = inputConventions.size();
@@ -107,6 +118,33 @@ LogicalResult FnMetadataAttr::verifySignature(
                           "input conventions: "
                        << getArgNames().size() << " != " << numInputConv;
   }
+
+  for (auto [i, argType, conv] :
+       llvm::enumerate(values.getInputs(), inputConventions)) {
+    Type type = argType;
+    // Verify variadics.
+    if (effects.hasVarArgs() && effects.isVarArg(values.getNumInputs(), i)) {
+      auto variadic = ::dyn_cast<VariadicType>(type);
+      if (!variadic) {
+        return emitError() << "argument #" << i
+                           << " in signature with varargs should be a "
+                              "`!kgen.variadic` but got: "
+                           << type;
+      }
+      type = variadic.getElementAsType();
+    }
+    // Verify argument conventions.
+    if (SignatureType::hasAddress(conv)) {
+      if (::isa<PointerType, RefType>(type))
+        break;
+      return emitError() << "argument #" << i << " with convention '"
+                         << stringifyEnum(conv)
+                         << "' in signature type should be a `!kgen.pointer` "
+                            "or `!lit.ref` but got: "
+                         << type;
+    }
+  }
+
   return success();
 }
 
