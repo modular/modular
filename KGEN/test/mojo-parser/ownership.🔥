@@ -36,7 +36,6 @@ struct RegExample:
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.varlet.decl2 "self" var
   # CHECK-NEXT: lit.ref.store %self, %self_0
-  # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT: lit.ownership.mark_destroyed [[SELFPTR]]
@@ -511,9 +510,10 @@ fn regpassable_owned_args_mutable(owned x: RegExample):
   # CHECK-NEXT: [[X:%.*]] = pop.load [[XPTR2]]
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[X]])
   # CHECK-NEXT: [[X:%.*]] = {{.*}}"__init__
-  # CHECK-NEXT: pop.store [[X]], [[XPTR]]
+  # CHECK-NEXT: lit.ref.store [[X]], %x_0
   x = RegExample()
 
+  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
   # CHECK-NEXT: kgen.call {{.*}}mutate{{.*}}([[XPTR]])
   x.mutate()
   # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
@@ -677,7 +677,6 @@ struct BigRegExample:
   # CHECK-NEXT: [[BPTR:%.*]] = lit.struct.gep [[SELFPTR]][b]
   # CHECK-NEXT: [[BVAL:%.*]] = pop.load [[BPTR]]
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[BVAL]])
-  # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT: lit.ownership.mark_destroyed [[SELFPTR]]
@@ -729,16 +728,16 @@ struct ExoticDelExample:
     # CHECK-NEXT: [[BPTR:%.*]] = lit.struct.gep [[SELFPTR]][b]
     # CHECK-NEXT: [[BVAL:%.*]] = pop.load [[BPTR]]
     # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[BVAL]])
-    # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
 
     # Test the condition
-    # CHECK-NEXT: [[CONDPTR:%.*]] = lit.struct.gep [[SELFPTR2]][cond] : <i1> from <!ExoticDelExample>
-    # CHECK-NEXT: [[CONDVAL:%.*]] = pop.load [[CONDPTR]]
+    # CHECK-NEXT: [[CONDPTR:%.*]] = lit.ref.struct.ger %self_0[cond]
+    # CHECK-NEXT: [[CONDVAL:%.*]] = lit.ref.load [[CONDPTR]]
     # CHECK-NEXT: hlcf.if [[CONDVAL]] {
     if self.cond:
       # This side we manually consume for c.
 
-      # CHECK-NEXT: [[CPTR:%.*]] = lit.struct.gep [[SELFPTR2]][c]
+      # CHECK-NEXT: [[CREF:%.*]] = lit.ref.struct.ger %self_0[c]
+      # CHECK-NEXT: [[CPTR:%.*]] = lit.ref.to_pointer [[CREF]]
       # CHECK-NEXT: [[CPTR2:%.*]] = lit.ownership.end_lifetime [[CPTR]]
       # CHECK-NEXT: [[CVAL:%.*]] = lit.load.consume [[CPTR2]]
       # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[CVAL]])
@@ -880,8 +879,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
   # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
-  # CHECK-NEXT: [[A:%.*]] = pop.load [[APTR]]
+  # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
   # CHECK-NEXT: kgen.return [[A]]
   return a
 

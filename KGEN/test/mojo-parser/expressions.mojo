@@ -492,9 +492,8 @@ fn initializers():
 # CHECK-LABEL: lit.func @"test_if_cond
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK: lit.ref.store %cond, %cond_0
-    # CHECK: [[CONDPTR:%.*]] = lit.ref.to_pointer %cond_0
     # CHECK: %i = lit.varlet.decl "i"
-    # CHECK: [[COND:%.*]] = pop.load [[CONDPTR]]
+    # CHECK: [[COND:%.*]] = lit.ref.load %cond_0
     # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
@@ -507,7 +506,7 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     var i: Int = 2 if cond else 3
 
     # CHECK: [[TRUEB:%.+]] = kgen{{.*}}= true}
-    # CHECK-NEXT: pop.store [[TRUEB]], [[CONDPTR]]
+    # CHECK-NEXT: lit.ref.store [[TRUEB]], %cond_0
     cond = True
     i += i
     if cond:     # 'if' stmt, not an 'if' expression.
@@ -636,12 +635,10 @@ fn mvalueStructField():
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: %a_0 = lit.varlet.decl2 "a"
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK: %b_1 = lit.varlet.decl2 "b" var synth : !lit.ref<mut !Int, *"`b">
   # CHECK: lit.ref.store %b, %b_1
-  # CHECK: [[BPTR:%.*]] = lit.ref.to_pointer %b_1
-  # CHECK: [[B:%.*]] = pop.load [[BPTR]]
-  # CHECK-NEXT: pop.store [[B]], [[APTR]]
+  # CHECK: [[B:%.*]] = lit.ref.load %b_1
+  # CHECK-NEXT: lit.ref.store [[B]], %a_0
   a = b # Parameters are mutable!
 
 ##===----------------------------------------------------------------------===##
@@ -651,58 +648,61 @@ def defTests(a: Int, b: Int, untyped) -> None:
 # CHECK-LABEL: lit.func @"basic_assignments
 def basic_assignments(a: Int, b: Int, c: M, d: M):
   # CHECK:      %a_0 = lit.varlet.decl2 "a" var
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      %b_1 = lit.varlet.decl2 "b" var
-  # CHECK:      [[BPTR:%.*]] = lit.ref.to_pointer %b_1
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__iadd__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a += b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__isub__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a -= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__imul__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a *= b
-  # HECK:      [[LOAD_C:%.*]] = pop.load %c_2  : !kgen.pointer<@M>
-  # HECK-NEXT: [[RES:%.*]] = kgen.call @M::@"__imatmul__({{.*}}$int::Int&,{{.*}}$int::Int)"(%d_3, [[LOAD_C]])
-  #d @= c
-  # HECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
-  # HECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__itruediv__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
-  #a /= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__ifloordiv__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a //= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__imod__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a %= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__ipow__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a **= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__irshift__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a >>= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__ilshift__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a <<= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__iand__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a &= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__ixor__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a ^= b
-  # CHECK:      [[LOAD_B:%.*]] = pop.load [[BPTR]]
+  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__ior__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
   a |= b
 
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}value = 4
-  # CHECK-NEXT: pop.store [[FOUR]], [[BPTR]]
-  # CHECK-NEXT: pop.store [[FOUR]], [[APTR]]
+  # CHECK-NEXT: lit.ref.store [[FOUR]], %b_1
+  # CHECK-NEXT: lit.ref.store [[FOUR]], %a_0
   a = b = 4
 
   # Walrus
   # CHECK-NEXT: [[SEVEN:%.*]] = kgen.param.constant: {{.*}}value = 7
-  # CHECK-NEXT: pop.store [[SEVEN]], [[BPTR]]
-  # CHECK-NEXT: [[A:%.*]] = pop.load [[APTR]]
+  # CHECK-NEXT: lit.ref.store [[SEVEN]], %b_1
+  # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
   # CHECK-NEXT: kgen.call {{.*}}simpleMath{{.*}}([[A]], [[SEVEN]])
   simpleMath(a, b := 7)
 
@@ -1005,8 +1005,7 @@ fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
     `!pop.scalar<`, type.value, `>`]:
   # CHECK: %a_0 = lit.varlet.decl2 "a"
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: [[APTR:%.*]] = lit.ref.to_pointer %a_0
-  # CHECK: [[AVAL:%.*]] = pop.load [[APTR]]
+  # CHECK: [[AVAL:%.*]] = lit.ref.load %a_0
   # CHECK: [[ZERO:%.*]] = kgen.param.constant: {{.*}} = 0
   # CHECK: [[GOT:%.*]] = kgen.call {{.*}}__getitem__{{.*}}([[AVAL]], [[ZERO]])
   # CHECK: [[RES:%.*]] = lit.struct.extract [[GOT]][value]

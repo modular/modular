@@ -130,11 +130,14 @@ class XRValue : public Value {
 public:
   using Value::Value;
   using Value::operator=;
-  XRValue(Value v) : Value(v) {}
+  XRValue(Value v) : Value(v) { check(); }
 
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getReferenceElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
+
+private:
+  void check() const;
 };
 
 /// Instances of XBValue model a borrowed reference to dynamic value stored
@@ -148,11 +151,14 @@ class XBValue : public Value {
 public:
   using Value::Value;
   using Value::operator=;
-  XBValue(Value v) : Value(v) {}
+  XBValue(Value v) : Value(v) { check(); }
 
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getReferenceElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
+
+private:
+  void check() const;
 };
 
 /// Instances of MBValue model a borrowed reference to dynamic value stored
@@ -201,11 +207,14 @@ public:
 class XLValue : public Value {
 public:
   using Value::Value;
-  XLValue(Value v) : Value(v) {}
+  XLValue(Value v) : Value(v) { check(); }
 
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getReferenceElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
+
+private:
+  void check() const;
 };
 
 /// DLValue's model a dynamic LValue which has a getter and setter.  Lit

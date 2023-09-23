@@ -319,6 +319,19 @@ static bool isMLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
   return false;
 }
 
+static bool isXLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
+  // if (astDecl->getIfXLValue())
+  //   return true;
+  if (Operation *op = astDecl->getIfOperation()) {
+    if (auto varlet = dyn_cast<VarLetDecl2Op>(op)) {
+      if (ASTType(varlet.getType().getElementAsType())
+              .isRegisterPassable(loc, shared))
+        return true;
+    }
+  }
+  return false;
+}
+
 StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     SMLoc location, ASTDecl &nestedFunctionDecl, ClosureCache &cache) {
   MLIRContext *ctx = shared.getContext();
@@ -538,13 +551,23 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     bool isRegisterPassable =
         ASTType(fieldOp.getType()).isRegisterPassable(location, shared);
     bool expectsPointer = !isRegisterPassable;
-    if (isMLValue(declAndCapture.first, location, shared))
+    if (isMLValue(declAndCapture.first, location, shared) ||
+        isXLValue(declAndCapture.first, location, shared))
       expectsPointer = true;
-    Value target = expectsPointer
-                       ? ptrToField
-                       : builder.create<POP::LoadOp>(ptrToField).getResult();
-    replaceAllUsesInRegionWith(capture.getMlirValue(), target,
-                               callFunc.getBodyRegion());
+    Value target = ptrToField;
+    if (!expectsPointer)
+      target = builder.create<POP::LoadOp>(target);
+
+    Value captureValue = capture.getMlirValue();
+    // FIXME(references): properly capture things as references instead of
+    // capturing by raw pointer.
+    if (isa<RefType>(captureValue.getType()))
+      target = builder
+                   .create<mlir::UnrealizedConversionCastOp>(
+                       captureValue.getType(), target)
+                   .getResult(0);
+
+    replaceAllUsesInRegionWith(captureValue, target, callFunc.getBodyRegion());
   }
   cache.storeClosure(key, declOp);
   nestedFunction->erase();
@@ -804,19 +827,23 @@ Type Capture::getFieldType() const { return fieldType; }
 Type Capture::getInitType() const { return initType; }
 
 Value Capture::getMlirValue() const {
-  if (auto v = anyValue.getIfMLValue()) {
+  if (auto v = anyValue.getIfMLValue())
     return v;
-  } else if (auto v = anyValue.getIfSBValue()) {
+  if (auto v = anyValue.getIfXLValue())
     return v;
-  } else if (auto v = anyValue.getIfMLValue()) {
+  if (auto v = anyValue.getIfXBValue())
     return v;
-  } else if (auto v = anyValue.getIfMRValue()) {
+  if (auto v = anyValue.getIfMBValue())
     return v;
-  } else if (auto v = anyValue.getIfMBValue()) {
+  if (auto v = anyValue.getIfSBValue())
     return v;
-  } else if (auto v = anyValue.getIfSRValue()) {
+  if (auto v = anyValue.getIfXRValue())
     return v;
-  }
+  if (auto v = anyValue.getIfMRValue())
+    return v;
+  if (auto v = anyValue.getIfSRValue())
+    return v;
+
   return {};
 }
 

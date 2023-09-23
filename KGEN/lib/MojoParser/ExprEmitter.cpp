@@ -484,6 +484,9 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   // Handle MLValue's by decaying to MBValue.
   if (auto lv = value.ir.getIfMLValue())
     value.ir = MBValue(lv);
+  // Handle XLValue's by decaying to XBValue.
+  if (auto lv = value.ir.getIfXLValue())
+    value.ir = XBValue(lv);
 
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
@@ -506,6 +509,8 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     value.ir = SBValue(srVal);
   else if (auto mrVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
     value.ir = MBValue(mrVal);
+  else if (auto refVal = value.ir.getIfXRValue()) // Decay XRValue -> XBValue
+    value.ir = XBValue(mrVal);
 
   // Finally, we know we have a BValue.
   auto resultBV = value.ir.getIfBValue();
@@ -1046,11 +1051,16 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
     return dlValue->emitLoad(dest, *this);
 
   // Decay a stored LValue to an MBValue.
-  auto slValue = value.ir.getIfMLValue();
-  assert(slValue && "unknown lvalue kind");
+  if (auto mlValue = value.ir.getIfMLValue()) {
+    // Emit a non-consuming __copyinit__ or load of the value.
+    return emitCopyOfValue({MBValue(mlValue), value.expr}, dest);
+  }
 
+  // Decay a stored LValue to an MBValue.
+  auto ref = value.ir.getIfXLValue();
+  assert(ref && "unknown lvalue kind");
   // Emit a non-consuming __copyinit__ or load of the value.
-  return emitCopyOfValue({MBValue(slValue), value.expr}, dest);
+  return emitCopyOfValue({XBValue(ref), value.expr}, dest);
 }
 
 CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
@@ -1133,9 +1143,20 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     address = value.ir.getIfMRValue();
   if (!address)
     address = value.ir.getIfMLValue();
+  if (address) {
+    Value result =
+        builder->create<POP::LoadOp>(value.expr->getLocation(*this), address);
+    return emitCResult(SRValue(result), value.expr, dest);
+  }
+
+  address = value.ir.getIfXBValue();
+  if (!address)
+    address = value.ir.getIfXRValue();
+  if (!address)
+    address = value.ir.getIfXLValue();
   assert(address && "Unknown BValue/RValue/MLValue");
   Value result =
-      builder->create<POP::LoadOp>(value.expr->getLocation(*this), address);
+      builder->create<RefLoadOp>(value.expr->getLocation(*this), address);
   return emitCResult(SRValue(result), value.expr, dest);
 }
 
@@ -1580,8 +1601,13 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     mlirValue = var.getResult();
     value = MLValue(mlirValue);
 
-    // RValue's and LValues always resolve to their known value.
+  } else if (auto var = dyn_cast<VarLetDecl2Op>(decl)) {
+    // We handle both var and let's as mutable lvalues and let check lifetimes
+    // diagnose any problems.  This allows us to handle late-initialized lets.
+    mlirValue = var.getResult();
+    value = XLValue(mlirValue);
   } else if (auto rvalue = decl.getIfRValue()) {
+    // RValue's resolve to their known value.
     if (auto mrValue = rvalue.getIfMRValue())
       mlirValue = mrValue;
     else
@@ -1609,14 +1635,13 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
         << spelling << "\" as a value isn't supported yet" << expr->getRange();
     return {};
   }
-  if (auto slValue = value.getIfMLValue()) {
-    if (ASTType(slValue.getRValueType())
-            .isRegisterPassable(expr->getLoc(), shared)) {
-      capture = Capture(value, value.getRValueType(), value.getRValueType());
-      return value;
-    }
-  }
+
   capture = Capture(value, value.getRValueType(), value.getType());
+  if (value.getIfMLValue() || value.getIfXLValue()) {
+    if (ASTType(value.getRValueType())
+            .isRegisterPassable(expr->getLoc(), shared))
+      capture = Capture(value, value.getRValueType(), value.getRValueType());
+  }
   return value;
 }
 

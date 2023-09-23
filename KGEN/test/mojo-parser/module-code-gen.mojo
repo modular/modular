@@ -449,14 +449,14 @@ fn foo(owned y:Int):
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %q: !Int, %ww: !Int borrow) -> !lit.none
 # CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %self[field0] : <!Int>
 # CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %self[field1] : <!Int>
+# CHECK-NEXT: %[[V1REF:.*]] = builtin.unrealized_conversion_cast %[[V1]]
 # CHECK-NEXT: %q_0 = lit.varlet.decl2 "q" var synth :
 # CHECK-NEXT: lit.ref.store %q, %q_0
-# CHECK-NEXT: %[[QPTR:.*]] = lit.ref.to_pointer %q_0
 # CHECK-NEXT: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V3:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V4:.*]] = kgen.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : !lit.signature<("self": !Int borrow, "rhs": !Int borrow) -> !Int>
 # CHECK-NEXT: pop.store %[[V4]], %[[V0]] : !kgen.pointer<!Int>
-# CHECK-NEXT: %[[V5:.*]] = pop.load %[[V1]] : !kgen.pointer<!Int>
+# CHECK-NEXT: %[[V5:.*]] = lit.ref.load %[[V1REF]]
 # CHECK-NEXT: %[[V6:.*]] = kgen.call @{{.*}}@"print{{.*}}"(%[[V5]])
 # CHECK-NEXT: %[[V7:.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT: lit.return %[[V7]] : !lit.none
@@ -470,11 +470,12 @@ fn foo(owned y:Int):
 # CHECK-NEXT: lit.end_func
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem) -> index
-# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <index>
-# CHECK-NEXT: %[[W1:.*]] = pop.load %[[W0]] : !kgen.pointer<index>
-# CHECK-NEXT: %[[W2:.*]] = lit.struct.gep %self[field1] : <!Int>
-# CHECK-NEXT: %[[W3:.*]] = lit.struct.gep %[[W2]][value] : <index> from <!Int>
-# CHECK-NEXT: %[[W4:.*]] = pop.load %[[W3]] : !kgen.pointer<index>
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0]
+# CHECK-NEXT: %[[W1:.*]] = pop.load %[[W0]]
+# CHECK-NEXT: %[[W2:.*]] = lit.struct.gep %self[field1]
+# CHECK-NEXT: %[[W2REF:.*]] = builtin.unrealized_conversion_cast %[[W2]]
+# CHECK-NEXT: %[[W3:.*]] = lit.ref.struct.ger %[[W2REF]][value]
+# CHECK-NEXT: %[[W4:.*]] = lit.ref.load %[[W3]]
 # CHECK-NEXT: %[[W5:.*]] = index.mul %[[W1]], %[[W4]]
 # CHECK-NEXT: lit.return %[[W5]] : index
 # CHECK-NEXT: lit.end_func

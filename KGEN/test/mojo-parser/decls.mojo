@@ -611,9 +611,8 @@ fn ownedConventionReg(
     # CHECK: %a_0 = lit.varlet.decl2 "a" var
     # CHECK: lit.ref.store %a, %a_0
 
-    # CHECK: [[APTR:%.*]] = lit.ref.to_pointer %a_0
-    # CHECK: [[AX:%.*]] = lit.struct.gep [[APTR]][x]
-    # CHECK:  = pop.load [[AX]]
+    # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
+    # CHECK:  = lit.ref.load [[AX]]
     _ = a.x
     # CHECK: [[BY:%.*]] = lit.struct.extract %b[y]
     _ = b.y
@@ -622,9 +621,9 @@ fn ownedConventionReg(
     # No copy call.
     let t = triv
 
-    # CHECK: [[AX:%.*]] = lit.struct.gep [[APTR]][x]
+    # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
     # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
-    # CHECK: pop.store [[ONE]], [[AX]]
+    # CHECK: lit.ref.store [[ONE]], [[AX]]
     a.x = 1
 
 

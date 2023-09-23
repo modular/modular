@@ -233,11 +233,10 @@ fn test_simple(a: Bool):
 def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     # CHECK: %a_0 = lit.varlet.decl2 "a"
     # CHECK: lit.ref.store %a, %a_0
-    # CHECK: [[APTR:%.*]] = lit.ref.to_pointer %a_0
     # CHECK: hlcf.if {{.+}} {
     if b:
         # CHECK: hlcf.loop
-        # CHECK: {{.+}} = pop.load [[APTR]]
+        # CHECK: {{.+}} = lit.ref.load %a_0
         while a:
             # CHECK: pop.store {{.+}}, %inside_a
             inside_a = 0
@@ -510,8 +509,7 @@ fn propagateErrorInTry():
 def raiseErrorInDef(err: Error):
     # CHECK: %err_0 = lit.varlet.decl2 "err"
     # CHECK: lit.ref.store %err, %err_0
-    # CHECK: %0 = lit.ref.to_pointer %err_0
-    # CHECK: %[[ERRVAL:.*]] = pop.load %0
+    # CHECK: %[[ERRVAL:.*]] = lit.ref.load %err_0
     # CHECK: %[[ERRVALCOPY:.*]] = kgen.call {{.*}}@Error::@"__copyinit__
     # CHECK: lit.raise %[[ERRVALCOPY]] : !Error
     raise err
