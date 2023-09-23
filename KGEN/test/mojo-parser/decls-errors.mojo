@@ -398,6 +398,21 @@ struct TestOverloading:
     overloadIntFloat32(a, b)
 
 
+# Test that static methods don't get dispatched if their first arg is self type.
+struct MyStruct:
+    fn __init__(inout self): pass
+
+    # expected-note @+2 {{function declared here}}
+    @staticmethod
+    fn bar(inout f: MyStruct): pass
+
+
+fn test_static_overload():
+    var a = MyStruct()
+    # expected-error @below {{call to 'bar': callee expects 1 argument, but 0 were specified}}
+    a.bar()
+
+
 # expected-note @+1 {{function declared here}}
 fn takesAtLeastOneInt(x: Int, *y: Int): pass
 fn badTakesAtLeastOneInt():
