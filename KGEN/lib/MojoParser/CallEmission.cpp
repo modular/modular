@@ -1239,6 +1239,80 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
   }
 }
 
+// Assuming we have at least one valid candidate, filter the candidate list to
+// the ones with the lowest number of implicit conversions required. If there is
+// more than one candidate with minimal implicit conversions, we filter for the
+// ones with the fewest number of parameter bindings. If there is still
+// ambiguity, we filter for non-static methods.
+//
+// To aid downstream diganostics, the function returns the number of conversions
+// needed for the best candidates, and a pointer to the fitness of one of them.
+// All diagnostics from erroneous candidates are dropped.
+static std::pair<const OverloadFitness *, size_t>
+selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
+                     MutableArrayRef<OverloadFitness> evaluations,
+                     SmallVectorImpl<ASTDecl *> &newFnDecls) {
+  assert(newFnDecls.empty());
+  size_t minConversions = std::numeric_limits<size_t>::max();
+  size_t minBindings = std::numeric_limits<size_t>::max();
+  bool areTheBestCandidatesStatic = true;
+  const OverloadFitness *oneFitness = &evaluations[0];
+  for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
+    // Ignore failures.
+    if (!eval.isValid()) {
+      eval.takeDiag().abandon();
+      continue;
+    }
+
+    // Ignore candidates that have more conversions.
+    size_t numConversions = eval.getNumImplicitConversions();
+    if (numConversions > minConversions)
+      continue;
+
+    // Ignore candidates that have too many bindings.
+    size_t numBindings = eval.getParamBindings().size();
+    if ((numConversions == minConversions) && (numBindings > minBindings))
+      continue;
+
+    // If we found a new floor to the number of conversions needed, or a new
+    // candidate with minimal conversions with a new floor for the number of
+    // bindings, clear the list.
+    if (numConversions < minConversions || numBindings < minBindings) {
+      newFnDecls.clear();
+      minConversions = numConversions;
+      minBindings = numBindings;
+      areTheBestCandidatesStatic = true;
+    }
+
+    auto func = cast<LIT::FuncOp>(*candidate);
+
+    // If the current best candidates are not static, we ignore new static
+    // candidates.
+    if (!areTheBestCandidatesStatic && func.getIsStatic())
+      continue;
+
+    // If the current best candidates are static, and we just found a non-static
+    // one, we clear the list.
+    if (areTheBestCandidatesStatic && !func.getIsStatic()) {
+      newFnDecls.clear();
+      areTheBestCandidatesStatic = false;
+    }
+
+    newFnDecls.push_back(candidate);
+    oneFitness = &eval;
+  }
+
+  // The numConversions value computed by OverloadFitness includes the number of
+  // implicit conversions required but also uses the three lowest bits to track
+  // whether a nonmaterializable conversion was needed, and if variadic
+  // conversion was used in the parameters or arguments. Among other things,
+  // this allows us to treat varargs as a less-specific match than an exact
+  // signature match (for example, when overloading a `foo(Int)` and `foo(Int*)`
+  // we should pick the former if both work). That said, we don't want to
+  // complain about the wrong number in diagnostics, so we adjust for this.
+  return {oneFitness, minConversions / 8};
+}
+
 PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure,
@@ -1289,59 +1363,10 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     return {};
   }
 
-  // Ok, we have at least one valid candidate, filter the list to the ones with
-  // the lowest number of implicit conversions required. If there is more than
-  // one candidate with minimal implicit conversions, we filter for the ones
-  // with the fewest number of parameter bindings.
-  size_t minConversions = std::numeric_limits<size_t>::max();
-  size_t minBindings = std::numeric_limits<size_t>::max();
-  bool areTheBestCandidatesStatic = true;
+  // Ok, we have at least one valid candidate, so filter for the best matches.
   SmallVector<ASTDecl *, 1> newFnDecls;
-  const OverloadFitness *oneFitness = &evaluations[0];
-  for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
-    // Ignore failures.
-    if (!eval.isValid()) {
-      eval.takeDiag().abandon();
-      continue;
-    }
-
-    // Ignore candidates that have more conversions.
-    size_t numConversions = eval.getNumImplicitConversions();
-    if (numConversions > minConversions)
-      continue;
-
-    // Ignore candidates that have too many bindings.
-    size_t numBindings = eval.getParamBindings().size();
-    if ((numConversions == minConversions) && (numBindings > minBindings))
-      continue;
-
-    // If we found a new floor to the number of conversions needed, or a new
-    // candidate with minimal conversions with a new floor for the number of
-    // bindings, clear the list.
-    if (numConversions < minConversions || numBindings < minBindings) {
-      newFnDecls.clear();
-      minConversions = numConversions;
-      minBindings = numBindings;
-      areTheBestCandidatesStatic = true;
-    }
-
-    auto func = cast<LIT::FuncOp>(*candidate);
-
-    // If the current best candidates are not static, we ignore new static
-    // candidates.
-    if (!areTheBestCandidatesStatic && func.getIsStatic())
-      continue;
-
-    // If the current best candidates are static, and we just found a non-static
-    // one, we clear the list.
-    if (areTheBestCandidatesStatic && !func.getIsStatic()) {
-      newFnDecls.clear();
-      areTheBestCandidatesStatic = false;
-    }
-
-    newFnDecls.push_back(candidate);
-    oneFitness = &eval;
-  }
+  auto [oneFitness, minConversions] =
+      selectBestCandidates(fnDecls, evaluations, newFnDecls);
 
   // Notify the listener of the updated decl references for the call now that
   // invalid candidates have been filtered out.
@@ -1383,19 +1408,9 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
           diag.attachNote(candidate.getLoc()) << "non-adaptive candidate here";
       }
     } else {
-      // The numConversions field computed for kValue includes the number of
-      // implicit conversions required but also uses the two lowest bits to
-      // track the whether a variadic conversion was used in the parameters and
-      // arguments. This allows us to treat varargs as a less-specific match
-      // than an exact signature match (for example, when overloading a
-      // `foo(Int)` and `foo(Int*)` we should pick the former if both work. That
-      // said, when we get here we don't want to complain about the wrong
-      // number.
-      size_t numConversions = minConversions / 8;
-
       auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
-                  << baseName << "', each candidate requires " << numConversions
-                  << " implicit conversion" << plural(numConversions)
+                  << baseName << "', each candidate requires " << minConversions
+                  << " implicit conversion" << plural(minConversions)
                   << ", disambiguate with an explicit cast" << expr->getRange();
       for (ASTDecl *candidate : newFnDecls)
         diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
