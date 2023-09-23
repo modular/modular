@@ -328,6 +328,23 @@ lit.func @ref_it() {
   kgen.return
 }
 
+// CHECK-LABEL: lit.struct.decl @FuncParamStruct
+// CHECK-SAME: <c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()>>
+lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()>>  {
+  // CHECK: lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>)
+  lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) {
+    lit.end_func
+  }
+  // CHECK-LABEL: lit.func @bar
+  lit.func @bar(%x: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) {
+    // CHECK: call @FuncParamStruct::@foo<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
+    kgen.call @FuncParamStruct::@foo<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
+    // CHECK-SAME: ("x": !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) -> ()
+      : !lit.signature<("x": !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) -> ()>
+    lit.end_func
+  }
+}
+
 // -----
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {

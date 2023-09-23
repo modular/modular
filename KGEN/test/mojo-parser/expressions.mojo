@@ -186,6 +186,21 @@ struct M:
   fn __rmatmul__(lhs, self: M) -> M:
     return M(0)
 
+# CHECK-LABEL: lit.struct.decl @StructWithFuncParam
+# CHECK-SAME: <[[PARAM:.*]]: !lit.signature
+# CHECK-SAME: <type>(!kgen.paramref<*(0,0)> borrow)
+struct StructWithFuncParam[comparator: fn[T: AnyType] (T) -> None]:
+    # CHECK-LABEL: lit.func @"f
+    # CHECK-SAME: %self: !kgen.pointer<{{.*}}<[[PARAM]]: !lit.signature<<type>(!kgen.paramref<*(0,0)>
+    fn f(self):
+        pass
+
+    # CHECK-LABEL: lit.func @"g
+    fn g(self):
+        # CHECK: call {{.*}}<:!lit.signature<<type>(!kgen.paramref<*(0,0)> borrow)
+        # CHECK-SAME: !kgen.pointer<{{.*}}<type>(!kgen.paramref<*(0,0)> borrow)
+        self.f()
+
 # CHECK-LABEL: lit.func @"simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
   # CHECK: %0 = kgen.call {{.*}}Int::@"__mul__{{.*}}(%b, %a)
