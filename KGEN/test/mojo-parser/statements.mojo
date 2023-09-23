@@ -312,10 +312,12 @@ struct MyList:
 fn for_range_loop():
     let my_list = MyList()
 
-    # CHECK: %$RANGE = lit.varlet.decl "$RANGE"
-    # CHECK: [[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}(%$RANGE, %my_list)
+    # CHECK: %$RANGE = lit.varlet.decl2 "$RANGE"
+    # CHECK: %1 = lit.ref.to_pointer %$RANGE
+    # CHECK: [[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}(%1, %my_list)
     for item in my_list:
-        # CHECK: [[LENGTH:%.*]] = kgen.call {{.*}}__len__{{.*}}(%$RANGE)
+        # CHECK: %4 = lit.ref.to_pointer %$RANGE
+        # CHECK: [[LENGTH:%.*]] = kgen.call {{.*}}__len__{{.*}}(%4)
         # CHECK: [[INDEX:%.*]] = kgen.call {{.*}}__index__{{.*}}([[LENGTH]])
         # CHECK: [[MLIR_INDEX:%.*]] = kgen.call {{.*}}__mlir_index__{{.*}}([[INDEX]])
         # CHECK: [[COND:%.*]] = index.cmp sgt([[MLIR_INDEX]], %idx0)
@@ -329,11 +331,11 @@ fn induction_var_scope():
     # CHECK: "item"
     # CHECK: hlcf.loop
     for item in range(0):
-        # CHECK: pop.load %item
+        # CHECK: lit.ref.load %item
         # CHECK: "g" = %{{.*}}
         let g = item
     for item in range(0):
-        # CHECK: pop.load %item
+        # CHECK: lit.ref.load %item
         let g = item
 
 # CHECK-LABEL: lit.func @"unroll_for()"

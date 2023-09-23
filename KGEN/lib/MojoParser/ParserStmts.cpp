@@ -939,8 +939,9 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
-  auto varDeclOp = builder.create<VarLetDeclOp>(
-      forLoc, PointerType::get(UnresolvedType::get(getContext())), target,
+  StringAttr targetLifenameName = curDeclScope->getAnonymousLifetimeFor(target);
+  auto varDeclOp = builder.create<VarLetDecl2Op>(
+      forLoc, UnresolvedType::get(getContext()), target, targetLifenameName,
       /*isVar=*/funcOp && funcOp.getIsDef(), /*isSynth=*/true);
 
   // If there is a failure before we parse the for loop body, we still
@@ -963,8 +964,11 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return {};
 
   // Emit a call to __iter__ into a var with an inferred type.
-  VarLetDeclOp rangeRef = builder.create<VarLetDeclOp>(
-      forLoc, PointerType::get(UnresolvedType::get(getContext())), "$RANGE",
+  StringAttr rangeName = StringAttr::get(builder.getContext(), "$RANGE");
+  StringAttr rangeLifenameName =
+      curDeclScope->getAnonymousLifetimeFor(rangeName);
+  auto rangeRef = builder.create<VarLetDecl2Op>(
+      forLoc, UnresolvedType::get(getContext()), rangeName, rangeLifenameName,
       /*isVar*/ true, /*isSynth=*/true);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
@@ -972,7 +976,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
                                         seqExpr)) {
     rangeDest.resetForError();
     varDeclOp.getResult().setType(
-        PointerType::get(shared.getTypeCheckErrorType()));
+        RefType::get(/*isMut*/ true, shared.getTypeCheckErrorType(),
+                     varDeclOp.getType().getLifetime()));
     return {};
   }
 
@@ -983,7 +988,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
   AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", CallOperands({{MLValue(rangeRef), seqExpr}}),
+      "__len__", CallOperands({{XLValue(rangeRef), seqExpr}}),
       ValueDest::none(), CallSyntax::kImplicitConvert, seqExpr);
   CValue lengthIndex =
       getEmitter().emitMLIRIndex({currentLength, seqExpr}, EC_ForIterator);
@@ -1010,7 +1015,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   builder.setInsertionPointAfter(condOp);
   ValueDest ivarDest(varDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
-          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), ivarDest,
+          "__next__", CallOperands({{XLValue(rangeRef), seqExpr}}), ivarDest,
           CallSyntax::kImplicitConvert, seqExpr)) {
     ivarDest.resetForError();
     return {};

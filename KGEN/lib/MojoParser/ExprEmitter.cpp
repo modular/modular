@@ -124,6 +124,9 @@ const char *LIT::getContextMessage(ExprContext context) {
 ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
+ValueDest::ValueDest(VarLetDecl2Op dest, ExprContext context)
+    : representation(dest.getOperation()), context(context) {}
+
 ValueDest::ValueDest(GlobalVarDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
@@ -248,6 +251,13 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(PointerType::get(materializedType));
       return MLValue(varOp);
+    }
+    if (auto varOp = dyn_cast<VarLetDecl2Op>(opDest)) {
+      assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
+             "Cannot resolve an already-resolved vardecl");
+      varOp.getResult().setType(RefType::get(/*isMut*/ true, materializedType,
+                                             varOp.getType().getLifetime()));
+      return XLValue(varOp);
     }
     auto globalOp = cast<GlobalVarDeclOp>(opDest);
     assert(isa<UnresolvedType>(globalOp.getType()) &&
@@ -749,11 +759,24 @@ MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
 
 MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
+  if (auto ref = value.ir.getIfXRValue()) {
+    value.ir = emitMRValue(value, context);
+    if (!value.ir)
+      return {};
+  } else if (auto ref = value.ir.getIfXBValue()) {
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    return MBValue(builder->create<RefToPointerOp>(ref.getLoc(), ref));
+  }
+
   if (auto mb = value.ir.getIfMBValue())
     return mb;
   // Decay MRValue to MBValue.
   if (auto mr = value.ir.getIfMRValue())
     return MBValue(mr);
+
   assert(value.ir.getIfPValue() && "expected a PValue if not an MRValue");
   return emitPValueToMRValue({value.ir.getIfPValue(), value.expr}, context);
 }
