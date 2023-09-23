@@ -9,6 +9,7 @@
 
 #include "Support/CommandLine.h"
 #include "Support/ErrorOr.h"
+#include "Support/FileSystemExtras.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/Alignment.h"
@@ -51,27 +52,6 @@ public:
     return EXIT_FAILURE;
   }
 
-  /// Open the filename specified as the argument and return a memory buffer, or
-  /// an error message on failure.
-  static ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  openInputFile(StringRef inputFilename) {
-    std::string errorMsg;
-    auto result = mlir::openInputFile(inputFilename, &errorMsg);
-    if (result)
-      return result;
-    return Error(errorMsg);
-  }
-
-  /// Open the filename with a given alignment specified as the argument and
-  /// return a memory buffer, or an error message on failure.
-  static ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  openInputFileAligned(StringRef inputFilename, llvm::Align align) {
-    std::string errorMsg;
-    if (auto result = mlir::openInputFile(inputFilename, align, &errorMsg))
-      return result;
-    return Error(errorMsg);
-  }
-
 private:
   /// This tells LLVM to print stack traces on crashes, and also handles
   /// multibyte command line options on windows.
@@ -107,8 +87,7 @@ public:
   openInputFile(StringRef inputFile,
                 std::optional<llvm::Align> align = std::nullopt) {
     align = (inputFileAlignment != 0) ? llvm::Align(inputFileAlignment) : align;
-    return CLOptionsBase::openInputFileAligned(
-        inputFile, align.value_or(defaultAlignment));
+    return M::openInputFile(inputFile, align.value_or(defaultAlignment));
   }
 
   /// The common case for all our driver-like tools is to fail early with an
