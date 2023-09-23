@@ -162,6 +162,8 @@ fn test[
             DimList.create_unknown[5](),
             DimList.create_unknown[4](),
             type,
+            type,
+            type,
             True,
             False,
         ].run(
@@ -177,6 +179,8 @@ fn test[
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),
+            type,
+            type,
             type,
             False,
             False,

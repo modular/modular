@@ -2456,7 +2456,9 @@ struct ConvDirectNHWC[
     shape_input: DimList,
     shape_filter: DimList,
     shape_output: DimList,
-    type: DType,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
     filter_packed: Bool,
     elementwise_epilogue_enabled: Bool,
 ]:
@@ -2471,9 +2473,9 @@ struct ConvDirectNHWC[
     Assume F is divisible at least by simd_size.
     """
 
-    var output: NDBuffer[4, shape_output, type]
-    var input: NDBuffer[4, shape_input, type]
-    var filter: NDBuffer[filter_rank, shape_filter, type]
+    var output: NDBuffer[4, shape_output, output_type]
+    var input: NDBuffer[4, shape_input, input_type]
+    var filter: NDBuffer[filter_rank, shape_filter, filter_type]
 
     var conv_shape: ConvShape
 
@@ -2490,9 +2492,9 @@ struct ConvDirectNHWC[
 
     @staticmethod
     fn run(
-        output: NDBuffer[4, shape_output, type],
-        input: NDBuffer[4, shape_input, type],
-        filter: NDBuffer[filter_rank, shape_filter, type],
+        output: NDBuffer[4, shape_output, output_type],
+        input: NDBuffer[4, shape_input, input_type],
+        filter: NDBuffer[filter_rank, shape_filter, filter_type],
         conv_shape: ConvShape,
         out_chain: OutputChainPtr,
     ):
@@ -2507,23 +2509,25 @@ struct ConvDirectNHWC[
 
     @staticmethod
     fn run(
-        output: NDBuffer[4, shape_output, type],
-        input: NDBuffer[4, shape_input, type],
-        filter: NDBuffer[filter_rank, shape_filter, type],
+        output: NDBuffer[4, shape_output, output_type],
+        input: NDBuffer[4, shape_input, input_type],
+        filter: NDBuffer[filter_rank, shape_filter, filter_type],
         conv_shape: ConvShape,
         elementwise_epilogue_fn: elementwise_epilogue_type,
         out_chain: OutputChainPtr,
     ):
         """Run with no padding (valid padding in TF). The micro kernel can include
         points from differeent rows or images."""
+
+        # FIXME - what type?
         let cf_tile_size = get_conv_tile_shape[
-            type, get_direct_conv_micro_kernel_width()
+            filter_type, get_direct_conv_micro_kernel_width()
         ](conv_shape)
 
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
-        alias simd_size = simdwidthof[type]()
+        alias simd_size = simdwidthof[output_type]()
 
         # Number of partitions in n_ho_wo, c, f dimensions.
         let num_threads = out_chain.get_runtime().parallelism_level()
@@ -2540,8 +2544,10 @@ struct ConvDirectNHWC[
         let output_size = conv_shape.n * conv_shape.out_h * conv_shape.out_w * conv_shape.f
         let scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
-            output_ptr = DTypePointer[type].alloc(scratch_size)
-        let output_scratch = Buffer[Dim(), type](output_ptr, scratch_size)
+            output_ptr = DTypePointer[output_type].alloc(scratch_size)
+        let output_scratch = Buffer[Dim(), output_type](
+            output_ptr, scratch_size
+        )
 
         @parameter
         @always_inline
@@ -2593,7 +2599,7 @@ struct ConvDirectNHWC[
                 min(cf_tile_size[0], c_range[1]), cf_tile_size[1]
             )
 
-            let task_output = NDBuffer[4, shape_output, type](
+            let task_output = NDBuffer[4, shape_output, output_type](
                 output_scratch.data.offset(task_id_c * output_size),
                 Index(
                     conv_shape.n,
@@ -2608,7 +2614,9 @@ struct ConvDirectNHWC[
                 shape_input,
                 shape_filter,
                 shape_output,
-                type,
+                input_type,
+                filter_type,
+                output_type,
                 filter_packed,
                 elementwise_epilogue_enabled,
             ](
@@ -2727,7 +2735,7 @@ struct ConvDirectNHWC[
         """Loop over F tiles."""
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-        alias simd_size = simdwidthof[type]()
+        alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
@@ -2800,7 +2808,7 @@ struct ConvDirectNHWC[
         """The N, HO, WO dimensions are fused and traversed with the micro
         kernel height as the step.
         Note that the micro kernel height changes for residual blocks."""
-        alias simd_size = simdwidthof[type]()
+        alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
         alias micro_kernel_width = micro_kernel_f_size // simd_size
 
@@ -2860,7 +2868,7 @@ struct ConvDirectNHWC[
             "Use Height x 1 kernel for residual in F.",
         ]()
 
-        alias simd_size = simdwidthof[type]()
+        alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
         # Base input offsets.
         let input_base_offsets = Buffer[
@@ -2886,11 +2894,11 @@ struct ConvDirectNHWC[
 
         unroll[micro_kernel_height, set_input_base_offsets]()
 
-        alias alignment = alignof[SIMD[type, simd_size]]()
+        alias alignment = alignof[SIMD[output_type, simd_size]]()
         let output_micro_tile = NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            type,
+            output_type,
         ].aligned_stack_allocation[alignment]()
 
         for f in range(
@@ -2912,7 +2920,7 @@ struct ConvDirectNHWC[
                     output_micro_tile,
                 )
 
-            var filter_ptr: DTypePointer[type] = self.filter.data
+            var filter_ptr: DTypePointer[filter_type] = self.filter.data
 
             @parameter
             if filter_packed:
@@ -3001,7 +3009,7 @@ struct ConvDirectNHWC[
         output_micro_tile: NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            type,
+            output_type,
         ],
     ):
         """Initialize a micro tile to zero.
@@ -3015,7 +3023,7 @@ struct ConvDirectNHWC[
         @parameter
         fn body[idx0: Int, idx1: Int]():
             output_micro_tile.simd_store[simd_size](
-                Index(idx0, idx1 * simd_size), SIMD[type, simd_size](0.0)
+                Index(idx0, idx1 * simd_size), SIMD[output_type, simd_size](0.0)
             )
 
         unroll[micro_kernel_height, micro_kernel_width, body]()
@@ -3028,11 +3036,11 @@ struct ConvDirectNHWC[
         has_residual: Bool,
     ](
         self,
-        output_base: DTypePointer[type],
+        output_base: DTypePointer[output_type],
         output_micro_tile: NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            type,
+            output_type,
         ],
     ):
         """Load a micro tile from the output buffer.
@@ -3059,7 +3067,7 @@ struct ConvDirectNHWC[
                     ) * simd_size
                     output_micro_tile.simd_store[simd_size](
                         Index(i, j * simd_size),
-                        partial_simd_load[type, simd_size](
+                        partial_simd_load[output_type, simd_size](
                             output_ptr.offset(j * simd_size), 0, residual, 0.0
                         ),
                     )
@@ -3082,9 +3090,9 @@ struct ConvDirectNHWC[
         output_micro_tile: NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            type,
+            output_type,
         ],
-        output_base: DTypePointer[type],
+        output_base: DTypePointer[output_type],
     ):
         """Store a micro tile from the output buffer.
         Parameters:
@@ -3111,7 +3119,7 @@ struct ConvDirectNHWC[
                     let residual = self.conv_shape.f - (
                         self.conv_shape.f // simd_size
                     ) * simd_size
-                    partial_simd_store[type, simd_size](
+                    partial_simd_store[output_type, simd_size](
                         output_ptr.offset(j * simd_size),
                         0,
                         residual,
@@ -3127,15 +3135,15 @@ struct ConvDirectNHWC[
     @always_inline
     fn _load_filter_vec[
         has_residual: Bool, simd_size: Int
-    ](self, filter_ptr: DTypePointer[type], offset: Int) -> SIMD[
-        type, simd_size
+    ](self, filter_ptr: DTypePointer[filter_type], offset: Int) -> SIMD[
+        filter_type, simd_size
     ]:
         """Load a simd vector from the filter.
         There may be residual elements i.e. F - offset < simd_size. Partial
         simd load instrinc is used if the filter is not packed.  Otherwise,
         it's safe to load a vector since the filter has been properly padded.
         """
-        let filter_vec: SIMD[type, simd_size]
+        let filter_vec: SIMD[filter_type, simd_size]
         # Partial load if F is not multiple of simd_size.
         @parameter
         if has_residual and not filter_packed:
@@ -3143,7 +3151,7 @@ struct ConvDirectNHWC[
                 self.conv_shape.f // simd_size
             ) * simd_size
             # TODO: Follow #20211 to optimize it for NEON.
-            filter_vec = partial_simd_load[type, simd_size](
+            filter_vec = partial_simd_load[filter_type, simd_size](
                 filter_ptr, 0, residual, 0.0
             )
         # It's always safe to load a full vector from packed filter because
@@ -3167,11 +3175,11 @@ struct ConvDirectNHWC[
         input_base_offsets: Buffer[micro_kernel_height, DType.int32],
         input_offset: Int,
         c_tile_size: Int,
-        filter_base: DTypePointer[type],
+        filter_base: DTypePointer[filter_type],
         output_micro_tile: NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            type,
+            output_type,
         ],
     ):
         """Accumulate with register tiling on SIMD ISAs other than NEON.
@@ -3211,7 +3219,7 @@ struct ConvDirectNHWC[
                 let input_val = self.input.data.offset(
                     input_base_offsets[i].value + offset
                 ).simd_load[1]()
-                let input_vec = SIMD[type, simd_size](input_val)
+                let input_vec = SIMD[input_type, simd_size](input_val)
 
                 @unroll
                 for j in range(micro_kernel_width):
@@ -3225,8 +3233,10 @@ struct ConvDirectNHWC[
                     var output_vec = output_micro_tile.simd_load[simd_size](
                         output_micro_idx
                     )
-                    output_vec = fma[type, simd_size](
-                        input_vec, filter_vec, output_vec
+                    output_vec = fma[output_type, simd_size](
+                        input_vec.cast[output_type](),
+                        filter_vec.cast[output_type](),
+                        output_vec,
                     )
                     output_micro_tile.simd_store[simd_size](
                         output_micro_idx, output_vec
@@ -3256,11 +3266,11 @@ struct ConvDirectNHWC[
         input_base_offsets: Buffer[micro_kernel_height, DType.int32],
         input_offset: Int,
         c_tile_size: Int,
-        filter_base: DTypePointer[type],
+        filter_base: DTypePointer[filter_type],
         output_micro_tile: NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            type,
+            output_type,
         ],
     ):
         """Accumulate with register tiling on NEON architectures."""
@@ -3273,7 +3283,7 @@ struct ConvDirectNHWC[
         @always_inline
         fn micro_kernel[num_lanes: Int](offset: Int):
             let input_vecs = stack_allocation[
-                micro_kernel_height, SIMD[type, num_lanes]
+                micro_kernel_height, SIMD[input_type, num_lanes]
             ]()
 
             # Load vectors of size num_lanes from input.
@@ -3286,7 +3296,7 @@ struct ConvDirectNHWC[
                 ).simd_load[num_lanes]()
                 input_vecs.store(i, input_vec)
 
-            var filter_ptr: DTypePointer[type]
+            var filter_ptr: DTypePointer[filter_type]
 
             @parameter
             if filter_packed:
@@ -3311,8 +3321,10 @@ struct ConvDirectNHWC[
                             output_micro_idx
                         )
                         # Neon can broadcast from an element in simd vector.
-                        output_vec = fma[type, simd_size](
-                            input_vec[lane], filter_vec, output_vec
+                        output_vec = fma[output_type, simd_size](
+                            input_vec[lane].cast[output_type](),
+                            filter_vec.cast[output_type](),
+                            output_vec,
                         )
                         output_micro_tile.simd_store[simd_size](
                             output_micro_idx, output_vec
@@ -3338,9 +3350,9 @@ struct ConvDirectNHWC[
         self,
         c_tile_size: Int,
         input_stride: Int,
-        input_base: DTypePointer[type],
-        filter_base: DTypePointer[type],
-        output_ptr: DTypePointer[type],
+        input_base: DTypePointer[input_type],
+        filter_base: DTypePointer[filter_type],
+        output_ptr: DTypePointer[output_type],
     ):
         """Accumulate with register tiling on SIMD ISAs other than NEON.
         It has been optimized for AVX512 and AVX2.
@@ -3373,7 +3385,7 @@ struct ConvDirectNHWC[
                         .to_data_cache()
                     ]()
 
-            alias alignment = alignof[SIMD[type, simd_size]]()
+            alias alignment = alignof[SIMD[output_type, simd_size]]()
 
             @unroll
             for i in range(micro_kernel_height):
@@ -3384,7 +3396,7 @@ struct ConvDirectNHWC[
                     let input_val = input_base.offset(
                         c + i * input_stride
                     ).load()
-                    let input_vec = SIMD[type, simd_size](input_val)
+                    let input_vec = SIMD[input_type, simd_size](input_val)
                     # Load a simd vector from filter.
                     let filter_vec = self._load_filter_vec[
                         has_residual, simd_size
@@ -3394,8 +3406,10 @@ struct ConvDirectNHWC[
                     var output_vec = output_ptr.offset(
                         i * micro_kernel_f_size + j * simd_size
                     ).aligned_simd_load[simd_size, alignment]()
-                    output_vec = fma[type, simd_size](
-                        input_vec, filter_vec, output_vec
+                    output_vec = fma[output_type, simd_size](
+                        input_vec.cast[output_type](),
+                        filter_vec.cast[output_type](),
+                        output_vec,
                     )
                     output_ptr.offset(
                         i * micro_kernel_f_size + j * simd_size
@@ -3421,9 +3435,9 @@ struct ConvDirectNHWC[
         self,
         c_tile_size: Int,
         input_stride: Int,
-        input_base: DTypePointer[type],
-        filter_base: DTypePointer[type],
-        output_ptr: DTypePointer[type],
+        input_base: DTypePointer[input_type],
+        filter_base: DTypePointer[filter_type],
+        output_ptr: DTypePointer[output_type],
     ):
         """Accumulate with register tiling on NEON architectures."""
         constrained[has_neon()]()
@@ -3439,7 +3453,7 @@ struct ConvDirectNHWC[
         @always_inline
         fn micro_kernel[num_lanes: Int](offset: Int):
             let input_vecs = stack_allocation[
-                micro_kernel_height, SIMD[type, num_lanes]
+                micro_kernel_height, SIMD[input_type, num_lanes]
             ]()
 
             # Load vectors of size num_lanes from input.
@@ -3452,7 +3466,7 @@ struct ConvDirectNHWC[
                     ](),
                 )
 
-            var filter_ptr: DTypePointer[type]
+            var filter_ptr: DTypePointer[filter_type]
 
             @parameter
             if filter_packed:
@@ -3476,8 +3490,10 @@ struct ConvDirectNHWC[
                             i * micro_kernel_f_size + j * simd_size
                         ).simd_load[simd_size]()
                         # Neon can broadcast from an element in simd vector.
-                        output_vec = fma[type, simd_size](
-                            input_vec[lane], filter_vec, output_vec
+                        output_vec = fma[output_type, simd_size](
+                            input_vec[lane].cast[output_type](),
+                            filter_vec.cast[output_type](),
+                            output_vec,
                         )
                         output_ptr.offset(
                             i * micro_kernel_f_size + j * simd_size
@@ -3511,7 +3527,7 @@ struct ConvDirectNHWC[
         micro kernel 1 x micro_kernel_width for (1) and (3) and exploits the
         default micro kernel for (2).
         """
-        alias simd_size = simdwidthof[type]()
+        alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Divide each row into three part:
@@ -3527,7 +3543,7 @@ struct ConvDirectNHWC[
             - self.conv_shape.s * self.conv_shape.dilation[1]
         ) // self.conv_shape.stride[1] + 1
 
-        let filter_base: DTypePointer[type]
+        let filter_base: DTypePointer[filter_type]
 
         @parameter
         if filter_packed:
@@ -3649,9 +3665,11 @@ struct ConvDirectNHWC[
         last_c_tile: Bool,
     ](
         self,
-        input_base: DTypePointer[type],  # points to (ho, wo) mapped in input
-        filter_base: DTypePointer[type],  # point to filter in cf tile
-        output_base: DTypePointer[type],  # point to (ho, wo) in output
+        input_base: DTypePointer[
+            input_type
+        ],  # points to (ho, wo) mapped in input
+        filter_base: DTypePointer[filter_type],  # point to filter in cf tile
+        output_base: DTypePointer[output_type],  # point to (ho, wo) in output
         f_tile_offset: Int,
         f_tile_size: Int,
         c_tile_offset: Int,
@@ -3674,7 +3692,7 @@ struct ConvDirectNHWC[
             "USE 1 x width kernel on boundary",
         ]()
 
-        alias simd_size = simdwidthof[type]()
+        alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Shift in input when shifting 1 in filter S dimension.
@@ -3704,11 +3722,11 @@ struct ConvDirectNHWC[
 
         # This will be all lifted to simd registers for FMA unless the micro
         # kernel is too large that spills named registers.
-        alias alignment = alignof[SIMD[type, simd_size]]()
+        alias alignment = alignof[SIMD[output_type, simd_size]]()
         let output_micro_tile = NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            type,
+            output_type,
         ].aligned_stack_allocation[alignment]()
 
         var filter_tile = filter_base
@@ -4170,6 +4188,7 @@ fn conv_2d_nhwc_direct[
     let filter_rebind = rebind[NDBuffer[filter_rank, filter_shape, input_type]](
         filter
     )
+
     alias filter_layout = Image2DLayout.FRSCf if filter_packed else Image2DLayout.RSCF
     let conv_shape = get_conv2d_shape[
         filter_rank,
@@ -4214,12 +4233,14 @@ fn conv_2d_nhwc_direct[
         filter_shape,
         output_shape,
         input_type,
+        filter_type,
+        output_type,
         filter_packed,
         lambdas_have_fusion,
     ].run(
-        output_rebind,
+        output,
         input,
-        filter_rebind,
+        filter,
         conv_shape,
         elementwise_epilogue_closure,
         out_chain,

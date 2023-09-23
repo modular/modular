@@ -81,6 +81,8 @@ fn static_conv(
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
         DimList(N, HO, WO, F),
         value_type,
+        value_type,
+        value_type,
         True,
         False,
     ](
