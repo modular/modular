@@ -79,9 +79,6 @@ def KGEN_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     }]>
   ];
 
-  let extraClassDeclaration = [{
-  }];
-
   let genVerifyDecl = 1;
 }
 
