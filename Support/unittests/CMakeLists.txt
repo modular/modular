@@ -52,4 +52,5 @@ add_modular_unittest(
   MSupportML
   MSupportGlobals
   MTelemetry
+  MProfiling
 )

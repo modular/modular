@@ -6,7 +6,7 @@
 
 #include "Support/CommandLine.h"
 #include "Support/ErrorOr.h"
-#include "Support/Host.h"
+#include "Support/MArchTarget/Host.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
 #include "llvm/ADT/STLExtras.h"

@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/Registration.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "Support/SymbolExport.h"
-#include "Support/TimeProfiler.h"
 
 using namespace M;
 

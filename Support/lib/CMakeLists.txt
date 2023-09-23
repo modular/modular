@@ -18,7 +18,6 @@ add_modular_library(MSupport
   ErrorOr.cpp
   FileSystemExtras.cpp
   HMAC.cpp
-  Host.cpp
   IPInt.cpp
   JSON.cpp
   MicroBenchmark.cpp
@@ -26,7 +25,6 @@ add_modular_library(MSupport
   Random.cpp
     ReferenceCounted.cpp
   Stats.cpp
-  TimeProfiler.cpp
   URI.cpp
   Version.cpp
 
@@ -37,11 +35,6 @@ add_modular_library(MSupport
   MLIRSupport
   MVersion
   )
-
-if (APPLE)
-  target_include_directories(MSupport PRIVATE ${CLANG_INCLUDE_DIRS})
-  target_link_libraries(MSupport PRIVATE clangBasic)
-endif ()
 
 string(REPLACE ";" " " LLVM_TARGETS_BUILT "${LLVM_TARGETS_TO_BUILD}")
 set(BUILD_INFO_DEFINITIONS
@@ -60,9 +53,11 @@ add_subdirectory(Driver)
 add_subdirectory(Entitlements)
 add_subdirectory(HTTP)
 add_subdirectory(MDialect)
+add_subdirectory(Threading)
 add_subdirectory(MArchTarget)
 add_subdirectory(ML)
 add_subdirectory(Compiler)
 add_subdirectory(DebugInfoDialect)
 add_subdirectory(Globals)
 add_subdirectory(Telemetry)
+add_subdirectory(Profiling)

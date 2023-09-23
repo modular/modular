@@ -3,20 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 ##===----------------------------------------------------------------------===##
-
-add_modular_library(MArchTarget
+add_modular_library(MProfiling
   STATIC OBJECT # Always generate an obj.${name} target.
 
-  Host.cpp
-  MArchTarget.cpp
+  TimeProfiler.cpp
 
-  DEPENDS
-  MLIRMIncGen
-
-  LINK_LIBS
-  clangBasic
-  MDialect
-  MThreading
+  LINK_LIBS PUBLIC
+  MArchTarget
   )
-
-target_include_directories(MArchTarget PRIVATE ${CLANG_INCLUDE_DIRS})

@@ -8,7 +8,7 @@
 #include "Config/Version.h"
 #include "Support/BuildInfo.h"
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
-#include "Support/Host.h"
+#include "Support/MArchTarget/Host.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
 #include "mlir/IR/Builders.h"

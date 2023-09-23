@@ -7,7 +7,7 @@
 #ifndef SUPPORT_COMPILER_TIMEPROFILERTIMINGMANAGER_H
 #define SUPPORT_COMPILER_TIMEPROFILERTIMINGMANAGER_H
 
-#include "Support/TimeProfiler.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/Support/Timing.h"
 
 namespace M {

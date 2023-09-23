@@ -9,7 +9,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Support/ErrorOr.h"
-#include "Support/TimeProfiler.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 
