@@ -75,8 +75,8 @@ public:
   }
 
   using ParameterInferenceHookTy =
-      std::function<PValue(size_t index, Type type, ASTType expectedType,
-                           ArrayRef<TypedAttr> bindings)>;
+      function_ref<PValue(size_t index, Type type, ASTType expectedType,
+                          ArrayRef<TypedAttr> bindings)>;
 
   /// Describe how closely the given parameter bindings match the specified
   /// input parameters and call operands.
@@ -231,16 +231,17 @@ public:
   /// not emit an error on failure.
   OverloadSet(ASTType type, StringRef methodName, const ExprNode *callExpr,
               CallSyntax syntax, SharedState &shared,
-              std::function<void()> errorHandler);
+              function_ref<void()> errorHandler = {});
 
-  /// Lookup of a named named method on the specified type, filtered to match a
+  /// Lookup of a named method on the specified type, filtered to match a
   /// concrete operand set. If successful, this provides a non-null PValue for a
-  /// single callee.
+  /// single callee. If non-null, it invokes errorHandler if the lookup of the
+  /// named method fails.
   static PValue lookup(ASTType type, StringRef methodName,
                        const CallOperands &callOperands,
                        const ExprNode *callExpr, CallSyntax syntax,
                        ExprEmitter &emitter,
-                       std::function<void()> errorHandler);
+                       function_ref<void()> errorHandler = {});
 
   bool isNull() const { return fnDecls.empty(); }
   bool operator!() const { return isNull(); }
@@ -301,7 +302,7 @@ private:
   /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
   static PValue getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
-                          InputParamBindings inputParamBindings,
+                          const InputParamBindings &inputParamBindings,
                           const ExprNode *expr, ExprEmitter &emitter);
 };
 
