@@ -185,6 +185,9 @@ struct CallOperands {
 
   /// The values passed as keyword operands.
   const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> *kwOperands;
+
+  /// Inidicates if the positional operands include a self operand.
+  bool hasSelfOperand = false;
 };
 
 /// This class represents an unresolved overload set with partially bound

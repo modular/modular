@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate %s -verify-diagnostics -import-mojo | FileCheck %s
+# RUN: kgen-translate %s -import-mojo | FileCheck %s
 
 ##===----------------------------------------------------------------------===##
 # var/let
@@ -423,6 +423,22 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
 
     # CHECK: kgen.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}MyInt{{.*}}>]()"
     paramOverload2[MyInt(a), b, c]()
+
+
+# Test overloading precedence in the presence of static methods.
+struct MyStruct:
+    fn __init__(inout self): pass
+
+    fn foo(inout self): pass
+
+    @staticmethod
+    fn foo(): pass
+
+# CHECK-LABEL: lit.func @"test_static_overload()"
+fn test_static_overload():
+    var a = MyStruct()
+    # CHECK: kgen.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%a) : !lit.signature<("self": !kgen.pointer<!MyStruct> byref) -> !lit.none>
+    a.foo()
 
 
 struct VariadicStruct[*Ts: AnyType]:

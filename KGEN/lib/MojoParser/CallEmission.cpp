@@ -1247,9 +1247,17 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
-    auto signature = cast<LIT::FuncOp>(*candidate).getFullSignature();
-    evaluations.push_back(OverloadFitness::evaluate(
-        signature, *this, operands, allowImplicitConversions, emitter));
+    auto func = cast<LIT::FuncOp>(*candidate);
+
+    // If we are dealing with a static method, we check if the operands include
+    // a self operand and remove it, otherwise the signature might not match.
+    CallOperands callOperands(operands);
+    if (func.getIsStatic() && operands.hasSelfOperand)
+      callOperands.posOperands = callOperands.posOperands.drop_front();
+
+    evaluations.push_back(
+        OverloadFitness::evaluate(func.getFullSignature(), *this, callOperands,
+                                  allowImplicitConversions, emitter));
     anyValid |= evaluations.back().isValid();
   }
 
@@ -1287,8 +1295,9 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   // with the fewest number of parameter bindings.
   size_t minConversions = std::numeric_limits<size_t>::max();
   size_t minBindings = std::numeric_limits<size_t>::max();
+  bool areTheBestCandidatesStatic = true;
   SmallVector<ASTDecl *, 1> newFnDecls;
-  OverloadFitness *oneFitness = &evaluations[0];
+  const OverloadFitness *oneFitness = &evaluations[0];
   for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
     // Ignore failures.
     if (!eval.isValid()) {
@@ -1313,7 +1322,23 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
       newFnDecls.clear();
       minConversions = numConversions;
       minBindings = numBindings;
+      areTheBestCandidatesStatic = true;
     }
+
+    auto func = cast<LIT::FuncOp>(*candidate);
+
+    // If the current best candidates are not static, we ignore new static
+    // candidates.
+    if (!areTheBestCandidatesStatic && func.getIsStatic())
+      continue;
+
+    // If the current best candidates are static, and we just found a non-static
+    // one, we clear the list.
+    if (areTheBestCandidatesStatic && !func.getIsStatic()) {
+      newFnDecls.clear();
+      areTheBestCandidatesStatic = false;
+    }
+
     newFnDecls.push_back(candidate);
     oneFitness = &eval;
   }
@@ -1865,6 +1890,7 @@ CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
     baseValue = {};
     assert(syntax == CallSyntax::kMethodCall && "Unexpected syntax form");
     operands.posOperands = posOperandsWithSelf;
+    operands.hasSelfOperand = true;
   }
 
   // Check the direct callees to see if they can be unambiguously resolved
@@ -2086,6 +2112,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
       posOperandsWithSelf.push_back({PValue(attr), expr});
       posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
       operands.posOperands = posOperandsWithSelf;
+      operands.hasSelfOperand = true;
     }
   };
   argsAddSelf();
