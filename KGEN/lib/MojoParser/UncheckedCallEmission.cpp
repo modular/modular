@@ -466,6 +466,20 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     if (auto pVal = argValAndExpr.ir.getIfPValue())
       return arg = emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
 
+    // If this is an XBValue, the element must be register passable but not
+    // loaded.
+    if (auto refVal = argValAndExpr.ir.getIfXBValue()) {
+      const ExprNode *expr = argValAndExpr.expr;
+      // TODO: Factor this into a helper.
+      std::optional<OpBuilder> builder = emitter.builder;
+      if (!builder) {
+        emitter.emitErrorForDynamicValueInParameter(expr);
+        return {};
+      }
+      auto load =
+          builder->create<RefLoadOp>(expr->getLocation(emitter), refVal);
+      argValAndExpr.ir = SBValue(load);
+    }
     // If this is an MBValue, the element must be register passable but not
     // loaded.
     if (auto mbVal = argValAndExpr.ir.getIfMBValue()) {
@@ -517,6 +531,12 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     assert(lv && "type checking ensures we will have an lvalue");
     if (auto sl = lv.getIfMLValue())
       return sl;
+    if (auto ref = lv.getIfXLValue()) {
+      // Decay reference to pointer.
+      return emitter.builder->create<RefToPointerOp>(
+          emitter.translateLocation(argValAndExpr.expr->getLoc()), ref);
+      return ref;
+    }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.

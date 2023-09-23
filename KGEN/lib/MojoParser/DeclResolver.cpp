@@ -2766,9 +2766,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
 /// Create a mutable VarDecl for a function argument that captures its value.
 /// argValue specifies the argument with the correct valuetype.
-static MLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
-                                    ASTDecl &parentDecl, OpBuilder &builder,
-                                    SMLoc loc, SharedState &shared) {
+static VarLetDecl2Op makeArgLValueVarSlot(const CValue &argValue,
+                                          StringAttr argName,
+                                          ASTDecl &parentDecl,
+                                          OpBuilder &builder, SMLoc loc,
+                                          SharedState &shared) {
   Location mloc = shared.translateLocation(loc);
 
   // Emit the initializer expression into the slot.
@@ -2786,10 +2788,7 @@ static MLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
   if (!emitter.emitBValue({argValue, &srcExpr}, dest))
     dest.resetForError();
 
-  // TODO: Maintain the reference in the type system.
-  auto varPtr = builder.create<RefToPointerOp>(mloc, varDecl);
-
-  return MLValue(varPtr);
+  return varDecl;
 };
 
 /// This adds a default return (lit.return of None, potentially converted

@@ -139,9 +139,13 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
       // Add the block argument, get it as an RValue since it is owned.
       BlockArgument arg = body->getArgument(idx);
       CValue argVal;
-      if (argConventions[idx] == ValueInputConvention::OwnedInReg)
-        argVal = SRValue(arg);
-      else if (argConventions[idx] == ValueInputConvention::BorrowedInReg)
+      if (argConventions[idx] == ValueInputConvention::OwnedInReg) {
+        // FIXME(references): This won't be right for first-class references.
+        if (isa<RefType>(arg.getType()))
+          argVal = XBValue(arg);
+        else
+          argVal = SRValue(arg);
+      } else if (argConventions[idx] == ValueInputConvention::BorrowedInReg)
         argVal = SBValue(arg);
       else
         argVal = MRValue(arg);

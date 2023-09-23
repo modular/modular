@@ -497,7 +497,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!isa<LIT::FuncOp>(*decls[0])) {
       assert(decls.size() == 1 && "Only functions may be overloaded");
       ASTDecl *decl = decls[0];
-      if (decl->getParentDecl() && (decl->getParentDecl() != &container))
+      if (decl->getParentDecl() && decl->getParentDecl() != &container)
         emitter.shared.addCaptureToScope(container, decl, capture);
     }
   }
@@ -612,6 +612,14 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     auto fieldPtr =
         emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
     return emitter.emitCResult(MLValue(fieldPtr), expr, dest);
+  }
+
+  // If the base is an memory lvalue, then we can return an lvalue to the field.
+  if (XLValue baseLV = base.ir.getIfXLValue()) {
+    assert(emitter.builder && "Must have a builder given dynamic base value");
+    auto fieldPtr =
+        emitter.builder->create<RefStructGEROp>(mlirLoc, baseLV, fieldOp);
+    return emitter.emitCResult(XLValue(fieldPtr), expr, dest);
   }
 
   // We know the base.ir is a BValue or CRValue, decay to BValue.
@@ -2247,6 +2255,10 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
           << "transfer from an owned value has no effect and can be removed"
           << FixIt::remove(getLoc());
 
+    // TODO(references) swap OwnershipEndLifetimeOp to reference.
+    if (isa<RefType>(v.getType()))
+      v = emitter.builder->create<RefToPointerOp>(getLocation(emitter), v);
+
     auto newVal = emitter.builder->create<OwnershipEndLifetimeOp>(
         getLocation(emitter), v, isRegister);
     if (isRegister)
@@ -2256,8 +2268,14 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
 
   // The transfer expression expects the result to be a ownable value that it
   // can launder into an RValue.
-  if (auto sl = argValue.getIfMLValue()) {
-    if (auto result = handleLifetimeEnd(sl, /*isRegister=*/false))
+  if (auto ptr = argValue.getIfMLValue()) {
+    if (auto result = handleLifetimeEnd(ptr, /*isRegister=*/false))
+      return result;
+    // TODO: When we support explicit move operations and have an lvalue, we
+    // can invoke it.
+  }
+  if (auto ref = argValue.getIfXLValue()) {
+    if (auto result = handleLifetimeEnd(ref, /*isRegister=*/false))
       return result;
     // TODO: When we support explicit move operations and have an lvalue, we
     // can invoke it.
@@ -2266,6 +2284,12 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
     if (auto result = handleLifetimeEnd(mb, /*isRegister=*/false))
       return result;
   if (auto mr = argValue.getIfMRValue())
+    if (auto result = handleLifetimeEnd(mr, /*isRegister=*/false))
+      return result;
+  if (auto mb = argValue.getIfXBValue())
+    if (auto result = handleLifetimeEnd(mb, /*isRegister=*/false))
+      return result;
+  if (auto mr = argValue.getIfXRValue())
     if (auto result = handleLifetimeEnd(mr, /*isRegister=*/false))
       return result;
   if (auto sb = argValue.getIfSBValue())
@@ -2698,6 +2722,10 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     LValue result = emitter.emitExprLValue(subExpr, EC_Unknown);
     if (!result)
       return {};
+    if (XLValue resultRef = result.getIfXLValue())
+      result = MLValue(emitter.builder->create<RefToPointerOp>(
+          getLocation(emitter), resultRef));
+
     MLValue resultPtr = result.getIfMLValue();
     if (!resultPtr) {
       emitter.emitError(getLoc(),

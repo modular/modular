@@ -218,6 +218,10 @@ ASTType BValue::getRValueType() const {
   return type;
 }
 
+void XRValue::check() const { assert(::isa<RefType>(Value::getType())); }
+void XLValue::check() const { assert(::isa<RefType>(Value::getType())); }
+void XBValue::check() const { assert(::isa<RefType>(Value::getType())); }
+
 //===----------------------------------------------------------------------===//
 // ORValue
 //===----------------------------------------------------------------------===//

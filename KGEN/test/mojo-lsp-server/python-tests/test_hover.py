@@ -377,7 +377,12 @@ Multiple arguments.
     )
 
     # We currently can't recover an owned argument from its decl, so we just print its name.
-    await assert_decl("owned_input", "### `owned_input`")
+    await assert_decl(
+        "owned_input",
+        """```mojo
+(variable) var owned_input: Int
+```""",
+    )
 
     await assert_decl(
         "arg_in_function_that_raises",
