@@ -541,22 +541,25 @@ fn test_result_optimization():
 
   # Direct reuse of the result slot forces a temporary.
 
-  # CHECK: %__call_result_tmp__ = lit.varlet.decl
-  # CHECK-NEXT: kgen.call @"$ownership{{.*}}(%__call_result_tmp__, %example)
+  # CHECK: %__call_result_tmp__ = lit.varlet.decl2
+  # CHECK-NEXT: %1 = lit.ref.to_pointer %__call_result_tmp__
+  # CHECK-NEXT: kgen.call @"$ownership{{.*}}(%1, %example)
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%example)
-  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}(%example, %__call_result_tmp__)
-  # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%__call_result_tmp__)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}(%example, %1)
+  # CHECK-NEXT: %5 = lit.ref.to_pointer %__call_result_tmp__
+  # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%5)
   example = use_and_return(example)
 
   # Aliased reuse of part of the result slot forces a temporary.
 
   # CHECK-NEXT: %__call_result_tmp___0 = lit.varlet.decl
+  # CHECK-NEXT: %7 = lit.ref.to_pointer %__call_result_tmp___0
   # CHECK-NEXT: [[F1:%.*]] = lit.struct.gep %example[f1]
-  # CHECK-NEXT: kgen.call @"$ownership"::@"use_and_return2{{.*}}(%__call_result_tmp___0, %example)
+  # CHECK-NEXT: kgen.call @"$ownership"::@"use_and_return2{{.*}}(%7, %example)
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.struct.gep %example[f1]
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}([[F1_2]])
-  # CHECK-NEXT: kgen.call @{{.*}}@"__moveinit__{{.*}}([[F1]], %__call_result_tmp___0)
+  # CHECK-NEXT: kgen.call @{{.*}}@"__moveinit__{{.*}}([[F1]], %7)
 
   example.mutate()
   # CHECK-NEXT: kgen.call @{{.*}}@"mutate{{.*}}(%example)

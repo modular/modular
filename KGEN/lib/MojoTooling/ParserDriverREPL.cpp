@@ -432,8 +432,8 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   // persisted, returns a value corresponding to the address of the field.
   // Returns nullptr otherwise.
   auto checkInsertPersistentVar = [&](Operation *varOp, StringAttr name,
-                                      PointerType type) {
-    mlir::Type elementType = type.getElementAsType();
+                                      mlir::Type elementType) {
+    PointerType type = PointerType::get(elementType);
 
     // Check if the variable should be persisted.
     if (!listener.shouldPersistVariable(name, elementType))
@@ -485,8 +485,8 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // Handle register based let decls. These have an initializer, and never
     // expose the actual pointer.
     if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(*decl)) {
-      Value field = checkInsertPersistentVar(letOp, letOp.getNameAttr(),
-                                             PointerType::get(letOp.getType()));
+      Value field =
+          checkInsertPersistentVar(letOp, letOp.getNameAttr(), letOp.getType());
       if (!field)
         continue;
       decl->setIRValue(MRValue(field));
@@ -500,20 +500,37 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
       letOp.erase();
       continue;
     }
-    // Handle memory based let decls.
+    // Handle memory based decls.
     if (auto letOp = dyn_cast<LIT::VarLetDeclOp>(*decl)) {
-      if (Value field = checkInsertPersistentVar(letOp, letOp.getNameAttr(),
-                                                 letOp.getType())) {
+      if (Value field = checkInsertPersistentVar(
+              letOp, letOp.getNameAttr(), letOp.getType().getElementAsType())) {
         decl->setIRValue(MRValue(field));
         letOp.replaceAllUsesWith(field);
         letOp.erase();
       }
       continue;
     }
-    // Handle memory based let decls.
-    if (auto letOp = dyn_cast<LIT::VarLetDecl2Op>(*decl))
-      llvm_unreachable(
-          "add support when we have IRValue support for references");
+    // Handle memory based decls.
+    if (auto letOp = dyn_cast<LIT::VarLetDecl2Op>(*decl)) {
+      if (Value field = checkInsertPersistentVar(
+              letOp, letOp.getNameAttr(), letOp.getType().getElementAsType())) {
+        decl->setIRValue(MRValue(field));
+
+        // In order to use the pointer as a reference we force cast.
+        // FIXME(references): switch synthesized structs to use references
+        mlir::ImplicitLocOpBuilder builder(letOp.getLoc(), letOp);
+        // Declare the lifetime as a placeholder.
+        builder.create<ParamDeclareOp>(letOp.getParamDecl(),
+                                       builder.getAttr<LifetimeAttr>());
+        field = builder
+                    .create<mlir::UnrealizedConversionCastOp>(letOp.getType(),
+                                                              field)
+                    .getResult(0);
+        letOp.replaceAllUsesWith(field);
+        letOp.erase();
+      }
+      continue;
+    }
   }
 }
 

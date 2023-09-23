@@ -396,14 +396,14 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // This creates an untyped VarLetDeclOp which is then inferred from its
   // initializer.  `isVar` indicates whether this should be considered mutable.
   auto createVarDecl = [&](OpBuilder &builder, bool isVar,
-                           bool isSynth) -> VarLetDeclOp {
+                           bool isSynth) -> VarLetDecl2Op {
     auto contextualType = dest.getIfLValueInitializerType();
     assert(contextualType && "must have contextual type");
     auto loc = getLocation(emitter);
-    Type declIRType = PointerType::get(contextualType);
-    auto nameAttr = StringAttr::get(loc.getContext(), spelling);
-    return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar,
-                                        isSynth);
+    auto name = StringAttr::get(loc.getContext(), spelling);
+    StringAttr lifetimeName = emitter.declScope.getAnonymousLifetimeFor(name);
+    return builder.create<VarLetDecl2Op>(loc, contextualType, name,
+                                         lifetimeName, isVar, isSynth);
   };
 
   // If that lookup failed, but we can synthesize a variable declaration in this
@@ -418,14 +418,14 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     OpBuilder varDeclBuilder(
         emitter.varDeclCursor->getInsertionBlock(),
         std::next(emitter.varDeclCursor->getInsertionPoint()));
-    VarLetDeclOp varDecl = // Marked isSynth to disable warnings.
+    VarLetDecl2Op varDecl = // Marked isSynth to disable warnings.
         createVarDecl(varDeclBuilder, /*isVar=*/true, /*isSynth=*/true);
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
         DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), &container);
-    return emitter.emitResult(MLValue(varDecl), this, dest);
+    return emitter.emitResult(XLValue(varDecl), this, dest);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();

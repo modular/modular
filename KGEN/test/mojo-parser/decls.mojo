@@ -220,7 +220,7 @@ def let_decls() -> None:
 # CHECK-LABEL:  lit.func @"var_decls()
 def var_decls() -> None:
     # Implicit declaration is mutable.
-    # CHECK: %x = lit.varlet.decl "x" var
+    # CHECK: %x = lit.varlet.decl2 "x" var
     x = Int(123).value
     # CHECK: %y = lit.varlet.decl "y" var
     var y: Int
@@ -240,7 +240,7 @@ def var_decls() -> None:
     var str = "hello"
 
     # CHECK: %z = lit.varlet.decl {{.*}} : <index>
-    # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !kgen.pointer<index>
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
     # CHECK-NEXT: pop.store [[TMP]], %z
     var z = x
     z = Int(42).value

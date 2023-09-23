@@ -1086,12 +1086,13 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       if (func && func.getIsDef()) {
         // If we are parsing inside a 'def', create a mutable LValue to allow
         // reassignment.
-        auto varDecl = builder.create<VarLetDeclOp>(
-            errVal.getLoc(), PointerType::get(errVal.getType()), errName,
+        StringAttr errLifetimeName =
+            curDeclScope->getAnonymousLifetimeFor(errName);
+        auto varDecl = builder.create<VarLetDecl2Op>(
+            errVal.getLoc(), errVal.getType(), errName, errLifetimeName,
             /*isVar=*/true, /*isSynth=*/true);
         decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
-        builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
-                                     /*alignment=*/std::nullopt);
+        builder.create<RefStoreOp>(errVal.getLoc(), errVal, varDecl);
       } else {
         // If we are parsing inside an 'fn', the error declaration is an BValue,
         // because any reference to it needs to copy/move out.
@@ -1187,7 +1188,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // FIXME: This needs to parse this as a target expression and then handle it
   // like a destructuring pattern.
-  VarLetDeclOp targetDecl;
+  VarLetDecl2Op targetDecl;
   bool addDecl = false;
   SMLoc targetLoc;
   SMLoc asLoc;
@@ -1202,6 +1203,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls);
       if (auto slval = emitted.getIfMLValue()) {
         enterDest = ValueDest(slval, EC_WithContextMgr);
+      } else if (auto ref = emitted.getIfXLValue()) {
+        enterDest = ValueDest(ref, EC_WithContextMgr);
       } else {
         (emitError(targetLoc)
          << name
@@ -1211,9 +1214,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         return failure();
       }
     } else {
-      targetDecl = builder.create<VarLetDeclOp>(
+      StringAttr lifetimeName = curDeclScope->getAnonymousLifetimeFor(name);
+      targetDecl = builder.create<VarLetDecl2Op>(
           shared.translateLocation(targetLoc),
-          PointerType::get(UnresolvedType::get(getContext())), name,
+          UnresolvedType::get(getContext()), name, lifetimeName,
           /*isVar=*/!useLexicalScope, /*isSynth=*/false);
       enterDest = ValueDest(targetDecl, EC_WithContextMgr);
       addDecl = true;
@@ -1243,7 +1247,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Inject the target into our scope if asked for.
   if (addDecl) {
     auto &targetDeclResolved = getDeclResolver().addFullyResolvedDecl(
-        MLValue(targetDecl), targetDecl.getNameAttr(), targetLoc, curDeclScope);
+        targetDecl.getOperation(), targetDecl.getNameAttr(), targetLoc,
+        curDeclScope);
     if (!enterResult)
       targetDeclResolved.hasReferenceError = true;
   }
@@ -1316,10 +1321,13 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // Insert the flag and initialize it to 'True'.
     OpBuilder::InsertionGuard g(builder);
     builder.setInsertionPoint(tryOp);
-    excVar = builder.create<VarLetDeclOp>(
-        loc, PointerType::get(builder.getI1Type()), "__with_exc__",
-        /*isVar=*/true, /*isSynth=*/true);
-    builder.create<POP::StoreOp>(
+
+    StringAttr name = StringAttr::get(builder.getContext(), "__with_exc__");
+    StringAttr lifetimeName = curDeclScope->getAnonymousLifetimeFor(name);
+    excVar = builder.create<VarLetDecl2Op>(loc, builder.getI1Type(), name,
+                                           lifetimeName,
+                                           /*isVar=*/true, /*isSynth=*/true);
+    builder.create<RefStoreOp>(
         loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
   }
 
@@ -1362,7 +1370,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   SRValue errorVal = exceptBlock->addArgument(errorType, loc);
 
   // Set the flag to 'False'.
-  builder.create<POP::StoreOp>(
+  builder.create<RefStoreOp>(
       loc, builder.create<mlir::index::BoolConstantOp>(loc, false), excVar);
 
   // Pass the error value to the __exit__ method.
@@ -1396,7 +1404,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Emit the conditional call to __exit__.
   builder.createBlock(&tryOp.getFinallyRegion());
   auto excIf =
-      builder.create<HLCF::IfOp>(loc, builder.create<POP::LoadOp>(loc, excVar));
+      builder.create<HLCF::IfOp>(loc, builder.create<RefLoadOp>(loc, excVar));
   builder.create<TryYieldOp>(loc);
   builder.createBlock(&excIf.getThenRegion());
   emitNormalExitLogic();
