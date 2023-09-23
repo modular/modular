@@ -22,8 +22,7 @@ ErrorOrSuccess M::Detail::setThreadAffinityLinux(size_t cpuID) {
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
   CPU_SET(cpuID, &cpuset);
-  int rc = sched_setaffinity(0, sizeof(cpuset), &cpuset);
-  if (rc != 0)
+  if (int rc = sched_setaffinity(0, sizeof(cpuset), &cpuset))
     return Error("unable to set thread CPU affinity: " + std::to_string(rc));
   return success();
 }
@@ -59,21 +58,24 @@ M::Detail::runWithThreadAffinityLinux(size_t cpuID,
 bool M::haveThreadAffinity() {
 #if defined(HAVE_LINUX_SET_AFFINITY)
   return true;
-#endif
+#else
   return false;
+#endif // defined(HAVE_LINUX_SET_AFFINITY)
 }
 
 ErrorOrSuccess M::setThreadAffinity(size_t cpuID) {
 #if defined(HAVE_LINUX_SET_AFFINITY)
   return Detail::setThreadAffinityLinux(cpuID);
-#endif
+#else
   return Error("setThreadAffinity is not supported by this build");
+#endif // defined(HAVE_LINUX_SET_AFFINITY)
 }
 
 ErrorOrSuccess M::runWithThreadAffinity(size_t cpuID,
                                         llvm::function_ref<void()> workFn) {
 #if defined(HAVE_LINUX_SET_AFFINITY)
   return Detail::runWithThreadAffinityLinux(cpuID, workFn);
-#endif
+#else
   return Error("runWithThreadAffinity is not supported by this build");
+#endif // defined(HAVE_LINUX_SET_AFFINITY)
 }

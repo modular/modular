@@ -161,8 +161,9 @@ ErrorOr<CPUSystemInfo> CPUSystemInfo::get() {
 static M::ErrorOr<size_t> getNumPhysicalCoresImpl() {
 #ifdef _MSC_VER
   return Detail::getNumPhysicalCoresWindows();
-#endif
+#else
   return llvm::get_physical_cores();
+#endif // _MSC_VER
 }
 
 M::ErrorOr<size_t> M::getNumPhysicalCores() {
@@ -204,9 +205,10 @@ std::vector<size_t> CPUSystemInfo::getPreferredCpuIDs(size_t numThreads) const {
         if (virtualCoreIndex < physicalCore.virtualCores.size()) {
           cpuIDs.emplace_back(
               physicalCore.virtualCores[virtualCoreIndex].cpuID);
-          if (cpuIDs.size() >= numThreads)
+          if (cpuIDs.size() >= numThreads) {
             // Found enough.
             return cpuIDs;
+          }
         }
       }
     }
