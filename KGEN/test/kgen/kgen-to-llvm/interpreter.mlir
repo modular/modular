@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -lower-kgen-to-llvm | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=64>} {
 
 // CHECK-LABEL: llvm.func internal @heap
 kgen.func @heap() -> !kgen.pointer<i16> {
@@ -8,11 +8,8 @@ kgen.func @heap() -> !kgen.pointer<i16> {
   // CHECK: %[[ALLOC_LLVM:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]] : !kgen.pointer<i8> to !llvm.ptr<i8>
   // CHECK: %[[BASE:.*]] = llvm.bitcast %[[ALLOC_LLVM]] : !llvm.ptr<i8> to !llvm.ptr
   // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
-  // CHECK: %[[CST_EF:.*]] = llvm.mlir.constant(-17 :
-  // CHECK: llvm.store %[[CST_EF]], %[[P0]] {alignment = 32 :
-  // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASE]][1]
-  // CHECK: %[[CST_BE:.*]] = llvm.mlir.constant(-66 :
-  // CHECK: llvm.store %[[CST_BE]], %[[P1]] {alignment = 32 :
+  // CHECK: %[[CST_EFBE:.*]] = llvm.mlir.constant(#M.dense_array<-17, -66> : vector<2xi8>)
+  // CHECK: llvm.store %[[CST_EFBE]], %[[P0]] {alignment = 32 :
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
   %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(mem_heap, heap, [])], 0, 0>>
@@ -80,6 +77,62 @@ kgen.func @string() {
   kgen.return
 }
 
+// CHECK-LABEL: llvm.func internal @long
+kgen.func @long() {
+  // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASEPTR:.*]][0]
+  // CHECK: %[[V0:.*]] = llvm.mlir.constant(#M.dense_array<0, 1, 2, 3, 4, 5, 6, 7> : vector<8xi8>)
+  // CHECK: llvm.store %[[V0]], %[[P0]]
+
+  // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][8]
+  // CHECK: %[[V1:.*]] = llvm.mlir.constant(#M.dense_array<8, 9, 0, 1, 2, 3, 4, 5> : vector<8xi8>)
+  // CHECK: llvm.store %[[V1]], %[[P1]]
+
+  // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][16]
+  // CHECK: %[[V2:.*]] = llvm.mlir.constant(#M.dense_array<6, 7, 8, 9> : vector<4xi8>)
+  // CHECK: llvm.store %[[V2]], %[[P2]]
+  %1 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(large, stack, [])], 0, 0>>
+
+  // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][20]
+  // CHECK: %[[V3:.*]] = llvm.mlir.constant(0 : i8)
+  // CHECK: llvm.store %[[V3]], %[[P3]]
+  kgen.return
+}
+
+// CHECK-LABEL: llvm.func internal @ptr_inside_blob
+kgen.func @ptr_inside_blob() {
+  // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASEPTR:.*]][0]
+  // CHECK: %[[V0:.*]] = llvm.mlir.constant(#M.dense_array<0, 1, 2, 3> : vector<4xi8>)
+  // CHECK: llvm.store %[[V0]], %[[P0]]
+
+  // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][4]
+  // CHECK: %[[V1:.*]] = llvm.mlir.constant(#M.dense_array<4, 5> : vector<2xi8>)
+  // CHECK: llvm.store %[[V1]], %[[P1]]
+
+  // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][6]
+  // CHECK: %[[V2:.*]] = llvm.getelementptr inbounds %{{.*}}[1]
+  // CHECK: llvm.store %[[V2]], %[[P2]]
+
+  // COM: 8-byte pointer occupies [6, 7, 8, 9, 0, 1, 2, 3], so next is 4
+
+  // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][14]
+  // CHECK: %[[V3:.*]] = llvm.mlir.constant(#M.dense_array<4, 5, 6, 7> : vector<4xi8>)
+  // CHECK: llvm.store %[[V3]], %[[P3]]
+
+  // CHECK: %[[P4:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][18]
+  // CHECK: %[[V4:.*]] = llvm.mlir.constant(#M.dense_array<8, 9> : vector<2xi8>)
+  // CHECK: llvm.store %[[V4]], %[[P4]]
+
+  // CHECK: %[[P5:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][20]
+  // CHECK: %[[V5:.*]] = llvm.mlir.constant(0 : i8)
+  // CHECK: llvm.store %[[V5]], %[[P5]]
+
+  %1 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[
+    (large, stack, [(6, 1, 1)]),
+    (bar, stack, [])
+  ], 0, 0>>
+  kgen.return
+}
+
 // CHECK: llvm.mlir.global internal constant @mem_global(#M.dense_array<1, 2, 3, 4> : !M.array<4xi8>) {addr_space = 0 : i32, alignment = 32 : i64} : !llvm.array<4 x i8>
 // CHECK: llvm.mlir.global internal constant @mem_string("hello world")
 
@@ -93,7 +146,8 @@ kgen.func @string() {
       mem_global: "0x2000000001020304",
       mem_string: "hello world",
       foo: "0x10000000000000000000000008",
-      bar: "0x100000000000"
+      bar: "0x100000000000",
+      large: "0x10000000000102030405060708090001020304050607080900"
     }
   }
 #-}

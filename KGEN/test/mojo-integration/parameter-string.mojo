@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -elaborate %s -S -o - | FileCheck %s --check-prefix=ELABORATE
+# RUN: mojo %s | FileCheck %s
 
 
 @value

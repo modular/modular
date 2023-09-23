@@ -602,6 +602,38 @@ Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
   return global;
 }
 
+/// Store `size` worth of data to offset `idx` into `ptr`, reading from `data`.
+/// Use vector stores, and progressively smaller ones if `size` is not a
+/// multiple of 2.
+static void materializeVectorStores(int64_t idx, int64_t size, Value ptr,
+                                    const char *data, ImplicitLocOpBuilder &b,
+                                    Type ptrType, size_t align) {
+  // Nothing to do.
+  if (size == 0)
+    return;
+
+  // GEP to the current offset.
+  Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
+                                    LLVM::GEPArg(idx), /*inbounds=*/true);
+  // Emit a scalar store.
+  if (size == 1) {
+    b.create<LLVM::StoreOp>(
+        b.create<LLVM::ConstantOp>(b.getI8Type(), data[idx]), gep, align);
+    return;
+  }
+
+  // Round down to the nearest power of 2, inclusive.
+  int64_t curSize = llvm::NextPowerOf2(size) / 2;
+  int64_t remaining = size - curSize;
+
+  ArrayRef<uint8_t> slice((const uint8_t *)data + idx, curSize);
+  auto value =
+      ArrayElementsAttr::get(slice, VectorType::get(curSize, b.getI8Type()));
+  b.create<LLVM::StoreOp>(b.create<LLVM::ConstantOp>(value), gep, align);
+  materializeVectorStores(idx + curSize, remaining, ptr, data, b, ptrType,
+                          align);
+}
+
 InterpreterMemoryConverter::MaterializedBlobs &
 InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     ImplicitLocOpBuilder &b, MemorySpaceAttr space) {
@@ -639,6 +671,7 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
 
   // Perform memcpy of non-global blobs while remapping pointer regions.
   int64_t pointerSize = imc.tc.getTarget().getDataLayout().getPointerSize();
+  int64_t simdWidth = imc.tc.getTarget().getSimdBitWidth() / 8;
   for (auto [blob, value] : llvm::zip(space, materialized)) {
     // Constant globals don't have pointer regions.
     if (blob.getKind() == MemoryKind::ConstGlobal)
@@ -648,26 +681,31 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     ArrayRef<char> data = mem->getData();
     auto ptrIt = blob.getPointerRegions().begin();
     auto ptrEnd = blob.getPointerRegions().end();
-    for (int64_t i = 0, e = data.size(); i != e;) {
-      // GEP to the current offset.
-      Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
-                                        LLVM::GEPArg(i), /*inbounds=*/true);
-      // Check if the current offset is the beginning of a pointer region.
-      if (ptrIt != ptrEnd && ptrIt->offset == i) {
+
+    // Store the memory blob in chunks of the preferred SIMD width.
+    for (int64_t i = 0, e = data.size(); i < e;) {
+      // Check if the current chunk contains a pointer.
+      if (ptrIt != ptrEnd && i <= ptrIt->offset &&
+          ptrIt->offset < (i + simdWidth)) {
+        // Store up to the pointer region.
+        int64_t partSize = ptrIt->offset - i;
+        materializeVectorStores(i, partSize, ptr, data.data(), b, ptrType,
+                                mem->getDataAlignment());
+        i += partSize;
+
         // Store the pointer value to the current offset.
+        Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
+                                          LLVM::GEPArg(i), /*inbounds=*/true);
         auto [_, index, offset] = *ptrIt++;
         b.create<LLVM::StoreOp>(
             getBlobPointer(b, ptrType, materialized, index, offset), gep,
             mem->getDataAlignment());
         i += pointerSize;
-      } else {
-        // Store the byte at this offset.
-        // FIXME: Vectorize the stores to reduce IR bloat.
-        b.create<LLVM::StoreOp>(
-            b.create<LLVM::ConstantOp>(b.getI8Type(), data[i]), gep,
-            mem->getDataAlignment());
-        ++i;
+        continue;
       }
+      materializeVectorStores(i, std::min(simdWidth, e - i), ptr, data.data(),
+                              b, ptrType, mem->getDataAlignment());
+      i += simdWidth;
     }
   }
 
