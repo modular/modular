@@ -80,8 +80,9 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%v2, %a)
   let v2 : MemoryOnlyPair = a
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %a)
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl2
+  # CHECK-NEXT: [[TMPPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[TMPPTR]], %a)
   _ = a
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
@@ -97,11 +98,13 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # Pass memory only things by value as arguments.
 
-  # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.varlet.decl {{.*}}!MemoryOnlyPair
-  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}"([[TMPPAIR]], %a)
-  # CHECK-NEXT: [[TMPINT:%.*]] = lit.varlet.decl {{.*}}!MemoryOnlyInt
-  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}"([[TMPINT]], %regX)
-  # CHECK-NEXT: kgen.call @{{.*}}@"method{{.*}}"([[TMPPAIR]], [[TMPINT]])
+  # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.varlet.decl2 {{.*}}!MemoryOnlyPair
+  # CHECK: [[TMPPAIRPTR:%.*]] = lit.ref.to_pointer [[TMPPAIR]]
+  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}"([[TMPPAIRPTR]], %a)
+  # CHECK-NEXT: [[TMPINT:%.*]] = lit.varlet.decl2 {{.*}}!MemoryOnlyInt
+  # CHECK: [[TMPINTPTR:%.*]] = lit.ref.to_pointer [[TMPINT]]
+  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}"([[TMPINTPTR]], %regX)
+  # CHECK-NEXT: kgen.call @{{.*}}@"method{{.*}}"([[TMPPAIRPTR]], [[TMPINTPTR]])
   a.method(regX)
 
   # Drill into rvalue without cloning intermediate values.
@@ -117,14 +120,16 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
   let mpFloat : MemoryOnlyFloat64 = v2.x
 
-  # CHECK: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMP]]
+  # CHECK: [[TMP:%.*]] = lit.varlet.decl2 "anonymous*"
+  # CHECK: [[TMPPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+  # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMPPTR]]
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
 
   # Memory-only default argument with memory-only result.
-  # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
+  # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl2 "anonymous*"
+  # CHECK-NEXT: [[TMPPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: {{.*}}Int = {{.*}} 42
-  # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}([[TMP]], %[[C42]])
+  # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}([[TMPPTR]], %[[C42]])
   _ = MemoryOnlyInt()
 
   # CHECK-NEXT: [[VARIADIC:%.*]]  = pop.variadic.create [%regX, %regX]
@@ -153,9 +158,10 @@ fn implicit_func_conversion():
     # CHECK: %0 = kgen.create_closure
     # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%f, %0)
     var f: DummyFunc = take_int
-    # CHECK: %2 = kgen.create_closure
-    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%anonymous2A, %2)
-    # CHECK: call {{.*}}func_arg_conversion{{.*}}(%anonymous2A)
+    # CHECK: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+    # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
+    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}([[ANONPTR]], [[CLOSURE]])
+    # CHECK: call {{.*}}func_arg_conversion{{.*}}([[ANONPTR]])
     func_arg_conversion(take_int)
 
 # CHECK-LABEL: lit.struct.decl @M
@@ -409,14 +415,16 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
 
   # CHECK-NEXT: [[DBOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%d)
   # CHECK-NEXT: [[DI1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[DBOOL]])
-  # CHECK-NEXT: [[IFRESULT:%.*]] = lit.varlet.decl {{.*}} <!MemBoolish>
+  # CHECK-NEXT: [[IFRESULT:%.*]] = lit.varlet.decl2 {{.*}} : !lit.ref<mut !MemBoolish
+  # CHECK-NEXT: [[IRPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: hlcf.if [[DI1]] {
-  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[IFRESULT]], %d)
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[IRPTR]], %d)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[TMPMEM:%.*]] = lit.varlet.decl
-  # CHECK-NEXT:   kgen.call {{.*}}__init__{{.*}}([[TMPMEM]], %b)
-  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[IFRESULT]], [[TMPMEM]])
+  # CHECK-NEXT:   [[TMPMEM:%.*]] = lit.varlet.decl2
+  # CHECK-NEXT:   [[TMPPTR:%.*]] = lit.ref.to_pointer [[TMPMEM]]
+  # CHECK-NEXT:   kgen.call {{.*}}__init__{{.*}}([[TMPPTR]], %b)
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[IRPTR]], [[TMPPTR]])
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
   _ = d or b
@@ -966,13 +974,14 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   # CHECK: %0 = lit.ownership.end_lifetime %moi
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, %0)
   arr[x] = moi^
-  # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl2 "anonymous*"
+  # CHECK: [[ANON:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = arr[x]
 
   # CHECK: [[ANON:%.*]] = lit.varlet.decl2 "__store_tmp__"
-  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__0">
+  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__
   # CHECK: [[ANONPTR:%.*]] = lit.ref.to_pointer [[ANON]]
   # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANONPTR]], %arr, %x)
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[ANON]][x]
@@ -983,13 +992,14 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   arr[x].x = 1
 
   # Initialize in memory through a temp + setitem.
-  # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl2 "anonymous*"
+  # CHECK: [[ANON:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK: kgen.call @"{{.*}}__init__{{.*}}([[ANON]],
   # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = MemoryOnlyInt(42)
 
   # CHECK: [[STORETMP:%.*]] = lit.varlet.decl2 "__store_tmp__"
-  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__1">
+  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__
   # CHECK: [[STORETMPPTR:%.*]] = lit.ref.to_pointer [[STORETMP]]
   # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[STORETMPPTR]], %arr, %x)
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
@@ -1035,34 +1045,38 @@ fn takeInOutInt(inout a: Int): pass
 
  # CHECK-LABEL: lit.func @"testWritebacks
 fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
-  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var
+  # CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var
+  # CHECK-NEXT: %[[ANONPTR:.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: %[[V0:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V1:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
-  # CHECK-NEXT: pop.store %[[V1]], %anonymous2A
-  # CHECK-NEXT: %[[V2:.*]] = kgen.call {{.*}}takeInOutInt{{.*}}(%anonymous2A)
+  # CHECK-NEXT: pop.store %[[V1]], %[[ANONPTR]]
+  # CHECK-NEXT: %[[V2:.*]] = kgen.call {{.*}}takeInOutInt{{.*}}(%[[ANONPTR]])
   # CHECK-NEXT: %[[V3:.*]] = {{.*}}constant{{.*}} = 0
-  # CHECK-NEXT: %[[V4:.*]] = pop.load %anonymous2A
+  # CHECK-NEXT: %[[V4:.*]] = pop.load %[[ANONPTR]]
   # CHECK-NEXT: %[[V5:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
   takeInOutInt(a[0]);
 
-  # CHECK: %anonymous2A_0 = lit.varlet.decl
-  # CHECK: %anonymous2A_1 = lit.varlet.decl {{.*}}: <!IndexArray>
+  # CHECK: %anonymous2A_0 = lit.varlet.decl2
+  # CHECK-NEXT: %[[ANONPTR_0:.*]] = lit.ref.to_pointer %anonymous2A_0
+  # CHECK: %anonymous2A_1 = lit.varlet.decl2 {{.*}}!IndexArray
+  # CHECK-NEXT: %[[ANONPTR_1:.*]] = lit.ref.to_pointer %anonymous2A_1
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%anonymous2A_1, %b, %[[C1]])
+  # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%[[ANONPTR_1]], %b, %[[C1]])
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2
-  # CHECK-NEXT: %[[V5:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%anonymous2A_1, %[[C2]])
+  # CHECK-NEXT: %[[V5:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%[[ANONPTR_1]], %[[C2]])
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[V6:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %anonymous2A_1)
-  # CHECK-NEXT: pop.store %[[V5]], %anonymous2A_0
-  # CHECK-NEXT: %[[V7:.*]] = kgen.call {{.*}}takeInOutInt{{.*}}(%anonymous2A_0)
-  # CHECK-NEXT: %anonymous2A_2 = lit.varlet.decl {{.*}}
+  # CHECK-NEXT: %[[V6:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[ANONPTR_1]])
+  # CHECK-NEXT: pop.store %[[V5]], %[[ANONPTR_0]]
+  # CHECK-NEXT: %[[V7:.*]] = kgen.call {{.*}}takeInOutInt{{.*}}(%[[ANONPTR_0]])
+  # CHECK-NEXT: %anonymous2A_2 = lit.varlet.decl2
+  # CHECK-NEXT: %[[ANONPTR_2:.*]] = lit.ref.to_pointer %anonymous2A_2
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[V8:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%anonymous2A_2, %b, %[[C1]])
+  # CHECK-NEXT: %[[V8:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%[[ANONPTR_2]], %b, %[[C1]])
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2
-  # CHECK-NEXT: %[[V9:.*]] = pop.load %anonymous2A_0
-  # CHECK-NEXT: %[[V10:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%anonymous2A_2, %[[C2]], %[[V9]])
+  # CHECK-NEXT: %[[V9:.*]] = pop.load %[[ANONPTR_0]]
+  # CHECK-NEXT: %[[V10:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%[[ANONPTR_2]], %[[C2]], %[[V9]])
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[V11:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %anonymous2A_2)
+  # CHECK-NEXT: %[[V11:.*]] = kgen.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[ANONPTR_2]])
   takeInOutInt(b[1][2])
 
 
@@ -1312,15 +1326,16 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: M, i: Int) -
   # Memory only conds.
   # Issue (#13379)
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl2
+  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: hlcf.if %cond {
-  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %a)
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[ANONPTR]], %a)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %b)
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[ANONPTR]], %b)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
-  # CHECK-NEXT: kgen.call {{.*}}takeMemory{{.*}}(%anonymous2A)
+  # CHECK-NEXT: kgen.call {{.*}}takeMemory{{.*}}([[ANONPTR]])
   takeMemory(a if cond else b)
 
   # CHECK-NEXT: hlcf.if %cond {
@@ -1498,10 +1513,11 @@ fn indirect_kw_args():
     # CHECK: kgen.call_param[{{.*}} [[CALLEE]]](%[[A]], %[[B]])
     callee(b=2, a=7)
 
-    # CHECK: %[[CALLABLE:.*]] = lit.varlet.decl {{.*}} <!KwCallable>
+    # CHECK: %[[CALLABLE:.*]] = lit.varlet.decl2 {{.*}}: !lit.ref<mut !KwCallable
+    # CHECK-DAG: %[[CALLABLEPTR:.*]] = lit.ref.to_pointer %[[CALLABLE]]
     # CHECK-DAG: %[[MSG:.*]] = kgen.param.constant: {{.*}}value: string = "woof"
     # CHECK-DAG: %[[N:.*]] = kgen.param.constant: {{.*}}value = 7
-    # CHECK: kgen.call @{{.*}}@KwCallable::@"__call__{{.*}}"(%[[CALLABLE]], %[[MSG]], %[[N]])
+    # CHECK: kgen.call @{{.*}}@KwCallable::@"__call__{{.*}}"(%[[CALLABLEPTR]], %[[MSG]], %[[N]])
     KwCallable()(n=7, msg="woof")
 
 ##===----------------------------------------------------------------------===##

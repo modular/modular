@@ -1983,8 +1983,9 @@ static bool mightPointTo(Value p1, Value p2) {
 // itself be part of a standalone SSA pass post-inlining.  For now we'll
 // just catch the most obvious local cases to clean up the IR and provide a
 // "guaranteed" optimization.
+// TODO(references): Switch tmpDecl back to being a VarLetDeclOp.
 static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
-                                            VarLetDeclOp tmpDecl) {
+                                            Operation *tmpDecl) {
   Block *tmpBlock = tmpDecl->getBlock();
   if (copyInitCall->getBlock() != tmpBlock)
     return false;
@@ -1992,7 +1993,7 @@ static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
   Value srcPointer = copyInitCall.getOperand(1);
 
   size_t numUses = 0;
-  for (OpOperand &operand : tmpDecl.getResult().getUses()) {
+  for (OpOperand &operand : copyInitCall.getOperand(0).getUses()) {
     CallOp user = dyn_cast<CallOp>(operand.getOwner());
 
     // Don't handle control flow or other weird cases that are not calls.
@@ -2022,7 +2023,7 @@ static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
       if (it == e)
         return false;
 
-      // Scan all the operands to see if any of them are related to %src.  We
+      // Scan all the operands to see if any of them are related to %src. We
       // disallow regions because we don't recurse into them.
       if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
             return mightPointTo(v, srcPointer);
@@ -2103,6 +2104,24 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // implicit ones.  This is a policy decision, and we should look into
   // the impact on debug information, but generally one wouldn't want debug
   // information to block optimizations.
+  if (auto refToPtr =
+          copyInitCall.getOperand(0).getDefiningOp<RefToPointerOp>()) {
+    if (VarLetDecl2Op tmpDecl =
+            refToPtr.getOperand().getDefiningOp<VarLetDecl2Op>()) {
+      assert(copyInitCall.getOperand(0).getType() == value.getType() &&
+             copyInitCall.use_empty() && "something strange");
+
+      if (tmpDecl->hasOneUse() &&
+          canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
+        refToPtr.getResult().replaceAllUsesWith(value);
+        opsToRemove.push_back(copyInitCall);
+        opsToRemove.push_back(refToPtr);
+        opsToRemove.push_back(tmpDecl);
+        return success();
+      }
+    }
+  }
+
   if (VarLetDeclOp tmpDecl =
           copyInitCall.getOperand(0).getDefiningOp<VarLetDeclOp>()) {
     assert(copyInitCall.getOperand(0).getType() == value.getType() &&

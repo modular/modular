@@ -1325,10 +1325,11 @@ var reg_global_implicit = RegType()
 struct MemType: pass
 
 # CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}}
-# CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-# CHECK-NEXT: %0 = kgen.call {{.*}}__init__{{.*}}(%anonymous2A)
-# CHECK-NEXT: %1 = lit.globalvar.ref
-# CHECK-NEXT: %2 = kgen.call {{.*}}__moveinit__{{.*}}(%1, %anonymous2A) :
+# CHECK-NEXT: %anonymous2A = lit.varlet.decl2 "anonymous*"
+# CHECK-NEXT: %0 = lit.ref.to_pointer %anonymous2A
+# CHECK-NEXT: %1 = kgen.call {{.*}}__init__{{.*}}(%0)
+# CHECK-NEXT: [[GLOBAL:%.*]] = lit.globalvar.ref
+# CHECK-NEXT: = kgen.call {{.*}}__moveinit__{{.*}}([[GLOBAL]], %0) :
 let mem_global: MemType = MemType()
 # CHECK-LABEL: lit.globalvar.decl @mem_global_implicit {{.*}} isVar
 # CHECK-NEXT: %0 = lit.globalvar.ref
@@ -1375,9 +1376,10 @@ fn refGlobals():
     # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}([[REG_REF]])
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
-    # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} <!MemType>
-    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF]])
-    # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
+    # CHECK-NEXT: %anonymous2A = lit.varlet.decl2 {{.*}} : !lit.ref<mut !MemType
+    # CHECK-NEXT: %9 = lit.ref.to_pointer %anonymous2A
+    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%9, [[MEM_REF]])
+    # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%9)
     copyGlobalMem(mem_global)
 
 # CHECK: lit.globalvar.decl export @exported_alias {{.*}} {linkageName = "exported_global"}

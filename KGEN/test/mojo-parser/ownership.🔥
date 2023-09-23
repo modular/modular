@@ -89,9 +89,10 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[T3]])
   consume(mem3^^^)
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous
-  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%anonymous2A)
-  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime %anonymous2A
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl2 "anonymous
+  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[ANONPTR]])
+  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime [[ANONPTR]]
   # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[T1]])
   consume(MemExample()^)
 
@@ -623,9 +624,10 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   let example = MemExample()
 
   # This doesn't consume example, so it must copy it. It does consume the copy.
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %example)
-  # CHECK-NEXT: kgen.call {{.*}}consumeMem{{.*}}(%anonymous2A)
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl2
+  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[ANONPTR]], %example)
+  # CHECK-NEXT: kgen.call {{.*}}consumeMem{{.*}}([[ANONPTR]])
   consumeMem(example)
 
   # This does consume example, so no copy needed.
@@ -957,9 +959,10 @@ fn optimizeCopyElision():
 
   # We need one copy of 'x' here, not two + dtor.
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %x)
-  # CHECK-NEXT: kgen.call {{.*}}takeTwo{{.*}}(%anonymous2A, %x)
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl2 "anonymous*"
+  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[ANONPTR]], %x)
+  # CHECK-NEXT: kgen.call {{.*}}takeTwo{{.*}}([[ANONPTR]], %x)
   takeTwo(x, x)
 
   # CHECK-NEXT: kgen.param.constant: !lit.none

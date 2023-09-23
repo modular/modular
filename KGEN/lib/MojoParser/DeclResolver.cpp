@@ -100,9 +100,20 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
 /// collide with any other parameters.  This is done by prepending a ` and
 /// postpending a unique ID.
 StringAttr ASTDecl::getAnonymousLifetimeFor(StringAttr valueName) {
-  return StringAttr::get(valueName.getContext(),
-                         Twine("`") + valueName.strref() +
-                             Twine(anonymousLifetimeCounter++));
+  // Find the enclosing isolated from above decl that will scope parameter
+  // names.
+  ASTDecl *outermostFuncScope = nullptr;
+  ASTDecl *scope = this;
+  while (scope) {
+    if (isa<LIT::FuncOp, FileModuleOp>(*scope))
+      outermostFuncScope = scope;
+    scope = scope->getParentDecl();
+  }
+  assert(outermostFuncScope && "couldn't find an enclosing function");
+  return StringAttr::get(
+      valueName.getContext(),
+      Twine("`") + valueName.strref() +
+          Twine(outermostFuncScope->anonymousLifetimeCounter++));
 }
 
 void ASTDecl::dump() const {
@@ -2412,6 +2423,11 @@ static Value emitClosureInstance(SignatureType closureSignature,
 
   ASTDecl *parentFunctionDecl =
       shared.declResolver->getDeclForFuncSymbol(symbol.getSymbol());
+
+  // FIXME(closures): cannot pass a null ASTDecl into ExprEmitter!
+  if (!parentFunctionDecl)
+    parentFunctionDecl = &nestedFunctionDecl;
+
   FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
   // Create ClosureWrapper first. Nested function cannot be referenced after the
   // Closure Impl replaces it.
