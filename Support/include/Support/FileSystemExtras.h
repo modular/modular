@@ -10,8 +10,13 @@
 #include "LLVMForwardDecls.h"
 #include "Support/ForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Alignment.h"
 #include <cstddef>
 #include <filesystem>
+
+namespace llvm {
+class MemoryBuffer;
+} // namespace llvm
 
 namespace M {
 
@@ -100,6 +105,12 @@ private:
 ErrorOr<TempFile> writeTempFile(const Twine &model,
                                 function_ref<void(raw_ostream &)> writeFn);
 ErrorOr<TempFile> writeTempFile(const Twine &model, StringRef buffer);
+
+/// Open the filename specified as the argument and return a memory buffer, or
+/// an error message on failure.
+M::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+openInputFile(StringRef inputFilename,
+              std::optional<llvm::Align> align = std::nullopt);
 
 } // namespace M
 #endif // SUPPORT_FILESYSTEM_EXTRAS_H

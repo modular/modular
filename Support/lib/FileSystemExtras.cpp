@@ -6,6 +6,7 @@
 
 #include "Support/FileSystemExtras.h"
 #include "Support/ErrorOr.h"
+#include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
@@ -235,4 +236,16 @@ ErrorOr<size_t> TempFile::getSize() {
     return Error(ec.message());
 
   return size;
+}
+
+/// Open the filename with a given alignment (if specified) as the argument and
+/// return a memory buffer, or an error message on failure.
+ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+M::openInputFile(StringRef inputFilename, std::optional<llvm::Align> align) {
+  std::string errorMsg;
+  auto result = align ? mlir::openInputFile(inputFilename, *align, &errorMsg)
+                      : mlir::openInputFile(inputFilename, &errorMsg);
+  if (result)
+    return result;
+  return Error(errorMsg);
 }

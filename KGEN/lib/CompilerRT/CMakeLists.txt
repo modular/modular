@@ -62,6 +62,7 @@ endif()
 add_static_dep_lib(LLVMSupport)
 add_static_dep_lib(LLVMDemangle)
 add_static_dep_lib(LLVMTargetParser)
+add_static_dep_lib(MLIRSupport)
 file(GLOB StaticDepObjects ${CMAKE_CURRENT_BINARY_DIR}/static_deps/*)
 
 # Collect the various system libraries required by llvm support that we need to
