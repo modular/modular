@@ -92,6 +92,13 @@ struct Device:
             String("memory: ") + _human_memory(self._total_memory(dylib)) + "\n"
         )
         res += (
+            String("compute_capability: ")
+            + self._query(dylib, DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
+            + "."
+            + self._query(dylib, DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
+            + "\n"
+        )
+        res += (
             String("clock_rate: ")
             + self._query(dylib, DeviceAttribute.CLOCK_RATE)
             + "\n"
