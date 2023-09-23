@@ -238,12 +238,12 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
         # CHECK: hlcf.loop
         # CHECK: {{.+}} = lit.ref.load %a_0
         while a:
-            # CHECK: pop.store {{.+}}, %inside_a
+            # CHECK: lit.ref.store {{.+}}, %inside_a
             inside_a = 0
             # CHECK: hlcf.continue
     # CHECK: } else {
     else:
-        # CHECK: pop.store {{.+}}, %inside_else
+        # CHECK: lit.ref.store {{.+}}, %inside_else
         inside_else = 2
     # CHECK: }
     # CHECK: lit.return
@@ -259,7 +259,7 @@ def test_break_continue_inside_while(a: Bool) -> Bool:
         if a:
             # CHECK-NEXT:   lit.break
             break
-            # CHECK:   pop.store
+            # CHECK:   lit.ref.store
             # CHECK-NEXT:   hlcf.yield
             c = 1
         else:
@@ -278,14 +278,14 @@ def test_early_return():
     if a:
         # CHECK: lit.return
         return
-        # CHECK: pop.store
+        # CHECK: lit.ref.store
         b = 2
         # CHECK-NEXT: hlcf.yield
     # CHECK: else
     # CHECK-NEXT: yield
     # CHECK: lit.return
     return
-    # CHECK: pop.store
+    # CHECK: lit.ref.store
     c = 3
     # CHECK: lit.return
     return
@@ -418,8 +418,8 @@ def tryExceptArgDef():
         pass
     # CHECK: except (%arg0: !Error)
     except err:
-        # CHECK-NEXT: lit.varlet.decl "err" var
-        # CHECK: [[ERRVAL:%.*]] = pop.load %err
+        # CHECK-NEXT: lit.varlet.decl2 "err" var
+        # CHECK: [[ERRVAL:%.*]] = lit.ref.load %err
         # CHECK: eatError{{.*}}([[ERRVAL]])
         eatError(err)
 
@@ -466,7 +466,7 @@ def propagateErrorInDef():
     # CHECK:    lit.raise [[ERR]] : !Error
     # CHECK:    kgen.unreachable
     # CHECK:  }
-    # CHECK-NEXT: pop.store %1, %a
+    # CHECK-NEXT: lit.ref.store %1, %a
     a = maybeRaises()
 
 
@@ -639,12 +639,12 @@ fn noop(a: Int): pass
 
 # CHECK-LABEL: lit.func @"testWithNonRaising
 fn testWithNonRaising(a: ExampleCM):
-  # CHECK-NEXT: %val = lit.varlet.decl
+  # CHECK-NEXT: %val = lit.varlet.decl2
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
-  # CHECK-NEXT: pop.store [[TARGET]], %val
+  # CHECK-NEXT: lit.ref.store [[TARGET]], %val
   # CHECK-NEXT: lit.try
   with a as val:
-    # CHECK-NEXT: [[VAL:%.*]] = pop.load %val
+    # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load %val
     # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL]])
     noop(val)
   # CHECK: finally
@@ -663,14 +663,14 @@ fn testWithNonRaising(a: ExampleCM):
 
 # CHECK-LABEL: lit.func @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:
-  # CHECK-NEXT: %val = lit.varlet.decl
+  # CHECK-NEXT: %val = lit.varlet.decl2
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
-  # CHECK-NEXT: pop.store [[TARGET]], %val
-  # CHECK: pop.store %true, %__with_exc__ : !kgen.pointer<i1>
+  # CHECK-NEXT: lit.ref.store [[TARGET]], %val
+  # CHECK: lit.ref.store %true, %__with_exc__
   # CHECK-NEXT: lit.try
   # CHECK-NEXT: lit.try
   with a as val:
-    # CHECK-NEXT: [[VAL:%.*]] = pop.load %val
+    # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load %val
     # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL]])
     noop(val)
 
@@ -686,7 +686,7 @@ fn testWithRaising(a: ExampleCM) raises:
     raise_string()
     # CHECK-NEXT: lit.try.yield
   # CHECK-NEXT: } except (%arg0: !Error) {
-  # CHECK:        pop.store %false, %__with_exc__
+  # CHECK:        lit.ref.store %false, %__with_exc__
   # CHECK-NEXT:   %3 = kgen.call {{.*}}__exit__{{.*}}(%a, %arg0)
   # CHECK-NEXT:   %4 = kgen.call {{.*}}__mlir_i1__{{.*}}(%3)
   # CHECK-NEXT:   hlcf.if %4 {
@@ -700,40 +700,42 @@ fn testWithRaising(a: ExampleCM) raises:
   # CHECK:    } except
   # CHECK-NEXT:  lit.raise %arg0
   # CHECK:    } finally {
-  # CHECK-NEXT: %[[EXC:.*]] = pop.load %__with_exc__
+  # CHECK-NEXT: %[[EXC:.*]] = lit.ref.load %__with_exc__
   # CHECK-NEXT: hlcf.if %[[EXC]]
   # CHECK-NEXT:   call {{.*}}__exit__{{.*}}(%a)
 
+# CHECK-LABEL: lit.func @"testWithScoping
 fn testWithScoping(a: ExampleCM):
   # This is a test that issue #18811 is fixed, in which a `with`
   # statement inside a `fn` does not respect lexical scope and binds
   # its variable in its parent scope.
   with a as withDecl:
-    # CHECK: %withDecl = lit.varlet.decl "withDecl"{{.*}}
+    # CHECK: %withDecl = lit.varlet.decl2 "withDecl"
     noop(withDecl)
   with a as withDecl:
-    # CHECK: %withDecl_0 = lit.varlet.decl "withDecl"{{.*}}
+    # CHECK: %withDecl_0 = lit.varlet.decl2 "withDecl"
     noop(withDecl)
 
+# CHECK-LABEL: lit.func @"testWithInDef
 def testWithInDef(a: ExampleCM):
   # This is a test that issue #20141 is fixed.
   # https://github.com/modularml/modular/issues/20141
   # IE that when used inside a `def`, the `with` statement uses
   # mutable function scope variables.
-  # CHECK: [[VAL1:%.*]] = pop.load %val1
+  # CHECK: [[VAL1:%.*]] = lit.ref.load %val1
   val1 = 77
   # CHECK: kgen.call {{.*}}noop{{.*}}([[VAL1]])
   noop(val1)
   with a as val1:
-    # CHECK: [[VAL1:%.*]] = pop.load %val1
+    # CHECK: [[VAL1:%.*]] = lit.ref.load %val1
     # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL1]])
     noop(val1)
   noop(val1)
   with a as val2:
-    # CHECK: [[VAL2:%.*]] = pop.load %val2
+    # CHECK: [[VAL2:%.*]] = lit.ref.load %val2
     # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL2]])
     noop(val2)
-  # CHECK: [[VAL2:%.*]] = pop.load %val2
+  # CHECK: [[VAL2:%.*]] = lit.ref.load %val2
   val2 = 78
   # CHECK: kgen.call {{.*}}noop{{.*}}([[VAL2]])
   noop(val2)

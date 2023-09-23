@@ -280,10 +280,14 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (convention == ValueInputConvention::ByRefResult && builder) {
       assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
       assert(argName.empty());
-      auto resultTmp = builder->create<VarLetDeclOp>(
-          loc, expectedType, "__call_result_tmp__", /*isVar=*/true,
+      auto name = emitter.builder->getStringAttr("__call_result_tmp__");
+      auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(name);
+      // TODO(references): drop this cast eventually.
+      expectedType = cast<PointerType>(expectedType).getElementAsType();
+      auto resultTmp = builder->create<VarLetDecl2Op>(
+          loc, expectedType, name, lifetimeAttr, /*isVar=*/true,
           /*isSynth=*/true);
-      argumentValues.push_back({MLValue(resultTmp), callExpr});
+      argumentValues.push_back({XLValue(resultTmp), callExpr});
       continue;
     }
 
@@ -432,6 +436,21 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
           continue;
         return false;
       }
+      if (auto ref = value.ir.getIfXLValue()) {
+        if (ptrGuaranteedNoAlias(ref))
+          continue;
+        return false;
+      }
+      if (auto ref = value.ir.getIfXBValue()) {
+        if (ptrGuaranteedNoAlias(ref))
+          continue;
+        return false;
+      }
+      if (auto ref = value.ir.getIfXRValue()) {
+        if (ptrGuaranteedNoAlias(ref))
+          continue;
+        return false;
+      }
       // Dynamic variadic memory values are passed with a pop.variadic.create,
       // check each field.
       if (auto sr = value.ir.getIfSRValue()) {
@@ -501,7 +520,15 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Promote PValue's if needed.
     return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::ByRefResult: {
-    auto tmpSlotAddr = argValAndExpr.ir.getIfMLValue();
+    Value tmpSlotAddr = argValAndExpr.ir.getIfMLValue();
+    if (!tmpSlotAddr) {
+      if (auto ref = argValAndExpr.ir.getIfXLValue()) {
+        // Decay reference to pointer.
+        tmpSlotAddr =
+            emitter.builder->create<RefToPointerOp>(ref.getLoc(), ref);
+      }
+    }
+
     assert(tmpSlotAddr && "byref_result value start in a temp slot");
     auto rvalueType = ASTType(tmpSlotAddr.getType()).getReferenceElementType();
 
@@ -519,7 +546,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // Okay it is safe to use, so remove the temporary allocation we aren't
     // going to use.
-    tmpSlotAddr.getDefiningOp<VarLetDeclOp>()->erase();
+    if (auto ref = argValAndExpr.ir.getIfXLValue()) {
+      cast<OpResult>(tmpSlotAddr).getOwner()->erase(); // Ref2Ptr.
+      argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDecl2Op>()->erase();
+    } else
+      argValAndExpr.ir.getIfMLValue().getDefiningOp<VarLetDeclOp>()->erase();
     // Get the MLValue of the destination slot.
     return dest.getMLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }

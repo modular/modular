@@ -365,7 +365,6 @@ TEST(Telemetry, LoggerL2) {
   TelemetryContext ctx({}, logFileSetup.getConfig());
 
   StringRef logString = "hello\nthis is a string";
-  StringRef escapedLogString = "hello\\nthis is a string";
 
   auto logger = ctx.getLogger("basic.log");
   logger->getInfo("test.LoggerL2", Level::L2) << logString;

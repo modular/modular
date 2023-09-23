@@ -482,9 +482,10 @@ fn foo(owned y:Int):
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%__result__: !kgen.pointer<!String> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %y: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!String>
-# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl "__call_result_tmp__" var synth : <!String>
-# CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%__call_result_tmp__, %[[W0]], %y)
-# CHECK-NEXT: %[[W3:.*]] = kgen.call @{{.*}}__copyinit__{{.*}}(%__result__, %__call_result_tmp__)
+# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl2 "__call_result_tmp__" var synth : !lit.ref<mut !String,
+# CHECK-NEXT: %1 = lit.ref.to_pointer %__call_result_tmp__
+# CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%1, %[[W0]], %y)
+# CHECK-NEXT: %[[W3:.*]] = kgen.call @{{.*}}__copyinit__{{.*}}(%__result__, %1)
 # CHECK-NEXT: %[[W4:.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT: lit.return %[[W4]] : !lit.none
 # CHECK-NEXT: lit.end_func
