@@ -101,6 +101,10 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
                                     ref.getIsResult(), ref.getIndex(),
                                     ref.getType());
     });
+    replacer.addReplacement(
+        [](SignatureType type) -> std::pair<Type, WalkResult> {
+          return {type, WalkResult::skip()};
+        });
     return replacer.replace(value);
   };
 
