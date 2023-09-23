@@ -544,7 +544,7 @@ fn nestedFnInLoop():
         @always_inline
         @noncapturing
         fn foo() -> Int:
-            # CHECK: %[[I:.*]] = pop.load %i
+            # CHECK: %[[I:.*]] = lit.ref.load %i
             # CHECK-NEXT: return %[[I]]
             return i
 
