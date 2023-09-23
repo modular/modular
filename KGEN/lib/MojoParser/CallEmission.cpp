@@ -1507,10 +1507,10 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
 /// Utility function to perform substitutions of the specified callable bindings
 /// into the symbol for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
-static TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
-                                      InputParamBindings inputParamBindings,
-                                      const ExprNode *expr,
-                                      ExprEmitter &emitter) {
+static TypedAttr
+getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
+                     const InputParamBindings &inputParamBindings,
+                     const ExprNode *expr, ExprEmitter &emitter) {
 
   // If there are no input parameters specified and if we allow unbound
   // symbols, just return the unbound symbol.
@@ -1535,7 +1535,7 @@ static TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
 /// function overload. On failure it produces an error message and returns null.
 static VariadicAttr getAdaptiveSet(ArrayRef<ASTDecl *> fnDecls,
                                    StringRef baseName,
-                                   InputParamBindings inputParamBindings,
+                                   const InputParamBindings &inputParamBindings,
                                    const ExprNode *expr, ExprEmitter &emitter) {
   SmallVector<TypedAttr> symConstAttrs;
   for (ASTDecl *fnDecl : fnDecls) {
@@ -1571,7 +1571,7 @@ PValue OverloadSet::getAdaptiveSet(ExprEmitter &emitter) {
 /// overloads. Because adaptive overloads must all have the same signature, this
 /// also returns the signature type that they all share.
 PValue OverloadSet::getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
-                              InputParamBindings inputParamBindings,
+                              const InputParamBindings &inputParamBindings,
                               const ExprNode *expr, ExprEmitter &emitter) {
   assert(!fnDecls.empty() &&
          "cannot get the callee when no callees have been resolved");
@@ -1636,8 +1636,7 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
 /// failure.
 OverloadSet::OverloadSet(ASTType type, StringRef methodName,
                          const ExprNode *expr, CallSyntax syntax,
-                         SharedState &shared,
-                         std::function<void()> errorHandler)
+                         SharedState &shared, function_ref<void()> errorHandler)
     : expr(expr), syntax(syntax) {
 
   // If this is a previously-reported error, ignore and don't report an
@@ -1679,7 +1678,7 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
                            const CallOperands &callOperands,
                            const ExprNode *callExpr, CallSyntax syntax,
                            ExprEmitter &emitter,
-                           std::function<void()> errorHandler) {
+                           function_ref<void()> errorHandler) {
   ASTType nmTarget = type.getNonmaterializableTarget(emitter.shared);
   bool shouldPrintError = bool(errorHandler);
   auto doLookup = [&](ASTType type, bool shouldPrintError) -> PValue {
@@ -2020,7 +2019,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     // nonmaterializable, give it a second chance with the materialized type.
     // If the type doesn't have the specified method, emit an error.
     callee = OverloadSet::lookup(type, methodName, operands, callNode, syntax,
-                                 *this, /*errorHandler=*/{});
+                                 *this);
     if (!callee) {
       CValue convertedSelf = emitConstructorCall(
           nmTarget, CallOperands({{selfVal, posOperands[0].expr}}), callNode,
@@ -2056,8 +2055,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     return {};
 
   // Check to see if we can invoke an __init__ method to convert it.
-  OverloadSet callee(type, "__init__", expr, syntax, shared,
-                     /*errorHandler*/ {});
+  OverloadSet callee(type, "__init__", expr, syntax, shared);
   return emitConstructorCall(type, callee, callOperands, expr, syntax, dest,
                              allowImplicitConversion);
 }
