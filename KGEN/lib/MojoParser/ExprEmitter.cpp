@@ -322,15 +322,15 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       slotType = requiredType;
   }
 
-  Type declIRType = PointerType::get(slotType);
   auto nameAttr = StringAttr::get(emitter.getContext(), "anonymous*");
 
   // We model this as an immutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
-  return MLValue(emitter.builder->create<VarLetDeclOp>(
-      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ true,
-      /*isSynth=*/true));
+  auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
+  return XLValue(emitter.builder->create<VarLetDecl2Op>(
+      emitter.translateLocation(loc), slotType, nameAttr, lifetimeAttr,
+      /*isVar*/ true, /*isSynth=*/true));
 }
 
 /// Return an MLValue for this destination of the specified type that we can

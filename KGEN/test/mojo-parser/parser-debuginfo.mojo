@@ -130,11 +130,13 @@ struct MyValueStruct:
 # CHECK-DAG:    lit.func @"makes_escaping_closure
 # CHECK-DAG:    debuginfo.value #local_variable1 = %m : index loc(#[[LOC26:.*]])
 # CHECK-DAG:    debuginfo.value #local_variable2 = %z : index loc(#[[LOC27:.*]])
-# CHECK-DAG:    %anonymous2A = lit.varlet.decl "anonymous*" var synth : <!escaping> loc(#[[LOC28:.*]])
-# CHECK-DAG:    %0 = kgen.call {{.*}}CI{{.*}}__init__{{.*}}"(%anonymous2A, %m)
-# CHECK-DAG:    %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : <!escaping1>
-# CHECK-DAG:    %1 = kgen.call {{.*}}CW{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A)
-# CHECK-DAG:    %2 = kgen.call {{.*}}CW{{.*}}__copyinit__{{.*}}(%__result__, %anonymous2A_0) {{.*}} loc(#[[LOC29:.*]])
+# CHECK-DAG:    %anonymous2A = lit.varlet.decl2 "anonymous*" var synth : {{.*}} loc(#[[LOC28:.*]])
+# CHECK-DAG:    %0 = lit.ref.to_pointer %anonymous2A
+# CHECK-DAG:    %1 = kgen.call {{.*}}CI{{.*}}__init__{{.*}}"(%0, %m)
+# CHECK-DAG:    %anonymous2A_0 = lit.varlet.decl2 "anonymous*" var synth : !lit.ref<mut !escaping1
+# CHECK-DAG:    %2 = lit.ref.to_pointer %anonymous2A_0
+# CHECK-DAG:    %3 = kgen.call {{.*}}CW{{.*}}__init__{{.*}}(%2, %0)
+# CHECK-DAG:    %4 = kgen.call {{.*}}CW{{.*}}__copyinit__{{.*}}(%__result__, %2) {{.*}} loc(#[[LOC29:.*]])
 
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#[[LOC6]]])
 # CHECK-DAG: #[[LOC27]] = loc(fused<#[[SP9]]>[#[[LOC7]]])

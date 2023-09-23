@@ -544,12 +544,15 @@ fn makes_escaping_closure(m: String):
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 fn makes_escaping_closure(m: String):
-   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
-   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : <!String>
-   # CHECK-NEXT: kgen.call @"{{.*}}@"__copyinit__{{.*}}"(%anonymous2A_0, %m)
-   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %anonymous2A_0)
-   # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*" var synth
-   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A_1, %anonymous2A)
+   # CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var synth
+   # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl2 "anonymous*" var synth : !lit.ref<mut !String,
+   # CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
+   # CHECK-NEXT: kgen.call @"{{.*}}@"__copyinit__{{.*}}"([[ANONPTR_0]], %m)
+   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR]], [[ANONPTR_0]])
+   # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl2 "anonymous*" var synth
+   # CHECK-NEXT: [[ANONPTR_1:%.*]] = lit.ref.to_pointer %anonymous2A_1
+   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR_1]], [[ANONPTR]])
    fn myclosure_with_mem_types(n:String) escaping -> String:
       return n+m
 
@@ -561,11 +564,13 @@ fn makes_escaping_closure(m: String):
 fn makes_escaping_closure(z: Int):
    let w = z * z
    var a = w
-   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
-   # CHECK-NEXT: %[[A:.*]] = pop.load %a : !kgen.pointer<!Int>
-   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %[[A]], %w)
-   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth
-   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A_0, %anonymous2A)
+   # CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var synth
+   # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+   # CHECK-NEXT: [[A:%.*]] = pop.load %a : !kgen.pointer<!Int>
+   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR]], [[A]], %w)
+   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl2 "anonymous*" var synth
+   # CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
+   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR_0]], [[ANONPTR]])
    fn myclosure_with_reg_types(x:Int) escaping -> Int:
       a = a + 1
       return x + w
@@ -584,14 +589,17 @@ fn makes_escaping_closure(z: Int):
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 
-# CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
-# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : <!String>
-# CHECK-NEXT: [[V0:%.*]] = kgen.call @"{{.*}}::@String::@"__copyinit__({{.*}})"(%anonymous2A_0, %m)
-# CHECK-NEXT: [[V1:%.*]] = kgen.call {{.*}}CI_$[[F]]_{{.*}}"::@"__init__{{.*}}(%anonymous2A, %anonymous2A_0)
-# CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*" var synth
-# CHECK-NEXT: %2 = kgen.call {{.*}}CW_{{.*}}__init__{{.*}}(%anonymous2A_1, %anonymous2A)
-# CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT: lit.return [[V3]] : !lit.none
+# CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var synth
+# CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl2 "anonymous*" var synth : {{.*}}!String
+# CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
+# CHECK-NEXT: [[V0:%.*]] = kgen.call @"{{.*}}::@String::@"__copyinit__({{.*}})"([[ANONPTR_0]], %m)
+# CHECK-NEXT: [[V1:%.*]] = kgen.call {{.*}}CI_$[[F]]_{{.*}}"::@"__init__{{.*}}([[ANONPTR]], [[ANONPTR_0]])
+# CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl2 "anonymous*" var synth
+# CHECK-NEXT: [[ANONPTR_1:%.*]] = lit.ref.to_pointer %anonymous2A_1
+# CHECK-NEXT:  = kgen.call {{.*}}CW_{{.*}}__init__{{.*}}([[ANONPTR_1]], [[ANONPTR]])
+# CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !lit.none
+# CHECK-NEXT: lit.return [[V3]]
 # CHECK-NEXT: lit.end_func
 fn makes_escaping_closure(m: String):
    fn myclosure(n:String) escaping -> String:

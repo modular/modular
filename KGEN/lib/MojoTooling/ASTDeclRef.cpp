@@ -48,14 +48,8 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
   return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
-      .Case<SBValue, SRValue, MLValue, MBValue>([&](auto val) -> Operation * {
-        Operation *result = Value(val).getDefiningOp();
-        // Look through PointerToRef to find the VarLetDecl2Op if present.
-        // TODO(references): remove this.
-        if (auto refToPtr = dyn_cast_or_null<RefToPointerOp>(result))
-          result = refToPtr.getRef().getDefiningOp();
-        return result;
-      })
+      .Case<SBValue, SRValue, MLValue, MBValue>(
+          [&](auto val) -> Operation * { return Value(val).getDefiningOp(); })
       .Default((Operation *)nullptr);
 }
 
