@@ -165,6 +165,7 @@ def LowerPreElaboratedLIT : Pass<"lower-preelaborated-lit", "mlir::ModuleOp"> {
     "HLCF::HLCFDialect",
     "MDialect",
     "mlir::LLVM::LLVMDialect",
+    "mlir::NVVM::NVVMDialect",
     "mlir::index::IndexDialect",
   ];
 }
@@ -246,8 +247,11 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
   }];
 
   // We generate the LLVM dialect.
-  let dependentDialects = ["mlir::LLVM::LLVMDialect",
-                           "mlir::index::IndexDialect"];
+  let dependentDialects = [
+    "mlir::LLVM::LLVMDialect",
+    "mlir::NVVM::NVVMDialect",
+    "mlir::index::IndexDialect"
+  ];
 
   let options = [
     Option<"disableGlobalDtors", "disable-global-dtors", "bool", "false",
@@ -383,6 +387,7 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
     "HLCF::HLCFDialect",
     "MDialect",
     "mlir::LLVM::LLVMDialect",
+    "mlir::NVVM::NVVMDialect",
     "mlir::index::IndexDialect",
   ];
 
