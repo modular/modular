@@ -33,6 +33,7 @@ add_modular_dialect_library(KGENDialect
   MCompilerSupport
   MSupport
   MSupportML
+  MProfiling
   MLIRIR
   MLIRFunctionInterfaces
 )

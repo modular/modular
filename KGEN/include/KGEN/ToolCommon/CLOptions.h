@@ -11,7 +11,7 @@
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
-#include "Support/TimeProfiler.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "llvm/Support/CommandLine.h"
 #include <filesystem>
 

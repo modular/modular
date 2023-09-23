@@ -91,8 +91,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_TIMEPROFILER_H
-#define SUPPORT_TIMEPROFILER_H
+#ifndef SUPPORT_PROFILING_TIMEPROFILER_H
+#define SUPPORT_PROFILING_TIMEPROFILER_H
 
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -531,4 +531,4 @@ void timeTraceProfilerEnd() {
 
 } // namespace M
 
-#endif
+#endif // SUPPORT_PROFILING_TIMEPROFILER_H
