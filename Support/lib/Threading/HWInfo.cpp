@@ -158,11 +158,18 @@ ErrorOr<CPUSystemInfo> CPUSystemInfo::get() {
   return Error("CPUSystemInfo is not supported by this build");
 }
 
-M::ErrorOr<size_t> M::getNumPhysicalCores() {
+static M::ErrorOr<size_t> getNumPhysicalCoresImpl() {
 #ifdef _MSC_VER
   return Detail::getNumPhysicalCoresWindows();
 #endif
   return llvm::get_physical_cores();
+}
+
+M::ErrorOr<size_t> M::getNumPhysicalCores() {
+  static ErrorOr<size_t> numPhysicalCoresOr = getNumPhysicalCoresImpl();
+  if (numPhysicalCoresOr.isError())
+    return M::Error(numPhysicalCoresOr.getError());
+  return *numPhysicalCoresOr;
 }
 
 void CPUSystemInfo::print(raw_ostream &os) const {
