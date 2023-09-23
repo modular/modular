@@ -646,23 +646,50 @@ MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
   return MBValue(dest);
 }
 
+/// Emit any kind of PValue to an XLValue.
+XBValue ExprEmitter::emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
+                                         ExprContext context) {
+  // PValues don't have lifetimes and are immortal with respect to the compiler.
+  // Emit a memcpy into the MLValue. Creating an SSA value of the memory-primary
+  // type for the sake of memcpy is safe because the bulk store will ensure the
+  // variable does not get promoted off the stack, and after struct lowering,
+  // the type is erased down to its MLIR constituents anyways.
+  Location loc = translateLocation(value.expr->getLoc());
+  Value attr = value.ir.getRValueType().isTrivial(value.expr->getLoc(), shared)
+                   ? Value(builder->create<ParamConstantOp>(loc, value.ir))
+                   : builder->create<ParamMaterializeOp>(loc, value.ir);
+  builder->create<RefStoreOp>(loc, attr, dest);
+  return XBValue(dest);
+}
+
 MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
+                                         ExprContext context) {
+  XRValue ref = emitPValueToXRValue(value, context);
+  if (!ref)
+    return {};
+
+  return MRValue(builder->create<RefToPointerOp>(ref.getLoc(), ref));
+}
+
+XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
                                          ExprContext context) {
   PValue pvalue = value.ir;
   // FIXME: This is a hack around default arguments requiring types to match.
   if (auto memWrapper = dyn_cast<StoreToMemAttr>(pvalue.get()))
     pvalue = memWrapper.getValue();
 
+  auto nameAttr = StringAttr::get(getContext(), "anonymous*");
+  auto lifetimeAttr = declScope.getAnonymousLifetimeFor(nameAttr);
+
   // We model this as an immutable let value with a separately stored
   // initializer.
-  auto var = builder->create<VarLetDeclOp>(
-      translateLocation(value.expr->getLoc()),
-      PointerType::get(pvalue.getType()),
-      StringAttr::get(getContext(), "anonymous*"), /*isVar=*/false,
-      /*isSynth=*/true);
-  if (!emitPValueToMLValue({pvalue, value.expr}, MLValue(var), context))
+  auto var =
+      builder->create<VarLetDecl2Op>(translateLocation(value.expr->getLoc()),
+                                     pvalue.getType(), nameAttr, lifetimeAttr,
+                                     /*isVar=*/false, /*isSynth=*/true);
+  if (!emitPValueToXLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
-  return MRValue(var);
+  return XRValue(var);
 }
 
 SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
@@ -1235,6 +1262,14 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return SBValue(val);
   }
 
+  if (auto pvalue = value.ir.getIfPValue()) {
+    if (MLValue destPtr = destLV.getIfMLValue())
+      return emitPValueToMLValue({pvalue, value.expr}, destPtr, context);
+    auto valRef = destLV.getIfXLValue();
+    assert(valRef && "Unknown LValue");
+    return emitPValueToXLValue({pvalue, value.expr}, valRef, context);
+  }
+
   // If we have a reference destination, convert to a pointer.
   // TODO(references): make this the primary path.
   if (auto ref = destLV.getIfXLValue()) {
@@ -1249,9 +1284,6 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // Otherwise we have an MLValue destination.
   MLValue destPtr = destLV.getIfMLValue();
   assert(destPtr && "No other known LValue");
-
-  if (auto pvalue = value.ir.getIfPValue())
-    return emitPValueToMLValue({pvalue, value.expr}, destPtr, context);
 
   // Otherwise, assign with a move constructor.  We own the CRValue, so prefer
   // to use __moveinit__ if present.
