@@ -7,3 +7,9 @@
 kgen.generator export @exp_f32(%arg: f32) -> f32 {
   kgen.return %arg : f32
 }
+
+kgen.func export NVVM @kernel() {
+  kgen.return
+}
+
+// CHECK: !nvvm.annotations

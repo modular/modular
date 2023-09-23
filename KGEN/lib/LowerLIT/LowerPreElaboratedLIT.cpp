@@ -11,6 +11,7 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/Threading.h"
 #include "llvm/Support/MemoryBufferRef.h"
