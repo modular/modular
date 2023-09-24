@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-kgen-to-llvm | FileCheck %s
+// RUN: kgen-opt %s -lower-kgen-to-llvm -split-input-file | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=64>} {
 
@@ -90,7 +90,7 @@ kgen.func @long() {
   // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][16]
   // CHECK: %[[V2:.*]] = llvm.mlir.constant(#M.dense_array<6, 7, 8, 9> : vector<4xi8>)
   // CHECK: llvm.store %[[V2]], %[[P2]]
-  %1 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(large, stack, [])], 0, 0>>
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(large, stack, [])], 0, 0>>
 
   // CHECK: %[[P3:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][20]
   // CHECK: %[[V3:.*]] = llvm.mlir.constant(0 : i8)
@@ -126,7 +126,7 @@ kgen.func @ptr_inside_blob() {
   // CHECK: %[[V5:.*]] = llvm.mlir.constant(0 : i8)
   // CHECK: llvm.store %[[V5]], %[[P5]]
 
-  %1 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[
     (large, stack, [(6, 1, 1)]),
     (bar, stack, [])
   ], 0, 0>>
@@ -148,6 +148,37 @@ kgen.func @ptr_inside_blob() {
       foo: "0x10000000000000000000000008",
       bar: "0x100000000000",
       large: "0x10000000000102030405060708090001020304050607080900"
+    }
+  }
+#-}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=16>} {
+// CHECK-LABEL: llvm.func internal @compress_me
+kgen.func @compress_me() {
+  // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASEPTR:.*]][0]
+  // CHECK: %[[VAL:.*]] = llvm.mlir.constant(-1 : i8)
+  // CHECK: %[[SIZE:.*]] = llvm.mlir.constant(32 : i64)
+  // CHECK: "llvm.intr.memset"(%[[P0]], %[[VAL]], %[[SIZE]]) <{isVolatile = false}>
+
+  // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][32]
+  // CHECK: %[[VAL:.*]] = llvm.mlir.constant(#M.dense_array<-34, -34> : vector<2xi8>)
+  // CHECK: llvm.store %[[VAL]], %[[P1]]
+
+  // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASEPTR:.*]][34]
+  // CHECK: %[[VAL:.*]] = llvm.mlir.constant(-1 : i8)
+  // CHECK: %[[SIZE:.*]] = llvm.mlir.constant(30 : i64)
+  // CHECK: "llvm.intr.memset"(%[[P2]], %[[VAL]], %[[SIZE]]) <{isVolatile = false}>
+  %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(compress_me, heap, [])], 0, 0>>
+  kgen.return
+}
+}
+
+{-#
+  dialect_resources: {
+    interp: {
+      compress_me: "0x10000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFDEDEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
     }
   }
 #-}

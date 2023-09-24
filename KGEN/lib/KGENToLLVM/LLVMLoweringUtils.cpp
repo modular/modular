@@ -676,24 +676,84 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     // Constant globals don't have pointer regions.
     if (blob.getKind() == MemoryKind::ConstGlobal)
       continue;
+
     auto ptr = cast<Value>(value);
     mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
     ArrayRef<char> data = mem->getData();
-    auto ptrIt = blob.getPointerRegions().begin();
-    auto ptrEnd = blob.getPointerRegions().end();
+    auto materializeStoreImpl = [&, align = mem->getDataAlignment()](
+                                    int64_t idx, int64_t size) {
+      materializeVectorStores(idx, size, ptr, data.data(), b, ptrType, align);
+    };
+
+    // For large, contiguous chunks of memory with the same byte value,
+    // "compress" the generated IR by emitting a memset instead of a huge number
+    // of SIMD stores. This struct tracks the current compression state, which
+    // has to be "comitted". This will prevent large materialized blobs from
+    // destroying compile time. However, if the user fills a large blob with
+    // "random" data, not much can be done.
+    struct CompressionState {
+      int64_t startIdx;
+      char value;
+      int64_t numReps;
+    };
+    std::optional<CompressionState> compressionState;
+    auto commitCompressedStores = [&] {
+      if (!compressionState)
+        return;
+      auto [startIdx, value, numReps] = std::move(*compressionState);
+      compressionState.reset();
+      // Simple heuristic: if the compressed size is more than 8 times the
+      // preferred SIMD width, then use a memset instead.
+      if (numReps <= 8 * simdWidth) {
+        for (int64_t i = 0; i < numReps; i += simdWidth)
+          materializeStoreImpl(startIdx + i, std::min(simdWidth, numReps - i));
+        return;
+      }
+      // Emit a memset.
+      Value gep =
+          b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
+                                LLVM::GEPArg(startIdx), /*inbounds=*/true);
+      b.create<LLVM::MemsetOp>(
+          gep, b.create<LLVM::ConstantOp>(b.getI8Type(), value),
+          b.create<LLVM::ConstantOp>(b.getI64Type(), numReps),
+          /*isVolatile=*/false);
+    };
+
+    auto materializeStore = [&](int64_t idx, int64_t size) {
+      if (size == 0)
+        return;
+      if (!llvm::all_equal(data.slice(idx, size))) {
+        // No compression possible. Commit the current state and materialize the
+        // next chunk.
+        commitCompressedStores();
+        materializeStoreImpl(idx, size);
+      } else if (!compressionState) {
+        // Start tracking a new compression state.
+        compressionState = CompressionState{idx, data[idx], size};
+      } else if (compressionState->value == data[idx]) {
+        // Increase the size of the compressed chunk.
+        compressionState->numReps += size;
+      } else {
+        // Commit the previous state.
+        commitCompressedStores();
+        compressionState = CompressionState{idx, data[idx], size};
+      }
+    };
 
     // Store the memory blob in chunks of the preferred SIMD width.
+    auto ptrIt = blob.getPointerRegions().begin();
+    auto ptrEnd = blob.getPointerRegions().end();
     for (int64_t i = 0, e = data.size(); i < e;) {
       // Check if the current chunk contains a pointer.
       if (ptrIt != ptrEnd && i <= ptrIt->offset &&
           ptrIt->offset < (i + simdWidth)) {
         // Store up to the pointer region.
         int64_t partSize = ptrIt->offset - i;
-        materializeVectorStores(i, partSize, ptr, data.data(), b, ptrType,
-                                mem->getDataAlignment());
+        materializeStore(i, partSize);
         i += partSize;
 
         // Store the pointer value to the current offset.
+        commitCompressedStores();
         Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
                                           LLVM::GEPArg(i), /*inbounds=*/true);
         auto [_, index, offset] = *ptrIt++;
@@ -703,10 +763,10 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
         i += pointerSize;
         continue;
       }
-      materializeVectorStores(i, std::min(simdWidth, e - i), ptr, data.data(),
-                              b, ptrType, mem->getDataAlignment());
+      materializeStore(i, std::min(simdWidth, e - i));
       i += simdWidth;
     }
+    commitCompressedStores();
   }
 
   return blobs.try_emplace(space, std::move(materialized)).first->second;
