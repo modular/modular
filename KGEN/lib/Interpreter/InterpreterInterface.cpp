@@ -82,13 +82,6 @@ ErrorOrSuccess InterpreterState::MemoryBlob::setPointerRegion(
 ErrorOr<InterpreterState::MemoryBlob &>
 InterpreterState::MemoryTable::addBlob(size_t size, size_t align,
                                        std::optional<MemoryHandle> hdl) {
-  // FIXME(#21846): The codegen for large allocations is *extremely* slow. The
-  // interpreter needs a compression scheme for memory and more efficient
-  // codegen for materialized blobs. Set a 64kB limit.
-  if (size > 64 * 1024)
-    return Error(
-        "FIXME(#21846): large interpreter allocations blow up compile time");
-
   // Pick the base address of the new blob.
   int64_t baseAddr = minAddr;
   if (!blobs.empty()) {
