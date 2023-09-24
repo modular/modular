@@ -7,16 +7,23 @@
 #include "Support/DLOpen.h"
 
 #if defined(_WIN32) || defined(_WIN64)
-#include <windows.h>
+#include "llvm/Support/DynamicLibrary.h"
 #else
 #include <dlfcn.h>
-#endif
+#endif // defined(_WIN32) || defined(_WIN64)
 
 namespace M {
 
 void *loadLibrary(const std::string &path) {
 #if defined(_WIN32) || defined(_WIN64)
-  return LoadLibrary(path.c_str());
+  // Use `llvm::sys::getPermanentLibrary()` on Windows where the default export
+  // problem that `RTLD_DEEPBIND` fixes does not exist.
+  llvm::sys::DynamicLibrary dylib =
+      llvm::sys::DynamicLibrary::getPermanentLibrary(path.c_str());
+  if (!dylib.isValid())
+    return nullptr;
+
+  return dylib.getOSSpecificHandle();
 #else
   int flags = RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE;
 #if defined(__linux__)

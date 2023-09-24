@@ -11,11 +11,15 @@
 
 namespace M {
 
-/// Open the shared object file from `path` and map it in using
-/// RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE | RTLD_DEEPBIND (on *nix systems) and
-/// return a handle. The function can be used when
-/// llvm::sys::DynamicLibrary::getPermanentLibrary() isn't suitable (due to
-/// RTLD_LAZY | RTLD_GLOBAL flags).
+/// Opens the shared object file from `path` and maps it in using
+/// RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE | RTLD_DEEPBIND (on *nix systems).
+/// Returns a handle to the opened shared object file.
+///
+/// On *nix the function is useful when
+/// `llvm::sys::DynamicLibrary::getPermanentLibrary()` isn't suitable due to
+/// RTLD_LAZY | RTLD_GLOBAL flags.
+/// On Windows this function calls
+/// `llvm::sys::DynamicLibrary::getPermanentLibrary()`.
 void *loadLibrary(const std::string &path);
 
 } // namespace M
