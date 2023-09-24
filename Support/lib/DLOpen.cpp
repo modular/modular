@@ -18,9 +18,14 @@ void *loadLibrary(const std::string &path) {
 #if defined(_WIN32) || defined(_WIN64)
   return LoadLibrary(path.c_str());
 #else
-  return dlopen(path.c_str(),
-                RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE | RTLD_DEEPBIND);
-#endif
+  int flags = RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE;
+#if defined(__linux__)
+  // `RTLD_DEEPBIND` is specific to Linux.
+  // MacOS behaves as if `RTLD_DEEPBIND` is always set by default.
+  flags |= RTLD_DEEPBIND;
+#endif // defined(__linux__)
+  return dlopen(path.c_str(), flags);
+#endif // defined(_WIN32) || defined(_WIN64)
 }
 
 } // namespace M
