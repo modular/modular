@@ -104,6 +104,7 @@ fn roi_align_nhwc[
     spatial_scale: Float32,
     sampling_ration: Float32,
     aligned: Bool,
+    mode: String = "AVG",
 ](
     output: NDBuffer[4, output_shape, type],
     input: NDBuffer[4, input_shape, type],
@@ -120,12 +121,19 @@ fn roi_align_nhwc[
         roi_shape: Shape of regions of interests (ROI).
         spatial_scale: Scale ROIs from spatial scale to pooling scale.
         aligned: If not true offset the ROIs by 0.5.
-
+        mode: The pooling mode "AVG" for average and "MAX" for max pooling.
     Args:
         output: Pre-allocated output tensor.
         input: Batched images to the roi_align with NHWC format.
         rois: Batched ROIs box coordinates.
     """
+
+    constrained[
+        type.is_floating_point(),
+        "ROI align input / output must be a floating point",
+    ]()
+
+    debug_assert(mode == "AVG" or mode == "MAX", "mode must be AVG or MAX")
 
     let n_regions = rois.dim(0)
     let height = input.dim(1)
@@ -134,11 +142,6 @@ fn roi_align_nhwc[
     let pooled_height = output.dim(1)
     let pooled_width = output.dim(2)
     let offset = 0.5 if aligned else 0.0
-
-    constrained[
-        type.is_floating_point(),
-        "ROI align input / output must be a floating point",
-    ]()
 
     for ri in range(n_regions):
         # Region coordinates and batch indix
@@ -180,10 +183,40 @@ fn roi_align_nhwc[
         # Number of points in the pooling window.
         let pool_elemn_num = math.max(roi_bin_grid_h * roi_bin_grid_w, 1)
 
+        # Associatve pooling init/update/finalize functions parameterized by
+        # mode
+        @parameter
+        @always_inline
+        fn init_fn[type: DType]() -> SIMD[type, 1]:
+            if mode == "AVG":
+                return 0
+            else:
+                return math.limit.neginf[type]()
+
+        @parameter
+        @always_inline
+        fn update_fn[
+            type: DType
+        ](a: SIMD[type, 1], b: SIMD[type, 1]) -> SIMD[type, 1]:
+            if mode == "AVG":
+                return a + b
+            else:
+                return math.max(a, b)
+
+        @parameter
+        @always_inline
+        fn reduce_fn[
+            type: DType
+        ](a: SIMD[type, 1], b: SIMD[type, 1]) -> SIMD[type, 1]:
+            if mode == "AVG":
+                return a / b
+            else:
+                return a
+
         for ph in range(pooled_height):
             for pw in range(pooled_width):
                 for c in range(channles):
-                    var sum = SIMD[type, 1](0)
+                    var pool_val = init_fn[type]()
                     for iy in range(roi_bin_grid_h):
                         for ix in range(roi_bin_grid_w):
                             # Sample bilinearly mapped points coordinates
@@ -206,10 +239,22 @@ fn roi_align_nhwc[
                             let p2 = p.get[1, Weighted2DPoint[type]]()
                             let p3 = p.get[2, Weighted2DPoint[type]]()
                             let p4 = p.get[3, Weighted2DPoint[type]]()
-                            sum += p1.w * input[roi_batch_idx, p1.y, p1.x, c]
-                            sum += p2.w * input[roi_batch_idx, p2.y, p2.x, c]
-                            sum += p3.w * input[roi_batch_idx, p3.y, p3.x, c]
-                            sum += p4.w * input[roi_batch_idx, p4.y, p4.x, c]
-                    output[StaticIntTuple[4](ri, ph, pw, c)] = (
-                        sum / pool_elemn_num
+                            pool_val = update_fn(
+                                pool_val,
+                                p1.w * input[roi_batch_idx, p1.y, p1.x, c],
+                            )
+                            pool_val = update_fn(
+                                pool_val,
+                                p2.w * input[roi_batch_idx, p2.y, p2.x, c],
+                            )
+                            pool_val = update_fn(
+                                pool_val,
+                                p3.w * input[roi_batch_idx, p3.y, p3.x, c],
+                            )
+                            pool_val = update_fn(
+                                pool_val,
+                                p4.w * input[roi_batch_idx, p4.y, p4.x, c],
+                            )
+                    output[StaticIntTuple[4](ri, ph, pw, c)] = reduce_fn(
+                        pool_val, pool_elemn_num
                     )
