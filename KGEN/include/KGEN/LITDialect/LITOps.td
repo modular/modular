@@ -258,14 +258,13 @@ def PackageLinkOp : LITOp<"package.link", [Symbol]> {
     // FIXME(#17326): This should be a map of precompiled targets, not one.
     M_TargetInfoAttr:$compiledFor,
     KGEN_EnvAttr:$compiledEnv,
-    Builtin_DenseResourceElementsAttr:$archiveBytes,
-    Builtin_DenseResourceElementsAttr:$postElaborationModule
+    LIT_PackageArchiveAttr:$archive
   );
 
   let assemblyFormat = [{
-    $sym_name `archive` `(` $archiveBytes `)`
+    $sym_name
     (`pre_elaboration` `(` $preElaborationModule^ `)`)?
-    `post_elaboration` `(` $postElaborationModule `)`
+     `archive` `(` $archive `)`
     attr-dict-with-keyword
   }];
 }
