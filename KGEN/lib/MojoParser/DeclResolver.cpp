@@ -2407,13 +2407,6 @@ static Value emitClosureInstance(SignatureType closureSignature,
   auto parentFunction = nestedFunction->getParentOfType<LIT::FuncOp>();
   assert(parentFunction &&
          "Expected nestedFunctionDecl to have a parent FuncOp.");
-  auto symbol =
-      dyn_cast<SymbolConstantAttr>(parentFunction.getBoundReference());
-  if (!symbol) {
-    shared.emitError(location, "TODO: nested escaping closures deeper than 1 "
-                               "level are not supported yet");
-    return {};
-  }
   // Save the insertion point before closure creation since closure creation
   // nukes the nested function.
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
@@ -2421,12 +2414,7 @@ static Value emitClosureInstance(SignatureType closureSignature,
   builder.setInsertionPointAfter(nestedFunction);
   auto insertPoint = builder.saveInsertionPoint();
 
-  ASTDecl *parentFunctionDecl =
-      shared.declResolver->getDeclForFuncSymbol(symbol.getSymbol());
-
-  // FIXME(closures): cannot pass a null ASTDecl into ExprEmitter!
-  if (!parentFunctionDecl)
-    parentFunctionDecl = &nestedFunctionDecl;
+  ASTDecl *parentFunctionDecl = nestedFunctionDecl.getParentDecl();
 
   FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
   // Create ClosureWrapper first. Nested function cannot be referenced after the
