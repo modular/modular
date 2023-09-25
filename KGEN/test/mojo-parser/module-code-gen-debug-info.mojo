@@ -114,7 +114,7 @@ fn capture_reg_type(z: Int):
 
     # CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var synth : !lit.ref<mut !escaping{{.*}} loc(#[[LOC:loc[0-9]*]])
     # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-    # CHECK: [[A:%.*]] = pop.load %a : !kgen.pointer<!Int> loc(#[[LOC]])
+    # CHECK: [[A:%.*]] = lit.ref.load %a : <mut !Int, {{.*}} loc(#[[LOC]])
     # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR]], [[A]], %w) {{.*}} loc(#[[LOC]])
     fn myclosure_with_reg_types(x: Int) escaping -> Int:
         a = a + 1

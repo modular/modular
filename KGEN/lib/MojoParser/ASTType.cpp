@@ -217,8 +217,8 @@ ASTType ASTType::getPointerElementType() const {
 /// if the current type isn't a reference.
 ///
 ASTType ASTType::getReferenceElementType() const {
-  /// TODO: This accepts pointer types while we're phasing in first class
-  /// references.
+  /// TODO(references): This accepts pointer types while we're phasing in first
+  /// class references.
   if (auto refType = dyn_cast<RefType>(mlirType))
     return ASTType(refType.getElementType());
   return getPointerElementType();

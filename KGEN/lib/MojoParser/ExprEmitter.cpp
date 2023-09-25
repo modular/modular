@@ -301,7 +301,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
         if (emitter.builder) {
           representation = LValueBufferTaken(); // Buffer taken!
           return MLValue(emitter.builder->create<RefToPointerOp>(
-              refValue.getLoc(), refValue));
+              emitter.translateLocation(loc), refValue));
         }
       }
     }
@@ -678,7 +678,8 @@ MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
   if (!ref)
     return {};
 
-  return MRValue(builder->create<RefToPointerOp>(ref.getLoc(), ref));
+  return MRValue(
+      builder->create<RefToPointerOp>(value.expr->getLocation(*this), ref));
 }
 
 XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
@@ -768,7 +769,8 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
       emitErrorForDynamicValueInParameter(value.expr);
       return {};
     }
-    return MBValue(builder->create<RefToPointerOp>(ref.getLoc(), ref));
+    return MBValue(
+        builder->create<RefToPointerOp>(value.expr->getLocation(*this), ref));
   }
 
   if (auto mb = value.ir.getIfMBValue())
@@ -897,6 +899,12 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
     return MRValue(rebind(mrValue));
   if (auto mbValue = value.getIfMBValue())
     return MBValue(rebind(mbValue));
+  if (auto refValue = value.getIfXLValue())
+    return XLValue(rebind(refValue));
+  if (auto refValue = value.getIfXRValue())
+    return XRValue(rebind(refValue));
+  if (auto refValue = value.getIfXBValue())
+    return XBValue(rebind(refValue));
   if (auto sbValue = value.getIfSBValue())
     return SBValue(rebind(sbValue));
   if (auto dlValue = value.getIfDLValue()) {
@@ -1692,11 +1700,23 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   }
 
   capture = Capture(value, value.getRValueType(), value.getType());
-  if (value.getIfMLValue() || value.getIfXLValue()) {
+  if (value.getIfMLValue()) {
     if (ASTType(value.getRValueType())
             .isRegisterPassable(expr->getLoc(), shared))
       capture = Capture(value, value.getRValueType(), value.getRValueType());
   }
+
+  if (Value ref = value.getIfXLValue()) {
+    if (ASTType(value.getRValueType())
+            .isRegisterPassable(expr->getLoc(), shared))
+      capture = Capture(value, value.getRValueType(), value.getRValueType());
+    else {
+      // TODO(references): Capture references by pointer for now.
+      capture = Capture(value, value.getRValueType(),
+                        cast<RefType>(ref.getType()).getAsPointerType());
+    }
+  }
+
   return value;
 }
 
@@ -1876,7 +1896,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 
     // Emit the call to get the item from the tuple into the corresponding
     // LValue.
-    LValue lv = lvalue.ir.getIfMLValue();
+    LValue lv = lvalue.ir.getIfLValue();
     assert(lv && "Each dest is known to be an lvalue");
     ValueDest eltDest(lv, EC_TupleElement);
 

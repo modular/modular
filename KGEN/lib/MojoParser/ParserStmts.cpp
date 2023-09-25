@@ -1823,9 +1823,9 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
-    auto varType = PointerType::get(unresolvedType);
-    declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar,
-                                          /*isSynth=*/false);
+    auto lifetimeAttr = curDeclScope->getAnonymousLifetimeFor(name);
+    declOp = builder.create<VarLetDecl2Op>(
+        loc, unresolvedType, name, lifetimeAttr, isVar, /*isSynth=*/false);
     delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
@@ -1850,7 +1850,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     }
   });
 
-  auto varOp = dyn_cast<VarLetDeclOp>(decl);
+  auto varOp = dyn_cast<VarLetDecl2Op>(decl);
   if (!varOp) {
     // Parse docstrings for struct fields here.
     parseDocString(decl);
@@ -1894,8 +1894,9 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     ValueDest dest;
     ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
     if (parsedType) {
-      varOp.getResult().setType(PointerType::get(parsedType));
-      dest = ValueDest(MLValue(varOp), exprContext);
+      varOp.getResult().setType(RefType::get(/*isMut=*/true, parsedType,
+                                             varOp.getType().getLifetime()));
+      dest = ValueDest(XLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
       // type of the varOp from the initializer expression.
@@ -1911,7 +1912,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
            "RValue emission should have inferred var type");
 
   } else if (parsedType) {
-    varOp.getResult().setType(PointerType::get(parsedType));
+    varOp.getResult().setType(RefType::get(/*isMut=*/true, parsedType,
+                                           varOp.getType().getLifetime()));
   } else {
     // If there was neither a type or initializer, reject the var.
     emitError(varOp.getLoc(),
@@ -1923,8 +1925,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // if this was a non-parameteric register-passable `let` declaration with
   // an initializer.  We don't care about the address being available and
   // this produces smaller IR.
-  ASTType inferredRValueType =
-      ASTType(varOp.getType()).getReferenceElementType();
+  ASTType inferredRValueType = ASTType(varOp.getType().getElementAsType());
   if (initExpr && !varOp.getIsVar() &&
       // NOTE: This is assuming type parameters are valid register types.  We
       // will need to build out better support when we have traits, but this is
@@ -1932,7 +1933,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
       inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared) &&
       // Variable could have multiple uses in invalid cases like "var x = x+1".
       varOp->hasOneUse()) {
-    auto theStore = cast<POP::StoreOp>(*varOp->user_begin());
+    auto theStore = cast<RefStoreOp>(*varOp->user_begin());
 
     // Create new LetRegDeclOp and put it into the ASTDecl.
     OpBuilder builder(theStore);
