@@ -10,6 +10,9 @@
 // CHECK: bf16: 3.1{{[0-9]+}}e+00, 1.7{{[0-9]+}}e+00
 "some.op"() {a = #M.primitives_array<bf16: 3.14, 1.73>} : () -> ()
 
+// CHECK: f32: 0xFF800000
+"some.op"() {a = #M.primitives_array<f32: 0xFF800000>} : () -> ()
+
 // CHECK: primitives_array<i64>
 "some.op"() {a = #M.primitives_array<i64>} : () -> ()
 
