@@ -22,7 +22,7 @@ struct TestTensor[rank: Int, type: DType]:
         self.storage.resize(shape.flattened_length())
         self.shape = shape
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __moveinit__(inout self, owned existing: Self):
         self.storage = existing.storage
         self.shape = existing.shape
 
@@ -50,12 +50,12 @@ fn test_case[
     largest: Bool = True,
     sorted: Bool = True,
 ):
-    var input = TestTensor[rank, type](input_shape)
+    let input = TestTensor[rank, type](input_shape)
 
     var output_shape = input_shape
     output_shape[axis] = K
-    var out_vals = TestTensor[rank, type](output_shape)
-    var out_idxs = TestTensor[rank, DType.int64](output_shape)
+    let out_vals = TestTensor[rank, type](output_shape)
+    let out_idxs = TestTensor[rank, DType.int64](output_shape)
 
     var input_buf = input.to_ndbuffer()
     fill_fn[rank, type](input_buf)
@@ -75,7 +75,7 @@ fn test_case[
         )
         out_chain.wait()
 
-    let xxx_no_lifetimes = input  # intentionally bad name
+    let xxx_no_lifetimes = input ^  # intentionally bad name
 
     for i in range(out_vals.storage.size):
         print_no_newline(out_vals.storage[i])
@@ -199,7 +199,7 @@ fn main():
     fn fill_custom[
         rank: Int, type: DType
     ](inout buf: NDBuffer[rank, DimList.create_unknown[rank](), type]):
-        var flat_buf = buf.flatten()
+        let flat_buf = buf.flatten()
         for i in range(flat_buf.__len__()):
             flat_buf[i] = flat_buf.__len__() - i - 1
         flat_buf[0] = -1
