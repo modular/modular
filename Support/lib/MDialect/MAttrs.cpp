@@ -123,17 +123,10 @@ public:
 
   /// Parse a single float.
   ParseResult parseSingleFloat(AsmParser &p) {
-    double fpVal;
-    if (p.parseFloat(fpVal))
+    FloatAttr fpAttr;
+    if (p.parseAttribute(fpAttr, type))
       return failure();
-    APFloat apFloat(fpVal);
-    // `double` is `f64`, so skip conversions when that's the case.
-    if (!type.isF64()) {
-      bool unused;
-      apFloat.convert(type.cast<FloatType>().getFloatSemantics(),
-                      APFloat::rmNearestTiesToEven, &unused);
-    }
-    append(apFloat.bitcastToAPInt());
+    append(fpAttr.getValue().bitcastToAPInt());
     return success();
   }
 
