@@ -451,7 +451,7 @@ fn foo(owned y:Int):
 # CHECK-NEXT: %[[V0REF:.*]] = builtin.unrealized_conversion_cast %[[V0]]
 # CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT: %[[V1REF:.*]] = builtin.unrealized_conversion_cast %[[V1]]
-# CHECK-NEXT: %q_0 = lit.varlet.decl2 "q" var synth :
+# CHECK-NEXT: %q_0 = lit.varlet.decl "q" var synth :
 # CHECK-NEXT: lit.ref.store %q, %q_0
 # CHECK-NEXT: %[[V2:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V3:.*]] = lit.ref.load %[[V0REF]]
@@ -483,7 +483,7 @@ fn foo(owned y:Int):
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%__result__: !kgen.pointer<!String> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %y: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!String>
-# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl2 "__call_result_tmp__" var synth : !lit.ref<mut !String,
+# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl "__call_result_tmp__" var synth : !lit.ref<mut !String,
 # CHECK-NEXT: %1 = lit.ref.to_pointer %__call_result_tmp__
 # CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%1, %[[W0]], %y)
 # CHECK-NEXT: %[[W3:.*]] = kgen.call @{{.*}}__copyinit__{{.*}}(%__result__, %1)
@@ -546,13 +546,13 @@ fn makes_escaping_closure(m: String):
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 fn makes_escaping_closure(m: String):
-   # CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var synth
+   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
    # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl2 "anonymous*" var synth : !lit.ref<mut !String,
+   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : !lit.ref<mut !String,
    # CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
    # CHECK-NEXT: kgen.call @"{{.*}}@"__copyinit__{{.*}}"([[ANONPTR_0]], %m)
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR]], [[ANONPTR_0]])
-   # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl2 "anonymous*" var synth
+   # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*" var synth
    # CHECK-NEXT: [[ANONPTR_1:%.*]] = lit.ref.to_pointer %anonymous2A_1
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR_1]], [[ANONPTR]])
    fn myclosure_with_mem_types(n:String) escaping -> String:
@@ -566,11 +566,11 @@ fn makes_escaping_closure(m: String):
 fn makes_escaping_closure(z: Int):
    let w = z * z
    var a = w
-   # CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var synth
+   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
    # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR]], [[A]], %w)
-   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl2 "anonymous*" var synth
+   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth
    # CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR_0]], [[ANONPTR]])
    fn myclosure_with_reg_types(x:Int) escaping -> Int:
@@ -591,13 +591,13 @@ fn makes_escaping_closure(z: Int):
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 
-# CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var synth
+# CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
 # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl2 "anonymous*" var synth : {{.*}}!String
+# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : {{.*}}!String
 # CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
 # CHECK-NEXT: [[V0:%.*]] = kgen.call @"{{.*}}::@String::@"__copyinit__({{.*}})"([[ANONPTR_0]], %m)
 # CHECK-NEXT: [[V1:%.*]] = kgen.call {{.*}}CI_$[[F]]_{{.*}}"::@"__init__{{.*}}([[ANONPTR]], [[ANONPTR_0]])
-# CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl2 "anonymous*" var synth
+# CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*" var synth
 # CHECK-NEXT: [[ANONPTR_1:%.*]] = lit.ref.to_pointer %anonymous2A_1
 # CHECK-NEXT:  = kgen.call {{.*}}CW_{{.*}}__init__{{.*}}([[ANONPTR_1]], [[ANONPTR]])
 # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !lit.none

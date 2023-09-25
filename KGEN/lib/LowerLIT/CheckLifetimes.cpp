@@ -399,7 +399,7 @@ struct ValueSet {
     // Determine if we should reject mutations after initialization.
     bool isLet = false;
     if (val) {
-      if (auto varLet = val.getDefiningOp<VarLetDecl2Op>())
+      if (auto varLet = val.getDefiningOp<VarLetDeclOp>())
         isLet = !varLet.getIsVar();
     }
 
@@ -1982,7 +1982,7 @@ static bool mightPointTo(Value p1, Value p2) {
 // just catch the most obvious local cases to clean up the IR and provide a
 // "guaranteed" optimization.
 static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
-                                            VarLetDecl2Op tmpDecl) {
+                                            VarLetDeclOp tmpDecl) {
   Block *tmpBlock = tmpDecl->getBlock();
   if (copyInitCall->getBlock() != tmpBlock)
     return false;
@@ -2109,8 +2109,8 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // information to block optimizations.
   if (auto refToPtr =
           copyInitCall.getOperand(0).getDefiningOp<RefToPointerOp>()) {
-    if (VarLetDecl2Op tmpDecl =
-            refToPtr.getOperand().getDefiningOp<VarLetDecl2Op>()) {
+    if (VarLetDeclOp tmpDecl =
+            refToPtr.getOperand().getDefiningOp<VarLetDeclOp>()) {
       assert((copyInitCall.getOperand(0).getType() == value.getType() ||
               copyInitCall.getOperand(1).getDefiningOp<RefToPointerOp>()) &&
              copyInitCall.use_empty() && "something strange");
@@ -2355,7 +2355,7 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
                "switching to a 'let'";
       };
 
-      if (auto varLet = info.value.getDefiningOp<VarLetDecl2Op>())
+      if (auto varLet = info.value.getDefiningOp<VarLetDeclOp>())
         checkVarLet(varLet);
     }
 

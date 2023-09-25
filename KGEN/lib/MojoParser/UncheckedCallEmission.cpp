@@ -284,7 +284,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(name);
       // TODO(references): drop this cast eventually.
       expectedType = cast<PointerType>(expectedType).getElementAsType();
-      auto resultTmp = builder->create<VarLetDecl2Op>(
+      auto resultTmp = builder->create<VarLetDeclOp>(
           loc, expectedType, name, lifetimeAttr, /*isVar=*/true,
           /*isSynth=*/true);
       argumentValues.push_back({XLValue(resultTmp), callExpr});
@@ -548,7 +548,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // going to use.
     assert(argValAndExpr.ir.getIfXLValue());
     cast<OpResult>(tmpSlotAddr).getOwner()->erase(); // Ref2Ptr.
-    argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDecl2Op>()->erase();
+    argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDeclOp>()->erase();
     // Get the MLValue of the destination slot.
     return dest.getMLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }

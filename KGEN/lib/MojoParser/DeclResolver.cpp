@@ -2770,11 +2770,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
 /// Create a mutable VarDecl for a function argument that captures its value.
 /// argValue specifies the argument with the correct valuetype.
-static VarLetDecl2Op makeArgLValueVarSlot(const CValue &argValue,
-                                          StringAttr argName,
-                                          ASTDecl &parentDecl,
-                                          OpBuilder &builder, SMLoc loc,
-                                          SharedState &shared) {
+static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
+                                         StringAttr argName,
+                                         ASTDecl &parentDecl,
+                                         OpBuilder &builder, SMLoc loc,
+                                         SharedState &shared) {
   Location mloc = shared.translateLocation(loc);
 
   // Emit the initializer expression into the slot.
@@ -2783,8 +2783,8 @@ static VarLetDecl2Op makeArgLValueVarSlot(const CValue &argValue,
   ASTType declType = argValue.getRValueType();
   std::string lifetimeName = "`" + argName.str();
   auto varDecl =
-      builder.create<VarLetDecl2Op>(mloc, declType, argName, lifetimeName,
-                                    /*isVar*/ true, /*isSynthesized*/ true);
+      builder.create<VarLetDeclOp>(mloc, declType, argName, lifetimeName,
+                                   /*isVar*/ true, /*isSynthesized*/ true);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));

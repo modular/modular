@@ -13,22 +13,22 @@ fn mlirMagicTest(
 ) -> __mlir_type.index:
     # CHECK: lit.alias.decl [[A:.*]] = <1>
     alias a: __mlir_type.index = Int(1).value
-    # CHECK: %b = lit.varlet.decl2 "b" var : !lit.ref<mut f64,
+    # CHECK: %b = lit.varlet.decl "b" var : !lit.ref<mut f64,
     var b: __mlir_type.f64
-    # CHECK: %c = lit.varlet.decl2 "c" var : !lit.ref<mut pointer<pointer<float32>>,
+    # CHECK: %c = lit.varlet.decl "c" var : !lit.ref<mut pointer<pointer<float32>>,
     var c: __mlir_type.`!kgen.pointer<!kgen.pointer<float32>>`
 
-    # CHECK: %d = lit.varlet.decl2
+    # CHECK: %d = lit.varlet.decl
     # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
     # CHECK: lit.ref.store [[TMP]], %d : <mut i17,
     var d = __mlir_attr.`4: i17`
 
-    # CHECK: %dt = lit.varlet.decl2
+    # CHECK: %dt = lit.varlet.decl
     # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
     # CHECK: lit.ref.store [[TMP]], %dt : <mut dtype
     var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype `
 
-    # CHECK-NEXT: %idxConstant = lit.varlet.decl2
+    # CHECK-NEXT: %idxConstant = lit.varlet.decl
     # CHECK: index.constant 42
     var idxConstant = __mlir_op.`index.constant`[value : Int(42).value]()
 
@@ -51,9 +51,9 @@ fn mlirMagicTest(
 # CHECK-LABEL: lit.func @"mlirTypesAndAttrs{{.*}}()"<
 # CHECK-SAME: [[DTYPE:.*]]: dtype>()
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
-    # CHECK: %a = lit.varlet.decl2 "a" var : !lit.ref<mut scalar<[[DTYPE]]>,
+    # CHECK: %a = lit.varlet.decl "a" var : !lit.ref<mut scalar<[[DTYPE]]>,
     var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
-    # CHECK: %b = lit.varlet.decl2 "b" var : !lit.ref<mut simd<4, [[DTYPE]]>,
+    # CHECK: %b = lit.varlet.decl "b" var : !lit.ref<mut simd<4, [[DTYPE]]>,
     var b: __mlir_type[`!pop.simd<4, `, dtype, `>`]
 
 
@@ -68,13 +68,13 @@ struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
 # Issue #6374: [Lit] Add support for type placeholder
 # CHECK-LABEL: typePlaceholder
 fn typePlaceholder():
-    # CHECK: %x = lit.varlet.decl2 {{.*}} : !lit.ref<mut variadic<i32>,
+    # CHECK: %x = lit.varlet.decl {{.*}} : !lit.ref<mut variadic<i32>,
     var x: __mlir_type[`!kgen.variadic<`, __mlir_type.i32, `>`]
 
 
 # CHECK-LABEL: lit.func @"fancierSubstitutions
 fn fancierSubstitutions():
-    # CHECK: = lit.varlet.decl2 {{.*}} : !lit.ref<mut complex<i32>,
+    # CHECK: = lit.varlet.decl {{.*}} : !lit.ref<mut complex<i32>,
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
     # CHECK: lit.alias.decl [[A:.*]] = <1>

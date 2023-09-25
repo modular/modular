@@ -414,7 +414,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
       lookupSingleDecl(exprFnDecl, "__mojo_repl_expr_body__");
   SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
   for (auto &[name, decls] : exprBodyDecl.getDeclsInScope())
-    if (decls.size() == 1 && isa<LetRegDeclOp, VarLetDecl2Op>(*decls.front()))
+    if (decls.size() == 1 && isa<LetRegDeclOp, VarLetDeclOp>(*decls.front()))
       variables.emplace_back(name, decls.front());
   llvm::sort(variables, [](const auto &lhs, const auto &rhs) {
     return lhs.first.getValue() < rhs.first.getValue();
@@ -500,7 +500,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
       continue;
     }
     // Handle memory based decls.
-    if (auto letOp = dyn_cast<LIT::VarLetDecl2Op>(*decl)) {
+    if (auto letOp = dyn_cast<LIT::VarLetDeclOp>(*decl)) {
       if (Value field = checkInsertPersistentVar(
               letOp, letOp.getNameAttr(), letOp.getType().getElementAsType())) {
         decl->setIRValue(MRValue(field));

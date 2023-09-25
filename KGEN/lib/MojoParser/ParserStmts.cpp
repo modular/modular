@@ -940,7 +940,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
   StringAttr targetLifenameName = curDeclScope->getAnonymousLifetimeFor(target);
-  auto varDeclOp = builder.create<VarLetDecl2Op>(
+  auto varDeclOp = builder.create<VarLetDeclOp>(
       forLoc, UnresolvedType::get(getContext()), target, targetLifenameName,
       /*isVar=*/funcOp && funcOp.getIsDef(), /*isSynth=*/true);
 
@@ -967,7 +967,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   StringAttr rangeName = StringAttr::get(builder.getContext(), "$RANGE");
   StringAttr rangeLifenameName =
       curDeclScope->getAnonymousLifetimeFor(rangeName);
-  auto rangeRef = builder.create<VarLetDecl2Op>(
+  auto rangeRef = builder.create<VarLetDeclOp>(
       forLoc, UnresolvedType::get(getContext()), rangeName, rangeLifenameName,
       /*isVar*/ true, /*isSynth=*/true);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
@@ -1088,7 +1088,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
         // reassignment.
         StringAttr errLifetimeName =
             curDeclScope->getAnonymousLifetimeFor(errName);
-        auto varDecl = builder.create<VarLetDecl2Op>(
+        auto varDecl = builder.create<VarLetDeclOp>(
             errVal.getLoc(), errVal.getType(), errName, errLifetimeName,
             /*isVar=*/true, /*isSynth=*/true);
         decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
@@ -1188,7 +1188,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // FIXME: This needs to parse this as a target expression and then handle it
   // like a destructuring pattern.
-  VarLetDecl2Op targetDecl;
+  VarLetDeclOp targetDecl;
   bool addDecl = false;
   SMLoc targetLoc;
   SMLoc asLoc;
@@ -1215,7 +1215,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       }
     } else {
       StringAttr lifetimeName = curDeclScope->getAnonymousLifetimeFor(name);
-      targetDecl = builder.create<VarLetDecl2Op>(
+      targetDecl = builder.create<VarLetDeclOp>(
           shared.translateLocation(targetLoc),
           UnresolvedType::get(getContext()), name, lifetimeName,
           /*isVar=*/!useLexicalScope, /*isSynth=*/false);
@@ -1324,9 +1324,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
     StringAttr name = StringAttr::get(builder.getContext(), "__with_exc__");
     StringAttr lifetimeName = curDeclScope->getAnonymousLifetimeFor(name);
-    excVar = builder.create<VarLetDecl2Op>(loc, builder.getI1Type(), name,
-                                           lifetimeName,
-                                           /*isVar=*/true, /*isSynth=*/true);
+    excVar = builder.create<VarLetDeclOp>(loc, builder.getI1Type(), name,
+                                          lifetimeName,
+                                          /*isVar=*/true, /*isSynth=*/true);
     builder.create<RefStoreOp>(
         loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
   }
@@ -1824,7 +1824,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
     auto lifetimeAttr = curDeclScope->getAnonymousLifetimeFor(name);
-    declOp = builder.create<VarLetDecl2Op>(
+    declOp = builder.create<VarLetDeclOp>(
         loc, unresolvedType, name, lifetimeAttr, isVar, /*isSynth=*/false);
     delayAddingName = true;
   } else {
@@ -1850,7 +1850,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     }
   });
 
-  auto varOp = dyn_cast<VarLetDecl2Op>(decl);
+  auto varOp = dyn_cast<VarLetDeclOp>(decl);
   if (!varOp) {
     // Parse docstrings for struct fields here.
     parseDocString(decl);
@@ -1940,7 +1940,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     decl.setIRValue(&*builder.create<LetRegDeclOp>(
         varOp.getLoc(), varOp.getNameAttr(), theStore.getArg()));
 
-    // Remove the store and the original VarLetDecl2Op.
+    // Remove the store and the original VarLetDeclOp.
     theStore->erase();
     varOp->erase();
   }

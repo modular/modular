@@ -38,7 +38,7 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
-  # CHECK: %local = lit.varlet.decl2 "local" var
+  # CHECK: %local = lit.varlet.decl "local" var
   # CHECK: %[[TMP1:.*]] = kgen.param.constant: !Int = <[[SIZE]]>
   # CHECK: %[[TMP2:.*]] = kgen.param.constant: !Int = <[[SIZE]]>
   # CHECK: %[[TMP3:.*]] = kgen.param.constant: !Int = <[[SIZE]]>
@@ -88,13 +88,13 @@ struct TestParamStruct[A: Int]:
     alias C = B*A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}> = <apply(:!lit.signature<() ownedresult -> {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
-    # CHECK: %temp = lit.varlet.decl2 {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = [[C]]>
+    # CHECK: %temp = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = [[C]]>
     var temp: TestParamStruct[C]
 
     # CHECK: lit.alias.decl {{.*}}intVal: !Int = <#lit.struct<{value = 42}>>
     alias intVal : Int = 42
 
-    # CHECK: %temp2 = lit.varlet.decl2 {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
+    # CHECK: %temp2 = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
   # CHECK: lit.alias.decl {{.*}}TypeLevelAlias: !Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
@@ -102,7 +102,7 @@ struct TestParamStruct[A: Int]:
 
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
-  # CHECK: %arg11 = lit.varlet.decl2 {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
+  # CHECK: %arg11 = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
   # CHECK: %0 = kgen.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>()
   # CHECK: lit.ref.store %0, %arg11 : <mut {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
   var arg11 = TestParamStruct[11]()
@@ -115,9 +115,9 @@ fn testTestParamStruct(a: TestParamStruct[4]):
 fn testSIMD(a: SIMD[DType.float64, 1],
             b: SIMD[DType.int32, 1],
             inout reff: SIMD[DType.int32, 1]):
-  # CHECK: %field1 = lit.varlet.decl2 {{.*}} : !lit.ref<mut scalar<f64>,
+  # CHECK: %field1 = lit.varlet.decl {{.*}} : !lit.ref<mut scalar<f64>,
   var field1 = a.value
-  # CHECK: %field2 = lit.varlet.decl2 {{.*}} : !lit.ref<mut scalar<si32>,
+  # CHECK: %field2 = lit.varlet.decl {{.*}} : !lit.ref<mut scalar<si32>,
   var field2 = reff.value
 
   # Test calls to methods and operators on parameterized type.
@@ -198,7 +198,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$parameters"::@ParamSubst<[[TYPE]]: type = index, [[SH]]: variadic<index> = [1, 2]>
+  # CHECK: %xx = lit.varlet.decl {{.*}} : !lit.ref<mut @"$parameters"::@ParamSubst<[[TYPE]]: type = index, [[SH]]: variadic<index> = [1, 2]>
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
@@ -258,13 +258,13 @@ fn passMemoryValue(x: MemoryType) -> MemoryType:
 fn callMemoryValueParam():
     # CHECK: paramValue: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
     alias paramValue = makeMemoryValue(1234)
-    # CHECK: %dynamicLet = lit.varlet.decl2
+    # CHECK: %dynamicLet = lit.varlet.decl
     # CHECK: %[[PARAM_VALUE:.*]] = kgen.param.materialize: !MemoryType = <{{.*}}paramValue>
     # CHECK: lit.ref.store %[[PARAM_VALUE]], %dynamicLet
     let dynamicLet = paramValue
 
     alias nonMovable = NonMovableMemoryType(42)
-    # CHECK: %dynamicVar = lit.varlet.decl2
+    # CHECK: %dynamicVar = lit.varlet.decl
     # CHECK: %1 = lit.ref.to_pointer %dynamicVar
     # CHECK: %[[NON_MOVABLE:.*]] = kgen.param.materialize: !NonMovableMemoryType
     # CHECK: pop.store %[[NON_MOVABLE]], %1
@@ -272,8 +272,8 @@ fn callMemoryValueParam():
 
     # CHECK: copy: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}}, store_to_mem({{.*}}paramValue
     alias copy = passMemoryValue(paramValue)
-    # CHECK: lit.varlet.decl2
-    # CHECK: [[MVALUE:%.*]] = lit.varlet.decl2 "anonymous*"
+    # CHECK: lit.varlet.decl
+    # CHECK: [[MVALUE:%.*]] = lit.varlet.decl "anonymous*"
     # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType = <{{.*}}copy>
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
     # CHECK: %5 = lit.ref.to_pointer %anonymous2A_0
@@ -542,11 +542,11 @@ fn useParamVariadics():
   # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<!lit.signature<() param_vararg -> !lit.none>>
   let fnLet = fnWithVariadics
 
-  # CHECK-NEXT: %a = lit.varlet.decl2 {{.*}} : !lit.ref<mut @"{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = []>
+  # CHECK-NEXT: %a = lit.varlet.decl {{.*}} : !lit.ref<mut @"{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = []>
   var a: StructWithVariadics
-  # CHECK-NEXT: %b = lit.varlet.decl2 {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = [#lit.struct<{value = 1}>]>
+  # CHECK-NEXT: %b = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = [#lit.struct<{value = 1}>]>
   var b: StructWithVariadics[1]
-  # CHECK-NEXT: %c = lit.varlet.decl2 {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = [#lit.struct<{value = 1}>, #lit.struct<{value = 2}>]>
+  # CHECK-NEXT: %c = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = [#lit.struct<{value = 1}>, #lit.struct<{value = 2}>]>
   var c: StructWithVariadics[1, 2]
 
   # TODO(16040): fix symbol name mangling to erase parameter name 'b'

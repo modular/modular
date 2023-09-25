@@ -121,7 +121,7 @@ const char *LIT::getContextMessage(ExprContext context) {
 // ValueDest
 //===----------------------------------------------------------------------===//
 
-ValueDest::ValueDest(VarLetDecl2Op dest, ExprContext context)
+ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
 ValueDest::ValueDest(GlobalVarDeclOp dest, ExprContext context)
@@ -243,7 +243,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
     ASTType materializedType = nmTarget ? nmTarget : resultType;
 
-    if (auto varOp = dyn_cast<VarLetDecl2Op>(opDest)) {
+    if (auto varOp = dyn_cast<VarLetDeclOp>(opDest)) {
       assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(RefType::get(/*isMut*/ true, materializedType,
@@ -329,7 +329,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
   auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
-  return XLValue(emitter.builder->create<VarLetDecl2Op>(
+  return XLValue(emitter.builder->create<VarLetDeclOp>(
       emitter.translateLocation(loc), slotType, nameAttr, lifetimeAttr,
       /*isVar*/ true, /*isSynth=*/true));
 }
@@ -686,9 +686,9 @@ XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
   // We model this as an immutable let value with a separately stored
   // initializer.
   auto var =
-      builder->create<VarLetDecl2Op>(translateLocation(value.expr->getLoc()),
-                                     pvalue.getType(), nameAttr, lifetimeAttr,
-                                     /*isVar=*/false, /*isSynth=*/true);
+      builder->create<VarLetDeclOp>(translateLocation(value.expr->getLoc()),
+                                    pvalue.getType(), nameAttr, lifetimeAttr,
+                                    /*isVar=*/false, /*isSynth=*/true);
   if (!emitPValueToXLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
   return XRValue(var);
@@ -1647,7 +1647,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     mlirValue = letDecl.getResult();
     value = SBValue(mlirValue);
 
-  } else if (auto var = dyn_cast<VarLetDecl2Op>(decl)) {
+  } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
     // We handle both var and let's as mutable lvalues and let check lifetimes
     // diagnose any problems.  This allows us to handle late-initialized lets.
     mlirValue = var.getResult();
@@ -1753,7 +1753,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   ASTType rvalueType = baseVal.ir->elementType;
   auto nameAttr = StringAttr::get(loc.getContext(), "__store_tmp__");
   auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
-  Value tmpDecl = emitter.builder->create<VarLetDecl2Op>(
+  Value tmpDecl = emitter.builder->create<VarLetDeclOp>(
       loc, rvalueType, nameAttr, lifetimeAttr,
       /*isVar=*/false, /*isSynth=*/false);
 
