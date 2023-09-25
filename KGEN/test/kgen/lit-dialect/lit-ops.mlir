@@ -9,11 +9,11 @@ lit.func @trivial_generator(%name: si32) -> si32 {
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
-  // CHECK-NEXT: %a = lit.varlet.decl2 "a" var synth : !lit.ref<mut scalar<ty>, life>
-  %a = lit.varlet.decl2 "a" var synth : !lit.ref<mut scalar<ty>, life>
+  // CHECK-NEXT: %a = lit.varlet.decl "a" var synth : !lit.ref<mut scalar<ty>, life>
+  %a = lit.varlet.decl "a" var synth : !lit.ref<mut scalar<ty>, life>
 
-  // CHECK-NEXT: %lifetime = lit.varlet.decl2 "lifetime" : !lit.ref<mut index, lt>
-  %lifetime = lit.varlet.decl2 "lifetime" : !lit.ref<mut index, lt>
+  // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" : !lit.ref<mut index, lt>
+  %lifetime = lit.varlet.decl "lifetime" : !lit.ref<mut index, lt>
 
   // CHECK-NEXT: %y = lit.letreg.decl "y" = %x : i32
   %y = lit.letreg.decl "y" = %x: i32
@@ -30,8 +30,8 @@ lit.struct.decl @SomeStruct<ty: dtype> {
     kgen.return
   }
 
-  // CHECK: %size = lit.varlet.decl2 "size" var : !lit.ref<mut scalar<ty>, life>
-  %size = lit.varlet.decl2 "size" var : !lit.ref<mut scalar<ty>, life>
+  // CHECK: %size = lit.varlet.decl "size" var : !lit.ref<mut scalar<ty>, life>
+  %size = lit.varlet.decl "size" var : !lit.ref<mut scalar<ty>, life>
 
   // CHECK: lit.func @getMyType
   // CHECK-NEXT: kgen.param.constant: dtype = <ty>
@@ -348,7 +348,7 @@ lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>
 // -----
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
-  %y = lit.varlet.decl2 "y" var : !lit.ref<mut @MyStruct, *"life">
+  %y = lit.varlet.decl "y" var : !lit.ref<mut @MyStruct, *"life">
   %none = kgen.param.constant: !lit.none = <#lit.none>
   %ret = kgen.param.constant: !pop.variant<@Error, !lit.none> = <#pop.variant<:!lit.none #lit.none>>
   %yptr = lit.ref.to_pointer %y: !lit.ref<mut @MyStruct, *"life">

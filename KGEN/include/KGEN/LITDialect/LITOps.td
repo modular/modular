@@ -789,10 +789,10 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl", [
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDecl2Op
+// VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_VarLetDecl2Op : LITOp<"varlet.decl2", [
+def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
     ASTDeclInterface,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
@@ -807,7 +807,7 @@ def LIT_VarLetDecl2Op : LITOp<"varlet.decl2", [
     Example:
 
     ```mlir
-    %foo = lit.varlet.decl2 "foo" isVar, synth : !lit.ref<index, foo>
+    %foo = lit.varlet.decl "foo" isVar, synth : !lit.ref<index, foo>
     ```
   }];
 

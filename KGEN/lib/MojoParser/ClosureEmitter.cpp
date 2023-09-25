@@ -316,7 +316,7 @@ static bool isXLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
   // if (astDecl->getIfXLValue())
   //   return true;
   if (Operation *op = astDecl->getIfOperation()) {
-    if (auto varlet = dyn_cast<VarLetDecl2Op>(op)) {
+    if (auto varlet = dyn_cast<VarLetDeclOp>(op)) {
       if (ASTType(varlet.getType().getElementAsType())
               .isRegisterPassable(loc, shared))
         return true;

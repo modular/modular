@@ -50,21 +50,21 @@ fn return_impl_convert_raises() raises -> Int:
 fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK:          hlcf.if
     if a:
-        # CHECK-NEXT: %inside_a = lit.varlet.decl2 "inside_a" var
+        # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a" var
         var inside_a: Int
     # CHECK:          } else {
     # CHECK:            hlcf.if
     elif b:
-        # CHECK-NEXT: %inside_b = lit.varlet.decl2 "inside_b" var
+        # CHECK-NEXT: %inside_b = lit.varlet.decl "inside_b" var
         var inside_b: Int
     # CHECK:            } else {
     # CHECK:              hlcf.if
     elif c:
-        # CHECK-NEXT: %inside_c = lit.varlet.decl2 "inside_c" var
+        # CHECK-NEXT: %inside_c = lit.varlet.decl "inside_c" var
         var inside_c: Int
     # CHECK:              } else {
     else:
-        # CHECK-NEXT: %inside_else = lit.varlet.decl2 "inside_else" var
+        # CHECK-NEXT: %inside_else = lit.varlet.decl "inside_else" var
         var inside_else: Int
     # CHECK:                hlcf.yield
     # CHECK-NEXT:         }
@@ -72,7 +72,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:       }
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     }
-    # CHECK-NEXT: %z = lit.varlet.decl2 "z"
+    # CHECK-NEXT: %z = lit.varlet.decl "z"
     # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant{{.*}}4
     # CHECK-NEXT: store [[FOUR]], %z
     var z: Int = 4
@@ -94,23 +94,23 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:   [[I1:%.*]] = kgen.call {{.*}}Bool::@"__mlir_i1__($builtin::$bool::Bool)"(%a)
     # CHECK-NEXT:              hlcf.if [[I1]]
     if a:
-        # CHECK-NEXT: %inside_a = lit.varlet.decl2 "inside_a" var
+        # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a" var
         var inside_a: Int
     # CHECK:                   } else {
     # CHECK:                     hlcf.if
     else:
         if b:
-            # CHECK-NEXT: %inside_b = lit.varlet.decl2 "inside_b" var
+            # CHECK-NEXT: %inside_b = lit.varlet.decl "inside_b" var
             var inside_b: Int
         # CHECK:                     } else {
         # CHECK:                       hlcf.if
         else:
             if c:
-                # CHECK-NEXT: %inside_c = lit.varlet.decl2 "inside_c" var
+                # CHECK-NEXT: %inside_c = lit.varlet.decl "inside_c" var
                 var inside_c: Int
             # CHECK:                       } else {
             else:
-                # CHECK-NEXT: %inside_else = lit.varlet.decl2 "inside_else" var
+                # CHECK-NEXT: %inside_else = lit.varlet.decl "inside_else" var
                 var inside_else: Int
     # CHECK:                         hlcf.yield
     # CHECK:                       }
@@ -127,12 +127,12 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: kgen.param.if <[[A]]> {
   @parameter
   if a:
-    # CHECK: lit.varlet.decl2 "inside_1" var
+    # CHECK: lit.varlet.decl "inside_1" var
     var inside_1: Int
   # CHECK: } else {
   # CHECK:     kgen.param.if <apply{{.*}}{{.*}}Bool::@"__mlir_i1__{{.*}}[[B]])> {
   elif b:
-  # CHECK:     lit.varlet.decl2 "inside_2" var
+  # CHECK:     lit.varlet.decl "inside_2" var
     var inside_2: Int
   # CHECK:     kgen.param.yield
   # CHECK:   }
@@ -145,13 +145,13 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
   # CHECK: kgen.param.if <cond([[A]], [[B]], [[A]])>
   @parameter
   if a and b:
-  # CHECK:   lit.varlet.decl2 "v" var
+  # CHECK:   lit.varlet.decl "v" var
     var v: Int
   # CHECK:   kgen.param.yield
   # CHECK: } else {
   # CHECK: kgen.param.if <cond([[A]], [[A]], [[B]])>
   elif a or b:
-  # CHECK:   lit.varlet.decl2 "w" var
+  # CHECK:   lit.varlet.decl "w" var
     var w: Int
 
 
@@ -163,7 +163,7 @@ fn param_if_and[a: Bool, b: Bool]():
   # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
   @parameter
   if a and b:
-  # CHECK:   lit.varlet.decl2 "v" var
+  # CHECK:   lit.varlet.decl "v" var
     var v: Int
   # CHECK:   kgen.param.yield
   # CHECK: }
@@ -173,9 +173,9 @@ fn param_if_and[a: Bool, b: Bool]():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"test_while
-# CHECK:       %inside_a = lit.varlet.decl2 "inside_a" var
-# CHECK:       %inside_b = lit.varlet.decl2 "inside_b" var
-# CHECK:       %inside_else = lit.varlet.decl2 "inside_else" var
+# CHECK:       %inside_a = lit.varlet.decl "inside_a" var
+# CHECK:       %inside_b = lit.varlet.decl "inside_b" var
+# CHECK:       %inside_else = lit.varlet.decl "inside_else" var
 # CHECK:       hlcf.loop {
 # CHECK:         hlcf.if
 # CHECK-NEXT:     hlcf.yield
@@ -231,7 +231,7 @@ fn test_simple(a: Bool):
 
 # CHECK-LABEL: lit.func @"test_else_outside_while
 def test_else_outside_while(a: Bool, b: Bool) -> Bool:
-    # CHECK: %a_0 = lit.varlet.decl2 "a"
+    # CHECK: %a_0 = lit.varlet.decl "a"
     # CHECK: lit.ref.store %a, %a_0
     # CHECK: hlcf.if {{.+}} {
     if b:
@@ -312,7 +312,7 @@ struct MyList:
 fn for_range_loop():
     let my_list = MyList()
 
-    # CHECK: %$RANGE = lit.varlet.decl2 "$RANGE"
+    # CHECK: %$RANGE = lit.varlet.decl "$RANGE"
     # CHECK: %2 = lit.ref.to_pointer %$RANGE
     # CHECK: %3 = lit.ref.to_pointer %my_list
     # CHECK: [[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}(%2, %3)
@@ -419,7 +419,7 @@ def tryExceptArgDef():
         pass
     # CHECK: except (%arg0: !Error)
     except err:
-        # CHECK-NEXT: lit.varlet.decl2 "err" var
+        # CHECK-NEXT: lit.varlet.decl "err" var
         # CHECK: [[ERRVAL:%.*]] = lit.ref.load %err
         # CHECK: eatError{{.*}}([[ERRVAL]])
         eatError(err)
@@ -473,7 +473,7 @@ def propagateErrorInDef():
 
 # CHECK-LABEL: lit.func @"propagateErrorInRaisingFn
 fn propagateErrorInRaisingFn() raises:
-    # CHECK:  %a = lit.varlet.decl2 {{.*}} : !lit.ref<mut !Int,
+    # CHECK:  %a = lit.varlet.decl {{.*}} : !lit.ref<mut !Int,
     var a: Int
     # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : !lit.signature<() throws -> !pop.variant<!Error, !Int>>
     # CHECK:  %1 = lit.handle_variant %0 : (!pop.variant<!Error, !Int>) -> !Int
@@ -510,7 +510,7 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %err_0 = lit.varlet.decl2 "err"
+    # CHECK: %err_0 = lit.varlet.decl "err"
     # CHECK: lit.ref.store %err, %err_0
     # CHECK: %[[ERRVAL:.*]] = lit.ref.load %err_0
     # CHECK: %[[ERRVALCOPY:.*]] = kgen.call {{.*}}@Error::@"__copyinit__
@@ -594,7 +594,7 @@ fn call_raising():
     # CHECK:   kgen.unreachable
     # CHECK: }
     let x = fail("hello world")
-    # CHECK: %y = lit.varlet.decl2 "y"
+    # CHECK: %y = lit.varlet.decl "y"
     # CHECK: %5 = lit.ref.to_pointer %y
     # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], %5
     # CHECK:   [[VAR2:%.*]] = pop.variant.get [[ERR]]
@@ -645,7 +645,7 @@ fn noop(a: Int): pass
 
 # CHECK-LABEL: lit.func @"testWithNonRaising
 fn testWithNonRaising(a: ExampleCM):
-  # CHECK-NEXT: %val = lit.varlet.decl2
+  # CHECK-NEXT: %val = lit.varlet.decl
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: lit.ref.store [[TARGET]], %val
   # CHECK-NEXT: lit.try
@@ -669,7 +669,7 @@ fn testWithNonRaising(a: ExampleCM):
 
 # CHECK-LABEL: lit.func @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:
-  # CHECK-NEXT: %val = lit.varlet.decl2
+  # CHECK-NEXT: %val = lit.varlet.decl
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: lit.ref.store [[TARGET]], %val
   # CHECK: lit.ref.store %true, %__with_exc__
@@ -716,10 +716,10 @@ fn testWithScoping(a: ExampleCM):
   # statement inside a `fn` does not respect lexical scope and binds
   # its variable in its parent scope.
   with a as withDecl:
-    # CHECK: %withDecl = lit.varlet.decl2 "withDecl"
+    # CHECK: %withDecl = lit.varlet.decl "withDecl"
     noop(withDecl)
   with a as withDecl:
-    # CHECK: %withDecl_0 = lit.varlet.decl2 "withDecl"
+    # CHECK: %withDecl_0 = lit.varlet.decl "withDecl"
     noop(withDecl)
 
 # CHECK-LABEL: lit.func @"testWithInDef
@@ -793,28 +793,28 @@ fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
     pass
 fn nmTargetNoop(x: NmTarget): pass
 fn useNonmaterializable():
-  # CHECK: [[NMDECL:%.*]] lit.varlet.decl2 "gotConverted1" var : !lit.ref<mut !NmTarget
+  # CHECK: [[NMDECL:%.*]] lit.varlet.decl "gotConverted1" var : !lit.ref<mut !NmTarget
   # CHECK-NEXT: kgen.param.constant: !NmTarget {{.*}}true
   var gotConverted1 = NmStruct(76) + NmStruct(1)
-  # CHECK: [[NMDECL:%.*]] lit.varlet.decl2 "gotConverted2" var : !lit.ref<mut !NmTarget
+  # CHECK: [[NMDECL:%.*]] lit.varlet.decl "gotConverted2" var : !lit.ref<mut !NmTarget
   # CHECK-NEXT: kgen.param.constant: !NmTarget {{.*}}false
   var gotConverted2 = notMaterializedAlias + NmStruct(1)
   # CHECK: lit.alias.decl{{.*}}useIfAlias{{.*}}NmStruct{{.*}}2
   alias useIfAlias = NmStruct(2) if True else NmStruct(3)
-  # CHECK: [[NMDECL:%.*]] lit.varlet.decl2 "useIfVar" var : !lit.ref<mut !NmTarget
+  # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useIfVar" var : !lit.ref<mut !NmTarget
   # CHECK: kgen.param.constant: !NmTarget {{.*}}false
   var useIfVar = NmStruct(2) if True else NmStruct(77)
-  # CHECK: [[NMDECL:%.*]] lit.varlet.decl2 "useIfVarLopsided" var : !lit.ref<mut !NmTarget
+  # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useIfVarLopsided" var : !lit.ref<mut !NmTarget
   # CHECK: kgen.param.constant: !NmTarget {{.*}}true
   var useIfVarLopsided = NmTarget(False) if False else NmStruct(77)
 
-  # CHECK: [[NMDECL:%.*]] lit.varlet.decl2 "useOrVar1" var : !lit.ref<mut !NmTarget
+  # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useOrVar1" var : !lit.ref<mut !NmTarget
   var useOrVar1 = NmStruct(2) or NmStruct(77)
-  # CHECK: [[NMDECL:%.*]] lit.varlet.decl2 "useOrVar2" var : !lit.ref<mut !NmTarget
+  # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useOrVar2" var : !lit.ref<mut !NmTarget
   var useOrVar2 = NmStruct(2) or NmStruct(3)
-  # CHECK: [[NMDECL:%.*]] lit.varlet.decl2 "useAndVar1" var : !lit.ref<mut !NmTarget
+  # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useAndVar1" var : !lit.ref<mut !NmTarget
   var useAndVar1 = NmStruct(2) and NmStruct(77)
-  # CHECK: [[NMDECL:%.*]] lit.varlet.decl2 "useAndVar2" var : !lit.ref<mut !NmTarget
+  # CHECK: [[NMDECL:%.*]] lit.varlet.decl "useAndVar2" var : !lit.ref<mut !NmTarget
   var useAndVar2 = NmStruct(77) and NmStruct(77)
 
   # Test that parameter inference using nonmaterializable gives the target,

@@ -1262,7 +1262,7 @@ OpFoldResult LetRegDeclOp::fold(LetRegDeclOp::FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDecl2Op
+// VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseVarLetDeclType(AsmParser &p, Type &resultType,
@@ -1289,19 +1289,19 @@ static void printVarLetDeclType(AsmPrinter &p, Operation *op, Type resultType,
   p.printType(resultType);
 }
 
-void VarLetDecl2Op::getAsmResultNames(
+void VarLetDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
 }
 
-void VarLetDecl2Op::walkDefinitions(
+void VarLetDeclOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   walkDef(getParamDecl(), ParamDefValue());
 }
 
-void VarLetDecl2Op::build(OpBuilder &b, OperationState &state, Type elementType,
-                          StringRef name, StringRef lifetimeName, bool isVar,
-                          bool isSynth) {
+void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
+                         StringRef name, StringRef lifetimeName, bool isVar,
+                         bool isSynth) {
   auto lifetimeType = b.getType<LifetimeType>();
   auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);

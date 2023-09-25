@@ -34,7 +34,7 @@ struct RegExample:
     return RegExample{}
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.varlet.decl2 "self" var
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
   # CHECK-NEXT: lit.ref.store %self, %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
@@ -53,7 +53,7 @@ fn consume(owned a: RegExample): pass
 fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%arg0)
 
-  # CHECK-NEXT: %mem1 = lit.varlet.decl2 "mem1" var
+  # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1" var
   var mem1 = MemExample() # expected-warning {{consider switching to a 'let'}}
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem1
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
@@ -61,7 +61,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[PTR]])
 
   var mem2 = MemExample()
-  # CHECK-NEXT: %mem2 = lit.varlet.decl2 "mem2" var
+  # CHECK-NEXT: %mem2 = lit.varlet.decl "mem2" var
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem2
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   mem2.noop()
@@ -85,7 +85,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem2
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[PTR]])
 
-  # CHECK-NEXT:  %mem3 = lit.varlet.decl2 "mem3"
+  # CHECK-NEXT:  %mem3 = lit.varlet.decl "mem3"
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem3
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   let mem3 = MemExample()
@@ -99,7 +99,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[T3]])
   consume(mem3^^^)
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl2 "anonymous
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous
   # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[ANONPTR]])
   # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime [[ANONPTR]]
@@ -109,10 +109,10 @@ fn destructors(owned arg0: MemExample):
 
 # CHECK-LABEL: lit.func @"if_examples
 fn if_examples(cond: __mlir_type.i1):
-  # CHECK: %a = lit.varlet.decl2
+  # CHECK: %a = lit.varlet.decl
   var a: MemExample  # expected-warning {{consider switching to a 'let'}}
 
-  # CHECK-NEXT: %b = lit.varlet.decl2
+  # CHECK-NEXT: %b = lit.varlet.decl
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}([[PTR]])
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
@@ -137,7 +137,7 @@ fn if_examples(cond: __mlir_type.i1):
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
 
-  # CHECK-NEXT: %c = lit.varlet.decl2
+  # CHECK-NEXT: %c = lit.varlet.decl
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}([[PTR]])
   var c = MemExample()
@@ -160,7 +160,7 @@ fn if_examples(cond: __mlir_type.i1):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
   # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}([[PTR]])
 
-  # CHECK-NEXT:  %d = lit.varlet.decl2 "d"
+  # CHECK-NEXT:  %d = lit.varlet.decl "d"
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %d
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}([[PTR]])
   var d = MemExample()  # expected-warning {{consider switching to a 'let'}}
@@ -184,7 +184,7 @@ fn if_examples(cond: __mlir_type.i1):
 
 # CHECK-LABEL: lit.func @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
-  # CHECK-NEXT: %a = lit.varlet.decl2
+  # CHECK-NEXT: %a = lit.varlet.decl
   let a : MemExample
   # CHECK-NEXT: lit.try {
   # CHECK-NOT: %a
@@ -206,7 +206,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: gen.call @{{.*}}__del__{{.*}}([[PTR]])
 
-  # CHECK-NEXT: %b = lit.varlet.decl2
+  # CHECK-NEXT: %b = lit.varlet.decl
   var b : MemExample
   # CHECK-NEXT: lit.try {
   try:
@@ -231,7 +231,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
   # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}([[PTR]])
 
-  # CHECK-NEXT: %c = lit.varlet.decl2
+  # CHECK-NEXT: %c = lit.varlet.decl
   let c : MemExample
   # CHECK-NEXT: lit.try {
   try:
@@ -254,7 +254,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
   # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}([[PTR]])
 
-  # CHECK-NEXT: %d = lit.varlet.decl2
+  # CHECK-NEXT: %d = lit.varlet.decl
   let d : MemExample
   # CHECK-NEXT: lit.try {
   try:
@@ -322,11 +322,11 @@ fn chris_lifetime_example(a: Bool, b: Bool):
 
 # CHECK-LABEL: lit.func @"loop_example
 fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
-  # CHECK-NEXT: %a = lit.varlet.decl2 "a"
+  # CHECK-NEXT: %a = lit.varlet.decl "a"
   var a : MemExample
-  # CHECK-NEXT: %b = lit.varlet.decl2 "b"
+  # CHECK-NEXT: %b = lit.varlet.decl "b"
   let b : MemExample
-  # CHECK-NEXT: %c = lit.varlet.decl2 "c"
+  # CHECK-NEXT: %c = lit.varlet.decl "c"
   let c : MemExample
 
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
@@ -387,7 +387,7 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
 
 # CHECK-LABEL: lit.func @"indirect_call
 fn indirect_call[detail_fn: fn() -> MemExample]():
-       # CHECK: %mem = lit.varlet.decl2
+       # CHECK: %mem = lit.varlet.decl
        # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem
        # CHECK-NEXT: kgen.call_param{{.*}}([[PTR]])
        let mem = detail_fn()
@@ -417,7 +417,7 @@ struct Parameterized[level: Int]:
 
 # CHECK-LABEL: lit.func @"test_parameterized
 fn test_parameterized():
-  # CHECK: %x = lit.varlet.decl2 "x"
+  # CHECK: %x = lit.varlet.decl "x"
   let x = Parameterized[4]()
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %x
   # CHECK: kgen.call {{.*}}@"__init__{{.*}}([[PTR]])
@@ -559,7 +559,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):
-  # CHECK-NEXT: %x_0 = lit.varlet.decl2 "x" var synth
+  # CHECK-NEXT: %x_0 = lit.varlet.decl "x" var synth
   # CHECK-NEXT: lit.ref.store %x, %x_0
   # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
   # CHECK-NEXT: kgen.call {{.*}}mutate{{.*}}([[XPTR]])
@@ -591,14 +591,14 @@ fn use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
 
 # CHECK-LABEL: lit.func @"test_result_optimization
 fn test_result_optimization():
-  # CHECK-NEXT: %example = lit.varlet.decl2 "example"
+  # CHECK-NEXT: %example = lit.varlet.decl "example"
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: kgen.call @{{.*}}"__init__{{.*}}([[PTR]])
   var example = FieldSensitiveMemExample()
 
   # Direct reuse of the result slot forces a temporary.
 
-  # CHECK: %__call_result_tmp__ = lit.varlet.decl2
+  # CHECK: %__call_result_tmp__ = lit.varlet.decl
   # CHECK-NEXT: %2 = lit.ref.to_pointer %__call_result_tmp__
     # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: kgen.call @"$ownership{{.*}}(%2, [[PTR]])
@@ -612,7 +612,7 @@ fn test_result_optimization():
 
   # Aliased reuse of part of the result slot forces a temporary.
 
-  # CHECK-NEXT: %__call_result_tmp___0 = lit.varlet.decl2
+  # CHECK-NEXT: %__call_result_tmp___0 = lit.varlet.decl
   # CHECK-NEXT: [[PTR2:%.*]] = lit.ref.to_pointer %__call_result_tmp___0
   # CHECK-NEXT: [[F1:%.*]] = lit.ref.struct.ger %example[f1]
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
@@ -662,7 +662,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
 
   # Make sure var bindings work the same way even though the IR differs.
 
-  # CHECK-NEXT: %example2 = lit.varlet.decl2
+  # CHECK-NEXT: %example2 = lit.varlet.decl
   # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: lit.ref.store [[TMP]], %example2
   var example2 = RegExample() # expected-warning {{consider switching to a 'let'}}
@@ -687,13 +687,13 @@ fn consumeMem(owned x: MemExample):
 
 # CHECK: lit.func @"test_result_consume_mem
 fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
-  # CHECK-NEXT: %example = lit.varlet.decl2
+  # CHECK-NEXT: %example = lit.varlet.decl
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   let example = MemExample()
 
   # This doesn't consume example, so it must copy it. It does consume the copy.
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl2
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl
   # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[ANONPTR]], [[PTR]])
@@ -706,7 +706,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: kgen.call {{.*}}consumeMem{{.*}}([[CONSUME]])
   consumeMem(example^)
 
-  # CHECK-NEXT: %example2 = lit.varlet.decl2
+  # CHECK-NEXT: %example2 = lit.varlet.decl
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example2
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   let example2 = MemExample()
@@ -742,7 +742,7 @@ struct BigRegExample:
     return BigRegExample{a: self.a, b: self.b }
 
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.varlet.decl2 "self" var
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
   # CHECK-NEXT: lit.ref.store %self, %self_0
 
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
@@ -760,7 +760,7 @@ struct BigRegExample:
 
 # CHECK-LABEL: lit.func @"bigreg_test
 fn bigreg_test():
-  # CHECK-NEXT: %varThing = lit.varlet.decl2 "varThing"
+  # CHECK-NEXT: %varThing = lit.varlet.decl "varThing"
   # CHECK-NEXT: [[INITVAL:%.*]] = kgen.call {{.*}}__init__()
   # CHECK-NEXT: lit.ref.store [[INITVAL]], %varThing
   var varThing = BigRegExample()
@@ -796,7 +796,7 @@ struct ExoticDelExample:
 
  # CHECK-LABEL: lit.func @"__del__
   fn __del__(owned self):
-    # CHECK-NEXT: %self_0 = lit.varlet.decl2 "self" var
+    # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
     # CHECK-NEXT: lit.ref.store %self, %self_0
     # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
 
@@ -943,7 +943,7 @@ struct RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
   # CHECK-NEXT: lit.ref.store %a, %a_0
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end_lifetime [[APTR]]
@@ -953,7 +953,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
   # CHECK-NEXT: lit.ref.store %a, %a_0
   # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
   # CHECK-NEXT: kgen.return [[A]]
@@ -961,7 +961,7 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
   # CHECK-NEXT: lit.ref.store %a, %a_0
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end_lifetime [[APTR]]
@@ -971,7 +971,7 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
   # CHECK-NEXT: lit.ref.store %a, %a_0
 
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
@@ -1027,14 +1027,14 @@ fn optimizeCopyElision():
   # CHECK-NEXT: kgen.call {{.*}}takeTwo{{.*}}([[ACOPY]], %a)
   takeTwo(a, a)
 
-  # CHECK-NEXT: %x = lit.varlet.decl2 "x"
+  # CHECK-NEXT: %x = lit.varlet.decl "x"
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %x
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   let x = MemExample()
 
   # We need one copy of 'x' here, not two + dtor.
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl2 "anonymous*"
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
   # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %x
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[ANONPTR]], [[PTR]])
@@ -1048,7 +1048,7 @@ fn optimizeCopyElision():
 fn optimizeCopyToMove():
    # All the copy ctors should be eliminated in favor of moves.
 
-   # CHECK: %m1 = lit.varlet.decl2
+   # CHECK: %m1 = lit.varlet.decl
    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %m1
    # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
    var m1 = MemExample()                   # expected-warning {{never mutated}}
@@ -1056,7 +1056,7 @@ fn optimizeCopyToMove():
    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[PTR]])
    m1.noop()
 
-   # CHECK: %m2 = lit.varlet.decl2
+   # CHECK: %m2 = lit.varlet.decl
    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %m2
    # CHECK: [[PTR2:%.*]] = lit.ref.to_pointer %m1
    # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}([[PTR]], [[PTR2]])
@@ -1065,7 +1065,7 @@ fn optimizeCopyToMove():
    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[PTR]])
    m2.noop()
 
-   # CHECK: %m3 = lit.varlet.decl2
+   # CHECK: %m3 = lit.varlet.decl
    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %m3
    # CHECK: [[PTR2:%.*]] = lit.ref.to_pointer %m2
    # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}([[PTR]], [[PTR2]])
@@ -1097,7 +1097,7 @@ fn optimizeCopyToMove():
    # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%r3)
 
 
-   # CHECK-NEXT: %v1 = lit.varlet.decl2
+   # CHECK-NEXT: %v1 = lit.varlet.decl
    # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
    # CHECK-NEXT: lit.ref.store [[TMP]], %v1
    var v1 = RegExample()                   # expected-warning {{never mutated}}
@@ -1105,7 +1105,7 @@ fn optimizeCopyToMove():
    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[TMP]])
    v1.noop()
 
-   # CHECK-NEXT: %v2 = lit.varlet.decl2
+   # CHECK-NEXT: %v2 = lit.varlet.decl
    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
    # CHECK-NEXT: lit.ref.store [[TMP]], %v2
    var v2 = v1                   # expected-warning {{never mutated}}
@@ -1113,7 +1113,7 @@ fn optimizeCopyToMove():
    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[TMP]])
    v2.noop()
 
-   # CHECK-NEXT: %v3 = lit.varlet.decl2
+   # CHECK-NEXT: %v3 = lit.varlet.decl
    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
    # CHECK-NEXT: lit.ref.store [[TMP]], %v3
    var v3 = v2                   # expected-warning {{never mutated}}

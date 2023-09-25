@@ -21,7 +21,7 @@ lit.func @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:  }
 
 lit.func @varDecl(%arg0: index) -> index {
-  %a = lit.varlet.decl2 "a" var : !lit.ref<mut index, *"life">
+  %a = lit.varlet.decl "a" var : !lit.ref<mut index, *"life">
   kgen.return %arg0 : index
 }
 
@@ -40,7 +40,7 @@ lit.func @letDecl(%arg0: index) -> index {
 // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !kgen.pointer<index> to !lit.ref<mut index, alife>
 // CHECK-NEXT: kgen.return
 lit.func @varDecl2(%arg0: index) {
-  %a = lit.varlet.decl2 "a" var : !lit.ref<mut index, alife>
+  %a = lit.varlet.decl "a" var : !lit.ref<mut index, alife>
   kgen.return
 }
 
@@ -129,7 +129,7 @@ lit.struct.decl @Adder<size> {
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
   lit.func @__add__(%self: !kgen.declref<@Adder<size = size>>)  {
-    %0 = lit.varlet.decl2 "a" var : !lit.ref<mut index, *"life">
+    %0 = lit.varlet.decl "a" var : !lit.ref<mut index, *"life">
     %one = index.constant 1
     lit.ref.store %one, %0 : !lit.ref<mut index, *"life">
     kgen.return
@@ -242,7 +242,7 @@ lit.struct.decl @foo {
 //===----------------------------------------------------------------------===//
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
-  %y = lit.varlet.decl2 "y" : !lit.ref<mut @MyStruct, *"life">
+  %y = lit.varlet.decl "y" : !lit.ref<mut @MyStruct, *"life">
   %yp = lit.ref.to_pointer %y : !lit.ref<mut @MyStruct, *"life">
   %0 = kgen.call @throwing_callee(%yp) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
   // CHECK: [[V:%.*]] = kgen.call @throwing_callee(

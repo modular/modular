@@ -393,17 +393,17 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  // This creates an untyped VarLetDecl2Op which is then inferred from its
+  // This creates an untyped VarLetDeclOp which is then inferred from its
   // initializer.  `isVar` indicates whether this should be considered mutable.
   auto createVarDecl = [&](OpBuilder &builder, bool isVar,
-                           bool isSynth) -> VarLetDecl2Op {
+                           bool isSynth) -> VarLetDeclOp {
     auto contextualType = dest.getIfLValueInitializerType();
     assert(contextualType && "must have contextual type");
     auto loc = getLocation(emitter);
     auto name = StringAttr::get(loc.getContext(), spelling);
     StringAttr lifetimeName = emitter.declScope.getAnonymousLifetimeFor(name);
-    return builder.create<VarLetDecl2Op>(loc, contextualType, name,
-                                         lifetimeName, isVar, isSynth);
+    return builder.create<VarLetDeclOp>(loc, contextualType, name, lifetimeName,
+                                        isVar, isSynth);
   };
 
   // If that lookup failed, but we can synthesize a variable declaration in this
@@ -412,13 +412,13 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // (which tells us we need to emit an LValue).
   if (lookup.isFailure() && emitter.varDeclCursor &&
       dest.getIfLValueInitializerType()) {
-    // Use this builder to place any VarLetDecl2Ops. In Python there is only one
+    // Use this builder to place any VarLetDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
     OpBuilder varDeclBuilder(
         emitter.varDeclCursor->getInsertionBlock(),
         std::next(emitter.varDeclCursor->getInsertionPoint()));
-    VarLetDecl2Op varDecl = // Marked isSynth to disable warnings.
+    VarLetDeclOp varDecl = // Marked isSynth to disable warnings.
         createVarDecl(varDeclBuilder, /*isVar=*/true, /*isSynth=*/true);
 
     // In a normal implicit declaration, we add it to the name table so

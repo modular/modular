@@ -143,7 +143,7 @@ static void lowerLITOps(LIT::FuncOp func) {
       }
 
       b.replaceOp(letDecl, letDecl.getOperand());
-    } else if (auto varDecl = dyn_cast<VarLetDecl2Op>(op)) {
+    } else if (auto varDecl = dyn_cast<VarLetDeclOp>(op)) {
       mlir::IRRewriter b{OpBuilder(op)};
       StringAttr varName = varDecl.getNameAttr();
       auto varType = varDecl.getType().getAsPointerType();
@@ -151,7 +151,7 @@ static void lowerLITOps(LIT::FuncOp func) {
       // Declare the lifetime used in the result type.
       b.create<ParamDeclareOp>(varDecl.getLoc(), varDecl.getParamDecl(),
                                b.getAttr<LifetimeAttr>());
-      // Lower a lit.varlet.decl2 to pop.stack_allocation.
+      // Lower a lit.varlet.decl to pop.stack_allocation.
       auto allocOp =
           b.create<POP::StackAllocationOp>(varDecl.getLoc(), varType, 1);
       // Replace !lit.ref result type with a cast from the pointer.  This will

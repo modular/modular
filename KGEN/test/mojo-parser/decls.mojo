@@ -220,9 +220,9 @@ def let_decls() -> None:
 # CHECK-LABEL:  lit.func @"var_decls()
 def var_decls() -> None:
     # Implicit declaration is mutable.
-    # CHECK: %x = lit.varlet.decl2 "x" var
+    # CHECK: %x = lit.varlet.decl "x" var
     x = Int(123).value
-    # CHECK: %y = lit.varlet.decl2 "y" var
+    # CHECK: %y = lit.varlet.decl "y" var
     var y: Int
 
     # CHECK: [[Y:%.*]] = lit.ref.load %y
@@ -234,12 +234,12 @@ def var_decls() -> None:
     # CHECK: kgen.param.constant: !StringLiteral = <#lit.struct<{value: string = "hello"}>>
     let const_str = "hello"
 
-    # CHECK: %str = lit.varlet.decl2 {{.*}} : !lit.ref<mut !StringLiteral,
+    # CHECK: %str = lit.varlet.decl {{.*}} : !lit.ref<mut !StringLiteral,
     # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}} = "hello"
     # CHECK: lit.ref.store [[CONST]], %str
     var str = "hello"
 
-    # CHECK: %z = lit.varlet.decl2 {{.*}} : !lit.ref<mut index,
+    # CHECK: %z = lit.varlet.decl {{.*}} : !lit.ref<mut index,
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
     var z = x
@@ -625,7 +625,7 @@ fn ownedConventionReg(
     borrowed b: RPStructWithInit,
     borrowed triv: RPStructWithInitTrivial,
 ):
-    # CHECK: %a_0 = lit.varlet.decl2 "a" var
+    # CHECK: %a_0 = lit.varlet.decl "a" var
     # CHECK: lit.ref.store %a, %a_0
 
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
@@ -708,7 +708,7 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1): pass
 
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
-    # CHECK: %[[ANON:.*]] = lit.varlet.decl2 "anonymous*" synth : !lit.ref<mut !MemoryType,
+    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !MemoryType,
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}value = 1
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
     # CHECK: %1 = lit.ref.to_pointer %anonymous2A
@@ -828,15 +828,15 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.mlirtype`](x: Int):
 # CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]]: !Int
 fn usePacks(x: Float32, y: Int):
-    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>
     var b: MyTuple[Int, Float32, Int]
-    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>
     let c = MyTuple[Int](1)
-    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!FloatLiteral, index]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!FloatLiteral, index]>
     let d = MyTuple(3.14, Int(6).value)
-    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = []>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = []>
     let e = MyTuple()
 
     # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
@@ -1356,7 +1356,7 @@ var reg_global_implicit = RegType()
 struct MemType: pass
 
 # CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}}
-# CHECK-NEXT: %anonymous2A = lit.varlet.decl2 "anonymous*"
+# CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
 # CHECK-NEXT: %0 = lit.ref.to_pointer %anonymous2A
 # CHECK-NEXT: %1 = kgen.call {{.*}}__init__{{.*}}(%0)
 # CHECK-NEXT: [[GLOBAL:%.*]] = lit.globalvar.ref
@@ -1407,7 +1407,7 @@ fn refGlobals():
     # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}([[REG_REF]])
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
-    # CHECK-NEXT: %anonymous2A = lit.varlet.decl2 {{.*}} : !lit.ref<mut !MemType
+    # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<mut !MemType
     # CHECK-NEXT: %9 = lit.ref.to_pointer %anonymous2A
     # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%9, [[MEM_REF]])
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%9)
