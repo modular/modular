@@ -99,9 +99,9 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
       // clang-format off
       InterpreterDialect,
       HLCF::HLCFDialect,
-      KGEN::KGENDialect,
-      KGEN::LIT::LITDialect,
-      KGEN::POP::POPDialect,
+      KGENDialect,
+      LIT::LITDialect,
+      POP::POPDialect,
       MDialect,
       DebugInfo::DebugInfoDialect,
       Cache::CacheDialect,
@@ -119,4 +119,22 @@ void M::registerKGENToLLVMTranslation(mlir::DialectRegistry &registry) {
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
   mlir::registerNVVMDialectTranslation(registry);
+}
+
+void M::preloadAllKGENDialects(MLIRContext *ctx) {
+  ctx->loadDialect<
+      // clang-format off
+      InterpreterDialect,
+      HLCF::HLCFDialect,
+      KGENDialect,
+      LIT::LITDialect,
+      POP::POPDialect,
+      MDialect,
+      DebugInfo::DebugInfoDialect,
+      Cache::CacheDialect,
+      mlir::index::IndexDialect,
+      mlir::LLVM::LLVMDialect,
+      mlir::NVVM::NVVMDialect
+      // clang-format on
+      >();
 }

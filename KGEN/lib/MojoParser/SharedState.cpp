@@ -8,6 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/CallEmission.h"
@@ -18,13 +19,10 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
 
-#include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser/SharedState.h"
-#include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
@@ -37,10 +35,10 @@
 #include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -190,9 +188,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   impl->warnMissingDocStrings = config.warnMissingDocStrings;
   impl->experimentalLifetimes = config.experimentalLifetimes;
 
-  config.context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
-                              POP::POPDialect, LITDialect,
-                              mlir::index::IndexDialect, KGENDialect>();
+  preloadAllKGENDialects(config.context);
 
   // Record any existing buffers in the source manager.
   for (int i = 0, e = sourceMgr.getNumBuffers(); i < e; ++i) {
