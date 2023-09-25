@@ -32,6 +32,23 @@ void LITDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// PackageArchiveAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+PackageArchiveAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           DenseResourceElementsAttr elaboratedModule,
+                           DenseResourceElementsAttr archive) {
+  if (elaboratedModule.empty())
+    return emitError() << "elaborated module cannot be empty";
+
+  if (archive.empty())
+    return emitError() << "archive cannot be empty";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
 

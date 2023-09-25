@@ -11,6 +11,7 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -137,7 +138,8 @@ struct TestGeneratePreElaboratedBody
       linkBuilder.create<KGEN::LIT::PackageLinkOp>(
           func.getLoc(), linkName, bytecodeBufferAttr, funcTarget,
           M::KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
-          bytecodeBufferAttr, bytecodeBufferAttr);
+          M::KGEN::LIT::PackageArchiveAttr::get(bytecodeBufferAttr,
+                                                bytecodeBufferAttr));
     }
   }
 };

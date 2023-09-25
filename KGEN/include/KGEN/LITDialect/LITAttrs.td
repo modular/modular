@@ -14,6 +14,7 @@
 include "KGEN/LITDialect/LITDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/BuiltinAttributes.td"
 
 /// An attribute in the LIT dialect.
 class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
@@ -24,6 +25,45 @@ class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 /// A typed attribute in the LIT dialect.
 class LITTypedAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : LITAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
+
+//===----------------------------------------------------------------------===//
+// PackageArchiveAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_PackageArchiveAttr : LITAttr<"PackageArchive", "package.archive"> {
+  let summary = "A pre-compiled, standalone archive for a package";
+  let description = [{
+    The `#lit.package.archive` attribute stores binary artifacts for an
+    elaborated Mojo package module that has been compiled into a standalone
+    archive.
+
+    Example:
+
+    ```mlir
+    #archive = #lit.package.archive<
+      elaboratedModule = dense_resource<foo> : tensor<42xui8>,
+      archive = dense_resource<bar> : tensor<13xui8>
+    >
+    ```
+  }];
+
+  let parameters = (ins
+    Builtin_DenseResourceElementsAttr:$elaboratedModule,
+    Builtin_DenseResourceElementsAttr:$archive
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "DenseResourceElementsAttr":$elaboratedModule,
+      "DenseResourceElementsAttr":$archive), [{
+        return get(elaboratedModule.getContext(), elaboratedModule, archive);
+      }]>
+  ];
+
+  let assemblyFormat = "`<` struct(params) `>`";
+
+  let genVerifyDecl = 1;
+}
 
 //===----------------------------------------------------------------------===//
 // FnMetadataAttr

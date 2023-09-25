@@ -114,7 +114,7 @@ void LowerPreElaboratedLITPass::runOnOperation() {
     }
     TargetInfoAttr compiledFor = packageLink.getCompiledFor();
     DenseResourceElementsAttr precompiledBody =
-        packageLink.getPostElaborationModule();
+        packageLink.getArchive().getElaboratedModule();
     bool isPreElaborated = true;
 
     // Get the target on the module. If we don't have a target or if the
@@ -208,7 +208,7 @@ void LowerPreElaboratedLITPass::runOnOperation() {
       OpBuilder b(packageLink);
       auto linkOp = b.create<KGEN::LinkOp>(
           packageLink.getLoc(), packageLink.getSymNameAttr(), StringAttr(),
-          packageLink.getArchiveBytesAttr());
+          packageLink.getArchive().getArchive());
       symtab.erase(packageLink);
       symtab.insert(linkOp);
     } else {
