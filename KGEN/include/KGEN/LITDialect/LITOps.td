@@ -207,10 +207,11 @@ def PackageOp : LITOp<"package", [
     // FIXME(#17326): This should be a map of precompiled targets, not one.
     OptionalAttr<M_TargetInfoAttr>:$compiledFor,
     OptionalAttr<KGEN_EnvAttr>:$compiledEnv,
-    // The module containing the post-elaboration of this package when it was
-    // compiled.
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postElaborationModule,
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$archiveBytes
+    // The elaborated module, and a standalone archive created using that
+    // module, built for the target specified by `compiledFor`. Note that if
+    // `compiledFor` is present on the op, then this attribute must also be
+    // present.
+    OptionalAttr<LIT_PackageArchiveAttr>:$archive
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

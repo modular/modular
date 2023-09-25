@@ -3,8 +3,9 @@
 // CHECK-NOT: #doc_string
 #doc_string = #lit.doc.string<"Package docstring">
 #doc_string1 = #lit.doc.string<"Module docstrig">
+#archive = #lit.package.archive<elaboratedModule = dense_resource<bytecode_0> : tensor<2893xui8>, archive = dense_resource<archive_0> : tensor<4086xui8>>
 module {
-  lit.package @package attributes {archiveBytes = dense_resource<archive_0> : tensor<4086xui8>, compiledFor = #M.target<triple = "", cpu = "", features = "", data_layout = "", simd_bit_width = 256>, docString = #doc_string, postElaborationModule = dense_resource<bytecode_0> : tensor<2893xui8>, preElaborationModule = dense_resource<bytecode_1> : tensor<7468xui8>} {
+  lit.package @package attributes {archive = #archive, compiledFor = #M.target<triple = "", cpu = "", features = "", data_layout = "", simd_bit_width = 256>, docString = #doc_string, preElaborationModule = dense_resource<bytecode_1> : tensor<7468xui8>} {
     lit.file_module @module attributes {docString = #doc_string1} {
     }
   }
