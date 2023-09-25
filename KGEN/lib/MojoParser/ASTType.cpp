@@ -99,6 +99,11 @@ uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
   if (failed(shared.declResolver->resolveSignature(*decl, loc)))
     return StructDeclOp::RP_MemoryOnly;
 
+  // We don't yet have a runtime representation for packages or modules, but
+  // when we do, it will not be register-passable.
+  if (isa<FileModuleOp, PackageOp>(*decl))
+    return StructDeclOp::RP_MemoryOnly;
+
   auto structOp = dyn_cast<StructDeclOp>(*decl);
   assert(structOp && "only one user-defined type so far");
   return structOp.getRegisterPassable();
