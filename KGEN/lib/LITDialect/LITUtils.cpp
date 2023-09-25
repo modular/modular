@@ -11,6 +11,7 @@
 
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 
 using namespace M;
 using namespace KGEN;
@@ -63,6 +64,31 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
 
   return KGEN::parseOptionalParameterSpec(p, inputParamDecls, resultParamDecls,
                                           parseWithDefault);
+}
+
+void LIT::printOptionalParameterSpec(AsmPrinter &p,
+                                     ArrayRef<ParamDeclAttr> inputParamDecls,
+                                     ArrayRef<ParamDeclAttr> resultParamDecls,
+                                     ArrayRef<TypedAttr> defaultParams,
+                                     ParameterEvaluator &evaluator) {
+  // Substitute input and result parameters when printing default parameters.
+  for (ParamDeclAttr param : inputParamDecls)
+    evaluator.addInputValue(ParamDeclRefAttr::get(param));
+  for (ParamDeclAttr param : resultParamDecls)
+    evaluator.addResultValue(ParamDeclRefAttr::get(param));
+
+  ssize_t defaultIdx = defaultParams.size() - inputParamDecls.size();
+  auto printWithDefault = [&](ParamDeclAttr decl) {
+    printParamDecl(p, decl);
+    if (defaultIdx >= 0) {
+      p << " = ";
+      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
+                             defaultParams[defaultIdx])));
+    }
+    ++defaultIdx;
+  };
+  printOptionalParameterSpec(p, inputParamDecls, resultParamDecls,
+                             printWithDefault);
 }
 
 ParseResult

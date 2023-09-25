@@ -468,27 +468,11 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       ArrayRef<ParamDeclAttr> resultParams,
                                       FunctionType functionType,
                                       LITSignatureType signature) {
-  // Print the function parameters and arguments. Make sure to substitute input
-  // and result parameters when printing default arguments and parameters.
   ParameterEvaluator evaluator;
-  for (ParamDeclAttr param : inputParams)
-    evaluator.addInputValue(ParamDeclRefAttr::get(param));
-  for (ParamDeclAttr param : resultParams)
-    evaluator.addResultValue(ParamDeclRefAttr::get(param));
+  printOptionalParameterSpec(p, inputParams, resultParams,
+                             signature.getDefaultParameters(), evaluator);
 
-  ArrayRef<TypedAttr> defaultParams = signature.getDefaultParameters();
-  ssize_t defaultIdx = defaultParams.size() - inputParams.size();
-  auto printWithDefault = [&](ParamDeclAttr decl) {
-    printParamDecl(p, decl);
-    if (defaultIdx >= 0) {
-      p << " = ";
-      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultParams[defaultIdx])));
-    }
-    ++defaultIdx;
-  };
-  printOptionalParameterSpec(p, inputParams, resultParams, printWithDefault);
-
+  // Substitute input and result parameters when printing default arguments.
   ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
   auto printElt = [&](unsigned i) {
     p.printRegionArgument(region->getArgument(i));

@@ -20,6 +20,7 @@ class TypeArrayAttr;
 namespace KGEN {
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
+class ParameterEvaluator;
 
 namespace LIT {
 /// Parse an optional default value of the given type. `defaultVal` is not
@@ -32,11 +33,19 @@ ParseResult parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result,
                            TypedAttr &defaultVal);
 
-/// Parse and print a parameter specification in a lit.func.
+/// Parse a parameter specification in a lit op.
 ParseResult
 parseOptionalParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
                            ParamDeclArrayAttr &resultParamDecls,
                            SmallVectorImpl<TypedAttr> &defaultParams);
+
+/// Print a parameter specification in a lit op. A ParameterEvaluator is
+/// necessary to substitute parameters into parametric parameters.
+void printOptionalParameterSpec(AsmPrinter &p,
+                                ArrayRef<ParamDeclAttr> inputParamDecls,
+                                ArrayRef<ParamDeclAttr> resultParamDecls,
+                                ArrayRef<TypedAttr> defaultParams,
+                                ParameterEvaluator &evaluator);
 
 /// Parse a parameter signature (input/result types with optional default
 /// values) if present.
