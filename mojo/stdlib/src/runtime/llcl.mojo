@@ -175,6 +175,12 @@ struct Runtime:
 
     fn __init__(num_threads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
+
+        # If the request was for a runtime with the default number of cores,
+        # then we can just return the global runtime.
+        if num_threads == num_cores():
+            return Runtime()
+
         return external_call[
             "KGEN_CompilerRT_LLCL_CreateRuntime", Self.ptr_type
         ](num_threads)
