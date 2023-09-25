@@ -45,7 +45,7 @@ static void forceLinkExportedSymbols() {
 /// running in the repl to use the compiler-rt runtime functions.
 static void forceLinkCompilerRT() {
   llvm::nulls() << (void *)&KGEN::registerGlobals
-                << (void *)&KGEN::registerIntelAMX
+                << (void *)&KGEN::registerIntelAMX << (void *)&KGEN::registerIO
                 << (void *)&KGEN::registerLLCL << (void *)&KGEN::registerPython
                 << (void *)&KGEN::registerMemory
                 << (void *)&KGEN::registerRandom

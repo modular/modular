@@ -6,8 +6,9 @@
 
 set(SOURCES
   Globals.cpp
-  InitIntelAMX.cpp
   Initialize.cpp
+  InitIntelAMX.cpp
+  IO.cpp
   LLCL.cpp
   Memory.cpp
   OutputChain.cpp
