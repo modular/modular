@@ -673,6 +673,35 @@ CValue CallEmitter::emitCallInParamContext(
 // ExprEmitter::emitCallUnchecked
 //===----------------------------------------------------------------------===//
 
+/// The results of calls to async functions are always bound to a `Coroutine`
+/// type, or `RaisingCoroutine` type in the case of a raising function. This
+/// function looks up the corresponding coroutine type and binds its result
+/// type.
+static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
+                                     SMLoc loc, SignatureType sig,
+                                     Type resultType) {
+  ASTType coroType = sig.isThrows()
+                         ? shared.getBuiltinRaisingCoroutineType(declScope, loc)
+                         : shared.getBuiltinCoroutineType(declScope, loc);
+  if (!coroType) {
+    shared.emitError(loc,
+                     "internal error: could not find builtin 'Coroutine' type");
+    return {};
+  }
+  // If the async function throws, extract the normal result type.
+  if (sig.isThrows()) {
+    resultType =
+        ParamRefType::get(cast<POP::VariantType>(resultType).getTypes().back());
+  }
+
+  // Bind the result type to the base coroutine type.
+  return DeclRefType::get(
+      cast<DeclRefType>(coroType.mlirType).getSymbol(),
+      ParamBindArrayAttr::get(
+          shared.getContext(),
+          {ParamBindAttr::get("type", TypeConstantAttr::get(resultType))}));
+}
+
 CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                       const CallOperands &callOperands,
                                       ArrayRef<ParamDeclAttr> resultParams,
@@ -753,20 +782,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       // `!pop.coroutine<() -> T>` result in a `Coroutine[T]` object.
       auto call = builder->create<AsyncCallOp>(loc, target.get(), resultParams,
                                                callArgs);
-      ASTType coroType =
-          shared.getBuiltinCoroutineType(declScope, callExpr->getLoc());
-      if (!coroType) {
-        emitError(callExpr->getLoc(),
-                  "internal error: could not find builtin 'Coroutine' type");
+      ASTType coroType = getBoundCoroutineType(
+          shared, declScope, callExpr->getLoc(), sig, resultTypes.front());
+      if (!coroType)
         return {};
-      }
-      // Bind the result type to the base coroutine type.
-      coroType = DeclRefType::get(
-          cast<DeclRefType>(coroType.mlirType).getSymbol(),
-          ParamBindArrayAttr::get(
-              getContext(),
-              {ParamBindAttr::get(
-                  "type", TypeConstantAttr::get(resultTypes.front()))}));
       ValueDest dest;
       // Emit the implicit conversion.
       callResult =
@@ -794,8 +813,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   callEmitter.emitAfterCallActions();
 
   // If the callee can raise an error, it will be represented as a variant: try
-  // to unwrap it.
-  if (calleeSig.isThrows()) {
+  // to unwrap it. If the callee is async, the error is propagated later.
+  if (calleeSig.isThrows() && !calleeSig.isAsync()) {
     // Put the insertion point back after we're done building the 'if'.
     OpBuilder::InsertionGuard builderGuard(*builder);
     auto callResultTy = cast<POP::VariantType>(callResult.getType());

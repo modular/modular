@@ -1152,6 +1152,18 @@ struct StructWithAsync:
         let a = coroutine()
 
 
+# CHECK-LABEL: lit.func @"throwing_coroutine()"() throws|async -> !pop.variant<!Error, !Int>
+async fn throwing_coroutine() raises -> Int:
+    raise Error("oh no!")
+
+
+# CHECK-LABEL: lit.func @"call_raising_coro()"
+fn call_raising_coro():
+    # CHECK: %[[CORO:.*]] = lit.async.call[{{.*}}throwing_coroutine
+    # CHECK-NEXT: call {{.*}}RaisingCoroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
+    let coro = throwing_coroutine()
+
+
 # CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !lit.none
 async fn call_struct_async(f: StructWithAsync):
     # CHECK-NEXT: lit.async.call[!lit.signature<({{.*}}) async -> !lit.none>: @{{.*}}](%f)

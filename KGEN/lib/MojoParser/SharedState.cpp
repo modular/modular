@@ -949,6 +949,11 @@ ASTType SharedState::getBuiltinCoroutineType(ASTDecl &context,
   return resolveBuiltinModuleType(context, loc, "Coroutine", *this);
 }
 
+ASTType SharedState::getBuiltinRaisingCoroutineType(ASTDecl &context,
+                                                    llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, "RaisingCoroutine", *this);
+}
+
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
 ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
