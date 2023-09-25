@@ -287,6 +287,21 @@ struct ConvertKGENUndef : public ConvertPOPToLLVMPattern<UndefOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENRebind
+//===----------------------------------------------------------------------===//
+
+/// Intercept unfolded rebind ops to give a better error message.
+struct ConvertKGENRebind : public ConvertPOPToLLVMPattern<RebindOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(RebindOp op, RebindOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    return mlir::emitError(
+        op.getLoc(), "invalid rebind between two unequal, unparametric types");
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertKGENGlobalAddress
 //===----------------------------------------------------------------------===//
 
@@ -326,6 +341,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertKGENCall,
       ConvertKGENGlobalAddress,
+      ConvertKGENRebind,
       ConvertKGENReturn,
       ConvertKGENUnreachable,
       ConvertKGENUndef
