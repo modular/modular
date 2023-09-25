@@ -60,10 +60,6 @@ struct MojoTypeSystem::Impl {
     // Set up the dialects in the context.
     mlirContext.appendDialectRegistry(registry);
 
-    // Allow unregistered dialects, we will verify we know what to do with it
-    // later.
-    mlirContext.allowUnregisteredDialects();
-
     // Configure the runtime.
     runtime = std::make_unique<LLCL::Runtime>(
         LLCL::createMallocAllocator(),

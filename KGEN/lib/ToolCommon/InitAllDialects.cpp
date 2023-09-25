@@ -19,6 +19,7 @@
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -105,7 +106,8 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
       DebugInfo::DebugInfoDialect,
       Cache::CacheDialect,
       mlir::index::IndexDialect,
-      mlir::LLVM::LLVMDialect
+      mlir::LLVM::LLVMDialect,
+      mlir::NVVM::NVVMDialect
       // clang-format on
       >();
 

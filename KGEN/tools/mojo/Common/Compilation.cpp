@@ -113,10 +113,6 @@ ErrorOrSuccess M::parseCompilationOptions(
   ctx.appendDialectRegistry(registry);
   ctx.loadDialect<MDialect>();
 
-  // Allow unregistered dialects, we will verify we know what to do with it
-  // later.
-  ctx.allowUnregisteredDialects();
-
   // Initialize targets first - we rely on this for getTargetInfo as well as for
   // the ExecutionEngine.
   llvm::InitializeAllTargets();
