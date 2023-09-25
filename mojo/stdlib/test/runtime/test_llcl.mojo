@@ -16,6 +16,7 @@ from runtime.llcl import (
     TaskGroup,
 )
 
+
 # CHECK-LABEL: test_sync_coro
 fn test_sync_coro():
     print("== test_sync_coro")
@@ -30,6 +31,39 @@ fn test_sync_coro():
 
     # CHECK: 57
     print(test_llcl_add_two_of_them(20, 30)())
+
+
+fn test_sync_raising_coro():
+    # CHECK: == test_sync_raising_coro
+    print("== test_sync_raising_coro")
+
+    @parameter
+    async fn might_throw(a: Int) raises -> Int:
+        if a > 10:
+            raise Error("oops")
+        return a + 1
+
+    @parameter
+    async fn also_might_throw(a: Int) raises -> Int:
+        if a == 20:
+            raise Error("doh!")
+        return await might_throw(a) + 100
+
+    try:
+        print(also_might_throw(20)())
+    except e:
+        # CHECK-NEXT: doh!
+        print(e.message())
+    try:
+        print(also_might_throw(25)())
+    except e:
+        # CHECK-NEXT: oops
+        print(e.message())
+    try:
+        # CHECK-NEXT: 102
+        print(also_might_throw(1)())
+    except:
+        pass
 
 
 # CHECK-LABEL: test_runtime_task
@@ -101,6 +135,7 @@ fn test_runtime_asynctaskgroup():
 
 fn main():
     test_sync_coro()
+    test_sync_raising_coro()
     test_runtime_task()
     test_runtime_taskgroup()
     test_runtime_asynctaskgroup()
