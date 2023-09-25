@@ -51,7 +51,7 @@ class Model:
         model._impl = _core_model
         return model
 
-    def execute(self, **kwargs) -> Dict[str, np.ndarray]:
+    def execute(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         """Executes the model with the provided input and returns outputs.
 
         For example, if the model has one input tensor named "input":
@@ -80,6 +80,13 @@ class Model:
             If the given input tensors' name, shape, and dtype don't match what
             the model expects.
         """
+        if args:
+            raise RuntimeError(
+                "Execute API only accepts keyword arguments e.g. outs ="
+                " model.execute(arg0=np.ones((1,"
+                " 10)).astype(np.float32)).Keywords have to be tensor names"
+                " which can be queried using the input_metadata API."
+            )
         return self._impl.execute(**kwargs)
 
     def __repr__(self) -> str:
