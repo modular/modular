@@ -48,6 +48,8 @@
 #include "llvm/Target/TargetMachine.h"
 
 #include <filesystem>
+#include <tuple>
+#include <utility>
 
 using namespace M;
 using namespace M::KGEN;
@@ -83,15 +85,19 @@ public:
   /// the new package.
   ErrorOrSuccess attachPreElaboratorBytecode(ModuleOp moduleOp);
 
-  /// Given an elaborated module, attach the bytecode for the elaborated
-  /// versions of each non-parametric function to the high level lit.func in
-  /// the new package.
-  ErrorOrSuccess attachElaboratedBytecode(const SymbolTable &symtab,
-                                          const ExportMap &exportedSymbols);
+  /// Given an elaborated module, returns an attribute storing its bytecode, or
+  /// an error if one could not be created.
+  ///
+  /// This also sets the new package name and the appropriate linkage on each
+  /// non-parametric `lit.func` op in the given symbol table.
+  ErrorOr<DenseResourceElementsAttr>
+  createPostElaborationModuleAttr(const SymbolTable &symtab,
+                                  const ExportMap &exportedSymbols);
 
-  /// Given an attribute for the static archive bytes corresponding to a package
-  /// module, attaches that attribute onto the package we're building.
-  void attachCompiledArchiveBytes(DenseResourceElementsAttr archiveBytes);
+  /// Sets the given elaborated module and pre-compiled standalone archive on
+  /// the package op that's being built.
+  void attachArchive(DenseResourceElementsAttr elaboratedModule,
+                     DenseResourceElementsAttr archiveBytes);
 
   /// Returns an owning reference to the module that contains the newly created
   /// package, as well as the package itself. This releases the builer's owning
@@ -270,10 +276,9 @@ ErrorOrSuccess PackageBuilder::attachPreElaboratorBytecode(ModuleOp moduleOp) {
   return success();
 }
 
-/// Attach the elaborated bytecode to the high-level lit.func ops.
-ErrorOrSuccess
-PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
-                                         const ExportMap &exportedSymbols) {
+ErrorOr<DenseResourceElementsAttr>
+PackageBuilder::createPostElaborationModuleAttr(
+    const SymbolTable &symtab, const ExportMap &exportedSymbols) {
   auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
   auto bytecodeResourceOr = createElaboratedBytecodeAttr(symtab, packageName);
   if (bytecodeResourceOr.isError())
@@ -298,13 +303,12 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
     hlFunc.setLinkageName(symName);
   }
 
-  thePackage.setPostElaborationModuleAttr(bytecodeResource);
-  return success();
+  return bytecodeResource;
 }
 
-/// Attach the compiled archive bytes to the new lit.package op.
-void PackageBuilder::attachCompiledArchiveBytes(
-    DenseResourceElementsAttr archiveBytes) {
+void PackageBuilder::attachArchive(DenseResourceElementsAttr elaboratedModule,
+                                   DenseResourceElementsAttr archiveBytes) {
+  thePackage.setPostElaborationModuleAttr(elaboratedModule);
   thePackage.setArchiveBytesAttr(archiveBytes);
 }
 
@@ -381,7 +385,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 
 /// Elaborate the given module, attaching the generated IR along the way. On
 /// success, returns the symbol table and export map after elaboration has run.
-static ErrorOr<std::pair<SymbolTable, ExportMap>>
+static ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
 elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
                  const CompilationOptions &options, LLCL::Runtime &runtime,
                  BuildInfoAttr build, TargetInfoAttr target, EnvAttr env) {
@@ -432,11 +436,14 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
   SymbolTable symtab(theModule);
   ExportMap exportedSymbols = getExportedSymbols(theModule);
 
-  // Attach the elaborated bytecode to the individual functions.
-  if (auto err =
-          packageBuilder.attachElaboratedBytecode(symtab, exportedSymbols))
-    return err.takeError();
-  return std::make_pair(std::move(symtab), std::move(exportedSymbols));
+  // Create the elaborated bytecode attribute, and update the functions in the
+  // symbol table.
+  auto attrOr =
+      packageBuilder.createPostElaborationModuleAttr(symtab, exportedSymbols);
+  if (attrOr.isError())
+    return attrOr.takeError();
+  return std::make_tuple(attrOr.takeValue(), std::move(symtab),
+                         std::move(exportedSymbols));
 }
 
 /// Given parsed module and package ops, returns either a module and package op
@@ -467,21 +474,21 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   });
 
   // Elaborate the package, attaching the generated IR along the way.
-  auto symTabAndExportedSymbolsOr =
+  auto elaboratedOr =
       elaboratePackage(theModule, packageBuilder, compilationOptions, runtime,
                        BuildInfoAttr::getForCurrentBuild(ctx),
                        packageArgs.target, packageArgs.env);
-  if (failed(symTabAndExportedSymbolsOr)) {
-    return Error(llvm::formatv("compilation failed: {0}",
-                               symTabAndExportedSymbolsOr.getError()));
+  if (failed(elaboratedOr)) {
+    return Error(
+        llvm::formatv("compilation failed: {0}", elaboratedOr.getError()));
   }
-  auto [symtab, exportMap] = std::move(*symTabAndExportedSymbolsOr);
+  auto [elaboratedBytecode, symtab, exportMap] = std::move(*elaboratedOr);
 
   auto archiveOr =
       createPackageArchive(symtab, exportMap, compilationOptions, runtime);
   if (archiveOr.isError())
     return archiveOr.takeError();
-  packageBuilder.attachCompiledArchiveBytes(archiveOr.takeValue());
+  packageBuilder.attachArchive(elaboratedBytecode, archiveOr.takeValue());
   return packageBuilder.build();
 }
 

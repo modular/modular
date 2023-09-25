@@ -199,6 +199,7 @@ def PackageOp : LITOp<"package", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<LIT_DocStringAttr>:$docString,
     // The module containing the pre-elaboration IR of this package when it was
     // compiled.
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
@@ -206,11 +207,10 @@ def PackageOp : LITOp<"package", [
     // FIXME(#17326): This should be a map of precompiled targets, not one.
     OptionalAttr<M_TargetInfoAttr>:$compiledFor,
     OptionalAttr<KGEN_EnvAttr>:$compiledEnv,
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$archiveBytes,
     // The module containing the post-elaboration of this package when it was
     // compiled.
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$postElaborationModule,
-    OptionalAttr<LIT_DocStringAttr>:$docString
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$archiveBytes
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
