@@ -177,7 +177,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
             .Case([](StructDeclOp) { return CodeCompletionResult::kStruct; })
             .Case([](FuncOp) { return CodeCompletionResult::kFunction; })
             .Case([](StructFieldOp) { return CodeCompletionResult::kField; })
-            .Case<LetRegDeclOp, VarLetDeclOp, VarLetDecl2Op>(
+            .Case<LetRegDeclOp, VarLetDecl2Op>(
                 [](auto op) { return CodeCompletionResult::kVariable; })
             .Default(CodeCompletionResult::kUnknown);
 
