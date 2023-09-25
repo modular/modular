@@ -11,6 +11,7 @@ add_modular_library(MSupport
   Base64.cpp
     Buffer.cpp
   BuildInfo.cpp
+  CPUCache.cpp
   CommonCLOptions.cpp
   Configuration.cpp
   DeviceSpecs.cpp

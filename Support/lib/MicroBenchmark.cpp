@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MicroBenchmark.h"
-#include "Support/MArchTarget/Host.h"
+#include "Support/CPUCache.h"
 #include "Support/MathExtras.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVectorExtras.h"

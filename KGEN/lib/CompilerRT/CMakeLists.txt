@@ -56,8 +56,11 @@ function(add_static_dep_lib target)
   )
 endfunction()
 
-if(CMAKE_HOST_APPLE)
+if(${MODULAR_LLCL_MAX_PROFILING_LEVEL})
   # FIXME(20613): this dependency might need to go away to keep the runtime small.
+
+  # We log HostMachineInfo with profiling information. This has a dependency
+  # on clangBasic.
   add_static_dep_lib(clangBasic)
 endif()
 
@@ -79,20 +82,28 @@ string(REGEX MATCHALL "[^\n]+" config_output "${config_output}")
 list(GET config_output 1 kgen_system_libs)
 string(REPLACE " " "," kgen_system_libs "${kgen_system_libs}")
 
-# A fully-staticized version of KGENCompilerRT that we can use for standalone
-# mojo executables.
-add_modular_library(KGENCompilerRT-static
-  ${SOURCES}
-
+set(COMPILER_RT_OBJECT_SRCS
   $<TARGET_OBJECTS:obj.MSupportGlobals-static>
   $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
   $<TARGET_OBJECTS:obj.MSupport>
   $<TARGET_OBJECTS:obj.MThreading>
   $<TARGET_OBJECTS:obj.MProfiling>
-  $<TARGET_OBJECTS:obj.MArchTarget>
   $<TARGET_OBJECTS:obj.MVersion>
   $<TARGET_OBJECTS:obj.LLCLRuntime>
   $<TARGET_OBJECTS:obj.LLCLSupport>
+)
+
+if(${MODULAR_LLCL_MAX_PROFILING_LEVEL})
+  # For logging HostMachineInfo with profiling results.
+  list(APPEND COMPILER_RT_OBJECT_SRCS $<TARGET_OBJECTS:obj.MArchTarget>)
+endif()
+
+# A fully-staticized version of KGENCompilerRT that we can use for standalone
+# mojo executables.
+add_modular_library(KGENCompilerRT-static
+  ${SOURCES}
+
+  ${COMPILER_RT_OBJECT_SRCS}
 
   ${StaticDepObjects}
   )
