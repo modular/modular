@@ -13,6 +13,7 @@
 
 namespace mlir {
 class DialectRegistry;
+class MLIRContext;
 } // namespace mlir
 
 namespace M {
@@ -20,6 +21,8 @@ namespace M {
 void registerAllKGENDialects(mlir::DialectRegistry &registry);
 /// Register all required LLVMIR translation interfaces.
 void registerKGENToLLVMTranslation(mlir::DialectRegistry &registry);
+/// Preload all KGEN dialects in the MLIR context.
+void preloadAllKGENDialects(mlir::MLIRContext *ctx);
 } // namespace M
 
 #endif // KGEN_TOOLCOMMON_INITALLDIALECTS_H
