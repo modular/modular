@@ -72,12 +72,14 @@ fn inferred_function_with_memory_result[
 
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
-  # CHECK-NEXT: %v1 = lit.varlet.decl {{.*}} : <!MemoryOnlyPair>
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%v1, %a)
+  # CHECK-NEXT: %v1 = lit.varlet.decl2 {{.*}} : !lit.ref<mut !MemoryOnlyPair,
+  # CHECK-NEXT: %0 = lit.ref.to_pointer %v1
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%0, %a)
   var v1 = a
 
-  # CHECK-NEXT: %v2 = lit.varlet.decl "v2"
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%v2, %a)
+  # CHECK-NEXT: %v2 = lit.varlet.decl2 "v2"
+  # CHECK-NEXT: %2 = lit.ref.to_pointer %v2
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%2, %a)
   let v2 : MemoryOnlyPair = a
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl2
@@ -87,13 +89,15 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
-  # CHECK-NEXT: %regX = lit.varlet.decl
+  # CHECK-NEXT: %regX = lit.varlet.decl2
   # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%regX, [[AX]])
+  # CHECK-NEXT: %7 = lit.ref.to_pointer %regX
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%7, [[AX]])
   let regX = a.x
 
   # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[AX]], %regX)
+  # CHECK-NEXT: %10 = lit.ref.to_pointer %regX
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[AX]], %10)
   a.x = regX
 
   # Pass memory only things by value as arguments.
@@ -103,21 +107,24 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}"([[TMPPAIRPTR]], %a)
   # CHECK-NEXT: [[TMPINT:%.*]] = lit.varlet.decl2 {{.*}}!MemoryOnlyInt
   # CHECK: [[TMPINTPTR:%.*]] = lit.ref.to_pointer [[TMPINT]]
-  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}"([[TMPINTPTR]], %regX)
+  # CHECK: %15 = lit.ref.to_pointer %regX
+  # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}"([[TMPINTPTR]], %15)
   # CHECK-NEXT: kgen.call @{{.*}}@"method{{.*}}"([[TMPPAIRPTR]], [[TMPINTPTR]])
   a.method(regX)
 
   # Drill into rvalue without cloning intermediate values.
-  # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
-  # CHECK-NEXT: [[V2XX:%.*]] = lit.struct.gep [[V2X]][x]
-  # CHECK-NEXT: [[VAL:%.*]] = pop.load [[V2XX]] : !kgen.pointer<!Int>
+  # CHECK-NEXT: [[V2X:%.*]] = lit.ref.struct.ger %v2[x]
+  # CHECK-NEXT: [[V2XX:%.*]] = lit.ref.struct.ger [[V2X]][x]
+  # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load [[V2XX]]
   # CHECK-NEXT: lit.letreg.decl "v2xx" = [[VAL]]
   let v2xx = v2.x.x
 
   # Implicit conversion between memory-only types.
-  # CHECK-NEXT: %mpFloat = lit.varlet.decl
-  # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
-  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
+  # CHECK-NEXT: %mpFloat = lit.varlet.decl2
+  # CHECK-NEXT: [[V2X:%.*]] = lit.ref.struct.ger %v2[x]
+  # CHECK-NEXT: %22 = lit.ref.to_pointer %mpFloat
+  # CHECK-NEXT: %23 = lit.ref.to_pointer [[V2X]]
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%22, %23)
   let mpFloat : MemoryOnlyFloat64 = v2.x
 
   # CHECK: [[TMP:%.*]] = lit.varlet.decl2 "anonymous*"
@@ -132,13 +139,16 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}([[TMPPTR]], %[[C42]])
   _ = MemoryOnlyInt()
 
-  # CHECK-NEXT: [[VARIADIC:%.*]]  = pop.variadic.create [%regX, %regX]
+  # CHECK-NEXT: %31 = lit.ref.to_pointer %regX
+  # CHECK-NEXT: %32 = lit.ref.to_pointer %regX
+  # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [%31, %32]
   # CHECK-NEXT: kgen.call @{{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
-  # CHECK-NEXT: lit.ownership.use %regX : !kgen.pointer<!MemoryOnlyInt>
-  # CHECK-NEXT: lit.ownership.use %regX
+  # CHECK-NEXT: lit.ownership.use %31 : !kgen.pointer<!MemoryOnlyInt>
+  # CHECK-NEXT: lit.ownership.use %32
 
-  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %v2)
+  # CHECK-NEXT: %35 = lit.ref.to_pointer %v2
+  # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %35)
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
   # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
@@ -155,8 +165,10 @@ fn implicit_func_conversion():
     def take_int(x: Int):
         pass
 
-    # CHECK: %0 = kgen.create_closure
-    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%f, %0)
+    # CHECK: %f = lit.varlet.decl2 "f"
+    # CHECK: %0 = lit.ref.to_pointer %f
+    # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
+    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%0, [[CLOSURE]])
     var f: DummyFunc = take_int
     # CHECK: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
     # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
@@ -210,52 +222,52 @@ fn simpleMath(a: Int, b: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"precedence_associativity
 fn precedence_associativity(a: Int):
-  # CHECK: %z = lit.varlet.decl "z" var
+  # CHECK: %z = lit.varlet.decl2 "z" var
   var z: Int = 0
 
   # CHECK: [[SEVENTEENINT:%.*]] = kgen{{.*}}#lit.struct<{value = 17}>
-  # CHECK-NEXT: pop.store [[SEVENTEENINT]], %z
+  # CHECK-NEXT: lit.ref.store [[SEVENTEENINT]], %z
   z = 17  # Implicit conversion
 
-  # CHECK-NEXT: %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT: %[[POW0:.*]] = kgen.call {{.*}}Int::@"__pow__{{.*}}(%a, %[[Z]])
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
   # CHECK-NEXT: %[[POW1:.*]] = kgen.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
-  # CHECK-NEXT: pop.store %[[POW1]], %z
+  # CHECK-NEXT: lit.ref.store %[[POW1]], %z
   z = 2**(a**z)
-  # CHECK-NEXT: %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT: %[[POW0:.*]] = kgen.call {{.*}}Int::@"__pow__{{.*}}(%a, %[[Z]])
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
   # CHECK-NEXT: %[[POW1:.*]] = kgen.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
-  # CHECK-NEXT: pop.store %[[POW1]], %z
+  # CHECK-NEXT: lit.ref.store %[[POW1]], %z
   z = 2**a**z
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT:  %[[MUL:.*]] = kgen.param.constant: !Int = <{{.*}} = -6}
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
-  # CHECK-NEXT:  pop.store %[[ADD]], %z
+  # CHECK-NEXT:  lit.ref.store %[[ADD]], %z
   z = z + 3 * -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: !Int = <{{.*}} = -2}
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
-  # CHECK-NEXT:  pop.store %[[ADD]], %z
+  # CHECK-NEXT:  lit.ref.store %[[ADD]], %z
   z = z + 3 // -2
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen{{.*}}#lit.struct<{value = 3}>
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen{{.*}}#lit.struct<{value = -2}>
   # CHECK-NEXT:  %[[MUL:.*]] =  kgen.call {{.*}}Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
-  # CHECK-NEXT:  pop.store %[[MUL]], %z
+  # CHECK-NEXT:  lit.ref.store %[[MUL]], %z
   z = (z + 3) * -+2
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
   # CHECK-NEXT:  %[[POW:.*]] = kgen.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call {{.*}}Int::@"__neg__{{.*}}(%[[POW]])
-  # CHECK-NEXT:  pop.store %[[NEG]], %z
+  # CHECK-NEXT:  lit.ref.store %[[NEG]], %z
   z = -2**z
-  # CHECK-NEXT: [[Z:%.*]] = pop.load %z
+  # CHECK-NEXT: [[Z:%.*]] = lit.ref.load %z
   # CHECK-NEXT: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value = 1}>
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"([[Z]], [[ONE]])
-  # CHECK-NEXT: pop.store [[RES]], %z
+  # CHECK-NEXT: lit.ref.store [[RES]], %z
   z = Int(1).value + z
 
   # div tests
@@ -461,18 +473,18 @@ fn paramAndOr[a: Boolish, b: Boolish]():
 
 # CHECK-LABEL: lit.func @"do_math
 fn do_math(a: Int, b: Int, c: Int) -> Int:
-  # CHECK-NEXT: %z = lit.varlet.decl "z" var
+  # CHECK-NEXT: %z = lit.varlet.decl2 "z" var
   var z : Int
   # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}#lit.struct<{value = 5}>
   # CHECK-NEXT: %[[MUL:.*]] = kgen.call {{.*}}Int::@"__mul__{{.*}}(%[[INT_5]], %a)
   # CHECK-NEXT: %[[INT_42:.*]] = kgen{{.*}}#lit.struct<{value = 42}>
   # CHECK-NEXT: %[[ADD:.*]] = kgen.call {{.*}}Int::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
-  # CHECK-NEXT: pop.store %[[ADD]], %z
+  # CHECK-NEXT: lit.ref.store %[[ADD]], %z
   z = 42 + 5*a
 
-  # CHECK-NEXT: %x = lit.varlet.decl "x" var
-  # CHECK-NEXT: [[TMP:%.*]] = pop.load %z
-  # CHECK-NEXT: pop.store [[TMP]], %x
+  # CHECK-NEXT: %x = lit.varlet.decl2 "x" var
+  # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %z
+  # CHECK-NEXT: lit.ref.store [[TMP]], %x
   # This is checking the lexer handles \ at end of line correctly.
   var x : Int
   x = \
@@ -481,23 +493,23 @@ z
   # CHECK-NEXT: kgen.call @"$expressions"::@"noop()"()
   noop()
 
-  # CHECK-NEXT: [[TMP:%.*]] = pop.load %x
+  # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
   # CHECK-NEXT: lit.return [[TMP]]
   return x
 
 # CHECK-LABEL: lit.func @"listValues()"
 fn listValues():
   # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
-  # CHECK: pop.store %[[LIST:.*]], %a
+  # CHECK: lit.ref.store %[[LIST:.*]], %a
   var a = [1, 2, 2+1]
   # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
-  # CHECK: pop.store %[[LIST:.*]], %a
+  # CHECK: lit.ref.store %[[LIST:.*]], %a
   a = [1, 2, 2+1,]
   # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
-  # CHECK: pop.store %[[LIST:.*]], %a
+  # CHECK: lit.ref.store %[[LIST:.*]], %a
   a = [1, 2, 2+1]
   # CHECK: %[[LIST:.*]] = kgen.call {{.*}}@ListLiteral::@"__init__
-  # CHECK: pop.store %[[LIST:.*]], %b
+  # CHECK: lit.ref.store %[[LIST:.*]], %b
   var b = []
 
 # CHECK-LABEL: lit.func @"initializers
@@ -515,7 +527,7 @@ fn initializers():
 # CHECK-LABEL: lit.func @"test_if_cond
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK: lit.ref.store %cond, %cond_0
-    # CHECK: %i = lit.varlet.decl "i"
+    # CHECK: %i = lit.varlet.decl2 "i"
     # CHECK: [[COND:%.*]] = lit.ref.load %cond_0
     # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
@@ -525,7 +537,7 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}= 3}
     # CHECK-NEXT:   hlcf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF_RES]], %i
+    # CHECK-NEXT: lit.ref.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 
     # CHECK: [[TRUEB:%.+]] = kgen{{.*}}= true}
@@ -596,34 +608,37 @@ fn parameterExprs[a: Int, a2: Int]():
 
 # CHECK-LABEL: lit.func @"patterns()
 fn patterns():
-  # CHECK: %z2 = lit.varlet.decl "z2" var
+  # CHECK: %z2 = lit.varlet.decl2 "z2" var
   var z2: Int
 
   (((z2))) = 42  # Paren patterns
   # CHECK: [[TMP:%.*]] = {{.*}}constant{{.*}} 42
-  # CHECK: pop.store [[TMP]], %z2
+  # CHECK: lit.ref.store [[TMP]], %z2
 
   var someInt : Int
   (someInt) += someInt
-  # CHECK: %someInt = lit.varlet.decl "someInt" var
-  # CHECK:  %1 = pop.load %someInt
-  # CHECK:  %2 = kgen.call {{.*}}Int::@"__iadd__{{.*}}(%someInt, %1)
+  # CHECK: %someInt = lit.varlet.decl2 "someInt" var
+  # CHECK:  %1 = lit.ref.to_pointer %someInt
+  # CHECK:  %2 = lit.ref.load %someInt
+  # CHECK:   = kgen.call {{.*}}Int::@"__iadd__{{.*}}(%1, %2)
 
   # Discard pattern with different types.
   (_) = someInt
-  # CHECK: [[TMP:%.*]] = pop.load %someInt
+  # CHECK: [[TMP:%.*]] = lit.ref.load %someInt
 
   (_) = 1.0
 
-  # CHECK: %someFloat32 = lit.varlet.decl "someFloat32" var
-  # CHECK: [[Float32:%.*]] = pop.load %someFloat32
-  # CHECK: {{%.*}} = kgen.call {{.*}}__iadd__{{.*}}(%someFloat32, [[Float32]])
+  # CHECK: %someFloat32 = lit.varlet.decl2 "someFloat32" var
+  # CHECK: %5 = lit.ref.to_pointer %someFloat32
+  # CHECK: [[Float32:%.*]] = lit.ref.load %someFloat32
+  # CHECK: {{%.*}} = kgen.call {{.*}}__iadd__{{.*}}(%5, [[Float32]])
   var someFloat32 : Float32
   (someFloat32) += someFloat32
 
-  # CHECK: %someSIMD = lit.varlet.decl "someSIMD" var
-  # CHECK: [[SIMD:%.*]] = pop.load %someSIMD
-  # CHECK: {{%.*}} = kgen.call @"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
+  # CHECK: %someSIMD = lit.varlet.decl2 "someSIMD" var
+  # CHECK: %8 = lit.ref.to_pointer %someSIMD
+  # CHECK: [[SIMD:%.*]] = lit.ref.load %someSIMD
+  # CHECK: {{%.*}} = kgen.call @"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%8, [[SIMD]])
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
@@ -632,7 +647,7 @@ fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
 
-  # CHECK-NEXT: %x = lit.varlet.decl "x" var
+  # CHECK-NEXT: %x = lit.varlet.decl2 "x" var
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
@@ -864,10 +879,10 @@ fn tuples_rv(a: Int, b: Float32):
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     _ = a,
 
-    # CHECK: %c = lit.varlet.decl "c"
+    # CHECK: %c = lit.varlet.decl2 "c"
     # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
     # CHECK: [[TUP2:%.*]] = kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
-    # CHECK: pop.store [[TUP2]], %c
+    # CHECK: lit.ref.store [[TUP2]], %c
     var c = a,
 
 # CHECK-LABEL: lit.func @"tuples_lv
@@ -875,34 +890,34 @@ fn tuples_lv(i0: Int, f0: Float32):
    var i1 = 1
    var i2 = 2
 
-   # CHECK: %iTup = lit.varlet.decl "iTup"
+   # CHECK: %iTup = lit.varlet.decl2 "iTup"
    var iTup : Tuple[Int, Int]
 
    # Tuple Rvalue
    # CHECK: [[TUP:%.*]] = kgen.call {{.*}}@Tuple::@"__init__
-   # CHECK: pop.store [[TUP]], %iTup
+   # CHECK: lit.ref.store [[TUP]], %iTup
    iTup = (i1, i2)
 
    # Tuple LValue
-   # CHECK: [[TUP:%.*]] = pop.load %iTup
+   # CHECK: [[TUP:%.*]] = lit.ref.load %iTup
    # CHECK: [[TUP2:%.*]] = kgen.call {{.*}}@"__copyinit__{{.*}}([[TUP]])
    # CHECK: [[ELT:%.*]] = kgen.call {{.*}}Tuple::@"get{{.*}}([[TUP2]])
-   # CHECK-NEXT: pop.store [[ELT]], %i1
+   # CHECK-NEXT: lit.ref.store [[ELT]], %i1
    # CHECK: [[ELT:%.*]] = kgen.call {{.*}}Tuple::@"get{{.*}}([[TUP2]])
-   # CHECK-NEXT: pop.store [[ELT]], %i2
+   # CHECK-NEXT: lit.ref.store [[ELT]], %i2
    (i1, i2) = iTup
 
    # Check that the swap idiom is correct, this requires producing a copy of the
    # whole RValue on the right before extracting from it.
 
-   # CHECK: [[I2VAL:%.*]] = pop.load %i2
-   # CHECK-NEXT: [[I1VAL:%.*]] = pop.load %i1
+   # CHECK: [[I2VAL:%.*]] = lit.ref.load %i2
+   # CHECK-NEXT: [[I1VAL:%.*]] = lit.ref.load %i1
    # CHECK-NEXT: [[PACK:%.*]] = pop.pack.create([[I2VAL]], [[I1VAL]])
    # CHECK-NEXT: [[TUPRV:%.*]] = kgen.call {{.*}}__init__{{.*}}([[PACK]])
    # CHECK-NEXT: [[I1VAL:%.*]] =  kgen.call {{.*}}Tuple::@"get{{.*}}({{.*}} = 0{{.*}}([[TUPRV]])
-   # CHECK-NEXT: pop.store [[I1VAL]], %i1
+   # CHECK-NEXT: lit.ref.store [[I1VAL]], %i1
    # CHECK-NEXT: [[I2VAL:%.*]] =  kgen.call {{.*}}Tuple::@"get{{.*}}({{.*}} = 1{{.*}}([[TUPRV]])
-   # CHECK-NEXT: pop.store [[I2VAL]], %i2
+   # CHECK-NEXT: lit.ref.store [[I2VAL]], %i2
    (i1, i2) = (i2, i1)
 
    var f1 : Float32 = 1
@@ -1136,18 +1151,20 @@ fn dynamic_attribute():
     _ = const_obj.dynamic_attribute
 
     var obj = DynamicObject()
+    # CHECK: %5 = lit.ref.to_pointer %obj
     # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
-    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}"(%obj, %[[KEY]])
+    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}"(%5, %[[KEY]])
     _ = obj.some_attr
+    # CHECK: %8 = lit.ref.to_pointer %obj
     # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
     # CHECK: %[[VALUE:.*]] = kgen.param.constant{{.*}} 42
-    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}(%obj, %[[KEY]], %[[VALUE]])
+    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}(%8, %[[KEY]], %[[VALUE]])
     obj.some_attr = 42
 
 
 # CHECK-LABEL: lit.func @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
-    # CHECK-NEXT: %res = lit.varlet.decl "res"
+    # CHECK-NEXT: %res = lit.varlet.decl2 "res"
     # CHECK:      [[CMP_A_B:%.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
     # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
@@ -1162,7 +1179,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !kgen.pointer<!Bool>
+    # CHECK-NEXT: lit.ref.store %[[IF_A_B]], %res
     var res = a < b < c < d
 
     # COM: This checks the parsing precedence between `<` and `and`.
@@ -1181,7 +1198,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[IF_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF]], %res : !kgen.pointer<!Bool>
+    # CHECK-NEXT: lit.ref.store %[[IF]], %res
     res = a < b < c and d < e
 
 # CHECK-LABEL: lit.func @"foo_adaptive[{{.*}}$int::Int](){{.*}} {isAdaptive

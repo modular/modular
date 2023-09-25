@@ -2093,9 +2093,15 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   //   kgen.call __copyinit__(%tmp, %src)
   //   kgen.call __del__(%src)   <<= Thinking about inserting this.
   //   kgen.call user(%tmp)      <<= Consuming call.
-  if (callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit ||
-      copyInitCall.getOperand(1) != value)
+  if (callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
     return failure();
+  if (copyInitCall.getOperand(1) != value) {
+    // TODO(references): remove this.
+    auto refToPointer =
+        copyInitCall.getOperand(1).getDefiningOp<RefToPointerOp>();
+    if (!refToPointer || refToPointer.getRef() != value)
+      return failure();
+  }
 
   // We prefer to completely delete the copy if it is into a temporary location
   // that we can forward.
@@ -2108,12 +2114,13 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
           copyInitCall.getOperand(0).getDefiningOp<RefToPointerOp>()) {
     if (VarLetDecl2Op tmpDecl =
             refToPtr.getOperand().getDefiningOp<VarLetDecl2Op>()) {
-      assert(copyInitCall.getOperand(0).getType() == value.getType() &&
+      assert((copyInitCall.getOperand(0).getType() == value.getType() ||
+              copyInitCall.getOperand(1).getDefiningOp<RefToPointerOp>()) &&
              copyInitCall.use_empty() && "something strange");
 
       if (tmpDecl->hasOneUse() &&
           canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
-        refToPtr.getResult().replaceAllUsesWith(value);
+        refToPtr.getResult().replaceAllUsesWith(copyInitCall.getOperand(1));
         opsToRemove.push_back(copyInitCall);
         opsToRemove.push_back(refToPtr);
         opsToRemove.push_back(tmpDecl);
@@ -2145,9 +2152,10 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // object without destroying it, and __moveinit__ takes and destroys it.  The
   // former takes the operand as inout, the later as owned convention.
   auto moveSig = cast<SignatureType>(moveCtor.getType());
-  assert(moveSig.getNumInputs() == 2 &&
-         moveSig.getValueInputs()[0] == value.getType() &&
-         moveSig.getValueInputs()[1] == value.getType());
+  assert(moveSig.getNumInputs() == 2);
+  // TODO(references): reenable this assert when RefToPointerOp is removed.
+  // assert(moveSig.getValueInputs()[0] == value.getType() &&
+  //       moveSig.getValueInputs()[1] == value.getType());
 
   // Transform the copy into a move.
   copyInitCall.setCalleeAttr(moveCtor);
@@ -2195,18 +2203,20 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   // We may have a @register_passable value indirect (e.g. because it is in a
   // var).  If so, it needs to be loaded to invoke the destructor.
   Value valueToDestroy = value;
+  if (auto ref = dyn_cast<RefType>(valueToDestroy.getType())) {
+    if (signature.getValueInputs()[0] == ref.getElementAsType())
+      valueToDestroy = builder.create<RefLoadOp>(valueToDestroy);
+    else
+      // TODO(references): pass references to destructors, not pointers.
+      valueToDestroy = builder.create<RefToPointerOp>(valueToDestroy);
+  }
 
-  // Convert lit.ref into pointers until
-  // TODO(references): pass references to destructors, not pointeres.
-  if (isa<RefType>(valueToDestroy.getType()))
-    valueToDestroy = builder.create<RefToPointerOp>(valueToDestroy);
-
-  if (valueToDestroy.getType() != signature.getValueInputs()[0]) {
-    assert(PointerType::get(signature.getValueInputs()[0]) ==
-           valueToDestroy.getType());
+  // TODO(references): remove this when pointers are gone.
+  if (valueToDestroy.getType() != signature.getValueInputs()[0])
     valueToDestroy = builder.create<POP::LoadOp>(valueToDestroy,
                                                  /*align*/ std::nullopt);
-  }
+
+  assert(signature.getValueInputs()[0] == valueToDestroy.getType());
 
   // Emit the call to the destructor.
   builder.create<CallOp>(

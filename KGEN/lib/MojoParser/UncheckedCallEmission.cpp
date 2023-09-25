@@ -524,8 +524,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     if (!tmpSlotAddr) {
       if (auto ref = argValAndExpr.ir.getIfXLValue()) {
         // Decay reference to pointer.
-        tmpSlotAddr =
-            emitter.builder->create<RefToPointerOp>(ref.getLoc(), ref);
+        tmpSlotAddr = emitter.builder->create<RefToPointerOp>(
+            argValAndExpr.expr->getLocation(emitter), ref);
       }
     }
 

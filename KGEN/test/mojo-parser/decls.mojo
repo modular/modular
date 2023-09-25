@@ -166,7 +166,7 @@ fn capture_by_copy():
     var c: BoxedInt = 2
 
     # CHECK: %[[TMP:.*]] = pop.stack_allocation
-    # CHECK-NEXT: %[[VAL:.*]] = pop.load %c
+    # CHECK-NEXT: %[[VAL:.*]] = lit.ref.load %c
     # CHECK-NEXT: %[[COPY:.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%[[VAL]])
     # CHECK-NEXT: pop.store %[[COPY]], %[[TMP]]
     # CHECK-NEXT: %[[RAW:.*]] = pop.load %[[TMP]]
@@ -222,30 +222,30 @@ def var_decls() -> None:
     # Implicit declaration is mutable.
     # CHECK: %x = lit.varlet.decl2 "x" var
     x = Int(123).value
-    # CHECK: %y = lit.varlet.decl "y" var
+    # CHECK: %y = lit.varlet.decl2 "y" var
     var y: Int
 
-    # CHECK: [[Y:%.*]] = pop.load %y
+    # CHECK: [[Y:%.*]] = lit.ref.load %y
     # CHECK: [[ONE:%.*]] = kgen.param.constant: !Int {{.*}} 1
     # CHECK: [[ADD:%.*]] = kgen.call {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)"([[Y]], [[ONE]])
-    # CHECK: pop.store [[ADD]], %y : !kgen.pointer<!Int>
+    # CHECK: lit.ref.store [[ADD]], %y
     y = y + 1
 
     # CHECK: kgen.param.constant: !StringLiteral = <#lit.struct<{value: string = "hello"}>>
     let const_str = "hello"
 
-    # CHECK: %str = lit.varlet.decl {{.*}} : <!StringLiteral>
+    # CHECK: %str = lit.varlet.decl2 {{.*}} : !lit.ref<mut !StringLiteral,
     # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}} = "hello"
-    # CHECK: pop.store [[CONST]], %str
+    # CHECK: lit.ref.store [[CONST]], %str
     var str = "hello"
 
-    # CHECK: %z = lit.varlet.decl {{.*}} : <index>
+    # CHECK: %z = lit.varlet.decl2 {{.*}} : !lit.ref<mut index,
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
-    # CHECK-NEXT: pop.store [[TMP]], %z
+    # CHECK-NEXT: lit.ref.store [[TMP]], %z
     var z = x
     z = Int(42).value
     # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
-    # CHECK-NEXT: pop.store [[TMP]], %z
+    # CHECK-NEXT: lit.ref.store [[TMP]], %z
 
 
 ##===----------------------------------------------------------------------===##
@@ -313,7 +313,7 @@ fn callOverload(a: Int):
 
     # CHECK: kgen.create_closure [!lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}>>:
     # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
-    # CHECK-NEXT: pop.store %3, %float1
+    # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
     # CHECK: %4 = kgen.create_closure [!lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}>>:
@@ -437,7 +437,8 @@ struct MyStruct:
 # CHECK-LABEL: lit.func @"test_static_overload()"
 fn test_static_overload():
     var a = MyStruct()
-    # CHECK: kgen.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%a) : !lit.signature<("self": !kgen.pointer<!MyStruct> byref) -> !lit.none>
+    # CHECK: %2 = lit.ref.to_pointer %a
+    # CHECK: kgen.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%2) : !lit.signature<("self": !kgen.pointer<!MyStruct> byref) -> !lit.none>
     a.foo()
 
 
@@ -827,15 +828,15 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.mlirtype`](x: Int):
 # CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]]: !Int
 fn usePacks(x: Float32, y: Int):
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>>
+    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>>
+    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>
     var b: MyTuple[Int, Float32, Int]
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>>
+    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>
     let c = MyTuple[Int](1)
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!FloatLiteral, index]>>
+    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!FloatLiteral, index]>
     let d = MyTuple(3.14, Int(6).value)
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = []>>
+    # CHECK: lit.varlet.decl2 {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = []>
     let e = MyTuple()
 
     # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
@@ -1167,7 +1168,8 @@ struct Awaitable:
 
 # CHECK-LABEL: lit.func @"awaitable()"
 async fn awaitable() -> Int:
-    # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable&)"(%aw)
+    # CHECK: %2 = lit.ref.to_pointer %aw
+    # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable&)"(%2)
     var aw = Awaitable()
     return await aw
 
@@ -1182,7 +1184,7 @@ fn topLevelFunction() -> Int:
     # CHECK: lit.func *"nestedFunction()"
     @parameter
     fn nestedFunction() -> Int:
-        # CHECK-NEXT: pop.load %a
+        # CHECK-NEXT: lit.ref.load %a
         return a
 
     # CHECK: lit.alias.decl {{.*}}b: !lit.signature<() capturing -> !Int> = <*"nestedFunction()">
@@ -1199,7 +1201,7 @@ struct SomeStruct:
         # CHECK: lit.func *"nestedFunction()"
         @parameter
         fn nestedFunction() -> Int:
-            # CHECK-NEXT: pop.load %a
+            # CHECK-NEXT: lit.ref.load %a
             return a
 
         # CHECK: lit.alias.decl {{.*}}b: !lit.signature<() capturing -> !Int> = <*"nestedFunction()">

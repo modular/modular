@@ -448,17 +448,18 @@ fn foo(owned y:Int):
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %q: !Int, %ww: !Int borrow) -> !lit.none
 # CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %self[field0] : <!Int>
+# CHECK-NEXT: %[[V0REF:.*]] = builtin.unrealized_conversion_cast %[[V0]]
 # CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT: %[[V1REF:.*]] = builtin.unrealized_conversion_cast %[[V1]]
 # CHECK-NEXT: %q_0 = lit.varlet.decl2 "q" var synth :
 # CHECK-NEXT: lit.ref.store %q, %q_0
-# CHECK-NEXT: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
-# CHECK-NEXT: %[[V3:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
+# CHECK-NEXT: %[[V2:.*]] = lit.ref.load %[[V0REF]]
+# CHECK-NEXT: %[[V3:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V4:.*]] = kgen.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : !lit.signature<("self": !Int borrow, "rhs": !Int borrow) -> !Int>
-# CHECK-NEXT: pop.store %[[V4]], %[[V0]] : !kgen.pointer<!Int>
+# CHECK-NEXT: lit.ref.store %[[V4]], %[[V0REF]]
 # CHECK-NEXT: %[[V5:.*]] = lit.ref.load %[[V1REF]]
 # CHECK-NEXT: %[[V6:.*]] = kgen.call @{{.*}}@"print{{.*}}"(%[[V5]])
-# CHECK-NEXT: %[[V7:.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT: %[[V7:.*]] = kgen.param.constant: !lit.none
 # CHECK-NEXT: lit.return %[[V7]] : !lit.none
 # CHECK-NEXT: lit.end_func
 
@@ -567,7 +568,7 @@ fn makes_escaping_closure(z: Int):
    var a = w
    # CHECK: %anonymous2A = lit.varlet.decl2 "anonymous*" var synth
    # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-   # CHECK-NEXT: [[A:%.*]] = pop.load %a : !kgen.pointer<!Int>
+   # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR]], [[A]], %w)
    # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl2 "anonymous*" var synth
    # CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
