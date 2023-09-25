@@ -17,12 +17,7 @@ from utils.vector import DynamicVector
 from memory.buffer import Buffer
 from tensor import Tensor
 from utils.list import Dim, DimList
-from runtime.llcl import (
-    num_cores,
-    Runtime,
-    TaskGroup,
-    OwningOutputChainPtr,
-)
+from runtime.llcl import num_cores
 from algorithm import (
     parallelize,
     vectorize,
@@ -31,7 +26,7 @@ from algorithm import (
 )
 from math import iota
 from complex import ComplexSIMD
-from benchmark import Benchmark
+from benchmark import Benchmark, keep
 from memory.unsafe import Pointer, DTypePointer
 from sys.info import simdwidthof
 from math import abs
@@ -241,7 +236,7 @@ fn mandelbrot_kernel[
 @always_inline
 fn mandelbrot[
     simd_width: Int, h: Int, w: Int, step: BlogPost2Step
-](inout out: Tensor[int_type], rt: Runtime):
+](inout out: Tensor[int_type]):
     # Each task gets a row.
     @always_inline
     @parameter
@@ -268,13 +263,12 @@ fn mandelbrot[
     if step == BlogPost2Step.PARALLELIZE:
         # If we just want to parallelize, then we launch the code above to
         # run in parallel with each thread getting a chunk of h.
-        parallelize[worker](rt, h)
+        parallelize[worker](h)
     elif step.value >= BlogPost2Step.PARALLELIZE_FINE_2.value:
         # A parallel launch where we overpartition the work. Each thread is
         # now resposnible for multiple chunks and executes these chunks in a
         # round-robin manner.
         parallelize[worker](
-            rt,
             h,
             # Get the number of workers multiple.
             (step.value - BlogPost2Step.PARALLELIZE_FINE_2.value + 2)
@@ -293,9 +287,10 @@ fn main_blog_part2():
 
     alias ns_per_second: Int = 1_000_000_000
 
-    with Runtime(num_cores()) as rt0:
-        alias simd_width = simdwidthof[DType.float64]()
-        mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE](m, rt0)
+    mandelbrot[
+        simdwidthof[DType.float64](), height, width, BlogPost2Step.PARALLELIZE
+    ](m)
+
     var pixel_sum: Int = 0
     for i in range(height):
         for j in range(width):
@@ -307,158 +302,150 @@ fn main_blog_part2():
     var time: Float64
 
     # PART 1. Just vectorize
-    with Runtime(num_cores()) as rt1:
+    @always_inline
+    @parameter
+    fn bench_vector[simd_width: Int]():
+        mandelbrot[simd_width, height, width, BlogPost2Step.VECTORIZE](m)
 
-        @always_inline
-        @parameter
-        fn bench_vector[simd_width: Int]():
-            mandelbrot[simd_width, height, width, BlogPost2Step.VECTORIZE](
-                m, rt1
-            )
-
-        for i in range(experiment_iter_count):
-            alias simd_width = simdwidthof[DType.float64]()
-            time = (
-                Benchmark(num_warmup).run[bench_vector[simd_width]]()
-                / ns_per_second
-            )
-            print("Vectorize with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        alias simd_width = simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_vector[simd_width]]()
+            / ns_per_second
+        )
+        print("Vectorize with simd_width=", simd_width, "::", time)
 
     # PART 2. Vectorize, fine grained
-    with Runtime(num_cores()) as rt2:
+    @always_inline
+    @parameter
+    fn bench_vector_2[simd_width: Int]():
+        mandelbrot[simd_width, height, width, BlogPost2Step.VECTORIZE_WIDE](m)
 
-        @always_inline
-        @parameter
-        fn bench_vector_2[simd_width: Int]():
-            mandelbrot[simd_width, height, width, BlogPost2Step.VECTORIZE_WIDE](
-                m, rt2
-            )
+    for i in range(experiment_iter_count):
+        alias simd_width = 2 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
+            / ns_per_second
+        )
+        print("Vectorize with simd_width=", simd_width, "::", time)
 
-        for i in range(experiment_iter_count):
-            alias simd_width = 2 * simdwidthof[DType.float64]()
-            time = (
-                Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
-                / ns_per_second
-            )
-            print("Vectorize with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        alias simd_width = 4 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
+            / ns_per_second
+        )
+        print("Vectorize with simd_width=", simd_width, "::", time)
 
-        for i in range(experiment_iter_count):
-            alias simd_width = 4 * simdwidthof[DType.float64]()
-            time = (
-                Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
-                / ns_per_second
-            )
-            print("Vectorize with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        alias simd_width = 8 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
+            / ns_per_second
+        )
+        print("Vectorize with simd_width=", simd_width, "::", time)
 
-        for i in range(experiment_iter_count):
-            alias simd_width = 8 * simdwidthof[DType.float64]()
-            time = (
-                Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
-                / ns_per_second
-            )
-            print("Vectorize with simd_width=", simd_width, "::", time)
-
-        for i in range(experiment_iter_count):
-            alias simd_width = 16 * simdwidthof[DType.float64]()
-            time = (
-                Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
-                / ns_per_second
-            )
-            print("Vectorize with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        alias simd_width = 16 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
+            / ns_per_second
+        )
+        print("Vectorize with simd_width=", simd_width, "::", time)
 
     # Parallelize the code.
-    with Runtime(num_cores()) as rt3:
-        alias simd_width = 4 * simdwidthof[DType.float64]()
+    alias simd_width = 4 * simdwidthof[DType.float64]()
 
-        @always_inline
-        @parameter
-        fn bench_parallel[simd_width: Int]():
-            mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE](
-                m, rt3
-            )
+    @always_inline
+    @parameter
+    fn bench_parallel[simd_width: Int]():
+        mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE](m)
 
-        for i in range(experiment_iter_count):
-            time = (
-                Benchmark(num_warmup).run[bench_parallel[simd_width]]()
-                / ns_per_second
-            )
-            print("Parallel with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        time = (
+            Benchmark(num_warmup).run[bench_parallel[simd_width]]()
+            / ns_per_second
+        )
+        print("Parallel with simd_width=", simd_width, "::", time)
 
     # Fine grained parallelism.
-    with Runtime(num_cores()) as rt4:
+
+    @always_inline
+    @parameter
+    fn bench_parallel_2[simd_width: Int]():
+        mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_2](
+            m
+        )
+
+    for i in range(experiment_iter_count):
         alias simd_width = 2 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_parallel_2[simd_width]]()
+            / ns_per_second
+        )
+        print("Parallel(2) with simd_width=", simd_width, "::", time)
 
-        @always_inline
-        @parameter
-        fn bench_parallel_2[simd_width: Int]():
-            mandelbrot[
-                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_2
-            ](m, rt4)
+    @always_inline
+    @parameter
+    fn bench_parallel_4[simd_width: Int]():
+        mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_4](
+            m
+        )
 
-        for i in range(experiment_iter_count):
-            time = (
-                Benchmark(num_warmup).run[bench_parallel_2[simd_width]]()
-                / ns_per_second
-            )
-            print("Parallel(2) with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        alias simd_width = 4 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_parallel_4[simd_width]]()
+            / ns_per_second
+        )
+        print("Parallel(4) with simd_width=", simd_width, "::", time)
 
-        @always_inline
-        @parameter
-        fn bench_parallel_4[simd_width: Int]():
-            mandelbrot[
-                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_4
-            ](m, rt4)
+    @always_inline
+    @parameter
+    fn bench_parallel_8[simd_width: Int]():
+        mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_8](
+            m
+        )
 
-        for i in range(experiment_iter_count):
-            time = (
-                Benchmark(num_warmup).run[bench_parallel_4[simd_width]]()
-                / ns_per_second
-            )
-            print("Parallel(4) with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        alias simd_width = 8 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_parallel_8[simd_width]]()
+            / ns_per_second
+        )
+        print("Parallel(8) with simd_width=", simd_width, "::", time)
 
-        @always_inline
-        @parameter
-        fn bench_parallel_8[simd_width: Int]():
-            mandelbrot[
-                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_8
-            ](m, rt4)
+    @always_inline
+    @parameter
+    fn bench_parallel_16[simd_width: Int]():
+        mandelbrot[
+            simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_16
+        ](m)
 
-        for i in range(experiment_iter_count):
-            time = (
-                Benchmark(num_warmup).run[bench_parallel_8[simd_width]]()
-                / ns_per_second
-            )
-            print("Parallel(8) with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        alias simd_width = 16 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_parallel_16[simd_width]]()
+            / ns_per_second
+        )
+        print("Parallel(16) with simd_width=", simd_width, "::", time)
 
-        @always_inline
-        @parameter
-        fn bench_parallel_16[simd_width: Int]():
-            mandelbrot[
-                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_16
-            ](m, rt4)
+    @always_inline
+    @parameter
+    fn bench_parallel_32[simd_width: Int]():
+        mandelbrot[
+            simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_32
+        ](m)
 
-        for i in range(experiment_iter_count):
-            time = (
-                Benchmark(num_warmup).run[bench_parallel_16[simd_width]]()
-                / ns_per_second
-            )
-            print("Parallel(16) with simd_width=", simd_width, "::", time)
+    for i in range(experiment_iter_count):
+        alias simd_width = 32 * simdwidthof[DType.float64]()
+        time = (
+            Benchmark(num_warmup).run[bench_parallel_32[simd_width]]()
+            / ns_per_second
+        )
+        print("Parallel(32) with simd_width=", simd_width, "::", time)
 
-        @always_inline
-        @parameter
-        fn bench_parallel_32[simd_width: Int]():
-            mandelbrot[
-                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_32
-            ](m, rt4)
-
-        for i in range(experiment_iter_count):
-            time = (
-                Benchmark(num_warmup).run[bench_parallel_32[simd_width]]()
-                / ns_per_second
-            )
-            print("Parallel(32) with simd_width=", simd_width, "::", time)
-
-    print(m[Index(0, 0)])
+    keep(m[Index(0, 0)])
 
 
 fn main():
