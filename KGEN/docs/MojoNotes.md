@@ -173,14 +173,14 @@ value in Mojo.  You can see this most easily when materializing a constant
 value into a dynamic one, e.g. when storing into a variable:
 
 ```mlir
-  # CHECK: %d = lit.varlet.decl "d" var : <i17>
+  # CHECK: %d = lit.varlet.decl "d" var : !lit.ref<mut i17, ...
   # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
-  # CHECK: pop.store [[TMP]], %d : !kgen.pointer<i17>
+  # CHECK: lit.ref.store [[TMP]], %d : !kgen.pointer<i17>
   var d = __mlir_attr.`4: i17`
 
-  # CHECK: %dt = lit.varlet.decl "dt" var : <dtype>
+  # CHECK: %dt = lit.varlet.decl "dt" var : !lit.ref<mut dtype, ...
   # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
-  # CHECK: pop.store [[TMP]], %dt  : !kgen.pointer<dtype>
+  # CHECK: lit.ref.store [[TMP]], %dt  : !kgen.pointer<dtype>
   var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
 ```
 
@@ -211,9 +211,9 @@ subscript syntax (including specifying multiple attributes such as
 you can use:
 
 ```mlir
-  # CHECK: %idxConstant = lit.varlet.decl "idxConstant" var var = true : <index>
+  # CHECK: %idxConstant = lit.varlet.decl "idxConstant" var var = true : !lit.ref<mut index, ...
   # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
-  # CHECK-NEXT: pop.store [[TMP]], %idxConstant : !kgen.pointer<index>
+  # CHECK-NEXT: lit.ref.store [[TMP]], %idxConstant
   var idxConstant = __mlir_op.`index.constant`[value: 42]()
 ```
 

@@ -399,9 +399,7 @@ struct ValueSet {
     // Determine if we should reject mutations after initialization.
     bool isLet = false;
     if (val) {
-      if (auto varLet = val.getDefiningOp<VarLetDeclOp>())
-        isLet = !varLet.getIsVar();
-      else if (auto varLet = val.getDefiningOp<VarLetDecl2Op>())
+      if (auto varLet = val.getDefiningOp<VarLetDecl2Op>())
         isLet = !varLet.getIsVar();
     }
 
@@ -1983,9 +1981,8 @@ static bool mightPointTo(Value p1, Value p2) {
 // itself be part of a standalone SSA pass post-inlining.  For now we'll
 // just catch the most obvious local cases to clean up the IR and provide a
 // "guaranteed" optimization.
-// TODO(references): Switch tmpDecl back to being a VarLetDeclOp.
 static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
-                                            Operation *tmpDecl) {
+                                            VarLetDecl2Op tmpDecl) {
   Block *tmpBlock = tmpDecl->getBlock();
   if (copyInitCall->getBlock() != tmpBlock)
     return false;
@@ -2003,7 +2000,7 @@ static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
     // Ignore the copyinit.
     if (user == copyInitCall.getOperation())
       continue;
-    // We doing n^2 scanning below, harshly limit it.
+    // We are doing n^2 scanning below, harshly limit it.
     if (++numUses > 3)
       return false;
 
@@ -2126,19 +2123,6 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
         opsToRemove.push_back(tmpDecl);
         return success();
       }
-    }
-  }
-
-  if (VarLetDeclOp tmpDecl =
-          copyInitCall.getOperand(0).getDefiningOp<VarLetDeclOp>()) {
-    assert(copyInitCall.getOperand(0).getType() == value.getType() &&
-           copyInitCall.use_empty() && "something strange");
-
-    if (canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
-      tmpDecl.getResult().replaceAllUsesWith(value);
-      opsToRemove.push_back(copyInitCall);
-      opsToRemove.push_back(tmpDecl);
-      return success();
     }
   }
 
@@ -2371,8 +2355,6 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
                "switching to a 'let'";
       };
 
-      if (auto varLet = info.value.getDefiningOp<VarLetDeclOp>())
-        checkVarLet(varLet);
       if (auto varLet = info.value.getDefiningOp<VarLetDecl2Op>())
         checkVarLet(varLet);
     }

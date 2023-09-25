@@ -1262,21 +1262,6 @@ OpFoldResult LetRegDeclOp::fold(LetRegDeclOp::FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDeclOp
-//===----------------------------------------------------------------------===//
-
-void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type type,
-                         StringRef name, bool isVar, bool isSynth) {
-  build(b, state, type, name, isVar, isSynth,
-        /*docString=*/{});
-}
-
-void VarLetDeclOp::getAsmResultNames(
-    function_ref<void(Value, StringRef)> setNameFn) {
-  setNameFn(getResult(), getName());
-}
-
-//===----------------------------------------------------------------------===//
 // VarLetDecl2Op
 //===----------------------------------------------------------------------===//
 

@@ -14,12 +14,14 @@ lit.func @trivial_generator(%arg0: si32) -> si32 {
 
 // CHECK-LABEL: kgen.generator @varDecl
 // CHECK-SAME:  (%[[ARG0:.*]]: index) -> index {
+// CHECK-NEXT:    kgen.param.declare life: lifetime
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
+// CHECK-NEXT:    %1 = builtin.unrealized_conversion_cast %0
 // CHECK-NEXT:    kgen.return %[[ARG0]] : index
 // CHECK-NEXT:  }
 
 lit.func @varDecl(%arg0: index) -> index {
-  %a = lit.varlet.decl "a" var : <index>
+  %a = lit.varlet.decl2 "a" var : !lit.ref<mut index, *"life">
   kgen.return %arg0 : index
 }
 
@@ -123,12 +125,13 @@ lit.func @aliasDecls() {
 
 lit.struct.decl @Adder<size> {
   // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !kgen.declref<@Adder<size = size>>) {
+  // CHECK-NEXT:    kgen.param.declare life: lifetime
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
   lit.func @__add__(%self: !kgen.declref<@Adder<size = size>>)  {
-    %0 = lit.varlet.decl "a" var : <index>
+    %0 = lit.varlet.decl2 "a" var : !lit.ref<mut index, *"life">
     %one = index.constant 1
-    pop.store %one, %0 : !kgen.pointer<index>
+    lit.ref.store %one, %0 : !lit.ref<mut index, *"life">
     kgen.return
   }
 }
@@ -239,18 +242,20 @@ lit.struct.decl @foo {
 //===----------------------------------------------------------------------===//
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
-  %y = lit.varlet.decl "y" : <@MyStruct>
-  %0 = kgen.call @throwing_callee(%y) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
-  // CHECK: %2 = pop.variant.is !pop.array<0, i1>, %1 : !pop.variant<@Error, array<0, i1>>
-  // CHECK: %3 = hlcf.if %2 -> !pop.array<0, i1> {
-  // CHECK:   %4 = pop.variant.get %1 : !pop.variant<@Error, array<0, i1>> as !pop.array<0, i1>
-  // CHECK:   hlcf.yield %4 : !pop.array<0, i1>
+  %y = lit.varlet.decl2 "y" : !lit.ref<mut @MyStruct, *"life">
+  %yp = lit.ref.to_pointer %y : !lit.ref<mut @MyStruct, *"life">
+  %0 = kgen.call @throwing_callee(%yp) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
+  // CHECK: [[V:%.*]] = kgen.call @throwing_callee(
+  // CHECK: [[VAR0:%.*]] = pop.variant.is !pop.array<0, i1>, [[V]] : !pop.variant<@Error, array<0, i1>>
+  // CHECK:  = hlcf.if [[VAR0]] -> !pop.array<0, i1> {
+  // CHECK:   [[VAR1:%.*]] = pop.variant.get [[V]] : !pop.variant<@Error, array<0, i1>> as !pop.array<0, i1>
+  // CHECK:   hlcf.yield [[VAR1]] : !pop.array<0, i1>
   // CHECK: } else {
-  // CHECK:   %4 = pop.variant.get %1 : !pop.variant<@Error, array<0, i1>> as !kgen.declref<@Error>
-  // CHECK:   %5 = pop.variant.create %4 : !kgen.declref<@Error> -> !pop.variant<@Error, array<0, i1>>
-  // CHECK:   kgen.return %5 : !pop.variant<@Error, array<0, i1>>
+  // CHECK:   [[VAR2:%.*]] = pop.variant.get [[V]] : !pop.variant<@Error, array<0, i1>> as !kgen.declref<@Error>
+  // CHECK:   [[VAR3:%.*]] = pop.variant.create [[VAR2]] : !kgen.declref<@Error> -> !pop.variant<@Error, array<0, i1>>
+  // CHECK:   kgen.return [[VAR3]]
   // CHECK:  }
-  %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
+  %1 = lit.handle_variant %0, %yp : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
     %7 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !lit.none
     lit.yield %7 : !lit.none
   } else {
@@ -265,13 +270,13 @@ lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
 lit.func @caller_reg() -> !lit.none {
   lit.try {
     %0 = kgen.call @throwing_callee() : () throws -> !pop.variant<@Error, index>
-    // CHECK: %[[VAR0:.*]] = pop.variant.is index, %0 : !pop.variant<@Error, index>
-    // CHECK: %[[VAR1:.*]] = hlcf.if %[[VAR0]] -> index {
-    // CHECK:   %[[VAR2:.*]] = pop.variant.get %0 : !pop.variant<@Error, index> as index
-    // CHECK:   hlcf.yield %[[VAR2]] : index
+    // CHECK: [[VAR0:%.*]] = pop.variant.is index, %0 : !pop.variant<@Error, index>
+    // CHECK: [[VAR1:%.*]] = hlcf.if [[VAR0]] -> index {
+    // CHECK:   [[VAR2:%.*]] = pop.variant.get %0 : !pop.variant<@Error, index> as index
+    // CHECK:   hlcf.yield [[VAR2]] : index
     // CHECK: } else {
-    // CHECK:   %[[VAR3:.*]] = pop.variant.get %0 : !pop.variant<@Error, index> as !kgen.declref<@Error>
-    // CHECK:   lit.raise %[[VAR3]] : <@Error>
+    // CHECK:   [[VAR3:%.*]] = pop.variant.get %0 : !pop.variant<@Error, index> as !kgen.declref<@Error>
+    // CHECK:   lit.raise [[VAR3]] : <@Error>
     // CHECK:   kgen.unreachable
     // CHECK: }
     %1 = lit.handle_variant %0 : (!pop.variant<@Error, index>) -> index {

@@ -9,8 +9,8 @@ lit.func @trivial_generator(%name: si32) -> si32 {
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
-  // CHECK-NEXT: %a = lit.varlet.decl "a" var synth : <scalar<ty>>
-  %a = lit.varlet.decl "a" var synth: !kgen.pointer<scalar<ty>>
+  // CHECK-NEXT: %a = lit.varlet.decl2 "a" var synth : !lit.ref<mut scalar<ty>, life>
+  %a = lit.varlet.decl2 "a" var synth : !lit.ref<mut scalar<ty>, life>
 
   // CHECK-NEXT: %lifetime = lit.varlet.decl2 "lifetime" : !lit.ref<mut index, lt>
   %lifetime = lit.varlet.decl2 "lifetime" : !lit.ref<mut index, lt>
@@ -30,8 +30,8 @@ lit.struct.decl @SomeStruct<ty: dtype> {
     kgen.return
   }
 
-  // CHECK: %size = lit.varlet.decl "size" var : <scalar<ty>>
-  %size = lit.varlet.decl "size" var : !kgen.pointer<scalar<ty>>
+  // CHECK: %size = lit.varlet.decl2 "size" var : !lit.ref<mut scalar<ty>, life>
+  %size = lit.varlet.decl2 "size" var : !lit.ref<mut scalar<ty>, life>
 
   // CHECK: lit.func @getMyType
   // CHECK-NEXT: kgen.param.constant: dtype = <ty>
@@ -305,7 +305,7 @@ lit.func @param_return_no_results<() -> ()>() {
 }
 
 lit.struct.decl @GiveMeDefault {
-  lit.varlet.decl "size" var : !kgen.pointer<scalar<index>>
+  lit.struct.field size : !kgen.pointer<scalar<index>>
 }
 
 // CHECK-LABEL: lit.func @default_struct
@@ -348,11 +348,12 @@ lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>
 // -----
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
-  %y = lit.varlet.decl "y" var : <@MyStruct>
+  %y = lit.varlet.decl2 "y" var : !lit.ref<mut @MyStruct, *"life">
   %none = kgen.param.constant: !lit.none = <#lit.none>
   %ret = kgen.param.constant: !pop.variant<@Error, !lit.none> = <#pop.variant<:!lit.none #lit.none>>
-  // CHECK: lit.handle_variant %variant, %y : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
-  %0 = lit.handle_variant %ret, %y : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
+  %yptr = lit.ref.to_pointer %y: !lit.ref<mut @MyStruct, *"life">
+  // CHECK: lit.handle_variant %variant, %1 : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
+  %0 = lit.handle_variant %ret, %yptr : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
     // CHECK-NEXT: lit.yield %{{.*}} : !lit.none
     lit.yield %none : !lit.none
   // CHECK-NEXT: else
