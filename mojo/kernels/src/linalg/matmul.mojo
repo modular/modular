@@ -1507,8 +1507,12 @@ struct TiledMatmul[
 
 @always_inline
 fn pack_matmul_b_shape_func[
-    type: DType, transpose_in_0: Bool, single_thread_blocking_override: Bool
-](b_input: NDBuffer[2, DimList.create_unknown[2](), type],) -> StaticIntTuple[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_in_0: Bool,
+    single_thread_blocking_override: Bool,
+](b_input: NDBuffer[2, DimList.create_unknown[2](), b_type],) -> StaticIntTuple[
     2
 ]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
@@ -1517,11 +1521,7 @@ fn pack_matmul_b_shape_func[
     If transpose_b is True, this returns the un-transposed shape, since pack_b
     will un-transpose `b_ref` as part of the packing layout transformation."""
 
-    # a_type and ctype are not provided yet so for now we only use the b_type
-    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
-    alias a_type = DType.uint8 if use_vnni else type
-    alias b_type = type
-    alias c_type = DType.int32 if use_vnni else type
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
 
     var output = StaticIntTuple[2]()
 
@@ -1530,10 +1530,10 @@ fn pack_matmul_b_shape_func[
 
     if is_critical_stride(k):
         alias config = search_mm_config[a_type, b_type, c_type, True, True]()
-        tile_n_k = _get_tile_n_k[config, transpose_in_0, type](b_input)
+        tile_n_k = _get_tile_n_k[config, transpose_in_0, b_type](b_input)
     else:
         alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
-        tile_n_k = _get_tile_n_k[config2, transpose_in_0, type](b_input)
+        tile_n_k = _get_tile_n_k[config2, transpose_in_0, b_type](b_input)
 
     @parameter
     if transpose_in_0:
@@ -1553,12 +1553,14 @@ fn pack_b[
     transpose_b: Bool,
     simd_size: Int,
     inner_size: Int,
-    type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
     src_shape: DimList,
     dst_shape: DimList,
 ](
-    dst: NDBuffer[2, dst_shape, type],
-    src: NDBuffer[2, src_shape, type],
+    dst: NDBuffer[2, dst_shape, b_type],
+    src: NDBuffer[2, src_shape, b_type],
     tile_n: Int,
     tile_k: Int,
 ):
@@ -1572,8 +1574,7 @@ fn pack_b[
     let dst_flat = dst.flatten()
     var dst_offset: Int = 0
 
-    # a_type and ctype are not provided yet so for now we only use the b_type
-    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
 
     @parameter
     if not transpose_b:
@@ -1594,7 +1595,7 @@ fn pack_b[
             for idx_n in range(0, n_out, tile_n):
                 let vnni_factor = 4 if use_vnni else 1
                 let packed_dst_view = NDBuffer[
-                    3, DimList.create_unknown[3](), type
+                    3, DimList.create_unknown[3](), b_type
                 ](
                     dst_flat.data.offset(dst_offset),
                     DimList(
@@ -1608,7 +1609,7 @@ fn pack_b[
                 PackMatrixCols[
                     src_shape,
                     DimList.create_unknown[3](),
-                    type,
+                    b_type,
                     simd_size,
                     inner_size,
                     use_vnni,
@@ -1642,7 +1643,7 @@ fn pack_b[
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
                 let packed_dst_view_t = NDBuffer[
-                    3, DimList.create_unknown[3](), type
+                    3, DimList.create_unknown[3](), b_type
                 ](
                     dst_flat.data.offset(dst_offset),
                     DimList(tile_n // inner_size, tile_k, inner_size),
@@ -1652,7 +1653,7 @@ fn pack_b[
                 PackMatrixRows[
                     src_shape,
                     DimList.create_unknown[3](),
-                    type,
+                    b_type,
                     simd_size,
                     inner_size,
                 ].run(
@@ -1670,11 +1671,13 @@ fn pack_b[
 
 @always_inline
 fn _pack_b_ndbuffer_impl[
-    type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
     transposed: Bool,
 ](
-    b_input: NDBuffer[2, DimList.create_unknown[2](), type],
-    output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
+    b_input: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
     out_chain: OutputChainPtr,
 ):
     """Performs the layout transformation on `b_input` expected by
@@ -1689,20 +1692,18 @@ fn _pack_b_ndbuffer_impl[
     # The config (in particular inner size and tile_k) needs to EXACTLY match the
     # values used in the matmul algorithm consuming this packed b matrix
 
-    # a_type and ctype are not provided yet so for now we only use the b_type
-    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
-    alias a_type = DType.uint8 if use_vnni else type
-    alias b_type = type
-    alias c_type = DType.int32 if use_vnni else type
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
 
     if is_critical_stride(k):
         alias config = search_mm_config[a_type, b_type, c_type, True, True]()
-        let tile_n_k = _get_tile_n_k[config, transposed, type](b_input)
+        let tile_n_k = _get_tile_n_k[config, transposed, b_type](b_input)
         pack_b[
             transposed,
             config.simd_size,
             config.pack_inner_size,
-            type,
+            a_type,
+            b_type,
+            c_type,
             DimList.create_unknown[2](),
             DimList.create_unknown[2](),
         ](
@@ -1713,12 +1714,14 @@ fn _pack_b_ndbuffer_impl[
         )
     else:
         alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
-        let tile_n_k = _get_tile_n_k[config2, transposed, type](b_input)
+        let tile_n_k = _get_tile_n_k[config2, transposed, b_type](b_input)
         pack_b[
             transposed,
             config2.simd_size,
             config2.pack_inner_size,
-            type,
+            a_type,
+            b_type,
+            c_type,
             DimList.create_unknown[2](),
             DimList.create_unknown[2](),
         ](
@@ -1732,10 +1735,12 @@ fn _pack_b_ndbuffer_impl[
 
 @always_inline
 fn pack_b_ndbuffer[
-    type: DType
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
 ](
-    b_input: NDBuffer[2, DimList.create_unknown[2](), type],
-    output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
+    b_input: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
     out_chain: OutputChainPtr,
 ):
     """
@@ -1746,22 +1751,28 @@ fn pack_b_ndbuffer[
     `output_buffer`.
 
     Parameters:
-        type: The data type of elements inside `b_input`.
+        a_type: The data type of elements inside a.
+        b_type: The data type of elements inside b.
+        c_type: The data type of elements inside c.
 
     Args:
         b_input: Input buffer that contains the weight to be packed.
         output_buffer: Output buffer to store the packed weight.
         out_chain: The to signal when writes to output buffer have finished.
     """
-    _pack_b_ndbuffer_impl[type, False](b_input, output_buffer, out_chain)
+    _pack_b_ndbuffer_impl[a_type, b_type, c_type, False](
+        b_input, output_buffer, out_chain
+    )
 
 
 @always_inline
 fn pack_transposed_b_ndbuffer[
-    type: DType
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
 ](
-    b_input: NDBuffer[2, DimList.create_unknown[2](), type],
-    output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
+    b_input: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
     out_chain: OutputChainPtr,
 ):
     """
@@ -1779,7 +1790,9 @@ fn pack_transposed_b_ndbuffer[
         output_buffer: Output buffer to store the packed weight.
         out_chain: The to signal when writes to output buffer have finished.
     """
-    _pack_b_ndbuffer_impl[type, True](b_input, output_buffer, out_chain)
+    _pack_b_ndbuffer_impl[a_type, b_type, c_type, True](
+        b_input, output_buffer, out_chain
+    )
 
 
 @value
