@@ -58,7 +58,7 @@ class Model:
 
         .. code-block:: python
 
-            input_tensor = np.random.rand(1, 224, 224, 3).astype(np.float32)
+            input_tensor = np.random.rand(1, 224, 224, 3)
             model.execute(input=input_tensor)
 
         Parameters
@@ -77,8 +77,12 @@ class Model:
         Raises
         ------
         RuntimeError
-            If the given input tensors' name, shape, and dtype don't match what
+            If the given input tensors' name and shape don't match what
             the model expects.
+
+        TypeError
+            If the given input tensors' dtype cannot be cast to what the model
+            expects.
         """
         if args:
             raise RuntimeError(
@@ -87,6 +91,34 @@ class Model:
                 " 10)).astype(np.float32)).Keywords have to be tensor names"
                 " which can be queried using the input_metadata API."
             )
+        dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
+        for input_name, input_value in kwargs.items():
+            if input_value.dtype != dtype_map[input_name]:
+                try:
+                    # the default casting settings of NumPy
+                    # are extremely liberal - all data conversions are allowed
+                    # e.g. uint8 -> float64 and vice versa. We use `same_kind`
+                    # casting instead which casts within the same numerics class.
+                    # This can be made stricter to only allow casting that
+                    # preserves values.
+                    #
+                    # NumPy casting creates a copy which is a runtime cost, but
+                    # we only pay for it in the event of a dtype mismatch.
+                    kwargs[input_name] = input_value.astype(
+                        dtype_map[input_name]._to_np_dtype(),
+                        casting="same_kind",
+                    )
+                except TypeError:
+                    # We don't expect this branch to be taken in practice but it
+                    # is added for completeness' sake. NumPy can theoretically
+                    # raise a ComplexWarning but complex numpy tensors are
+                    # super rare in ML.
+                    raise TypeError(
+                        f"Input dtype {input_value.dtype} not compatible with"
+                        f" {dtype_map[input_name]}"
+                        " required for model"
+                        " execution."
+                    )
         return self._impl.execute(**kwargs)
 
     def __repr__(self) -> str:
@@ -149,6 +181,32 @@ class DType(Enum):
 
     def __repr__(self) -> str:
         return self.name
+
+    def _to_np_dtype(self):
+        if self == DType.bool:
+            return np.bool_
+        elif self == DType.int8:
+            return np.int8
+        elif self == DType.int16:
+            return np.int16
+        elif self == DType.int32:
+            return np.int32
+        elif self == DType.int64:
+            return np.int64
+        elif self == DType.uint8:
+            return np.uint8
+        elif self == DType.uint16:
+            return np.uint16
+        elif self == DType.uint32:
+            return np.uint32
+        elif self == DType.uint64:
+            return np.uint64
+        elif self == DType.float16:
+            return np.float16
+        elif self == DType.float32:
+            return np.float32
+        elif self == DType.float64:
+            return np.float64
 
 
 class TensorSpec:
