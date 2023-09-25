@@ -4,7 +4,7 @@
 // DEBUGINFO-DAG: #local_variable{{[0-9]+}} =
 // DEBUGINFO-DAG: !subroutine{{[0-9]+}} =
 
-// CHECK: lit.package @"$test_package" attributes {archiveBytes = {{.*}}, compiledEnv = {{.*}}fire = "\F0\9F\94\A5"{{.*}}, compiledFor = {{.*}}, postElaborationModule = {{.*}}, preElaborationModule = {{.*}}
+// CHECK: lit.package @"$test_package" attributes {archive = {{.*}}, compiledEnv = {{.*}}fire = "\F0\9F\94\A5"{{.*}}, compiledFor = {{.*}}, preElaborationModule = {{.*}}
 
 // CHECK: lit.package @"$inner1"
 // CHECK:   lit.file_module @"$myfile"

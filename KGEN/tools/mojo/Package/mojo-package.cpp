@@ -308,8 +308,8 @@ PackageBuilder::createPostElaborationModuleAttr(
 
 void PackageBuilder::attachArchive(DenseResourceElementsAttr elaboratedModule,
                                    DenseResourceElementsAttr archiveBytes) {
-  thePackage.setPostElaborationModuleAttr(elaboratedModule);
-  thePackage.setArchiveBytesAttr(archiveBytes);
+  thePackage.setArchiveAttr(
+      LIT::PackageArchiveAttr::get(elaboratedModule, archiveBytes));
 }
 
 //===----------------------------------------------------------------------===//

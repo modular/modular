@@ -29,8 +29,7 @@ struct StripParserMetadataPass
         // Strip precompiled packages.
         package.removePreElaborationModuleAttr();
         package.removeCompiledForAttr();
-        package.removeArchiveBytesAttr();
-        package.removePostElaborationModuleAttr();
+        package.removeArchiveAttr();
       }
     });
   }

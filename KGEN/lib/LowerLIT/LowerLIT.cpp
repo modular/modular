@@ -513,9 +513,9 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
     return success();
 
   // We have an archive, insert the link directive.
-  DenseResourceElementsAttr bytes = package.getArchiveBytesAttr();
-  if (!bytes) {
-    return package->emitError("expected archive bytes to be provided since the "
+  LIT::PackageArchiveAttr archive = package.getArchiveAttr();
+  if (!archive) {
+    return package->emitError("expected archive to be provided since the "
                               "package has a target specified");
   }
 
@@ -523,9 +523,7 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   auto linkOp = b.create<PackageLinkOp>(
       package.getLoc(), package.getSymNameAttr(),
       package.getPreElaborationModuleAttr(), compiledFor,
-      package.getCompiledEnvAttr(),
-      LIT::PackageArchiveAttr::get(package.getPostElaborationModuleAttr(),
-                                   bytes));
+      package.getCompiledEnvAttr(), archive);
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do
