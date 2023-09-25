@@ -886,8 +886,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarLetDeclOp,
-              GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, GlobalVarDeclOp,
+              AliasDeclOp>([&](auto op) {
           Lexer lexer(shared.diags, decl.getCursor());
 
           // Generate pretty stack traces if a crash happens in this scope.
@@ -959,20 +959,20 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
-              VarLetDeclOp, GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp,
-              AliasForwardDeclOp>([&](auto op) {
-          // Parse the body of the declaration from the correct point.
-          Lexer lexer(shared.diags, decl.getCursor());
+              GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp, AliasForwardDeclOp>(
+            [&](auto op) {
+              // Parse the body of the declaration from the correct point.
+              Lexer lexer(shared.diags, decl.getCursor());
 
-          // Generate pretty stack traces if a crash happens in this scope.
-          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                           "resolving decl body");
+              // Generate pretty stack traces if a crash happens in this scope.
+              LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                               "resolving decl body");
 
-          if (resolveBody(op, lexer, decl))
-            return;
+              if (resolveBody(op, lexer, decl))
+                return;
 
-          checkEndOfBodyCursor(lexer);
-        })
+              checkEndOfBodyCursor(lexer);
+            })
         .Case([&](PackageOp op) { (void)resolveBody(op, decl); })
         .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
             [&](auto op) { /*Nothing*/ })
@@ -3097,16 +3097,6 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 //===----------------------------------------------------------------------===//
 // VarLetDecl implementation
 //===----------------------------------------------------------------------===//
-
-LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
-                                             ASTDecl &decl) {
-  return success();
-}
-
-ParseResult DeclResolver::resolveBody(VarLetDeclOp op, Lexer &lexer,
-                                      ASTDecl &decl) {
-  return success();
-}
 
 ParseResult DeclResolver::resolveBody(LetRegDeclOp op, Lexer &lexer,
                                       ASTDecl &decl) {

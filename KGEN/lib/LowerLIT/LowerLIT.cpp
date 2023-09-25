@@ -303,7 +303,6 @@ lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
   StringAttr structName =
       flattenAndRenameSymbol(structDecl, symbolTable, symTableIt);
 
-  SmallVector<VarLetDeclOp> opsToErase;
   for (Operation &member : llvm::make_early_inc_range(
            structDecl.getFields().front().getOperations())) {
     if (isa<StructFieldOp>(member))

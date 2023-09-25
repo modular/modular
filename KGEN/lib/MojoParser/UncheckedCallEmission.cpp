@@ -546,11 +546,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // Okay it is safe to use, so remove the temporary allocation we aren't
     // going to use.
-    if (auto ref = argValAndExpr.ir.getIfXLValue()) {
-      cast<OpResult>(tmpSlotAddr).getOwner()->erase(); // Ref2Ptr.
-      argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDecl2Op>()->erase();
-    } else
-      argValAndExpr.ir.getIfMLValue().getDefiningOp<VarLetDeclOp>()->erase();
+    assert(argValAndExpr.ir.getIfXLValue());
+    cast<OpResult>(tmpSlotAddr).getOwner()->erase(); // Ref2Ptr.
+    argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDecl2Op>()->erase();
     // Get the MLValue of the destination slot.
     return dest.getMLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }

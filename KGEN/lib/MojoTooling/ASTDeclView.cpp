@@ -337,10 +337,6 @@ llvm::json::Object VariableDeclView::toJSON() const {
 VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_VariableDeclView, declRef.getName().value_or(StringRef{})) {
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
-      .Case([&](VarLetDeclOp op) {
-        flagIsVar = op.getIsVar();
-        type = declRef.getType().getPointerElementType().getAsString();
-      })
       .Case([&](VarLetDecl2Op op) {
         flagIsVar = op.getIsVar();
         type = declRef.getType().getReferenceElementType().getAsString();

@@ -121,9 +121,6 @@ const char *LIT::getContextMessage(ExprContext context) {
 // ValueDest
 //===----------------------------------------------------------------------===//
 
-ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
-    : representation(dest.getOperation()), context(context) {}
-
 ValueDest::ValueDest(VarLetDecl2Op dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
@@ -246,12 +243,6 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
     ASTType materializedType = nmTarget ? nmTarget : resultType;
 
-    if (auto varOp = dyn_cast<VarLetDeclOp>(opDest)) {
-      assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
-             "Cannot resolve an already-resolved vardecl");
-      varOp.getResult().setType(PointerType::get(materializedType));
-      return MLValue(varOp);
-    }
     if (auto varOp = dyn_cast<VarLetDecl2Op>(opDest)) {
       assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
              "Cannot resolve an already-resolved vardecl");
@@ -1655,14 +1646,6 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
     mlirValue = letDecl.getResult();
     value = SBValue(mlirValue);
-
-    // Variable references resolve to an MBValue or LValue addressing the
-    // memory.
-  } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
-    // We handle both var and let's as mutable lvalues and let check lifetimes
-    // diagnose any problems.  This allows us to handle late-initialized lets.
-    mlirValue = var.getResult();
-    value = MLValue(mlirValue);
 
   } else if (auto var = dyn_cast<VarLetDecl2Op>(decl)) {
     // We handle both var and let's as mutable lvalues and let check lifetimes

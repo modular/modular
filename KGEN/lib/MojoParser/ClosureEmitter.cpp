@@ -309,13 +309,6 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
 static bool isMLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
   if (astDecl->getIfMLValue())
     return true;
-  if (Operation *op = astDecl->getIfOperation()) {
-    if (auto varlet = dyn_cast<VarLetDeclOp>(op)) {
-      if (ASTType(varlet.getType().getElementAsType())
-              .isRegisterPassable(loc, shared))
-        return true;
-    }
-  }
   return false;
 }
 

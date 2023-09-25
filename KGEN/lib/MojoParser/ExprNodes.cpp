@@ -393,7 +393,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  // This creates an untyped VarLetDeclOp which is then inferred from its
+  // This creates an untyped VarLetDecl2Op which is then inferred from its
   // initializer.  `isVar` indicates whether this should be considered mutable.
   auto createVarDecl = [&](OpBuilder &builder, bool isVar,
                            bool isSynth) -> VarLetDecl2Op {
@@ -412,7 +412,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // (which tells us we need to emit an LValue).
   if (lookup.isFailure() && emitter.varDeclCursor &&
       dest.getIfLValueInitializerType()) {
-    // Use this builder to place any VarLetDeclOps. In Python there is only one
+    // Use this builder to place any VarLetDecl2Ops. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
     OpBuilder varDeclBuilder(

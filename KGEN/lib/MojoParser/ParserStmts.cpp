@@ -1940,7 +1940,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     decl.setIRValue(&*builder.create<LetRegDeclOp>(
         varOp.getLoc(), varOp.getNameAttr(), theStore.getArg()));
 
-    // Remove the store and the original VarLetDeclOp.
+    // Remove the store and the original VarLetDecl2Op.
     theStore->erase();
     varOp->erase();
   }

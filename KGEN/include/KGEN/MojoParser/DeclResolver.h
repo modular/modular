@@ -33,7 +33,6 @@ class PackageOp;
 class ParserBase;
 class SharedState;
 class UnresolvedImportOp;
-class VarLetDeclOp;
 class LetRegDeclOp;
 class GlobalVarDeclOp;
 class StructDeclOp;
@@ -214,8 +213,6 @@ private:
   ParseResult resolveBody(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(VarLetDeclOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(VarLetDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(LetRegDeclOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
                                  ASTDecl &decl);

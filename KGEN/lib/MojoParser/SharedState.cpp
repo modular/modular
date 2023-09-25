@@ -1671,14 +1671,13 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                                              demangleParameterName(
                                                  op.getParamDecl().getName())));
           })
-          .Case<AliasForwardDeclOp, LetRegDeclOp, StructFieldOp, VarLetDeclOp>(
-              [&](auto op) {
-                ASTDecl &varDecl = addDeclForOp(op, op.getNameAttr());
+          .Case<AliasForwardDeclOp, LetRegDeclOp, StructFieldOp>([&](auto op) {
+            ASTDecl &varDecl = addDeclForOp(op, op.getNameAttr());
 
-                // Variables normally get resolved fully during parse phase, so
-                // resolve them as soon as we encounter them in bytecode.
-                (void)declResolver->resolveFully(varDecl, varDecl.getLoc());
-              })
+            // Variables normally get resolved fully during parse phase, so
+            // resolve them as soon as we encounter them in bytecode.
+            (void)declResolver->resolveFully(varDecl, varDecl.getLoc());
+          })
           .Case([&](GlobalVarDeclOp op) {
             addDeclForOp(op, op.getSymNameAttr());
           })
