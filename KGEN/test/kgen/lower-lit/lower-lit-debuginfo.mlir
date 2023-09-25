@@ -8,8 +8,10 @@
 
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
 // CHECK-SAME: (%[[ARG0:.*]]: index
+// CHECK-NEXT:    kgen.param.declare life: lifetime
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
 // CHECK-NEXT:    debuginfo.value #[[DIVAR]] = %[[VAR_A]] : !kgen.pointer<index>
+// CHECK-NEXT:    %1 = builtin.unrealized_conversion_cast %0
 // CHECK-NEXT:    debuginfo.value #[[DILETVAR]] = %[[ARG0]] : index
 
 // CHECK-LABEL: kgen.generator @"module::fn"()
@@ -24,7 +26,7 @@
 
 lit.struct.decl @Int {
   lit.func @varDecl(%arg0: index) -> index {
-    %a = lit.varlet.decl "a" var : <index> loc(fused<#sp>["test.mlir":10:10])
+    %a = lit.varlet.decl2 "a" var : !lit.ref<mut index, *"life"> loc(fused<#sp>["test.mlir":10:10])
     %let_value = lit.letreg.decl "let_value" = %arg0 : index loc(fused<#sp>["test.mlir":11:10])
     kgen.return %let_value : index loc(fused<#sp>[#loc])
   } loc(fused<#sp>[#loc])
@@ -46,8 +48,10 @@ lit.file_module @module {
 
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
 // CHECK-SAME: (%[[ARG0:.*]]: index
+// CHECK-NEXT:    kgen.param.declare life: lifetime
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
 // CHECK-NEXT:    debuginfo.value #[[DIVAR]] = %[[VAR_A]] : !kgen.pointer<index>
+// CHECK-NEXT:    %1 = builtin.unrealized_conversion_cast %0
 // CHECK-NEXT:    debuginfo.value #[[DILETVAR]] = %[[ARG0]] : index
 
 // CHECK-LABEL: kgen.generator @"module::fn"()
@@ -62,7 +66,7 @@ lit.file_module @module {
 
 lit.struct.decl @Int {
   lit.func @varDecl(%arg0: index) -> index {
-    %a = lit.varlet.decl "a" var : <index> loc(fused<#sp>["test.mlir":10:10])
+    %a = lit.varlet.decl2 "a" var : !lit.ref<mut index, *"life"> loc(fused<#sp>["test.mlir":10:10])
     %let_value = lit.letreg.decl "let_value" = %arg0 : index loc(fused<#sp>["test.mlir":11:10])
     kgen.return %let_value : index loc(fused<#sp>[#loc])
   } loc(fused<#sp>[#loc])

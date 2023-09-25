@@ -28,14 +28,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endsUninit = true;
     return;
   }
-  // VarLetDeclOp is uninit and ends that way.
-  if (auto varLet = v.getDefiningOp<VarLetDeclOp>()) {
-    name = varLet.getNameAttr();
-    isIndirect = true;
-    startsUninit = true;
-    endsUninit = true;
-    return;
-  }
   // VarLetDecl2Op is uninit and ends that way.
   if (auto varLet = v.getDefiningOp<VarLetDecl2Op>()) {
     name = varLet.getNameAttr();

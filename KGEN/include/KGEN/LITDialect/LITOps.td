@@ -789,42 +789,6 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl", [
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDeclOp
-//===----------------------------------------------------------------------===//
-
-def LIT_VarLetDeclOp : LITOp<"varlet.decl", [ASTDeclInterface,
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]> ]> {
-  let summary = "Addressible local let or var declaration";
-  let description = [{
-    This declaration is used for var and let declarations with an exposed
-    address.  `isVar` indicates if this is mutable at the source level, and
-    `isSynthesized` bit indicates whether this was created internally, which
-    supresses some warnings.
-
-    Example:
-
-    ```mlir
-    %foo = lit.varlet.decl "foo" isVar, synth : <index>
-    ```
-  }];
-
-  let arguments = (ins StrAttr:$name, UnitAttr:$isVar, UnitAttr:$isSynthesized,
-                       OptionalAttr<LIT_DocStringAttr>:$docString);
-  let results = (outs PointerType:$result);
-
-  let assemblyFormat = [{
-    $name (`var` $isVar^)? (`synth` $isSynthesized^)?
-    `:` type($result) attr-dict
-  }];
-
-  let builders = [
-    OpBuilder<(ins "Type":$type, "StringRef":$name, "bool":$isVar,
-                   "bool":$isSynth)>
-  ];
-}
-
-
-//===----------------------------------------------------------------------===//
 // VarLetDecl2Op
 //===----------------------------------------------------------------------===//
 
