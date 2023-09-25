@@ -7,6 +7,7 @@
 #include "KGEN/CompilerRT/Registration.h"
 #include "Support/AlignedAlloc.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
 #include <filesystem>
 
 #ifdef _MSC_VER
@@ -92,8 +93,12 @@ struct FileHandle {
   }
 
   void write(llvm::StringRef buf, llvm::StringRef *errMsg) {
+#ifdef _WIN32
+    llvm::raw_fd_ostream os(handle, /*shouldClose=*/false, /*unbuffered=*/true);
+#else
     llvm::raw_fd_ostream os(llvm::sys::fs::convertFDToNativeFile(handle),
                             /*shouldClose=*/false, /*unbuffered=*/true);
+#endif // _WIN32
     os << buf;
   }
 

@@ -7,6 +7,7 @@
 #include "Support/CPUCache.h"
 #include "Support/ErrorOr.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Process.h"
 
 #include <system_error>
