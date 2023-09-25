@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Cumsum import cumsum
-from memory.buffer import Buffer, NDBuffer
+from memory.buffer import NDBuffer
 from math import iota
 
 
@@ -16,22 +16,26 @@ fn test_cumsum_1d():
     print("== test_cumsum_1d")
     alias exclusive = 0
     alias reverse = 0
-    alias axis = 0
+    let axis = 0
 
-    var vec_data = DTypePointer[DType.float64].alloc(5)
-    let vec = Buffer[5, DType.float64](vec_data)
+    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
 
-    iota[DType.float64](vec_data, 5, 1)
+    iota[DType.float64](matrix_data, 5, 1)
 
-    let cumsum_vec = Buffer[5, DType.float64].stack_allocation()
+    let cumsum_matrix = NDBuffer[
+        1, DimList(5), DType.float64
+    ].stack_allocation()
 
-    cumsum[1, 5, DType.float64, exclusive, reverse, axis](cumsum_vec, vec)
+    cumsum[1, DType.float64, exclusive, reverse](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
+    )
 
     for i in range(5):
-        print_no_newline(cumsum_vec[i], ",")
+        print_no_newline(cumsum_matrix[i], ",")
     print()
 
-    vec_data.free()
+    matrix_data.free()
 
 
 # CHECK-LABEL: test_cumsum_1d_exclusive
@@ -40,22 +44,26 @@ fn test_cumsum_1d_exclusive():
     print("== test_cumsum_1d_exclusive")
     alias exclusive = 1
     alias reverse = 0
-    alias axis = 0
+    let axis = 0
 
-    var vec_data = DTypePointer[DType.float64].alloc(5)
-    let vec = Buffer[5, DType.float64](vec_data)
+    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
 
-    iota[DType.float64](vec_data, 5, 1)
+    iota[DType.float64](matrix_data, 5, 1)
 
-    let cumsum_vec = Buffer[5, DType.float64].stack_allocation()
+    let cumsum_matrix = NDBuffer[
+        1, DimList(5), DType.float64
+    ].stack_allocation()
 
-    cumsum[1, 5, DType.float64, exclusive, reverse, axis](cumsum_vec, vec)
+    cumsum[1, DType.float64, exclusive, reverse](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
+    )
 
     for i in range(5):
-        print_no_newline(cumsum_vec[i], ",")
+        print_no_newline(cumsum_matrix[i], ",")
     print()
 
-    vec_data.free()
+    matrix_data.free()
 
 
 # CHECK-LABEL: test_cumsum_1d_reverse
@@ -64,22 +72,26 @@ fn test_cumsum_1d_reverse():
     print("== test_cumsum_1d_reverse")
     alias exclusive = 0
     alias reverse = 1
-    alias axis = 0
+    let axis = 0
 
-    var vec_data = DTypePointer[DType.float64].alloc(5)
-    let vec = Buffer[5, DType.float64](vec_data)
+    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
 
-    iota[DType.float64](vec_data, 5, 1)
+    iota[DType.float64](matrix_data, 5, 1)
 
-    let cumsum_vec = Buffer[5, DType.float64].stack_allocation()
+    let cumsum_matrix = NDBuffer[
+        1, DimList(5), DType.float64
+    ].stack_allocation()
 
-    cumsum[1, 5, DType.float64, exclusive, reverse, axis](cumsum_vec, vec)
+    cumsum[1, DType.float64, exclusive, reverse](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
+    )
 
     for i in range(5):
-        print_no_newline(cumsum_vec[i], ",")
+        print_no_newline(cumsum_matrix[i], ",")
     print()
 
-    vec_data.free()
+    matrix_data.free()
 
 
 # CHECK-LABEL: test_cumsum_1d_reverse_exclusive
@@ -90,20 +102,24 @@ fn test_cumsum_1d_reverse_exclusive():
     alias reverse = 1
     alias axis = 0
 
-    var vec_data = DTypePointer[DType.float64].alloc(5)
-    let vec = Buffer[5, DType.float64](vec_data)
+    var matrix_data = DTypePointer[DType.float64].alloc(5)
+    let matrix = NDBuffer[1, DimList(5), DType.float64](matrix_data, DimList(5))
 
-    iota[DType.float64](vec_data, 5, 1)
+    iota[DType.float64](matrix_data, 5, 1)
 
-    let cumsum_vec = Buffer[5, DType.float64].stack_allocation()
+    let cumsum_matrix = NDBuffer[
+        1, DimList(5), DType.float64
+    ].stack_allocation()
 
-    cumsum[1, 5, DType.float64, exclusive, reverse, axis](cumsum_vec, vec)
+    cumsum[1, DType.float64, exclusive, reverse](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
+    )
 
     for i in range(5):
-        print_no_newline(cumsum_vec[i], ",")
+        print_no_newline(cumsum_matrix[i], ",")
     print()
 
-    vec_data.free()
+    matrix_data.free()
 
 
 # CHECK-LABEL: test_cumsum_2d_axis_0
@@ -112,7 +128,7 @@ fn test_cumsum_2d_axis_0():
     print("== test_cumsum_2d_axis_0")
     alias exclusive = 0
     alias reverse = 0
-    alias axis = 0
+    let axis = 0
 
     var matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
@@ -129,8 +145,8 @@ fn test_cumsum_2d_axis_0():
         DType.float64,
     ].stack_allocation()
 
-    cumsum[2, 6, DType.float64, exclusive, reverse, axis](
-        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown()
+    cumsum[2, DType.float64, exclusive, reverse](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
     )
 
     for i in range(2):
@@ -147,7 +163,7 @@ fn test_cumsum_2d_axis_1():
     print("== test_cumsum_2d_axis_1")
     alias exclusive = 0
     alias reverse = 0
-    alias axis = 1
+    let axis = 1
 
     var matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
@@ -164,8 +180,8 @@ fn test_cumsum_2d_axis_1():
         DType.float64,
     ].stack_allocation()
 
-    cumsum[2, 6, DType.float64, exclusive, reverse, axis](
-        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown()
+    cumsum[2, DType.float64, exclusive, reverse](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
     )
 
     for i in range(2):
@@ -182,7 +198,7 @@ fn test_cumsum_2d_negative_axis():
     print("== test_cumsum_2d_negative_axis")
     alias exclusive = 0
     alias reverse = 0
-    alias axis = -1
+    let axis = -1
 
     var matrix_data = DTypePointer[DType.float64].alloc(6)
     let matrix = NDBuffer[
@@ -199,8 +215,8 @@ fn test_cumsum_2d_negative_axis():
         DType.float64,
     ].stack_allocation()
 
-    cumsum[2, 6, DType.float64, exclusive, reverse, axis](
-        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown()
+    cumsum[2, DType.float64, exclusive, reverse](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
     )
 
     for i in range(2):

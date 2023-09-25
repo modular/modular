@@ -4,51 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import Buffer, NDBuffer
+from memory.buffer import NDBuffer
 
 
 @always_inline
 fn cumsum[
-    rank: Int, size: Int, type: DType, exclusive: Int, reverse: Int, axis: Int
-](output: Buffer[size, type], input: Buffer[size, type]):
-    """
-    Implements the CumSum operator from the ONNX spec - entry point for 1D input.
-    Computes cumulative sum of the input elements.
-    Cumulative sum can be inclusive or exclusive of the top element, and
-    normal or reverse (direction along a given axis).
-
-    Parameters:
-        rank: Rank of the input and output tensors.
-        size: The size of the input and output tensors.
-        type: Type of the input and output tensors.
-        exclusive: If set to 1, return exclusive sum (top element not included).
-        reverse: If set to 1, perform cumsum operation in reverse direction.
-        axis: The axis on which to perform the cumsum operation (0 for 1D input).
-
-    Args:
-        output: The output tensor.
-        input: The input tensor.
-    """
-    let input_B = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        input.data, StaticIntTuple[rank](size)
-    )
-    let output_B = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        output.data, StaticIntTuple[rank](size)
-    )
-
-    debug_assert(
-        axis == 0,
-        "Axis value must be 0 for 1D tensor.",
-    )
-    cumsum[rank, size, type, exclusive, reverse, axis](output_B, input_B)
-
-
-@always_inline
-fn cumsum[
-    rank: Int, size: Int, type: DType, exclusive: Int, reverse: Int, axis: Int
+    rank: Int,
+    type: DType,
+    exclusive: Int,
+    reverse: Int,
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: Int,
 ):
     """
     Implements the CumSum operator from the ONNX spec:
@@ -59,15 +27,15 @@ fn cumsum[
 
     Parameters:
         rank: Rank of the input and output tensors.
-        size: The size of the input and output tensors.
         type: Type of the input and output tensors.
+        axis_type: The type of the axis. Should be an index or integer.
         exclusive: If set to 1, return exclusive sum (top element not included).
         reverse: If set to 1, perform cumsum operation in reverse direction.
-        axis: The axis on which to perform the cumsum operation.
 
     Args:
         output: The output tensor.
         input: The input tensor.
+        axis: The axis on which to perform the cumsum operation.
     """
 
     debug_assert(
@@ -75,7 +43,7 @@ fn cumsum[
         "Axis value must be in range [-rank, rank)",
     )
 
-    alias axis_pos = axis if axis >= 0 else axis + rank
+    let axis_pos = axis if axis >= 0 else axis + rank
 
     let shape = input.get_shape()
 
