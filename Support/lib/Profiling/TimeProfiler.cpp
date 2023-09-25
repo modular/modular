@@ -39,6 +39,10 @@ using ClockType = ProfilerEntry<true>::ClockType;
 using TimePointType = ProfilerEntry<true>::TimePointType;
 using DurationType = duration<ClockType::rep, ClockType::period>;
 
+namespace {
+constexpr bool kProfilingEnabled = MODULAR_LLCL_MAX_PROFILING_LEVEL > 0;
+}
+
 namespace M {
 
 struct TimeTraceThreadProfiler {
@@ -137,11 +141,6 @@ struct GlobalProfilerContext {
   SmallVector<std::string> inputShapes;
 };
 } // namespace M
-
-static int reportError(Twine errorMessage) {
-  llvm::errs() << errorMessage << "\n";
-  return EXIT_FAILURE;
-}
 
 TimeTraceThreadProfiler *ThreadProfilerContext::get() {
   static thread_local ThreadProfilerContext instance;
@@ -317,15 +316,19 @@ void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
   jsonOS.objectEnd();
   jsonOS.attributeEnd();
 
-  // Emit the host machine info, if we can retrieve it.
-  auto hostMachineInfoOr = getHostMachineInfo();
-  if (hostMachineInfoOr.isError()) {
-    reportError("warning: time-profiler failed to "
-                "retrieve system-info for tracefile");
-  } else {
-    jsonOS.attributeBegin("hostMachineInfo");
-    hostMachineInfoOr.takeValue().print(jsonOS);
-    jsonOS.attributeEnd();
+  if constexpr (kProfilingEnabled) {
+    // Emit the host machine info, if we can retrieve
+    // it.
+    auto hostMachineInfoOr = getHostMachineInfo();
+    if (hostMachineInfoOr.isError()) {
+      llvm::errs() << "warning: time-profiler failed to "
+                      "retrieve system-info for tracefile"
+                   << "\n";
+    } else {
+      jsonOS.attributeBegin("hostMachineInfo");
+      hostMachineInfoOr.takeValue().print(jsonOS);
+      jsonOS.attributeEnd();
+    }
   }
 
   jsonOS.objectEnd();
