@@ -398,11 +398,33 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
     """
 
     with Runtime(num_work_items) as rt:
-        parallelize[func](rt, num_work_items)
+        _parallelize_impl[func](rt, num_work_items)
 
 
 @always_inline
 fn parallelize[
+    func: fn (Int) capturing -> None
+](num_work_items: Int, num_workers: Int):
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    returns when all are complete.
+
+    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
+    function will return only after all the sub-tasks have completed.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        num_work_items: Number of parallel tasks.
+        num_workers: The number of works to use for execution.
+    """
+
+    with Runtime() as rt:
+        _parallelize_impl[func](rt, num_work_items, num_workers)
+
+
+@always_inline
+fn _parallelize_impl[
     func: fn (Int) capturing -> None
 ](rt: Runtime, num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
@@ -418,11 +440,11 @@ fn parallelize[
         rt: The runtime.
         num_work_items: Number of parallel tasks.
     """
-    parallelize[func](rt, num_work_items, rt.parallelism_level())
+    _parallelize_impl[func](rt, num_work_items, rt.parallelism_level())
 
 
 @always_inline
-fn parallelize[
+fn _parallelize_impl[
     func: fn (Int) capturing -> None
 ](rt: Runtime, num_work_items: Int, num_workers: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
