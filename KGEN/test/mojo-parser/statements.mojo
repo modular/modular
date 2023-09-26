@@ -747,6 +747,46 @@ def testWithInDef(a: ExampleCM):
   noop(val2)
 
 
+# Issue #21990: [Mojo-lang] Support context managers in with statements that
+# don't implement the __exit__ method.
+# https://github.com/modularml/modular/issues/21990
+
+struct CMWithoutExit:
+  fn __init__(inout self): pass
+  fn __moveinit__(inout self, owned existing: Self): pass
+
+  # This context manager consumes itself and returns it as the value.
+  fn __enter__(owned self) -> Self:
+    return self^
+  fn method(self): pass
+
+# CHECK-LABEL: lit.func @"testCMWithoutExit
+fn testCMWithoutExit():
+  # CHECK-NEXT: %a = lit.varlet.decl "a"
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
+  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR]])
+  with CMWithoutExit() as a:
+    a.method()
+
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a"
+  # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*"
+  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A_1
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR]])
+
+  # Test that we don't have a name collision between two 'a's.
+  with CMWithoutExit() as a:
+    a.method()
+
+  # CHECK-NEXT: kgen.param.constant: !lit.none
 
 ##===----------------------------------------------------------------------===##
 
