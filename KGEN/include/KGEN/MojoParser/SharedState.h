@@ -306,6 +306,10 @@ public:
   /// declaration has been resolved by the parser.
   void notifyListenerOnStructFieldDecl(ASTDecl &decl, SMLoc identifierLoc);
 
+  /// Notify the parser listener, if present, that a new `trait` declaration
+  /// has been resolved by the parser.
+  void notifyListenerOnTraitDecl(ASTDecl &decl, SMLoc identifierLoc);
+
   /// Notify the parser listener, if present, that a new `let` or `var`
   /// declaration has been resolved by the parser.
   void notifyListenerOnVariableDecl(ASTDecl &decl, SMLoc identifierLoc);

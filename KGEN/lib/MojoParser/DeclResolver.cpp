@@ -672,7 +672,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
         // Some decls always need to be resolved if their parents were resolved,
         // allowlist the decls that we can safely ignore when unparsed.
         if (isa<FuncOp, FileModuleOp, PackageOp, UnresolvedImportOp,
-                UnresolvedWildcardImportOp, StructDeclOp>(decl)) {
+                UnresolvedWildcardImportOp, StructDeclOp, TraitDeclOp>(decl)) {
           deferredDecls.insert(&decl);
           continue;
         }
@@ -886,8 +886,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, GlobalVarDeclOp,
-              AliasDeclOp>([&](auto op) {
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, TraitDeclOp,
+              GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
           Lexer lexer(shared.diags, decl.getCursor());
 
           // Generate pretty stack traces if a crash happens in this scope.
@@ -936,7 +936,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
           !decl.hasReferenceError) {
         if (lexer.getToken().isAny(Token::kw_def, Token::kw_struct,
-                                   Token::kw_class, Token::kw_var)) {
+                                   Token::kw_trait, Token::kw_class,
+                                   Token::kw_var)) {
           lexer.emitTokenError(
               "definition isn't on its own line at the correct "
               "indentation");
@@ -959,20 +960,20 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
-              GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp, AliasForwardDeclOp>(
-            [&](auto op) {
-              // Parse the body of the declaration from the correct point.
-              Lexer lexer(shared.diags, decl.getCursor());
+              TraitDeclOp, GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp,
+              AliasForwardDeclOp>([&](auto op) {
+          // Parse the body of the declaration from the correct point.
+          Lexer lexer(shared.diags, decl.getCursor());
 
-              // Generate pretty stack traces if a crash happens in this scope.
-              LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                               "resolving decl body");
+          // Generate pretty stack traces if a crash happens in this scope.
+          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                           "resolving decl body");
 
-              if (resolveBody(op, lexer, decl))
-                return;
+          if (resolveBody(op, lexer, decl))
+            return;
 
-              checkEndOfBodyCursor(lexer);
-            })
+          checkEndOfBodyCursor(lexer);
+        })
         .Case([&](PackageOp op) { (void)resolveBody(op, decl); })
         .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
             [&](auto op) { /*Nothing*/ })
@@ -2009,7 +2010,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
   ASTType selfType;
   ssize_t selfArgNumber = -1;
   if (auto *parentDecl = decl.getParentDecl()) {
-    if (isa<StructDeclOp>(*parentDecl)) {
+    if (isa<StructDeclOp, TraitDeclOp>(*parentDecl)) {
       // The parent decl must be fully resolved in order to resolve any members
       // of it.
       assert(parentDecl->resolvedness == DeclResolvedness::fully);
@@ -2936,10 +2937,20 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       return failure();
   }
 
+  Block *body = funcOp.getBody();
+
+  Operation *lastOpIterBefore =
+      body->empty() ? nullptr : &body->getOperations().back();
+
   // With all the argument declarations set up, we can resolve the body of the
   // function.
   if (ParserBase(shared, lexer).parseSuite(decl))
     return failure();
+
+  // Function body is empty if the body block is empty or the last operation in
+  // the block is still the same as it was before parseSuite.
+  bool emptyBody =
+      body->empty() || (lastOpIterBefore == &body->getOperations().back());
 
   auto loc = funcOp.getLoc();
 
@@ -2954,7 +2965,23 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Emit a default "return None" if the function returns nothing, and add an
   // endop terminator.
-  appendDefaultReturnAndEndOp(funcOp, decl, shared);
+
+  if (emptyBody && isa<TraitDeclOp>(*decl.getParentDecl())) {
+    // Wipe out the body which may already contain some compiler generated
+    // operations for handling argLValueVarSlot.
+    body->walk([&](LIT::VarLetDeclOp op) {
+      // Remove the value from parent's declsInScope first before destroying the
+      // value.
+      auto iter = decl.declsInScope.find(op.getNameAttr());
+      if (iter != decl.declsInScope.end())
+        iter->second.clear();
+    });
+
+    body->clear();
+    // Don't append anything to an empty function if this is a trait function.
+  } else {
+    appendDefaultReturnAndEndOp(funcOp, decl, shared);
+  }
 
   // Now that the body of the function is parsed, run any body decorators.
   Decorators(decl, shared).applyBodyDecorators([](ExprNode *decorator) {
@@ -3416,6 +3443,44 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// Trait Decl implementation
+//===----------------------------------------------------------------------===//
+
+LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
+                                             ASTDecl &decl) {
+  ParserBase p(shared, lexer);
+  auto decoratorExprs = p.parseDecorators(decl);
+
+  SMLoc identifierLoc;
+  if (p.parseToken(Token::kw_trait, "internal error: checked by stmt parser") ||
+      p.parseIdentifier("internal error: checked by trait parser",
+                        &identifierLoc))
+    return failure();
+
+  if (p.consumeIf(Token::l_square)) {
+    // If the current token is on a new line, report the error on the end of
+    // the previous line, this is probably where the punctuation was omitted.
+    auto diagLoc = p.getTokenLocOrEndOfPreviousLineIfOnNewLine();
+    // Report the error.
+    emitError(diagLoc,
+              "TODO: trait declarations do not support parameters yet");
+    return failure();
+  }
+
+  if (p.parseToken(Token::colon, "expected ':' in trait definition"))
+    return failure();
+
+  // TODO: figure out selfType for trait.
+  // selfType needs to be set to avoid silent parsing error that drops function
+  // calls.
+  decl.setSelfType(shared.getTypeCheckErrorType());
+
+  shared.notifyListenerOnTraitDecl(decl, identifierLoc);
+
+  return success();
+}
+
 /// Look up the __del__ destructor for the specified `type` which is needed
 /// for the specified declaration (typically a var or argument declaration).
 /// This returns the destructor if successful, diagnoses an error if not, and
@@ -3770,6 +3835,43 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
 ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
                                       ASTDecl &decl) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// TraitFieldDecl implementation
+//===----------------------------------------------------------------------===//
+
+ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
+                                      ASTDecl &traitDecl) {
+  // Push the debug scope for this trait if necessary so that nested operations
+  // have proper debug info.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = traitOp.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+  if (ParserBase(shared, lexer).parseSuite(traitDecl))
+    return failure();
+
+  // Resolve TraitDeclOp's body here so that we get more information about its
+  // functions right away.
+  for (auto &decls : llvm::make_second_range(traitDecl.declsInScope)) {
+    for (ASTDecl *decl : decls)
+      // Only fully resolve children of LIT::FuncOp type.
+      if (decl->getParentDecl() == &traitDecl && isa<LIT::FuncOp>(*decl))
+        (void)resolveFully(*decl, decl->getLoc());
+  }
+
+  for (auto fn : traitOp.getBodyRegion().getOps<LIT::FuncOp>()) {
+    if (!fn.getBody()->empty())
+      shared.emitError(fn.getLoc(),
+                       "unexpected function body in trait function "
+                       "declaration, use `...` or `pass`");
+
+    auto b = ImplicitLocOpBuilder::atBlockEnd(fn.getLoc(), fn.getBody());
+    b.create<TraitFuncOp>();
+  }
+
   return success();
 }
 

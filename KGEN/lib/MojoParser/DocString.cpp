@@ -43,8 +43,9 @@ static size_t getIndentationLevel(StringRef str) {
 
 /// A struct requires a doc string if it's defined at the top level of a module,
 /// unless its name begins with an underscore.
-static bool requiresDocString(StructDeclOp op) {
-  return !op.getName().starts_with("_") && isa<FileModuleOp>(op->getParentOp());
+static bool requiresDocString(ASTDeclInterface op) {
+  return !op.getDeclName().strref().starts_with("_") &&
+         isa<FileModuleOp>(op->getParentOp());
 }
 
 /// Given a function name such as "__init__($module::Struct=&)", returns whether
@@ -69,14 +70,19 @@ static bool requiresDocString(LIT::FuncOp op) {
   if (isa<FileModuleOp>(parent))
     return true;
 
-  StructDeclOp parentStruct = dyn_cast<StructDeclOp>(parent);
-  if (!parentStruct)
-    return false;
-
-  // We rely on an assumption here that only synthesized methods have the same
-  // location as their parent struct.
-  return requiresDocString(parentStruct) &&
-         op.getLoc() != parentStruct.getLoc();
+  if (auto parentStruct = dyn_cast<StructDeclOp>(parent)) {
+    // We rely on an assumption here that only synthesized methods have the same
+    // location as their parent struct.
+    return requiresDocString(parentStruct) &&
+           op.getLoc() != parentStruct.getLoc();
+  }
+  if (auto parentTrait = dyn_cast<TraitDeclOp>(parent)) {
+    // We rely on an assumption here that only synthesized methods have the same
+    // location as their parent struct.
+    return requiresDocString(parentTrait) &&
+           op.getLoc() != parentTrait.getLoc();
+  }
+  return false;
 }
 
 /// If a struct field matches all of the following conditions, it requires a doc
@@ -223,8 +229,9 @@ public:
   void validate(ASTDecl &decl) {
     if (decl.hasReferenceError)
       return;
-    TypeSwitch<ASTDecl &>(decl).Case<LIT::FuncOp, StructDeclOp, StructFieldOp>(
-        [&](auto op) {
+    TypeSwitch<ASTDecl &>(decl)
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp,
+              TraitDeclOp>([&](auto op) {
           ValidationKind validation = requiresDocString(op)
                                           ? ValidationKind::Strict
                                           : ValidationKind::Normal;
@@ -474,7 +481,8 @@ private:
       argNames = argNames.drop_front();
     // Methods take `self` as an explicit first argument, for which
     // documentation isn't required.
-    if (isa<StructDeclOp>(funcOp->getParentOp()) && !funcOp.getIsStatic())
+    if (isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&
+        !funcOp.getIsStatic())
       argNames = argNames.drop_front();
 
     // Grab the types of the arguments to the function.
@@ -567,6 +575,14 @@ private:
   void validateDecl(ASTDecl &decl, StructFieldOp fieldOp,
                     ValidationKind validation) {
     // Nothing to do.
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Traits
+
+  void validateDecl(ASTDecl &decl, TraitDeclOp traitDeclOp,
+                    ValidationKind validation) {
+    // TODO: issue #21850 add validation for trait docstring.
   }
 
   //===--------------------------------------------------------------------===//

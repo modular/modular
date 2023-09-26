@@ -189,6 +189,10 @@ public:
   /// resolved by the parser.
   virtual void onStructFieldDecl(ASTDecl *decl, llvm::SMLoc identifierLoc);
 
+  /// Notify the listener that a new `trait` declaration has been resolved by
+  /// the parser.
+  virtual void onTraitDecl(ASTDecl *decl, llvm::SMLoc identifierLoc);
+
   /// Notify the listener that a new `let` or `var` declaration has been
   /// resolved by the parser.
   virtual void onVariableDecl(ASTDecl *decl, llvm::SMLoc identifierLoc);

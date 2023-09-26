@@ -1377,7 +1377,9 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
   if (!decl) // MLIR types are never parameterized.
     return type;
 
-  auto structDecl = cast<StructDeclOp>(*decl);
+  auto structDecl = dyn_cast<StructDeclOp>(*decl);
+  if (!structDecl)
+    return type;
 
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;

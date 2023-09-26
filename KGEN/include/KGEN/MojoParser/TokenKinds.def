@@ -145,6 +145,7 @@ TOK_KEYWORD(ref)
 TOK_KEYWORD(return)
 TOK_KEYWORD(Self)
 TOK_KEYWORD(struct)
+TOK_KEYWORD(trait)
 TOK_KEYWORD(True)
 TOK_KEYWORD(try)
 TOK_KEYWORD(var) // Mojo extension.
