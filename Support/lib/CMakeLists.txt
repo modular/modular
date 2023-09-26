@@ -28,7 +28,6 @@ add_modular_library(MSupport
   Stats.cpp
   URI.cpp
   Version.cpp
-  DLOpen.cpp
 
   LINK_LIBS PUBLIC
   LLVMSupport
