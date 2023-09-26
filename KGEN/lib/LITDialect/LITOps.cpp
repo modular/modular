@@ -816,13 +816,30 @@ LogicalResult StructDeclOp::verifyRegions() {
   return success();
 }
 
+LogicalResult
+StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  if (!getTraitsAttr())
+    return success();
+
+  KGENModule module = KGENModule::from(*this, symbolTable);
+  for (SymbolRefAttr trait : getTraitsAttr()) {
+    auto traitDeclOp = module.lookup<TraitDeclOp>(trait);
+    if (!traitDeclOp)
+      return emitOpError("expected to find a trait decl of ")
+             << trait << " for struct";
+  }
+  return success();
+}
+
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
         DecoratorsAttr::get(ctx, {}), /*paramVarArgs=*/false,
         /*defaultParameters=*/ParameterExprArrayAttr::get(ctx, {}),
-        /*registerPassable=*/0, /*nonmaterializableTarget=*/nullptr,
+        /*registerPassable=*/0,
+        /*traits=*/nullptr,
+        /*nonmaterializableTarget=*/nullptr,
         /*destructor=*/nullptr, /*moveInit=*/nullptr,
         /*copyInit=*/nullptr, /*closureSignature=*/nullptr,
         /*docString=*/nullptr);
