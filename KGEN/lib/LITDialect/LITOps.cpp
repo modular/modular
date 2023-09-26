@@ -821,6 +821,7 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
         DecoratorsAttr::get(ctx, {}), /*paramVarArgs=*/false,
+        /*defaultParameters=*/ParameterExprArrayAttr::get(ctx, {}),
         /*registerPassable=*/0, /*nonmaterializableTarget=*/nullptr,
         /*destructor=*/nullptr, /*moveInit=*/nullptr,
         /*copyInit=*/nullptr, /*closureSignature=*/nullptr,

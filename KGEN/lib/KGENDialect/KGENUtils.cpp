@@ -415,18 +415,6 @@ ParseResult KGEN::parseOptionalParameterSpec(
   return success();
 }
 
-ParseResult
-KGEN::parseOptionalParameterSpec(AsmParser &parser,
-                                 ParamDeclArrayAttr &inputParamDecls) {
-  ParamDeclArrayAttr resultParams;
-  llvm::SMLoc loc = parser.getCurrentLocation();
-  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParams))
-    return failure();
-  if (!resultParams.empty())
-    return parser.emitError(loc, "expected no result parameters");
-  return success();
-}
-
 void KGEN::printOptionalParameterSpec(AsmPrinter &p,
                                       ArrayRef<ParamDeclAttr> inputParamDecls,
                                       ArrayRef<ParamDeclAttr> resultParams,
@@ -442,11 +430,6 @@ void KGEN::printOptionalParameterSpec(AsmPrinter &p,
     printParamDecls(p, resultParams);
   }
   p << '>';
-}
-
-void KGEN::printOptionalParameterSpec(AsmPrinter &p, Operation *op,
-                                      ArrayRef<ParamDeclAttr> inputParamDecls) {
-  printOptionalParameterSpec(p, inputParamDecls);
 }
 
 //===----------------------------------------------------------------------===//

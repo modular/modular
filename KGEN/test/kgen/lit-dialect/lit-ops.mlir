@@ -23,8 +23,8 @@ lit.func @vardecl<ty : dtype>(%x : i32) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @SomeStruct<ty: dtype> {
-lit.struct.decl @SomeStruct<ty: dtype> {
+// CHECK-LABEL: lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7>
+lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7> {
   // CHECK-NEXT: lit.func @foo() {
   lit.func @foo() {
     kgen.return

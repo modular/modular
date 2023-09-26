@@ -325,6 +325,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$paramVarArgs,
+    KGEN_ParameterExprArrayAttr:$defaultParameters,
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor,
@@ -335,7 +336,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
-    $sym_name `` custom<OptionalParameterSpec>($inputParams)
+    $sym_name `` custom<StructParameterSpec>($inputParams, $defaultParameters)
     attr-dict-with-keyword custom<OptionalDecorators>($decorators)
     $fields
   }];

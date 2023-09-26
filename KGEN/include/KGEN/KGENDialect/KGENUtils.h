@@ -164,8 +164,6 @@ ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result,
 /// of the inputs, and is responsible for parsing the decl and placing it in the
 /// provided array.
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
-                                       ParamDeclArrayAttr &inputParamDecls);
-ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls,
                                        ParamDeclArrayAttr &resultParamDecls,
                                        ParamDeclParseHookTy parseInputElt = {});
@@ -179,8 +177,6 @@ void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<ParamDeclAttr> inputParamDecls,
                                 ArrayRef<ParamDeclAttr> resultParams = {},
                                 ParamDeclPrintHookTy printInputElt = {});
-void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
-                                ArrayRef<ParamDeclAttr> inputParamDecls);
 
 /// Parse an argument convention.
 ParseResult parseInputConvention(AsmParser &p,
