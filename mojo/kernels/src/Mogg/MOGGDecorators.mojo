@@ -18,6 +18,17 @@ fn mogg_register(name: StringLiteral):
     return
 
 
+fn mogg_register_override(name: StringLiteral, priority: Int):
+    """
+    This decorator registers a given mojo function as being an implementation
+    of a mo op with an override priority.
+
+    @mogg_register("mo.add", 1)
+    fn my_op[...](...):
+    """
+    return
+
+
 fn mogg_elementwise():
     """
     This decorator marks a kernel as being elementwise. This implies the

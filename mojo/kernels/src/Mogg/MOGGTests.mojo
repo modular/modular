@@ -125,3 +125,13 @@ fn _test_make_indices[num_indices: Int]() -> StaticIntTuple[num_indices]:
     for i in range(num_indices):
         out[i] = i
     return out
+
+
+@mogg_register_override("mo.sqrt", 1)
+@mogg_elementwise
+@export
+fn sqrt_wrapped[
+    type: DType, simd_width: Int
+](value: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    print("In override sqrt")
+    return value
