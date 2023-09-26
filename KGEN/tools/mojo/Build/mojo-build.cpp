@@ -229,6 +229,15 @@ static int linkExecutable(const State &state,
   StringRef outputName =
       args.getLastArgValue(options::OPT_o, defaultOutputName);
 
+  // Check that the parent directory of the output exists.
+  auto outputDirPath =
+      std::filesystem::absolute(outputName.str(), ec).parent_path();
+  if (!std::filesystem::exists(outputDirPath, ec) || ec) {
+    return state.reportError(
+        llvm::formatv("unable to write file. The path '{0}' does not exist.",
+                      outputDirPath.string()));
+  }
+
   // Resolve the linker path.
   llvm::ErrorOr<std::string> linker =
       llvm::sys::findProgramByName(linkerFilename);
