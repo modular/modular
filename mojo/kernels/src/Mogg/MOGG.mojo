@@ -220,6 +220,7 @@ fn MOGGExport():
     alias _relu = relu
     alias _reshape = reshape
     alias _reshape_shape = reshape_shape
+    alias _calculate_squeeze_shape = calculate_squeeze_shape
     alias _calculate_unsqueeze_shape = calculate_unsqueeze_shape
     alias _broadcast_to_shape = broadcast_to_shape
     alias _broadcast_to_tensor = broadcast_to_tensor
@@ -1393,6 +1394,72 @@ fn reshape_shape[
     )
 
     return target_shape
+
+
+# ===----------------------------------------------------------------------===#
+# SqueezeShape
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn calculate_squeeze_shape[
+    type: DType, indices_type: DType, single_thread_blocking_override: Bool
+](
+    input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
+    remove_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
+    output_shape: NDBuffer[1, DimList.create_unknown[1](), type],
+):
+    # remove_indices may not be sorted so our strategy is to use -1 to
+    # represent removed dimensions in a copied version of our input shape buffer
+    let num_input_dims = input_shape.dynamic_shape[0]
+    let num_remove_indices = remove_indices.dynamic_shape[0]
+    let final_rank = num_input_dims - num_remove_indices
+
+    debug_assert(
+        final_rank == output_shape.dynamic_shape[0],
+        "Incorrect output shape.",
+    )
+
+    alias MAX_VECTOR_LIMIT = 12
+    debug_assert(
+        num_input_dims <= MAX_VECTOR_LIMIT,
+        "Only support shape vectors up to rank-12.",
+    )
+    var input_shape_copy = StaticIntTuple[MAX_VECTOR_LIMIT]()
+    for i in range(num_input_dims):
+        input_shape_copy[i] = input_shape[i].to_int()
+
+    # Mark every squeezed dimension as -1 in our copy of the shape tensor
+    for remove_index_index in range(num_remove_indices):
+        let remove_index = remove_indices[remove_index_index].to_int()
+        let remove_index_normalize = remove_index + num_input_dims * (
+            remove_indices[remove_index_index] < 0
+        ).to_int()
+
+        debug_assert(
+            remove_index_normalize >= 0 and remove_index_normalize < final_rank,
+            (
+                "Remove indices must be between [-r, r-1] where r is the final"
+                " output rank."
+            ),
+        )
+        debug_assert(
+            output_shape[remove_index_normalize] != -1,
+            "Multiple indices point to the same dimension.",
+        )
+        debug_assert(
+            output_shape[remove_index_normalize] == 1,
+            "Attempting to unsqueeze a dimension that is not 1.",
+        )
+        input_shape_copy[remove_index_normalize] = -1
+
+    # # Copy over the non -1 dimensions
+    var output_shape_index = 0
+    for input_shape_index in range(num_input_dims):
+        if input_shape_copy[input_shape_index] == -1:
+            continue
+        output_shape[output_shape_index] = input_shape_copy[input_shape_index]
+        output_shape_index += 1
 
 
 # ===----------------------------------------------------------------------===#
