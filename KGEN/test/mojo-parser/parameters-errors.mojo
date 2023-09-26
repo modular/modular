@@ -26,14 +26,14 @@ struct Thing[a: Int, b: Int]:
 fn GoodUseOfThing(a: Thing[4, 5]):
   pass
 
-fn MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' expects 2 input parameters but 0 were provided}}
+fn MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' expects 2 input parameters, but 0 were specified}}
   pass
 
 # expected-error-re @below {{cannot apply more parameters to an already parameterized type 'Thing[{{.*}}1{{.*}}, {{.*}}2{{.*}}]'}}
 fn MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
-fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
+fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters, but 1 was specified}}
   pass
 
 # expected-error @+1 {{'Thing' parameter #1 has 'Int' type, but value has type 'FloatLiteral'}}
@@ -62,7 +62,7 @@ fn testTestParamStruct(a: Parameterized[4]):
   # expected-error-re @below {{invalid call to 'method': method argument #0 cannot be converted from 'Parameterized[{{.*}}12{{.*}}]' to 'Parameterized[{{.*}}11{{.*}}]'}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
-  a.method[2, 7] # expected-error {{'method' expects 2 input parameters but 3 were provided}}
+  a.method[2, 7] # expected-error {{'method' expects 2 input parameters, but 3 were specified}}
 
 
 struct MySIMD[size: Int, type: __mlir_type.`!kgen.dtype`]:
@@ -93,7 +93,7 @@ def generic_fn[a: DType, b: Int](c : Int):
   pass
 
 def call_generic[dt: DType]():
-  generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
+  generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters, but 3 were specified}}
   generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, parameter expected 'DType'}}
 
 fn meta_param_then_param_redef[
@@ -152,7 +152,7 @@ fn hasInputParam[a: Int]():
   pass
 
 fn useResultParams():
-  # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 0 were provided}}
+  # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter, but 0 were specified}}
   hasResultParam[1]()
 
   alias b: Int
@@ -163,7 +163,7 @@ fn useResultParams():
 
   alias c: Int
   alias d: Int
-  # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 2 were provided}}
+  # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter, but 2 were specified}}
   hasResultParam[1 -> c, d]()
 
   # expected-error @+1 {{unable to find forward-declared alias named 'e'}}
@@ -184,7 +184,7 @@ fn useResultParams():
   # expected-error-re @+1 {{cannot use parameterized function of type 'fn[Int]() -> None' without binding all its parameters}}
   var float1 = hasInputParam
 
-  # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}
+  # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter, but 0 were specified}}
   hasInputParam()
 
   # Issue #6856: Cannot bind parameter results is parameter expressions
@@ -261,5 +261,15 @@ alias accessStructWithParam = StructWithParam.Alias # expected-error {{incorrect
 ##===----------------------------------------------------------------------===##
 
 # expected-error @below {{non-default parameter follows default parameter}}
-struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral]:
-    pass
+struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral]: pass
+
+
+@value
+struct DefaultParams2[a: Int, b: Int = 7]: pass  # expected-note {{declared here}}
+
+fn test_default_param_struct():
+    # expected-error @+1 {{expects at least 1 input parameter, but 0 were specified}}
+    alias T = DefaultParams2[]
+
+    # expected-error @+1 {{expects at most 2 input parameters, but 3 were specified}}
+    alias S = DefaultParams2[1, 3, 4]

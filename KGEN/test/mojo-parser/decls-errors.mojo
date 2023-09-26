@@ -242,15 +242,15 @@ fn badCalls(arg: Int):
 
   # FIXME(#11803): These diagnostics could be improved.
   # The user hasn't provided any arguments that could be used to infer `T`.
-  # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
+  # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
   parameterizedVariadic()
-  # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
+  # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
   let z = ParameterizedStruct()
   # We can't infer `T` with two arguments of different types.
-  # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
+  # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
   parameterizedVariadic(1, 2.0)
 
-  # expected-error @below {{callee expects 3 input parameters but 2 were provided}}
+  # expected-error @below {{callee expects 3 input parameters, but 2 were specified}}
   TestTuple[Int, Float32]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
@@ -322,7 +322,7 @@ fn badPackCalls():
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
   examplePack[Int, Float32](1, Int(2).value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
-  # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
+  # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter, but 0 were specified}}
   examplePack(packArgOverload)
 
 ##===----------------------------------------------------------------------===##
