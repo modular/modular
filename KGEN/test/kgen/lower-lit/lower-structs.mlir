@@ -249,7 +249,7 @@ lit.struct.decl @StaticTuple<size, ty: type> {
 // -----
 
 // CHECK-LABEL: kgen.generator @nested_declref_type
-// CHECK-SAME: !pop.closure<(!pop.simd<apply(:(index) -> index @pass, 1), si32>
+// CHECK-SAME: !kgen.signature<(!pop.simd<apply(:(index) -> index @pass, 1), si32>
 kgen.generator @nested_declref_type(
     %arg1: !kgen.declref<@UnaryClosure<input_type: type = !kgen.declref<@SIMD<size = 1>>>>) {
   kgen.return
@@ -264,7 +264,7 @@ lit.struct.decl @SIMD<size> {
 }
 
 lit.struct.decl @UnaryClosure<input_type: type> {
-  lit.struct.field value : !pop.closure<(!kgen.paramref<input_type>) -> ()>
+  lit.struct.field value : !kgen.signature<(!kgen.paramref<input_type>) -> ()>
 }
 
 // -----

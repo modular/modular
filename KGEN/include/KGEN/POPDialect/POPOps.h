@@ -42,7 +42,6 @@ class PrefetchTagAttr;
 class PrefetchLocalityAttr;
 
 class ArrayType;
-class ClosureType;
 class CoroutineType;
 class PackType;
 class SIMDType;

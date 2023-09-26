@@ -620,19 +620,6 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
-// ClosureType
-//===----------------------------------------------------------------------===//
-
-std::optional<int64_t> ClosureType::getTypeSize(TargetInfoAttr target) const {
-  // This type is lowered to a pair of pointers.
-  return 2 * target.getDataLayout().getPointerSize();
-}
-
-std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerABIAlign();
-}
-
-//===----------------------------------------------------------------------===//
 // CoroutineType
 //===----------------------------------------------------------------------===//
 
