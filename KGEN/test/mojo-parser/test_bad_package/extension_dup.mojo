@@ -3,5 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-fn getExtension() -> String:
-  return "normal string"
+
+fn getExtension()
+    pass

@@ -3,5 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-fn getExtension() -> String:
-  return "emoji"
+
+
+fn getExtension():
+    pass

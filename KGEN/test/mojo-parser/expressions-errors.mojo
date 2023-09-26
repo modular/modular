@@ -199,7 +199,7 @@ fn dynamic_type_value():
 ##===----------------------------------------------------------------------===##
 
 # expected-note @+1 {{function declared here}}
-fn var_func(s: String, *args: Int): pass
+fn var_func(s: StringLiteral, *args: Int): pass
 
 # expected-note @+1 {{function declared here}}
 fn pack_func[*Ts: AnyType](*args: *Ts): pass

@@ -12,21 +12,25 @@
 
 # CHECK-LABEL: module {
 
-fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
+@value
+struct MemType:
+   pass
+
+fn foo1(x:MemType, y:MemType, z:Int, u: __mlir_type.index) -> MemType:
    return x
 
-fn foo2(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
+fn foo2(x:MemType, y:MemType, z:Int, u: __mlir_type.index) -> MemType:
    return y
 
 # CHECK-COUNT-1: lit.struct.decl @"_CI_
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
-fn makes_escaping_closure(m: String, z:String, y:Bool):
+fn makes_escaping_closure(m: MemType, z:MemType, y:Bool):
    let register_passable_var: Int = 3
    let mlir_type_var: __mlir_type.index = register_passable_var.value
-   fn dummy(n:String) escaping -> String:
+   fn dummy(n:MemType) escaping -> MemType:
       return foo1(n,m,register_passable_var, mlir_type_var)
-   fn duplicate(n:String) escaping -> String:
+   fn duplicate(n:MemType) escaping -> MemType:
       return foo2(n,m,register_passable_var, mlir_type_var)
 
 # // -----
@@ -37,25 +41,16 @@ fn makes_escaping_closure(m: String, z:String, y:Bool):
 # Closure Impl Methods
 ##===----------------------------------------------------------------------===##
 
-struct String:
-   var size: Int
-   fn __init__(inout self, sz:Int):
-      self.size = sz
-
-   fn __copyinit__(inout self, existing: Self):
-      pass
-
-   fn __moveinit__(inout self, owned existing: Self):
-      pass
-
+@value
+struct MemType:
    fn __del__(owned self):
       pass
 
-fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
+fn foo1(x:MemType, y:MemType, z:Int, u: __mlir_type.index) -> MemType:
    return x
 
 # CHECK:    lit.struct.decl @"_CI_
-# CHECK-NEXT:      lit.struct.field field0 : !String
+# CHECK-NEXT:      lit.struct.field field0 : !MemType
 # CHECK-NEXT:      lit.struct.field field1 : !Int
 # CHECK-NEXT:      lit.struct.field field2 : index
 # CHECK-NEXT:      lit.func @"__del__
@@ -68,8 +63,8 @@ fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
 # CHECK-NEXT:    lit.func @"__copyinit__
 # CHECK-SAME:    (%self: !kgen.pointer<{{.*}}> init_self,
 # CHECK-SAME:    %existing: !kgen.pointer<{{.*}}> borrow_in_mem) -> !lit.none attributes {specialFnKind = 3 : i8} {
-# CHECK-NEXT:    [[V0:%.*]] = lit.struct.gep %self[field0] : <!String>
-# CHECK-NEXT:    [[V1:%.*]] = lit.struct.gep %existing[field0] : <!String>
+# CHECK-NEXT:    [[V0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
+# CHECK-NEXT:    [[V1:%.*]] = lit.struct.gep %existing[field0] : <!MemType>
 # CHECK-NEXT:    [[V2:%.*]] = kgen.call @{{.*}}__copyinit__{{.*}}"([[V0]], [[V1]])
 # CHECK-NEXT:    [[V3:%.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT:    [[V4:%.*]] = lit.struct.gep %existing[field1] : <!Int>
@@ -87,8 +82,8 @@ fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
 # CHECK-NEXT:      lit.func @"__moveinit__
 # CHECK-SAME:      (%self: !kgen.pointer<{{.*}}> init_self, %existing:
 # CHECK-SAME:      !kgen.pointer<{{.*}}> owned_in_mem) -> !lit.none attributes {specialFnKind = 4 : i8} {
-# CHECK-NEXT:      [[W0:%.*]] = lit.struct.gep %self[field0] : <!String>
-# CHECK-NEXT:      [[W1:%.*]] = lit.struct.gep %existing[field0] : <!String>
+# CHECK-NEXT:      [[W0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
+# CHECK-NEXT:      [[W1:%.*]] = lit.struct.gep %existing[field0] : <!MemType>
 # CHECK-NEXT:      [[W2:%.*]] = kgen.call @{{.*}}__moveinit__{{.*}}"([[W0]], [[W1]])
 # CHECK-NEXT:      [[W3:%.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT:      [[W4:%.*]] = lit.struct.gep %existing[field1] : <!Int>
@@ -105,7 +100,7 @@ fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
 # CHECK-NEXT: }
 
 # CHECK-NEXT: lit.func @"__init__
-# CHECK-NEXT: [[Q0:%.*]] = lit.struct.gep %self[field0] : <!String>
+# CHECK-NEXT: [[Q0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
 # CHECK-NEXT: [[Q1:%.*]] = kgen.call @{{.*}}::@"__moveinit__{{.*}}"([[Q0]], %field0)
 # CHECK-NEXT: [[Q2:%.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT: pop.store %field1, [[Q2]] : !kgen.pointer<!Int>
@@ -116,10 +111,10 @@ fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
 # CHECK-NEXT: lit.end_func
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
-fn makes_escaping_closure(m: String, z:String, y:Bool):
+fn makes_escaping_closure(m: MemType, z:MemType, y:Bool):
    let register_passable_var: Int = 3
    let mlir_type_var: __mlir_type.index = register_passable_var.value
-   fn dummy(n:String) escaping -> String:
+   fn dummy(n:MemType) escaping -> MemType:
       return foo1(n,m,register_passable_var, mlir_type_var)
 
 # // -----
@@ -130,14 +125,19 @@ fn makes_escaping_closure(m: String, z:String, y:Bool):
 # Nested Function Signature Multiple Effects
 ##===----------------------------------------------------------------------===##
 
-# CHECK:    lit.struct.decl @"_CI_{{.*}}throws|escaping
-# CHECK-NEXT:      lit.struct.field field0 : !String
+@value
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
 
-# CHECK: lit.struct.decl @"_CW_{{.*}}::String)
+# CHECK:    lit.struct.decl @"_CI_{{.*}}throws|escaping
+# CHECK-NEXT:      lit.struct.field field0 : !MemType
+
+# CHECK: lit.struct.decl @"_CW_{{.*}}::MemType)
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
-fn makes_escaping_closure(m: String):
-   fn two_effects(n:String) escaping raises -> String:
+fn makes_escaping_closure(m: MemType):
+   fn two_effects(n:MemType) escaping raises -> MemType:
       return n + m
 
 # // -----
@@ -148,11 +148,16 @@ fn makes_escaping_closure(m: String):
 # Escaping Return Type
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.struct.decl @"_CW_{{.*}}::String)
+@value
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
+
+# CHECK: lit.struct.decl @"_CW_{{.*}}::MemType)
 # CHECK-NEXT:     lit.struct.field field0 : !kgen.pointer<array<0, i1>>
 # CHECK-NEXT:     lit.struct.field dtor : {{.*}}<("self": !kgen.pointer<array<0, i1>>) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field copy : {{.*}}<("ptrToImpl": !kgen.pointer<pointer<array<0, i1>>> borrow, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
-# CHECK-NEXT:     lit.struct.field call : {{.*}}<("__result__": !kgen.pointer<!String> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!String> borrow_in_mem) -> !lit.none>
+# CHECK-NEXT:     lit.struct.field call : {{.*}}<("__result__": !kgen.pointer<!MemType> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT: lit.func @"__del__
 # CHECK-NEXT: [[PTR_TO_IMPL:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
 # CHECK-NEXT: [[OPAQUE_IMPL:%.*]] = pop.load [[PTR_TO_IMPL]] : !kgen.pointer<pointer<array<0, i1>>>
@@ -223,10 +228,10 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:   [[V3:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT:   lit.ownership.mark_destroyed %existing
 
-# CHECK: lit.func @"returns_escaping_closure({{.*}}::String)"
-# CHECK-SAME: (%__result__: !kgen.pointer<{{.*}}> byref_result, %m: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
-fn returns_escaping_closure(m: String) -> fn(n:String) escaping -> String:
-   fn myclosure(n:String) escaping -> String:
+# CHECK: lit.func @"returns_escaping_closure({{.*}}::MemType)"
+# CHECK-SAME: (%__result__: !kgen.pointer<{{.*}}> byref_result, %m: !kgen.pointer<!MemType> borrow_in_mem) -> !lit.none
+fn returns_escaping_closure(m: MemType) -> fn(n:MemType) escaping -> MemType:
+   fn myclosure(n:MemType) escaping -> MemType:
       return n + m
    return myclosure
 
@@ -273,16 +278,15 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
 ##===----------------------------------------------------------------------===##
 
 @value
-struct Mem:
-  var str: String
-  fn __add__(self, other:Mem) -> Mem:
-     return Mem(self.str + other.str)
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
 
 # CHECK: lit.struct.decl @"_CW_
 
 # CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<!escaping1> init_self, %impl: !kgen.pointer<!escaping> borrow_in_mem)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
-# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [!lit.signature<("__result__": !kgen.pointer<!Mem> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!Mem> borrow_in_mem) -> !lit.none
+# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [!lit.signature<("__result__": !kgen.pointer<!MemType> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
 
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
@@ -311,20 +315,20 @@ struct Mem:
 # CHECK-NEXT:  lit.end_func
 # CHECK-NEXT:  }
 
-# CHECK: lit.struct.decl @Mem
+# CHECK: lit.struct.decl @MemType
 
 # CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>>) -> !lit.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"(%__result__: !kgen.pointer<!Mem> byref_result, %self: !kgen.pointer<array<0, i1>> borrow_in_mem, %n: !kgen.pointer<!Mem> borrow_in_mem) -> !lit.none
+# CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"(%__result__: !kgen.pointer<!MemType> byref_result, %self: !kgen.pointer<array<0, i1>> borrow_in_mem, %n: !kgen.pointer<!MemType> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %self
 # CHECK-NEXT: %[[A1:.*]] = kgen.call @{{.*}}@"__call__{{.*}}"(%__result__, %[[A0]], %n)
 # CHECK-NEXT: lit.return %[[A1]] : !lit.none
 # CHECK-NEXT: lit.end_func
 
-fn materialize_escaping_closure(m: Mem):
-   fn unique(n: Mem) escaping -> Mem:
+fn materialize_escaping_closure(m: MemType):
+   fn unique(n: MemType) escaping -> MemType:
       return m + n
 
 # // -----
@@ -335,32 +339,36 @@ fn materialize_escaping_closure(m: Mem):
 # Pointer Captures
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.struct.field field0 : !kgen.pointer<!String>
-# CHECK: lit.struct.field field1 : !kgen.pointer<!String>
+@value
+struct MemType:
+   pass
+
+# CHECK: lit.struct.field field0 : !kgen.pointer<!MemType>
+# CHECK: lit.struct.field field1 : !kgen.pointer<!MemType>
 # CHECK: lit.struct.field field2 : !kgen.pointer<!Int>
 # CHECK: lit.struct.field field3 : !kgen.pointer<index>
-# CHECK: lit.struct.field field4 : !String
-# CHECK: lit.struct.field field5 : !String
+# CHECK: lit.struct.field field4 : !MemType
+# CHECK: lit.struct.field field5 : !MemType
 # CHECK: lit.struct.field field6 : !Int
 
 # CHECK: lit.func @"__init__({{.*}}_CI_{{.*}} init_self,
-# CHECK-SAME: %field0: !kgen.pointer<!String>, %field1: !kgen.pointer<!String>, %field2: !kgen.pointer<!Int>,
-# CHECK-SAME: %field3: !kgen.pointer<index>, %field4: !kgen.pointer<!String> owned_in_mem, %field5: !kgen.pointer<!String> owned_in_mem
-fn doNothing(x:__mlir_type[`!kgen.pointer<`, String, `>`], y:__mlir_type[`!kgen.pointer<`, String, `>`]):
+# CHECK-SAME: %field0: !kgen.pointer<!MemType>, %field1: !kgen.pointer<!MemType>, %field2: !kgen.pointer<!Int>,
+# CHECK-SAME: %field3: !kgen.pointer<index>, %field4: !kgen.pointer<!MemType> owned_in_mem, %field5: !kgen.pointer<!MemType> owned_in_mem
+fn doNothing(x:__mlir_type[`!kgen.pointer<`, MemType, `>`], y:__mlir_type[`!kgen.pointer<`, MemType, `>`]):
    pass
 
-fn doNothingAgain(x:__mlir_type[`!kgen.pointer<`, Int, `>`], y:__mlir_type.`!kgen.pointer<index>`, w:String, local:String, size:Int):
+fn doNothingAgain(x:__mlir_type[`!kgen.pointer<`, Int, `>`], y:__mlir_type.`!kgen.pointer<index>`, w:MemType, local:MemType, size:Int):
    pass
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 fn makes_escaping_closure(x: __mlir_type[`!kgen.pointer<`, Int, `>`],
                           y: __mlir_type.`!kgen.pointer<index>`,
-                          z: __mlir_type[`!kgen.pointer<`, String, `>`],
-                          w: String):
-   let local:String = "1234"
+                          z: __mlir_type[`!kgen.pointer<`, MemType, `>`],
+                          w: MemType):
+   let local = MemType()
    let alignment = 0
    let size = 1
-   let local_ptr: __mlir_type[`!kgen.pointer<`, String, `>`] = __mlir_op.`pop.aligned_alloc`[_type : __mlir_type[`!kgen.pointer<`, String, `>`]](alignment.value, size.value)
+   let local_ptr: __mlir_type[`!kgen.pointer<`, MemType, `>`] = __mlir_op.`pop.aligned_alloc`[_type : __mlir_type[`!kgen.pointer<`, MemType, `>`]](alignment.value, size.value)
    fn do_stuff_with_pointers() escaping -> NoneType:
       doNothing(local_ptr, z)
       doNothingAgain(x, y, local, w, size)
@@ -373,18 +381,23 @@ fn makes_escaping_closure(x: __mlir_type[`!kgen.pointer<`, Int, `>`],
 # Owned/ByRef Captures
 ##===----------------------------------------------------------------------===##
 
-fn foo(x:Int, y:String, z: String):
+@value
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
+
+fn foo(x:Int, y:MemType, z: MemType):
    pass
 
 # CHECK: lit.struct.field field0 : !Int
-# CHECK: lit.struct.field field1 : !String
-# CHECK: lit.struct.field field2 : !String
-# CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<{{.*}}> init_self, %field0: !Int, %field1: !kgen.pointer<!String> owned_in_mem, %field2: !kgen.pointer<!String> owned_in_mem)
+# CHECK: lit.struct.field field1 : !MemType
+# CHECK: lit.struct.field field2 : !MemType
+# CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<{{.*}}> init_self, %field0: !Int, %field1: !kgen.pointer<!MemType> owned_in_mem, %field2: !kgen.pointer<!MemType> owned_in_mem)
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure_3
 fn makes_escaping_closure_3(owned x: Int,
-                          owned y: String,
-                          inout z: String):
+                          owned y: MemType,
+                          inout z: MemType):
    fn take_owned_and_escape() escaping -> NoneType:
       foo(x, y, z)
 
@@ -446,6 +459,11 @@ fn foo(owned y:Int):
 # Closure Impl Call
 ##===----------------------------------------------------------------------===##
 
+@value
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
+
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %q: !Int, %ww: !Int borrow) -> !lit.none
 # CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %self[field0] : <!Int>
 # CHECK-NEXT: %[[V0REF:.*]] = builtin.unrealized_conversion_cast %[[V0]]
@@ -458,14 +476,14 @@ fn foo(owned y:Int):
 # CHECK-NEXT: %[[V4:.*]] = kgen.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : !lit.signature<("self": !Int borrow, "rhs": !Int borrow) -> !Int>
 # CHECK-NEXT: lit.ref.store %[[V4]], %[[V0REF]]
 # CHECK-NEXT: %[[V5:.*]] = lit.ref.load %[[V1REF]]
-# CHECK-NEXT: %[[V6:.*]] = kgen.call @{{.*}}@"print{{.*}}"(%[[V5]])
+# CHECK-NEXT: %[[V6:.*]] = kgen.call @{{.*}}@"use{{.*}}"(%[[V5]])
 # CHECK-NEXT: %[[V7:.*]] = kgen.param.constant: !lit.none
 # CHECK-NEXT: lit.return %[[V7]] : !lit.none
 # CHECK-NEXT: lit.end_func
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %p: !Int borrow) -> !lit.none
-# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!String>
-# CHECK-NEXT: %[[W1:.*]] = kgen.call @{{.*}}::@"print{{.*}}"(%[[W0]])
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!MemType>
+# CHECK-NEXT: %[[W1:.*]] = kgen.call @{{.*}}::@"use{{.*}}"(%[[W0]])
 # CHECK-NEXT: %[[W2:.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT: lit.return %[[W2]] : !lit.none
 # CHECK-NEXT: lit.end_func
@@ -481,26 +499,30 @@ fn foo(owned y:Int):
 # CHECK-NEXT: lit.return %[[W5]] : index
 # CHECK-NEXT: lit.end_func
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%__result__: !kgen.pointer<!String> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %y: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
-# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!String>
-# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl "__call_result_tmp__" var synth : !lit.ref<mut !String,
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%__result__: !kgen.pointer<!MemType> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %y: !kgen.pointer<!MemType> borrow_in_mem) -> !lit.none
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!MemType>
+# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl "__call_result_tmp__" var synth : !lit.ref<mut !MemType,
 # CHECK-NEXT: %1 = lit.ref.to_pointer %__call_result_tmp__
 # CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%1, %[[W0]], %y)
-# CHECK-NEXT: %[[W3:.*]] = kgen.call @{{.*}}__copyinit__{{.*}}(%__result__, %1)
+# CHECK-NEXT: %[[W3:.*]] = kgen.call @{{.*}}__moveinit__{{.*}}(%__result__, %1)
 # CHECK-NEXT: %[[W4:.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT: lit.return %[[W4]] : !lit.none
 # CHECK-NEXT: lit.end_func
-fn make_diff_closures(m:String, z: __mlir_type.index, owned w: Int):
+
+fn use(x: MemType): pass
+fn use(x: Int): pass
+
+fn make_diff_closures(m:MemType, z: __mlir_type.index, owned w: Int):
    var x = w
-   fn ret_mem(y: String) escaping -> String:
+   fn ret_mem(y: MemType) escaping -> MemType:
       return m + y
    fn ret_mlir_type() escaping -> __mlir_type.index:
       return __mlir_op.`index.mul`(z, w.value)
-   fn ret_none(p: Int) escaping -> NoneType:
-      print(m)
-   fn capture_slvalue(owned q: Int, ww: Int) escaping -> NoneType:
+   fn ret_none(p: Int) escaping:
+      use(m)
+   fn capture_slvalue(owned q: Int, ww: Int) escaping:
       x = x + x
-      print(w)
+      use(w)
 
 # // -----
 
@@ -510,8 +532,8 @@ fn make_diff_closures(m:String, z: __mlir_type.index, owned w: Int):
 # Closure Wrapper Call
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.struct.field call : {{.*}}<("self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!String> borrow_in_mem, "j": !Int borrow) -> !Int>
-# CHECK: lit.func @"__call__{{.*}}"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %n: !kgen.pointer<!String> borrow_in_mem, %j: !Int borrow) -> !Int
+# CHECK: lit.struct.field call : {{.*}}<("self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!MemType> borrow_in_mem, "j": !Int borrow) -> !Int>
+# CHECK: lit.func @"__call__{{.*}}"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %n: !kgen.pointer<!MemType> borrow_in_mem, %j: !Int borrow) -> !Int
 # CHECK-NEXT: [[closure_impl_ref0:%.*]] = lit.struct.gep %self[field0]
 # CHECK-NEXT: [[closure_impl0:%.*]] = pop.load [[closure_impl_ref0]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT: [[casting_call_ref0:%.*]] = lit.struct.gep %self[call]
@@ -520,8 +542,8 @@ fn make_diff_closures(m:String, z: __mlir_type.index, owned w: Int):
 # CHECK-NEXT: lit.return [[result_of_typed_call0]] : !Int
 # CHECK-NEXT: lit.end_func
 # CHECK-NEXT: }
-# CHECK: lit.struct.field call : {{.*}}<("__result__": !kgen.pointer<!String> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!String> borrow_in_mem) -> !lit.none>
-# CHECK: lit.func @"__call__{{.*}}"(%__result__: !kgen.pointer<!String> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %n: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
+# CHECK: lit.struct.field call : {{.*}}<("__result__": !kgen.pointer<!MemType> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !lit.none>
+# CHECK: lit.func @"__call__{{.*}}"(%__result__: !kgen.pointer<!MemType> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %n: !kgen.pointer<!MemType> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: [[closure_impl_ref:%.*]] = lit.struct.gep %self[field0]
 # CHECK-NEXT: [[closure_impl:%.*]] = pop.load [[closure_impl_ref]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT: [[casting_call_ref:%.*]] = lit.struct.gep %self[call]
@@ -529,11 +551,18 @@ fn make_diff_closures(m:String, z: __mlir_type.index, owned w: Int):
 # CHECK-NEXT: [[result_of_typed_call:%.*]] = kgen.call_signature [[casting_call]](%__result__, [[closure_impl]], %n)
 # CHECK-NEXT: lit.return [[result_of_typed_call]] : !lit.none
 
+@value
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
+   fn __len__(self) -> Int:
+      return 0
+
 # CHECK-LABEL: lit.func @"makes_escaping_closure
-fn makes_escaping_closure(m: String):
-   fn myclosure(n:String) escaping -> String:
+fn makes_escaping_closure(m: MemType):
+   fn myclosure(n:MemType) escaping -> MemType:
       return n+m
-   fn myclosure2(n:String, j:Int) escaping -> Int:
+   fn myclosure2(n:MemType, j:Int) escaping -> Int:
       return m.__len__()
 
 # // -----
@@ -544,18 +573,23 @@ fn makes_escaping_closure(m: String):
 # Closure Impl Instantiation
 ##===----------------------------------------------------------------------===##
 
+@value
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
+
 # CHECK-LABEL: lit.func @"makes_escaping_closure
-fn makes_escaping_closure(m: String):
+fn makes_escaping_closure(m: MemType):
    # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
    # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : !lit.ref<mut !String,
+   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : !lit.ref<mut !MemType,
    # CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
    # CHECK-NEXT: kgen.call @"{{.*}}@"__copyinit__{{.*}}"([[ANONPTR_0]], %m)
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR]], [[ANONPTR_0]])
    # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*" var synth
    # CHECK-NEXT: [[ANONPTR_1:%.*]] = lit.ref.to_pointer %anonymous2A_1
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[ANONPTR_1]], [[ANONPTR]])
-   fn myclosure_with_mem_types(n:String) escaping -> String:
+   fn myclosure_with_mem_types(n:MemType) escaping -> MemType:
       return n+m
 
 # // -----
@@ -591,11 +625,16 @@ fn makes_escaping_closure(z: Int):
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 
+@value
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
+
 # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
 # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : {{.*}}!String
+# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : {{.*}}!MemType
 # CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
-# CHECK-NEXT: [[V0:%.*]] = kgen.call @"{{.*}}::@String::@"__copyinit__({{.*}})"([[ANONPTR_0]], %m)
+# CHECK-NEXT: [[V0:%.*]] = kgen.call @"{{.*}}::@MemType::@"__copyinit__({{.*}})"([[ANONPTR_0]], %m)
 # CHECK-NEXT: [[V1:%.*]] = kgen.call {{.*}}CI_$[[F]]_{{.*}}"::@"__init__{{.*}}([[ANONPTR]], [[ANONPTR_0]])
 # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*" var synth
 # CHECK-NEXT: [[ANONPTR_1:%.*]] = lit.ref.to_pointer %anonymous2A_1
@@ -603,9 +642,9 @@ fn makes_escaping_closure(z: Int):
 # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !lit.none
 # CHECK-NEXT: lit.return [[V3]]
 # CHECK-NEXT: lit.end_func
-fn makes_escaping_closure(m: String):
-   fn myclosure(n:String) escaping -> String:
-      fn nested_nested(k:String, l:String) escaping -> String:
+fn makes_escaping_closure(m: MemType):
+   fn myclosure(n:MemType) escaping -> MemType:
+      fn nested_nested(k:MemType, l:MemType) escaping -> MemType:
          return n+k
       return n+m
 
@@ -661,6 +700,11 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]
 # CHECK-NEXT:  pop.store [[V4]], %ptrToImpl : !kgen.pointer<pointer<array<0, i1>>>
 
-fn materialize_escaping_closure(m: String):
-   fn unique(n: String) escaping -> String:
+@value
+struct MemType:
+   fn __add__(self, rhs: MemType) -> MemType:
+      return MemType()
+
+fn materialize_escaping_closure(m: MemType):
+   fn unique(n: MemType) escaping -> MemType:
       return m + n
