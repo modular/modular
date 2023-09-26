@@ -768,8 +768,9 @@ fn testCMWithoutExit():
   # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR]])
+  # CHECK-NEXT: [[APTR1:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
+  # CHECK-NEXT: lit.ownership.use [[APTR]]
   with CMWithoutExit() as a:
     a.method()
 
@@ -779,8 +780,9 @@ fn testCMWithoutExit():
   # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
-  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR]])
+  # CHECK-NEXT: [[APTR1:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
+  # CHECK-NEXT: lit.ownership.use [[APTR]]
 
   # Test that we don't have a name collision between two 'a's.
   with CMWithoutExit() as a:
