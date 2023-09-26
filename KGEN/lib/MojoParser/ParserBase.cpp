@@ -82,7 +82,7 @@ ParseResult ParserBase::parseCommaSeparatedList(
   if (firstCommaLoc)
     *firstCommaLoc = SMLoc();
 
-  while (1) {
+  while (true) {
     if (parseElement())
       return failure();
 
