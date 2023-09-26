@@ -128,16 +128,16 @@ fn _async_complete(chain: Pointer[Chain]):
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_global_runtime() -> DTypePointer[DType.invalid]:
+fn _init_global_runtime() -> Pointer[AnyType]:
     """Intialize the global runtime. This is a singleton that handle the common
     case where the runtime has the same number of threads as the number of cores.
     """
     return external_call[
-        "KGEN_CompilerRT_LLCL_CreateRuntime", DTypePointer[DType.invalid]
+        "KGEN_CompilerRT_LLCL_CreateRuntime", Pointer[AnyType]
     ](num_cores())
 
 
-fn _destroy_global_runtime(ptr: DTypePointer[DType.invalid]):
+fn _destroy_global_runtime(ptr: Pointer[AnyType]):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](ptr)
 
@@ -145,9 +145,9 @@ fn _destroy_global_runtime(ptr: DTypePointer[DType.invalid]):
 @always_inline
 fn _get_global_runtime() -> Runtime:
     """Gets or creats the global runtime."""
-    return external_call[
-        "KGEN_CompilerRT_GetGlobalOr", DTypePointer[DType.invalid]
-    ](StringRef("Runtime"), _init_global_runtime, _destroy_global_runtime)
+    return external_call["KGEN_CompilerRT_GetGlobalOr", Pointer[AnyType]](
+        StringRef("Runtime"), _init_global_runtime, _destroy_global_runtime
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -159,7 +159,7 @@ fn _get_global_runtime() -> Runtime:
 # until we have traits for proper parametric types.
 @register_passable
 struct Runtime:
-    alias ptr_type = DTypePointer[DType.invalid]
+    alias ptr_type = Pointer[AnyType]
     var ptr: Self.ptr_type
 
     # TODO: Probably don't want the runtime to be implicitly copyable.
