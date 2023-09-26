@@ -7,7 +7,7 @@
 
 from math import is_power_of_2
 from sys import llvm_intrinsic
-from sys.info import alignof, simdwidthof, sizeof
+from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 
 from memory import stack_allocation as _generic_stack_allocation
 from memory.unsafe import DTypePointer
@@ -588,10 +588,14 @@ fn _stack_allocation[
 # Pointer
 # ===----------------------------------------------------------------------===#
 
+alias DEFAULT_ADDRESS_SPACE = AddressSpace.GLOBAL if triple_is_nvidia_cuda() else AddressSpace.GENERIC
+
 
 @value
 @register_passable("trivial")
-struct DevicePointer[type: AnyType, address_space: AddressSpace]:
+struct DevicePointer[
+    type: AnyType, address_space: AddressSpace = DEFAULT_ADDRESS_SPACE
+]:
     """Defines a Pointer struct that contains an address of any mlirtype at the
     specified address space.
 
@@ -864,7 +868,9 @@ struct DevicePointer[type: AnyType, address_space: AddressSpace]:
 
 
 @register_passable("trivial")
-struct DTypeDevicePointer[type: DType, address_space: AddressSpace]:
+struct DTypeDevicePointer[
+    type: DType, address_space: AddressSpace = DEFAULT_ADDRESS_SPACE
+]:
     """Defines a `DTypeDevicePointer` struct that contains an address of the
     given dtype at the specified address space.
 
