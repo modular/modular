@@ -7,6 +7,7 @@
 
 from sys.ffi import RTLD, DLHandle
 from memory import stack_allocation
+from utils.index import StaticIntTuple, Index
 from math import floor
 
 # ===----------------------------------------------------------------------===#
@@ -1604,3 +1605,32 @@ struct Module:
                     "cuModuleUnload"
                 )(self.module)
             )
+
+
+# ===----------------------------------------------------------------------===#
+# Dim
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct Dim:
+    var _value: StaticIntTuple[3]
+
+    fn __init__(x: Int, y: Int = 1, z: Int = 1) -> Self:
+        return Self {_value: Index(x, y, z)}
+
+    fn __getitem__(self, idx: Int) -> Int:
+        return self._value[idx]
+
+    fn __str__(self) -> String:
+        var res = String("(") + String(self[0]) + String(", ")
+        if self[1] != 1 or self[2] != 1:
+            res += String(self[1])
+        if self[2] != 1:
+            res += String(", ") + String(self[2])
+        res += String(")")
+        return res
+
+    fn __repr__(self) -> String:
+        return self.__str__()
