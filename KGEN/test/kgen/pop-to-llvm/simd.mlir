@@ -278,14 +278,6 @@ kgen.func @simd_splat_scalar_to_2xf32(%a: !pop.scalar<f32>) -> !pop.simd<2, f32>
   kgen.return %0 : !pop.simd<2, f32>
 }
 
-// CHECK-LABEL: @simd_splat_scalar_to_1xf32
-kgen.func @simd_splat_scalar_to_1xf32(%a: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: %[[F32_VAL:.*]] = builtin.unrealized_conversion_cast %[[E:..*]] : !pop.scalar<f32> to f32
-  // CHECK: %[[RESULT:.*]] = builtin.unrealized_conversion_cast %[[F32_VAL]] : f32 to !pop.scalar<f32>
-  %0 = pop.simd.splat %a : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
-}
-
 // CHECK-LABEL: @simd_extractelement
 kgen.func @simd_extractelement(%vec: !pop.simd<4, f32>, %idx: index) -> !pop.scalar<f32> {
   // CHECK: %[[VEC:.*]] = builtin.unrealized_conversion_cast

@@ -405,6 +405,26 @@ kgen.func @simd_select_equal(%arg0: !pop.simd<2, bool>, %arg1: !pop.simd<2, bool
   kgen.return %0 : !pop.simd<2, bool>
 }
 
+// CHECK-LABEL: @simd_select_all_true
+kgen.func @simd_select_all_true(%arg0: !pop.simd<2, f32>, %arg1: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
+  // CHECK: (%[[ARG0:.*]]: !pop.simd<2, f32>, %[[ARG1:.*]]: !pop.simd<2, f32>)
+  // CHECK-NEXT: kgen.return %[[ARG0]]
+  
+  %true = kgen.param.constant: simd<2, bool> = <<true, true>>
+  %0 = pop.simd.select %true, %arg0, %arg1 : <2, f32>
+  kgen.return %0 : !pop.simd<2, f32>
+}
+
+// CHECK-LABEL: @simd_select_all_false
+kgen.func @simd_select_all_false(%arg0: !pop.simd<2, f32>, %arg1: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
+  // CHECK: (%[[ARG0:.*]]: !pop.simd<2, f32>, %[[ARG1:.*]]: !pop.simd<2, f32>)
+  // CHECK-NEXT: kgen.return %[[ARG1]]
+
+  %true = kgen.param.constant: simd<2, bool> = <<false, false>>
+  %0 = pop.simd.select %true, %arg0, %arg1 : <2, f32>
+  kgen.return %0 : !pop.simd<2, f32>
+}
+
 // CHECK-LABEL: @bitcast
 kgen.func @bitcast() -> (!pop.simd<2, bf16>, !pop.simd<2, f16>) {
   // CHECK-DAG: <"0.125", "8">
@@ -552,6 +572,14 @@ kgen.func @simd_shuffle() -> !pop.simd<2, si8> {
   kgen.return %2 : !pop.simd<2, si8>
 }
 
+// CHECK-LABEL: @simd_splat_scalar
+kgen.func @simd_splat_scalar(%arg0: !pop.scalar<si8>) -> !pop.scalar<si8> {
+  // CHECK: (%[[ARG0:.*]]: !pop.scalar<si8>)
+  // CHECK-NEXT: kgen.return %[[ARG0]]
+  %1 = pop.simd.splat %arg0 : !pop.scalar<si8>
+  kgen.return %1 : !pop.scalar<si8>
+}
+
 // CHECK-LABEL: @simd_splat
 kgen.func @simd_splat() -> !pop.simd<2, si8> {
   // CHECK-NEXT: <2>
@@ -601,6 +629,18 @@ kgen.func @array_repeat() -> !pop.array<3, index> {
   %idx1 = index.constant 1
   %0 = pop.array.repeat [%idx0, %idx1] : !pop.array<3, index>
   kgen.return %0 : !pop.array<3, index>
+}
+
+// CHECK-LABEL: @array_repeat_get
+kgen.func @array_repeat_get(%arg0: index, %arg1: index) -> (index, index, index) {
+  // CHECK: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index)
+  // CHECK-NEXT: kgen.return %[[ARG0]], %[[ARG1]], %[[ARG0]] : index, index, index
+
+  %0 = pop.array.repeat [%arg0, %arg1] : !pop.array<3, index>
+  %1 = pop.array.get %0[0] : !pop.array<3, index>
+  %2 = pop.array.get %0[1] : !pop.array<3, index>
+  %3 = pop.array.get %0[2] : !pop.array<3, index>
+  kgen.return %1, %2, %3 : index, index, index
 }
 
 // CHECK-LABEL: @array_get
