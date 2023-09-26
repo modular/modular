@@ -1256,6 +1256,9 @@ struct RegType: pass
 @register_passable
 struct ParamType[a: Int]: pass
 
+@value
+struct MemType: pass
+
 # CHECK-LABEL: lit.func @"function_types
 # CHECK-SAME: %float0: {{.*}}(!Int borrow) -> !Int
 # CHECK-SAME: %float1: {{.*}}(!kgen.pointer<!MemoryType> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem) -> !lit.none
@@ -1270,7 +1273,7 @@ struct ParamType[a: Int]: pass
 # CHECK-SAME: %float10: {{.*}}<<!Int, @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float11: {{.*}}<<variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float12: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
-# CHECK-SAME: %named: {{.*}}<("x": !kgen.pointer<!String> borrow_in_mem) -> !Int>
+# CHECK-SAME: %named: {{.*}}<("x": !kgen.pointer<!MemType> borrow_in_mem) -> !Int>
 fn function_types(
   float0: fn(Int) -> Int,
   float1: fn(MemoryType) -> MemoryType,
@@ -1285,7 +1288,7 @@ fn function_types(
   float10: def[a: Int, b: ParamType[a]]() -> None,
   float11: async def[*Ts: AnyType](* *Ts) -> None,
   float12: fn(Int = 10, StringLiteral = "foo") -> None,
-  named: fn(x:String) -> Int
+  named: fn(x:MemType) -> Int
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
