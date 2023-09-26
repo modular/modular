@@ -49,6 +49,7 @@ from MatmulUtils import (
     get_partitioned_matmul,
     get_partitioned_matmul_im2col,
     partition_work,
+    use_vnni_fn,
 )
 from memory import memset_zero, stack_allocation
 from memory.buffer import (
@@ -75,16 +76,20 @@ struct Naive2dConvolution[
     static_output_shape: DimList,
     static_filter_shape: DimList,
     static_input_shape: DimList,
-    type: DType,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
     static_data_layout: Image2DLayout,
     static_filter_layout: Image2DLayout,
 ]:
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
-    var output: ImageData[static_output_shape, type, static_data_layout]
-    var input: ImageData[static_input_shape, type, static_data_layout]
-    var filter: ImageData[static_filter_shape, type, static_filter_layout]
+    var output: ImageData[static_output_shape, output_type, static_data_layout]
+    var input: ImageData[static_input_shape, input_type, static_data_layout]
+    var filter: ImageData[
+        static_filter_shape, filter_type, static_filter_layout
+    ]
     var pad_h: StaticIntTuple[2]
     var pad_w: StaticIntTuple[2]
     var stride: StaticIntTuple[2]
@@ -97,9 +102,11 @@ struct Naive2dConvolution[
 
     @staticmethod
     fn run(
-        output: ImageData[static_output_shape, type, static_data_layout],
-        input: ImageData[static_input_shape, type, static_data_layout],
-        filter: ImageData[static_filter_shape, type, static_filter_layout],
+        output: ImageData[static_output_shape, output_type, static_data_layout],
+        input: ImageData[static_input_shape, input_type, static_data_layout],
+        filter: ImageData[
+            static_filter_shape, filter_type, static_filter_layout
+        ],
         pad_h: StaticIntTuple[2],
         pad_w: StaticIntTuple[2],
         stride: StaticIntTuple[2],
@@ -126,7 +133,9 @@ struct Naive2dConvolution[
             static_output_shape,
             static_filter_shape,
             static_input_shape,
-            type,
+            input_type,
+            filter_type,
+            output_type,
             static_data_layout,
             static_filter_layout,
         ](output, input, filter, pad_h, pad_w, stride, dilation)
@@ -136,9 +145,11 @@ struct Naive2dConvolution[
 
     fn __init__(
         inout self,
-        output: ImageData[static_output_shape, type, static_data_layout],
-        input: ImageData[static_input_shape, type, static_data_layout],
-        filter: ImageData[static_filter_shape, type, static_filter_layout],
+        output: ImageData[static_output_shape, output_type, static_data_layout],
+        input: ImageData[static_input_shape, input_type, static_data_layout],
+        filter: ImageData[
+            static_filter_shape, filter_type, static_filter_layout
+        ],
         pad_h: StaticIntTuple[2],
         pad_w: StaticIntTuple[2],
         stride: StaticIntTuple[2],
@@ -171,13 +182,13 @@ struct Naive2dConvolution[
 
         # Derive layout agnostic shape information.
         self.output_shape = ImageShape.__init__[
-            static_output_shape, type, static_data_layout
+            static_output_shape, output_type, static_data_layout
         ](output)
         self.input_shape = ImageShape.__init__[
-            static_input_shape, type, static_data_layout
+            static_input_shape, input_type, static_data_layout
         ](input)
         self.filter_shape = ImageShape.__init__[
-            static_filter_shape, type, static_filter_layout
+            static_filter_shape, filter_type, static_filter_layout
         ](filter)
 
     fn _outer_loop(self):
@@ -211,7 +222,7 @@ struct Naive2dConvolution[
             value of the output tensor to produce.
         """
         # Initialize the result of this point.
-        var value: SIMD[type, 1] = 0
+        var value: SIMD[output_type, 1] = 0
 
         # Extract the H and W size of the input image.
         let image_bound = StaticIntTuple[2](
@@ -261,7 +272,10 @@ struct Naive2dConvolution[
                             r_idx,
                             s_idx,  # F  # C  # R  # S
                         ]
-                        value += input_val * filter_val
+                        value += (
+                            input_val.cast[output_type]()
+                            * filter_val.cast[output_type]()
+                        )
 
         # Store the computed output at the given output position..
         self.output[
@@ -3924,7 +3938,13 @@ fn pack_filter[
     remainder is further divided by simd_size. The last residual elements if
     any is padded with zero to fill simd_size.
     """
-    alias simd_size = simdwidthof[type]()
+    # a_type and ctype are not provided yet so for now we only use the b_type
+    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
+    alias input_type = DType.uint8 if use_vnni else type
+    alias filter_type = type
+    alias output_type = DType.int32 if use_vnni else type
+
+    alias simd_size = simdwidthof[output_type]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 

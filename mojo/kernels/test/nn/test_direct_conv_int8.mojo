@@ -27,13 +27,17 @@ from runtime.llcl import OwningOutputChainPtr, Runtime
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
-alias simd_size: Int = simdwidthof[DType.float32]()
-alias type = DType.float32
-
+alias input_type = DType.uint8
+alias filter_type = DType.int8
+alias output_type = DType.int32
+alias simd_size: Int = simdwidthof[output_type]()
 
 # CHECK-LABEL: test_direct_conv
 fn test[
-    type: DType, filter_packed: Bool
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    filter_packed: Bool,
 ](
     N: Int,
     H: Int,
@@ -71,13 +75,13 @@ fn test[
         pad_w: pad_w,
     }
 
-    let input_ptr = DTypePointer[type].alloc(N * H * W * C)
-    let filter_ptr = DTypePointer[type].alloc(R * S * C * F)
-    let output_ptr = DTypePointer[type].alloc(N * HO * WO * F)
-    let output_ref_ptr = DTypePointer[type].alloc(N * HO * WO * F)
+    let input_ptr = DTypePointer[input_type].alloc(N * H * W * C)
+    let filter_ptr = DTypePointer[filter_type].alloc(R * S * C * F)
+    let output_ptr = DTypePointer[output_type].alloc(N * HO * WO * F)
+    let output_ref_ptr = DTypePointer[output_type].alloc(N * HO * WO * F)
 
-    rand[type](input_ptr, N * H * W * C)
-    rand[type](filter_ptr, R * S * C * F)
+    rand[input_type](input_ptr, N * H * W * C)
+    rand[filter_type](filter_ptr, R * S * C * F)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -92,15 +96,17 @@ fn test[
     # Rounded C and F size for pre-packed filter.
     let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
-    let packed_filter_ptr = DTypePointer[type].alloc(R * S * C * rounded_F)
+    let packed_filter_ptr = DTypePointer[filter_type].alloc(
+        R * S * C * rounded_F
+    )
 
-    let input = NDBuffer[4, DimList.create_unknown[4](), type](
+    let input = NDBuffer[4, DimList.create_unknown[4](), input_type](
         input_ptr, Index(N, H, W, C)
     )
-    let filter = NDBuffer[4, DimList.create_unknown[4](), type](
+    let filter = NDBuffer[4, DimList.create_unknown[4](), filter_type](
         filter_ptr, Index(R, S, C, F)
     )
-    let packed_filter = NDBuffer[5, DimList.create_unknown[5](), type](
+    let packed_filter = NDBuffer[5, DimList.create_unknown[5](), filter_type](
         packed_filter_ptr,
         Index(
             div_ceil(F, micro_kernel_width * simd_size),
@@ -110,41 +116,41 @@ fn test[
             micro_kernel_width * simd_size,
         ),
     )
-    let output = NDBuffer[4, DimList.create_unknown[4](), type](
+    let output = NDBuffer[4, DimList.create_unknown[4](), output_type](
         output_ptr, Index(N, HO, WO, F)
     )
-    let output_ref = NDBuffer[4, DimList.create_unknown[4](), type](
+    let output_ref = NDBuffer[4, DimList.create_unknown[4](), output_type](
         output_ref_ptr, Index(N, HO, WO, F)
     )
 
     @parameter
     if filter_packed:
-        pack_filter[type](filter, packed_filter)
+        pack_filter[filter_type](filter, packed_filter)
 
     # Reference: naive conv
     Naive2dConvolution[
         DimList.create_unknown[4](),  # Output Shape.
         DimList.create_unknown[4](),  # Filter Shape,
         DimList.create_unknown[4](),  # Input Shape
-        type,  # Data type.
-        type,
-        type,
+        input_type,  # Data type.
+        filter_type,
+        output_type,
         Image2DLayout.NHWC,  # Data Layout.
         Image2DLayout.RSCF,  # Filter Layout.
     ].run(
         ImageData[
             DimList.create_unknown[4](),
-            type,
+            output_type,
             Image2DLayout.NHWC,
         ](output_ref),
         ImageData[
             DimList.create_unknown[4](),
-            type,
+            input_type,
             Image2DLayout.NHWC,
         ](input),
         ImageData[
             DimList.create_unknown[4](),
-            type,
+            filter_type,
             Image2DLayout.RSCF,
         ](filter),
         pad_h,
@@ -163,9 +169,9 @@ fn test[
             DimList.create_unknown[4](),
             DimList.create_unknown[5](),
             DimList.create_unknown[4](),
-            type,
-            type,
-            type,
+            input_type,
+            filter_type,
+            output_type,
             True,
             False,
         ].run(
@@ -181,9 +187,9 @@ fn test[
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),
-            type,
-            type,
-            type,
+            input_type,
+            filter_type,
+            output_type,
             False,
             False,
         ].run(output, input, filter, conv_shape, direct_conv_chain.borrow())
@@ -223,7 +229,7 @@ fn main():
     """It only includes shapes where F is multiple simd_size."""
     with Runtime() as rt:
         # likely partition in n_ho_wo or sequential
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             6,  # H
             5,  # W
@@ -238,7 +244,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             12,  # H
             12,  # W
@@ -253,7 +259,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             13,  # H
             13,  # W
@@ -268,7 +274,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             7,  # H
             7,  # W
@@ -283,7 +289,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             17,  # H
             17,  # W
@@ -298,7 +304,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             5,  # N
             7,  # H
             7,  # W
@@ -314,7 +320,7 @@ fn main():
         )
 
         # likely partition in F or both
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             7,  # H
             7,  # W
@@ -329,7 +335,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             7,  # H
             7,  # W
@@ -348,7 +354,7 @@ fn main():
         # Avoid using dispatch functions for now because pre-packed version
         # has more restrictions for F.
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             12,  # H
             12,  # W
@@ -363,7 +369,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             13,  # H
             13,  # W
@@ -378,7 +384,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             7,  # H
             7,  # W
@@ -393,7 +399,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             17,  # H
             17,  # W
@@ -408,7 +414,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             5,  # N
             12,  # H
             12,  # W
@@ -424,7 +430,7 @@ fn main():
         )
 
         # likely partition in F or both
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             7,  # H
             7,  # W
@@ -439,7 +445,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             7,  # H
             7,  # W
@@ -457,7 +463,7 @@ fn main():
         # Top resnet shapes, all pre-packed
 
         # likely to partition C
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             16,  # H
             16,  # W
@@ -472,7 +478,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             58,  # H
             58,  # W
@@ -487,7 +493,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             30,  # H
             30,  # W
@@ -502,7 +508,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             9,  # H
             9,  # W
@@ -517,7 +523,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             230,  # H
             230,  # W
@@ -532,7 +538,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             58,  # H
             58,  # W
@@ -547,7 +553,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             30,  # H
             30,  # W
@@ -562,7 +568,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             16,  # H
             16,  # W
@@ -577,7 +583,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             56,  # H
             56,  # W
@@ -592,7 +598,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             14,  # H
             14,  # W
@@ -607,7 +613,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             28,  # H
             28,  # W
@@ -625,7 +631,7 @@ fn main():
         # Test with padding
         # This is a fallback implementation assuming all shapes are dynamic.
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             56,  # H
             56,  # W
@@ -643,7 +649,7 @@ fn main():
         # Test with padding
         # This is a fallback implementation assuming all shapes are dynamic.
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             5,  # H
             5,  # W
@@ -658,7 +664,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             2,  # N
             12,  # H
             11,  # W
@@ -673,7 +679,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             8,  # H
             12,  # W
@@ -688,7 +694,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             9,  # H
             7,  # W
@@ -703,7 +709,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, False](
+        test[input_type, filter_type, output_type, False](
             1,  # N
             10,  # H
             5,  # W
@@ -718,7 +724,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             224,  # H
             224,  # W
@@ -733,7 +739,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             56,  # H
             56,  # W
@@ -748,7 +754,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             56,  # H
             56,  # W
@@ -763,7 +769,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             28,  # H
             28,  # W
@@ -778,7 +784,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             14,  # H
             14,  # W
@@ -793,7 +799,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             14,  # H
             14,  # W
@@ -808,7 +814,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             7,  # H
             7,  # W
@@ -823,7 +829,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             19,  # N
             7,  # H
             7,  # W
@@ -838,7 +844,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             13,  # N
             14,  # H
             14,  # W
@@ -855,7 +861,7 @@ fn main():
 
         # Test with F not multiple of simd_size
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             5,  # H
             5,  # W
@@ -870,7 +876,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             7,  # H
             7,  # W
@@ -885,7 +891,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             23,  # H
             23,  # W
@@ -900,7 +906,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             5,  # H
             11,  # W
@@ -915,7 +921,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             7,  # H
             9,  # W
@@ -930,7 +936,7 @@ fn main():
             rt,
         )
 
-        test[DType.float32, True](
+        test[input_type, filter_type, output_type, True](
             1,  # N
             11,  # H
             7,  # W
