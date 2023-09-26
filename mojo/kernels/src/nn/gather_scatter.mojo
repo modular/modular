@@ -227,28 +227,26 @@ fn gather[
     @parameter
     @always_inline
     fn input_fn[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](
-            input.simd_load[width](rebind[StaticIntTuple[input_rank]](coords))
+        width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
+        return input.simd_load[width](
+            rebind[StaticIntTuple[input_rank]](coords)
         )
 
     @parameter
     @always_inline
     fn indices_fn[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](
-            indices.simd_load[width](
-                rebind[StaticIntTuple[indices_rank]](coords)
-            )
+        width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
+        return indices.simd_load[width](
+            rebind[StaticIntTuple[indices_rank]](coords)
         )
 
     @parameter
     @always_inline
     fn output_fn[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank], val: SIMD[_type, width]):
+        width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank], val: SIMD[type, width]):
         output.simd_store[width](
             rebind[StaticIntTuple[output_rank]](coords),
             rebind[SIMD[type, width]](val),
@@ -271,7 +269,7 @@ fn gather[
         OptionalParamInt[axis](axis),
         input.dynamic_shape,
         indices.dynamic_shape,
-        output,
+        output.dynamic_shape,
         out_chain,
     )
 
@@ -285,13 +283,13 @@ fn gather[
     output_rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_fn: fn[type: DType, width: Int, rank: Int] (
+    input_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    indices_fn: fn[type: DType, width: Int, rank: Int] (
+    indices_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
-    output_fn: fn[type: DType, width: Int, rank: Int] (
+    ) capturing -> SIMD[indices_type, width],
+    output_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     prefetch_fn: fn[input_rank: Int, indices_rank: Int] (
@@ -302,7 +300,7 @@ fn gather[
     axis: OptionalParamInt[axis_static],
     input_shape: StaticIntTuple[input_rank],
     indices_shape: StaticIntTuple[indices_rank],
-    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    output_shape: StaticIntTuple[output_rank],
     out_chain: OutputChainPtr,
 ):
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -322,19 +320,19 @@ fn gather[
         # The output shape has the same shape as the input, with the indexed-axis
         # replaced by the shape of the indices
         for i in range(axis.get()):
-            if output.dim(i) != input_shape[i]:
+            if output_shape[i] != input_shape[i]:
                 return out_chain.mark_error(
                     "gather: output_shape[0:axis] does not match"
                     " input_shape[0:axis]"
                 )
         for i in range(axis.get(), axis.get() + indices_rank):
-            if output.dim(i) != indices_shape[i - axis.get()]:
+            if output_shape[i] != indices_shape[i - axis.get()]:
                 return out_chain.mark_error(
                     "gather: output_shape[axis:axis+indices_rank] does not"
                     " match indices_shape"
                 )
         for i in range(axis.get() + indices_rank, output_rank):
-            if output.dim(i) != input_shape[i - indices_rank + 1]:
+            if output_shape[i] != input_shape[i - indices_rank + 1]:
                 return out_chain.mark_error(
                     "gather: output_shape[axis + indices_rank:] does not match"
                     " input_shape[axis:]"
@@ -376,9 +374,7 @@ fn gather[
         unroll[indices_rank, indices_get]()
 
         # The index we are gathering.
-        let data_index = indices_fn[indices_type, 1, indices_rank](
-            indices_index
-        ).to_int()
+        let data_index = indices_fn[1, indices_rank](indices_index).to_int()
 
         # Update the indices with the new data index.
         var data_indices = StaticIntTuple[input_rank]()
@@ -403,10 +399,10 @@ fn gather[
 
         # Load the the data.
         prefetch_fn[input_rank, indices_rank](data_indices, indices_index)
-        let data = input_fn[type, simd_width, input_rank](data_indices)
+        let data = input_fn[simd_width, input_rank](data_indices)
 
         # Store it to the original index.
-        output_fn[type, simd_width, rank](idx, data)
+        output_fn[simd_width, rank](idx, data)
 
     # If we are gathering on the last dimension then we have to be scalar.
     if axis.get() == input_rank - 1:
@@ -416,7 +412,7 @@ fn gather[
             single_thread_blocking_override,
             gather_lambda,
         ](
-            output.dynamic_shape,
+            output_shape,
             out_chain,
         )
     else:
@@ -426,7 +422,7 @@ fn gather[
             single_thread_blocking_override,
             gather_lambda,
         ](
-            output.dynamic_shape,
+            output_shape,
             out_chain,
         )
 
