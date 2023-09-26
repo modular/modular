@@ -565,7 +565,7 @@ M::Cache::getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config) {
   constexpr llvm::StringLiteral libPath = "libblobcache_s3.so";
 #elif defined(__APPLE__)
   constexpr llvm::StringLiteral libPath = "libblobcache_s3.dylib";
-#elif defined(WIN32)
+#elif defined(_WIN32)
   constexpr llvm::StringLiteral libPath = "blobcache_s3.dll";
 #endif
   return DylibBackendStub::create(runtime, libPath, &config);
