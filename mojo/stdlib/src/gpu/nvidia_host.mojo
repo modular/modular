@@ -1606,6 +1606,389 @@ struct Module:
                 )(self.module)
             )
 
+    fn load(self, name: String) raises -> Function:
+        var func = Function()
+
+        _check_error(
+            _get_dylib_function[
+                fn (
+                    Pointer[Function], _ModuleImpl, DTypePointer[DType.int8]
+                ) -> Result
+            ]("cuModuleGetFunction")(
+                Pointer.address_of(func), self.module, name._as_ptr()
+            )
+        )
+        return func
+
+
+# ===----------------------------------------------------------------------===#
+# Function
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct Function:
+    var handle: DTypePointer[DType.invalid]
+
+    fn __init__() -> Self:
+        return Self {handle: DTypePointer[DType.invalid]()}
+
+    fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
+        return Self {handle: handle}
+
+    fn __bool__(self) -> Bool:
+        return self.handle.__bool__()
+
+    fn __call__[
+        T0: AnyType
+    ](self, grid_dim: Dim, block_dim: Dim, inout arg0: T0) raises:
+        var _arg0 = arg0
+
+        let args = stack_allocation[1, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType, T1: AnyType
+    ](
+        self, grid_dim: Dim, block_dim: Dim, inout arg0: T0, inout arg1: T1
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+
+        let args = stack_allocation[2, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType, T1: AnyType, T2: AnyType
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        inout arg0: T0,
+        inout arg1: T1,
+        inout arg2: T2,
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+        var _arg2 = arg2
+
+        let args = stack_allocation[3, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+        var _arg2 = arg2
+        var _arg3 = arg3
+
+        let args = stack_allocation[4, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType, T4: AnyType
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        inout arg0: T0,
+        inout arg1: T1,
+        inout arg2: T2,
+        inout arg3: T3,
+        inout arg4: T4,
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+        var _arg2 = arg2
+        var _arg3 = arg3
+        var _arg4 = arg4
+
+        let args = stack_allocation[5, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        inout arg0: T0,
+        inout arg1: T1,
+        inout arg2: T2,
+        inout arg3: T3,
+        inout arg4: T4,
+        inout arg5: T5,
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+        var _arg2 = arg2
+        var _arg3 = arg3
+        var _arg4 = arg4
+        var _arg5 = arg5
+
+        let args = stack_allocation[6, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+        T6: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        inout arg0: T0,
+        inout arg1: T1,
+        inout arg2: T2,
+        inout arg3: T3,
+        inout arg4: T4,
+        inout arg5: T5,
+        inout arg6: T6,
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+        var _arg2 = arg2
+        var _arg3 = arg3
+        var _arg4 = arg4
+        var _arg5 = arg5
+        var _arg6 = arg6
+
+        let args = stack_allocation[7, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
+        args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+        T6: AnyType,
+        T7: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        inout arg0: T0,
+        inout arg1: T1,
+        inout arg2: T2,
+        inout arg3: T3,
+        inout arg4: T4,
+        inout arg5: T5,
+        inout arg6: T6,
+        inout arg7: T7,
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+        var _arg2 = arg2
+        var _arg3 = arg3
+        var _arg4 = arg4
+        var _arg5 = arg5
+        var _arg6 = arg6
+        var _arg7 = arg7
+
+        let args = stack_allocation[8, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
+        args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
+        args.store(7, Pointer.address_of(_arg7).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+        T6: AnyType,
+        T7: AnyType,
+        T8: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        inout arg0: T0,
+        inout arg1: T1,
+        inout arg2: T2,
+        inout arg3: T3,
+        inout arg4: T4,
+        inout arg5: T5,
+        inout arg6: T6,
+        inout arg7: T7,
+        inout arg8: T8,
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+        var _arg2 = arg2
+        var _arg3 = arg3
+        var _arg4 = arg4
+        var _arg5 = arg5
+        var _arg6 = arg6
+        var _arg7 = arg7
+        var _arg8 = arg8
+
+        let args = stack_allocation[9, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
+        args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
+        args.store(7, Pointer.address_of(_arg7).bitcast[AnyType]())
+        args.store(8, Pointer.address_of(_arg8).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+        T6: AnyType,
+        T7: AnyType,
+        T8: AnyType,
+        T9: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+        arg6: T6,
+        arg7: T7,
+        arg8: T8,
+        arg9: T9,
+    ) raises:
+        var _arg0 = arg0
+        var _arg1 = arg1
+        var _arg2 = arg2
+        var _arg3 = arg3
+        var _arg4 = arg4
+        var _arg5 = arg5
+        var _arg6 = arg6
+        var _arg7 = arg7
+        var _arg8 = arg8
+        var _arg9 = arg9
+
+        let args = stack_allocation[10, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
+        args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
+        args.store(7, Pointer.address_of(_arg7).bitcast[AnyType]())
+        args.store(8, Pointer.address_of(_arg8).bitcast[AnyType]())
+        args.store(9, Pointer.address_of(_arg9).bitcast[AnyType]())
+
+        self._call_impl(grid_dim, block_dim, args)
+
+    fn _call_impl(
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        args: Pointer[Pointer[AnyType]],
+    ) raises:
+        _check_error(
+            _get_dylib_function[
+                # fmt: off
+                fn (
+                  Function,
+                  UInt32,
+                  UInt32,
+                  UInt32,
+                  UInt32,
+                  UInt32,
+                  UInt32,
+                  UInt32,
+                  DTypePointer[DType.invalid],
+                  Pointer[Pointer[AnyType]],
+                  DTypePointer[DType.invalid]
+                ) -> Result
+                # fmt: on
+            ]("cuLaunchKernel")(
+                self.handle,
+                UInt32(grid_dim[2]),
+                UInt32(grid_dim[1]),
+                UInt32(grid_dim[0]),
+                UInt32(block_dim[2]),
+                UInt32(block_dim[1]),
+                UInt32(block_dim[0]),
+                UInt32(0),
+                DTypePointer[DType.invalid](),
+                args,
+                DTypePointer[DType.invalid](),
+            )
+        )
+
 
 # ===----------------------------------------------------------------------===#
 # Dim
@@ -1626,8 +2009,14 @@ struct Dim:
     fn __init__(dims: Tuple[Int, Int, Int]) -> Self:
         return Self(dims.get[0, Int](), dims.get[1, Int](), dims.get[2, Int]())
 
-    fn __init__(x: Int, y: Int = 1, z: Int = 1) -> Self:
+    fn __init__(z: Int, y: Int, x: Int) -> Self:
         return Self {_value: Index(x, y, z)}
+
+    fn __init__(y: Int, x: Int) -> Self:
+        return Self(1, y, x)
+
+    fn __init__(x: Int) -> Self:
+        return Self(1, 1, x)
 
     fn __getitem__(self, idx: Int) -> Int:
         return self._value[idx]
