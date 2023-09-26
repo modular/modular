@@ -3384,17 +3384,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                       paramVarArgs) ||
       p.parseToken(Token::colon, "expected ':' in struct definition"))
     return failure();
-  // TODO(#21636): support default parameters for structs
-  if (!paramDefaults.empty()) {
-    return emitError(decl.getLoc(),
-                     "default parameter values not supported yet");
-  }
 
   // Propagate signature errors and decls.
   moveDecls(decl, sigDecl);
 
   structOp.setInputParams(inputParamDecls);
   structOp.setParamVarArgs(paramVarArgs);
+  structOp.setDefaultParametersAttr(
+      ParameterExprArrayAttr::get(structOp->getContext(), paramDefaults));
 
   // Reject result parameters.
   if (!resultParamDecls.empty())

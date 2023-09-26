@@ -254,3 +254,12 @@ struct StructWithParam[n: Int]:
     alias Alias = StructWithParam[1]()
 
 alias accessStructWithParam = StructWithParam.Alias # expected-error {{incorrect number of struct parameters}}
+
+
+##===----------------------------------------------------------------------===##
+# Default struct parameters
+##===----------------------------------------------------------------------===##
+
+# expected-error @below {{non-default parameter follows default parameter}}
+struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral]:
+    pass

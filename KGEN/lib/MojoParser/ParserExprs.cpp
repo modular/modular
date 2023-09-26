@@ -831,6 +831,14 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   // Expressions continue maximally because we are within []'s.
   llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
 
+  // If we have an empty parameter list, we return immediately.
+  SMLoc rsquareLoc;
+  if (consumeIf(Token::r_square, &rsquareLoc)) {
+    result = alloc<SubscriptNode>(result, lsquareLoc, ArrayRef<ExprNode *>(),
+                                  rsquareLoc);
+    return success();
+  }
+
   SmallVector<ExprNode *> indices;
 
   /// Consume either a colon or an equal sign.  If we have an equal sign,
@@ -884,7 +892,6 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     return success();
   };
 
-  SMLoc rsquareLoc;
   if (parseCommaSeparatedList(parseExprOrSlice,
                               {Token::r_square, Token::minus_greater},
                               std::nullopt) ||
