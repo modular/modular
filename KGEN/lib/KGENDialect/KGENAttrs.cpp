@@ -894,6 +894,13 @@ static IntegerAttr foldBinaryValues(
                                 : IntegerAttr();
 }
 
+/// Duplicate the operands in-place for ops like `min` and `max`.
+static void deduplicateOperands(SmallVectorImpl<TypedAttr> &operands) {
+  llvm::SetVector<TypedAttr, SmallVector<TypedAttr>, SmallPtrSet<Attribute, 4>>
+      uniqueOperands(operands.begin(), operands.end());
+  operands = uniqueOperands.takeVector();
+}
+
 /// Given a fully associative variadic integer operation, constant fold any
 /// constant operands and move them to the right.  If the whole expression is
 /// constant, then return that, otherwise update the operands list.
@@ -902,7 +909,8 @@ static Attribute simplifyAssocOp(
     llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedFn,
     llvm::function_ref<APInt(const APInt &, const APInt &)> signedFn = {},
     llvm::function_ref<bool(const APInt &)> identityConstantFn = {},
-    llvm::function_ref<bool(const APInt &)> destructiveConstantFn = {}) {
+    llvm::function_ref<bool(const APInt &)> destructiveConstantFn = {},
+    bool shouldDeduplicateOperands = false) {
   auto type = operands[0].getType();
   if (operands.size() == 1)
     return operands[0];
@@ -919,6 +927,10 @@ static Attribute simplifyAssocOp(
                       subexpr.getOperands().end());
     }
   }
+
+  // If allowed, deduplicate operands after flattening
+  if (shouldDeduplicateOperands)
+    deduplicateOperands(operands);
 
   // Impose an ordering on the operands, pushing subexpressions to the left and
   // constants to the right, with ParamRefs in the middle - but predictably
@@ -1078,13 +1090,6 @@ static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
       /*identityCst*/ [](auto cst) { return cst.isZero(); });
 }
 
-/// Duplicate the operands in-place for ops like `min` and `max`.
-static void deduplicateOperands(SmallVectorImpl<TypedAttr> &operands) {
-  llvm::SetVector<TypedAttr, SmallVector<TypedAttr>, SmallPtrSet<Attribute, 4>>
-      uniqueOperands(operands.begin(), operands.end());
-  operands = uniqueOperands.takeVector();
-}
-
 /// Returns true if the integer is at its max value.
 static bool intIsMaxValue(Type type, const APInt &value) {
   return isSignedIntType(type) ? value.isMaxSignedValue() : value.isMaxValue();
@@ -1096,21 +1101,21 @@ static bool intIsMinValue(Type type, const APInt &value) {
 }
 
 static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
-  deduplicateOperands(operands);
   Type type = operands.front().getType();
   return simplifyAssocOp(
       POC::Max, operands, llvm::APIntOps::umax, llvm::APIntOps::smax,
       [&](auto cst) { return intIsMinValue(type, cst); },
-      [&](auto cst) { return intIsMaxValue(type, cst); });
+      [&](auto cst) { return intIsMaxValue(type, cst); },
+      /*shouldDeduplicateOperands*/ true);
 }
 
 static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
-  deduplicateOperands(operands);
   Type type = operands.front().getType();
   return simplifyAssocOp(
       POC::Min, operands, llvm::APIntOps::umin, llvm::APIntOps::smin,
       [&](auto cst) { return intIsMaxValue(type, cst); },
-      [&](auto cst) { return intIsMinValue(type, cst); });
+      [&](auto cst) { return intIsMinValue(type, cst); },
+      /*shouldDeduplicateOperands*/ true);
 }
 
 /// Given a binary function, if the two operands are known constant integers,
