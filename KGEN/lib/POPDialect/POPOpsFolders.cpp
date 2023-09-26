@@ -693,6 +693,26 @@ OpFoldResult SIMDSelectOp::fold(FoldAdaptor adaptor) {
   if (getTrueValue() == getFalseValue())
     return getTrueValue();
 
+  // Check if all the values are true or false then fold to either of the
+  // operands in that case.
+  if (condVals) {
+    bool allTrue = true, allFalse = true;
+    for (auto cond : condVals.getValues()) {
+      if (cond.getBoolVal())
+        allFalse = false;
+      else
+        allTrue = false;
+    }
+
+    // Fold `select(true, x, y) -> x`
+    if (allTrue)
+      return getTrueValue();
+
+    // Fold `select(false, x, y) -> y`
+    if (allFalse)
+      return getFalseValue();
+  }
+
   // Fold `select(x, true, false) -> x`.
   if (getType().getResolvedDType() == KGENDType::kBool && trueVals &&
       falseVals) {
@@ -768,6 +788,10 @@ OpFoldResult SIMDShuffleOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
   std::optional<int64_t> size = getType().getResolvedSize();
+
+  if (size == 1)
+    return getScalar();
+
   auto scalar = dyn_cast_if_present<SIMDAttr>(adaptor.getScalar());
   if (!size || !scalar)
     return {};
@@ -1082,6 +1106,10 @@ OpFoldResult ArrayGetOp::fold(FoldAdaptor adaptor) {
   // of that.
   if (auto arrayCreate = getArray().getDefiningOp<POP::ArrayCreateOp>())
     return arrayCreate.getOperand(idx);
+
+  // If we come from a repeat we can work out which operand we are.
+  if (auto repeat = getArray().getDefiningOp<POP::ArrayRepeatOp>())
+    return repeat.getOperand(idx % repeat.getNumOperands());
 
   return {};
 }
