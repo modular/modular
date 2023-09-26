@@ -710,7 +710,7 @@ fn bar(x : Int):
 fn reference_params_through_struct():
     var x = MultiStruct[52, 9, 33]()
 
-    # CHECK: %[[Y:.*]] = lit.varlet.decl2 "y"
+    # CHECK: %[[Y:.*]] = lit.varlet.decl "y"
     # CHECK-NEXT: %[[P:.*]] = kgen.param.constant: {{.*}} <#lit.struct<{value = 52}>
     # CHECK-NEXT: lit.ref.store %[[P]], %[[Y]]
     var y = x.p1
@@ -722,7 +722,7 @@ fn reference_params_through_struct():
     # CHECK: kgen.call @{{.*}}foo{{.*}}<:!Int #lit.struct<{value = 33}>>
     foo[x.p3]()
 
-    # CHECK: %[[Z:.*]] = lit.varlet.decl2 "z"
+    # CHECK: %[[Z:.*]] = lit.varlet.decl "z"
     # CHECK-NEXT: %[[P:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK-NEXT: lit.ref.store %[[P]], %[[Z]]
     var z = MultiStruct[1, 2, 3].p1
