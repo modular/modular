@@ -33,6 +33,7 @@ from MatmulUtils import (
     is_critical_stride,
     search_mm_config,
     use_vnni_fn,
+    supported_types,
 )
 from Matrix import Matrix
 from memory import memset_zero, stack_allocation
@@ -2149,6 +2150,9 @@ fn matmul[
     num_threads: Int = -1,
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
+    constrained[
+        supported_types[a_type, b_type, c_type](), "types not yet supported"
+    ]()
 
     let shape = GemmShape.get[False, transpose_b](c, a, b)
     let m = shape.M
