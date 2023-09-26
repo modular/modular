@@ -67,10 +67,10 @@ fn test_one_rank_many_tensor[
 fn test_3D_in_out_lambda[
     type: DType,
     simd_width: Int,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+    input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
@@ -89,8 +89,8 @@ fn test_3D_in_out_lambda[
             @parameter
             fn func_wrapper[simd_width: Int](idx: Int):
                 let indices = StaticIntTuple[3](x, y, idx)
-                let result = input_0_fn[type, simd_width, 3](indices)
-                output_0_fn[type, simd_width, 3](indices, result)
+                let result = input_0_fn[simd_width, 3](indices)
+                output_0_fn[simd_width, 3](indices, result)
 
             vectorize[
                 simd_width,

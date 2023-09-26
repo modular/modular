@@ -411,7 +411,7 @@ fn to_shape[
 fn tensor_to_shape[
     type: DType,
     rank: Int,
-](tensor: NDBuffer[1, DimList.create_unknown[1](), type],) -> StaticIntTuple[
+](tensor: NDBuffer[1, DimList.create_unknown[1](), type]) -> StaticIntTuple[
     rank
 ]:
     var out = StaticIntTuple[rank]()
@@ -963,16 +963,16 @@ fn mean[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+    input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
-    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.mean")
@@ -987,6 +987,12 @@ fn mean[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
+    @always_inline
+    fn input_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
     # For floats apply the reciprocal as a multiply.
     @parameter
     if type.is_floating_point():
@@ -996,17 +1002,19 @@ fn mean[
         @always_inline
         @parameter
         fn wrapped_output_mul[
-            type: DType, width: Int, rank: Int
-        ](indices: StaticIntTuple[rank], value: SIMD[type, width]):
+            _type: DType, width: Int, rank: Int
+        ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
             let mean_val = value * reciprocal
-            output_0_fn[type, width, rank](indices, mean_val)
+            output_0_fn[width, rank](
+                indices, rebind[SIMD[type, width]](mean_val)
+            )
 
         _reduce_generator[
             type,
             rank,
             simdwidthof[type](),
             single_thread_blocking_override,
-            input_0_fn,
+            input_0_fn_wrapper,
             wrapped_output_mul,
             reduce_impl,
         ](input_shape, 0, reduce_dim, out_chain)
@@ -1018,17 +1026,19 @@ fn mean[
         @always_inline
         @parameter
         fn wrapped_output_div[
-            type: DType, width: Int, rank: Int
-        ](indices: StaticIntTuple[rank], value: SIMD[type, width]):
+            _type: DType, width: Int, rank: Int
+        ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
             let mean_val = value / dim_size
-            output_0_fn[type, width, rank](indices, mean_val)
+            output_0_fn[width, rank](
+                indices, rebind[SIMD[type, width]](mean_val)
+            )
 
         _reduce_generator[
             type,
             rank,
             simdwidthof[type](),
             single_thread_blocking_override,
-            input_0_fn,
+            input_0_fn_wrapper,
             wrapped_output_div,
             reduce_impl,
         ](input_shape, 0, reduce_dim, out_chain)
@@ -1097,16 +1107,16 @@ fn reduce_add[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+    input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
-    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.reduce_add")
@@ -1114,6 +1124,18 @@ fn reduce_add[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = axis_buffer[0].to_int()
+
+    @always_inline
+    fn input_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+    @always_inline
+    fn output_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+        output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
     fn reduce_impl[
@@ -1126,8 +1148,8 @@ fn reduce_add[
         rank,
         simdwidthof[type](),
         single_thread_blocking_override,
-        input_0_fn,
-        output_0_fn,
+        input_0_fn_wrapper,
+        output_0_fn_wrapper,
         reduce_impl,
     ](input_shape, 0, reduce_dim, out_chain)
 
@@ -1139,16 +1161,16 @@ fn reduce_max[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+    input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
-    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.reduce_max")
@@ -1156,6 +1178,18 @@ fn reduce_max[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = axis_buffer[0].to_int()
+
+    @always_inline
+    fn input_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+    @always_inline
+    fn output_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+        output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
     fn reduce_impl[
@@ -1168,8 +1202,8 @@ fn reduce_max[
         rank,
         simdwidthof[type](),
         single_thread_blocking_override,
-        input_0_fn,
-        output_0_fn,
+        input_0_fn_wrapper,
+        output_0_fn_wrapper,
         reduce_impl,
     ](input_shape, min_or_neginf[type](), reduce_dim, out_chain)
 
@@ -1181,16 +1215,16 @@ fn reduce_min[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+    input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
-    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.reduce_min")
@@ -1198,6 +1232,18 @@ fn reduce_min[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = axis_buffer[0].to_int()
+
+    @always_inline
+    fn input_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+    @always_inline
+    fn output_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+        output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
     fn reduce_impl[
@@ -1210,8 +1256,8 @@ fn reduce_min[
         rank,
         simdwidthof[type](),
         single_thread_blocking_override,
-        input_0_fn,
-        output_0_fn,
+        input_0_fn_wrapper,
+        output_0_fn_wrapper,
         reduce_impl,
     ](input_shape, max_or_inf[type](), reduce_dim, out_chain)
 
@@ -1223,16 +1269,16 @@ fn reduce_mul[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+    input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
     input_shape: StaticIntTuple[rank],
     axis: NDBuffer[1, DimList.create_unknown[rank](), index_type],
-    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.reduce_mul")
@@ -1240,6 +1286,18 @@ fn reduce_mul[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = axis[0].to_int()
+
+    @always_inline
+    fn input_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+    @always_inline
+    fn output_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+        output_0_fn[width, rank](indices, rebind[SIMD[type, width]](value))
 
     @always_inline
     fn reduce_impl[
@@ -1252,8 +1310,8 @@ fn reduce_mul[
         rank,
         simdwidthof[type](),
         single_thread_blocking_override,
-        input_0_fn,
-        output_0_fn,
+        input_0_fn_wrapper,
+        output_0_fn_wrapper,
         reduce_impl,
     ](input_shape, 1, reduce_dim, out_chain)
 
@@ -1642,19 +1700,21 @@ fn gather[
     output_rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+    input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
     input_shape: StaticIntTuple[in_rank],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+        indices_rank,
+        DimList.create_unknown[indices_rank](),
+        indices_type,
     ],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    output_shape: StaticIntTuple[output_rank],
     out_chain: OutputChainPtr,
 ):
     # Look through the lambda to pull the index out.
@@ -1680,12 +1740,10 @@ fn gather[
     @parameter
     @always_inline
     fn load_indices[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](
-            indices.simd_load[width](
-                rebind[StaticIntTuple[indices_rank]](coords)
-            )
+        width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
+        return indices.simd_load[width](
+            rebind[StaticIntTuple[indices_rank]](coords)
         )
 
     _gather[
@@ -1701,7 +1759,13 @@ fn gather[
         output_0_fn,
         no_prefetch,
         axis_static,
-    ](axis_normalized, input_shape, indices.dynamic_shape, output, out_chain)
+    ](
+        axis_normalized,
+        input_shape,
+        indices.dynamic_shape,
+        output_shape,
+        out_chain,
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1718,8 +1782,8 @@ fn matmul[
     packed_in_1: Bool,
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+    output_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
 ](
     a: NDBuffer[2, DimList.create_unknown[2](), a_type],
@@ -1742,9 +1806,9 @@ fn matmul[
     @parameter
     @always_inline
     fn epilogue_wrapper[
-        type: DType, width: Int
-    ](coords: StaticIntTuple[2], val: SIMD[type, width]):
-        output_0_fn[type, width, 2](coords, val)
+        _type: DType, width: Int
+    ](coords: StaticIntTuple[2], val: SIMD[_type, width]):
+        output_0_fn[width, 2](coords, rebind[SIMD[c_type, width]](val))
 
     @always_inline
     @parameter
@@ -1797,7 +1861,7 @@ fn batched_matmul[
     transpose_in_1: Bool,
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+    output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
@@ -1808,6 +1872,13 @@ fn batched_matmul[
 ):
     alias adj_a = False
     alias adj_b = transpose_in_1
+
+    @parameter
+    @always_inline
+    fn epilogue_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](coords: StaticIntTuple[rank], val: SIMD[_type, width]):
+        output_0_fn[width, rank](coords, rebind[SIMD[type, width]](val))
 
     @always_inline
     @parameter
@@ -1834,7 +1905,7 @@ fn batched_matmul[
         adj_a,
         adj_b,
         lambdas_have_fusion,
-        output_0_fn,
+        epilogue_wrapper,
         single_thread_blocking_override,
     ](c, a, b, out_chain)
 
@@ -2416,8 +2487,8 @@ fn conv[
     output_type: DType,
     filter_packed: Bool,
     lambdas_have_fusion: Bool,
-    output_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+    output_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,
 ](
     input: NDBuffer[4, DimList.create_unknown[4](), input_type],
@@ -2492,9 +2563,9 @@ fn conv[
     @parameter
     @always_inline
     fn epilogue_wrapper[
-        type: DType, width: Int
-    ](coords: StaticIntTuple[4], val: SIMD[type, width]):
-        output_0_fn[type, width, 4](coords, val)
+        _type: DType, width: Int
+    ](coords: StaticIntTuple[4], val: SIMD[_type, width]):
+        output_0_fn[width, 4](coords, rebind[SIMD[output_type, width]](val))
 
     conv_2d_nhwc_direct[
         filter_rank,
