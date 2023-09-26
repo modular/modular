@@ -108,6 +108,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addPass(mlir::createCSEPass());
     pm.addPass(createHoistTrivialInvariants());
     pm.addPass(createCanonicalizer());
+    pm.addPass(createSimplifyCF());
     pm.addPass(createSROA());
     pm.addPass(createMem2Reg());
     pm.addPass(createStackReuse());
