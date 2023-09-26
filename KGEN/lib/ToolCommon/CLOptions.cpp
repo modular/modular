@@ -137,16 +137,12 @@ bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
 // TraceProfiler
 //===--------------------------------------------------------------------===//
 
-void TraceProfiler::initialize(int timeTraceGranularity,
-                               const CLOptionsBase &clOptions) {
+void TraceProfiler::initialize(int timeTraceGranularity) {
   profiler.emplace(timeTraceGranularity, "kgen");
 
   std::error_code ec;
   std::filesystem::path derived = std::filesystem::absolute(
       llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("."), ec);
-  if (ec)
-    clOptions.reportError("cannot get the modular derived path: " +
-                          ec.message());
 
   outputFilePath = derived / "kgen.trace.json";
 }

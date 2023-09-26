@@ -241,15 +241,14 @@ public:
 
 /// Common trace profiler setup.
 struct TraceProfiler {
-  template <typename OptionsT>
-  TraceProfiler(const OptionsT &clOptions) {
-    if (clOptions.timeTrace)
-      initialize(clOptions.timeTraceGranularity, clOptions);
+  TraceProfiler(bool enabled, int timeTraceGranularity) {
+    if (enabled)
+      initialize(timeTraceGranularity);
   }
   ~TraceProfiler();
 
 private:
-  void initialize(int timeTraceGranularity, const CLOptionsBase &options);
+  void initialize(int timeTraceGranularity);
 
   std::optional<TimeTraceProfiler> profiler;
   std::filesystem::path outputFilePath;

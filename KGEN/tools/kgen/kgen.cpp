@@ -171,7 +171,7 @@ static LogicalResult createDependencyFile(const CLOptions &clOptions,
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                      CLOptions &clOptions) {
   DialectRegistry registry;
-  TraceProfiler tracer(clOptions);
+  TraceProfiler tracer(clOptions.timeTrace, clOptions.timeTraceGranularity);
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
