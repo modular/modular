@@ -1454,3 +1454,35 @@ fn decorated_fn():
 @decorator_arg(2)
 struct DecoratedStruct:
     pass
+
+##===----------------------------------------------------------------------===##
+# Traits
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.trait.decl @Trait {
+trait Trait:
+    # CHECK-DAG: lit.func @"f0({{.*}})"(%self: !lit.typecheckerror borrow) -> !lit.none
+    # CHECK-NEXT:     lit.trait_func
+    fn f0(self: Self): ...
+
+    # CHECK-DAG: lit.func @"f1({{.*}}&)"(%self: !kgen.pointer<!lit.typecheckerror> byref) -> !lit.none
+    # CHECK-NEXT:   lit.trait_func
+    fn f1(inout self: Self): ...
+
+    # CHECK-DAG: lit.func @"f2({{.*}}&)"(%self: !kgen.pointer<!lit.typecheckerror> byref) -> !lit.none
+    # CHECK-NEXT:   lit.trait_func
+    fn f2(inout self: Self):
+        pass
+
+    # CHECK-DAG: lit.func @"f3({{.*}})"(%__result__: !kgen.pointer<!object> byref_result, %self: !lit.typecheckerror) throws -> !pop.variant<!Error, !lit.none>
+    # CHECK-NEXT:   lit.trait_func
+    def f3(self: Self): ...
+
+    # CHECK-DAG: lit.func @"f4({{.*}})"(%__result__: !kgen.pointer<!object> byref_result, %self: !kgen.pointer<!lit.typecheckerror> byref) throws -> !pop.variant<!Error, !lit.none>
+    # CHECK-NEXT:   lit.trait_func
+    def f4(inout self: Self):
+        pass
+
+# CHECK-LABEL: lit.trait.decl @EmptyTrait {
+trait EmptyTrait:
+    pass

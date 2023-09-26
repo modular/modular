@@ -15,6 +15,8 @@ from test_package import method_defined_in_init
 # CHECK: #[[STRUCT_DOC:.*]] = #lit.doc.string<"This is a struct doc."
 # CHECK: #[[STRUCT_FIELD_DOC:.*]] = #lit.doc.string<"This is a struct field doc."
 # CHECK: #[[FUNCTION_DOC:.*]] = #lit.doc.string<"This is a function doc."
+# CHECK: #[[TRAIT_DOC:.*]] = #lit.doc.string<"This is a trait doc."
+# CHECK: #[[TRAIT_FUNCTION_DOC:.*]] = #lit.doc.string<"This is a trait function doc."
 # CHECK: #[[PACKAGE_DOC:.*]] = #lit.doc.string<"This is a test package."
 
 # CHECK: lit.file_module @"$parser-doc"{{.*}}docString = #[[MODULE_DOC]]
@@ -42,3 +44,15 @@ fn foo():
   """This is a function doc."""
   method_defined_in_init()
   return
+
+##===----------------------------------------------------------------------===##
+# Traits
+##===----------------------------------------------------------------------===##
+
+trait Trait:
+  """This is a trait doc."""
+
+  fn f(self: Self):
+    """This is a trait function doc."""
+    ...
+

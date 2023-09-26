@@ -663,6 +663,28 @@ fn function_with_struct():
     var x: Int
 
 ##===----------------------------------------------------------------------===##
+# Traits
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.trait.decl @EverythingIsWrongTrait {
+trait EverythingIsWrongTrait:
+    var value: Int # expected-error {{fields in traits are not supported yet}}
+
+    fn trait_fn_has_body(self: Self): # expected-error {{unexpected function body in trait function declaration, use `...`}}
+        print(1)
+
+    fn trait_fn_no_dot_dot_dot(self: Self): # expected-error {{expected body statements; use 'pass' if none is required}}
+
+    trait NestedTrait: # expected-error {{nested trait not supported here}}
+        ...
+
+    struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
+        pass
+
+trait TraitWithParams[T: AnyType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
+    ...
+
+##===----------------------------------------------------------------------===##
 # Class
 ##===----------------------------------------------------------------------===##
 

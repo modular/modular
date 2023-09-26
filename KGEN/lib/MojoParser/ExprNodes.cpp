@@ -332,19 +332,20 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
 
   assert(kind == kSelfLiteral && "Unknown simple literal kind");
   // Self resolves to the type of the enclosing structure type.
-  ASTDecl *structDecl = &emitter.declScope;
-  while (!isa<StructDeclOp>(*structDecl)) {
-    structDecl = structDecl->getParentDecl();
-    if (!structDecl) {
-      emitter.emitError(getLoc(), "'Self' type may only be used inside a type");
+  ASTDecl *astDecl = &emitter.declScope;
+  while (!isa<StructDeclOp, TraitDeclOp>(*astDecl)) {
+    astDecl = astDecl->getParentDecl();
+    if (!astDecl) {
+      emitter.emitError(
+          getLoc(), "'Self' type may only be used inside a struct or trait");
       return {};
     }
   }
 
   // Once we have the type in question we can just return its Self type as an
   // PValue.  This already includes bound parameters etc.
-  assert(structDecl->resolvedness >= DeclResolvedness::signature);
-  return emitter.emitResult(structDecl->getSelfType(), this, dest);
+  assert(astDecl->resolvedness >= DeclResolvedness::signature);
+  return emitter.emitResult(astDecl->getSelfType(), this, dest);
 }
 
 /// The value of a string is the concatenated value with escapes and quotes
@@ -847,7 +848,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitDeclReference(spelling, *decls, this, dest, unused);
   }
 
-  if (!isa<StructDeclOp>(*typeDecl)) {
+  if (!isa<StructDeclOp, TraitDeclOp>(*typeDecl)) {
     emitter.emitError(getLoc(), "cannot access attribute in type ")
         << baseVal.getType() << base->getRange();
     return {};

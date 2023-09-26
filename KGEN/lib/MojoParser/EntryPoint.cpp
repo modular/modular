@@ -116,7 +116,7 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
   auto module = cast<ModuleOp>(declModule->getParentOp());
   module.walk([](Operation *op) {
     // Imports are not found underneath structs and functions.
-    if (isa<StructDeclOp, LIT::FuncOp>(op))
+    if (isa<StructDeclOp, TraitDeclOp, LIT::FuncOp>(op))
       return WalkResult::skip();
     if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op))
       op->erase();
@@ -356,6 +356,7 @@ void ParserListener::onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onParameterDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onStructDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onTraitDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                            SMLoc loc) {}

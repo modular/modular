@@ -130,6 +130,7 @@ struct StmtParser : public ParserBase {
                                     StringRef *leafModuleName = nullptr);
   ParseResult parseDefFnStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseTraitStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseClassStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseLetVarStmt(LexerCursor startCursor, size_t stmtIndent);
   ParseResult parseAliasDeclStmt(LexerCursor startCursor, size_t stmtIndent);
@@ -501,6 +502,9 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_struct:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseStructStmt(startCursor, stmtIndent);
+  case Token::kw_trait:
+    rejectSimpleStmt(); // Not a simple_stmt.
+    return parseTraitStmt(startCursor, stmtIndent);
   case Token::kw_class:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseClassStmt(startCursor, stmtIndent);
@@ -518,8 +522,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_pass:
   case Token::dot_dot_dot:
   case Token::string:
-    // doc string
     // pass_stmt ::= "pass"
+    // doc string
     consumeToken();
     return success();
   case Token::kw_let:
@@ -1852,6 +1856,11 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // Skip the body of this definition: go to a token the starts a line at the
     // same indent level (or less) as the current definition.
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
+  } else if (isa<TraitDeclOp>(getParentDecl())) {
+    rejectDecorator();
+    emitError(loc, "TODO: fields in traits are not supported yet");
+    skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
+    return success();
   } else if (isa<LIT::FuncOp>(getParentDecl())) {
     rejectDecorator();
     // This is a local let/var declaration.
@@ -2024,7 +2033,9 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
   // We don't support non-top level structs (yet?).
   if (isa<StructDeclOp>(getParentDecl()))
     emitTokenError("nested struct not supported here");
-  if (isa<LIT::FuncOp>(getParentDecl()))
+  else if (isa<TraitDeclOp>(getParentDecl()))
+    emitTokenError("nested struct in a trait not supported here");
+  else if (isa<LIT::FuncOp>(getParentDecl()))
     emitTokenError("struct inside a function not supported here");
 
   auto smLoc = consumeToken(Token::kw_struct).getLoc();
@@ -2043,6 +2054,32 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
   getDeclResolver().addDecl(newStruct, smLoc, nameAttr, curDeclScope,
+                            startCursor, getLexer().getCursor(), curIndent);
+  return success();
+}
+
+ParseResult StmtParser::parseTraitStmt(LexerCursor startCursor,
+                                       size_t curIndent) {
+  // We don't support non-top level traits (yet?).
+  if (!isa<FileModuleOp>(getParentDecl()))
+    emitTokenError("nested trait not supported here");
+
+  auto smLoc = consumeToken(Token::kw_trait).getLoc();
+  auto loc = translateLocation(smLoc);
+
+  StringAttr nameAttr;
+  if (parseIdentifier(nameAttr, "expected trait name"))
+    return failure();
+
+  auto newTrait = builder.create<TraitDeclOp>(loc, nameAttr);
+
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the current definition.
+  skipUntilIndentation(curIndent);
+
+  // Remember that we parsed this declaration so we can finish type checking it
+  // when it gets referenced.
+  getDeclResolver().addDecl(newTrait, smLoc, nameAttr, curDeclScope,
                             startCursor, getLexer().getCursor(), curIndent);
   return success();
 }

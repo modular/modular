@@ -1622,7 +1622,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // If this isn't a container op, we don't need to resolve any nested decls,
   // simply materialize everything nested within.
-  if (!isa<FileModuleOp, PackageOp, StructDeclOp>(declOp)) {
+  if (!isa<FileModuleOp, PackageOp, StructDeclOp, TraitDeclOp>(declOp)) {
     return failure(declOp->walk<mlir::WalkOrder::PreOrder>(resolveSingleOp)
                        .wasInterrupted());
   }
@@ -1668,6 +1668,13 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
             structDecl.setSelfType(ASTDecl::computeSelfTypeForStruct(op));
+          })
+          .Case([&](TraitDeclOp op) {
+            ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());
+            // TODO: figure out selfType for trait.
+            // selfType needs to be set to avoid silent parsing error that drops
+            // function calls.
+            traitDecl.setSelfType(getTypeCheckErrorType());
           })
           .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),
@@ -2018,6 +2025,12 @@ void SharedState::notifyListenerOnStructFieldDecl(ASTDecl &decl,
                                                   SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onStructFieldDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnTraitDecl(ASTDecl &decl,
+                                            SMLoc identifierLoc) {
+  if (isListenerInterestedInLoc(parserListener, identifierLoc))
+    parserListener->onTraitDecl(&decl, identifierLoc);
 }
 
 void SharedState::notifyListenerOnVariableDecl(ASTDecl &decl,
