@@ -21,6 +21,7 @@ namespace KGEN {
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
 class ParameterEvaluator;
+class ParameterExprArrayAttr;
 
 namespace LIT {
 /// Parse an optional default value of the given type. `defaultVal` is not
@@ -60,6 +61,14 @@ parseOptionalParamSignature(AsmParser &p,
 void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
                                  TypeArrayAttr resultParamTypes,
                                  ArrayRef<TypedAttr> defaultParams);
+
+/// StructDeclOp parameter printing/parsing.
+ParseResult parseStructParameterSpec(AsmParser &p,
+                                     ParamDeclArrayAttr &inputParamDecls,
+                                     ParameterExprArrayAttr &defaultParameters);
+void printStructParameterSpec(AsmPrinter &p, Operation *op,
+                              ArrayRef<ParamDeclAttr> inputParamDecls,
+                              ParameterExprArrayAttr defaultParameters);
 } // namespace LIT
 } // namespace KGEN
 } // namespace M

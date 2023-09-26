@@ -10,7 +10,9 @@ lit.struct.decl @SomeStruct {
 // expected-error @below {{expected declaration body to have no arguments}}
 "lit.struct.decl"() ({
 ^bb0(%arg0: i32):
-}) {sym_name = "StructArgs", decorators = #kgen<decorators[]>,
+}) {sym_name = "StructArgs",
+    decorators = #kgen<decorators[]>,
+    defaultParameters = #kgen<exprs[]>,
     inputParams = #kgen<param.decls[]>
     } : () -> ()
 

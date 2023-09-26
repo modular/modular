@@ -130,3 +130,29 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
   KGEN::printOptionalParamSignature(p, inputParamTypes, resultParamTypes,
                                     printWithDefault);
 }
+
+ParseResult
+LIT::parseStructParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
+                              ParameterExprArrayAttr &defaultParameters) {
+  SmallVector<TypedAttr> defaultParams;
+  ParamDeclArrayAttr resultParams;
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (parseOptionalParameterSpec(p, inputParamDecls, resultParams,
+                                 defaultParams))
+    return failure();
+  if (!resultParams.empty())
+    return p.emitError(loc, "expected no result parameters");
+  defaultParameters =
+      ParameterExprArrayAttr::get(p.getContext(), defaultParams);
+  return success();
+}
+
+void LIT::printStructParameterSpec(AsmPrinter &p, Operation *op,
+                                   ArrayRef<ParamDeclAttr> inputParamDecls,
+                                   ParameterExprArrayAttr defaultParameters) {
+  ParameterEvaluator evaluator;
+  printOptionalParameterSpec(
+      p, inputParamDecls,
+      /*resultParamDecls=*/{},
+      defaultParameters ? defaultParameters : ArrayRef<TypedAttr>(), evaluator);
+}
