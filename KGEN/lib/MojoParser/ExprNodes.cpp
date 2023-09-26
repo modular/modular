@@ -1315,11 +1315,10 @@ static PValue substituteParametersIntoUserDefinedType(
   SmallVector<Type> paramTypes;
   for (ParamDeclAttr decl : structOp.getInputParams())
     paramTypes.push_back(decl.getType());
-  // TODO(#21636): support default parameters for structs
   auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
-      paramTypes, structOp.getInputParamsAttr(), /*defaultParams=*/{}, emitter,
-      structOp.getParamVarArgs(), structOp.getName(), structOp.getLoc(),
-      subscript.getLoc());
+      paramTypes, structOp.getInputParamsAttr(),
+      structOp.getDefaultParameters(), emitter, structOp.getParamVarArgs(),
+      structOp.getName(), structOp.getLoc(), subscript.getLoc());
   if (!bindingValuesAttr)
     return {};
 

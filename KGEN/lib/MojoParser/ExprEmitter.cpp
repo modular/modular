@@ -1388,11 +1388,10 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
   SmallVector<Type> paramTypes;
   for (ParamDeclAttr decl : structDecl.getInputParams())
     paramTypes.push_back(decl.getType());
-  // TODO(#21636): support default parameters for structs
   auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
-      paramTypes, structDecl.getInputParamsAttr(), /*defaultParams=*/{}, *this,
-      structDecl.getParamVarArgs(), structDecl.getName(), structDecl.getLoc(),
-      expr->getLoc());
+      paramTypes, structDecl.getInputParamsAttr(),
+      structDecl.getDefaultParameters(), *this, structDecl.getParamVarArgs(),
+      structDecl.getName(), structDecl.getLoc(), expr->getLoc());
   if (!bindingValuesAttr)
     return {};
   SmallVector<ParamBindAttr> bindingValues;

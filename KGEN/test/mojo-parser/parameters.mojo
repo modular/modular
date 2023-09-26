@@ -735,9 +735,8 @@ fn reference_params_through_struct():
     foo[MultiStruct[1, 2, 3].p3]()
 
 ##===----------------------------------------------------------------------===##
-# Default parameters
+# Default function parameters
 ##===----------------------------------------------------------------------===##
-
 
 fn default_params[a: Int, b: Int = 7, c: StringLiteral = "woof"]():
     pass
@@ -790,3 +789,58 @@ fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
 # CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
 fn test_mem_only_default_param():
     mem_only_default_param()
+
+##===----------------------------------------------------------------------===##
+# Default struct parameters
+##===----------------------------------------------------------------------===##
+
+# CHECK: lit.struct.decl @DefaultParams<{{.*}}: !Int, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+@value
+struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral = "woof"]: pass
+
+# CHECK-LABEL: lit.func @"test_default_param_struct()"
+fn test_default_param_struct():
+    # CHECK: lit.alias.decl {{.*}}@DefaultParams<
+    # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 1}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+    alias T = DefaultParams[1]
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 1}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+    # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
+    # CHECK-NEXT: kgen.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
+    _ = DefaultParams[1]()
+
+    # CHECK: lit.alias.decl {{.*}}@DefaultParams<
+    # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 2}>, {{.*}}: !Int = #lit.struct<{value = 3}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+    alias U = DefaultParams[2, 3]
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 2}>, {{.*}}: !Int = #lit.struct<{value = 3}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+    # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
+    # CHECK-NEXT: kgen.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
+    _ = DefaultParams[2, 3]()
+
+    # CHECK: lit.alias.decl {{.*}}@DefaultParams<
+    # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 4}>, {{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "meow"}>
+    alias S = DefaultParams[4, 5, "meow"]
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 4}>, {{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "meow"}>
+    # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
+    # CHECK-NEXT: kgen.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
+    _ = DefaultParams[4, 5, "meow"]()
+
+
+# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+@value
+struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
+
+# CHECK-LABEL: lit.func @"test_default_param_struct_all_default()"
+fn test_default_param_struct_all_default():
+    # CHECK: lit.alias.decl {{.*}}: type = <@{{.*}}::@AllDefaultParams<
+    # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 0}>,
+    # CHECK-SAME: {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    alias T = AllDefaultParams[]
+
+    # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@AllDefaultParams<
+    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
+    # CHECK: %1 = kgen.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
+    _ = AllDefaultParams[]()
