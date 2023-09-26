@@ -529,6 +529,28 @@ InputParamBindings::verifyBindings(
           fitness};
 }
 
+/// Helper to produce a consistent error message for incorrect argument and
+/// parameter counts.
+static void emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
+                                     size_t maxAllowed, size_t numActual,
+                                     Twine argOrParam) {
+  diag << " expects ";
+
+  // Tailor the diagnostic if the exact number of expected args is known.
+  if (minRequired == maxAllowed && numActual != minRequired) {
+    diag << minRequired << " " << argOrParam << plural(minRequired);
+  } else if (numActual < minRequired) {
+    diag << "at least " << minRequired << " " << argOrParam
+         << plural(minRequired);
+  } else {
+    assert(numActual > maxAllowed);
+    diag << "at most " << maxAllowed << " " << argOrParam << plural(maxAllowed);
+  }
+
+  diag << ", but " << numActual << plural(numActual, " was", " were")
+       << " specified";
+}
+
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
@@ -541,13 +563,12 @@ InputParamBindings::verifyBindings(
       hasParamVarArgs, parameterInferenceHook,
       isPackVarArg, /*emitParamCountDiag=*/
       [&]() {
-        auto expectedNumParams = actualParamTypes.size();
-        auto actualNumParams = bindings.size();
-        auto diag = emitter.emitError(exprLoc, "'")
-                    << baseName << "' expects " << expectedNumParams
-                    << " input parameter" << plural(expectedNumParams)
-                    << " but " << actualNumParams
-                    << plural(actualNumParams, " was", " were") << " provided";
+        size_t minRequired = actualParamTypes.size() - defaultParams.size();
+        size_t maxAllowed = actualParamTypes.size();
+        size_t actualNumParams = bindings.size();
+        InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
+        emitWrongArgOrParamCount(diag, minRequired, maxAllowed, actualNumParams,
+                                 "input parameter");
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
       /*emitParamTypeDiag=*/
@@ -683,32 +704,19 @@ struct DiagEmitter {
 
   InflightDiag wrongParamCount(size_t expectedNumParams, size_t actualNumParams,
                                StringRef inputOrResult) {
-    return initDiag() << "callee expects " << expectedNumParams << " "
-                      << inputOrResult << " parameter"
-                      << plural(expectedNumParams) << " but " << actualNumParams
-                      << plural(actualNumParams, " was", " were")
-                      << " provided";
+    InflightDiag diag = initDiag() << "callee";
+    emitWrongArgOrParamCount(diag, /*minRequired=*/expectedNumParams,
+                             /*maxAllowed=*/expectedNumParams, actualNumParams,
+                             Twine(inputOrResult) + " parameter");
+    return diag;
   }
 
   InflightDiag wrongArgCount(size_t minRequiredArgs, size_t maxAllowedArgs,
                              size_t numOperands) {
-    // Tailor the diagnostic if the exact number of expected args is known.
-    if (minRequiredArgs == maxAllowedArgs && numOperands != minRequiredArgs) {
-      return initDiag() << "callee expects " << minRequiredArgs << " argument"
-                        << plural(minRequiredArgs) << ", but " << numOperands
-                        << plural(numOperands, " was", " were") << " specified";
-    }
-    if (numOperands < minRequiredArgs) {
-      return initDiag() << "callee expects at least " << minRequiredArgs
-                        << " argument" << plural(minRequiredArgs) << ", but "
-                        << numOperands << plural(numOperands, " was", " were")
-                        << " specified";
-    }
-    assert(numOperands > maxAllowedArgs);
-    return initDiag() << "callee expects at most " << maxAllowedArgs
-                      << " argument" << plural(maxAllowedArgs) << ", but "
-                      << numOperands << plural(numOperands, " was", " were")
-                      << " specified";
+    InflightDiag diag = initDiag() << "callee";
+    emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
+                             "argument");
+    return diag;
   }
 
   InflightDiag resultGenericMemType(Type outputType) {
