@@ -9,7 +9,43 @@ from sys.ffi import RTLD, DLHandle
 from memory import stack_allocation
 from math import floor
 
+# ===----------------------------------------------------------------------===#
+# Globals
+# ===----------------------------------------------------------------------===#
+
+
 alias CUDA_DRIVER_PATH = "/usr/lib/x86_64-linux-gnu/libcuda.so"
+
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
+fn _check_error(err: Result) raises:
+    if err != Result.SUCCESS:
+        raise Error(err.__str__())
+
+
+fn _human_memory(size: Int) -> String:
+    alias KB = 1024
+    alias MB = KB * KB
+    alias GB = MB * KB
+
+    if size > GB:
+        return String(Float32(size) / GB) + "GB"
+
+    if size > MB:
+        return String(Float32(size) / MB) + "MB"
+
+    if size > KB:
+        return String(Float32(size) / KB) + "KB"
+
+    return String(size) + "B"
+
+
+# ===----------------------------------------------------------------------===#
+# Library Load
+# ===----------------------------------------------------------------------===#
 
 
 fn _init_dylib() -> Pointer[DLHandle]:
@@ -45,131 +81,9 @@ fn _get_dylib_function[
     return dylib.get_function[result_type](name)
 
 
-fn _check_error(err: Result) raises:
-    if err != Result.SUCCESS:
-        raise Error(err.__str__())
-
-
-fn device_count() raises -> Int:
-    var res: Int32 = 0
-    _check_error(
-        _get_dylib_function[fn (Pointer[Int32]) -> Result]("cuDeviceGetCount")(
-            Pointer.address_of(res)
-        )
-    )
-    return res.to_int()
-
-
-fn _human_memory(size: Int) -> String:
-    alias KB = 1024
-    alias MB = KB * KB
-    alias GB = MB * KB
-
-    if size > GB:
-        return String(Float32(size) / GB) + "GB"
-
-    if size > MB:
-        return String(Float32(size) / MB) + "MB"
-
-    if size > KB:
-        return String(Float32(size) / KB) + "KB"
-
-    return String(size) + "B"
-
-
-@value
-@register_passable("trivial")
-struct Device:
-    var id: Int32
-
-    fn __init__(id: Int = 0) -> Self:
-        return Self {id: id}
-
-    fn __str__(self) raises -> String:
-        let dylib = _get_dylib()
-        var res = String("name: ") + self._name(dylib) + "\n"
-        res += (
-            String("memory: ") + _human_memory(self._total_memory(dylib)) + "\n"
-        )
-        res += (
-            String("compute_capability: ")
-            + self._query(dylib, DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
-            + "."
-            + self._query(dylib, DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
-            + "\n"
-        )
-        res += (
-            String("clock_rate: ")
-            + self._query(dylib, DeviceAttribute.CLOCK_RATE)
-            + "\n"
-        )
-        res += (
-            String("warp_size: ")
-            + self._query(dylib, DeviceAttribute.WARP_SIZE)
-            + "\n"
-        )
-        res += (
-            String("max_threads_per_block: ")
-            + self._query(dylib, DeviceAttribute.MAX_THREADS_PER_BLOCK)
-            + "\n"
-        )
-        res += (
-            String("max_shared_memory: ")
-            + _human_memory(
-                self._query(dylib, DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
-            )
-            + "\n"
-        )
-        res += (
-            String("max_block: [")
-            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Z)
-            + ", "
-            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Y)
-            + ", "
-            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_X)
-            + "]\n"
-        )
-        res += (
-            String("max_grid: [")
-            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Z)
-            + ", "
-            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Y)
-            + ", "
-            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_X)
-            + "]\n"
-        )
-
-        return res
-
-    fn _name(self, dylib: DLHandle) -> String:
-        alias buffer_size = 256
-        let buffer = stack_allocation[buffer_size, DType.int8]()
-
-        let ok = _get_dylib_function[
-            fn (DTypePointer[DType.int8], Int32, Device) -> Result
-        ](dylib, "cuDeviceGetName")(buffer, Int32(buffer_size), self)
-
-        return StringRef(buffer.address)
-
-    fn _total_memory(self, dylib: DLHandle) raises -> Int:
-        var res: Int = 0
-        _check_error(
-            _get_dylib_function[fn (Pointer[Int], Device) -> Result](
-                dylib, "cuDeviceTotalMem_v2"
-            )(Pointer.address_of(res), self)
-        )
-        return res
-
-    fn _query(self, dylib: DLHandle, attr: DeviceAttribute) raises -> Int:
-        var res: Int32 = 0
-        _check_error(
-            _get_dylib_function[
-                fn (Pointer[Int32], DeviceAttribute, Device) -> Result
-            ](dylib, "cuDeviceGetAttribute")(
-                Pointer.address_of(res), attr, self
-            )
-        )
-        return res.to_int()
+# ===----------------------------------------------------------------------===#
+# Result
+# ===----------------------------------------------------------------------===#
 
 
 @value
@@ -904,6 +818,11 @@ struct Result:
         return self.__str__()
 
 
+# ===----------------------------------------------------------------------===#
+# Device Information
+# ===----------------------------------------------------------------------===#
+
+
 @value
 @register_passable("trivial")
 struct DeviceAttribute:
@@ -1479,3 +1398,209 @@ struct DeviceAttribute:
 
     fn __init__(value: Int32) -> Self:
         return Self {_value: value}
+
+
+fn device_count() raises -> Int:
+    var res: Int32 = 0
+    _check_error(
+        _get_dylib_function[fn (Pointer[Int32]) -> Result]("cuDeviceGetCount")(
+            Pointer.address_of(res)
+        )
+    )
+    return res.to_int()
+
+
+@value
+@register_passable("trivial")
+struct Device:
+    var id: Int32
+
+    fn __init__(id: Int = 0) -> Self:
+        return Self {id: id}
+
+    fn __str__(self) raises -> String:
+        let dylib = _get_dylib()
+        var res = String("name: ") + self._name(dylib) + "\n"
+        res += (
+            String("memory: ") + _human_memory(self._total_memory(dylib)) + "\n"
+        )
+        res += (
+            String("compute_capability: ")
+            + self._query(dylib, DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
+            + "."
+            + self._query(dylib, DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
+            + "\n"
+        )
+        res += (
+            String("clock_rate: ")
+            + self._query(dylib, DeviceAttribute.CLOCK_RATE)
+            + "\n"
+        )
+        res += (
+            String("warp_size: ")
+            + self._query(dylib, DeviceAttribute.WARP_SIZE)
+            + "\n"
+        )
+        res += (
+            String("max_threads_per_block: ")
+            + self._query(dylib, DeviceAttribute.MAX_THREADS_PER_BLOCK)
+            + "\n"
+        )
+        res += (
+            String("max_shared_memory: ")
+            + _human_memory(
+                self._query(dylib, DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
+            )
+            + "\n"
+        )
+        res += (
+            String("max_block: [")
+            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Z)
+            + ", "
+            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Y)
+            + ", "
+            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_X)
+            + "]\n"
+        )
+        res += (
+            String("max_grid: [")
+            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Z)
+            + ", "
+            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Y)
+            + ", "
+            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_X)
+            + "]\n"
+        )
+
+        return res
+
+    fn _name(self, dylib: DLHandle) -> String:
+        alias buffer_size = 256
+        let buffer = stack_allocation[buffer_size, DType.int8]()
+
+        let ok = _get_dylib_function[
+            fn (DTypePointer[DType.int8], Int32, Device) -> Result
+        ](dylib, "cuDeviceGetName")(buffer, Int32(buffer_size), self)
+
+        return StringRef(buffer.address)
+
+    fn _total_memory(self, dylib: DLHandle) raises -> Int:
+        var res: Int = 0
+        _check_error(
+            _get_dylib_function[fn (Pointer[Int], Device) -> Result](
+                dylib, "cuDeviceTotalMem_v2"
+            )(Pointer.address_of(res), self)
+        )
+        return res
+
+    fn _query(self, dylib: DLHandle, attr: DeviceAttribute) raises -> Int:
+        var res: Int32 = 0
+        _check_error(
+            _get_dylib_function[
+                fn (Pointer[Int32], DeviceAttribute, Device) -> Result
+            ](dylib, "cuDeviceGetAttribute")(
+                Pointer.address_of(res), attr, self
+            )
+        )
+        return res.to_int()
+
+
+# ===----------------------------------------------------------------------===#
+# Context
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct _ContextImpl:
+    var handle: DTypePointer[DType.invalid]
+
+    fn __init__() -> Self:
+        return Self {handle: DTypePointer[DType.invalid]()}
+
+    fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
+        return Self {handle: handle}
+
+    fn __bool__(self) -> Bool:
+        return self.handle.__bool__()
+
+
+struct Context:
+    var ctx: _ContextImpl
+
+    fn __init__(inout self) raises:
+        self.__init__(Device())
+
+    fn __init__(inout self, device: Device, flags: Int = 0) raises:
+        var ctx = _ContextImpl()
+
+        _check_error(
+            _get_dylib_function[
+                fn (Pointer[_ContextImpl], Int32, Device) -> Result
+            ]("cuCtxCreate_v2")(Pointer.address_of(ctx), flags, device)
+        )
+        self.ctx = ctx
+
+    fn __del__(owned self) raises:
+        if self.ctx:
+            _check_error(
+                _get_dylib_function[fn (_ContextImpl) -> Result](
+                    "cuCtxDestroy_v2"
+                )(self.ctx)
+            )
+
+    fn __enter__(owned self) -> Self:
+        return self ^
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.ctx = existing.ctx
+        existing.ctx = _ContextImpl()
+
+    fn __takeinit__(inout self, inout existing: Self):
+        self.ctx = existing.ctx
+        existing.ctx = _ContextImpl()
+
+
+# ===----------------------------------------------------------------------===#
+# Module
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct _ModuleImpl:
+    var handle: DTypePointer[DType.invalid]
+
+    fn __init__() -> Self:
+        return Self {handle: DTypePointer[DType.invalid]()}
+
+    fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
+        return Self {handle: handle}
+
+    fn __bool__(self) -> Bool:
+        return self.handle.__bool__()
+
+
+struct Module:
+    var module: _ModuleImpl
+
+    fn __init__(inout self):
+        self.module = _ModuleImpl()
+
+    fn __init__(inout self, path: String) raises:
+        var module = _ModuleImpl()
+
+        _check_error(
+            _get_dylib_function[
+                fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
+            ]("cuModuleLoad")(Pointer.address_of(module), path._as_ptr())
+        )
+        self.module = module
+
+    fn __del__(owned self) raises:
+        if self.module:
+            _check_error(
+                _get_dylib_function[fn (_ModuleImpl) -> Result](
+                    "cuModuleUnload"
+                )(self.module)
+            )
