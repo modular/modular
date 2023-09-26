@@ -172,6 +172,24 @@ def no_unused_values_in_def():
 
   _ # expected-error {{discard pattern requires an initializing expression}}
 
+fn func_with_static_param[x: Int]() -> Int:
+  return x
+
+fn dynamic_used_as_param() -> Int:
+  let x = 5
+  # expected-error @+1 {{cannot use a dynamic value in call parameter}}
+  return func_with_static_param[x]()
+
+@value
+struct StructWithField:
+  var x : Int
+
+fn dynamic_used_as_param_2() -> Int:
+  var w = StructWithField(3)
+  # expected-error @+1 {{cannot use a dynamic value in call parameter}}
+  return func_with_static_param[w.x]()
+
+
 fn dynamic_type_value():
   # expected-error @below {{cannot use type value as dynamic value}}
   let some_type = Int

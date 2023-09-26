@@ -1634,10 +1634,6 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   if (auto pvalue = decl.getIfPValue())
     return emitResult(pvalue, expr, dest);
 
-  // All the declarations below require resolving a dynamic value.
-  if (!builder)
-    return emitErrorForDynamicValueInParameter(expr);
-
   // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
   // can check if it is captured in a function.
   CValue value;
@@ -1669,6 +1665,9 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     mlirValue = lvalue;
     value = lvalue;
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
+    // If this is a parameter context then we cannot return a dynamic field
+    if (!builder)
+      return emitErrorForDynamicValueInParameter(expr);
     auto ref = builder->create<GlobalVarRefOp>(
         translateLocation(expr->getLoc()), globalOp);
     mlirValue = ref;
@@ -1680,6 +1679,16 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     emitError(expr->getLoc(), "use of declaration \"")
         << spelling << "\" as a value isn't supported yet" << expr->getRange();
     return {};
+  }
+
+  // If this is a param context we cannot return a concrete mlir value, however
+  // `value` may still be allowed. For instance. `x.static_field` requires
+  // `value` the thing which calls this will still enforce the parameter-ness of
+  // the result of the expression while still allowing the temporary reference
+  // to `x` to lead to a final parameter value.
+  if (!builder) {
+    mlirValue = nullptr;
+    return emitResult(value, expr, dest);
   }
 
   capture = Capture(value, value.getRValueType(), value.getType());
@@ -1700,7 +1709,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     }
   }
 
-  return value;
+  return emitResult(value, expr, dest);
 }
 
 AnyValue ExprEmitter::emitDeclReference(StringRef spelling,

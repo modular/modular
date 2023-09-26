@@ -482,11 +482,11 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   Capture capture;
-  AnyValue result =
-      emitter.emitDeclReference(spelling, decls, this, dest, capture);
+  AnyValue result = emitter.emitDeclReference(spelling, decls, this,
+                                              ValueDest::none(), capture);
 
   if (!capture)
-    return result;
+    return emitter.emitResult(result, this, dest);
   auto nestedFunc =
       getBlockParentOfType<FuncOp>(emitter.builder->getInsertionBlock());
   bool livesInsideNestedFunc = nestedFunc && !nestedFunc.getIsParametric() &&
@@ -608,7 +608,11 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   // If the base is an stored lvalue, then we can return an lvalue to the
   // field.
   if (MLValue baseLV = base.ir.getIfMLValue()) {
-    assert(emitter.builder && "Must have a builder given dynamic base value");
+    // If this is a parameter context then we cannot return a dynamic field.
+    if (!emitter.builder) {
+      emitter.emitErrorForDynamicValueInParameter(expr);
+      return {};
+    }
     auto fieldPtr =
         emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
     return emitter.emitCResult(MLValue(fieldPtr), expr, dest);
@@ -616,7 +620,11 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 
   // If the base is an memory lvalue, then we can return an lvalue to the field.
   if (XLValue baseLV = base.ir.getIfXLValue()) {
-    assert(emitter.builder && "Must have a builder given dynamic base value");
+    // If this is a parameter context then we cannot return a dynamic field.
+    if (!emitter.builder) {
+      emitter.emitErrorForDynamicValueInParameter(expr);
+      return {};
+    }
     auto fieldPtr =
         emitter.builder->create<RefStructGEROp>(mlirLoc, baseLV, fieldOp);
     return emitter.emitCResult(XLValue(fieldPtr), expr, dest);
@@ -634,7 +642,10 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   }
 
   // Okay, handle dynamic field references.
-  assert(emitter.builder && "Must have a builder given dynamic base value");
+  if (!emitter.builder) {
+    emitter.emitErrorForDynamicValueInParameter(expr);
+    return {};
+  }
 
   // If the base is an MRValue or MBValue, reference the field as an
   // MBValue so we lazy copy only the piece that is needed in the case of
@@ -750,6 +761,9 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
 /// Emit a qualified attribute reference to MLIR.  On error, emit an error and
 /// return a null value.
 AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  // In-order to allow parameter expressions which technically include a runtime
+  // reference, i.e `x.static_field` we allow some values which would otherwise
+  // produce a value in a parameter context to still propagate up.
   AnyValue baseAnyVal = base->emitIR(ValueDest::none(), emitter);
   if (!baseAnyVal)
     return {};
@@ -929,6 +943,21 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // Otherwise, emit the stored field reference.
     return emitStoredFieldRef({baseVal, base}, fieldOp, this, dest, emitter);
+  }
+
+  // This parameter will refer to the generic parameter on the base type decl,
+  // e.g the base struct. We need to substitute it for the "real" parameter used
+  // to construct this specific type, not the shared type on the struct.
+  if (auto parameter = memberDecl.getIfPValue()) {
+    auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
+    if (auto baseDecl = dyn_cast<DeclRefType>(baseRVType.mlirType)) {
+      for (ParamBindAttr bind : baseDecl.getParamValues()) {
+        // If this binding is for this parameter propagate the bound
+        // parameter.
+        if (bind.getName() == paramRef.getName())
+          return emitter.emitResult(bind.getValue(), this, dest);
+      }
+    }
   }
 
   // Reference to some non-function/struct member of the type.

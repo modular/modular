@@ -642,11 +642,8 @@ CValue CallEmitter::emitCallInParamContext(
            argumentValues, calleeSig.getValueInputs().drop_front(dropFirst),
            calleeSig.getInputConventions().drop_front(dropFirst))) {
     PValue pValue = argValAndExpr.ir.getIfPValue();
-    if (!pValue) {
-      return emitter.emitErrorForDynamicValueInParameter(
-          argValAndExpr.expr,
-          "cannot use a dynamic value in parameter context");
-    }
+    if (!pValue)
+      return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
     TypedAttr arg = pValue.get();
     // Put memory-only arguments into memory ("PRValue" to "PLValue"
     // conversion).
