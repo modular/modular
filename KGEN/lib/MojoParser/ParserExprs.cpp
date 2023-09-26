@@ -839,7 +839,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     return success();
   }
 
-  SmallVector<ExprNode *> indices;
+  SmallVector<ExprNode *> subscriptArgs;
 
   /// Consume either a colon or an equal sign.  If we have an equal sign,
   /// diagnose it as a typo error.
@@ -863,7 +863,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
       // If we had an expr with no trailing colon, then we are done with the
       // expr case.
       if (getToken().isNot(Token::colon, Token::equal)) {
-        indices.push_back(firstExpr);
+        subscriptArgs.push_back(firstExpr);
         return success();
       }
     }
@@ -887,8 +887,8 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
           return failure();
       }
     }
-    indices.push_back(alloc<SliceNode>(firstExpr, colon1Loc, secondExpr,
-                                       colon2Loc, thirdExpr));
+    subscriptArgs.push_back(alloc<SliceNode>(firstExpr, colon1Loc, secondExpr,
+                                             colon2Loc, thirdExpr));
     return success();
   };
 
@@ -902,15 +902,16 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   if (!consumeIf(Token::minus_greater)) {
     if (parseToken(Token::r_square, "expected ']' in call argument list"))
       return failure();
-    result = alloc<SubscriptNode>(
-        result, lsquareLoc, copyArrayRef<ExprNode *>(indices), rsquareLoc);
+    result = alloc<SubscriptNode>(result, lsquareLoc,
+                                  copyArrayRef<ExprNode *>(subscriptArgs),
+                                  rsquareLoc);
     return success();
   }
 
   // Otherwise, parse the arrow production.
   SMLoc arrowLoc = rsquareLoc;
   SmallVector<ExprNode *> arrowExprs;
-  std::swap(indices, arrowExprs);
+  std::swap(subscriptArgs, arrowExprs);
   if (parseCommaSeparatedList(parseExprOrSlice,
                               {Token::r_square, Token::minus_greater},
                               std::nullopt) ||
@@ -918,9 +919,9 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
       parseToken(Token::r_square, "expected ']' in call argument list"))
     return failure();
 
-  std::swap(indices, arrowExprs);
+  std::swap(subscriptArgs, arrowExprs);
   result = alloc<SubscriptArrowNode>(
-      result, lsquareLoc, copyArrayRef<ExprNode *>(indices), arrowLoc,
+      result, lsquareLoc, copyArrayRef<ExprNode *>(subscriptArgs), arrowLoc,
       copyArrayRef<ExprNode *>(arrowExprs), rsquareLoc);
   return success();
 }
