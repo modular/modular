@@ -1370,7 +1370,9 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
     keyBuf->write_impl((const char *)moduleState.contentHash.data(),
                        moduleState.contentHash.size());
     options.print(*keyBuf << "mojoParser(");
-    *keyBuf << ")";
+    *keyBuf << ", useBuiltins=" << useBuiltinModule
+            << ", experimentalLifetimes=" << useExperimentalLifetimes()
+            << ", parsingStdlib=" << parsingStandardLibrary << ")";
     auto output = cachedTransform(
         moduleDecl.getIfOperation(), impl->transformCache.copy(),
         LLCL::AsyncValueRef<Chain>::createReady(runtime), std::move(keyBuf),
