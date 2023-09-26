@@ -694,6 +694,47 @@ fn call_with_tail_types():
     tail_types(1, 77)
 
 ##===----------------------------------------------------------------------===##
+# Access parameter through structure
+##===----------------------------------------------------------------------===##
+
+struct MultiStruct[p1: Int, p2: Int, p3: Int]:
+    fn __init__(inout self): pass
+
+fn foo[x: Int]():
+  pass
+
+fn bar(x : Int):
+  pass
+
+# CHECK-LABEL: lit.func @"reference_params_through_struct
+fn reference_params_through_struct():
+    var x = MultiStruct[52, 9, 33]()
+
+    # CHECK: %[[Y:.*]] = lit.varlet.decl2 "y"
+    # CHECK-NEXT: %[[P:.*]] = kgen.param.constant: {{.*}} <#lit.struct<{value = 52}>
+    # CHECK-NEXT: lit.ref.store %[[P]], %[[Y]]
+    var y = x.p1
+
+    # CHECK: %[[P:.*]] = kgen.param.constant: {{.*}} <#lit.struct<{value = 9}>
+    # CHECK-NEXT: kgen.call @"{{.*}}bar({{.*}})"(%[[P]])
+    bar(x.p2)
+
+    # CHECK: kgen.call @{{.*}}foo{{.*}}<:!Int #lit.struct<{value = 33}>>
+    foo[x.p3]()
+
+    # CHECK: %[[Z:.*]] = lit.varlet.decl2 "z"
+    # CHECK-NEXT: %[[P:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
+    # CHECK-NEXT: lit.ref.store %[[P]], %[[Z]]
+    var z = MultiStruct[1, 2, 3].p1
+
+    # CHECK: %[[P:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 2}>>
+    # CHECK-NEXT: kgen.call @"{{.*}}bar({{.*}})"(%[[P]])
+    bar(MultiStruct[1, 2, 3].p2)
+
+    # CHECK: kgen.call @{{.*}}foo{{.*}}<:!Int #lit.struct<{value = 3}>>
+    foo[MultiStruct[1, 2, 3].p3]()
+
+##===----------------------------------------------------------------------===##
 # Default parameters
 ##===----------------------------------------------------------------------===##
 
