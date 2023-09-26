@@ -163,6 +163,13 @@ BValue ASTDecl::getIfBValue() const {
   return {};
 }
 
+std::optional<StringRef> ASTDecl::getNameIfOperation() const {
+  if (Operation *op = getIfOperation())
+    if (auto decl = dyn_cast<ASTDeclInterface>(op))
+      return decl.getDeclName().getValue();
+  return {};
+}
+
 PValue ASTDecl::getFuncAsPValue() const {
   return SymbolConstantAttr::get(getSymbolRef(),
                                  cast<LIT::FuncOp>(*this).getSignature());
@@ -623,6 +630,10 @@ void DeclResolver::resolveAll() {
 }
 
 void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
+  TimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
+    return decl.getNameIfOperation().value_or("").str();
+  });
+
   // The first stage is to fully resolve all of the decls recursively defined
   // within the main container. These decls provide the anchor for resolution.
   std::deque<ASTDecl *> worklist({&decl});

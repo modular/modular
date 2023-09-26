@@ -67,6 +67,9 @@ int main(int argc, char *argv[]) {
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
         sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
 
+        TraceProfiler profiler(clOptions.timeTrace,
+                               clOptions.timeTraceGranularity);
+
         DialectRegistry registry;
         registerAllKGENDialects(registry);
         context->appendDialectRegistry(registry);

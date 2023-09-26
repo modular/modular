@@ -66,6 +66,9 @@ public:
     return dyn_cast_or_null<Operation *>(irValue);
   }
 
+  /// Get the name of the declaration if it has one.
+  std::optional<StringRef> getNameIfOperation() const;
+
   /// If the IRValue is a function, return it as a PValue.
   PValue getFuncAsPValue() const;
 
