@@ -255,13 +255,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return convertElementTypesToStruct(variadic.getValues());
   });
 
-  // Convert closure type to a struct of two pointers
-  addConversion([=](POP::ClosureType closureType) -> std::optional<Type> {
-    MLIRContext *ctx = closureType.getContext();
-    auto pointerTy = LLVM::LLVMPointerType::get(ctx);
-    return LLVM::LLVMStructType::getLiteral(ctx, {pointerTy, pointerTy});
-  });
-
   // Convert SIMD types to vector types.
   addConversion([=](POP::SIMDType simd) -> std::optional<Type> {
     std::optional<KGENDType> dtype = simd.getResolvedDType();
@@ -1214,11 +1207,6 @@ buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
     return DebugInfo::DIArrayType::get(elementType, size);
   }
 
-  if (auto closureType = dyn_cast<POP::ClosureType>(type)) {
-    return buildDebugTypeFromFunctionType(ctx, closureType.getFunc(), converter,
-                                          target);
-  }
-
   if (auto coroutineType = dyn_cast<POP::CoroutineType>(type)) {
     // We map coroutine types to pointers to subroutine types.
     DebugInfo::DIType srType = buildDebugTypeFromFunctionType(
@@ -1277,11 +1265,6 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
 
   // Add direct debug info conversions.
   addConversion([&converter, target](POP::ArrayType type) {
-    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
-                                     target);
-  });
-
-  addConversion([&converter, target](POP::ClosureType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });

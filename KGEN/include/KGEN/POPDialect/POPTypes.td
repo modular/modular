@@ -398,26 +398,6 @@ def POP_VariantType : POPType<"Variant", "variant",
 }
 
 //===----------------------------------------------------------------------===//
-// ClosureType
-//===----------------------------------------------------------------------===//
-
-def POP_ClosureType : POPType<"Closure", "closure"> {
-  let summary = "The type for a closure.";
-  let description = [{
-    A type for a closure.
-
-    Example:
-
-    ```mlir
-    !pop.closure<(index, i32) -> ()>
-    ```
-  }];
-
-  let parameters = (ins "FunctionType":$func);
-  let assemblyFormat = "`<` $func `>`";
-}
-
-//===----------------------------------------------------------------------===//
 // CoroutineType
 //===----------------------------------------------------------------------===//
 

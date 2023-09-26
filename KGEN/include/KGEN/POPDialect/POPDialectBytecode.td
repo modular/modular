@@ -40,10 +40,6 @@ def VariantType : DialectType<(type
   TypedAttrArray:$types
 )>;
 
-def ClosureType : DialectType<(type
-  ConcreteType<"FunctionType">:$func
-)>;
-
 def CoroutineType : DialectType<(type
   ConcreteType<"SignatureType">:$signature
 )>;
@@ -56,7 +52,6 @@ def POPDialectTypes : DialectTypes<"pop"> {
     StructType,
     PackType,
     VariantType,
-    ClosureType,
     CoroutineType
   ];
 }
