@@ -1285,20 +1285,34 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   //   contextMgr = EXPRESSION
   //   TARGET = contextMgr.__enter__()
   //   SUITE
+  //   lit.ownership.use(TARGET)
   // This is useful for compatibility, and does scope "TARGET" (when
   // useLexicalScope is true) and the context manager expression.
   if (!hasExitMethod) {
     // Parse the body suite.
-    return parseLocalScopeSuite(curIndent);
-  }
+    if (parseLocalScopeSuite(curIndent))
+      return failure();
 
-  // This emits the call to the 'contextMgr.__exit__()' methods on the
-  // context managers in the normal path.
-  auto emitNormalExitLogic = [&]() {
-    (void)getEmitter().emitNamedMethodCall(
-        "__exit__", CallOperands({{contextRV, contextExp}}), ValueDest::none(),
-        CallSyntax::kMethodCall, contextExp);
-  };
+    // The target value may not have a __exit__ method, but we need it to be
+    // live all the way across the suite, so add an extra use so it isn't
+    // destroyed early.
+    if (enterResult) {
+      if (auto targetBV = getEmitter().emitBValue(
+              {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
+        Value ptrOrScalar;
+        // We don't care about extending PValues if one ever happened.
+        if (auto scalar = targetBV.getIfSBValue())
+          ptrOrScalar = scalar;
+        if (auto scalar = targetBV.getIfXBValue())
+          ptrOrScalar = scalar;
+        if (auto scalar = targetBV.getIfMBValue())
+          ptrOrScalar = scalar;
+        if (ptrOrScalar)
+          builder.create<OwnershipUseOp>(loc, ptrOrScalar);
+      }
+    }
+    return success();
+  }
 
   // If we're in a non-raising region, then we have a simple pattern to emit:
   //   contextMgr = EXPRESSION
@@ -1324,6 +1338,14 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   builder.createBlock(&tryOp.getElseRegion());
   builder.create<TryYieldOp>(loc);
   builder.createBlock(&tryOp.getTryRegion());
+
+  // This emits the call to the 'contextMgr.__exit__()' methods on the
+  // context managers in the normal path.
+  auto emitNormalExitLogic = [&]() {
+    (void)getEmitter().emitNamedMethodCall(
+        "__exit__", CallOperands({{contextRV, contextExp}}), ValueDest::none(),
+        CallSyntax::kMethodCall, contextExp);
+  };
 
   if (!inExceptRegion) {
     // Parse the body suite.
