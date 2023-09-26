@@ -353,6 +353,13 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: = <1>
   kgen.param.declare unknownEqItselfIndex: i1 = <eq(?, ?)>
 
+  // Make sure operand deduplication happens for nested operands too
+  kgen.param.declare max = <max(max(p1, 1), p1)>
+  // CHECK: kgen.param.declare max = <max(p1, 1)>
+
+  kgen.param.declare min = <min(min(p1, 1), p1)>
+  // CHECK: kgen.param.declare min = <min(p1, 1)>
+
   kgen.return
 }
 
