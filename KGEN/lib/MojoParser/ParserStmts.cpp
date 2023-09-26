@@ -1218,7 +1218,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       targetDecl = builder.create<VarLetDeclOp>(
           shared.translateLocation(targetLoc),
           UnresolvedType::get(getContext()), name, lifetimeName,
-          /*isVar=*/!useLexicalScope, /*isSynth=*/false);
+          /*isVar=*/!useLexicalScope, /*isSynth=*/true);
       enterDest = ValueDest(targetDecl, EC_WithContextMgr);
       addDecl = true;
     }
