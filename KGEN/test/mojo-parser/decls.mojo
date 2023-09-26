@@ -81,7 +81,7 @@ fn take_closure_no_param_main():
     # CHECK: %1 = kgen.rebind %W : !kgen.signature<!lit.signature<("y": index borrow) capturing -> index>>
     # CHECK-SAME: to !kgen.signature<!lit.signature<(index borrow) capturing -> index>>
     let W = g
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %idx3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow) capturing -> index>> borrow, "x": index borrow) -> !lit.none>
+    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %index3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow) capturing -> index>> borrow, "x": index borrow) -> !lit.none>
     take_closure(W, Int(3).value)
 
 
@@ -196,7 +196,7 @@ fn capture_by_copy():
 
 # CHECK-LABEL:  lit.func @"let_decls()
 def let_decls() -> None:
-    # CHECK: %x = lit.letreg.decl "x" = %idx123 : index
+    # CHECK: %x = lit.letreg.decl "x" = %index123 : index
     let x = Int(123).value
     # CHECK: %0 = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"1"{{.*}}>
     # CHECK: %y = lit.letreg.decl "y" = %0 : {{.*}}FloatLiteral
@@ -244,7 +244,7 @@ def var_decls() -> None:
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
     var z = x
     z = Int(42).value
-    # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant = <42>
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
 
 
@@ -498,7 +498,7 @@ fn math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"useIt
 fn useIt(a: __mlir_type.index) -> __mlir_type.index:
-    # CHECK: %idx3 = index.constant 3
+    # CHECK: %index3 = kgen.param.constant = <3>
     # CHECK: %0 = kgen.call @"$decls"::@"math(
     # CHECK: lit.return %0 : index
     return math(a, math(Int(1).value, Int(2).value))
@@ -857,7 +857,7 @@ fn usePacks(x: Float32, y: Int):
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK5]])
     pack[Int, Float32, Int](Int(1).value, x, y)
 
-    # CHECK: index.constant 1
+    # CHECK: kgen.param.constant = <1>
     # CHECK-NEXT: [[PACK6:%.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
     # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed(Int(1).value, x, y)

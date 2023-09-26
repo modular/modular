@@ -657,7 +657,7 @@ fn byval_byref_function(a: Int, inout b: Int):
 
 # CHECK-LABEL: lit.func @"lvaluesAndRValues()
 fn lvaluesAndRValues() -> __mlir_type.index:
-  # CHECK: [[VALUE:%.*]] = index.constant 4
+  # CHECK: [[VALUE:%.*]] = kgen.param.constant = <4>
   # CHECK: lit.return [[VALUE]] : index
   return Int(4).value
 
@@ -1310,7 +1310,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: lit.alias.decl {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<!Int> [[A]], 2)>
     alias v0 = a[2]
-    # CHECK: pop.variadic.get %{{.*}}[%idx3]
+    # CHECK: pop.variadic.get %{{.*}}[%index3]
     let v1 = a[3]
     # CHECK: %[[IDX:.*]] = kgen.call {{.*}}__index__
     # CHECK-NEXT: %[[MLIR_IDX:.*]] = kgen.call {{.*}}__mlir_index__{{.*}}%[[IDX]]
@@ -1323,10 +1323,10 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 # CHECK-SAME:   a{{.*}} = variadic_get{{.*}}a, 0
 # CHECK-SAME:   b{{.*}} = variadic_get{{.*}}a, 1
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
-    # CHECK: [[V0:%.*]] = pop.variadic.get %b[%idx1]
+    # CHECK: [[V0:%.*]] = pop.variadic.get %b[%index1]
     # CHECK: __copyinit__{{.*}}[[V0]]
     let v0 = b[1]
-    # CHECK: [[V1:%.*]] = pop.variadic.get %b[%idx2]
+    # CHECK: [[V1:%.*]] = pop.variadic.get %b[%index2]
     # CHECK: __copyinit__{{.*}}[[V1]]
     var v1 = b[2]
 

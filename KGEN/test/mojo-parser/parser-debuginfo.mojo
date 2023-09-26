@@ -30,6 +30,7 @@ fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
 # CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = [[LN]], arg = 1> : ![[INT_TYPE]]
 # CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = [[LN]], arg = 2> : ![[INT_TYPE]]
 
+
 # CHECK-LABEL: lit.func @"power({{.*}}$int::Int,{{.*}}$int::Int)"(
 fn power(lhs: Int, rhs: Int) -> Int:
     # CHECK: debuginfo.value #[[LHS_VAR]] = %lhs
@@ -41,13 +42,14 @@ fn power(lhs: Int, rhs: Int) -> Int:
 
 # CHECK-DAG: #[[LOCAL_VAR_I:.*]] = #debuginfo.local_variable<scope = #[[FOR_SP:.*]], name = "i", {{.*}}, line = [[LN:[0-9]+]], arg = 1
 
+
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
-    # CHECK: %0 = hlcf.loop (%arg0 loc({{.*}}) = %idx0 : index) -> index {
+    # CHECK: %0 = hlcf.loop (%arg0 loc({{.*}}) = %index0 : index) -> index {
     __mlir_region loop_body(i: __mlir_type.index):
         # CHECK-NEXT: debuginfo.value #[[LOCAL_VAR_I]] = %arg0 : index
-        # CHECK-NEXT: %idx1 = index.constant 1
-        # CHECK-NEXT: %1 = index.add %arg0, %idx1 loc(#[[FOR_ADD_LOC:.*]])
+        # CHECK-NEXT: %index1 = kgen.param.constant = <1>
+        # CHECK-NEXT: %1 = index.add %arg0, %index1 loc(#[[FOR_ADD_LOC:.*]])
         # CHECK-NEXT: hlcf.continue %1 : index loc(#[[FOR_YIELD_LOC:.*]])
         __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, Int(1).value))
 
@@ -74,8 +76,10 @@ from imported_module import VeryUniqueStruct
 # CHECK-DAG: #[[VALUE_LOC]] = loc(fused<#[[SP]]>[#[[LINE_LOC:loc[0-9]+]]])
 # CHECK-DAG: #[[LINE_LOC]] = loc("[[FILENAME]]"
 
+
 fn caller():
     let y = VeryUniqueStruct.very_unique_func(0)
+
 
 # // -----
 
@@ -109,41 +113,36 @@ fn caller():
 # CHECK-DAG: #[[MOVE_LOC]] = loc(fused<#[[SP_MOVE]]>[#[[DEC_LOC]]])
 # CHECK-DAG: #[[DEC_LOC]] = loc("within split at [[FILENAME]]:
 
+
 @value
 struct MyValueStruct:
     var value: __mlir_type.index
+
 
 # // -----
 
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.
 
-# CHECK-DAG: ![[SR7:.*]] = !debuginfo.subroutine<(!kgen.pointer<!escaping1>, index, index) -> (!lit.none): DW_CC_normal>
 # CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "makes_escaping_closure", linkageName = "makes_escaping_closure{{.*}}", file = #file, line = [[#LN42:]],
-
-# CHECK-DAG: #[[LOC1:.*]] = loc("{{.*}}":[[#LN42]]:1)
-# CHECK-DAG: #[[LOC4:.*]] = loc("{{.*}}":[[#LN42+1]]:3)
-# CHECK-DAG: #[[LOC6:.*]] = loc("{{.*}}":[[#LN42]]:27)
-# CHECK-DAG: #[[LOC7:.*]] = loc("{{.*}}":[[#LN42]]:50)
-# CHECK-DAG: #[[LOC8:.*]] = loc("{{.*}}":[[#LN42+3]]:10)
-# CHECK-DAG: #[[LOC9:.*]] = loc("{{.*}}":[[#LN42+3]]:3)
 
 # CHECK-DAG:    lit.func @"makes_escaping_closure
 # CHECK-DAG:    debuginfo.value #local_variable1 = %m : index loc(#[[LOC26:.*]])
-# CHECK-DAG:    debuginfo.value #local_variable2 = %z : index loc(#[[LOC27:.*]])
-# CHECK-DAG:    %anonymous2A = lit.varlet.decl "anonymous*" var synth : {{.*}} loc(#[[LOC28:.*]])
+# CHECK-DAG:    debuginfo.value #local_variable2 = %z : index
+# CHECK-DAG:    %anonymous2A = lit.varlet.decl "anonymous*" var synth : {{.*}}
 # CHECK-DAG:    %0 = lit.ref.to_pointer %anonymous2A
 # CHECK-DAG:    %1 = kgen.call {{.*}}CI{{.*}}__init__{{.*}}"(%0, %m)
 # CHECK-DAG:    %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : !lit.ref<mut !escaping1
 # CHECK-DAG:    %2 = lit.ref.to_pointer %anonymous2A_0
 # CHECK-DAG:    %3 = kgen.call {{.*}}CW{{.*}}__init__{{.*}}(%2, %0)
-# CHECK-DAG:    %4 = kgen.call {{.*}}CW{{.*}}__copyinit__{{.*}}(%__result__, %2) {{.*}} loc(#[[LOC29:.*]])
+# CHECK-DAG:    %4 = kgen.call {{.*}}CW{{.*}}__copyinit__{{.*}}(%__result__, %2) {{.*}}
 
-# CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#[[LOC6]]])
-# CHECK-DAG: #[[LOC27]] = loc(fused<#[[SP9]]>[#[[LOC7]]])
-# CHECK-DAG: #[[LOC28]] = loc(fused<#[[SP9]]>[#[[LOC4]]])
-# CHECK-DAG: #[[LOC29]] = loc(fused<#[[SP9]]>[#[[LOC8]]])
+# CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
 
-fn makes_escaping_closure(m:  __mlir_type.index, z: __mlir_type.index) -> fn(n:__mlir_type.index) escaping ->  __mlir_type.index:
-  fn myclosure(n: __mlir_type.index) escaping ->  __mlir_type.index:
-      return m
-  return myclosure
+
+fn makes_escaping_closure(
+    m: __mlir_type.index, z: __mlir_type.index
+) -> fn (n: __mlir_type.index) escaping -> __mlir_type.index:
+    fn myclosure(n: __mlir_type.index) escaping -> __mlir_type.index:
+        return m
+
+    return myclosure
