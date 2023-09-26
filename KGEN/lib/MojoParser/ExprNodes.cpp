@@ -1303,7 +1303,7 @@ static PValue substituteParametersIntoUserDefinedType(
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
   for (ExprNode *indexExpr : subscript.indices) {
-    // TODO: Slice syntax is the obvious way to support named parameter
+    // TODO(#21618): Slice syntax is the obvious way to support named parameter
     // arguments.
     auto indexVal = emitter.emitExprPValue(indexExpr, EC_TypeParamValue);
     if (!indexVal)
@@ -1334,38 +1334,45 @@ static PValue substituteParametersIntoUserDefinedType(
       ParamBindArrayAttr::get(structOp.getContext(), bindingValues)));
 }
 
+/// Returns the next expected parameter type for a function candidate given a
+/// set of bindings.
+static Type getNextParamType(ASTDecl *fnDecl,
+                             const InputParamBindings &inputParamBindings,
+                             ExprEmitter &emitter) {
+  LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
+  const auto &[_, fitness] = inputParamBindings.verifyBindings(
+      signature.getInputParamTypes(), /*actualParamDecls=*/{},
+      signature.getDefaultParameters(), emitter, signature.hasParamVarArgs());
+  return fitness.lastExpectedType;
+}
+
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
 /// or call to a method), apply parameter bindings to it.
-static ORValue bindParamValuesToDirectCall(ORValue value,
-                                           ArrayRef<ExprNode *> indices,
-                                           ExprEmitter &emitter) {
+static ORValue
+bindParamValuesToDirectCall(ORValue value,
+                            ArrayRef<ExprNode *> subscriptOperands,
+                            ExprEmitter &emitter) {
   // If the indices are a single () expression, then we treat this as having
   // no parameters.  This is used with arrow expressions to allow `f[() -> x]`.
-  if (indices.size() == 1 && indices[0]->getWithoutParens()->isEmptyTuple())
+  if (subscriptOperands.size() == 1 &&
+      subscriptOperands[0]->getWithoutParens()->isEmptyTuple())
     return value;
 
   // Process each subscript entry as a binding.
   // TODO(#21618): Support keyword parameters: `A[x = 42]`.
-  for (auto idx : indices) {
+  for (auto idx : subscriptOperands) {
     // If all entries in this overload set take a parameter with a common type,
     // use it for parameter type inference.
     ASTType paramType;
     if (!value->fnDecls.empty()) {
-      // This lambda returns the next expected parameter type.
-      auto getCandidateParamType = [&](ASTDecl *fnDecl) -> Type {
-        LITSignatureType signature =
-            cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-        const auto &[_, fitness] = value->inputParamBindings.verifyBindings(
-            signature.getInputParamTypes(), /*actualParamDecls=*/{},
-            signature.getDefaultParameters(), emitter,
-            signature.hasParamVarArgs());
-        return fitness.lastExpectedType;
+      paramType = getNextParamType(value->fnDecls[0], value->inputParamBindings,
+                                   emitter);
+      auto hasDifferentNextParam = [&](ASTDecl *decl) {
+        return !paramType.isEqualCanon(
+            getNextParamType(decl, value->inputParamBindings, emitter));
       };
-      paramType = getCandidateParamType(value->fnDecls[0]);
       if (paramType && value->fnDecls.size() != 1 &&
-          !llvm::all_of(value->fnDecls, [&](ASTDecl *decl) {
-            return ASTType(paramType).isEqualCanon(getCandidateParamType(decl));
-          }))
+          llvm::any_of(value->fnDecls, hasDifferentNextParam))
         paramType = ASTType();
     }
 
