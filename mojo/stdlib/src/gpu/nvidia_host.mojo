@@ -8,6 +8,7 @@
 from sys.ffi import RTLD, DLHandle
 from memory import stack_allocation
 from utils.index import StaticIntTuple, Index
+from sys.info import sizeof
 from math import floor
 
 # ===----------------------------------------------------------------------===#
@@ -2032,3 +2033,54 @@ struct Dim:
 
     fn __repr__(self) -> String:
         return self.__str__()
+
+
+# ===----------------------------------------------------------------------===#
+# Memory
+# ===----------------------------------------------------------------------===#
+
+
+fn _malloc[type: AnyType](count: Int) raises -> Pointer[type]:
+    var ptr = Pointer[AnyType]()
+    _check_error(
+        _get_dylib_function[fn (Pointer[Pointer[AnyType]], Int) -> Result](
+            "cuMemAlloc_v2"
+        )(Pointer.address_of(ptr), count * sizeof[type]())
+    )
+    return ptr.bitcast[type]()
+
+
+fn _free[type: AnyType](ptr: Pointer[type]) raises:
+    _check_error(
+        _get_dylib_function[fn (Pointer[AnyType]) -> Result]("cuMemFree_v2")(
+            ptr.bitcast[AnyType]()
+        )
+    )
+
+
+fn _copy_host_to_device[
+    type: AnyType
+](dest: Pointer[type], src: Pointer[type], count: Int) raises:
+    _check_error(
+        _get_dylib_function[
+            fn (Pointer[AnyType], Pointer[AnyType], Int) -> Result
+        ]("cuMemcpyHtoD_v2")(
+            dest.bitcast[AnyType](),
+            src.bitcast[AnyType](),
+            count * sizeof[type](),
+        )
+    )
+
+
+fn _copy_device_to_host[
+    type: AnyType
+](dest: Pointer[type], src: Pointer[type], count: Int) raises:
+    _check_error(
+        _get_dylib_function[
+            fn (Pointer[AnyType], Pointer[AnyType], Int) -> Result
+        ]("cuMemcpyDtoH_v2")(
+            dest.bitcast[AnyType](),
+            src.bitcast[AnyType](),
+            count * sizeof[type](),
+        )
+    )
