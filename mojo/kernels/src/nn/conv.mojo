@@ -49,7 +49,6 @@ from MatmulUtils import (
     get_partitioned_matmul,
     get_partitioned_matmul_im2col,
     partition_work,
-    use_vnni_fn,
 )
 from memory import memset_zero, stack_allocation
 from memory.buffer import (
@@ -3939,7 +3938,7 @@ fn pack_filter[
     any is padded with zero to fill simd_size.
     """
     # a_type and ctype are not provided yet so for now we only use the b_type
-    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
+    alias use_vnni = type == DType.int8
     alias input_type = DType.uint8 if use_vnni else type
     alias filter_type = type
     alias output_type = DType.int32 if use_vnni else type
