@@ -124,7 +124,7 @@ void ASTDecl::dump() const {
         op->print(llvm::errs(), mlir::OpPrintingFlags().printGenericOpForm());
         llvm::errs() << "\n";
       })
-      .Case<PValue, SRValue, MRValue, SBValue, MBValue, MLValue>(
+      .Case<PValue, SRValue, MRValue, SBValue, MBValue, MLValue, XLValue>(
           [](auto v) { v.dump(); })
       .Default([](DeclIRValue v) { llvm::errs() << "<null decl>\n"; });
 }
@@ -132,13 +132,15 @@ void ASTDecl::dump() const {
 MLIRContext *ASTDecl::getContext() const {
   if (auto *op = getIfOperation())
     return op->getContext();
-  if (auto mv = dyn_cast<PValue>(getIRValue()))
+  if (auto mv = dyn_cast<PValue>(irValue))
     return mv.get().getContext();
-  if (auto dr = dyn_cast<SRValue>(getIRValue()))
+  if (auto dr = dyn_cast<SRValue>(irValue))
     return dr.getContext();
+  if (auto value = dyn_cast_or_null<XLValue>(irValue))
+    return value.getContext();
   if (auto value = dyn_cast_or_null<MRValue>(irValue))
     return value.getContext();
-  return cast<MLValue>(getIRValue()).getContext();
+  return cast<MLValue>(irValue).getContext();
 }
 
 /// If this is an RValue, return it otherwise return null.
@@ -149,6 +151,8 @@ CRValue ASTDecl::getIfRValue() const {
     return value;
   if (auto value = dyn_cast_or_null<MRValue>(irValue))
     return value;
+  // if (auto value = dyn_cast_or_null<XRValue>(irValue))
+  //   return value;
   return {};
 }
 
@@ -160,6 +164,8 @@ BValue ASTDecl::getIfBValue() const {
     return value;
   if (auto value = dyn_cast_or_null<MBValue>(irValue))
     return value;
+  // if (auto value = dyn_cast_or_null<XBValue>(irValue))
+  //   return value;
   return {};
 }
 
