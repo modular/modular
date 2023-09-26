@@ -278,6 +278,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
     DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>
   ]> {
   let summary = "Struct declaration.";
   let description = [{
@@ -327,6 +328,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     UnitAttr:$paramVarArgs,
     KGEN_ParameterExprArrayAttr:$defaultParameters,
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
+    OptionalAttr<M_SymbolRefArrayAttr>:$traits,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$moveInit,
@@ -597,12 +599,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     // it and fill it in.
     OpBuilder<(ins "StringAttr":$name)>,
   ];
-
-  let extraClassDeclaration = [{
-    /// Return the decl name of the struct.
-    StringAttr getDeclName() { return getSymNameAttr(); }
-  }];
-
 }
 
 //===----------------------------------------------------------------------===//

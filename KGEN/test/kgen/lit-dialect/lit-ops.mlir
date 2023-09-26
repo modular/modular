@@ -399,3 +399,17 @@ lit.globalvar.decl @global_let : !kgen.declref<@Error> isVar {
 lit.struct.decl @Foo {
   lit.struct.field value : index
 } loc(fused<#file>[#loc])
+
+// -----
+// struct with traits
+// CHECK-LABEL: lit.trait.decl @Trait1
+lit.trait.decl @Trait1 {
+}
+
+// CHECK-LABEL: lit.trait.decl @Trait2
+lit.trait.decl @Trait2 {
+}
+
+// CHECK-LABEL: lit.struct.decl @StructHasTraits
+lit.struct.decl @StructHasTraits attributes {traits = #M<symbols[@Trait1, @Trait2]>} {
+}
