@@ -46,25 +46,14 @@ struct PoolMethod:
 
 
 fn pool(pool_method: Int):
-    alias in_shape = DimList(2, 2, 5, 7)
+    alias in_shape = DimList(2, 5, 7, 2)
     alias out_shape = DimList(2, 2, 2, 2)
-
     # Create an input buffer.
     let input_buffer = NDBuffer[4, in_shape, DType.float32].stack_allocation()
-
     fill_buffer[in_shape](input_buffer)
-
-    let input = ImageData[in_shape, DType.float32, Image2DLayout.NCHW](
-        input_buffer
-    )
-
     # Create an output buffer.
     let output_buffer = NDBuffer[4, out_shape, DType.float32].stack_allocation()
     output_buffer.fill(0)
-
-    let output = ImageData[out_shape, DType.float32, Image2DLayout.NCHW](
-        output_buffer
-    )
 
     let pad_h = StaticIntTuple[2](0, 0)
     let pad_w = StaticIntTuple[2](0, 0)
@@ -79,13 +68,13 @@ fn pool(pool_method: Int):
                 out_shape,
                 in_shape,
                 DType.float32,
-                Image2DLayout.NCHW,
+                Image2DLayout.NHWC,
                 max_pool_init_fn[DType.float32],
                 max_pool_update_fn[DType.float32],
                 max_pool_reduce_fn[DType.float32],
             ].run(
-                output,
-                input,
+                output_buffer,
+                input_buffer,
                 pad_h,
                 pad_w,
                 filter,
@@ -98,13 +87,13 @@ fn pool(pool_method: Int):
                 out_shape,
                 in_shape,
                 DType.float32,
-                Image2DLayout.NCHW,
+                Image2DLayout.NHWC,
                 avg_pool_init_fn[DType.float32],
                 avg_pool_update_fn[DType.float32],
                 avg_pool_reduce_fn[DType.float32],
             ].run(
-                output,
-                input,
+                output_buffer,
+                input_buffer,
                 pad_h,
                 pad_w,
                 filter,
@@ -122,31 +111,31 @@ fn test_max_pool_2d():
     print("== test_max_pool_2d")
 
     # output should have form
-    # ([[[[ 15.,  18.],
-    #    [ 29.,  32.]],
-    #   [[ 50.,  53.],
-    #    [ 64.,  67.]]],
-    #  [[[ 85.,  88.],
-    #    [ 99., 102.]],
-    #   [[120., 123.],
-    #    [134., 137.]]]])
+    # ([[[[ 30.,  31.],
+    #    [ 35.,  37.]],
+    #   [[ 58.,  59.],
+    #    [ 64.,  65.]]],
+    #  [[[ 100.,  101.],
+    #    [ 106., 107.]],
+    #   [[128., 129.],
+    #    [134., 135.]]]])
 
-    # CHECK: 15
-    # CHECK: 18
-    # CHECK: 29
-    # CHECK: 32
-    # CHECK: 50
-    # CHECK: 53
-    # CHECK: 64
-    # CHECK: 67
-    # CHECK: 85
-    # CHECK: 88
-    # CHECK: 99
-    # CHECK: 102
-    # CHECK: 120
-    # CHECK: 123
-    # CHECK: 134
-    # CHECK: 137
+    # CHECK: 30.0
+    # CHECK: 31.0
+    # CHECK: 36.0
+    # CHECK: 37.0
+    # CHECK: 58.0
+    # CHECK: 59.0
+    # CHECK: 64.0
+    # CHECK: 65.0
+    # CHECK: 100.0
+    # CHECK: 101.0
+    # CHECK: 106.0
+    # CHECK: 107.0
+    # CHECK: 128.0
+    # CHECK: 129.0
+    # CHECK: 134.0
+    # CHECK: 135.0
     pool(PoolMethod.MAX)
 
 
@@ -155,31 +144,31 @@ fn test_avg_pool_2d():
     print("== test_avg_pool_2d")
 
     # output should have form
-    # ([[[[  7.5000,  10.5000],
-    #    [ 21.5000,  24.5000]],
-    #   [[ 42.5000,  45.5000],
-    #    [ 56.5000,  59.5000]]],
-    #  [[[ 77.5000,  80.5000],
-    #    [ 91.5000,  94.5000]],
-    #   [[112.5000, 115.5000],
-    #    [126.5000, 129.5000]]]])
+    # ([[[[  15.5,  16.0],
+    #    [ 21.0,  22.0]],
+    #   [[ 43.0,  44.0],
+    #    [ 49.0,  50.0]]],
+    #  [[[ 85.0,  86.0],
+    #    [ 91.0,  92.0]],
+    #   [[113.0, 114.0],
+    #    [119.0, 120.0]]]])
 
-    # CHECK: 7.5
-    # CHECK: 10.5
-    # CHECK: 21.5
-    # CHECK: 24.5
-    # CHECK: 42.5
-    # CHECK: 45.5
-    # CHECK: 56.5
-    # CHECK: 59.5
-    # CHECK: 77.5
-    # CHECK: 80.5
-    # CHECK: 91.5
-    # CHECK: 94.5
-    # CHECK: 112.5
-    # CHECK: 115.5
-    # CHECK: 126.5
-    # CHECK: 129.5
+    # CHECK: 15.0
+    # CHECK: 16.0
+    # CHECK: 21.0
+    # CHECK: 22.0
+    # CHECK: 43.0
+    # CHECK: 44.0
+    # CHECK: 49.0
+    # CHECK: 50.0
+    # CHECK: 85.0
+    # CHECK: 86.0
+    # CHECK: 91.0
+    # CHECK: 92.0
+    # CHECK: 113.0
+    # CHECK: 114.0
+    # CHECK: 119.0
+    # CHECK: 120.0
     pool(PoolMethod.AVG)
 
 

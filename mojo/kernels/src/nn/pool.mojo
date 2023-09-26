@@ -48,8 +48,8 @@ struct Pool2d[
     """Struct wrapper for pool implementation."""
 
     # Input params.
-    var output: ImageData[static_output_shape, type, static_data_layout]
-    var input: ImageData[static_input_shape, type, static_data_layout]
+    var output: NDBuffer[4, static_output_shape, type]
+    var input: NDBuffer[4, static_input_shape, type]
     var pad_h: StaticIntTuple[2]
     var pad_w: StaticIntTuple[2]
     var filter_shape: StaticIntTuple[2]
@@ -63,8 +63,8 @@ struct Pool2d[
 
     @staticmethod
     fn run(
-        output: ImageData[static_output_shape, type, static_data_layout],
-        input: ImageData[static_input_shape, type, static_data_layout],
+        output: NDBuffer[4, static_output_shape, type],
+        input: NDBuffer[4, static_input_shape, type],
         pad_h: StaticIntTuple[2],
         pad_w: StaticIntTuple[2],
         filter_shape: StaticIntTuple[2],
@@ -105,8 +105,7 @@ struct Pool2d[
 
         @always_inline
         @parameter
-        fn task_func(task_id: Int):
-
+        fn task_func_nhwc(task_id: Int):
             # Create an instance of the pooling op.
             let pool2d = Pool2d[
                 static_output_shape,
@@ -136,10 +135,10 @@ struct Pool2d[
 
                 for i in range(simd_width):
                     # Compute the result value at this specific output position.
-                    values[i] = pool2d._compute_point(offset + idx + i)
+                    values[i] = pool2d._compute_point_nhwc(offset + idx + i)
 
                 # Store the computed output at the given output position.
-                pool2d.output.data.flatten().simd_store[simd_width](
+                pool2d.output.data.simd_store[simd_width](
                     offset + idx,
                     values,
                 )
@@ -148,11 +147,15 @@ struct Pool2d[
                 min(work_block_size, work - offset)
             )
 
-        async_parallelize[task_func](out_chain, num_tasks)
+        debug_assert(
+            static_data_layout == Image2DLayout.NHWC,
+            "Only NHWC layot format is supported.",
+        )
+        async_parallelize[task_func_nhwc](out_chain, num_tasks)
 
     fn __init__(
-        output: ImageData[static_output_shape, type, static_data_layout],
-        input: ImageData[static_input_shape, type, static_data_layout],
+        output: NDBuffer[4, static_output_shape, type],
+        input: NDBuffer[4, static_input_shape, type],
         pad_h: StaticIntTuple[2],
         pad_w: StaticIntTuple[2],
         filter_shape: StaticIntTuple[2],
@@ -209,15 +212,20 @@ struct Pool2d[
             ](input),
         }
 
-    fn _compute_point(self, idx: Int) -> SIMD[type, 1]:
-        """Implementation of the inner loop computation of a pooling operator
-        producing a single scalar value at the given output tensor index.
+    fn _compute_point_nhwc(self, idx: Int) -> SIMD[type, 1]:
+        """Implementation of the inner loop computation of a nhwc pooling
+        operator producing a single scalar value at the given output tensor
+        index.
 
         Args:
             idx: Flat index specifying which value of the output tensor to
               produce.
         """
-        let output_idx = self.output.get_tuple_index(idx)
+
+        let n_idx = (idx // self.output.stride(0)) % self.output.dim(0)
+        let h_idx = (idx // self.output.stride(1)) % self.output.dim(1)
+        let w_idx = (idx // self.output.stride(2)) % self.output.dim(2)
+        let c_idx = (idx) % self.output.dim(3)
 
         # Initialize the result of this point.
         var value: SIMD[type, 1] = init_fn()
@@ -236,8 +244,8 @@ struct Pool2d[
                     # Output HxW with striding.
                     (
                         Index(
-                            output_idx[2],
-                            output_idx[3],
+                            h_idx,
+                            w_idx,
                         )
                         * self.stride
                     )
@@ -260,10 +268,10 @@ struct Pool2d[
                     value = update_fn(
                         value,
                         self.input[
-                            output_idx[0],  # N
-                            output_idx[1],  # C
+                            n_idx,
                             input_image_index[0],  # H
                             input_image_index[1],  # W
+                            c_idx,
                         ],
                     )
         return reduce_fn(value, self.filter_shape[0] * self.filter_shape[1])
@@ -433,8 +441,8 @@ fn _pool_dispatcher[
         update_fn,
         reduce_fn,
     ].run(
-        ImageData[DimList.create_unknown[4](), type, layout](output),
-        ImageData[DimList.create_unknown[4](), type, layout](input),
+        output,
+        input,
         pad_h,
         pad_w,
         filter_shape,
