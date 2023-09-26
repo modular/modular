@@ -589,9 +589,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       // remaining arguments.
       SmallVector<TypedAttr> bindOperands;
       bindOperands.push_back(attr);
-      for (auto bind : bindingAttr)
-        bindOperands.push_back(bind);
-      // bindOperands.push_back(bindingAttr);
+      llvm::append_range(bindOperands, bindingAttr);
       attr = ParamOperatorAttr::get(POC::BindSignature, bindOperands);
     }
 
@@ -604,15 +602,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     }
   }
 
-  auto location = expr->getLocation(*this);
-  // Materialize index integer constants as a special case.
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
-    if (intAttr.getType().isIndex()) {
-      auto cst = builder->create<mlir::index::ConstantOp>(
-          location, intAttr.getValue().getSExtValue());
-      return SRValue(cst);
-    }
-  }
+  Location location = expr->getLocation(*this);
 
   // Materialize signatures as closures.
   if (auto sig = dyn_cast<SignatureType>(attr.getType())) {

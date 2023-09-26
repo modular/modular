@@ -29,7 +29,7 @@ fn mlirMagicTest(
     var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype `
 
     # CHECK-NEXT: %idxConstant = lit.varlet.decl
-    # CHECK: index.constant 42
+    # CHECK: kgen.param.constant = <42>
     var idxConstant = __mlir_op.`index.constant`[value : Int(42).value]()
 
     # CHECK: [[TMP:%.*]] = lit.ref.load %idxConstant
@@ -42,7 +42,7 @@ fn mlirMagicTest(
     ]
 
     # CHECK: [[TMP1:%.*]] = kgen.param.constant = <[[NEW_LOWER]]>
-    # CHECK: [[TMP2:%.*]] = index.constant 1
+    # CHECK: [[TMP2:%.*]] = kgen.param.constant = <1>
     # CHECK: [[SHRU:%.*]] = index.shru [[TMP1]], [[TMP2]]
     # CHECK: lit.return [[SHRU]] : index
     return __mlir_op.`index.shru`(new_lower, Int(1).value)
@@ -131,10 +131,10 @@ fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
-    # CHECK: %0 = hlcf.loop (%arg0 = %idx0 : index) -> index {
+    # CHECK: %0 = hlcf.loop (%arg0 = %index0 : index) -> index {
     __mlir_region loop_body(i: __mlir_type.index):
-        # CHECK-NEXT: %idx1 = index.constant 1
-        # CHECK-NEXT: %1 = index.add %arg0, %idx1
+        # CHECK-NEXT: %index1 = kgen.param.constant = <1>
+        # CHECK-NEXT: %1 = index.add %arg0, %index1
         # CHECK-NEXT: hlcf.continue %1 : index
         __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, Int(1).value))
 
