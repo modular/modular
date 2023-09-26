@@ -96,10 +96,7 @@ void LSPServer::onInitialize(const InitializeParams &params,
   JSONObject serverCaps{
       {"completionProvider",
        JSONObject{
-           {"allCommitCharacters",
-            {"\t", "(", ")", "[", "]", "{",  "}", "<", ">",
-             ":",  ";", ",", "+", "-", "/",  "*", "%", "^",
-             "&",  "#", "?", ".", "=", "\"", "'", "|"}},
+           {"allCommitCharacters", {"\t", "."}},
            {"resolveProvider", false},
            {"triggerCharacters", {"."}},
        }},
