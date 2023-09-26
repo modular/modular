@@ -1229,7 +1229,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     return failure();
   }
 
-  AnyValue contextRV = getEmitter().emitExpr(contextExp, EC_WithContextMgr);
+  CValue contextRV = getEmitter().emitExprCValue(contextExp, EC_WithContextMgr);
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
@@ -1253,8 +1253,43 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       targetDeclResolved.hasReferenceError = true;
   }
 
-  // This emits the call to the 'contextMgr.__exit__()' methods on the context
-  // managers in the normal path.
+  // Determine if the context manager has an __exit__ method.  If not, that is
+  // fine, we silently just don't call it.  This mode of supporting context
+  // managers with just an __enter__ method is useful for strong Mojo types
+  // working with context managers even if they don't need them, e.g. we want
+  // file descriptors to support both of these patterns:
+  //
+  //    with open("foo.txt", "r") as f:
+  //        print(f.read())
+  //
+  // and:
+  //    let f = open("foo.txt", "r")
+  //    print(f.read())
+  //
+  // The later works because of Mojo's strong early-destruction guarantees and
+  // lack of frame-objects-capturing-variables problems, but the former is more
+  // familiar to Pythonistas.
+
+  // In erroneous code, ASTDecl may be missing, e.g. a 'with' on an MLIR type.
+  // This will already have been diagnosed when the __enter__ was emitted.
+  ASTDecl *contextDecl = contextRV.getRValueType().getDecl(shared);
+  bool hasExitMethod =
+      contextDecl && !contextDecl->lookupInCurrentScope("__exit__").empty();
+
+  // If the context manager has no __exit__ method, then we emit this pattern
+  // with no try operation at all:
+  //   contextMgr = EXPRESSION
+  //   TARGET = contextMgr.__enter__()
+  //   SUITE
+  // This is useful for compatibility, and does scope "TARGET" (when
+  // useLexicalScope is true) and the context manager expression.
+  if (!hasExitMethod) {
+    // Parse the body suite.
+    return parseLocalScopeSuite(curIndent);
+  }
+
+  // This emits the call to the 'contextMgr.__exit__()' methods on the
+  // context managers in the normal path.
   auto emitNormalExitLogic = [&]() {
     (void)getEmitter().emitNamedMethodCall(
         "__exit__", CallOperands({{contextRV, contextExp}}), ValueDest::none(),
