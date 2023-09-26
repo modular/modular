@@ -246,14 +246,14 @@ struct CallNode final : public ExprNode {
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
 /// slice will be represented with a subexpression.
 struct SubscriptNode final : public ExprNode {
-  SubscriptNode(ExprNode *base, SMLoc lsquareLoc, ArrayRef<ExprNode *> indices,
-                SMLoc rsquareLoc)
+  SubscriptNode(ExprNode *base, SMLoc lsquareLoc,
+                ArrayRef<ExprNode *> subscriptArgs, SMLoc rsquareLoc)
       : ExprNode(kSubscript), base(base), lsquareLoc(lsquareLoc),
-        indices(indices), rsquareLoc(rsquareLoc) {}
+        subscriptArgs(subscriptArgs), rsquareLoc(rsquareLoc) {}
 
   ExprNode *const base;
   const SMLoc lsquareLoc;
-  const ArrayRef<ExprNode *> indices;
+  const ArrayRef<ExprNode *> subscriptArgs;
   const SMLoc rsquareLoc;
 
   static bool classof(const ExprNode *node) { return node->kind == kSubscript; }
@@ -271,15 +271,15 @@ struct SubscriptNode final : public ExprNode {
 /// the slice will be represented with a subexpression.
 struct SubscriptArrowNode final : public ExprNode {
   SubscriptArrowNode(ExprNode *base, SMLoc lsquareLoc,
-                     ArrayRef<ExprNode *> indices, SMLoc arrowLoc,
+                     ArrayRef<ExprNode *> subscriptArgs, SMLoc arrowLoc,
                      ArrayRef<ExprNode *> arrowExprs, SMLoc rsquareLoc)
       : ExprNode(kSubscriptArrow), base(base), lsquareLoc(lsquareLoc),
-        indices(indices), arrowLoc(arrowLoc), arrowExprs(arrowExprs),
-        rsquareLoc(rsquareLoc) {}
+        subscriptArgs(subscriptArgs), arrowLoc(arrowLoc),
+        arrowExprs(arrowExprs), rsquareLoc(rsquareLoc) {}
 
   ExprNode *const base;
   const SMLoc lsquareLoc;
-  ArrayRef<ExprNode *> indices;
+  ArrayRef<ExprNode *> subscriptArgs;
   const SMLoc arrowLoc;
   ArrayRef<ExprNode *> arrowExprs;
   const SMLoc rsquareLoc;

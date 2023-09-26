@@ -96,14 +96,14 @@ static PValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
 }
 
 /// Given an __mlir_type[a,b,c] or __mlir_attr[a,b,c] usage, stringize the
-/// indices and return the result.  On error, emit an error and return an empty
-/// string.
+/// subscriptArgs and return the result.  On error, emit an error and return an
+/// empty string.
 static std::string substituteMLIRMagic(const SubscriptNode &node,
                                        ExprEmitter &emitter) {
   std::string result;
   llvm::raw_string_ostream os(result);
 
-  for (auto *indexExpr : node.indices) {
+  for (auto *indexExpr : node.subscriptArgs) {
     // If the index is an identifier, and if it is a backtick identifier, we
     // treat it as an interpolated literal string.  Otherwise we look it up as
     // an expression.  Rationale: this allows using strings attributes, which
@@ -204,7 +204,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
   // Each element of the subscript must have a name identifier and a value as an
   // PValue.
-  for (auto *subscriptIdx : subscript.indices) {
+  for (auto *subscriptIdx : subscript.subscriptArgs) {
     auto *slice = dyn_cast<SliceNode>(subscriptIdx);
     if (!slice || slice->colon2Loc.isValid() || !slice->lower ||
         !slice->upper || !isa<DeclRefNode>(slice->lower)) {
@@ -697,10 +697,10 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
   ASTType elementType;
   if (!getter.isNull()) {
     // If we have at least one getter implementation then filter it based on the
-    // indices we have.  This will ensure we treat its presence of indication
-    // that the type was intended to be subscriptable, but whine about index
-    // values and base type if they aren't actually compatible at this usage
-    // site.
+    // subscriptArgs we have.  This will ensure we treat its presence of
+    // indication that the type was intended to be subscriptable, but whine
+    // about index values and base type if they aren't actually compatible at
+    // this usage site.
     PValue getterCallee =
         getter.filterOverloadSet(callArgs, /*allowImplicitConversions=*/true,
                                  /*emitDiagnosticOnFailure=*/true, emitter);
@@ -720,7 +720,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
 
     // Cannot support overloaded setter.  We could make this more flexible in
     // the future if needed, eg if they have common set values but different
-    // indices.
+    // subscriptArgs.
     if (setter.fnDecls.size() != 1) {
       auto diag = emitter.emitError(node->getLoc())
                   << baseType << " has overloaded " << setterName
@@ -1299,11 +1299,11 @@ static PValue substituteParametersIntoUserDefinedType(
 
   // Notify the listener on the parameter binding.
   emitter.shared.notifyListenerOnParameterBinding(
-      &typeDecl, subscript.rsquareLoc, subscript.indices);
+      &typeDecl, subscript.rsquareLoc, subscript.subscriptArgs);
 
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
-  for (ExprNode *indexExpr : subscript.indices) {
+  for (ExprNode *indexExpr : subscript.subscriptArgs) {
     // TODO(#21618): Slice syntax is the obvious way to support named parameter
     // arguments.
     auto indexVal = emitter.emitExprPValue(indexExpr, EC_TypeParamValue);
@@ -1348,19 +1348,19 @@ static Type getNextParamType(ASTDecl *fnDecl,
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
 /// or call to a method), apply parameter bindings to it.
-static ORValue
-bindParamValuesToDirectCall(ORValue value,
-                            ArrayRef<ExprNode *> subscriptOperands,
-                            ExprEmitter &emitter) {
-  // If the indices are a single () expression, then we treat this as having
-  // no parameters.  This is used with arrow expressions to allow `f[() -> x]`.
-  if (subscriptOperands.size() == 1 &&
-      subscriptOperands[0]->getWithoutParens()->isEmptyTuple())
+static ORValue bindParamValuesToDirectCall(ORValue value,
+                                           ArrayRef<ExprNode *> subscriptArgs,
+                                           ExprEmitter &emitter) {
+  // If the subscriptArgs are a single () expression, then we treat this as
+  // having no parameters.  This is used with arrow expressions to allow `f[()
+  // -> x]`.
+  if (subscriptArgs.size() == 1 &&
+      subscriptArgs[0]->getWithoutParens()->isEmptyTuple())
     return value;
 
   // Process each subscript entry as a binding.
   // TODO(#21618): Support keyword parameters: `A[x = 42]`.
-  for (auto idx : subscriptOperands) {
+  for (auto idx : subscriptArgs) {
     // If all entries in this overload set take a parameter with a common type,
     // use it for parameter type inference.
     ASTType paramType;
@@ -1403,8 +1403,9 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // (more?) parameter expressions to bind its parameters.
   if (auto overloads = baseAnyValue.getIfORValue()) {
     emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
-                                                    rsquareLoc, indices);
-    auto result = bindParamValuesToDirectCall(overloads, indices, emitter);
+                                                    rsquareLoc, subscriptArgs);
+    auto result =
+        bindParamValuesToDirectCall(overloads, subscriptArgs, emitter);
     return emitter.emitResult(result, this, dest);
   }
 
@@ -1419,13 +1420,14 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // If this is a signature-type PValue callable, this is binding parameter
       // values to a call.
       SmallVector<TypedAttr> bindOperands({callableMVal.get()});
-      if (indices.size() != sig.getNumInputParams()) {
+      if (subscriptArgs.size() != sig.getNumInputParams()) {
         emitter.emitError(getLoc(), "parametric callable expected ")
             << sig.getNumInputParams() << " parameter"
             << plural(sig.getNumInputParams()) << getIndexRange();
         return {};
       }
-      for (auto [idx, type] : llvm::zip(indices, sig.getInputParamTypes())) {
+      for (auto [idx, type] :
+           llvm::zip(subscriptArgs, sig.getInputParamTypes())) {
         bindOperands.push_back(
             emitter.emitExprPValue(idx, EC_CallParamValue, type));
         if (!bindOperands.back())
@@ -1481,7 +1483,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> indexValues;
   indexValues.push_back({baseValue, base});
-  for (ExprNode *index : indices) {
+  for (ExprNode *index : subscriptArgs) {
     indexValues.push_back({index->emitIR(ValueDest::none(), emitter), index});
     if (!indexValues.back())
       return {};
@@ -1563,7 +1565,7 @@ AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
 
   // The only use of SubscriptArrow nodes right now is to bind parameter
   // input values and results to a call.  Start by binding the input values.
-  overloads = bindParamValuesToDirectCall(overloads, indices, emitter);
+  overloads = bindParamValuesToDirectCall(overloads, subscriptArgs, emitter);
   if (!overloads)
     return {};
 
