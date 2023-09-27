@@ -8,7 +8,7 @@
 # RUN: kgen-translate -import-mojo -I=%S %s
 # RUN: kgen-translate -import-mojo -I=%S %s | FileCheck %s
 
-from imported_cached_module import StringLiteralAlias, global_variable
+from imported_cached_module import StringLiteralAlias, global_variable, Trait
 
 # CHECK-LABEL: lit.func @"assign_from()"
 fn assign_from():
@@ -16,3 +16,7 @@ fn assign_from():
     let foo = StringLiteralAlias
     # CHECK: lit.globalvar.ref {{.*}}@global_variable
     let bar = global_variable
+
+#CHECK-LABEL: lit.struct.decl @Struct([@"$imported_cached_module"::@Trait])
+struct Struct(Trait):
+    pass

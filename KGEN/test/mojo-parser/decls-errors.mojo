@@ -684,6 +684,13 @@ trait EverythingIsWrongTrait:
 trait TraitWithParams[T: AnyType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
     ...
 
+# // -----
+# struct with traits that do not exist
+struct StructWithTrait(T1):  # expected-error {{expected to find a trait decl of 'T1' for struct}}
+    pass
+
+# // -----
+
 ##===----------------------------------------------------------------------===##
 # Class
 ##===----------------------------------------------------------------------===##
