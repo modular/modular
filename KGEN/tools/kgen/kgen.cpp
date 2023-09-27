@@ -427,8 +427,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // If there are no exported symbols, there's nothing to codegen. Report this
   // as an error.
   if (exportedSymbols.empty())
-    return failure(clOptions.reportError(
-        "module does not `@export` any symbols; nothing to codegen"));
+    return failure(
+        clOptions.reportError("module does not `@export` any symbols or define "
+                              "a `main` function; nothing to codegen"));
 
   // If we're emitting the archive, do it.
   if (clOptions.cmd == Command::kEmit) {
