@@ -367,78 +367,53 @@ struct FilesystemBackend : public BlobCacheBackend {
     if (!std::filesystem::exists(*filePath, ec) || ec)
       return std::nullopt;
 
-    // This callback does all the file reading/etc. we care to do while we hold
-    // the lock on the file - that's why it's such a large inline lambda.
-    std::optional<Error> error = std::nullopt;
-    BufferRef out;
-    auto doRead = [&error, buf = std::move(buf),
-                   &out](const std::filesystem::path &path) mutable {
-      auto bufOr = Buffer::getFile(path);
-      // If the file doesn't exist, or it's empty, return an error.
-      if (bufOr.isError()) {
-        error = bufOr.takeError();
-        return;
-      }
+    // If the cache file for this key exists, then it will never be written
+    // again. We can safely read it without a lock.
+    auto bufOr = Buffer::getFile(*filePath);
+    // If the file doesn't exist, or it's empty, return an error.
+    if (bufOr.isError())
+      return bufOr.takeError();
 
-      BufferRef buffer = std::move(*bufOr);
-      if (buffer->getBufferSize() == 0) {
-        error =
-            Error("file '" + Twine(path.string()) + "' exists, but is empty");
-        return;
-      }
+    BufferRef buffer = std::move(*bufOr);
+    if (buffer->getBufferSize() == 0)
+      return Error("file '" + Twine(filePath->string()) +
+                   "' exists, but is empty");
 
-      StringRef contentsAndHMAC = buffer->getBuffer();
+    StringRef contentsAndHMAC = buffer->getBuffer();
 
-      // Get a StringRef of the contents without the HMAC.
-      StringRef contents = contentsAndHMAC.drop_back(blake3Bytes);
-      BLAKE3Hash computedHMAC = hmacBLAKE3(contents, kIntegrityKey);
-      StringRef storedHMAC = contentsAndHMAC.take_back(blake3Bytes);
+    // Get a StringRef of the contents without the HMAC.
+    StringRef contents = contentsAndHMAC.drop_back(blake3Bytes);
+    BLAKE3Hash computedHMAC = hmacBLAKE3(contents, kIntegrityKey);
+    StringRef storedHMAC = contentsAndHMAC.take_back(blake3Bytes);
 
-      // Check the computed hmac against the one in the file.
-      if (memcmp(computedHMAC.data(), storedHMAC.data(), blake3Bytes) != 0) {
-        error = Error("corrupted file: stored hash and computed hash did not "
-                      "match for file '" +
-                      Twine(path.string()) + "'");
-        return;
-      }
+    // Check the computed hmac against the one in the file.
+    if (memcmp(computedHMAC.data(), storedHMAC.data(), blake3Bytes) != 0) {
+      return Error("corrupted file: stored hash and computed hash did not "
+                   "match for file '" +
+                   Twine(filePath->string()) + "'");
+    }
 
-      // Now that we've verified the integrity of the file, return a memory
-      // buffer that holds just the contents.
-      bufOr = Buffer::getFile(path, contents.size(),
-                              /*offset=*/0);
-      if (failed(bufOr)) {
-        error = bufOr.takeError();
-        return;
-      }
+    // Now that we've verified the integrity of the file, return a memory buffer
+    // that holds just the contents.
+    bufOr = Buffer::getFile(*filePath, contents.size(), /*offset=*/0);
+    if (failed(bufOr))
+      return bufOr.takeError();
 
-      // No buffer provided, return the mapped thing directly.
-      if (!buf) {
-        out = BufferRef::take(bufOr->release());
-        return;
-      }
+    // No buffer provided, return the mapped thing directly.
+    if (!buf)
+      return BufferRef::take(bufOr->release());
 
-      if ((*buf)->getBufferSize() < (*bufOr)->getBufferSize())
-        error = Error("Buffer passed to CAS (size " +
-                      Twine((*buf)->getBufferSize()) +
-                      ") cannot accommodate found object (size " +
-                      Twine((*bufOr)->getBufferSize()) + ")");
+    if ((*buf)->getBufferSize() < (*bufOr)->getBufferSize()) {
+      return Error("Buffer passed to CAS (size " +
+                   Twine((*buf)->getBufferSize()) +
+                   ") cannot accommodate found object (size " +
+                   Twine((*bufOr)->getBufferSize()) + ")");
+    }
 
-      // Copy the file data into the buffer that was provided to us.
-      (*buf)->pwrite((*bufOr)->getBufferStart(), (*bufOr)->getBufferSize(), 0);
-      // Take a reference to the provided buffer and return it.
-      out = BufferRef::copy((*buf).getPointer());
-    };
-
-    // If there was an error reading the file, return that.
-    if (auto err = readFileUnderLock(*filePath, doRead))
-      return err.takeError();
-
-    // If there was an error in our read callback, return that.
-    if (error)
-      return std::move(*error);
-
-    // Otherwise, return the BufferRef we created.
-    return std::move(out);
+    // Copy the file data into the buffer that was provided to us.
+    (*buf)->pwrite((*bufOr)->getBufferStart(), (*bufOr)->getBufferSize(), 0);
+    // Take a reference to the provided buffer and return it.
+    return BufferRef::copy((*buf).getPointer());
   }
 
   ErrorOrSuccess clearImpl() override {
@@ -537,9 +512,8 @@ private:
     std::string errorMsg;
     dylib =
         llvm::sys::DynamicLibrary::getLibrary(libPath.str().c_str(), &errorMsg);
-    if (!dylib.isValid()) {
+    if (!dylib.isValid())
       return Error("Failed to load library " + libPath + ": " + errorMsg);
-    }
 
     using allocType = DylibBlobCacheBackend *(*)(LLCL::Runtime * runtime);
     auto allocFunc = reinterpret_cast<allocType>(

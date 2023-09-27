@@ -67,6 +67,7 @@ int main(int argc, char *argv[]) {
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
         sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
 
+        clOptions.useSingleThreadedWorkqueue();
         TraceProfiler profiler(clOptions.timeTrace,
                                clOptions.timeTraceGranularity);
 
