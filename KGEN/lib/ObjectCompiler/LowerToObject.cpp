@@ -374,7 +374,7 @@ ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName,
 static ExportMap getAllSymbols(ModuleOp theModule) {
   ExportMap exports;
   for (auto sym : theModule.getOps<mlir::SymbolOpInterface>())
-    exports.insert({sym.getNameAttr(), {false}});
+    exports.insert({sym.getNameAttr(), {ExportKind::Exported}});
   return exports;
 }
 
@@ -570,10 +570,10 @@ ObjectCompilerLayer::getInterface(const SymbolTable &symtab,
 
   auto addSymbols = [&](const ExportMap &exportedSymbols) {
     for (auto &[name, symbol] : exports) {
-      symbols[mangler(name)] = llvm::JITSymbolFlags::Callable |
-                               llvm::JITSymbolFlags::Exported |
-                               (symbol.isCExport ? llvm::JITSymbolFlags::None
-                                                 : llvm::JITSymbolFlags::Weak);
+      symbols[mangler(name)] =
+          llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
+          (symbol.kind == ExportKind::Weak ? llvm::JITSymbolFlags::Weak
+                                           : llvm::JITSymbolFlags::None);
     }
   };
 

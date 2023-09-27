@@ -231,7 +231,8 @@ using ssize_t = SSIZE_T;
   auto module = cast<ModuleOp>(symtab.getOp());
   for (auto f : module.getOps<FuncOp>()) {
     auto itExported = exportedSymbols.find(f.getNameAttr());
-    if (itExported == exportedSymbols.end() || !itExported->second.isCExport)
+    if (itExported == exportedSymbols.end() ||
+        itExported->second.kind != ExportKind::CExported)
       continue;
     // The symbol was exported, use its alias name.
     if (failed(emitSignature(os, f)))

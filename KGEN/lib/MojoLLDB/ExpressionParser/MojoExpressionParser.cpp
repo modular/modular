@@ -178,7 +178,7 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
     StringAttr symName = e.getSymNameAttr();
     expressionLogger->debugLog("[evaluateSpecializations] Exporting {0}",
                                symName.getValue());
-    exports.insert({symName, ExportedSymbol()});
+    exports.insert({symName, ExportedSymbol(ExportKind::Exported)});
   }
 
   // Create the target machine so we can run the optimizer.

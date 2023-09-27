@@ -130,7 +130,7 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
     }
     ExportKind kind = func.getExportKind();
     if (kind == ExportKind::NotExported)
-      sliceFn.setExported();
+      sliceFn.setWeakExported();
     else
       sliceFn.setExportKind(kind);
   }

@@ -65,9 +65,9 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 
   // Create the set of symbols to export.
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
-  for (auto e : funcsToCompile) {
-    StringAttr symName = e.getSymNameAttr();
-    exportedSymbols.insert({symName, ExportedSymbol()});
+  for (FuncOp func : funcsToCompile) {
+    StringAttr symName = func.getSymNameAttr();
+    exportedSymbols.insert({symName, ExportedSymbol(ExportKind::Weak)});
   }
 
   // Add the exported symbols to the ObjectCompilerLayer. This will not actually
@@ -165,7 +165,7 @@ KGEN::getMojoCacheBackends(LLCL::Runtime &runtime) {
 static ExportMap getAllSymbols(ModuleOp theModule) {
   ExportMap exports;
   for (auto sym : theModule.getOps<mlir::SymbolOpInterface>())
-    exports.insert({sym.getNameAttr(), {false}});
+    exports.insert({sym.getNameAttr(), {ExportKind::Exported}});
   return exports;
 }
 
@@ -288,10 +288,10 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
   llvm::orc::SymbolFlagsMap symbols;
 
   for (auto &[name, symbol] : exports) {
-    symbols[mangler(name)] = llvm::JITSymbolFlags::Callable |
-                             llvm::JITSymbolFlags::Exported |
-                             (symbol.isCExport ? llvm::JITSymbolFlags::None
-                                               : llvm::JITSymbolFlags::Weak);
+    symbols[mangler(name)] =
+        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
+        (symbol.kind == ExportKind::Weak ? llvm::JITSymbolFlags::Weak
+                                         : llvm::JITSymbolFlags::None);
   }
 
   return {std::move(symbols), /*InitSymbol=*/nullptr};
