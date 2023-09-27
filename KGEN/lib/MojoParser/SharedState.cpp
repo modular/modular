@@ -1576,8 +1576,15 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                 return failure();
               return mlir::success();
             })
-            .Case<GlobalVarDeclOp, AliasDeclOp>([&](auto varDecl) {
+            .Case([&](GlobalVarDeclOp varDecl) {
               typeWalker.walk<mlir::WalkOrder::PreOrder>(varDecl.getType());
+              return mlir::success();
+            })
+            .Case([&](AliasDeclOp aliasDecl) {
+              // Mark the alias decl has being referenced, keeping it in the IR.
+              aliasDecl.setIsUnresolved(false);
+              typeWalker.walk<mlir::WalkOrder::PreOrder>(aliasDecl.getType());
+              typeWalker.walk<mlir::WalkOrder::PreOrder>(aliasDecl.getValue());
               return mlir::success();
             })
             .Default([](auto) { return mlir::success(); });
@@ -1677,6 +1684,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             traitDecl.setSelfType(getTypeCheckErrorType());
           })
           .Case([&](AliasDeclOp op) {
+            // An alias decl is wholly pulled from the bytecode. Mark it as
+            // unresolved so it gets removed if it's never referenced.
+            op.setIsUnresolved(true);
             addDeclForOp(op, StringAttr::get(op.getContext(),
                                              demangleParameterName(
                                                  op.getParamDecl().getName())));

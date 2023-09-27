@@ -725,11 +725,11 @@ std::optional<StringRef> DeclRefType::getAliasName() {
 OptionalParseResult IntLiteralType::parseValue(AsmParser &p,
                                                TypedAttr &value) const {
   APInt resultAP;
-  OptionalParseResult parseResult = p.parseInteger(resultAP);
-  if (!parseResult.has_value() || failed(*parseResult)) {
-    value = {};
+  OptionalParseResult parseResult = p.parseOptionalInteger(resultAP);
+  if (!parseResult.has_value())
+    return {};
+  if (failed(*parseResult))
     return failure();
-  }
   value = IntLiteralAttr::get(p.getContext(), IPInt(resultAP));
   return mlir::success();
 }

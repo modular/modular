@@ -689,7 +689,8 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
         // Some decls always need to be resolved if their parents were resolved,
         // allowlist the decls that we can safely ignore when unparsed.
         if (isa<FuncOp, FileModuleOp, PackageOp, UnresolvedImportOp,
-                UnresolvedWildcardImportOp, StructDeclOp, TraitDeclOp>(decl)) {
+                UnresolvedWildcardImportOp, StructDeclOp, TraitDeclOp,
+                AliasDeclOp, GlobalVarDeclOp>(decl)) {
           deferredDecls.insert(&decl);
           continue;
         }

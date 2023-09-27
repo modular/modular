@@ -754,3 +754,10 @@ kgen.generator @apply_result_slot() {
   kgen.param.constant: pointer<index> = <apply_result_slot(:(!kgen.pointer<index> byref_result, index) -> () @result_slot, 2)>
   kgen.return
 }
+
+// CHECK-LABEL: @int_literal_param
+kgen.generator @int_literal_param<abcd: !kgen.int_literal>() {
+  // CHECK-NEXT: constant: !kgen.int_literal = <abcd>
+  kgen.param.constant: !kgen.int_literal = <abcd>
+  kgen.return
+}

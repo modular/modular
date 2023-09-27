@@ -105,21 +105,24 @@ static void sortValueUses(Operation *topLevelOp) {
 /// for instance, ensures the cache key computed on parser output does not
 /// depend on whether the parser has cache hits for lazy loading.
 static void eraseUnreachableDecls(ASTDecl &decl) {
-  // Don't purge decls when parsing a package.
-  if (isa<PackageOp>(decl))
-    return;
-
   TimeTraceScope traceScope("eraseUnreachableDecls");
+  Operation *declOp = decl.getIfOperation();
+  auto module = cast<ModuleOp>(declOp->getParentOp());
+
   // Start by erasing unresolved imports. This puts the module in a canonical
   // form.
-  auto declModule = cast<FileModuleOp>(decl);
-  auto module = cast<ModuleOp>(declModule->getParentOp());
-  module.walk([](Operation *op) {
+  module.walk<mlir::WalkOrder::PreOrder>([declOp](Operation *op) {
+    // Don't purge anything from the main package if we are parsing one.
+    if (op == declOp && isa<PackageOp>(declOp))
+      return WalkResult::skip();
+
     // Imports are not found underneath structs and functions.
     if (isa<StructDeclOp, TraitDeclOp, LIT::FuncOp>(op))
       return WalkResult::skip();
-    if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op))
+    if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op)) {
       op->erase();
+      return WalkResult::skip();
+    }
     return WalkResult::advance();
   });
 
@@ -128,7 +131,7 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
   mlir::SymbolTableCollection symtab;
   DenseSet<Operation *> liveSymbols;
   std::vector<Operation *> worklist;
-  declModule.walk([&](mlir::SymbolOpInterface symbol) {
+  declOp->walk([&](mlir::SymbolOpInterface symbol) {
     liveSymbols.insert(symbol);
     worklist.push_back(symbol);
   });
@@ -143,7 +146,8 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
     // Mark all referenced symbols as live. Invalid symbol references will get
     // caught by the verifier.
     SmallVector<Operation *, 4> symbols;
-    (void)symtab.lookupSymbolIn(module, ref, symbols);
+    if (failed(symtab.lookupSymbolIn(module, ref, symbols)))
+      return;
     for (Operation *symbol : symbols)
       markLive(symbol);
   });
@@ -176,9 +180,23 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
   }
 
   // Walk post-order to erase dead symbols.
-  module.walk([&](mlir::SymbolOpInterface symbol) {
-    if (!liveSymbols.contains(symbol))
-      symbol.erase();
+  module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) -> WalkResult {
+    // Don't purge anything from the main package if we are parsing one.
+    if (op == declOp && isa<PackageOp>(declOp))
+      return WalkResult::skip();
+
+    if (auto symbol = dyn_cast<mlir::SymbolOpInterface>(op)) {
+      if (!liveSymbols.contains(symbol)) {
+        symbol.erase();
+        return WalkResult::skip();
+      }
+    } else if (auto aliasDecl = dyn_cast<AliasDeclOp>(op)) {
+      if (aliasDecl.getIsUnresolved()) {
+        aliasDecl.erase();
+        return WalkResult::skip();
+      }
+    }
+    return WalkResult::advance();
   });
 }
 
@@ -230,11 +248,11 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
   // Now that resolution is finished, cache the state of modules we have parsed.
   // TODO: We should be able to cache even in the presence of warnings and
   // errors. We can store the diagnostics and replay on cache load.
-  if (!sharedState.diags.isDiagnosticEmitted()) {
+  if (!sharedState.diags.isDiagnosticEmitted())
     sharedState.cacheParsedModules();
-    eraseUnreachableDecls(moduleDecl);
-    sortValueUses(*module);
-  }
+
+  eraseUnreachableDecls(moduleDecl);
+  sortValueUses(*module);
 
   // Set the included files if requested.
   if (includedFiles)

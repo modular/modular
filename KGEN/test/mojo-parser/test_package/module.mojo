@@ -8,6 +8,9 @@
 from .test_nested_package.module import nested_function
 
 
+alias top_level_alias = 2
+
+
 fn function():
     call_nested_function()
     return
@@ -16,6 +19,7 @@ fn function():
 fn call_nested_function():
     nested_function()
     return
+
 
 @value
 struct SomeType:
