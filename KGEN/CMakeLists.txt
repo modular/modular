@@ -9,9 +9,13 @@ set(KGEN_BINARY_DIR ${MODULAR_BINARY_DIR}/KGEN)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
+# This target represents the full mojo-stdlib which contains all the standard
+# library packages.
+add_custom_target(mojo-stdlib)
+
 # This target represents the full mojo-sdk, and builds both `mojo` and all of
 # the necessary standard library packages.
-add_custom_target(mojo-sdk)
+add_custom_target(mojo-sdk DEPENDS mojo-stdlib)
 
 # KGEN MLIR dialects.
 add_subdirectory(include/KGEN)
@@ -248,9 +252,9 @@ function(add_mojo_package target)
   set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 
   # If this is a standard library package, then we need to add it to the
-  # mojo-sdk target.
+  # mojo-sdk and mojo-stdlib target.
   if (KGEN_STDLIB)
-    add_dependencies(mojo-sdk ${target})
+    add_dependencies(mojo-stdlib ${target})
     install(FILES "${CMAKE_BINARY_DIR}/${package_file_name_rel}"
             DESTINATION "lib/mojo"
             COMPONENT mojo-sdk)
