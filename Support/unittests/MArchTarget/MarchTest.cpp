@@ -29,11 +29,11 @@ TEST(ArchTarget, GetFeatures) {
 #elif defined(__APPLE__) && defined(MODULAR_X86_64)
   auto targetInfo = M::getMArchFeatures(&ctx, "x86-64", "apple", "");
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
-  EXPECT_EQ(targetInfo->getCpu(), "x86-64");
+  EXPECT_EQ(targetInfo->getArch(), "x86-64");
 #elif defined(__APPLE__) && defined(MODULAR_ARM_NEON)
   auto targetInfo = M::getMArchFeatures(&ctx, "arm64", "apple-m1", "");
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
-  EXPECT_EQ(targetInfo->getCpu(), "apple-m1");
+  EXPECT_EQ(targetInfo->getArch(), "apple-m1");
 #endif
 }
 
