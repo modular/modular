@@ -1296,127 +1296,129 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
     }
     for (auto it : moduleDecl.unresolvedWildcardImports)
       dependencies.insert({it.first, it.second.first});
+
+    // Remember if we were actively resolving dependencies before reaching here.
+    bool wasImportingAModule = impl->activelyResolvingModuleDeps;
+    if (!wasImportingAModule)
+      impl->activelyResolvingModuleDeps = true;
+    size_t prevNumModules = impl->moduleStates.size() - 1;
+
+    // Import all of the dependencies, so that we can resolve their
+    // dependencies.
+    for (auto [name, loc] : dependencies) {
+      moduleState.dependencies.insert(
+          &importModuleState(name.getValue(), parentDecl, loc));
+    }
+
+    // If we are actively resolving a different module, bail early. That module
+    // will handle resolving all of the dependencies of this module, and
+    // checking if it's cached. This is necessary to avoid problems with
+    // recursive modules.
+    if (wasImportingAModule)
+      return mlir::success();
+
+    // At this point, all of the dependent modules are known. Update the modules
+    // dependencies to include all dependent modules. We iterate over all of the
+    // modules imported during this import, to handle cases of recursive module
+    // import.
+    bool addedNewDep = false;
+    do {
+      addedNewDep = false;
+      for (auto &it : llvm::drop_begin(impl->moduleStates, prevNumModules)) {
+        for (unsigned i = 0, e = it.second->dependencies.size(); i < e; ++i)
+          for (ModuleState *depState : it.second->dependencies[i]->dependencies)
+            addedNewDep |= it.second->dependencies.insert(depState);
+      }
+    } while (addedNewDep);
+
+    impl->activelyResolvingModuleDeps = false;
+
     return mlir::success();
   };
+
+  // If we don't have a valid cache, just compute the deps directly.
+  if (!impl->transformCache) {
+    (void)resolveDeclAndComputeDeps();
+    return;
+  }
 
   // For a given textual buffer, we can cache what the dependent module names
   // are. Caching this prevents the need to actually parse the buffer when the
   // content of the module hasn't changed.
-  if (impl->transformCache) {
-    auto onCacheMiss = [&](Operation *op, WriteableBufferRef buf,
-                           LLCL::AnyAsyncValueRef chain) {
-      auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-      chain.andThenSync([resolveDeclAndComputeDeps, &dependencies, &moduleDecl,
-                         moduleBuffer, output = output.copy(),
-                         buf = buf.copy()]() mutable {
-        if (failed(resolveDeclAndComputeDeps())) {
-          std::move(output).setToError(
-              LLCL::getMLIRDiagnostic("failed to resolved body",
-                                      moduleDecl.getIfOperation()->getLoc()));
-          return;
-        }
-
-        // Write the dependencies to the cache. Dependencies are written as a
-        // sequence of (name, location) pairs. The location is the offset into
-        // the module buffer where the dependency is located.
-        llvm::support::endian::Writer writer(*buf, llvm::support::little);
-        writer.write((uint64_t)dependencies.size());
-        for (auto &[name, loc] : dependencies) {
-          writer.write((uint64_t)name.size());
-          *buf << name.strref();
-
-          // Sanity check the location pointer, though it should generally
-          // always be within the buffer.
-          if (loc.getPointer() >= moduleBuffer.data() &&
-              loc.getPointer() < moduleBuffer.data() + moduleBuffer.size())
-            writer.write((uint64_t)(loc.getPointer() - moduleBuffer.data()));
-          else
-            writer.write((uint64_t)0);
-        }
-
-        std::move(output).emplace(buf.copy());
-      });
-      return output;
-    };
-    auto onCacheHit = [&](Operation *op, BufferRef buf) {
-      const char *data = buf->getBufferStart();
-
-      // Functor for reading a uint64_t from the cache buffer.
-      auto readInt = [&]() -> uint64_t {
-        return llvm::support::endian::readNext<uint64_t, llvm::support::little,
-                                               llvm::support::unaligned>(data);
-      };
-
-      // Read the dependencies from the cache.
-      size_t numDeps = readInt();
-      for (size_t i = 0; i < numDeps; ++i) {
-        // Read the name.
-        size_t nameSize = readInt();
-        StringRef name(data, nameSize);
-        data += nameSize;
-
-        // Read the location.
-        size_t locOffset = readInt();
-        auto loc = SMLoc::getFromPointer(moduleBuffer.data() + locOffset);
-
-        // Add the dependency.
-        dependencies.insert({StringAttr::get(getContext(), name), loc});
+  auto onCacheMiss = [&](Operation *op, WriteableBufferRef buf,
+                         LLCL::AnyAsyncValueRef chain) {
+    auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
+    chain.andThenSync([resolveDeclAndComputeDeps, &dependencies, &moduleDecl,
+                       moduleBuffer, output = output.copy(),
+                       buf = buf.copy()]() mutable {
+      if (failed(resolveDeclAndComputeDeps())) {
+        std::move(output).setToError(LLCL::getMLIRDiagnostic(
+            "failed to resolved body", moduleDecl.getIfOperation()->getLoc()));
+        return;
       }
-      return buf.copy();
+
+      // Write the dependencies to the cache. Dependencies are written as a
+      // sequence of (name, location) pairs. The location is the offset into
+      // the module buffer where the dependency is located.
+      llvm::support::endian::Writer writer(*buf, llvm::support::little);
+      writer.write((uint64_t)dependencies.size());
+      for (auto &[name, loc] : dependencies) {
+        writer.write((uint64_t)name.size());
+        *buf << name.strref();
+
+        // Sanity check the location pointer, though it should generally
+        // always be within the buffer.
+        if (loc.getPointer() >= moduleBuffer.data() &&
+            loc.getPointer() < moduleBuffer.data() + moduleBuffer.size())
+          writer.write((uint64_t)(loc.getPointer() - moduleBuffer.data()));
+        else
+          writer.write((uint64_t)0);
+      }
+
+      std::move(output).emplace(buf.copy());
+    });
+    return output;
+  };
+  auto onCacheHit = [&](Operation *op, BufferRef buf) {
+    const char *data = buf->getBufferStart();
+
+    // Functor for reading a uint64_t from the cache buffer.
+    auto readInt = [&]() -> uint64_t {
+      return llvm::support::endian::readNext<uint64_t, llvm::support::little,
+                                             llvm::support::unaligned>(data);
     };
 
-    // Compute the cache key for this module, using the content hash.
-    WriteableBufferRef keyBuf = WriteableBuffer::get();
-    keyBuf->write_impl((const char *)moduleState.contentHash.data(),
-                       moduleState.contentHash.size());
-    options.print(*keyBuf << "mojoParser(");
-    *keyBuf << ", useBuiltins=" << useBuiltinModule
-            << ", experimentalLifetimes=" << useExperimentalLifetimes()
-            << ", parsingStdlib=" << parsingStandardLibrary << ")";
-    auto output = cachedTransform(
-        moduleDecl.getIfOperation(), impl->transformCache.copy(),
-        LLCL::AsyncValueRef<Chain>::createReady(runtime), std::move(keyBuf),
-        onCacheMiss, onCacheHit);
-    await(output);
+    // Read the dependencies from the cache.
+    size_t numDeps = readInt();
+    for (size_t i = 0; i < numDeps; ++i) {
+      // Read the name.
+      size_t nameSize = readInt();
+      StringRef name(data, nameSize);
+      data += nameSize;
 
-    // If we don't have a valid cache, just compute the deps directly.
-  } else if (failed(resolveDeclAndComputeDeps())) {
-    return;
-  }
+      // Read the location.
+      size_t locOffset = readInt();
+      auto loc = SMLoc::getFromPointer(moduleBuffer.data() + locOffset);
 
-  // Remember if we were actively resolving dependencies before reaching here.
-  bool wasImportingAModule = impl->activelyResolvingModuleDeps;
-  if (!wasImportingAModule)
-    impl->activelyResolvingModuleDeps = true;
-  size_t prevNumModules = impl->moduleStates.size() - 1;
-
-  // Import all of the dependencies, so that we can resolve their dependencies.
-  for (auto [name, loc] : dependencies) {
-    moduleState.dependencies.insert(
-        &importModuleState(name.getValue(), parentDecl, loc));
-  }
-
-  // If we are actively resolving a different module, bail early. That module
-  // will handle resolving all of the dependencies of this module, and checking
-  // if it's cached. This is necessary to avoid problems with recursive modules.
-  if (wasImportingAModule)
-    return;
-
-  // At this point, all of the dependent modules are known. Update the modules
-  // dependencies to include all dependent modules. We iterate over all of the
-  // modules imported during this import, to handle cases of recursive module
-  // import.
-  bool addedNewDep = false;
-  do {
-    addedNewDep = false;
-    for (auto &it : llvm::drop_begin(impl->moduleStates, prevNumModules)) {
-      for (unsigned i = 0, e = it.second->dependencies.size(); i < e; ++i)
-        for (ModuleState *depState : it.second->dependencies[i]->dependencies)
-          addedNewDep |= it.second->dependencies.insert(depState);
+      // Add the dependency.
+      dependencies.insert({StringAttr::get(getContext(), name), loc});
     }
-  } while (addedNewDep);
+    return buf.copy();
+  };
 
-  impl->activelyResolvingModuleDeps = false;
+  // Compute the cache key for this module, using the content hash.
+  WriteableBufferRef keyBuf = WriteableBuffer::get();
+  keyBuf->write_impl((const char *)moduleState.contentHash.data(),
+                     moduleState.contentHash.size());
+  options.print(*keyBuf << "mojoParser(");
+  *keyBuf << ", useBuiltins=" << useBuiltinModule
+          << ", experimentalLifetimes=" << useExperimentalLifetimes()
+          << ", parsingStdlib=" << parsingStandardLibrary << ")";
+  auto output =
+      cachedTransform(moduleDecl.getIfOperation(), impl->transformCache.copy(),
+                      LLCL::AsyncValueRef<Chain>::createReady(runtime),
+                      std::move(keyBuf), onCacheMiss, onCacheHit);
+  await(output);
 }
 
 void SharedState::cacheParsedModules() {
