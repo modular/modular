@@ -216,8 +216,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   SymbolTable symtab(moduleOp);
   ExportMap exports = getExportedSymbols(moduleOp);
   if (exports.empty())
-    return state.reportError(
-        "module does not `@export` any symbols; nothing to codegen");
+    return state.reportError("module does not define a `main` function");
 
   // Trigger compilation so we can pull out the archive.
   ErrorOr<CompiledFunc> funcOr = engine->lookup(exports.front().first);

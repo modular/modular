@@ -7,6 +7,6 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-# CHECK: module does not `@export` any symbols; nothing to codegen
+# CHECK: module does not define a `main` function
 fn foo() -> Float32:
     return 0.0
