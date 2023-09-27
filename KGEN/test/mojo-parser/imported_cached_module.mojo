@@ -8,3 +8,6 @@
 
 alias StringLiteralAlias = "foobar"
 var global_variable = 1234
+
+trait Trait:
+    pass

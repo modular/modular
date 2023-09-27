@@ -1486,3 +1486,16 @@ trait Trait:
 # CHECK-LABEL: lit.trait.decl @EmptyTrait {
 trait EmptyTrait:
     pass
+
+# CHECK-LABEL: lit.trait.decl @Trait1 {
+trait Trait1:
+    fn f(self: Self) -> Self: ...
+
+# CHECK-LABEL: lit.trait.decl @Trait2 {
+trait Trait2:
+    fn f(self: Self) -> Self: ...
+
+# CHECK-LABEL: lit.struct.decl @StructWithTraits([{{.*}}@Trait1, {{.*}}@Trait2])  {
+struct StructWithTraits(Trait1, Trait2):
+    pass
+

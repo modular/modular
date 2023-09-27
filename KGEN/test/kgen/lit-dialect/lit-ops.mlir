@@ -411,5 +411,5 @@ lit.trait.decl @Trait2 {
 }
 
 // CHECK-LABEL: lit.struct.decl @StructHasTraits
-lit.struct.decl @StructHasTraits attributes {traits = #M<symbols[@Trait1, @Trait2]>} {
+lit.struct.decl @StructHasTraits([@Trait1, @Trait2]) {
 }

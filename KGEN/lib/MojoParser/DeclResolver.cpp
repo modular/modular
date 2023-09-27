@@ -3402,6 +3402,37 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
   return failure();
 }
 
+static ParseResult
+parseOptionalParentList(ParserBase &p, ASTDecl &declScope,
+                        SmallVectorImpl<SymbolRefAttr> &traits,
+                        SharedState &shared) {
+  if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
+    return success();
+
+  SmallVector<ParsedArgument> names;
+  if (ParsedArgument::parseAndResolvePresentArgumentList(
+          p, names, ParsedArgument::ArgListKind::kArgList))
+    return failure();
+
+  // Resolve traits.
+  // TODO: use `emitExprType` when we have types for traits.
+  for (ParsedArgument name : names) {
+    auto lookupResult = shared.lookupAndResolveDecl(
+        name.name, declScope.getLoc(), *declScope.getParentDecl(),
+        /*searchParentScopes*/ true);
+    ArrayRef<ASTDecl *> decls = lookupResult.getIfSuccess();
+    if (!decls.empty()) {
+      traits.push_back(decls.front()->getSymbolRef());
+      continue;
+    }
+    p.emitError(declScope.getLoc(), "expected to find a trait decl of ")
+        << name.name << " for struct";
+    declScope.hasReferenceError = true;
+  }
+
+  return p.parseToken(Token::r_paren, "expected ')' for parameter list");
+}
+
 /// structdef ::=
 ///   [decorators] "struct" identifier [param_signature] ":" suite
 ///
@@ -3417,6 +3448,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
   SmallVector<TypedAttr> paramDefaults;
+  SmallVector<SymbolRefAttr> traits;
+
   bool paramVarArgs = false;
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
@@ -3426,7 +3459,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
                                       resultParamDecls, paramDefaults,
                                       paramVarArgs) ||
-      p.parseToken(Token::colon, "expected ':' in struct definition"))
+      parseOptionalParentList(p, sigDecl, traits, shared) ||
+      p.parseToken(Token::colon, "expected ':' in struct definition") ||
+      decl.hasReferenceError)
     return failure();
 
   // Propagate signature errors and decls.
@@ -3436,6 +3471,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setParamVarArgs(paramVarArgs);
   structOp.setDefaultParametersAttr(
       ParameterExprArrayAttr::get(structOp->getContext(), paramDefaults));
+
+  if (!traits.empty())
+    structOp.setTraitsAttr(
+        M::SymbolRefArrayAttr::get(decl.getContext(), traits));
 
   // Reject result parameters.
   if (!resultParamDecls.empty())

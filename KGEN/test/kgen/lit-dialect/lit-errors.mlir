@@ -361,7 +361,7 @@ lit.func @f() -> !lit.none {
 
 // -----
 // expected-error @below {{'lit.struct.decl' op expected to find a trait decl of @Trait1 for struct}}
-lit.struct.decl @StructCannotFileTrait attributes {traits = #M<symbols[@Trait1]>} {
+lit.struct.decl @StructCannotFileTrait([@Trait1]) {
 }
 
 // -----
