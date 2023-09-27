@@ -10,10 +10,11 @@
 
 from imported_module import *
 
+
 # CHECK-LABEL: lit.func @"import_of_import
 # CHECK-SAME: @"$builtin"::@"$simd"::@SIMD<
 fn import_of_import(arg: Float64):
-  pass
+    pass
 
 
 # // -----
@@ -32,6 +33,7 @@ import builtin
 
 # CHECK-LABEL: lit.package @"$test_package"
 # CHECK:  lit.file_module @"$module"
+# CHECK:    lit.alias.decl {{.*}}top_level_alias
 # CHECK:    lit.func @"function()"
 # CHECK:      lit.func @"call_nested_function()"
 # CHECK:        kgen.call @"$test_package"::@"$test_nested_package"::@"$module"::@"nested_function()"
@@ -39,7 +41,22 @@ import builtin
 # CHECK:    lit.file_module @"$module"
 # CHECK:      lit.func @"nested_function()"
 
+
 fn test_function_calls(arg: builtin.int.Int):
-  function()
-  nested_function()
-  method_defined_in_init()
+    function()
+    nested_function()
+    method_defined_in_init()
+    _ = module.top_level_alias
+
+
+# // -----
+
+from test_package.module import top_level_alias
+
+
+# CHECK-LABEL: lit.func @"foo
+fn foo():
+    pass
+
+
+# CHECK-NOT: lit.alias.decl
