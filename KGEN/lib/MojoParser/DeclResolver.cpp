@@ -1824,25 +1824,25 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
 static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
                         StringRef unmangledName, const CallNode &node,
                         ExportInterface itf) {
-  if (node.args.empty() || node.args.size() > 2) {
+  ArrayRef<Operand> operands = node.operands;
+  if (operands.empty() || operands.size() > 2) {
     shared.emitError(node.getLoc(), "@export requires 1 or 2 arguments");
     return;
   }
 
   std::optional<std::string> exportABI;
   std::optional<std::string> aliasName;
-  for (const CallArgument &arg : node.args) {
-    if (arg.kind == CallArgument::kKeyword &&
-        isa<StringLiteralNode>(arg.expr) && arg.name == "ABI") {
-      exportABI = cast<StringLiteralNode>(arg.expr)->getValue();
+  for (const Operand &operand : operands) {
+    auto strNode = dyn_cast<StringLiteralNode>(operand.value);
+    if (strNode && operand.isKeyword() && operand.name == "ABI") {
+      exportABI = strNode->getValue();
       if (*exportABI != "C") {
-        shared.emitError(arg.getLoc(),
+        shared.emitError(operand.getLoc(),
                          "only \"C\" ABI is supported at the moment");
         return;
       }
-    } else if (arg.kind == CallArgument::kPositional &&
-               isa<StringLiteralNode>(arg.expr)) {
-      aliasName = cast<StringLiteralNode>(arg.expr)->getValue();
+    } else if (strNode && operand.isPositional()) {
+      aliasName = strNode->getValue();
     } else {
       shared.emitError(node.getLoc(),
                        "@export requires a string specifying the "
@@ -2341,8 +2341,9 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
       // @always_inline("nodebug")
-      if (declRef->spelling == "always_inline" && callNode->args.size() == 1 &&
-          callNode->args[0].isPositionalStringLiteral("nodebug"))
+      if (declRef->spelling == "always_inline" &&
+          callNode->operands.size() == 1 &&
+          callNode->operands[0].isPositionalStringLiteral("nodebug"))
         funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
       else if (declRef->spelling == "export")
         applyExport(decorator->getLoc(), shared, decl, baseName, *callNode,
@@ -3380,14 +3381,16 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
       // @register_passable("trivial")
       if (declRef->spelling == "register_passable" &&
-          callNode->args.size() == 1 &&
-          callNode->args[0].isPositionalStringLiteral("trivial")) {
+          callNode->operands.size() == 1 &&
+          callNode->operands[0].isPositionalStringLiteral("trivial")) {
         structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassableTrivial);
         return success();
       }
+
+      // @nonmaterializable(TargetType)
       if (declRef->spelling == "nonmaterializable" &&
-          callNode->args.size() == 1)
-        if (auto drn = dyn_cast<DeclRefNode>(callNode->args[0].expr))
+          callNode->operands.size() == 1)
+        if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].value))
           if (auto parentDecl = structDecl.getParentDecl()) {
             ExprEmitter emitter(shared, *parentDecl, EC_Type);
             if (ASTType t = emitter.emitExprType(drn)) {

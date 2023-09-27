@@ -828,8 +828,8 @@ static ParseResult parseLoopDecorators(ParserBase &parser,
       } else if (auto *callNode = dyn_cast<CallNode>(decorator)) {
         if (auto dre = dyn_cast<DeclRefNode>(callNode->callee)) {
           int32_t factor;
-          if (dre->spelling == "unroll" && callNode->args.size() == 1 &&
-              callNode->args[0].isPositionalIntLiteral(factor)) {
+          if (dre->spelling == "unroll" && callNode->operands.size() == 1 &&
+              callNode->operands[0].isPositionalIntLiteral(factor)) {
             level = HLCF::UnrollLevel(factor);
             continue;
           }

@@ -370,11 +370,11 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
                                      this, CallSyntax::kImplicitConvert, dest);
 }
 
-/// Return true if this is a positional argument with a string literal
-/// containing the specified string.
-bool CallArgument::isPositionalStringLiteral(StringRef str) const {
-  auto *strExpr = dyn_cast<StringLiteralNode>(expr);
-  return kind == kPositional && strExpr && strExpr->getValue() == str;
+bool Operand::isPositionalStringLiteral(StringRef str) const {
+  if (isPositional())
+    if (auto *strExpr = dyn_cast<StringLiteralNode>(value))
+      return strExpr->getValue() == str;
+  return false;
 }
 
 AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -978,13 +978,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Emit all the arguments so we can encode them as SSA values.
   SmallVector<Value> opOperands;
-  for (CallArgument argument : call.args) {
-    if (argument.kind != CallArgument::kPositional) {
+  for (const Operand &argument : call.operands) {
+    if (!argument.isPositional()) {
       emitter.emitError(argument.getLoc(),
                         "MLIR operators only support positional arguments");
       return {};
     }
-    Value value = emitter.emitExprSRValue(argument.expr, EC_MLIRMagic);
+    Value value = emitter.emitExprSRValue(argument.value, EC_MLIRMagic);
     if (!value)
       return {};
     opOperands.push_back(value);
@@ -1186,27 +1186,26 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   /// Emit all the operands that we'll need.
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
   SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands;
-  for (CallArgument arg : args) {
-    if (arg.kind == CallArgument::kStar ||
-        arg.kind == CallArgument::kStarStar) {
-      emitter.emitError(arg.getLoc(),
+  for (const Operand &operand : operands) {
+    if (operand.isUnpacked()) {
+      emitter.emitError(operand.getLoc(),
                         "unpacked arguments are not supported yet");
       return {};
     }
     ASTExprAnd<AnyValue> exprAndVal = {
-        arg.expr->emitIR(ValueDest::none(), emitter), arg.expr};
+        operand.value->emitIR(ValueDest::none(), emitter), operand.value};
     if (!exprAndVal)
       return {};
-    if (arg.kind == CallArgument::kPositional) {
+    if (operand.isPositional()) {
       posOperands.emplace_back(std::move(exprAndVal));
     } else {
-      assert(arg.kind == CallArgument::kKeyword);
-      auto [it, addedNew] =
-          kwOperands.try_emplace(arg.name, std::move(exprAndVal));
+      assert(operand.isKeyword());
+      StringAttr name = operand.name;
+      auto [it, addedNew] = kwOperands.try_emplace(name, std::move(exprAndVal));
       if (!addedNew) {
         auto diag =
-            emitter.emitError(arg.expr->getLoc(), "duplicate keyword argument ")
-            << arg.name;
+            emitter.emitError(operand.getLoc(), "duplicate keyword argument ")
+            << name;
         diag.attachNote(it->getSecond().expr->getLoc())
             << "previously specified here";
         return {};
@@ -1360,7 +1359,7 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
 
   // Process each subscript entry as a binding.
   // TODO(#21618): Support keyword parameters: `A[x = 42]`.
-  for (auto idx : subscriptArgs) {
+  for (auto operand : subscriptArgs) {
     // If all entries in this overload set take a parameter with a common type,
     // use it for parameter type inference.
     ASTType paramType;
@@ -1376,7 +1375,7 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
         paramType = ASTType();
     }
 
-    auto val = emitter.emitExprPValue(idx, EC_CallParamValue, paramType);
+    auto val = emitter.emitExprPValue(operand, EC_CallParamValue, paramType);
     if (!val)
       return {};
 
@@ -1387,7 +1386,7 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     //
     // Note: we're being a bit abusive here by making a ParamBindAttr with a
     // null name for positional attributes.
-    value->inputParamBindings.add(idx, val.get());
+    value->inputParamBindings.add(operand, val.get());
   }
   // The bindings will be checked for validity when a reference is formed.
   return value;
@@ -1426,10 +1425,10 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
             << plural(sig.getNumInputParams()) << getIndexRange();
         return {};
       }
-      for (auto [idx, type] :
+      for (auto [operand, type] :
            llvm::zip(subscriptArgs, sig.getInputParamTypes())) {
         bindOperands.push_back(
-            emitter.emitExprPValue(idx, EC_CallParamValue, type));
+            emitter.emitExprPValue(operand, EC_CallParamValue, type));
         if (!bindOperands.back())
           return {};
       }
@@ -1483,8 +1482,9 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> indexValues;
   indexValues.push_back({baseValue, base});
-  for (ExprNode *index : subscriptArgs) {
-    indexValues.push_back({index->emitIR(ValueDest::none(), emitter), index});
+  for (ExprNode *operand : subscriptArgs) {
+    indexValues.push_back(
+        {operand->emitIR(ValueDest::none(), emitter), operand});
     if (!indexValues.back())
       return {};
   }

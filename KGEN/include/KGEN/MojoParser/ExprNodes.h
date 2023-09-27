@@ -191,47 +191,73 @@ struct AttributeRefNode final : public ExprNode, Identifier {
                                    ValueDest &dest, ExprEmitter &emitter);
 };
 
-struct CallArgument {
-  /// This specifies what "kind" of argument this is, these are always present
+struct Operand {
+  /// This specifies how the operand is passed, these are always present
   /// in a specific order, and any of these may be missing.
-  enum Kind {
-    kPositional, ///< Positional argument like foo(x)
+  enum PassKind {
+    kPositional, ///< Positional operand like foo(x)
     kStar,       ///< Splat list of positional values like: foo(*x)
-    kKeyword,    ///< Keyword argument: foo(arg=x)
+    kKeyword,    ///< Keyword operand: foo(arg=x)
     kStarStar,   ///< Splat list of keyword values like: foo(**x)
-  } kind = kPositional;
+  };
 
-  /// This is the expression for the value, and is always present.
-  ExprNode *expr = nullptr;
+  Operand(ExprNode *value, SMLoc startLoc, PassKind passKind,
+          StringAttr name = StringAttr())
+      : value(value), startLoc(startLoc), passKind(passKind), name(name) {
+    assert(passKind != kKeyword || name);
+  }
 
-  /// This is the name of a keyword argument when kind=kKeyword, else null.
+  /// This is the expression for the operand value.
+  ExprNode *value;
+
+  /// The location where the keyword (if given) or the value starts.
+  const SMLoc startLoc;
+
+  PassKind passKind;
+
+  /// This is the name of a keyword operand when kind=kKeyword, else null.
   StringAttr name;
 
-  SMLoc getLoc() const { return expr->getLoc(); }
+  SMLoc getLoc() const { return startLoc; }
 
-  /// Return true if this is a positional argument with a string literal
+  /// Return true if this is a positional operand.
+  bool isPositional() const { return passKind == kPositional; }
+
+  /// Return true if this is a keyword operand.
+  bool isKeyword() const { return passKind == kKeyword; }
+
+  /// Return true if this is a keyword or keyword pack operand.
+  bool isKeywordOrUnpackedKeyword() const {
+    return isKeyword() || passKind == kStarStar;
+  }
+
+  /// Return true if this is an unpacked (positional or keyword) operand.
+  bool isUnpacked() const { return passKind == kStar || passKind == kStarStar; }
+
+  /// Return true if this is a positional operand with a string literal
   /// containing the specified string.
   bool isPositionalStringLiteral(StringRef str) const;
 
-  template <typename N>
-  bool isPositionalIntLiteral(N &value, unsigned base = 0) const {
-    auto *intExpr = dyn_cast<IntLiteralNode>(expr);
-    if (kind == kPositional && intExpr) {
-      return llvm::to_integer(intExpr->spelling, value, base);
-    }
+  /// Return true if this is a positional operand with an int literal
+  /// containing the specified value of the (optionally given base).
+  template <typename IntType>
+  bool isPositionalIntLiteral(IntType &value, unsigned base = 0) const {
+    if (isPositional())
+      if (auto *intExpr = dyn_cast<IntLiteralNode>(this->value))
+        return llvm::to_integer(intExpr->spelling, value, base);
     return false;
   }
 };
 
 struct CallNode final : public ExprNode {
-  CallNode(ExprNode *callee, SMLoc lparenLoc, ArrayRef<CallArgument> args,
+  CallNode(ExprNode *callee, SMLoc lparenLoc, ArrayRef<Operand> operands,
            SMLoc rparenLoc)
-      : ExprNode(kCall), callee(callee), lparenLoc(lparenLoc), args(args),
-        rparenLoc(rparenLoc) {}
+      : ExprNode(kCall), callee(callee), lparenLoc(lparenLoc),
+        operands(operands), rparenLoc(rparenLoc) {}
 
   ExprNode *const callee;
   const SMLoc lparenLoc;
-  const ArrayRef<CallArgument> args;
+  const ArrayRef<Operand> operands;
   const SMLoc rparenLoc;
 
   static bool classof(const ExprNode *node) { return node->kind == kCall; }
