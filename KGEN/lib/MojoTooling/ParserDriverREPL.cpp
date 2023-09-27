@@ -318,16 +318,17 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
 
   // Insert a preamble of imports used by the expression wrapper.
   if (isFirstREPLCell) {
-    exprOS << "from memory.unsafe import Pointer\n"
-           << "from python.python import Python\n"
-           << "from python.object import PythonObject\n";
+    exprOS << "from memory.unsafe import Pointer as __mojo_repl_Pointer\n"
+           << "from python.python import Python as __mojo_repl_Python\n";
   }
 
   // Build the input struct, which contains each of the persistent variables.
   exprOS << "struct __mojo_repl_context__:\n";
   for (auto &[name, type] : variables) {
     exprOS << llvm::formatv(
-        "  var `{0}`: Pointer[Pointer[__mlir_type.`{1}`]]\n", name, type);
+        "  var `{0}`: "
+        "__mojo_repl_Pointer[__mojo_repl_Pointer[__mlir_type.`{1}`]]\n",
+        name, type);
   }
   if (variables.empty())
     exprOS << "  pass\n";

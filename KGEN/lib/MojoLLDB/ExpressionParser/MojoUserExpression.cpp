@@ -389,8 +389,9 @@ importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
       mojoExprOS << llvm::formatv("let {0} = {1}.{0}\n", decl->getName(),
                                   moduleName);
     } else if (auto *import = dyn_cast<ExtractedPythonImport>(&symbol)) {
-      mojoExprOS << llvm::formatv("let {0} = Python.import_module(\"{1}\")\n",
-                                  import->getName(), import->getModule());
+      mojoExprOS << llvm::formatv(
+          "let {0} = __mojo_repl_Python.import_module(\"{1}\")\n",
+          import->getName(), import->getModule());
     }
   }
 
@@ -446,7 +447,7 @@ sys.modules['{1}'] = expr_module
   llvm::raw_string_ostream mojoExprOS(mojoExpr);
 
   // Evaluate the wrapped python expression.
-  mojoExprOS << "var __lldb_repl_python__ = Python()\n\n";
+  mojoExprOS << "var __lldb_repl_python__ = __mojo_repl_Python()\n\n";
   mojoExprOS << "if not __lldb_repl_python__.eval(\"";
   mojoExprOS.write_escaped(wrappedPythonExpr);
   mojoExprOS << "\"):\n  __mojo_repl_expr_failed = True\n  raise Error('The "
@@ -455,8 +456,8 @@ sys.modules['{1}'] = expr_module
   // If persistent results are enabled, we also import top-level symbols from
   // the python module into the mojo context.
   if (!m_options.GetSuppressPersistentResult()) {
-    mojoExprOS << llvm::formatv("let {0} = Python.import_module(\"{0}\")\n\n",
-                                moduleName);
+    mojoExprOS << llvm::formatv(
+        "let {0} = __mojo_repl_Python.import_module(\"{0}\")\n\n", moduleName);
 
     // Import the interesting top-level symbols from the python module into the
     // mojo context.
