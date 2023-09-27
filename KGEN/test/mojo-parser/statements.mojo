@@ -343,16 +343,16 @@ fn induction_var_scope():
 fn unroll_for():
     @unroll
     for i in range(1, 9, 2):
-        print(i)
+        _ = i
         @unroll
         for j in range (1, 4):
-            print (i + j)
+            _ = i + j
     # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
     # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
 
     @unroll(2)
     for j in range (1, 4):
-        print (j)
+        _ = j
     # CHECK: } {unrollLevel = #hlcf<unroll_level 2>}
 
 # CHECK-LABEL: lit.func @"unroll_while()"
@@ -360,7 +360,7 @@ fn unroll_while():
   let i = 1
   @unroll
   while i < 4:
-      print(i)
+      _ = i
   # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
 
 ##===----------------------------------------------------------------------===##

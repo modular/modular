@@ -151,7 +151,7 @@ fn spurious_for_loop_variable_unknown_decl():
     # Note that the bug in issue #18599 is that after the above error, another error
     # will be spuriously raised about i not being bound.  So the real check in
     # this test is that no further error is raised.
-    print(i)
+    _ = i
 
 ##===----------------------------------------------------------------------===##
 # With
@@ -195,7 +195,7 @@ struct HasBadContextManagerExit:
 def useBadContextManagerExit():
   # expected-error @below {{invalid call to '__exit__'}}
   with HasBadContextManagerExit(5) as bad:
-      print(bad.x)
+      _ = bad.x
 
 ##===----------------------------------------------------------------------===##
 # Raise
