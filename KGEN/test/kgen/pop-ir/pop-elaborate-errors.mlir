@@ -101,7 +101,7 @@ kgen.generator @call_it() {
 
 // -----
 
-module attributes {M.target = #M.target<triple="", cpu="", features="", data_layout="p:64:64", simd_bit_width=128>} {
+module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
 
 // expected-note @below {{failed to interpret function @clobber_pointer}}
 kgen.generator @clobber_pointer(%arg0: i64) -> i64 {

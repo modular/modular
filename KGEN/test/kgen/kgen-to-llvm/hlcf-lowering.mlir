@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-kgen-to-llvm -lower-control-flow -allow-unregistered-dialect %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: @nested_continue
 kgen.func @nested_continue(%arg0: i1) {

@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm,canonicalize))' | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: @variant_create_0
 kgen.func @variant_create_0(%arg0: i32) -> !pop.variant<i32> {

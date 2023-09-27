@@ -1,6 +1,6 @@
 // RUN: kgen-opt -split-input-file -allow-unregistered-dialect -lower-global-pop-to-llvm %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @external_call
   kgen.func @external_call(%a: !pop.simd<1, ui32>, %b: !kgen.pointer<i32>) -> !pop.simd<4, f64> {
     // CHECK: llvm.call @foo
@@ -20,7 +20,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @external_call_variadic
   kgen.func @external_call_variadic(%a: !pop.simd<1, ui32>) {
     // CHECK: llvm.call @foo
@@ -34,7 +34,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @global_constant
   kgen.func @global_constant() {
     // CHECK: llvm.mlir.addressof @global_constant_0
@@ -58,7 +58,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @aligned_globals
   kgen.func @aligned_globals() {
 
@@ -89,7 +89,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @global_array_constant
   kgen.func @global_array_constant() {
     // CHECK: llvm.mlir.addressof @global_constant
@@ -103,7 +103,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: llvm.func @alloc_free
   llvm.func @alloc_free() {
     %size = index.constant 1

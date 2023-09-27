@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -split-input-file -lower-kgen-to-llvm | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
   // CHECK-SAME: %[[SIZE:.*]]: [[INDEXTY:.*]], %[[PTR:.*]]: !llvm.ptr, %[[DTYPE:.*]]: i8
   // CHECK-SAME: %[[SIZE_OUT:.*]]: !llvm.ptr<[[INDEXTY]]>, %[[PTR_OUT:.*]]: !llvm.ptr<ptr>, %[[DTYPE_OUT:.*]]: !llvm.ptr<i8>
@@ -26,7 +26,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 !nestedStruct = !pop.struct<struct<>, struct<f32>>
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
   // CHECK-SAME: %[[V:.*]]: f32, %[[V_OUT:.*]]: !llvm.ptr<f32>
   // CHECK-NEXT: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(f32)>)>
@@ -46,7 +46,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
   // CHECK-SAME: %[[I:.*]]: f32
   // CHECK: llvm.return
@@ -58,7 +58,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
   // CHECK-SAME: -> i64
   // CHECK: %[[RESULT:.*]] = llvm.mlir.constant(1 : i64) : i64
@@ -72,7 +72,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
   // CHECK-SAME: (%[[ARG:.*]]: f32) -> f32
   // CHECK-NEXT: return %[[ARG]] : f32
@@ -83,7 +83,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func export C @foo() {
     kgen.return
   }

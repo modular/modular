@@ -253,6 +253,6 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
     return runtimeTargetInfoOr.takeError();
 
   return getTargetInfoFor(ctx, runtimeTargetInfoOr->triple.str(),
-                          runtimeTargetInfoOr->cpu,
+                          runtimeTargetInfoOr->arch,
                           encodeFeatures(runtimeTargetInfoOr->features), mtune);
 }

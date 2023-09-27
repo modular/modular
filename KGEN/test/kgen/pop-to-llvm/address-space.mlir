@@ -1,6 +1,6 @@
 // RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(lower-global-pop-to-llvm,kgen.func(lower-pop-to-llvm))'  %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: llvm.mlir.global internal @global_load_global_alloc() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
   // CHECK-LABEL: kgen.func @global_load
   kgen.func @global_load() -> !pop.scalar<f32> {
@@ -17,7 +17,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: llvm.mlir.global internal @global_store_global_alloc() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
   // CHECK-LABEL: kgen.func @global_store
   kgen.func @global_store(%arg0: !pop.scalar<f32>) {

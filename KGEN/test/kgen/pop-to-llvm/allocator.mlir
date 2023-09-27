@@ -12,7 +12,7 @@
 // CHECK-SAME: allockind("free")
 // CHECK-SAME: "alloc-family"="kgen_aligned_allocator"
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @alloc_free() {
     %size = index.constant 1
     %align = index.constant 8

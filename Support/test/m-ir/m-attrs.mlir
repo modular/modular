@@ -34,25 +34,22 @@
 // CHECK: aligned_bytes<"0x01020304", align 64>
 "some.op"() {a = #M.aligned_bytes<"0x01020304", align 64>} : () -> ()
 
-// CHECK: #M.target<triple = "a", cpu = "b", features = "+foo", data_layout = "p:64:64-i64:64:64", simd_bit_width = 128>
-"some.op"() {a = #M.target<triple = "a", cpu = "b", features = "+foo", data_layout = "p:64:64-i64:64:64", simd_bit_width = 128>} : () -> ()
+// CHECK: #M.target<triple = "a", arch = "b", features = "+foo", data_layout = "p:64:64-i64:64:64", simd_bit_width = 128>
+"some.op"() {a = #M.target<triple = "a", arch = "b", features = "+foo", data_layout = "p:64:64-i64:64:64", simd_bit_width = 128>} : () -> ()
 
-// CHECK: #M.target<triple = "a", cpu = "b">
-"some.op"() {a = #M.target<triple = "a", cpu = "b">} : () -> ()
-
-// CHECK: #M.target<triple = "a">
-"some.op"() {a = #M.target<triple = "a">} : () -> ()
+// CHECK: #M.target<triple = "a", arch = "b">
+"some.op"() {a = #M.target<triple = "a", arch = "b">} : () -> ()
 
 // CHECK: #M.device_ref<"foo", 3>
 "some.op"() {a = #M.device_ref<"foo", 3>} : () -> ()
 
-// CHECK: #M.device_spec<ref = <"cuda", 1>, target = <triple = "nvptx64-nvidia-cuda", features = "+compute_80">>
-"some.op"() {a = #M.device_spec<ref = <"cuda", 1>, target = <triple="nvptx64-nvidia-cuda", features="+compute_80">>} : () -> ()
+// CHECK: #M.device_spec<ref = <"cuda", 1>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>
+"some.op"() {a = #M.device_spec<ref = <"cuda", 1>, target = <triple="nvptx64-nvidia-cuda", arch = "sm_80">>} : () -> ()
 
-// CHECK: #M.device_spec_collection<host = <"cpu", 0>, devices = [<ref = <"cuda", 0>, target = <triple = "nvptx64-nvidia-cuda", features = "+compute_80">>, <ref = <"cpu", 0>, target = <triple = "x86_64-unknown-linux-gnu", cpu = "znver3", features = "+avx2">>]>
+// CHECK: #M.device_spec_collection<host = <"cpu", 0>, devices = [<ref = <"cuda", 0>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>, <ref = <"cpu", 0>, target = <triple = "x86_64-unknown-linux-gnu", arch = "znver3", features = "+avx2">>]>
 "some.op"() {a = #M.device_spec_collection<host = <"cpu", 0>,
-                   devices = [<ref = <"cuda", 0>, target = <triple = "nvptx64-nvidia-cuda", features = "+compute_80">>,
-                              <ref = <"cpu", 0>, target = <triple="x86_64-unknown-linux-gnu", cpu="znver3", features="+avx2">>]>} : () -> ()
+                   devices = [<ref = <"cuda", 0>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>,
+                              <ref = <"cpu", 0>, target = <triple="x86_64-unknown-linux-gnu", arch="znver3", features="+avx2">>]>} : () -> ()
 
 // CHECK: #M<multiline["a", "b", "c"]>
 "some.op"() {a = #M<multiline["a", "b", "c"]>} : () -> ()

@@ -19,6 +19,38 @@ using namespace M;
 // Helpers
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// An arch or feature name decoded into 'base' and 'version' components.
+struct VersionedName {
+  // eg "sm_80".
+  StringRef fullName;
+  // eg "sm".
+  StringRef baseName;
+  // eg 80.
+  uint64_t version;
+
+  VersionedName(StringRef fullName, StringRef baseName, uint64_t version)
+      : fullName(fullName), baseName(baseName), version(version) {}
+
+  bool operator<=(const VersionedName &that) const {
+    return baseName == that.baseName && version <= that.version;
+  }
+
+  static VersionedName decode(StringRef name) {
+    // Currently just hard coded and not target specific.
+    static StringRef prefix("sm_");
+    if (name.find(prefix) == 0) {
+      StringRef suffix = name.drop_front(prefix.size());
+      uint64_t version;
+      if (!suffix.getAsInteger(10, version))
+        return VersionedName(name, prefix.drop_back(), version);
+    }
+    return VersionedName(name, name, 0);
+  }
+};
+
+} // namespace
+
 std::string M::encodeFeatures(ArrayRef<std::string> features) {
   std::string featureStr;
   llvm::raw_string_ostream os(featureStr);
@@ -50,7 +82,7 @@ ErrorOr<std::vector<std::string>> M::decodeFeatures(StringRef encodedFeatures) {
 void TargetInfo::serializeToJSON(llvm::json::OStream &json) const {
   json.objectBegin();
   json.attribute("triple", triple.str());
-  json.attribute("cpu", cpu);
+  json.attribute("arch", arch);
   json.attribute("features", features);
   json.objectEnd();
 }
@@ -70,14 +102,14 @@ TargetInfo::deserializeFromJSON(const llvm::json::Value *json) {
     return Error("ill-formed serialized TargetInfo: expecting object");
 
   std::optional<StringRef> optTriple = object->getString("triple");
-  std::optional<StringRef> optCpu = object->getString("cpu");
+  std::optional<StringRef> optArch = object->getString("arch");
   const llvm::json::Array *array = object->getArray("features");
-  if (!optTriple || !optCpu || !array)
+  if (!optTriple || !optArch || !array)
     return Error("ill-formed serialized TargetInfo: missing attributes");
 
   TargetInfo result;
   result.triple = llvm::Triple(*optTriple);
-  result.cpu = *optCpu;
+  result.arch = *optArch;
   for (const llvm::json::Value &v : *array) {
     std::optional<StringRef> optFeature = v.getAsString();
     if (!optFeature)
@@ -145,43 +177,31 @@ static ErrorOrSuccess satisfiesTriple(const llvm::Triple &provided,
   return success();
 }
 
-/// Returns success if provided cpu matches required cpu.
-static ErrorOrSuccess satisfiesCPU(StringRef provided, StringRef required) {
+/// Returns success if provided arch matches required arch.
+static ErrorOrSuccess satisfiesArch(StringRef provided, StringRef required) {
   if (required.empty())
     // No constraint.
     return success();
 
-  if (provided != required) {
-    return Error(Twine("Provided CPU '") + provided +
-                 "' does not match required CPU '" + required + "'.");
+  auto versionedProvided = VersionedName::decode(provided);
+  auto versionedRequired = VersionedName::decode(required);
+
+  if (!(versionedRequired <= versionedProvided)) {
+    return Error(Twine("Provided arch '") + provided +
+                 "' does not match required arch '" + required + "'.");
   }
   return success();
 }
 
-/// Adds feature to map. If feature supports multiple versions, map will
-/// contain base feature as key and version as value. Otherwise the
-/// entire feature will be the key and 0 the value.
-static void parseFeature(StringRef feature, llvm::StringMap<int> &map) {
-  static StringRef prefix("compute_");
-  if (feature.find(prefix) == 0) {
-    StringRef suffix = feature.drop_front(prefix.size());
-    int version;
-    if (!suffix.getAsInteger(10, version)) {
-      map[prefix] = version;
-      return;
-    }
-  }
-  map[feature] = 0;
-}
-
-/// Returns features parsed into map form, where the map domain is the base
-/// feature name and the map range is the feature's level (or just 0 if the
-/// feature is boolean).
-static llvm::StringMap<int>
+/// Returns features parsed into map form, where the key is the feature
+/// base name.
+static llvm::StringMap<VersionedName>
 parseFeatures(const std::vector<std::string> &features) {
-  llvm::StringMap<int> map;
-  for (const auto &feature : features)
-    parseFeature(feature, map);
+  llvm::StringMap<VersionedName> map;
+  for (const auto &feature : features) {
+    auto versionedFeature = VersionedName::decode(feature);
+    map.insert({versionedFeature.baseName, versionedFeature});
+  }
   return map;
 }
 
@@ -194,27 +214,24 @@ satisfiesFeatures(const std::vector<std::string> &provided,
     // No constraint (following code would also return success).
     return success();
 
-  llvm::StringMap<int> providedMap = parseFeatures(provided);
-  llvm::StringMap<int> requiredMap = parseFeatures(required);
+  llvm::StringMap<VersionedName> providedMap = parseFeatures(provided);
+  llvm::StringMap<VersionedName> requiredMap = parseFeatures(required);
   std::string str;
   llvm::raw_string_ostream os(str);
   os << "The following features are required but not provided: ";
   bool anyMissing = false;
-  for (const auto &[requiredBase, requiredVersion] : requiredMap) {
+  for (const auto &[requiredBase, requiredVersioned] : requiredMap) {
     auto providedItr = providedMap.find(requiredBase);
     if (providedItr == providedMap.end()) {
       if (anyMissing)
         os << ", ";
-      os << requiredBase;
-      if (requiredVersion)
-        os << requiredVersion;
+      os << requiredVersioned.fullName;
       anyMissing = true;
-    } else if (providedItr->second < requiredVersion) {
+    } else if (!(requiredVersioned <= providedItr->second)) {
       if (anyMissing)
         os << ", ";
-      os << requiredBase << requiredVersion;
-      os << " (only have " << providedItr->getKey() << providedItr->second
-         << ")";
+      os << requiredVersioned.fullName;
+      os << " (only have " << providedItr->second.fullName << ")";
       anyMissing = true;
     }
   }
@@ -230,7 +247,7 @@ TargetInfo::checkSatisfiesRequirements(const TargetInfo &required) const {
                           << required.serializeToJSON() << "\n\n");
   if (auto errOr = satisfiesTriple(triple, required.triple))
     return errOr.takeError();
-  if (auto errOr = satisfiesCPU(cpu, required.cpu))
+  if (auto errOr = satisfiesArch(arch, required.arch))
     return errOr.takeError();
   if (auto errOr = satisfiesFeatures(features, required.features))
     return errOr.takeError();

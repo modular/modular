@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -lower-kgen-to-llvm -split-input-file | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=64>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
 
 // CHECK-LABEL: llvm.func internal @heap
 kgen.func @heap() -> !kgen.pointer<i16> {
@@ -154,12 +154,12 @@ kgen.func @ptr_inside_blob() {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=16>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=16>} {
 // CHECK-LABEL: llvm.func internal @compress_me
 kgen.func @compress_me() {
   // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASEPTR:.*]][0]
-  // CHECK: %[[VAL:.*]] = llvm.mlir.constant(-1 : i8)
-  // CHECK: %[[SIZE:.*]] = llvm.mlir.constant(32 : i64)
+  // CHECK-DAG: %[[VAL:.*]] = llvm.mlir.constant(-1 : i8)
+  // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(32 : i64)
   // CHECK: "llvm.intr.memset"(%[[P0]], %[[VAL]], %[[SIZE]]) <{isVolatile = false}>
 
   // CHECK: %[[P1:.*]] = llvm.getelementptr inbounds %[[BASEPTR]][32]
@@ -167,8 +167,8 @@ kgen.func @compress_me() {
   // CHECK: llvm.store %[[VAL]], %[[P1]]
 
   // CHECK: %[[P2:.*]] = llvm.getelementptr inbounds %[[BASEPTR:.*]][34]
-  // CHECK: %[[VAL:.*]] = llvm.mlir.constant(-1 : i8)
-  // CHECK: %[[SIZE:.*]] = llvm.mlir.constant(30 : i64)
+  // CHECK-DAG: %[[VAL:.*]] = llvm.mlir.constant(-1 : i8)
+  // CHECK-DAG: %[[SIZE:.*]] = llvm.mlir.constant(30 : i64)
   // CHECK: "llvm.intr.memset"(%[[P2]], %[[VAL]], %[[SIZE]]) <{isVolatile = false}>
   %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<[(compress_me, heap, [])], 0, 0>>
   kgen.return

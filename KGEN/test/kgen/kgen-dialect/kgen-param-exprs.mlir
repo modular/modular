@@ -1,7 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-#target = #kgen.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128> : !kgen.target
+#target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: kgen.generator @param_expr
 kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
@@ -454,8 +454,8 @@ kgen.generator @string_params<a: string, b: string>()
 
 // CHECK-LABEL: kgen.generator @target_params2<t0: target>()
 kgen.generator @target_params2<t0: target>()
-  // CHECK: constraints <[eq(:target t0, #kgen.target<triple = "triple", cpu = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>),
-  constraints <[eq(:target t0, #kgen.target<triple="triple", cpu="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>), "must support target!!"]> {
+  // CHECK: constraints <[eq(:target t0, #kgen.target<triple = "triple", arch = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>),
+  constraints <[eq(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>), "must support target!!"]> {
   kgen.return
 }
 

@@ -2,7 +2,7 @@
 
 // Test trivial vector conversions to LLVM.
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 kgen.func @trivial_conversions(%a: !pop.simd<4, f32>, %b: !pop.simd<4, f32>, %c: !pop.simd<4, f32>, %d: !pop.simd<4, bool>) {
   // CHECK: llvm.fneg

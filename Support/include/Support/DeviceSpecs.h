@@ -43,12 +43,12 @@ ErrorOr<std::vector<std::string>> decodeFeatures(StringRef encodedFeatures);
 /// structure.
 struct TargetInfo {
   llvm::Triple triple;
-  std::string cpu;
+  std::string arch;
   std::vector<std::string> features;
 
-  TargetInfo(llvm::Triple triple = llvm::Triple(""), std::string cpu = {},
+  TargetInfo(llvm::Triple triple = llvm::Triple(""), std::string arch = {},
              std::vector<std::string> features = {})
-      : triple(std::move(triple)), cpu(std::move(cpu)),
+      : triple(std::move(triple)), arch(std::move(arch)),
         features(std::move(features)) {}
 
   /// Serializes this target info to JSON.

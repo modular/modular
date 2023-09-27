@@ -281,7 +281,7 @@ HostMachineInfo HostMachineInfo::fromTargetInfo(const TargetInfo &targetInfo) {
   HostMachineInfo result;
   result.triple = targetInfo.triple.str();
   result.osName = llvm::Triple::getOSTypeName(targetInfo.triple.getOS());
-  result.cpuArch = targetInfo.cpu;
+  result.cpuArch = targetInfo.arch;
   result.cpuFeatures = targetInfo.features;
   return result;
 }
