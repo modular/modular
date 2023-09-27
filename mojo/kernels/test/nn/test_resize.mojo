@@ -41,11 +41,12 @@ fn test_case_nearest[
 fn test_case_linear[
     rank: Int,
     coord_transform: CoordinateTransformationMode,
+    antialias: Bool,
     type: DType,
 ](input: Tensor[type], output: Tensor[type], reference: Tensor[type]):
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        resize_linear[coord_transform](
+        resize_linear[coord_transform, antialias](
             input._to_ndbuffer[rank](),
             output._to_ndbuffer[rank](),
             out_chain.borrow(),
@@ -194,7 +195,7 @@ fn main():
             # fmt: on
         )
 
-        test_case_linear[4, CoordinateTransformationMode.HalfPixel](
+        test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
             input, output, reference
         )
 
@@ -226,7 +227,7 @@ fn main():
             # fmt: on
         )
 
-        test_case_linear[4, CoordinateTransformationMode.AlignCorners](
+        test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
             input, output, reference
         )
 
@@ -256,7 +257,7 @@ fn main():
             # fmt: on
         )
 
-        test_case_linear[4, CoordinateTransformationMode.HalfPixel](
+        test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
             input, output, reference
         )
 
@@ -288,7 +289,7 @@ fn main():
             # fmt: on
         )
 
-        test_case_linear[4, CoordinateTransformationMode.AlignCorners](
+        test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
             input, output, reference
         )
 
@@ -335,7 +336,7 @@ fn main():
             # fmt: on
         )
 
-        test_case_linear[4, CoordinateTransformationMode.HalfPixel](
+        test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
             input, output, reference
         )
 
@@ -343,3 +344,37 @@ fn main():
     # CHECK: PASSED
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_trilinear()
+
+    fn test_downsample_sizes_linear_antialias():
+        print("== test_downsample_sizes_linear_antialias")
+        alias type = DType.float32
+        let input = Tensor[type](1, 1, 4, 4)
+        linear_fill[type](
+            input,
+            VariadicList[SIMD[type, 1]](
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+            ),
+        )
+        let output = Tensor[type](1, 1, 2, 2)
+        let reference = Tensor[type](1, 1, 2, 2)
+        # TORCH REFERENCE:
+        # x = np.arange(16).reshape((1, 1, 4, 4))
+        # y = torch.nn.functional.interpolate(
+        #     torch.Tensor(x), (2, 2), mode="bilinear", antialias=True
+        # )
+        # print(y.flatten())
+        linear_fill[type](
+            reference,
+            # fmt: off
+            VariadicList[SIMD[type, 1]](3.57143, 5.14286, 9.85714, 11.42857)
+            # fmt: on
+        )
+
+        test_case_linear[4, CoordinateTransformationMode.HalfPixel, True](
+            input, output, reference
+        )
+
+    # CHECK-LABEL: test_downsample_sizes_linear_antialias
+    # CHECK: PASSED
+    # CHECK-NOT: ASSERT ERROR
+    test_downsample_sizes_linear_antialias()

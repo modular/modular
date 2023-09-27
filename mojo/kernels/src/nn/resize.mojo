@@ -61,6 +61,49 @@ struct RoundMode:
         return self.value == other.value
 
 
+@value
+struct InterpolationMode:
+    var value: Int
+    alias Linear = InterpolationMode(0)
+
+    @always_inline
+    fn __eq__(self, other: InterpolationMode) -> Bool:
+        return self.value == other.value
+
+
+@value
+@register_passable("trivial")
+struct Interpolator[mode: InterpolationMode]:
+    var cubic_coeff: Float32
+
+    @always_inline
+    fn __init__(cubic_coeff: Float32) -> Self:
+        return Self {cubic_coeff: cubic_coeff}
+
+    @always_inline
+    fn __init__() -> Self:
+        return Self {cubic_coeff: 0}
+
+    @staticmethod
+    @always_inline
+    fn filter_length() -> Int:
+        @parameter
+        if mode == InterpolationMode.Linear:
+            return 1
+        else:
+            constrained[False, "InterpolationMode not supported"]()
+            return -1
+
+    @always_inline
+    fn filter(self, x: Float32) -> Float32:
+        @parameter
+        if mode == InterpolationMode.Linear:
+            return linear_filter(x)
+        else:
+            constrained[False, "InterpolationMode not supported"]()
+            return -1
+
+
 fn resize_nearest_neighbor[
     coordinate_transformation_mode: CoordinateTransformationMode,
     round_mode: RoundMode,
@@ -135,9 +178,12 @@ fn linear_filter(x: Float32) -> Float32:
 @always_inline
 fn interpolate_point_1d[
     coordinate_transformation_mode: CoordinateTransformationMode,
+    antialias: Bool,
     rank: Int,
     type: DType,
+    interpolation_mode: InterpolationMode,
 ](
+    interpolator: Interpolator[interpolation_mode],
     dim: Int,
     out_coords: StaticIntTuple[rank],
     scale: Float32,
@@ -147,28 +193,29 @@ fn interpolate_point_1d[
     let center = coord_transform[coordinate_transformation_mode](
         out_coords[dim], input.dim(dim), output.dim(dim), scale
     ) + 0.5
-    let xmin = max(0, floor(center - 1 + 0.5).to_int())
-    let xmax = min(input.dim(dim), floor(center + 1 + 0.5).to_int())
+    let filter_scale = 1 / scale if antialias and scale < 1 else 1
+    let support = interpolator.filter_length() * filter_scale
+    let xmin = max(0, floor(center - support + 0.5).to_int())
+    let xmax = min(input.dim(dim), floor(center + support + 0.5).to_int())
     var in_coords = out_coords
     var sum = SIMD[type, 1](0)
     var acc = SIMD[type, 1](0)
-    for k in range(0, xmax - xmin):
+    let ss = 1 / filter_scale
+    for k in range(xmax - xmin):
         in_coords[dim] = k + xmin
-        let dist_from_center = k + xmin - center + 0.5
-        let filter_coeff = linear_filter(dist_from_center).cast[type]()
+        let dist_from_center = ((k + xmin + 0.5) - center) * ss
+        let filter_coeff = interpolator.filter(dist_from_center).cast[type]()
         acc += input[in_coords] * filter_coeff
         sum += filter_coeff
 
     # normalize to handle cases near image boundary where only 1 point is used
     # for interpolation
-    for k in range(0, xmax - xmin):
-        acc /= sum
-
-    output[out_coords] = acc
+    output[out_coords] = acc / sum
 
 
 fn resize_linear[
     coordinate_transformation_mode: CoordinateTransformationMode,
+    antialias: Bool,
     rank: Int,
     type: DType,
 ](
@@ -182,6 +229,8 @@ fn resize_linear[
 
     Parameters:
         coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
+        antialias: Whether or not to use an antialiasing linear/cubic filter, which when downsampling, uses
+            more points to avoid aliasing artifacts. Effectively stretches the filter by a factor of 1 / scale.
         rank: Rank of the input and output.
         type: Type of input and output.
 
@@ -192,14 +241,15 @@ fn resize_linear[
 
 
     """
-    _resize_with_filter[linear_filter, coordinate_transformation_mode](
-        input, output, out_chain
-    )
+    _resize[
+        InterpolationMode.Linear, coordinate_transformation_mode, antialias
+    ](input, output, out_chain)
 
 
-fn _resize_with_filter[
-    filter: fn (Float32) -> Float32,
+fn _resize[
+    interpolation_mode: InterpolationMode,
     coordinate_transformation_mode: CoordinateTransformationMode,
+    antialias: Bool,
     rank: Int,
     type: DType,
 ](
@@ -210,33 +260,40 @@ fn _resize_with_filter[
     var scales = StaticTuple[rank, Float32]()
 
     var resize_dims = InlinedFixedVector[rank, Int](rank)
+    var tmp_dims = StaticIntTuple[rank](0)
     for i in range(rank):
+        # need to consider output dims when upsampling and input dims when downsampling
+        tmp_dims[i] = max(input.dim(i), output.dim(i))
+        scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
         if input.dim(i) != output.dim(i):
             resize_dims.append(i)
-        scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
+    let interpolator = Interpolator[interpolation_mode]()
 
     var in_ptr = input.data
     var out_ptr = DTypePointer[type]()
-    var out_in_use = False
-    var tmp_buffer = DTypePointer[type]()
-    # ping pong between using out_buffer and tmp_buffer to store outputs
+    var using_tmp1 = False
+    var tmp_buffer1 = DTypePointer[type]()
+    var tmp_buffer2 = DTypePointer[type]()
+    # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass accross one of the dimensions
-    if len(resize_dims) == 1:
-        out_ptr = output.data  # avoid allocating tmp_buffer
-    # last iteration must use output
-    elif len(resize_dims) % 2 == 0:
-        tmp_buffer = DTypePointer[type].alloc(output.num_elements())
-        out_ptr = tmp_buffer
-        out_in_use = False
-    else:
-        tmp_buffer = DTypePointer[type].alloc(output.num_elements())
+    if len(resize_dims) == 1:  # avoid allocating tmp_buffer
         out_ptr = output.data
-        out_in_use = True
+    if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
+        tmp_buffer1 = DTypePointer[type].alloc(tmp_dims.flattened_length())
+        out_ptr = tmp_buffer1
+        using_tmp1 = True
+    if len(resize_dims) > 2:  # need a second tmp_buffer
+        # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
+        # as long as you make sure that the last iteration uses tmp1_buffer as the input
+        # and tmp_buffer2 (output) as the output
+        tmp_buffer2 = DTypePointer[type].alloc(tmp_dims.flattened_length())
     var in_shape = input.get_shape()
     var out_shape = input.get_shape()
     # interpolation is separable, so perform 1d interpolation across each
     # interpolated dimension
     for dim_idx in range(len(resize_dims)):
+        if dim_idx == len(resize_dims) - 1:
+            out_ptr = output.data
         let resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = output.dim(resize_dim)
 
@@ -254,17 +311,23 @@ fn _resize_with_filter[
             )
             for i in range(out_shape[resize_dim]):
                 coords[resize_dim] = i
-                interpolate_point_1d[coordinate_transformation_mode](
-                    resize_dim, coords, scales[resize_dim], in_buf, out_buf
+                interpolate_point_1d[coordinate_transformation_mode, antialias](
+                    interpolator,
+                    resize_dim,
+                    coords,
+                    scales[resize_dim],
+                    in_buf,
+                    out_buf,
                 )
 
         in_shape = out_shape
         in_ptr = out_ptr
 
-        out_ptr = tmp_buffer if out_in_use else output.data
-        out_in_use = not out_in_use
+        out_ptr = tmp_buffer2 if using_tmp1 else tmp_buffer1
+        using_tmp1 = not using_tmp1
 
-    tmp_buffer.free()
+    tmp_buffer1.free()
+    tmp_buffer2.free()
     resize_dims._del_old()
 
     out_chain.mark_ready()
