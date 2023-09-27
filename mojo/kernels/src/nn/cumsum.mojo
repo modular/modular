@@ -28,7 +28,6 @@ fn cumsum[
     Parameters:
         rank: Rank of the input and output tensors.
         type: Type of the input and output tensors.
-        axis_type: The type of the axis. Should be an index or integer.
         exclusive: If set to 1, return exclusive sum (top element not included).
         reverse: If set to 1, perform cumsum operation in reverse direction.
 
