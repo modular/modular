@@ -1456,22 +1456,22 @@ struct Device:
             + "\n"
         )
         res += (
-            String("max_block: [")
-            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Z)
-            + ", "
-            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Y)
-            + ", "
-            + self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_X)
-            + "]\n"
+            String("max_block: ")
+            + Dim(
+                self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_X),
+                self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Y),
+                self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Z),
+            ).__str__()
+            + "\n"
         )
         res += (
-            String("max_grid: [")
-            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Z)
-            + ", "
-            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Y)
-            + ", "
-            + self._query(dylib, DeviceAttribute.MAX_GRID_DIM_X)
-            + "]\n"
+            String("max_grid: ")
+            + Dim(
+                self._query(dylib, DeviceAttribute.MAX_GRID_DIM_X),
+                self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Y),
+                self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Z),
+            ).__str__()
+            + "\n"
         )
 
         return res
