@@ -214,10 +214,10 @@ fn gather[
             let indices_ptr = indices._offset(indices_coords)
             let indices_remaining = (
                 end_indices_ptr.__as_index() - indices_ptr.__as_index()
-            ) // sizeof[type]()
+            ) // sizeof[indices_type]()
             # assumes that indices are layed out in row major order
             let next_idx_ptr = indices._offset(indices_coords) + min(
-                indices_remaining, prefetch_offset
+                indices_remaining - 1, prefetch_offset
             )
             input_coords[axis] = next_idx_ptr.load().to_int()
             input.prefetch[
@@ -386,7 +386,6 @@ fn gather[
         @always_inline
         @parameter
         fn input_indices_get[unrolled_i: Int]():
-            indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
             if unrolled_i == axis.get():
                 data_indices[unrolled_i] = data_index
             elif unrolled_i > axis.get():
