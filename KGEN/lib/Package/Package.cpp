@@ -27,7 +27,7 @@ M::KGEN::createElaboratedBytecodeAttr(const SymbolTable &symtab,
   for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>()) {
     // Attach a reference to the precompiled body to the KGEN::FuncOp.
     func.setPrecompiledBodyRefAttr(packageName);
-    func.setExported();
+    func.setWeakExported();
   }
 
   // Write the package bytecode to the given buffer. This will be attached to

@@ -8,7 +8,7 @@ kgen.generator @string_address(%arg0: !kgen.string) -> !kgen.pointer<scalar<si8>
   kgen.return %0 : !kgen.pointer<scalar<si8>>
 }
 
-// CHECK-LABEL: llvm.func weak @check_string_table
+// CHECK-LABEL: llvm.func @check_string_table
 kgen.generator export @check_string_table() -> (!kgen.pointer<scalar<si8>>, !kgen.string) {
   kgen.param.declare value: string = <"hello">
   // CHECK: llvm.mlir.addressof @[[STATIC_STRING:.*]] :

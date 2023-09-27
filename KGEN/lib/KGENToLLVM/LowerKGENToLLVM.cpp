@@ -27,6 +27,20 @@ using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
 
+/// Get the LLVM linkage kind for an export kind.
+static LLVM::Linkage getLinkageKind(ExportKind exportKind, bool isExternFunc) {
+  switch (exportKind) {
+  case ExportKind::NotExported:
+    return isExternFunc ? LLVM::Linkage::ExternWeak : LLVM::Linkage::Internal;
+  case ExportKind::Exported:
+  case ExportKind::CExported:
+  case ExportKind::NVVMExported:
+    return LLVM::Linkage::External;
+  case ExportKind::Weak:
+    return isExternFunc ? LLVM::Linkage::External : LLVM::Linkage::Weak;
+  }
+}
+
 namespace {
 
 //===----------------------------------------------------------------------===//
@@ -48,10 +62,9 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
       return emitError(func.getLoc(), "failed to convert func signature");
 
     // Mark all functions as internal for now - we'll clean this up later.
-    auto funcOp = createLLVMFunc(b, getTypeConverter()->getTarget(),
-                                 func.getLoc(), func.getNameAttr(), funcType,
-                                 func.isExported() ? LLVM::Linkage::Weak
-                                                   : LLVM::Linkage::Internal);
+    auto funcOp = createLLVMFunc(
+        b, getTypeConverter()->getTarget(), func.getLoc(), func.getNameAttr(),
+        funcType, getLinkageKind(func.getExportKind(), /*isExternFunc=*/false));
 
     // NVVM-exported functions get a special metadata attribute to tell LLVM
     // that these are kernel functions.
@@ -88,16 +101,15 @@ struct ConvertKGENExternFunc : public ConvertSymbolOpToLLVM<ExternFuncOp> {
     FunctionType signature = func.getFunctionType();
     TypeConverter::SignatureConversion result(signature.getNumInputs());
     Type funcType = getTypeConverter()->convertFunctionSignature(
-        signature,
-        /*isVariadic=*/false,
+        signature, /*isVariadic=*/false,
         getTypeConverter()->getOptions().useBarePtrCallConv, result);
     if (!funcType)
       return emitError(func.getLoc(), "failed to convert func signature");
 
-    auto funcOp = createLLVMFunc(rewriter, getTypeConverter()->getTarget(),
-                                 func.getLoc(), func.getNameAttr(), funcType,
-                                 func.isExported() ? LLVM::Linkage::External
-                                                   : LLVM::Linkage::ExternWeak);
+    auto funcOp = createLLVMFunc(
+        rewriter, getTypeConverter()->getTarget(), func.getLoc(),
+        func.getNameAttr(), funcType,
+        getLinkageKind(func.getExportKind(), /*isExternFunc=*/true));
 
     // Remove the function.
     symtab.remove(func);
@@ -385,7 +397,7 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
     bool isExported = global.isExported();
     auto llvmGlobal = b.replaceOpWithNewOp<LLVM::GlobalOp>(
         global, type, /*constant=*/false,
-        isExported ? LLVM::Linkage::External : LLVM::Linkage::Internal,
+        getLinkageKind(global.getExportKind(), /*isExternFunc=*/false),
         global.getSymName(), /*value=*/Attribute());
 
     // If the global is not exported, then no need to initialize it.

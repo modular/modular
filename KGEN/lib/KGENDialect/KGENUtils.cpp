@@ -1411,7 +1411,9 @@ ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {
   ExportKind value = ExportKind::NotExported;
   if (succeeded(p.parseOptionalKeyword("export"))) {
     value = ExportKind::Exported;
-    if (succeeded(p.parseOptionalKeyword("C")))
+    if (succeeded(p.parseOptionalKeyword("weak")))
+      value = ExportKind::Weak;
+    else if (succeeded(p.parseOptionalKeyword("C")))
       value = ExportKind::CExported;
     else if (succeeded(p.parseOptionalKeyword("NVVM")))
       value = ExportKind::NVVMExported;
@@ -1424,10 +1426,19 @@ void KGEN::printSymbolExport(AsmPrinter &p, Operation *op,
                              ExportKindAttr exportKind) {
   if (exportKind.getValue() != ExportKind::NotExported) {
     p << " export";
-    if (exportKind.getValue() == ExportKind::CExported)
+    switch (exportKind.getValue()) {
+    case ExportKind::Weak:
+      p << " weak";
+      break;
+    case ExportKind::CExported:
       p << " C";
-    else if (exportKind.getValue() == ExportKind::NVVMExported)
+      break;
+    case ExportKind::NVVMExported:
       p << " NVVM";
+      break;
+    default:
+      break;
+    }
   }
 }
 
@@ -1885,7 +1896,7 @@ ExportMap KGEN::getExportedSymbols(ModuleOp module) {
   for (auto op : module.getOps<ExportInterface>()) {
     if (op.isExported())
       exportedSymbols.insert(
-          {op.getLinkageNameAttr(), ExportedSymbol(op.isCExported())});
+          {op.getLinkageNameAttr(), ExportedSymbol(op.getExportKind())});
   }
   return exportedSymbols;
 }

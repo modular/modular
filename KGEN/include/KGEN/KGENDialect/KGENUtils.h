@@ -24,10 +24,9 @@ class FuncInterface;
 
 /// This struct represents the data for an exported symbol.
 struct ExportedSymbol {
-  ExportedSymbol(bool isCExport = false) : isCExport(isCExport) {}
+  ExportedSymbol(ExportKind kind) : kind(kind) {}
 
-  /// A flag indicating whether the export is a C export.
-  bool isCExport = false;
+  ExportKind kind;
 };
 
 /// This type is a bit of a mouthful, add a useful alias for it.
