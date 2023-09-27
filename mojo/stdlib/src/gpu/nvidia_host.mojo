@@ -50,16 +50,16 @@ fn _human_memory(size: Int) -> String:
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_dylib() -> Pointer[DLHandle]:
+fn _init_dylib() -> Pointer[AnyType]:
     let ptr = Pointer[DLHandle].alloc(1)
     let handle = DLHandle(CUDA_DRIVER_PATH, RTLD.NOW | RTLD.GLOBAL)
     _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
     __get_address_as_lvalue(ptr.address) = handle
-    return ptr
+    return ptr.bitcast[AnyType]()
 
 
-fn _destroy_dylib(ptr: Pointer[DLHandle]):
-    __get_address_as_lvalue(ptr.address)._del_old()
+fn _destroy_dylib(ptr: Pointer[AnyType]):
+    __get_address_as_lvalue(ptr.bitcast[DLHandle]().address)._del_old()
     ptr.free()
 
 
