@@ -82,14 +82,13 @@ from GatherScatter import (
     scatter_nd as _scatter_nd,
     scatter_nd_generator,
 )
-from Matmul import _pack_b_ndbuffer_impl
+from Matmul import (
+    pack_b_ndbuffer,
+    pack_matmul_b_shape_func,
+    pack_transposed_b_ndbuffer,
+)
 from Matmul import matmul as _matmul
 
-# from Matmul import (
-# pack_b_ndbuffer,
-# pack_matmul_b_shape_func,
-# pack_transposed_b_ndbuffer,
-# )
 from MatmulUtils import (
     GemmShape,
     _get_tile_n_k,
@@ -2811,119 +2810,3 @@ fn gather_nd[
     ](data, indices, output)
     if not single_thread_blocking_override:
         out_chain.mark_ready()
-
-
-# Temporary wrapper to override the pack_b_ndbuffer function in Matmul.mojo
-@always_inline
-fn pack_b_ndbuffer[
-    type: DType,
-](
-    b_input: NDBuffer[2, DimList.create_unknown[2](), type],
-    output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
-    out_chain: OutputChainPtr,
-):
-    """
-    Perform matmul weight packing on the given input.
-
-    Performs the layout transformation on `b_input` expected by
-    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
-    `output_buffer`.
-
-    Parameters:
-        type: The data type of elements inside `b_input`.
-
-    Args:
-        b_input: Input buffer that contains the weight to be packed.
-        output_buffer: Output buffer to store the packed weight.
-        out_chain: The to signal when writes to output buffer have finished.
-    """
-    # a_type and ctype are not provided yet so for now we only use the b_type
-    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
-    alias a_type = DType.uint8 if use_vnni else type
-    alias b_type = type
-    alias c_type = DType.int32 if use_vnni else type
-
-    _pack_b_ndbuffer_impl[a_type, type, c_type, False](
-        b_input, output_buffer, out_chain
-    )
-
-
-# Temporary wrapper to override the pack_transposed_b_ndbuffer function in Matmul.mojo
-@always_inline
-fn pack_transposed_b_ndbuffer[
-    type: DType,
-](
-    b_input: NDBuffer[2, DimList.create_unknown[2](), type],
-    output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
-    out_chain: OutputChainPtr,
-):
-    """
-    Perform matmul weight packing on a transposed input.
-
-    Performs the layout transformation on `b_input` expected by
-    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
-    `output_buffer`. This also un-transposes `b_input`.
-
-    Parameters:
-        type: The data type of elements inside `b_input`.
-
-    Args:
-        b_input: Input buffer that contains the transposed weight to be packed.
-        output_buffer: Output buffer to store the packed weight.
-        out_chain: The to signal when writes to output buffer have finished.
-    """
-    # a_type and ctype are not provided yet so for now we only use the b_type
-    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
-    alias a_type = DType.uint8 if use_vnni else type
-    alias b_type = type
-    alias c_type = DType.int32 if use_vnni else type
-
-    _pack_b_ndbuffer_impl[a_type, type, c_type, True](
-        b_input, output_buffer, out_chain
-    )
-
-
-# Temporary wrapper to override the pack_matmul_b_shape_func function in Matmul.mojo
-fn pack_matmul_b_shape_func[
-    type: DType,
-    transpose_in_0: Bool,
-    single_thread_blocking_override: Bool,
-](b_input: NDBuffer[2, DimList.create_unknown[2](), type],) -> StaticIntTuple[
-    2
-]:
-    """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
-    argument.
-
-    If transpose_b is True, this returns the un-transposed shape, since pack_b
-    will un-transpose `b_ref` as part of the packing layout transformation."""
-
-    # a_type and ctype are not provided yet so for now we only use the b_type
-    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
-    alias a_type = DType.uint8 if use_vnni else type
-    alias b_type = type
-    alias c_type = DType.int32 if use_vnni else type
-
-    var output = StaticIntTuple[2]()
-
-    let k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
-    var tile_n_k = StaticIntTuple[2]()
-
-    if is_critical_stride(k):
-        alias config = search_mm_config[a_type, b_type, c_type, True, True]()
-        tile_n_k = _get_tile_n_k[config, transpose_in_0, type](b_input)
-    else:
-        alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
-        tile_n_k = _get_tile_n_k[config2, transpose_in_0, type](b_input)
-
-    @parameter
-    if transpose_in_0:
-        output[0] = b_input.dim(1)
-        output[1] = b_input.dim(0)
-    else:
-        output[0] = b_input.dim(0)
-        output[1] = b_input.dim(1)
-
-    output[0] = div_ceil(output[0], tile_n_k[1]) * tile_n_k[1]
-    output[1] = div_ceil(output[1], tile_n_k[0]) * tile_n_k[0]
-
-    return output
