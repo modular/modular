@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s --lower-runtime-closures -allow-unregistered-dialect | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @take_closure_no_args
   llvm.func @take_closure_no_args(%arg0: !llvm.struct<(ptr, ptr)>) {
     // CHECK: %1 = llvm.extractvalue %arg0[0] : !llvm.struct<(ptr, ptr)>

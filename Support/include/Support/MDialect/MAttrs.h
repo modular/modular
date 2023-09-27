@@ -338,7 +338,7 @@ void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 TargetInfoAttr lookupTargetInfo(Operation *from);
 /// Get the target info for the specified target.
 ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
-                                         StringRef targetTriple, StringRef cpu,
+                                         StringRef targetTriple, StringRef arch,
                                          StringRef features,
                                          StringRef tuneCpu = "");
 

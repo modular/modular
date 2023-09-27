@@ -1,6 +1,6 @@
 // RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: @stack_allocation
 kgen.func @stack_allocation(%cond: i1) {
@@ -76,7 +76,7 @@ kgen.func @stack_allocation_insertion(%v: !pop.simd<1, si32>) {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="p:64:64", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
   // CHECK-LABEL @allocate_64_bit
   kgen.func @allocate_64_bit() {
     // CHECK: lifetime.start 8, {{.*}}
@@ -87,7 +87,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="p:32:32", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:32:32", simd_bit_width=128>} {
   // CHECK-LABEL @allocate_32_bit
   kgen.func @allocate_32_bit() {
     // CHECK: lifetime.start 4, {{.*}}

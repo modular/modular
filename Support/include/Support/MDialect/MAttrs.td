@@ -280,15 +280,22 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
   let summary = "Target configuration attribute.";
   let description = [{
     The `#M.target` attribute represents a compilation target configuration. It
-    contains the target triple, optional CPU type, optional features,
-    and derived data such as data layout and SIMD width.
+    contains the target triple, microarchitecture, optional features, and
+    derived data such as data layout and SIMD width.
+
+    The microarchitecture and features may encode version numbers, such as
+    'sm_80' for CUDA compute capability 8.0. When deciding if a runtime host
+    supports a compile time microarchitecutre or feature it may be necessary
+    to compare these versions numerically rather than textually.
+
+    Features are encoded in the form of "+feature1,+feature2".
 
     Example:
     ```mlir
-    #M.target<triple="x86_64-unknown-linux-gnu", cpu="znver3",
+    #M.target<triple="x86_64-unknown-linux-gnu", arch="znver3",
               features="+avx,+avx2", data_layout="p:64:64-i64:64:64",
               simd_bit_width=256>
-    #M.target<triple="nvptx64-nvidia-cuda", features="+compute_80">
+    #M.target<triple="nvptx64-nvidia-cuda", arch="sm_80">
     ```
 
     Can be (partially) represented at runtime by M::TargetInfo.
@@ -296,7 +303,7 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
 
   let parameters = (ins
     "llvm::Triple":$triple,
-    OptionalStringRefParameter:$cpu,
+    StringRefParameter<>:$arch,
     OptionalStringRefParameter:$features,
     OptionalDataLayoutParameter:$data_layout,
     DefaultValuedParameter<"int64_t", "0">:$simd_bit_width,
@@ -379,7 +386,7 @@ def M_DeviceSpecAttr : MAttr<"DeviceSpec", "device_spec"> {
 
     ```mlir
     #M.device_spec<ref = <"cuda", 1>,
-                   target = <triple="nvptx64-nvidia-cuda", features="+compute_80">>
+                   target = <triple="nvptx64-nvidia-cuda", arch="sm_80">>
     ```
 
     Can be represented at runtime by M::DeviceSpec.
@@ -409,10 +416,10 @@ def M_DeviceSpecCollectionAttr : MAttr<"DeviceSpecCollection", "device_spec_coll
     #M.device_spec_collection<
       host = <"cpu", 0>,
       devices = [<ref = <"cpu", 0>,
-                  target = <triple="x86_64-unknown-linux-gnu", cpu="znver3",
+                  target = <triple="x86_64-unknown-linux-gnu", arch="znver3",
                             features="+avx2">>,
                  <ref = <"cuda", 1>,
-                  target = <triple="nvptx64-nvidia-cuda", features="+compute_80">>]>
+                  target = <triple="nvptx64-nvidia-cuda", arch="sm_80">>]>
     ```
 
     Encoded into MEF as JSON in string form.

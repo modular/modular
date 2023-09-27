@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-kgen-to-llvm -split-input-file %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128, tune_cpu="skylake-avx512">} {
+module attributes {M.target_info = #M.target<triple="", arch="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128, tune_cpu="skylake-avx512">} {
 
 // CHECK-LABEL: llvm.func internal @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)
@@ -135,14 +135,14 @@ kgen.extern.func @external_func() -> () from @libc
 // -----
 
 // COM: Don't generate globals where there are none.
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-NOT: llvm.mlir.global_ctors
   // CHECK-NOT: llvm.mlir.global_dtors
 }
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK: llvm.mlir.global_ctors {ctors = [@foo_c, @bar_c, @noop], priorities = [2 : i32, 5 : i32, 0 : i32]}
   // CHECK: llvm.mlir.global_dtors {dtors = [@foo_d, @bar_d, @noop], priorities = [2 : i32, 5 : i32, 0 : i32]}
   llvm.func @foo_c() {
@@ -174,7 +174,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-module attributes {M.build_info = #M.build_info<buildType = "relwithdebinfo", kernelsBuildType = "Release", lLCLMaxProfilingLevel = 0>, M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", cpu = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+module attributes {M.build_info = #M.build_info<buildType = "relwithdebinfo", kernelsBuildType = "Release", lLCLMaxProfilingLevel = 0>, M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
 // CHECK-LABEL: llvm.func weak @kernel() attributes {nvvm.kernel
 kgen.func export NVVM @kernel() {
   kgen.return

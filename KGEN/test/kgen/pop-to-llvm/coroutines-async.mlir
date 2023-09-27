@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -split-input-file -lower-coroutines-async -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: llvm.func @coro_promise
 llvm.func @coro_promise() {
@@ -48,7 +48,7 @@ llvm.func @coro_destroy() {
 
 #loc = loc(fused<#subprogram>["foo.mlir":17:8])
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: llvm.func internal @async_fn_af.suspend
 // CHECK-SAME: (%arg0: i64 loc({{.*}}))
@@ -169,7 +169,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 #subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 41, scopeLine = 41, subprogramFlags = "Definition|Optimized"> : !subroutine
 #loc8 = loc(fused<#subprogram>["foo.mlir":41:11])
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   llvm.func internal @foo() -> !llvm.ptr<i8> {
     %0 = pop.coroutine.handle : <() -> index> loc(#loc8)
     %1 = builtin.unrealized_conversion_cast %0 : !pop.coroutine<() -> index> to !llvm.ptr<i8> loc(#loc8)

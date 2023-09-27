@@ -37,14 +37,14 @@
 
 // expected-error@+1 {{#M.device_spec_collection does not contain a device spec with the host device reference 'foo:0'.}}
 "M"() {a = #M.device_spec_collection<host = <"foo", 0>,
-                                     devices = [<ref = <"bar", 0>, target = <triple="x86_64-unknown-linux-gnu", cpu="znver3", features="+avx2">>]>} : () -> ()
+                                     devices = [<ref = <"bar", 0>, target = <triple="x86_64-unknown-linux-gnu", arch="znver3", features="+avx2">>]>} : () -> ()
 
 // -----
 
 // expected-error@+1 {{#M.device_spec_collection contains duplicate device specs for the device reference 'cpu:1'.}}
 "M"() {a = #M.device_spec_collection<host = <"cpu", 1>,
-                                     devices = [<ref = <"cpu", 1>, target = <triple="x86_64-unknown-linux-gnu", cpu="znver3", features="+avx2">>,
-                                                <ref = <"cpu", 1>, target = <triple="x86_64-unknown-linux-gnu", cpu="znver4", features="+avx2">>]>} : () -> ()
+                                     devices = [<ref = <"cpu", 1>, target = <triple="x86_64-unknown-linux-gnu", arch="znver3", features="+avx2">>,
+                                                <ref = <"cpu", 1>, target = <triple="x86_64-unknown-linux-gnu", arch="znver4", features="+avx2">>]>} : () -> ()
 
 // -----
 

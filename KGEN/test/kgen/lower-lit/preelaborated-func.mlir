@@ -2,7 +2,7 @@
 // RUN: kgen-opt -test-generate-elaborated-body -lower-lit %s | FileCheck %s --check-prefix=LOWER_LIT
 // RUN: kgen-opt -test-generate-elaborated-body -lower-lit -lower-preelaborated-lit %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 // The `doNotExtern` attribute is a marker for the test pass - it won't attempt to generate a kgen.func for this lit.func.
 // ATTACH-LABEL: lit.func @caller
 // ATTACH-NOT: preCompiledModuleRef
@@ -65,7 +65,7 @@ lit.func @different_precompiled_func(%arg0: index) -> index {
 
 // CHECK-NOT: kgen.link dense_resource<compile_invalid_target_generated_body_attr> {{.*}} as @compile_invalid_target
 // CHECK-LABEL: kgen.func @compile_invalid_target_precompiled
-lit.func @compile_invalid_target(%arg0: index) -> index attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=256>}  {
+lit.func @compile_invalid_target(%arg0: index) -> index attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=256>}  {
   kgen.return %arg0 : index
 }
 }

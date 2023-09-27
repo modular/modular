@@ -1024,7 +1024,7 @@ TargetInfoAttr M::lookupTargetInfo(Operation *from) {
 
 ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
                                             StringRef targetTriple,
-                                            StringRef cpu, StringRef features,
+                                            StringRef arch, StringRef features,
                                             StringRef tuneCpu) {
   std::string errorMessage;
   const llvm::Target *target =
@@ -1033,7 +1033,7 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
     return Error("could not construct host target info: " + errorMessage);
 
   std::unique_ptr<llvm::TargetMachine> machine(
-      target->createTargetMachine(targetTriple, cpu, features, /*Options=*/{},
+      target->createTargetMachine(targetTriple, arch, features, /*Options=*/{},
                                   /*RM=*/llvm::Reloc::Model::PIC_));
   if (!machine)
     return Error("failed to create target machine for data layout lookup");
@@ -1043,7 +1043,7 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
   assert(!dl.isError() && "failed to parse LLVM data layout?");
 
   // Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, features,
+  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), arch, features,
                              std::move(*dl), simdWidthFromFeatures(features),
                              tuneCpu);
 }
@@ -1051,7 +1051,7 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
 ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
   TargetInfo result;
   result.triple = targetInfoAttr.getTriple();
-  result.cpu = targetInfoAttr.getCpu();
+  result.arch = targetInfoAttr.getArch();
 
   auto errOr = decodeFeatures(targetInfoAttr.getFeatures());
   if (errOr)
@@ -1065,7 +1065,7 @@ ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
 TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
                                         const TargetInfo &runtimeTargetInfo) {
   return TargetInfoAttr::get(
-      ctx, runtimeTargetInfo.triple, runtimeTargetInfo.cpu,
+      ctx, runtimeTargetInfo.triple, runtimeTargetInfo.arch,
       encodeFeatures(runtimeTargetInfo.features),
       /*data_layout=*/{}, /*simd_bit_width=*/0, /*tune_cpu=*/{});
 }

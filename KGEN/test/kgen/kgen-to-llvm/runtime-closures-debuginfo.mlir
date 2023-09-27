@@ -32,7 +32,7 @@
 // CHECK-DAG: #[[LOC6:.*]] = loc(callsite(#[[LOC3]] at #[[LOC4]]))
 // CHECK-DAG: #[[LOC7:.*]] = loc(callsite(#[[LOC5]] at #[[LOC4]]))
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   llvm.func @h(%arg0: i64) -> i64 {
     llvm.return %arg0 : i64
   }
@@ -72,9 +72,3 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 // CHECK: #[[SUB_PROG2:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit1, scope = #file, name = "closure_wrapper_fn_0", linkageName = "closure_wrapper_fn_0", file = #file, line = 48, scopeLine = 48, subprogramFlags = Definition> : !subroutine1
 // CHECK: #[[CLOSURE_WRAPPER_FN_LOC]] = loc(fused<#[[SUB_PROG1]]>[#[[LOC0]]])
 // CHECK: #[[CLOSURE_WRAPPER_FN_LOC0]] = loc(fused<#[[SUB_PROG2]]>[#[[LOC2]]])
-
-
-
-
-
-

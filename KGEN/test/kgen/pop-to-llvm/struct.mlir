@@ -2,7 +2,7 @@
 
 !struct1 = !pop.struct<struct<f32>, array<4, f32>>
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: @struct_construct
 kgen.func @struct_construct(%a: !pop.struct<f32>, %b: !pop.array<4, f32>) -> !struct1 {

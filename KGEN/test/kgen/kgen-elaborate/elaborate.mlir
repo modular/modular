@@ -1942,7 +1942,7 @@ kgen.generator export @interpret_concrete() {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="foobar", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="foobar", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @custom_target
   kgen.generator @custom_target() {
     // CHECK: constant: i1 = <1>

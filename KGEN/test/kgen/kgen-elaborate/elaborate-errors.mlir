@@ -69,7 +69,7 @@ kgen.generator @unfoldableIndex() {
 
 // -----
 
-#target = #kgen.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128> : !kgen.target
+#target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{no viable expansions found}}
 kgen.generator @sizeof_unknown() {

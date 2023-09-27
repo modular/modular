@@ -91,7 +91,7 @@ def DataLayout :
 
 def TargetInfoAttr : DialectAttribute<(attr
   LLVMTriple:$triple,
-  String:$cpu,
+  String:$arch,
   String:$features,
   DataLayout:$data_layout,
   SignedVarInt:$simd_bit_width,

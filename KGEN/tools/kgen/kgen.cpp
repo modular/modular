@@ -256,7 +256,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       mlir::emitWarning(theModule->getLoc(),
                         "overriding module target specification with -march");
     } else if (target.getTripleStr() != clOptions.targetTriple ||
-               target.getCpu() != clOptions.targetCpu ||
+               target.getArch() != clOptions.targetCpu ||
                target.getFeatures() != clOptions.targetFeatures) {
       mlir::emitWarning(theModule->getLoc(),
                         "module target does not match command line "
@@ -298,7 +298,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure(clOptions.reportError(targetOr.getError()));
     target = targetOr.takeValue();
     options.targetTriple = target.getTripleStr();
-    options.targetCpu = target.getCpu();
+    options.targetCpu = target.getArch();
     options.targetFeatures = target.getFeatures();
   }
   // Detect cross-compilation by checking whether the target CPU is the same as

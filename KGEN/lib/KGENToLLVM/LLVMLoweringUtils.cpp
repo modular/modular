@@ -112,7 +112,7 @@ ArrayAttr KGEN::attachTargetPassthroughAttrs(OpBuilder &b,
     llvm::append_range(attrs, passthrough);
   // Attach the target info attributes.
   attrs.push_back(b.getArrayAttr(
-      {b.getStringAttr("target-cpu"), b.getStringAttr(target.getCpu())}));
+      {b.getStringAttr("target-cpu"), b.getStringAttr(target.getArch())}));
   attrs.push_back(b.getArrayAttr({b.getStringAttr("target-features"),
                                   b.getStringAttr(target.getFeatures())}));
   if (!target.getTuneCpu().empty())
