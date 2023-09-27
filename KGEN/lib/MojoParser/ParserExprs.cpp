@@ -109,6 +109,7 @@ private:
   ParseResult parsePrefixLBrace(DictionaryNode *&result, SMLoc lbraceLoc,
                                 bool isSubscript);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
+  FailureOr<Operand> parseOperand();
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
   ParseResult parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
@@ -740,6 +741,42 @@ ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
   return success();
 }
 
+/// Parses an operand expression.
+FailureOr<Operand> ExprParser::parseOperand() {
+  ExprNode *value;
+  SMLoc startLoc = getToken().getLoc();
+  if (consumeIf(Token::star)) {
+    if (failed(parseExpression(value)))
+      return failure();
+    return Operand(value, startLoc, Operand::kStar);
+  }
+  if (consumeIf(Token::star_star)) {
+    if (failed(parseExpression(value)))
+      return failure();
+    return Operand(value, startLoc, Operand::kStarStar);
+  }
+
+  // Check for a keyword argument.  We need look-ahead to determine whether
+  // the token after the identifier is an equal sign.
+  if (getToken().isIdentifier()) {
+    auto cursor = lexer.getCursor();
+    StringAttr name;
+    (void)parseIdentifier(name, "<<already know this is identifier>>");
+    if (consumeIf(Token::equal)) {
+      if (failed(parseExpression(value)))
+        return failure();
+      return Operand(value, startLoc, Operand::kKeyword, name);
+    }
+    // Otherwise, we consumed the base expression, just pop it back off.
+    cursor.restore(lexer);
+  }
+
+  // Parse this as an assignment_expression, allowing := operator.
+  if (failed(parseExpression(value, Precedence::kAssignExpr)))
+    return failure();
+  return Operand(value, startLoc, Operand::kPositional);
+};
+
 /// call ::=  primary "(" [argument_list [","] | comprehension] ")"
 /// argument_list ::= argument ("," argument)*
 /// argument      ::= assignment_expression
@@ -751,7 +788,7 @@ ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
 /// just that you can't have position arguments after keyword arguments. This
 /// is easier to enforce imperatively than with BNF.
 ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
-  SmallVector<CallArgument> args;
+  SmallVector<Operand> operands;
   SMLoc rparenLoc;
   if (!consumeIf(Token::r_paren, &rparenLoc)) {
     // Expressions continue maximally because we are within ()'s.
@@ -759,32 +796,11 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
 
     // Parse an argument.
     auto parseArgument = [&]() -> ParseResult {
-      CallArgument &arg = args.emplace_back(CallArgument());
-
-      if (consumeIf(Token::star)) {
-        arg.kind = CallArgument::kStar;
-        return parseExpression(arg.expr);
-      }
-      if (consumeIf(Token::star_star)) {
-        arg.kind = CallArgument::kStarStar;
-        return parseExpression(arg.expr);
-      }
-
-      // Check for a keyword argument.  We need look-ahead to determine whether
-      // the token after the identifier is an equal sign.
-      if (getToken().isIdentifier()) {
-        auto cursor = lexer.getCursor();
-        (void)parseIdentifier(arg.name, "<<already know this is identifier>>");
-        if (consumeIf(Token::equal)) {
-          arg.kind = CallArgument::kKeyword;
-          return parseExpression(arg.expr);
-        }
-        // Otherwise, we consumed the base expression, just pop it back off.
-        cursor.restore(lexer);
-      }
-
-      // Parse this as an assignment_expression, allowing := operator.
-      return parseExpression(arg.expr, Precedence::kAssignExpr);
+      FailureOr<Operand> operandOr = parseOperand();
+      if (failed(operandOr))
+        return failure();
+      operands.emplace_back(std::move(*operandOr));
+      return success();
     };
 
     // TODO: Handle comprehension argument.
@@ -799,20 +815,19 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   // just that you can't have positional arguments after keyword arguments. This
   // is easier to enforce with a bool than with BNF.
   bool sawKeywordArg = false;
-  for (auto &arg : args) {
+  for (const Operand &operand : operands) {
     // We have a positional / non-keyword argument.  Python syntactically
     // rejects these to reduce ambiguity so we do the same.
-    if (arg.kind == CallArgument::kPositional && sawKeywordArg) {
-      emitError(arg.getLoc(), "positional argument follows keyword argument");
+    if (operand.isPositional() && sawKeywordArg) {
+      emitError(operand.getLoc(),
+                "positional argument follows keyword argument");
       return failure();
     }
-    if (arg.kind == CallArgument::kKeyword ||
-        arg.kind == CallArgument::kStarStar)
-      sawKeywordArg = true;
+    sawKeywordArg |= operand.isKeywordOrUnpackedKeyword();
   }
 
   // Otherwise we're good to go.
-  result = alloc<CallNode>(result, lparenLoc, copyArrayRef<CallArgument>(args),
+  result = alloc<CallNode>(result, lparenLoc, copyArrayRef<Operand>(operands),
                            rparenLoc);
   return success();
 }
