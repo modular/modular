@@ -17,6 +17,7 @@ from sys.info import alignof, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import unroll, vectorize
+from pathlib import Path
 from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple
@@ -357,6 +358,16 @@ struct Buffer[size: Dim, type: DType]:
             val: The value to store.
         """
         self.simd_fill[simdwidthof[type]()](val)
+
+    @always_inline
+    fn write_file(self, path: Path) raises:
+        """Write values to a file.
+
+        Args:
+            path: Path to the output file.
+        """
+        with open(path.__str__(), "w") as f:
+            f._write(self.data.bitcast[DType.int8](), self.bytecount())
 
     @staticmethod
     @always_inline
@@ -1340,6 +1351,16 @@ struct NDBuffer[
             self.zero()
             return
         self.flatten().simd_fill[simd_width](val)
+
+    @always_inline
+    fn write_file(self, path: Path) raises:
+        """Write values to a file.
+
+        Args:
+            path: Path to the output file.
+        """
+        with open(path.__str__(), "w") as f:
+            f._write(self.data.bitcast[DType.int8](), self.bytecount())
 
     @always_inline
     fn fill(self, val: SIMD[type, 1]):
