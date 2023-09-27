@@ -448,7 +448,7 @@ class LineGenerator(Visitor[Line]):
         else:
             self.visit_except_clause = partial(v, keywords={"except"}, parens=Ø)
             self.visit_with_stmt = partial(v, keywords={"with"}, parens=Ø)
-        self.visit_classdef = partial(v, keywords={"class"}, parens=Ø, nodeTypes={token.STRUCT})
+        self.visit_classdef = partial(v, keywords={"class"}, parens=Ø, nodeTypes={token.STRUCT, token.TRAIT})
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(v, keywords={"return"}, parens={"return"})
         self.visit_import_from = partial(v, keywords=Ø, parens={"import"})

@@ -146,6 +146,7 @@ class Line:
                 and self.leaves[0].value == "class"
             )
             or self.leaves[0].type == token.STRUCT
+            or self.leaves[0].type == token.TRAIT
         )
 
     @property

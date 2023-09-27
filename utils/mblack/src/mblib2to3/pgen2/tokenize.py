@@ -481,6 +481,7 @@ def generate_tokens(
         "owned": OWNED,
         "borrowed": BORROWED,
         "inout": INOUT,
+        "trait": TRAIT,
     }
 
     strstart: Tuple[int, int]
