@@ -2028,12 +2028,12 @@ struct Function:
                 # fmt: on
             ]("cuLaunchKernel")(
                 self.handle,
-                UInt32(grid_dim.z()),
-                UInt32(grid_dim.y()),
                 UInt32(grid_dim.x()),
-                UInt32(block_dim.z()),
-                UInt32(block_dim.y()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
                 UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
                 UInt32(0),
                 _StreamImpl(),
                 args,
