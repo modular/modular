@@ -1508,6 +1508,57 @@ struct Device:
 
 
 # ===----------------------------------------------------------------------===#
+# Stream
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct _StreamImpl:
+    var handle: DTypePointer[DType.invalid]
+
+    fn __init__() -> Self:
+        return Self {handle: DTypePointer[DType.invalid]()}
+
+    fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
+        return Self {handle: handle}
+
+    fn __bool__(self) -> Bool:
+        return self.handle.__bool__()
+
+
+struct Stream:
+    var stream: _StreamImpl
+
+    fn __init__(inout self, flags: Int = 0) raises:
+        var stream = _StreamImpl()
+
+        _check_error(
+            _get_dylib_function[fn (Pointer[_StreamImpl], Int32) -> Result](
+                "cuStreamCreate_v2"
+            )(Pointer.address_of(stream), Int32(0))
+        )
+
+        self.stream = stream
+
+    fn __del__(owned self) raises:
+        if self.stream:
+            _check_error(
+                _get_dylib_function[fn (_StreamImpl) -> Result](
+                    "cuStreamDestroy_v2"
+                )(self.stream)
+            )
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.stream = existing.stream
+        existing.stream = _StreamImpl()
+
+    fn __takeinit__(inout self, inout existing: Self):
+        self.stream = existing.stream
+        existing.stream = _StreamImpl()
+
+
+# ===----------------------------------------------------------------------===#
 # Context
 # ===----------------------------------------------------------------------===#
 
@@ -1963,28 +2014,28 @@ struct Function:
                 # fmt: off
                 fn (
                   Function,
-                  UInt32,
-                  UInt32,
-                  UInt32,
-                  UInt32,
-                  UInt32,
-                  UInt32,
-                  UInt32,
-                  DTypePointer[DType.invalid],
-                  Pointer[Pointer[AnyType]],
-                  DTypePointer[DType.invalid]
+                  UInt32, # GridDimZ
+                  UInt32, # GridDimY
+                  UInt32, # GridDimX
+                  UInt32, # BlockDimZ
+                  UInt32, # BlockDimY
+                  UInt32, # BlockDimX
+                  UInt32, # SharedMemSize
+                  _StreamImpl, # Stream
+                  Pointer[Pointer[AnyType]], # Args
+                  DTypePointer[DType.invalid] # Extra
                 ) -> Result
                 # fmt: on
             ]("cuLaunchKernel")(
                 self.handle,
-                UInt32(grid_dim[2]),
-                UInt32(grid_dim[1]),
-                UInt32(grid_dim[0]),
-                UInt32(block_dim[2]),
-                UInt32(block_dim[1]),
-                UInt32(block_dim[0]),
+                UInt32(grid_dim.z()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.x()),
+                UInt32(block_dim.z()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.x()),
                 UInt32(0),
-                DTypePointer[DType.invalid](),
+                _StreamImpl(),
                 args,
                 DTypePointer[DType.invalid](),
             )
@@ -2005,10 +2056,10 @@ struct Dim:
         return Self(dims.get[0, Int]())
 
     fn __init__(dims: Tuple[Int, Int]) -> Self:
-        return Self(dims.get[0, Int](), dims.get[1, Int]())
+        return Self(dims.get[1, Int](), dims.get[0, Int]())
 
     fn __init__(dims: Tuple[Int, Int, Int]) -> Self:
-        return Self(dims.get[0, Int](), dims.get[1, Int](), dims.get[2, Int]())
+        return Self(dims.get[2, Int](), dims.get[1, Int](), dims.get[0, Int]())
 
     fn __init__(z: Int, y: Int, x: Int) -> Self:
         return Self {_value: Index(x, y, z)}
@@ -2023,16 +2074,25 @@ struct Dim:
         return self._value[idx]
 
     fn __str__(self) -> String:
-        var res = String("(") + String(self[0]) + String(", ")
-        if self[1] != 1 or self[2] != 1:
-            res += String(self[1])
-        if self[2] != 1:
-            res += String(", ") + String(self[2])
+        var res = String("(") + String(self.x()) + String(", ")
+        if self.y() != 1 or self.z() != 1:
+            res += String(self.y())
+            if self.z() != 1:
+                res += String(", ") + String(self.z())
         res += String(")")
         return res
 
     fn __repr__(self) -> String:
         return self.__str__()
+
+    fn z(self) -> Int:
+        return self[2]
+
+    fn y(self) -> Int:
+        return self[1]
+
+    fn x(self) -> Int:
+        return self[0]
 
 
 # ===----------------------------------------------------------------------===#
@@ -2041,9 +2101,9 @@ struct Dim:
 
 
 fn _malloc[type: AnyType](count: Int) raises -> Pointer[type]:
-    var ptr = Pointer[AnyType]()
+    var ptr = Pointer[UInt32]()
     _check_error(
-        _get_dylib_function[fn (Pointer[Pointer[AnyType]], Int) -> Result](
+        _get_dylib_function[fn (Pointer[Pointer[UInt32]], Int) -> Result](
             "cuMemAlloc_v2"
         )(Pointer.address_of(ptr), count * sizeof[type]())
     )
@@ -2052,21 +2112,21 @@ fn _malloc[type: AnyType](count: Int) raises -> Pointer[type]:
 
 fn _free[type: AnyType](ptr: Pointer[type]) raises:
     _check_error(
-        _get_dylib_function[fn (Pointer[AnyType]) -> Result]("cuMemFree_v2")(
-            ptr.bitcast[AnyType]()
+        _get_dylib_function[fn (Pointer[UInt32]) -> Result]("cuMemFree_v2")(
+            ptr.bitcast[UInt32]()
         )
     )
 
 
 fn _copy_host_to_device[
     type: AnyType
-](dest: Pointer[type], src: Pointer[type], count: Int) raises:
+](device_dest: Pointer[type], host_src: Pointer[type], count: Int) raises:
     _check_error(
         _get_dylib_function[
-            fn (Pointer[AnyType], Pointer[AnyType], Int) -> Result
+            fn (Pointer[UInt32], Pointer[AnyType], Int) -> Result
         ]("cuMemcpyHtoD_v2")(
-            dest.bitcast[AnyType](),
-            src.bitcast[AnyType](),
+            device_dest.bitcast[UInt32](),
+            host_src.bitcast[AnyType](),
             count * sizeof[type](),
         )
     )
@@ -2074,13 +2134,22 @@ fn _copy_host_to_device[
 
 fn _copy_device_to_host[
     type: AnyType
-](dest: Pointer[type], src: Pointer[type], count: Int) raises:
+](host_dest: Pointer[type], device_src: Pointer[type], count: Int) raises:
     _check_error(
         _get_dylib_function[
-            fn (Pointer[AnyType], Pointer[AnyType], Int) -> Result
+            fn (Pointer[AnyType], Pointer[UInt32], Int) -> Result
         ]("cuMemcpyDtoH_v2")(
-            dest.bitcast[AnyType](),
-            src.bitcast[AnyType](),
+            host_dest.bitcast[AnyType](),
+            device_src.bitcast[UInt32](),
             count * sizeof[type](),
         )
     )
+
+
+# ===----------------------------------------------------------------------===#
+# Synchronize
+# ===----------------------------------------------------------------------===#
+
+
+fn synchronize() raises:
+    _check_error(_get_dylib_function[fn () -> Result]("cuCtxSynchronize")())
