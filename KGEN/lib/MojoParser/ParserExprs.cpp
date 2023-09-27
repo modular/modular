@@ -69,7 +69,7 @@ public:
              std::optional<size_t> stmtIndent)
       : ParserBase(shared, lexer), stmtIndent(stmtIndent) {}
 
-  ~ExprParser() {}
+  ~ExprParser() = default;
 
   // Expressions.
   ParseResult parseStarredList(SmallVectorImpl<ExprNode *> &results,
@@ -251,9 +251,9 @@ struct InfixInfo {
 /// specifies the minimum precedence that binary sub-expression must have to be
 /// included.  Anything looser than the specified precedence is left for a
 /// parent expression to parse.
-ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
+ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
   // Parse any prefix expression like -1.
-  if (parsePrimaryExpr(expr))
+  if (parsePrimaryExpr(result))
     return failure();
 
   // Consume infix tokens until we meet a token whose tokPrecedence is equal or
@@ -277,7 +277,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
                      "expecting an 'else' followed by an expression") ||
           parseExpression(falseExpr, Precedence::kBoolOr))
         return failure();
-      expr = alloc<IfElseOpNode>(expr, binOpLoc, cond, elseLoc, falseExpr);
+      result = alloc<IfElseOpNode>(result, binOpLoc, cond, elseLoc, falseExpr);
       infixInfo = InfixInfo::get(getToken().getKind());
       continue;
     }
@@ -305,8 +305,8 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
     // Comparison operators get special handling to treat 'a < b < c' as a
     // ChainedCmpOpNode.
     if (infixInfo.precedence != Precedence::kComparison)
-      expr = alloc<BinOpNode>(infixInfo.nodeKind, expr, binOpLoc, rhs);
-    else if (parseComparisonExpr(expr, rhs, infixInfo.nodeKind, binOpLoc))
+      result = alloc<BinOpNode>(infixInfo.nodeKind, result, binOpLoc, rhs);
+    else if (parseComparisonExpr(result, rhs, infixInfo.nodeKind, binOpLoc))
       return failure();
     infixInfo = InfixInfo::get(getToken().getKind());
   }
@@ -314,27 +314,27 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
 }
 
 /// starred_item ::= assignment_expression | '*' bitwise_or
-ParseResult ExprParser::parseStarredItem(ExprNode *&expr) {
+ParseResult ExprParser::parseStarredItem(ExprNode *&result) {
   SMLoc starLoc;
   if (consumeIf(Token::star, &starLoc)) {
-    if (parseExpression(expr, Precedence::kOr))
+    if (parseExpression(result, Precedence::kOr))
       return failure();
-    expr = alloc<UnaryOpNode>(ExprNode::kUnpack, starLoc, expr);
+    result = alloc<UnaryOpNode>(ExprNode::kUnpack, starLoc, result);
     return success();
   }
 
-  return parseExpression(expr, Precedence::kAssignExpr);
+  return parseExpression(result, Precedence::kAssignExpr);
 }
 
 /// Parse a chained comparison expression (ex. a < b < c) starting from the
 /// first comparison given as input:
 /// expr is the lhs and kind specifies the type of comparison, ex. kCmpLT.
 /// This function returns in expr a ChainedCmpOpNode on success.
-ParseResult ExprParser::parseComparisonExpr(ExprNode *&expr, ExprNode *rhs,
+ParseResult ExprParser::parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
                                             ExprNode::Kind kind, SMLoc loc) {
   SmallVector<ExprNode *> exprs;
   SmallVector<ExprNode::Kind> ops;
-  exprs.push_back(expr);
+  exprs.push_back(result);
   exprs.push_back(rhs);
   ops.push_back(kind);
   InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
@@ -348,8 +348,8 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&expr, ExprNode *rhs,
     ops.push_back(infixInfo.nodeKind);
     infixInfo = InfixInfo::get(getToken().getKind());
   }
-  expr = alloc<ChainedCmpOpNode>(copyArrayRef<ExprNode *>(exprs),
-                                 copyArrayRef<ExprNode::Kind>(ops), loc);
+  result = alloc<ChainedCmpOpNode>(copyArrayRef<ExprNode *>(exprs),
+                                   copyArrayRef<ExprNode::Kind>(ops), loc);
   return success();
 }
 
@@ -1229,10 +1229,10 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
   return success();
 }
 
-ParseResult ParserBase::parseVarLetInitExpression(ExprNode *&expr,
+ParseResult ParserBase::parseVarLetInitExpression(ExprNode *&result,
                                                   size_t stmtIndent) {
   return ExprParser(shared, getLexer(), stmtIndent)
-      .parseStarredListAsTuple(expr, /*terminators=*/{});
+      .parseStarredListAsTuple(result, /*terminators=*/{});
 }
 
 /// Return an expression node for None at the specified location.
