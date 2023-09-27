@@ -1517,7 +1517,7 @@ fn test_kw_args_param_infer():
 
 
 fn print_kw_args(a: Int, b: Int = 7):
-    print(a, b)
+    pass
 
 
 struct KwCallable:
@@ -1525,7 +1525,7 @@ struct KwCallable:
         pass
 
     fn __call__(self, msg: StringLiteral, n: Int = 5):
-        print(msg, n)
+        pass
 
 
 # CHECK-LABEL: lit.func @"indirect_kw_args()"

@@ -671,7 +671,7 @@ trait EverythingIsWrongTrait:
     var value: Int # expected-error {{fields in traits are not supported yet}}
 
     fn trait_fn_has_body(self: Self): # expected-error {{unexpected function body in trait function declaration, use `...`}}
-        print(1)
+        let t = 1
 
     fn trait_fn_no_dot_dot_dot(self: Self): # expected-error {{expected body statements; use 'pass' if none is required}}
 
@@ -833,7 +833,7 @@ try:
     let np2 = foo()
 except e:
     # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
-    print(e.message())
+    _ = e
 
 alias a = 100
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
