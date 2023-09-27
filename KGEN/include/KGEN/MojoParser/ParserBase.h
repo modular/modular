@@ -220,22 +220,22 @@ public:
   /// expression on the next line - when it is more indented than the start of
   /// the current statement.  This can be passed in as None when there is a
   /// trailing punctuator that naturally terminates the expression.
-  ParseResult parseExpression(ExprNode *&expr,
+  ParseResult parseExpression(ExprNode *&result,
                               std::optional<size_t> stmtIndent);
-  ParseResult parseAssignExpression(ExprNode *&expr,
+  ParseResult parseAssignExpression(ExprNode *&result,
                                     std::optional<size_t> stmtIndent);
-  ParseResult parseVarLetInitExpression(ExprNode *&expr, size_t stmtIndent);
+  ParseResult parseVarLetInitExpression(ExprNode *&result, size_t stmtIndent);
 
   /// Parse an expression_list production, returning a single expression or a
   /// tuple expression if there are commas.
   ParseResult parseExpressionList(ExprNode *&result,
                                   std::optional<size_t> stmtIndent);
 
-  ParseResult parseStarredItem(ExprNode *&expr);
+  ParseResult parseStarredItem(ExprNode *&result);
 
   /// Parse a simple_stmt production containing an expression, including
   /// expression_stmt and {augmented_|annotated_|}assignment_stmt.
-  ParseResult parseSimpleStmtExprs(ExprNode *&expr, size_t stmtIndent);
+  ParseResult parseSimpleStmtExprs(ExprNode *&result, size_t stmtIndent);
 
   /// Return an expression node for None at the specified location.
   ExprNode *getNoneExpr(SMLoc loc);

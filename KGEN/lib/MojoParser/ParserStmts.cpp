@@ -106,7 +106,7 @@ struct StmtParser : public ParserBase {
   ParseResult parseLocalScopeSuite(ssize_t curIndent,
                                    ArrayRef<ScopeDecl> decls = {});
   ParseResult parseStmt(bool onlySimpleStmt, bool &parsedCompound,
-                        size_t curIndent);
+                        size_t stmtIndent);
 
   // Compound statements.
   ParseResult parseIfStmt(LexerCursor startCursor, size_t curIndent);
@@ -1960,7 +1960,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     ValueDest dest;
     ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
     if (parsedType) {
-      varOp.getResult().setType(RefType::get(/*isMut=*/true, parsedType,
+      varOp.getResult().setType(RefType::get(/*isMutable=*/true, parsedType,
                                              varOp.getType().getLifetime()));
       dest = ValueDest(XLValue(varOp), exprContext);
     } else {
@@ -1978,7 +1978,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
            "RValue emission should have inferred var type");
 
   } else if (parsedType) {
-    varOp.getResult().setType(RefType::get(/*isMut=*/true, parsedType,
+    varOp.getResult().setType(RefType::get(/*isMutable=*/true, parsedType,
                                            varOp.getType().getLifetime()));
   } else {
     // If there was neither a type or initializer, reject the var.
