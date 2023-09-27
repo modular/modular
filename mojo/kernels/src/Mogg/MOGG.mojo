@@ -72,6 +72,7 @@ from Conv import (
     pack_conv_filter,
     pack_conv_filter_shape,
 )
+from Cumsum import cumsum as _cumsum
 from GatherScatter import gather as _gather
 from GatherScatter import gather_shape
 from GatherScatter import gather_nd as _gather_nd
@@ -163,6 +164,7 @@ fn MOGGExport():
     alias _concat = concat
     alias _concat_shape = concat_shape
     alias _conv_shape = conv_shape
+    alias _cumsum = cumsum
     alias _conv = conv
     alias _cos = cos
     alias _div = div
@@ -859,6 +861,34 @@ fn concat[
     _concat[rank, type, single_thread_blocking_override](
         output, axis_int, inputs, out_chain
     )
+
+
+# ===----------------------------------------------------------------------===#
+# Cumsum op
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn cumsum[
+    type: DType,
+    axis_type: DType,
+    rank: Int,
+    exclusive: Int,
+    reverse: Int,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    var axis_int = axis[0].to_int()
+    if axis_int < 0:
+        axis_int = axis_int + rank
+    debug_assert(
+        axis_int >= 0 and axis_int < rank, "axis must be between 0 and rank - 1"
+    )
+    _cumsum[rank, type, exclusive, reverse](output, input, axis_int)
+    out_chain.mark_ready()
 
 
 # ===----------------------------------------------------------------------===#
