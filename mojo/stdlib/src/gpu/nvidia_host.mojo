@@ -2074,12 +2074,12 @@ struct Dim:
         return self._value[idx]
 
     fn __str__(self) -> String:
-        var res = String("(") + String(self.x()) + String(", ")
+        var res = String("(") + self.x() + ", "
         if self.y() != 1 or self.z() != 1:
-            res += String(self.y())
+            res += self.y()
             if self.z() != 1:
-                res += String(", ") + String(self.z())
-        res += String(")")
+                res += ", " + String(self.z())
+        res += ")"
         return res
 
     fn __repr__(self) -> String:
