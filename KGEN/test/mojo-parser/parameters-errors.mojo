@@ -116,18 +116,18 @@ fn default_after_non_default[a: Int = 7, b: Int]():
 
 # The keyword argument flags work in parameter lists.
 fn kw_only_param[a: Int, /, b: Int, *,
-                 c: Int](): # expected-error {{keyword-only arguments not supported yet}}
+                 c: Int](): # expected-error {{keyword-only parameters not supported yet}}
     pass
 
 # expected-error @+1 {{result parameters may not be variadic}}
 fn variadic_result_params[() -> *b: Int]():
   pass
 
-# expected-error @+1 {{keyword-only arguments not supported yet}}
+# expected-error @+1 {{keyword-only parameters not supported yet}}
 fn variadic_kw_result_params[() -> **b: Int]():
   pass
 
-# expected-error @+1 {{keyword-only arguments not supported yet}}
+# expected-error @+1 {{keyword-only parameters not supported yet}}
 fn variadic_kw_result_binding[**a: Int]():
     variadic_kw_result_params[() -> **a] # expected-error {{result parameters cannot be unpacked}}
 

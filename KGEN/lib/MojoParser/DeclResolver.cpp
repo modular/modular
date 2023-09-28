@@ -1246,19 +1246,23 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
   auto defaultKWArgHandling = KWArgHandling::kPositionalOrKeyword;
 
   // This is invoked when we see a '/' marker.
+  StringRef argOrParam =
+      kind == ArgListKind::kParamList ? "parameter" : "argument";
   auto handleSlashMarker = [&](SMLoc loc) {
     if (hasSlashMarker) {
-      p.emitError(loc, "cannot have two '/' markers in the same argument list");
+      p.emitError(loc, "cannot have two '/' markers in the same ")
+          << argOrParam << " list";
       return;
     }
     if (hasStarMarker) {
-      p.emitError(loc, "cannot specify '/' marker after '*' marker");
+      p.emitError(loc, "cannot specify '/' marker after '*' marker in ")
+          << argOrParam << " list";
       return;
     }
-
-    if (args.empty())
-      p.emitError(
-          loc, "'/' marker cannot be used at the start of the argument list");
+    if (args.empty()) {
+      p.emitError(loc, "'/' marker cannot be used at the start of the ")
+          << argOrParam << " list";
+    }
 
     // Ok, process it by changing all arguments we've seen to be positional
     // only.  The remaining ones will stay kPositionalOrKeyword though.
@@ -1269,12 +1273,16 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 
   // This is invoked when we see a '*' marker or '*arg' argument.
   auto handleStarMarker = [&](SMLoc loc, bool isMarker) {
-    if (hasStarMarker)
-      p.emitError(loc, "cannot have two '*' markers in the same argument list");
+    if (hasStarMarker) {
+      p.emitError(loc, "cannot have two '*' markers in the same ")
+          << argOrParam << " list";
+    }
 
     // Diagnose '*' marker at end of argument list for completeness.
-    if (p.getToken().isAny(stopTokens) && isMarker)
-      p.emitError(loc, "'*' marker is not allowed at end of argument list");
+    if (p.getToken().isAny(stopTokens) && isMarker) {
+      p.emitError(loc, "'*' marker is not allowed at end of ")
+          << argOrParam << " list";
+    }
 
     // From now on, any parsed arguments are keyword only.
     defaultKWArgHandling = KWArgHandling::kKeywordOnly;
@@ -1303,7 +1311,8 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 
     // If we have a **arg then it must be the last argument.
     if (arg.vararg == VarArgKind::KWVarArg && p.getToken().isNot(stopTokens)) {
-      p.emitError(arg.loc, "'**' marker must be at end of argument list");
+      p.emitError(arg.loc, "'**' marker must be at end of ")
+          << argOrParam << " list";
       arg.vararg = VarArgKind::None;
     }
 
@@ -1325,7 +1334,8 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
            args.back().kwArgHandling == KWArgHandling::kKeywordOnly;
   };
   if (trailingKwarg()) {
-    p.emitError(args.back().loc, "keyword-only arguments not supported yet");
+    p.emitError(args.back().loc, "keyword-only ")
+        << argOrParam << "s not supported yet";
     do {
       args.pop_back();
     } while (trailingKwarg());
