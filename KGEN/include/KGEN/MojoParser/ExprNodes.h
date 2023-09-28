@@ -498,6 +498,10 @@ struct BinOpNode final : public ExprNode {
 
 private:
   AnyValue emitAndOr(ValueDest &dest, ExprEmitter &emitter) const;
+  AnyValue emitCmpContain(ValueDest &dest, ExprEmitter &emitter) const;
+  AnyValue emitCmpContain(ASTExprAnd<AnyValue> lhs, ASTExprAnd<AnyValue> rhs,
+                          ExprNode::Kind kind, ValueDest &dest,
+                          const ExprNode *callExpr, ExprEmitter &emitter);
   AnyValue emitAssign(ValueDest &dest, ExprEmitter &emitter) const;
   AnyValue emitInplace(ValueDest &dest, ExprEmitter &emitter) const;
 };

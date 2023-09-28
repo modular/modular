@@ -485,3 +485,9 @@ def testLambda():
 def testLambda2():
   # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
   _ = lambda (x: Int, y: Float) raises: x+y
+
+def testInExpr(x, y):
+  # expected-error @+1 {{'in' operation is not yet supported}}
+  _ = x in y
+  # expected-error @+1 {{'not in' operation is not yet supported}}
+  _ = x not in y
