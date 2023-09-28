@@ -5,15 +5,15 @@
 ##===----------------------------------------------------------------------===##
 
 # Pass CMake values for dynamic library file paths into a header that can be
-# used by the `repl` and `lldb` subcommands.
-configure_file(MojoLLDB.h.in MojoLLDB.h)
+# used by the `repl` and `debug` subcommands.
+configure_file(MojoDebug.h.in MojoDebug.h)
 
-add_driver_option_tablegen(Mojo LLDBOptions.td
-  MANUAL_NAME mojo-lldb
-  MARKDOWN_NAME lldb
+add_driver_option_tablegen(Mojo DebugOptions.td
+  MANUAL_NAME mojo-debug
+  MARKDOWN_NAME debug
   EXTRA_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
-# The `lldb` subcommand depends on Mojo's LLDB plugin.
+# The `debug` subcommand depends on Mojo's LLDB plugin.
 if(LLDB_FOUND)
   add_dependencies(mojo MojoLLDB)
 endif()

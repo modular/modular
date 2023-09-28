@@ -6,12 +6,12 @@
 
 include "DescriptionBase.td"
 include "Build/BuildDescription.td"
+include "Debug/DebugDescription.td"
 include "Demangle/DemangleDescription.td"
 include "Doc/DocDescription.td"
 include "Format/FormatDescription.td"
 include "Package/PackageDescription.td"
 include "REPL/REPLDescription.td"
-include "LLDB/LLDBDescription.td"
 include "Run/RunDescription.td"
 
 def : MojoDriverDescription<
