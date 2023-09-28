@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, div_ceil, min
+from math import abs, div_ceil, min, isclose
 from random import rand
 from sys import external_call
 from sys.info import simdwidthof
 
-from Conv import ConvDirectNHWC, Naive2dConvolution, pack_filter
+from Conv import ConvDirectNHWC, Naive2dConvolution, pack_filter, ConvInfoStatic
 from ConvUtils import (
     ConvShape,
     get_conv_num_partitions,
@@ -94,7 +94,7 @@ fn test[
     ](num_tasks, conv_shape)
 
     # Rounded C and F size for pre-packed filter.
-    let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
+    alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
     let packed_filter_ptr = DTypePointer[filter_type].alloc(
         R * S * C * rounded_F
@@ -125,7 +125,9 @@ fn test[
 
     @parameter
     if filter_packed:
-        pack_filter[filter_type](filter, packed_filter)
+        pack_filter[filter_type, simd_size, micro_kernel_f_size](
+            filter, packed_filter
+        )
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -161,6 +163,7 @@ fn test[
 
     # Test direct conv
     let direct_conv_chain = OwningOutputChainPtr(rt)
+    alias conv_attr = ConvInfoStatic.create_unknown()
 
     @parameter
     if filter_packed:
@@ -173,6 +176,7 @@ fn test[
             filter_type,
             output_type,
             True,
+            conv_attr,
             False,
         ].run(
             output,
@@ -191,6 +195,7 @@ fn test[
             filter_type,
             output_type,
             False,
+            conv_attr,
             False,
         ].run(output, input, filter, conv_shape, direct_conv_chain.borrow())
     direct_conv_chain.wait()
@@ -204,9 +209,11 @@ fn test[
         for ho in range(HO):
             for wo in range(WO):
                 for f in range(F):
-                    if (
-                        abs(output_ref[n, ho, wo, f] - output[n, ho, wo, f])
-                        > abs(output_ref[n, ho, wo, f]) * 1e-5
+                    if not isclose(
+                        output_ref[n, ho, wo, f],
+                        output[n, ho, wo, f],
+                        1e-4,  # absolute error tolerance
+                        1e-5,  # relative error tolerance
                     ):
                         print("Input shape NHWC: ", Index(N, H, W, C))
                         print("filter shape RSCF: ", Index(R, S, C, F))

@@ -309,6 +309,57 @@ fn get_direct_conv_micro_kernel_width() -> Int:
     return 3
 
 
+fn get_micro_kernel_shape[
+    WO: Dim, F: Dim, simd_size: Int
+]() -> StaticIntTuple[2]:
+    # Number of named simd registers for each architecture.
+    # TODO: configure micro kernel shape are other architectures.
+    alias num_avx512_registers = 32
+
+    @parameter
+    if WO.has_value() and F.has_value() and has_avx512f():
+        alias WO_val = WO.get()
+        alias F_val = F.get()
+        # The micro tile is m rows by n*simd_size columns.
+        # The register usage in tiling for avx512/avx2:
+        #   (1) load n registers in F dimension.
+        #   (2) broadcast 1 element from each row into 1 register. The same
+        #       is used for all rows. This doesn't serialize the accumulation
+        #       because register renaming can resolve RAR dependence.
+        #   (3) accumulate m * n registers.
+        # There are in total m*n + n + 1 registers needed.
+        # Iterating n from 2, we get possible (m, n) combinations including
+        # (14, 2), (9, 3), (6, 4), and (5, 5).
+
+        # There must be less than WO*F tiles so the values are updated
+        # in the following loop.
+        var min_num_tiles = WO_val * F_val
+        var micro_kernel_height = -1
+        var micro_kernel_width = -1
+
+        # Traverse the possible combinations (9, 3), (6, 4), and (5, 5).
+        for n in range(2, 6):
+            let m = min((num_avx512_registers - 1) // n - 1, WO_val)
+            let num_tiles = div_ceil(WO_val, m) * div_ceil(F_val, n * simd_size)
+            if num_tiles < min_num_tiles:
+                micro_kernel_height = m
+                micro_kernel_width = n
+                min_num_tiles = num_tiles
+        return Index(micro_kernel_height, micro_kernel_width)
+    else:  # Default options for dynamic shapes.
+
+        @parameter
+        if has_avx512f():
+            return Index(6, 4)
+        elif is_neoverse_n1():
+            return Index(8, 2)
+        elif has_neon():  # neon other than neoverse-N1
+            return Index(6, 4)
+        # default, including AVX2
+        else:
+            return Index(4, 3)
+
+
 # ===----------------------------------------------------------------------===#
 # Partition Heuristics
 # ===----------------------------------------------------------------------===#

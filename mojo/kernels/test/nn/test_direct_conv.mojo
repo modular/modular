@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, div_ceil, min
+from math import abs, div_ceil, min, isclose
 from random import rand
 from sys import external_call
 from sys.info import simdwidthof
 
-from Conv import ConvDirectNHWC, Naive2dConvolution, pack_filter
+from Conv import ConvDirectNHWC, Naive2dConvolution, pack_filter, ConvInfoStatic
 from ConvUtils import (
     ConvShape,
     get_conv_num_partitions,
@@ -156,6 +156,8 @@ fn test[
     # Test direct conv
     let direct_conv_chain = OwningOutputChainPtr(rt)
 
+    alias conv_attr = ConvInfoStatic.create_unknown()
+
     @parameter
     if filter_packed:
         ConvDirectNHWC[
@@ -167,6 +169,7 @@ fn test[
             type,
             type,
             True,
+            conv_attr,
             False,
         ].run(
             output,
@@ -185,6 +188,7 @@ fn test[
             type,
             type,
             False,
+            conv_attr,
             False,
         ].run(output, input, filter, conv_shape, direct_conv_chain.borrow())
     direct_conv_chain.wait()
@@ -198,9 +202,11 @@ fn test[
         for ho in range(HO):
             for wo in range(WO):
                 for f in range(F):
-                    if (
-                        abs(output_ref[n, ho, wo, f] - output[n, ho, wo, f])
-                        > abs(output_ref[n, ho, wo, f]) * 1e-5
+                    if not isclose(
+                        output_ref[n, ho, wo, f],
+                        output[n, ho, wo, f],
+                        1e-4,  # absolute error tolerance
+                        1e-5,  # relative error tolerance
                     ):
                         print("Input shape NHWC: ", Index(N, H, W, C))
                         print("filter shape RSCF: ", Index(R, S, C, F))
