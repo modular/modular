@@ -461,10 +461,14 @@ fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   # expected-error @+1 {{operand must have '!kgen.pointer<T>' type, not 'index'}}
   __get_address_as_lvalue(addr2) = 42
 
+struct NoSelfCtor:
+  var x: Int
+  fn __init__(inout self: Self, x: Int):
+    self.x = x
 
-fn test_int_to_int_error(a: Int):
-  # expected-error @+1 {{cannot construct 'Int' with itself, you can remove the constructor call}}
-  _ = Int(a)
+fn test_int_to_int_error(a: Int, b: NoSelfCtor):
+  # expected-error @+1 {{cannot construct 'NoSelfCtor' with itself, you can remove the constructor call}}
+  _ = NoSelfCtor(NoSelfCtor(a))
 
   # expected-error @+1 {{cannot construct 'GetAttrNotString' from 'Int' value in assignment}}
   _ = GetAttrNotString(a)
