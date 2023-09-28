@@ -713,11 +713,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 
   let arguments = (ins
     KGEN_ParamDeclAttr:$paramDecl, TypedAttrInterface:$value,
-    OptionalAttr<LIT_DocStringAttr>:$docString,
-    // When an alias decl is lazily resolved from bytecode, it is fully formed,
-    // but if it doesn't get referenced, it must be removed from the IR. This
-    // flag indicates that the alias decl needs to be dropped.
-    UnitAttr:$isUnresolved
+    OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let assemblyFormat = [{
     custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
