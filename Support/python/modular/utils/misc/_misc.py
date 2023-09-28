@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import numpy as np
 import os
 import shutil
 from contextlib import contextmanager
@@ -114,3 +115,44 @@ def create_dir_symlink(destination_dir: Path, src_dir: Path):
         src_dir (Path): the source ("true") directory to link to
     """
     create_symlink(destination_dir, src_dir, target_is_directory=True)
+
+
+def modular_dtype_to_np_dtype(dtype: str) -> np.dtype:
+    """Converts a string representing a Modular dtype to its NumPy dtype.
+
+    Args:
+        dtype: the string representing the Modular dtype.
+
+    Returns:
+        The corresponding NumPy dtype.
+    """
+    np_dtype = {
+        "bool": np.bool_,
+        "si8": np.int8,
+        "int8": np.int8,
+        "si16": np.int16,
+        "int16": np.int16,
+        "si32": np.int32,
+        "int32": np.int32,
+        "si64": np.int64,
+        "int64": np.int64,
+        "ui8": np.uint8,
+        "uint8": np.uint8,
+        "ui16": np.uint16,
+        "uint16": np.uint16,
+        "ui32": np.uint32,
+        "uint32": np.uint32,
+        "ui64": np.uint64,
+        "uint64": np.uint64,
+        "f16": np.float16,
+        "float16": np.float16,
+        "f32": np.float32,
+        "float32": np.float32,
+        "f64": np.float64,
+        "float64": np.float64,
+    }.setdefault(dtype, None)
+
+    if np_dtype is None:
+        raise RuntimeError(f"unrecognized dtype {dtype}")
+
+    return np_dtype

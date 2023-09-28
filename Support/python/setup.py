@@ -35,7 +35,11 @@ setup(
     zip_safe=False,
     python_requires=">=3.8",
     # WARNING: if changing dependencies, need to bump the version as well.
-    install_requires=["ruamel.yaml>=0.17", "find-libpython>=0.3.0"],
+    install_requires=[
+        "numpy",
+        "ruamel.yaml>=0.17",
+        "find-libpython>=0.3.0",
+    ],
     extras_require={
         "tests": [
             "pytest>=7.1.2",
