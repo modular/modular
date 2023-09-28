@@ -36,6 +36,7 @@ class ASTDecl;
 class ASTType;
 class DeclResolver;
 class ExprNode;
+struct Operand;
 class FileModuleOp;
 class FuncOp;
 class LookupResult;
@@ -331,11 +332,11 @@ public:
   void notifyListenerOnCall(ArrayRef<ASTDecl *> decls, SMLoc rparenLoc,
                             const CallOperands &callOperands);
 
-  /// Notify the listener, if present, that parameters are being bound to one of
-  /// the given decls.
+  /// Notify the listener, if present, that parameter operands are being bound
+  /// to one of the given decls.
   void notifyListenerOnParameterBinding(ArrayRef<ASTDecl *> decls,
                                         llvm::SMLoc rsquareLoc,
-                                        ArrayRef<ExprNode *> parameters);
+                                        ArrayRef<Operand> operands);
 
   //===--------------------------------------------------------------------===//
   // Builtin Module

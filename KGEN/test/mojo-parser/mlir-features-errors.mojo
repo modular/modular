@@ -58,10 +58,10 @@ fn testMLIR():
 
 # Issue #7307: Error message can be improved when a user accidentally uses = instead of :
 fn EqualInsteadOfColon():
-  # expected-error @below {{expected ':' in subscript slice, not '='}}
-  # expected-error @below {{unable to infer result type from MLIR operation 'lit.crazy'}}
+  # expected-error @below {{keyword parameters not supported yet}}
   _ = __mlir_op.`lit.crazy`[value = 42]()
 
+fn EqualInsteadOfColon2():
   # expected-error @+1 {{expected ':' after dictionary key, not '='}}
   _ = Int{value = Int(42).value}
 

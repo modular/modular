@@ -2110,9 +2110,12 @@ void SharedState::notifyListenerOnCall(ArrayRef<ASTDecl *> decls,
     parserListener->onCall(decls, rParenLoc, callOperands);
 }
 
-void SharedState::notifyListenerOnParameterBinding(
-    ArrayRef<ASTDecl *> decls, llvm::SMLoc rsquareLoc,
-    ArrayRef<ExprNode *> parameters) {
-  if (isListenerInterestedInLoc(parserListener, rsquareLoc))
+void SharedState::notifyListenerOnParameterBinding(ArrayRef<ASTDecl *> decls,
+                                                   llvm::SMLoc rsquareLoc,
+                                                   ArrayRef<Operand> operands) {
+  if (isListenerInterestedInLoc(parserListener, rsquareLoc)) {
+    SmallVector<ExprNode *> parameters = llvm::map_to_vector(
+        operands, [](const Operand &operand) { return operand.value; });
     parserListener->onParameterBinding(decls, rsquareLoc, parameters);
+  }
 }

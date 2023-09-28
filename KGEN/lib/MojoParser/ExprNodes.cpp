@@ -96,20 +96,29 @@ static PValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
 }
 
 /// Given an __mlir_type[a,b,c] or __mlir_attr[a,b,c] usage, stringize the
-/// subscriptArgs and return the result.  On error, emit an error and return an
-/// empty string.
+/// subscript operands and return the result.  On error, emit an error and
+/// return an empty string.
 static std::string substituteMLIRMagic(const SubscriptNode &node,
                                        ExprEmitter &emitter) {
   std::string result;
   llvm::raw_string_ostream os(result);
 
-  for (auto *indexExpr : node.subscriptArgs) {
+  SMLoc loc = node.getLoc();
+  for (const Operand &operand : node.operands) {
+    ExprNode *expr = operand.value;
+    if (!operand.isPositional()) {
+      // TODO(#22272): change this to allow keyword args.
+      emitter.emitError(loc, "only positional operands allowed in mlir magic")
+          << expr->getRange();
+      return {};
+    }
+
     // If the index is an identifier, and if it is a backtick identifier, we
     // treat it as an interpolated literal string.  Otherwise we look it up as
     // an expression.  Rationale: this allows using strings attributes, which
     // could be useful someday, and keeps __mlir_attr.`thing` more consistent
     // with __mlir_attr[`thing`].
-    if (auto *dre = dyn_cast<DeclRefNode>(indexExpr))
+    if (auto *dre = dyn_cast<DeclRefNode>(expr))
       if (dre->spelling.data()[dre->spelling.size()] == '`') {
         os << dre->spelling;
         continue;
@@ -118,12 +127,12 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
     // As a very special hack, we treat a unary plus as a marker that the type
     // should not be printed when the attribute is stringized.
     bool elideType = false;
-    if (indexExpr->kind == ExprNode::kPos) {
+    if (expr->kind == ExprNode::kPos) {
       elideType = true;
-      indexExpr = cast<UnaryOpNode>(indexExpr)->subExpr;
+      expr = cast<UnaryOpNode>(expr)->subExpr;
     }
 
-    auto indexVal = emitter.emitExprPValue(indexExpr, EC_MLIRMagic);
+    auto indexVal = emitter.emitExprPValue(expr, EC_MLIRMagic);
     if (!indexVal)
       return "";
 
@@ -135,7 +144,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
   }
 
   if (result.empty())
-    emitter.emitError(node.getLoc(), "mlir magic expanded to an empty string");
+    emitter.emitError(loc, "mlir magic expanded to an empty string");
   return result;
 }
 
@@ -151,14 +160,48 @@ static PValue synthesizeMLIROpFromString(StringRef name, ExprEmitter &emitter) {
   return PValue(result);
 }
 
+/// Given an expression, try to resolve it into an Attribute that we can install
+/// on this operation.
+static Attribute getAttrFromExpr(StringRef name, ExprNode *node,
+                                 ExprEmitter &emitter) {
+  // Special case handling of __mlir_attr.`xxx` directly in this parser,
+  // because we want to be able to install arbitrary attributes into an
+  // operation's attribute list, and emitPValue only supports TypedAttrs.
+  if (auto attrRef = dyn_cast<AttributeRefNode>(node)) {
+    auto mlirAttr = dyn_cast<DeclRefNode>(attrRef->base);
+    if (mlirAttr && mlirAttr->spelling == "__mlir_attr") {
+      if (attrRef->spelling.empty())
+        return {};
+      return parseMLIRAttrFromString(attrRef->spelling, attrRef->getLoc(),
+                                     emitter.shared);
+    }
+  }
+
+  // Likewise, special case the __mlir_attr[a,b,c] syntax to support
+  // attributes without types.
+  if (auto subscript = dyn_cast<SubscriptNode>(node)) {
+    auto mlirAttr = dyn_cast<DeclRefNode>(subscript->base);
+    if (mlirAttr && mlirAttr->spelling == "__mlir_attr") {
+      std::string result = substituteMLIRMagic(*subscript, emitter);
+      if (result.empty())
+        return {};
+      return parseMLIRAttrFromString(result, subscript->getLoc(),
+                                     emitter.shared);
+    }
+  }
+
+  // Otherwise emit the value as an PValue.
+  return emitter.emitExprPValue(node, EC_MLIRMagic);
+}
+
 /// Calculate the result of an __mlir_op.`thing`[attributes], applying the
 /// attributes list to the operation specification.
 static PValue
 bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
                                  UnboundMLIROperationAttr unboundOp,
                                  ExprEmitter &emitter) {
-  auto loc = subscript.getLoc();
-  auto *context = emitter.getContext();
+  SMLoc loc = subscript.getLoc();
+  MLIRContext *context = emitter.getContext();
 
   // Only allow applying attributes to something without them.
   if (!unboundOp.getAttrs().empty()) {
@@ -167,58 +210,33 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     return {};
   }
 
-  // Given an expression, try to resolve it into an Attribute that we can
-  // install on this operation.
-  auto getAttrFromExpr = [&](StringRef name, ExprNode *node) -> Attribute {
-    // Special case handling of __mlir_attr.`xxx` directly in this parser,
-    // because we want to be able to install arbitrary attributes into an
-    // operation's attribute list, and emitPValue only supports TypedAttrs.
-    if (auto attrRef = dyn_cast<AttributeRefNode>(node)) {
-      auto mlirAttr = dyn_cast<DeclRefNode>(attrRef->base);
-      if (mlirAttr && mlirAttr->spelling == "__mlir_attr") {
-        if (attrRef->spelling.empty())
-          return {};
-        return parseMLIRAttrFromString(attrRef->spelling, attrRef->getLoc(),
-                                       emitter.shared);
-      }
-    }
-
-    // Likewise, special case the __mlir_attr[a,b,c] syntax to support
-    // attributes without types.
-    if (auto subscript = dyn_cast<SubscriptNode>(node)) {
-      auto mlirAttr = dyn_cast<DeclRefNode>(subscript->base);
-      if (mlirAttr && mlirAttr->spelling == "__mlir_attr") {
-        std::string result = substituteMLIRMagic(*subscript, emitter);
-        if (result.empty())
-          return {};
-        return parseMLIRAttrFromString(result, subscript->getLoc(),
-                                       emitter.shared);
-      }
-    }
-
-    // Otherwise emit the value as an PValue.
-    return emitter.emitExprPValue(node, EC_MLIRMagic);
-  };
-
-  SmallVector<NamedAttribute> attrValues;
-
   // Each element of the subscript must have a name identifier and a value as an
   // PValue.
-  for (auto *subscriptIdx : subscript.subscriptArgs) {
-    auto *slice = dyn_cast<SliceNode>(subscriptIdx);
+  SmallVector<NamedAttribute> attrValues;
+  for (const Operand &operand : subscript.operands) {
+    ExprNode *expr = operand.value;
+    if (!operand.isPositional()) {
+      // TODO(#22272): change this to allow keyword args.
+      emitter.emitError(
+          loc, "only positional operands allowed in mlir operator call")
+          << expr->getRange();
+      return {};
+    }
+
+    auto *slice = dyn_cast<SliceNode>(expr);
     if (!slice || slice->colon2Loc.isValid() || !slice->lower ||
         !slice->upper || !isa<DeclRefNode>(slice->lower)) {
       emitter.emitError(
           loc, "attribute spec requires an attribute name and attr value")
-          << subscriptIdx->getRange();
+          << expr->getRange();
       return {};
     }
 
     auto name = cast<DeclRefNode>(slice->lower)->spelling;
-    auto value = getAttrFromExpr(name, slice->upper);
+    auto value = getAttrFromExpr(name, slice->upper, emitter);
     if (!value)
       return {};
-    attrValues.push_back(NamedAttribute(StringAttr::get(context, name), value));
+    attrValues.push_back({StringAttr::get(context, name), value});
   }
 
   // Check for duplicate attribute specifications.
@@ -1298,17 +1316,18 @@ static PValue substituteParametersIntoUserDefinedType(
 
   // Notify the listener on the parameter binding.
   emitter.shared.notifyListenerOnParameterBinding(
-      &typeDecl, subscript.rsquareLoc, subscript.subscriptArgs);
+      &typeDecl, subscript.rsquareLoc, subscript.operands);
 
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
-  for (ExprNode *indexExpr : subscript.subscriptArgs) {
+  for (const Operand &operand : subscript.operands) {
     // TODO(#21618): Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto indexVal = emitter.emitExprPValue(indexExpr, EC_TypeParamValue);
+    assert(!operand.isKeyword() && "keyword parameters not supported yet");
+    auto indexVal = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
     if (!indexVal)
       return {};
-    paramBindings.add(indexExpr, indexVal.get());
+    paramBindings.add(operand.value, indexVal.get());
   }
 
   // Check the bindings.
@@ -1348,18 +1367,20 @@ static Type getNextParamType(ASTDecl *fnDecl,
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
 /// or call to a method), apply parameter bindings to it.
 static ORValue bindParamValuesToDirectCall(ORValue value,
-                                           ArrayRef<ExprNode *> subscriptArgs,
+                                           ArrayRef<Operand> operands,
                                            ExprEmitter &emitter) {
-  // If the subscriptArgs are a single () expression, then we treat this as
+  // If the subscript operands are a single () expression, then we treat this as
   // having no parameters.  This is used with arrow expressions to allow `f[()
   // -> x]`.
-  if (subscriptArgs.size() == 1 &&
-      subscriptArgs[0]->getWithoutParens()->isEmptyTuple())
+  if (operands.size() == 1 &&
+      operands[0].value->getWithoutParens()->isEmptyTuple())
     return value;
 
   // Process each subscript entry as a binding.
   // TODO(#21618): Support keyword parameters: `A[x = 42]`.
-  for (auto operand : subscriptArgs) {
+  for (const Operand &operand : operands) {
+    assert(!operand.isKeyword() && "keyword parameters not supported yet");
+
     // If all entries in this overload set take a parameter with a common type,
     // use it for parameter type inference.
     ASTType paramType;
@@ -1375,7 +1396,8 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
         paramType = ASTType();
     }
 
-    auto val = emitter.emitExprPValue(operand, EC_CallParamValue, paramType);
+    auto val =
+        emitter.emitExprPValue(operand.value, EC_CallParamValue, paramType);
     if (!val)
       return {};
 
@@ -1386,7 +1408,7 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     //
     // Note: we're being a bit abusive here by making a ParamBindAttr with a
     // null name for positional attributes.
-    value->inputParamBindings.add(operand, val.get());
+    value->inputParamBindings.add(operand.value, val.get());
   }
   // The bindings will be checked for validity when a reference is formed.
   return value;
@@ -1402,9 +1424,8 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // (more?) parameter expressions to bind its parameters.
   if (auto overloads = baseAnyValue.getIfORValue()) {
     emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
-                                                    rsquareLoc, subscriptArgs);
-    auto result =
-        bindParamValuesToDirectCall(overloads, subscriptArgs, emitter);
+                                                    rsquareLoc, operands);
+    auto result = bindParamValuesToDirectCall(overloads, operands, emitter);
     return emitter.emitResult(result, this, dest);
   }
 
@@ -1419,16 +1440,16 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // If this is a signature-type PValue callable, this is binding parameter
       // values to a call.
       SmallVector<TypedAttr> bindOperands({callableMVal.get()});
-      if (subscriptArgs.size() != sig.getNumInputParams()) {
+      if (operands.size() != sig.getNumInputParams()) {
         emitter.emitError(getLoc(), "parametric callable expected ")
             << sig.getNumInputParams() << " parameter"
             << plural(sig.getNumInputParams()) << getIndexRange();
         return {};
       }
       for (auto [operand, type] :
-           llvm::zip(subscriptArgs, sig.getInputParamTypes())) {
+           llvm::zip(operands, sig.getInputParamTypes())) {
         bindOperands.push_back(
-            emitter.emitExprPValue(operand, EC_CallParamValue, type));
+            emitter.emitExprPValue(operand.value, EC_CallParamValue, type));
         if (!bindOperands.back())
           return {};
       }
@@ -1480,18 +1501,18 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
-  SmallVector<ASTExprAnd<AnyValue>> indexValues;
-  indexValues.push_back({baseValue, base});
-  for (ExprNode *operand : subscriptArgs) {
-    indexValues.push_back(
-        {operand->emitIR(ValueDest::none(), emitter), operand});
-    if (!indexValues.back())
+  SmallVector<ASTExprAnd<AnyValue>> operandValues;
+  operandValues.push_back({baseValue, base});
+  for (const Operand &operand : operands) {
+    ExprNode *expr = operand.value;
+    operandValues.push_back({expr->emitIR(ValueDest::none(), emitter), expr});
+    if (!operandValues.back())
       return {};
   }
 
   // TODO: If we have multiple indexes, package up the values in a tuple value
   // and try to see if this works.
-  if (indexValues.size() > 2) {
+  if (operandValues.size() > 2) {
     // TODO(Tuples). need tuples :-)
   }
 
@@ -1504,26 +1525,26 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // a standard library type that implements `__getitem__` and `__setitem__`.
   if (auto variadic = dyn_cast<VariadicType>(baseType.mlirType)) {
     // Attempt to convert the index.
-    if (indexValues.size() != 2) {
+    if (operandValues.size() != 2) {
       emitter.emitError(getLoc())
           << "variadic can only be subscripted with a single index";
       return {};
     }
-    CValue index = emitter.emitMLIRIndex(indexValues.back(), EC_Subscript);
+    CValue index = emitter.emitMLIRIndex(operandValues.back(), EC_Subscript);
     if (!index)
       return {};
     // Inside a parameter context, emit a parameter operator.
     if (!emitter.builder) {
       return ParamOperatorAttr::get(
           POC::VariadicGet,
-          {emitter.emitPValue(indexValues.front(), EC_Subscript),
+          {emitter.emitPValue(operandValues.front(), EC_Subscript),
            index.getIfPValue()});
     }
     // Otherwise, emit an MLIR operation.
     Value value = emitter.builder->create<POP::VariadicGetOp>(
         emitter.translateLocation(getLoc()),
-        emitter.emitSRValue(indexValues.front(), EC_Subscript),
-        emitter.emitSRValue({index, indexValues.back().expr}, EC_Subscript));
+        emitter.emitSRValue(operandValues.front(), EC_Subscript),
+        emitter.emitSRValue({index, operandValues.back().expr}, EC_Subscript));
     // FIXME: Should not be doing a bare `!kgen.pointer` type check.
     if (auto ptrType = dyn_cast<PointerType>(
             ASTType(variadic.getElementType()).mlirType)) {
@@ -1543,7 +1564,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   };
   return emitGetterSetterAccess(
       this, base, dest, emitter, baseType, "__getitem__", "__setitem__",
-      CallSyntax::kSubscript, lookupError, indexValues);
+      CallSyntax::kSubscript, lookupError, operandValues);
 }
 
 AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
@@ -1565,7 +1586,7 @@ AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
 
   // The only use of SubscriptArrow nodes right now is to bind parameter
   // input values and results to a call.  Start by binding the input values.
-  overloads = bindParamValuesToDirectCall(overloads, subscriptArgs, emitter);
+  overloads = bindParamValuesToDirectCall(overloads, operands, emitter);
   if (!overloads)
     return {};
 

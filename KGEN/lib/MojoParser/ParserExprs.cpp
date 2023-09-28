@@ -919,45 +919,76 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   // If we have an empty parameter list, we return immediately.
   SMLoc rsquareLoc;
   if (consumeIf(Token::r_square, &rsquareLoc)) {
-    result = alloc<SubscriptNode>(result, lsquareLoc, ArrayRef<ExprNode *>(),
+    result = alloc<SubscriptNode>(result, lsquareLoc, ArrayRef<Operand>(),
                                   rsquareLoc);
     return success();
   }
 
-  SmallVector<ExprNode *> operands;
-  auto parseOperand = [&]() {
-    return parseExprOrSlice(operands.emplace_back());
+  // Helper to parse an input or a result parameter.
+  auto parseSubscriptOperand =
+      [&](SmallVectorImpl<Operand> &parsed) -> ParseResult {
+    auto parseOperandValue = [&](ExprNode *&result, Precedence minPrec) {
+      // Precedence is ignored here on purpose; we don't allow walrus here.
+      return parseExprOrSlice(result);
+    };
+    FailureOr<Operand> operandOr = parseOperand(parseOperandValue);
+    if (failed(operandOr))
+      return failure();
+    parsed.emplace_back(std::move(*operandOr));
+    return success();
   };
-  if (parseCommaSeparatedList(parseOperand,
+
+  SmallVector<Operand> operands;
+  if (parseCommaSeparatedList([&]() { return parseSubscriptOperand(operands); },
                               {Token::r_square, Token::minus_greater},
                               std::nullopt) ||
       getLocation(rsquareLoc))
     return failure();
 
+  // Inspect each parsed operand.
+  for (const Operand &operand : operands) {
+    SMLoc loc = operand.getLoc();
+    if (operand.isKeyword())
+      return emitError(loc, "keyword parameters not supported yet");
+    if (operand.isUnpacked())
+      return emitError(loc, "unpacked parameters not supported yet");
+  }
+
   // If we have no arrow, handle this as a normal subscript.
   if (!consumeIf(Token::minus_greater)) {
     if (parseToken(Token::r_square, "expected ']' in call argument list"))
       return failure();
-    result = alloc<SubscriptNode>(
-        result, lsquareLoc, copyArrayRef<ExprNode *>(operands), rsquareLoc);
+    result = alloc<SubscriptNode>(result, lsquareLoc,
+                                  copyArrayRef<Operand>(operands), rsquareLoc);
     return success();
   }
 
-  // Otherwise, parse the arrow production.
+  // Otherwise, parse the results. We parse these as if they were ordinary
+  // operands, so that we can have better diagnostics. Then we unpack them into
+  // just an array of expressions so that it's easier to work with them later.
   SMLoc arrowLoc = rsquareLoc;
-  SmallVector<ExprNode *> results;
-  auto parseResults = [&]() {
-    return parseExprOrSlice(results.emplace_back());
-  };
-  if (parseCommaSeparatedList(parseResults,
-                              {Token::r_square, Token::minus_greater},
-                              std::nullopt) ||
+  SmallVector<Operand> parsedResults;
+  if (parseCommaSeparatedList(
+          [&]() { return parseSubscriptOperand(parsedResults); },
+          {Token::r_square}, std::nullopt) ||
       getLocation(rsquareLoc) ||
       parseToken(Token::r_square, "expected ']' in call argument list"))
     return failure();
 
+  // Inspect each parsed result.
+  for (const Operand &res : parsedResults) {
+    SMLoc loc = res.getLoc();
+    if (res.isKeyword())
+      return emitError(loc, "keyword result parameters not supported yet");
+    if (res.isUnpacked())
+      return emitError(loc, "result parameters cannot be unpacked");
+  }
+
+  SmallVector<ExprNode *> results = llvm::map_to_vector(
+      parsedResults, [](const Operand &operand) { return operand.value; });
+
   result = alloc<SubscriptArrowNode>(
-      result, lsquareLoc, copyArrayRef<ExprNode *>(operands), arrowLoc,
+      result, lsquareLoc, copyArrayRef<Operand>(operands), arrowLoc,
       copyArrayRef<ExprNode *>(results), rsquareLoc);
   return success();
 }

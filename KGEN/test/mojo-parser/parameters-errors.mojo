@@ -115,24 +115,35 @@ fn default_after_non_default[a: Int = 7, b: Int]():
 ##===----------------------------------------------------------------------===##
 
 # The keyword argument flags work in parameter lists.
-fn funnyArgs[a: Int, /, b: Int, *,
-             c: Int](): # expected-error {{keyword-only arguments not supported yet}}
+fn kw_only_param[a: Int, /, b: Int, *,
+                 c: Int](): # expected-error {{keyword-only arguments not supported yet}}
     pass
 
 # expected-error @+1 {{result parameters may not be variadic}}
-fn variadicResultParams[() -> *b: Int]():
+fn variadic_result_params[() -> *b: Int]():
   pass
 
-fn variadicIntParams[*a: Int]():
+# expected-error @+1 {{keyword-only arguments not supported yet}}
+fn variadic_kw_result_params[() -> **b: Int]():
   pass
+
+# expected-error @+1 {{keyword-only arguments not supported yet}}
+fn variadic_kw_result_binding[**a: Int]():
+    variadic_kw_result_params[() -> **a] # expected-error {{result parameters cannot be unpacked}}
+
+fn variadic_kw_binding[*a: Int]():
+    variadic_kw_result_binding[**a]() # expected-error {{unpacked parameters not supported yet}}
+
+fn variadic_int_params[*a: Int]():
+  variadic_result_params[() -> *a] # expected-error {{result parameters cannot be unpacked}}
 
 fn callVariadic():
-  variadicIntParams() # OK
-  variadicIntParams[1]() # OK
-  variadicIntParams[1, 2]() # OK
+  variadic_int_params() # OK
+  variadic_int_params[1]() # OK
+  variadic_int_params[1, 2]() # OK
 
-  variadicIntParams[1.0]() # expected-error {{cannot pass 'FloatLiteral' value, parameter expected 'Int'}}
-
+  variadic_int_params[1.0]() # expected-error {{cannot pass 'FloatLiteral' value, parameter expected 'Int'}}
+  variadic_int_params[*b] # expected-error {{unpacked parameters not supported yet}}
 
 
 ##===----------------------------------------------------------------------===##
