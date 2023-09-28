@@ -1,0 +1,21 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+// RUN: echo "" > %t.mojo
+// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --mojo-parser-hash-out %t.0 --mojo-disable-parser-caching=true
+// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --mojo-parser-hash-out %t.1
+// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --mojo-parser-hash-out %t.2
+// RUN: cat %t.0 %t.1 %t.2 | FileCheck %s
+
+// RUN: echo "def main(): print(\"hello\")" > %t.mojo
+// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --mojo-parser-hash-out %t.0 --mojo-disable-parser-caching=true
+// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --mojo-parser-hash-out %t.1
+// RUN: cat %t.mojo | kgen-translate -import-mojo -o %t.mlir --mojo-parser-hash-out %t.2
+// RUN: cat %t.0 %t.1 %t.2 | FileCheck %s
+
+// CHECK: [[HASH:.*]]
+// CHECK-NEXT: [[HASH]]
+// CHECK-NEXT: [[HASH]]

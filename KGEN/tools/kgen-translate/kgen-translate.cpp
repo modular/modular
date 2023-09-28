@@ -17,9 +17,12 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Tools/mlir-translate/MlirTranslateMain.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/ToolOutputFile.h"
 
 using namespace M;
 using namespace KGEN;
@@ -62,9 +65,16 @@ int main(int argc, char *argv[]) {
                                    cl::desc("Whether to use MLIR diagnostics."),
                                    cl::init(true)};
 
+  cl::opt<std::string> parserModuleHashOut{
+      "mojo-parser-hash-out",
+      cl::desc("Where to print the parser output hash. Used for "
+               "non-determinism testing."),
+      cl::init("")};
+
   mlir::TranslateToMLIRRegistration fromMojo(
       "import-mojo", "Import 'mojo' from source",
-      [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
+      [&](llvm::SourceMgr &sourceMgr,
+          MLIRContext *context) -> OwningOpRef<ModuleOp> {
         sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
 
         clOptions.useSingleThreadedWorkqueue();
@@ -88,7 +98,29 @@ int main(int argc, char *argv[]) {
         config.useBuiltinModule = !disableBuiltinModule;
         if (disableParserCaching)
           config.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
-        return LIT::importMojoFile(sourceMgr, config, ts);
+        OwningOpRef<ModuleOp> output =
+            LIT::importMojoFile(sourceMgr, config, ts);
+
+        if (!parserModuleHashOut.getValue().empty()) {
+          std::string message;
+          auto out =
+              mlir::openOutputFile(parserModuleHashOut.getValue(), &message);
+          if (!out) {
+            llvm::errs() << "failed to open file: " << message << "\n";
+            return {};
+          }
+          std::string bytecode;
+          llvm::raw_string_ostream bytecodeOs(bytecode);
+          if (failed(mlir::writeBytecodeToFile(*output, bytecodeOs)))
+            return {};
+          auto hash = llvm::BLAKE3::hash(
+              {(const uint8_t *)bytecode.data(), bytecode.size()});
+          out->os() << llvm::toHex({(const char *)hash.data(), hash.size()})
+                    << "\n";
+          out->keep();
+        }
+
+        return output;
       });
 
   // Register LLVM IR generation.
