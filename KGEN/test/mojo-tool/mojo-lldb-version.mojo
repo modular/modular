@@ -5,6 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # Invoking the subcommand with `--help` prints its help text.
-# RUN: mojo lldb --version | FileCheck %s
+# RUN: mojo debug --version | FileCheck %s
 
 # CHECK: lldb version

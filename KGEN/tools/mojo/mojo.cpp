@@ -5,10 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Build/mojo-build.h"
+#include "Debug/mojo-debug.h"
 #include "Demangle/mojo-demangle.h"
 #include "Doc/mojo-doc.h"
 #include "Format/mojo-format.h"
-#include "LLDB/mojo-lldb.h"
 #include "Package/mojo-package.h"
 #include "REPL/mojo-repl.h"
 #include "Run/mojo-run.h"
@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
   registerFormatSubcommand(registry);
   registerPackageSubcommand(registry);
   registerREPLSubcommand(registry);
-  registerLLDBSubcommand(registry);
+  registerDebugSubcommand(registry);
   registerRunSubcommand(registry);
 
   // Configure the current python if it hasn't been set.

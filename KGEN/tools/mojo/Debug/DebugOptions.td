@@ -4,5 +4,5 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "LLDB/LLDBDescription.td"
+include "Debug/DebugDescription.td"
 include "Support/Driver/CommonOptions.td"
