@@ -17,6 +17,7 @@
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/TargetParser/Triple.h"
 
 namespace M {
@@ -327,6 +328,12 @@ SmallVector<float> getFloatBlob(FloatArrayElementsAttr floatElemsAttr);
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
+/// Returns a string literal that represents the given relocation model.
+StringLiteral stringifyRelocationModel(llvm::Reloc::Model model);
+/// If the given string maps to one used to represent an `llvm::Reloc::Model`,
+/// returns that model. Otherwise, returns null.
+std::optional<llvm::Reloc::Model> symbolizeRelocationModel(StringRef str);
+
 /// Look for a target info specification inside the provided module. Returns
 /// null if there is not one.
 TargetInfoAttr getTargetInfo(ModuleOp module);
@@ -337,10 +344,10 @@ void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 /// the provided operation. Returns null if one cannot be found.
 TargetInfoAttr lookupTargetInfo(Operation *from);
 /// Get the target info for the specified target.
-ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
-                                         StringRef targetTriple, StringRef arch,
-                                         StringRef features,
-                                         StringRef tuneCpu = "");
+ErrorOr<TargetInfoAttr>
+getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
+                 StringRef features, StringRef tuneCpu = "",
+                 llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_);
 
 /// Returns runtime representation of target info attribute.
 ErrorOr<TargetInfo> toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr);

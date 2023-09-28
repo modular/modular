@@ -50,3 +50,13 @@
 
 // expected-error@+1 {{invalid #M.inout_sig at operand 3.}}
 "M"() {a = #M.inout_sig<"iioxm">} : () -> ()
+
+// -----
+
+// expected-error@+1 {{failed to parse M_TargetInfoAttr parameter 'relocation_model' which is to be a `llvm::Reloc::Model`}}
+"M"() {a = #M.target<triple = "", arch = "", relocation_model = "">} : () -> ()
+
+// -----
+
+// expected-error@+1 {{failed to parse M_TargetInfoAttr parameter 'relocation_model' which is to be a `llvm::Reloc::Model`}}
+"M"() {a = #M.target<triple = "", arch = "", relocation_model = "ropi-rwpi-fugazi">} : () -> ()
