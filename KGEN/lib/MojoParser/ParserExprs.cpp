@@ -184,7 +184,7 @@ struct InfixInfo {
   bool isRightAssociative;
 
   /// Classify a token for an infix operator.
-  static InfixInfo get(Token::Kind tokKind) {
+  static InfixInfo get(Token::Kind tokKind, ParserBase &p) {
     // Helper to reduce boilerplate with isRightAssociative.
     auto get = [](Precedence precedence, ExprNode::Kind nodeKind,
                   bool isRightAssociative = false) -> InfixInfo {
@@ -212,6 +212,17 @@ struct InfixInfo {
       return get(Precedence::kBoolOr, ExprNode::kBoolOr);
     case Token::kw_and:
       return get(Precedence::kBoolAnd, ExprNode::kBoolAnd);
+    case Token::kw_not: {
+      LexerCursor c;
+      std::ignore = p.getCursor(c);
+      p.consumeToken();
+      Token next = p.getToken();
+      c.restore(p.lexer);
+      if (next.getKind() == Token::kw_in)
+        return get(Precedence::kComparison, ExprNode::kCmpNotIn);
+      // `not` by itself is not an infix operator, it is prefix.
+      return get(Precedence::kInvalid, ExprNode::kLastBinOp);
+    }
     case Token::kw_in:
       return get(Precedence::kComparison, ExprNode::kCmpIn);
     case Token::kw_is:
@@ -261,7 +272,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
   // Consume infix tokens until we meet a token whose tokPrecedence is equal or
   // lower than minPrec. This means that it collects all tokens that bind
   // together before returning to the operator that called it.
-  InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
+  InfixInfo infixInfo = InfixInfo::get(getToken().getKind(), *this);
   while (isTokenInCurrentStatement() && minPrec <= infixInfo.precedence) {
     Token::Kind tokKind = getToken().getKind();
     auto binOpLoc = consumeToken().getLoc();
@@ -280,7 +291,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
           parseExpression(falseExpr, Precedence::kBoolOr))
         return failure();
       result = alloc<IfElseOpNode>(result, binOpLoc, cond, elseLoc, falseExpr);
-      infixInfo = InfixInfo::get(getToken().getKind());
+      infixInfo = InfixInfo::get(getToken().getKind(), *this);
       continue;
     }
 
@@ -310,7 +321,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
       result = alloc<BinOpNode>(infixInfo.nodeKind, result, binOpLoc, rhs);
     else if (parseComparisonExpr(result, rhs, infixInfo.nodeKind, binOpLoc))
       return failure();
-    infixInfo = InfixInfo::get(getToken().getKind());
+    infixInfo = InfixInfo::get(getToken().getKind(), *this);
   }
   return success();
 }
@@ -339,7 +350,7 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
   exprs.push_back(result);
   exprs.push_back(rhs);
   ops.push_back(kind);
-  InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
+  InfixInfo infixInfo = InfixInfo::get(getToken().getKind(), *this);
   while (isTokenInCurrentStatement() &&
          infixInfo.precedence == Precedence::kComparison) {
     consumeToken();
@@ -348,7 +359,7 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
       return failure();
     exprs.push_back(cmpOperand);
     ops.push_back(infixInfo.nodeKind);
-    infixInfo = InfixInfo::get(getToken().getKind());
+    infixInfo = InfixInfo::get(getToken().getKind(), *this);
   }
   result = alloc<ChainedCmpOpNode>(copyArrayRef<ExprNode *>(exprs),
                                    copyArrayRef<ExprNode::Kind>(ops), loc);

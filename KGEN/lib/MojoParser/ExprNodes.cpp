@@ -1897,6 +1897,11 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
   return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
 }
 
+static AnyValue emitCmpContain(ASTExprAnd<AnyValue> lhs,
+                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
+                               ValueDest &dest, const ExprNode *callExpr,
+                               ExprEmitter &emitter);
+
 /// Emit the binary operation (with a `lhs`, `rhs` and `kind`) as a special
 /// function call.
 /// A special function call is one where the` kind` must corresponds to a valid
@@ -1921,9 +1926,16 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     }
   }
 
+  if (kind == ExprNode::Kind::kCmpIn || kind == ExprNode::Kind::kCmpNotIn)
+    return emitCmpContain(lhs, rhs, kind, dest, callExpr, emitter);
+
   // If this operator maps onto a special function, attempt to lower it.
   auto specialFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/false);
-  assert(specialFnInfo.kind != SpecialFunctionKind::kNormal);
+  if (specialFnInfo.kind == SpecialFunctionKind::kNormal) {
+    // This means that the operator is not defined in SpecialFunctions.def.
+    emitter.shared.emitError(callExpr->getLoc(), "operator not yet supported");
+    return {};
+  }
   ASTExprAnd<AnyValue> argValues[] = {lhs, rhs};
 
   // Check to see if we have a forward version of this function on the primary
@@ -1958,6 +1970,28 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // Emit an error complaining about the forward version of the operator.
   return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, dest,
                                      CallSyntax::kOperator, callExpr);
+}
+
+/// Emit code for `x in y` and `x not in y` operators. These don't map
+/// cleanly to single dunder methods, but rather have a series of
+/// fallback behaviors.  Specifically, `x in y` uses __contains__ if
+/// available, and if not it traverses the object if it's iterable,
+/// comparing contained objects for equality.  The `not in` operator simply
+/// negates the result of the `in` operator.
+static AnyValue emitCmpContain(ASTExprAnd<AnyValue> lhs,
+                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
+                               ValueDest &dest, const ExprNode *callExpr,
+                               ExprEmitter &emitter) {
+  assert(
+      (kind == ExprNode::Kind::kCmpIn || kind == ExprNode::Kind::kCmpNotIn) &&
+      "must be used on in/not in comparison node");
+  Location cmpContainLoc = callExpr->getLocation(emitter);
+  std::string opName = "in";
+  if (kind == ExprNode::Kind::kCmpNotIn)
+    opName = "not in";
+  emitter.emitError(cmpContainLoc, "'")
+      << opName << "' operation is not yet supported";
+  return {};
 }
 
 /// Emit a simple assignment statement. Python evaluates the RHS of an
