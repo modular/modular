@@ -111,14 +111,16 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
 
   // Start by erasing unresolved imports. This puts the module in a canonical
   // form.
-  module.walk<mlir::WalkOrder::PreOrder>([declOp](Operation *op) {
+  DenseMap<StringAttr, AliasDeclOp> aliasMap;
+  module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Don't purge anything from the main package if we are parsing one.
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
 
-    // Imports are not found underneath structs and functions.
-    if (isa<StructDeclOp, TraitDeclOp, LIT::FuncOp>(op))
-      return WalkResult::skip();
+    if (auto aliasDecl = dyn_cast<AliasDeclOp>(op)) {
+      aliasMap.try_emplace(aliasDecl.getParamDecl().getName(), aliasDecl);
+      return WalkResult::advance();
+    }
     if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op)) {
       op->erase();
       return WalkResult::skip();
@@ -131,9 +133,11 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
   mlir::SymbolTableCollection symtab;
   DenseSet<Operation *> liveSymbols;
   std::vector<Operation *> worklist;
-  declOp->walk([&](mlir::SymbolOpInterface symbol) {
-    liveSymbols.insert(symbol);
-    worklist.push_back(symbol);
+  declOp->walk([&](Operation *op) {
+    if (isa<mlir::SymbolOpInterface, AliasDeclOp>(op)) {
+      liveSymbols.insert(op);
+      worklist.push_back(op);
+    }
   });
 
   // This walker will mark all referenced symbols as live.
@@ -150,6 +154,10 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
       return;
     for (Operation *symbol : symbols)
       markLive(symbol);
+  });
+  refCollector.addWalk([&](ParamDeclRefAttr ref) {
+    if (AliasDeclOp aliasDecl = aliasMap.lookup(ref.getName()))
+      markLive(aliasDecl);
   });
 
   // Propagate liveness.
@@ -185,16 +193,10 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
 
-    if (auto symbol = dyn_cast<mlir::SymbolOpInterface>(op)) {
-      if (!liveSymbols.contains(symbol)) {
-        symbol.erase();
-        return WalkResult::skip();
-      }
-    } else if (auto aliasDecl = dyn_cast<AliasDeclOp>(op)) {
-      if (aliasDecl.getIsUnresolved()) {
-        aliasDecl.erase();
-        return WalkResult::skip();
-      }
+    if (isa<mlir::SymbolOpInterface, AliasDeclOp>(op) &&
+        !liveSymbols.contains(op)) {
+      op->erase();
+      return WalkResult::skip();
     }
     return WalkResult::advance();
   });
