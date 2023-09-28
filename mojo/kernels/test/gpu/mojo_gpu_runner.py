@@ -74,8 +74,6 @@ def fix_ptx(path: Path):
     fixed_ptx = path.read_text()
     # Delete the (.param .align 1 .b8 func_retval0[0]) from the PTX
     fixed_ptx = fixed_ptx.replace(" (.param .align 1 .b8 func_retval0[0]) ", "")
-    # Make the visible function an entry function
-    fixed_ptx = fixed_ptx.replace(".visible .func", ".visible .entry")
 
     path.write_text(fixed_ptx)
 
