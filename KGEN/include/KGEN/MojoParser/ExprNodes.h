@@ -298,16 +298,16 @@ struct SubscriptNode final : public ExprNode {
 struct SubscriptArrowNode final : public ExprNode {
   SubscriptArrowNode(ExprNode *base, SMLoc lsquareLoc,
                      ArrayRef<ExprNode *> subscriptArgs, SMLoc arrowLoc,
-                     ArrayRef<ExprNode *> arrowExprs, SMLoc rsquareLoc)
+                     ArrayRef<ExprNode *> results, SMLoc rsquareLoc)
       : ExprNode(kSubscriptArrow), base(base), lsquareLoc(lsquareLoc),
-        subscriptArgs(subscriptArgs), arrowLoc(arrowLoc),
-        arrowExprs(arrowExprs), rsquareLoc(rsquareLoc) {}
+        subscriptArgs(subscriptArgs), arrowLoc(arrowLoc), results(results),
+        rsquareLoc(rsquareLoc) {}
 
   ExprNode *const base;
   const SMLoc lsquareLoc;
   ArrayRef<ExprNode *> subscriptArgs;
   const SMLoc arrowLoc;
-  ArrayRef<ExprNode *> arrowExprs;
+  ArrayRef<ExprNode *> results;
   const SMLoc rsquareLoc;
 
   static bool classof(const ExprNode *node) {
