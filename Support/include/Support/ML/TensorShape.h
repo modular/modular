@@ -13,6 +13,7 @@
 
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/LLVMYAMLForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -481,23 +482,6 @@ inline raw_ostream &operator<<(raw_ostream &os, const TensorShape &value) {
 
 } // namespace M
 
-namespace llvm::yaml {
-
-enum class QuotingType;
-
-template <typename T, typename Enable>
-struct ScalarTraits;
-
-// Equivalent to LLVM_YAML_DECLARE_SCALAR_TRAITS, but without requiring
-// including YAMLTraits.h (YAMLTraits.h is a large header and TensorShape.h is
-// somewhat pervasive, so we don't want to make it too heavy to compile)
-template <>
-struct ScalarTraits<M::TensorShape, void> {
-  static void output(const M::TensorShape &value, void *ctxt, raw_ostream &out);
-  static StringRef input(StringRef scalar, void *ctxt, M::TensorShape &value);
-  static QuotingType mustQuote(StringRef);
-};
-
-} // namespace llvm::yaml
+LLVM_FWD_YAML_DECLARE_SCALAR_TRAITS(M::TensorShape)
 
 #endif // SUPPORT_ML_TENSORSHAPE_H
