@@ -48,12 +48,7 @@ fn test_matmul[
     b_type: DType,
     c_type: DType,
 ]():
-    # k%4 != 0 can overread into unallocated memory and fault
-    # 3 bytes of padding fixes this. See issue 18784
-    alias extra_bytes = 3
-    let a_ptr = DTypePointer[a_type].aligned_alloc(
-        alignment, m * k + extra_bytes
-    )
+    let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
     let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
 

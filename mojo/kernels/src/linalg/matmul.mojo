@@ -942,9 +942,8 @@ struct MatmulInnerLoopBPacked[
                 c_val = fma[c_type, simd_size](a_val, b_val, c_val)
                 c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
-    @adaptive
-    fn _accumulate[
-        a_col_size: Int
+    fn _accumulate_vnni[
+        is_tail: Bool
     ](
         self,
         c_local: NDBuffer[
@@ -962,30 +961,61 @@ struct MatmulInnerLoopBPacked[
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        constrained[a_col_size == 0]()
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+        let kl = tile_n_k_idx[1]
 
         # Global K index.
-        let global_k = self.global_offset.K + tile_n_k_idx[1]
+        let global_k = self.global_offset.K + kl
         let b_ptr = self.b_packed._offset(
-            Index(n_outer_idx, tile_n_k_idx[1] // 4, 0)
+            Index(n_outer_idx, kl // 4, 0)
         ).bitcast[DType.int32]()
 
-        # Prefetch B matrix.
         @parameter
-        if prefetch_b_distance > 0:
-            alias prefetch_offset = prefetch_b_distance * pack_inner_size
+        if not is_tail:
+            # Prefetch B matrix.
+            @parameter
+            if prefetch_b_distance > 0:
+                alias prefetch_offset = prefetch_b_distance * pack_inner_size
 
-            @unroll
-            for idx in range(pack_inner_size // simd_size):
-                b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
-                    PrefetchOptions().for_read().high_locality().to_data_cache()
-                ]()
+                @unroll
+                for idx in range(pack_inner_size // simd_size):
+                    b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ]()
 
         # This inner kernels works with non-transposed A.
         let K = self.a.dim(1)
-        let a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
+
+        let a_local = Buffer[4 * a_row_size, a_type].stack_allocation()
+        let a_base_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
+        let a_ptr = a_local.data if (
+            is_tail and not has_avx512f()
+        ) else a_base_ptr
+        let a_ptr_stride = 4 if (is_tail and not has_avx512f()) else K
+
+        let tail_length = self.tile_n_k[1] - kl
+        # pack A if (tile_n_k_idx[1] - kl) is 1, 2, or 3
+        @parameter
+        if is_tail and not has_avx512f():
+            for idx0 in range(a_row_size):
+                for idx_k in range(tail_length):
+                    a_local[4 * idx0 + idx_k] = a_base_ptr.offset(
+                        idx0 * K + idx_k
+                    ).load()
+
+        @always_inline
+        fn bitcast[
+            dest_type: DType, dest_size: Int, src_type: DType, src_size: Int
+        ](v: SIMD[src_type, src_size]) -> SIMD[dest_type, dest_size]:
+            return __mlir_op.`pop.bitcast`[
+                _type : __mlir_type[
+                    `!pop.simd<`, dest_size.value, `, `, dest_type.value, `>`
+                ]
+            ](v.value)
 
         # Loop over local accumulator tiles.
         @unroll
@@ -994,9 +1024,18 @@ struct MatmulInnerLoopBPacked[
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
-                let a_val = a_ptr.offset(idx0 * K).bitcast[
+                let a_val = bitcast[c_type, 1](
+                    partial_simd_load[a_type, 4](
+                        a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
+                    )
+                ) if (is_tail and has_avx512f()) else a_ptr.offset(
+                    idx0 * a_ptr_stride
+                ).bitcast[
                     DType.int32
-                ]().load().cast[c_type]()
+                ]().load().cast[
+                    c_type
+                ]()
+
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 let c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local.aligned_simd_load[simd_size, alignment](
@@ -1037,11 +1076,12 @@ struct MatmulInnerLoopBPacked[
 
             # Iterate on tile K dimension.
             # Not unrolled on K path.
-            let k4 = align_up(self.tile_n_k[1], 4)
-            for idx_k in range(0, k4, 4):
+            let kl = align_down(self.tile_n_k[1], 4)
+            for idx_k in range(0, kl, 4):
                 # accumulate data for this (n, k) index
-                self._accumulate[0](c_local, Index(idx_n, idx_k))
-
+                self._accumulate_vnni[False](c_local, Index(idx_n, idx_k))
+            if kl != self.tile_n_k[1]:
+                self._accumulate_vnni[True](c_local, Index(idx_n, kl))
             self._store_c_tile(c_local, idx_n)
 
     @adaptive
