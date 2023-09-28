@@ -1873,7 +1873,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     // Bind the i/T parameters.  Int implicitly constructs from index type.
     TypedAttr iParam =
         IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-    getDecl.inputParamBindings.bindings.resize(1);
+    getDecl.inputParamBindings.posBindings.resize(1);
     getDecl.inputParamBindings.add(expr, iParam);
     getDecl.inputParamBindings.add(expr, packVariadic.getValues()[index]);
 

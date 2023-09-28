@@ -37,7 +37,11 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 void InputParamBindings::addPrechecked(TypedAttr precheckedBinding) {
-  bindings.push_back({nullptr, precheckedBinding, /*typeChecked=*/true});
+  posBindings.push_back({nullptr, precheckedBinding, /*typeChecked=*/true});
+}
+
+void InputParamBindings::add(const ExprNode *expr, TypedAttr value) {
+  posBindings.push_back({expr, value, /*typeChecked=*/false});
 }
 
 //===----------------------------------------------------------------------===//
@@ -431,12 +435,12 @@ InputParamBindings::verifyBindings(
   };
 
   size_t bindingIdx = 0;
-  size_t numBindings = bindings.size();
+  size_t numPosBindings = posBindings.size();
   for (auto [idx, type] : llvm::enumerate(actualParamTypes)) {
     bool isVarArg = idx + 1 == numParams && hasParamVarArgs;
 
     // Check to see if we ran out of bindings to provide to this param decl.
-    if (bindingIdx == numBindings) {
+    if (bindingIdx == numPosBindings) {
       // Determine what type we expect next.
       Type requestedType = evaluator.getReboundType(type);
       Type expectedType = requestedType;
@@ -482,7 +486,7 @@ InputParamBindings::verifyBindings(
       return {{}, fitness};
     }
 
-    Binding binding = bindings[bindingIdx];
+    Binding binding = posBindings[bindingIdx];
     // If this value was already bound and checked, use it.
     if (binding.typeChecked) {
       setParamValue(binding.value);
@@ -509,18 +513,18 @@ InputParamBindings::verifyBindings(
     SmallVector<TypedAttr> elements;
     Type expectedType = ASTType(type).getVariadicElementType();
     do {
-      binding = bindings[bindingIdx++];
+      binding = posBindings[bindingIdx++];
       PValue pValue = handleSingleBinding(idx, binding, expectedType);
       if (!pValue)
         return {{}, fitness};
       elements.emplace_back(pValue);
-    } while (bindingIdx != numBindings);
+    } while (bindingIdx != numPosBindings);
     setParamValue(VariadicAttr::get(
         elements, VariadicType::get(evaluator.getReboundType(expectedType))));
   }
 
   // Check and complain if we have bindings that didn't get used.
-  if (bindingIdx != numBindings) {
+  if (bindingIdx != numPosBindings) {
     emitParamCountDiag();
     return {{}, fitness};
   }
@@ -565,7 +569,7 @@ InputParamBindings::verifyBindings(
       [&]() {
         size_t minRequired = actualParamTypes.size() - defaultParams.size();
         size_t maxAllowed = actualParamTypes.size();
-        size_t actualNumParams = bindings.size();
+        size_t actualNumParams = posBindings.size();
         InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
         emitWrongArgOrParamCount(diag, minRequired, maxAllowed, actualNumParams,
                                  "input parameter");
@@ -1042,15 +1046,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // If there is an error, return the problem.
   if (!newBindings) {
-    ArrayRef<InputParamBindings::Binding> paramBindings =
-        callable.inputParamBindings.bindings;
+    ArrayRef<InputParamBindings::Binding> posBindings =
+        callable.inputParamBindings.posBindings;
     if (auto expectedBinding = bindingFitness.expectedBinding) {
       auto &[paramIdx, expectedType] = *expectedBinding;
-      return emitDiagFor.wrongParamType(paramBindings[paramIdx], paramIdx,
+      return emitDiagFor.wrongParamType(posBindings[paramIdx], paramIdx,
                                         expectedType);
     }
     return emitDiagFor.wrongParamCount(signature.getNumInputParams(),
-                                       paramBindings.size(), "input");
+                                       posBindings.size(), "input");
   }
 
   // Check the result parameter count.
@@ -1475,7 +1479,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     // bindings present, because (unlike normal function calls) the result type
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
-    if (!inputParamBindings.bindings.empty()) {
+    if (!inputParamBindings.posBindings.empty()) {
       auto newBindings = getBindingsForSignature(candidateType);
       if (!newBindings)
         return false; // If there is an error, return the problem.
@@ -1519,7 +1523,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   // If we resolved to a single candidate or an adaptive set, then we succeed.
   if (validCandidates.size() == 1 ||
       (!validCandidates.empty() && allMarkedAdaptive())) {
-    if (inputParamBindings.bindings.empty())
+    if (inputParamBindings.posBindings.empty())
       return getCallee(validCandidates, baseName, inputParamBindings, expr,
                        emitter);
 
@@ -1562,7 +1566,7 @@ getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
 
   // If there are no input parameters specified and if we allow unbound
   // symbols, just return the unbound symbol.
-  if (inputParamBindings.bindings.empty())
+  if (inputParamBindings.posBindings.empty())
     return funcOp.getBoundReference();
 
   // Check that the signature can be rebound with our set of bindings.
@@ -1773,7 +1777,7 @@ PValue OverloadSet::getDirectSymbol(ExprEmitter *emitter,
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
-    if (inputParamBindings.bindings.empty())
+    if (inputParamBindings.posBindings.empty())
       return cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference();
     if (!emitter)
       return {};
