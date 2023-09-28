@@ -62,17 +62,15 @@ public:
     ASTType getType() const { return value.getType(); }
   };
 
-  /// This contains a list of bound input parameters.
-  SmallVector<Binding> bindings;
+  /// This contains a list of bound input parameters given positionally.
+  SmallVector<Binding> posBindings;
 
   /// Add a bound value for a pre-checked parameter bindings.  The binding must
   /// be known to be valid.
   void addPrechecked(TypedAttr precheckedBinding);
 
   /// Add a bound value for a parameter expression bound to a value.
-  void add(const ExprNode *expr, TypedAttr value) {
-    bindings.push_back({expr, value, /*typeChecked=*/false});
-  }
+  void add(const ExprNode *expr, TypedAttr value);
 
   using ParameterInferenceHookTy =
       function_ref<PValue(size_t index, Type type, ASTType expectedType,
