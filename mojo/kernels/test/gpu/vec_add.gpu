@@ -1,0 +1,15 @@
+from gpu import *
+from memory.unsafe import DTypePointer
+
+
+@export
+fn vec_add(
+    in0: DTypePointer[DType.float32],
+    in1: DTypePointer[DType.float32],
+    out: DTypePointer[DType.float32],
+    len: Int,
+):
+    let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+    if tid >= len:
+        return
+    out.store(tid, in0.load(tid) + in1.load(tid))
