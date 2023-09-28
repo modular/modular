@@ -50,6 +50,7 @@ setup(
             "isort>=5.10.1",
             "flake8>=3.9",
             "pyright>=1.1.255",
+            "boto3>=1.26.102",
         ],
         "build-metrics": [
             "opentelemetry-api>=1.18.0",
