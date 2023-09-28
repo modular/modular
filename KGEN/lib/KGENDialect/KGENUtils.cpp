@@ -1415,8 +1415,6 @@ ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {
       value = ExportKind::Weak;
     else if (succeeded(p.parseOptionalKeyword("C")))
       value = ExportKind::CExported;
-    else if (succeeded(p.parseOptionalKeyword("NVVM")))
-      value = ExportKind::NVVMExported;
   }
   exportKind = ExportKindAttr::get(p.getContext(), value);
   return success();
@@ -1432,9 +1430,6 @@ void KGEN::printSymbolExport(AsmPrinter &p, Operation *op,
       break;
     case ExportKind::CExported:
       p << " C";
-      break;
-    case ExportKind::NVVMExported:
-      p << " NVVM";
       break;
     default:
       break;
