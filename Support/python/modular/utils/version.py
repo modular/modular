@@ -12,4 +12,4 @@ functionality. The only current requirement for updating version is when an
 external dependency is modified (e.g. added, removed, version changed).
 """
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
