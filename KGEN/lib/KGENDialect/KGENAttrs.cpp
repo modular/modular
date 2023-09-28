@@ -1614,13 +1614,19 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
 }
 
 static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
-  auto c = dyn_cast<IntegerAttr>(operands[0]);
+  TypedAttr condAttr = operands[0];
+  TypedAttr thenAttr = operands[1];
+  TypedAttr elseAttr = operands[2];
+  if (thenAttr == elseAttr)
+    return thenAttr;
+
+  auto c = dyn_cast<IntegerAttr>(condAttr);
   if (!c)
     return {};
   if (c.getValue().isOne())
-    return operands[1];
+    return thenAttr;
   if (c.getValue().isZero())
-    return operands[2];
+    return elseAttr;
   return {};
 }
 
