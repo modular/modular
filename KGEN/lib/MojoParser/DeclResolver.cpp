@@ -1201,7 +1201,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   // Parse an optional default argument value: `"=" expression`.
   SMLoc equalLoc;
   if (p.consumeIf(Token::equal, &equalLoc)) {
-    if (p.parseExpression(initExpr, std::nullopt))
+    if (p.parseExpression(initExpr))
       return failure();
 
     // Default args and varargs don't mix.
@@ -1314,7 +1314,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 
   // Parse a list of arguments and keyword argument specifiers.  Each argument
   // will leave its `kwargHandling` default initialized.
-  if (p.parseCommaSeparatedList(parseArgument, stopTokens, std::nullopt))
+  if (p.parseCommaSeparatedList(parseArgument, stopTokens))
     return failure();
 
   // TODO(Keyword Args): now that we parsed a fully generic parameter list,
@@ -2560,7 +2560,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ExprNode *resultTypeExpr = nullptr;
   SMLoc resultLoc = p.getToken().getLoc();
   if (p.consumeIf(Token::minus_greater)) {
-    if (p.parseExpression(resultTypeExpr, std::nullopt))
+    if (p.parseExpression(resultTypeExpr))
       return failure();
   }
   if (p.parseToken(Token::colon, "expected ':' in function definition"))

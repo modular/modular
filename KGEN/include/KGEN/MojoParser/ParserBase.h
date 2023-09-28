@@ -160,7 +160,7 @@ public:
   ParseResult
   parseCommaSeparatedList(const function_ref<ParseResult()> &parseElement,
                           ArrayRef<Token::Kind> terminators,
-                          std::optional<size_t> stmtIndent,
+                          std::optional<size_t> stmtIndent = std::nullopt,
                           SMLoc *firstCommaLoc = nullptr);
 
   /// Return true if the current token is part of the current statement, false
@@ -221,7 +221,7 @@ public:
   /// the current statement.  This can be passed in as None when there is a
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpression(ExprNode *&result,
-                              std::optional<size_t> stmtIndent);
+                              std::optional<size_t> stmtIndent = std::nullopt);
   ParseResult parseAssignExpression(ExprNode *&result,
                                     std::optional<size_t> stmtIndent);
   ParseResult parseVarLetInitExpression(ExprNode *&result, size_t stmtIndent);

@@ -934,7 +934,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return failure();
 
   ExprNode *seqExpr = nullptr;
-  if (parseExpression(seqExpr, std::nullopt) ||
+  if (parseExpression(seqExpr) ||
       parseToken(Token::colon, "expected ':' after expression"))
     return failure();
 
@@ -1177,7 +1177,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Parse and emit the context mgr.
   // TODO: Generalize to multiple of them.
   ExprNode *contextExp = nullptr;
-  if (parseExpression(contextExp, std::nullopt))
+  if (parseExpression(contextExp))
     return failure();
 
   // If we are in a def, we need to use function scoping.  If we are in a fn,
@@ -2158,7 +2158,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
       if (getLocation(arg.loc) ||
           parseIdentifier(arg.name, "expected an identifier") ||
           parseToken(Token::colon, "expected ':' after region argument") ||
-          parseExpression(typeExpr, std::nullopt))
+          parseExpression(typeExpr))
         return failure();
       ASTType type = getEmitter().emitExprType(typeExpr);
       if (!type)
@@ -2167,7 +2167,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
       argLocs.push_back(translateLocation(arg.loc));
       return success();
     };
-    if (parseCommaSeparatedList(parseArg, Token::r_paren, std::nullopt))
+    if (parseCommaSeparatedList(parseArg, Token::r_paren))
       return failure();
     consumeToken(Token::r_paren);
   }

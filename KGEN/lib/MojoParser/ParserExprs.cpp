@@ -822,8 +822,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
     };
 
     // TODO: Handle comprehension argument.
-    if (parseCommaSeparatedList(parseCallOperand, Token::r_paren,
-                                std::nullopt) ||
+    if (parseCommaSeparatedList(parseCallOperand, Token::r_paren) ||
         parseToken(Token::r_paren, "expected ')' in call argument list",
                    &rparenLoc)) {
       return failure();
@@ -940,8 +939,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
   SmallVector<Operand> operands;
   if (parseCommaSeparatedList([&]() { return parseSubscriptOperand(operands); },
-                              {Token::r_square, Token::minus_greater},
-                              std::nullopt) ||
+                              {Token::r_square, Token::minus_greater}) ||
       getLocation(rsquareLoc))
     return failure();
 
@@ -970,7 +968,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   SmallVector<Operand> parsedResults;
   if (parseCommaSeparatedList(
           [&]() { return parseSubscriptOperand(parsedResults); },
-          {Token::r_square}, std::nullopt) ||
+          Token::r_square) ||
       getLocation(rsquareLoc) ||
       parseToken(Token::r_square, "expected ']' in call argument list"))
     return failure();
