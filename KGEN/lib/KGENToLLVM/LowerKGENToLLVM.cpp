@@ -73,6 +73,9 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
                       b.getUnitAttr());
     }
 
+    if (func.isExported())
+      funcOp.setDsoLocal(true);
+
     // And move the func's body into the new function.
     b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(), funcOp.end());
     (void)b.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
