@@ -34,7 +34,6 @@ static LLVM::Linkage getLinkageKind(ExportKind exportKind, bool isExternFunc) {
     return isExternFunc ? LLVM::Linkage::ExternWeak : LLVM::Linkage::Internal;
   case ExportKind::Exported:
   case ExportKind::CExported:
-  case ExportKind::NVVMExported:
     return LLVM::Linkage::External;
   case ExportKind::Weak:
     return isExternFunc ? LLVM::Linkage::External : LLVM::Linkage::Weak;
@@ -61,20 +60,23 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
     if (!funcType)
       return emitError(func.getLoc(), "failed to convert func signature");
 
+    TargetInfoAttr target = getTypeConverter()->getTarget();
+
     // Mark all functions as internal for now - we'll clean this up later.
     auto funcOp = createLLVMFunc(
-        b, getTypeConverter()->getTarget(), func.getLoc(), func.getNameAttr(),
-        funcType, getLinkageKind(func.getExportKind(), /*isExternFunc=*/false));
+        b, target, func.getLoc(), func.getNameAttr(), funcType,
+        getLinkageKind(func.getExportKind(), /*isExternFunc=*/false));
 
-    // NVVM-exported functions get a special metadata attribute to tell LLVM
-    // that these are kernel functions.
-    if (func.isNVVMExported()) {
-      funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
-                      b.getUnitAttr());
-    }
-
-    if (func.isExported())
+    if (func.isExported()) {
       funcOp.setDsoLocal(true);
+
+      // Exported functions to the NVVM target get a special metadata attribute
+      // to tell LLVM that these are kernel functions.
+      if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
+                             target.getTriple().getArch()))
+        funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
+                        b.getUnitAttr());
+    }
 
     // And move the func's body into the new function.
     b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(), funcOp.end());
