@@ -213,10 +213,10 @@ struct Operand {
   /// The location where the keyword (if given) or the value starts.
   const SMLoc startLoc;
 
-  PassKind passKind;
+  const PassKind passKind;
 
   /// This is the name of a keyword operand when kind=kKeyword, else null.
-  StringAttr name;
+  const StringAttr name;
 
   SMLoc getLoc() const { return startLoc; }
 
@@ -272,14 +272,14 @@ struct CallNode final : public ExprNode {
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
 /// slice will be represented with a subexpression.
 struct SubscriptNode final : public ExprNode {
-  SubscriptNode(ExprNode *base, SMLoc lsquareLoc,
-                ArrayRef<ExprNode *> subscriptArgs, SMLoc rsquareLoc)
+  SubscriptNode(ExprNode *base, SMLoc lsquareLoc, ArrayRef<Operand> operands,
+                SMLoc rsquareLoc)
       : ExprNode(kSubscript), base(base), lsquareLoc(lsquareLoc),
-        subscriptArgs(subscriptArgs), rsquareLoc(rsquareLoc) {}
+        operands(operands), rsquareLoc(rsquareLoc) {}
 
   ExprNode *const base;
   const SMLoc lsquareLoc;
-  const ArrayRef<ExprNode *> subscriptArgs;
+  const ArrayRef<Operand> operands;
   const SMLoc rsquareLoc;
 
   static bool classof(const ExprNode *node) { return node->kind == kSubscript; }
@@ -297,15 +297,15 @@ struct SubscriptNode final : public ExprNode {
 /// the slice will be represented with a subexpression.
 struct SubscriptArrowNode final : public ExprNode {
   SubscriptArrowNode(ExprNode *base, SMLoc lsquareLoc,
-                     ArrayRef<ExprNode *> subscriptArgs, SMLoc arrowLoc,
+                     ArrayRef<Operand> operands, SMLoc arrowLoc,
                      ArrayRef<ExprNode *> results, SMLoc rsquareLoc)
       : ExprNode(kSubscriptArrow), base(base), lsquareLoc(lsquareLoc),
-        subscriptArgs(subscriptArgs), arrowLoc(arrowLoc), results(results),
+        operands(operands), arrowLoc(arrowLoc), results(results),
         rsquareLoc(rsquareLoc) {}
 
   ExprNode *const base;
   const SMLoc lsquareLoc;
-  ArrayRef<ExprNode *> subscriptArgs;
+  const ArrayRef<Operand> operands;
   const SMLoc arrowLoc;
   ArrayRef<ExprNode *> results;
   const SMLoc rsquareLoc;
