@@ -1571,7 +1571,7 @@ AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
 
   // Next, bind the results.  The grammar allows any expression, but we only
   // accept identifiers.
-  for (ExprNode *dest : arrowExprs) {
+  for (ExprNode *dest : results) {
     auto *drn = dyn_cast<DeclRefNode>(dest);
     if (!drn) {
       emitter.emitError(drn->getLoc(),

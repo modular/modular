@@ -109,8 +109,10 @@ private:
   ParseResult parsePrefixLBrace(DictionaryNode *&result, SMLoc lbraceLoc,
                                 bool isSubscript);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
-  FailureOr<Operand> parseOperand();
+  FailureOr<Operand> parseOperand(
+      function_ref<ParseResult(ExprNode *&, Precedence)> parseOperandValue);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
+  ParseResult parseExprOrSlice(ExprNode *&result);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
   ParseResult parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
                                   ExprNode::Kind kind, SMLoc loc);
@@ -741,8 +743,10 @@ ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
   return success();
 }
 
-/// Parses an operand expression.
-FailureOr<Operand> ExprParser::parseOperand() {
+/// Parses a (subscript or call) operand expression with optional keyword. The
+/// given callback is used to parse the operand value expression.
+FailureOr<Operand> ExprParser::parseOperand(
+    function_ref<ParseResult(ExprNode *&, Precedence)> parseOperandValue) {
   ExprNode *value;
   SMLoc startLoc = getToken().getLoc();
   if (consumeIf(Token::star)) {
@@ -763,7 +767,7 @@ FailureOr<Operand> ExprParser::parseOperand() {
     StringAttr name;
     (void)parseIdentifier(name, "<<already know this is identifier>>");
     if (consumeIf(Token::equal)) {
-      if (failed(parseExpression(value)))
+      if (failed(parseOperandValue(value, Precedence::kExpression)))
         return failure();
       return Operand(value, startLoc, Operand::kKeyword, name);
     }
@@ -772,10 +776,10 @@ FailureOr<Operand> ExprParser::parseOperand() {
   }
 
   // Parse this as an assignment_expression, allowing := operator.
-  if (failed(parseExpression(value, Precedence::kAssignExpr)))
+  if (failed(parseOperandValue(value, Precedence::kAssignExpr)))
     return failure();
   return Operand(value, startLoc, Operand::kPositional);
-};
+}
 
 /// call ::=  primary "(" [argument_list [","] | comprehension] ")"
 /// argument_list ::= argument ("," argument)*
@@ -795,8 +799,11 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
     llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
 
     // Parse an argument.
-    auto parseArgument = [&]() -> ParseResult {
-      FailureOr<Operand> operandOr = parseOperand();
+    auto parseCallOperand = [&]() -> ParseResult {
+      auto parseOperandValue = [&](ExprNode *&result, Precedence minPrec) {
+        return parseExpression(result, minPrec);
+      };
+      FailureOr<Operand> operandOr = parseOperand(parseOperandValue);
       if (failed(operandOr))
         return failure();
       operands.emplace_back(std::move(*operandOr));
@@ -804,7 +811,8 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
     };
 
     // TODO: Handle comprehension argument.
-    if (parseCommaSeparatedList(parseArgument, Token::r_paren, std::nullopt) ||
+    if (parseCommaSeparatedList(parseCallOperand, Token::r_paren,
+                                std::nullopt) ||
         parseToken(Token::r_paren, "expected ')' in call argument list",
                    &rparenLoc)) {
       return failure();
@@ -832,6 +840,57 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   return success();
 }
 
+/// Parses a slice or an ordinary expression
+ParseResult ExprParser::parseExprOrSlice(ExprNode *&result) {
+  // If this has a leading expr it could be an expr only or could be the first
+  // (optional) part of a slice.
+  if (getToken().isNot(Token::colon)) {
+    if (parseExpression(result))
+      return failure();
+    // If we had an expr with no trailing colon, then we are done with the
+    // expr case.
+    if (getToken().isNot(Token::colon, Token::equal))
+      return success();
+  } else {
+    // If it starts with a colon, this is a slice without a lower bound.
+    result = nullptr;
+  }
+
+  /// Consume either a colon or an equal sign.  If we have an equal sign,
+  /// diagnose it as a typo error.
+  auto consumeColonOrEqual = [&]() -> SMLoc {
+    assert(getToken().isAny(Token::colon, Token::equal));
+    auto loc = getToken().getLoc();
+    if (getToken().is(Token::equal))
+      emitTokenError("expected ':' in subscript slice, not '='")
+          << FixIt::replaceToken(loc, ":");
+    consumeToken();
+    return loc;
+  };
+
+  // Okay we have at least one colon, so we have a slice.
+  SMLoc colon1Loc = consumeColonOrEqual(), colon2Loc;
+  ExprNode *secondExpr = nullptr, *thirdExpr = nullptr;
+
+  // Parse the second expr if present.
+  if (getToken().isNot(Token::colon, Token::equal, Token::comma,
+                       Token::r_square))
+    if (parseExpression(secondExpr))
+      return failure();
+
+  // Parse a second colon if present and stride expression.
+  if (getToken().isAny(Token::colon, Token::equal)) {
+    colon2Loc = consumeColonOrEqual();
+    if (getToken().isNot(Token::comma, Token::r_square))
+      if (parseExpression(thirdExpr))
+        return failure();
+  }
+
+  result =
+      alloc<SliceNode>(result, colon1Loc, secondExpr, colon2Loc, thirdExpr);
+  return success();
+}
+
 /// subscription ::=  primary "[" expression_list ("->" expression_list)?"]"
 ///
 /// slicing      ::=  primary "[" slice_list "]"  [TODO]
@@ -854,60 +913,11 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
     return success();
   }
 
-  SmallVector<ExprNode *> subscriptArgs;
-
-  /// Consume either a colon or an equal sign.  If we have an equal sign,
-  /// diagnose it as a typo error.
-  auto consumeColonOrEqual = [&]() -> SMLoc {
-    assert(getToken().isAny(Token::colon, Token::equal));
-    auto loc = getToken().getLoc();
-    if (getToken().is(Token::equal))
-      emitTokenError("expected ':' in subscript slice, not '='")
-          << FixIt::replaceToken(loc, ":");
-    consumeToken();
-    return loc;
+  SmallVector<ExprNode *> operands;
+  auto parseOperand = [&]() {
+    return parseExprOrSlice(operands.emplace_back());
   };
-
-  auto parseExprOrSlice = [&]() -> ParseResult {
-    ExprNode *firstExpr = nullptr;
-    // If this has a leading expr it could be an expr only or could be the first
-    // (optional) part of a slice.
-    if (getToken().isNot(Token::colon)) {
-      if (parseExpression(firstExpr))
-        return failure();
-      // If we had an expr with no trailing colon, then we are done with the
-      // expr case.
-      if (getToken().isNot(Token::colon, Token::equal)) {
-        subscriptArgs.push_back(firstExpr);
-        return success();
-      }
-    }
-
-    // Okay we have at least one colon, so we have a slice.
-    SMLoc colon1Loc = consumeColonOrEqual(), colon2Loc;
-    ExprNode *secondExpr = nullptr, *thirdExpr = nullptr;
-
-    // Parse the second expr if present.
-    if (getToken().isNot(Token::colon, Token::equal, Token::comma,
-                         Token::r_square)) {
-      if (parseExpression(secondExpr))
-        return failure();
-    }
-
-    // Parse a second colon if present and stride expression.
-    if (getToken().isAny(Token::colon, Token::equal)) {
-      colon2Loc = consumeColonOrEqual();
-      if (getToken().isNot(Token::comma, Token::r_square)) {
-        if (parseExpression(thirdExpr))
-          return failure();
-      }
-    }
-    subscriptArgs.push_back(alloc<SliceNode>(firstExpr, colon1Loc, secondExpr,
-                                             colon2Loc, thirdExpr));
-    return success();
-  };
-
-  if (parseCommaSeparatedList(parseExprOrSlice,
+  if (parseCommaSeparatedList(parseOperand,
                               {Token::r_square, Token::minus_greater},
                               std::nullopt) ||
       getLocation(rsquareLoc))
@@ -917,27 +927,27 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   if (!consumeIf(Token::minus_greater)) {
     if (parseToken(Token::r_square, "expected ']' in call argument list"))
       return failure();
-    result = alloc<SubscriptNode>(result, lsquareLoc,
-                                  copyArrayRef<ExprNode *>(subscriptArgs),
-                                  rsquareLoc);
+    result = alloc<SubscriptNode>(
+        result, lsquareLoc, copyArrayRef<ExprNode *>(operands), rsquareLoc);
     return success();
   }
 
   // Otherwise, parse the arrow production.
   SMLoc arrowLoc = rsquareLoc;
-  SmallVector<ExprNode *> arrowExprs;
-  std::swap(subscriptArgs, arrowExprs);
-  if (parseCommaSeparatedList(parseExprOrSlice,
+  SmallVector<ExprNode *> results;
+  auto parseResults = [&]() {
+    return parseExprOrSlice(results.emplace_back());
+  };
+  if (parseCommaSeparatedList(parseResults,
                               {Token::r_square, Token::minus_greater},
                               std::nullopt) ||
       getLocation(rsquareLoc) ||
       parseToken(Token::r_square, "expected ']' in call argument list"))
     return failure();
 
-  std::swap(subscriptArgs, arrowExprs);
   result = alloc<SubscriptArrowNode>(
-      result, lsquareLoc, copyArrayRef<ExprNode *>(subscriptArgs), arrowLoc,
-      copyArrayRef<ExprNode *>(arrowExprs), rsquareLoc);
+      result, lsquareLoc, copyArrayRef<ExprNode *>(operands), arrowLoc,
+      copyArrayRef<ExprNode *>(results), rsquareLoc);
   return success();
 }
 
