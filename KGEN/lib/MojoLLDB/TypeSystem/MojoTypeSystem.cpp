@@ -68,8 +68,12 @@ struct MojoTypeSystem::Impl {
     // Compute the target information for the expression.
     // TODO: Populate cpu information properly here.
     ArchSpec targetArch = target.GetArchitecture();
-    if (targetArch.IsValid())
+    if (targetArch.IsValid()) {
       compilationOptions.targetTriple = targetArch.GetTriple().str();
+      compilationOptions.relocModel =
+          targetArch.GetTriple().isOSBinFormatMachO() ? llvm::Reloc::PIC_
+                                                      : llvm::Reloc::Static;
+    }
     compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
     // Configure the parser context.
@@ -80,7 +84,8 @@ struct MojoTypeSystem::Impl {
 
     auto targetInfoOr = M::getTargetInfoFor(
         &mlirContext, compilationOptions.targetTriple,
-        compilationOptions.targetCpu, compilationOptions.targetFeatures);
+        compilationOptions.targetCpu, compilationOptions.targetFeatures,
+        /*tuneCpu=*/"", compilationOptions.relocModel);
     if (succeeded(targetInfoOr))
       targetInfo = *targetInfoOr;
 

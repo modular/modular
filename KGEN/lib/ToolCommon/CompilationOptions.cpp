@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "Support/MDialect/MAttrs.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -68,6 +69,8 @@ void CompilationOptions::print(raw_ostream &os) const {
   }
   if (enableXRayInstrumentation)
     os << ", enableXRayInstrumentation";
+
+  os << ", relocModel: " << stringifyRelocationModel(relocModel);
 
   os << ", linkDirs: [";
   llvm::interleaveComma(linkDirs, os);

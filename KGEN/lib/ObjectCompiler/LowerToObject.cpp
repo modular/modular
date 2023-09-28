@@ -291,7 +291,7 @@ KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       options.targetTriple, options.targetCpu, options.targetFeatures,
-      /*Options=*/{}, /*RM=*/llvm::Reloc::Model::PIC_, /*CM=*/{},
+      /*Options=*/{}, options.relocModel, /*CM=*/{},
       /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
   if (!machine)
     return Error("unable to create target machine");
