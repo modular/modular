@@ -184,8 +184,7 @@ def PackageOp : LITOp<"package", [
     - The full pre-elaboration IR module, `preElaborationModule`.
     - The target it was compiled for, `compiledFor`.
     - The definitions used at compile time, `compiledEnv`.
-    - The full post-elaboration IR module, `postElaborationModule`.
-    - The compiled static archive, `archiveBytes`.
+    - The pre-compiled, standalone archive of the package, `archive`.
 
     Example:
 
@@ -246,9 +245,9 @@ def PackageLinkOp : LITOp<"package.link", [Symbol]> {
 
     ```mlir
     lit.package.link @foo compiledFor(#M.target<...>)
-      archive(dense_resource<...> : tensor<...xi8>)
       pre_elaboration(dense_resource<...> : tensor<...xi8>)
-      post_elaboration(dense_resource<...> : tensor<...xi8>)
+      archive(<elaboratedModule = dense_resource<...> : tensor<...xi8>,
+               archive = dense_resource<...> : tensor<...xi8>>)
     ```
   }];
 
