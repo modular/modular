@@ -428,6 +428,7 @@ bool SignatureType::hasAddress(ValueInputConvention conv) {
   case ValueInputConvention::InitSelf:
     return true;
   }
+  llvm_unreachable("invalid value input convention");
 }
 
 //===----------------------------------------------------------------------===//

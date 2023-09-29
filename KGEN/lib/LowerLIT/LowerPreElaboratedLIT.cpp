@@ -48,7 +48,7 @@ static LogicalResult readFromBytecode(Operation *op,
   // it.
   auto extractDependency = [&](StringAttr name) -> Operation * {
     // Don't move the symbol if it already exists in the main module.
-    if (Operation *existingOp = symTab.lookup(name))
+    if (symTab.lookup(name))
       return nullptr;
     Operation *symbol = bytecodeSymTab.lookup(name);
     assert(symbol && "expected valid symbol reference");
