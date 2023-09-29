@@ -93,7 +93,7 @@ static constexpr auto getOpFnOfType() {
 /// `OpFns`. If the head op function is of the given type, return it. Otherwise,
 /// check the rest of the functions.
 template <typename TestType, typename OpFn, typename... OpFns>
-static constexpr auto getOpFnOfType(OpFn op, OpFns &&...fns) {
+static constexpr auto getOpFnOfType([[maybe_unused]] OpFn op, OpFns &&...fns) {
   if constexpr (testOpFnType<OpFn, TestType>())
     return op;
   else
@@ -105,8 +105,9 @@ static constexpr auto getOpFnOfType(OpFn op, OpFns &&...fns) {
 /// dtype is encountered by the folder, it will assert; a folder must be
 /// provided for each dtype for which the operation is valid.
 template <typename TestType, typename GetValueFn, typename... OpFns>
-static SIMDAttr foldSIMDOpDType(GetValueFn getValue,
-                                ArrayRef<Attribute> operands, KGENDType dtype,
+static SIMDAttr foldSIMDOpDType([[maybe_unused]] GetValueFn getValue,
+                                [[maybe_unused]] ArrayRef<Attribute> operands,
+                                [[maybe_unused]] KGENDType dtype,
                                 OpFns &&...ops) {
   auto op = getOpFnOfType<TestType>(std::forward<OpFns>(ops)...);
   if constexpr (std::is_same_v<decltype(op), std::nullopt_t>) {
@@ -389,6 +390,7 @@ static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
   case CmpPredicate::GE:
     return lhs >= rhs;
   }
+  llvm_unreachable("invalid cmp predicate");
 }
 
 OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {

@@ -1196,6 +1196,7 @@ OpFoldResult IntLiteralCmp::fold(FoldAdaptor adaptor) {
   case IntLiteralCmpPred::Ge:
     return BoolAttr::get(lAttr.getContext(), l >= r);
   }
+  llvm_unreachable("invalid cmp predicate");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1225,11 +1226,10 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
     result = l * r;
     break;
   case IntLiteralBinopKind::FloorDiv:
-    if (l >= zero == r >= zero || l % r == zero) {
+    if ((l >= zero) == (r >= zero) || l % r == zero)
       result = l / r;
-    } else {
+    else
       result = (l / r) - one;
-    }
     break;
   case IntLiteralBinopKind::Mod:
     // Python's mod:

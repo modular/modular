@@ -42,7 +42,6 @@ static bool isWriting(ResourceUseType type) {
 
 static const char *useTypeToString(ResourceUseType type) {
   switch (type) {
-  default:
   case kInvalidResourceUse:
     return "invalid";
   case kReferencingResourceUse:
@@ -54,6 +53,7 @@ static const char *useTypeToString(ResourceUseType type) {
   case kMutatingResourceUse:
     return "mutating";
   }
+  llvm_unreachable("invalid resource type");
 }
 
 static void printNames(const llvm::StringMap<size_t> &names,

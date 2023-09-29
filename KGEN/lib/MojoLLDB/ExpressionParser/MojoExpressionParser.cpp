@@ -464,7 +464,7 @@ static std::string formatSMDiagnostic(const llvm::SMDiagnostic &diag,
 
   // Set the default colors for the diagnostic printing. This ensures we use the
   // correct corresponding color for the diagnostic type.
-  llvm::HighlightColor color;
+  llvm::HighlightColor color(llvm::HighlightColor::Error);
   switch (diag.getKind()) {
   case llvm::SourceMgr::DK_Error:
     color = llvm::HighlightColor::Error;

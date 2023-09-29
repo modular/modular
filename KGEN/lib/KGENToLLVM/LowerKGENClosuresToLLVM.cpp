@@ -255,7 +255,7 @@ private:
       Type boundArgTy = types.boundArgTypes[argIdx];
       Value boundArgPtr = rewriter.create<LLVM::GEPOp>(
           op.getLoc(), LLVM::LLVMPointerType::get(boundArgTy), envStruct,
-          ArrayRef<LLVM::GEPArg>({0, argIdx}));
+          ArrayRef<LLVM::GEPArg>({0, static_cast<int32_t>(argIdx)}));
       rewriter.create<LLVM::StoreOp>(op.getLoc(), boundArgValue, boundArgPtr);
     }
 

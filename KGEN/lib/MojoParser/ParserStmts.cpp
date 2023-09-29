@@ -309,7 +309,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 
   // If the expression returned an unawaited value, then the expression should
   // be awaited. Check for an '__await__' function.
-  if (ASTDecl *decl = valueType.getDecl(shared)) {
+  if (valueType.getDecl(shared)) {
     OverloadSet await(valueType, "__await__", expr, CallSyntax::kMethodCall,
                       shared, /*no error on failure*/ {});
     if (!await.isNull()) {
