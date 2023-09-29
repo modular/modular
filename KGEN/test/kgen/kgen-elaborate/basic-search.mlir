@@ -10,8 +10,8 @@ kgen.generator @even_only<param>() {
 }
 
 // This should turn into two variants exactly, not a duplicate for 72.
-// CHECK-LABEL: kgen.func @"find_even,value=72"
 // CHECK-LABEL: kgen.func @find_even()
+// CHECK-LABEL: kgen.func @"find_even,value=72"
 // CHECK-NOT: find_even
 kgen.generator @find_even() {
   kgen.param.fork seventy_two = <[72]>
@@ -82,7 +82,7 @@ kgen.generator @test() {
 // -----
 
 /// This evaluator returns a constant index.
-// CHECK-LABEL: @"simpleEvaluator,N=1,FN=!kgen.signature<() -> index>"
+// CHECK-LABEL: @"simpleEvaluator,N=1,FN=() -> index"
 kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !kgen.pointer<FN>, %num: index) -> index {
   %0 = kgen.param.constant = <N>
   kgen.return %0 : index
@@ -101,11 +101,11 @@ kgen.generator @pickSecond() -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.func @pickSecondA()
-// CHECK-NEXT: kgen.param.constant = <1>
-
 // CHECK-LABEL: kgen.func @"pickSecondA,f=2"()
 // CHECK-NEXT: kgen.param.constant = <2>
+
+// CHECK-LABEL: kgen.func @pickSecondA()
+// CHECK-NEXT: kgen.param.constant = <1>
 
 kgen.generator @pickSecondA() -> index {
   kgen.param.fork f = <[1, 2]>
@@ -130,12 +130,12 @@ kgen.generator export @test() {
 // -----
 
 // We should generate three versions of this function.
+// CHECK-LABEL: kgen.func @"checkGetAllImpls,oneImpl=@\22multipleImplsFn,p=2\22"
+// CHECK: kgen.call @"multipleImplsFn,p=2"
+// CHECK-LABEL: kgen.func @"checkGetAllImpls,oneImpl=@\22multipleImplsFn,p=3\22"
+// CHECK: kgen.call @"multipleImplsFn,p=3"
 // CHECK-LABEL: kgen.func @checkGetAllImpls(
 // CHECK: kgen.call @multipleImplsFn(
-// CHECK-LABEL: kgen.func @"checkGetAllImpls,oneImpl=multipleImplsFn,p=3"
-// CHECK: kgen.call @"multipleImplsFn,p=3"
-// CHECK-LABEL: kgen.func @"checkGetAllImpls,oneImpl=multipleImplsFn,p=2"
-// CHECK: kgen.call @"multipleImplsFn,p=2"
 kgen.generator @checkGetAllImpls() -> index {
   kgen.param.declare impls: !kgen.variadic<!kgen.signature<() -> index>> = <get_all_impls(@multipleImplsFn)>
   // `impls` should be a list containing three implementations of `@multipleImplsFn`
@@ -150,9 +150,9 @@ kgen.generator @checkGetAllImpls() -> index {
 }
 
 // This generator should also produce three versions.
-// CHECK-LABEL: kgen.func @multipleImplsFn(
-// CHECK-LABEL: kgen.func @"multipleImplsFn,p=3"
 // CHECK-LABEL: kgen.func @"multipleImplsFn,p=2"
+// CHECK-LABEL: kgen.func @"multipleImplsFn,p=3"
+// CHECK-LABEL: kgen.func @multipleImplsFn(
 kgen.generator @multipleImplsFn() -> index {
   kgen.param.fork p : index = <[1, 2, 3]>
   %ret = kgen.param.constant = <p>

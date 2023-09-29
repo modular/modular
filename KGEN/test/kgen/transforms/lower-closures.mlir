@@ -53,8 +53,8 @@ kgen.func @call_coroutine() {
 // CHECK-LABEL: kgen.func @async_execute
 kgen.func @async_execute(%arg0: index) {
   // CHECK: index.add
-  // CHECK-NEXT: kgen.call @async_execute_async_closure(%arg0)
-  // CHECK-NEXT: kgen.call @async_execute_async_closure_{{[0-9]}}(%arg0, %0)
+  // CHECK-NEXT: kgen.call @async_execute_async_closure_0(%arg0)
+  // CHECK-NEXT: kgen.call @async_execute_async_closure_2(%arg0, %0)
   %arg1 = index.add %arg0, %arg0
   %0 = lit.async.execute <() -> index> {
     kgen.return %arg0 : index
@@ -96,28 +96,28 @@ kgen.func @capturing_region(%arg0: si32, %arg1: si64) {
   kgen.return
 }
 
-// CHECK: kgen.func @no_name_attr_closure(%arg0: index) capturing -> index
-// CHECK: kgen.func @no_name_attr_closure_{{[0-9]}}(%arg0: index) capturing -> index
+// CHECK: kgen.func @no_name_attr_closure_0(%arg0: index) capturing -> index
+// CHECK: kgen.func @no_name_attr_closure_1(%arg0: index) capturing -> index
 
 // CHECK-LABEL: kgen.func @no_name_attr(
 kgen.func @no_name_attr(%arg0: index, %arg1: index) {
-  // CHECK: kgen.create_closure [(index) capturing -> index: @no_name_attr_closure](%arg0)
+  // CHECK: kgen.create_closure [(index) capturing -> index: @no_name_attr_closure_0](%arg0)
   %0 = kgen.stage_closure = () capturing -> index {
     kgen.return %arg0 : index
   }
-  // CHECK: kgen.create_closure [(index) capturing -> index: @no_name_attr_closure_{{[0-9]}}](%arg1)
+  // CHECK: kgen.create_closure [(index) capturing -> index: @no_name_attr_closure_1](%arg1)
   %1 = kgen.stage_closure = () capturing -> index {
     kgen.return %arg1 : index
   } { name = 6 }
   kgen.return
 }
 
-// CHECK: kgen.func @constant_in_closure() capturing -> index
+// CHECK: kgen.func @constant_in_closure_0() capturing -> index
 
 // CHECK-LABEL: kgen.func @constant_in(
 kgen.func @constant_in(%arg0: index, %arg1: index) {
   %idx4 = index.constant 4
-  // CHECK: kgen.create_closure [() capturing -> index: @constant_in_closure]()
+  // CHECK: kgen.create_closure [() capturing -> index: @constant_in_closure_0]()
   %0 = kgen.stage_closure = () capturing -> index {
     kgen.return %idx4 : index
   }
@@ -126,7 +126,7 @@ kgen.func @constant_in(%arg0: index, %arg1: index) {
 
 // CHECK-LABEL: kgen.func @create_closure(
 kgen.func @create_closure() {
-  // CHECK: %0 = kgen.create_closure [() -> (): @create_closure_closure]()
+  // CHECK: %0 = kgen.create_closure [() -> (): @create_closure_closure_0]()
   %0 = kgen.stage_closure = () {
     kgen.return
   }

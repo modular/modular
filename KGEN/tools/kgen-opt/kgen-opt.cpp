@@ -227,7 +227,7 @@ int main(int argc, char **argv) {
   // Register passes that require a runtime.
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
+      LLCL::createThreadPoolWorkQueue());
   mlir::registerPass(
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
   mlir::registerPass([&] { return KGEN::createForceInline(runtime); });

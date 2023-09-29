@@ -49,36 +49,6 @@ using namespace KGEN;
 using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
-// printParameterValue
-//===----------------------------------------------------------------------===//
-
-/// Pretty-print the value of a parameter.
-static void printParameterValue(Attribute value, raw_ostream &os) {
-  if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
-    os << intAttr.getValue();
-  } else if (auto floatAttr = dyn_cast<FloatAttr>(value)) {
-    SmallString<32> str;
-    floatAttr.getValue().toString(str);
-    os << str;
-  } else if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(value)) {
-    os << dtypeAttr.getDType();
-  } else if (auto typeConstant = dyn_cast<ConcreteTypeConstantAttr>(value)) {
-    // NOTE: Could use pretty mangling for common cases, e.g. "simd2xf32" or
-    // something if these get too verbose.
-    os << typeConstant.getValue();
-  } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-    if (auto flat = dyn_cast<FlatSymbolRefAttr>(symbolConstant.getSymbol()))
-      os << flat.getValue();
-    else
-      os << symbolConstant.getSymbol();
-  } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
-    os << stringConstant.strref();
-  } else {
-    os << getParamAsString(value);
-  }
-}
-
-//===----------------------------------------------------------------------===//
 // mangleParameterValues
 //===----------------------------------------------------------------------===//
 
@@ -95,10 +65,8 @@ static std::string mangleParameterValues(GeneratorOp generator,
   os << generator.getName();
 
   auto inputParamDecls = generator.getInputParamsAttr();
-  for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
-    os << ',' << inputDecl.getName().str() << '=';
-    printParameterValue(value, os);
-  }
+  for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    os << ',' << inputDecl.getName().str() << '=' << getParamAsString(value);
   return result;
 }
 
@@ -775,8 +743,9 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
   llvm::raw_string_ostream os(name);
   os << ',';
   if (!forkParam.empty())
-    os << forkParam << '=';
-  printParameterValue(value, os);
+    os << forkParam << '=' << getParamAsString(value);
+  else
+    os << '@' << cast<StringAttr>(value).getValue();
   clone.setSymName(name);
   // Insert the new function at a location relative to the current one. This
   // ensures all forks are inserted in a deterministic order, regardless of
@@ -2401,16 +2370,34 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       op->remove();
       eraseState.fork([op] { op->erase(); });
     };
+    // Sort instantiations of each generator to ensure we have a deterministic
+    // output in multithreaded execution.
+    DenseMap<GeneratorOp,
+             std::vector<std::pair<
+                 std::string, SmallVector<std::pair<StringRef, FuncOp>, 1>>>>
+        genInstantiations;
     for (ParamNode &node :
          llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
       FuncOp first;
       // Erase all erroneous functions.
+      SmallVector<std::pair<StringRef, FuncOp>, 1> successfulFuncs;
       for (ImplNode &impl : llvm::make_pointee_range(node.impls)) {
-        if (impl.error)
+        if (impl.error) {
           eraseFunc(impl.func);
-        else if (!first)
+          continue;
+        }
+        if (!first)
           first = impl.func;
+        successfulFuncs.emplace_back(impl.func.getSymName(), impl.func);
       }
+
+      // Sort the successful instantiations, if there are more than 1.
+      if (successfulFuncs.size() > 1) {
+        llvm::sort(successfulFuncs,
+                   [](auto &lhs, auto &rhs) { return lhs.first > rhs.first; });
+      }
+      genInstantiations[node.gen].emplace_back(
+          mlir::debugString(node.inputParams), std::move(successfulFuncs));
 
       // Rename the first successful function for concrete top-level generators,
       // if there is one.
@@ -2422,6 +2409,15 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
         first.setSymNameAttr(newName);
         symtab.get().insert(first);
       }
+    }
+
+    // Now reorder all instantiations of each generator to be deterministic.
+    for (auto &[gen, instantiations] : genInstantiations) {
+      llvm::sort(instantiations,
+                 [](auto &lhs, auto &rhs) { return lhs.first > rhs.first; });
+      for (auto &[_, implFuncs] : instantiations)
+        for (FuncOp func : llvm::make_second_range(implFuncs))
+          func->moveAfter(gen);
     }
 
     // Erase all generators.
