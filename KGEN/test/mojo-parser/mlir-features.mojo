@@ -30,11 +30,11 @@ fn mlirMagicTest(
 
     # CHECK-NEXT: %idxConstant = lit.varlet.decl
     # CHECK: kgen.param.constant = <42>
-    var idxConstant = __mlir_op.`index.constant`[value : Int(42).value]()
+    var idxConstant = __mlir_op.`index.constant`[value=Int(42).value]()
 
     # CHECK: [[TMP:%.*]] = lit.ref.load %idxConstant
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
-    var i1Cast = __mlir_op.`index.castu`[_type : __mlir_type.i1](idxConstant)
+    var i1Cast = __mlir_op.`index.castu`[_type=__mlir_type.i1](idxConstant)
 
     # CHECK: lit.alias.decl [[NEW_LOWER:.*]] = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
@@ -121,7 +121,7 @@ struct MyPointer[elType: __mlir_type.`!kgen.mlirtype`]:
 # CHECK-LABEL: getAddressOf{{.*}}"<
 # CHECK-SAME: [[T:.*_T]][T]: type>(%arg: !kgen.pointer<[[T]]> byref)
 fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
-    return __mlir_op.`pop.pointer.bitcast`[_type : MyPointer[T].StorageTy](
+    return __mlir_op.`pop.pointer.bitcast`[_type=MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
     # CHECK-NEXT: lit.ownership.def_lvalue %arg
@@ -140,5 +140,5 @@ fn structured_for_loop() -> __mlir_type.index:
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[
-        _type : __mlir_type.index, _region : "loop_body".value
+        _type=__mlir_type.index, _region="loop_body".value
     ](Int(0).value)

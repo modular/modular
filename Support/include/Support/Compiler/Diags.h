@@ -224,7 +224,7 @@ private:
 /// errors occur.  Generation of FixIt hints is great for QoI.  Error recovery
 /// in the parser must always follow the logic that would have happened if the
 /// FixIt was applied so the user doesn't get a different downstream error after
-/// applyign the FixIt hint.
+/// applying the FixIt hint.
 class FixIt {
 public:
   FixIt(SourceRange range, const Twine &replacement);

@@ -946,8 +946,6 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   // Inspect each parsed operand.
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
-    if (operand.isKeyword())
-      return emitError(loc, "keyword parameters not supported yet");
     if (operand.isUnpacked())
       return emitError(loc, "unpacked parameters not supported yet");
   }
