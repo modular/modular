@@ -110,4 +110,13 @@ def sanitize : Separate<["--", "-"], "sanitize">,
     "Mojo programs."
   >;
 
+def debug_info_language : Separate<["--", "-"], "debug-info-language">,
+  Group<ExperimentalCompilationOptionGroup>, Index<2>, MetaVarName<"LANGUAGE">,
+  HelpText<
+    "Sets the language to emit as part of the debug info. The supported "
+    "languages are: `Mojo`, and `C`. `C` is the default, and is useful to "
+    "enable rudimentary debugging and binary introspection in tools "
+    "that don't understand Mojo."
+  >;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD

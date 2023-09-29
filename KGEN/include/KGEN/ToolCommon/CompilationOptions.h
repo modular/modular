@@ -11,6 +11,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTarget.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/TargetParser/Host.h"
 
 namespace M::KGEN {
@@ -33,6 +34,12 @@ public:
     kFullDebugInfo,
   };
 
+  // The language to specify in the debug info.
+  enum DebugInfoLanguage {
+    kLangC = llvm::dwarf::DW_LANG_C,
+    kLangMojo = llvm::dwarf::DW_LANG_Mojo,
+  };
+
   /// The compilation abstraction level to generate debug info for, used in
   /// tandem with DebugInfoLevel.
   enum DebugAtLevel {
@@ -49,7 +56,8 @@ public:
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures(),
-      std::vector<std::string> linkDirs = {});
+      std::vector<std::string> linkDirs = {},
+      DebugInfoLanguage debugInfoLanguage = kLangC);
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -81,6 +89,7 @@ public:
   std::string targetFeatures = getHostCPUFeatures();
   llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;
   std::vector<std::string> linkDirs = {};
+  DebugInfoLanguage debugInfoLanguage = kLangC;
 
   std::string saveTempsPrefix = "";
 };

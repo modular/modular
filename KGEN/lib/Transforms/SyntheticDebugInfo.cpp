@@ -47,7 +47,9 @@ static LogicalResult visitLexicalRegion(Region &region,
 /// of how the IR is lowered from Mojo. In doing so, we try to dig out
 /// FileLineColLoc. If the file came from the front-end, this should be no
 /// issue. Otherwise, the pass fails.
-static LogicalResult synthesizeDebugInfo(ModuleOp module) {
+static LogicalResult
+synthesizeDebugInfo(ModuleOp module,
+                    llvm::dwarf::SourceLanguage debugInfoLanguage) {
   MLIRContext *ctx = module.getContext();
   DebugInfo::DIBuilder dib(ctx);
   // Attempt to dig out a file from the module location.
@@ -55,10 +57,9 @@ static LogicalResult synthesizeDebugInfo(ModuleOp module) {
   if (!fileLoc)
     return mlir::emitError(module.getLoc()) << "did not find a FileLineColLoc";
 
-  // TODO: "C" as the Dwarf language type is the best option for now.
-  dib.initializeCompileUnit(
-      llvm::dwarf::DW_LANG_C, dib.createFile(fileLoc), "kgen",
-      /*isOptimized=*/true, DebugInfo::EmissionKind::LineTablesOnly);
+  dib.initializeCompileUnit(debugInfoLanguage, dib.createFile(fileLoc), "kgen",
+                            /*isOptimized=*/true,
+                            DebugInfo::EmissionKind::LineTablesOnly);
   DebugInfo::DIBuilder::ScopeGuard moduleGuard =
       dib.pushFile(fileLoc.getFilename(), "/");
 
@@ -118,6 +119,7 @@ static LogicalResult synthesizeDebugInfo(ModuleOp module) {
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
+#define GEN_PASS_DECL_SYNTHESIZEDEBUGINFO
 #define GEN_PASS_DEF_SYNTHESIZEDEBUGINFO
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
@@ -128,7 +130,9 @@ struct SynthesizeDebugInfoPass
   using SynthesizeDebugInfoBase::SynthesizeDebugInfoBase;
 
   void runOnOperation() override {
-    if (failed(synthesizeDebugInfo(getOperation())))
+    if (failed(synthesizeDebugInfo(getOperation(),
+                                   static_cast<llvm::dwarf::SourceLanguage>(
+                                       debugInfoLanguage.getValue()))))
       return signalPassFailure();
   }
 };

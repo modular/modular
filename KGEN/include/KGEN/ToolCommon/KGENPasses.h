@@ -115,11 +115,12 @@ struct LowerToLLVMOptions
     : public mlir::PassPipelineOptions<LowerToLLVMOptions> {
   LowerToLLVMOptions(
       DebugInfo::EmissionKind diLevel = DebugInfo::EmissionKind::None,
-      std::optional<CompilationOptions::DebugAtLevel> diAtLevel =
-          std::nullopt) {
+      std::optional<CompilationOptions::DebugAtLevel> diAtLevel = std::nullopt,
+      llvm::dwarf::SourceLanguage diLanguage = llvm::dwarf::DW_LANG_C) {
     debugInfoLevel = diLevel;
     if (diAtLevel)
       debugAtLevel = *diAtLevel;
+    debugInfoLanguage = diLanguage;
   }
 
   Option<DebugInfo::EmissionKind> debugInfoLevel{
@@ -140,6 +141,12 @@ struct LowerToLLVMOptions
       llvm::cl::values(clEnumValN(KGEN::CompilationOptions::kDebugAtLLVM,
                                   "llvm",
                                   "Generate debug info for the LLVM level."))};
+
+  Option<unsigned> debugInfoLanguage{
+      *this, "debug-info-language",
+      llvm::cl::desc("The DWARF language code to specify in the debug info. "
+                     "Defaults to C (2)"),
+      llvm::cl::init(llvm::dwarf::DW_LANG_C)};
 
   Option<std::string> alignedAllocFnName{
       *this, "aligned-alloc-fn-name",

@@ -76,8 +76,9 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   if (isSearch)
     buildPostElaborationPipeline(*mgr, runtime, options);
 
-  LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
-                                 options.debugAtLevel);
+  LowerToLLVMOptions llvmOptions(
+      options.getDIEmissionKind(), options.debugAtLevel,
+      static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage));
   llvmOptions.isJIT = isJIT;
   // Use KGENCompilerRT allocators.
   llvmOptions.alignedAllocFnName = "KGEN_CompilerRT_AlignedAlloc";

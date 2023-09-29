@@ -341,7 +341,8 @@ static void lowerAttributesAndTypes(
 /// generate global variables that reference each other in a cycle.
 static LogicalResult
 orderAndLowerGlobalVariables(ModuleOp module,
-                             DenseMap<StringAttr, StringAttr> &renamedSymbols) {
+                             DenseMap<StringAttr, StringAttr> &renamedSymbols,
+                             llvm::dwarf::SourceLanguage debugInfoLanguage) {
   struct GlobalRefNode {
     unsigned numRefs = 0;
     unsigned numReady = 0;
@@ -407,9 +408,8 @@ orderAndLowerGlobalVariables(ModuleOp module,
       // GlobalVarDeclOp either has a file scope or no scope.
       auto fileAttr = cast<DebugInfo::DIFileAttr>(scope);
 
-      // TODO: "C" as the Dwarf language type is the best option for now.
       DebugInfo::DIBuilder dib(ctx);
-      dib.initializeCompileUnit(llvm::dwarf::DW_LANG_C, fileAttr, "kgen",
+      dib.initializeCompileUnit(debugInfoLanguage, fileAttr, "kgen",
                                 /*isOptimized=*/true,
                                 DebugInfo::EmissionKind::Full);
 
@@ -584,6 +584,8 @@ lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
 
 namespace {
 struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
+  using LowerLITBase::LowerLITBase;
+
   void runOnOperation() override {
     // TODO: This has to be a module pass because this mutates the body of
     // the module, but we could trivially parallelize this within the pass.
@@ -591,7 +593,10 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     SymbolTable &symbolTable =
         getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
     DenseMap<StringAttr, StringAttr> renamedSymbols;
-    if (failed(orderAndLowerGlobalVariables(module, renamedSymbols)))
+    if (failed(orderAndLowerGlobalVariables(
+            module, renamedSymbols,
+            static_cast<llvm::dwarf::SourceLanguage>(
+                debugInfoLanguage.getValue()))))
       return signalPassFailure();
     if (failed(lowerModuleDecl(module.getBody(), symbolTable, renamedSymbols)))
       return signalPassFailure();

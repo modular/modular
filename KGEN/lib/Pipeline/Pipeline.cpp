@@ -31,7 +31,7 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   // Insert calls to destructors, reject use before free, and borrow check.
   pm.addPass(createCheckLifetimes());
 
-  pm.addPass(createLowerLIT());
+  pm.addPass(createLowerLIT({options.debugInfoLanguage}));
   pm.addPass(createVerifyParameters());
 
   pm.addPass(createLowerStructs());
@@ -123,7 +123,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
 
   // Process debuginfo based on the selected debugging level.
   if (options.debugLevel == CompilationOptions::DebugInfoLevel::kSynthetic)
-    pm.addPass(createSynthesizeDebugInfo());
+    pm.addPass(createSynthesizeDebugInfo({options.debugInfoLanguage}));
   else if (options.debugLevel == CompilationOptions::kNoDebug)
     pm.addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 

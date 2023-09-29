@@ -210,7 +210,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     // python's). Figure out what we actually want here (though C works well
     // enough for now).
     diBuilder->initializeCompileUnit(
-        llvm::dwarf::DW_LANG_C,
+        options.debugInfoLanguage,
         diBuilder->createFile(diags.getBufferNameIdentifier(), "/"), "Mojo",
         /*isOptimized=*/true, options.getDIEmissionKind());
   }
