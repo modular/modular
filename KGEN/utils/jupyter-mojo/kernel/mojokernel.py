@@ -232,9 +232,6 @@ class MojoKernel(Kernel):
     def load_mojo_lib(self) -> ctypes.CDLL:
         """Load the libMojoJupyter library.
 
-        The location of the library is adjacent to the `mojo-repl-entry-point`
-        executable.
-
         On success, this initializes `mojoReplExe` returns the loaded library.
         """
 
@@ -255,13 +252,11 @@ class MojoKernel(Kernel):
         os.environ["PATH"] += os.pathsep + str(libDir)
 
         # Load the MojoJupyter library. This library provides the internal
-        # implementation, and is located adjacent to the mojo repl executable.
-        for ext in ["so", "dylib", "dll"]:
-            libFilename = libDir / ("libMojoJupyter." + ext)
-            if os.path.isfile(libFilename):
-                return ctypes.cdll.LoadLibrary(libFilename)
-
-        raise RuntimeError("Unable to load `libMojoJupyter` library.")
+        # implementation of the kernel.
+        mojoJupyterPath = Path(config.get("mojo", "jupyter_path").rstrip(";"))
+        if not mojoJupyterPath.exists():
+            raise RuntimeError("Unable to locate `MojoJupyter` library.")
+        return ctypes.cdll.LoadLibrary(str(mojoJupyterPath))
 
     def do_execute(
         self,
