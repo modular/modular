@@ -40,10 +40,10 @@ private:
   bool initialized;
 };
 
-class StructEmitter {
+class StructEmitter : public SharedStateUser {
 public:
   StructEmitter(SharedState &sharedState)
-      : shared(sharedState), noneType(shared.getNoneType()),
+      : SharedStateUser(sharedState), noneType(shared.getNoneType()),
         noneAttr(shared.getNoneAttr()) {}
   /// Generate empty stubs for the destructor, copy constructor, and move
   /// constructor on the declOp if they are eligible and do not already exist.
@@ -104,8 +104,7 @@ public:
                            ASTDecl &structDecl, SpecialFunctionKind specialFnID,
                            FnEffects effects = FnEffects());
 
-private:
-  SharedState &shared;
+protected:
   Type noneType;
   NoneAttr noneAttr;
 };

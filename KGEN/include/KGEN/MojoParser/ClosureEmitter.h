@@ -30,12 +30,10 @@ public:
   virtual void storeClosure(ClosureHash key, StructDeclOp closure) = 0;
 };
 
-class ClosureEmitter {
+class ClosureEmitter : public StructEmitter {
 public:
   ClosureEmitter(LIT::FileModuleOp fileModuleOp, SharedState &shared)
-      : fileModuleOp(fileModuleOp), shared(shared),
-        noneType(shared.getNoneType()), noneAttr(shared.getNoneAttr()),
-        structEmitter(shared),
+      : StructEmitter(shared), fileModuleOp(fileModuleOp),
         dtorFieldAttr(StringAttr::get(shared.getContext(), "dtor")),
         copyFieldAttr(StringAttr::get(shared.getContext(), "copy")),
         callFieldAttr(StringAttr::get(shared.getContext(), "call")),
@@ -65,10 +63,6 @@ public:
 
 private:
   FileModuleOp fileModuleOp;
-  SharedState &shared;
-  Type noneType;
-  NoneAttr noneAttr;
-  StructEmitter structEmitter;
   StringAttr dtorFieldAttr;
   StringAttr copyFieldAttr;
   StringAttr callFieldAttr;
