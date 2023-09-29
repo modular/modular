@@ -1446,6 +1446,8 @@ void MojoServer::getCodeActions(
     OnResultFn<std::vector<mlir::lsp::CodeAction>> onActionsFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->getCodeActions(uri, pos, context, std::move(onActionsFn));
+  else
+    onActionsFn({});
 }
 
 void MojoServer::onCodeCompletion(
@@ -1453,6 +1455,8 @@ void MojoServer::onCodeCompletion(
     OnResultFn<mlir::lsp::CompletionList> onCompletionFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onCodeCompletion(uri, completePos, std::move(onCompletionFn));
+  else
+    onCompletionFn({});
 }
 
 void MojoServer::onDefinition(
@@ -1460,6 +1464,8 @@ void MojoServer::onDefinition(
     OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onDefinition(uri, pos, std::move(onDefinitionFn));
+  else
+    onDefinitionFn({});
 }
 
 void MojoServer::onHover(
@@ -1467,6 +1473,8 @@ void MojoServer::onHover(
     OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onHover(uri, pos, std::move(onHoverFn));
+  else
+    onHoverFn({});
 }
 
 void MojoServer::getSignatureHelp(
@@ -1474,4 +1482,6 @@ void MojoServer::getSignatureHelp(
     OnResultFn<mlir::lsp::SignatureHelp> onHelpFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onSignatureHelp(uri, pos, std::move(onHelpFn));
+  else
+    onHelpFn({});
 }
