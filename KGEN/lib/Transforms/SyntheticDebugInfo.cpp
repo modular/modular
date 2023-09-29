@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -119,7 +120,6 @@ synthesizeDebugInfo(ModuleOp module,
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-#define GEN_PASS_DECL_SYNTHESIZEDEBUGINFO
 #define GEN_PASS_DEF_SYNTHESIZEDEBUGINFO
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
