@@ -107,7 +107,7 @@ public:
 private:
   SharedState &shared;
   Type noneType;
-  LIT::NoneAttr noneAttr;
+  NoneAttr noneAttr;
 };
 
 } // namespace M::KGEN::LIT

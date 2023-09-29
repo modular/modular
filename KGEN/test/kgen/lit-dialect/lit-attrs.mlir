@@ -7,8 +7,8 @@
 // CHECK: #lit.fn_metadata<[], [], [], []>
 "some.op"() {metadata = #lit.fn_metadata<[], [], [], []>} : () -> ()
 
-// CHECK: #lit.none : !lit.none
-"a"() {a = #lit.none : !lit.none} : () -> ()
+// CHECK: #kgen.none : !kgen.none
+"a"() {a = #kgen.none : !kgen.none} : () -> ()
 
 lit.struct.decl @Foo {
   lit.struct.field foo : index

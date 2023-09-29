@@ -153,10 +153,6 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
   debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
     return buildDebugInfoForStructRef(type, debugTypeConverter);
   });
-  debugTypeConverter.addConversion(
-      [&](LIT::NoneType type) -> std::optional<Type> {
-        return DebugInfo::DIUnspecifiedType::get(type.getContext(), "void");
-      });
 }
 
 template <typename T, typename U>

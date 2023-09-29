@@ -86,11 +86,15 @@ enum AttributeCode {
   ///   }
   kUnboundAttr = 9,
   ///
+  ///   NoneAttr {
+  ///   }
+  kNoneAttr = 10,
+  ///
   ///   ParamDeclRefAttr {
   ///     name: StringAttr
   ///     type: Type
   ///   }
-  kParamDeclRefAttr = 10,
+  kParamDeclRefAttr = 11,
   ///
   ///   ParamIndexRefAttr {
   ///     depth: varint
@@ -98,73 +102,73 @@ enum AttributeCode {
   ///     index: varint
   ///     type: Type
   ///   }
-  kParamIndexRefAttr = 11,
+  kParamIndexRefAttr = 12,
   ///
   ///   ConcreteTypeConstantAttr {
   ///     value: Type
   ///   }
-  kConcreteTypeConstantAttr = 12,
+  kConcreteTypeConstantAttr = 13,
   ///
   ///   ParameterizedTypeConstantAttr {
   ///     value: Type
   ///   }
-  kParameterizedTypeConstantAttr = 13,
+  kParameterizedTypeConstantAttr = 14,
   ///
   ///   DTypeConstantAttr {
   ///     dtype: varint
   ///   }
-  kDTypeConstantAttr = 14,
+  kDTypeConstantAttr = 15,
   ///
   ///   IntLiteralAttr {
   ///     value: varint
   ///   }
-  kIntLiteralAttr = 15,
+  kIntLiteralAttr = 16,
   ///
   ///   SymbolConstantAttr {
   ///     symbol: SymbolRefAttr
   ///     paramValues: TypedAttr[]
   ///     type: SignatureType
   ///   }
-  kSymbolConstantAttr = 16,
+  kSymbolConstantAttr = 17,
   ///
   ///   TargetParamAttr {
   ///     target: TargetInfoAttr
   ///   }
-  kTargetParamAttr = 17,
+  kTargetParamAttr = 18,
   ///
   ///   BuildInfoParamAttr {
   ///     info: BuildInfoAttr
   ///   }
-  kBuildInfoParamAttr = 18,
+  kBuildInfoParamAttr = 19,
   ///
   ///  EnvAttr {
   ///    values: DictionaryAttr
   ///  }
-  kEnvAttr = 19,
+  kEnvAttr = 20,
   ///
   ///   ParamOperatorAttr {
   ///     opcode: varint
   ///     operands: TypedAttr[]
   ///     type: Type
   ///   }
-  kParamOperatorAttr = 20,
+  kParamOperatorAttr = 21,
   ///
   ///   MLIROpAttr {
   ///     name: StringAttr
   ///     attrs: DictionaryAttr
   ///     type: SignatureType
   ///   }
-  kMLIROpAttr = 21,
+  kMLIROpAttr = 22,
   ///
   ///  DecoratorsAttr {
   ///    value: TypedAttr[]
   ///  }
-  kDecoratorsAttr = 22,
+  kDecoratorsAttr = 23,
   ///
   ///  ExportKindAttr {
   ///    value: varint
   ///  }
-  kExportKindAttr = 23,
+  kExportKindAttr = 24,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -220,6 +224,10 @@ enum TypeCode {
   ///     elementType: TypedAttr
   ///   }
   kVariadicType = 9,
+  ///
+  ///   NoneType {
+  ///   }
+  kNoneType = 10,
 };
 
 } // namespace Encoding
@@ -337,6 +345,8 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readUnknownAttr(reader);
   case Encoding::kUnboundAttr:
     return readUnboundAttr(reader);
+  case Encoding::kNoneAttr:
+    return NoneAttr::get(reader.getContext());
   case Encoding::kParamDeclRefAttr:
     return readParamDeclRefAttr(reader);
   case Encoding::kParamIndexRefAttr:
@@ -409,6 +419,10 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
       })
       .Case([&](DecoratorsAttr attr) {
         return writeArrayOfAttrs(attr, Encoding::kDecoratorsAttr, writer);
+      })
+      .Case([&](NoneAttr attr) {
+        writer.writeVarInt(Encoding::kNoneAttr);
+        return success();
       })
       .Default([&](Attribute) { return failure(); });
 }
@@ -822,6 +836,8 @@ Type KGENBytecodeInterface::readType(BytecodeReader &reader) const {
     return BuildInfoType::get(getContext());
   case Encoding::kVariadicType:
     return readVariadicType(reader);
+  case Encoding::kNoneType:
+    return KGEN::NoneType::get(reader.getContext());
 
   default:
     reader.emitError() << "unknown kgen type code: " << code;
@@ -859,6 +875,10 @@ LogicalResult KGENBytecodeInterface::writeType(Type type,
       })
       .Case([&](TargetType) {
         writer.writeVarInt(Encoding::kTargetType);
+        return success();
+      })
+      .Case([&](KGEN::NoneType) {
+        writer.writeVarInt(Encoding::kNoneType);
         return success();
       })
       .Default([&](Type) { return failure(); });

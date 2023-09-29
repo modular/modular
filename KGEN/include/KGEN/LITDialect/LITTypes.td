@@ -60,19 +60,6 @@ def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
 }
 
 //===----------------------------------------------------------------------===//
-// NoneType
-//===----------------------------------------------------------------------===//
-
-def LIT_NoneType : LITType<"None", "none"> {
-  let summary = "Type used for 'void' function results";
-  let description = [{
-    This type is nominal static type of the 'None' keyword, which is the result
-    type of functions with no declared result type.
-    TODO: This should be replaced with an empty tuple when we have variadics.
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // MetaTypeType
 //===----------------------------------------------------------------------===//
 

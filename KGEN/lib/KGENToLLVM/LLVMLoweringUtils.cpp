@@ -173,6 +173,11 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   //===--------------------------------------------------------------------===//
   // KGEN
 
+  // Convert `!kgen.none` to an empty struct.
+  addConversion([=](KGEN::NoneType) {
+    return LLVM::LLVMStructType::getLiteral(&getContext(), {});
+  });
+
   // Convert string types to LLVM literal structs: struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
   addConversion([=](KGEN::StringType stringType) -> std::optional<Type> {
@@ -917,6 +922,11 @@ Value KGEN::convertParameterToLLVM(
   if (auto dtypeCst = dyn_cast<DTypeConstantAttr>(attr))
     return b.create<LLVM::ConstantOp>(
         b.getI8IntegerAttr(dtypeCst.getDType().getValue()));
+
+  // Convert `#kgen.none` to an empty struct.
+  if (isa<NoneAttr>(attr))
+    return b.create<LLVM::UndefOp>(
+        LLVM::LLVMStructType::getLiteral(b.getContext(), {}));
 
   // Convert pointer attributes (usually null pointers).
   if (auto ptr = dyn_cast<PointerAttr>(attr)) {

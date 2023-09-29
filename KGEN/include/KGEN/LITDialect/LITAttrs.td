@@ -173,20 +173,6 @@ def UnboundMLIROperationAttr
 }
 
 //===----------------------------------------------------------------------===//
-// NoneAttr
-//===----------------------------------------------------------------------===//
-
-def NoneAttr : LITTypedAttr<"None", "none"> {
-  let summary = "A None value";
-  let description = [{
-    This attribute represents None values.
-  }];
-
-  let assemblyFormat = "";
-  let extraClassDeclaration = [{ Type getType() const; }];
-}
-
-//===----------------------------------------------------------------------===//
 // ModuleAttr
 //===----------------------------------------------------------------------===//
 

@@ -81,7 +81,7 @@ fn take_closure_no_param_main():
     # CHECK: %1 = kgen.rebind %W : !kgen.signature<!lit.signature<("y": index borrow) capturing -> index>>
     # CHECK-SAME: to !kgen.signature<!lit.signature<(index borrow) capturing -> index>>
     let W = g
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %index3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow) capturing -> index>> borrow, "x": index borrow) -> !lit.none>
+    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %index3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow) capturing -> index>> borrow, "x": index borrow) -> !kgen.none>
     take_closure(W, Int(3).value)
 
 
@@ -252,7 +252,7 @@ def var_decls() -> None:
 # fn/def
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"empty_def()"() -> !lit.none
+# CHECK-LABEL: lit.func @"empty_def()"() -> !kgen.none
 # CHECK: lit.end_func
 fn empty_def():
     pass
@@ -438,7 +438,7 @@ struct MyStruct:
 fn test_static_overload():
     var a = MyStruct()
     # CHECK: %2 = lit.ref.to_pointer %a
-    # CHECK: kgen.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%2) : !lit.signature<("self": !kgen.pointer<!MyStruct> byref) -> !lit.none>
+    # CHECK: kgen.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%2) : !lit.signature<("self": !kgen.pointer<!MyStruct> byref) -> !kgen.none>
     a.foo()
 
 
@@ -714,7 +714,7 @@ fn callNonRegisterDefaultArg():
     # CHECK: %1 = lit.ref.to_pointer %anonymous2A
     # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}(%1)
     defaultArgumentNonRegisterType()
-    # CHECK: lit.alias.decl {{.*}}none: !lit.none = <apply({{.*}}defaultArgumentNonRegisterType
+    # CHECK: lit.alias.decl {{.*}}none: none = <apply({{.*}}defaultArgumentNonRegisterType
     # CHECK-SAME: store_to_mem(apply_result_slot({{.*}}MemoryType::@"__init__{{.*}}value = 1}>
     alias none = defaultArgumentNonRegisterType()
 
@@ -909,11 +909,11 @@ fn fnThatRaises() raises -> Int:
     return 0
 
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<!Error, !lit.none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<!Error, none>
 fn raisesReturnsNone() raises:
-    # CHECK-NEXT: %0 = kgen.param.constant: !lit.none
-    # CHECK-NEXT: %1 = pop.variant.create %0
-    # CHECK-NEXT: lit.return %1
+    # CHECK-NEXT: %none = kgen.param.constant: none
+    # CHECK-NEXT: %0 = pop.variant.create %none
+    # CHECK-NEXT: lit.return %0
     # CHECK-NEXT: lit.end_func
     pass
 
@@ -976,7 +976,7 @@ struct StructWithInit:
         # CHECK: [[XT:%.*]] = pop.load [[XP]]
         # CHECK: pop.store [[XT]], [[YP]]
         self.y = self.x
-        # CHECK-NEXT: kgen.param.constant: !lit.none
+        # CHECK-NEXT: kgen.param.constant: none
         # CHECK-NEXT: lit.return
         return
 
@@ -1010,7 +1010,7 @@ struct StructExample:
     fn __init__() -> Self:
         return Self {}
 
-    # CHECK: lit.func @"static({{.*}}$int::Int)"(%x: !Int borrow) -> !lit.none attributes {{.*}} isStatic
+    # CHECK: lit.func @"static({{.*}}$int::Int)"(%x: !Int borrow) -> !kgen.none attributes {{.*}} isStatic
     @staticmethod
     fn static(x: Int):
         # CHECK: %0 = {{.*}}#lit.struct<{value = 4}>
@@ -1018,7 +1018,7 @@ struct StructExample:
         StructExample.static(4)
         pass
 
-    # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !kgen.pointer<!StructExample> byref) -> !lit.none
+    # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !kgen.pointer<!StructExample> byref) -> !kgen.none
     fn mutatingMethod(inout self):
         pass
 
@@ -1070,13 +1070,13 @@ struct ValueMem:
 # CHECK: lit.func @"__init__
 # CHECK-SAME: (%self: !kgen.pointer<!ValueMem> init_self,
 # CHECK-SAME:     %a: !Int borrow,
-# CHECK-SAME:    %b: !StructExample) -> !lit.none
+# CHECK-SAME:    %b: !StructExample) -> !kgen.none
 # CHECK-SAME:    attributes {specialFnKind = 2 : i8} {
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: pop.store %a, %0
 # CHECK-NEXT: %1 = lit.struct.gep %self[b]
 # CHECK-NEXT: pop.store %b, %1
-# CHECK-NEXT: kgen.param.constant: !lit.none
+# CHECK-NEXT: kgen.param.constant: none
 
 # CHECK: lit.func @"__copyinit__
 # CHECK-SAME: (%self: !kgen.pointer<!ValueMem> init_self,
@@ -1090,7 +1090,7 @@ struct ValueMem:
 # CHECK-NEXT: %5 = pop.load %4
 # CHECK-NEXT: %6 = kgen.call {{.*}}__copyinit__{{.*}}(%5)
 # CHECK-NEXT: pop.store %6, %3
-# CHECK-NEXT: kgen.param.constant: !lit.none
+# CHECK-NEXT: kgen.param.constant: none
 
 # CHECK: lit.func @"__moveinit__
 # CHECK-SAME: (%self: !kgen.pointer<!ValueMem> init_self,
@@ -1103,7 +1103,7 @@ struct ValueMem:
 # CHECK-NEXT: %4 = lit.struct.gep %existing[b]
 # CHECK-NEXT: %5 = lit.load.consume %4
 # CHECK-NEXT: pop.store %5, %3
-# CHECK-NEXT: kgen.param.constant: !lit.none
+# CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.struct.decl @ValueReg
 @value
@@ -1144,7 +1144,7 @@ async fn coroutine() -> Int:
 
 # CHECK-LABEL: lit.struct.decl @StructWithAsync
 struct StructWithAsync:
-    # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !lit.none
+    # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !kgen.none
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<() async -> !Int>: @"$decls"::@"coroutine()"]()
         # CHECK-NEXT: %[[COROUTINE:.*]] = kgen.call {{.*}}@Coroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
@@ -1164,9 +1164,9 @@ fn call_raising_coro():
     let coro = throwing_coroutine()
 
 
-# CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !lit.none
+# CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !kgen.none
 async fn call_struct_async(f: StructWithAsync):
-    # CHECK-NEXT: lit.async.call[!lit.signature<({{.*}}) async -> !lit.none>: @{{.*}}](%f)
+    # CHECK-NEXT: lit.async.call[!lit.signature<({{.*}}) async -> !kgen.none>: @{{.*}}](%f)
     _ = f.do_something()
 
 
@@ -1237,9 +1237,9 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
-    # CHECK: lit.alias.decl {{.*}}thinref: !lit.signature<<"b_param": index>() -> !lit.none> = <*"nestedFunction[__mlir_type.index]()">
+    # CHECK: lit.alias.decl {{.*}}thinref: !lit.signature<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[__mlir_type.index]()">
     alias thinref = nestedFunction
-    # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": index>() -> !lit.none> *"nestedFunction[__mlir_type.index]()", 2)]()
+    # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[Int(2).value]()
 
     let value = 0
@@ -1260,9 +1260,9 @@ struct SomeParamStruct[c_param: Int]:
         fn nestedFunction[b_param: Int]():
             return
 
-        # CHECK: lit.alias.decl {{.*}}reff: !lit.signature<<"b_param": !Int>() -> !lit.none> = <*"nestedFunction[{{.*}}$int::Int]()">
+        # CHECK: lit.alias.decl {{.*}}reff: !lit.signature<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}$int::Int]()">
         alias reff = nestedFunction
-        # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": !Int>() -> !lit.none> *"nestedFunction[{{.*}}$int::Int]()", {{.*}}2{{.*}})]()
+        # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}$int::Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
 
@@ -1445,12 +1445,12 @@ fn decorator_arg(a: Int):
     return
 
 # CHECK-LABEL: lit.func @"decorated_fn()"
-# CHECK-NEXT: decorators <:!lit.signature<() -> !lit.none> @{{.*}}::@"decorator()">
+# CHECK-NEXT: decorators <:!lit.signature<() -> !kgen.none> @{{.*}}::@"decorator()">
 @decorator
 fn decorated_fn():
     pass
 # CHECK-LABEL: lit.struct.decl @DecoratedStruct
-# CHECK-NEXT: decorators <:!lit.none apply({{.*}}decorator_arg{{.*}}, #lit.struct<{value = 2}>
+# CHECK-NEXT: decorators <:none apply({{.*}}decorator_arg{{.*}}, #lit.struct<{value = 2}>
 @decorator_arg(2)
 struct DecoratedStruct:
     pass
@@ -1461,24 +1461,24 @@ struct DecoratedStruct:
 
 # CHECK-LABEL: lit.trait.decl @Trait {
 trait Trait:
-    # CHECK-DAG: lit.func @"f0({{.*}})"(%self: !lit.typecheckerror borrow) -> !lit.none
+    # CHECK-DAG: lit.func @"f0({{.*}})"(%self: !lit.typecheckerror borrow) -> !kgen.none
     # CHECK-NEXT:     lit.trait_func
     fn f0(self: Self): ...
 
-    # CHECK-DAG: lit.func @"f1({{.*}}&)"(%self: !kgen.pointer<!lit.typecheckerror> byref) -> !lit.none
+    # CHECK-DAG: lit.func @"f1({{.*}}&)"(%self: !kgen.pointer<!lit.typecheckerror> byref) -> !kgen.none
     # CHECK-NEXT:   lit.trait_func
     fn f1(inout self: Self): ...
 
-    # CHECK-DAG: lit.func @"f2({{.*}}&)"(%self: !kgen.pointer<!lit.typecheckerror> byref) -> !lit.none
+    # CHECK-DAG: lit.func @"f2({{.*}}&)"(%self: !kgen.pointer<!lit.typecheckerror> byref) -> !kgen.none
     # CHECK-NEXT:   lit.trait_func
     fn f2(inout self: Self):
         pass
 
-    # CHECK-DAG: lit.func @"f3({{.*}})"(%__result__: !kgen.pointer<!object> byref_result, %self: !lit.typecheckerror) throws -> !pop.variant<!Error, !lit.none>
+    # CHECK-DAG: lit.func @"f3({{.*}})"(%__result__: !kgen.pointer<!object> byref_result, %self: !lit.typecheckerror) throws -> !pop.variant<!Error, none>
     # CHECK-NEXT:   lit.trait_func
     def f3(self: Self): ...
 
-    # CHECK-DAG: lit.func @"f4({{.*}})"(%__result__: !kgen.pointer<!object> byref_result, %self: !kgen.pointer<!lit.typecheckerror> byref) throws -> !pop.variant<!Error, !lit.none>
+    # CHECK-DAG: lit.func @"f4({{.*}})"(%__result__: !kgen.pointer<!object> byref_result, %self: !kgen.pointer<!lit.typecheckerror> byref) throws -> !pop.variant<!Error, none>
     # CHECK-NEXT:   lit.trait_func
     def f4(inout self: Self):
         pass

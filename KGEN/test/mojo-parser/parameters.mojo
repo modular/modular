@@ -23,7 +23,7 @@ struct OurSIMD[size: Int, dt: DType]:
 struct StructWithIntParam[size: Int]:
   pass
 
-# CHECK-LABEL: lit.func @"paramArith{{.*}}"<{{.*}}[x]: !Int>() -> !lit.none
+# CHECK-LABEL: lit.func @"paramArith{{.*}}"<{{.*}}[x]: !Int>() -> !kgen.none
 fn paramArith[x: Int]():
   # CHECK: kgen.call @"$builtin"::@"$constrained"::@"constrained[{{.*}}$bool::Bool]()"<{{.*}}apply({{.*}}__eq__{{.*}}, {{.*}}x, {{.*}}-99{{.*}})>()
   constrained[x == -100 + 1]()
@@ -214,11 +214,11 @@ fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: kgen.call @"$parameters"::@"fnToCall{{.*}}"<10, :array<10, f32> [[ARR]]>()
    fnToCall[Int(10).value, array]()
 
-# CHECK-LABEL: lit.func @"meta_str{{.*}}"<{{.*}}[type]: !StringLiteral>() -> !lit.none
+# CHECK-LABEL: lit.func @"meta_str{{.*}}"<{{.*}}[type]: !StringLiteral>() -> !kgen.none
 fn meta_str[type: StringLiteral]():
   pass
 
-# CHECK-LABEL: lit.func @"str_input_param()"() -> !lit.none
+# CHECK-LABEL: lit.func @"str_input_param()"() -> !kgen.none
 fn str_input_param():
   # CHECK: %0 = kgen.call @"$parameters"::@"meta_str{{.*}}"<:!StringLiteral {{.*}}"123"{{.*}}>()
   meta_str["123"]()
@@ -323,7 +323,7 @@ fn just_result_params[() -> a: __mlir_type.index]():
 
 # CHECK-LABEL: lit.func @"result_param_ref()"
 fn result_param_ref():
-    # CHECK: unbound_ref: !lit.signature<<[] -> index>() -> !lit.none> = <{{.*}}@"just_result_params()">
+    # CHECK: unbound_ref: !lit.signature<<[] -> index>() -> !kgen.none> = <{{.*}}@"just_result_params()">
     alias unbound_ref = just_result_params
     # CHECK: bound_ref: !lit.signature<<[] -> !Int, !Int>() -> !Int> = <{{.*}}idx_result_params{{.*}}<:!Int #lit.struct<{value = 1}>>>
     alias bound_ref = idx_result_params[1]
@@ -380,7 +380,7 @@ fn testResultParamConversion[() -> b: Int](a: Int):
 fn testResultParamThrowing[() -> b: Int]() raises:
   # CHECK: lit.param_return<:!Int #lit.struct<{{.*}} 1}
   param_return[1]
-  # CHECK: lit.return %{{.*}} : !pop.variant<!Error, !lit.none>
+  # CHECK: lit.return %{{.*}} : !pop.variant<!Error, none>
   raise Error()
 
 # CHECK-LABEL: lit.func @"testMultipleParamReturn[{{.*}}$bool::Bool]()"<{{.*}}[a]: {{.*}} -> {{.*}}b:
@@ -419,7 +419,7 @@ fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
 
 ##===--------------------Test function with parameters---------------------===##
 
-# CHECK-LABEL: lit.func @"callableWithParam{{.*}}"<{{.*}}[type]: dtype>() -> !lit.none
+# CHECK-LABEL: lit.func @"callableWithParam{{.*}}"<{{.*}}[type]: dtype>() -> !kgen.none
 fn callableWithParam[type: __mlir_type.`!kgen.dtype`]():
   pass
 
@@ -432,7 +432,7 @@ fn takeCallable2[
 # CHECK-LABEL: lit.func @"passFunctionParam2
 fn passFunctionParam2():
   # CHECK: kgen.call @"$parameters"::@"takeCallable2{{.*}}"<
-  # CHECK-SAME: :!lit.signature<<"dt": dtype>() -> !lit.none> rebind(:!lit.signature<<"type": dtype>() -> !lit.none> @"$parameters"::@"callableWithParam
+  # CHECK-SAME: :!lit.signature<<"dt": dtype>() -> !kgen.none> rebind(:!lit.signature<<"type": dtype>() -> !kgen.none> @"$parameters"::@"callableWithParam
   takeCallable2[callableWithParam]()
 
 # CHECK-LABEL: lit.func @"my_constrained{{.*}}()"
@@ -533,13 +533,13 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl {{.*}}fnAlias: !lit.signature<<"b": variadic<!Int>>() param_vararg -> !lit.none>
+  # CHECK-NEXT: lit.alias.decl {{.*}}fnAlias: !lit.signature<<"b": variadic<!Int>>() param_vararg -> !kgen.none>
   # CHECK-SAME: = <@"$parameters"::@"fnWithVariadics{{.*}}">
   alias fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure [!lit.signature<() param_vararg -> !lit.none>: @"$parameters"::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
-  # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<!lit.signature<() param_vararg -> !lit.none>>
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure [!lit.signature<() param_vararg -> !kgen.none>: @"$parameters"::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
+  # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<!lit.signature<() param_vararg -> !kgen.none>>
   let fnLet = fnWithVariadics
 
   # CHECK-NEXT: %a = lit.varlet.decl {{.*}} : !lit.ref<mut @"{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = []>
@@ -780,13 +780,13 @@ struct MemoryOnlyType:
 
 
 # CHECK: lit.func @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<{{.*}}[x]: !MemoryOnlyType =
-# CHECK-SAME: apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK-SAME: apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
 fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.func @"test_mem_only_default_param()"
 # CHECK: kgen.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<
-# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
 fn test_mem_only_default_param():
     mem_only_default_param()
 
@@ -828,7 +828,7 @@ fn test_default_param_struct():
     _ = DefaultParams[4, 5, "meow"]()
 
 
-# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
 @value
 struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
@@ -836,11 +836,11 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 fn test_default_param_struct_all_default():
     # CHECK: lit.alias.decl {{.*}}: type = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 0}>,
-    # CHECK-SAME: {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK-SAME: {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
     alias T = AllDefaultParams[]
 
     # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@AllDefaultParams<
-    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK: %1 = kgen.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
     _ = AllDefaultParams[]()

@@ -17,8 +17,6 @@ def TypeCheckErrorType : DialectType<(type)>;
 
 def UnresolvedType : DialectType<(type)>;
 
-def NoneType : DialectType<(type)>;
-
 def MetaTypeType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   ConcreteAttribute<"ParamBindArrayAttr">:$paramValues
@@ -46,7 +44,6 @@ def LITDialectTypes : DialectTypes<"lit"> {
   let elems = [
     TypeCheckErrorType,
     UnresolvedType,
-    NoneType,
     MetaTypeType,
     LifetimeType,
     RefType,
@@ -83,8 +80,6 @@ def UnboundMLIROperationAttr : DialectAttribute<(attr
   ConcreteAttribute<"DictionaryAttr">:$attrs
 )>;
 
-def NoneAttr : DialectAttribute<(attr)>;
-
 def ModuleAttr : DialectAttribute<(attr
   ConcreteType<"MetaTypeType">:$type
 )>;
@@ -107,7 +102,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     FnMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,
-    NoneAttr,
     ModuleAttr,
     LifetimeAttr,
     UnresolvedAliasValueAttr,

@@ -15,10 +15,10 @@
 
 namespace M::KGEN {
 class DeclRefType;
+class NoneType;
 namespace LIT {
 class LifetimeType;
 class MetaTypeType;
-class NoneType;
 class StructFieldOp;
 
 /// Mangle a parameter name with the line and column index where it's declared.

@@ -220,8 +220,8 @@ fn test_while(a: Bool, b: Bool) -> Bool:
 # CHECK-NEXT:     }
 # CHECK-NEXT:     hlcf.continue
 # CHECK-NEXT:   }
-# CHECK-NEXT:   %0 = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT:   lit.return %0 :  !lit.none
+# CHECK-NEXT:   %none = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:   lit.return %none :  !kgen.none
 # CHECK-NEXT:   lit.end_func
 # CHECK-NEXT: }
 fn test_simple(a: Bool):
@@ -313,12 +313,12 @@ fn for_range_loop():
     let my_list = MyList()
 
     # CHECK: %$RANGE = lit.varlet.decl "$RANGE"
-    # CHECK: %2 = lit.ref.to_pointer %$RANGE
-    # CHECK: %3 = lit.ref.to_pointer %my_list
-    # CHECK: [[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}(%2, %3)
+    # CHECK: [[RANGEPTR:%.*]] = lit.ref.to_pointer %$RANGE
+    # CHECK: [[LISTPTR:%.*]] = lit.ref.to_pointer %my_list
+    # CHECK: [[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}([[RANGEPTR]], [[LISTPTR]])
     for item in my_list:
-        # CHECK: %6 = lit.ref.to_pointer %$RANGE
-        # CHECK: [[LENGTH:%.*]] = kgen.call {{.*}}__len__{{.*}}(%6)
+        # CHECK: [[RANGEPTR:%.*]] = lit.ref.to_pointer %$RANGE
+        # CHECK: [[LENGTH:%.*]] = kgen.call {{.*}}__len__{{.*}}([[RANGEPTR]])
         # CHECK: [[INDEX:%.*]] = kgen.call {{.*}}__index__{{.*}}([[LENGTH]])
         # CHECK: [[MLIR_INDEX:%.*]] = kgen.call {{.*}}__mlir_index__{{.*}}([[INDEX]])
         # CHECK: [[COND:%.*]] = index.cmp sgt([[MLIR_INDEX]], %idx0)
@@ -493,15 +493,15 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %1 = kgen.call @"$statements"::@"maybeRaises()"()
-        # CHECK: %2 = lit.handle_variant %1 : (!pop.variant<!Error, !Int>) -> !Int
+        # CHECK: %0 = kgen.call @"$statements"::@"maybeRaises()"()
+        # CHECK: %1 = lit.handle_variant %0 : (!pop.variant<!Error, !Int>) -> !Int
         # CHECK: {
         # CHECK: } else {
-        # CHECK:   [[ERR:%.*]] = pop.variant.get %1
+        # CHECK:   [[ERR:%.*]] = pop.variant.get %0
         # CHECK:   lit.raise [[ERR]] : !Error
         # CHECK: }
 
-        # CHECK-NEXT: lit.ref.store %2, %a
+        # CHECK-NEXT: lit.ref.store %1, %a
         a = maybeRaises()
         # CHECK-NEXT: lit.try.yield
     except:
@@ -552,7 +552,7 @@ fn rethrowsToRethrow():
         # CHECK: }
     # CHECK: } except (%arg0: !Error)
     except:
-        # CHECK: lit.return %0
+        # CHECK: lit.return %none
         return
 
 # Issue #12358
@@ -582,12 +582,12 @@ fn fail(str: StringRef) raises -> S:
 
 # CHECK-LABEL: lit.func @"call_raising
 fn call_raising():
-  # CHECK: %1 = lit.ref.to_pointer %x
+  # CHECK: [[XPTR:%.*]] = lit.ref.to_pointer %x
   try:
     # CHECK: [[ERR:%.*]] =  kgen.call @"$statements"::@"fail
-    # CHECK: [[VAR0:%.*]] = lit.handle_variant [[ERR]], %1
+    # CHECK: [[VAR0:%.*]] = lit.handle_variant [[ERR]], [[XPTR]]
     # CHECK:   [[VAR1:%.*]] = pop.variant.get [[ERR]]
-    # CHECK:   lit.yield [[VAR1]] : !lit.none
+    # CHECK:   lit.yield [[VAR1]] : !kgen.none
     # CHECK: } else {
     # CHECK:   [[VAR2:%.*]] = pop.variant.get [[ERR]]
     # CHECK:   lit.raise [[VAR2]]
@@ -595,10 +595,10 @@ fn call_raising():
     # CHECK: }
     let x = fail("hello world")
     # CHECK: %y = lit.varlet.decl "y"
-    # CHECK: %5 = lit.ref.to_pointer %y
-    # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], %5
+    # CHECK: [[YPTR:%.*]] = lit.ref.to_pointer %y
+    # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], [[YPTR]]
     # CHECK:   [[VAR2:%.*]] = pop.variant.get [[ERR]]
-    # CHECK:   lit.yield [[VAR2]] : !lit.none
+    # CHECK:   lit.yield [[VAR2]] : !kgen.none
     # CHECK: } else {
     # CHECK:   [[VAR2:%.*]] = pop.variant.get [[ERR]]
     # CHECK:   lit.raise [[VAR2]]
@@ -680,10 +680,10 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL]])
     noop(val)
 
-    # CHECK-NEXT: %5 = kgen.call {{.*}}raise_string()
-    # CHECK-NEXT: %6 = lit.handle_variant %5
-    # CHECK-NEXT:   %7 = pop.variant.get %5
-    # CHECK-NEXT:   lit.yield %7 : !lit.none
+    # CHECK-NEXT: [[RESULT:%.*]] = kgen.call {{.*}}raise_string()
+    # CHECK-NEXT: lit.handle_variant [[RESULT]]
+    # CHECK-NEXT:   [[OK:%.*]] = pop.variant.get [[RESULT]]
+    # CHECK-NEXT:   lit.yield [[OK]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   pop.variant.get
     # CHECK-NEXT:   lit.raise
@@ -693,9 +693,9 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT: lit.try.yield
   # CHECK-NEXT: } except (%arg0: !Error) {
   # CHECK:        lit.ref.store %false, %__with_exc__
-  # CHECK-NEXT:   %3 = kgen.call {{.*}}__exit__{{.*}}(%a, %arg0)
-  # CHECK-NEXT:   %4 = kgen.call {{.*}}__mlir_i1__{{.*}}(%3)
-  # CHECK-NEXT:   hlcf.if %4 {
+  # CHECK-NEXT:   [[EXIT_RESULT:%.*]] = kgen.call {{.*}}__exit__{{.*}}(%a, %arg0)
+  # CHECK-NEXT:   [[SUCCESS:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[EXIT_RESULT]])
+  # CHECK-NEXT:   hlcf.if [[SUCCESS]] {
   # CHECK-NEXT:     hlcf.yield
   # CHECK-NEXT:   } else {
   # CHECK-NEXT:     lit.raise %arg0
@@ -788,7 +788,7 @@ fn testCMWithoutExit():
   with CMWithoutExit() as a:
     a.method()
 
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
 
 ##===----------------------------------------------------------------------===##
 

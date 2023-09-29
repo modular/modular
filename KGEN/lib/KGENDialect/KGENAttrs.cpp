@@ -163,6 +163,14 @@ bool UnknownAttr::isConstant() const { return !isParameterizedType(getType()); }
 bool UnboundAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// NoneAttr
+//===----------------------------------------------------------------------===//
+
+Type NoneAttr::getType() const { return KGEN::NoneType::get(getContext()); }
+
+bool NoneAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
 //===----------------------------------------------------------------------===//
 

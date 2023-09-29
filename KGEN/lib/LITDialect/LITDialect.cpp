@@ -70,7 +70,6 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 // LITDialectBytecodeInterface
 //===----------------------------------------------------------------------===//
 
-using LIT::NoneType;
 using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
 using mlir::get;

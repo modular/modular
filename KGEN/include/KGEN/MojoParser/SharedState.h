@@ -23,6 +23,7 @@ class DIBuilder;
 
 namespace M::KGEN {
 class CompilationOptions;
+class NoneAttr;
 class ParamDeclAttr;
 class SignatureType;
 } // namespace M::KGEN
@@ -40,7 +41,6 @@ struct Operand;
 class FileModuleOp;
 class FuncOp;
 class LookupResult;
-class NoneAttr;
 class PackageOp;
 class ParserListener;
 class StructDeclOp;
