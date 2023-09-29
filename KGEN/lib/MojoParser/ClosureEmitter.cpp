@@ -159,7 +159,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
     shared.declResolver->addFullyResolvedDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
-  GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
+  GeneratedStubs stubs = addMissingValueMemberStubsToStruct(
       astDecl, /*generateFieldwiseInit=*/false,
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
@@ -241,7 +241,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
         noneType, loadedFuncPtr,
         ArrayRef<Value>{ptrToImpl, loadedExistingImpl});
   }
-  if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, false)))
+  if (failed(populateMoveCopy(*copyCtrDecl, false)))
     return {};
 
   // Populate move constructor.
@@ -262,13 +262,13 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
     builder.create<POP::StoreOp>(
         nullPtr, builder.create<StructGEPOp>(copyExisting, impl));
   }
-  if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, true)))
+  if (failed(populateMoveCopy(*moveCtrDecl, true)))
     return {};
 
   // Add the __call__ Method.
   SignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(ptrToSelfType, signatureType);
-  auto [callMethod, _] = structEmitter.synthesizeMethodInStruct(
+  auto [callMethod, _] = synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getValueInputs(),
       closureMethodSignatureType.getInputConventions(),
       callMemberSignatureType.getArgNames(),
@@ -438,10 +438,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   llvm::append_range(initSigNames,
                      llvm::drop_end(closureImplSigArgNames, wrapperNumArgs));
 
-  GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
+  GeneratedStubs stubs = addMissingValueMemberStubsToStruct(
       astDecl, /*generateFieldwiseInit=*/false);
-  structEmitter.synthesizeMemberwiseInit(astDecl, initSigTypes,
-                                         initSigConventions, initSigNames);
+  synthesizeMemberwiseInit(astDecl, initSigTypes, initSigConventions,
+                           initSigNames);
 
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
   ASTDecl *copyCtrDecl = shared.declResolver->getDeclForFuncSymbol(
@@ -450,13 +450,13 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
       cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
 
-  if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, false)))
+  if (failed(populateMoveCopy(*copyCtrDecl, false)))
     shared.emitError(copyCtr.getLoc(), "Cannot copy captured value because")
         << declOp.getSymName() << "` does not implement copy constructor.";
 
   // It is permissible for a closure implementation to not have a move
   // constructor.
-  if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, true)))
+  if (failed(populateMoveCopy(*moveCtrDecl, true)))
     moveCtr.erase();
   else
     declOp.setMoveInitAttr(moveCtr.getBoundReference());
@@ -498,7 +498,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   }
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       declOp.getLoc(), &declOp.getFields().front());
-  LIT::FuncOp callFunc = structEmitter.createFunction(
+  LIT::FuncOp callFunc = createFunction(
       "__call__", callInputTypes, callConventions, callNames, closureResultType,
       SpecialFunctionKind::kNormal, location, builder);
   declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
@@ -577,8 +577,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     StructDeclOp closureWrapper, StructDeclOp closureImpl, SMLoc location) {
   auto ptrToClosureImplType =
       PointerType::get(ASTDecl::computeSelfTypeForStruct(closureImpl));
-  if (auto init =
-          structEmitter.findInitInStruct(closureWrapper, ptrToClosureImplType))
+  if (auto init = findInitInStruct(closureWrapper, ptrToClosureImplType))
     return init;
 
   auto emptyList =
@@ -601,11 +600,11 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   argTypes.push_back(ptrToClosureImplType);
   argConventions.push_back(ValueInputConvention::BorrowedInMem);
   argNames.push_back(StringAttr::get(closureWrapper->getContext(), "impl"));
-  FuncOp init = structEmitter.addVoidMethod(
-      *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
-           .getDecl(shared),
-      "__init__", argTypes, argConventions, argNames,
-      SpecialFunctionKind::kInit);
+  FuncOp init =
+      addVoidMethod(*ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
+                         .getDecl(shared),
+                    "__init__", argTypes, argConventions, argNames,
+                    SpecialFunctionKind::kInit);
 
   ImplicitLocOpBuilder builder =
       ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
@@ -679,7 +678,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       StringAttr::get(closureWrapper.getContext(), "other");
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelCopyInit = structEmitter.createFunction(
+  LIT::FuncOp topLevelCopyInit = createFunction(
       generateName("_copyinit_"),
       {PointerType::get(opaquePointer), opaquePointer},
       {ValueInputConvention::BorrowedInReg,
@@ -721,7 +720,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
 
-  LIT::FuncOp topLevelDtor = structEmitter.createFunction(
+  LIT::FuncOp topLevelDtor = createFunction(
       generateName("_dtor_"), ArrayRef<Type>{opaquePointer},
       ArrayRef<ValueInputConvention>{ValueInputConvention::OwnedInReg},
       ArrayRef<StringAttr>{selfName}, noneType, SpecialFunctionKind::kNormal,
@@ -771,7 +770,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  LIT::FuncOp topLevelCall = structEmitter.createFunction(
+  LIT::FuncOp topLevelCall = createFunction(
       generateName("_call_"), closureSignature.getValueInputs(),
       closureSignature.getInputConventions(), closureSignature.getArgNames(),
       closureSignature.getValueResults().front(), SpecialFunctionKind::kNormal,
