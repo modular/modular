@@ -55,10 +55,17 @@ public:
     return result;
   }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
   Error(Error &&other) : value(other.value), storageMode(other.storageMode) {
     other.value = nullptr;
     other.storageMode = kStaticError;
   }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
   ~Error() {
 #if defined(__GNUC__) && !defined(__clang__)

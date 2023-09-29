@@ -36,7 +36,7 @@ struct CompareTimingsCLOptions {
     llvm::errs() << err << "\n";                                               \
     return 1;                                                                  \
   }                                                                            \
-  auto(var) = *var##OrErr;
+  auto var = *var##OrErr;
 
 /// Prune samples outside of +/- this factor of the measured mean.
 constexpr double kPruneFactor = 0.5;

@@ -502,7 +502,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   for (auto [idx, arg] : llvm::enumerate(func.getArguments())) {
     Value argPtr = b.create<GEPOp>(
         LLVMPointerType::get(arg.getType()), contextValue,
-        ArrayRef<GEPArg>{0, argOffset + idx}, /*inbounds=*/true);
+        ArrayRef<GEPArg>{0, static_cast<int32_t>(argOffset + idx)},
+        /*inbounds=*/true);
     b.create<StoreOp>(arg, argPtr);
   }
   b.create<ReturnOp>(b.create<BitcastOp>(cache.i8PtrType, contextValue));

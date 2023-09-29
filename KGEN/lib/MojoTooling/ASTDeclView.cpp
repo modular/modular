@@ -284,6 +284,7 @@ StringRef DeclView::getKindAsString() const {
   case DK_VariableDeclView:
     return "variable";
   }
+  llvm_unreachable("invalid kind");
 }
 
 std::string DeclView::getFullMarkdownString() const {
