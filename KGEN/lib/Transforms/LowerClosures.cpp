@@ -82,7 +82,8 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
 /// `lit.async.execute` operations nested beneath this one when the function
 /// gets called.
 static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
-                              Shared<SymbolTable &> &sharedTable) {
+                              Shared<SymbolTable &> &sharedTable,
+                              size_t &nameCounter) {
   SmallVector<Value> captures;
   Region &body = op.getBodyRegion();
   liftClosureRegion(body, captures);
@@ -101,7 +102,8 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   // Move the body into a function. The function is not valid to inline.
   b.clearInsertionPoint();
   b.setLoc(op.getLoc());
-  StringAttr name = b.getStringAttr(parent.getSymName() + "_async_closure");
+  StringAttr name = b.getStringAttr(parent.getSymName() + "_async_closure_" +
+                                    Twine(nameCounter++));
   auto sig = SignatureType::get(
       b.getFunctionType(body.getArgumentTypes(), op.getType()));
   auto lifted = b.create<FuncOp>(name, sig, InlineLevel::Never);
@@ -134,7 +136,8 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
 /// Lower a closure by closing the region over its captured SSA values and
 /// lifting it into a top-level function.
 static void lowerStageClosure(FuncOp parent, StageClosureOp op,
-                              Shared<SymbolTable &> &sharedTable) {
+                              Shared<SymbolTable &> &sharedTable,
+                              size_t &nameCounter) {
   Region &body = op.getBodyRegion();
   unsigned numArgs = body.getNumArguments();
   SmallVector<Value> captures;
@@ -158,7 +161,8 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   if (auto nameMaybe = op->getAttrOfType<StringAttr>("name"))
     name = nameMaybe;
   else
-    name = b.getStringAttr(parent.getSymName() + "_closure");
+    name = b.getStringAttr(parent.getSymName() + "_closure_" +
+                           Twine(nameCounter++));
   auto lifted = b.create<FuncOp>(op->getLoc(), name, sig, InlineLevel::Never);
   lifted.getBodyRegion().takeBody(body);
 
@@ -190,6 +194,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 /// handle directly.
 static LogicalResult lowerAsyncFunction(FuncOp func,
                                         Shared<SymbolTable &> &sharedTable) {
+  size_t closureNameCounter = 0;
   Value coroHdl;
   ImplicitLocOpBuilder b(func.getLoc(),
                          OpBuilder::atBlockBegin(func.getBody()));
@@ -240,9 +245,9 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
       call.erase();
 
     } else if (auto exec = dyn_cast<LIT::AsyncExecuteOp>(op)) {
-      lowerAsyncExecute(func, exec, sharedTable);
+      lowerAsyncExecute(func, exec, sharedTable, closureNameCounter);
     } else if (auto closure = dyn_cast<StageClosureOp>(op)) {
-      lowerStageClosure(func, closure, sharedTable);
+      lowerStageClosure(func, closure, sharedTable, closureNameCounter);
     }
     return WalkResult::advance();
   });

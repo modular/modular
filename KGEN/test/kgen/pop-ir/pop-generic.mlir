@@ -7,11 +7,11 @@ kgen.generator @generic_offset_load_store<ty: type>(%i: index, %p: !kgen.pointer
   kgen.return
 }
 
-// CHECK-LABEL: @"generic_offset_load_store,ty=!pop.simd<4, f32>"
-// CHECK: pop.offset %{{.*}} : !kgen.pointer<simd<4, f32>>
-
-// CHECK-LABEL: @"generic_offset_load_store,ty=!pop.scalar<si32>"
+// CHECK-LABEL: @"generic_offset_load_store,ty=scalar<si32>"
 // CHECK: pop.offset %{{.*}} : !kgen.pointer<scalar<si32>>
+
+// CHECK-LABEL: @"generic_offset_load_store,ty=simd<4, f32>"
+// CHECK: pop.offset %{{.*}} : !kgen.pointer<simd<4, f32>>
 
 kgen.generator @impl(
     %i: index,
