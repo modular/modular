@@ -42,6 +42,7 @@ static bool isWriting(ResourceUseType type) {
 
 static const char *useTypeToString(ResourceUseType type) {
   switch (type) {
+  default:
   case kInvalidResourceUse:
     return "invalid";
   case kReferencingResourceUse:
@@ -356,6 +357,7 @@ const char *Resource::stateToString(ResourceState state) {
   case kFreed:
     return "freed";
   }
+  llvm_unreachable("invalid resource state");
 }
 
 void Resource::print(llvm::raw_ostream &os) const {
