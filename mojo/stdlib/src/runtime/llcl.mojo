@@ -26,15 +26,15 @@ fn num_cores() -> Int:
         Int: The number of cores on the system.
     """
     return __mlir_op.`pop.external_call`[
-        func : "KGEN_CompilerRT_CoreCount".value,
-        resAttrs : __mlir_attr.`[{llvm.noundef}]`,
-        funcAttrs : __mlir_attr.`["willreturn"]`,
-        memory : __mlir_attr[
+        func = "KGEN_CompilerRT_CoreCount".value,
+        resAttrs = __mlir_attr.`[{llvm.noundef}]`,
+        funcAttrs = __mlir_attr.`["willreturn"]`,
+        memory = __mlir_attr[
             `#llvm.memory_effects<other = read, `,
             `argMem = read, `,
             `inaccessibleMem = read>`,
         ],
-        _type : __mlir_type.index,
+        _type = __mlir_type.index,
     ]()
 
 
@@ -280,7 +280,7 @@ struct Task[type: AnyType]:
             )
             __mlir_op.`pop.coroutine.await.end`()
 
-        __mlir_op.`pop.coroutine.await`[_region : "await_body".value]()
+        __mlir_op.`pop.coroutine.await`[_region = "await_body".value]()
         return self.get()
 
     fn wait(self) -> type:
@@ -376,7 +376,7 @@ struct TaskGroup:
             Self.await_body_impl(cur_hdl, self)
             __mlir_op.`pop.coroutine.await.end`()
 
-        __mlir_op.`pop.coroutine.await`[_region : "await_body".value]()
+        __mlir_op.`pop.coroutine.await`[_region = "await_body".value]()
 
     fn wait(inout self):
         self._task_complete()
