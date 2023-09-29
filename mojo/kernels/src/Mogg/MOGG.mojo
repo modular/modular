@@ -92,11 +92,8 @@ from Matmul import matmul as _matmul
 
 from MatmulUtils import (
     GemmShape,
-    _get_tile_n_k,
     get_trace_information,
-    is_critical_stride,
     search_mm_config,
-    use_vnni_fn,
 )
 from MatrixBandPart import matrix_band_part
 from MatrixSolve import matrix_solve
@@ -112,7 +109,7 @@ from Normalization import layer_norm
 from Pad import pad as _pad
 from Pad import pad_shape
 from Pool import avg_pool, max_pool, pool_shape
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
+from runtime.llcl import OutputChainPtr
 from runtime.tracing import Trace, TraceLevel
 from Resize import (
     resize_nearest_neighbor,
