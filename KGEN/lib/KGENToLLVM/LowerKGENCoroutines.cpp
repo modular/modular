@@ -512,7 +512,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 static LogicalResult
 lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
                          CoroutineInfo &coro, TypeAttrCache &cache,
-                         LLVMFuncOp coroProjFn, POP::CoroutineAwaitOp op) {
+                         LLVMFuncOp coroProjFn, POP::CoroutineAwaitOp op,
+                         llvm::dwarf::SourceLanguage debugInfoLanguage) {
   b.setLoc(op.getLoc());
 
   // Outline the body of the await into a function.
@@ -568,8 +569,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
     DebugInfo::DIBuilder dib(ctx);
     DebugInfo::DIFileAttr fileAttr = dib.createFile(fileLoc);
 
-    // TODO: "C" as the Dwarf language type is the best option for now.
-    dib.initializeCompileUnit(llvm::dwarf::DW_LANG_C, fileAttr, "kgen",
+    dib.initializeCompileUnit(debugInfoLanguage, fileAttr, "kgen",
                               /*isOptimized=*/true,
                               DebugInfo::EmissionKind::Full);
     DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
@@ -635,7 +635,8 @@ static LogicalResult
 lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
                        TypeAttrCache &cache,
                        function_ref<LLVMFuncOp()> getCoroEndFn,
-                       function_ref<LLVMFuncOp()> getCoroProjFn) {
+                       function_ref<LLVMFuncOp()> getCoroProjFn,
+                       llvm::dwarf::SourceLanguage debugInfoLanguage) {
   // Collect all the relevant ops.
   SmallVector<POP::CoroutineHandleOp> handles;
   SmallVector<POP::CoroutineOpaqueHandleOp> opaques;
@@ -714,8 +715,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     op.erase();
   }
   for (POP::CoroutineAwaitOp op : awaits) {
-    if (failed(lowerCoroutineAwaitAsync(symtab, b, *coro, cache,
-                                        getCoroProjFn(), op)))
+    if (failed(lowerCoroutineAwaitAsync(
+            symtab, b, *coro, cache, getCoroProjFn(), op, debugInfoLanguage)))
       return failure();
   }
   return success();
@@ -763,6 +764,8 @@ void LowerKGENCoroutinesAsyncPass::runOnOperation() {
   // TODO: Do this in parallel.
   for (auto func : getOperation().getOps<LLVMFuncOp>())
     if (failed(lowerCoroutineFunction(symtab, func, b, cache, getCoroEndFn,
-                                      getCoroProjFn)))
+                                      getCoroProjFn,
+                                      static_cast<llvm::dwarf::SourceLanguage>(
+                                          debugInfoLanguage.getValue()))))
       return signalPassFailure();
 }

@@ -32,7 +32,8 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
     llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
     llvm::opt::OptSpecifier mtuneId, llvm::opt::OptSpecifier noOptimizationId,
-    llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId) {
+    llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
+    llvm::opt::OptSpecifier debugInfoLanguageId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -71,6 +72,20 @@ ErrorOrSuccess M::parseCompilationOptions(
       compilationOptions.sanitizers.enable(Sanitizers::kAddress);
     else if (sanitizer == "thread")
       compilationOptions.sanitizers.enable(Sanitizers::kThread);
+  }
+
+  // Process the debug info language.
+  StringRef debugInfoLanguage = args.getLastArgValue(debugInfoLanguageId);
+  if (args.hasMultipleArgs(debugInfoLanguageId))
+    return Error(
+        "too many specified debug info languages, expected exactly one");
+  if (!debugInfoLanguage.empty()) {
+    if (!llvm::is_contained({"C", "Mojo"}, debugInfoLanguage)) {
+      return Error("invalid debug info language '" + debugInfoLanguage +
+                   "', expected one of: `C` or `Mojo`");
+    }
+    if (debugInfoLanguage == "Mojo")
+      compilationOptions.debugInfoLanguage = CompilationOptions::kLangMojo;
   }
 
   // If the user specified the triple, the target CPU, or the target feature

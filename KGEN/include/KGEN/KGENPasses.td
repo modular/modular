@@ -145,6 +145,12 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
     "HLCF::HLCFDialect",
     "mlir::index::IndexDialect",
   ];
+
+  let options = [
+    Option<"debugInfoLanguage", "debug-info-language", "unsigned", "2",
+           "The DWARF language code to specify in the debug info. Defaults to "
+           "C (2).">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -304,6 +310,12 @@ def LowerKGENCoroutinesAsync : Pass<"lower-coroutines-async",
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    Option<"debugInfoLanguage", "debug-info-language", "unsigned", "2",
+           "The DWARF language code to specify in the debug info. Defaults to "
+           "C (2).">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -813,6 +825,12 @@ def LowerRuntimeClosures : Pass<"lower-runtime-closures", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+
+  let options = [
+    Option<"debugInfoLanguage", "debug-info-language", "unsigned", "2",
+           "The DWARF language code to specify in the debug info. Defaults to "
+           "C (2).">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -830,6 +848,12 @@ def SynthesizeDebugInfo : Pass<"synth-debuginfo", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["DebugInfo::DebugInfoDialect"];
+
+  let options = [
+    Option<"debugInfoLanguage", "debug-info-language", "unsigned", "2",
+           "The DWARF language code to specify in the debug info. Defaults to "
+           "C (2).">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//

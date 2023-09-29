@@ -33,6 +33,8 @@ namespace M::KGEN {
 namespace {
 struct LowerRuntimeClosuresPass
     : M::KGEN::impl::LowerRuntimeClosuresBase<LowerRuntimeClosuresPass> {
+  using LowerRuntimeClosuresBase::LowerRuntimeClosuresBase;
+
   void runOnOperation() override;
 };
 } // namespace
@@ -79,13 +81,15 @@ LogicalResult CreateClosureTypes::createClosureTypes(
 struct CreateRuntimeClosureOpConversion
     : public ConvertPOPToLLVMPattern<CreateClosureOp> {
 
-  CreateRuntimeClosureOpConversion(SymbolTable &symTable,
-                                   POPToLLVMTypeConverter &typeConverter)
+  CreateRuntimeClosureOpConversion(
+      SymbolTable &symTable, POPToLLVMTypeConverter &typeConverter,
+      llvm::dwarf::SourceLanguage debugInfoLanguage)
       : ConvertPOPToLLVMPattern<CreateClosureOp>(typeConverter),
-        symtab(symTable) {}
+        symtab(symTable), debugInfoLanguage(debugInfoLanguage) {}
 
 private:
   SymbolTable &symtab;
+  llvm::dwarf::SourceLanguage debugInfoLanguage;
 
   LLVM::LLVMFuncOp
   generateWrapperFunction(CreateClosureOp op,
@@ -148,8 +152,7 @@ private:
       DebugInfo::DIBuilder dib(op->getContext());
       DebugInfo::DIFileAttr fileAttr = dib.createFile(fileLoc);
 
-      // TODO: "C" as the Dwarf language type is the best option for now.
-      dib.initializeCompileUnit(llvm::dwarf::DW_LANG_C, fileAttr, "kgen",
+      dib.initializeCompileUnit(debugInfoLanguage, fileAttr, "kgen",
                                 /*isOptimized=*/true,
                                 DebugInfo::EmissionKind::Full);
       DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
@@ -428,7 +431,9 @@ void LowerRuntimeClosuresPass::runOnOperation() {
 
   target.addIllegalOp<CreateClosureOp>();
   target.addIllegalOp<CallSignatureOp>();
-  patterns.insert<CreateRuntimeClosureOpConversion>(symtab, typeConverter);
+  patterns.insert<CreateRuntimeClosureOpConversion>(
+      symtab, typeConverter,
+      static_cast<llvm::dwarf::SourceLanguage>(debugInfoLanguage.getValue()));
   patterns.insert<CallSignatureOpConversion>(typeConverter);
 
   if (failed(
