@@ -140,9 +140,9 @@ fn clobber_memory():
     # This opereration corresponds to  atomic_signal_fence(memory_order_acq_rel)
     # in C++.
     __mlir_op.`pop.fence`[
-        _type:None,
-        syncscope : "singlethread".value,
-        ordering : __mlir_attr.`#pop<atomic_ordering acq_rel>`,
+        _type=None,
+        syncscope = "singlethread".value,
+        ordering = __mlir_attr.`#pop<atomic_ordering acq_rel>`,
     ]()
 
 
@@ -200,17 +200,17 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
     @parameter
     if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]].pointer_type]():
         __mlir_op.`pop.inline_asm`[
-            _type:None,
-            assembly : "".value,
-            constraints : "+m,r,~{memory}".value,
-            hasSideEffects : __mlir_attr.unit,
+            _type=None,
+            assembly = "".value,
+            constraints = "+m,r,~{memory}".value,
+            hasSideEffects = __mlir_attr.unit,
         ](tmp_ptr, val)
     else:
         __mlir_op.`pop.inline_asm`[
-            _type:None,
-            assembly : "".value,
-            constraints : "+m,~{memory}".value,
-            hasSideEffects : __mlir_attr.unit,
+            _type=None,
+            assembly = "".value,
+            constraints = "+m,~{memory}".value,
+            hasSideEffects = __mlir_attr.unit,
         ](tmp_ptr, tmp_ptr)
 
 
@@ -248,10 +248,10 @@ fn keep[type: AnyType](val: Pointer[type]):
     var tmp = val
     let tmp_ptr = Pointer.address_of(tmp)
     __mlir_op.`pop.inline_asm`[
-        _type:None,
-        assembly : "".value,
-        constraints : "r,~{memory}".value,
-        hasSideEffects : __mlir_attr.unit,
+        _type=None,
+        assembly = "".value,
+        constraints = "r,~{memory}".value,
+        hasSideEffects = __mlir_attr.unit,
     ](tmp_ptr)
 
 
@@ -272,8 +272,8 @@ fn keep[type: AnyType](inout val: type):
     var tmp = val
     let tmp_ptr = Pointer.address_of(tmp)
     __mlir_op.`pop.inline_asm`[
-        _type:None,
-        assembly : "".value,
-        constraints : "r,~{memory}".value,
-        hasSideEffects : __mlir_attr.unit,
+        _type=None,
+        assembly = "".value,
+        constraints = "r,~{memory}".value,
+        hasSideEffects = __mlir_attr.unit,
     ](tmp_ptr)
