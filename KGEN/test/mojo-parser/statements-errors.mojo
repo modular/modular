@@ -26,8 +26,8 @@ fn issue_6291(
 fn testIndentation6291[index: __mlir_type.index](
     ptr: __mlir_type.`!kgen.pointer<!pop.scalar<index>>`):
   var result = __mlir_op.`pop.load`[
-            alignment : __mlir_attr.`1: index`,
-            _type : __mlir_type.`!pop.scalar<index>`
+            alignment=__mlir_attr.`1: index`,
+            _type=__mlir_type.`!pop.scalar<index>`
 ](ptr)
 
 # This file contains parsing related bugs.

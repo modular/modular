@@ -107,7 +107,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
   for (const Operand &operand : node.operands) {
     ExprNode *expr = operand.value;
     if (!operand.isPositional()) {
-      // TODO(#22272): change this to allow keyword args.
+      // TODO(#21618): improve test when keyword parameters are enabled.
       emitter.emitError(loc, "only positional operands allowed in mlir magic")
           << expr->getRange();
       return {};
@@ -214,29 +214,28 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   // PValue.
   SmallVector<NamedAttribute> attrValues;
   for (const Operand &operand : subscript.operands) {
-    ExprNode *expr = operand.value;
-    if (!operand.isPositional()) {
-      // TODO(#22272): change this to allow keyword args.
-      emitter.emitError(
-          loc, "only positional operands allowed in mlir operator call")
-          << expr->getRange();
+    ExprNode *valueExpr = operand.value;
+    if (!operand.isKeyword()) {
+      InflightDiag diag =
+          emitter.emitError(loc, "attribute spec requires a keyword parameter");
+
+      // Jump through some hoops to emit a hint about using the old syntax.
+      // TODO: test
+      if (auto *slice = dyn_cast<SliceNode>(valueExpr);
+          slice && slice->upper && !slice->colon2Loc.isValid()) {
+        if (auto *kwRef = dyn_cast_or_null<DeclRefNode>(slice->lower))
+          diag << "; did you mean '" << kwRef->spelling << "=...'?"
+               << FixIt::replaceToken(slice->colon1Loc, "=");
+      }
+
+      diag << valueExpr->getRange();
       return {};
     }
 
-    auto *slice = dyn_cast<SliceNode>(expr);
-    if (!slice || slice->colon2Loc.isValid() || !slice->lower ||
-        !slice->upper || !isa<DeclRefNode>(slice->lower)) {
-      emitter.emitError(
-          loc, "attribute spec requires an attribute name and attr value")
-          << expr->getRange();
-      return {};
-    }
-
-    auto name = cast<DeclRefNode>(slice->lower)->spelling;
-    auto value = getAttrFromExpr(name, slice->upper, emitter);
+    auto value = getAttrFromExpr(operand.name, valueExpr, emitter);
     if (!value)
       return {};
-    attrValues.push_back({StringAttr::get(context, name), value});
+    attrValues.push_back({operand.name, value});
   }
 
   // Check for duplicate attribute specifications.
@@ -1417,6 +1416,15 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the baseAnyValue has a bound callable symbol, then this is applying
   // (more?) parameter expressions to bind its parameters.
   if (auto overloads = baseAnyValue.getIfORValue()) {
+    // TODO(#21618): Support keyword parameters
+    for (const Operand &operand : operands) {
+      SMLoc loc = operand.getLoc();
+      if (operand.isKeyword()) {
+        emitter.emitError(loc, "keyword parameters not supported yet");
+        return {};
+      }
+    }
+
     emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
                                                     rsquareLoc, operands);
     auto result = bindParamValuesToDirectCall(overloads, operands, emitter);
@@ -1428,6 +1436,25 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       emitter.emitCValue({baseAnyValue, base}, ValueDest::none());
   if (!baseValue)
     return {};
+
+  // Check for attribute bindings to an MLIR operation.
+  if (auto value = baseValue.getIfPValue()) {
+    if (auto unboundOperator =
+            dyn_cast<UnboundMLIROperationAttr>(value.get())) {
+      PValue result =
+          bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter);
+      return emitter.emitResult(result, this, dest);
+    }
+  }
+
+  // TODO(#21618): Support keyword parameters
+  for (const Operand &operand : operands) {
+    SMLoc loc = operand.getLoc();
+    if (operand.isKeyword()) {
+      emitter.emitError(loc, "keyword parameters not supported yet");
+      return {};
+    }
+  }
 
   if (auto callableMVal = baseValue.getIfPValue()) {
     if (auto sig = dyn_cast<SignatureType>(callableMVal.getType().mlirType)) {
@@ -1477,16 +1504,6 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       PValue attr =
           synthesizeMLIRAttrFromString(result, getLoc(), emitter.shared);
       return emitter.emitResult(attr, this, dest);
-    }
-  }
-
-  // Check for attribute bindings to an MLIR operation.
-  if (auto value = baseValue.getIfPValue()) {
-    if (auto unboundOperator =
-            dyn_cast<UnboundMLIROperationAttr>(value.get())) {
-      PValue result =
-          bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter);
-      return emitter.emitResult(result, this, dest);
     }
   }
 

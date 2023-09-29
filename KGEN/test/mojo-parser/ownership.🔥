@@ -525,7 +525,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
     # CHECK-NEXT: lit.ownership.def_lvalue %0
     # CHECK-NEXT: lit.ownership.mark_destroyed %0
-    __mlir_op.`lit.ownership.mark_destroyed`[_type : None](
+    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
        __get_lvalue_as_address(self.f1)
     )
 
@@ -553,7 +553,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%2)
   # CHECK-NEXT: lit.ownership.mark_destroyed %x
   # CHECK-NEXT: kgen.param.constant: none
-  __mlir_op.`lit.ownership.mark_destroyed`[_type : None](
+  __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
      __get_lvalue_as_address(x)
   )
 

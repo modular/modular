@@ -370,7 +370,11 @@ fn makes_escaping_closure(x: __mlir_type[`!kgen.pointer<`, Int, `>`],
    let local = MemType()
    let alignment = 0
    let size = 1
-   let local_ptr: __mlir_type[`!kgen.pointer<`, MemType, `>`] = __mlir_op.`pop.aligned_alloc`[_type : __mlir_type[`!kgen.pointer<`, MemType, `>`]](alignment.value, size.value)
+   let local_ptr: __mlir_type[
+      `!kgen.pointer<`, MemType, `>`
+   ] = __mlir_op.`pop.aligned_alloc`[
+      _type=__mlir_type[`!kgen.pointer<`, MemType, `>`]
+   ](alignment.value, size.value)
    fn do_stuff_with_pointers() escaping -> NoneType:
       doNothing(local_ptr, z)
       doNothingAgain(x, y, local, w, size)
@@ -432,8 +436,8 @@ fn make_pointer() -> __mlir_type.`!kgen.pointer<index>`:
    let alignment = 0
    let size = 8
    return __mlir_op.`pop.aligned_alloc`[
-           _type : __mlir_type.`!kgen.pointer<index>`
-       ](alignment.value, size.value)
+       _type=__mlir_type.`!kgen.pointer<index>`
+   ](alignment.value, size.value)
 
 # CHECK: lit.struct.decl @"_CI_
 # CHECK-NEXT: lit.struct.field field0 : !kgen.pointer<index>

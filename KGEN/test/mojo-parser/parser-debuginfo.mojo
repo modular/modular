@@ -55,7 +55,7 @@ fn structured_for_loop() -> __mlir_type.index:
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[
-        _type : __mlir_type.index, _region : "loop_body".value
+        _type=__mlir_type.index, _region="loop_body".value
     ](Int(0).value)
 
 

@@ -467,7 +467,7 @@ fn variadic_params():
 # CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !kgen.pointer<si32> borrow) -> si32
 fn testPointerArgs(ptr: __mlir_type.`!kgen.pointer<si32>`) -> __mlir_type.si32:
     # CHECK-NEXT: %0 = pop.load %ptr : !kgen.pointer<si32>
-    return __mlir_op.`pop.load`[_type : __mlir_type.si32](ptr)
+    return __mlir_op.`pop.load`[_type=__mlir_type.si32](ptr)
 
 
 struct NoDebugInlineTest:
@@ -922,7 +922,7 @@ fn raisesReturnsNone() raises:
 # CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<!Error, index>
 fn raisesReturnsVariant() -> __mlir_type[`!pop.variant<`, Error, `, index>`]:
     return __mlir_op.`pop.variant.create`[
-        _type : __mlir_type[`!pop.variant<`, Error, `, index>`]
+        _type=__mlir_type[`!pop.variant<`, Error, `, index>`]
     ](Int(1).value)
 
 

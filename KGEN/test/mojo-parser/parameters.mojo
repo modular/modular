@@ -439,7 +439,7 @@ fn passFunctionParam2():
 # CHECK-SAME: <[[COND:.*_cond]][cond]: !Bool, [[MESSAGE:.*_message]][message]: !StringLiteral>
 fn my_constrained[cond: Bool, message: StringLiteral]():
     # CHECK: kgen.param.assert <apply({{.*}}__mlir_i1__{{.*}}, [[COND]])>, #lit.struct.extract<{{.*}}[[MESSAGE]], "value">
-    __mlir_op.`kgen.param.assert`[cond:cond.__mlir_i1__(), message:message.value]()
+    __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
     return
 
 
