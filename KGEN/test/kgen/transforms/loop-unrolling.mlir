@@ -86,7 +86,7 @@ kgen.func @nested_unroll_loops() {
     %0 = index.sub %arg0, %idx1
     %1 = index.sub %idx2, %arg0
     kgen.call @foo(%1) : (index) -> ()
-    hlcf.for [%idx4 to %idx8 step %idx2 sgt sub] (%arg1 = %idx4 : index) {
+    hlcf.for [%idx4 to %idx8 step %idx2 slt add] (%arg1 = %idx4 : index) {
       %3 = index.add %arg1, %idx2
       %4 = index.add %1, %arg1
       kgen.call @foo(%4) : (index) -> ()
@@ -353,3 +353,26 @@ kgen.func @unroll_factor_not_divisible() -> index {
    } {unrollLevel = #hlcf<unroll_level 3> }
    kgen.return %0 : index
  }
+
+// CHECK-LABEL: @eliminate_zero_iter_loop_with_invalid_range
+kgen.func @eliminate_zero_iter_loop_with_invalid_range() {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx7 = index.constant 7
+  %idx8 = index.constant 8
+
+  // CHECK:      [[IDX0:%.*]] = index.constant 0
+  // CHECK:      [[IDX7:%.*]] = index.constant 7
+  // CHECK-NEXT: kgen.call @foo([[IDX0]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[IDX7]]) : (index) -> ()
+  // CHECK-NOT: hlcf.for
+  // CHECK-NOT: hlcf.loop
+  %0:2 = hlcf.for [%idx8 to %idx7 step %idx1 slt add] (%arg2 = %idx8 : index, %arg0 = %idx0 : index, %arg1 = %idx7 : index) -> (index, index) {
+    %3 = index.add %arg2, %idx1
+    kgen.call @foo(%3, %arg0) : (index, index) -> ()
+    hlcf.for.yield [induction_var (%3 : index)] [retvals (%3, %3: index, index)] [iterargs ()]
+  }
+  kgen.call @foo(%0#0) : (index) -> ()
+  kgen.call @foo(%0#1) : (index) -> ()
+  kgen.return
+}
