@@ -185,8 +185,6 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<TestAlwaysFailPass>{};
 
   // Register opt passes.
-  KGEN::registerAlwaysInlineParametric();
-  KGEN::registerAutomaticInline();
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerCheckRecursiveStructs();
@@ -232,6 +230,9 @@ int main(int argc, char **argv) {
   mlir::registerPass(
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
   mlir::registerPass([&] { return KGEN::createForceInline(runtime); });
+  mlir::registerPass(
+      [&] { return KGEN::createAlwaysInlineParametric(runtime); });
+  mlir::registerPass([&] { return KGEN::createAutomaticInline(runtime); });
 
   return failed(
       mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));
