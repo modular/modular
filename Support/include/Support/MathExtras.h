@@ -28,8 +28,9 @@ namespace M {
 /// default values. If IsNanSensitive is false, then two NaNs are considered
 /// equal.
 template <typename T, bool IsNanSensitive = true>
-static bool isClose(T a, T b, double absoluteTolerance = 1.0E-5,
-                    double relativeTolerance = 1.0E-8) {
+static bool isClose(T a, T b,
+                    [[maybe_unused]] double absoluteTolerance = 1.0E-5,
+                    [[maybe_unused]] double relativeTolerance = 1.0E-8) {
   static_assert(std::is_arithmetic_v<T>, "isClose requires an arithmetic type");
   if constexpr (std::is_integral_v<T>) {
     return a == b;
