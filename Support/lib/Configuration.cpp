@@ -406,6 +406,12 @@ std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
   searchPaths.push_back(std::filesystem::path("/etc/modular"));
 #endif // _WIN32
 
+#ifdef __APPLE__
+  // Homebrew installs into /opt/homebrew on arm64 and we symlink our /etc
+  // package files into HOMEBREW_PREFIX/etc/modular location.
+  searchPaths.push_back(std::filesystem::path("/opt/homebrew/etc/modular"));
+#endif // __APPLE__
+
   // Try to find the file in the provided paths.
   auto found =
       llvm::find_if(searchPaths, [&](const std::filesystem::path &path) {
