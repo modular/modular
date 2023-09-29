@@ -25,30 +25,59 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
 }
 
 ParseResult LIT::parseParamDecl(AsmParser &p, ParamDeclAttr &result,
-                                TypedAttr &defaultVal) {
-  if (failed(KGEN::parseParamDecl(p, result)))
+                                StringAttr &name) {
+  StringAttr declName;
+  if (parseParamName(p, declName))
     return failure();
-  return parseOptionalDefaultValue(p, defaultVal, result.getType());
+
+  // Parse the unmangled name or set it to empty if not present.
+  if (succeeded(p.parseOptionalLSquare())) {
+    if (parseParamName(p, name) || p.parseRSquare())
+      return failure();
+  } else {
+    name = StringAttr::get(p.getContext());
+  }
+
+  Type type;
+  if (parseColonTypeOrIndex(p, type))
+    return failure();
+  result = ParamDeclAttr::get(declName, type);
+  return success();
+}
+
+void LIT::printParamDecl(AsmPrinter &p, ParamDeclAttr decl, StringAttr name) {
+  printParamName(p, decl.getName());
+  if (!name.empty()) {
+    p << '[';
+    printParamName(p, name);
+    p << ']';
+  }
+  printColonTypeOrIndex(p, decl.getType());
 }
 
 /// Parse a parameter spec if present, including input and result parameter
 /// declarations, and default values.
-/// parameter-decl   ::= identifier (`:` type (`=` expression)? )?
+/// parameter-decl   ::= identifier (`[` identifier `]`)?
+///                        (`:` type (`=` expression)? )?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
 ParseResult
 LIT::parseOptionalParameterSpec(AsmParser &p,
                                 ParamDeclArrayAttr &inputParamDecls,
                                 ParamDeclArrayAttr &resultParamDecls,
+                                SmallVectorImpl<StringAttr> &paramNames,
                                 SmallVectorImpl<TypedAttr> &defaultParams) {
   bool foundDefault = false;
   auto parseWithDefault =
       [&](SmallVectorImpl<ParamDeclAttr> &decls) -> ParseResult {
     llvm::SMLoc loc = p.getCurrentLocation();
+
     ParamDeclAttr decl;
-    if (failed(parseParamDecl(p, decl)))
+    StringAttr name;
+    if (failed(parseParamDecl(p, decl, name)))
       return failure();
     decls.emplace_back(decl);
+    paramNames.emplace_back(name);
 
     TypedAttr defaultValue;
     if (failed(parseOptionalDefaultValue(p, defaultValue, decl.getType())))
@@ -69,6 +98,7 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      ArrayRef<ParamDeclAttr> inputParamDecls,
                                      ArrayRef<ParamDeclAttr> resultParamDecls,
+                                     ArrayRef<StringAttr> paramNames,
                                      ArrayRef<TypedAttr> defaultParams,
                                      ParameterEvaluator &evaluator) {
   // Substitute input and result parameters when printing default parameters.
@@ -77,15 +107,16 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   for (ParamDeclAttr param : resultParamDecls)
     evaluator.addResultValue(ParamDeclRefAttr::get(param));
 
-  ssize_t defaultIdx = defaultParams.size() - inputParamDecls.size();
+  size_t defaultIdxStart = inputParamDecls.size() - defaultParams.size();
+  size_t idx = 0;
   auto printWithDefault = [&](ParamDeclAttr decl) {
-    printParamDecl(p, decl);
-    if (defaultIdx >= 0) {
+    printParamDecl(p, decl, paramNames[idx]);
+    if (idx >= defaultIdxStart) {
       p << " = ";
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultParams[defaultIdx])));
+                             defaultParams[idx - defaultIdxStart])));
     }
-    ++defaultIdx;
+    ++idx;
   };
   printOptionalParameterSpec(p, inputParamDecls, resultParamDecls,
                              printWithDefault);
@@ -95,9 +126,14 @@ ParseResult
 LIT::parseOptionalParamSignature(AsmParser &p,
                                  SmallVectorImpl<Type> &inputParamTypes,
                                  SmallVectorImpl<Type> &resultParamTypes,
+                                 SmallVectorImpl<StringAttr> &paramNames,
                                  SmallVectorImpl<TypedAttr> &defaultParams) {
   // Parse the input parameter types and optional default values.
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
+    // Parse an optional parameter name.
+    if (parseOptionalName(p, paramNames.emplace_back()))
+      return {};
+
     Type &type = inputs.emplace_back();
     if (failed(parseKGENType(p, type)))
       return failure();
@@ -116,15 +152,21 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       TypeArrayAttr inputParamTypes,
                                       TypeArrayAttr resultParamTypes,
+                                      ArrayRef<StringAttr> paramNames,
                                       ArrayRef<TypedAttr> defaultParams) {
-  ssize_t defaultIdx = defaultParams.size() - inputParamTypes.size();
+  size_t defaultIdxStart = inputParamTypes.size() - defaultParams.size();
+  size_t idx = 0;
   auto printWithDefault = [&](Type type) {
-    printKGENType(p, type);
-    if (defaultIdx >= 0) {
-      p << " = ";
-      printParamValue(p, defaultParams[defaultIdx]);
+    if (StringAttr name = paramNames[idx]; !name.empty()) {
+      p.printString(name);
+      p << ": ";
     }
-    ++defaultIdx;
+    printKGENType(p, type);
+    if (idx >= defaultIdxStart) {
+      p << " = ";
+      printParamValue(p, defaultParams[idx - defaultIdxStart]);
+    }
+    ++idx;
   };
 
   KGEN::printOptionalParamSignature(p, inputParamTypes, resultParamTypes,
@@ -135,9 +177,11 @@ ParseResult
 LIT::parseStructParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
                               ParameterExprArrayAttr &defaultParameters) {
   SmallVector<TypedAttr> defaultParams;
+  // TODO(#22021): add support for keyword parameters.
+  SmallVector<StringAttr> paramNames;
   ParamDeclArrayAttr resultParams;
   llvm::SMLoc loc = p.getCurrentLocation();
-  if (parseOptionalParameterSpec(p, inputParamDecls, resultParams,
+  if (parseOptionalParameterSpec(p, inputParamDecls, resultParams, paramNames,
                                  defaultParams))
     return failure();
   if (!resultParams.empty())
@@ -151,8 +195,20 @@ void LIT::printStructParameterSpec(AsmPrinter &p, Operation *op,
                                    ArrayRef<ParamDeclAttr> inputParamDecls,
                                    ParameterExprArrayAttr defaultParameters) {
   ParameterEvaluator evaluator;
+  // TODO(#22021): add support for keyword parameters.
+  auto emptyStr = StringAttr::get(op->getContext());
+  SmallVector<StringAttr> paramNames(inputParamDecls.size(), emptyStr);
   printOptionalParameterSpec(
       p, inputParamDecls,
-      /*resultParamDecls=*/{},
+      /*resultParamDecls=*/{}, paramNames,
       defaultParameters ? defaultParameters : ArrayRef<TypedAttr>(), evaluator);
+}
+
+ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
+  std::string argName;
+  if (succeeded(p.parseOptionalString(&argName)))
+    if (failed(p.parseColon()))
+      return failure();
+  name = StringAttr::get(p.getContext(), argName);
+  return success();
 }

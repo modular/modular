@@ -28,9 +28,11 @@ bool LIT::canZeroCostConvertSignature(LITSignatureType from,
                                       LITSignatureType to) {
   if (from.getArgNames().size() != to.getInputConventions().size())
     return false;
-  auto newMetadata =
-      FnMetadataAttr::get(from.getContext(), from.getArgNames(),
-                          to.getDefaultArguments(), to.getDefaultParameters());
+  if (from.getParamNames().size() != to.getInputParamTypes().size())
+    return false;
+  auto newMetadata = FnMetadataAttr::get(
+      from.getContext(), from.getArgNames(), from.getParamNames(),
+      to.getDefaultArguments(), to.getDefaultParameters());
   auto newSig = SignatureType::get(
       to.getValues(), to.getInputParamTypes(), to.getResultParamTypes(),
       to.getInputConventions(), to.getFnEffects(), newMetadata);

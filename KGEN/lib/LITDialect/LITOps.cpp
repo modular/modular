@@ -405,10 +405,10 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "exportKind",  "isCExported",  "constraints", "implements",
-    "signature",   "functionType", "sym_name",    "argNames",
-    "evaluator",   "defaultImpl",  "inlineLevel", "paramDecl",
-    "inputParams", "resultParams", "decorators",  "posArgNames"};
+    "exportKind",   "isCExported", "constraints", "implements",  "signature",
+    "functionType", "sym_name",    "argNames",    "paramNames",  "evaluator",
+    "defaultImpl",  "inlineLevel", "paramDecl",   "inputParams", "resultParams",
+    "decorators",   "posArgNames"};
 
 static ParseResult parseLITFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
@@ -416,8 +416,10 @@ static ParseResult parseLITFunctionSignature(
     FunctionType &functionType, LITSignatureType &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
 
+  SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> defaultParams;
-  if (parseOptionalParameterSpec(p, inputParams, resultParams, defaultParams))
+  if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
+                                 defaultParams))
     return failure();
 
   SmallVector<StringAttr> argNames;
@@ -458,7 +460,8 @@ static ParseResult parseLITFunctionSignature(
 
   signature = IndexRefRemapper::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
-      FnMetadataAttr::get(p.getContext(), argNames, defaults, defaultParams),
+      FnMetadataAttr::get(p.getContext(), argNames, paramNames, defaults,
+                          defaultParams),
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
@@ -470,6 +473,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       LITSignatureType signature) {
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, inputParams, resultParams,
+                             signature.getParamNames(),
                              signature.getDefaultParameters(), evaluator);
 
   // Substitute input and result parameters when printing default arguments.
@@ -565,7 +569,7 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
       newArgNames[i] = StringAttr::get(ctx);
 
     auto newMetadata = FnMetadataAttr::get(
-        ctx, StringArrayAttr::get(ctx, newArgNames),
+        ctx, newArgNames, metadata.getParamNames(),
         metadata.getDefaultArguments(), metadata.getDefaultParameters());
 
     signature = SignatureType::get(

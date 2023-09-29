@@ -364,10 +364,12 @@ struct ParsedArgument {
 
   /// Process parsed parameter arguments into input parameters by determining
   /// the correct parameter types, conventions, and default parameter values.
+  /// The unmangled parameter names are also collected.
   static void processParameterInputArgs(ExprEmitter &emitter,
                                         ASTDecl &declScope,
                                         ArrayRef<ParsedArgument> args,
                                         SmallVectorImpl<ParamDeclAttr> &params,
+                                        SmallVectorImpl<StringAttr> &names,
                                         SmallVectorImpl<TypedAttr> &defaults,
                                         bool &paramVarArg);
 

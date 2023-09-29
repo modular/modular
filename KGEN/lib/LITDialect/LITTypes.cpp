@@ -99,8 +99,9 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
   SmallVector<Type> inputParamTypes, resultParamTypes;
   SmallVector<TypedAttr> defaultParamValues;
+  SmallVector<StringAttr> paramNames;
   if (failed(parseOptionalParamSignature(p, inputParamTypes, resultParamTypes,
-                                         defaultParamValues)))
+                                         paramNames, defaultParamValues)))
     return failure();
 
   SmallVector<StringAttr> argNames;
@@ -108,11 +109,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<ValueInputConvention> inputConventions;
   auto parseElt = [&]() -> Type {
     // Parse an optional argument name.
-    std::string argName;
-    if (succeeded(p.parseOptionalString(&argName)))
-      if (failed(p.parseColon()))
-        return {};
-    argNames.push_back(p.getBuilder().getStringAttr(argName));
+    if (parseOptionalName(p, argNames.emplace_back()))
+      return {};
 
     // Parse the argument type and its input convention.
     Type type;
@@ -139,7 +137,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       TypeArrayAttr::get(p.getContext(), inputParamTypes),
       TypeArrayAttr::get(p.getContext(), resultParamTypes), inputConventions,
       effects,
-      FnMetadataAttr::get(p.getContext(), argNames, argDefaults,
+      FnMetadataAttr::get(p.getContext(), argNames, paramNames, argDefaults,
                           defaultParamValues));
   return success(!!signature);
 }
@@ -174,6 +172,7 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   auto signature = ::cast<LITSignatureType>(sig);
   printOptionalParamSignature(p, signature.getInputParamTypes(),
                               signature.getResultParamTypes(),
+                              signature.getParamNames(),
                               signature.getMetadata().getDefaultParameters());
   auto printElt = [&](unsigned i) {
     StringAttr argName = signature.getArgName(i);
@@ -227,6 +226,18 @@ ArrayRef<TypedAttr> LITSignatureType::getDefaultParameters() {
   return getMetadata().getDefaultParameters();
 }
 
+ArrayRef<StringAttr> LITSignatureType::getParamNames() {
+  return getMetadata().getParamNames();
+}
+
+LITSignatureType LITSignatureType::dropParamValues() {
+  auto metadata = FnMetadataAttr::get(getContext(), getArgNames(), {},
+                                      getDefaultArguments(), {});
+  return get(getValues(), TypeArrayAttr::get(getContext(), {}),
+             getResultParamTypes(), getInputConventions(), getFnEffects(),
+             metadata);
+}
+
 bool LITSignatureType::classof(SignatureType type) {
   return ::isa_and_nonnull<FnMetadataAttr>(type.getMetadata());
 }
@@ -247,8 +258,10 @@ LITSignatureType LITSignatureType::get(FunctionType values,
                                        TypeArrayAttr resultParams,
                                        ArrayRef<ValueInputConvention> convs,
                                        FnEffects effects, Attribute metadata) {
-  if (!metadata)
-    metadata = FnMetadataAttr::get(values.getContext(), values.getNumInputs());
+  if (!metadata) {
+    metadata = FnMetadataAttr::get(values.getContext(), values.getNumInputs(),
+                                   inputParams ? inputParams.size() : 0);
+  }
   return SignatureType::get(values, inputParams, resultParams, convs, effects,
                             metadata);
 }

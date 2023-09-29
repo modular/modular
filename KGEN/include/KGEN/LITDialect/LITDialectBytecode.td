@@ -68,6 +68,7 @@ def PackageArchiveAttr : DialectAttribute<(attr
 
 def FnMetadataAttr : DialectAttribute<(attr
   StringAttrArray:$argNames,
+  StringAttrArray:$paramNames,
   TypedAttrArray:$defaultArguments,
   TypedAttrArray:$defaultParameters
 )>;

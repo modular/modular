@@ -41,6 +41,12 @@ public:
   /// Get the function's default parameters.
   ArrayRef<TypedAttr> getDefaultParameters();
 
+  /// Get the function's (unmangled) parameter names.
+  ArrayRef<StringAttr> getParamNames();
+
+  /// Return this signature with the input parameters dropped.
+  LITSignatureType dropParamValues();
+
   /// A `SignatureType` is a LIT signature if it contains function metadata.
   static bool classof(SignatureType type);
   static bool classof(Type type);

@@ -1,11 +1,11 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK: #lit.fn_metadata<["someRef", "v"], [13 : index, 17 : i64], [3.140000e+00 : f32]>
-"some.op"() {metadata = #lit.fn_metadata<["someRef", "v"], [13 : index, 17: i64], [3.14: f32]>} : () -> ()
+// CHECK: #lit.fn_metadata<["someRef", "v"], ["someParam", "paramWithDefault"], [13 : index, 17 : i64], [3.140000e+00 : f32]>
+"some.op"() {metadata = #lit.fn_metadata<["someRef", "v"], ["someParam", "paramWithDefault"], [13 : index, 17: i64], [3.14: f32]>} : () -> ()
 
-// CHECK: #lit.fn_metadata<[], [], []>
-"some.op"() {metadata = #lit.fn_metadata<[], [], []>} : () -> ()
+// CHECK: #lit.fn_metadata<[], [], [], []>
+"some.op"() {metadata = #lit.fn_metadata<[], [], [], []>} : () -> ()
 
 // CHECK: #lit.none : !lit.none
 "a"() {a = #lit.none : !lit.none} : () -> ()

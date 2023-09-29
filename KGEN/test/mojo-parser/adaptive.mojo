@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 # RUN: kgen-translate -import-mojo %s | kgen-opt -verify-parameters | FileCheck %s
+
 
 @adaptive
 # CHECK: lit.func @"foo()"() -> !lit.none attributes {isAdaptive
@@ -41,20 +43,20 @@ struct TrivialStuff[*size: Int]:
 
 
 @adaptive
-# CHECK: lit.func @"foobar{{.*}}"<[[WIDTH:.*]]: !Int>() ->
+# CHECK: lit.func @"foobar{{.*}}"<[[WIDTH:.*_width]][width]: !Int>() ->
 # CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<!Int> = [[[WIDTH]]]>> attributes {isAdaptive,
 fn foobar[width: Int]() -> TrivialStuff[width]:
     pass
 
 
 @adaptive
-# CHECK: lit.func @"foobar{{.*}}"<[[W:.*]]: !Int>() ->
+# CHECK: lit.func @"foobar{{.*}}"<[[W:.*_w]][w]: !Int>() ->
 # CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<!Int> = [[[W]]]>> attributes {isAdaptive,
 fn foobar[w: Int]() -> TrivialStuff[w]:
     pass
 
 
-# CHECK: lit.func @"main_func[{{.*}}$int::Int]()"<[[X:.*]]: !Int
+# CHECK: lit.func @"main_func[{{.*}}$int::Int]()"<[[X:.*_x]][x]: !Int
 fn main_func[x: Int]():
     # CHECK: kgen.param.fork *"(adaptive)foo[[S0:.*]]": !lit.signature<() -> !lit.none> = <[@{{.*}}::@"foo()", @{{.*}}::@"foo()_0"]>
     # CHECK-NEXT: call_param[!lit.signature<() -> !lit.none>: *"(adaptive)foo[[S0]]"]()
