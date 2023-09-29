@@ -125,7 +125,7 @@ fn test_barrier():
 # ===----------------------------------------------------------------------===#
 
 
-# CHECK-LABEL: .weak	gemm
+# CHECK-LABEL: .visible .entry	gemm
 # CHECK: .shared .align 1 .b8 [[SHM1:.*]][512];
 # CHECK: st.shared.u8
 # CHECK: ld.shared.u8
