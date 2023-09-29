@@ -29,24 +29,24 @@ struct amx_detail:
         # In Apple's Accelerate, instruction 17 is apparently always prefixed by
         # three nops.
         __mlir_op.`pop.inline_asm`[
-            _type:None,
-            assembly : (
+            _type=None,
+            assembly = (
                 "nop\nnop\nnop\n.word (0x201000 + ($0 << 5) + $1)"
             ).value,
-            constraints : ("i,i,~{memory}").value,
-            hasSideEffects : __mlir_attr.unit,
+            constraints = ("i,i,~{memory}").value,
+            hasSideEffects = __mlir_attr.unit,
         ](op, imm)
 
     @staticmethod
     fn _op_gpr[op: __mlir_type.si32](gpr0: Int):
-        let gpr = __mlir_op.`index.castu`[_type : __mlir_type.ui64](gpr0.value)
+        let gpr = __mlir_op.`index.castu`[_type = __mlir_type.ui64](gpr0.value)
         __mlir_op.`pop.inline_asm`[
-            _type:None,
-            assembly : (
+            _type=None,
+            assembly = (
                 ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))"
             ).value,
-            constraints : ("i,r,~{memory}").value,
-            hasSideEffects : __mlir_attr.unit,
+            constraints = ("i,r,~{memory}").value,
+            hasSideEffects = __mlir_attr.unit,
         ](op, gpr)
 
     # The `set` and `clr` take no non-constant operands, and so we pass them as
@@ -416,23 +416,23 @@ struct amx_detail:
         let a_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
-            count:c256,
-            alignment:c128,
-            _type : __mlir_type.`!kgen.pointer<scalar<f32>>`,
+            count=c256,
+            alignment=c128,
+            _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
         let b_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
-            count:c256,
-            alignment:c128,
-            _type : __mlir_type.`!kgen.pointer<scalar<f32>>`,
+            count=c256,
+            alignment=c128,
+            _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
         let c_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
-            count:c256,
-            alignment:c128,
-            _type : __mlir_type.`!kgen.pointer<scalar<f32>>`,
+            count=c256,
+            alignment=c128,
+            _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
 
         let num_elements = c.num_elements()

@@ -42,9 +42,7 @@ alias int8_pop = __mlir_type.`!pop.scalar<si8>`
 fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
     let a = Buffer[Dim(), type](a_ptr.bitcast[type](), n)
     for i in range(n):
-        let v = __mlir_op.`pop.cast`[
-            _type:int32_pop,
-        ](a[i].value)
+        let v = __mlir_op.`pop.cast`[_type=int32_pop](a[i].value)
         print(v)
 
 
@@ -53,9 +51,7 @@ fn print_matrix[m: Int, n: Int, type: DType](a_ptr: DTypePointer[void]):
     for i in range(m):
         print("row")
         for j in range(n):
-            let ai = __mlir_op.`pop.cast`[
-                _type:int32_pop,
-            ](a[n * i + j].value)
+            let ai = __mlir_op.`pop.cast`[_type=int32_pop](a[n * i + j].value)
             print(ai)
 
 

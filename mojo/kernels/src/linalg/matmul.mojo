@@ -1012,7 +1012,7 @@ struct MatmulInnerLoopBPacked[
             dest_type: DType, dest_size: Int, src_type: DType, src_size: Int
         ](v: SIMD[src_type, src_size]) -> SIMD[dest_type, dest_size]:
             return __mlir_op.`pop.bitcast`[
-                _type : __mlir_type[
+                _type = __mlir_type[
                     `!pop.simd<`, dest_size.value, `, `, dest_type.value, `>`
                 ]
             ](v.value)

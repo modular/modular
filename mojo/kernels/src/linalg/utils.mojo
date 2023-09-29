@@ -618,8 +618,8 @@ fn search_mm_config[
 
     # We can fork on a_row_size and pack_inner_size independently to get a cross-product:
     #     __mlir_op.`kgen.param.fork`[
-    #         paramDecl : __mlir_attr.`#kgen<param.decl result_hidden1 : index>`,
-    #         values : __mlir_attr[
+    #         paramDecl=__mlir_attr.`#kgen<param.decl result_hidden1 : index>`,
+    #         values=__mlir_attr[
     #             `#kgen.variadic<4, 3, 5, 8> : !kgen.variadic<index>`
     #         ],
     #     ]()
@@ -627,8 +627,8 @@ fn search_mm_config[
     #         __mlir_attr.`#kgen.param.decl.ref<"result_hidden1"> : index`
     #     )
     #     __mlir_op.`kgen.param.fork`[
-    #         paramDecl : __mlir_attr.`#kgen<param.decl result_hidden2 : index>`,
-    #         values : __mlir_attr[
+    #         paramDecl=__mlir_attr.`#kgen<param.decl result_hidden2 : index>`,
+    #         values=__mlir_attr[
     #             `#kgen.variadic<3, 4, 2> : !kgen.variadic<index>`
     #         ],
     #     ]()
