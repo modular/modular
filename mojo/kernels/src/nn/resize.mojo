@@ -8,7 +8,7 @@ from memory.buffer import NDBuffer
 from math import round_half_down, round_half_up, floor, ceil, min, max
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from runtime.llcl import OutputChainPtr
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 
 
 @value
@@ -153,8 +153,15 @@ fn resize_nearest_neighbor[
 
         output[rebind[StaticIntTuple[rank]](out_coords)] = input[in_coords]
 
+    # `scales` lives on the stack and is not captured properly by the closure so
+    # need to force elementwise to be synchronous
+    let new_out_chain = OwningOutputChainPtr(out_chain.get_runtime())
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[rank, 1, nn_interpolate](output.get_shape(), out_chain)
+    elementwise[rank, 1, nn_interpolate](
+        output.get_shape(), new_out_chain.borrow()
+    )
+    new_out_chain.wait()
+    out_chain.mark_ready()
 
 
 @always_inline
