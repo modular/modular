@@ -86,8 +86,8 @@ kgen.func @call_it() -> !pop.coroutine<() -> (index)> {
   // CHECK: %0 = lit.async.execute <() -> index>
   // CHECK:   %1 = pop.compiler.global_load
   // CHECK:   hlcf.if %1
-  // CHECK:     lit.async.return %idx1
-  // CHECK:   lit.async.return %idx2
+  // CHECK:     kgen.return %idx1
+  // CHECK:   kgen.return %idx2
   %coroHdl = lit.async.call[(index) async -> index: @async_fn](%idx2)
   // CHECK: kgen.return %0
   kgen.return %coroHdl : !pop.coroutine<() -> (index)>

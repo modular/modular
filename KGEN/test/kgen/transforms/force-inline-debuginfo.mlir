@@ -118,7 +118,7 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
   %idx2 = index.constant 2 loc(#locAsyncCaller)
   // CHECK-NEXT: lit.async.execute <() -> index>
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx2 : index loc(#[[LOC_VALUE:.*]])
-  // CHECK-NEXT:   lit.async.return %idx2 : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
+  // CHECK-NEXT:   kgen.return %idx2 : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
   // CHECK-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_EXECUTE]])
   %coroHdl = lit.async.call[(index) async -> index: @inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
@@ -141,7 +141,7 @@ kgen.func @call_async_indirect() -> !pop.coroutine<() -> (index)> {
   // CHECK-NEXT: %idx3 = index.constant 3 loc(#[[INLINED_LOC]])
   // CHECK-NEXT: lit.async.execute <() -> index>
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE]])
-  // CHECK-NEXT:   lit.async.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE]])
+  // CHECK-NEXT:   kgen.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE]])
   // CHECK-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[INLINED_LOC]]) loc(#[[LOC_ASYNC_EXECUTE]])
   %1 = kgen.call @async_wrapper() : () -> !pop.coroutine<() -> (index)> loc(#locCaller)
   kgen.return %1 : !pop.coroutine<() -> (index)> loc(#locCaller)
@@ -188,4 +188,3 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
 // CHECK-DAG: #[[LOC_VALUE_INLINED]] = loc(callsite(#[[LOC_VALUE:loc[0-9]+]] at #[[LOC_CALLSITE]]))
 // CHECK-DAG: #[[LOC_VALUE]] = loc(fused<#[[SP]]>[#[[LOC_ARG]]])
 // CHECK-DAG: #[[LOC_ASYNC_EXECUTE]] = loc(fused<#[[SP]]>[#[[LOC]]])
-

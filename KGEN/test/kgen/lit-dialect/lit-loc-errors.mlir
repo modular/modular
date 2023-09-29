@@ -76,7 +76,7 @@ lit.globalvar.decl @foo : index {
 
 lit.func @foo() {
   %0 = lit.async.execute <() -> ()> {
-    lit.async.return loc(#loc5)
+    kgen.return loc(#loc5)
   // CHECK: foo.mlir:325:11: error: 'lit.async.execute' op must have callsite location
   } loc(#loc5)
   lit.return loc(#loc4)

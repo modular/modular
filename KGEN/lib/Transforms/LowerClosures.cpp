@@ -92,7 +92,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   Value coroHdl = b.create<CoroutineHandleOp>(op.getType());
 
   // Replace all returns.
-  op.walk([&](LIT::AsyncReturnOp ret) {
+  op.walk([&](ReturnOp ret) {
     createCoroutineFinalize(b, coroHdl, ret);
     b.create<ReturnOp>(coroHdl);
     ret.erase();

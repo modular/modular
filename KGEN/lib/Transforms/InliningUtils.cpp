@@ -76,10 +76,8 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
       b.setInsertionPoint(op);
       if (isa<CallOp>(&*call)) {
         b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
-      } else if (isa<CreateClosureOp>(*&call)) {
+      } else if (isa<CreateClosureOp, LIT::AsyncCallOp>(*&call)) {
         // Just `return` is ok.
-      } else if (isa<LIT::AsyncCallOp>(&*call)) {
-        b.replaceOpWithNewOp<LIT::AsyncReturnOp>(op, op->getOperands());
       } else {
         llvm::report_fatal_error("unknown call operation '" +
                                  call->getName().getStringRef() +
