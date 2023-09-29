@@ -214,12 +214,12 @@ fn vectorize_unroll[
     # TODO: `kgen.param.fork` and `get_all_impls` invocations should have
     # nice looking wrappers.
     __mlir_op.`kgen.param.fork`[
-        paramDecl : __mlir_attr[
+        paramDecl = __mlir_attr[
             `#kgen<param.decl result_hidden :`,
             fn (Int) capturing -> NoneType,
             `>`,
         ],
-        values : __mlir_attr[
+        values = __mlir_attr[
             vector_func_impls,
             `: !kgen.variadic<`,
             fn (Int) capturing -> NoneType,
