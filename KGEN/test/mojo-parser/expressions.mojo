@@ -200,17 +200,17 @@ struct M:
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam
 # CHECK-SAME: <[[PARAM:.*]]: !lit.signature
-# CHECK-SAME: <type>(!kgen.paramref<*(0,0)> borrow)
+# CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow)
 struct StructWithFuncParam[comparator: fn[T: AnyType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
-    # CHECK-SAME: %self: !kgen.pointer<{{.*}}<[[PARAM]]: !lit.signature<<type>(!kgen.paramref<*(0,0)>
+    # CHECK-SAME: %self: !kgen.pointer<{{.*}}<[[PARAM]]: !lit.signature<<"T": type>(!kgen.paramref<*(0,0)>
     fn f(self):
         pass
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
-        # CHECK: call {{.*}}<:!lit.signature<<type>(!kgen.paramref<*(0,0)> borrow)
-        # CHECK-SAME: !kgen.pointer<{{.*}}<type>(!kgen.paramref<*(0,0)> borrow)
+        # CHECK: call {{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow)
+        # CHECK-SAME: !kgen.pointer<{{.*}}<"T": type>(!kgen.paramref<*(0,0)> borrow)
         self.f()
 
 # CHECK-LABEL: lit.func @"simpleMath
@@ -457,7 +457,7 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   _ = d or b
 
 # CHECK-LABEL: lit.func @"paramAndOr{{.*}}()"
-# CHECK-SAME: <[[A:.*]]: !Boolish, [[B:.*]]: !Boolish>
+# CHECK-SAME: <[[A:.*_a]][a]: !Boolish, [[B:.*_b]][b]: !Boolish>
 fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
@@ -548,7 +548,7 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
         i += 1
 
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
-# CHECK-SAME: <[[COND:.*]]: !Bool>
+# CHECK-SAME: <[[COND:.*_cond]][cond]: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
   alias i = 2 if cond else 3
@@ -560,18 +560,18 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}$int::Int) -> {{.*}}$int::Int]({{.*}}$int::Int)"
-# CHECK-SAME: <[[CALLABLE:.*]]: !lit.signature<(!Int borrow) -> !Int>>(%a: !Int borrow) -> !Int
+# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(!Int borrow) -> !Int>>(%a: !Int borrow) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
   # CHECK-NEXT: kgen.call_param[!lit.signature<(!Int borrow) -> !Int>: [[CALLABLE]]](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
-# CHECK-SAME: [[CALLABLE:.*]]: !lit.signature<<!Int>(!Int borrow) -> !Int>, [[B:.*]]: !Int>(%a: !Int borrow) -> !Int
+# CHECK-SAME: [[CALLABLE:.*_callable]][callable]: !lit.signature<<"x": !Int>(!Int borrow) -> !Int>, [[B:.*_b]][b]: !Int>(%a: !Int borrow) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
   # CHECK-NEXT: kgen.call_param[!lit.signature<(!Int borrow) -> !Int>: bind_signature({{.*}}[[CALLABLE]], [[B]])](%a)
   return callable[b](a)
 
-# CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<{{.*}}a: !Int>() -> !Int
+# CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<{{.*}}[a]: !Int>() -> !Int
 fn takeIndexParam[a: Int]() -> Int:
   return a + 1
 
@@ -586,14 +586,14 @@ fn returnIndex2() -> Int:
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}$int::Int]({{.*}}$int::Int) -> {{.*}}$int::Int]()"
-# CHECK-SAME: <[[CALLABLE:.*]]: !lit.signature<<!Int>(!Int borrow) -> !Int>>() -> !Int
+# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<<"x": !Int>(!Int borrow) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
   # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}[[CALLABLE]], #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
 # CHECK-LABEL: lit.func @"parameterExprs{{.*}}()"
-# CHECK-SAME: <[[A:.*]]: !Int, [[A2:.*]]: !Int>
+# CHECK-SAME: <[[A:.*_a]][a]: !Int, [[A2:.*_a2]][a2]: !Int>
 fn parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl {{.*}}b: !Int = <apply({{.*}}__sub__{{.*}}, [[A]], [[A]])>
   alias b = a-a
@@ -1213,7 +1213,7 @@ fn foo_adaptive[x: Int]() -> Int:
 
 # CHECK-LABEL: lit.func @"test_adaptive_set
 fn test_adaptive_set():
-    # CHECK: lit.alias.decl {{.*}}not_bound: variadic<!lit.signature<<!Int>() -> !Int>> =
+    # CHECK: lit.alias.decl {{.*}}not_bound: variadic<!lit.signature<<"x": !Int>() -> !Int>> =
     # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()", @"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()_0"]>
     alias not_bound = foo_adaptive.__adaptive_set
     # CHECK-NEXT: lit.alias.decl {{.*}}bound: variadic<!lit.signature<() -> !Int>> =
@@ -1268,10 +1268,10 @@ struct MemType: pass
 # CHECK-SAME: %float5: {{.*}}(!Int borrow) throws -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float6: {{.*}}(!Int borrow) throws|async|capturing -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float7: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !pop.variant<!Error, !lit.none>
-# CHECK-SAME: %float8: {{.*}}<!Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>> borrow) -> !lit.none
+# CHECK-SAME: %float8: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>> borrow) -> !lit.none
 # CHECK-SAME: %float9: {{.*}}<[] -> !Int>() -> !lit.none
-# CHECK-SAME: %float10: {{.*}}<<!Int, @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, !lit.none>
-# CHECK-SAME: %float11: {{.*}}<<variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, !lit.none>
+# CHECK-SAME: %float10: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, !lit.none>
+# CHECK-SAME: %float11: {{.*}}<<"Ts": variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float12: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
 # CHECK-SAME: %named: {{.*}}<("x": !kgen.pointer<!MemType> borrow_in_mem) -> !Int>
 fn function_types(
@@ -1288,7 +1288,7 @@ fn function_types(
   float10: def[a: Int, b: ParamType[a]]() -> None,
   float11: async def[*Ts: AnyType](* *Ts) -> None,
   float12: fn(Int = 10, StringLiteral = "foo") -> None,
-  named: fn(x:MemType) -> Int
+  named: fn(x: MemType) -> Int
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
@@ -1309,7 +1309,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
         pass
 
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}})"<
-# CHECK-SAME: {{.*}}idx: !Int, [[A:.*]]: variadic<!Int>>
+# CHECK-SAME: {{.*}}[idx]: !Int, [[A:.*_a]][a]: variadic<!Int>>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: lit.alias.decl {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<!Int> [[A]], 2)>
     alias v0 = a[2]

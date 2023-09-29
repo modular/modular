@@ -326,12 +326,6 @@ SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
                             getMetadata());
 }
 
-SignatureType SignatureType::dropParamValues() {
-  return get(getValues(), TypeArrayAttr::get(getContext(), {}),
-             getResultParamTypes(), getInputConventions(), getFnEffects(),
-             getMetadata());
-}
-
 bool SignatureType::isConcrete() {
   return !getMetadata() && getInputParamTypes().empty() &&
          getResultParamTypes().empty();
@@ -543,12 +537,18 @@ IndexRefRemapper::prependParams(SignatureType sig,
     inputParamTypes.push_back(remapper.remap(param.getType()));
   for (Type type : sig.getInputParamTypes())
     inputParamTypes.push_back(remapper.remap(type));
+
+  FnMetadataAttrInterface metadata = sig.getMetadata();
+  if (metadata) {
+    metadata =
+        remapper.remap(sig.getMetadata().prependPosParams(parentParams.size()));
+  }
+
   return SignatureType::get(
       remapper.remap(sig.getValues()),
       TypeArrayAttr::get(sig.getContext(), inputParamTypes),
       remapper.remap(sig.getResultParamTypes()), sig.getInputConventions(),
-      sig.getFnEffects(),
-      sig.getMetadata() ? remapper.remap(sig.getMetadata()) : nullptr);
+      sig.getFnEffects(), metadata);
 }
 
 //===----------------------------------------------------------------------===//

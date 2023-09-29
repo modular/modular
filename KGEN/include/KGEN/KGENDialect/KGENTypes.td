@@ -231,9 +231,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Return this signature type with the value signature replaced.
     SignatureType getWithValuesReplaced(FunctionType fnType);
 
-    /// Return this signature with the input parameters dropped.
-    SignatureType dropParamValues();
-
     /// Returns true if the signature is a concrete callable.
     bool isConcrete();
 

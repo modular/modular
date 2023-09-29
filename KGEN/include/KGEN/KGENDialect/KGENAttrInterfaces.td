@@ -114,7 +114,13 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       Get a new metadata attribute for a signature where the first `numBound`
       arguments have been removed from the signature by being explicitly bound
       to values, such as in closure formation.
-    }], "FnMetadataAttrInterface", "getWithBoundArgs", (ins "size_t":$numBound)>
+    }], "FnMetadataAttrInterface", "getWithBoundArgs", (ins
+      "size_t":$numBound)>,
+    InterfaceMethod<[{
+      Get a new metadata attribute for a signature with the given number of
+      positional input parameters are prepended to the signature.
+    }], "FnMetadataAttrInterface", "prependPosParams", (ins
+      "size_t":$numNewParams)>,
   ];
 }
 

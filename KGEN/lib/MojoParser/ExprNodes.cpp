@@ -2716,10 +2716,11 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   bool paramVarArg = false;
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> paramDefaults;
-  ParsedArgument::processParameterInputArgs(typeEmitter, dummyScope,
-                                            inputParams, inputParamDecls,
-                                            paramDefaults, paramVarArg);
+  ParsedArgument::processParameterInputArgs(
+      typeEmitter, dummyScope, inputParams, inputParamDecls, paramNames,
+      paramDefaults, paramVarArg);
 
   ParsedArgument::processParameterResultArgs(
       typeEmitter, dummyScope, resultParams, resultParamDecls, paramVarArg);
@@ -2778,7 +2779,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
-      FnMetadataAttr::get(b.getContext(), argNames, argDefaults, paramDefaults),
+      FnMetadataAttr::get(b.getContext(), argNames, paramNames, argDefaults,
+                          paramDefaults),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");

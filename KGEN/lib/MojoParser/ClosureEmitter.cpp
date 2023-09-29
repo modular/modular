@@ -88,20 +88,20 @@ addClosureSelfArgToFunctionSignature(Type closureType, LITSignatureType sig) {
   // captured in the self argument we are inserting in this function.
 
   assert(callMemberArgNames.size() == callMemberInputConventions.size());
-  auto metadata = FnMetadataAttr::get(sig.getContext(), callMemberArgNames);
-  return SignatureType::get(FunctionType::get(sig.getContext(),
-                                              callMemberSignatureInputs,
-                                              sig.getValueResults()),
-                            sig.getInputParamTypes(), sig.getResultParamTypes(),
-                            callMemberInputConventions,
-                            sig.getFnEffects().setEscaping(false), metadata);
+  auto metadata =
+      FnMetadataAttr::get(ctx, callMemberArgNames, sig.getParamNames());
+  return SignatureType::get(
+      FunctionType::get(ctx, callMemberSignatureInputs, sig.getValueResults()),
+      sig.getInputParamTypes(), sig.getResultParamTypes(),
+      callMemberInputConventions, sig.getFnEffects().setEscaping(false),
+      metadata);
 }
 
 StructDeclOp
 ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
                                                SignatureType signatureType) {
-  auto emptyList =
-      POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1));
+  MLIRContext *ctx = fileModuleOp.getContext();
+  auto emptyList = POP::ArrayType::get(0, IntegerType::get(ctx, 1));
   auto opaquePointer = PointerType::get(emptyList);
   SmallVector<Type> fieldTypes;
   fieldTypes.push_back(opaquePointer);
@@ -114,10 +114,11 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   // function ptr fields
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
 
-  auto dtorMetadata = FnMetadataAttr::get(b.getContext(), {"self"});
-  auto dtorSig =
-      SignatureType::get(b.getFunctionType(opaquePointer, noneType),
-                         ValueInputConvention::OwnedInReg, {}, dtorMetadata);
+  auto dtorMetadata =
+      FnMetadataAttr::get(ctx, {b.getStringAttr("self")}, /*paramNames=*/{});
+  auto dtorSig = SignatureType::get(b.getFunctionType(opaquePointer, noneType),
+                                    ValueInputConvention::OwnedInReg,
+                                    /*effects=*/{}, dtorMetadata);
   auto dtor =
       b.create<StructFieldOp>(declOp.getLoc(), dtorFieldAttr, dtorSig, nullptr);
   SmallVector<Type> callInputTypes;
@@ -127,15 +128,19 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   auto ptrToSelfType = PointerType::get(selfType);
 
   // Create Copy Member.
-  Type opaquePtrType = PointerType::get(
-      POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1)));
-  SignatureType cpySignatureType = SignatureType::get(
-      b.getType<FunctionType>(
-          ArrayRef<Type>({PointerType::get(opaquePtrType), opaquePtrType}),
-          noneType),
-      {ValueInputConvention::BorrowedInReg,
-       ValueInputConvention::BorrowedInMem},
-      {}, FnMetadataAttr::get(b.getContext(), {"ptrToImpl", "other"}));
+  auto opaquePtrType =
+      PointerType::get(POP::ArrayType::get(0, b.getIntegerType(1)));
+  auto fnType = b.getType<FunctionType>(
+      ArrayRef<Type>({PointerType::get(opaquePtrType), opaquePtrType}),
+      noneType);
+  auto metadata = FnMetadataAttr::get(
+      b.getContext(), {b.getStringAttr("ptrToImpl"), b.getStringAttr("other")},
+      /*paramNames=*/{});
+  auto cpySignatureType =
+      SignatureType::get(fnType,
+                         {ValueInputConvention::BorrowedInReg,
+                          ValueInputConvention::BorrowedInMem},
+                         /*effects=*/{}, metadata);
   auto copy = b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr,
                                       cpySignatureType, nullptr);
 
@@ -384,13 +389,14 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   llvm::append_range(closureImplSigArgNames,
                      closureWrapperSignature.getArgNames());
 
-  SignatureType closureImplSignature = SignatureType::get(
-      FunctionType::get(ctx, closureImplSigTypes,
-                        closureWrapperSignature.getValueResults()),
-      closureWrapperSignature.getInputParamTypes(),
+  auto metadata = FnMetadataAttr::get(ctx, closureImplSigArgNames,
+                                      closureWrapperSignature.getParamNames());
+  auto fnType = FunctionType::get(ctx, closureImplSigTypes,
+                                  closureWrapperSignature.getValueResults());
+  auto closureImplSignature = SignatureType::get(
+      fnType, closureWrapperSignature.getInputParamTypes(),
       closureWrapperSignature.getResultParamTypes(), closureImplSigConventions,
-      closureWrapperSignature.getFnEffects(),
-      FnMetadataAttr::get(ctx, closureImplSigArgNames));
+      closureWrapperSignature.getFnEffects(), metadata);
 
   std::pair<SignatureType, StringAttr> key(closureImplSignature,
                                            fileModuleOp.getSymNameAttrName());

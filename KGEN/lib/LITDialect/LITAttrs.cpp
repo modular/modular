@@ -52,20 +52,31 @@ PackageArchiveAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numArgs,
+                                   unsigned numParams) {
   auto emptyStr = StringAttr::get(ctx);
-  SmallVector<StringAttr> names(numInputs, emptyStr);
-  return get(ctx, names, {}, {});
+  SmallVector<StringAttr> argNames(numArgs, emptyStr);
+  SmallVector<StringAttr> paramNames(numParams, emptyStr);
+  return get(ctx, argNames, paramNames);
 }
 
-LogicalResult
-FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       ArrayRef<StringAttr> argNames,
-                       ArrayRef<TypedAttr> defaultArguments,
-                       ArrayRef<TypedAttr> defaultParameters) {
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx,
+                                   ArrayRef<StringAttr> argNames,
+                                   ArrayRef<StringAttr> paramNames) {
+  return get(ctx, argNames, paramNames, ArrayRef<TypedAttr>(),
+             ArrayRef<TypedAttr>());
+}
+
+LogicalResult FnMetadataAttr::verify(
+    function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> argNames,
+    ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> defaultArguments,
+    ArrayRef<TypedAttr> defaultParameters) {
   for (StringAttr name : argNames)
     if (!name)
-      return emitError() << "arg name cannot be null";
+      return emitError() << "argument name cannot be null";
+  for (StringAttr name : paramNames)
+    if (!name)
+      return emitError() << "parameter name cannot be null";
   return success();
 }
 
@@ -77,23 +88,36 @@ FnMetadataAttr::getWithBoundArgs(size_t numBound) const {
   ArrayRef<TypedAttr> newDefaultArgs = getDefaultArguments();
   if (numArgs < newDefaultArgs.size())
     newDefaultArgs = newDefaultArgs.take_back(numArgs);
-  return get(getContext(), newArgNames, newDefaultArgs);
+  return get(getContext(), newArgNames, getParamNames(), newDefaultArgs,
+             getDefaultParameters());
 }
 
 FnMetadataAttrInterface
 FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   SmallVector<TypedAttr> newDefaultParams;
+  SmallVector<StringAttr> newParamNames;
 
   size_t numParams = boundParams.size();
   ssize_t defaultIdx = getDefaultParameters().size() - numParams;
   for (size_t idx = 0; idx < numParams; ++idx, ++defaultIdx) {
-    // TODO: handle parameter names when available.
-    if (defaultIdx >= 0 && !boundParams[idx])
-      newDefaultParams.emplace_back(getDefaultParameters()[defaultIdx]);
+    if (!boundParams[idx]) {
+      newParamNames.emplace_back(getParamNames()[idx]);
+      if (defaultIdx >= 0)
+        newDefaultParams.emplace_back(getDefaultParameters()[defaultIdx]);
+    }
   }
 
-  return get(getContext(), getArgNames(), getDefaultArguments(),
+  return get(getContext(), getArgNames(), newParamNames, getDefaultArguments(),
              newDefaultParams);
+}
+
+FnMetadataAttrInterface
+FnMetadataAttr::prependPosParams(size_t numNewParams) const {
+  auto emptyStr = StringAttr::get(getContext());
+  SmallVector<StringAttr> newParamNames(numNewParams, emptyStr);
+  llvm::append_range(newParamNames, getParamNames());
+  return get(getContext(), getArgNames(), newParamNames, getDefaultArguments(),
+             getDefaultParameters());
 }
 
 LogicalResult FnMetadataAttr::verifySignature(
@@ -127,6 +151,13 @@ LogicalResult FnMetadataAttr::verifySignature(
       failed(
           verifyDefaults(getDefaultParameters(), inputParamTypes, "parameter")))
     return failure();
+
+  if (getParamNames().size() != inputParamTypes.size()) {
+    // TODO: improve
+    // TODO: test
+    return emitError() << "number of parameter names doesn't match number of "
+                          "input param types";
+  }
 
   // Verify input conventions.
   size_t numInputConv = inputConventions.size();

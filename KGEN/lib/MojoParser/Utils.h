@@ -26,6 +26,6 @@ class LITSignatureType;
 POP::PackType getIfPackType(SignatureType sig, size_t index);
 
 /// Returns whether the two signatures match, i.e. if they only differ in
-/// argument names.
+/// argument or parameter names.
 bool canZeroCostConvertSignature(LITSignatureType from, LITSignatureType to);
 } // namespace M::KGEN::LIT

@@ -100,7 +100,7 @@ fn take_closure_with_param_main():
         return x
 
     # CHECK: lit.alias.decl [[BOUND:.*]]: !lit.signature<("y": index borrow) capturing -> index> =
-    # CHECK-SAME: <bind_signature(:!lit.signature<<index>("y": index borrow) capturing -> index> *"g[__mlir_type.index](__mlir_type.index)", 3)>
+    # CHECK-SAME: <bind_signature(:!lit.signature<<"N": index>("y": index borrow) capturing -> index> *"g[__mlir_type.index](__mlir_type.index)", 3)>
     # CHECK: %0 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: [[BOUND]]]()
     alias Bound = g[Int(3).value]
 
@@ -110,7 +110,7 @@ fn take_closure_with_param_main():
     # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %x)
     take_closure(value, x)
 
-    # CHECK: %3 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: bind_signature(:!lit.signature<<index, index>("y": index borrow) capturing -> index> *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
+    # CHECK: %3 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: bind_signature(:!lit.signature<<"N": index, "M": index>("y": index borrow) capturing -> index> *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
     # CHECK: %Q = lit.letreg.decl "Q" = %3
     let Q = h[Int(1).value, Int(8).value]
     take_closure(Q, x)
@@ -765,7 +765,7 @@ struct VarArgsParameterizedStruct[*Is: Int]:
 
 
 # CHECK-LABEL: lit.func @"callVariadic{{.*}})"<
-# CHECK-SAME: [[P:.*]]: !Int>
+# CHECK-SAME: [[P:.*_p]][p]: !Int>
 fn callVariadic[p: Int](x: Int):
     # CHECK: %variadic = kgen.param.constant: variadic<!Int> = <[]>
     # CHECK: call @"$decls"::@"variadics($builtin::$int::Int*)"(%variadic)
@@ -806,14 +806,14 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
 
 
 # CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!pop.pack<*(0,0)>)"<
-# CHECK-SAME: [[TS:.*]]: variadic<type>>(%args: !pop.pack<[[TS]]>)
+# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>(%args: !pop.pack<[[TS]]>)
 fn pack[*Ts: __mlir_type.`!kgen.mlirtype`](owned *args: *Ts):
     # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<[[TS]]>
     let copy = args
 
 
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}})"<
-# CHECK-SAME: [[TS:.*]]: variadic<type>>
+# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>
 fn packBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed *args: *Ts):
     # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<[[TS]]>
     let copy = args
@@ -1230,16 +1230,16 @@ fn closureParameter[
     pass
 
 
-# CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<{{.*}}a_param>
+# CHECK-LABEL: lit.func @"topLevelParamFn[__mlir_type.index]()"<{{.*}}[a_param]>
 fn topLevelParamFn[a_param: __mlir_type.index]():
-    # CHECK: lit.func *"nestedFunction[__mlir_type.index]()"<{{.*}}b_param>
+    # CHECK: lit.func *"nestedFunction[__mlir_type.index]()"<{{.*}}[b_param]>
     @noncapturing
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
-    # CHECK: lit.alias.decl {{.*}}thinref: !lit.signature<<index>() -> !lit.none> = <*"nestedFunction[__mlir_type.index]()">
+    # CHECK: lit.alias.decl {{.*}}thinref: !lit.signature<<"b_param": index>() -> !lit.none> = <*"nestedFunction[__mlir_type.index]()">
     alias thinref = nestedFunction
-    # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<index>() -> !lit.none> *"nestedFunction[__mlir_type.index]()", 2)]()
+    # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": index>() -> !lit.none> *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[Int(2).value]()
 
     let value = 0
@@ -1253,16 +1253,16 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
 
 struct SomeParamStruct[c_param: Int]:
-    # CHECK-LABEL: lit.func @"topLevelParamFn[{{.*}}$int::Int]({{.*}})"<{{.*}}a_param{{.*}}>
+    # CHECK-LABEL: lit.func @"topLevelParamFn[{{.*}}$int::Int]({{.*}})"<{{.*}}[a_param]
     fn topLevelParamFn[a_param: Int](self):
-        # CHECK: lit.func *"nestedFunction[{{.*}}$int::Int]()"<{{.*}}b_param{{.*}}>
+        # CHECK: lit.func *"nestedFunction[{{.*}}$int::Int]()"<{{.*}}[b_param]
         @noncapturing
         fn nestedFunction[b_param: Int]():
             return
 
-        # CHECK: lit.alias.decl {{.*}}reff: !lit.signature<<!Int>() -> !lit.none> = <*"nestedFunction[{{.*}}$int::Int]()">
+        # CHECK: lit.alias.decl {{.*}}reff: !lit.signature<<"b_param": !Int>() -> !lit.none> = <*"nestedFunction[{{.*}}$int::Int]()">
         alias reff = nestedFunction
-        # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<!Int>() -> !lit.none> *"nestedFunction[{{.*}}$int::Int]()", {{.*}}2{{.*}})]()
+        # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": !Int>() -> !lit.none> *"nestedFunction[{{.*}}$int::Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
 
@@ -1498,4 +1498,3 @@ trait Trait2:
 # CHECK-LABEL: lit.struct.decl @StructWithTraits([{{.*}}@Trait1, {{.*}}@Trait2])  {
 struct StructWithTraits(Trait1, Trait2):
     pass
-

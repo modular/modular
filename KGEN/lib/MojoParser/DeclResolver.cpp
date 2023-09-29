@@ -1399,6 +1399,7 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
 static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
                                  ArrayRef<ParsedArgument> args,
                                  SmallVectorImpl<ParamDeclAttr> &params,
+                                 SmallVectorImpl<StringAttr> &names,
                                  SmallVectorImpl<TypedAttr> &defaults,
                                  bool isResultParams, bool &paramVarArg) {
   bool seenInitExpr = false;
@@ -1448,12 +1449,18 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
       emitter.emitError(arg.loc, "parameters must always be passed by-value");
 
     // Bind the parsed type expression so references from other parameters
-    // can be resolved. The parameter names are mangled with the location so
-    // that parameter names shadowing in mojo are unique in the IR.
+    // can be resolved. The parameter names in ParamDeclAttr are mangled with
+    // the location so that parameter names in mojo are unique in the IR.
     auto [line, col] = emitter.getSourceMgr().getLineAndColumn(arg.loc);
     auto newDecl =
         ParamDeclAttr::get(mangleParameter(arg.name, line, col), type);
     params.push_back(newDecl);
+
+    // The unmangled names are also collected to aid keyword parameter binding.
+    // TODO(#21951): handle positional-only parameters.
+    if (!isResultParams)
+      names.push_back(arg.name);
+
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
@@ -1462,9 +1469,9 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
 
 void ParsedArgument::processParameterInputArgs(
     ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
-    SmallVectorImpl<ParamDeclAttr> &params,
+    SmallVectorImpl<ParamDeclAttr> &params, SmallVectorImpl<StringAttr> &names,
     SmallVectorImpl<TypedAttr> &defaults, bool &paramVarArg) {
-  processParameterArgs(emitter, declScope, args, params, defaults,
+  processParameterArgs(emitter, declScope, args, params, names, defaults,
                        /*isResultParams=*/false, paramVarArg);
 }
 
@@ -1472,7 +1479,8 @@ void ParsedArgument::processParameterResultArgs(
     ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
     SmallVectorImpl<ParamDeclAttr> &params, bool &paramVarArg) {
   SmallVector<TypedAttr> defaults;
-  processParameterArgs(emitter, declScope, args, params, defaults,
+  SmallVector<StringAttr> names;
+  processParameterArgs(emitter, declScope, args, params, names, defaults,
                        /*isResultParams=*/true, paramVarArg);
 }
 
@@ -1483,6 +1491,7 @@ static ParseResult
 parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
                                 SmallVectorImpl<ParamDeclAttr> &inputParams,
                                 SmallVectorImpl<ParamDeclAttr> &resultParams,
+                                SmallVectorImpl<StringAttr> &names,
                                 SmallVectorImpl<TypedAttr> &defaults,
                                 bool &paramVarArg) {
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
@@ -1505,8 +1514,8 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
 
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(p.shared, declScope, EC_Type);
-  ParsedArgument::processParameterInputArgs(emitter, declScope, args,
-                                            inputParams, defaults, paramVarArg);
+  ParsedArgument::processParameterInputArgs(
+      emitter, declScope, args, inputParams, names, defaults, paramVarArg);
 
   // Parse the meta results if present.
   if (p.consumeIf(Token::minus_greater)) {
@@ -2539,6 +2548,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Parse declared meta parameters and add them to the current scope.
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
   SmallVector<ParsedArgument> args;
+  SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> paramDefaults;
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
@@ -2547,8 +2557,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // value signature list so the types and parameters can resolve to the bound
   // values.
   if (parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramDefaults,
-                                      paramVarArg))
+                                      resultParamDecls, paramNames,
+                                      paramDefaults, paramVarArg))
     return failure();
 
   // Parse the argument list next if present.
@@ -2686,8 +2696,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
-      FnMetadataAttr::get(builder.getContext(), argNames, argDefaults,
-                          paramDefaults),
+      FnMetadataAttr::get(builder.getContext(), argNames, paramNames,
+                          argDefaults, paramDefaults),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
@@ -3461,6 +3471,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                           decl.getParentDecl());
 
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  // TODO(#22021): support keyword parameters.
+  SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> paramDefaults;
   SmallVector<SymbolRefAttr> traits;
 
@@ -3471,8 +3483,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
       parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramDefaults,
-                                      paramVarArgs) ||
+                                      resultParamDecls, paramNames,
+                                      paramDefaults, paramVarArgs) ||
       parseOptionalParentList(p, sigDecl, traits, shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.hasReferenceError)

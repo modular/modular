@@ -429,11 +429,17 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     for (Type type : baseSig.getInputParamTypes())
       inputParamTypes.push_back(remapper.remap(type));
 
+    FnMetadataAttrInterface metadata = baseSig.getMetadata();
+    if (metadata) {
+      metadata = remapper.remap(
+          baseSig.getMetadata().prependPosParams(paramDecls.size()));
+    }
+
     declSignature = SignatureType::getSpecializedSignature(
         getParamValues(), [&] { return emitError(loc); }, inputParamTypes,
         remapper.remap(baseSig.getResultParamTypes()),
         remapper.remap(baseSig.getValues()), baseSig.getInputConventions(),
-        baseSig.getFnEffects(), remapper.remap(baseSig.getMetadata()));
+        baseSig.getFnEffects(), metadata);
   }
   if (!declSignature)
     return failure();
