@@ -1824,7 +1824,9 @@ fn pack_transposed_b_ndbuffer[
     `output_buffer`. This also un-transposes `b_input`.
 
     Parameters:
-        type: The data type of elements inside `b_input`.
+        a_type: The data type of elements of the A matrix.
+        b_type: The data type of elements of the B matrix.
+        c_type: The data type of elements of the C matrix.
 
     Args:
         b_input: Input buffer that contains the transposed weight to be packed.
