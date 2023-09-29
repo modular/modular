@@ -566,21 +566,21 @@ fn _stack_allocation[
     @parameter
     if address_space == AddressSpace.SHARED:
         return __mlir_op.`pop.global_alloc`[
-            count : count.value,
-            _type : __mlir_type[
+            count = count.value,
+            _type = __mlir_type[
                 `!kgen.pointer<`, type, `,`, address_space.value().value, `>`
             ],
-            alignment : alignment.value,
-            address_space : address_space.value().value,
+            alignment = alignment.value,
+            address_space = address_space.value().value,
         ]()
     else:
         return __mlir_op.`pop.stack_allocation`[
-            count : count.value,
-            _type : __mlir_type[
+            count = count.value,
+            _type = __mlir_type[
                 `!kgen.pointer<`, type, `,`, address_space.value().value, `>`
             ],
-            alignment : alignment.value,
-            address_space : address_space.value().value,
+            alignment = alignment.value,
+            address_space = address_space.value().value,
         ]()
 
 
@@ -643,7 +643,7 @@ struct DevicePointer[
             Constructed Pointer object.
         """
         let address = __mlir_op.`pop.index_to_pointer`[
-            _type : Self.pointer_type
+            _type = Self.pointer_type
         ](value.cast[DType.index]().value)
         return Self {address: address}
 
@@ -677,7 +677,7 @@ struct DevicePointer[
         Returns:
             A pointer struct which contains the address of the argument.
         """
-        return __mlir_op.`pop.pointer.bitcast`[_type : Self.pointer_type](
+        return __mlir_op.`pop.pointer.bitcast`[_type = Self.pointer_type](
             __get_lvalue_as_address(arg)
         )
 
@@ -744,7 +744,7 @@ struct DevicePointer[
             "addrspacecast", __mlir_type[`!kgen.pointer<`, type, `>`]
         ](self.address)
         return __mlir_op.`pop.pointer_to_index`[
-            _type : __mlir_type.`!pop.scalar<index>`
+            _type = __mlir_type.`!pop.scalar<index>`
         ](addr)
 
     # ===------------------------------------------------------------------=== #
@@ -765,7 +765,7 @@ struct DevicePointer[
             as the original Pointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
-            _type : __mlir_type[
+            _type = __mlir_type[
                 `!kgen.pointer<`,
                 new_type,
                 `,`,
@@ -938,7 +938,7 @@ struct DTypeDevicePointer[
             Constructed `DTypePointer` object.
         """
         let address = __mlir_op.`pop.index_to_pointer`[
-            _type : Self.pointer_type
+            _type = Self.pointer_type
         ](value.cast[DType.index]().value)
         return Self {address: address}
 
@@ -974,7 +974,7 @@ struct DTypeDevicePointer[
         Returns:
             A pointer struct which contains the address of the argument.
         """
-        return __mlir_op.`pop.pointer.bitcast`[_type : Self.pointer_type](
+        return __mlir_op.`pop.pointer.bitcast`[_type = Self.pointer_type](
             __get_lvalue_as_address(arg)
         )
 
@@ -1037,7 +1037,7 @@ struct DTypeDevicePointer[
             address, as the original `DTypePointer`.
         """
         return __mlir_op.`pop.pointer.bitcast`[
-            _type : __mlir_type[`!kgen.pointer<scalar<`, new_type.value, `>>`]
+            _type = __mlir_type[`!kgen.pointer<scalar<`, new_type.value, `>>`]
         ](self.address)
 
     @always_inline
@@ -1140,7 +1140,7 @@ struct DTypeDevicePointer[
         # Loads a simd value from the pointer.
         alias alignment_value = alignment.value
         let ptr = __mlir_op.`pop.pointer.bitcast`[
-            _type : __mlir_type[
+            _type = __mlir_type[
                 `!kgen.pointer<`,
                 SIMD[type, width],
                 `,`,
@@ -1148,7 +1148,7 @@ struct DTypeDevicePointer[
                 `>`,
             ]
         ](self.address)
-        let result = __mlir_op.`pop.load`[alignment:alignment_value](ptr)
+        let result = __mlir_op.`pop.load`[alignment=alignment_value](ptr)
         return result
 
     @always_inline
@@ -1226,7 +1226,7 @@ struct DTypeDevicePointer[
         """
         alias alignment_value = alignment.value
         let ptr = __mlir_op.`pop.pointer.bitcast`[
-            _type : __mlir_type[
+            _type = __mlir_type[
                 `!kgen.pointer<`,
                 SIMD[type, width],
                 `,`,
@@ -1234,7 +1234,7 @@ struct DTypeDevicePointer[
                 `>`,
             ]
         ](self.address)
-        __mlir_op.`pop.store`[alignment:alignment_value](val, ptr)
+        __mlir_op.`pop.store`[alignment=alignment_value](val, ptr)
 
     @always_inline
     fn __as_index(self) -> Int:
@@ -1243,7 +1243,7 @@ struct DTypeDevicePointer[
             "addrspacecast", __mlir_type[`!kgen.pointer<`, SIMD[type, 1], `>`]
         ](self.address)
         return __mlir_op.`pop.pointer_to_index`[
-            _type : __mlir_type.`!pop.scalar<index>`
+            _type = __mlir_type.`!pop.scalar<index>`
         ](addr)
 
     @always_inline
