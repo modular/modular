@@ -383,14 +383,14 @@ static PValue emitSingleParameterValue(size_t index,
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
-    ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-    ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-    bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
-    bool isPackVarArg, function_ref<void()> emitParamCountDiag,
+    ArrayRef<Type> expectedParamTypes, ArrayRef<TypedAttr> defaultParams,
+    ExprEmitter &emitter, bool hasParamVarArgs,
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
+    SetEvaluatorHookTy setEvaluator, function_ref<void()> emitParamCountDiag,
     function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const {
 
   // If we have bound parameters, type check them now and bind names to them.
-  size_t numParams = actualParamTypes.size();
+  size_t numParams = expectedParamTypes.size();
   SmallVector<TypedAttr> newBindings;
   newBindings.reserve(numParams);
 
@@ -411,8 +411,8 @@ InputParamBindings::verifyBindings(
   // This lambda installs the decl's value in the parameter evaluator and new
   // binding array.
   auto setParamValue = [&](TypedAttr value) {
-    if (actualParamDecls)
-      evaluator.setParameterValue(actualParamDecls[newBindings.size()], value);
+    if (setEvaluator)
+      setEvaluator(newBindings.size(), value, evaluator);
     else
       evaluator.addInputValue(value);
     newBindings.push_back(value);
@@ -437,7 +437,7 @@ InputParamBindings::verifyBindings(
 
   size_t bindingIdx = 0;
   size_t numPosBindings = posBindings.size();
-  for (auto [idx, type] : llvm::enumerate(actualParamTypes)) {
+  for (auto [idx, type] : llvm::enumerate(expectedParamTypes)) {
     bool isVarArg = idx + 1 == numParams && hasParamVarArgs;
 
     // Check to see if we ran out of bindings to provide to this param decl.
@@ -557,19 +557,19 @@ static void emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
 }
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
-InputParamBindings::verifyBindings(
-    ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-    ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-    bool hasParamVarArgs, StringRef baseName, Location opLoc,
-    llvm::SMLoc exprLoc, ParameterInferenceHookTy parameterInferenceHook,
-    bool isPackVarArg) const {
+InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
+                                   ArrayRef<TypedAttr> defaultParams,
+                                   ExprEmitter &emitter, bool hasParamVarArgs,
+                                   StringRef baseName, Location opLoc,
+                                   llvm::SMLoc exprLoc,
+                                   SetEvaluatorHookTy setEvaluator) const {
   return verifyBindings(
-      actualParamTypes, actualParamDecls, defaultParams, emitter,
-      hasParamVarArgs, parameterInferenceHook,
-      isPackVarArg, /*emitParamCountDiag=*/
+      expectedParamTypes, defaultParams, emitter, hasParamVarArgs,
+      /*parameterInferenceHook=*/{},
+      /*isPackVarArg=*/false, setEvaluator, /*emitParamCountDiag=*/
       [&]() {
-        size_t minRequired = actualParamTypes.size() - defaultParams.size();
-        size_t maxAllowed = actualParamTypes.size();
+        size_t minRequired = expectedParamTypes.size() - defaultParams.size();
+        size_t maxAllowed = expectedParamTypes.size();
         size_t actualNumParams = posBindings.size();
         InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
         emitWrongArgOrParamCount(diag, minRequired, maxAllowed, actualNumParams,
@@ -585,6 +585,45 @@ InputParamBindings::verifyBindings(
                     << binding.expr->getRange();
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       });
+}
+
+std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
+InputParamBindings::verifyBindings(
+    LITSignatureType sig, ExprEmitter &emitter,
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
+  return verifyBindings(
+      sig.getInputParamTypes(), sig.getDefaultParameters(), emitter,
+      sig.hasParamVarArgs(), parameterInferenceHook, isPackVarArg,
+      /*setEvaluator=*/{},
+      /*emitParamCountDiag=*/[]() {},
+      /*emitParamTypeDiag=*/[](size_t, Binding &, ASTType) {});
+}
+
+ParameterExprArrayAttr
+InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
+                                   llvm::SMLoc exprLoc) const {
+  SmallVector<Type> paramTypes =
+      llvm::map_to_vector(structOp.getInputParams(),
+                          [](ParamDeclAttr decl) { return decl.getType(); });
+  auto setParamValue = [&](size_t declIdx, TypedAttr value,
+                           ParserParamEvaluator &evaluator) {
+    evaluator.setParameterValue(structOp.getInputParams()[declIdx], value);
+  };
+  auto [bindingValuesAttr, _] =
+      verifyBindings(paramTypes, structOp.getDefaultParameters(), emitter,
+                     structOp.getParamVarArgs(), structOp.getName(),
+                     structOp.getLoc(), exprLoc, setParamValue);
+  return bindingValuesAttr;
+}
+
+ParameterExprArrayAttr
+InputParamBindings::verifyBindings(LITSignatureType sig, ExprEmitter &emitter,
+                                   StringRef baseName, Location opLoc,
+                                   llvm::SMLoc exprLoc) const {
+  auto [newBindings, _] =
+      verifyBindings(sig.getInputParamTypes(), sig.getDefaultParameters(),
+                     emitter, sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
+  return newBindings;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1035,9 +1074,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Check that the signature can be rebound with this set of bindings.
   auto [newBindings, bindingFitness] =
       callable.inputParamBindings.verifyBindings(
-          signature.getInputParamTypes(), /*actualParamDecls=*/{},
-          signature.getDefaultParameters(), emitter,
-          signature.hasParamVarArgs(),
+          signature, emitter,
           [&](size_t index, Type type, ASTType expectedParamType,
               ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
             return ParameterInferenceState(emitter.shared, index, type)
@@ -1467,10 +1504,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.
     // TODO: Parameter inference.
-    auto [newBindings, _] = inputParamBindings.verifyBindings(
-        candidateType.getInputParamTypes(), /*actualParamDecls=*/{},
-        candidateType.getDefaultParameters(), emitter,
-        candidateType.hasParamVarArgs());
+    auto [newBindings, _] =
+        inputParamBindings.verifyBindings(candidateType, emitter);
     return newBindings;
   };
 
@@ -1572,10 +1607,8 @@ getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
 
   // Check that the signature can be rebound with our set of bindings.
   LITSignatureType signature = funcOp.getFullSignature();
-  auto [newBindings, _] = inputParamBindings.verifyBindings(
-      signature.getInputParamTypes(), /*actualParamDecls=*/{},
-      signature.getDefaultParameters(), emitter, signature.hasParamVarArgs(),
-      baseName, funcOp.getLoc(), expr->getLoc());
+  ParameterExprArrayAttr newBindings = inputParamBindings.verifyBindings(
+      signature, emitter, baseName, funcOp.getLoc(), expr->getLoc());
   if (!newBindings)
     return {};
 
