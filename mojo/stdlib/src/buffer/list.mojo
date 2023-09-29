@@ -44,7 +44,7 @@ struct Dim:
         Returns:
             A dimension with a static value.
         """
-        return __mlir_op.`pop.variant.create`[_type : Self.type](value)
+        return __mlir_op.`pop.variant.create`[_type = Self.type](value)
 
     @always_inline
     fn __init__(value: __mlir_type.index) -> Dim:
@@ -65,7 +65,7 @@ struct Dim:
         Returns:
             A dimension value with no static value.
         """
-        return __mlir_op.`pop.variant.create`[_type : Self.type](
+        return __mlir_op.`pop.variant.create`[_type = Self.type](
             __mlir_attr.`0 : i1`
         )
 
@@ -76,7 +76,7 @@ struct Dim:
         Returns:
             Whether the dimension has a static value.
         """
-        return __mlir_op.`pop.variant.is`[testType : __mlir_attr[Int]](
+        return __mlir_op.`pop.variant.is`[testType = __mlir_attr[Int]](
             self.value
         )
 
@@ -105,7 +105,7 @@ struct Dim:
         Returns:
             The static dimension value.
         """
-        return __mlir_op.`pop.variant.get`[_type:Int](self.value)
+        return __mlir_op.`pop.variant.get`[_type=Int](self.value)
 
     @always_inline
     fn is_multiple[alignment: Int](self) -> Bool:
