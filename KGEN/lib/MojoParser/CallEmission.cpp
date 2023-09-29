@@ -213,6 +213,7 @@ LogicalResult ParameterInferenceState::checkOneOperand(
         return matchTypes(pValue.getType(), expectedType);
     return success();
   }
+  llvm_unreachable("invalid value input convention");
 };
 
 PValue ParameterInferenceState::infer(LITSignatureType signature,

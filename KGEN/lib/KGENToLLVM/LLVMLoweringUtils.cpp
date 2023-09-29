@@ -1014,9 +1014,9 @@ Value KGEN::convertParameterToLLVM(
       if (!element)
         return {};
 
-      Value destination =
-          b.create<LLVM::GEPOp>(LLVM::LLVMPointerType::get(elementType), ptr,
-                                ArrayRef<LLVM::GEPArg>{idx});
+      Value destination = b.create<LLVM::GEPOp>(
+          LLVM::LLVMPointerType::get(elementType), ptr,
+          ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(idx)});
       b.create<LLVM::StoreOp>(element, destination);
     }
 

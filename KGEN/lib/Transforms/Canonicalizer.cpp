@@ -115,6 +115,7 @@ private:
     case POP::CmpPredicate::GE:
       return mlir::index::IndexCmpPredicate::SGE;
     }
+    llvm_unreachable("invalid cmp predicate");
   }
 };
 

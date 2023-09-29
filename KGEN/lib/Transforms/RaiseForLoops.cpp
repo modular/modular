@@ -165,6 +165,7 @@ invertCmpPred(HLCF::ForLoopBoundCmpPredicate pred) {
   case HLCF::ForLoopBoundCmpPredicate::SLE:
     return HLCF::ForLoopBoundCmpPredicate::SGT;
   }
+  llvm_unreachable("invalid cmp predicate");
 }
 
 static std::optional<ForLoopBoundsAndSteps>

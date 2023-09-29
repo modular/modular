@@ -204,7 +204,7 @@ private:
           LLVM::LLVMPointerType::get(capturedArgType);
       Value boundArgPtr = rewriter.create<LLVM::GEPOp>(
           wrapperFn.getLoc(), boundArgPtrType, envStructPtr,
-          ArrayRef<LLVM::GEPArg>({0, i}));
+          ArrayRef<LLVM::GEPArg>({0, static_cast<int32_t>(i)}));
       Value boundArg = rewriter.create<LLVM::LoadOp>(
           wrapperFn.getLoc(), capturedArgType, boundArgPtr);
       liftedNestedFunctionCallArgs[i] = boundArg;

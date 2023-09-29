@@ -421,9 +421,8 @@ private:
 } // namespace
 
 void WorkQueueThread::runOnThread() {
-  assert(!sharedState.mainWillDonate ||
-         workerID != 0 &&
-             "the WorkQueueThread for the main thread should not be run");
+  assert((!sharedState.mainWillDonate || workerID != 0) &&
+         "the WorkQueueThread for the main thread should not be run");
 
   // Set the current workerID in thread local storage so we can find it later
   // when re-entering.

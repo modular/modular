@@ -1019,6 +1019,7 @@ StringLiteral M::stringifyRelocationModel(llvm::Reloc::Model model) {
   case llvm::Reloc::ROPI_RWPI:
     return "ropi-rwpi";
   }
+  llvm_unreachable("invalid relocation model");
 }
 
 std::optional<llvm::Reloc::Model> M::symbolizeRelocationModel(StringRef str) {
@@ -1363,4 +1364,12 @@ InOutSignatureAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 
 #define GET_ATTRDEF_CLASSES
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 #include "Support/MDialect/MAttrs.cpp.inc"
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif

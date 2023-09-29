@@ -115,6 +115,7 @@ const char *LIT::getContextMessage(ExprContext context) {
   case EC_LifetimeSpec:
     return " in lifetime specifier";
   }
+  llvm_unreachable("invalid expr context");
 }
 
 //===----------------------------------------------------------------------===//
