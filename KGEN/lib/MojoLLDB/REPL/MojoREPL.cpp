@@ -433,9 +433,9 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
   cleanupOnError.release();
 
   if (isatty(STDIN_FILENO)) {
-    printf("Welcome to Mojo! 🔥\n\nExpressions are delimited by a blank "
-           "line.\nType `:quit` to exit the REPL and `:mojo help` for "
-           "further assistance.\n\n");
+    llvm::outs() << "Welcome to Mojo! 🔥\n\nExpressions are delimited by a "
+                    "blank line.\nType `:quit` to exit the REPL and `:mojo "
+                    "help` for further assistance.\n\n";
   }
   return repl;
 }
