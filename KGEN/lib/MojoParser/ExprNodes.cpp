@@ -1331,13 +1331,8 @@ static PValue substituteParametersIntoUserDefinedType(
   }
 
   // Check the bindings.
-  SmallVector<Type> paramTypes;
-  for (ParamDeclAttr decl : structOp.getInputParams())
-    paramTypes.push_back(decl.getType());
-  auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
-      paramTypes, structOp.getInputParamsAttr(),
-      structOp.getDefaultParameters(), emitter, structOp.getParamVarArgs(),
-      structOp.getName(), structOp.getLoc(), subscript.getLoc());
+  ParameterExprArrayAttr bindingValuesAttr =
+      paramBindings.verifyBindings(structOp, emitter, subscript.getLoc());
   if (!bindingValuesAttr)
     return {};
 
@@ -1358,9 +1353,8 @@ static Type getNextParamType(ASTDecl *fnDecl,
                              const InputParamBindings &inputParamBindings,
                              ExprEmitter &emitter) {
   LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-  const auto &[_, fitness] = inputParamBindings.verifyBindings(
-      signature.getInputParamTypes(), /*actualParamDecls=*/{},
-      signature.getDefaultParameters(), emitter, signature.hasParamVarArgs());
+  const auto &[_, fitness] =
+      inputParamBindings.verifyBindings(signature, emitter);
   return fitness.lastExpectedType;
 }
 

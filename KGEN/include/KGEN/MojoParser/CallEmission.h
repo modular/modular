@@ -14,15 +14,16 @@
 #include "KGEN/MojoParser/IRValues.h"
 
 namespace M::KGEN {
-class ParamDeclArrayAttr;
 class ParamBindAttr;
 class ParameterExprArrayAttr;
 class SignatureType;
-class SymbolConstantAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
 class FuncOp;
+class LITSignatureType;
+class ParserParamEvaluator;
+class StructDeclOp;
 
 //===----------------------------------------------------------------------===//
 // InputParamBindings
@@ -92,36 +93,61 @@ public:
     Type lastExpectedType = {};
   };
 
-  /// Check that our set of parameter bindings work with the specified input
-  /// parameters and call operands (if any). If so, return a checked
-  /// ParamBindArrayAttr, along with information on how closely the bindings fit
-  /// the input parameters, or why they don't. If the parameters do not work,
-  /// this emits a diagnostic using the locations and `baseName` provided.
-  ///
-  /// This rejects the signature list if all the parameters are not bound.
-  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
-      ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-      ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-      bool hasParamVarArgs, StringRef baseName, Location opLoc,
-      llvm::SMLoc exprLoc, ParameterInferenceHookTy parameterInferenceHook = {},
-      bool isPackVarArg = false) const;
+  /// Verify the parameter bindings for the given struct. If the struct doesn't
+  /// match, diagnostics will be emitted using the struct's location and the
+  /// given expression location.
+  ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
+                                        ExprEmitter &emitter,
+                                        llvm::SMLoc exprLoc) const;
+
+  /// Verify the parameter bindings for the given signature. If the signature
+  /// doesn't match, no diagnostics will be emitted. An optional hook can be
+  /// provided to infer parameters.
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(LITSignatureType sig, ExprEmitter &emitter,
+                 ParameterInferenceHookTy parameterInferenceHook = {},
+                 bool isPackVarArg = false) const;
+
+  /// Verify the parameter bindings for the given signature. If the signature
+  /// doesn't match, diagnostics will be emitted using the given baseName and
+  /// locations.
+  ParameterExprArrayAttr verifyBindings(LITSignatureType sig,
+                                        ExprEmitter &emitter,
+                                        StringRef baseName, Location opLoc,
+                                        llvm::SMLoc exprLoc) const;
+
+private:
+  /// Type of callback used to define how a value should be installed in the
+  /// parameter evaluator. Takes the index and value of the parameter, and a
+  /// reference to the evaluator.
+  using SetEvaluatorHookTy =
+      function_ref<void(size_t, TypedAttr, ParserParamEvaluator &)>;
 
   /// Check that our set of parameter bindings work with the specified input
-  /// parameters and call operands (if any). If so, return a checked
-  /// ParamBindArrayAttr, along with information on how closely the bindings fit
-  /// the input parameters, or why they don't. This overload allows passing
+  /// parameters. If so, return a checked ParamBindArrayAttr, along with
+  /// information on how closely the bindings fit the input parameters, or why
+  /// they don't. The setEvaluator hook is used to install the parameter value
+  /// in the evaluator used by the implementation. This overload allows passing
   /// functions for parameter count and type diagnostic emission.
-  ///
-  /// This rejects the signature list if all the parameters are not bound.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
-      ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-      ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-      bool hasParamVarArgs,
-      ParameterInferenceHookTy parameterInferenceHook = {},
-      bool isPackVarArg = false,
-      function_ref<void()> emitParamCountDiag = []() {},
-      function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag =
-          [](size_t, Binding &, ASTType) {}) const;
+      ArrayRef<Type> expectedParamTypes, ArrayRef<TypedAttr> defaultParams,
+      ExprEmitter &emitter, bool hasParamVarArgs,
+      ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
+      SetEvaluatorHookTy setEvaluator, function_ref<void()> emitParamCountDiag,
+      function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const;
+
+  /// Check that our set of parameter bindings work with the specified input
+  /// parameters. If so, return a checked ParamBindArrayAttr, along with
+  /// information on how closely the bindings fit the input parameters, or why
+  /// they don't. The setEvaluator hook is used to install the parameter value
+  /// in the evaluator used by the implementation. If the parameters do not
+  /// work, this emits a diagnostic using the locations and `baseName` provided.
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(ArrayRef<Type> expectedParamTypes,
+                 ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+                 bool hasParamVarArgs, StringRef baseName, Location opLoc,
+                 llvm::SMLoc exprLoc,
+                 SetEvaluatorHookTy setEvaluator = {}) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call

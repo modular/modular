@@ -574,9 +574,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     // or an variadic list that should be bound to an empty list.
     if (!signature.getInputParamTypes().empty()) {
       InputParamBindings paramBindings;
-      auto [bindingAttr, _] = paramBindings.verifyBindings(
-          signature.getInputParamTypes(), /*actualParamDecls=*/{},
-          signature.getDefaultParameters(), *this, signature.hasParamVarArgs());
+      auto [bindingAttr, _] = paramBindings.verifyBindings(signature, *this);
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
@@ -1378,13 +1376,8 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
     paramBindings.addPrechecked(binding.getValue());
 
   // Check the bindings.
-  SmallVector<Type> paramTypes;
-  for (ParamDeclAttr decl : structDecl.getInputParams())
-    paramTypes.push_back(decl.getType());
-  auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
-      paramTypes, structDecl.getInputParamsAttr(),
-      structDecl.getDefaultParameters(), *this, structDecl.getParamVarArgs(),
-      structDecl.getName(), structDecl.getLoc(), expr->getLoc());
+  ParameterExprArrayAttr bindingValuesAttr =
+      paramBindings.verifyBindings(structDecl, *this, expr->getLoc());
   if (!bindingValuesAttr)
     return {};
   SmallVector<ParamBindAttr> bindingValues;
