@@ -56,6 +56,7 @@ setup(
             "opentelemetry-api>=1.18.0",
             "opentelemetry-sdk>=1.18.0",
             "opentelemetry-exporter-otlp>=1.18.0",
+            "boto3>=1.26.102",
         ],
     },
     classifiers=[
