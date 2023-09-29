@@ -33,7 +33,6 @@ from MatmulUtils import (
     is_critical_stride,
     search_mm_config,
     use_vnni_fn,
-    supported_types,
 )
 from Matrix import Matrix
 from memory import memset_zero, stack_allocation
@@ -1571,10 +1570,14 @@ fn pack_matmul_b_shape_func[
 
     if is_critical_stride(k):
         alias config = search_mm_config[a_type, b_type, c_type, True, True]()
-        tile_n_k = _get_tile_n_k[config, transpose_in_0, b_type](b_input)
+        tile_n_k = _get_tile_n_k[
+            config, transpose_in_0, a_type, b_type, c_type
+        ](b_input)
     else:
         alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
-        tile_n_k = _get_tile_n_k[config2, transpose_in_0, b_type](b_input)
+        tile_n_k = _get_tile_n_k[
+            config2, transpose_in_0, a_type, b_type, c_type
+        ](b_input)
 
     @parameter
     if transpose_in_0:
@@ -1737,7 +1740,9 @@ fn _pack_b_ndbuffer_impl[
 
     if is_critical_stride(k):
         alias config = search_mm_config[a_type, b_type, c_type, True, True]()
-        let tile_n_k = _get_tile_n_k[config, transposed, b_type](b_input)
+        let tile_n_k = _get_tile_n_k[
+            config, transposed, a_type, b_type, c_type
+        ](b_input)
         pack_b[
             transposed,
             config.simd_size,
@@ -1755,7 +1760,9 @@ fn _pack_b_ndbuffer_impl[
         )
     else:
         alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
-        let tile_n_k = _get_tile_n_k[config2, transposed, b_type](b_input)
+        let tile_n_k = _get_tile_n_k[
+            config2, transposed, a_type, b_type, c_type
+        ](b_input)
         pack_b[
             transposed,
             config2.simd_size,
@@ -2192,9 +2199,6 @@ fn matmul[
     num_threads: Int = -1,
 ):
     constrained[not transpose_a, "transpose_a not yet supported"]()
-    constrained[
-        supported_types[a_type, b_type, c_type](), "types not yet supported"
-    ]()
 
     let shape = GemmShape.get[False, transpose_b](c, a, b)
     let m = shape.M

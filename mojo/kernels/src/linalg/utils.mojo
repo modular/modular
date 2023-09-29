@@ -751,6 +751,31 @@ fn dispatch_is_critical_stride[
 # TODO(16425): Unify this with the rest of the matmul impl
 @always_inline
 fn _get_tile_n_k[
+    config: MatmulConfig,
+    transpose_b: Bool,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+](b: NDBuffer[2, DimList.create_unknown[2](), b_type]) -> StaticIntTuple[2]:
+    var tile_n_k: StaticIntTuple[2]
+
+    @parameter
+    if not transpose_b:
+        tile_n_k = calculate_tile_n_k[
+            config.pack_data_size, config.pack_inner_size
+        ](b.dim(1), b.dim(0))
+    else:
+        tile_n_k = calculate_tile_n_k[
+            config.pack_data_size, config.pack_inner_size
+        ](b.dim(0), b.dim(1))
+
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    tile_n_k[1] = align_up(tile_n_k[1], 4) if use_vnni else tile_n_k[1]
+    return tile_n_k
+
+
+@always_inline
+fn _get_tile_n_k[
     config: MatmulConfig, transpose_b: Bool, type: DType
 ](b: NDBuffer[2, DimList.create_unknown[2](), type]) -> StaticIntTuple[2]:
     var tile_n_k: StaticIntTuple[2]
@@ -769,38 +794,3 @@ fn _get_tile_n_k[
     alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
     tile_n_k[1] = align_up(tile_n_k[1], 4) if use_vnni else tile_n_k[1]
     return tile_n_k
-
-
-fn supported_types[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
-    # The support types are:
-    #   fp32*fp32 + fp32
-    #   fp64*fp64 + fp64
-    #   fp16*fp16 + fp16 with Neon
-    #   int32*int32 + int32
-    #   uint8*int8 + int32 with AVX2
-    #
-    # More types which will eventually be supported:
-    #   uint8*uint8 + int32
-    #   int8*int8 + int32
-    #   bf16*bf16 + fp32
-
-    @parameter
-    if a_type == b_type and b_type == c_type:
-
-        @parameter
-        if c_type.is_float32():
-            return True
-        elif c_type.is_float64():
-            return True
-        elif c_type.is_float16() and has_neon():
-            return True
-        elif c_type.is_int32():
-            return True
-        else:
-            return False
-    elif (
-        a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
-    ):
-        return True
-    else:
-        return False
