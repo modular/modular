@@ -1405,16 +1405,6 @@ ArrayRef<Type> AsyncExecuteOp::getResultTypes() {
   return getType().getResultTypes();
 }
 
-LogicalResult AsyncExecuteOp::verify() {
-  auto ret = dyn_cast<AsyncReturnOp>(getBody()->getTerminator());
-  if (!ret)
-    return emitOpError("expected 'lit.async.return' as its terminator");
-  if (ret.getOperandTypes() == getType().getResultTypes())
-    return success();
-  return ret.emitOpError("operand types do not match coroutine results of "
-                         "surrounding 'lit.async.execute'");
-}
-
 //===----------------------------------------------------------------------===//
 // ParamReturnOp
 //===----------------------------------------------------------------------===//

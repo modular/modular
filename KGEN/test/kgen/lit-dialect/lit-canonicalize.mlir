@@ -117,7 +117,7 @@ kgen.func @no_hoist() -> !pop.coroutine<() -> ()> {
     %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
-    lit.async.return  loc(#loc5)
+    kgen.return  loc(#loc5)
   } callLoc(#loc4) loc(#loc5)
   kgen.return %0 : !pop.coroutine<() -> ()> loc(#loc4)
 } loc(#loc4)
@@ -131,7 +131,7 @@ kgen.func @hoist() -> !pop.coroutine<() -> ()> {
     %array = kgen.param.constant: array<1, index> = <[0]>
     %1 = pop.stack_allocation 1 x !pop.array<1, index>
     pop.store %array, %1 : !kgen.pointer<array<1, index>>
-    lit.async.return
+    kgen.return
   }
   kgen.return %0 : !pop.coroutine<() -> ()>
 }

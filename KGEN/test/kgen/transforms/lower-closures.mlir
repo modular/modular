@@ -57,16 +57,16 @@ kgen.func @async_execute(%arg0: index) {
   // CHECK-NEXT: kgen.call @async_execute_async_closure_{{[0-9]}}(%arg0, %0)
   %arg1 = index.add %arg0, %arg0
   %0 = lit.async.execute <() -> index> {
-    lit.async.return %arg0 : index
+    kgen.return %arg0 : index
   }
   %1 = lit.async.execute <() -> ()> {
     %idx1 = index.constant 1
     %2 = lit.async.execute <() -> index> {
       %3 = index.add %idx1, %arg0
       %4 = index.add %3, %arg1
-      lit.async.return %4 : index
+      kgen.return %4 : index
     }
-    lit.async.return
+    kgen.return
   }
   kgen.return
 }
