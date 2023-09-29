@@ -196,6 +196,7 @@ int main(int argc, char **argv) {
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();
   KGEN::registerLoopUnrolling();
+  KGEN::registerLowerCallingConvention();
   KGEN::registerLowerClosures();
   KGEN::registerLowerControlFlow();
   KGEN::registerLowerGlobalPOPToLLVM();

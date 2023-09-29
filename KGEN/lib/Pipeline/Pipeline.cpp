@@ -77,7 +77,7 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
   // TODO(#20717): CSE cannot run before `OutlineClosures`.
-  pm.addPass(mlir::createCSEPass());
+  pm.addNestedPass<GeneratorOp>(mlir::createCSEPass());
   pm.addPass(createVerifyParameters());
   pm.addPass(createLiftAndFoldApply());
 

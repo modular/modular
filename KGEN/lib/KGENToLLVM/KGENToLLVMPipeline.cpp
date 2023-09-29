@@ -20,6 +20,13 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                        const LowerToLLVMOptions &options) {
   using mlir::LLVM::LLVMFuncOp;
 
+  // Lower calling conventions, which changes function ABIs.
+  // FIXME(#22342): This needs to run way earlier, ideally right after
+  // elaboration. However, because this pass changes function ABIs, a signature
+  // conflict will occur if a function with a lowered ABI is loaded from a
+  // precompiled package.
+  pm.addPass(createLowerCallingConvention());
+
   // Run all LLVM lowering passes.
   pm.addPass(createLowerKGENToLLVM(
       LowerKGENToLLVMOptions{/*disableGlobalDtors=*/options.isJIT}));

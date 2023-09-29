@@ -7,6 +7,7 @@
 add_modular_library(KGENToLLVM
   KGENToLLVMPipeline.cpp
   LLVMLoweringUtils.cpp
+  LowerCallingConvention.cpp
   LowerControlFlow.cpp
   LowerKGENCoroutines.cpp
   LowerKGENToLLVM.cpp
