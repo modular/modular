@@ -165,8 +165,26 @@ std::optional<int64_t> ForOp::getTripCount() {
   if (!lowerBound || !upperBound || !step)
     return {};
 
-  int64_t r = std::abs(upperBound.value() - lowerBound.value());
+  int64_t r = upperBound.value() - lowerBound.value();
+
   HLCF::ForLoopBoundCmpPredicate pred = getCmpPredicateType();
+  HLCF::ForLoopIndVarCompute opType = getIndVarComputeType();
+  // When lowerBound and upperBound don't form a valid range, return 0.
+  switch (opType) {
+  case HLCF::ForLoopIndVarCompute::ADD:
+    if (step.value() > 0 && r < 0)
+      return 0;
+    if (step.value() < 0 && r > 0)
+      return 0;
+    break;
+  case HLCF::ForLoopIndVarCompute::SUB:
+    if (step.value() > 0 && r > 0)
+      return 0;
+    if (step.value() < 0 && r < 0)
+      return 0;
+  }
+
+  r = abs(r);
   if (pred == HLCF::ForLoopBoundCmpPredicate::SGE ||
       pred == HLCF::ForLoopBoundCmpPredicate::SLE)
     r += 1;
