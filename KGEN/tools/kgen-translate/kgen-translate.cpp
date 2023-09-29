@@ -20,7 +20,6 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 
@@ -65,10 +64,9 @@ int main(int argc, char *argv[]) {
                                    cl::desc("Whether to use MLIR diagnostics."),
                                    cl::init(true)};
 
-  cl::opt<std::string> parserModuleHashOut{
-      "mojo-parser-hash-out",
-      cl::desc("Where to print the parser output hash. Used for "
-               "non-determinism testing."),
+  cl::opt<std::string> parserBytecodeOutput{
+      "bytecode-output",
+      cl::desc("If specified, the parser output is also printed as bytecode."),
       cl::init("")};
 
   mlir::TranslateToMLIRRegistration fromMojo(
@@ -101,22 +99,16 @@ int main(int argc, char *argv[]) {
         OwningOpRef<ModuleOp> output =
             LIT::importMojoFile(sourceMgr, config, ts);
 
-        if (!parserModuleHashOut.getValue().empty()) {
+        if (!parserBytecodeOutput.getValue().empty()) {
           std::string message;
           auto out =
-              mlir::openOutputFile(parserModuleHashOut.getValue(), &message);
+              mlir::openOutputFile(parserBytecodeOutput.getValue(), &message);
           if (!out) {
             llvm::errs() << "failed to open file: " << message << "\n";
             return {};
           }
-          std::string bytecode;
-          llvm::raw_string_ostream bytecodeOs(bytecode);
-          if (failed(mlir::writeBytecodeToFile(*output, bytecodeOs)))
+          if (failed(mlir::writeBytecodeToFile(*output, out->os())))
             return {};
-          auto hash = llvm::BLAKE3::hash(
-              {(const uint8_t *)bytecode.data(), bytecode.size()});
-          out->os() << llvm::toHex({(const char *)hash.data(), hash.size()})
-                    << "\n";
           out->keep();
         }
 

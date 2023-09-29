@@ -24,6 +24,7 @@ add_modular_testsuite(check-mojo-parser
 
   TOOLS
   kgen-opt
+  hash-mlir
   warmup-mojo-parser-cache
   kgen-translate
 )

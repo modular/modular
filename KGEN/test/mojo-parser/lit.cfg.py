@@ -34,6 +34,7 @@ tool_dirs = [
 tools = [
     "kgen-translate",
     "kgen-opt",
+    "hash-mlir",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
