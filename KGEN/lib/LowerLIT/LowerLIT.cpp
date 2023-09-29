@@ -323,15 +323,6 @@ static void lowerAttributesAndTypes(
     return flat;
   });
 
-  // Lower `!lit.none` to `list<i1[0]>`, which will eventually become nothing.
-  auto emptyList =
-      POP::ArrayType::get(0, IntegerType::get(op->getContext(), 1));
-  replacer.addReplacement([&](LIT::NoneType type) { return emptyList; });
-  // Lower `#lit.none` to `[]`.
-  replacer.addReplacement([&](LIT::NoneAttr attr) {
-    return POP::ArrayAttr::get(attr.getContext(), {}, emptyList);
-  });
-
   // Remove signature metadata.
   replacer.addReplacement([](SignatureType sig) {
     return SignatureType::get(sig.getValues(), sig.getInputParamTypes(),

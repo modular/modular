@@ -266,9 +266,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 /// borrow_in_mem], ["x","b"]}, this function produces:
 ///       lit.func @prefixParam1Param2(%self: !kgen.pointer<@MyStruct>
 ///       init_self, %x: ParamType1 borrow_in_mem, %b : ParamType2
-///       borrow_in_mem) -> !lit.none  {
-///          %0 = kgen.param.constant: !lit.none = <#lit.none>
-///          lit.return %0 : !lit.none
+///       borrow_in_mem) -> !kgen.none  {
+///          %0 = kgen.param.constant: none = <#kgen.none>
+///          lit.return %0 : !kgen.none
 ///          lit.end_func
 ///      }
 LIT::FuncOp StructEmitter::addVoidMethod(

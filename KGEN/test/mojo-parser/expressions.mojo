@@ -44,7 +44,7 @@ struct MemoryOnlyPair:
 
   # CHECK: lit.func @"__copyinit__{{.*}}"(
   # CHECK-SAME: %self: !kgen.pointer<!MemoryOnlyPair> init_self,
-  # CHECK-SAME: %existing: !kgen.pointer<!MemoryOnlyPair> borrow_in_mem) -> !lit.none
+  # CHECK-SAME: %existing: !kgen.pointer<!MemoryOnlyPair> borrow_in_mem) -> !kgen.none
   fn __copyinit__(inout self, existing: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.struct.gep %existing[x]
     # CHECK-NEXT: %1 = lit.struct.gep %self[x]
@@ -149,7 +149,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # CHECK-NEXT: %35 = lit.ref.to_pointer %v2
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %35)
-  # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+  # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: none = <#kgen.none>
   # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
 
@@ -642,7 +642,7 @@ fn patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}$int::Int,{{.*}}$int::Int&)"(%a: !Int borrow, %b: !kgen.pointer<!Int> byref) -> !lit.none
+# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}$int::Int,{{.*}}$int::Int&)"(%a: !Int borrow, %b: !kgen.pointer<!Int> byref) -> !kgen.none
 fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
@@ -1057,7 +1057,7 @@ fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
 struct MyInlineIntInit:
     var intVal: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%self: !kgen.pointer<!MyInlineIntInit> init_self, %intVal: !kgen.pointer<!MemoryOnlyInt> borrow_in_mem) -> !lit.none
+    # CHECK-SAME: (%self: !kgen.pointer<!MyInlineIntInit> init_self, %intVal: !kgen.pointer<!MemoryOnlyInt> borrow_in_mem) -> !kgen.none
     fn __init__(inout self, intVal: MemoryOnlyInt):
         # CHECK: %0 = lit.struct.gep %self[intVal]
         # CHECK: kgen.call {{.*}}__copyinit__{{.*}}(%0, %intVal)
@@ -1261,18 +1261,18 @@ struct MemType: pass
 
 # CHECK-LABEL: lit.func @"function_types
 # CHECK-SAME: %float0: {{.*}}(!Int borrow) -> !Int
-# CHECK-SAME: %float1: {{.*}}(!kgen.pointer<!MemoryType> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem) -> !lit.none
+# CHECK-SAME: %float1: {{.*}}(!kgen.pointer<!MemoryType> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem) -> !kgen.none
 # CHECK-SAME: %float2: {{.*}}(!RegType) ownedresult -> !RegType
-# CHECK-SAME: %float3: {{.*}}(!kgen.pointer<!MemoryType> owned_in_mem) -> !lit.none
-# CHECK-SAME: %float4: {{.*}}(!kgen.pointer<!Int> byref) -> !lit.none
-# CHECK-SAME: %float5: {{.*}}(!Int borrow) throws -> !pop.variant<!Error, !lit.none>
-# CHECK-SAME: %float6: {{.*}}(!Int borrow) throws|async|capturing -> !pop.variant<!Error, !lit.none>
-# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !pop.variant<!Error, !lit.none>
-# CHECK-SAME: %float8: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>> borrow) -> !lit.none
-# CHECK-SAME: %float9: {{.*}}<[] -> !Int>() -> !lit.none
-# CHECK-SAME: %float10: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, !lit.none>
-# CHECK-SAME: %float11: {{.*}}<<"Ts": variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, !lit.none>
-# CHECK-SAME: %float12: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
+# CHECK-SAME: %float3: {{.*}}(!kgen.pointer<!MemoryType> owned_in_mem) -> !kgen.none
+# CHECK-SAME: %float4: {{.*}}(!kgen.pointer<!Int> byref) -> !kgen.none
+# CHECK-SAME: %float5: {{.*}}(!Int borrow) throws -> !pop.variant<!Error, none>
+# CHECK-SAME: %float6: {{.*}}(!Int borrow) throws|async|capturing -> !pop.variant<!Error, none>
+# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !pop.variant<!Error, none>
+# CHECK-SAME: %float8: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>> borrow) -> !kgen.none
+# CHECK-SAME: %float9: {{.*}}<[] -> !Int>() -> !kgen.none
+# CHECK-SAME: %float10: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, none>
+# CHECK-SAME: %float11: {{.*}}<<"Ts": variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, none>
+# CHECK-SAME: %float12: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>) -> !kgen.none>
 # CHECK-SAME: %named: {{.*}}<("x": !kgen.pointer<!MemType> borrow_in_mem) -> !Int>
 fn function_types(
   float0: fn(Int) -> Int,
@@ -1293,7 +1293,7 @@ fn function_types(
 
 # CHECK-LABEL: lit.struct.decl @Mem
 # CHECK-NEXT: lit.alias.decl _{{.*}}_x: type = <i8>
-# CHECK-NEXT: lit.alias.decl _{{.*}}_B: type = <!lit.signature<("foo": i8 borrow) -> !lit.none>>
+# CHECK-NEXT: lit.alias.decl _{{.*}}_B: type = <!lit.signature<("foo": i8 borrow) -> !kgen.none>>
 struct Mem:
    alias x = __mlir_type.i8
    alias B = fn (foo: Self.x) -> None
@@ -1380,7 +1380,7 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: M, i: Int) -
   # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %b)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
-  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+  # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
   return a if cond else b
 
 fn testTransferWarning():

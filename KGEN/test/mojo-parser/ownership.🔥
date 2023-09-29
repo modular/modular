@@ -16,9 +16,9 @@ struct MemExample:
   # Destructor should not recurse.
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT:    kgen.call {{.*}}noop{{.*}}(%self)
-  # CHECK-NEXT:    %1 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT:    %none = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT:    lit.ownership.mark_destroyed %self
-  # CHECK-NEXT:    kgen.return %1 : !lit.none
+  # CHECK-NEXT:    kgen.return %none : !kgen.none
   fn __del__(owned self):
     self.noop()
 
@@ -36,7 +36,7 @@ struct RegExample:
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
   # CHECK-NEXT: lit.ref.store %self, %self_0
-  # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT: lit.ownership.mark_destroyed [[SELFPTR]]
   # CHECK-NEXT: kgen.return
@@ -458,7 +458,7 @@ fn testTakePointeeAsOwned(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
   # CHECK-NEXT: %ownedI1 = lit.letreg.decl "ownedI1" = [[I1VAL]]
   let ownedI1 = __get_address_as_owned_value(i1ptr)
 
-  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+  # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 
 # CHECK-LABEL: testGetAsUnitializedObject
@@ -483,7 +483,7 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
   # CHECK-NEXT: %i1Val = lit.letreg.decl "i1Val" = [[I1VAL]]
   let i1Val = __get_address_as_lvalue(i1ptr)
 
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.struct.decl @FieldSensitiveMemExample
 struct FieldSensitiveMemExample:
@@ -498,7 +498,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: %2 = lit.struct.gep %self[f2]
     # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%2)
     self.f2 = MemExample()
-    # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+    # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT: kgen.return
 
  # CHECK: lit.func @"__init__
@@ -517,7 +517,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: %2 = lit.struct.gep %self[f1]
     # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%2)
     self.f1 = MemExample()
-    # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+    # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
  # CHECK-LABEL: lit.func @"mutate2
  fn mutate2(inout self):
@@ -532,7 +532,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: %1 = lit.struct.gep %self[f1]
     # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%1)
     self.f1 = MemExample()
-    # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+    # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 
   # CHECK-LABEL: lit.func @"__del__
@@ -540,7 +540,7 @@ struct FieldSensitiveMemExample:
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%0)
   # CHECK-NEXT: %2 = lit.struct.gep %self[f2]
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%2)
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
 
 # This disables the destructor of 'x' which causes the fields to be destroyed.
@@ -552,7 +552,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
   # CHECK-NEXT: %2 = lit.struct.gep %x[f2]
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%2)
   # CHECK-NEXT: lit.ownership.mark_destroyed %x
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
   __mlir_op.`lit.ownership.mark_destroyed`[_type : None](
      __get_lvalue_as_address(x)
   )
@@ -629,7 +629,7 @@ fn test_result_optimization():
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}([[PTR]])
 
-  # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+  # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 ##===----------------------------------------------------------------------===##
 # Consume Expressions
@@ -682,7 +682,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
 # CHECK: lit.func @"consumeMem
 fn consumeMem(owned x: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%x)
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
   pass
 
 # CHECK: lit.func @"test_result_consume_mem
@@ -714,7 +714,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example2
   # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime [[PTR]]
   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
   return example2^
 
 # CHECK-LABEL: lit.struct.decl @BigRegExample
@@ -752,7 +752,7 @@ struct BigRegExample:
   # CHECK-NEXT: [[BPTR:%.*]] = lit.struct.gep [[SELFPTR]][b]
   # CHECK-NEXT: [[BVAL:%.*]] = pop.load [[BPTR]]
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[BVAL]])
-  # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT: lit.ownership.mark_destroyed [[SELFPTR]]
   # CHECK-NEXT: kgen.return
@@ -785,7 +785,7 @@ fn bigreg_test():
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[OLDVAL]])
   varThing.a = RegExample()
 
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.struct.decl @ExoticDelExample
 @register_passable
@@ -829,7 +829,7 @@ struct ExoticDelExample:
     # CHECK-NEXT:  hlcf.yield
     # CHECK-NEXT:}
 
-    # CHECK-NEXT: = kgen.param.constant: !lit.none = <#lit.none>
+    # CHECK-NEXT: = kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
     # CHECK-NEXT:lit.ownership.mark_destroyed [[SELFPTR]]
     # CHECK-NEXT:kgen.return
@@ -855,7 +855,7 @@ struct MemoryUniqueMovable:
     # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%2, %1)
     self.state = existing.state^
 
-    # CHECK-NEXT: kgen.param.constant: !lit.none
+    # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: lit.ownership.mark_destroyed %existing
     # CHECK-NEXT: kgen.return
 
@@ -881,7 +881,7 @@ struct MemoryDestroyMovable:
     # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%4)
     existing.state = MemExample()
 
-    # CHECK-NEXT: kgen.param.constant: !lit.none
+    # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
 
   fn __del__(owned self): pass
@@ -910,7 +910,7 @@ struct MemoryMovableCopyable:
 fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
   # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, %0)
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
   return a^
 
@@ -918,7 +918,7 @@ fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
 fn result_mem2(owned a: MemoryDestroyMovable) -> MemoryDestroyMovable:
   # CHECK-NEXT: kgen.call {{.*}}__takeinit__{{.*}}(%__result__, %a){{.*}}init_self{{.*}} byref
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%a)
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
   return a
 
@@ -926,7 +926,7 @@ fn result_mem2(owned a: MemoryDestroyMovable) -> MemoryDestroyMovable:
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
   # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, %0){{.*}}init_self{{.*}} owned_in_mem
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
   return a^
 
@@ -995,7 +995,7 @@ fn passFieldToOwnedInt(owned a: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}takeOwnedInt{{.*}}(%1)
   takeOwnedInt(a.x)
 
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
 
 
 # Generic type: Issue #14018
@@ -1042,7 +1042,7 @@ fn optimizeCopyElision():
   # CHECK-NEXT: kgen.call {{.*}}takeTwo{{.*}}([[ANONPTR]], [[PTR]])
   takeTwo(x, x)
 
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.func @"optimizeCopyToMove
 fn optimizeCopyToMove():
@@ -1123,11 +1123,11 @@ fn optimizeCopyToMove():
 
    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
    # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[TMP]])
-   # CHECK-NEXT: kgen.param.constant: !lit.none
+   # CHECK-NEXT: kgen.param.constant: none
 
 
 # CHECK-LABEL: lit.func @"def_borrowed
 # CHECK-SAME: %a: !kgen.pointer<!MemExample> borrow_in_mem
 def def_borrowed(borrowed a: MemExample) -> None:
-  # CHECK-NEXT: kgen.param.constant: !lit.none
+  # CHECK-NEXT: kgen.param.constant: none
   pass

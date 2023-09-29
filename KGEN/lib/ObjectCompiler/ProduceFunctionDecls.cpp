@@ -79,6 +79,11 @@ static ErrorOr<std::string> getCTypeForElementary(Type t) {
 /// Get the C types for the given type.
 static LogicalResult getCTypeForType(FuncOp func, Type t,
                                      SmallVectorImpl<std::string> &types) {
+  if (isa<KGEN::NoneType>(t)) {
+    types.push_back("void");
+    return success();
+  }
+
   if (auto simd = dyn_cast<POP::SIMDType>(t)) {
     // Since the vector_size attribute only works on GNU and CLANG compilers,
     // we pass in an array.

@@ -576,7 +576,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
 
     ```mlir
     lit.trait.decl @Trait {
-      lit.func @f() -> !lit.none {
+      lit.func @f() -> !kgen.none {
         lit.trait_func
       }
     }
@@ -1103,7 +1103,7 @@ def LIT_TraitFuncOp : LITOp<"trait_func", [Terminator,
 
     ```mlir
     lit.trait.decl @Trait {
-      lit.func @f() -> !lit.none {
+      lit.func @f() -> !kgen.none {
         lit.trait_func
       }
     }
@@ -1172,11 +1172,11 @@ def LIT_ErrorReturnOp : LITOp<"error_return", [Terminator, ReturnLike,
     Example:
 
     ```mlir
-    lit.func @throwing_func() throws -> !pop.variant<@Error, !lit.none> {
+    lit.func @throwing_func() throws -> !pop.variant<@Error, none> {
       %1 = lit.struct.create(a=%0) : (index) -> !kgen.declref<@Error>
       %2 = pop.variant.create %1 :
-        !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
-      lit.error_return %2 : !pop.variant<@Error, !lit.none>
+        !kgen.declref<@Error> -> !pop.variant<@Error, none>
+      lit.error_return %2 : !pop.variant<@Error, none>
     }
     ```
   }];
@@ -1501,18 +1501,18 @@ def LIT_HandleVariantOp : LITOp<"handle_variant",
     ```mlir
     %0 = kgen.call @throwing_callee(%y) :
       (!kgen.pointer<@MyStruct> byref_result) throws ->
-      !pop.variant<@Error, !lit.none>
-    %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, !lit.none>,
-      !kgen.pointer<@MyStruct>) -> !lit.none {
+      !pop.variant<@Error, none>
+    %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, none>,
+      !kgen.pointer<@MyStruct>) -> !kgen.none {
       %7 = pop.variant.get %0 :
-        !pop.variant<@Error, !lit.none> as !lit.none
-      lit.yield %7 : !lit.none
+        !pop.variant<@Error, none> as !kgen.none
+      lit.yield %7 : !kgen.none
     } else {
-      %8 = pop.variant.get %0 : !pop.variant<@Error, !lit.none>
+      %8 = pop.variant.get %0 : !pop.variant<@Error, none>
         as !kgen.declref<@Error>
       %9 = pop.variant.create %8 :
-        !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
-  	  kgen.return %9 : !pop.variant<@Error, !lit.none>
+        !kgen.declref<@Error> -> !pop.variant<@Error, none>
+  	  kgen.return %9 : !pop.variant<@Error, none>
     }
     ```
   }];
@@ -1549,12 +1549,12 @@ def LIT_YieldOp : LITOp<"yield", [Pure,
     Example:
 
     ```mlir
-    %1 = lit.handle_variant %0, %x : (!pop.variant<@Error, !lit.none>,
-      !kgen.pointer<@MyStruct>) -> !lit.none {
-      %7 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !lit.none
-      lit.yield %7 : !lit.none
+    %1 = lit.handle_variant %0, %x : (!pop.variant<@Error, none>,
+      !kgen.pointer<@MyStruct>) -> !kgen.none {
+      %7 = pop.variant.get %0 : !pop.variant<@Error, none> as !kgen.none
+      lit.yield %7 : !kgen.none
     } else {
-      %8 = pop.variant.get %0 : !pop.variant<@Error, !lit.none>
+      %8 = pop.variant.get %0 : !pop.variant<@Error, none>
         as !kgen.declref<@Error>
       lit.try.raise %8 : !kgen.declref<@Error>
     }

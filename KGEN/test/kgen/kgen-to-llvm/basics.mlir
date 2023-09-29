@@ -12,6 +12,13 @@ kgen.func @trivial(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32
 }
 
+// CHECK: llvm.func internal @none_type() -> !llvm.struct<()>
+kgen.func @none_type() -> !kgen.none {
+  // CHECK: [[NONE:%.*]] = llvm.mlir.undef : !llvm.struct<()>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
 // CHECK-LABEL: llvm.func internal @convert_pop_types
 // CHECK-SAME: %{{.*}}: f32
 // CHECK-SAME: %{{.*}}: !llvm.ptr<f32>

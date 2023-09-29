@@ -13,7 +13,7 @@ struct StringParam[value: String]:
         print(value)
 
 
-# ELABORATE: kgen.func @"$parameter-string::stringInputParam[[FUNC:.*]]"() -> !pop.array<0, i1>
+# ELABORATE: kgen.func @"$parameter-string::stringInputParam[[FUNC:.*]]"() -> !kgen.none
 # ELABORATE-NOT: kgen.func {{.*}}stringInputParam
 @no_inline
 fn stringInputParam[value: String]():
@@ -26,7 +26,7 @@ fn stringInputParamInline[value: String]():
 
 
 fn instantiateElsewhere():
-    # ELABORATE: kgen.call @"$parameter-string::stringInputParam[[FUNC]]"() : () -> !pop.array<0, i1>
+    # ELABORATE: kgen.call @"$parameter-string::stringInputParam[[FUNC]]"() : () -> !kgen.none
     stringInputParam["thrice"]()
 
 
@@ -36,7 +36,7 @@ fn main():
 
     alias strValue: String = "thrice"
     # CHECK-COUNT-4: thrice
-    # ELABORATE: kgen.call @"$parameter-string::stringInputParam[[FUNC]]"() : () -> !pop.array<0, i1>
+    # ELABORATE: kgen.call @"$parameter-string::stringInputParam[[FUNC]]"() : () -> !kgen.none
     stringInputParam[strValue]()
     instantiateElsewhere()
 

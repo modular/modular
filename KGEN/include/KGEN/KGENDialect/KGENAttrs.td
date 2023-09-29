@@ -259,6 +259,20 @@ def KGEN_UnboundAttr : KGEN_ExprAttr<"Unbound", "unbound"> {
 }
 
 //===----------------------------------------------------------------------===//
+// NoneAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_NoneAttr : KGEN_ExprAttr<"None", "none"> {
+  let summary = "A none value";
+  let description = [{
+    The `#kgen.none` attribute is a value of `!kgen.none` type.
+  }];
+
+  let assemblyFormat = "";
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
 //===----------------------------------------------------------------------===//
 

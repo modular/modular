@@ -67,7 +67,7 @@ bool ASTType::isEqualCanon(ASTType other) const {
 }
 
 /// Return true if this is a None type.
-bool ASTType::isNoneType() const { return mlirType.isa<LIT::NoneType>(); }
+bool ASTType::isNoneType() const { return mlirType.isa<KGEN::NoneType>(); }
 
 /// Return true if this is a TypeCheckError type.
 bool ASTType::isTypeCheckErrorType() const {
@@ -484,7 +484,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     if (inMemResult) {
       ASTType(cast<PointerType>(inMemResult).getElementType())
           .print(os, forDiag);
-    } else if (isa<NoneType>(resultType)) {
+    } else if (isa<KGEN::NoneType>(resultType)) {
       os << "None";
     } else if (sig.isThrows()) {
       ASTType(cast<POP::VariantType>(resultType).getTypes().back())

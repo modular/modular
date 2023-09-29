@@ -45,6 +45,7 @@ void KGENDialect::registerTypes() {
       +[](AsmPrinter &p, Type) { p << "type"; });
   registerMnemonicType<DTypeType>();
   registerMnemonicType<PointerType>();
+  registerMnemonicType<NoneType>();
   registerMnemonicType<StringType>();
   registerMnemonicType<VariadicType>();
   registerMnemonicType<TargetType>();
@@ -267,7 +268,7 @@ SignatureType SignatureType::getSpecializedSignature(
     // If we're attempting to bind to an unknown attribute, we need to update
     // the decl, and keep it around so that we can continue to use it (as in a
     // partial bind).
-    if (value.isa<UnboundAttr>()) {
+    if (::isa<UnboundAttr>(value)) {
       // Set the binding to a declref of the thing itself - that will keep it
       // from becoming #kgen.unbound.
       auto value =
@@ -676,6 +677,20 @@ std::optional<int64_t> DTypeType::getTypeSize(TargetInfoAttr target) const {
 }
 
 std::optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
+  return 1;
+}
+
+//===----------------------------------------------------------------------===//
+// NoneType
+//===----------------------------------------------------------------------===//
+
+std::optional<int64_t>
+KGEN::NoneType::getTypeSize(TargetInfoAttr target) const {
+  return 0;
+}
+
+std::optional<int64_t>
+KGEN::NoneType::getTypeAlign(TargetInfoAttr target) const {
   return 1;
 }
 

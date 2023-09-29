@@ -126,7 +126,7 @@ lit.func @no_names(index)
 
 // expected-error @below {{'lit.func' expected parameter with default value}}
 lit.func @default_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
-  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  %0 = kgen.param.constant: none = <#kgen.none>
   lit.end_func
 }
 
@@ -272,11 +272,11 @@ lit.func @no_struct_decl(%a: index) {
 
 // -----
 
-lit.func @caller() -> !lit.none attributes {isParametric} {
+lit.func @caller() -> !kgen.none attributes {isParametric} {
   lit.try {
     %i = index.constant 0
     // expected-error @below {{'lit.handle_variant' op operand #0 must be A parametric variant type., but got 'index'}}
-    %4 = lit.handle_variant %i, %i : (index, index) -> !lit.none {
+    %4 = lit.handle_variant %i, %i : (index, index) -> !kgen.none {
       kgen.unreachable
     } else {
       kgen.unreachable
@@ -287,25 +287,25 @@ lit.func @caller() -> !lit.none attributes {isParametric} {
   } else {
     lit.try.yield
   }
-  %6 = kgen.param.constant: !lit.none = <#lit.none>
-  kgen.return %6 : !lit.none
+  %6 = kgen.param.constant: none = <#kgen.none>
+  kgen.return %6 : !kgen.none
 }
 
 // -----
 
-lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes {isParametric} {
+lit.func @throwing_caller() throws -> !pop.variant<@Error, none> attributes {isParametric} {
     %y = lit.varlet.decl "y" : !lit.ref<mut @MyStruct, *"lifetime">
     %yp = lit.ref.to_pointer %y : !lit.ref<mut @MyStruct, *"lifetime">
-    %0 = kgen.call @throwing_callee(%yp) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, index, !lit.none>
+    %0 = kgen.call @throwing_callee(%yp) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, index, !kgen.none>
     // expected-error @below {{'lit.handle_variant' op expected the variant to have two types: a success type and an error type}}
-    %1 = lit.handle_variant %0, %yp : (!pop.variant<@Error, index, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none
+    %1 = lit.handle_variant %0, %yp : (!pop.variant<@Error, index, !kgen.none>, !kgen.pointer<@MyStruct>) -> !kgen.none
     {
       kgen.unreachable
     } else {
       kgen.unreachable
     }
-    %6 = kgen.param.constant: !lit.none = <#lit.none>
-    kgen.return %6 : !lit.none
+    %6 = kgen.param.constant: none = <#kgen.none>
+    kgen.return %6 : !kgen.none
 }
 
 // -----
@@ -354,7 +354,7 @@ lit.unresolved_import @module as @newModule declNameLoc(loc(unknown))
 
 // -----
 
-lit.func @f() -> !lit.none {
+lit.func @f() -> !kgen.none {
   // expected-error @below {{'lit.trait_func' op expected a parent function in a trait}}
   lit.trait_func
 }

@@ -382,48 +382,6 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
 }
 
 //===----------------------------------------------------------------------===//
-// TargetType
-//===----------------------------------------------------------------------===//
-
-def KGEN_TargetType : KGENType<"Target", "target"> {
-  let summary = "The type of a target.";
-  let description = [{
-    A `!kgen.target` is the type of a target. It is used for parameterizing
-    kernels by target.
-
-    Example:
-    ```mlir
-    kgen.generator @target_params<t: !kgen.target>() {
-      ...
-    }
-    ```
-  }];
-
-  let assemblyFormat = "";
-}
-
-//===----------------------------------------------------------------------===//
-// BuildInfoType
-//===----------------------------------------------------------------------===//
-
-def KGEN_BuildInfoType : KGENType<"BuildInfo", "build_info"> {
-  let summary = "The type of a build info.";
-  let description = [{
-    A `!kgen.build_info` is the type of a build info. It is used for
-    parameterizing kernels by how they are built.
-
-    Example:
-    ```mlir
-    kgen.generator @target_params<bi: !kgen.build_info>() {
-      ...
-    }
-    ```
-  }];
-
-  let assemblyFormat = "";
-}
-
-//===----------------------------------------------------------------------===//
 // VariadicType
 //===----------------------------------------------------------------------===//
 
@@ -468,5 +426,62 @@ class VariadicElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches variadic element type", lhs, rhs,
     "ParamRefType::get($_self.cast<KGEN::VariadicType>().getElementType())",
     "typeRangeMatches">;
+
+//===----------------------------------------------------------------------===//
+// NoneType
+//===----------------------------------------------------------------------===//
+
+def KGEN_NoneType : KGENType<"None", "none",
+    [DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+  let summary = "Type used for 'void' function results";
+  let description = [{
+    The `!kgen.none` type represents a value with no contents. When used as a
+    function result, it is equivalent to a void result or no results.
+  }];
+
+  let assemblyFormat = "";
+}
+
+//===----------------------------------------------------------------------===//
+// TargetType
+//===----------------------------------------------------------------------===//
+
+def KGEN_TargetType : KGENType<"Target", "target"> {
+  let summary = "The type of a target.";
+  let description = [{
+    A `!kgen.target` is the type of a target. It is used for parameterizing
+    kernels by target.
+
+    Example:
+    ```mlir
+    kgen.generator @target_params<t: !kgen.target>() {
+      ...
+    }
+    ```
+  }];
+
+  let assemblyFormat = "";
+}
+
+//===----------------------------------------------------------------------===//
+// BuildInfoType
+//===----------------------------------------------------------------------===//
+
+def KGEN_BuildInfoType : KGENType<"BuildInfo", "build_info"> {
+  let summary = "The type of a build info.";
+  let description = [{
+    A `!kgen.build_info` is the type of a build info. It is used for
+    parameterizing kernels by how they are built.
+
+    Example:
+    ```mlir
+    kgen.generator @target_params<bi: !kgen.build_info>() {
+      ...
+    }
+    ```
+  }];
+
+  let assemblyFormat = "";
+}
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

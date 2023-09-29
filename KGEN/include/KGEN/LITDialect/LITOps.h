@@ -29,13 +29,13 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 namespace M::KGEN {
+class NoneType;
 class PointerType;
 class ReturnOp;
 
 namespace LIT {
 enum class SpecialFunctionKind : uint8_t;
 class SpecialFunctionInfo;
-class NoneType;
 
 /// Return the fully resolved symbol reference for the given declaration,
 /// including all scoping that may be needed, making it unique for every

@@ -2720,7 +2720,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     auto existingFunc = cast<LIT::FuncOp>(existing);
 
     // We need to compare the (name erased) user result types, since memory-only
-    // types may result in `!lit.none` in the mlir signature result.
+    // types may result in `!kgen.none` in the mlir signature result.
     auto resTy = ASTType(signature).getSignatureUserResultType();
     auto existingResTy =
         ASTType(existingFunc.getSignature()).getSignatureUserResultType();

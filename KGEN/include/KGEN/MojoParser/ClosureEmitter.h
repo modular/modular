@@ -67,7 +67,7 @@ private:
   FileModuleOp fileModuleOp;
   SharedState &shared;
   Type noneType;
-  LIT::NoneAttr noneAttr;
+  NoneAttr noneAttr;
   StructEmitter structEmitter;
   StringAttr dtorFieldAttr;
   StringAttr copyFieldAttr;
