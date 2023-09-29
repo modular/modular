@@ -442,7 +442,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
           contextPtrType, hdl, GEPArg(-contextBaseSize), /*inbounds=*/true);
       Value argPtr = b.create<GEPOp>(
           LLVMPointerType::get(arg.getType()), contextPtr,
-          ArrayRef<GEPArg>{0, argOffset + idx}, /*inbounds=*/true);
+          ArrayRef<GEPArg>{0, static_cast<int32_t>(argOffset + idx)},
+          /*inbounds=*/true);
       use.set(b.create<LoadOp>(argPtr));
     }
     assert(arg.use_empty() && "didn't replace all uses?");
