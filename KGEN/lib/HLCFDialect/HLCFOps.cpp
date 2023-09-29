@@ -184,7 +184,7 @@ std::optional<int64_t> ForOp::getTripCount() {
       return 0;
   }
 
-  r = abs(r);
+  r = std::abs(r);
   if (pred == HLCF::ForLoopBoundCmpPredicate::SGE ||
       pred == HLCF::ForLoopBoundCmpPredicate::SLE)
     r += 1;
