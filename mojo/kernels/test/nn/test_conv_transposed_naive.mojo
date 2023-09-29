@@ -7,7 +7,7 @@
 
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
-from ConvTranspose import AutoPadMode, convtranspose
+from ConvTranspose import convtranspose
 
 
 # CHECK-LABEL: test_convtranspose_pads
@@ -95,15 +95,43 @@ fn test_convtranspose_pads():
         type,
     ].stack_allocation()
 
-    alias group = 1
-    alias input_shape = StaticIntTuple[rank](1, 1, 3, 3)
-    alias output_shape = StaticIntTuple[rank](1, 2, 7, 3)
-    alias kernel_shape = StaticIntTuple[rank](1, 2, 3, 3)
-    alias strides = StaticIntTuple[2](3, 2)
-    alias dilations = StaticIntTuple[2](1, 1)
-    alias output_padding = StaticIntTuple[2](0, 0)
-    alias pads = StaticIntTuple[4](1, 2, 1, 2)
-    alias auto_pad = AutoPadMode.NOTSET
+    let strides = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    strides[0] = 3
+    strides[1] = 2
+
+    let dilations = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    dilations[0] = 1
+    dilations[1] = 1
+
+    let output_padding = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    output_padding[0] = 0
+    output_padding[1] = 0
+
+    let pads = NDBuffer[
+        1,
+        DimList(4),
+        DType.index,
+    ].stack_allocation()
+
+    pads[0] = 1
+    pads[1] = 2
+    pads[2] = 1
+    pads[3] = 2
 
     @always_inline
     @parameter
@@ -112,23 +140,14 @@ fn test_convtranspose_pads():
 
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[
-            rank,
-            type,
-            group,
-            input_shape,
-            output_shape,
-            kernel_shape,
-            strides,
-            dilations,
-            pads,
-            output_padding,
-            auto_pad,
-            epilogue_fn,
-        ](
+        convtranspose[rank, type, epilogue_fn,](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -225,15 +244,43 @@ fn test_convtranspose():
         type,
     ].stack_allocation()
 
-    alias group = 1
-    alias input_shape = StaticIntTuple[rank](1, 1, 3, 3)
-    alias output_shape = StaticIntTuple[rank](1, 2, 5, 5)
-    alias kernel_shape = StaticIntTuple[rank](1, 2, 3, 3)
-    alias strides = StaticIntTuple[2](1, 1)
-    alias dilations = StaticIntTuple[2](1, 1)
-    alias output_padding = StaticIntTuple[2](0, 0)
-    alias pads = StaticIntTuple[4](0, 0, 0, 0)
-    alias auto_pad = AutoPadMode.NOTSET
+    let strides = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    strides[0] = 1
+    strides[1] = 1
+
+    let dilations = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    dilations[0] = 1
+    dilations[1] = 1
+
+    let output_padding = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    output_padding[0] = 0
+    output_padding[1] = 0
+
+    let pads = NDBuffer[
+        1,
+        DimList(4),
+        DType.index,
+    ].stack_allocation()
+
+    pads[0] = 0
+    pads[1] = 0
+    pads[2] = 0
+    pads[3] = 0
 
     @always_inline
     @parameter
@@ -242,23 +289,14 @@ fn test_convtranspose():
 
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[
-            rank,
-            type,
-            group,
-            input_shape,
-            output_shape,
-            kernel_shape,
-            strides,
-            dilations,
-            pads,
-            output_padding,
-            auto_pad,
-            epilogue_fn,
-        ](
+        convtranspose[rank, type, epilogue_fn,](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -334,15 +372,43 @@ fn test_convtranspose_dilation():
         type,
     ].stack_allocation()
 
-    alias group = 1
-    alias input_shape = StaticIntTuple[rank](1, 1, 3, 3)
-    alias output_shape = StaticIntTuple[rank](1, 1, 5, 5)
-    alias kernel_shape = StaticIntTuple[rank](1, 1, 2, 2)
-    alias strides = StaticIntTuple[2](1, 1)
-    alias dilations = StaticIntTuple[2](2, 2)
-    alias output_padding = StaticIntTuple[2](0, 0)
-    alias pads = StaticIntTuple[4](0, 0, 0, 0)
-    alias auto_pad = AutoPadMode.NOTSET
+    let strides = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    strides[0] = 1
+    strides[1] = 1
+
+    let dilations = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    dilations[0] = 2
+    dilations[1] = 2
+
+    let output_padding = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    output_padding[0] = 0
+    output_padding[1] = 0
+
+    let pads = NDBuffer[
+        1,
+        DimList(4),
+        DType.index,
+    ].stack_allocation()
+
+    pads[0] = 0
+    pads[1] = 0
+    pads[2] = 0
+    pads[3] = 0
 
     @always_inline
     @parameter
@@ -351,23 +417,14 @@ fn test_convtranspose_dilation():
 
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[
-            rank,
-            type,
-            group,
-            input_shape,
-            output_shape,
-            kernel_shape,
-            strides,
-            dilations,
-            pads,
-            output_padding,
-            auto_pad,
-            epilogue_fn,
-        ](
+        convtranspose[rank, type, epilogue_fn,](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -476,15 +533,43 @@ fn test_convtranspose_attributes():
         type,
     ].stack_allocation()
 
-    alias group = 1
-    alias input_shape = StaticIntTuple[rank](1, 1, 3, 3)
-    alias output_shape = StaticIntTuple[rank](1, 2, 10, 8)
-    alias kernel_shape = StaticIntTuple[rank](1, 2, 3, 3)
-    alias strides = StaticIntTuple[2](3, 2)
-    alias dilations = StaticIntTuple[2](1, 1)
-    alias output_padding = StaticIntTuple[2](1, 1)
-    alias pads = StaticIntTuple[4](0, 0, 0, 0)
-    alias auto_pad = AutoPadMode.NOTSET
+    let strides = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    strides[0] = 3
+    strides[1] = 2
+
+    let dilations = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    dilations[0] = 1
+    dilations[1] = 1
+
+    let output_padding = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    output_padding[0] = 1
+    output_padding[1] = 1
+
+    let pads = NDBuffer[
+        1,
+        DimList(4),
+        DType.index,
+    ].stack_allocation()
+
+    pads[0] = 0
+    pads[1] = 0
+    pads[2] = 0
+    pads[3] = 0
 
     @always_inline
     @parameter
@@ -493,23 +578,14 @@ fn test_convtranspose_attributes():
 
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[
-            rank,
-            type,
-            group,
-            input_shape,
-            output_shape,
-            kernel_shape,
-            strides,
-            dilations,
-            pads,
-            output_padding,
-            auto_pad,
-            epilogue_fn,
-        ](
+        convtranspose[rank, type, epilogue_fn,](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -611,15 +687,43 @@ fn test_convtranspose_bias():
     bias[StaticIntTuple[1](0)] = 2
     bias[StaticIntTuple[1](1)] = 3
 
-    alias group = 1
-    alias input_shape = StaticIntTuple[rank](1, 1, 3, 3)
-    alias output_shape = StaticIntTuple[rank](1, 2, 5, 5)
-    alias kernel_shape = StaticIntTuple[rank](1, 2, 3, 3)
-    alias strides = StaticIntTuple[2](1, 1)
-    alias dilations = StaticIntTuple[2](1, 1)
-    alias output_padding = StaticIntTuple[2](0, 0)
-    alias pads = StaticIntTuple[4](0, 0, 0, 0)
-    alias auto_pad = AutoPadMode.NOTSET
+    let strides = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    strides[0] = 1
+    strides[1] = 1
+
+    let dilations = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    dilations[0] = 1
+    dilations[1] = 1
+
+    let output_padding = NDBuffer[
+        1,
+        DimList(2),
+        DType.index,
+    ].stack_allocation()
+
+    output_padding[0] = 0
+    output_padding[1] = 0
+
+    let pads = NDBuffer[
+        1,
+        DimList(4),
+        DType.index,
+    ].stack_allocation()
+
+    pads[0] = 0
+    pads[1] = 0
+    pads[2] = 0
+    pads[3] = 0
 
     @always_inline
     @parameter
@@ -628,23 +732,14 @@ fn test_convtranspose_bias():
 
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[
-            rank,
-            type,
-            group,
-            input_shape,
-            output_shape,
-            kernel_shape,
-            strides,
-            dilations,
-            pads,
-            output_padding,
-            auto_pad,
-            epilogue_fn,
-        ](
+        convtranspose[rank, type, epilogue_fn,](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
+            strides.make_dims_unknown(),
+            dilations.make_dims_unknown(),
+            pads.make_dims_unknown(),
+            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
