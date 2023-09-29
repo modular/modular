@@ -32,6 +32,7 @@ tools = [
     "kgen-opt",
     "kgen",
     "llvm-objdump",
+    "hash-mlir",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

@@ -49,6 +49,7 @@ if(LLDB_FOUND)
   add_subdirectory(lib/MojoJupyter)
 endif()
 
+add_subdirectory(tools/hash-mlir)
 add_subdirectory(tools/kgen)
 add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-translate)
