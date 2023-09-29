@@ -103,8 +103,8 @@ std::unique_ptr<mlir::Pass> createForceInline(
 /// Create an AutomaticInline pass with an LLCL runtime instance and a
 /// function pass pipeline to run.
 std::unique_ptr<mlir::Pass> createAutomaticInline(
-    LLCL::Runtime &runtime, const AutomaticInlineOptions &options,
-    std::function<void(mlir::OpPassManager &)> buildFuncPasses);
+    LLCL::Runtime &runtime, const AutomaticInlineOptions &options = {},
+    std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
 
 //===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline
