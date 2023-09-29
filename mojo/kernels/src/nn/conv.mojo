@@ -4371,8 +4371,8 @@ fn pack_filter[
     """This packs the filter form RSCF to FRSCf.
 
     Parameters:
-        type: filter data type
-        simd_size: can differ from the simd size of the input type.
+        type: The data type of the filter.
+        simd_size: The simd size of the output type.
         micro_kernel_f_size: The size of the last dimension in FRSCf, which is
             equals the size of the micro kernel's F dimension.
 
