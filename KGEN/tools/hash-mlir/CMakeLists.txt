@@ -11,4 +11,5 @@ add_modular_tool(hash-mlir
   KGENToolCommon
   MSupportGlobals
   MLIRIR
+  LLCLRuntimeGlobals
 )
