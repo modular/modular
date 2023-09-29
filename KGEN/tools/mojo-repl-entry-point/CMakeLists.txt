@@ -13,6 +13,13 @@ add_modular_tool(mojo-repl-entry-point
   MSupportGlobals
 )
 
+# The entry point is a win32 executable, and uses WinMain instead of main. This
+# removes the console window that would otherwise be created when starting the
+# REPL in LLDB.
+if(CMAKE_SYSTEM_NAME STREQUAL Windows)
+  set_target_properties(mojo-repl-entry-point PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
 # This target is supposed to be located next to libMojoLLDB.
 set_target_properties(mojo-repl-entry-point PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/"

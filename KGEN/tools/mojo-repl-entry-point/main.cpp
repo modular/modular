@@ -13,6 +13,11 @@
 #include "KGEN/CompilerRT/Registration.h"
 #include "llvm/Support/raw_ostream.h"
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#endif
+
 using namespace M;
 
 /// Wrapper function to avoid return type ABI issues when attempting to evaluate
@@ -57,7 +62,12 @@ static void forceLinkCompilerRT() {
 // Entry Point
 //===----------------------------------------------------------------------===//
 
+#if defined(_WIN32)
+int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine,
+            int nShowCmd) {
+#else
 int main() {
+#endif
   forceLinkExportedSymbols();
   forceLinkCompilerRT();
   KGEN_CompilerRT_Python_SetPythonPath();
