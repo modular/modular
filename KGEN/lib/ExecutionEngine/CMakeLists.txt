@@ -65,6 +65,7 @@ add_modular_library(KGENExecutionEngine
   KGENVersion
 
   LINK_COMPONENTS
+  OrcDebugging
   OrcJIT
   OrcShared
   OrcTargetProcess
