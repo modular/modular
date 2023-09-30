@@ -1,0 +1,12 @@
+@LIT_SITE_CFG_IN_HEADER@
+
+lit_config.load_config(
+    config, "@MODULAR_BINARY_DIR@/utils/build/llvm-lit/lit.common.configured"
+)
+
+available_backend_targets = "@LLVM_TARGETS_TO_BUILD@".lower().split(";")
+
+if "nvptx" in available_backend_targets:
+    config.available_features.add("nvptx_backend")
+
+lit_config.load_config(config, "@MODULAR_SOURCE_DIR@/Kernels/test/math/lit.cfg.py")
