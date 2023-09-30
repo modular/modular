@@ -323,21 +323,15 @@ struct CallSignatureOpConversion
   LogicalResult
   matchAndRewrite(CallSignatureOp op, CallSignatureOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // Convert the result types.
-    SmallVector<Type> resultTypes;
-    if (op.getNumResults()) {
-      resultTypes.assign(
-          {getTypeConverter()->packFunctionResults(op.getResultTypes())});
-      if (!resultTypes.back())
-        return emitError(op.getLoc(), "failed to convert call result types");
-    }
-    Type resultType;
     // If there are no result types, set it to void. Otherwise, set the result
     // type to the packed result types.
-    if (resultTypes.empty())
+    Type resultType;
+    if (!op.getNumResults())
       resultType = getVoidType();
     else
-      resultType = resultTypes[0];
+      resultType = getTypeConverter()->packFunctionResults(op.getResultTypes());
+    if (!resultType)
+      return emitError(op.getLoc(), "failed to convert call result type");
 
     Value callee = op.getCallee();
     LLVM::CallOp llvmCall;
@@ -377,18 +371,16 @@ struct CallSignatureOpConversion
 
       // Create the call to the wrapper function.
       SmallVector<Value> llvmCallArgs;
-      llvmCallArgs.push_back(castWrapperFn);
       llvmCallArgs.push_back(envStruct);
-      for (Value inp : adaptor.getArguments())
-        llvmCallArgs.push_back(inp);
+      llvm::append_range(llvmCallArgs, adaptor.getArguments());
 
-      llvmCall = createLLVMCall(rewriter, op.getLoc(), resultTypes,
-                                FlatSymbolRefAttr(), llvmCallArgs);
+      llvmCall =
+          createLLVMCall(rewriter, op.getLoc(), castWrapperFn, llvmCallArgs);
     } else {
       // Create the LLVM call operation.
       // Note: adaptor.getOperands() is a list of callee followed by inputs.
-      llvmCall = createLLVMCall(rewriter, op.getLoc(), resultTypes,
-                                FlatSymbolRefAttr(), adaptor.getOperands());
+      llvmCall = createLLVMCall(rewriter, op.getLoc(), adaptor.getCallee(),
+                                adaptor.getArguments());
     }
 
     if (op.getNumResults() <= 1) {
