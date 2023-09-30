@@ -11,6 +11,7 @@
 
 from sys import llvm_intrinsic
 from sys.info import has_avx512_vnni
+from memory.unsafe import bitcast
 
 # ===----------------------------------------------------------------------===#
 # vpdpwssd
@@ -193,8 +194,8 @@ fn _dot_i8_to_i32_16(
     a: SIMD[DType.int8, 64],
     b: SIMD[DType.int8, 64],
 ) -> SIMD[DType.int32, 16]:
-    let mask_hi = bitcast[64, DType.int8](SIMD[DType.int16, 32](0x0100))
-    let mask_lo = bitcast[64, DType.int8](SIMD[DType.int16, 32](0x0001))
+    let mask_hi = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0100))
+    let mask_lo = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0001))
     let ah = llvm_intrinsic[
         "llvm.x86.avx512.pmaddubs.w.512", __mlir_type.`!pop.simd<32, si16>`
     ](a.value, mask_hi)
@@ -221,8 +222,8 @@ fn _dot_i8_to_i32_8(
     a: SIMD[DType.int8, 32],
     b: SIMD[DType.int8, 32],
 ) -> SIMD[DType.int32, 8]:
-    let mask_hi = bitcast[32, DType.int8](SIMD[DType.int16, 16](0x0100))
-    let mask_lo = bitcast[32, DType.int8](SIMD[DType.int16, 16](0x0001))
+    let mask_hi = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0100))
+    let mask_lo = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0001))
 
     let ah = llvm_intrinsic[
         "llvm.x86.avx2.pmadd.ub.sw", __mlir_type.`!pop.simd<16, si16>`
@@ -250,8 +251,8 @@ fn _dot_i8_to_i32_4(
     a: SIMD[DType.int8, 16],
     b: SIMD[DType.int8, 16],
 ) -> SIMD[DType.int32, 4]:
-    let mask_hi = bitcast[16, DType.int8](SIMD[DType.int16, 8](0x0100))
-    let mask_lo = bitcast[16, DType.int8](SIMD[DType.int16, 8](0x0001))
+    let mask_hi = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0100))
+    let mask_lo = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0001))
 
     let ah = llvm_intrinsic[
         "llvm.x86.ssse3.pmadd.ub.sw.128", __mlir_type.`!pop.simd<8, si16>`
@@ -319,16 +320,6 @@ fn _dot_i8_to_i32_saturated_4(
     return t2 + src
 
 
-fn bitcast[
-    dest_size: Int, dest_type: DType, src_size: Int, src_type: DType
-](v: SIMD[src_type, src_size]) -> SIMD[dest_type, dest_size]:
-    return __mlir_op.`pop.bitcast`[
-        _type = __mlir_type[
-            `!pop.simd<`, dest_size.value, `, `, dest_type.value, `>`
-        ]
-    ](v.value)
-
-
 fn dot_i8_to_i32_AVX2[
     width: Int,
     a_type: DType,
@@ -365,16 +356,16 @@ fn dot_i8_to_i32_AVX2[
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_16(
                 rebind[SIMD[DType.int32, 16]](src),
-                bitcast[64, DType.int8](rebind[SIMD[DType.int32, 16]](a)),
-                bitcast[64, DType.int8](rebind[SIMD[DType.int32, 16]](b)),
+                bitcast[DType.int8, 64](rebind[SIMD[DType.int32, 16]](a)),
+                bitcast[DType.int8, 64](rebind[SIMD[DType.int32, 16]](b)),
             )
         )
     elif width == 8:
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_8(
                 rebind[SIMD[DType.int32, 8]](src),
-                bitcast[32, DType.int8](rebind[SIMD[DType.int32, 8]](a)),
-                bitcast[32, DType.int8](rebind[SIMD[DType.int32, 8]](b)),
+                bitcast[DType.int8, 32](rebind[SIMD[DType.int32, 8]](a)),
+                bitcast[DType.int8, 32](rebind[SIMD[DType.int32, 8]](b)),
             )
         )
     else:
@@ -382,8 +373,8 @@ fn dot_i8_to_i32_AVX2[
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_4(
                 rebind[SIMD[DType.int32, 4]](src),
-                bitcast[16, DType.int8](rebind[SIMD[DType.int32, 4]](a)),
-                bitcast[16, DType.int8](rebind[SIMD[DType.int32, 4]](a)),
+                bitcast[DType.int8, 16](rebind[SIMD[DType.int32, 4]](a)),
+                bitcast[DType.int8, 16](rebind[SIMD[DType.int32, 4]](a)),
             )
         )
 
@@ -424,16 +415,16 @@ fn dot_i8_to_i32_saturated_AVX2[
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_saturated_16(
                 rebind[SIMD[DType.int32, 16]](src),
-                bitcast[64, DType.int8](rebind[SIMD[DType.int32, 16]](a)),
-                bitcast[64, DType.int8](rebind[SIMD[DType.int32, 16]](b)),
+                bitcast[DType.int8, 64](rebind[SIMD[DType.int32, 16]](a)),
+                bitcast[DType.int8, 64](rebind[SIMD[DType.int32, 16]](b)),
             )
         )
     elif width == 8:
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_saturated_8(
                 rebind[SIMD[DType.int32, 8]](src),
-                bitcast[32, DType.int8](rebind[SIMD[DType.int32, 8]](a)),
-                bitcast[32, DType.int8](rebind[SIMD[DType.int32, 8]](b)),
+                bitcast[DType.int8, 32](rebind[SIMD[DType.int32, 8]](a)),
+                bitcast[DType.int8, 32](rebind[SIMD[DType.int32, 8]](b)),
             )
         )
     else:
@@ -441,8 +432,8 @@ fn dot_i8_to_i32_saturated_AVX2[
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_saturated_4(
                 rebind[SIMD[DType.int32, 4]](src),
-                bitcast[16, DType.int8](rebind[SIMD[DType.int32, 4]](a)),
-                bitcast[16, DType.int8](rebind[SIMD[DType.int32, 4]](b)),
+                bitcast[DType.int8, 16](rebind[SIMD[DType.int32, 4]](a)),
+                bitcast[DType.int8, 16](rebind[SIMD[DType.int32, 4]](b)),
             )
         )
 

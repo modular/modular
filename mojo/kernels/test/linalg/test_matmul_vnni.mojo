@@ -71,16 +71,6 @@ fn gemm_8_to_32(
         c.data.offset(16 * i).simd_store[16](cv)
 
 
-fn bitcast[
-    dest_size: Int, dest_type: DType, src_size: Int, src_type: DType
-](v: SIMD[src_type, src_size]) -> SIMD[dest_type, dest_size]:
-    return __mlir_op.`pop.bitcast`[
-        _type = __mlir_type[
-            `!pop.simd<`, dest_size.value, `, `, dest_type.value, `>`
-        ]
-    ](v.value)
-
-
 fn main():
     let a = Buffer[16 * 64, DType.uint8].aligned_stack_allocation[64]()
     let asat = Buffer[16 * 64, DType.uint8].aligned_stack_allocation[64]()

@@ -43,7 +43,7 @@ from memory.buffer import (
     partial_simd_load,
     partial_simd_store,
 )
-from memory.unsafe import DTypePointer
+from memory.unsafe import DTypePointer, bitcast
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from Transpose import transpose_inplace
 from VNNI import dot_i8_to_i32_saturated_x86
@@ -1005,16 +1005,6 @@ struct MatmulInnerLoopBPacked[
                     a_local[4 * idx0 + idx_k] = a_base_ptr.offset(
                         idx0 * K + idx_k
                     ).load()
-
-        @always_inline
-        fn bitcast[
-            dest_type: DType, dest_size: Int, src_type: DType, src_size: Int
-        ](v: SIMD[src_type, src_size]) -> SIMD[dest_type, dest_size]:
-            return __mlir_op.`pop.bitcast`[
-                _type = __mlir_type[
-                    `!pop.simd<`, dest_size.value, `, `, dest_type.value, `>`
-                ]
-            ](v.value)
 
         # Loop over local accumulator tiles.
         @unroll
