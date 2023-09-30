@@ -15,7 +15,9 @@ add_custom_command(
   OUTPUT mojo_warmup_parser_cache.mlir
   DEPENDS kgen-translate
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-  COMMAND echo "" | kgen-translate -import-mojo -o mojo_warmup_parser_cache.mlir
+  COMMAND
+    echo "" |
+    $<TARGET_FILE:kgen-translate> -import-mojo -o mojo_warmup_parser_cache.mlir
 )
 add_custom_target(warmup-mojo-parser-cache DEPENDS mojo_warmup_parser_cache.mlir)
 
