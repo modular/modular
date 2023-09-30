@@ -544,7 +544,7 @@ struct OwningOutputChainPtr:
     """
 
     # Actually LLCL::OutputChain*
-    alias ptr_type = DTypePointer[DType.invalid.value]
+    alias ptr_type = DTypePointer[DType.invalid]
     var ptr: Self.ptr_type
 
     @always_inline
