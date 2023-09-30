@@ -1796,21 +1796,20 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
   bool allInitializersPValues = true;
-  for (auto &keyValue : indices->values) {
-    const ExprNode *valueExpr = keyValue.second;
+  for (auto &[key, valueExpr] : indices->values) {
     // We don't support `**dict` syntax.
-    if (!keyValue.first) {
+    if (!key) {
       emitter.emitError(valueExpr->getLoc(),
                         "cannot expand into initializer list")
           << valueExpr->getRange();
       return {};
     }
 
-    auto fieldName = dyn_cast<DeclRefNode>(keyValue.first);
+    auto fieldName = dyn_cast<DeclRefNode>(key);
     if (!fieldName) {
-      emitter.emitError(keyValue.first->getLoc(),
+      emitter.emitError(key->getLoc(),
                         "type initializer requires keys to be bare field names")
-          << keyValue.first->getRange() << base->getRange();
+          << key->getRange() << base->getRange();
       return {};
     }
     StringAttr fieldNameAttr =
@@ -1820,15 +1819,15 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
         /*searchParentScopes=*/false);
     if (!fieldNameDecls.isSuccess()) {
       if (!fieldNameDecls.isErroneous())
-        emitter.emitError(keyValue.first->getLoc())
+        emitter.emitError(key->getLoc())
             << initType << " has no field named " << fieldNameAttr
-            << keyValue.first->getRange() << base->getRange();
+            << key->getRange() << base->getRange();
       return {};
     }
 
     auto field = fieldNameMap[fieldNameAttr];
     if (!field) {
-      emitter.emitError(keyValue.first->getLoc(), "")
+      emitter.emitError(key->getLoc(), "")
           << initType << " has no field named " << fieldNameAttr
           << valueExpr->getRange();
       return {};
@@ -1846,10 +1845,9 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
     auto mapResult = fieldMapping.insert({fieldNameAttr, {value, valueExpr}});
     if (!mapResult.second) {
-      emitter.emitError(keyValue.first->getLoc(), "field ")
-          << fieldNameAttr << " specified multiple times"
-          << keyValue.first->getRange() << base->getRange()
-          << mapResult.first->second.expr->getRange();
+      emitter.emitError(key->getLoc(), "field ")
+          << fieldNameAttr << " specified multiple times" << key->getRange()
+          << base->getRange() << mapResult.first->second.expr->getRange();
       return {};
     }
   }
