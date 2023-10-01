@@ -6,6 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math import frexp, log, log2
+from math.limit import isinf
+
 
 # CHECK-LABEL: test_frexp
 fn test_frexp():
@@ -51,6 +53,9 @@ fn test_log():
 
     # CHECK: 1.0
     print(log[DType.float32, 1](2.7182818284590452353602874713526624977572))
+
+    # CHECK: [True, False, True, True]
+    print(isinf(log(SIMD[DType.float32, 4](0, 1, 0, 0))))
 
 
 # CHECK-LABEL: test_log2
