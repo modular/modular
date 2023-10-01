@@ -674,6 +674,15 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     return emitter.emitCResult(MBValue(fieldPtr), expr, dest);
   }
 
+  // If the base is an XRValue or XBValue, reference the field as an
+  // XBValue so we lazy copy only the piece that is needed in the case of
+  // `x.y.z.w`
+  if (XBValue baseMBV = baseBVal.getIfXBValue()) {
+    auto fieldRef =
+        emitter.builder->create<RefStructGEROp>(mlirLoc, baseMBV, fieldOp);
+    return emitter.emitCResult(XBValue(fieldRef), expr, dest);
+  }
+
   // Otherwise, we have an SSA register for the base, which must be an SRValue
   // or SBValue.
   SBValue baseSB = baseBVal.getIfSBValue();

@@ -128,6 +128,36 @@ ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
 ValueDest::ValueDest(GlobalVarDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
+void ValueDest::dump() const {
+  auto &os = llvm::errs() << "ValueDest context=" << (int)context
+                          << " destination = ";
+
+  if (isa<NullRepresentation>(representation)) {
+    os << "NullRepresentation";
+  } else if (auto lv = dyn_cast<LValue>(representation)) {
+    os << "LValue: ";
+    lv.dump();
+  } else if (isa<LValueBufferTaken>(representation)) {
+    os << "LValueBufferTaken";
+  } else if (auto expr = dyn_cast<const ExprNode *>(representation)) {
+    const char *startPtr = expr->getRangeStart().getPointer();
+    size_t length = expr->getRangeEnd().getPointer() - startPtr;
+    os << "ExprNode: " << StringRef(startPtr, std::min(length, size_t(80)))
+       << "\n---- 8< ----";
+
+  } else if (auto *op = dyn_cast<Operation *>(representation)) {
+    os << "Operation*: " << *op;
+  } else if (auto type = dyn_cast<ASTType>(representation)) {
+    os << "ASTType: " << type;
+  } else if (isa<LValueInitializerType>(representation)) {
+    os << "LValueInitializerType: "
+       << cast<LValueInitializerType>(representation).type;
+  } else {
+    os << "UNKNOWN VALUE DEST!";
+  }
+  os << '\n';
+}
+
 /// Inspect the ValueDest to see if it implies a specific type for the value
 /// being computed, emiting ExprNode targets if present to get their implied
 /// type if present.  This returns null if there is no implied type.
@@ -512,7 +542,7 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   else if (auto mrVal = value.ir.getIfMRValue()) // Decay MRValue -> MBValue
     value.ir = MBValue(mrVal);
   else if (auto refVal = value.ir.getIfXRValue()) // Decay XRValue -> XBValue
-    value.ir = XBValue(mrVal);
+    value.ir = XBValue(refVal);
 
   // Finally, we know we have a BValue.
   auto resultBV = value.ir.getIfBValue();
@@ -1009,9 +1039,12 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     // The client directly filled in an LValue we provided which is great, but
     // that LValue we provided took ownership of the value, so we need to return
     // the result as a borrow, not an owned reference.
-    auto memValue = value.getIfMRValue();
-    assert(memValue && "Must be an MRValue providing result");
-    return MBValue(memValue);
+    if (auto memValue = value.getIfMRValue())
+      return MBValue(memValue);
+
+    auto memValue = value.getIfXRValue();
+    assert(memValue && "Must be an XRValue providing result");
+    return XBValue(memValue);
   }
 
   // We know we have an CRValue/BValue and the destination is some kind of
