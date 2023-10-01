@@ -193,6 +193,12 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
       value = structGER.getContainer();
     } else if (auto refToPointer = value.getDefiningOp<RefToPointerOp>()) {
       value = refToPointer.getRef();
+    } else if (auto ptrToRefCast =
+                   value.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
+      if (ptrToRefCast.getNumOperands() == 1)
+        value = ptrToRefCast.getOperand(0);
+      else
+        break;
     } else {
       break;
     }

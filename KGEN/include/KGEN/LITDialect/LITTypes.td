@@ -158,6 +158,11 @@ def LIT_RefType : LITType<"Ref", "ref"> {
     /// Return the pointer type that corresponds to this reference type,
     /// ignoring the lifetime and the mutability.
     PointerType getAsPointerType();
+
+    /// Given the specified pointer type, return a reference type of the same
+    /// element but with a hacked lifetime.
+    /// TODO(references): Remove. This is just for migration.
+    static RefType getRefForPointerHACK(PointerType type, bool isMut);
   }];
 }
 

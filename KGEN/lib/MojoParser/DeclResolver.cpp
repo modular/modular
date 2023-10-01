@@ -105,8 +105,20 @@ StringAttr ASTDecl::getAnonymousLifetimeFor(StringAttr valueName) {
   ASTDecl *outermostFuncScope = nullptr;
   ASTDecl *scope = this;
   while (scope) {
-    if (isa<LIT::FuncOp, FileModuleOp>(*scope))
+    // If we see a function scope, remember it but see if we are nested in some
+    // other function.
+    if (isa<LIT::FuncOp>(*scope))
       outermostFuncScope = scope;
+
+    // If we found the file module, then we're at the top level, just use it.
+    if (isa<FileModuleOp>(*scope)) {
+      // If we have a function scope, make sure to use it, otherwise we really
+      // are at the top level.
+      if (!outermostFuncScope)
+        outermostFuncScope = scope;
+      break;
+    }
+
     scope = scope->getParentDecl();
   }
   assert(outermostFuncScope && "couldn't find an enclosing function");

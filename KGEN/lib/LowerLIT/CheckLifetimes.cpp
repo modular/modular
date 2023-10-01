@@ -21,7 +21,6 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/Support/SaveAndRestore.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 using namespace KGEN;
@@ -895,7 +894,9 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<StructGEPOp, RefStructGEROp, RefToPointerOp>(op))
+  if (isa<StructGEPOp, RefStructGEROp,
+          // TODO(references): remove these.
+          RefToPointerOp, mlir::UnrealizedConversionCastOp>(op))
     return;
 
   // A store of a whole value is an initialization.
@@ -1433,7 +1434,9 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // This op is handled when used.
-  if (isa<StructGEPOp, RefStructGEROp, RefToPointerOp>(op))
+  if (isa<StructGEPOp, RefStructGEROp,
+          // TODO(references): remove these.
+          RefToPointerOp, mlir::UnrealizedConversionCastOp>(op))
     return;
 
   // If this is a call, investigate each of the operands along with the

@@ -391,6 +391,11 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     if (hasAddress(conv)) {
       if (::isa<PointerType>(type))
         break;
+      // These things must be reference types.  FIXME: Cannot verify this
+      // in a simple way.
+      if (type.getDialect().getNamespace() == "lit")
+        break;
+
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)
              << "' in signature type should be a `!kgen.pointer` but got: "
