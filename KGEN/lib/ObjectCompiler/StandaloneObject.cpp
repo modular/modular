@@ -519,10 +519,16 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
 
       // If we are saving the temp files we don't want to split.
       bool savingTemps = !options.saveTempsPrefix.empty();
+      // HACK HACK HACK
+      // If we are generating PTX we don't want to split.
+      bool generatingPtx =
+          options.targetTriple.find("nvptx") != std::string::npos;
 
       // Split the module into multiple slices and compile each in parallel.
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
-      if (runtime.getWorkQueue()->getParallelismLevel() < 2 || savingTemps) {
+      bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2 ||
+                         savingTemps || generatingPtx;
+      if (noSplitting) {
         cacheResults.push_back(
             lowerLLVMModuleToObject(*llvmModule, op->getLoc()));
       } else {
@@ -532,17 +538,28 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
               lowerLLVMModuleToObject(inputModule, op->getLoc()));
         });
       }
+
       andThenSyncMoving(
           cacheResults, [moduleName = moduleName.str(), op,
                          linksAndUsers = std::move(linksAndUsers),
                          linkMgr = std::move(linkMgr), buf = buf.copy(),
-                         output = output.copy()](
+                         output = output.copy(), generatingPtx](
                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
             // If any of the cache results failed, propagate the error.
-            for (auto &result : values)
+            for (auto &result : values) {
               if (result.isError())
                 return std::move(output).setToError(result.takeDiagnostic());
+            }
             TimeTraceScope<> traceScope("concatenate-object-files");
+
+            if (generatingPtx) {
+              // If we're not splitting just copy directly to the output buffer.
+              assert(values.size() == 1 &&
+                     "should have one result if generating PTX");
+              *buf << values[0].get<BufferRef>()->getBuffer();
+              std::move(output).emplace(buf.copy());
+              return;
+            }
 
             SmallVector<llvm::NewArchiveMember> archiveMembers;
 
@@ -674,9 +691,16 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
           // Set the data layout on the module.
           module->setDataLayout((*machineOr)->createDataLayout());
 
+          // HACK HACK HACK
+          // Some targets like PTX don't support object files so can only emit
+          // assembly.
+          bool emitAssembly =
+              (*machineOr)->getTargetTriple().str().find("nvptx") !=
+              std::string::npos;
+
           // Lower the LLVM to an object file.
           if (failed(compileLLVMToObject(*module, **machineOr, *buf, options,
-                                         runtime))) {
+                                         runtime, emitAssembly))) {
             return std::move(output).setToError(LLCL::getMLIRDiagnostic(
                 "failed to lower LLVM IR to object file", loc));
           }
