@@ -39,8 +39,7 @@ fn test[
     pad_w: StaticIntTuple[2],
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
-](rt: Runtime,):
-
+](rt: Runtime):
     # Skip architectures other than avx512 for now.
     # TODO: tune on other architectures and enable testing.
     @parameter

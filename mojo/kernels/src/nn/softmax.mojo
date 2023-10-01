@@ -246,7 +246,7 @@ fn _softmax_3_pass_step_3[
     accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[buffer_size, type], accum: SIMD[type, 1],):
+](output: Buffer[buffer_size, type], accum: SIMD[type, 1]):
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
     # for i = 0 to N do
