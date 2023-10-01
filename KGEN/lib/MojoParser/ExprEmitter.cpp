@@ -212,7 +212,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
 }
 
 /// If this ValueDest specifies an MLValue (or an XLValue) that will be
-/// returned by getMLValueForResult with the specified type, return it.
+/// returned by getXLValueForResult with the specified type, return it.
 /// Otherwise return null.
 /// TODO(references): switch this to return XLValue instead.
 ///
@@ -369,6 +369,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 /// initialize. This uses and consumes the destination if it matches the type
 /// of the value dest. If the underlying value is a DLValue, attempt to coerce
 /// it to an MLValue if possible.
+/// TODO(references): remove this.
 MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
                                        ExprEmitter &emitter) {
   // Save the operation if it is one so we can query the type of DLValue.
@@ -393,6 +394,45 @@ MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
 
   assert(!lv || lv.getIfMLValue());
   return lv.getIfMLValue();
+}
+
+/// Return an XLValue for this destination of the specified type that we can
+/// initialize. This uses and consumes the destination if it matches the type
+/// of the value dest. If the underlying value is a DLValue, attempt to coerce
+/// it to an MLValue if possible.
+XLValue ValueDest::getXLValueForResult(SMLoc loc, ASTType resultType,
+                                       ExprEmitter &emitter) {
+  // Save the operation if it is one so we can query the type of DLValue.
+  auto *op = dyn_cast<Operation *>(representation);
+
+  LValue lv =
+      getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
+                         /*requireMLValue=*/true, emitter);
+  if (!lv)
+    return {};
+
+  // Only a GlobalDLValue is possible at the moment.
+  if (lv.getIfDLValue()) {
+    // Get an MLValue by taking the address of the global.
+    auto global = cast<GlobalVarDeclOp>(op);
+    lv = MLValue(emitter.builder->create<GlobalVarRefOp>(
+        emitter.translateLocation(loc), global));
+  }
+
+  // Decay MLValue to XLValue on demand.
+  // TODO(references): Remove MLValue.
+  if (auto ptr = lv.getIfMLValue()) {
+    // HACK: force convert to reference.
+    auto destTy = RefType::getRefForPointerHACK(
+        cast<PointerType>(ptr.getType().mlirType), /*mut=*/true);
+    return emitter.builder
+        ->create<mlir::UnrealizedConversionCastOp>(
+            emitter.translateLocation(loc), destTy, ptr)
+        .getResult(0);
+  }
+
+  assert(lv.getIfXLValue());
+  return lv.getIfXLValue();
 }
 
 //===----------------------------------------------------------------------===//
