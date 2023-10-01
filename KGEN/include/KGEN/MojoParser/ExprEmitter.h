@@ -223,6 +223,8 @@ public:
   /// ValueDest so it doesn't complain when emission is done.
   void resetForError() { representation = NullRepresentation(); }
 
+  void dump() const;
+
 private:
   //  This should only be accessed by ExprEmitter::emitResult.
   friend class ExprEmitter;

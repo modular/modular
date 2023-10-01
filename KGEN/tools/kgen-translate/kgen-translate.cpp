@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
         OwningOpRef<ModuleOp> output =
             LIT::importMojoFile(sourceMgr, config, ts);
 
-        if (!parserBytecodeOutput.getValue().empty()) {
+        if (output && !parserBytecodeOutput.getValue().empty()) {
           std::string message;
           auto out =
               mlir::openOutputFile(parserBytecodeOutput.getValue(), &message);
