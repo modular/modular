@@ -56,6 +56,14 @@ PointerType RefType::getAsPointerType() {
   return PointerType::get(getElementType());
 }
 
+/// Given the specified pointer type, return a reference type of the same
+/// element but with a hacked lifetime.
+/// TODO(references): Remove. This is just for migration.
+RefType RefType::getRefForPointerHACK(PointerType type, bool isMut) {
+  return RefType::get(isMut, type.getElementType(),
+                      LifetimeAttr::get(type.getContext()));
+}
+
 /// Print/Parse a parameter value that is known to have `lifetime` type.
 static void printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
   printParamValue(p, value);
