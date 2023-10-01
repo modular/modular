@@ -111,6 +111,15 @@ fn test_runtime_taskgroup():
         print(t0.get() + t1.get())
 
 
+# CHECK-LABEL: test_global_same_runtime
+fn test_global_same_runtime():
+    print("== test_global_same_runtime")
+    let rt = Runtime()
+    let rt2 = Runtime()
+    # CHECK: True
+    print(rt.ptr == rt2.ptr)
+
+
 # CHECK-LABEL: test_runtime_asynctaskgroup
 fn test_runtime_asynctaskgroup():
     print("== test_runtime_asynctaskgroup")
@@ -138,4 +147,5 @@ fn main():
     test_sync_raising_coro()
     test_runtime_task()
     test_runtime_taskgroup()
+    test_global_same_runtime()
     test_runtime_asynctaskgroup()
