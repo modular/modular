@@ -62,7 +62,7 @@ fn run_cuda_mem_ops() raises:
 fn run_vec_add() raises:
     print("== run_vec_add")
 
-    let module = Module((Path(CURRENT_DIR) / "data" / "vec_add.ptx").__str__())
+    let module = Module((Path(CURRENT_DIR) / "vec_add.ptx").__str__())
 
     let func = module.load("vec_add")
 
