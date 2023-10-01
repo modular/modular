@@ -66,7 +66,7 @@ void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
 void OutputChain::markReady() {
   complete();
   // CAUTION: Must copy so chain remains valid.
-  chain.copy().emplace();
+  chain.copy().emplace<Chain>();
 }
 
 void OutputChain::markError(StringRef message) {
@@ -78,7 +78,7 @@ void OutputChain::markError(StringRef message) {
 void OutputChain::emplace() {
   complete();
   // CAUTION: Must copy so chain remains valid.
-  chain.copy().emplace();
+  chain.copy().emplace<Chain>();
 }
 
 void OutputChain::setToError(Error &&error) {

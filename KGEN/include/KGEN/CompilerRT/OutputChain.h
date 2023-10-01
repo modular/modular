@@ -24,9 +24,10 @@ using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 
 /// An OutputChain helps mediate between asynchronous Mojo kernels and the C++
 /// MEF runtime. It is responsible for:
-///  - Holding an AsyncValueRef<Chain> which will be either emplaced or
-///    set to an error when Mojo code invokes the markReady or markError
-///    methods.
+///  - Holding an AnyAsyncValueRef for the out chain. On CPU that will be an
+///    AsyncValueRef<Chain>, and will be either emplaced or set to an error
+///    when Mojo code invokes the markReady or markError methods. One other
+///    devices that may be a device-specific chain.
 ///  - Holding an EncodedLocation which can be used by the markError method.
 ///  - Holding at most one MojoProfilerEntry to be recorded when the markReady
 ///    or markError methods are called.
@@ -44,8 +45,9 @@ using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 /// the profiling entry has been recorded or the additional refs have been
 /// released. By taking responsibility here we guarantee ordering.
 struct OutputChain {
-  /// Chain on which consumers are waiting.
-  AsyncValueRef<Chain> chain;
+  /// Chain on which consumers are waiting. The actual representation
+  /// may depend on the device executing the kernel.
+  AnyAsyncValueRef chain;
   /// Location to use for any errors.
   LLCL::EncodedLocation loc;
   /// The profiler entry for the kernel execution. Begins when the
@@ -80,7 +82,7 @@ struct OutputChain {
   /// Other odd's 'n end's to keep alive also.
   SmallVector<LLCL::GenericUniquePtr> extras;
 
-  OutputChain(AsyncValueRef<Chain> chain, LLCL::EncodedLocation loc)
+  OutputChain(AnyAsyncValueRef chain, LLCL::EncodedLocation loc)
       : chain(std::move(chain)), loc(std::move(loc)) {}
 
   /// No implicit copying.
@@ -139,6 +141,8 @@ struct OutputChain {
   /// Called from the Mojo side.  The chain is not consumed so that we can
   /// always safely await and check for errors on the chain irrespective of
   /// whether the Mojo kernel is asynchronous or synchronous.
+  ///
+  /// For CPU kernels only.
   void markReady();
 
   /// Indicate the Mojo call failed with the given message.
@@ -146,6 +150,8 @@ struct OutputChain {
   /// Called from the Mojo side. The chain is not consumed so that we can
   /// always safely await and check for errors on the chain irrespective of
   /// whether the Mojo kernel is asynchronous or synchronous.
+  ///
+  /// For CPU kernels only.
   void markError(StringRef message);
 
   /// Emplace the chain.
