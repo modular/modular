@@ -26,6 +26,7 @@ from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
+
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
 # dimensions for matmul, skipping the last 2 dimsnions.
 @always_inline
@@ -254,7 +255,7 @@ fn batched_matmul[
     @parameter
     fn null_elementwise_epilogue[
         type: DType, width: Int, rank: Int
-    ](out_coords: StaticIntTuple[rank], out_val: SIMD[type, width],):
+    ](out_coords: StaticIntTuple[rank], out_val: SIMD[type, width]):
         pass
 
     @closure

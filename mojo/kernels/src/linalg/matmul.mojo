@@ -69,7 +69,7 @@ fn elementwise_epilogue_c_tile[
     func: fn[type: DType, width: Int] (
         StaticIntTuple[2], SIMD[type, width]
     ) capturing -> None,
-](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[2, shape_c, type],):
+](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[2, shape_c, type]):
     @always_inline
     @parameter
     fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int):
@@ -997,6 +997,7 @@ struct MatmulInnerLoopBPacked[
         let a_ptr_stride = 4 if (is_tail and not has_avx512f()) else K
 
         let tail_length = self.tile_n_k[1] - kl
+
         # pack A if (tile_n_k_idx[1] - kl) is 1, 2, or 3
         @parameter
         if is_tail and not has_avx512f():
@@ -1328,7 +1329,7 @@ struct TiledMatmul[
         last_n_tile: Bool,
         last_k_tile: Bool,
         m_loop_pack_inner_size: Int,
-    ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int,):
+    ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int):
         """
         Helper function: Pack a subtile of B and iterate through all the rows
             of C.
@@ -1425,7 +1426,7 @@ struct TiledMatmul[
     # Iterate on the N dimension of the gemm space.
     fn _outer_n_loop[
         last_k_tile: Bool
-    ](self, global_offset: GemmShape, sub_tile_k: Int,):
+    ](self, global_offset: GemmShape, sub_tile_k: Int):
         """Iterate on the N dimension of the whole problem space.
 
         Args:
@@ -1542,7 +1543,7 @@ fn pack_matmul_b_shape_func[
     c_type: DType,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](b_input: NDBuffer[2, DimList.create_unknown[2](), b_type],) -> StaticIntTuple[
+](b_input: NDBuffer[2, DimList.create_unknown[2](), b_type]) -> StaticIntTuple[
     2
 ]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
