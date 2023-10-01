@@ -213,8 +213,14 @@ public:
   MLValue getMLValueForResult(SMLoc loc, ASTType resultType,
                               ExprEmitter &emitter);
 
+  /// Return an XLValue for this destination of the specified type that we can
+  /// initialize.  This uses and consumes the destination if it matches the type
+  /// of the value dest.
+  XLValue getXLValueForResult(SMLoc loc, ASTType resultType,
+                              ExprEmitter &emitter);
+
   /// If this ValueDest specifies an MLValue (or an XLValue) that will be
-  /// returned by getMLValueForResult with the specified type, return it.
+  /// returned by getXLValueForResult with the specified type, return it.
   /// Otherwise return null.
   /// TODO(references): switch this to return XLValue instead.
   Value getDefinedXMLValueIfExists(ASTType resultType, ExprEmitter &emitter);

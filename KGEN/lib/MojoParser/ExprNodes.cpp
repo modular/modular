@@ -2319,7 +2319,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   // DLValue.  We handle this by projecting the ValueDest to an MLValue if we
   // can, but otherwise using a scratch buffer if not.
   emitter.builder->setInsertionPoint(ifOp);
-  MLValue destBuffer = dest.getMLValueForResult(getLoc(), resultType, emitter);
+  XLValue destBuffer = dest.getXLValueForResult(getLoc(), resultType, emitter);
 
   emitter.builder = falseBuilder;
   ValueDest falseDest(destBuffer, EC_CondExpr);
@@ -2342,7 +2342,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
   ifOp->erase();
 
-  return emitter.emitCResult(MRValue(destBuffer), this, dest);
+  return emitter.emitCResult(XRValue(destBuffer), this, dest);
 }
 
 /// Emit the x^ expression.
@@ -2621,12 +2621,12 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If we have a memory only type, we have to handle the various issues with
-  // the ValueDest.  It may specify an MLValue to emit into, it may be
+  // the ValueDest.  It may specify an XLValue to emit into, it may be
   // ambiguous (like a call argument) or it may even be something like a
-  // DLValue.  We handle this by projecting the ValueDest to an MLValue if we
+  // DLValue.  We handle this by projecting the ValueDest to an XLValue if we
   // can, but otherwise using a scratch buffer if not.
   emitter.builder->setInsertionPoint(ifOp);
-  MLValue destBuffer = dest.getMLValueForResult(getLoc(), resultType, emitter);
+  XLValue destBuffer = dest.getXLValueForResult(getLoc(), resultType, emitter);
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
   ValueDest falseDest(destBuffer, EC_CondExpr);
@@ -2649,7 +2649,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
   ifOp->erase();
 
-  return emitter.emitCResult(MRValue(destBuffer), this, dest);
+  return emitter.emitCResult(XRValue(destBuffer), this, dest);
 }
 
 /// Emit the comparison expression with operator ops[opIdx] and operands:

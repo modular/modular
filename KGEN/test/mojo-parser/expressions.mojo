@@ -443,14 +443,15 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: [[DBOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%d)
   # CHECK-NEXT: [[DI1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[DBOOL]])
   # CHECK-NEXT: [[IFRESULT:%.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut !MemBoolish
-  # CHECK-NEXT: [[IRPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: hlcf.if [[DI1]] {
+  # CHECK-NEXT:   [[IRPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[IRPTR]], %d)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[TMPMEM:%.*]] = lit.varlet.decl
   # CHECK-NEXT:   [[TMPPTR:%.*]] = lit.ref.to_pointer [[TMPMEM]]
   # CHECK-NEXT:   kgen.call {{.*}}__init__{{.*}}([[TMPPTR]], %b)
+  # CHECK-NEXT:   [[IRPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[IRPTR]], [[TMPPTR]])
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
@@ -1362,22 +1363,27 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: M, i: Int) -
   # Issue (#13379)
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl
-  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: hlcf.if %cond {
+  # CHECK-NEXT:   [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[ANONPTR]], %a)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[ANONPTR]], %b)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
+  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: kgen.call {{.*}}takeMemory{{.*}}([[ANONPTR]])
   takeMemory(a if cond else b)
 
+  # CHECK-NEXT: [[RESREF:%.*]] = builtin.unrealized_conversion_cast %__result__
   # CHECK-NEXT: hlcf.if %cond {
-  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %a)
+  # CHECK-NEXT:   [[RESPTR:%.*]] = lit.ref.to_pointer [[RESREF:%.*]]
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[RESPTR]], %a)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %b)
+  # CHECK-NEXT:   [[RESPTR:%.*]] = lit.ref.to_pointer [[RESREF:%.*]]
+  # CHECK-NEXT:   kgen.call {{.*}}__copyinit__{{.*}}([[RESPTR]], %b)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
