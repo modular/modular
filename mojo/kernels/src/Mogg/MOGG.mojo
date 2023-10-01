@@ -390,7 +390,7 @@ fn to_buffer[
 @always_inline
 fn to_shape[
     rank: Int
-](shape: __mlir_type.`!kgen.pointer<index>`,) -> StaticIntTuple[rank]:
+](shape: __mlir_type.`!kgen.pointer<index>`) -> StaticIntTuple[rank]:
     let shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
 
@@ -828,7 +828,7 @@ fn argmin_wrapped[
 @always_inline
 fn cast[
     type: DType, new_type: DType, simd_width: Int
-](value: SIMD[type, simd_width],) -> SIMD[new_type, simd_width]:
+](value: SIMD[type, simd_width]) -> SIMD[new_type, simd_width]:
     return value.cast[new_type]()
 
 
