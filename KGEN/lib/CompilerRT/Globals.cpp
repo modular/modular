@@ -23,32 +23,32 @@ struct GlobalEntry {
 };
 } // namespace
 
-static llvm::SmallDenseMap<llvm::StringRef, GlobalEntry> *getGlobalTable() {
+static llvm::SmallDenseMap<llvm::StringRef, GlobalEntry> &getGlobalTable() {
   static llvm::SmallDenseMap<llvm::StringRef, GlobalEntry> table{};
-  return &table;
+  return table;
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetGlobalOr(llvm::StringRef name, void *(*initFn)(),
                             void (*destroyFn)(void *)) {
-  auto globalTable = getGlobalTable();
+  auto &globalTable = getGlobalTable();
 
-  auto it = globalTable->find(name);
-  if (it != globalTable->end())
+  auto it = globalTable.find(name);
+  if (it != globalTable.end())
     return it->second.value;
 
   GlobalEntry entry(initFn(), destroyFn);
-  globalTable->insert({name, entry});
+  globalTable.insert({name, entry});
 
   return entry.value;
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_DestroyGlobals() {
-  auto globalTable = getGlobalTable();
-  for (auto entry : *globalTable)
+  auto &globalTable = getGlobalTable();
+  for (auto entry : globalTable)
     entry.second.destroy();
-  globalTable->clear();
+  globalTable.clear();
 }
 
 //===----------------------------------------------------------------------===//
