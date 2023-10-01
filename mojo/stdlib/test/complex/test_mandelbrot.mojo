@@ -15,7 +15,6 @@ from complex import ComplexFloat32, ComplexSIMD
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
-
     alias height = 375
     alias width = 500
 
