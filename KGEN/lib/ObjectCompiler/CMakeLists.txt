@@ -15,6 +15,9 @@ add_modular_library(KGENEmitObject
   KGENVersion
 
   LINK_COMPONENTS
+  AllTargetsAsmParsers
+  AllTargetsCodeGens
+  AllTargetsInfos
   OrcJIT
   JITLink
   MC
