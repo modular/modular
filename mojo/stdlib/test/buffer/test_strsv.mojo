@@ -17,7 +17,7 @@ alias simd_width = 8
 
 fn strsv[
     size: Int
-](L: Buffer[size * size, DType.float32], x: Buffer[size, DType.float32],):
+](L: Buffer[size * size, DType.float32], x: Buffer[size, DType.float32]):
     # assuming size is a multiple of simd_width
     var x_ptr = DTypePointer[DType.float32](x.data.address)
     var L_ptr = DTypePointer[DType.float32](L.data.address)
@@ -84,7 +84,7 @@ fn fill_x[size: Int](x: Buffer[size, DType.float32]):
 
 fn naive_strsv[
     size: Int
-](L: Buffer[size * size, DType.float32], x: Buffer[size, DType.float32],):
+](L: Buffer[size * size, DType.float32], x: Buffer[size, DType.float32]):
     for j in range(size):
         let x_j = x[j]
         for i in range(j + 1, size):

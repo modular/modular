@@ -479,7 +479,7 @@ fn _compute_ndbuffer_offset[
     rank: Int,
     shape: DimList,
     type: DType,
-](buf: NDBuffer[rank, shape, type], idx: StaticIntTuple[rank],) -> Int:
+](buf: NDBuffer[rank, shape, type], idx: StaticIntTuple[rank]) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Parameters:
@@ -502,7 +502,7 @@ fn _compute_ndbuffer_offset[
     rank: Int,
     shape: DimList,
     type: DType,
-](buf: NDBuffer[rank, shape, type], index: StaticTuple[rank, Int],) -> Int:
+](buf: NDBuffer[rank, shape, type], index: StaticTuple[rank, Int]) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Parameters:
@@ -1130,7 +1130,7 @@ struct NDBuffer[
     @always_inline
     fn simd_store[
         width: Int
-    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width],):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1148,7 +1148,7 @@ struct NDBuffer[
     @always_inline
     fn simd_store[
         width: Int
-    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width],):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1170,7 +1170,7 @@ struct NDBuffer[
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
-    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width],):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1189,7 +1189,7 @@ struct NDBuffer[
     @always_inline
     fn aligned_simd_store[
         width: Int, alignment: Int
-    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width],):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Constraints:
@@ -1212,7 +1212,7 @@ struct NDBuffer[
     @always_inline
     fn simd_nt_store[
         width: Int
-    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width],):
+    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
         """Stores a simd value using non-temporal store.
 
         Constraints:
@@ -1232,7 +1232,7 @@ struct NDBuffer[
     @always_inline
     fn simd_nt_store[
         width: Int
-    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width],):
+    ](self, idx: StaticTuple[rank, Int], val: SIMD[type, width]):
         """Stores a simd value using non-temporal store.
 
         Constraints:
