@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo -debug-level full -I %S/.. %s | FileCheck %s
 
 from GatherScatter import scatter_elements
 from tensor import Tensor, TensorShape
