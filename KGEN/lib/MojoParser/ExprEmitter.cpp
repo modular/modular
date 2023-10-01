@@ -239,7 +239,7 @@ Value ValueDest::getDefinedXMLValueIfExists(ASTType resultType,
 
     // If emitting into an XLValue, convert the location to a pointer.
     if (Value refValue = lValue.getIfXLValue()) {
-      if (lValue.getRValueType().isEqualCanon(resultType) && emitter.builder)
+      if (lValue.getRValueType().isEqualCanon(resultType))
         return refValue;
     }
   }
@@ -313,18 +313,14 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
         lValue.getRValueType().isEqualCanon(resultType)) {
       // If the client requires a stored LValue and we don't have one, don't
       // consume it.
+      // TODO(references): remove this.
       if (!requireMLValue || lValue.getIfMLValue()) {
         representation = LValueBufferTaken(); // Buffer taken!
         return lValue;
       }
-
-      // If we have an XLValue and required an MLValue, then convert.
-      if (Value refValue = lValue.getIfXLValue()) {
-        if (emitter.builder) {
-          representation = LValueBufferTaken(); // Buffer taken!
-          return MLValue(emitter.builder->create<RefToPointerOp>(
-              emitter.translateLocation(loc), refValue));
-        }
+      if (!requireMLValue || lValue.getIfXLValue()) {
+        representation = LValueBufferTaken(); // Buffer taken!
+        return lValue;
       }
     }
 
