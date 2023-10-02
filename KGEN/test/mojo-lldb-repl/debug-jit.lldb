@@ -4,12 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %lldb -b -o 'b test.mojo:9' -o run -- %mojo run --debug-level full -O0 '%S/Inputs/test.mojo' | FileCheck %s
+# RUN: %lldb -b -o 'b test.mojo:9' -o run -- mojo run %mojo_args --debug-level full -O0 '%S/Inputs/test.mojo' | FileCheck %s
 
 # COM: Here we test debugging of a source file passed by relative path.
 # RUN: mkdir -p debug-jit/Inputs
 # RUN: cp '%S/Inputs/test.mojo' debug-jit/Inputs/test.mojo
-# RUN: %lldb -b -o 'b test.mojo:9' -o run -- %mojo run --debug-level full -O0 'debug-jit/Inputs/test.mojo' | FileCheck %s
+# RUN: %lldb -b -o 'b test.mojo:9' -o run -- mojo run %mojo_args --debug-level full -O0 'debug-jit/Inputs/test.mojo' | FileCheck %s
 
 # CHECK-NOT: hello
 # CHECK: Process {{.*}} stopped
