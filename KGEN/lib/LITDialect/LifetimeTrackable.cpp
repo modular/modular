@@ -117,9 +117,23 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   switch (signature.getInputConvention(argIdx)) {
   case ValueInputConvention::OwnedInReg: // This gets an LValue slot.
   case ValueInputConvention::BorrowedInReg:
-  case ValueInputConvention::BorrowedInMem:
     // These are immutable so don't need to be tracked.
     return;
+
+  case ValueInputConvention::BorrowedInMem:
+    // TODO(#21861): support variadic arguments
+    // This is immutable and so can't be tracked, but also cannot be analyzed
+    // for aliases without lifetimes.
+    if (isa<VariadicType>(bbArg.getType()))
+      return;
+
+    // Borrowed memory objects don't need lifetime tracking given that they are
+    // immutable, but we do want to reason about their aliasing properties for
+    // return slot optimization etc.
+    isIndirect = true;
+    startsUninit = false;
+    endsUninit = false;
+    break;
 
   case ValueInputConvention::OwnedInMem:
     // TODO(#21861): support variadic arguments

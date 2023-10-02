@@ -1576,3 +1576,22 @@ fn useBigNumber() -> Int:
   # CHECK: [[DECL:%.*]] lit.letreg.decl "minInt" = [[VAR]] : !Int
   let minInt = -(2<<62)
   return notSoBig
+
+##===----------------------------------------------------------------------===##
+# Test return slot optimization
+##===----------------------------------------------------------------------===##
+
+struct Unmovable:
+  fn __init__(inout self): pass
+
+# NOTE: Don't remove this argument, this was defeating return slot opzn.
+fn getUnmovable(a: Unmovable) -> Unmovable:
+  return Unmovable()
+
+# This can only be codegen'd directly into x.
+# CHECK-LABEL: lit.func @"testUnmovable
+fn testUnmovable(a: Unmovable):
+   # CHECK-NEXT: %x = lit.varlet.decl "x"
+   # CHECK-NEXT: %0 = lit.ref.to_pointer %x
+   # CHECK-NEXT: kgen.call {{.*}}(%0, %a)
+   var x : Unmovable = getUnmovable(a)
