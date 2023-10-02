@@ -16,6 +16,7 @@
 #include "KGEN/MojoJupyter/MatplotlibInitialization.h"
 
 #include "KGEN/MojoTooling/CodeComplete.h"
+#include "Support/Configuration.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/STLExtras.h"
@@ -71,6 +72,16 @@ enum ExecutionFinishedState : int {
   kFinishedSuccessfully = 1,
   kFinishedError = 2,
 };
+
+//===----------------------------------------------------------------------===//
+// Symbol Visibility
+//===----------------------------------------------------------------------===//
+
+#if (defined(_WIN32) || defined(__CYGWIN__))
+#define EXPORT extern "C" __declspec(dllexport)
+#else
+#define EXPORT extern "C" __attribute__((visibility("default")))
+#endif
 
 //===----------------------------------------------------------------------===//
 // MojoExpressionEvaluationOptions
@@ -253,37 +264,36 @@ private:
 // EntryPoint API
 //===----------------------------------------------------------------------===//
 
-MODULAR_EXPORT MojoKernel *initMojoKernel(OutputFn outputFn,
-                                          const char *mojoReplExe,
-                                          const char *lldbInitFile) {
+EXPORT MojoKernel *initMojoKernel(OutputFn outputFn, const char *mojoReplExe,
+                                  const char *lldbInitFile) {
   std::unique_ptr<MojoKernel> kernel = std::make_unique<MojoKernel>(outputFn);
   if (failed(kernel->initialize(mojoReplExe, lldbInitFile)))
     return nullptr;
   return kernel.release();
 }
 
-MODULAR_EXPORT int startMojoExecution(MojoKernel *kernel, const char *cellId,
-                                      const char *code, int storeHistory) {
+EXPORT int startMojoExecution(MojoKernel *kernel, const char *cellId,
+                              const char *code, int storeHistory) {
   if (failed(kernel->startExecution(cellId, code, storeHistory)))
     return ExecutionFinishedState::kFinishedError;
   return ExecutionFinishedState::kNotFinished;
 }
 
-MODULAR_EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
+EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
   return kernel->checkExecutionFinished();
 }
 
-MODULAR_EXPORT void interruptMojoExecution(MojoKernel *kernel) {
+EXPORT void interruptMojoExecution(MojoKernel *kernel) {
   kernel->interruptExecution();
 }
 
-MODULAR_EXPORT void checkMojoCodeComplete(MojoKernel *kernel, const char *code,
-                                          int completionPos,
-                                          CompletionFn completionFn) {
+EXPORT void checkMojoCodeComplete(MojoKernel *kernel, const char *code,
+                                  int completionPos,
+                                  CompletionFn completionFn) {
   kernel->codeComplete(code, completionPos, completionFn);
 }
 
-MODULAR_EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
+EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
 
 //===----------------------------------------------------------------------===//
 // Initialization
@@ -362,17 +372,13 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe,
   // host.
   removeUnwantedCommands(*debugger);
 
-  // Initialize the Mojo LLDB plugin. We expect the plugin to be adjacent to the
-  // MojoJupyter library.
-  FileSpec mojoPlugin(Host::GetModuleFileSpecForHostAddress(
-      reinterpret_cast<void *>(initMojoKernel)));
-  if (!mojoPlugin)
-    return reportKernelError("unable to resolve libMojoJupyter location");
-
-  StringRef libExt = mojoPlugin.GetFilename().GetStringRef().split('.').second;
-  mojoPlugin.SetFilename(("libMojoLLDB." + libExt).str());
+  // Initialize the Mojo LLDB plugin.
+  ErrorOr<Config> config = Config::open();
+  if (failed(config))
+    return reportKernelError(config.getError());
+  FileSpec mojoPlugin(config->getValue("mojo.lldb_plugin_path").str());
   if (!FileSystem::Instance().Exists(mojoPlugin))
-    return reportKernelError("unable to locate libMojoLLDB plugin");
+    return reportKernelError("unable to locate Mojo LLDB plugin");
 
   CommandReturnObject result(/*colors=*/false);
   Status err;

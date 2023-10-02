@@ -9,6 +9,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "lldb/Utility/Broadcaster.h"
 
 namespace M::KGEN::Mojo {
@@ -86,13 +87,14 @@ public:
   ///  - Send eBroadcastUserMessage to `sendUserOutput`
   ///  - Treat eDebugMessage same as eIRMessage
   ///  - Send eErrorMessage to `reportMessage`
-  static void
+  MODULAR_VISIBILITY_EXPORT static void
   handleEvent(const lldb::EventSP &event,
               function_ref<void(StringRef, StringRef)> reportMessage,
               function_ref<void(StringRef)> sendUserOutput);
 
   /// Get or create a unique expression logger for the given target.
-  static MojoExpressionLogger &getLoggerForTarget(lldb_private::Target &target);
+  MODULAR_VISIBILITY_EXPORT static MojoExpressionLogger &
+  getLoggerForTarget(lldb_private::Target &target);
 };
 } // namespace M::KGEN::Mojo
 

@@ -18,6 +18,13 @@ add_modular_tool(mojo-repl-entry-point
 # REPL in LLDB.
 if(CMAKE_SYSTEM_NAME STREQUAL Windows)
   set_target_properties(mojo-repl-entry-point PROPERTIES WIN32_EXECUTABLE TRUE)
+
+  set_property(TARGET mojo-repl-entry-point
+    PROPERTY WINDOWS_EXPORT_ALL_SYMBOLS ON
+  )
+  target_compile_definitions(mojo-repl-entry-point
+    PRIVATE MODULAR_BUILDING_LIBRARY
+  )
 endif()
 
 # This target is supposed to be located next to libMojoLLDB.

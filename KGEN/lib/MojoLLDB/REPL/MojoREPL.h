@@ -37,8 +37,9 @@ public:
   static llvm::StringRef getPluginNameStatic() { return "Mojo REPL"; }
 
   /// Launch the entry point process that is used to JIT Mojo expressions.
-  static llvm::Error launchEntryPointProcess(lldb_private::Target &target,
-                                             lldb_private::Debugger &debugger);
+  MODULAR_VISIBILITY_EXPORT static llvm::Error
+  launchEntryPointProcess(lldb_private::Target &target,
+                          lldb_private::Debugger &debugger);
 
   /// Return the common help message to show in commands like `:help` or `:mojo
   /// help`.
@@ -49,7 +50,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Perform a REPL code completion within the given type system.
-  static std::vector<CodeCompletionResult>
+  MODULAR_VISIBILITY_EXPORT static std::vector<CodeCompletionResult>
   handleREPLCodeComplete(lldb_private::Target &target, StringRef code,
                          uint64_t completionPos);
 
