@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef PARSERBASE_H
-#define PARSERBASE_H
+#ifndef KGEN_MOJOPARSER_PARSERBASE_H
+#define KGEN_MOJOPARSER_PARSERBASE_H
 
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -252,4 +252,4 @@ public:
 
 } // namespace M::KGEN::LIT
 
-#endif // PARSERBASE_H
+#endif // KGEN_MOJOPARSER_PARSERBASE_H

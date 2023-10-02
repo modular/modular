@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef EXPREMITTER_H
-#define EXPREMITTER_H
+#ifndef KGEN_MOJOPARSER_EXPREMITTER_H
+#define KGEN_MOJOPARSER_EXPREMITTER_H
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ExprNode.h"
@@ -532,4 +532,4 @@ public:
 
 } // namespace M::KGEN::LIT
 
-#endif // EXPREMITTER_H
+#endif // KGEN_MOJOPARSER_EXPREMITTER_H

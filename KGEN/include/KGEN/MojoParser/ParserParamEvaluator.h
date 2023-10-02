@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef PARSER_PARAM_EVALUATOR_H
-#define PARSER_PARAM_EVALUATOR_H
+#ifndef KGEN_MOJOPARSER_PARSERPARAMEVALUATOR_H
+#define KGEN_MOJOPARSER_PARSERPARAMEVALUATOR_H
 
 #include "KGEN/Interpreter/InterpreterInterface.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -45,4 +45,4 @@ private:
 
 } // namespace M::KGEN::LIT
 
-#endif // PARSER_PARAM_EVALUATOR_H
+#endif // KGEN_MOJOPARSER_PARSERPARAMEVALUATOR_H

@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SHARED_STATE_H
-#define SHARED_STATE_H
+#ifndef KGEN_MOJOPARSER_SHAREDSTATE_H
+#define KGEN_MOJOPARSER_SHAREDSTATE_H
 
 #include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
@@ -538,4 +538,4 @@ public:
 };
 } // namespace M::KGEN::LIT
 
-#endif // SHARED_STATE_H
+#endif // KGEN_MOJOPARSER_SHAREDSTATE_H

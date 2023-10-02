@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef DECLRESOLVER_H
-#define DECLRESOLVER_H
+#ifndef KGEN_MOJOPARSER_DECLRESOLVER_H
+#define KGEN_MOJOPARSER_DECLRESOLVER_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -395,4 +395,4 @@ struct ParsedArgument {
 
 } // namespace M::KGEN::LIT
 
-#endif // DECLRESOLVER_H
+#endif // KGEN_MOJOPARSER_DECLRESOLVER_H

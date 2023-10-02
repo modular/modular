@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef CLOSUREEMITTER_H
-#define CLOSUREEMITTER_H
+#ifndef KGEN_MOJOPARSER_CLOSUREEMITTER_H
+#define KGEN_MOJOPARSER_CLOSUREEMITTER_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -71,4 +71,4 @@ private:
 
 } // namespace M::KGEN::LIT
 
-#endif // CLOSUREEMITTER_H
+#endif // KGEN_MOJOPARSER_CLOSUREEMITTER_H
