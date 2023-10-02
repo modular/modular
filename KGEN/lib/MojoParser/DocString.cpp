@@ -492,8 +492,8 @@ private:
 
     // Grab the parameters to the function.
     llvm::MapVector<StringRef, const char *> seenParameters;
-    for (ParamDeclAttr decl : funcOp.getInputParams())
-      seenParameters.insert({demangleParameterName(decl.getName()), nullptr});
+    for (StringAttr declName : funcOp.getSignature().getParamNames())
+      seenParameters.insert({declName, nullptr});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, const char *> sections = {
