@@ -15,10 +15,7 @@
 #include "llvm/Support/Program.h"
 #include <filesystem>
 
-#if defined(_WIN32)
-#include <process.h>
-#include <windows.h>
-#else
+#if !defined(_WIN32)
 #include <unistd.h>
 #endif
 
@@ -85,7 +82,7 @@ int M::invokeLLDB(const State &state, llvm::opt::InputArgList &args,
     execvArgs[i] = const_cast<char *>(lldbArgs[i].data());
   execvArgs[size] = nullptr;
 #if defined(_WIN32)
-  return _execv(lldb.get().c_str(), execvArgs);
+  return llvm::sys::ExecuteAndWait(lldb.get(), lldbArgs);
 #else
   return execv(lldb.get().c_str(), execvArgs);
 #endif
