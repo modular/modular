@@ -53,12 +53,12 @@ fn test_sync_raising_coro():
         print(also_might_throw(20)())
     except e:
         # CHECK-NEXT: doh!
-        print(e.message())
+        print(e)
     try:
         print(also_might_throw(25)())
     except e:
         # CHECK-NEXT: oops
-        print(e.message())
+        print(e)
     try:
         # CHECK-NEXT: 102
         print(also_might_throw(1)())
