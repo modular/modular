@@ -140,16 +140,30 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
       // Add the block argument, get it as an RValue since it is owned.
       BlockArgument arg = body->getArgument(idx);
       CValue argVal;
-      if (argConventions[idx] == ValueInputConvention::OwnedInReg) {
+      switch (argConventions[idx]) {
+      default:
+        llvm_unreachable("unknown convention");
+      case ValueInputConvention::OwnedInReg:
+        argVal = SRValue(arg);
+        break;
+      case ValueInputConvention::BorrowedInReg:
+        argVal = SBValue(arg);
+        break;
+      case ValueInputConvention::OwnedInMem:
+        // FIXME(references): This won't be right for first-class references.
+        if (isa<RefType>(arg.getType()))
+          argVal = XRValue(arg);
+        else
+          argVal = MRValue(arg);
+        break;
+      case ValueInputConvention::BorrowedInMem:
         // FIXME(references): This won't be right for first-class references.
         if (isa<RefType>(arg.getType()))
           argVal = XBValue(arg);
         else
-          argVal = SRValue(arg);
-      } else if (argConventions[idx] == ValueInputConvention::BorrowedInReg)
-        argVal = SBValue(arg);
-      else
-        argVal = MRValue(arg);
+          argVal = MBValue(arg);
+        break;
+      }
 
       // Project self to the right field and store the RValue.
       auto fieldPtr = builder.create<StructGEPOp>(selfArg, field);

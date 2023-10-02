@@ -305,7 +305,7 @@ struct MemType:
 # CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index : <!escaping>
 
 # Copy source (stack) into target (heap)
-# CHECK-NEXT:  %[[V1:.*]] = kgen.call {{.*}}__moveinit__{{.*}}(%[[V0]], %impl)
+# CHECK-NEXT:  %[[V1:.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%[[V0]], %impl)
 
 # Store heap pointer in ClosureWrapper field
 # CHECK-NEXT:  %[[V2:.*]] = lit.struct.gep %self[field0]
@@ -507,10 +507,7 @@ struct MemType:
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%__result__: !kgen.pointer<!MemType> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %y: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!MemType>
-# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl "__call_result_tmp__" var synth : !lit.ref<mut !MemType,
-# CHECK-NEXT: %1 = lit.ref.to_pointer %__call_result_tmp__
-# CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%1, %[[W0]], %y)
-# CHECK-NEXT: %[[W3:.*]] = kgen.call @{{.*}}__moveinit__{{.*}}(%__result__, %1)
+# CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%__result__, %[[W0]], %y)
 # CHECK-NEXT: %[[W4:.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %[[W4]] : !kgen.none
 # CHECK-NEXT: lit.end_func

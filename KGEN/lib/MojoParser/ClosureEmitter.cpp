@@ -634,7 +634,11 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   // Copy the contents of the injected impl into the heap memory.
   SymbolConstantAttr copySym;
-  if (closureImpl.getMoveInit().has_value()) {
+  // FIXME: This cannot use move initializer to take data from a borrowed
+  // argument.  Should this always use copyinit or should this check to see if
+  // the argument is borrowed vs owned?
+  // https://github.com/modularml/modular/issues/22471
+  if (0 && closureImpl.getMoveInit().has_value()) {
     copySym = cast<SymbolConstantAttr>(closureImpl.getMoveInit().value());
   } else {
     assert(closureImpl.getCopyInit().has_value() &&
