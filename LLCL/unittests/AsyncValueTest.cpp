@@ -40,6 +40,26 @@ INSTANTIATE_TEST_SUITE_P(ManyRuntimes, AsyncValueTest,
                          testing::Values(kSingleThread, kThreadPool));
 
 //===----------------------------------------------------------------------===//
+// Async emplace
+//===----------------------------------------------------------------------===//
+
+struct Foo {
+  int v = 0;
+
+  Foo(int v) : v(v) {}
+  Foo(Foo &&that) { std::swap(v, that.v); }
+};
+
+TEST_P(AsyncValueTest, EmplaceWithMove) {
+  auto runtime = createRuntime();
+  Foo foo(42);
+  auto ref = AsyncValueRef<Foo>::allocate(*runtime);
+  ref.copy().emplace(std::move(foo));
+  EXPECT_EQ(foo.v, 0);
+  EXPECT_EQ(ref->v, 42);
+}
+
+//===----------------------------------------------------------------------===//
 // Idiomatic async producer/consumer
 //===----------------------------------------------------------------------===//
 

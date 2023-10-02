@@ -6,9 +6,9 @@
 
 set(SOURCES
   Globals.cpp
-  Initialize.cpp
-  InitIntelAMX.cpp
   IO.cpp
+  InitIntelAMX.cpp
+  Initialize.cpp
   LLCL.cpp
   Memory.cpp
   OutputChain.cpp
@@ -16,17 +16,19 @@ set(SOURCES
   Random.cpp
   System.cpp
   Tracing.cpp
-  )
+)
 
 # A statically built CompilerRT library.
 add_modular_library(KGENCompilerRT
   ${SOURCES}
 
   LINK_LIBS PUBLIC
+  CUDASupport
+  LLCLRuntime
+  MProfiling
   MSupport
   MThreading
-  MProfiling
-  LLCLRuntime)
+)
 
 target_compile_definitions(KGENCompilerRT PRIVATE MODULAR_BUILDING_COMPILERRT)
 
@@ -35,12 +37,14 @@ add_modular_library(KGENCompilerRTShared SHARED
   ${SOURCES}
 
   LINK_LIBS PRIVATE
-  MSupport
-  MThreading
-  MProfiling
-  MSupportGlobals
+  CUDASupport
   LLCLRuntime
-  LLCLRuntimeGlobals)
+  LLCLRuntimeGlobals
+  MProfiling
+  MSupport
+  MSupportGlobals
+  MThreading
+)
 
 target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILERRT)
 

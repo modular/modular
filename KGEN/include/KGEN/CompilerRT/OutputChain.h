@@ -17,22 +17,40 @@ namespace M::KGEN {
 
 /// Type of profiling entries for Mojo trace events.
 ///
-/// Note that the Mojo tracing code does it's own filtering based on the
+/// Note that the Mojo tracing code does its own filtering based on the
 /// kMojo level in MODULAR_LLCL_MAX_PROFILING_LEVEL. However, the level must
 /// be at least 1 for any such events to be captured.
 using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 
-/// An OutputChain helps mediate between asynchronous Mojo kernels and the C++
-/// MEF runtime. It is responsible for:
-///  - Holding an AnyAsyncValueRef for the out chain. On CPU that will be an
-///    AsyncValueRef<Chain>, and will be either emplaced or set to an error
-///    when Mojo code invokes the markReady or markError methods. One other
-///    devices that may be a device-specific chain.
-///  - Holding an EncodedLocation which can be used by the markError method.
-///  - Holding at most one MojoProfilerEntry to be recorded when the markReady
+/// An OutputChain represents the context for a call from the C++ runtime into
+/// a Mojo entry point, aka kernel. The kernel may be fully synchronous, or
+/// may launch sub-tasks or other asynchronous work and return.
+///
+/// TODO: Rename to MojoCallContext.
+///
+/// It holds:
+///  - An AnyAsyncValueRef 'chain' which the Mojo kernel can use to indicate
+///    when the kernel has finished or exited with an error.
+///     - For synchronous pure-CPU kernels, the chain is the usual
+///       AsyncValueRef<Chain>, which must be completed by markReady or
+///       markError before return.
+///     - For asynchronous pure-CPU kernels, the chain is again an
+///       AsyncValueRef<Chain>, and the kernel may move the chain, launch
+///       sub-tasks, and return. The moved chain must then be completed by
+///       markReady or markError after all sub-tasks have completed.
+///     - For CPU kernels which launch non-CPU work (such as a CUDA kernel),
+///       the chain may be a device-type specific AsyncValue. The CPU portion
+///       of the kernel may use markError to signal a launch error before
+///       returning. Otherwise, the chain is completed by the underlying
+///       launch machinery. Mojo kernels may access device-specific properties
+///       of the chain (such as a CUDA stream representing the kernel's GPU
+///       computation).
+///  - An EncodedLocation, which can be used by the markError method.
+///  - An optional MojoProfilerEntry to be recorded when the markReady
 ///    or markError methods are called.
-///  - Holding any number of AnyAsyncValueRefs to keep buffers or other
-///    AsyncValues alive until markReady or markError methods are called.
+///  - Any number of AnyAsyncValueRefs and GenericUniquePtrs to keep C++
+///    runtime objects alive until the markReady or markError methods are
+///    called.
 ///
 /// The Mojo OutputChainPtr struct points to heap-allocated instances of this
 /// class.
@@ -46,20 +64,20 @@ using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 /// released. By taking responsibility here we guarantee ordering.
 struct OutputChain {
   /// Chain on which consumers are waiting. The actual representation
-  /// may depend on the device executing the kernel.
+  /// may depend on the device executing the 'inner' kernel, if any.
   AnyAsyncValueRef chain;
   /// Location to use for any errors.
   LLCL::EncodedLocation loc;
   /// The profiler entry for the kernel execution. Begins when the
   /// kernel is called, and ends when either the kernel calls markReady()/
-  /// markError(), or the kernel returns to the MEF executor.
+  /// markError(), or the kernel returns to the C++ runtime.
   ///
   /// For synchronous kernels, this profiler entry will capture the true
   /// work of the kernel. The kernel will not have launched any sub-tasks.
   ///
   /// For asynchronous kernels, this profiler entry will live only while the
   /// kernel establishes its sub-tasks, and will be recorded when the kernel
-  /// returns to MEF.
+  /// returns to the C++ runtime.
   MojoProfilerEntry profilerEntry;
   /// The 'prototype' profiler entry to be used when the Mojo kernel calls
   /// executeAsTask. Each task will append '.task' to the profile name,
@@ -122,13 +140,13 @@ struct OutputChain {
   /// These references will keep their referenced AsyncValues alive until
   /// the OutputChain is completed.
   ///
-  /// Called from the MEF side.
+  /// Called from the C++ runtime.
   void transfer(LLCL::AnyAsyncValueRef argRef);
   void transfer(SmallVector<LLCL::AnyAsyncValueRef> argRefs);
 
   /// Similarly for extras.
   ///
-  /// Called from the MEF side.
+  /// Called from the C++ runtime.
   void transfer(LLCL::GenericUniquePtr extra);
 
   /// Adds tracing entry with name and detail.
@@ -156,7 +174,7 @@ struct OutputChain {
 
   /// Emplace the chain.
   ///
-  /// Called from the MEF side when there's nothing to be done by
+  /// Called from the C++ runtime when there's nothing to be done by
   /// a Mojo kernel. The chain is not consumed so that we can
   /// always safely await and check for errors on the chain irrespective of
   /// whether the Mojo kernel is asynchronous or synchronous.
@@ -164,7 +182,7 @@ struct OutputChain {
 
   /// Set the chain to the given error.
   ///
-  /// Called from the MEF side when an error is detected before entering
+  /// Called from the C++ runtime when an error is detected before entering
   /// the Mojo kernel. The chain is not consumed so that we can
   /// always safely await and check for errors on the chain irrespective of
   /// whether the Mojo kernel is asynchronous or synchronous.
@@ -172,8 +190,8 @@ struct OutputChain {
 
   /// Record any profiling entry if it has not been recorded already.
   ///
-  /// Called from the MEF side when control returns from a Mojo kernel. If the
-  /// kernel is asynchronous then it's launched sub-tasks will continue, but
+  /// Called from the C++ runtime when control returns from a Mojo kernel. If
+  /// the kernel is asynchronous then it's launched sub-tasks will continue, but
   /// we'll stop the profiling entry now to avoid confusing traces. If the
   /// kernel is synchronous then hopefully it's profiling entry was already
   /// stopped, and this call is a no-op.
@@ -189,6 +207,11 @@ struct OutputChain {
   /// or markError() to signal their completion. Only significant if build
   /// has enabled task overhang detection.
   void taskIsDone();
+
+  /// For kernel calls using cuda.kernel.execute.via_cpu only: Returns the
+  /// CUDA CUstream handle being used to synchronize execution of the launched
+  /// CUDA kernel. We'll use a void* to avoid including any CUDA headers.
+  void *getCUDAStream() const;
 
 private:
   /// Cleanup all resource held by the OutputChain in preparation for emplacing
