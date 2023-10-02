@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, exp, identity, log, min, mul, reciprocal, sub
-from math.limit import neginf
+from math import div_ceil, exp, identity, log, min, max, mul, reciprocal, sub
+from math.limit import neginf, min_or_neginf
 
 from algorithm import async_parallelize, vectorize_unroll
-from algorithm.reduction import max
+from algorithm.reduction import _reduce_generator
+from algorithm.reduction import _get_nd_indices_from_flat_index
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OutputChainPtr
 from runtime.tracing import TraceLevel
@@ -195,17 +196,16 @@ fn _softmax_3_pass_step_2[
     unroll_factor: Int,
     buffer_size: Dim,
     type: DType,
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
+        type, _simd_width
+    ],
     pre_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
     post_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
         type, width
     ],
-](
-    output: Buffer[buffer_size, type],
-    input: Buffer[buffer_size, type],
-    max_val: SIMD[type, 1],
-) -> SIMD[type, 1]:
+](output: Buffer[buffer_size, type], max_val: SIMD[type, 1],) -> SIMD[type, 1]:
     # STEP 2: compute for each batch
     # for i = 0 to N do
     #   Output[i] = pre_update_func(Input[i] - max_val)
@@ -219,9 +219,8 @@ fn _softmax_3_pass_step_2[
     @always_inline
     @parameter
     fn step_2[simd_width: Int](idx: Int):
-        var elem = input.simd_load[simd_width](idx) - SIMD[
-            type, simd_width
-        ].splat(max_val)
+        let vin = input_fn_1d[simd_width](idx)
+        var elem = vin - SIMD[type, simd_width].splat(max_val)
 
         elem = pre_update_func[type, simd_width](elem)
         output.simd_store[simd_width](idx, elem)
@@ -269,6 +268,9 @@ fn _softmax_3_pass_base[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
+        type, _simd_width
+    ],
     step2_pre_update_func: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) -> SIMD[type, width],
@@ -281,7 +283,7 @@ fn _softmax_3_pass_base[
     step3_accum_apply_func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) -> SIMD[type, width],
-](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
+](output: Buffer[buffer_size, type], out_chain: OutputChainPtr):
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
@@ -289,6 +291,7 @@ fn _softmax_3_pass_base[
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
         type: The type of the input and output buffers.
+        input_fn_1d: The elementwise input lambda.
         step2_pre_update_func: Pre update function.
         step2_post_update_func: Post update function.
         step3_accum_proc_func: Pre accumulation function.
@@ -297,9 +300,46 @@ fn _softmax_3_pass_base[
     Args:
         output: The output buffer in which to store the softmax values.
         input: The input buffer used to compute the softmax.
+        out_chain: The output-chain pointer.
     """
-    # STEP 1
-    let max_val = max(input)
+    # STEP 1 - Calculate max
+    # Allocate buffer for max_val
+    let max_buff = Buffer[1, type].stack_allocation()
+
+    # Use _reduce_generator to fuse input lambda with max-reduction
+    # Reduce function
+    @always_inline
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return max(v1, v2)
+
+    # Input function
+    # Translate given input lambda from 1d to Nd because _reduce_generator
+    # needs Nd.
+    @parameter
+    @always_inline
+    fn input_fn[
+        _type: DType, _width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, _width]:
+        constrained[_rank == 1]()
+        return rebind[SIMD[_type, _width]](input_fn_1d[_width](coords[0]))
+
+    # Output function
+    @parameter
+    @always_inline
+    fn output_fn[
+        _type: DType, _width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank], val: SIMD[_type, _width]):
+        constrained[_rank == 1]()
+        max_buff[0] = val.reduce_max().cast[type]()
+
+    # Generate fused input-reduction
+    _reduce_generator[
+        type, 1, simd_width, True, input_fn, output_fn, reduce_impl
+    ](StaticIntTuple[1](output.__len__()), min_or_neginf[type](), 0, out_chain)
+
+    let max_val = max_buff[0]
 
     # STEP 2
     alias unroll_factor = 8  # TODO: search
@@ -308,9 +348,10 @@ fn _softmax_3_pass_base[
         unroll_factor,
         buffer_size,
         type,
+        input_fn_1d,
         step2_pre_update_func,
         step2_post_update_func,
-    ](output, input, max_val)
+    ](output, max_val)
 
     # STEP 3
     _softmax_3_pass_step_3[
@@ -327,7 +368,10 @@ fn softmax_3_pass[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
+        type, _simd_width
+    ],
+](output: Buffer[buffer_size, type], out_chain: OutputChainPtr):
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -353,14 +397,23 @@ fn softmax_3_pass[
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
         type: The type of the input and output buffers.
+        input_fn_1d: The elementwise input lambda.
 
     Args:
         output: The output buffer in which to store the softmax values.
         input: The input buffer used to compute the softmax.
+        out_chain: The output-chain pointer.
     """
     _softmax_3_pass_base[
-        simd_width, buffer_size, type, exp, identity, reciprocal, mul
-    ](output, input)
+        simd_width,
+        buffer_size,
+        type,
+        input_fn_1d,
+        exp,
+        identity,
+        reciprocal,
+        mul,
+    ](output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -372,7 +425,10 @@ fn logsoftmax[
     simd_width: Int,
     buffer_size: Dim,
     type: DType,
-](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
+    input_fn_1d: fn[_simd_width: Int] (Int) capturing -> SIMD[
+        type, _simd_width
+    ],
+](output: Buffer[buffer_size, type], out_chain: OutputChainPtr):
     """Performs an unbatched logsoftmax on an input tensor using the three-pass
     algorithm.
 
@@ -398,14 +454,76 @@ fn logsoftmax[
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
         type: The type of the input and output buffers.
+        input_fn_1d: The elementwise input lambda.
 
     Args:
         output: The output buffer in which to store the softmax values.
         input: The input buffer used to compute the softmax.
+        out_chain: The output-chain pointer.
     """
     _softmax_3_pass_base[
-        simd_width, buffer_size, type, identity, exp, log, sub
-    ](output, input)
+        simd_width, buffer_size, type, input_fn_1d, identity, exp, log, sub
+    ](output, out_chain)
+
+
+fn logsoftmax[
+    type: DType,
+    simd_width: Int,
+    rank: Int,
+    static_shape: DimList,
+    input_fn: fn[_simd_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[type, _simd_width],
+](
+    shape: StaticIntTuple[rank],
+    output: NDBuffer[rank, static_shape, type],
+    axis: Int,
+    out_chain: OutputChainPtr,
+):
+    # TODO: Add rowwise generator to de-duplicate partioning logic between
+    # softmax and logsoftmax
+    if axis != rank - 1:
+        out_chain.mark_error("logsoftmax not supported on non-inner axis yet")
+        return
+
+    if shape.flattened_length() == 0:
+        return out_chain.mark_ready()
+
+    let inner_dim = output.dim[rank - 1]()
+    let outer_dim = product[rank](shape, rank - 1)
+    let num_workers = min(
+        out_chain.get_runtime().parallelism_level(), outer_dim
+    )
+    let chunk_size = div_ceil(outer_dim, num_workers)
+
+    @parameter
+    @always_inline
+    fn task_func(task_id: Int):
+        let start_offset = task_id * chunk_size
+        let end_offset = min((task_id + 1) * chunk_size, outer_dim)
+        for i in range(start_offset, end_offset):
+            let buffer_offset = i * inner_dim
+            let output_buffer_view = Buffer[Dim(), type](
+                output.data.offset(buffer_offset), inner_dim
+            )
+            var indices = _get_nd_indices_from_flat_index[rank](
+                i, shape, rank - 1
+            )
+
+            @parameter
+            @always_inline
+            # Given input lambda accepts N-dimensional coordinates, but the
+            # softmax base routines operate on 1D buffers. Here we wrap the
+            # given input lamda with some 1d-to-Nd translation logic.
+            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
+                indices[rank - 1] = idx
+                return input_fn[_width, rank](indices)
+
+            logsoftmax[simd_width, Dim(), type, input_fn_1d](
+                output_buffer_view, out_chain
+            )
+
+    async_parallelize[task_func](out_chain, num_workers)
 
 
 fn logsoftmax[
@@ -419,51 +537,35 @@ fn logsoftmax[
     axis: Int,
     out_chain: OutputChainPtr,
 ):
-    # TODO: Add rowwise generator to de-duplicate partioning logic between
-    # softmax and logsoftmax
-    if axis != rank - 1:
-        out_chain.mark_error("logsoftmax not supported on non-inner axis yet")
-        return
-
-    if input.num_elements() == 0:
-        return out_chain.mark_ready()
-
-    let shape = input.get_shape()
-    let inner_dim = output.dim[rank - 1]()
-    let outer_dim = product[rank](shape, rank - 1)
-    let num_workers = min(
-        out_chain.get_runtime().parallelism_level(), outer_dim
-    )
-    let chunk_size = div_ceil(outer_dim, num_workers)
-
     @parameter
     @always_inline
-    fn task_func(task_id: Int):
-        let start_offset = task_id * chunk_size
-        let end_offset = min((task_id + 1) * chunk_size, outer_dim)
-        for i in range(start_offset, end_offset):
-            let buffer_offset = i * inner_dim
-            let output_buffer_view = Buffer[Dim(), type](
-                output.data.offset(buffer_offset), inner_dim
-            )
-            let input_buffer_view = Buffer[Dim(), type](
-                input.data.offset(buffer_offset), inner_dim
-            )
+    fn input_fn[
+        _simd_width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
+        return input.simd_load[_simd_width](
+            rebind[StaticIntTuple[rank]](coords)
+        )
 
-            logsoftmax[simd_width, Dim(), type](
-                output_buffer_view, input_buffer_view
-            )
-
-    async_parallelize[task_func](out_chain, num_workers)
+    logsoftmax[type, simd_width, rank, static_shape, input_fn](
+        input.get_shape(), output, axis, out_chain
+    )
 
 
+# ===----------------------------------------------------------------------===#
+# Softmax
+# ===----------------------------------------------------------------------===#
+
+# Softmax (w/ input lambda)
 fn softmax[
     type: DType,
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
+    input_fn: fn[_simd_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[type, _simd_width],
 ](
-    input: NDBuffer[rank, static_shape, type],
+    shape: StaticIntTuple[rank],
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
     out_chain: OutputChainPtr,
@@ -477,14 +579,13 @@ fn softmax[
     @always_inline
     @parameter
     fn trace_information() -> String:
-        return String("shape=") + String("x").join(input.get_shape())
+        return String("shape=") + String("x").join(shape)
 
     out_chain.trace[TraceLevel.OP, trace_information]("mojo.softmax")
 
-    if input.num_elements() == 0:
+    if shape.flattened_length() == 0:
         return out_chain.mark_ready()
 
-    let shape = input.get_shape()
     let inner_dim = output.dim[rank - 1]()
     let outer_dim = product[rank](shape, rank - 1)
     let num_workers = min(
@@ -502,12 +603,47 @@ fn softmax[
             let output_buffer_view = Buffer[Dim(), type](
                 output.data.offset(buffer_offset), inner_dim
             )
-            let input_buffer_view = Buffer[Dim(), type](
-                input.data.offset(buffer_offset), inner_dim
+            var indices = _get_nd_indices_from_flat_index[rank](
+                i, shape, rank - 1
             )
 
-            softmax_3_pass[simd_width, Dim(), type](
-                output_buffer_view, input_buffer_view
+            @parameter
+            @always_inline
+            # Given input lambda accepts N-dimensional coordinates, but the
+            # softmax base routines operate on 1D buffers. Here we wrap the
+            # given input lamda with some 1d-to-Nd translation logic.
+            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
+                indices[rank - 1] = idx
+                return input_fn[_width, rank](indices)
+
+            softmax_3_pass[simd_width, Dim(), type, input_fn_1d](
+                output_buffer_view, out_chain
             )
 
     async_parallelize[task_func](out_chain, num_workers)
+
+
+# Softmax (no input lambda)
+fn softmax[
+    type: DType,
+    simd_width: Int,
+    rank: Int,
+    static_shape: DimList,
+](
+    input: NDBuffer[rank, static_shape, type],
+    output: NDBuffer[rank, static_shape, type],
+    axis: Int,
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    @always_inline
+    fn input_fn[
+        _simd_width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
+        return input.simd_load[_simd_width](
+            rebind[StaticIntTuple[rank]](coords)
+        )
+
+    softmax[type, simd_width, rank, static_shape, input_fn](
+        input.get_shape(), output, axis, out_chain
+    )
