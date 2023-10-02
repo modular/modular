@@ -233,6 +233,16 @@ InflightDiag::InflightDiag(InflightDiag &&other)
   other.diags = nullptr;
 }
 
+InflightDiag &InflightDiag::operator=(InflightDiag &&other) {
+  messages = std::move(other.messages);
+  diags = other.diags;
+  isWarning = other.isWarning;
+
+  // Do not emit the other diagnostic.
+  other.diags = nullptr;
+  return *this;
+}
+
 InflightDiag::InflightDiag(Location loc, Diags &diags, bool isWarning)
     : diags(&diags), isWarning(isWarning) {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});

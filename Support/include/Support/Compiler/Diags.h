@@ -122,6 +122,7 @@ public:
   InflightDiag(Location loc, Diags &diags, bool isWarning);
   ~InflightDiag();
   InflightDiag(InflightDiag &&other);
+  InflightDiag &operator=(InflightDiag &&other);
 
   // This class in non-copyable.
   InflightDiag(const InflightDiag &) = delete;

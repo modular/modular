@@ -427,8 +427,7 @@ InputParamBindings::verifyBindings(
                                              fitness.numImplicitConversions,
                                              emitter, evaluator);
     if (!pValue) {
-      // Set the diagnostic metadata and call the custom diagnostic handler.
-      fitness.expectedBinding = std::make_pair(index, expectedType);
+      // Call the custom diagnostic handler.
       emitParamTypeDiag(index, binding, expectedType);
     }
 
@@ -590,13 +589,13 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     LITSignatureType sig, ExprEmitter &emitter,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
+    function_ref<void()> emitParamCountDiag,
+    function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const {
   return verifyBindings(
       sig.getInputParamTypes(), sig.getDefaultParameters(), emitter,
       sig.hasParamVarArgs(), parameterInferenceHook, isPackVarArg,
-      /*setEvaluator=*/{},
-      /*emitParamCountDiag=*/[]() {},
-      /*emitParamTypeDiag=*/[](size_t, Binding &, ASTType) {});
+      /*setEvaluator=*/{}, emitParamCountDiag, emitParamTypeDiag);
 }
 
 ParameterExprArrayAttr
@@ -1071,29 +1070,36 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   if (!unknownKwOperands.empty())
     return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
 
-  // Check that the signature can be rebound with this set of bindings.
-  auto [newBindings, bindingFitness] =
-      callable.inputParamBindings.verifyBindings(
-          signature, emitter,
-          [&](size_t index, Type type, ASTType expectedParamType,
-              ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
-            return ParameterInferenceState(emitter.shared, index, type)
-                .infer(signature, bindingsSoFar, callOperands);
-          },
-          /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
-
-  // If there is an error, return the problem.
-  if (!newBindings) {
-    ArrayRef<InputParamBindings::Binding> posBindings =
-        callable.inputParamBindings.posBindings;
-    if (auto expectedBinding = bindingFitness.expectedBinding) {
-      auto &[paramIdx, expectedType] = *expectedBinding;
-      return emitDiagFor.wrongParamType(posBindings[paramIdx], paramIdx,
-                                        expectedType);
-    }
-    return emitDiagFor.wrongParamCount(signature.getNumInputParams(),
+  // Check that the signature can be rebound with this set of bindings. We use
+  // diagnostic handlers to capture any issues.
+  const InputParamBindings &inputParamBindings = callable.inputParamBindings;
+  ArrayRef<InputParamBindings::Binding> posBindings =
+      inputParamBindings.posBindings;
+  InflightDiag diag = emitter.emitError(callLoc);
+  auto emitParamCountDiag = [&]() {
+    diag = emitDiagFor.wrongParamCount(signature.getNumInputParams(),
                                        posBindings.size(), "input");
-  }
+  };
+  auto emitParamTypeDiag = [&](size_t paramIdx,
+                               InputParamBindings::Binding &binding,
+                               ASTType expectedType) {
+    diag = emitDiagFor.wrongParamType(posBindings[paramIdx], paramIdx,
+                                      expectedType);
+  };
+  auto paramInferenceHook = [&](size_t index, Type type, ASTType /*unused*/,
+                                ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
+    return ParameterInferenceState(emitter.shared, index, type)
+        .infer(signature, bindingsSoFar, callOperands);
+  };
+  auto [newBindings, bindingFitness] = inputParamBindings.verifyBindings(
+      signature, emitter, paramInferenceHook,
+      /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty(),
+      emitParamCountDiag, emitParamTypeDiag);
+
+  // If there is an error, we just forward the diagnostics.
+  if (!newBindings)
+    return std::move(diag);
+  diag.abandon();
 
   // Check the result parameter count.
   if (size_t expectedNumResultParams = signature.getNumResultParams(),
