@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA host functions."""
 
-from sys.ffi import RTLD, DLHandle
+from sys.ffi import DLHandle
 from memory import stack_allocation
 from utils.index import StaticIntTuple, Index
 from sys.info import sizeof
@@ -52,7 +52,7 @@ fn _human_memory(size: Int) -> String:
 
 fn _init_dylib() -> Pointer[AnyType]:
     let ptr = Pointer[DLHandle].alloc(1)
-    let handle = DLHandle(CUDA_DRIVER_PATH, RTLD.NOW | RTLD.GLOBAL)
+    let handle = DLHandle(CUDA_DRIVER_PATH)
     _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
     __get_address_as_lvalue(ptr.address) = handle
     return ptr.bitcast[AnyType]()
