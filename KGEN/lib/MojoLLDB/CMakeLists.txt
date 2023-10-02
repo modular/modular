@@ -53,6 +53,7 @@ add_modular_library(MojoLLDB SHARED
 
 # Ensure symbols from the plugin library are visible.
 set_target_properties(MojoLLDB PROPERTIES CXX_VISIBILITY_PRESET default)
+target_compile_definitions(MojoLLDB PRIVATE MODULAR_BUILDING_LIBRARY)
 
 # We used to create an lldbinit file to automatically load our MojoLLDB plugin,
 # but this conflicted with the --one-line-before-file load of the plugin
