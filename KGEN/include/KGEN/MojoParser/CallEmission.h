@@ -86,9 +86,6 @@ public:
     /// Whether the bindings include variadic parameters.
     bool hasVariadicParams;
 
-    /// Index and type of the expected binding, if it doesn't fit.
-    std::optional<std::pair<size_t, ASTType>> expectedBinding = std::nullopt;
-
     /// The last expected type if there aren't enough bindings.
     Type lastExpectedType = {};
   };
@@ -100,13 +97,17 @@ public:
                                         ExprEmitter &emitter,
                                         llvm::SMLoc exprLoc) const;
 
-  /// Verify the parameter bindings for the given signature. If the signature
-  /// doesn't match, no diagnostics will be emitted. An optional hook can be
-  /// provided to infer parameters.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig, ExprEmitter &emitter,
-                 ParameterInferenceHookTy parameterInferenceHook = {},
-                 bool isPackVarArg = false) const;
+  /// Verify the parameter bindings for the given signature. An optional hook
+  /// can be provided to infer parameters. If the signature doesn't match,
+  /// optional diagnostic emission, hooks can be provided (by default no
+  /// diagnostics will be emitted).
+  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
+      LITSignatureType sig, ExprEmitter &emitter,
+      ParameterInferenceHookTy parameterInferenceHook = {},
+      bool isPackVarArg = false,
+      function_ref<void()> emitParamCountDiag = []() {},
+      function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag =
+          [](size_t, Binding &, ASTType) {}) const;
 
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
