@@ -56,6 +56,11 @@ public:
       cl::desc("Ignore execution failures. Any messages are still printed, but "
                "failures don't mean the tool fails to execute.")};
 
+  cl::opt<bool> disablePrebuiltPackages{
+      "disable-prebuilt-packages",
+      cl::desc("Disable prebuilt packages when parsing the input Mojo file."),
+      cl::init(false)};
+
   cl::opt<std::string> dependencyFilename{
       "d", llvm::cl::desc("Path of the dependency file to generate"),
       llvm::cl::value_desc("filename"), llvm::cl::init("")};
@@ -224,6 +229,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     TimingScope litScope = timing.nest("Import Mojo source");
     LIT::ParserConfig config(ctx, *runtime, options);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
+    config.parsingStandardLibrary = clOptions.disablePrebuiltPackages;
     theModule = importMojoFile(mgr, config, litScope, &includedFiles);
   } else if (options.getDebugInfoLevelForInput() >
              CompilationOptions::kSynthetic) {
