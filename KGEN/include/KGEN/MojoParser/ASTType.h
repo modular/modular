@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASTTYPE_H
-#define ASTTYPE_H
+#ifndef KGEN_MOJOPARSER_ASTTYPE_H
+#define KGEN_MOJOPARSER_ASTTYPE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
@@ -178,4 +178,4 @@ public:
 
 } // namespace llvm
 
-#endif // ASTTYPE_H
+#endif // KGEN_MOJOPARSER_ASTTYPE_H

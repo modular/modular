@@ -43,8 +43,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IRVALUES_H
-#define IRVALUES_H
+#ifndef KGEN_MOJOPARSER_IRVALUES_H
+#define KGEN_MOJOPARSER_IRVALUES_H
 
 #include "KGEN/MojoParser/ASTType.h"
 #include "Support/ADT/SmartVariant.h"
@@ -885,4 +885,4 @@ public:
 };
 } // namespace llvm
 
-#endif // IRVALUES_H
+#endif // KGEN_MOJOPARSER_IRVALUES_H

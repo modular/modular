@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef STRUCTEMITTER_H
-#define STRUCTEMITTER_H
+#ifndef KGEN_MOJOPARSER_STRUCTEMITTER_H
+#define KGEN_MOJOPARSER_STRUCTEMITTER_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"

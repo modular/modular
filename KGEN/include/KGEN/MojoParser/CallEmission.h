@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef CALLEMISSION_H
-#define CALLEMISSION_H
+#ifndef KGEN_MOJOPARSER_CALLEMISSION_H
+#define KGEN_MOJOPARSER_CALLEMISSION_H
 
 #include "KGEN/MojoParser/IRValues.h"
 
@@ -364,4 +364,4 @@ inline OverloadSet &ORValue::operator*() {
 
 } // namespace M::KGEN::LIT
 
-#endif // CALLEMISSION_H
+#endif // KGEN_MOJOPARSER_CALLEMISSION_H

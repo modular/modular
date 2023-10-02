@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ASTDECL_H
-#define ASTDECL_H
+#ifndef KGEN_MOJOPARSER_ASTDECL_H
+#define KGEN_MOJOPARSER_ASTDECL_H
 
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
@@ -275,4 +275,4 @@ struct CastInfo<T, const M::KGEN::LIT::ASTDecl>
 
 } // namespace llvm
 
-#endif // ASTDECL_H
+#endif // KGEN_MOJOPARSER_ASTDECL_H

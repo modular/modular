@@ -13,8 +13,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef EXPRNODES_H
-#define EXPRNODES_H
+#ifndef KGEN_MOJOPARSER_EXPRNODES_H
+#define KGEN_MOJOPARSER_EXPRNODES_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/MojoParser/ExprNode.h"
@@ -627,4 +627,4 @@ struct AddressConvertNode final : public ExprNode {
 
 } // namespace M::KGEN::LIT
 
-#endif // EXPRNODES_H
+#endif // KGEN_MOJOPARSER_EXPRNODES_H

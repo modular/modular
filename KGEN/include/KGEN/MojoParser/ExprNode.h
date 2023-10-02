@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef EXPRNODE_H
-#define EXPRNODE_H
+#ifndef KGEN_MOJOPARSER_EXPRNODE_H
+#define KGEN_MOJOPARSER_EXPRNODE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 
@@ -171,4 +171,4 @@ public:
 
 } // namespace M::KGEN::LIT
 
-#endif // EXPRNODE_H
+#endif // KGEN_MOJOPARSER_EXPRNODE_H
