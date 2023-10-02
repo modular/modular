@@ -7,7 +7,6 @@
 # Checks x86 int8 matmul C = A*B with prepacked B
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
