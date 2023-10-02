@@ -5,17 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
+#include "KGEN/HLCFDialect/HLCFUtils.h"
 
 using namespace M;
 using namespace HLCF;
-
-/// Get the parent operation of a terminator.
-static ControlFlowNode getParentNode(ControlFlowTerminator term) {
-  Operation *op = term->getParentOp();
-  while (!term.isParentNode(op))
-    op = op->getParentOp();
-  return dyn_cast<ControlFlowNode>(op);
-}
 
 CFGAnalysis::CFGAnalysis(Operation *op) {
   op->walk([&](Operation *op) {
@@ -38,7 +31,7 @@ CFGAnalysis::CFGAnalysis(Operation *op) {
       SmallVector<ControlFlowTarget> targets;
       term.getBranchTargets(operands, targets);
       SmallVector<CFGNode> successors;
-      ControlFlowNode node = getParentNode(term);
+      auto node = dyn_cast<ControlFlowNode>(HLCF::getParentNode(term));
       // If the successor is not a control-flow node, then it must be a
       // function, which does not participate in the CFG.
       if (!node)
