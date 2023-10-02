@@ -2325,8 +2325,11 @@ fn scatter_nd_mul[
 fn softmax[
     rank: Int,
     type: DType,
+    input_0_fn: fn[_simd_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[type, _simd_width],
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    shape: StaticIntTuple[rank],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
@@ -2335,7 +2338,8 @@ fn softmax[
         simdwidthof[type](),
         rank,
         DimList.create_unknown[rank](),
-    ](input, output, rank - 1, out_chain)
+        input_0_fn,
+    ](shape, output, rank - 1, out_chain)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
@@ -2344,8 +2348,11 @@ fn softmax[
 fn logsoftmax[
     rank: Int,
     type: DType,
+    input_0_fn: fn[_simd_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[type, _simd_width],
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    shape: StaticIntTuple[rank],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
@@ -2354,7 +2361,8 @@ fn logsoftmax[
         simdwidthof[type](),
         rank,
         DimList.create_unknown[rank](),
-    ](input, output, rank - 1, out_chain)
+        input_0_fn,
+    ](shape, output, rank - 1, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
