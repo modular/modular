@@ -112,6 +112,7 @@ from Pool import avg_pool, max_pool, pool_shape
 from runtime.llcl import OutputChainPtr
 from runtime.tracing import Trace, TraceLevel
 from Resize import (
+    resize_linear as resize_linear_kernel,
     resize_nearest_neighbor,
     RoundMode,
     CoordinateTransformationMode,
@@ -246,6 +247,7 @@ fn MOGGExport():
     alias _reduce_max = reduce_max
     alias _reduce_min = reduce_min
     alias _reduce_mul = reduce_mul
+    alias _resize_linear = resize_linear
     alias _resize_nearest = resize_nearest
     alias _resize_shape = resize_shape
     alias _round = round
@@ -2438,6 +2440,23 @@ fn resize_nearest[
     resize_nearest_neighbor[
         coordinate_transform_mode, round_mode, rank, inpType
     ](input, output, out_chain)
+
+
+fn resize_linear[
+    coordinate_transform_mode: Int,
+    antialias: Bool,
+    rank: Int,
+    inpType: DType,
+    sizeType: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
+    size: NDBuffer[1, DimList(rank), sizeType],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
+    out_chain: OutputChainPtr,
+):
+    resize_linear_kernel[coordinate_transform_mode, antialias, rank, inpType](
+        input, output, out_chain
+    )
 
 
 fn resize_shape[
