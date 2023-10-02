@@ -362,7 +362,7 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   }
   exprOS << ")\n"
             "  except error:\n"
-            "    print(\"Error:\", error.message())\n\n";
+            "    print(\"Error:\", error)\n\n";
 
   // Finally we can generate the actual expression function.
   exprOS << "def __mojo_repl_expr_impl__(inout __mojo_repl_arg: "
