@@ -248,6 +248,15 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone(LLCLOutputChainRef outChain) {
 #endif
 }
 
+/// Returns the CUstream handle held by the OutputChain's underlying
+/// AsyncValueRef<CUDAStream>. Only valid for GPU kernels which are
+/// launched via a CPU kernel shim. The CUstream is returned as a void*
+/// to avoid depending on any CUDA headers.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream(LLCLOutputChainRef outChain) {
+  return unwrap(outChain).getCUDAStream();
+}
+
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
@@ -296,4 +305,6 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream",
+                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream});
 }

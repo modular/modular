@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/OutputChain.h"
+#include "CUDASupport/CUDAAsyncValue.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "llvm/Support/Threading.h"
 
@@ -89,6 +90,10 @@ void OutputChain::setToError(Error &&error) {
 
 void OutputChain::recordProfilerEntry() && {
   std::move(profilerEntry).record();
+}
+
+void *OutputChain::getCUDAStream() const {
+  return chain.get<CUDA::CUDAChain>().getStream();
 }
 
 void OutputChain::complete() {
