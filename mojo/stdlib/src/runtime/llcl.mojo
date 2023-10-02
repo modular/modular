@@ -390,15 +390,24 @@ struct TaskGroup:
 
 @register_passable
 struct OutputChainPtr:
-    """A pointer to a C++ heap/stack/closure allocated OutputChain, ie a pair
-    of an AsyncValueRef<Chain> and an EncodedLocation. Kernels which accept
-    an OutputChainPtr argument are expected to call mark_ready(), mark_error(),
-    or move.
+    """A pointer to a C++ heap/stack/closure allocated OutputChain, which is
+    used by the Modular C++ runtime to coordinate execution with Mojo kernels.
+
+    Pure CPU kernels which accept an OutputChainPtr argument are expected to
+    call mark_ready(), mark_error(), or fork() before returning.
+
+    CPU kernels which launch non-CPU kernels (eg a CUDA kernel) must accept
+    an OuptputChainPtr, and must either call mark_error() before returning,
+    or use a device-specific mechanism to coordinate execution back to the
+    C++ runtime.
     """
 
-    # Actually LLCL::OutputChain*
-    alias ptr_type = DTypePointer[DType.invalid.value]
+    # Actually a KGEN::OutputChain*
+    alias ptr_type = DTypePointer[DType.invalid]
     var ptr: Self.ptr_type
+
+    # Actually a CUstream
+    alias cuda_stream_handle_type = DTypePointer[DType.invalid]
 
     @always_inline
     fn __init__() -> OutputChainPtr:
@@ -535,6 +544,15 @@ struct OutputChainPtr:
         external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
             self.ptr
         )
+
+    @always_inline
+    fn get_cuda_stream(self) -> Self.cuda_stream_handle_type:
+        """Return the CUstream to use for launching CUDA kernels from the
+        CPU kernel 'shim'. These CPU kernels should never call mark_ready()."""
+        return external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream",
+            Self.cuda_stream_handle_type,
+        ](self.ptr)
 
 
 @register_passable
