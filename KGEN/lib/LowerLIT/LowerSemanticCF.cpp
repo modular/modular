@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -197,14 +198,6 @@ static LogicalResult lowerParamResults(LIT::FuncOp func) {
 // Semantic control flow lowering.
 //===----------------------------------------------------------------------===//
 
-/// Get the parent operation of a terminator.
-static Operation *getParentNode(HLCF::ControlFlowTerminator term) {
-  Operation *op = term->getParentOp();
-  while (!term.isParentNode(op))
-    op = op->getParentOp();
-  return op;
-}
-
 /// Insert 'finally' block logic on a `lit.try` operation by finding all
 /// terminators that exit the try regions and pasting the finally clause before
 /// it. Try operations must be processed post-order, so that the order in which
@@ -236,7 +229,7 @@ static LIT::TryOp lowerTryFinally(LIT::TryOp tryOp) {
     auto term = dyn_cast<HLCF::ControlFlowTerminator>(op);
     if (!term)
       return WalkResult::advance();
-    Operation *node = getParentNode(term);
+    Operation *node = HLCF::getParentNode(term);
     if (node->isProperAncestor(tryOp))
       pasteFinally(term);
     return WalkResult::advance();

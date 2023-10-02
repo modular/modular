@@ -19,6 +19,10 @@ LoopOp getParentLoop(Operation *op, StringAttr label);
 
 /// Check if the child loop is nested in the parentToCheck loop.
 bool isParentLoop(LoopOp child, LoopOp parentToCheck);
+
+/// Get the parent operation of a terminator.
+Operation *getParentNode(HLCF::ControlFlowTerminator term);
+
 } // namespace M::HLCF
 
 #endif // KGEN_HLCFDIALECT_HLCFUTILS_H

@@ -32,3 +32,11 @@ bool HLCF::isParentLoop(LoopOp child, LoopOp parentToCheck) {
     parent = parent->getParentOfType<LoopOp>();
   return parent == parentToCheck;
 }
+
+/// Get the parent operation of a terminator.
+Operation *HLCF::getParentNode(HLCF::ControlFlowTerminator term) {
+  Operation *op = term->getParentOp();
+  while (!term.isParentNode(op))
+    op = op->getParentOp();
+  return op;
+}
