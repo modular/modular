@@ -9,6 +9,7 @@ from sys.ffi import DLHandle
 from memory import stack_allocation
 from utils.index import StaticIntTuple, Index
 from sys.info import sizeof
+from pathlib import Path
 from math import floor
 
 # ===----------------------------------------------------------------------===#
@@ -1640,13 +1641,23 @@ struct Module:
     fn __init__(inout self):
         self.module = _ModuleImpl()
 
-    fn __init__(inout self, path: String) raises:
+    fn __init__(inout self, path: Path) raises:
         var module = _ModuleImpl()
-
+        let path_str = path.__str__()
         _check_error(
             _get_dylib_function[
                 fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
-            ]("cuModuleLoad")(Pointer.address_of(module), path._as_ptr())
+            ]("cuModuleLoad")(Pointer.address_of(module), path_str._as_ptr())
+        )
+        _ = path_str
+        self.module = module
+
+    fn __init__(inout self, content: String) raises:
+        var module = _ModuleImpl()
+        _check_error(
+            _get_dylib_function[
+                fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
+            ]("cuModuleLoadData")(Pointer.address_of(module), content._as_ptr())
         )
         self.module = module
 
@@ -1660,7 +1671,6 @@ struct Module:
 
     fn load(self, name: String) raises -> Function:
         var func = Function()
-
         _check_error(
             _get_dylib_function[
                 fn (
