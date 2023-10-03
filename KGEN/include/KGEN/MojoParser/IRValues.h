@@ -225,7 +225,7 @@ private:
 /// DLValues are allowed to be get-only, set-only, or get-set.
 class DLValue {
 public:
-  DLValue() {}
+  DLValue() = default;
   DLValue(RCRef<BaseDLValue> storage) : storage(std::move(storage)) {}
   DLValue(const DLValue &existing) : storage(existing.storage.copy()) {}
   DLValue &operator=(const DLValue &existing);
@@ -246,7 +246,7 @@ private:
 /// @register_passable and memory-only types.
 class PValue {
 public:
-  PValue() {}
+  PValue() = default;
   PValue(TypedAttr v) : storage(v) {}
   PValue(Attribute value) : storage(value) {
     assert((!value || isa<TypedAttr>(value)) && "invalid value attribute");
@@ -336,9 +336,9 @@ struct VariantValueStorage {
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
-  static DerivedType getFromStorage(Storage storage) {
+  static DerivedType getFromStorage(const Storage &storage) {
     DerivedType result;
-    result.storage = std::move(storage);
+    result.storage = storage;
     return result;
   }
 
@@ -351,7 +351,7 @@ protected:
 
 template <typename DerivedType>
 struct VariantCRValue {
-  VariantCRValue() {}
+  VariantCRValue() = default;
   // These are common constructors all CRValues have.
   VariantCRValue(PValue value) {
     if (value)
@@ -429,7 +429,7 @@ raw_ostream &operator<<(raw_ostream &os, CRValue value);
 /// from and checked conversion to child value types.
 template <typename DerivedType>
 struct VariantURValue {
-  VariantURValue() {}
+  VariantURValue() = default;
   // These are common constructors all URValues have.
   VariantURValue(ORValue value) {
     if (value)
@@ -478,7 +478,7 @@ public:
   using VariantURValue::VariantURValue;
   using VariantValueStorage::VariantValueStorage;
 
-  RValue() {}
+  RValue() = default;
 
   RValue(URValue value) {
     if (value)
@@ -506,7 +506,7 @@ raw_ostream &operator<<(raw_ostream &os, RValue value);
 
 template <typename DerivedType>
 struct VariantLValue {
-  VariantLValue() {}
+  VariantLValue() = default;
   VariantLValue(MLValue value) {
     if (value)
       getStorageL() = value;
@@ -560,7 +560,7 @@ raw_ostream &operator<<(raw_ostream &os, LValue value);
 
 template <typename DerivedType>
 struct VariantBValue {
-  VariantBValue() {}
+  VariantBValue() = default;
   VariantBValue(SBValue value) {
     if (value)
       getStorageB() = value;
@@ -631,7 +631,7 @@ public:
   using VariantLValue::VariantLValue;
   using VariantValueStorage::VariantValueStorage;
 
-  CValue() {}
+  CValue() = default;
   CValue(CRValue value) { getStorage() = value.getStorage(); }
   CValue(BValue value) { getStorage() = value.getStorage(); }
   CValue(LValue value) { getStorage() = value.getStorage(); }
@@ -678,7 +678,7 @@ public:
   using VariantURValue::VariantURValue;
   using VariantValueStorage::VariantValueStorage;
 
-  AnyValue() {}
+  AnyValue() = default;
 
   AnyValue(URValue value) { storage = value.getStorage(); }
   AnyValue(CRValue value) { storage = value.getStorage(); }
@@ -735,10 +735,9 @@ public:
 
   DiscardDLValue(ASTType elementType, const ExprNode *expr);
 
-  virtual void print(raw_ostream &os) const override;
-  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  virtual void emitStore(ASTExprAnd<CValue> value,
-                         ExprEmitter &emitter) const override;
+  void print(raw_ostream &os) const override;
+  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents a stored attribute projected from
@@ -754,10 +753,9 @@ public:
 
   StructFieldOp getField() const;
 
-  virtual void print(raw_ostream &os) const override;
-  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  virtual void emitStore(ASTExprAnd<CValue> value,
-                         ExprEmitter &emitter) const override;
+  void print(raw_ostream &os) const override;
+  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents property access `a.x =`
@@ -778,10 +776,9 @@ public:
   SubscriptDLValue(ArrayRef<FuncOperand> selfAndIndicesValue,
                    ASTType elementType, const ExprNode *expr);
 
-  virtual void print(raw_ostream &os) const override;
-  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  virtual void emitStore(ASTExprAnd<CValue> value,
-                         ExprEmitter &emitter) const override;
+  void print(raw_ostream &os) const override;
+  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents tuple lvalues, e.g. `(a[i], b) = x`.
@@ -794,10 +791,9 @@ public:
   TupleDLValue(ArrayRef<FuncOperand> eltLValues, ASTType tupleType,
                const ExprNode *expr);
 
-  virtual void print(raw_ostream &os) const override;
-  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  virtual void emitStore(ASTExprAnd<CValue> value,
-                         ExprEmitter &emitter) const override;
+  void print(raw_ostream &os) const override;
+  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents a global variable reference.
@@ -811,10 +807,9 @@ public:
 
   GlobalVarDeclOp getGlobal() const;
 
-  virtual void print(raw_ostream &os) const override;
-  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  virtual void emitStore(ASTExprAnd<CValue> value,
-                         ExprEmitter &emitter) const override;
+  void print(raw_ostream &os) const override;
+  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  void emitStore(ASTExprAnd<CValue> value, ExprEmitter &emitter) const override;
 };
 
 } // namespace M::KGEN::LIT
