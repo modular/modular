@@ -14,6 +14,7 @@ from tensor import TensorSpec
 """
 
 from .tensor_shape import TensorShape, _as_rep16
+from utils.vector import DynamicVector
 
 # ===----------------------------------------------------------------------===#
 # TensorSpec
@@ -51,6 +52,16 @@ struct TensorSpec:
           shapes: The shapes to initialize the shape with.
         """
         self = TensorSpec(type, TensorShape(shapes))
+
+    @always_inline
+    fn __init__(inout self, type: DType, shapes: DynamicVector[Int]):
+        """Initializes a Tensorspec from the dtype and shapes provided.
+
+        Args:
+          type: The dtype of the specification.
+          shapes: The shapes to initialize the shape with.
+        """
+        self = TensorSpec(type, shape=shapes)
 
     @always_inline
     fn __init__(inout self, type: DType, owned shape: TensorShape):

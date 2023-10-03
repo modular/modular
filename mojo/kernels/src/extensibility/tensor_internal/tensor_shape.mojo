@@ -23,6 +23,7 @@ from memory.unsafe import DTypePointer, Pointer
 from utils.index import StaticIntTuple
 from utils.list import VariadicList
 from utils.static_tuple import StaticTuple
+from utils.vector import DynamicVector
 
 # These representation must be kept in sync with the TensorShape file in
 # Support/include/Support/ML/TensorShape.h
@@ -724,6 +725,54 @@ struct TensorShape:
 
         Args:
           shapes: The shapes to initialize the shape with.
+        """
+        let rank = shapes.__len__()
+
+        # Decide which representation we can use and initialize the elements.
+        # The most common case should fit into 4 dimensions.
+        if rank <= 4:
+            var ok = True  # Checks if we did not loose precision.
+            var rep = _Rep32()
+            rep.rank = rank
+            for i in range(rank):
+                rep[i] = shapes[i]
+                if rep[i] != shapes[i]:
+                    ok = False
+                    break
+            if ok:
+                self._rep = rep
+                return
+
+        # Otherwise we fall through to try the next representation.
+        # Virtually everything else will fit into 6 dimensions.
+        if rank <= 6:
+            var ok = True  # Checks if we did not loose precision.
+            var rep = _Rep16()
+            rep.rank = rank
+            for i in range(rank):
+                rep[i] = shapes[i]
+                if rep[i] != shapes[i]:
+                    ok = False
+                    break
+            if ok:
+                self._rep = rep
+                return
+
+        # Otherwise, we will store out of line.
+        var rep = _RepOutOfLine()
+        rep.rank = rank
+        rep.dims = DTypePointer[DType.index].alloc(rank)
+        for i in range(rank):
+            rep[i] = shapes[i]
+
+        self._rep = rep
+
+    @always_inline
+    fn __init__(inout self, shapes: DynamicVector[Int]):
+        """Initializes a TensorShape from the vector provided.
+
+        Args:
+          shapes: The vector to initialize the shape with.
         """
         let rank = shapes.__len__()
 
