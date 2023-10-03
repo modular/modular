@@ -57,6 +57,7 @@ from algorithm import (
 )
 from algorithm.functional import _elementwise_impl
 from algorithm.reduction import _reduce_generator
+from algorithm.reduction import _get_nd_indices_from_flat_index
 from Arange import arange, arange_shape
 from BatchedMatmul import batched_matmul as _batched_matmul
 from BatchedMatmul import (
@@ -2639,9 +2640,13 @@ fn conv[
 @mogg_register("mo.layer_norm")
 @export
 fn mogg_layer_norm[
-    type: DType, rank: Int
+    type: DType,
+    rank: Int,
+    input_0_fn: fn[_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[type, _width],
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    shape: StaticIntTuple[rank],
     gamma: NDBuffer[1, DimList.create_unknown[1](), type],
     beta: NDBuffer[1, DimList.create_unknown[1](), type],
     epsilon: NDBuffer[1, DimList.create_unknown[1](), type],
@@ -2653,11 +2658,10 @@ fn mogg_layer_norm[
 
     alias simd_width = simdwidthof[type]()
 
-    let last_dim = input.dynamic_shape[rank - 1]
-    let prod_all_but_last_dim = input.dynamic_shape.flattened_length() // last_dim
+    let last_dim = shape[rank - 1]
+    let prod_all_but_last_dim = shape.flattened_length() // last_dim
     let flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
 
-    let input_buf = reshape[rank, 2, type, True](input, flat_shape)
     let output_buf = reshape[rank, 2, type, True](output, flat_shape)
 
     let num_workers = min(
@@ -2676,82 +2680,21 @@ fn mogg_layer_norm[
         let output_buf_view = NDBuffer[2, DimList.create_unknown[2](), type](
             output_buf._offset(thread_starting_coord), per_thread_dims
         )
-        let input_buf_view = NDBuffer[2, DimList.create_unknown[2](), type](
-            input_buf._offset(thread_starting_coord), per_thread_dims
-        )
 
         @parameter
-        fn noop[
+        @always_inline
+        # Translate given 2d index back to original Nd tensor
+        fn input_fn_2d[
             return_type: DType, simd_width: Int
         ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
-            let coord = StaticIntTuple[2](row, idx)
-            let input_val = input_buf_view.simd_load[simd_width](coord)
+            var indices = _get_nd_indices_from_flat_index[rank](
+                row_idx + row, shape, rank - 1
+            )
+            indices[rank - 1] = idx
+            let input_val = input_0_fn[simd_width, rank](indices)
             return input_val.cast[return_type]()
 
-        layer_norm[simd_width, type, noop](output_buf_view, gamma, beta, eps)
-
-    async_parallelize[task_func](out_chain, num_workers)
-
-
-@mogg_register("mo.layer_norm_skip")
-@export
-fn mogg_layer_norm_skip[
-    type: DType, rank: Int
-](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    gamma: NDBuffer[1, DimList.create_unknown[1](), type],
-    beta: NDBuffer[1, DimList.create_unknown[1](), type],
-    epsilon: NDBuffer[1, DimList.create_unknown[1](), type],
-    skip: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
-):
-    out_chain.trace[TraceLevel.OP]("mojo.layer_norm")
-    let eps = epsilon[0]
-
-    alias simd_width = simdwidthof[type]()
-
-    let last_dim = input.dynamic_shape[rank - 1]
-    let prod_all_but_last_dim = input.dynamic_shape.flattened_length() // last_dim
-    let flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
-
-    let input_buf = reshape[rank, 2, type, True](input, flat_shape)
-    let output_buf = reshape[rank, 2, type, True](output, flat_shape)
-    let skip_buf = reshape[rank, 2, type, True](skip, flat_shape)
-
-    let num_workers = min(
-        out_chain.get_runtime().parallelism_level(), prod_all_but_last_dim
-    )
-    let chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
-
-    @parameter
-    fn task_func(thread_id: Int):
-        let num_rows = min(
-            chunk_size, prod_all_but_last_dim - thread_id * chunk_size
-        )
-        let row_idx = thread_id * chunk_size
-        let thread_starting_coord = StaticIntTuple[2](row_idx, 0)
-        let per_thread_dims = DimList(num_rows, last_dim)
-        let output_buf_view = NDBuffer[2, DimList.create_unknown[2](), type](
-            output_buf._offset(thread_starting_coord), per_thread_dims
-        )
-        let input_buf_view = NDBuffer[2, DimList.create_unknown[2](), type](
-            input_buf._offset(thread_starting_coord), per_thread_dims
-        )
-        let skip_buf_view = NDBuffer[2, DimList.create_unknown[2](), type](
-            skip_buf._offset(thread_starting_coord), per_thread_dims
-        )
-
-        @parameter
-        fn add_skip[
-            return_type: DType, simd_width: Int
-        ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
-            let coord = StaticIntTuple[2](row, idx)
-            let skip_val = skip_buf_view.simd_load[simd_width](coord)
-            let input_val = input_buf_view.simd_load[simd_width](coord)
-            return (input_val + skip_val).cast[return_type]()
-
-        layer_norm[simd_width, type, add_skip](
+        layer_norm[simd_width, type, input_fn_2d](
             output_buf_view, gamma, beta, eps
         )
 
