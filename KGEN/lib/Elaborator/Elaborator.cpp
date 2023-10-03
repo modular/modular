@@ -2576,17 +2576,6 @@ public:
                          EnvAttr::get(DictionaryAttr::get(&getContext())));
     }
 
-    // Same for the target info, the build info is concretized in the IR.
-    if (BuildInfoAttr bld = getBuildInfo(theModule)) {
-      if (bld != build) {
-        mlir::emitError(theModule.getLoc(), "build did not match, expected ")
-            << build << " but got " << bld;
-        return signalPassFailure();
-      }
-    } else {
-      setBuildInfo(theModule, build);
-    }
-
     if (failed(elaborateGenerators(
             analysis, paramCache, *rt, target, primaryGenerators,
             evaluatorExecutorFn,
