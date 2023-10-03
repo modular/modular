@@ -1704,7 +1704,7 @@ struct Function:
 
     fn __call__[
         T0: AnyType
-    ](self, grid_dim: Dim, block_dim: Dim, inout arg0: T0) raises:
+    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0) raises:
         var _arg0 = arg0
 
         let args = stack_allocation[1, Pointer[AnyType]]()
@@ -1714,9 +1714,7 @@ struct Function:
 
     fn __call__[
         T0: AnyType, T1: AnyType
-    ](
-        self, grid_dim: Dim, block_dim: Dim, inout arg0: T0, inout arg1: T1
-    ) raises:
+    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, arg1: T1) raises:
         var _arg0 = arg0
         var _arg1 = arg1
 
@@ -1732,9 +1730,9 @@ struct Function:
         self,
         grid_dim: Dim,
         block_dim: Dim,
-        inout arg0: T0,
-        inout arg1: T1,
-        inout arg2: T2,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1777,11 +1775,11 @@ struct Function:
         self,
         grid_dim: Dim,
         block_dim: Dim,
-        inout arg0: T0,
-        inout arg1: T1,
-        inout arg2: T2,
-        inout arg3: T3,
-        inout arg4: T4,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1809,12 +1807,12 @@ struct Function:
         self,
         grid_dim: Dim,
         block_dim: Dim,
-        inout arg0: T0,
-        inout arg1: T1,
-        inout arg2: T2,
-        inout arg3: T3,
-        inout arg4: T4,
-        inout arg5: T5,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1845,13 +1843,13 @@ struct Function:
         self,
         grid_dim: Dim,
         block_dim: Dim,
-        inout arg0: T0,
-        inout arg1: T1,
-        inout arg2: T2,
-        inout arg3: T3,
-        inout arg4: T4,
-        inout arg5: T5,
-        inout arg6: T6,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+        arg6: T6,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1885,14 +1883,14 @@ struct Function:
         self,
         grid_dim: Dim,
         block_dim: Dim,
-        inout arg0: T0,
-        inout arg1: T1,
-        inout arg2: T2,
-        inout arg3: T3,
-        inout arg4: T4,
-        inout arg5: T5,
-        inout arg6: T6,
-        inout arg7: T7,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+        arg6: T6,
+        arg7: T7,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1929,15 +1927,15 @@ struct Function:
         self,
         grid_dim: Dim,
         block_dim: Dim,
-        inout arg0: T0,
-        inout arg1: T1,
-        inout arg2: T2,
-        inout arg3: T3,
-        inout arg4: T4,
-        inout arg5: T5,
-        inout arg6: T6,
-        inout arg7: T7,
-        inout arg8: T8,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+        arg6: T6,
+        arg7: T7,
+        arg8: T8,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
