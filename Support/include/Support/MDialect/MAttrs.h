@@ -343,6 +343,9 @@ void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 /// Look for a target info specification in the nearest surrounding module from
 /// the provided operation. Returns null if one cannot be found.
 TargetInfoAttr lookupTargetInfo(Operation *from);
+/// Erase the target info set on the module. This asserts that a target was
+/// present to begin with.
+void eraseTargetInfo(ModuleOp module);
 /// Get the target info for the specified target.
 ErrorOr<TargetInfoAttr>
 getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,

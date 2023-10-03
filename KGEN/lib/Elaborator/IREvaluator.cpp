@@ -103,6 +103,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return failure();
   case POC::GetAllImpls:
     return evaluateGetAllImpls(op);
+  case POC::CompileAssembly:
+    return evaluateCompileAssembly(op);
   default:
     return failure();
   }
@@ -205,6 +207,36 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   // environment variable is present.
   assert(cast<IntegerType>(op.getType()).isSignlessInteger(1));
   return {BoolAttr::get(op.getContext(), static_cast<bool>(value))};
+}
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
+  // Cheeky copy. The state of the symbol table right at this moment is
+  // sufficient to produce a standalone object for the generator being JIT'd.
+  SymbolTable symtabCopy = elaborator->getSymbolTable().read(
+      [](const SymbolTable &symtab) -> SymbolTable { return symtab; });
+
+  // Slice out a stanalone module to re-elaborate with the new target.
+  TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
+  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(1));
+  if (!symbol || !symbol.getType().isConcrete()) {
+    emitError({*errorLoc, "'compile_assembly' function is not concrete"});
+    return failure();
+  }
+
+  auto func = symtabCopy.lookup<GeneratorOp>(
+      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
+  assert(func && "expected a valid generator reference");
+
+  WriteableBufferRef buffer = WriteableBuffer::get();
+  if (ErrorOrSuccess result =
+          elaborator->getCompileAsmFn()(func, symtabCopy, target, *buffer);
+      result.isError()) {
+    emitError({*errorLoc, result.takeError()});
+    return failure();
+  }
+  MutableArrayRef<char> data = buffer->getBuffer();
+  return {StringAttr::get(StringRef(data.data(), data.size()), op.getType())};
 }
 
 //===----------------------------------------------------------------------===//

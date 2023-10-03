@@ -505,9 +505,6 @@ namespace {
 // ElaboratorImpl Declaration
 //===----------------------------------------------------------------------===//
 
-using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
-    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
-
 /// This class provides the elaborator, which constructs the expansion tree as
 /// it walks the IR and specializes operations. This outputs IR that has been
 /// fully specialized/concretized, with the appropriate functions
@@ -517,11 +514,12 @@ public:
   ElaboratorImpl(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
                  TargetInfoAttr target,
                  EvaluatorExecutorFnRef evaluatorExecutorFn,
-                 LLCL::Runtime &runtime,
+                 ElaboratorCompileAsmFnRef compileAsmFn, LLCL::Runtime &runtime,
                  const ElaborateGeneratorsOptions &config)
       : Elaborator(symtab, target), config(config), g(runtime),
         paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
-        evaluatorExecutorFn(evaluatorExecutorFn), runtime(runtime) {}
+        evaluatorExecutorFn(evaluatorExecutorFn), compileAsmFn(compileAsmFn),
+        runtime(runtime) {}
 
   std::optional<ErrorTreeOr<FuncOp>>
   getConcreteFunction(ImplNode *parent, Location loc,
@@ -531,6 +529,10 @@ public:
   std::optional<ErrorTreeOrSuccess> getAllConcreteFunctions(
       ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
       ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) override;
+
+  ElaboratorCompileAsmFnRef getCompileAsmFn() const override {
+    return compileAsmFn;
+  }
 
   /// Given a list of primary generators (i.e. generators with no input
   /// parameters), run the elaborator. This will generate an expansion tree
@@ -710,6 +712,9 @@ private:
 
   /// The functor used for evaluating generator specializations.
   EvaluatorExecutorFnRef evaluatorExecutorFn;
+
+  /// The functor used to compile a module to assembly.
+  ElaboratorCompileAsmFnRef compileAsmFn;
 
   /// This struct contains information about a deferred search job.
   struct DeferredSearch {
@@ -2451,12 +2456,14 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 // elaborateGenerators
 //===----------------------------------------------------------------------===//
 
-LogicalResult elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
-                                  ParameterCollector::Analysis &paramCache,
-                                  LLCL::Runtime &runtime, TargetInfoAttr target,
-                                  ArrayRef<GeneratorOp> primaryGenerators,
-                                  EvaluatorExecutorFnRef evaluatorExecutorFn,
-                                  const ElaborateGeneratorsOptions &config) {
+static LogicalResult
+elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
+                    ParameterCollector::Analysis &paramCache,
+                    LLCL::Runtime &runtime, TargetInfoAttr target,
+                    ArrayRef<GeneratorOp> primaryGenerators,
+                    EvaluatorExecutorFnRef evaluatorExecutorFn,
+                    ElaboratorCompileAsmFnRef compileAsmFn,
+                    const ElaborateGeneratorsOptions &config) {
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
 
@@ -2466,7 +2473,7 @@ LogicalResult elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
       config.enableSearch ? evaluatorExecutorFn
                           : [](FuncOp, const SymbolTable &, TargetInfoAttr,
                                ArrayRef<FuncOp>) { return [] { return 0; }; },
-      runtime, config);
+      std::move(compileAsmFn), runtime, config);
   return impl.run(theModule, primaryGenerators);
 }
 
@@ -2490,9 +2497,11 @@ public:
                           LLCL::Runtime *runtime = nullptr,
                           TargetInfoAttr target = nullptr,
                           BuildInfoAttr build = nullptr,
-                          EvaluatorExecutorFn evaluatorExecutorFn = {})
+                          EvaluatorExecutorFn evaluatorExecutorFn = {},
+                          ElaboratorCompileAsmFn compileAsmFn = {})
       : ElaborateGeneratorsBase(options), runtime(runtime), target(target),
-        build(build), evaluatorExecutorFn(std::move(evaluatorExecutorFn)) {}
+        build(build), evaluatorExecutorFn(std::move(evaluatorExecutorFn)),
+        compileAsmFn(std::move(compileAsmFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
     // Default to the host target if one was not specified
@@ -2504,14 +2513,23 @@ public:
         return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
       target = targetOr.takeValue();
     }
+
     // Default to the host build if one was not specified
     if (!build)
       build = BuildInfoAttr::getForCurrentBuild(ctx);
+
     // Default the evaluator to selecting the first specialization.
     if (!evaluatorExecutorFn) {
-      evaluatorExecutorFn =
-          [](FuncOp evaluator, const SymbolTable &symtab, TargetInfoAttr target,
-             ArrayRef<FuncOp> specializations) { return [] { return 0; }; };
+      evaluatorExecutorFn = [](FuncOp, const SymbolTable &, TargetInfoAttr,
+                               ArrayRef<FuncOp>) { return [] { return 0; }; };
+    }
+
+    // Default compile assembly hook will just error.
+    if (!compileAsmFn) {
+      compileAsmFn = [](GeneratorOp, const SymbolTable &, TargetInfoAttr,
+                        llvm::raw_pwrite_stream &) {
+        return Error("internal error: cannot compile assembly without a JIT");
+      };
     }
     return success();
   }
@@ -2574,7 +2592,7 @@ public:
 
     if (failed(elaborateGenerators(
             analysis, paramCache, *rt, target, primaryGenerators,
-            evaluatorExecutorFn,
+            evaluatorExecutorFn, compileAsmFn,
             ElaborateGeneratorsOptions{enableSearch, allowMultiplePrimaryImpls,
                                        maxDepth, elaborateLocations})))
       return signalPassFailure();
@@ -2589,6 +2607,8 @@ private:
   BuildInfoAttr build;
   /// The functor used for evaluating generator specializations.
   EvaluatorExecutorFn evaluatorExecutorFn;
+  /// The functor used to compile a module to assembly.
+  ElaboratorCompileAsmFn compileAsmFn;
 };
 } // namespace
 
@@ -2596,7 +2616,9 @@ std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                                 BuildInfoAttr build,
                                 const ElaborateGeneratorsOptions &options,
-                                EvaluatorExecutorFn evaluatorExecutorFn) {
+                                EvaluatorExecutorFn evaluatorExecutorFn,
+                                ElaboratorCompileAsmFn compileAsmFn) {
   return std::make_unique<ElaborateGeneratorsPass>(
-      options, &runtime, target, build, std::move(evaluatorExecutorFn));
+      options, &runtime, target, build, std::move(evaluatorExecutorFn),
+      std::move(compileAsmFn));
 }

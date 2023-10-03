@@ -9,7 +9,6 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLVMPassesPipeline.h"
-#include "LowerToObjectImpl.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Profiling/TimeProfiler.h"

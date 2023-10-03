@@ -11,6 +11,7 @@
 #include "IREvaluator.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"
@@ -22,6 +23,12 @@ namespace M::KGEN {
 //===----------------------------------------------------------------------===//
 // Elaborator
 //===----------------------------------------------------------------------===//
+
+using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
+    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
+using ElaboratorCompileAsmFnRef =
+    function_ref<ErrorOrSuccess(GeneratorOp, const SymbolTable &,
+                                TargetInfoAttr, llvm::raw_pwrite_stream &)>;
 
 class Elaborator {
 public:
@@ -45,6 +52,9 @@ public:
   virtual std::optional<ErrorTreeOrSuccess> getAllConcreteFunctions(
       ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
       ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) = 0;
+
+  /// Get the functor for compiling a generator to assembly.
+  virtual ElaboratorCompileAsmFnRef getCompileAsmFn() const = 0;
 
   /// Get the symbol table associated with this instance of the elaborator.
   Shared<SymbolTable &> &getSymbolTable() { return symtab; }

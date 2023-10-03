@@ -1051,6 +1051,11 @@ TargetInfoAttr M::lookupTargetInfo(Operation *from) {
   return getTargetInfo(module);
 }
 
+void M::eraseTargetInfo(ModuleOp module) {
+  [[maybe_unused]] Attribute target = module->removeAttr(targetInfoAttrName);
+  assert(target && "module did not have a target to remove");
+}
+
 ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
                                             StringRef targetTriple,
                                             StringRef arch, StringRef features,

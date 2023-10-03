@@ -78,13 +78,20 @@ using ElaboratorSearchFn = llvm::unique_function<ErrorOr<ssize_t>()>;
 using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
 
+/// Function to slice and compile the generator to assembly with the provided
+/// target.
+using ElaboratorCompileAsmFn =
+    std::function<ErrorOrSuccess(GeneratorOp, const SymbolTable &,
+                                 TargetInfoAttr, llvm::raw_pwrite_stream &)>;
+
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
 createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                           BuildInfoAttr build,
                           const ElaborateGeneratorsOptions &options = {},
-                          EvaluatorExecutorFn evaluatorExecutorFn = {});
+                          EvaluatorExecutorFn evaluatorExecutorFn = {},
+                          ElaboratorCompileAsmFn compileAsmFn = {});
 
 //===----------------------------------------------------------------------===//
 // Inlining
@@ -191,6 +198,7 @@ void buildGenerateLibraryPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
                                   TargetInfoAttr target, BuildInfoAttr build,
                                   EvaluatorExecutorFn evaluatorExecutorFn,
+                                  ElaboratorCompileAsmFn compileAsmFn,
                                   const CompilationOptions &options);
 //===----------------------------------------------------------------------===//
 // PostElaborationPipeline

@@ -11,7 +11,6 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
-#include "LowerToObjectImpl.h"
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Profiling/TimeProfiler.h"
@@ -125,10 +124,8 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
       sliceSymtab.insert(sliceFn);
     }
     ExportKind kind = func.getExportKind();
-    if (kind == ExportKind::NotExported)
-      sliceFn.setWeakExported();
-    else
-      sliceFn.setExportKind(kind);
+    sliceFn.setExportKind(kind == ExportKind::NotExported ? exportVal.kind
+                                                          : kind);
   }
 
   return singleModule;

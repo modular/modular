@@ -151,7 +151,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
         return evaluateSpecializations(evaluator, symtab, target,
                                        specializations);
       },
-      compilationOptions);
+      /*compileAsmFn=*/{}, compilationOptions);
   buildPostElaborationPipeline(*fullCompilationPM, typeSystem->getRuntime(),
                                compilationOptions);
 

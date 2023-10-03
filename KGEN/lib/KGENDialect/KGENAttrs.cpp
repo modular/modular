@@ -680,6 +680,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::ApplyResultSlot:
   case POC::Rebind:
   case POC::VariadicGet:
+  case POC::CompileAssembly:
     break;
   default:
     if (!llvm::all_of(operands, [&](auto operand) {
@@ -852,6 +853,14 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'get_env' must return index, i1, or string";
     }
     break;
+  case POC::CompileAssembly: {
+    if (operands.size() != 2)
+      return emitError() << "'compile_assembly' requires 2 operands";
+    if (!::isa<TargetType>(operands.front().getType()))
+      return emitError()
+             << "'compile_assembly' first operand should be a target type";
+    break;
+  }
   }
   return success();
 }
@@ -1756,6 +1765,9 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
   case POC::GetEnv:
     result = {};
     break;
+  case POC::CompileAssembly:
+    result = {};
+    break;
   }
 
   // If we folded to an operand, return it.
@@ -1788,14 +1800,14 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::BindSignature)
     resultType = operandsIn.front().getType();
-  assert(
-      llvm::is_contained({POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
-                          POC::TargetHasFeature, POC::TargetGetField,
-                          POC::BuildInfoGetField, POC::GetSizeOf,
-                          POC::GetAlignOf, POC::VariadicGet, POC::GetEnv},
-                         opcode) ||
-      llvm::all_of(operandsIn.drop_front(),
-                   [&](auto op) { return op.getType() == resultType; }));
+  assert(llvm::is_contained({POC::BindSignature, POC::Apply,
+                             POC::ApplyResultSlot, POC::TargetHasFeature,
+                             POC::TargetGetField, POC::BuildInfoGetField,
+                             POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet,
+                             POC::GetEnv, POC::CompileAssembly},
+                            opcode) ||
+         llvm::all_of(operandsIn.drop_front(),
+                      [&](auto op) { return op.getType() == resultType; }));
 
   return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
                           resultType);
@@ -1871,8 +1883,8 @@ LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-/// An MLIR operation attribute is a constant if it is concrete.
-bool MLIROpAttr::isConstant() const { return getType().isConcrete(); }
+/// An MLIR operation attribute is always a constant.
+bool MLIROpAttr::isConstant() const { return true; }
 
 TypedAttr KGEN::emitMLIROperationCall(
     StringRef opName,

@@ -1949,3 +1949,17 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="fooba
     kgen.return
   }
 }
+
+// -----
+
+kgen.generator @kernel() {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @top
+kgen.generator export @top() {
+  // COM: Just check that the code compiles. The assembly is target-dependent.
+  // CHECK: constant: string
+  kgen.param.constant: string = <compile_assembly(current_target(), :() -> () @kernel)>
+  kgen.return
+}

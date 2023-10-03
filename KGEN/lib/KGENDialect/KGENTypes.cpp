@@ -328,8 +328,7 @@ SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
 }
 
 bool SignatureType::isConcrete() {
-  return !getMetadata() && getInputParamTypes().empty() &&
-         getResultParamTypes().empty();
+  return getInputParamTypes().empty() && getResultParamTypes().empty();
 }
 
 Type SignatureType::parse(AsmParser &p) {
