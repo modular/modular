@@ -226,11 +226,11 @@ void XBValue::check() const { assert(::isa<RefType>(Value::getType())); }
 // ORValue
 //===----------------------------------------------------------------------===//
 
-ORValue::ORValue() {}
+ORValue::ORValue() = default;
 ORValue::ORValue(const ORValue &existing) : storage(existing.storage.copy()) {}
 ORValue::ORValue(RCRef<OverloadSetWrapper> storage)
     : storage(std::move(storage)) {}
-ORValue::~ORValue() {}
+ORValue::~ORValue() = default;
 
 ORValue &ORValue::operator=(const ORValue &existing) {
   storage = existing.storage.copy();
@@ -245,16 +245,14 @@ ORValue ORValue::create(OverloadSet &&set) {
 // DLValue / BaseDLValue
 //===----------------------------------------------------------------------===//
 
-DLValue::~DLValue() {}
+DLValue::~DLValue() = default;
 
 DLValue &DLValue::operator=(const DLValue &existing) {
   storage = existing.storage.copy();
   return *this;
 }
 
-BaseDLValue::~BaseDLValue() {
-  // vtable anchor.
-}
+BaseDLValue::~BaseDLValue() = default; // vtable anchor.
 
 //===----------------------------------------------------------------------===//
 // DiscardDLValue

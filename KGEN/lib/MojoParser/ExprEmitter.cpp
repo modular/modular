@@ -420,7 +420,7 @@ XLValue ValueDest::getXLValueForResult(SMLoc loc, ASTType resultType,
   if (auto ptr = lv.getIfMLValue()) {
     // HACK: force convert to reference.
     auto destTy = RefType::getRefForPointerHACK(
-        cast<PointerType>(ptr.getType().mlirType), /*mut=*/true);
+        cast<PointerType>(ptr.getType().mlirType), /*isMut=*/true);
     return emitter.builder
         ->create<mlir::UnrealizedConversionCastOp>(
             emitter.translateLocation(loc), destTy, ptr)

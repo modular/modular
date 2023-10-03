@@ -479,7 +479,7 @@ public:
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// I1 value that we can test directly.  This reports and error and returns
   /// null on error.
-  RValue emitI1(ASTExprAnd<CValue> expr);
+  RValue emitI1(ASTExprAnd<CValue> value);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
