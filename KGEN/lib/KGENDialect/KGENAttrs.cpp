@@ -666,17 +666,27 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
-  // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
-                           POC::Rebind, POC::TargetHasFeature,
-                           POC::TargetGetField, POC::BuildInfoGetField,
-                           POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet,
-                           POC::Cond, POC::GetEnv},
-                          opcode) &&
-      !llvm::all_of(operands, [&](auto operand) {
-        return operand.getType() == operands.front().getType();
-      }))
-    return emitError() << "operand type mismatch";
+  // All the operand types must match except for these operators.
+  switch (opcode) {
+  case POC::Cond:
+  case POC::TargetHasFeature:
+  case POC::TargetGetField:
+  case POC::BuildInfoGetField:
+  case POC::GetEnv:
+  case POC::GetSizeOf:
+  case POC::GetAlignOf:
+  case POC::BindSignature:
+  case POC::Apply:
+  case POC::ApplyResultSlot:
+  case POC::Rebind:
+  case POC::VariadicGet:
+    break;
+  default:
+    if (!llvm::all_of(operands, [&](auto operand) {
+          return operand.getType() == operands.front().getType();
+        }))
+      return emitError() << "operand type mismatch";
+  }
 
   // Check invariants on the expression.
   switch (opcode) {
