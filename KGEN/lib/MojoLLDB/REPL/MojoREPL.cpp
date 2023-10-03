@@ -593,7 +593,24 @@ lldb::offset_t MojoREPL::GetDesiredIndentation(const StringList &lines,
 
 void MojoREPL::CompleteCode(const std::string &current_code,
                             CompletionRequest &request) {
-  // TODO: Implement this when we have code completion functionality in Mojo.
+  // If we're completing a partially written token, grab that and use it for
+  // filtering results.
+  StringRef completionPrefix;
+  const Args::ArgEntry &completionArg = request.GetParsedArg();
+  if (!completionArg.IsQuoted() &&
+      llvm::all_of(completionArg.ref(), [](char c) {
+        return llvm::isAlnum(c) || c == '_' || c == '$';
+      })) {
+    completionPrefix = completionArg.ref();
+  }
+
+  std::vector<CodeCompletionResult> result = handleREPLCodeComplete(
+      *getTarget(), current_code + "\n", current_code.size());
+  for (const CodeCompletionResult &completion : result) {
+    if (completionPrefix.empty() ||
+        StringRef(completion.label).starts_with(completionPrefix))
+      request.AddCompletion(completion.label);
+  }
 }
 
 std::vector<CodeCompletionResult>
