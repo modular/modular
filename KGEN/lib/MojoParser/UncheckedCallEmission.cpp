@@ -821,14 +821,12 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     Block *successBlock =
         builder->createBlock(&handleVariant.getSuccessRegion());
     builder->setInsertionPointToStart(successBlock);
-    Value value =
-        builder->create<POP::VariantGetOp>(loc, successType, callResult);
+    Value value = builder->create<POP::VariantGetOp>(loc, callResult, 1);
     builder->create<LIT::YieldOp>(loc, value);
 
     Block *errorBlock = builder->createBlock(&handleVariant.getErrorRegion());
     builder->setInsertionPointToStart(errorBlock);
-    Value error = builder->create<POP::VariantGetOp>(
-        loc, callResultTy.getType(0), callResult);
+    Value error = builder->create<POP::VariantGetOp>(loc, callResult, 0);
     if (failed(emitRaise(error, loc))) {
       InflightDiag diag =
           emitError(callExpr->getLoc(), "cannot call function that may raise "

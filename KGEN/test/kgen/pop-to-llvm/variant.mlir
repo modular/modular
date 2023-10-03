@@ -17,7 +17,7 @@ kgen.func @variant_create_0(%arg0: i32) -> !pop.variant<i32> {
   // CHECK: %[[S3:.*]] = llvm.insertvalue %[[S1]], %[[S2]][0]
   // CHECK: %[[S4:.*]] = llvm.insertvalue %[[DISCR]], %[[S3]][1]
   // CHECK: unrealized_conversion_cast %[[S4]]
-  %0 = pop.variant.create %arg0 : i32 -> !pop.variant<i32>
+  %0 = pop.variant.create %arg0, 0 : <i32>
   kgen.return %0 : !pop.variant<i32>
 }
 
@@ -30,7 +30,7 @@ kgen.func @variant_create_1(%arg0: i8) -> !pop.variant<i8> {
   // CHECK: %[[P5:.*]] = llvm.shl %[[P4]], %[[I64_0]] : i64
   // CHECK: %[[P6:.*]] = llvm.or %[[I64_0]], %[[P5]] : i64
   // CHECK: llvm.insertvalue %[[P6]], %{{.*}}[0] : !llvm.array<1 x i64>
-  %0 = pop.variant.create %arg0 : i8 -> !pop.variant<i8>
+  %0 = pop.variant.create %arg0, 0 : <i8>
   kgen.return %0 : !pop.variant<i8>
 }
 
@@ -40,7 +40,7 @@ kgen.func @variant_create_2(%arg0: f64) -> !pop.variant<f64> {
   // CHECK: %[[P3:.*]] = llvm.lshr %[[P2]], %{{.*}} : i64
   // CHECK: %[[P4:.*]] = llvm.trunc %[[P3]] : i64 to i64
   // CHECK: %[[P5:.*]] = llvm.shl %[[P4]], %{{.*}} : i64
-  %0 = pop.variant.create %arg0 : f64 -> !pop.variant<f64>
+  %0 = pop.variant.create %arg0, 0 : <f64>
   kgen.return %0 : !pop.variant<f64>
 }
 
@@ -57,7 +57,7 @@ kgen.func @variant_create_3(%arg0: !pop.struct<i32, i32>) -> !pop.variant<struct
   // CHECK: %[[P13:.*]] = llvm.shl %[[P12]], %{{.*}} : i64
   // CHECK: %[[P14:.*]] = llvm.or %[[P9]], %[[P13]] : i64
   // CHECK: llvm.insertvalue %[[P14]], %{{.*}}[0] : !llvm.array<1 x i64>
-  %0 = pop.variant.create %arg0 : !pop.struct<i32, i32> -> !pop.variant<struct<i32, i32>>
+  %0 = pop.variant.create %arg0, 0 : <struct<i32, i32>>
   kgen.return %0 : !pop.variant<struct<i32, i32>>
 }
 
@@ -91,7 +91,7 @@ kgen.func @variant_create_4(%arg0: !pop.struct<i32, i64, i32>) -> !pop.variant<s
   // CHECK: %[[P26:.*]] = llvm.insertvalue %[[P23]], %[[P25]][1] : !llvm.array<4 x i64>
   // CHECK: %[[P27:.*]] = llvm.insertvalue %[[I64_0]], %[[P26]][2] : !llvm.array<4 x i64>
   // CHECK: %[[P28:.*]] = llvm.insertvalue %[[I64_0]], %[[P27]][3] : !llvm.array<4 x i64>
-  %0 = pop.variant.create %arg0 : !pop.struct<i32, i64, i32> -> !pop.variant<struct<i32, i64, i32>, array<4, i64>>
+  %0 = pop.variant.create %arg0, 0 : <struct<i32, i64, i32>, array<4, i64>>
   kgen.return %0 : !pop.variant<struct<i32, i64, i32>, array<4, i64>>
 }
 
@@ -147,14 +147,14 @@ kgen.func @variant_create_5(%arg0: !pop.struct<array<2, i16>, struct<struct<i8, 
   // CHECK: %[[S1:.*]] = llvm.insertvalue %[[P34]], %[[S0]][1] : !llvm.array<3 x i64>
   // CHECK: %[[S2:.*]] = llvm.insertvalue %[[P51]], %[[S1]][2] : !llvm.array<3 x i64>
   // CHECK: insertvalue %[[S2]], %{{.*}}[0]
-  %0 = pop.variant.create %arg0 : !pop.struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>> -> !pop.variant<struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>>
+  %0 = pop.variant.create %arg0, 0 : <struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>>
   kgen.return %0 : !pop.variant<struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>>
 }
 
 // CHECK-LABEL: @variant_create_6
 kgen.func @variant_create_6(%arg0: !kgen.pointer<index>) -> !pop.variant<pointer<index>> {
   // CHECK: llvm.ptrtoint
-  %0 = pop.variant.create %arg0 : !kgen.pointer<index> -> !pop.variant<pointer<index>>
+  %0 = pop.variant.create %arg0, 0 : <pointer<index>>
   kgen.return %0 : !pop.variant<pointer<index>>
 }
 
@@ -167,14 +167,14 @@ kgen.func @variant_get_0(%arg0: !pop.variant<i32>) ->  i32{
   // CHECK: %[[P6:.*]] = llvm.shl %[[P5]], %[[C0]] : i64
   // CHECK: %[[P7:.*]] = llvm.trunc %[[P6]] : i64 to i32
   // CHECK: %[[P8:.*]] = llvm.or %[[C0_i32]], %[[P7]] : i32
-  %0 = pop.variant.get %arg0 : !pop.variant<i32> as i32
+  %0 = pop.variant.get %arg0, 0 : <i32>
   kgen.return %0 : i32
 }
 
 // CHECK-LABEL: @variant_get_1
 kgen.func @variant_get_1(%arg0: !pop.variant<f64>) -> f64 {
   // CHECK: llvm.bitcast %{{.*}} : i64 to f64
-  %0 = pop.variant.get %arg0 : !pop.variant<f64> as f64
+  %0 = pop.variant.get %arg0, 0 : <f64>
   kgen.return %0 : f64
 }
 
@@ -195,7 +195,7 @@ kgen.func @variant_get_2(%arg0: !pop.variant<struct<i32, i32>>) -> !pop.struct<i
   // CHECK: %[[P14:.*]] = llvm.trunc %[[P13]] : i64 to i32
   // CHECK: %[[P15:.*]] = llvm.or %[[C0_i32]], %[[P14]] : i32
   // CHECK: %[[P16:.*]] = llvm.insertvalue %[[P15]], %[[P11]][1] : !llvm.struct<(i32, i32)>
-  %0 = pop.variant.get %arg0 : !pop.variant<struct<i32, i32>> as !pop.struct<i32, i32>
+  %0 = pop.variant.get %arg0, 0 : <struct<i32, i32>>
   kgen.return %0 : !pop.struct<i32, i32>
 }
 
@@ -228,7 +228,7 @@ kgen.func @variant_get_3(%arg0: !pop.variant<struct<i32, i64, i32>, array<4, i64
   // CHECK: %[[P24:.*]] = llvm.trunc %[[P23]] : i64 to i32
   // CHECK: %[[P25:.*]] = llvm.or %[[C0_i32]], %[[P24]] : i32
   // CHECK: %[[P26:.*]] = llvm.insertvalue %[[P25]], %[[P21]][2] : !llvm.struct<(i32, i64, i32)>
-  %0 = pop.variant.get %arg0 : !pop.variant<struct<i32, i64, i32>, array<4, i64>> as !pop.struct<i32, i64, i32>
+  %0 = pop.variant.get %arg0, 0 : <struct<i32, i64, i32>, array<4, i64>>
   kgen.return %0 : !pop.struct<i32, i64, i32>
 }
 
@@ -287,14 +287,14 @@ kgen.func @variant_get_4(%arg0: !pop.variant<struct<array<2, i16>, struct<struct
   // CHECK: %[[P61:.*]] = llvm.insertelement %[[P60]], %[[P51]][%[[C1_i32]] : i32] : vector<2xf32>
   // CHECK: %[[P62:.*]] = llvm.insertvalue %[[P61]], %[[P44]][1] : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
   // CHECK: %[[P63:.*]] = llvm.insertvalue %[[P62]], %[[P27]][1] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
-  %0 = pop.variant.get %arg0 : !pop.variant<struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>> as !pop.struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>
+  %0 = pop.variant.get %arg0, 0 : <struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>>
   kgen.return %0 : !pop.struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>
 }
 
 // CHECK-LABEL: @variant_get_5
 kgen.func @variant_get_5(%arg0: !pop.variant<pointer<index>>) -> !kgen.pointer<index> {
   // CHECK: llvm.inttoptr
-  %0 = pop.variant.get %arg0 : !pop.variant<pointer<index>> as !kgen.pointer<index>
+  %0 = pop.variant.get %arg0, 0 : <pointer<index>>
   kgen.return %0 : !kgen.pointer<index>
 }
 
@@ -302,7 +302,7 @@ kgen.func @variant_get_5(%arg0: !pop.variant<pointer<index>>) -> !kgen.pointer<i
 kgen.func @unpack_pointer(%arg0: !pop.variant<pointer<i8>>) -> !kgen.pointer<i8> {
   // CHECK: trunc %{{.*}} : i64 to i64
   // CHECK: inttoptr %{{.*}} : i64 to !llvm.ptr<i8>
-  %0 = pop.variant.get %arg0 : !pop.variant<pointer<i8>> as !kgen.pointer<i8>
+  %0 = pop.variant.get %arg0, 0 : <pointer<i8>>
   kgen.return %0 : !kgen.pointer<i8>
 }
 

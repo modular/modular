@@ -922,8 +922,17 @@ fn raisesReturnsNone() raises:
 # CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<!Error, index>
 fn raisesReturnsVariant() -> __mlir_type[`!pop.variant<`, Error, `, index>`]:
     return __mlir_op.`pop.variant.create`[
-        _type=__mlir_type[`!pop.variant<`, Error, `, index>`]
+        _type=__mlir_type[`!pop.variant<`, Error, `, index>`],
+        index=Int(1).value
     ](Int(1).value)
+
+
+# CHECK-LABEL: lit.func @"raise_and_return
+# CHECK-SAME: -> !pop.variant<!Error, !Error>
+fn raise_and_return(a: Error) raises -> Error:
+  # COM: Index 1 is the success index.
+  # CHECK: pop.variant.create %{{.*}}, 1 : <!Error, !Error>
+  return a
 
 
 @value

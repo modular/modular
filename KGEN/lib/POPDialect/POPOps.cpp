@@ -508,25 +508,49 @@ LogicalResult PackGetOp::verify() {
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
-/// Verify that the type is one of the variant types.
-static LogicalResult verifyVariantElementType(Operation *op, Type type,
-                                              VariantType variantType) {
-  if (!variantType.getTypeIndex(type))
-    return op->emitOpError("operand type ")
-           << type << " is not a variant type of " << variantType;
-  return success();
+static LogicalResult verifyVariantIndex(Operation *op, VariantType type,
+                                        unsigned index) {
+  if (index < type.getNumTypes())
+    return success();
+  return op->emitOpError("variant index ")
+         << index << " is out of bounds in range [0, " << type.getNumTypes()
+         << ")";
 }
 
 LogicalResult VariantCreateOp::verify() {
-  return verifyVariantElementType(*this, getOperand().getType(), getType());
+  if (failed(verifyVariantIndex(*this, getType(), getIndex())))
+    return failure();
+  Type elementType = getType().getType(getIndex());
+  if (elementType == getOperand().getType())
+    return success();
+  return emitOpError("variant element at index ")
+         << getIndex() << " expected type " << elementType
+         << " but operand has type " << getOperand().getType();
 }
+
+static ParseResult parseVariantElementType(AsmParser &p, Type &type,
+                                           Type variantType,
+                                           IntegerAttr index) {
+  unsigned i = index.getInt();
+  auto variant = cast<VariantType>(variantType);
+  if (i >= variant.getNumTypes()) {
+    return p.emitError(p.getCurrentLocation(),
+                       "variant index is out of bounds: ")
+           << i;
+  }
+  type = variant.getType(i);
+  return success();
+}
+
+static void printVariantElementType(AsmPrinter &p, Operation *op, Type type,
+                                    Type variantType, IntegerAttr index) {}
 
 //===----------------------------------------------------------------------===//
 // VariantIsOp
 //===----------------------------------------------------------------------===//
 
 LogicalResult VariantIsOp::verify() {
-  return verifyVariantElementType(*this, getTestType(), getVariant().getType());
+  return verifyVariantIndex(*this, getVariant().getType(), getIndex());
 }
 
 //===----------------------------------------------------------------------===//
@@ -534,7 +558,29 @@ LogicalResult VariantIsOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult VariantGetOp::verify() {
-  return verifyVariantElementType(*this, getType(), getVariant().getType());
+  if (failed(verifyVariantIndex(*this, getVariant().getType(), getIndex())))
+    return failure();
+  Type elementType = getVariant().getType().getType(getIndex());
+  if (elementType == getType())
+    return success();
+  return emitOpError("variant element at index ")
+         << getIndex() << " expected type " << elementType
+         << " but operand has type " << getType();
+}
+
+LogicalResult
+VariantGetOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
+                               ValueRange operands, DictionaryAttr attrs,
+                               mlir::OpaqueProperties, RegionRange,
+                               SmallVectorImpl<Type> &types) {
+  VariantGetOpAdaptor adaptor(operands, attrs);
+  unsigned index = adaptor.getIndex();
+  auto variant = cast<VariantType>(adaptor.getVariant().getType());
+  if (index >= variant.getNumTypes())
+    return mlir::emitOptionalError(loc, "variant element index ", index,
+                                   " is out of bounds");
+  types.push_back(variant.getType(index));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

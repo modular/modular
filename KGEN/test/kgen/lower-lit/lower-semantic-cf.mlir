@@ -40,7 +40,7 @@ lit.file_module @FileModule {
       } except (%err: !kgen.declref<@Error>) {
         // CHECK-NEXT: %[[R:.*]] = pop.variant.create %arg0
         // CHECK-NEXT: kgen.return %[[R]]
-        %tmp2 = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, i32>
+        %tmp2 = pop.variant.create %err, 0 : <@Error, i32>
         lit.return %tmp2 : !pop.variant<@Error, i32>
         lit.try.yield
       // CHECK-NEXT: else
@@ -48,7 +48,7 @@ lit.file_module @FileModule {
         // CHECK-NEXT: kgen.unreachable
 
         // expected-warning @+1 {{'else' logic in 'try' is unreachable}}
-        %tmp3 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
+        %tmp3 = pop.variant.create %a, 1 : <@Error, i32>
         lit.return %tmp3 : !pop.variant<@Error, i32>
         lit.try.yield
       // CHECK-NEXT: }
@@ -58,7 +58,7 @@ lit.file_module @FileModule {
 
       // CHECK-NEXT: kgen.unreachable
       // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
-      %tmp1 = pop.variant.create %a : i32 -> !pop.variant<@Error, i32>
+      %tmp1 = pop.variant.create %a, 1 : <@Error, i32>
       lit.return %tmp1 : !pop.variant<@Error, i32>
       lit.end_func
     }
@@ -155,8 +155,7 @@ lit.func @if_false_raise() throws -> !pop.variant<@Error, index> {
     hlcf.yield
   } else {
     %err = lit.struct.create () : () -> !kgen.declref<@Error>
-    %tmp = pop.variant.create %err : !kgen.declref<@Error>
-        -> !pop.variant<@Error, index>
+    %tmp = pop.variant.create %err, 0 : <@Error, index>
     lit.return %tmp : !pop.variant<@Error, index>
     hlcf.yield
   }
@@ -173,7 +172,7 @@ lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
     lit.try.yield
   // CHECK-NEXT: except
   } except (%err: !kgen.declref<@Error>) {
-    %tmp = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, index>
+    %tmp = pop.variant.create %err, 0 : <@Error, index>
     // CHECK: kgen.return
     lit.return %tmp : !pop.variant<@Error, index>
     lit.try.yield
@@ -192,7 +191,7 @@ lit.func @raise_raise() throws -> !pop.variant<@Error, index> {
 // CHECK-SAME ) -> !pop.variant<@Error, none>
 lit.func @no_return_throws() throws -> !pop.variant<@Error, none> {
   %0 = kgen.param.constant: none = <#kgen.none>
-  %tmp2 = pop.variant.create %0 : !kgen.none -> !pop.variant<@Error, none>
+  %tmp2 = pop.variant.create %0, 1 : <@Error, none>
   lit.return %tmp2 : !pop.variant<@Error, none>
   // CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
   // CHECK-NEXT: %0 = pop.variant.create %none
@@ -204,7 +203,7 @@ lit.func @no_return_throws() throws -> !pop.variant<@Error, none> {
 // CHECK-SAME:  -> !pop.variant<@Error, index>
 lit.func @throws(%e: !kgen.declref<@Error>) throws -> !pop.variant<@Error, index> {
   // CHECK-NEXT: pop.variant.create %e
-  %tmp = pop.variant.create %e : !kgen.declref<@Error> -> !pop.variant<@Error, index>
+  %tmp = pop.variant.create %e, 0 : <@Error, index>
   lit.return %tmp : !pop.variant<@Error, index>
   lit.end_func
 }
@@ -221,7 +220,7 @@ lit.func @ref(%e: !kgen.declref<@Error>,
     // CHECK: except (
     // CHECK-NEXT: kgen.unreachable
     // expected-warning @+1 {{'except' logic is unreachable, try doesn't raise an exception}}
-    %tmp = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, none>
+    %tmp = pop.variant.create %err, 0 : <@Error, none>
     lit.return %tmp : !pop.variant<@Error, none>
     lit.try.yield
   } else {
@@ -229,7 +228,7 @@ lit.func @ref(%e: !kgen.declref<@Error>,
     // CHECK-NEXT: %[[R:.*]] = pop.variant.create %[[V]]
     // CHECK-NEXT: kgen.return %[[R]]
     %none = kgen.param.constant: none = <#kgen.none>
-    %tmp2 = pop.variant.create %none : !kgen.none -> !pop.variant<@Error, none>
+    %tmp2 = pop.variant.create %none, 1 : <@Error, none>
     lit.return %tmp2 : !pop.variant<@Error, none>
     lit.try.yield
   } finally {
@@ -270,7 +269,7 @@ lit.func @parametric_throws<fn: () throws -> !pop.variant<@Error, none>>() throw
   kgen.call_param[() throws -> !pop.variant<@Error, none>: fn]()
 
   %0 = kgen.param.constant: none = <#kgen.none>
-  %tmp2 = pop.variant.create %0 : !kgen.none -> !pop.variant<@Error, none>
+  %tmp2 = pop.variant.create %0, 1 : <@Error, none>
   lit.return %tmp2 : !pop.variant<@Error, none>
   lit.end_func
 }
@@ -288,7 +287,7 @@ lit.file_module @Module {
       %x = lit.struct.extract %self[x] : !kgen.signature<() throws -> !pop.variant<@Error, none>>
         from !kgen.declref<@Module::@Struct>
       %0 = kgen.param.constant: none = <#kgen.none>
-      %tmp2 = pop.variant.create %0 : !kgen.none -> !pop.variant<@Error, none>
+      %tmp2 = pop.variant.create %0, 1 : <@Error, none>
       lit.return %tmp2 : !pop.variant<@Error, none>
       lit.end_func
     }
@@ -323,7 +322,7 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
     %a = kgen.param.constant = <a>
     // CHECK-NEXT: %[[RESULT:.*]] = pop.variant.create %[[A]]
     // CHECK-NEXT: kgen.return %[[RESULT]]
-    %tmp = pop.variant.create %a : index -> !pop.variant<@Error, index>
+    %tmp = pop.variant.create %a, 1 : <@Error, index>
     lit.return %tmp : !pop.variant<@Error, index>
     hlcf.yield
   } else {
@@ -332,7 +331,7 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
   // CHECK: %[[ERR:.*]] = pop.variant.create %err
   // CHECK-NEXT: kgen.return %[[ERR]]
 
-  %tmp2 = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, index>
+  %tmp2 = pop.variant.create %err, 0 : <@Error, index>
   lit.return %tmp2 : !pop.variant<@Error, index>
   lit.end_func
 }
@@ -347,7 +346,7 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.v
   %hdl = lit.async.call[!lit.signature<("err": !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index>> : callee](%err)
 
   %0 = kgen.param.constant: none = <#kgen.none>
-  %tmp2 = pop.variant.create %0 : !kgen.none -> !pop.variant<@Error, none>
+  %tmp2 = pop.variant.create %0, 1 : <@Error, none>
   lit.return %tmp2 : !pop.variant<@Error, none>
   lit.end_func
 }
@@ -628,7 +627,7 @@ lit.func @nested_try_finally() {
 // CHECK-LABEL: lit.func @throwing_func
 lit.func @throwing_func<T: type>() throws -> !pop.variant<@Error, T> {
   %0 = lit.struct.create() : () -> !kgen.declref<@Error>
-  // CHECK: %1 = pop.variant.create %0 : !kgen.declref<@Error> -> !pop.variant<@Error, T>
+  // CHECK: %1 = pop.variant.create %0, 0 : <@Error, T>
   // CHECK: lit.error_return %1 : <@Error, T>
   lit.raise %0 : <@Error>
   lit.end_func

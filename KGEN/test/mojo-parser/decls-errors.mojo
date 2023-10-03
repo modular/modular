@@ -154,11 +154,6 @@ fn testThingWithStaticMethod():
   ThingWithStaticMethod.splat(4.0)
 
 
-# expected-error @+1 {{cannot return and raise the same type from a function}}
-fn cant_raise_return(a: Error) raises -> Error:
-  return a
-
-
 def top_level_fn(a: Int):
     # expected-error @+2 {{nonparametric capturing closure cannot be marked @adaptive}}
     @adaptive

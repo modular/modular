@@ -320,7 +320,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         Type failedType = funcOp.getResultTypes().front();
         assert(isa<POP::VariantType>(failedType));
         b.create<LIT::ErrorReturnOp>(b.create<POP::VariantCreateOp>(
-            raiseOp->getLoc(), failedType, raiseOp.getError()));
+            raiseOp->getLoc(), failedType, raiseOp.getError(), 0));
       } else
         b.create<LIT::TryRaiseOp>(raiseOp.getError());
       op.erase();

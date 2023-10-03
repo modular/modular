@@ -409,7 +409,7 @@ kgen.func @simd_select_equal(%arg0: !pop.simd<2, bool>, %arg1: !pop.simd<2, bool
 kgen.func @simd_select_all_true(%arg0: !pop.simd<2, f32>, %arg1: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
   // CHECK: (%[[ARG0:.*]]: !pop.simd<2, f32>, %[[ARG1:.*]]: !pop.simd<2, f32>)
   // CHECK-NEXT: kgen.return %[[ARG0]]
-  
+
   %true = kgen.param.constant: simd<2, bool> = <<true, true>>
   %0 = pop.simd.select %true, %arg0, %arg1 : <2, f32>
   kgen.return %0 : !pop.simd<2, f32>
@@ -699,40 +699,40 @@ kgen.func @array_replace() -> !pop.array<2, index> {
 
 // CHECK-LABEL: @variant_create
 kgen.func @variant_create() -> !pop.variant<si4, ui4> {
-  // CHECK-NEXT: constant: variant<si4, ui4> = <#pop.variant<:ui4 7>>
+  // CHECK-NEXT: constant: variant<si4, ui4> = <#pop.variant<:ui4 7, 1>>
   %0 = kgen.param.constant: ui4 = <7>
-  %1 = pop.variant.create %0 : ui4 -> !pop.variant<si4, ui4>
+  %1 = pop.variant.create %0, 1 : <si4, ui4>
   kgen.return %1 : !pop.variant<si4, ui4>
 }
 
 // CHECK-LABEL: @variant_is
 kgen.func @variant_is() -> i1 {
   // CHECK-NEXT: constant: i1 = <1>
-  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7>>
-  %1 = pop.variant.is ui4, %0 : !pop.variant<si4, ui4>
+  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7, 1>>
+  %1 = pop.variant.is %0, 1 : <si4, ui4>
   kgen.return %1 : i1
 }
 
 // CHECK-LABEL: @variant_get
 kgen.func @variant_get() -> ui4 {
   // CHECK-NEXT: constant: ui4 = <7>
-  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7>>
-  %1 = pop.variant.get %0 : !pop.variant<si4, ui4> as ui4
+  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7, 1>>
+  %1 = pop.variant.get %0, 1 : <si4, ui4>
   kgen.return %1 : ui4
 }
 
 // CHECK-LABEL: @variant_get_ub
 kgen.func @variant_get_ub() -> si4 {
   // CHECK: pop.variant.get
-  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7>>
-  %1 = pop.variant.get %0 : !pop.variant<si4, ui4> as si4
+  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7, 1>>
+  %1 = pop.variant.get %0, 0 : <si4, ui4>
   kgen.return %1 : si4
 }
 
 // CHECK-LABEL: @variant_create_get
 kgen.func @variant_create_get(%a: i32) -> i32 {
-  %0 = pop.variant.create %a : i32 -> !pop.variant<i32, f32>
-  %1 = pop.variant.get %0 : !pop.variant<i32, f32> as i32
+  %0 = pop.variant.create %a, 0 : <i32, f32>
+  %1 = pop.variant.get %0, 0 : <i32, f32>
   // CHECK: return %arg0
   kgen.return %1 : i32
 }

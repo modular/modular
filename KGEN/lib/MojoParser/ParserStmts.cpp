@@ -636,8 +636,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // variant type.
   ImplicitLocOpBuilder b(mlirLoc, builder);
   if (decl.isThrows())
-    resultValue =
-        b.create<POP::VariantCreateOp>(decl.getMLIRResultType(), resultValue);
+    resultValue = b.create<POP::VariantCreateOp>(decl.getMLIRResultType(),
+                                                 resultValue, 1);
 
   ExprEmitter::emitNormalReturn(b, resultValue, getParentDecl());
   return success();

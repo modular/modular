@@ -78,8 +78,8 @@ static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
   TypedValue<POP::VariantType> variantOperand = handleVariantOp.getVariant();
   mlir::IRRewriter b{OpBuilder(handleVariantOp)};
   Type successType = variantOperand.getType().getType(1);
-  auto variantIsOp = b.create<POP::VariantIsOp>(handleVariantOp.getLoc(),
-                                                variantOperand, successType);
+  auto variantIsOp =
+      b.create<POP::VariantIsOp>(handleVariantOp.getLoc(), variantOperand, 1);
   auto ifOp = b.create<HLCF::IfOp>(handleVariantOp.getLoc(),
                                    TypeRange(successType), variantIsOp);
   ifOp.getThenRegion().takeBody(handleVariantOp.getSuccessRegion());

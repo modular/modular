@@ -53,6 +53,6 @@ kgen.generator @array_constant<size>() {
 // -----
 
 kgen.generator @variant_constant<value: i32>() {
-  // expected-error @below {{variant attribute value type 'i32' is not a possible variant subtype}}
-  %0 = kgen.param.constant: variant<f32, f64> = <#pop.variant<:i32 value>>
+  // expected-error @below {{variant attribute value type 'i32' does not match type at index 0 which is 'f32'}}
+  %0 = kgen.param.constant: variant<f32, f64> = <#pop.variant<:i32 value, 0>>
 }

@@ -2651,18 +2651,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       decl.hasReferenceError = true;
 
     resultType = POP::VariantType::get({errorType, resultType});
-
-    // FIXME(#12604): We cannot return an Error type from a function that also
-    // throws. This is because Variant collapses the variant to one case and
-    // we can't tell which is which.  We could fix this in a number of ways in
-    // the future if/when it matters.
-    if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
-      p.emitError(funcOp.getLoc(),
-                  "cannot return and raise the same type from a function");
-      resultType =
-          POP::VariantType::get({errorType, shared.getTypeCheckErrorType()});
-      decl.hasReferenceError = true;
-    }
   }
 
   // Handle argument effects and build the ASTDecls for the arguments.
@@ -2860,7 +2848,8 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
 
     // Wrap the result value if necessary.
     if (func.isThrows())
-      retVal = b.create<POP::VariantCreateOp>(func.getMLIRResultType(), retVal);
+      retVal =
+          b.create<POP::VariantCreateOp>(func.getMLIRResultType(), retVal, 1);
     ExprEmitter::emitNormalReturn(b, retVal, funcDecl);
   };
 

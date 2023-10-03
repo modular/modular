@@ -118,17 +118,17 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
     // CHECK: [[V:%.*]] = kgen.call @foo([[XPTR]])
     %1 = kgen.call @foo(%xptr) : (!kgen.pointer<@S> byref_result) throws -> !pop.variant<@Error, none>
     // CHECK: [[VAR0:%.*]] = lit.handle_variant [[V]], [[XPTR]] : (!pop.variant<@Error, none>, !kgen.pointer<@S>) -> !kgen.none {
-    // CHECK: [[VAR1:%.*]] = pop.variant.get [[V]] : !pop.variant<@Error, none> as !kgen.none
+    // CHECK: [[VAR1:%.*]] = pop.variant.get [[V]], 1 : <@Error, none>
     // CHECK: lit.yield [[VAR1]]
     // CHECK: } else {
-    // CHECK: [[VAR2:%.*]] = pop.variant.get [[V]] : !pop.variant<@Error, none> as !kgen.declref<@Error>
+    // CHECK: [[VAR2:%.*]] = pop.variant.get [[V]], 0 : <@Error, none>
     // CHECK: lit.try.raise [[VAR2]]
     // CHECK: }
     %2 = lit.handle_variant %1, %xptr: (!pop.variant<@Error, none>, !kgen.pointer<@S>) -> !kgen.none {
-      %4 = pop.variant.get %1 : !pop.variant<@Error, none> as !kgen.none
+      %4 = pop.variant.get %1, 1 : <@Error, none>
       lit.yield %4 : !kgen.none
     } else {
-      %4 = pop.variant.get %1 : !pop.variant<@Error, none> as !kgen.declref<@Error>
+      %4 = pop.variant.get %1, 0 : <@Error, none>
       lit.try.raise %4 : !kgen.declref<@Error>
     }
     // CHECK: kgen.call @S::@__del__({{.*}}) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
@@ -157,13 +157,13 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
     hlcf.if %c {
       %5 = kgen.call @mightThrow() : () throws -> !pop.variant<@Error, none>
   	  %6 = lit.handle_variant %5 : (!pop.variant<@Error, none>) -> !kgen.none {
-        %10 = pop.variant.get %5 : !pop.variant<@Error, none> as !kgen.none
+        %10 = pop.variant.get %5, 1 : <@Error, none>
         lit.yield %10 : !kgen.none
   	  } else {
         // CHECK: [[PTR:%.*]] = lit.ref.to_pointer %s
   	    // CHECK-NEXT: [[VAR0:%.*]] = kgen.call @S::@__del__([[PTR]])
   	    // CHECK-NEXT: [[VAR1:%.*]] = pop.variant.get
-        %10 = pop.variant.get %5 : !pop.variant<@Error, none> as !kgen.declref<@Error>
+        %10 = pop.variant.get %5, 0 : <@Error, none>
         lit.try.raise %10 : !kgen.declref<@Error>
       }
       %7 = lit.ref.struct.ger %s[a] : !lit.ref<mut index, *"SLife"> from !lit.ref<mut @S, *"SLife">
@@ -227,7 +227,7 @@ lit.struct.decl @DestructSome attributes {destructor = #kgen.symbol.constant<@De
     %106 = kgen.call @S::@__init__(%105) : (!kgen.pointer<@S> init_self) -> !kgen.none
     // CHECK: hlcf.if %cond {
     // CHECK-NEXT: [[VAR0:%.*]] = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
-    // CHECK-NEXT: [[VAR1:%.*]] = pop.variant.create [[VAR0]] : !kgen.declref<@Error> -> !pop.variant<@Error, none>
+    // CHECK-NEXT: [[VAR1:%.*]] = pop.variant.create [[VAR0]], 0 : <@Error, none>
     // CHECK-NEXT: [[VAR2:%.*]] = lit.struct.gep %self[a] : <@S> from <@DestructSome>
     // CHECK-NEXT: [[VAR3:%.*]] = kgen.call @S::@__del__([[VAR2]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
     // CHECK-NEXT: [[VAR4:%.*]] = lit.struct.gep %self[stole] : <@S> from <@DestructSome>
@@ -240,7 +240,7 @@ lit.struct.decl @DestructSome attributes {destructor = #kgen.symbol.constant<@De
     // CHECK-NEXT: }
     hlcf.if %cond {
       %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
-      %13 = pop.variant.create %12 : !kgen.declref<@Error> -> !pop.variant<@Error, none>
+      %13 = pop.variant.create %12, 0 : <@Error, none>
       lit.error_return %13 : !pop.variant<@Error, none>
     } else {
       hlcf.yield
@@ -248,7 +248,7 @@ lit.struct.decl @DestructSome attributes {destructor = #kgen.symbol.constant<@De
     %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructSome>
     %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
-    %14 = pop.variant.create %none : !kgen.none -> !pop.variant<@Error, none>
+    %14 = pop.variant.create %none, 1 : <@Error, none>
     kgen.return %14 : !pop.variant<@Error, none>
   }
 }
@@ -267,14 +267,14 @@ lit.struct.decl @DestructNone attributes {destructor = #kgen.symbol.constant<@De
                      ) throws -> !pop.variant<@Error, none> {
     // CHECK: hlcf.if %cond {
     // CHECK-NEXT: %[[VAR0:.*]] = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
-    // CHECK-NEXT: %[[VAR1:.*]] = pop.variant.create %[[VAR0]] : !kgen.declref<@Error> -> !pop.variant<@Error, none>
+    // CHECK-NEXT: %[[VAR1:.*]] = pop.variant.create %[[VAR0]], 0 : <@Error, none>
     // CHECK-NEXT: lit.error_return %[[VAR1]] : <@Error, none>
     // CHECK-NEXT: } else {
     // CHECK-NEXT: hlcf.yield
     // CHECK-NEXT: }
     hlcf.if %cond {
       %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
-      %13 = pop.variant.create %12 : !kgen.declref<@Error> -> !pop.variant<@Error, none>
+      %13 = pop.variant.create %12, 0 : <@Error, none>
       lit.error_return %13 : !pop.variant<@Error, none>
     } else {
         hlcf.yield
@@ -291,7 +291,7 @@ lit.struct.decl @DestructNone attributes {destructor = #kgen.symbol.constant<@De
     %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructNone>
     %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
-    %14 = pop.variant.create %none : !kgen.none -> !pop.variant<@Error, none>
+    %14 = pop.variant.create %none, 1 : <@Error, none>
     kgen.return %14 : !pop.variant<@Error, none>
   }
 }
@@ -322,7 +322,7 @@ lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@De
     %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
     hlcf.if %cond {
       %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
-      %13 = pop.variant.create %12 : !kgen.declref<@Error> -> !pop.variant<@Error, none>
+      %13 = pop.variant.create %12, 0 : <@Error, none>
       // CHECK: %[[VAR0:.*]] = kgen.call @DestructFull::@__del__(%self) : (!kgen.pointer<@DestructFull> owned_in_mem) -> !kgen.none
       lit.error_return %13 : !pop.variant<@Error, none>
     } else {
@@ -330,7 +330,7 @@ lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@De
     }
 
     %none = kgen.param.constant: none = <#kgen.none>
-    %14 = pop.variant.create %none : !kgen.none -> !pop.variant<@Error, none>
+    %14 = pop.variant.create %none, 1 : <@Error, none>
     kgen.return %14 : !pop.variant<@Error, none>
   }
 }
@@ -524,7 +524,7 @@ lit.func @doSomething(%e: !Error borrow) {
 
 lit.func @i_raise() throws -> !pop.variant<!Error, index> {
   %0 = kgen.call @Error::@__init__() : () ownedresult -> !Error
-  %1 = pop.variant.create %0 : !Error -> !pop.variant<!Error, index>
+  %1 = pop.variant.create %0, 0 : <!Error, index>
   lit.error_return %1 : <!Error, index>
 }
 
@@ -533,10 +533,10 @@ lit.func @eatErrorNoRef() {
   lit.try {
     %3 = kgen.call @i_raise() : !lit.signature<() throws -> !pop.variant<!Error, index>>
     %4 = lit.handle_variant %3 : (!pop.variant<!Error, index>) -> index {
-      %6 = pop.variant.get %3 : !pop.variant<!Error, index> as index
+      %6 = pop.variant.get %3, 1 : <!Error, index>
       lit.yield %6 : index
     } else {
-      %6 = pop.variant.get %3 : !pop.variant<!Error, index> as !Error
+      %6 = pop.variant.get %3, 0 : <!Error, index>
       lit.try.raise %6 : !Error
     }
     lit.try.yield
@@ -556,10 +556,10 @@ lit.func @eatErrorRef() {
   lit.try {
     %3 = kgen.call @i_raise() : !lit.signature<() throws -> !pop.variant<!Error, index>>
     %4 = lit.handle_variant %3 : (!pop.variant<!Error, index>) -> index {
-      %6 = pop.variant.get %3 : !pop.variant<!Error, index> as index
+      %6 = pop.variant.get %3, 1 : <!Error, index>
       lit.yield %6 : index
     } else {
-      %6 = pop.variant.get %3 : !pop.variant<!Error, index> as !Error
+      %6 = pop.variant.get %3, 0 : <!Error, index>
       lit.try.raise %6 : !Error
     }
     lit.try.yield
