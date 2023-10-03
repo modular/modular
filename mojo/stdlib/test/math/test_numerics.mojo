@@ -7,6 +7,7 @@
 
 from math.numerics import FPUtils
 
+
 # CHECK-LABEL: test_numerics
 fn test_numerics():
     print("== test_numerics")

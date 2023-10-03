@@ -7,6 +7,7 @@
 
 from math import isclose
 
+
 # CHECK-LABEL: test_isclose
 fn test_isclose():
     print("== test_isclose")

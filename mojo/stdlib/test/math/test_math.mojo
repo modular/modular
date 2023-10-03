@@ -21,6 +21,7 @@ from math.limit import inf, isfinite, isinf, neginf
 
 from complex import ComplexFloat32
 
+
 # CHECK-LABEL: test_inf
 fn test_inf():
     print("== test_inf")
