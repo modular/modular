@@ -1847,10 +1847,6 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     // indicate an error.
     if (genNode->constraintError)
       return ElaborationState::error();
-    // If this generator node is already concrete and has no error, don't
-    // re-concretize.
-    if (config.testDiagnostics)
-      genNode->gen.emitRemark("Generator has already been specialized");
     return ElaborationState::advance();
   case ParamNodeState::IN_PROGRESS:
     // If the worker hit a parameter node that is already in progress, this
@@ -2344,7 +2340,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       failed = true;
       err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
     }
-    if (!config.testDiagnostics &&
+    if (!config.allowMultiplePrimaryImpls &&
         llvm::count_if(genNode->impls,
                        [](auto &impl) { return !impl->error; }) > 1) {
       InFlightDiagnostic diag = mlir::emitError(
@@ -2579,8 +2575,8 @@ public:
     if (failed(elaborateGenerators(
             analysis, paramCache, *rt, target, primaryGenerators,
             evaluatorExecutorFn,
-            ElaborateGeneratorsOptions{enableSearch, testDiagnostics, maxDepth,
-                                       elaborateLocations})))
+            ElaborateGeneratorsOptions{enableSearch, allowMultiplePrimaryImpls,
+                                       maxDepth, elaborateLocations})))
       return signalPassFailure();
   }
 
