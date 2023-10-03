@@ -91,6 +91,11 @@ public:
                                      const ExportMap &exportedSymbols,
                                      StringRef filename, raw_ostream &os);
 
+  /// Get a reference to the object compiler's transform cache.
+  RCRef<Cache::TransformCache> getTransformCache() {
+    return transformCache.copy();
+  }
+
   /// Configure the object compiler to be used for search.
   void setForSearch(bool useForSearch) { isSearch = useForSearch; }
 
@@ -105,7 +110,7 @@ private:
                                                  Location loc);
 
   /// The caches needed for compilation.
-  RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
+  RCRef<Cache::TransformCache> transformCache;
 
   /// The async runtime to use during lowering.
   LLCL::Runtime &runtime;

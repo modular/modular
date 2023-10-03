@@ -8,6 +8,7 @@
 #define KGEN_TOOLCOMMON_KGENPASSES_H
 
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "Support/Buffer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
@@ -80,9 +81,8 @@ using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
 
 /// Function to slice and compile the generator to assembly with the provided
 /// target.
-using ElaboratorCompileAsmFn =
-    std::function<ErrorOrSuccess(GeneratorOp, const SymbolTable &,
-                                 TargetInfoAttr, llvm::raw_pwrite_stream &)>;
+using ElaboratorCompileAsmFn = std::function<ErrorOr<BufferRef>(
+    GeneratorOp, const SymbolTable &, TargetInfoAttr)>;
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.

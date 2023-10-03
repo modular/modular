@@ -26,9 +26,8 @@ namespace M::KGEN {
 
 using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
-using ElaboratorCompileAsmFnRef =
-    function_ref<ErrorOrSuccess(GeneratorOp, const SymbolTable &,
-                                TargetInfoAttr, llvm::raw_pwrite_stream &)>;
+using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<BufferRef>(
+    GeneratorOp, const SymbolTable &, TargetInfoAttr)>;
 
 class Elaborator {
 public:

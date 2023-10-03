@@ -58,7 +58,7 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
       LLCL::MLIRLocationDecoder::getEncodedLocation(target->getLoc()),
       std::move(transformCache), std::move(chain), std::move(transformKey),
       [target, transformFn = std::forward<TransformationFnT>(transformFn)](
-          WriteableBufferRef buf, LLCL::AnyAsyncValueRef chain) {
+          WriteableBufferRef buf, LLCL::AnyAsyncValueRef chain) mutable {
         return transformFn(target, std::move(buf), std::move(chain));
       },
       [target, cacheHitFn = std::forward<CacheHitFnT>(cacheHitFn)](

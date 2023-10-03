@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
@@ -104,10 +105,11 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func` and
 /// elaborate it and compile to assembly for the provided `target.
-static ErrorOrSuccess
-compileElaboratorAsm(GeneratorOp func, const SymbolTable &symtab,
-                     LLCL::Runtime &runtime, TargetInfoAttr target,
-                     CompilationOptions options, llvm::raw_pwrite_stream &os) {
+static ErrorOr<BufferRef> compileElaboratorAsm(GeneratorOp func,
+                                               const SymbolTable &symtab,
+                                               LLCL::Runtime &runtime,
+                                               TargetInfoAttr target,
+                                               CompilationOptions options) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
@@ -126,7 +128,7 @@ compileElaboratorAsm(GeneratorOp func, const SymbolTable &symtab,
   auto tmOr = createTargetMachine(options, /*isJIT=*/false);
   if (tmOr.isError())
     return tmOr.takeError();
-  std::unique_ptr<llvm::TargetMachine> targetMachine = tmOr.takeValue();
+  std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
 
   // Slice out a pre-elaboration module for the new target to compile for.
   ExportMap exportedSymbols;
@@ -153,24 +155,58 @@ compileElaboratorAsm(GeneratorOp func, const SymbolTable &symtab,
                                        options, specializations);
       },
       [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
-                    TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
+                    TargetInfoAttr target) {
         // Recursion...!
-        return compileElaboratorAsm(func, symtab, runtime, target, options, os);
+        return compileElaboratorAsm(func, symtab, runtime, target, options);
       }));
   buildPostElaborationPipeline(pm, runtime, options);
 
-  // TODO: cachedTransform
-  if (failed(pm.run(*module)))
-    return Error("failed to run the pass manager");
-  llvm::LLVMContext llvmCtx;
-  std::unique_ptr<llvm::Module> llvmModule =
-      compiler.lowerAllFuncsToLLVM(llvmCtx, *module);
+  // This functor runs the desired transformation to cache.
+  auto compileToAsm = [&pm, &compiler, &options, &runtime, tm = std::move(tm)](
+                          Operation *op,
+                          WriteableBufferRef buffer) mutable -> ErrorOrSuccess {
+    if (failed(pm.run(op)))
+      return Error("failed to run the pass manager");
+    llvm::LLVMContext llvmCtx;
+    std::unique_ptr<llvm::Module> llvmModule =
+        compiler.lowerAllFuncsToLLVM(llvmCtx, cast<ModuleOp>(op));
 
-  if (failed(compileLLVMToObject(*llvmModule, *targetMachine, os, options,
-                                 runtime, /*emitAssembly=*/true)))
-    return Error("failed to emit assembly");
+    if (failed(compileLLVMToObject(*llvmModule, *tm, *buffer, options, runtime,
+                                   /*emitAssembly=*/true)))
+      return Error("failed to emit assembly");
+    return success();
+  };
 
-  return success();
+  // Cache the compilation down to assembly as a single step. Finer-grain
+  // caching here would not create any re-use with the rest of the stack.
+  WriteableBufferRef key = WriteableBuffer::get();
+  pm.printAsTextualPipeline(*key);
+  options.print(*key);
+  // Functor to adapt the transform functor to the required API.
+  auto runTransformation =
+      [func = std::move(compileToAsm)](Operation *op, WriteableBufferRef buf,
+                                       AnyAsyncValueRef chain) mutable {
+        auto output = AsyncValueRef<BufferRef>::allocate(chain.getRuntime());
+        std::move(chain).andThenSync(
+            [op, func = std::move(func), output = output.copy(),
+             buf = std::move(buf)](AnyAsyncValueRef &&chain) mutable {
+              if (chain.isError())
+                return std::move(output).setToError(chain.takeDiagnostic());
+              if (ErrorOrSuccess err = func(op, buf.copy()); err.isError())
+                return std::move(output).setToError(
+                    LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
+              return std::move(output).emplace(std::move(buf));
+            });
+        return output;
+      };
+  // On cache hit, just return the assembly buffer.
+  auto onCacheHit = [](Operation *op, BufferRef buf) { return buf.copy(); };
+  AnyAsyncValueRef result = Cache::cachedTransform(
+      *module, compiler.getTransformCache(),
+      AsyncValueRef<Chain>::createReady(runtime), std::move(key),
+      std::move(runTransformation), onCacheHit);
+  await(result);
+  return std::move(result.get<BufferRef>());
 }
 
 //===----------------------------------------------------------------------===//
@@ -190,8 +226,8 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                        options, specializations);
       },
       [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
-                    TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
-        return compileElaboratorAsm(func, symtab, runtime, target, options, os);
+                    TargetInfoAttr target) {
+        return compileElaboratorAsm(func, symtab, runtime, target, options);
       },
       options);
   buildPostElaborationPipeline(pm, runtime, options);
@@ -374,9 +410,9 @@ KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
                                        /*options=*/{}, specializations);
       },
       [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
-                    TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
+                    TargetInfoAttr target) {
         return compileElaboratorAsm(func, symtab, runtime, target,
-                                    /*options=*/{}, os);
+                                    /*options=*/{});
       });
 }
 
