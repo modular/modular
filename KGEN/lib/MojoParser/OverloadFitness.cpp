@@ -1,0 +1,917 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file implements the components for overload fitness evaluation.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/MojoParser/OverloadFitness.h"
+#include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
+#include "Utils.h"
+
+#include "KGEN/LITDialect/LITTypes.h"
+
+#include "llvm/ADT/StringSet.h"
+
+#define DEBUG_TYPE "LITEXPRCALLS"
+
+using namespace M;
+using namespace M::KGEN;
+using namespace M::KGEN::LIT;
+
+//===----------------------------------------------------------------------===//
+// ParameterInferenceState Implementation
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class provides the implementation details that help to infer
+/// information about the specified parameter.
+class ParameterInferenceState {
+public:
+  ParameterInferenceState(SharedState &state, size_t index, Type type)
+      : state(state), parameterIndex(index) {}
+
+  /// Given an incomplete parameter binding set for a call to the specified
+  /// signature, try to infer the value of the next 'decl' parameter.  This
+  /// should always return null /without/ an error if it cannot be inferred, and
+  /// return a specific value if unambiguously determined.
+  PValue infer(LITSignatureType signature, ArrayRef<TypedAttr> bindingsSoFar,
+               const CallOperands &callOperands);
+
+private:
+  LogicalResult matchTypes(Type actualType, Type expectedType);
+  LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  LogicalResult checkOneOperand(ASTExprAnd<AnyValue> operand,
+                                ASTType expectedType,
+                                ValueInputConvention expectedConvention);
+
+  SharedState &state;
+  size_t parameterIndex;
+  SmallVector<PValue> inferredValues;
+};
+} // namespace
+
+LogicalResult ParameterInferenceState::matchTypes(Type actualType,
+                                                  Type expectedType) {
+  // If the expected type is a parameter ref, then we're binding the specified
+  // type to an attribute parameter.
+  if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType))
+    return matchParams(ParameterizedTypeConstantAttr::get(actualType),
+                       expectedParamRef.getParam());
+
+  // If the types trivially match then there is no inference to do.
+  if (actualType == expectedType)
+    return success();
+
+  // Handle when both are DeclRefTypes.
+  if (auto actualDRT = dyn_cast<DeclRefType>(actualType)) {
+    if (auto expectedDRT = dyn_cast<DeclRefType>(expectedType)) {
+      // Ignore if these are two fundamentally different symbols.
+      if (actualDRT.getSymbol() != expectedDRT.getSymbol())
+        return success();
+
+      // Fail if the parameter lists fundamentally mismatch.
+      // TODO: Defaulted parameters could make this ok?
+      if (actualDRT.getParamValues().size() !=
+          expectedDRT.getParamValues().size())
+        return failure();
+
+      // Match up the parameter bindings.
+      for (auto [actual, expected] : llvm::zip(actualDRT.getParamValues(),
+                                               expectedDRT.getParamValues())) {
+        assert(actual.getName() == expected.getName());
+        if (failed(matchParams(actual.getValue(), expected.getValue())))
+          return failure();
+      }
+      return success();
+    }
+  }
+
+  // Handle various common POP types for convenience, starting with SIMDType.
+  if (auto actual = dyn_cast<POP::SIMDType>(actualType))
+    if (auto expected = dyn_cast<POP::SIMDType>(expectedType))
+      return failure(
+          failed(matchParams(actual.getSize(), expected.getSize())) ||
+          failed(matchParams(actual.getDType(), expected.getDType())));
+
+  // POP::ArrayType.
+  if (auto actual = dyn_cast<POP::ArrayType>(actualType))
+    if (auto expected = dyn_cast<POP::ArrayType>(expectedType))
+      return failure(
+          failed(matchParams(actual.getSize(), expected.getSize())) ||
+          failed(
+              matchParams(actual.getElementType(), expected.getElementType())));
+
+  // Handle PointerType.
+  if (auto actual = dyn_cast<PointerType>(actualType))
+    if (auto expected = dyn_cast<PointerType>(expectedType))
+      return matchParams(actual.getElementType(), expected.getElementType());
+
+  // Handle VariadicType
+  if (auto actual = dyn_cast<VariadicType>(actualType))
+    if (auto expected = dyn_cast<VariadicType>(expectedType))
+      return matchParams(actual.getElementType(), expected.getElementType());
+
+  // TODO: Could do StructType?
+  LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCH TYPES:\n";
+             actualType.dump(); expectedType.dump();
+             llvm::errs() << parameterIndex);
+  return success();
+}
+
+LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
+                                                   TypedAttr expectedAttr) {
+
+  // We can only match up these values if their types match.
+  if (actualAttr.getType() != expectedAttr.getType() &&
+      failed(matchTypes(actualAttr.getType(), expectedAttr.getType())))
+    return failure();
+
+  // If the expected value is the parameter declaration in question, remember
+  // this value!
+  if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
+    if (ire.getDepth() == 0 && !ire.getIsResult() &&
+        ire.getIndex() == parameterIndex)
+      inferredValues.push_back(actualAttr);
+    return success();
+  }
+
+  // If the attrs trivial match then we're done and there is no inference to do.
+  if (actualAttr == expectedAttr)
+    return success();
+
+  LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCHING ATTRS:\n";
+             actualAttr.dump(); expectedAttr.dump();
+             llvm::errs() << parameterIndex << "\n");
+  return success();
+}
+
+LogicalResult ParameterInferenceState::checkOneOperand(
+    ASTExprAnd<AnyValue> operand, ASTType expectedType,
+    ValueInputConvention expectedConvention) {
+  // We'll bind the next provided value.
+  switch (expectedConvention) {
+  case ValueInputConvention::InitSelf:
+    // If this is an UnknownAttr, then it is a placeholder for type
+    // checking, just let it pass.
+    if (PValue pValue = operand.ir.getIfPValue())
+      if (isa<UnknownAttr>(pValue.get()))
+        return success();
+    [[fallthrough]];
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::ByRefResult: {
+    // The actual value must be an lvalue if callee takes things by-ref.
+    LValue argVal = operand.ir.getIfLValue();
+    if (!argVal)
+      return failure();
+
+    // By-ref argument types must exactly match, no conversions are allowed.
+    return matchTypes(argVal.getRValueType(),
+                      expectedType.getReferenceElementType());
+  }
+
+  case ValueInputConvention::OwnedInMem:
+  case ValueInputConvention::BorrowedInMem:
+    // Otherwise,we expect an r-value to match up, ignoring the pointer type
+    // from the convention.
+    expectedType = expectedType.getReferenceElementType();
+    [[fallthrough]];
+  case ValueInputConvention::OwnedInReg:
+  case ValueInputConvention::BorrowedInReg:
+    // Otherwise, we pass as an r-value if we know the type.
+    // TODO: Consider implicit conversions?
+    if (CValue cValue = operand.ir.getIfCValue())
+      return matchTypes(cValue.getRValueType(), expectedType);
+    // Consider the types of ORValues with single candidates.
+    if (ORValue orValue = operand.ir.getIfORValue())
+      if (PValue pValue = orValue->emitAsPValue())
+        return matchTypes(pValue.getType(), expectedType);
+    return success();
+  }
+  llvm_unreachable("invalid value input convention");
+};
+
+PValue ParameterInferenceState::infer(LITSignatureType signature,
+                                      ArrayRef<TypedAttr> bindingsSoFar,
+                                      const CallOperands &callOperands) {
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
+  size_t numPosOperands = posOperands.size();
+
+  // TODO: Apply the bindings so far (plus a distinct new attribute relating
+  // back to the original decls for ones that are missing) to the signature with
+  // getSpecializedSignature so we benefit from the already-fixed substitutions
+  // being applied to the input types.  This can make them more concrete and
+  // help with inferring dependent types based on already-bound parameters.
+
+  // Match up the operands provided by the call to the input arguments.  Keep in
+  // mind that the callee signature might not match at all, so we have to be
+  // careful here!
+  size_t posOperandIdx = 0;
+  for (auto [expectedArgIdx, expectedType, expectedConvention, argName] :
+       llvm::enumerate(signature.getValueInputs(),
+                       signature.getInputConventions(),
+                       signature.getArgNames())) {
+
+    // There is no provided operand for a by-ref result.
+    if (expectedConvention == ValueInputConvention::ByRefResult)
+      continue;
+
+    // Handle case when there are no more provided positional operands.
+    if (posOperandIdx == numPosOperands) {
+      // If the argument is a varargs argument list, then it can be initialized
+      // with zero values no problem.
+      if (signature.isVarArg(expectedArgIdx))
+        break;
+
+      // If we have a pack argument, then we're binding zero type values to it.
+      if (POP::PackType packType = getIfPackType(signature, expectedArgIdx)) {
+        if (!inferredValues.empty())
+          break;
+        inferredValues.push_back(VariadicAttr::get(
+            {}, cast<VariadicType>(packType.getVariadic().getType())));
+        continue;
+      }
+
+      // Check if a keyword operand was provided for this argument
+      if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
+              callOperands.findKwArg(argName)) {
+        if (failed(checkOneOperand(*kwOperandOr, expectedType,
+                                   expectedConvention)))
+          return {};
+        continue;
+      }
+
+      // TODO: If this argument is defaulted, infer against it.
+
+      // Otherwise we have an argument count mismatch, just fail.
+      return {};
+    }
+
+    // Otherwise we'll check the expected type against one (or more in the case
+    // of varargs) provided values.
+
+    // If we have a varargs argument, then it will eat the rest of the
+    // arguments, but we have to check each of them.
+    if (signature.isVarArg(expectedArgIdx)) {
+      auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
+      while (posOperandIdx != numPosOperands)
+        if (failed(checkOneOperand(posOperands[posOperandIdx++], varArgsEltType,
+                                   expectedConvention)))
+          return {};
+      continue;
+    }
+
+    // If we have a pack argument, then we're binding a variadic parameter with
+    // multiple type values.  We need to consume all remaining arguments and use
+    // their types as bindings.
+    if (auto packType = getIfPackType(signature, expectedArgIdx)) {
+      if (!inferredValues.empty())
+        break;
+      SmallVector<TypedAttr> types;
+      while (posOperandIdx != numPosOperands) {
+        ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
+        CValue value = operand.ir.getIfCValue();
+        if (!value) {
+          state.emitWarning(operand.expr->getLoc(),
+                            "could not infer parameter type for this value, "
+                            "because it is not concrete");
+          return {};
+        }
+        ASTType toPush = value.getRValueType();
+        // Infer nonmaterializable types as their materialization target.
+        if (ASTType nmTarget = toPush.getNonmaterializableTarget(state))
+          toPush = nmTarget;
+        types.push_back(ParameterizedTypeConstantAttr::get(toPush));
+      }
+
+      inferredValues.push_back(VariadicAttr::get(
+          types, cast<VariadicType>(packType.getVariadic().getType())));
+      continue;
+    }
+
+    // In the typical case, this argument isn't varargs or a pack, so just check
+    // it.  If there was a problem, report it, otherwise continue on to the next
+    // expected argument to check.
+    if (failed(checkOneOperand(posOperands[posOperandIdx++], expectedType,
+                               expectedConvention)))
+      return {};
+  }
+
+  // If we have left over operands, then this signature cannot match.
+  if (posOperandIdx != numPosOperands && !signature.hasParamVarArgs())
+    return {};
+
+  // We succeed iff we were able to infer a single (unique) value.
+  if (!inferredValues.empty()) {
+    PValue first = inferredValues.front();
+    auto sameAsFirst = [&](PValue v) { return v.get() == first.get(); };
+    if (llvm::all_of(inferredValues, sameAsFirst)) {
+      // Infer nonmaterializable types as their materialization target.
+      if (ASTType typeVal = first.getIfTypeValue()) {
+        if (ASTType nmTarget = typeVal.getNonmaterializableTarget(state))
+          return PValue(nmTarget);
+      }
+      return first;
+    }
+  }
+
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// Diagnostic emission implementation
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Helper class to emit errors without cluttering the evaluation logic.
+struct DiagEmitter {
+  DiagEmitter(SMLoc callLoc, size_t numOperands, CallSyntax callSyntax,
+              ExprEmitter &emitter)
+      : callLoc(callLoc), numOperands(numOperands), callSyntax(callSyntax),
+        emitter(emitter) {}
+
+  InflightDiag unexpectedKwArgs(StringSet<> &unknownKwOperands) const;
+  InflightDiag wrongParamType(const InputParamBindings::Binding &actualBinding,
+                              size_t paramIdx, ASTType expectedType) const;
+  InflightDiag wrongParamCount(size_t expectedNumParams, size_t actualNumParams,
+                               StringRef inputOrResult) const;
+  InflightDiag wrongArgCount(size_t minRequiredArgs, size_t maxAllowedArgs,
+                             size_t numOperands) const;
+  InflightDiag resultGenericMemType(Type outputType) const;
+  InflightDiag argGenericMemType(size_t expectedArgIdx,
+                                 Type expectedType) const;
+  InflightDiag redundantArg(size_t argIdx, StringAttr argName) const;
+  InflightDiag argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
+                               ASTType ty, ASTExprAnd<AnyValue> operand,
+                               size_t argIdx) const;
+
+private:
+  SMLoc callLoc;
+  size_t numOperands;
+  CallSyntax callSyntax;
+  ExprEmitter &emitter;
+
+  /// Wrapper around pretty printing logic for an argument given by index.
+  void describeArgumentNo(InflightDiag &diag, size_t argIdx) const;
+
+  InflightDiag initDiag() const { return emitter.emitError(callLoc); }
+};
+} // namespace
+
+void DiagEmitter::describeArgumentNo(InflightDiag &diag, size_t argIdx) const {
+  // If this is a method syntax call, don't count the receiver.
+  if (callSyntax == CallSyntax::kMethodCall) {
+    // It is probably possible for this assert to fire, if it does we should
+    // tailor the error message.
+    assert(argIdx != 0 && "TODO: unexpected self mismatch");
+    diag << "method argument #" << (argIdx - 1);
+  } else if (callSyntax == CallSyntax::kOperator && argIdx == 1) {
+    diag << "right side";
+  } else if (callSyntax == CallSyntax::kReversedOperator && argIdx == 0) {
+    diag << "left side";
+  } else if (callSyntax == CallSyntax::kSubscript && argIdx != 0) {
+    if (argIdx == 1 && numOperands == 2)
+      diag << "index";
+    else
+      diag << "index #" << (argIdx - 1);
+  } else if (callSyntax == CallSyntax::kAttribute && argIdx != 0) {
+    diag << "attribute name";
+  } else {
+    diag << "argument #" << argIdx;
+  }
+}
+
+InflightDiag
+DiagEmitter::unexpectedKwArgs(StringSet<> &unknownKwOperands) const {
+  InflightDiag diag = initDiag();
+  SmallVector<StringRef> keywords = llvm::map_to_vector(
+      unknownKwOperands, [](auto &it) { return it.getKey(); });
+  emitUnexpectedKeywords(diag, std::move(keywords), "argument");
+  return diag;
+}
+
+InflightDiag
+DiagEmitter::wrongParamType(const InputParamBindings::Binding &actualBinding,
+                            size_t paramIdx, ASTType expectedType) const {
+  return initDiag() << "callee parameter #" << paramIdx << " has "
+                    << ASTType(expectedType) << " type, but value has type "
+                    << ASTType(actualBinding.getType())
+                    << actualBinding.expr->getRange();
+}
+
+InflightDiag DiagEmitter::wrongParamCount(size_t expectedNumParams,
+                                          size_t actualNumParams,
+                                          StringRef inputOrResult) const {
+  InflightDiag diag = initDiag() << "callee";
+  emitWrongArgOrParamCount(diag, /*minRequired=*/expectedNumParams,
+                           /*maxAllowed=*/expectedNumParams, actualNumParams,
+                           Twine(inputOrResult) + " parameter");
+  return diag;
+}
+
+InflightDiag DiagEmitter::wrongArgCount(size_t minRequiredArgs,
+                                        size_t maxAllowedArgs,
+                                        size_t numOperands) const {
+  InflightDiag diag = initDiag() << "callee";
+  emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
+                           "argument");
+  return diag;
+}
+
+InflightDiag DiagEmitter::resultGenericMemType(Type outputType) const {
+  return initDiag()
+         << "result cannot bind generic !mlirtype to memory-only type "
+         << outputType;
+}
+
+InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
+                                            Type expectedType) const {
+  InflightDiag diag = initDiag();
+  describeArgumentNo(diag, expectedArgIdx);
+  return std::move(diag)
+         << " cannot bind generic !mlirtype to memory-only type "
+         << expectedType;
+}
+
+InflightDiag DiagEmitter::redundantArg(size_t argIdx,
+                                       StringAttr argName) const {
+  InflightDiag diag = initDiag();
+  describeArgumentNo(diag, argIdx);
+  return std::move(diag) << " (" << argName
+                         << ") passed both as positional and keyword operand";
+}
+
+/// Attach extra type conversion error detail or hints to the user.
+static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
+                                    ASTType payloadType, ASTType argType) {
+  if (!payloadType) {
+    diag.attachNote(payloadLoc.getStart())
+        << "try resolving the overloaded function first" << payloadLoc;
+    return;
+  }
+  // Try to detect mismatched byref result type.
+  auto lhsSig = dyn_cast<SignatureType>(payloadType.mlirType);
+  auto rhsSig = dyn_cast<SignatureType>(argType.mlirType);
+  if (lhsSig && rhsSig) {
+    auto getByRefResult = [](SignatureType sig) -> std::pair<bool, Type> {
+      return {sig.hasMemoryOnlyResult(),
+              ASTType(sig).getSignatureUserResultType()};
+    };
+    auto [lhsByRef, lhsRetType] = getByRefResult(lhsSig);
+    auto [rhsByRef, rhsRetType] = getByRefResult(rhsSig);
+    if (lhsByRef == rhsByRef || lhsRetType != rhsRetType)
+      return;
+    // Different result semantics but same result type.
+    diag.attachNote(payloadLoc.getStart())
+        << "memory-only type bound to generic result type: "
+        << (lhsByRef ? "payload" : "argument") << " returns "
+        << ASTType(lhsRetType) << " by reference";
+  }
+}
+
+/// Helper to get the RValueType from an operand.
+static ASTType getRValueType(ASTExprAnd<AnyValue> operand) {
+  AnyValue value = operand.ir;
+  if (auto cValue = value.getIfCValue())
+    return cValue.getRValueType();
+  // Otherwise, try to narrow an overload set to a PValue.
+  if (auto pValue = value.getIfORValue()->emitAsPValue())
+    return pValue.getType();
+  return ASTType();
+}
+
+InflightDiag
+DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
+                             ASTType ty, ASTExprAnd<AnyValue> operand,
+                             size_t argIdx) const {
+  using ArgTypeMismatchKind = OverloadFitness::ArgTypeMismatchKind;
+  InflightDiag diag = initDiag();
+  switch (kind) {
+  case ArgTypeMismatchKind::kNotLValue:
+    if (callSyntax == CallSyntax::kMethodCall && argIdx == 0) {
+      diag << "invalid use of mutating method on rvalue of type ";
+      if (ASTType type = getRValueType(operand))
+        diag << type;
+      else
+        diag << "unknown overload";
+    } else {
+      describeArgumentNo(diag, argIdx);
+      diag << " must be mutable in order to pass as a by-ref argument";
+    }
+    diag << operand.expr->getRange();
+    return diag;
+  case ArgTypeMismatchKind::kWrongLVType:
+    return std::move(diag) << "l-value of type "
+                           << operand.ir.getIfLValue().getRValueType()
+                           << " cannot be converted to reference of type "
+                           << ty.getReferenceElementType()
+                           << operand.expr->getRange();
+  case ArgTypeMismatchKind::kWrongType: {
+    describeArgumentNo(diag, argIdx);
+    diag << " cannot be converted from ";
+    ASTType rValueType = getRValueType(operand);
+    if (rValueType)
+      diag << rValueType;
+    else
+      diag << "unknown overload";
+    SourceRange payloadLoc = operand.expr->getRange();
+    diag << " to " << ty << payloadLoc;
+    addTypeConversionDetail(diag, payloadLoc, rValueType, ty);
+    return diag;
+  }
+  default:
+    llvm_unreachable("");
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// OverloadFitness
+//===----------------------------------------------------------------------===//
+
+std::pair<size_t, size_t>
+OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
+  size_t minRequiredArgs = 0;
+  size_t maxAllowedArgs = 0;
+  for (auto [idx, convention] :
+       llvm::enumerate(signature.getInputConventions())) {
+    // Ignore the return slot if present.
+    if (convention == ValueInputConvention::ByRefResult)
+      continue;
+
+    // VarArgs arguments don't require a value, but allow any number of them.
+    if (signature.isVarArg(idx)) {
+      maxAllowedArgs = std::numeric_limits<size_t>::max();
+      continue;
+    }
+
+    // Arguments with a pack type must have a known number of element types,
+    // and so they require exactly that many arguments.
+    if (auto packType = getIfPackType(signature, idx)) {
+      size_t numValues = packType.getVariadicAttr().getValues().size();
+      minRequiredArgs += numValues;
+      maxAllowedArgs += numValues;
+      continue;
+    }
+
+    // Otherwise, we have an ordinary argument that requires a value.
+    ++minRequiredArgs;
+    ++maxAllowedArgs;
+  }
+
+  // One less required argument for each argument that has a default value we
+  // can use instead.
+  minRequiredArgs -= signature.getDefaultArguments().size();
+
+  return {minRequiredArgs, maxAllowedArgs};
+}
+
+std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
+OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
+                                 ValueInputConvention expectedConvention,
+                                 ASTType expectedType,
+                                 size_t &numImplicitConversions,
+                                 bool &hasNonmaterializableConversion,
+                                 bool allowImplicitConversions,
+                                 ExprEmitter &emitter) {
+  switch (expectedConvention) {
+  case ValueInputConvention::InitSelf:
+    // If this is an UnknownAttr, then it is a placeholder for type
+    // checking, just let it pass.
+    if (auto pValue = operand.ir.getIfPValue())
+      if (isa<UnknownAttr>(pValue.get()))
+        break;
+    [[fallthrough]];
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::ByRefResult: {
+    // The actual value must be an lvalue if callee takes things by-ref.
+    auto argVal = operand.ir.getIfLValue();
+    if (!argVal)
+      return {kNotLValue, expectedType};
+
+    // By-ref argument types must exactly match, no conversions are allowed.
+    if (!argVal.getRValueType().isEqualCanon(
+            expectedType.getReferenceElementType()))
+      return {kWrongLVType, expectedType};
+    break;
+  }
+  case ValueInputConvention::BorrowedInMem:
+  case ValueInputConvention::OwnedInMem:
+    // Ignore the pointer type on memory conventions when matching types.
+    // Note: Should do not support overloading on borrow/owned currently,
+    // but we could add this if there is a reason to.
+    expectedType = expectedType.getReferenceElementType();
+    [[fallthrough]];
+  case ValueInputConvention::BorrowedInReg:
+  case ValueInputConvention::OwnedInReg:
+    // If the argument is an overload set, see if it can be resolve to the
+    // right type.
+    CValue argVal;
+    if (auto orValue = operand.ir.getIfORValue()) {
+      // Try to refine the ORValue into a PValue.
+      argVal = orValue->emitAsPValue(&emitter, expectedType);
+      if (!argVal)
+        return {kWrongType, expectedType};
+    } else {
+      argVal = operand.ir.getIfCValue();
+      assert(argVal && "we handled ORValue above");
+    }
+
+    auto argType = argVal.getRValueType();
+    // Otherwise, we pass as an r-value.  If the argument types match, then
+    // they are good.
+    if (argType.isEqualCanon(expectedType))
+      break;
+    if (auto nonmaterializableTarget =
+            argType.getNonmaterializableTarget(emitter.shared))
+      if (nonmaterializableTarget.isEqualCanon(expectedType)) {
+        // Implicit conversion for nonmaterializable types to their target
+        // type is allowed even if !allowImplicitConversions.  Even though
+        // this may be an implicit conversion, don't increment the
+        // numImplicitConversions count so that it will win against other
+        // implicit conversions.  However, we keep track of whether
+        // nonmaterializable autoconversion has happened so that functions
+        // that literally take the nonmaterializable type can still win
+        // instead of autoconverting if their signature matches exactly.
+        hasNonmaterializableConversion = true;
+        break;
+      }
+
+    // Argument name mismatches don't count as implicit conversions.
+    auto expectedSig = dyn_cast<SignatureType>(expectedType.mlirType);
+    auto argSig = dyn_cast<SignatureType>(argType.mlirType);
+    if (expectedSig && argSig &&
+        canZeroCostConvertSignature(expectedSig, argSig))
+      break;
+
+    // If we lack an exact match and conversions are disabled, this
+    // candidate fails.
+    if (!allowImplicitConversions || !emitter.canImplicitlyConvertToType(
+                                         {argVal, operand.expr}, expectedType,
+                                         /*allowArgNameCheck=*/false))
+      return {kWrongType, expectedType};
+
+    // If we had one, this bumps our # implicit conversions.
+    ++numImplicitConversions;
+    break;
+  }
+
+  return {kValidType, expectedType};
+};
+
+/// Determine whether the specified signature can be invoked with the
+/// parameter bindings specified in `callable` and the arguments specified in
+/// `posOperands`.
+OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
+                                          const OverloadSet &callable,
+                                          const CallOperands &callOperands,
+                                          bool allowImplicitConversions,
+                                          ExprEmitter &emitter) {
+  // Before we do anything, we check if there were any unexpected keyword
+  // operands passed. This keeps the subsequent code much simpler.
+
+  // First, we collect all real argument names.
+  StringSet<> argNames;
+  for (auto [argIdx, argName] :
+       llvm::enumerate(signature.getMetadata().getArgNames())) {
+    if (argName.empty())
+      continue; // Positional-only argument.
+    if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx))
+      continue; // Variadic/pack args cannot be specified by keyword.
+    auto [_, addedNew] = argNames.insert(argName);
+    assert(addedNew && "duplicate argument name in signature");
+  }
+
+  // TODO(#21295): handle variadic keyword arguments.
+  // Then we find all the keyword operands with unknown names.
+  StringSet<> unknownKwOperands;
+  if (callOperands.hasKwOperands()) {
+    for (auto [name, operandVal] : *callOperands.kwOperands)
+      if (!argNames.contains(name))
+        unknownKwOperands.insert(name);
+  }
+
+  // We set up diagnostics.
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
+  size_t numPosOperands = posOperands.size();
+  size_t numOperands = numPosOperands + callOperands.getNumKwOperands();
+  SMLoc callLoc = callable.expr->getLoc();
+  DiagEmitter emitDiagFor(callLoc, numOperands, callable.syntax, emitter);
+
+  if (!unknownKwOperands.empty())
+    return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
+
+  // Check that the signature can be rebound with this set of bindings. We use
+  // diagnostic handlers to capture any issues.
+  const InputParamBindings &inputParamBindings = callable.inputParamBindings;
+  ArrayRef<InputParamBindings::Binding> posBindings =
+      inputParamBindings.posBindings;
+  InflightDiag diag = emitter.emitError(callLoc);
+  auto emitParamCountDiag = [&]() {
+    diag = emitDiagFor.wrongParamCount(signature.getNumInputParams(),
+                                       posBindings.size(), "input");
+  };
+  auto emitPosTypeDiag = [&](size_t paramIdx,
+                             const InputParamBindings::Binding &binding,
+                             ASTType expectedType) {
+    diag = emitDiagFor.wrongParamType(binding, paramIdx, expectedType);
+  };
+  auto emitKwTypeDiag = [&](StringAttr paramName,
+                            const InputParamBindings::Binding &binding,
+                            ASTType expectedType) {
+    diag << "callee parameter '" << paramName << "' has "
+         << ASTType(expectedType) << " type, but value has type "
+         << ASTType(binding.getType()) << binding.expr->getRange();
+  };
+  auto emitUnknownKwDiag = [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
+    emitUnexpectedKeywords(diag, std::move(unknownKeywords), "parameter");
+  };
+  auto emitRedundantKwDiag = [&](size_t paramIdx, StringAttr paramName) {
+    diag << "parameter #" << paramIdx << " (" << paramName
+         << ") passed both as positional and keyword operand";
+  };
+  auto paramInferenceHook = [&](size_t index, Type type, ASTType /*unused*/,
+                                ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
+    return ParameterInferenceState(emitter.shared, index, type)
+        .infer(signature, bindingsSoFar, callOperands);
+  };
+  auto [newBindings, bindingFitness] = inputParamBindings.verifyBindings(
+      signature, emitter, paramInferenceHook,
+      /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty(),
+      emitParamCountDiag, emitPosTypeDiag, emitKwTypeDiag, emitUnknownKwDiag,
+      emitRedundantKwDiag);
+
+  // If there is an error, we just forward the diagnostics.
+  if (!newBindings)
+    return std::move(diag);
+  diag.abandon();
+
+  // Check the result parameter count.
+  if (size_t expectedNumResultParams = signature.getNumResultParams(),
+      actualNumResultParams = callable.resultParams.size();
+      expectedNumResultParams != actualNumResultParams) {
+    return emitDiagFor.wrongParamCount(expectedNumResultParams,
+                                       actualNumResultParams, "result");
+  }
+
+  // If anything was bound, apply it to the signature so the expected argument
+  // types are updated.
+  std::tie(signature, newBindings) =
+      getUnboundSpecializedSignature(signature, newBindings);
+
+  // Check that the result didn't bind to a type that would require changing to
+  // a different result convention.
+  for (Type outputType : signature.getValueResults())
+    if (!ASTType(outputType).isRegisterPassable(callLoc, emitter.shared))
+      return emitDiagFor.resultGenericMemType(outputType);
+
+  // Ok, the parameters all line up, check the argument list.  We generally want
+  // to diagnose problems where too few or too many arguments are passed if that
+  // is the problem, rather than complaining about a type error of some argument
+  // that doesn't work out.  Check for that first.
+  auto [minRequiredArgs, maxAllowedArgs] = calculateMinMaxArgs(signature);
+  if (numOperands < minRequiredArgs || maxAllowedArgs < numOperands) {
+    return emitDiagFor.wrongArgCount(minRequiredArgs, maxAllowedArgs,
+                                     numOperands);
+  }
+
+  // We will accumulate the implicit conversion in arguments to those counted
+  // for the parameter bindings.
+  size_t numImplicitConversions = bindingFitness.numImplicitConversions;
+  bool hasNonmaterializableConversion = false;
+
+  // As we walk through the values provided as part of the argument list, we
+  // match them up against arguments expected by the signature of the callee,
+  // take note if variadic arguments are passed, and accumulate implicit
+  // conversions required for a match.
+  size_t posOperandIdx = 0;
+  bool passesVarArgArgument = false;
+
+  // Use a ParserParamEvaluator to substitute 'apply' expressions in the
+  // argument types.
+  ParserParamEvaluator evaluator(emitter.getDeclResolver());
+  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName] :
+       llvm::enumerate(signature.getValueInputs(),
+                       signature.getInputConventions(),
+                       signature.getMetadata().getArgNames())) {
+    assert(!signature.isKWVarArg(expectedArgIdx) &&
+           "`**arg` variadics not supported yet");
+
+    // Ignore the return slot if present.
+    if (expectedConvention == ValueInputConvention::ByRefResult)
+      continue;
+
+    // If the arguments or results got bound to a memory-only type then their
+    // argument convention needs to change.  We cannot support this until we get
+    // proper type traits.  Note that the PointerType is considered a valid
+    // register passable type, so things passed byref are ok.
+    Type expectedType = evaluator.refineType(unboundExpectedType);
+    if (!ASTType(expectedType).isRegisterPassable(callLoc, emitter.shared))
+      return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
+
+    // Handle case when there are no more provided positional arguments.
+    if (posOperandIdx == numPosOperands) {
+      // If the argument is a varargs argument list or pack, then it can be
+      // initialized with zero values no problem.
+      if (signature.isVarArg(expectedArgIdx) ||
+          signature.isPackVarArg(expectedArgIdx)) {
+        // We consider an empty varargs list to be an implicit conversion,
+        // so an exact signature match takes precedence.
+        ++numImplicitConversions;
+        continue;
+      }
+
+      // Check if the argument was passed as a keyword operand.
+      if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
+              callOperands.findKwArg(argName)) {
+        // If we found a keyword argument, we check it normally.
+        auto [kind, ty] = checkOneOperand(*kwOperandOr, expectedConvention,
+                                          expectedType, numImplicitConversions,
+                                          hasNonmaterializableConversion,
+                                          allowImplicitConversions, emitter);
+        if (kind != kValidType) {
+          return emitDiagFor.argTypeMismatch(kind, ty, *kwOperandOr,
+                                             expectedArgIdx);
+        }
+        continue;
+      }
+
+      // We don't need to provide value for this argument if it has a default
+      // value.
+      if (expectedArgIdx >=
+          signature.getNumInputs() - signature.getDefaultArguments().size()) {
+        // Arguments with default values must be followed only by other
+        // arguments with default values, or by keyword argument.
+        continue;
+      }
+
+      llvm_unreachable("argument had no corresponding operand");
+    }
+
+    /// Check and process a single positional operand and advance the operand
+    /// index.
+    auto processPositionalOperand =
+        [&, expectedConvention = expectedConvention,
+         newBindings = std::ref(newBindings)](
+            ASTType expectedType) -> std::optional<InflightDiag> {
+      ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx];
+      auto [kind, ty] = checkOneOperand(
+          operand, expectedConvention, expectedType, numImplicitConversions,
+          hasNonmaterializableConversion, allowImplicitConversions, emitter);
+      if (kind != kValidType)
+        return emitDiagFor.argTypeMismatch(kind, ty, operand, posOperandIdx);
+      ++posOperandIdx;
+      return std::nullopt;
+    };
+
+    // If we have a varargs argument, then it will eat the rest of the
+    // positional arguments, but we have to check each of them.
+    if (signature.isVarArg(expectedArgIdx)) {
+      auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
+      while (posOperandIdx != numPosOperands) {
+        if (auto result = processPositionalOperand(varArgsEltType))
+          return std::move(*result);
+        passesVarArgArgument = true;
+      }
+      continue;
+    }
+
+    // If we have a pack type, it must have a known number of elements, and so
+    // consume exactly that many positional operands.
+    if (POP::PackType packType = getIfPackType(signature, expectedArgIdx)) {
+      for (TypedAttr element : packType.getVariadicAttr().getValues()) {
+        if (auto result = processPositionalOperand(ASTType(element)))
+          return std::move(*result);
+        passesVarArgArgument = true;
+      }
+      continue;
+    }
+
+    // Otherwise, we have an ordinary positional argument that is not varargs or
+    // a pack. Ensure that it is not also passed as a keyword operand, then
+    // process it as usual.
+    if (!argName.empty())
+      if (callOperands.findKwArg(argName))
+        return emitDiagFor.redundantArg(expectedArgIdx, argName);
+    if (auto result = processPositionalOperand(expectedType))
+      return std::move(*result);
+  }
+
+  assert(posOperandIdx == numPosOperands &&
+         "should handle argument mismatch above");
+
+  // Otherwise we succeeded!  For our payload, indicate the number of implicit
+  // conversions, whether there were (even more implicit) nonmaterializable
+  // conversions, and whether anything was passed through varargs.  We consider
+  // exact matches of concrete types to be more specific than varargs matches,
+  // and both of these more specific than matches with variadic parameters.
+  size_t payload = numImplicitConversions * 8;
+  payload += (hasNonmaterializableConversion ? 4 : 0);
+  payload += (passesVarArgArgument ? 2 : 0);
+  payload += (bindingFitness.hasVariadicParams ? 1 : 0);
+  return {newBindings, payload};
+}
