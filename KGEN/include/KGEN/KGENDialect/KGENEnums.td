@@ -39,36 +39,34 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"LT", 13, "lt">,
   I32EnumAttrCase<"LE", 14, "le">,
 
-  // Target comparisons & utilities.
-  I32EnumAttrCase<"CurrentTarget", 15, "current_target">,
-  I32EnumAttrCase<"TargetHasFeature", 16, "target_has_feature">,
-  I32EnumAttrCase<"TargetGetField", 17, "target_get_field">,
-
-  // BuildInfo comparisons & utilities.
-  I32EnumAttrCase<"BuildInfoGetField", 18, "build_info_get_field">,
-
   // Complex variadic operations.
-  I32EnumAttrCase<"In", 19, "in">,
-
-  // Unary type expressions.
-  I32EnumAttrCase<"GetSizeOf", 20, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 21, "get_alignof">,
-
-  // Signature processing.
-  I32EnumAttrCase<"BindSignature", 22, "bind_signature">,
-  I32EnumAttrCase<"Apply", 23, "apply">,
-  I32EnumAttrCase<"ApplyResultSlot", 24, "apply_result_slot">,
-  I32EnumAttrCase<"Rebind", 25, "rebind">,
-
-  // Evaluator.
-  I32EnumAttrCase<"GetAllImpls", 26, "get_all_impls">,
-  I32EnumAttrCase<"VariadicGet", 27, "variadic_get">,
+  I32EnumAttrCase<"In", 15, "in">,
 
   // Conditional expression.
-  I32EnumAttrCase<"Cond", 28, "cond">,
+  I32EnumAttrCase<"Cond", 16, "cond">,
+
+  // Target and build comparisons & utilities.
+  I32EnumAttrCase<"CurrentTarget", 17, "current_target">,
+  I32EnumAttrCase<"TargetHasFeature", 18, "target_has_feature">,
+  I32EnumAttrCase<"TargetGetField", 19, "target_get_field">,
+  I32EnumAttrCase<"BuildInfoGetField", 20, "build_info_get_field">,
 
   // Environment variables.
-  I32EnumAttrCase<"GetEnv", 29, "get_env">
+  I32EnumAttrCase<"GetEnv", 21, "get_env">,
+
+  // Unary type expressions.
+  I32EnumAttrCase<"GetSizeOf", 22, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 23, "get_alignof">,
+
+  // Signature processing.
+  I32EnumAttrCase<"BindSignature", 24, "bind_signature">,
+  I32EnumAttrCase<"Apply", 25, "apply">,
+  I32EnumAttrCase<"ApplyResultSlot", 26, "apply_result_slot">,
+  I32EnumAttrCase<"Rebind", 27, "rebind">,
+
+  // Evaluator.
+  I32EnumAttrCase<"GetAllImpls", 28, "get_all_impls">,
+  I32EnumAttrCase<"VariadicGet", 29, "variadic_get">
 ]>;
 
 //===----------------------------------------------------------------------===//

@@ -87,14 +87,12 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   case POC::CurrentTarget:
     // Retrieve the contextual compilation target info.
     return {TargetParamAttr::get(elaborator->getTarget())};
-  case POC::GetAllImpls:
-    return evaluateGetAllImpls(op);
+  case POC::GetEnv:
+    return evaluateGetEnv(op);
   case POC::Apply:
     return evaluateApplyLike(op, /*withResultSlot=*/false);
   case POC::ApplyResultSlot:
     return evaluateApplyLike(op, /*withResultSlot=*/true);
-  case POC::GetEnv:
-    return evaluateGetEnv(op);
   case POC::Rebind:
     // Catch unfolded rebinds to emit a nicer error message.
     emitError(ErrorTree(
@@ -103,6 +101,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
                        "' does not match result type '" +
                        mlir::debugString(op.getType()) + "'"));
     return failure();
+  case POC::GetAllImpls:
+    return evaluateGetAllImpls(op);
   default:
     return failure();
   }
