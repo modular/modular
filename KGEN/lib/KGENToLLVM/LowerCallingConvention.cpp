@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
 #include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
 
@@ -50,9 +51,26 @@ static SignatureType removeNoneResults(SignatureType signature) {
       signature.getInputConventions(), signature.getFnEffects());
 }
 
+/// Remove none types from the results of debuginfo subroutine types as well.
+static DebugInfo::DISubroutineType
+removeDINoneResults(DebugInfo::DISubroutineType type) {
+  // None types in the subroutine type will be wrapped in an unresolved type.
+  SmallVector<DebugInfo::DIType> newTypes;
+  for (DebugInfo::DIType type : type.getResultTypes()) {
+    auto unresolved = dyn_cast<DebugInfo::DIUnresolvedMLIRType>(type);
+    if (!unresolved || !isa<KGEN::NoneType>(unresolved.getType()))
+      newTypes.push_back(type);
+  }
+  if (newTypes.size() == type.getResultTypes().size())
+    return type;
+  return DebugInfo::DISubroutineType::get(type.getContext(),
+                                          type.getArgumentTypes(), newTypes);
+}
+
 static void rewriteCallingConventions(Operation &op) {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement(removeNoneResults);
+  replacer.addReplacement(removeDINoneResults);
 
   auto walkFn = [&](Operation *op) {
     // Recursively replace all signatures in the operation. This will handle the
