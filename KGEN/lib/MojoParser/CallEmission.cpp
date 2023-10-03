@@ -23,6 +23,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -40,8 +41,22 @@ void InputParamBindings::addPrechecked(TypedAttr precheckedBinding) {
   posBindings.push_back({nullptr, precheckedBinding, /*typeChecked=*/true});
 }
 
+void InputParamBindings::addPrechecked(TypedAttr precheckedBinding,
+                                       StringAttr name) {
+  auto [_, addedNew] = kwBindings.try_emplace(
+      name, Binding{nullptr, precheckedBinding, /*typeChecked=*/true});
+  assert(addedNew && "duplicate keyword parameter");
+}
+
 void InputParamBindings::add(const ExprNode *expr, TypedAttr value) {
   posBindings.push_back({expr, value, /*typeChecked=*/false});
+}
+
+void InputParamBindings::add(const ExprNode *expr, TypedAttr value,
+                             StringAttr name) {
+  auto [_, addedNew] =
+      kwBindings.try_emplace(name, Binding{expr, value, /*typeChecked=*/false});
+  assert(addedNew && "duplicate keyword parameter");
 }
 
 //===----------------------------------------------------------------------===//
@@ -349,8 +364,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
 
 /// Check a single binding and emit a parameter value if possible. If an
 /// implicit conversion is required, the provided counter is incremented.
-static PValue emitSingleParameterValue(size_t index,
-                                       InputParamBindings::Binding binding,
+static PValue emitSingleParameterValue(InputParamBindings::Binding binding,
                                        ASTType expectedType,
                                        size_t &numImplicitConversions,
                                        ExprEmitter &emitter,
@@ -383,14 +397,46 @@ static PValue emitSingleParameterValue(size_t index,
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
-    ArrayRef<Type> expectedParamTypes, ArrayRef<TypedAttr> defaultParams,
-    ExprEmitter &emitter, bool hasParamVarArgs,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
-    SetEvaluatorHookTy setEvaluator, function_ref<void()> emitParamCountDiag,
-    function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const {
-
-  // If we have bound parameters, type check them now and bind names to them.
+    ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
+    ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+    bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
+    bool isPackVarArg, SetEvaluatorHookTy setEvaluator,
+    function_ref<void()> emitParamCountDiag,
+    function_ref<void(size_t, const Binding &, ASTType)> emitPosTypeDiag,
+    function_ref<void(StringAttr, const Binding &, ASTType)> emitKwTypeDiag,
+    function_ref<void(SmallVectorImpl<StringRef> &&)> emitUnknownKwDiag,
+    function_ref<void(size_t, StringAttr)> emitRedundantKwDiag) const {
   size_t numParams = expectedParamTypes.size();
+  assert(paramNames.size() == numParams);
+  auto isVarArg = [&](size_t idx) {
+    return idx + 1 == numParams && hasParamVarArgs;
+  };
+
+  // First, we collect all real parameter names.
+  SmallPtrSet<StringAttr, 4> argNames;
+  for (auto [idx, paramName] : llvm::enumerate(paramNames)) {
+    if (paramName.empty())
+      continue; // Positional-only parameter.
+    if (isVarArg(idx) || isPackVarArg)
+      continue; // Variadic/pack parameters cannot be specified by keyword.
+    auto [_, addedNew] = argNames.insert(paramName);
+    assert(addedNew && "duplicate parameter name in declaration");
+  }
+
+  // Then we find all the keyword parameters with unknown names.
+  SmallPtrSet<StringAttr, 4> unknownKwParams;
+  for (auto [name, operandVal] : kwBindings)
+    if (!argNames.contains(name))
+      unknownKwParams.insert(name);
+
+  Fitness fitness{0, false};
+  if (!unknownKwParams.empty()) {
+    emitUnknownKwDiag(llvm::map_to_vector(
+        unknownKwParams, [](StringAttr name) { return name.strref(); }));
+    return {{}, fitness};
+  }
+
+  /// We will attempt to find a binding for every expected parameter.
   SmallVector<TypedAttr> newBindings;
   newBindings.reserve(numParams);
 
@@ -418,39 +464,43 @@ InputParamBindings::verifyBindings(
     newBindings.push_back(value);
   };
 
-  // This lambda hides the diagnostic and error handling logic for checking a
-  // single parameter bdingin.
-  Fitness fitness{0, false};
-  auto handleSingleBinding = [&](size_t index, Binding binding,
-                                 ASTType expectedType) -> PValue {
-    PValue pValue = emitSingleParameterValue(index, binding, expectedType,
-                                             fitness.numImplicitConversions,
-                                             emitter, evaluator);
-    if (!pValue) {
-      // Call the custom diagnostic handler.
-      emitParamTypeDiag(index, binding, expectedType);
-    }
-
-    return pValue;
-  };
-
-  size_t bindingIdx = 0;
+  size_t posBindingIdx = 0;
   size_t numPosBindings = posBindings.size();
-  for (auto [idx, type] : llvm::enumerate(expectedParamTypes)) {
-    bool isVarArg = idx + 1 == numParams && hasParamVarArgs;
-
+  for (auto [idx, type, paramName] :
+       llvm::enumerate(expectedParamTypes, paramNames)) {
     // Check to see if we ran out of bindings to provide to this param decl.
-    if (bindingIdx == numPosBindings) {
+    if (posBindingIdx == numPosBindings) {
       // Determine what type we expect next.
       Type requestedType = evaluator.getReboundType(type);
       Type expectedType = requestedType;
       // If this is a vararg parameter, infer using the element type.
-      if (isVarArg)
+      if (isVarArg(idx))
         if (auto varType = dyn_cast<VariadicType>(expectedType))
           expectedType = ASTType(varType.getElementType());
 
-      // If we have a method to infer parameter values, invoke it to see if we
-      // can get an inferred value for the parameter.
+      // We first check if we have a keyword parameter.
+      if (auto it = kwBindings.find(paramName); it != kwBindings.end()) {
+        const Binding &binding = it->getSecond();
+
+        // If this value was already bound and checked, use it.
+        if (binding.typeChecked) {
+          setParamValue(binding.value);
+          continue;
+        }
+
+        PValue pValue = emitSingleParameterValue(binding, expectedType,
+                                                 fitness.numImplicitConversions,
+                                                 emitter, evaluator);
+        if (!pValue) {
+          emitKwTypeDiag(paramName, binding, expectedType);
+          return {{}, fitness};
+        }
+        setParamValue(pValue);
+        continue;
+      }
+
+      // If we have a method to infer parameter values, invoke it to see if
+      // we can get an inferred value for the parameter.
       if (parameterInferenceHook) {
         if (PValue pValue =
                 parameterInferenceHook(idx, type, expectedType, newBindings)) {
@@ -466,7 +516,7 @@ InputParamBindings::verifyBindings(
       // fulfill it with an empty list.  We know it must be the last parameter
       // decl. If this isn't actually a variadic type, then we simply reached
       // the end of the parameter list.
-      if (isVarArg && !isPackVarArg) {
+      if (isVarArg(idx) && !isPackVarArg) {
         if (auto varType = dyn_cast<VariadicType>(type)) {
           setParamValue(VariadicAttr::get({}, varType));
           fitness.lastExpectedType = expectedType;
@@ -486,24 +536,52 @@ InputParamBindings::verifyBindings(
       return {{}, fitness};
     }
 
-    Binding binding = posBindings[bindingIdx];
+    // Helper to check and emit diagnostics for redundant keyword parameters.
+    auto checkRedundantKwParam = [&, paramName = paramName]() -> LogicalResult {
+      if (paramName.empty())
+        return success(); // Positional-only parameter.
+      if (auto it = kwBindings.find(paramName); it == kwBindings.end())
+        return success(); // Not redundant.
+      emitRedundantKwDiag(posBindingIdx, paramName);
+      return failure();
+    };
+
+    const Binding &binding = posBindings[posBindingIdx];
     // If this value was already bound and checked, use it.
     if (binding.typeChecked) {
+      if (failed(checkRedundantKwParam()))
+        return {{}, fitness};
       setParamValue(binding.value);
-      ++bindingIdx;
+      ++posBindingIdx;
       continue;
     }
+
+    // This lambda hides the diagnostic and error handling logic for checking a
+    // single positional parameter binding.
+    auto handlePosBinding = [&](size_t index, const Binding &binding,
+                                ASTType expectedType) -> PValue {
+      PValue pValue = emitSingleParameterValue(binding, expectedType,
+                                               fitness.numImplicitConversions,
+                                               emitter, evaluator);
+      if (!pValue) {
+        // Call the custom diagnostic handler.
+        emitPosTypeDiag(index, binding, expectedType);
+      }
+      return pValue;
+    };
 
     // Scalar parameter values are installed directly. Or, if we have a variadic
     // of the same type, we can use it as the value of the parameter directly.
     // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
     // PValue classification for `*Ts`, which is required to pass this legally?
-    if (!isVarArg || binding.getValue().getType() == type) {
-      PValue paramValue = handleSingleBinding(idx, binding, type);
+    if (!isVarArg(idx) || binding.getValue().getType() == type) {
+      if (failed(checkRedundantKwParam()))
+        return {{}, fitness};
+      PValue paramValue = handlePosBinding(idx, binding, type);
       if (!paramValue)
         return {{}, fitness};
       setParamValue(paramValue);
-      ++bindingIdx;
+      ++posBindingIdx;
       continue;
     }
 
@@ -513,18 +591,18 @@ InputParamBindings::verifyBindings(
     SmallVector<TypedAttr> elements;
     Type expectedType = ASTType(type).getVariadicElementType();
     do {
-      binding = posBindings[bindingIdx++];
-      PValue pValue = handleSingleBinding(idx, binding, expectedType);
+      const Binding &binding = posBindings[posBindingIdx++];
+      PValue pValue = handlePosBinding(idx, binding, expectedType);
       if (!pValue)
         return {{}, fitness};
       elements.emplace_back(pValue);
-    } while (bindingIdx != numPosBindings);
+    } while (posBindingIdx != numPosBindings);
     setParamValue(VariadicAttr::get(
         elements, VariadicType::get(evaluator.getReboundType(expectedType))));
   }
 
   // Check and complain if we have bindings that didn't get used.
-  if (bindingIdx != numPosBindings) {
+  if (posBindingIdx != numPosBindings) {
     emitParamCountDiag();
     return {{}, fitness};
   }
@@ -555,33 +633,69 @@ static void emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
        << " specified";
 }
 
+/// Helper to emit an error message for unexpected keyword oeprands.
+static void emitUnexpectedKeywords(InflightDiag &diag,
+                                   SmallVectorImpl<StringRef> &&unknownKeywords,
+                                   StringRef argOrParam) {
+  size_t numUnknownKws = unknownKeywords.size();
+  diag << "unexpected keyword " << argOrParam << plural(numUnknownKws) << ": ";
+
+  // We need to sort the unknown keywords to have reproducible errors.
+  llvm::sort(unknownKeywords);
+  llvm::interleave(
+      unknownKeywords, [&](StringRef str) { diag << "'" << str << "'"; },
+      [&]() { diag << ", "; });
+}
+
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
+                                   ArrayRef<StringAttr> paramNames,
                                    ArrayRef<TypedAttr> defaultParams,
                                    ExprEmitter &emitter, bool hasParamVarArgs,
                                    StringRef baseName, Location opLoc,
                                    llvm::SMLoc exprLoc,
                                    SetEvaluatorHookTy setEvaluator) const {
   return verifyBindings(
-      expectedParamTypes, defaultParams, emitter, hasParamVarArgs,
+      expectedParamTypes, paramNames, defaultParams, emitter, hasParamVarArgs,
       /*parameterInferenceHook=*/{},
       /*isPackVarArg=*/false, setEvaluator, /*emitParamCountDiag=*/
       [&]() {
         size_t minRequired = expectedParamTypes.size() - defaultParams.size();
-        size_t maxAllowed = expectedParamTypes.size();
-        size_t actualNumParams = posBindings.size();
         InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
-        emitWrongArgOrParamCount(diag, minRequired, maxAllowed, actualNumParams,
-                                 "input parameter");
+        emitWrongArgOrParamCount(diag, minRequired,
+                                 /*maxAllowed=*/expectedParamTypes.size(),
+                                 /*numActual=*/size(), "input parameter");
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
-      /*emitParamTypeDiag=*/
-      [&](size_t index, Binding &binding, ASTType expectedType) {
+      /*emitPosTypeDiag=*/
+      [&](size_t index, const Binding &binding, ASTType expectedType) {
         auto diag = emitter.emitError(binding.expr->getLoc(), "'")
                     << baseName << "' parameter #" << index << " has "
                     << expectedType << " type, but value has type "
                     << ASTType(binding.getValue().getType())
                     << binding.expr->getRange();
+        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+      },
+      /*emitKwTypeDiag=*/
+      [&](StringAttr paramName, const Binding &binding, ASTType expectedType) {
+        auto diag = emitter.emitError(binding.expr->getLoc(), "'")
+                    << baseName << "' parameter '" << paramName << "' has "
+                    << expectedType << " type, but value has type "
+                    << ASTType(binding.getValue().getType())
+                    << binding.expr->getRange();
+        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+      },
+      /*emitUnknownKwDiag=*/
+      [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
+        InflightDiag diag = emitter.emitError(exprLoc);
+        emitUnexpectedKeywords(diag, std::move(unknownKeywords), "parameter");
+        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+      },
+      /*emitRedundantKwDiag=*/
+      [&](size_t paramIdx, StringAttr paramName) {
+        InflightDiag diag = emitter.emitError(exprLoc);
+        diag << "parameter #" << paramIdx << " (" << paramName
+             << ") passed both as positional and keyword operand";
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       });
 }
@@ -591,11 +705,15 @@ InputParamBindings::verifyBindings(
     LITSignatureType sig, ExprEmitter &emitter,
     ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
     function_ref<void()> emitParamCountDiag,
-    function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const {
+    function_ref<void(size_t, const Binding &, ASTType)> emitPosTypeDiag,
+    function_ref<void(StringAttr, const Binding &, ASTType)> emitKwTypeDiag,
+    function_ref<void(SmallVectorImpl<StringRef> &&)> emitUnknownKwDiag,
+    function_ref<void(size_t, StringAttr)> emitRedundantKwDiag) const {
   return verifyBindings(
-      sig.getInputParamTypes(), sig.getDefaultParameters(), emitter,
-      sig.hasParamVarArgs(), parameterInferenceHook, isPackVarArg,
-      /*setEvaluator=*/{}, emitParamCountDiag, emitParamTypeDiag);
+      sig.getInputParamTypes(), sig.getParamNames(), sig.getDefaultParameters(),
+      emitter, sig.hasParamVarArgs(), parameterInferenceHook, isPackVarArg,
+      /*setEvaluator=*/{}, emitParamCountDiag, emitPosTypeDiag, emitKwTypeDiag,
+      emitUnknownKwDiag, emitRedundantKwDiag);
 }
 
 ParameterExprArrayAttr
@@ -608,9 +726,13 @@ InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
                            ParserParamEvaluator &evaluator) {
     evaluator.setParameterValue(structOp.getInputParams()[declIdx], value);
   };
+
+  // TODO(#22021): support keyword parameters in structs.
+  auto emptyStr = StringAttr::get(structOp->getContext());
+  SmallVector<StringAttr> paramNames(paramTypes.size(), emptyStr);
   auto [bindingValuesAttr, _] =
-      verifyBindings(paramTypes, structOp.getDefaultParameters(), emitter,
-                     structOp.getParamVarArgs(), structOp.getName(),
+      verifyBindings(paramTypes, paramNames, structOp.getDefaultParameters(),
+                     emitter, structOp.getParamVarArgs(), structOp.getName(),
                      structOp.getLoc(), exprLoc, setParamValue);
   return bindingValuesAttr;
 }
@@ -619,9 +741,9 @@ ParameterExprArrayAttr
 InputParamBindings::verifyBindings(LITSignatureType sig, ExprEmitter &emitter,
                                    StringRef baseName, Location opLoc,
                                    llvm::SMLoc exprLoc) const {
-  auto [newBindings, _] =
-      verifyBindings(sig.getInputParamTypes(), sig.getDefaultParameters(),
-                     emitter, sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
+  auto [newBindings, _] = verifyBindings(
+      sig.getInputParamTypes(), sig.getParamNames(), sig.getDefaultParameters(),
+      emitter, sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
   return newBindings;
 }
 
@@ -722,18 +844,10 @@ struct DiagEmitter {
         emitter(emitter) {}
 
   InflightDiag unexpectedKwArgs(StringSet<> &unknownKwOperands) {
-    size_t numUnknownKws = unknownKwOperands.size();
-    InflightDiag diag = initDiag() << "unexpected keyword argument"
-                                   << plural(numUnknownKws) << ": ";
-
-    // We need to sort the unknown keywords to have reproducible errors.
-    SmallVector<StringRef> sorted;
-    for (auto &it : unknownKwOperands)
-      sorted.emplace_back(it.getKey());
-    llvm::sort(sorted);
-    llvm::interleave(
-        sorted, [&](StringRef str) { diag << "'" << str << "'"; },
-        [&]() { diag << ", "; });
+    InflightDiag diag = initDiag();
+    SmallVector<StringRef> keywords = llvm::map_to_vector(
+        unknownKwOperands, [](auto &it) { return it.getKey(); });
+    emitUnexpectedKeywords(diag, std::move(keywords), "argument");
     return diag;
   }
 
@@ -1080,11 +1194,24 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     diag = emitDiagFor.wrongParamCount(signature.getNumInputParams(),
                                        posBindings.size(), "input");
   };
-  auto emitParamTypeDiag = [&](size_t paramIdx,
-                               InputParamBindings::Binding &binding,
-                               ASTType expectedType) {
-    diag = emitDiagFor.wrongParamType(posBindings[paramIdx], paramIdx,
-                                      expectedType);
+  auto emitPosTypeDiag = [&](size_t paramIdx,
+                             const InputParamBindings::Binding &binding,
+                             ASTType expectedType) {
+    diag = emitDiagFor.wrongParamType(binding, paramIdx, expectedType);
+  };
+  auto emitKwTypeDiag = [&](StringAttr paramName,
+                            const InputParamBindings::Binding &binding,
+                            ASTType expectedType) {
+    diag << "callee parameter '" << paramName << "' has "
+         << ASTType(expectedType) << " type, but value has type "
+         << ASTType(binding.getType()) << binding.expr->getRange();
+  };
+  auto emitUnknownKwDiag = [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
+    emitUnexpectedKeywords(diag, std::move(unknownKeywords), "parameter");
+  };
+  auto emitRedundantKwDiag = [&](size_t paramIdx, StringAttr paramName) {
+    diag << "parameter #" << paramIdx << " (" << paramName
+         << ") passed both as positional and keyword operand";
   };
   auto paramInferenceHook = [&](size_t index, Type type, ASTType /*unused*/,
                                 ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
@@ -1094,7 +1221,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   auto [newBindings, bindingFitness] = inputParamBindings.verifyBindings(
       signature, emitter, paramInferenceHook,
       /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty(),
-      emitParamCountDiag, emitParamTypeDiag);
+      emitParamCountDiag, emitPosTypeDiag, emitKwTypeDiag, emitUnknownKwDiag,
+      emitRedundantKwDiag);
 
   // If there is an error, we just forward the diagnostics.
   if (!newBindings)
@@ -1278,10 +1406,9 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                          const ExprNode *expr, CallSyntax syntax)
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
       syntax(syntax) {
-  if (bindingsAttr) {
+  if (bindingsAttr)
     for (TypedAttr precheckedBinding : bindingsAttr)
       inputParamBindings.addPrechecked(precheckedBinding);
-  }
 }
 
 OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
@@ -1289,10 +1416,9 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                          CallSyntax syntax)
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
       syntax(syntax) {
-  if (bindingsAttr) {
+  if (bindingsAttr)
     for (ParamBindAttr precheckedBinding : bindingsAttr)
       inputParamBindings.addPrechecked(precheckedBinding.getValue());
-  }
 }
 
 // Assuming we have at least one valid candidate, filter the candidate list to
@@ -1521,7 +1647,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     // bindings present, because (unlike normal function calls) the result type
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
-    if (!inputParamBindings.posBindings.empty()) {
+    if (!inputParamBindings.empty()) {
       auto newBindings = getBindingsForSignature(candidateType);
       if (!newBindings)
         return false; // If there is an error, return the problem.
@@ -1565,7 +1691,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   // If we resolved to a single candidate or an adaptive set, then we succeed.
   if (validCandidates.size() == 1 ||
       (!validCandidates.empty() && allMarkedAdaptive())) {
-    if (inputParamBindings.posBindings.empty())
+    if (inputParamBindings.empty())
       return getCallee(validCandidates, baseName, inputParamBindings, expr,
                        emitter);
 
@@ -1608,7 +1734,7 @@ getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
 
   // If there are no input parameters specified and if we allow unbound
   // symbols, just return the unbound symbol.
-  if (inputParamBindings.posBindings.empty())
+  if (inputParamBindings.empty())
     return funcOp.getBoundReference();
 
   // Check that the signature can be rebound with our set of bindings.
@@ -1817,7 +1943,7 @@ PValue OverloadSet::getDirectSymbol(ExprEmitter *emitter,
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
-    if (inputParamBindings.posBindings.empty())
+    if (inputParamBindings.empty())
       return cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference();
     if (!emitter)
       return {};

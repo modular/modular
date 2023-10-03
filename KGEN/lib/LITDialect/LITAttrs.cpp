@@ -153,10 +153,8 @@ LogicalResult FnMetadataAttr::verifySignature(
     return failure();
 
   if (getParamNames().size() != inputParamTypes.size()) {
-    // TODO: improve
-    // TODO: test
     return emitError() << "number of parameter names doesn't match number of "
-                          "input param types";
+                          "input parameter types";
   }
 
   // Verify input conventions.

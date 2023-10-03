@@ -238,14 +238,6 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     attrValues.push_back({operand.name, value});
   }
 
-  // Check for duplicate attribute specifications.
-  if (auto duplicate = DictionaryAttr::findDuplicate(attrValues, false)) {
-    emitter.emitError(loc, "attribute ")
-        << duplicate->getName() << " redundantly specified"
-        << subscript.getIndexRange();
-    return {};
-  }
-
   // Return it.
   auto attrs = DictionaryAttr::get(context, attrValues);
   return UnboundMLIROperationAttr::get(unboundOp.getName(), attrs);
@@ -1329,8 +1321,7 @@ static PValue substituteParametersIntoUserDefinedType(
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
   for (const Operand &operand : subscript.operands) {
-    // TODO(#21618): Slice syntax is the obvious way to support named parameter
-    // arguments.
+    // TODO(#22021): Add support for keyword parameters in structs.
     assert(!operand.isKeyword() && "keyword parameters not supported yet");
     auto indexVal = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
     if (!indexVal)
@@ -1379,14 +1370,11 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     return value;
 
   // Process each subscript entry as a binding.
-  // TODO(#21618): Support keyword parameters: `A[x = 42]`.
   for (const Operand &operand : operands) {
-    assert(!operand.isKeyword() && "keyword parameters not supported yet");
-
     // If all entries in this overload set take a parameter with a common type,
     // use it for parameter type inference.
     ASTType paramType;
-    if (!value->fnDecls.empty()) {
+    if (operand.isPositional() && !value->fnDecls.empty()) {
       paramType = getNextParamType(value->fnDecls[0], value->inputParamBindings,
                                    emitter);
       auto hasDifferentNextParam = [&](ASTDecl *decl) {
@@ -1407,10 +1395,10 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     // expected type - this is deferred until when the symbol is actually
     // emitted for something.  This allow us to use the provided parameters to
     // filter down the overload set.
-    //
-    // Note: we're being a bit abusive here by making a ParamBindAttr with a
-    // null name for positional attributes.
-    value->inputParamBindings.add(operand.value, val.get());
+    if (operand.isKeyword())
+      value->inputParamBindings.add(operand.value, val.get(), operand.name);
+    else
+      value->inputParamBindings.add(operand.value, val.get());
   }
   // The bindings will be checked for validity when a reference is formed.
   return value;
@@ -1425,15 +1413,6 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the baseAnyValue has a bound callable symbol, then this is applying
   // (more?) parameter expressions to bind its parameters.
   if (auto overloads = baseAnyValue.getIfORValue()) {
-    // TODO(#21618): Support keyword parameters
-    for (const Operand &operand : operands) {
-      SMLoc loc = operand.getLoc();
-      if (operand.isKeyword()) {
-        emitter.emitError(loc, "keyword parameters not supported yet");
-        return {};
-      }
-    }
-
     emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
                                                     rsquareLoc, operands);
     auto result = bindParamValuesToDirectCall(overloads, operands, emitter);
@@ -1456,11 +1435,12 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
-  // TODO(#21618): Support keyword parameters
+  // TODO(#21618): Support keyword parameters in indirect calls
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
     if (operand.isKeyword()) {
-      emitter.emitError(loc, "keyword parameters not supported yet");
+      emitter.emitError(
+          loc, "keyword parameters in indirect calls not supported yet");
       return {};
     }
   }

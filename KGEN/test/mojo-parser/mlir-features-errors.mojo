@@ -7,8 +7,6 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
 fn test_mlir():
-  var a : __mlir_type
-
   var x: __mlir_type.index
   x += x # expected-error {{'index' does not implement the '__iadd__' method}}
 
@@ -21,12 +19,16 @@ fn test_mlir():
   # expected-error @+1 {{operation already has attributes}}
   __mlir_op.`op`[value1=42][value2=42]
 
-  # expected-error @+1 {{attribute 'value' redundantly specified}}
+  # expected-error @+1 {{duplicate keyword parameter 'value'}}
   __mlir_op.`op`[value=42, value=42]
 
+fn test_mlir2():
   # expected-error @below {{invalid MLIR type: kgen.dtype}}
   # expected-note @below {{MLIR error: expected non-function type}}
   var y : __mlir_type.`kgen.dtype`  # should be !kgen.dtype
+
+  var a : __mlir_type
+  var x: __mlir_type.index
 
   # expected-error @+1 {{unable to infer result type from MLIR operation 'index.castu'}}
   __mlir_op.`index.castu`(x, a)
@@ -82,5 +84,5 @@ fn bad_signature_type[func: __mlir_type[`!kgen.signature<(`, Int, ` byref) -> !k
 
 fn mlir_magic_keyword_param():
     # TODO(#21618): improve test when keyword parameters are enabled.
-    # expected-error @below {{keyword parameters not supported yet}}
+    # expected-error @below {{keyword parameters in indirect calls not supported yet}}
     alias a = __mlir_type[a=`!pop.scalar<bool>`]
