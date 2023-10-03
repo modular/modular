@@ -207,20 +207,18 @@ fn pack_func[*Ts: AnyType](*args: *Ts): pass
 # expected-note @+1 {{function declared here}}
 fn take_kw_args(i: Int, j: Int = 7): pass
 
-def test_kw_args():
+fn test_kw_args():
   # expected-error @+2 {{duplicate keyword argument 'j'}}
   # expected-note @+1 {{previously specified here}}
   take_kw_args(j = 42, j = 43)
   # expected-error @+1 {{positional argument follows keyword argument}}
   take_kw_args(j = 42, 1)
 
-def test_kw_args_2():
+fn test_kw_args_2():
   # expected-error @+1 {{unexpected keyword argument: 'args'}}
   var_func("boo", args=3)
   # expected-error @+1 {{unexpected keyword argument: 'args'}}
   pack_func("boo", args=2)
-  # expected-error @+1 {{unexpected keyword argument: 'z'}}
-  take_kw_args(8, z=13)
   # expected-error @+1 {{unexpected keyword argument: 'z'}}
   take_kw_args(8, z=13)
   # expected-error @+1 {{unexpected keyword arguments: 'x', 'z'}}

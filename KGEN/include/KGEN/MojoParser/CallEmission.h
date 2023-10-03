@@ -66,12 +66,26 @@ public:
   /// This contains a list of bound input parameters given positionally.
   SmallVector<Binding> posBindings;
 
-  /// Add a bound value for a pre-checked parameter bindings.  The binding must
-  /// be known to be valid.
-  void addPrechecked(TypedAttr precheckedBinding);
+  /// This contains the bound input parameters given by a keyword.
+  SmallDenseMap<StringAttr, Binding> kwBindings;
 
-  /// Add a bound value for a parameter expression bound to a value.
+  /// Return whether there are any bindings given.
+  bool empty() const { return posBindings.empty() && kwBindings.empty(); }
+
+  /// Return the total number of bindings, including keyword and positional.
+  size_t size() const { return posBindings.size() + kwBindings.size(); }
+
+  /// Add a bound value for pre-checked positional parameter binding. The caller
+  /// is responsible for ensuring the keyword is not already present.
+  void addPrechecked(TypedAttr precheckedBinding);
+  /// Add a bound value for pre-checked keyword parameter binding.
+  void addPrechecked(TypedAttr precheckedBinding, StringAttr name);
+
+  /// Add a bound value for a positional parameter binding.
   void add(const ExprNode *expr, TypedAttr value);
+  /// Add a bound value for a keyword parameter binding. The caller is
+  /// responsible for ensuring the keyword is not already present.
+  void add(const ExprNode *expr, TypedAttr value, StringAttr name);
 
   using ParameterInferenceHookTy =
       function_ref<PValue(size_t index, Type type, ASTType expectedType,
@@ -86,7 +100,8 @@ public:
     /// Whether the bindings include variadic parameters.
     bool hasVariadicParams;
 
-    /// The last expected type if there aren't enough bindings.
+    /// The last expected type if there aren't enough bindings for
+    /// positional-or-keyword parameters.
     Type lastExpectedType = {};
   };
 
@@ -106,8 +121,14 @@ public:
       ParameterInferenceHookTy parameterInferenceHook = {},
       bool isPackVarArg = false,
       function_ref<void()> emitParamCountDiag = []() {},
-      function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag =
-          [](size_t, Binding &, ASTType) {}) const;
+      function_ref<void(size_t, const Binding &, ASTType)> emitPosTypeDiag =
+          [](size_t, const Binding &, ASTType) {},
+      function_ref<void(StringAttr, const Binding &, ASTType)> emitKwTypeDiag =
+          [](StringAttr, const Binding &, ASTType) {},
+      function_ref<void(SmallVectorImpl<StringRef> &&)> emitUnknownKwDiag =
+          [](SmallVectorImpl<StringRef> &&) {},
+      function_ref<void(size_t, StringAttr)> emitRedundantKwDiag =
+          [](size_t, StringAttr) {}) const;
 
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
@@ -129,26 +150,29 @@ private:
   /// information on how closely the bindings fit the input parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. This overload allows passing
-  /// functions for parameter count and type diagnostic emission.
+  /// functions for parameter count, type, and name diagnostic emission.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
-      ArrayRef<Type> expectedParamTypes, ArrayRef<TypedAttr> defaultParams,
-      ExprEmitter &emitter, bool hasParamVarArgs,
-      ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
-      SetEvaluatorHookTy setEvaluator, function_ref<void()> emitParamCountDiag,
-      function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const;
+      ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
+      ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+      bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
+      bool isPackVarArg, SetEvaluatorHookTy setEvaluator,
+      function_ref<void()> emitParamCountDiag,
+      function_ref<void(size_t, const Binding &, ASTType)> emitPosTypeDiag,
+      function_ref<void(StringAttr, const Binding &, ASTType)> emitKwTypeDiag,
+      function_ref<void(SmallVectorImpl<StringRef> &&)> emitUnknownKwDiag,
+      function_ref<void(size_t, StringAttr)> emitRedundantKwDiag) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParamBindArrayAttr, along with
   /// information on how closely the bindings fit the input parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. If the parameters do not
-  /// work, this emits a diagnostic using the locations and `baseName` provided.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(ArrayRef<Type> expectedParamTypes,
-                 ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-                 bool hasParamVarArgs, StringRef baseName, Location opLoc,
-                 llvm::SMLoc exprLoc,
-                 SetEvaluatorHookTy setEvaluator = {}) const;
+  /// work, this emits diagnostics using the locations and `baseName` provided.
+  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
+      ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
+      ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+      bool hasParamVarArgs, StringRef baseName, Location opLoc,
+      llvm::SMLoc exprLoc, SetEvaluatorHookTy setEvaluator = {}) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call

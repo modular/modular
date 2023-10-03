@@ -1522,7 +1522,7 @@ fn test_kw_args_param_infer():
     take_kw_param_infer(b=3, a="hello")
 
 
-fn print_kw_args(a: Int, b: Int = 7):
+fn kw_args_callable(a: Int, b: Int = 7):
     pass
 
 
@@ -1537,7 +1537,7 @@ struct KwCallable:
 # CHECK-LABEL: lit.func @"indirect_kw_args()"
 fn indirect_kw_args():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
-    alias callee = print_kw_args
+    alias callee = kw_args_callable
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 9
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 7

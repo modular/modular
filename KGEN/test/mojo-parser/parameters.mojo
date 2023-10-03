@@ -844,3 +844,45 @@ fn test_default_param_struct_all_default():
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK: %1 = kgen.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
     _ = AllDefaultParams[]()
+
+
+##===----------------------------------------------------------------------===##
+# Keyword parameters
+##===----------------------------------------------------------------------===##
+
+fn take_kw_params[a: Int, b: Int = 2, c: Int = 3](): pass
+
+# CHECK-LABEL: lit.func @"test_simple_kw_params()"
+fn test_simple_kw_params():
+    # CHECK: kgen.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 3}>>
+    take_kw_params[5, b=7]()
+    # CHECK: kgen.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
+    take_kw_params[5, b=7, c=9]()
+    # CHECK: kgen.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 9}>>
+    take_kw_params[5, c=9]()
+    # CHECK: kgen.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
+    take_kw_params[5, c=9, b=7]()
+    # CHECK: kgen.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
+    take_kw_params[a=5, c=9, b=7]()
+    # CHECK: kgen.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
+    take_kw_params[c=9, b=7, a=5]()
+
+
+@register_passable("trivial")
+struct MyInt:
+    var value: Int
+
+    @always_inline("nodebug")
+    fn __init__(_a: Int) -> Self:
+        return Self {value: _a}
+
+fn overloaded_kw_param[a: Int, b: MyInt](): pass
+
+fn overloaded_kw_param[a: Int, b: Int](): pass
+
+# CHECK-LABEL: lit.func @"test_kw_params_overload
+fn test_kw_params_overload[a: Int, b: Int]():
+    # CHECK: kgen.call @{{.*}}@"overloaded_kw_param[{{.*}}::Int,{{.*}}::Int]()"
+    overloaded_kw_param[b=b, a=a]()
+    # CHECK: kgen.call @{{.*}}@"overloaded_kw_param[{{.*}}::Int,{{.*}}::MyInt]()"
+    overloaded_kw_param[b = MyInt(b), a=a]()

@@ -25,6 +25,7 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/ParserBase.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M::KGEN::LIT;
@@ -943,11 +944,20 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
       getLocation(rsquareLoc))
     return failure();
 
-  // Inspect each parsed operand.
+  // Inspect each parsed operand, and check for duplicates.
+  SmallPtrSet<StringAttr, 4> keywords;
+  bool foundKw = false;
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
     if (operand.isUnpacked())
       return emitError(loc, "unpacked parameters not supported yet");
+    if (foundKw && operand.isPositional())
+      return emitError(loc, "positional parameter follows keyword parameter");
+    if (operand.isKeyword()) {
+      if (auto [_, isNewKw] = keywords.insert(operand.name); !isNewKw)
+        return emitError(loc, "duplicate keyword parameter ") << operand.name;
+      foundKw = true;
+    }
   }
 
   // If we have no arrow, handle this as a normal subscript.
