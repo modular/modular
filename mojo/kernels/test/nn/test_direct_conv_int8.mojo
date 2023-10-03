@@ -32,6 +32,7 @@ alias filter_type = DType.int8
 alias output_type = DType.int32
 alias simd_size: Int = simdwidthof[output_type]()
 
+
 # CHECK-LABEL: test_direct_conv
 fn test[
     input_type: DType,

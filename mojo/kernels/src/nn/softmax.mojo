@@ -555,6 +555,7 @@ fn logsoftmax[
 # Softmax
 # ===----------------------------------------------------------------------===#
 
+
 # Softmax (w/ input lambda)
 fn softmax[
     type: DType,

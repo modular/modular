@@ -47,7 +47,6 @@ fn print_elements[
 fn test_arange[
     dtype: DType,
 ](start: Int, stop: Int, step: Int):
-
     let memory1 = stack_allocation[1, dtype, 1]()
     let start_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
         memory1, StaticIntTuple[1](1)

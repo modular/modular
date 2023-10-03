@@ -31,7 +31,6 @@ fn slice_as_view[
     ends: NDBuffer[1, DimList.create_unknown[1](), end_type],
     steps: NDBuffer[1, DimList.create_unknown[1](), step_type],
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-
     var new_shape = StaticIntTuple[rank]()
     var new_stride = StaticIntTuple[rank]()
 
@@ -100,7 +99,6 @@ fn slice_as_copy[
     step: NDBuffer[1, DimList.create_unknown[1](), index_type],
     out_chain: OutputChainPtr,
 ):
-
     # Apply slice to the tensor
     let sliced = slice_as_view(tensor, start, end, step)
 
@@ -138,7 +136,6 @@ fn slice_shape[
     stop_buf: NDBuffer[1, DimList.create_unknown[1](), stop_type],
     step_buf: NDBuffer[1, DimList.create_unknown[1](), step_type],
 ) -> StaticIntTuple[input_rank]:
-
     # TODO(17512)
     debug_assert(
         input_rank == start_buf.dim(0),

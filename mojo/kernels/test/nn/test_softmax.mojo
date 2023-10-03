@@ -13,6 +13,7 @@ from Softmax import logsoftmax, softmax_2_pass
 
 from utils.list import Dim, DimList
 
+
 # CHECK-LABEL: test_logsoftmax
 fn test_logsoftmax():
     print("== test_logsoftmax")

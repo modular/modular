@@ -2750,6 +2750,7 @@ struct ConvDirectNHWC[
             # within (0, tile_size].
             let c_round_by_tile = align_down((self.conv_shape.c - 1), tile_size)
             tile[c_tile_iteration](0, c_round_by_tile, tile_size)
+
             # Update the last c tile with fusion
             @parameter
             if self.fully_static:
@@ -2968,6 +2969,7 @@ struct ConvDirectNHWC[
                     let input_offset = self.conv_shape.c * (
                         s + self.conv_shape.w * r
                     )
+
                     # Unpacked version. For each (r, s), we first offset the
                     # filter pointer by (r, s) plus c_tile_offset. Later for
                     # each c, we access micro_kernel_f_size contiguous elements.
@@ -3185,6 +3187,7 @@ struct ConvDirectNHWC[
         it's safe to load a vector since the filter has been properly padded.
         """
         let filter_vec: SIMD[filter_type, simd_size]
+
         # Partial load if F is not multiple of simd_size.
         @parameter
         if has_residual and not filter_packed:
@@ -3408,7 +3411,6 @@ struct ConvDirectNHWC[
         var filter_ptr = filter_base
 
         for c in range(c_tile_size):
-
             alias micro_kernel_f_size = micro_kernel_width * simd_size
 
             # prefetch

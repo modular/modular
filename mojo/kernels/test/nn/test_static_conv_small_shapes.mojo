@@ -60,7 +60,6 @@ fn static_conv(
         value_type,
     ],
 ):
-
     let conv_shape = ConvShape {
         n: N,
         h: H,

@@ -19,6 +19,7 @@ from runtime.llcl import OwningOutputChainPtr, Runtime
 from utils.index import StaticIntTuple
 from utils.list import DimList
 
+
 # CHECK-LABEL: test_gather
 fn test_gather():
     print("== test_gather")

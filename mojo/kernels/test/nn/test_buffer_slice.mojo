@@ -52,7 +52,6 @@ fn test_slice[
     steps: StaticIntTuple[outer_rank],
     use_copy: Bool,
 ):
-
     # Isn't always used but is used for the output buffer if we copy.
     let output_mem = stack_allocation[numelems, dtype, 1]()
 

@@ -7,6 +7,7 @@
 
 from Activations import sigmoid, sigmoid_grad
 
+
 # CHECK-LABEL: test_sigmoid_float32
 fn test_sigmoid_float32():
     print("== test_sigmoid_float32")

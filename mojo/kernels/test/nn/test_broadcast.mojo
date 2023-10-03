@@ -11,6 +11,7 @@ from memory.buffer import NDBuffer
 from utils.index import StaticIntTuple
 from utils.list import DimList
 
+
 # CHECK-LABEL: test_broadcast_empty_shape
 fn test_broadcast_empty_shape():
     print("== test_broadcast_empty_shape")
@@ -183,7 +184,6 @@ fn test_broadcast_multi_axes():
 
 
 fn test_broadcast_multi_axes_nested():
-
     # parameters
     alias input_shape = DimList(2, 1, 2, 1, 2)
     alias output_shape = DimList(2, 2, 2, 2, 2)
