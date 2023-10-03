@@ -100,11 +100,7 @@ InputParamBindings::verifyBindings(
     ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
     bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
     bool isPackVarArg, SetEvaluatorHookTy setEvaluator,
-    function_ref<void()> emitParamCountDiag,
-    function_ref<void(size_t, const Binding &, ASTType)> emitPosTypeDiag,
-    function_ref<void(StringAttr, const Binding &, ASTType)> emitKwTypeDiag,
-    function_ref<void(SmallVectorImpl<StringRef> &&)> emitUnknownKwDiag,
-    function_ref<void(size_t, StringAttr)> emitRedundantKwDiag) const {
+    const DiagEmitter &diagEmitter) const {
   size_t numParams = expectedParamTypes.size();
   assert(paramNames.size() == numParams);
   auto isVarArg = [&](size_t idx) {
@@ -130,8 +126,10 @@ InputParamBindings::verifyBindings(
 
   Fitness fitness{0, false};
   if (!unknownKwParams.empty()) {
-    emitUnknownKwDiag(llvm::map_to_vector(
-        unknownKwParams, [](StringAttr name) { return name.strref(); }));
+    if (diagEmitter.emitUnknownKw) {
+      diagEmitter.emitUnknownKw(llvm::map_to_vector(
+          unknownKwParams, [](StringAttr name) { return name.strref(); }));
+    }
     return {{}, fitness};
   }
 
@@ -191,7 +189,8 @@ InputParamBindings::verifyBindings(
                                                  fitness.numImplicitConversions,
                                                  emitter, evaluator);
         if (!pValue) {
-          emitKwTypeDiag(paramName, binding, expectedType);
+          if (diagEmitter.emitKwType)
+            diagEmitter.emitKwType(paramName, binding, expectedType);
           return {{}, fitness};
         }
         setParamValue(pValue);
@@ -231,7 +230,8 @@ InputParamBindings::verifyBindings(
 
       // Otherwise, we're simply missing bindings.
       fitness.lastExpectedType = expectedType;
-      emitParamCountDiag();
+      if (diagEmitter.emitParamCount)
+        diagEmitter.emitParamCount();
       return {{}, fitness};
     }
 
@@ -241,7 +241,8 @@ InputParamBindings::verifyBindings(
         return success(); // Positional-only parameter.
       if (auto it = kwBindings.find(paramName); it == kwBindings.end())
         return success(); // Not redundant.
-      emitRedundantKwDiag(posBindingIdx, paramName);
+      if (diagEmitter.emitRedundantKw)
+        diagEmitter.emitRedundantKw(posBindingIdx, paramName);
       return failure();
     };
 
@@ -262,10 +263,9 @@ InputParamBindings::verifyBindings(
       PValue pValue = emitSingleParameterValue(binding, expectedType,
                                                fitness.numImplicitConversions,
                                                emitter, evaluator);
-      if (!pValue) {
-        // Call the custom diagnostic handler.
-        emitPosTypeDiag(index, binding, expectedType);
-      }
+      if (!pValue)
+        if (diagEmitter.emitPosType)
+          diagEmitter.emitPosType(index, binding, expectedType);
       return pValue;
     };
 
@@ -302,7 +302,8 @@ InputParamBindings::verifyBindings(
 
   // Check and complain if we have bindings that didn't get used.
   if (posBindingIdx != numPosBindings) {
-    emitParamCountDiag();
+    if (diagEmitter.emitParamCount)
+      diagEmitter.emitParamCount();
     return {{}, fitness};
   }
 
@@ -318,11 +319,8 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                                    StringRef baseName, Location opLoc,
                                    llvm::SMLoc exprLoc,
                                    SetEvaluatorHookTy setEvaluator) const {
-  return verifyBindings(
-      expectedParamTypes, paramNames, defaultParams, emitter, hasParamVarArgs,
-      /*parameterInferenceHook=*/{},
-      /*isPackVarArg=*/false, setEvaluator, /*emitParamCountDiag=*/
-      [&]() {
+  DiagEmitter diagEmitter{
+      /*emitParamCount=*/[&]() {
         size_t minRequired = expectedParamTypes.size() - defaultParams.size();
         InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
         emitWrongArgOrParamCount(diag, minRequired,
@@ -330,7 +328,7 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                                  /*numActual=*/size(), "input parameter");
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
-      /*emitPosTypeDiag=*/
+      /*emitPosType=*/
       [&](size_t index, const Binding &binding, ASTType expectedType) {
         auto diag = emitter.emitError(binding.expr->getLoc(), "'")
                     << baseName << "' parameter #" << index << " has "
@@ -339,7 +337,7 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                     << binding.expr->getRange();
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
-      /*emitKwTypeDiag=*/
+      /*emitKwType=*/
       [&](StringAttr paramName, const Binding &binding, ASTType expectedType) {
         auto diag = emitter.emitError(binding.expr->getLoc(), "'")
                     << baseName << "' parameter '" << paramName << "' has "
@@ -348,35 +346,45 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                     << binding.expr->getRange();
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
-      /*emitUnknownKwDiag=*/
+      /*emitUnknownKw=*/
       [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
         InflightDiag diag = emitter.emitError(exprLoc);
         emitUnexpectedKeywords(diag, std::move(unknownKeywords), "parameter");
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
-      /*emitRedundantKwDiag=*/
+      /*emitRedundantKw=*/
       [&](size_t paramIdx, StringAttr paramName) {
         InflightDiag diag = emitter.emitError(exprLoc);
         diag << "parameter #" << paramIdx << " (" << paramName
              << ") passed both as positional and keyword operand";
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
-      });
+      }};
+
+  return verifyBindings(expectedParamTypes, paramNames, defaultParams, emitter,
+                        hasParamVarArgs,
+                        /*parameterInferenceHook=*/{},
+                        /*isPackVarArg=*/false, setEvaluator, diagEmitter);
 }
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
-    LITSignatureType sig, ExprEmitter &emitter,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
-    function_ref<void()> emitParamCountDiag,
-    function_ref<void(size_t, const Binding &, ASTType)> emitPosTypeDiag,
-    function_ref<void(StringAttr, const Binding &, ASTType)> emitKwTypeDiag,
-    function_ref<void(SmallVectorImpl<StringRef> &&)> emitUnknownKwDiag,
-    function_ref<void(size_t, StringAttr)> emitRedundantKwDiag) const {
+    LITSignatureType sig, ExprEmitter &emitter, const DiagEmitter &diagEmitter,
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
   return verifyBindings(
       sig.getInputParamTypes(), sig.getParamNames(), sig.getDefaultParameters(),
       emitter, sig.hasParamVarArgs(), parameterInferenceHook, isPackVarArg,
-      /*setEvaluator=*/{}, emitParamCountDiag, emitPosTypeDiag, emitKwTypeDiag,
-      emitUnknownKwDiag, emitRedundantKwDiag);
+      /*setEvaluator=*/{}, diagEmitter);
+}
+
+std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
+InputParamBindings::verifyBindings(LITSignatureType sig,
+                                   ExprEmitter &emitter) const {
+  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr};
+  return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
+                        sig.getDefaultParameters(), emitter,
+                        sig.hasParamVarArgs(), /*parameterInferenceHook=*/{},
+                        /*isPackVarArg=*/false,
+                        /*setEvaluator=*/{}, diagEmitter);
 }
 
 ParameterExprArrayAttr
