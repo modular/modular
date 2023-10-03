@@ -37,11 +37,17 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
                         LLCL::Runtime &runtime, TargetInfoAttr target,
                         const CompilationOptions &options,
                         ArrayRef<FuncOp> specializations) {
+  // TODO(#2717): Cross-compilation and execution for search!
+  if (target.getArch() != llvm::sys::getHostCPUName())
+    return Error("cross-compilation execution in search is not yet supported");
+
   mlir::PassManager mgr(target.getContext());
-  ExecutionEngineOptions opts{/*registerDebugPlugins=*/false,
-                              /*sanitizers=*/options.sanitizers};
+  ExecutionEngineOptions eeOptions;
+  eeOptions.sanitizers = options.sanitizers;
+  if (options.debugLevel != CompilationOptions::kNoDebug)
+    eeOptions.registerDebugPlugins = true;
   auto engineOr =
-      initializeExecutionEngine(runtime, mgr, options, std::move(opts),
+      initializeExecutionEngine(runtime, mgr, options, std::move(eeOptions),
                                 /*isJIT=*/true, target, /*isSearch=*/true);
   if (engineOr.isError())
     return engineOr.takeError();
@@ -52,7 +58,7 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
   funcsToCompile.push_back(evaluator);
 
   // Create the set of symbols to export.
-  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
+  ExportMap exportedSymbols;
   for (FuncOp func : funcsToCompile) {
     StringAttr symName = func.getSymNameAttr();
     exportedSymbols.insert({symName, ExportedSymbol(ExportKind::Weak)});
@@ -92,6 +98,82 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 }
 
 //===----------------------------------------------------------------------===//
+// compileElaboratorAsm
+//===----------------------------------------------------------------------===//
+
+/// Given the pre-elaboration function `func` belonging to a module with the
+/// symbol table `symtab`, slice out a standalone module rooted at `func` and
+/// elaborate it and compile to assembly for the provided `target.
+static ErrorOrSuccess
+compileElaboratorAsm(GeneratorOp func, const SymbolTable &symtab,
+                     LLCL::Runtime &runtime, TargetInfoAttr target,
+                     CompilationOptions options, llvm::raw_pwrite_stream &os) {
+  // Configure the compilation options given the new target.
+  options.targetTriple = target.getTripleStr();
+  options.targetCpu = target.getArch();
+  options.targetFeatures = target.getFeatures();
+  options.relocModel = target.getRelocationModel();
+
+  // Initialize the object compiler.
+  mlir::PassManager compilerPm(target.getContext());
+  ErrorOr<ObjectCompiler> compilerOr = ObjectCompiler::create(
+      runtime, compilerPm, ".mojo_cache", options, /*isJIT=*/false);
+  if (compilerOr.isError())
+    return compilerOr.takeError();
+  ObjectCompiler compiler = compilerOr.takeValue();
+
+  // Initialize the target machine.
+  auto tmOr = createTargetMachine(options, /*isJIT=*/false);
+  if (tmOr.isError())
+    return tmOr.takeError();
+  std::unique_ptr<llvm::TargetMachine> targetMachine = tmOr.takeValue();
+
+  // Slice out a pre-elaboration module for the new target to compile for.
+  ExportMap exportedSymbols;
+  exportedSymbols.insert({func.getSymNameAttr(), ExportKind::Exported});
+  OwningOpRef<ModuleOp> module =
+      compiler.produceStandaloneModule(symtab, exportedSymbols);
+  // Override the target.
+  eraseTargetInfo(*module);
+  setTargetInfo(*module, target);
+
+  // Run elaboration through to the end of the optimization pipeline.
+  ElaborateGeneratorsOptions elaboratorOptions;
+  elaboratorOptions.enableSearch = options.enableSearch;
+  elaboratorOptions.elaborateLocations =
+      options.debugLevel == CompilationOptions::kLineTablesOnly ||
+      options.debugLevel == CompilationOptions::kFullDebugInfo;
+  mlir::PassManager pm(target.getContext());
+  pm.addPass(createElaborateGenerators(
+      runtime, target, BuildInfoAttr::getForCurrentBuild(target.getContext()),
+      elaboratorOptions,
+      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
+                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, runtime, target,
+                                       options, specializations);
+      },
+      [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
+                    TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
+        // Recursion...!
+        return compileElaboratorAsm(func, symtab, runtime, target, options, os);
+      }));
+  buildPostElaborationPipeline(pm, runtime, options);
+
+  // TODO: cachedTransform
+  if (failed(pm.run(*module)))
+    return Error("failed to run the pass manager");
+  llvm::LLVMContext llvmCtx;
+  std::unique_ptr<llvm::Module> llvmModule =
+      compiler.lowerAllFuncsToLLVM(llvmCtx, *module);
+
+  if (failed(compileLLVMToObject(*llvmModule, *targetMachine, os, options,
+                                 runtime, /*emitAssembly=*/true)))
+    return Error("failed to emit assembly");
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // populateElaborateModulePasses
 //===----------------------------------------------------------------------===//
 
@@ -106,6 +188,10 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
                                        options, specializations);
+      },
+      [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
+                    TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
+        return compileElaboratorAsm(func, symtab, runtime, target, options, os);
       },
       options);
   buildPostElaborationPipeline(pm, runtime, options);
@@ -286,6 +372,11 @@ KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
                                        /*options=*/{}, specializations);
+      },
+      [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
+                    TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
+        return compileElaboratorAsm(func, symtab, runtime, target,
+                                    /*options=*/{}, os);
       });
 }
 

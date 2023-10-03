@@ -75,6 +75,8 @@ private:
   FailureOr<TypedAttr> evaluateGetAllImpls(ParamOperatorAttr op);
   /// Evaluate a `get_env` operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
+  /// Evaluate a `compile_assembly` operator.
+  FailureOr<TypedAttr> evaluateCompileAssembly(ParamOperatorAttr op);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);

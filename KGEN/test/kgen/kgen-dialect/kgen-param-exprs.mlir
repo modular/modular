@@ -763,3 +763,15 @@ kgen.generator @int_literal_param<abcd: !kgen.int_literal>() {
   kgen.param.constant: !kgen.int_literal = <abcd>
   kgen.return
 }
+
+kgen.generator @kernel() {
+  kgen.return
+}
+
+// CHECK-LABEL: @compile_assembly
+kgen.generator @compile_assembly() {
+  kgen.param.declare nvptx: target = <#kgen.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>>
+  // CHECK: constant: string = <compile_assembly(nvptx, :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(nvptx, :() -> () @kernel)>
+  kgen.return
+}

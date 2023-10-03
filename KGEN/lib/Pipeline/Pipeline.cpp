@@ -64,12 +64,10 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
     pm.addNestedPass<GeneratorOp>(createConstraintReduction());
   }
 }
-void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
-                                        LLCL::Runtime &runtime,
-                                        TargetInfoAttr target,
-                                        BuildInfoAttr build,
-                                        EvaluatorExecutorFn evaluatorExecutorFn,
-                                        const CompilationOptions &options) {
+void KGEN::buildElaborateModulePipeline(
+    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
+    BuildInfoAttr build, EvaluatorExecutorFn evaluatorExecutorFn,
+    ElaboratorCompileAsmFn compileAsmFn, const CompilationOptions &options) {
   // At the end of the LIT lowering pipeline, pull in the bodies of constructs
   // that were already elaborated.
   pm.addPass(createLowerPreElaboratedLIT());
@@ -88,8 +86,9 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
   elaboratorOptions.elaborateLocations =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
-  pm.addPass(createElaborateGenerators(runtime, target, build,
-                                       elaboratorOptions, evaluatorExecutorFn));
+  pm.addPass(createElaborateGenerators(
+      runtime, target, build, elaboratorOptions, std::move(evaluatorExecutorFn),
+      std::move(compileAsmFn)));
 }
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,

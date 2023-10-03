@@ -55,6 +55,17 @@ public:
   lowerAllFuncsToLLVM(const SymbolTable &symtab,
                       const ExportMap &exportedSymbols, llvm::LLVMContext &ctx);
 
+  /// Lower the given module to LLVM. Returns the LLVM module on success, and
+  /// nullptr on failure.
+  std::unique_ptr<llvm::Module> lowerAllFuncsToLLVM(llvm::LLVMContext &ctx,
+                                                    ModuleOp module);
+
+  /// Produce a standalone MLIR module by slicing out the dependencies of the
+  /// provided exported ops.
+  OwningOpRef<ModuleOp>
+  produceStandaloneModule(const SymbolTable &symtab,
+                          const ExportMap &exportedSymbols);
+
   /// Slices the call graph for all exported symbols to produce a standalone
   /// archive.
   ErrorOr<BufferRef> produceStandaloneArchive(const SymbolTable &symtab,
@@ -88,17 +99,6 @@ private:
   ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
                  RCRef<Cache::BlobCacheBackend> transformCache,
                  CompilationOptions options, bool isJIT, bool isSearch);
-
-  /// Produce a standalone MLIR module by slicing out the dependencies of the
-  /// provided exported ops.
-  OwningOpRef<ModuleOp>
-  produceStandaloneModule(const SymbolTable &symtab,
-                          const ExportMap &exportedSymbols);
-
-  /// Lower the given module to LLVM. Returns the LLVM module on success, and
-  /// nullptr on failure.
-  std::unique_ptr<llvm::Module> lowerAllFuncsToLLVM(llvm::LLVMContext &ctx,
-                                                    ModuleOp module);
 
   /// Lower the given LLVM module to an object file.
   LLCL::AnyAsyncValueRef lowerLLVMModuleToObject(llvm::Module &module,
@@ -205,6 +205,18 @@ private:
   llvm::orc::ObjectLayer &baseLayer;
   DenseMap<ModuleOp, BufferRef> generatedArchives;
 };
+
+//===----------------------------------------------------------------------===//
+// compileLLVMToObject
+//===----------------------------------------------------------------------===//
+
+/// Compile the given LLVM module to an object file and write it to objStream.
+LogicalResult compileLLVMToObject(llvm::Module &module,
+                                  llvm::TargetMachine &targetMachine,
+                                  llvm::raw_pwrite_stream &objStream,
+                                  CompilationOptions &options,
+                                  LLCL::Runtime &runtime,
+                                  bool emitAssembly = false);
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_OBJECTCOMPILER_H
