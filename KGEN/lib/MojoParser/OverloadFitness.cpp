@@ -710,40 +710,46 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   const InputParamBindings &inputParamBindings = callable.inputParamBindings;
   ArrayRef<InputParamBindings::Binding> posBindings =
       inputParamBindings.posBindings;
+
   InflightDiag diag = emitter.emitError(callLoc);
-  auto emitParamCountDiag = [&]() {
-    diag = emitDiagFor.wrongParamCount(signature.getNumInputParams(),
-                                       posBindings.size(), "input");
+  InputParamBindings::DiagEmitter bindingDiag{
+      /*emitParamCount=*/
+      [&]() {
+        diag = emitDiagFor.wrongParamCount(signature.getNumInputParams(),
+                                           posBindings.size(), "input");
+      },
+      /*emitPosType=*/
+      [&](size_t paramIdx, const InputParamBindings::Binding &binding,
+          ASTType expectedType) {
+        diag = emitDiagFor.wrongParamType(binding, paramIdx, expectedType);
+      },
+      /*emitKwType=*/
+      [&](StringAttr paramName, const InputParamBindings::Binding &binding,
+          ASTType expectedType) {
+        diag << "callee parameter '" << paramName << "' has "
+             << ASTType(expectedType) << " type, but value has type "
+             << ASTType(binding.getType()) << binding.expr->getRange();
+      },
+      /*emitUnknownKw=*/
+      [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
+        emitUnexpectedKeywords(diag, std::move(unknownKeywords), "parameter");
+      },
+      /*emitRedundantKw=*/
+      [&](size_t paramIdx, StringAttr paramName) {
+        diag << "parameter #" << paramIdx << " (" << paramName
+             << ") passed both as positional and keyword operand";
+      },
   };
-  auto emitPosTypeDiag = [&](size_t paramIdx,
-                             const InputParamBindings::Binding &binding,
-                             ASTType expectedType) {
-    diag = emitDiagFor.wrongParamType(binding, paramIdx, expectedType);
-  };
-  auto emitKwTypeDiag = [&](StringAttr paramName,
-                            const InputParamBindings::Binding &binding,
-                            ASTType expectedType) {
-    diag << "callee parameter '" << paramName << "' has "
-         << ASTType(expectedType) << " type, but value has type "
-         << ASTType(binding.getType()) << binding.expr->getRange();
-  };
-  auto emitUnknownKwDiag = [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
-    emitUnexpectedKeywords(diag, std::move(unknownKeywords), "parameter");
-  };
-  auto emitRedundantKwDiag = [&](size_t paramIdx, StringAttr paramName) {
-    diag << "parameter #" << paramIdx << " (" << paramName
-         << ") passed both as positional and keyword operand";
-  };
-  auto paramInferenceHook = [&](size_t index, Type type, ASTType /*unused*/,
-                                ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
+
+  auto parameterInferenceHook =
+      [&](size_t index, Type type, ASTType /*unused*/,
+          ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
     return ParameterInferenceState(emitter.shared, index, type)
         .infer(signature, bindingsSoFar, callOperands);
   };
   auto [newBindings, bindingFitness] = inputParamBindings.verifyBindings(
-      signature, emitter, paramInferenceHook,
-      /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty(),
-      emitParamCountDiag, emitPosTypeDiag, emitKwTypeDiag, emitUnknownKwDiag,
-      emitRedundantKwDiag);
+      signature, emitter, bindingDiag, parameterInferenceHook,
+      /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
 
   // If there is an error, we just forward the diagnostics.
   if (!newBindings)

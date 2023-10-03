@@ -112,23 +112,34 @@ public:
                                         ExprEmitter &emitter,
                                         llvm::SMLoc exprLoc) const;
 
-  /// Verify the parameter bindings for the given signature. An optional hook
-  /// can be provided to infer parameters. If the signature doesn't match,
-  /// optional diagnostic emission, hooks can be provided (by default no
-  /// diagnostics will be emitted).
-  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
-      LITSignatureType sig, ExprEmitter &emitter,
-      ParameterInferenceHookTy parameterInferenceHook = {},
-      bool isPackVarArg = false,
-      function_ref<void()> emitParamCountDiag = []() {},
-      function_ref<void(size_t, const Binding &, ASTType)> emitPosTypeDiag =
-          [](size_t, const Binding &, ASTType) {},
-      function_ref<void(StringAttr, const Binding &, ASTType)> emitKwTypeDiag =
-          [](StringAttr, const Binding &, ASTType) {},
-      function_ref<void(SmallVectorImpl<StringRef> &&)> emitUnknownKwDiag =
-          [](SmallVectorImpl<StringRef> &&) {},
-      function_ref<void(size_t, StringAttr)> emitRedundantKwDiag =
-          [](size_t, StringAttr) {}) const;
+  /// Helper class to customizing diagnostic emission for verification. The
+  /// default implementation suppresses all diagnostics.
+  struct DiagEmitter {
+    /// Emit diagnostics for incorrect parameter count.
+    std::function<void()> emitParamCount;
+    /// Emit diagnostics for incorrect type in a positional parameter.
+    std::function<void(size_t, const Binding &, ASTType)> emitPosType;
+    /// Emit diagnostics for incorrect type in a keyword parameter.
+    std::function<void(StringAttr, const Binding &, ASTType)> emitKwType;
+    /// Emit diagnostics for a parameter given with an unknown keyword.
+    std::function<void(SmallVectorImpl<StringRef> &&)> emitUnknownKw;
+    /// Emit diagnostics for a parameter specified both by position and keyword.
+    std::function<void(size_t, StringAttr)> emitRedundantKw;
+  };
+
+  /// Verify the parameter bindings for the given signature. If the signature
+  /// doesn't match  no diagnostics will be emitted.
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(LITSignatureType sig, ExprEmitter &emitter) const;
+
+  /// Verify the parameter bindings for the given signature. If the signature
+  /// doesn't match, the provided DiagEmitter will be used to emit diagnostics.
+  /// An optional hook can be provided to infer parameters.
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(LITSignatureType sig, ExprEmitter &emitter,
+                 const DiagEmitter &diagEmitter,
+                 ParameterInferenceHookTy parameterInferenceHook = {},
+                 bool isPackVarArg = false) const;
 
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
@@ -149,18 +160,14 @@ private:
   /// parameters. If so, return a checked ParamBindArrayAttr, along with
   /// information on how closely the bindings fit the input parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
-  /// in the evaluator used by the implementation. This overload allows passing
-  /// functions for parameter count, type, and name diagnostic emission.
+  /// in the evaluator used by the implementation. This overload allows
+  /// customizing diagnostics by passing a custom DiagEmitter.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
       ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
       bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
       bool isPackVarArg, SetEvaluatorHookTy setEvaluator,
-      function_ref<void()> emitParamCountDiag,
-      function_ref<void(size_t, const Binding &, ASTType)> emitPosTypeDiag,
-      function_ref<void(StringAttr, const Binding &, ASTType)> emitKwTypeDiag,
-      function_ref<void(SmallVectorImpl<StringRef> &&)> emitUnknownKwDiag,
-      function_ref<void(size_t, StringAttr)> emitRedundantKwDiag) const;
+      const DiagEmitter &diagEmitter) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParamBindArrayAttr, along with
