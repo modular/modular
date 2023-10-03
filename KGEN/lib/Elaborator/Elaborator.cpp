@@ -2526,8 +2526,7 @@ public:
 
     // Default compile assembly hook will just error.
     if (!compileAsmFn) {
-      compileAsmFn = [](GeneratorOp, const SymbolTable &, TargetInfoAttr,
-                        llvm::raw_pwrite_stream &) {
+      compileAsmFn = [](GeneratorOp, const SymbolTable &, TargetInfoAttr) {
         return Error("internal error: cannot compile assembly without a JIT");
       };
     }

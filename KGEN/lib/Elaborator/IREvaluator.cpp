@@ -228,15 +228,13 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
       cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
   assert(func && "expected a valid generator reference");
 
-  WriteableBufferRef buffer = WriteableBuffer::get();
-  if (ErrorOrSuccess result =
-          elaborator->getCompileAsmFn()(func, symtabCopy, target, *buffer);
-      result.isError()) {
-    emitError({*errorLoc, result.takeError()});
+  ErrorOr<BufferRef> buffer =
+      elaborator->getCompileAsmFn()(func, symtabCopy, target);
+  if (buffer.isError()) {
+    emitError({*errorLoc, buffer.takeError()});
     return failure();
   }
-  MutableArrayRef<char> data = buffer->getBuffer();
-  return {StringAttr::get(StringRef(data.data(), data.size()), op.getType())};
+  return {StringAttr::get(buffer.takeValue()->getBuffer(), op.getType())};
 }
 
 //===----------------------------------------------------------------------===//
