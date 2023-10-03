@@ -83,6 +83,5 @@ fn bad_signature_type[func: __mlir_type[`!kgen.signature<(`, Int, ` byref) -> !k
 
 
 fn mlir_magic_keyword_param():
-    # TODO(#21618): improve test when keyword parameters are enabled.
-    # expected-error @below {{keyword parameters in indirect calls not supported yet}}
+    # expected-error @below {{only positional operands allowed in mlir magic}}
     alias a = __mlir_type[a=`!pop.scalar<bool>`]

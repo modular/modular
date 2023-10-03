@@ -757,6 +757,23 @@ fn test_default_params():
     default_params[4, 9, "meow"]()
 
 
+fn test_indirect_default_params():
+    # CHECK: lit.alias.decl [[CALLEE:.*_callee]]: !lit.signature
+    alias callee = default_params
+
+    # CHECK: kgen.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+    # CHECK-SAME: #lit.struct<{value = 1}>, #lit.struct<{value = 7}>, #lit.struct<{value: string = "woof"}>)]()
+    callee[1]()
+
+    # CHECK: kgen.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+    # CHECK-SAME: #lit.struct<{value = 2}>, #lit.struct<{value = 8}>, #lit.struct<{value: string = "woof"}>)]()
+    callee[2, 8]()
+
+    # CHECK: kgen.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+    # CHECK-SAME: #lit.struct<{value = 4}>, #lit.struct<{value = 9}>, #lit.struct<{value: string = "meow"}>)]()
+    callee[4, 9, "meow"]()
+
+
 # COM: check that inferred parameter values take precedence over defaults
 # CHECK-LABEL: lit.func @"inferred_default_param
 fn inferred_default_param[dt: DType, w: Int = 8](a: OurSIMD[w, dt]):
@@ -866,6 +883,17 @@ fn test_simple_kw_params():
     take_kw_params[a=5, c=9, b=7]()
     # CHECK: kgen.call @{{.*}}@"take_kw_params{{.*}}"<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>
     take_kw_params[c=9, b=7, a=5]()
+
+
+fn test_indirect_kw_params():
+  # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
+  alias callee = take_kw_params
+  # CHECK: kgen.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+  # CHECK-SAME: #lit.struct<{value = 5}>, #lit.struct<{value = 2}>, #lit.struct<{value = 9}>)]()
+  callee[5, c=9]()
+  # CHECK: kgen.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+  # CHECK-SAME: #lit.struct<{value = 5}>, #lit.struct<{value = 7}>, #lit.struct<{value = 9}>)]()
+  callee[c=9, b=7, a=5]()
 
 
 @register_passable("trivial")

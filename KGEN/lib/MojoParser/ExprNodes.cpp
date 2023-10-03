@@ -108,7 +108,6 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
   for (const Operand &operand : node.operands) {
     ExprNode *expr = operand.value;
     if (!operand.isPositional()) {
-      // TODO(#21618): improve test when keyword parameters are enabled.
       emitter.emitError(loc, "only positional operands allowed in mlir magic")
           << expr->getRange();
       return {};
@@ -1405,6 +1404,70 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
   return value;
 }
 
+/// Bind parameter operands to a callable parameter.
+static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
+                                 ArrayRef<Operand> operands,
+                                 ExprEmitter &emitter,
+                                 const SourceRange &range) {
+  ArrayRef<Operand> posOperands = operands.take_while(
+      [](Operand p) { return !p.isKeywordOrUnpackedKeyword(); });
+  size_t numPosOperands = posOperands.size();
+
+  SmallDenseMap<StringAttr, Operand> kwOperands;
+  for (Operand p : operands.drop_front(numPosOperands)) {
+    assert(!p.name.empty());
+    auto [_, addedNew] = kwOperands.try_emplace(p.name, p);
+    assert(addedNew && "duplicate keyword parameter");
+  }
+
+  // Helper to install a single operand in the binding list.
+  SmallVector<TypedAttr> bindOperands({callable.get()});
+  auto addBoundOperand = [&](const Operand &operand,
+                             Type paramType) -> LogicalResult {
+    PValue pValue =
+        emitter.emitExprPValue(operand.value, EC_CallParamValue, paramType);
+    if (!pValue)
+      return failure();
+    bindOperands.emplace_back(pValue);
+    return success();
+  };
+
+  size_t posIdx = 0;
+  ArrayRef<TypedAttr> defaultParams = sig.getDefaultParameters();
+  size_t numParams = sig.getNumInputParams();
+  for (auto [idx, paramType, paramName] :
+       llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames())) {
+    // Emit positional operand while possible.
+    if (posIdx < numPosOperands) {
+      if (failed(addBoundOperand(posOperands[posIdx++], paramType)))
+        return {};
+      continue;
+    }
+
+    // TODO(#21951): handle positional-only parameters
+
+    // If we have no more positional operands, try keyword
+    if (auto it = kwOperands.find(paramName); it != kwOperands.end()) {
+      if (failed(addBoundOperand(it->getSecond(), paramType)))
+        return {};
+      continue;
+    }
+
+    // If no operand is provided, try a default.
+    if (size_t defaultStartIdx = numParams - defaultParams.size();
+        idx >= defaultStartIdx) {
+      bindOperands.emplace_back(defaultParams[idx - defaultStartIdx]);
+      continue;
+    }
+
+    emitter.emitError(range.getStart(), "parametric callable expected ")
+        << numParams << " parameter" << plural(numParams) << range;
+    return {};
+  }
+
+  return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
+}
+
 AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
   auto baseAnyValue = base->emitIR(ValueDest::none(), emitter);
@@ -1436,36 +1499,14 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
-  // TODO(#21618): Support keyword parameters in indirect calls
-  for (const Operand &operand : operands) {
-    SMLoc loc = operand.getLoc();
-    if (operand.isKeyword()) {
-      emitter.emitError(
-          loc, "keyword parameters in indirect calls not supported yet");
-      return {};
-    }
-  }
-
-  if (auto callableMVal = baseValue.getIfPValue()) {
-    if (auto sig = dyn_cast<SignatureType>(callableMVal.getType().mlirType)) {
-      // If this is a signature-type PValue callable, this is binding parameter
-      // values to a call.
-      SmallVector<TypedAttr> bindOperands({callableMVal.get()});
-      if (operands.size() != sig.getNumInputParams()) {
-        emitter.emitError(getLoc(), "parametric callable expected ")
-            << sig.getNumInputParams() << " parameter"
-            << plural(sig.getNumInputParams()) << getIndexRange();
+  // If this is a signature-type PValue callable, this is binding parameter
+  // values to a call.
+  if (PValue callable = baseValue.getIfPValue()) {
+    if (auto sig = dyn_cast<LITSignatureType>(callable.getType().mlirType)) {
+      PValue result =
+          bindToIndirectCall(callable, sig, operands, emitter, getIndexRange());
+      if (!result)
         return {};
-      }
-      for (auto [operand, type] :
-           llvm::zip(operands, sig.getInputParamTypes())) {
-        bindOperands.push_back(
-            emitter.emitExprPValue(operand.value, EC_CallParamValue, type));
-        if (!bindOperands.back())
-          return {};
-      }
-
-      PValue result(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
       return emitter.emitResult(result, this, dest);
     }
   }
@@ -1474,6 +1515,15 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types.
     if (auto declRef = dyn_cast<DeclRefType>(typeValue)) {
+      // TODO(#22021): Support keyword parameters in structs
+      for (const Operand &operand : operands) {
+        SMLoc loc = operand.getLoc();
+        if (operand.isKeyword()) {
+          emitter.emitError(loc,
+                            "keyword parameters in structs not supported yet");
+          return {};
+        }
+      }
       PValue result =
           substituteParametersIntoUserDefinedType(declRef, *this, emitter);
       return emitter.emitResult(result, this, dest);
@@ -1494,6 +1544,16 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       PValue attr =
           synthesizeMLIRAttrFromString(result, getLoc(), emitter.shared);
       return emitter.emitResult(attr, this, dest);
+    }
+  }
+
+  // TODO(#21618): Support keyword parameters in dynamic subscripts.
+  for (const Operand &operand : operands) {
+    SMLoc loc = operand.getLoc();
+    if (operand.isKeyword()) {
+      emitter.emitError(
+          loc, "keyword parameters in dynamic subscripts not supported yet");
+      return {};
     }
   }
 
