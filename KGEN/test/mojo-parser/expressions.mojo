@@ -959,6 +959,15 @@ fn testWeirdArray(a: WeirdArray, idx: Int, f: Float32):
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%a, %idx, %idx, [[SEVENTEEN]])
   a[idx, idx] = 17
 
+fn test_kew_getitem(a: WeirdArray, idx: Int, idx2: Int, idx3: Int):
+  # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
+  _ = a[x=idx]
+  # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx2)
+  _ = a[y=idx2, x=idx]
+  # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx2, %idx3)
+  _ = a[z=idx3, x=idx, y=idx2]
+  # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx2, %idx3)
+  _ = a[idx, z=idx3, y=idx2]
 
 struct Slicable:
     fn __init__(inout self):

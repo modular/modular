@@ -286,11 +286,12 @@ void StoredAttributeRefDLValue::print(raw_ostream &os) const {
 // SubscriptDLValue
 //===----------------------------------------------------------------------===//
 
-SubscriptDLValue::SubscriptDLValue(ArrayRef<FuncOperand> selfAndIndicesValue,
-                                   ASTType elementType, const ExprNode *expr)
-    : BaseDLValue(elementType), expr(expr),
-      selfAndIndicesValue(selfAndIndicesValue.begin(),
-                          selfAndIndicesValue.end()) {}
+SubscriptDLValue::SubscriptDLValue(
+    SmallVectorImpl<FuncOperand> &&posOperands,
+    SmallDenseMap<StringRef, FuncOperand> &&kwOperands, ASTType elementType,
+    const ExprNode *expr)
+    : BaseDLValue(elementType), expr(expr), posOperands(std::move(posOperands)),
+      kwOperands(std::move(kwOperands)) {}
 
 /// Return true if this is a subscript, false if this is an attribute access.
 bool SubscriptDLValue::isSubscript() const {
