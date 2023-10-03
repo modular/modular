@@ -11,6 +11,7 @@ from Transpose import _simplify_transpose_perms, transpose, transpose_inplace
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
+
 # CHECK-LABEL: test_transpose_4x4
 fn test_transpose_4x4():
     print("== test_transpose_4x4")

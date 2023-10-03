@@ -530,7 +530,6 @@ fn _process_tile[
     out_ptr: DTypePointer[type],
     in_ptr: DTypePointer[type],
 ):
-
     let input_tile_offset = M * n + m
     let output_tile_offset = N * m + n
 
@@ -1047,7 +1046,6 @@ fn _copy_with_strides[
         @always_inline
         @parameter
         fn _parallel_copy(thread_id: Int):
-
             var next_input_offset = (
                 thread_id * work_block_size * input_axis_stride + input_offset
             )

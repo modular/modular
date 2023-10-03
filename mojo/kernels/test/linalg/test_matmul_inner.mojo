@@ -49,7 +49,6 @@ fn matmul_inner_loop(
         b_type,
     ],
 ):
-
     MatmulInnerLoopBPacked[
         DimList(M, K),
         DimList(M, N),
