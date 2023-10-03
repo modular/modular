@@ -256,11 +256,6 @@ LogicalResult StructExtractOp::inferReturnTypes(
   return type;
 }
 
-void StructExtractOp::build(OpBuilder &b, OperationState &state,
-                            Value container, int64_t index) {
-  return build(b, state, container, b.getIndexAttr(index));
-}
-
 //===----------------------------------------------------------------------===//
 // StructReplaceOp
 //===----------------------------------------------------------------------===//
@@ -283,11 +278,6 @@ static void printStructValueType(AsmPrinter &p, Operation *op, Type valueType,
 LogicalResult StructReplaceOp::verify() {
   return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
                                getValue().getType(), "operand");
-}
-
-void StructReplaceOp::build(OpBuilder &b, OperationState &state, Value value,
-                            Value container, int64_t index) {
-  build(b, state, value, container, b.getIndexAttr(index));
 }
 
 //===----------------------------------------------------------------------===//
