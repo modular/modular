@@ -25,6 +25,17 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 class POPOp<string mnemonic, list<Trait> traits = []> :
     Op<POPDialect, mnemonic, traits>;
 
+// IndexAttr whose return value is an `int64_t`.
+def POP_IndexAttr :
+    TypedAttrBase<
+      Index, "IntegerAttr",
+      And<[CPred<"isa<IntegerAttr>($_self)">,
+           CPred<"isa<IndexType>(cast<IntegerAttr>($_self).getType())">]>,
+      "index attribute"> {
+  let returnType = "int64_t";
+  let convertFromStorage = "$_self.getInt()";
+}
+
 //===----------------------------------------------------------------------===//
 // UnaryOp
 //===----------------------------------------------------------------------===//
@@ -881,13 +892,11 @@ def POP_StructExtractOp : POPOp<"struct.extract", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_StructType:$container, IndexAttr:$index);
+  let arguments = (ins POP_StructType:$container, POP_IndexAttr:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $container `[` $index `]` attr-dict `:` qualified(type($container))
   }];
-
-  let builders = [OpBuilder<(ins "Value":$container, "int64_t":$index)>];
 
   let hasVerifier = 1;
   let hasFolder = 1;
@@ -918,7 +927,7 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
   }];
 
   let arguments = (ins AnyType:$value, POP_StructType:$container,
-                       IndexAttr:$index);
+                       POP_IndexAttr:$index);
   let results = (outs POP_StructType:$result);
   let assemblyFormat = [{
     $value `,` $container `[` $index `]` attr-dict `:`
@@ -928,10 +937,6 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
 
   let hasVerifier = 1;
   let hasFolder = 1;
-
-  let builders = [
-    OpBuilder<(ins "Value":$value, "Value":$container, "int64_t":$index)>
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -963,17 +968,12 @@ def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
     ```
   }];
 
-  let arguments = (ins PointerOf<POP_StructType>:$container, IndexAttr:$index);
+  let arguments = (ins PointerOf<POP_StructType>:$container,
+                       POP_IndexAttr:$index);
   let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $container `[` $index `]` attr-dict `:` type($container)
   }];
-
-  let builders = [
-    OpBuilder<(ins "Value":$container, "int64_t":$index), [{
-      build($_builder, $_state, container, $_builder.getIndexAttr(index));
-    }]>
-  ];
 
   let hasVerifier = 1;
 }

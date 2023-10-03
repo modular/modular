@@ -175,7 +175,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
           gep.replaceAllUsesWith(newAllocas[gep.getIndexAttr().getInt()]);
           toDelete.push_back(gep);
         } else if (auto extract = dyn_cast<POP::StructExtractOp>(loadUser)) {
-          Value newVal = getOrCreateLoad(extract.getIndex().getLimitedValue());
+          Value newVal = getOrCreateLoad(extract.getIndex());
           extract.replaceAllUsesWith(newVal);
           toDelete.push_back(extract);
         }
