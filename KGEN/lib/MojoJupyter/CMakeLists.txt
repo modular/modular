@@ -27,5 +27,6 @@ add_modular_library(MojoJupyter SHARED
   MSupport
   MojoLLDB
 
+  MLIRIR
   liblldb
 )

@@ -7,6 +7,8 @@
 #ifndef KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_JITEXECUTIONUNIT_H
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_JITEXECUTIONUNIT_H
 
+#include "KGEN/KGENDialect/KGENUtils.h"
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "lldb/Expression/IRMemoryMap.h"
 #include "lldb/Expression/ObjectFileJIT.h"
@@ -16,22 +18,23 @@
 #include "lldb/lldb-private.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
-#include "llvm/IR/Module.h"
+#include "llvm/Object/Archive.h"
 #include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace M::KGEN::Mojo {
-/// This class contains the IR and the JIT-compiled code for an LLVM module.
+/// This class contains the standalone archive and JIT-compiled code for a
+/// parsed Mojo module.
 ///
 /// This class encapsulates the compiled version of an expression in raw machine
 /// code form (for execution in the target).
 ///
-/// This object wraps an IR module that comes from the expression parser, and
-/// knows how to use the JIT to make it into executable code.  It can then be
-/// used as input to the IR interpreter, or the address of the executable code
-/// can be passed to a thread plan to run in the target.
+/// This object wraps a parsed module and archive that comes from the expression
+/// parser, and knows how to use the JIT to turn those into executable code.  It
+/// can then be used as input to the IR interpreter, or the address of the
+/// executable code can be passed to a thread plan to run in the target.
 ///
 /// This class creates a subclass of LLVM's SectionMemoryManager, because that
 /// is how the JIT emits code.  Because LLDB needs to move JIT-compiled code
@@ -41,8 +44,8 @@ class JITExecutionUnit : public std::enable_shared_from_this<JITExecutionUnit>,
                          public lldb_private::IRMemoryMap,
                          public lldb_private::ObjectFileJITDelegate {
 public:
-  JITExecutionUnit(std::unique_ptr<llvm::LLVMContext> context,
-                   std::unique_ptr<llvm::Module> module,
+  JITExecutionUnit(SymbolTable symbolTable, ExportMap exportedSymbols,
+                   llvm::object::OwningBinary<llvm::object::Archive> archive,
                    lldb_private::ConstString &name,
                    const lldb::TargetSP &target,
                    const lldb_private::SymbolContext &symCtx,
@@ -55,7 +58,7 @@ public:
   // Compilation
   //===--------------------------------------------------------------------===//
 
-  /// Lazily compiles the expression entry point in the module this execution
+  /// Lazily compiles the expression entry point in the archive this execution
   /// unit was instantiated with, and populates the given `funcAddr` and
   /// `funcEnd` with its start and end (inclusive) addresses.
   lldb_private::Status getRunnableInfo(lldb::addr_t &funcAddr,

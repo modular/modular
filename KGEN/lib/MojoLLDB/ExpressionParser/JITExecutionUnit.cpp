@@ -5,6 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "JITExecutionUnit.h"
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Disassembler.h"
@@ -25,13 +28,16 @@
 #include "lldb/Utility/LLDBAssert.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "mlir/IR/SymbolTable.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticHandler.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Object/Archive.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 #include <optional>
@@ -142,18 +148,23 @@ getSectionTypeFromSectionName(const StringRef &name, AllocationKind allocKind) {
 //===----------------------------------------------------------------------===//
 
 struct JITExecutionUnit::Impl {
-  Impl(std::unique_ptr<llvm::LLVMContext> context,
-       std::unique_ptr<llvm::Module> module, ConstString &name,
-       const SymbolContext &symCtx, std::vector<std::string> &cpuFeatures)
-      : context(std::move(context)), module(std::move(module)),
-        cpuFeatures(cpuFeatures), name(name), symCtx(symCtx) {}
+  Impl(SymbolTable symbolTable, ExportMap exportedSymbols,
+       llvm::object::OwningBinary<llvm::object::Archive> archive,
+       ConstString &name, const SymbolContext &symCtx,
+       std::vector<std::string> &cpuFeatures)
+      : context(std::make_unique<llvm::LLVMContext>()),
+        symbolTable(symbolTable), exportedSymbols(exportedSymbols),
+        archive(std::move(archive)), cpuFeatures(cpuFeatures), name(name),
+        symCtx(symCtx) {}
 
   std::vector<AllocationRecord> records;
 
   std::unique_ptr<llvm::LLVMContext> context;
   std::unique_ptr<llvm::ExecutionEngine> executionEngine;
   std::unique_ptr<llvm::ObjectCache> objectCache;
-  std::unique_ptr<llvm::Module> module;
+  SymbolTable symbolTable;
+  ExportMap exportedSymbols;
+  llvm::object::OwningBinary<llvm::object::Archive> archive;
   std::vector<std::string> cpuFeatures;
 
   /// The jitted functions and global variables.
@@ -170,7 +181,7 @@ struct JITExecutionUnit::Impl {
   lldb::addr_t functionEndLoadAddr = LLDB_INVALID_ADDRESS;
 
   /// True for platforms where global symbols have a _ prefix.
-  bool stripUnderscore = true;
+  bool usesGlobalUnderscorePrefix = true;
 
   /// True after allocations have been reported. It is possible that sections
   /// will be allocated when this is true, in which case they weren't depended
@@ -185,15 +196,15 @@ struct JITExecutionUnit::Impl {
 // JITExecutionUnit
 //===----------------------------------------------------------------------===//
 
-JITExecutionUnit::JITExecutionUnit(std::unique_ptr<llvm::LLVMContext> context,
-                                   std::unique_ptr<llvm::Module> module,
-                                   ConstString &name,
-                                   const lldb::TargetSP &target,
-                                   const SymbolContext &symCtx,
-                                   std::vector<std::string> &cpuFeatures)
+JITExecutionUnit::JITExecutionUnit(
+    SymbolTable symbolTable, ExportMap exportedSymbols,
+    llvm::object::OwningBinary<llvm::object::Archive> archive,
+    ConstString &name, const lldb::TargetSP &target,
+    const SymbolContext &symCtx, std::vector<std::string> &cpuFeatures)
     : IRMemoryMap(target),
-      impl(std::make_unique<Impl>(std::move(context), std::move(module), name,
-                                  symCtx, cpuFeatures)) {}
+      impl(std::make_unique<Impl>(symbolTable, exportedSymbols,
+                                  std::move(archive), name, symCtx,
+                                  cpuFeatures)) {}
 JITExecutionUnit::~JITExecutionUnit() = default;
 
 lldb_private::ConstString JITExecutionUnit::getFunctionName() {
@@ -330,7 +341,7 @@ uint8_t *JITExecutionUnit::MemoryManager::allocateDataSection(
 uint64_t JITExecutionUnit::MemoryManager::getSymbolAddressAndPresence(
     const std::string &name, bool &missingWeak) {
   Log *log = GetLog(LLDBLog::Expressions);
-  const char *namePtr = name.c_str() + parent.impl->stripUnderscore;
+  const char *namePtr = name.c_str() + parent.impl->usesGlobalUnderscorePrefix;
   ConstString nameCS(namePtr);
 
   lldb::addr_t ret = parent.findSymbol(nameCS, missingWeak);
@@ -780,26 +791,24 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   if (log) {
     std::string s;
     llvm::raw_string_ostream oss(s);
-    impl->module->print(oss, nullptr);
+    impl->symbolTable.getOp()->print(oss);
     oss.flush();
-    LLDB_LOGF(log, "Module being sent to JIT: \n%s", s.c_str());
+    LLDB_LOGF(log, "Symbol table being sent to JIT: \n%s", s.c_str());
   }
 
-  impl->module->getContext().setDiagnosticHandler(
-      std::make_unique<IRExecDiagnosticHandler>(&error));
-
-  llvm::Module *module = impl->module.get();
-  llvm::EngineBuilder builder(std::move(impl->module));
-  llvm::Triple triple(module->getTargetTriple());
+  llvm::EngineBuilder builder(std::make_unique<llvm::Module>(
+      "Dummy JIT LLVM module", *impl->context.get()));
 
   std::string errorString;
   builder.setEngineKind(llvm::EngineKind::JIT)
       .setErrorStr(&errorString)
-      .setRelocationModel(triple.isOSBinFormatMachO() ? llvm::Reloc::PIC_
-                                                      : llvm::Reloc::Static)
+      .setRelocationModel(impl->archive.getBinary()->isMachO()
+                              ? llvm::Reloc::PIC_
+                              : llvm::Reloc::Static)
       .setMCJITMemoryManager(std::make_unique<MemoryManager>(*this))
       .setOptLevel(llvm::CodeGenOptLevel::Less);
 
+  llvm::Triple triple;
   StringRef mArch;
   StringRef mCPU;
   llvm::SmallVector<std::string, 0> mAttrs;
@@ -811,6 +820,8 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
       builder.selectTarget(triple, mArch, mCPU, mAttrs);
 
   impl->executionEngine.reset(builder.create(target_machine));
+  impl->executionEngine->UnregisterJITEventListener(
+      llvm::JITEventListener::createGDBRegistrationListener());
 
   if (!impl->executionEngine) {
     error.SetErrorToGenericError();
@@ -819,7 +830,7 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
     return error;
   }
 
-  impl->stripUnderscore =
+  impl->usesGlobalUnderscorePrefix =
       (impl->executionEngine->getDataLayout().getGlobalPrefix() == '_');
 
   if (FileSpec saveObjectsDir = process->GetTarget().GetSaveJITObjectsDir()) {
@@ -831,59 +842,40 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   impl->executionEngine->setProcessAllSections(true);
   impl->executionEngine->DisableLazyCompilation();
 
-  for (llvm::Function &function : *module) {
-    if (function.isDeclaration() || function.hasPrivateLinkage())
-      continue;
-    bool external = !function.hasLocalLinkage();
+  impl->executionEngine->addArchive(std::move(impl->archive));
 
-    void *fnPtr = impl->executionEngine->getPointerToFunction(&function);
+  // Register each function in the module.
+  for (auto &[sym, exportVal] : impl->exportedSymbols) {
+    auto func = impl->symbolTable.lookup<FuncOp>(sym);
+    if (!func) {
+      // Not a function; skip it.
+      continue;
+    }
+    bool external = func.isExported();
+
+    // Lookup the function by its global name.
+    std::string name = sym.getValue().str();
+    if (impl->usesGlobalUnderscorePrefix)
+      name = impl->executionEngine->getDataLayout().getGlobalPrefix() + name;
+    void *fnPtr = impl->executionEngine->getPointerToNamedFunction(name);
     if (!error.Success())
       return error;
     if (!fnPtr) {
       error.SetErrorToGenericError();
       error.SetErrorStringWithFormat(
-          "'%s' was in the JITted module but wasn't lowered",
-          function.getName().str().c_str());
+          "'%s' was in the parsed module, but wasn't compiled into the "
+          "standalone archive",
+          name.c_str());
       return error;
     }
-    impl->jittedFunctions.emplace_back(function.getName().str().c_str(),
-                                       external,
+    // Add the function's address to the list of JIT'ted functions, using its
+    // symbol name. All KGEN functions are marked internal.
+    impl->jittedFunctions.emplace_back(sym.getValue().data(), external,
                                        reinterpret_cast<uintptr_t>(fnPtr));
   }
 
   commitAllocations(process);
   reportAllocations(*impl->executionEngine);
-
-  // We have to do this after calling ReportAllocations because for the MCJIT,
-  // getGlobalValueAddress will cause the JIT to perform all relocations.  That
-  // can only be done once, and has to happen after we do the remapping from
-  // local -> remote. That means we don't know the local address of the
-  // Variables, but we don't need that for anything, so that's okay.
-
-  std::function<void(llvm::GlobalValue &)> registerOneValue =
-      [this](llvm::GlobalValue &val) {
-        if (!val.hasExternalLinkage() || val.isDeclaration())
-          return;
-        uint64_t varPtrAddr =
-            impl->executionEngine->getGlobalValueAddress(val.getName().str());
-        lldb::addr_t remoteAddr = getRemoteAddressForLocal(varPtrAddr);
-
-        // This is a really unfortunate API that sometimes returns local
-        // addresses and sometimes returns remote addresses, based on whether
-        // the variable was relocated during ReportAllocations or not.
-        if (remoteAddr == LLDB_INVALID_ADDRESS)
-          remoteAddr = varPtrAddr;
-
-        if (varPtrAddr) {
-          impl->jittedGlobalVariables.emplace_back(
-              val.getName().str().c_str(), LLDB_INVALID_ADDRESS, remoteAddr);
-        }
-      };
-
-  for (llvm::GlobalVariable &globalVar : module->globals())
-    registerOneValue(globalVar);
-  for (llvm::GlobalAlias &globalAlias : module->aliases())
-    registerOneValue(globalAlias);
 
   writeData(process);
 
