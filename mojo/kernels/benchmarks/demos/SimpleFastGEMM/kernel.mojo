@@ -142,7 +142,6 @@ fn kernel6x4_naive(
     k: Int,
     kc: Int,
 ):
-
     let a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
     let b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
     let c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
