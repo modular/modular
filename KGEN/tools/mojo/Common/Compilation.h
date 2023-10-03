@@ -63,16 +63,6 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
                                        mlir::TimingScope &)>
         parseFn);
-
-/// Sets up an ExecutionEngine instance for compiling Mojo. It handles
-/// initializing the LLVM MC targets, the target machine, the cache backends,
-/// and the execution engine itself. On success, the execution engine is
-/// returned.
-ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>>
-initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
-                          const KGEN::CompilationOptions &compilationOptions,
-                          KGEN::ExecutionEngineOptions executionEngineOptions,
-                          bool isJIT, TargetInfoAttr target);
 } // namespace M
 
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATION_H

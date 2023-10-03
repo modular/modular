@@ -186,10 +186,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ctx->appendDialectRegistry(registry);
 
   CompilationOptions options = clOptions.getCompilationOptions();
-  ExecutionEngineOptions eeOptions;
-  eeOptions.sanitizers = options.sanitizers;
-  if (options.debugLevel != CompilationOptions::kNoDebug)
-    eeOptions.registerDebugPlugins = true;
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
@@ -307,44 +303,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     options.targetCpu = target.getArch();
     options.targetFeatures = target.getFeatures();
   }
-  // Detect cross-compilation by checking whether the target CPU is the same as
-  // the host CPU.
-  eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
-
-  // Get the build info from the current build.
-  BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(ctx);
-
-  // Now create the execution engine so we can JIT.
-  auto tmOr = createTargetMachine(options,
-                                  /*isJIT=*/clOptions.cmd == Command::kExecute);
-  if (tmOr.isError())
-    return failure(clOptions.reportError(tmOr.getError()));
-
-  auto engineOr =
-      ExecutionEngine::createWithStandardLayers(std::move(eeOptions), **tmOr);
-  if (failed(engineOr))
-    return failure(clOptions.reportError(engineOr.getError()));
-  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
-
-  // Add the object compiler layer.
-  auto compiler = ObjectCompiler::create(*runtime, pm, ".mojo_cache", options,
-                                         clOptions.cmd == Command::kExecute);
-  if (failed(compiler)) {
-    return failure(clOptions.reportError(
-        Twine("could not create object compiler: ") + compiler.getError()));
-  }
-  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(
-      std::move(*compiler), engine->getLinkingLayer());
-
-  // Add the KGEN compiler layer.
-  // First though, get the backend chains to pass into the compile layer.
-  auto cacheBackends = getMojoCacheBackends(*runtime);
-  if (cacheBackends.isError())
-    return cacheBackends.takeError();
-
-  auto &compileLayer = engine->addLayer<KGENCompilerLayer>(
-      pm, *runtime, target, build, clOptions.getCompilationOptions(), objLayer,
-      std::move(cacheBackends->first), std::move(cacheBackends->second));
 
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile) {
@@ -353,6 +311,22 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure(clOptions.reportError("compilation failed"));
     return emitModuleIR(*theModule, clOptions);
   }
+
+  ExecutionEngineOptions eeOptions;
+  eeOptions.sanitizers = options.sanitizers;
+  if (options.debugLevel != CompilationOptions::kNoDebug)
+    eeOptions.registerDebugPlugins = true;
+  // Detect cross-compilation by checking whether the target CPU is the same as
+  // the host CPU.
+  eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
+
+  auto engineOr = initializeExecutionEngine(
+      *runtime, pm, options, std::move(eeOptions),
+      /*isJIT=*/clOptions.cmd == Command::kExecute, target);
+  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
+
+  auto &objLayer = engine->getLayer<ObjectCompilerLayer>();
+  auto &compileLayer = engine->getLayer<KGENCompilerLayer>();
 
   // This currently compiles the module, so we don't need to try to look
   // anything up.
@@ -405,8 +379,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == Command::kEmitHeader) {
     LogicalResult result = failure();
     auto writeFn = [&](raw_ostream &os) {
-      result = compiler->produceFunctionDecls(symtab, exportedSymbols,
-                                              clOptions.outputFilename, os);
+      result = objLayer.getRawCompiler().produceFunctionDecls(
+          symtab, exportedSymbols, clOptions.outputFilename, os);
     };
     if (clOptions.outputFilename == "-") {
       auto writeContents = [&](raw_ostream &os) {

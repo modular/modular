@@ -45,8 +45,8 @@ public:
   /// This applies to the elaboration pipeline because we'd like to share the
   /// ObjectCompiler between during-elaboration and post-elaboration
   /// compilation, but need different pass managers for each.
-  // TODO: Remove me in favor of restoring the state of the pass manager after
-  //   the LLVM compile.
+  /// TODO: Remove me in favor of restoring the state of the pass manager after
+  /// the LLVM compile.
   void updatePassManager(mlir::PassManager &newPM) { mgr = &newPM; }
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on

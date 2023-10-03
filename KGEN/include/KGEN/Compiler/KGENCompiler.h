@@ -21,11 +21,6 @@ class Runtime;
 } // namespace M::LLCL
 
 namespace M::KGEN {
-/// Create an instance of the elaborator pass using the given configuration.
-/// The created elaborator pass uses a default specialization executor that
-/// JITs and executes in-process.
-std::unique_ptr<Pass>
-createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime);
 
 //===----------------------------------------------------------------------===//
 // populateElaborateModulePasses
@@ -105,6 +100,27 @@ private:
   RCRef<Cache::RegionCache> regionCache;
   RCRef<Cache::TransformCache> transformCache;
 };
+
+//===----------------------------------------------------------------------===//
+// Default JIT Configuration
+//===----------------------------------------------------------------------===//
+
+/// Create an instance of the elaborator pass using the given configuration.
+/// The created elaborator pass uses a default specialization executor that
+/// JITs and executes in-process.
+std::unique_ptr<Pass>
+createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime);
+
+/// Sets up an ExecutionEngine instance for compiling Mojo. It handles
+/// initializing the target machine, the cache backends, and the execution
+/// engine itself. On success, the execution engine is returned.
+ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>>
+initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
+                          const KGEN::CompilationOptions &compilationOptions,
+                          KGEN::ExecutionEngineOptions executionEngineOptions,
+                          bool isJIT, TargetInfoAttr target,
+                          bool isSearch = false);
+
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_KGENCOMPILER_H
