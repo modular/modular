@@ -253,10 +253,13 @@ private:
 RCRef<BlobCacheBackend> getInMemoryBackend(LLCL::Runtime &runtime);
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. If the
-/// base path is not specified, then the backend will use the CWD.
+/// base path is not specified, then the backend will use the CWD. The cache
+/// reads and writes to the filesystem by default, but if `readOnly` is
+/// specified, only reads are performed.
 RCRef<BlobCacheBackend>
 getFilesystemBackend(LLCL::Runtime &runtime,
-                     const std::filesystem::path &basePath = "");
+                     const std::filesystem::path &basePath = "",
+                     bool readOnly = false);
 
 class S3BackendConfig : public DylibBackendConfig {
 public:

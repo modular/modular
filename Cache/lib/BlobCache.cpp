@@ -33,6 +33,27 @@ static EncodedDiagnostic getError(std::optional<EncodedLocation> loc,
   return UnknownLocationDecoder::getDiagnostic(std::move(err));
 }
 
+/// Returns whether the given path is a directory that the current process can
+/// write to. If the path does not exist, this attempts to create a writable
+/// directory at that path.
+static bool checkOrCreateWriteableDirectory(std::filesystem::path path) {
+  [[maybe_unused]] std::error_code existsErr;
+  if (std::filesystem::exists(path, existsErr)) {
+    // If the path exists but is not a directory, return false.
+    if (!std::filesystem::is_directory(path, existsErr))
+      return false;
+    // Otherwise, check the write access permissions for the existing directory.
+    return !llvm::sys::fs::access(path.c_str(),
+                                  llvm::sys::fs::AccessMode::Write);
+  }
+
+  // If the path doesn't exist, create it. If creation was successful, we must
+  // have write access.
+  std::error_code createErr;
+  std::filesystem::create_directories(path, createErr);
+  return !createErr;
+}
+
 //===----------------------------------------------------------------------===//
 // BlobCacheBackend
 //===----------------------------------------------------------------------===//
@@ -295,18 +316,25 @@ RCRef<BlobCacheBackend> M::Cache::getInMemoryBackend(LLCL::Runtime &runtime) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// Provides a filesystem-backed backend that stores the buffers in binary
-/// files on disk.
+/// Provides a filesystem-backed backend that primarily stores the buffers in
+/// binary files on disk. If read-only, no writes are performed, only reads.
 struct FilesystemBackend : public BlobCacheBackend {
   explicit FilesystemBackend(LLCL::Runtime &runtime,
-                             const std::filesystem::path &basePath)
-      : BlobCacheBackend(runtime), basePath(basePath.string()) {}
+                             const std::filesystem::path &basePath,
+                             bool readOnly)
+      : BlobCacheBackend(runtime), basePath(basePath.string()),
+        readOnly(readOnly) {}
 
   ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
-    // Check if we already have the object - if we do, then don't bother writing
-    // it again.
+    // Check if we already have the object in the filesystem cache - if we do,
+    // then don't bother writing it again.
     ErrorOr<bool> containsOr = containsImpl(keyHash);
     if (!containsOr.isError() && *containsOr)
+      return success();
+
+    // Otherwise, if the filesystem is read-only, we cannot write to it for
+    // insertion.
+    if (readOnly)
       return success();
 
     // Get the absolute path and create any directories we need to create.
@@ -417,6 +445,11 @@ struct FilesystemBackend : public BlobCacheBackend {
   }
 
   ErrorOrSuccess clearImpl() override {
+    // We cannot clear the filesystem backend if we cannot write to it.
+    // Note that this is not an error, there's simply nothing to do.
+    if (readOnly)
+      return success();
+
     std::error_code ec;
     std::filesystem::remove_all(basePath, ec);
     if (ec)
@@ -445,13 +478,17 @@ struct FilesystemBackend : public BlobCacheBackend {
       "bedcaea9f09fa9fe565a8088ea66547c06c7c8e9c47fa46e0fb768a157d640a6";
   /// The base path for the filesystem cache.
   std::string basePath;
+  /// Whether the filesystem cache is read-only. If `true`, reads are performed
+  /// as normal, whereas writes are silently ignored.
+  bool readOnly;
 };
 } // namespace
 
 RCRef<BlobCacheBackend>
 M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
-                               const std::filesystem::path &basePath) {
-  return RCRef<FilesystemBackend>::create(runtime, basePath);
+                               const std::filesystem::path &basePath,
+                               bool readOnly) {
+  return RCRef<FilesystemBackend>::create(runtime, basePath, readOnly);
 }
 
 //===----------------------------------------------------------------------===//
@@ -597,13 +634,13 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
     }
   }
 
-  // Erase everything that lives in basePath other than `base/version` if
-  // we (a) have a `base`, (b) it exists, and (c) it's a directory.
-  if (!base.empty() && std::filesystem::exists(base, ec) &&
-      std::filesystem::is_directory(base, ec)) {
+  assert(base.is_absolute() && "must default to non-empty absolute path");
+  bool readOnly = !checkOrCreateWriteableDirectory(base);
 
-    // Iterate the base path and remove directories that don't match the
-    // current version.
+  // If we have write access, do a little cache pruning on the host system in
+  // order to keep disk usage down: iterate the base path and remove directories
+  // that don't match the current version.
+  if (!readOnly) {
     for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
       // The directory entry must exist, be a directory, the parent must be
       // `base` and the directory 'filename' must not match
@@ -621,7 +658,7 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
 
   base = base / version;
 
-  backend->appendDelegate(getFilesystemBackend(runtime, base));
+  backend->appendDelegate(getFilesystemBackend(runtime, base, readOnly));
   return backend;
 }
 
