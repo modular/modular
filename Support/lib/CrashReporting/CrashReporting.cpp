@@ -109,6 +109,17 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0, const char *program) {
   std::filesystem::path modularHome = Config::getModularHomeDirPath();
   std::filesystem::path databasePath =
       getCrashDatabasePath(config, modularHome);
+
+  // Create the directory for the crash database if it doesn't already exist.
+  std::error_code ec;
+  if (!std::filesystem::exists(databasePath, ec))
+    std::filesystem::create_directories(databasePath, ec);
+
+  if (ec) {
+    return Error(llvm::Twine("while creating crashpad database: ") +
+                 ec.message());
+  }
+
   auto handlerPathOr = getCrashpadHandlerPath(config, argv0);
   if (handlerPathOr)
     return Error(llvm::Twine("while locating crashpad handler: ") +
