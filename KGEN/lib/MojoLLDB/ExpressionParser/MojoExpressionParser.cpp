@@ -31,6 +31,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Object/Archive.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -47,11 +48,11 @@ struct MojoExpressionParser::Impl {
   Impl(ExecutionContextScope *exeScope, MojoUserExpression &expr,
        const EvaluateExpressionOptions &options);
 
-  /// Compile the list of functions to LLVM and return the module. This produces
-  /// a 'standalone' module.
-  ErrorOr<std::unique_ptr<llvm::Module>>
-  compileFuncsToLLVM(const SymbolTable &symtab,
-                     ArrayRef<KGEN::FuncOp> funcsToCompile);
+  /// Compile the list of functions to a standalone archive and return that
+  /// archive.
+  ErrorOr<llvm::object::OwningBinary<llvm::object::Archive>>
+  compileFuncsToStandaloneArchive(const SymbolTable &symtab, ExportMap exports,
+                                  ArrayRef<KGEN::FuncOp> funcsToCompile);
 
   /// Given an evaluator, set of specializations, and a symbol table, construct
   /// a JITExecutionUnit. This function handles compiling the specializations to
@@ -87,14 +88,14 @@ struct MojoExpressionParser::Impl {
   /// state.
   std::unique_ptr<mlir::PassManager> duringElaborationPM, fullCompilationPM;
 
-  /// The llvm context to use when compiling.
-  std::unique_ptr<llvm::LLVMContext> llvmContext;
-
   /// The compiler instance to use when parsing.
   std::unique_ptr<KGEN::ObjectCompiler> compiler;
 
-  /// The compiled llvm module.
-  std::unique_ptr<llvm::Module> llvmModule;
+  /// The parsed Mojo module.
+  OwningOpRef<ModuleOp> mlirModule;
+
+  /// The compiled archive.
+  llvm::object::OwningBinary<llvm::object::Archive> archive;
 
   /// The options to use when evaluating the expression.
   EvaluateExpressionOptions options;
@@ -131,7 +132,6 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   typeSystem = llvm::cast<MojoTypeSystem>(typeSystemOr.get().get());
   compilationOptions = &typeSystem->getParserContext().getCompilationOptions();
   MLIRContext *ctx = typeSystem->getMLIRContext();
-  llvmContext = std::make_unique<llvm::LLVMContext>();
 
   // Get the target info to use for compilation.
   TargetInfoAttr targetInfo = typeSystem->GetTargetInfo();
@@ -169,18 +169,10 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
 }
 
-ErrorOr<std::unique_ptr<llvm::Module>>
-MojoExpressionParser::Impl::compileFuncsToLLVM(
-    const SymbolTable &symtab, ArrayRef<KGEN::FuncOp> funcsToCompile) {
-  // Create the set of symbols to export.
-  KGEN::ExportMap exports;
-  for (auto e : funcsToCompile) {
-    StringAttr symName = e.getSymNameAttr();
-    expressionLogger->debugLog("[evaluateSpecializations] Exporting {0}",
-                               symName.getValue());
-    exports.insert({symName, ExportedSymbol(ExportKind::Exported)});
-  }
-
+ErrorOr<llvm::object::OwningBinary<llvm::object::Archive>>
+MojoExpressionParser::Impl::compileFuncsToStandaloneArchive(
+    const SymbolTable &symtab, ExportMap exports,
+    ArrayRef<KGEN::FuncOp> funcsToCompile) {
   // Create the target machine so we can run the optimizer.
   auto targetMachineOr =
       KGEN::createTargetMachine(compilationOptions, /*isJIT=*/true);
@@ -191,25 +183,32 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
     return M::Error("failed to create the target machine");
   }
 
-  // Lower everything to LLVM and run the optimizer.
+  // Produce a standalone archive buffer.
   compiler->setForSearch(true);
-  auto module = compiler->lowerAllFuncsToLLVM(symtab, exports, *llvmContext);
+  auto bufferOr = compiler->produceStandaloneArchive(symtab, exports);
   compiler->setForSearch(false);
-  if (!module) {
+
+  if (bufferOr.isError()) {
     expressionLogger->errorLog(
-        "[evaluateSpecializations] failed to lower to LLVM");
-    return M::Error("failed to lower to LLVM");
+        "[evaluateSpecializations] failed to produce standalone archive: {0}",
+        bufferOr.getError());
+    return bufferOr.takeError();
   }
 
-  if (failed(KGEN::runLLVMOptPasses(*module, **targetMachineOr,
-                                    compilationOptions,
-                                    typeSystem->getRuntime()))) {
+  // Convert the buffer to an archive and return it.
+  auto archiveOr = toModularErrorOr(
+      llvm::object::Archive::create((*bufferOr)->getMemBufferRef()));
+  if (archiveOr.isError()) {
     expressionLogger->errorLog(
-        "[evaluateSpecializations] LLVM optimization failed");
-    return M::Error("LLVM optimization failed");
+        "[evaluateSpecializations] failed to create the archive: {0}",
+        archiveOr.getError());
+    return archiveOr.takeError();
   }
 
-  return module;
+  return llvm::object::OwningBinary<llvm::object::Archive>(
+      std::move(*archiveOr),
+      llvm::MemoryBuffer::getMemBuffer((*bufferOr)->getMemBufferRef(),
+                                       /*RequiresNullTerminator=*/false));
 }
 
 ErrorOr<std::shared_ptr<JITExecutionUnit>>
@@ -223,10 +222,20 @@ MojoExpressionParser::Impl::produceExecutionUnit(
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
 
-  auto moduleOr = compileFuncsToLLVM(symtab, funcsToCompile);
-  if (moduleOr.isError())
-    return moduleOr.takeError();
-  std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
+  // Compile the functions to a standalone archive.
+  KGEN::ExportMap exportedSymbols;
+  for (auto e : funcsToCompile) {
+    StringAttr symName = e.getSymNameAttr();
+    expressionLogger->debugLog("[evaluateSpecializations] Exporting {0}",
+                               symName.getValue());
+    exportedSymbols.insert({symName, ExportedSymbol(ExportKind::Exported)});
+  }
+  auto archiveOr =
+      compileFuncsToStandaloneArchive(symtab, exportedSymbols, funcsToCompile);
+  if (archiveOr.isError())
+    return archiveOr.takeError();
+  llvm::object::OwningBinary<llvm::object::Archive> archive =
+      std::move(*archiveOr);
 
   // Extract the target features.
   SmallVector<StringRef> splitFeatures;
@@ -240,15 +249,11 @@ MojoExpressionParser::Impl::produceExecutionUnit(
   else if (const lldb::TargetSP &target = exeCtx.GetTargetSP())
     sc.target_sp = target;
 
-  // Now JIT the LLVM module.
+  // Now JIT the archive.
   ConstString name(evaluator.getSymName());
-  auto executionUnit = std::make_shared<JITExecutionUnit>(
-      std::move(llvmContext), std::move(module), name, exeCtx.GetTargetSP(), sc,
-      features);
-
-  // Refresh the LLVM context in the impl.
-  llvmContext = std::make_unique<llvm::LLVMContext>();
-  return executionUnit;
+  return std::make_shared<JITExecutionUnit>(symtab, exportedSymbols,
+                                            std::move(archive), name,
+                                            exeCtx.GetTargetSP(), sc, features);
 }
 
 namespace {
@@ -751,36 +756,30 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     impl->expressionLogger->dumpIR("Elaborated module:\n{0}", *module);
   }
 
-  // Lower the module to LLVM IR.
-  SymbolTable symtab(*module);
+  // Compile the module to a standalone archive.
+  SymbolTable symbolTable(*module);
   ExportMap exportedSymbols = getExportedSymbols(*module);
-  impl->llvmModule = impl->compiler->lowerAllFuncsToLLVM(
-      symtab, exportedSymbols, *impl->llvmContext);
-  if (!impl->llvmModule) {
-    impl->expressionLogger->errorLog("Lowering to LLVM failed");
+  auto bufferOr =
+      impl->compiler->produceStandaloneArchive(symbolTable, exportedSymbols);
+  if (bufferOr.isError()) {
+    impl->expressionLogger->errorLog(
+        "Failed to produce standalone archive: {0}", bufferOr.getError());
     return returnErrorCleanup();
   }
-
-  if (isVerboseLoggingEnabled) {
-    impl->expressionLogger->dumpIR("Pre-optimization LLVM module:\n{0}",
-                                   *impl->llvmModule);
-  }
-
-  // Create the target machine so we can run the optimizer.
-  auto targetMachineOr =
-      KGEN::createTargetMachine(impl->compilationOptions, /*isJIT=*/true);
-  if (targetMachineOr.isError()) {
-    impl->expressionLogger->errorLog("Failed to create the target machine: {0}",
-                                     targetMachineOr.getError());
+  std::unique_ptr<llvm::MemoryBuffer> buffer = llvm::MemoryBuffer::getMemBuffer(
+      bufferOr->getPointer()->getMemBufferRef(),
+      /*RequiresNullTerminator=*/false);
+  auto archiveOr = toModularErrorOr(
+      llvm::object::Archive::create(bufferOr->getPointer()->getMemBufferRef()));
+  if (archiveOr.isError()) {
+    impl->expressionLogger->errorLog("Failed to create the archive: {0}",
+                                     archiveOr.getError());
     return returnErrorCleanup();
   }
+  impl->mlirModule = std::move(module);
+  impl->archive = llvm::object::OwningBinary<llvm::object::Archive>(
+      std::move(*archiveOr), std::move(buffer));
 
-  if (failed(KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr,
-                                    impl->compilationOptions,
-                                    impl->typeSystem->getRuntime()))) {
-    impl->expressionLogger->errorLog("LLVM optimization failed");
-    return returnErrorCleanup();
-  }
   return success();
 }
 
@@ -788,11 +787,21 @@ Status MojoExpressionParser::prepareForExecution(
     lldb::addr_t &funcAddr, lldb::addr_t &funcEnd,
     std::shared_ptr<JITExecutionUnit> &executionUnit, ExecutionContext &exeCtx,
     ExecutionPolicy executionPolicy, bool keepResultInMemory) {
-  // Grab the LLVM module built during the parse phase.
-  std::unique_ptr<llvm::Module> module = std::move(impl->llvmModule);
-  if (!module) {
+  // Grab the module and standalone archive built during the parse phase.
+  // NOTE: impl->mlirModule and impl->archive will be nullptr after this!
+  // Luckily, expressions are generally destroyed shortly after this, so we
+  // don't have to be too concerned - just something to be aware of.
+  OwningOpRef<ModuleOp> mlirModule = std::move(impl->mlirModule);
+  if (!mlirModule) {
     Status err;
     err.SetErrorString("Can't prepare a NULL module for execution");
+    return err;
+  }
+  llvm::object::OwningBinary<llvm::object::Archive> archive =
+      std::move(impl->archive);
+  if (!archive.getBinary()) {
+    Status err;
+    err.SetErrorString("Can't prepare a NULL archive for execution");
     return err;
   }
 
@@ -810,11 +819,10 @@ Status MojoExpressionParser::prepareForExecution(
 
   // Build the IR execution unit responsible for executing the generated IR.
   ConstString functionName(impl->expr.FunctionName());
-  // NOTE: impl->llvmContext will be nullptr after this! Luckily, expressions
-  // are generally destroyed shortly after this, so we don't have to be too
-  // concerned - just something to be aware of.
+  SymbolTable symbolTable(*mlirModule);
+  ExportMap exportedSymbols = getExportedSymbols(*mlirModule);
   executionUnit = std::make_shared<JITExecutionUnit>(
-      std::move(impl->llvmContext), std::move(module), functionName,
+      symbolTable, exportedSymbols, std::move(archive), functionName,
       exeCtx.GetTargetSP(), sc, features);
 
   // Extract the function information for the expression entry point.
