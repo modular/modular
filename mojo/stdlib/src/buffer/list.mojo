@@ -34,6 +34,9 @@ struct Dim:
     """Either a boolean indicating that the dimension is dynamic, or the static
     value of the dimension."""
 
+    alias _missing = Int(0).value
+    alias _present = Int(1).value
+
     @always_inline
     fn __init__(value: Int) -> Dim:
         """Creates a statically-known dimension.
@@ -44,7 +47,9 @@ struct Dim:
         Returns:
             A dimension with a static value.
         """
-        return __mlir_op.`pop.variant.create`[_type = Self.type](value)
+        return __mlir_op.`pop.variant.create`[
+            _type = Self.type, index = Self._present
+        ](value)
 
     @always_inline
     fn __init__(value: __mlir_type.index) -> Dim:
@@ -65,9 +70,9 @@ struct Dim:
         Returns:
             A dimension value with no static value.
         """
-        return __mlir_op.`pop.variant.create`[_type = Self.type](
-            __mlir_attr.`0 : i1`
-        )
+        return __mlir_op.`pop.variant.create`[
+            _type = Self.type, index = Self._missing
+        ](__mlir_attr.`0 : i1`)
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -76,9 +81,7 @@ struct Dim:
         Returns:
             Whether the dimension has a static value.
         """
-        return __mlir_op.`pop.variant.is`[testType = __mlir_attr[Int]](
-            self.value
-        )
+        return __mlir_op.`pop.variant.is`[index = Self._present](self.value)
 
     @always_inline
     fn has_value(self) -> Bool:
@@ -105,7 +108,7 @@ struct Dim:
         Returns:
             The static dimension value.
         """
-        return __mlir_op.`pop.variant.get`[_type=Int](self.value)
+        return __mlir_op.`pop.variant.get`[index = Self._present](self.value)
 
     @always_inline
     fn is_multiple[alignment: Int](self) -> Bool:
