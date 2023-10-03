@@ -112,7 +112,7 @@ void LowerPreElaboratedLITPass::runOnOperation() {
       funcs[0].emitOpError("unable to find the link for preCompiledModuleRef");
       return signalPassFailure();
     }
-    TargetInfoAttr compiledFor = packageLink.getCompiledFor();
+    TargetInfoAttr compiledFor = packageLink.getArchive().getTarget();
     DenseResourceElementsAttr precompiledBody =
         packageLink.getArchive().getElaboratedModule();
     bool isPreElaborated = true;

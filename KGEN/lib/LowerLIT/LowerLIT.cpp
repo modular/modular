@@ -482,22 +482,16 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
                                              SymbolTable &symtab) {
   // If the package wasn't compiled for anything, it's a source package, so
   // there are no link directives to insert.
-  TargetInfoAttr compiledFor = package.getCompiledForAttr();
-  if (!compiledFor)
+  LIT::PackageArchiveAttr archive = package.getArchiveAttr();
+  if (!archive)
     return success();
 
   // We have an archive, insert the link directive.
-  LIT::PackageArchiveAttr archive = package.getArchiveAttr();
-  if (!archive) {
-    return package->emitError("expected archive to be provided since the "
-                              "package has a target specified");
-  }
-
   OpBuilder b(package.getContext());
-  auto linkOp = b.create<PackageLinkOp>(
-      package.getLoc(), package.getSymNameAttr(),
-      package.getPreElaborationModuleAttr(), compiledFor,
-      package.getCompiledEnvAttr(), archive);
+  auto linkOp =
+      b.create<PackageLinkOp>(package.getLoc(), package.getSymNameAttr(),
+                              package.getPreElaborationModuleAttr(),
+                              package.getCompiledEnvAttr(), archive);
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do

@@ -182,9 +182,9 @@ def PackageOp : LITOp<"package", [
 
     If the package was precompiled it may also contain:
     - The full pre-elaboration IR module, `preElaborationModule`.
-    - The target it was compiled for, `compiledFor`.
     - The definitions used at compile time, `compiledEnv`.
-    - The pre-compiled, standalone archive of the package, `archive`.
+    - The precompiled, standalone archive of the package for a specific target,
+      `archive`.
 
     Example:
 
@@ -204,12 +204,8 @@ def PackageOp : LITOp<"package", [
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
 
     // FIXME(#17326): This should be a map of precompiled targets, not one.
-    OptionalAttr<M_TargetInfoAttr>:$compiledFor,
     OptionalAttr<KGEN_EnvAttr>:$compiledEnv,
-    // The elaborated module, and a standalone archive created using that
-    // module, built for the target specified by `compiledFor`. Note that if
-    // `compiledFor` is present on the op, then this attribute must also be
-    // present.
+    // An optional precompiled archive for the package.
     OptionalAttr<LIT_PackageArchiveAttr>:$archive
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -235,18 +231,19 @@ def PackageLinkOp : LITOp<"package.link", [Symbol]> {
   let summary = "link to a precompiled package's artifacts";
   let description = [{
     A `lit.package.link` defines a link to the compiled artifacts of a package.
-    It contains a reference to the generated archive and the post elaboration
-    body, providing an anchor for functions and other operations defined within
-    the package during the lowering pipeline. It may also contain the pre
-    elaboration body which can be used to compile the package if the compiled
-    target is not compatible with the current target of compilation.
+    It contains a reference to the precompiled archive, providing an anchor for
+    functions and other operations defined within the package during the
+    lowering pipeline. It may also contain the pre-elaboration body which can be
+    used to compile the package if the compiled target is not compatible with
+    the current target of compilation.
 
     Example:
 
     ```mlir
-    lit.package.link @foo compiledFor(#M.target<...>)
+    lit.package.link @foo
       pre_elaboration(dense_resource<...> : tensor<...xi8>)
-      archive(<elaboratedModule = dense_resource<...> : tensor<...xi8>,
+      archive(<target = #M.target<...>,
+               elaboratedModule = dense_resource<...> : tensor<...xi8>,
                archive = dense_resource<...> : tensor<...xi8>>)
     ```
   }];
@@ -256,7 +253,6 @@ def PackageLinkOp : LITOp<"package.link", [Symbol]> {
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
 
     // FIXME(#17326): This should be a map of precompiled targets, not one.
-    M_TargetInfoAttr:$compiledFor,
     KGEN_EnvAttr:$compiledEnv,
     LIT_PackageArchiveAttr:$archive
   );

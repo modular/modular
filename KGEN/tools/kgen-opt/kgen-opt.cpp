@@ -136,9 +136,9 @@ struct TestGeneratePreElaboratedBody
       auto bytecodeBufferAttr = createResourceAttr(
           &getContext(), buffer, func.getSymName() + "_generated_body_attr");
       linkBuilder.create<KGEN::LIT::PackageLinkOp>(
-          func.getLoc(), linkName, bytecodeBufferAttr, funcTarget,
+          func.getLoc(), linkName, bytecodeBufferAttr,
           M::KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
-          M::KGEN::LIT::PackageArchiveAttr::get(bytecodeBufferAttr,
+          M::KGEN::LIT::PackageArchiveAttr::get(funcTarget, bytecodeBufferAttr,
                                                 bytecodeBufferAttr));
     }
   }

@@ -94,10 +94,8 @@ public:
   createPostElaborationModuleAttr(const SymbolTable &symtab,
                                   const ExportMap &exportedSymbols);
 
-  /// Sets the given elaborated module and pre-compiled standalone archive on
-  /// the package op that's being built.
-  void attachArchive(DenseResourceElementsAttr elaboratedModule,
-                     DenseResourceElementsAttr archiveBytes);
+  /// Sets the given archive on the package op that's being built.
+  void attachArchive(LIT::PackageArchiveAttr archive);
 
   /// Returns an owning reference to the module that contains the newly created
   /// package, as well as the package itself. This releases the builer's owning
@@ -186,7 +184,6 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
 
   // Clone the parsed package operation and push its ops onto the worklist.
   thePackage = cloneWithoutRegions(parsedPackageOp);
-  thePackage.setCompiledForAttr(target);
   thePackage.setCompiledEnvAttr(env);
   pushOpsOntoWorklist(parsedPackageOp.getOps());
 
@@ -306,10 +303,8 @@ PackageBuilder::createPostElaborationModuleAttr(
   return bytecodeResource;
 }
 
-void PackageBuilder::attachArchive(DenseResourceElementsAttr elaboratedModule,
-                                   DenseResourceElementsAttr archiveBytes) {
-  thePackage.setArchiveAttr(
-      LIT::PackageArchiveAttr::get(elaboratedModule, archiveBytes));
+void PackageBuilder::attachArchive(LIT::PackageArchiveAttr archive) {
+  thePackage.setArchiveAttr(archive);
 }
 
 //===----------------------------------------------------------------------===//
@@ -489,7 +484,8 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
       createPackageArchive(symtab, exportMap, compilationOptions, runtime);
   if (archiveOr.isError())
     return archiveOr.takeError();
-  packageBuilder.attachArchive(elaboratedBytecode, archiveOr.takeValue());
+  packageBuilder.attachArchive(LIT::PackageArchiveAttr::get(
+      packageArgs.target, elaboratedBytecode, archiveOr.takeValue()));
   return packageBuilder.build();
 }
 
