@@ -12,6 +12,7 @@
 #define KGEN_LITDIALECT_LITATTRS_TD
 
 include "KGEN/LITDialect/LITDialect.td"
+include "Support/MDialect/MAttrs.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/BuiltinAttributes.td"
@@ -35,12 +36,13 @@ def LIT_PackageArchiveAttr : LITAttr<"PackageArchive", "package.archive"> {
   let description = [{
     The `#lit.package.archive` attribute stores binary artifacts for an
     elaborated Mojo package module that has been compiled into a standalone
-    archive.
+    archive for a specific target.
 
     Example:
 
     ```mlir
     #archive = #lit.package.archive<
+      target = #M.target<triple = "arm64-apple-darwin21.6.0", arch="apple-m1">,
       elaboratedModule = dense_resource<foo> : tensor<42xui8>,
       archive = dense_resource<bar> : tensor<13xui8>
     >
@@ -48,15 +50,17 @@ def LIT_PackageArchiveAttr : LITAttr<"PackageArchive", "package.archive"> {
   }];
 
   let parameters = (ins
+    M_TargetInfoAttr:$target,
     Builtin_DenseResourceElementsAttr:$elaboratedModule,
     Builtin_DenseResourceElementsAttr:$archive
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
+      "TargetInfoAttr":$target,
       "DenseResourceElementsAttr":$elaboratedModule,
       "DenseResourceElementsAttr":$archive), [{
-        return get(elaboratedModule.getContext(), elaboratedModule, archive);
+        return get(target.getContext(), target, elaboratedModule, archive);
       }]>
   ];
 

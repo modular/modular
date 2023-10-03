@@ -59,6 +59,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
 //===----------------------------------------------------------------------===//
 
 def PackageArchiveAttr : DialectAttribute<(attr
+  ConcreteAttribute<"TargetInfoAttr">:$target,
   ConcreteAttribute<"DenseResourceElementsAttr">:$elaboratedModule,
   ConcreteAttribute<"DenseResourceElementsAttr">:$archive
 )>;

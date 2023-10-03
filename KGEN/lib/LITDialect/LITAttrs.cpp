@@ -37,6 +37,7 @@ void LITDialect::registerAttributes() {
 
 LogicalResult
 PackageArchiveAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           TargetInfoAttr target,
                            DenseResourceElementsAttr elaboratedModule,
                            DenseResourceElementsAttr archive) {
   if (elaboratedModule.empty())
