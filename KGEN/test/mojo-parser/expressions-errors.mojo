@@ -411,6 +411,9 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   c[1] = Float32(4.0)
   c[1] = tmp
 
+  # expected-error @+1 {{keyword operands for __setitem__ not supported yet}}
+  c[x=1] = 4
+
 
 struct GetAttrNotString:
     fn __init__(inout self):

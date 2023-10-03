@@ -220,7 +220,6 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
           emitter.emitError(loc, "attribute spec requires a keyword parameter");
 
       // Jump through some hoops to emit a hint about using the old syntax.
-      // TODO: test
       if (auto *slice = dyn_cast<SliceNode>(valueExpr);
           slice && slice->upper && !slice->colon2Loc.isValid()) {
         if (auto *kwRef = dyn_cast_or_null<DeclRefNode>(slice->lower))
@@ -685,16 +684,19 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 }
 
 /// Given a base value, emit access to a base value element using getter and
-/// setter methods and the provided arguments. If a getter is present on the
-/// base type but a setter is not, this method immediately emits a getter call.
+/// setter methods and the provided operands. If a getter is present on the base
+/// type but a setter is not, this method immediately emits a getter call.
 /// Otherwise, it returns a SubscriptDLValue for later materializing calls to
-/// the getter or setter as appropriate.
+/// the getter or setter as appropriate. This functions takes ownership of the
+/// operands because it might move them to a SubscriptDLValue, if emitted.
 static AnyValue
 emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
                        ValueDest &dest, ExprEmitter &emitter, ASTType baseType,
                        StringRef getterName, StringRef setterName,
                        CallSyntax syntax, function_ref<void()> lookupError,
-                       ArrayRef<ASTExprAnd<AnyValue>> callArgs) {
+                       SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
+                       SmallDenseMap<StringRef, FuncOperand> &&kwOperands =
+                           SmallDenseMap<StringRef, FuncOperand>()) {
   // If there is no getter at all, then this is not a subscriptable type.
   OverloadSet getter(baseType, getterName, node, syntax, emitter.shared,
                      /*no error on failure*/ {});
@@ -719,9 +721,10 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     // indication that the type was intended to be subscriptable, but whine
     // about index values and base type if they aren't actually compatible at
     // this usage site.
-    PValue getterCallee =
-        getter.filterOverloadSet(callArgs, /*allowImplicitConversions=*/true,
-                                 /*emitDiagnosticOnFailure=*/true, emitter);
+    CallOperands callOperands(posOperands, &kwOperands);
+    PValue getterCallee = getter.filterOverloadSet(
+        callOperands, /*allowImplicitConversions=*/true,
+        /*emitDiagnosticOnFailure=*/true, emitter);
     if (!getterCallee)
       return {};
 
@@ -729,7 +732,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     // immediately. The getter is allowed to return a reference if it has a
     // physical lvalue.
     if (setter.isNull())
-      return emitter.emitIndirectCall(getterCallee, callArgs, dest, node);
+      return emitter.emitIndirectCall(getterCallee, callOperands, dest, node);
 
     elementType = getterCallee.getType().getSignatureUserResultType();
   } else {
@@ -758,7 +761,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
       return {}; // Getter invalid.
     auto sigType = cast<SignatureType>(directSymbolAttr.getType());
     // Check basic sanity.
-    size_t setValueIdx = callArgs.size() + sigType.hasMemoryOnlyResult();
+    size_t setValueIdx = posOperands.size() + sigType.hasMemoryOnlyResult();
     if (sigType.getNumInputs() <= setValueIdx) {
       auto diag = emitter.emitError(node->getLoc())
                   << setterName << " has too few arguments";
@@ -773,7 +776,8 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
       elementType = elementType.getReferenceElementType();
   }
 
-  DLValue result(RCRef<SubscriptDLValue>::create(callArgs, elementType, node));
+  DLValue result(RCRef<SubscriptDLValue>::create(
+      std::move(posOperands), std::move(kwOperands), elementType, node));
   return emitter.emitResult(result, node, dest);
 }
 
@@ -900,10 +904,10 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!key)
       return {};
 
-    SmallVector<ASTExprAnd<AnyValue>> callArgs = {{baseVal, base}, {key, base}};
     return emitGetterSetterAccess(
         this, base, dest, emitter, baseRVType, "__getattr__", "__setattr__",
-        CallSyntax::kAttribute, lookupError, callArgs);
+        CallSyntax::kAttribute, lookupError,
+        SmallVector<ASTExprAnd<AnyValue>>{{baseVal, base}, {key, base}});
   }
   emitter.shared.notifyListenerOnRef(memberDecls, spelling, this);
 
@@ -1547,34 +1551,23 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
-  // TODO(#21618): Support keyword parameters in dynamic subscripts.
-  for (const Operand &operand : operands) {
-    SMLoc loc = operand.getLoc();
-    if (operand.isKeyword()) {
-      emitter.emitError(
-          loc, "keyword parameters in dynamic subscripts not supported yet");
-      return {};
-    }
-  }
-
   // Otherwise, if there is no symbol, it is just an LValue or RValue being
   // subscript, invoking a dynamic subscript.
 
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
-  SmallVector<ASTExprAnd<AnyValue>> operandValues;
-  operandValues.push_back({baseValue, base});
+  SmallVector<ASTExprAnd<AnyValue>> posOperands{{baseValue, base}};
+  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands;
   for (const Operand &operand : operands) {
     ExprNode *expr = operand.value;
-    operandValues.push_back({expr->emitIR(ValueDest::none(), emitter), expr});
-    if (!operandValues.back())
+    AnyValue exprVal = expr->emitIR(ValueDest::none(), emitter);
+    if (!exprVal)
       return {};
-  }
 
-  // TODO: If we have multiple indexes, package up the values in a tuple value
-  // and try to see if this works.
-  if (operandValues.size() > 2) {
-    // TODO(Tuples). need tuples :-)
+    if (operand.isKeywordOrUnpackedKeyword())
+      kwOperands.try_emplace(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
+    else
+      posOperands.push_back({exprVal, expr});
   }
 
   // Okay, we're doing a normal value subscript.  Check for compatible
@@ -1586,26 +1579,26 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // a standard library type that implements `__getitem__` and `__setitem__`.
   if (auto variadic = dyn_cast<VariadicType>(baseType.mlirType)) {
     // Attempt to convert the index.
-    if (operandValues.size() != 2) {
-      emitter.emitError(getLoc())
-          << "variadic can only be subscripted with a single index";
+    if (posOperands.size() != 2 || !kwOperands.empty()) {
+      emitter.emitError(getLoc()) << "variadic can only be subscripted with a "
+                                     "single positional operand";
       return {};
     }
-    CValue index = emitter.emitMLIRIndex(operandValues.back(), EC_Subscript);
+    CValue index = emitter.emitMLIRIndex(posOperands.back(), EC_Subscript);
     if (!index)
       return {};
     // Inside a parameter context, emit a parameter operator.
     if (!emitter.builder) {
       return ParamOperatorAttr::get(
           POC::VariadicGet,
-          {emitter.emitPValue(operandValues.front(), EC_Subscript),
+          {emitter.emitPValue(posOperands.front(), EC_Subscript),
            index.getIfPValue()});
     }
     // Otherwise, emit an MLIR operation.
     Value value = emitter.builder->create<POP::VariadicGetOp>(
         emitter.translateLocation(getLoc()),
-        emitter.emitSRValue(operandValues.front(), EC_Subscript),
-        emitter.emitSRValue({index, operandValues.back().expr}, EC_Subscript));
+        emitter.emitSRValue(posOperands.front(), EC_Subscript),
+        emitter.emitSRValue({index, posOperands.back().expr}, EC_Subscript));
     // FIXME: Should not be doing a bare `!kgen.pointer` type check.
     if (auto ptrType = dyn_cast<PointerType>(
             ASTType(variadic.getElementType()).mlirType)) {
@@ -1623,9 +1616,10 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
            "`__getitem__`/`__setitem__` methods"
         << base->getRange();
   };
-  return emitGetterSetterAccess(
-      this, base, dest, emitter, baseType, "__getitem__", "__setitem__",
-      CallSyntax::kSubscript, lookupError, operandValues);
+  return emitGetterSetterAccess(this, base, dest, emitter, baseType,
+                                "__getitem__", "__setitem__",
+                                CallSyntax::kSubscript, lookupError,
+                                std::move(posOperands), std::move(kwOperands));
 }
 
 AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,

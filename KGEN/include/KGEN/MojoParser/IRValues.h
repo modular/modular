@@ -54,7 +54,6 @@
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN::LIT {
-class AnyValue;
 class BaseDLValue;
 class ExprNode;
 class ExprEmitter;
@@ -766,14 +765,16 @@ public:
 class SubscriptDLValue : public BaseDLValue {
 public:
   const ExprNode *expr;
-  // This is the self+name values for property access and the self+key values
-  // for a subscript.
-  std::vector<FuncOperand> selfAndIndicesValue;
+  // Positional operands (including self) for the setter/getter call.
+  SmallVector<FuncOperand> posOperands;
+  // Keyword operands for the setter/getter call.
+  SmallDenseMap<StringRef, FuncOperand> kwOperands;
 
   /// Return true if this is a subscript, false if this is an attribute access.
   bool isSubscript() const;
 
-  SubscriptDLValue(ArrayRef<FuncOperand> selfAndIndicesValue,
+  SubscriptDLValue(SmallVectorImpl<FuncOperand> &&posOperands,
+                   SmallDenseMap<StringRef, FuncOperand> &&kwOperands,
                    ASTType elementType, const ExprNode *expr);
 
   void print(raw_ostream &os) const override;

@@ -1841,8 +1841,9 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   auto methodName =
       isSubscript() ? StringRef("__getitem__") : StringRef("__getattr__");
-  auto result = emitter.emitNamedMethodCall(methodName, selfAndIndicesValue,
-                                            dest, CallSyntax::kSubscript, expr);
+  auto result = emitter.emitNamedMethodCall(
+      methodName, CallOperands(posOperands, &kwOperands), dest,
+      CallSyntax::kSubscript, expr);
   // TODO: The result could be another LValue in the future.
   assert(!result || result.getIfRValue() || result.getIfBValue());
   return result;
@@ -1850,13 +1851,20 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
 
 void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
+  // TODO(#22580): support keyword operands in __setitem__
+  if (isSubscript() && !kwOperands.empty()) {
+    emitter.emitError(expr->getLoc())
+        << "keyword operands for __setitem__ not supported yet"
+        << expr->getRange();
+    return;
+  }
+
   auto methodName =
       isSubscript() ? StringRef("__setitem__") : StringRef("__setattr__");
-  SmallVector<ASTExprAnd<AnyValue>> posOperands(selfAndIndicesValue.begin(),
-                                                selfAndIndicesValue.end());
-  posOperands.push_back(value);
-  emitter.emitNamedMethodCall(methodName, posOperands, ValueDest::none(),
-                              CallSyntax::kSubscript, expr);
+  SmallVector<ASTExprAnd<AnyValue>> posOperandsWithValue(posOperands);
+  posOperandsWithValue.push_back(value);
+  emitter.emitNamedMethodCall(methodName, posOperandsWithValue,
+                              ValueDest::none(), CallSyntax::kSubscript, expr);
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
