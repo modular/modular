@@ -37,27 +37,15 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
                         LLCL::Runtime &runtime, TargetInfoAttr target,
                         const CompilationOptions &options,
                         ArrayRef<FuncOp> specializations) {
-  auto tmOr = createTargetMachine(options, true);
-  if (tmOr.isError())
-    return tmOr.takeError();
-
-  // Create the execution engine.
-  auto engineOr = ExecutionEngine::createWithStandardLayers(
-      ExecutionEngineOptions{/*registerDebugPlugins=*/false,
-                             /*sanitizers=*/options.sanitizers},
-      **tmOr);
+  mlir::PassManager mgr(target.getContext());
+  ExecutionEngineOptions opts{/*registerDebugPlugins=*/false,
+                              /*sanitizers=*/options.sanitizers};
+  auto engineOr =
+      initializeExecutionEngine(runtime, mgr, options, std::move(opts),
+                                /*isJIT=*/true, target, /*isSearch=*/true);
   if (engineOr.isError())
     return engineOr.takeError();
-  auto engine = std::move(*engineOr);
-
-  // Create the object compiler so we can add its layer to the execution engine.
-  mlir::PassManager mgr(target.getContext());
-  auto compilerOr = ObjectCompiler::create(runtime, mgr, ".mojo_cache", options,
-                                           /*isJIT=*/true, /*isSearch=*/true);
-  if (failed(compilerOr))
-    return compilerOr.takeError();
-  engine->addLayer<ObjectCompilerLayer>(std::move(*compilerOr),
-                                        engine->getLinkingLayer());
+  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
@@ -106,17 +94,6 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 //===----------------------------------------------------------------------===//
 // populateElaborateModulePasses
 //===----------------------------------------------------------------------===//
-
-std::unique_ptr<Pass>
-KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
-  return createElaborateGenerators(
-      runtime, /*target=*/{}, /*build=*/{}, /*options=*/{},
-      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
-        return evaluateSpecializations(evaluator, symtab, runtime, target,
-                                       /*options=*/{}, specializations);
-      });
-}
 
 void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          LLCL::Runtime &runtime,
@@ -295,4 +272,66 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
   }
 
   return {std::move(symbols), /*InitSymbol=*/nullptr};
+}
+
+//===----------------------------------------------------------------------===//
+// Default JIT Configuration
+//===----------------------------------------------------------------------===//
+
+std::unique_ptr<Pass>
+KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
+  return createElaborateGenerators(
+      runtime, /*target=*/{}, /*build=*/{}, /*options=*/{},
+      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
+                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, runtime, target,
+                                       /*options=*/{}, specializations);
+      });
+}
+
+ErrorOr<std::unique_ptr<ExecutionEngine>>
+KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
+                                const CompilationOptions &compilationOptions,
+                                ExecutionEngineOptions executionEngineOptions,
+                                bool isJIT, TargetInfoAttr target,
+                                bool isSearch) {
+  MLIRContext *ctx = pm.getContext();
+
+  // Now create the execution engine so we can JIT.
+  auto tmOr = createTargetMachine(compilationOptions, isJIT);
+  if (tmOr.isError())
+    return tmOr.takeError();
+
+  // Forward the sanitizers into the execution engine if we are JITing.
+  if (isJIT)
+    executionEngineOptions.sanitizers = compilationOptions.sanitizers;
+
+  auto engineOr = ExecutionEngine::createWithStandardLayers(
+      std::move(executionEngineOptions), **tmOr);
+  if (failed(engineOr))
+    return engineOr.takeError();
+  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
+
+  // Add the object compiler layer.
+  auto compiler = ObjectCompiler::create(runtime, pm, ".mojo_cache",
+                                         compilationOptions, isJIT, isSearch);
+  if (failed(compiler))
+    return compiler.takeError();
+
+  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(
+      std::move(*compiler), engine->getLinkingLayer());
+
+  // Add the KGEN compiler layer. First though, get the backend chains to pass
+  // into the compile layer.
+  auto cacheBackends = getMojoCacheBackends(runtime);
+  if (cacheBackends.isError())
+    return cacheBackends.takeError();
+
+  // Get the build info from the current build.
+  BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(ctx);
+
+  engine->addLayer<KGENCompilerLayer>(
+      pm, runtime, target, build, compilationOptions, objLayer,
+      std::move(cacheBackends->first), std::move(cacheBackends->second));
+  return std::move(engine);
 }
