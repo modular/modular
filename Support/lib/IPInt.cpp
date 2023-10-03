@@ -9,13 +9,6 @@
 
 using namespace M;
 
-llvm::hash_code M::hash_value(const IPInt &Arg) {
-  return llvm::hash_value(Arg.val);
-}
-llvm::raw_ostream &M::operator<<(llvm::raw_ostream &OS, const IPInt &Arg) {
-  return OS << Arg.getAPInt();
-}
-
 bool IPInt::cmp(const IPInt &rhs, IPInt::CmpOp whichOp) const {
   const llvm::APInt &lOrig = getAPInt();
   const llvm::APInt &rOrig = rhs.getAPInt();
@@ -34,6 +27,7 @@ bool IPInt::cmp(const IPInt &rhs, IPInt::CmpOp whichOp) const {
   case IPInt::CmpOp::kSle:
     return lExt.sle(rExt);
   }
+  llvm_unreachable("Unknown compare operation.");
 }
 
 IPInt IPInt::binop(const IPInt &rhs, IPInt::BinOp whichOp) const {

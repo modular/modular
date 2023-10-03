@@ -50,6 +50,7 @@ ErrorOrSuccess HTTPResponse::asError(StringRef extraContext) {
                                responseCode, extraContext)
                      .str());
   }
+  llvm_unreachable("Invalid response kind.");
 }
 
 HTTPClient::HTTPClient(HTTPContextRef ctx) : context(std::move(ctx)) {

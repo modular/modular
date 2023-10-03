@@ -60,8 +60,14 @@ public:
   IPInt operator^(const IPInt &rhs) const;
   IPInt abs() const;
 
-  friend llvm::hash_code hash_value(const IPInt &Arg);
-  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const IPInt &Arg);
+  friend llvm::hash_code hash_value(const IPInt &arg) {
+    return llvm::hash_value(arg.val);
+  }
+
+  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
+                                       const IPInt &arg) {
+    return os << arg.getAPInt();
+  }
 
 private:
   enum class BinOp {
