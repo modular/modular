@@ -95,6 +95,10 @@ struct DeviceRef {
   }
 };
 
+/// Well known device labels.
+constexpr const char *kCPULabel = "cpu";
+constexpr const char *kCUDALabel = "cuda";
+
 } // namespace M
 
 namespace llvm {
