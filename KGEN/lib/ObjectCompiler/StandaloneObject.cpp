@@ -105,11 +105,7 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
   // Create a new module for these funcs. This will go away at the end
   // of this function.
   OwningOpRef<ModuleOp> singleModule = ModuleOp::create(module->getLoc());
-
-  // Propagate the target info.
-  TargetInfoAttr target = getTargetInfo(module);
-  assert(target && "module to compile is missing target specification");
-  setTargetInfo(*singleModule, target);
+  singleModule.get()->setAttrs(module->getAttrDictionary());
 
   // Create a new symbol table for the sliced module.
   SymbolTable sliceSymtab(*singleModule);
