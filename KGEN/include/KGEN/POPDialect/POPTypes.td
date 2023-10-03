@@ -374,18 +374,12 @@ def POP_VariantType : POPType<"Variant", "variant",
 
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$types);
   let assemblyFormat = "`<` custom<TypeParamValues>($types) `>`";
-  let skipDefaultBuilders = 1;
 
   let builders = [
-    TypeBuilder<(ins "ArrayRef<TypedAttr>":$types)>,
     TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>
   ];
 
   let extraClassDeclaration = [{
-    /// Returns the index of the type in the variant type list. If the type is
-    /// not in the list, returns None.
-    std::optional<int64_t> getTypeIndex(Type type) const;
-
     /// Get the element types as parameterized types.
     SmallVector<Type> getParameterizedElementTypes() const;
 

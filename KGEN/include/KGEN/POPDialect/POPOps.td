@@ -26,13 +26,13 @@ class POPOp<string mnemonic, list<Trait> traits = []> :
     Op<POPDialect, mnemonic, traits>;
 
 // IndexAttr whose return value is an `int64_t`.
-def POP_IndexAttr :
+def UnsignedIndexAttr :
     TypedAttrBase<
       Index, "IntegerAttr",
       And<[CPred<"isa<IntegerAttr>($_self)">,
            CPred<"isa<IndexType>(cast<IntegerAttr>($_self).getType())">]>,
       "index attribute"> {
-  let returnType = "int64_t";
+  let returnType = "unsigned";
   let convertFromStorage = "$_self.getInt()";
 }
 
@@ -892,7 +892,7 @@ def POP_StructExtractOp : POPOp<"struct.extract", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_StructType:$container, POP_IndexAttr:$index);
+  let arguments = (ins POP_StructType:$container, UnsignedIndexAttr:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $container `[` $index `]` attr-dict `:` qualified(type($container))
@@ -927,7 +927,7 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
   }];
 
   let arguments = (ins AnyType:$value, POP_StructType:$container,
-                       POP_IndexAttr:$index);
+                       UnsignedIndexAttr:$index);
   let results = (outs POP_StructType:$result);
   let assemblyFormat = [{
     $value `,` $container `[` $index `]` attr-dict `:`
@@ -969,7 +969,7 @@ def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
   }];
 
   let arguments = (ins PointerOf<POP_StructType>:$container,
-                       POP_IndexAttr:$index);
+                       UnsignedIndexAttr:$index);
   let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $container `[` $index `]` attr-dict `:` type($container)
@@ -1291,20 +1291,21 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
     ```mlir
     // Create an `std::optional<T>` variant.
     %none = pop.struct.create() : !pop.struct<>
-    %0 = pop.variant.create %none : !pop.struct<>
+    %0 = pop.variant.create %none, 0 : !pop.struct<>
         -> !pop.variant<struct<>, T>
 
     // Create a variant of either a scalar float or integer.
     %1 = kgen.param.constant: scalar<f64> = <<"0.0">>
-    %2 = pop.variant.create %1 : !pop.scalar<f64>
+    %2 = pop.variant.create %1, 1 : !pop.scalar<f64>
         -> !pop.variant<scalar<i64>, scalar<f64>>
     ```
   }];
 
-  let arguments = (ins AnyType:$operand);
+  let arguments = (ins AnyType:$operand, UnsignedIndexAttr:$index);
   let results = (outs POP_VariantType:$result);
   let assemblyFormat = [{
-    $operand attr-dict `:` type($operand) `->` qualified(type($result))
+    $operand `,` $index attr-dict `:` type($result)
+    custom<VariantElementType>(type($operand), ref(type($result)), ref($index))
   }];
 
   let hasVerifier = 1;
@@ -1326,16 +1327,13 @@ def VariantIsOp : POPOp<"variant.is", [Pure]> {
 
     ```mlir
     %optional = ...
-    %isNone = pop.variant.is !pop.struct<>, %optional
-        : !pop.variant<struct<>, T>
+    %isNone = pop.variant.is %optional, 0 : !pop.variant<struct<>, T>
     ```
   }];
 
-  let arguments = (ins POP_VariantType:$variant, TypeAttr:$testType);
+  let arguments = (ins POP_VariantType:$variant, UnsignedIndexAttr:$index);
   let results = (outs I1:$result);
-  let assemblyFormat = [{
-    $testType `,` $variant attr-dict `:` qualified(type($variant))
-  }];
+  let assemblyFormat = "$variant `,` $index attr-dict `:` type($variant)";
 
   let hasVerifier = 1;
   let hasFolder = 1;
@@ -1345,7 +1343,8 @@ def VariantIsOp : POPOp<"variant.is", [Pure]> {
 // VariantGetOp
 //===----------------------------------------------------------------------===//
 
-def VariantGetOp : POPOp<"variant.get", [Pure]> {
+def VariantGetOp : POPOp<"variant.get", [Pure,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "Get a variant as one of its possible types.";
   let description = [{
     The `pop.variant.get` operation interprets the given variant as one of its
@@ -1357,16 +1356,13 @@ def VariantGetOp : POPOp<"variant.get", [Pure]> {
 
     ```mlir
     %optional = ...
-    %intVal = pop.variant.get %optional
-        : !pop.variant<struct<>, i32> as i32
+    %intVal = pop.variant.get %optional, 1 : !pop.variant<struct<>, i32>
     ```
   }];
 
-  let arguments = (ins POP_VariantType:$variant);
+  let arguments = (ins POP_VariantType:$variant, UnsignedIndexAttr:$index);
   let results = (outs AnyType:$result);
-  let assemblyFormat = [{
-    $variant attr-dict `:` qualified(type($variant)) `as` type($result)
-  }];
+  let assemblyFormat = "$variant `,` $index attr-dict `:` type($variant)";
 
   let hasVerifier = 1;
   let hasFolder = 1;

@@ -2758,13 +2758,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return {};
 
     resultType = POP::VariantType::get({errorType, resultType});
-
-    // FIXME(#12604): Cannot return Error from raising function.
-    if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
-      emitter.emitError(
-          resultLoc, "cannot return and raise the same type from a function");
-      return {};
-    }
   }
 
   // Build the signature type.

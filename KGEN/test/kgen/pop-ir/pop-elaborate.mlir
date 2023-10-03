@@ -192,10 +192,10 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<i8, i16, f64> = <apply(
     :(!pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> @store_load<:type !pop.struct<i8, i16, f64>>,
     { 120, 32112, 1.125 })>
-  // CHECK-NEXT: #pop.variant<:i32 42>
+  // CHECK-NEXT: #pop.variant<:i32 42, 0>
   kgen.param.constant: variant<i32, f64> = <apply(
     :(!pop.variant<i32, f64>) -> !pop.variant<i32, f64> @store_load<:type !pop.variant<i32, f64>>,
-    #pop.variant<:i32 42>)>
+    #pop.variant<:i32 42, 0>)>
 
   // CHECK-NEXT: <1099511627792>
   kgen.param.constant: i64 = <apply(
@@ -216,10 +216,10 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <0>
   kgen.param.constant: i8 = <apply(
-    :(!pop.variant<i32, i64>) -> i8 @variant_bitcast_discr, #pop.variant<:i32 1>)>
+    :(!pop.variant<i32, i64>) -> i8 @variant_bitcast_discr, #pop.variant<:i32 1, 0>)>
   // CHECK-NEXT: <1>
   kgen.param.constant: i8 = <apply(
-    :(!pop.variant<i32, i64>) -> i8 @variant_bitcast_discr, #pop.variant<:i64 1>)>
+    :(!pop.variant<i32, i64>) -> i8 @variant_bitcast_discr, #pop.variant<:i64 1, 1>)>
 
   // CHECK-NEXT: <12>
   kgen.param.constant: i24 = <apply(

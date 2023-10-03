@@ -103,6 +103,7 @@ def PackAttr : DialectAttribute<(attr
 
 def VariantAttr : DialectAttribute<(attr
   TypedAttr:$value,
+  VarInt:$index,
   ConcreteType<"VariantType">:$type
 )>;
 

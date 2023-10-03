@@ -1034,8 +1034,7 @@ struct ConvertPOPVariantCreate
 
     VariantHelper helper(rewriter, op.getLoc(), *getTypeConverter());
     Value result = helper.materializeLLVMVariant(
-        variantType, adaptor.getOperand(),
-        *op.getType().getTypeIndex(op.getOperand().getType()));
+        variantType, adaptor.getOperand(), op.getIndex());
     if (!result)
       return failure();
     rewriter.replaceOp(op, result);
@@ -1059,8 +1058,7 @@ struct ConvertPOPVariantIs : public ConvertPOPToLLVMPattern<VariantIsOp> {
     auto variantType =
         adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
     Value discrVal = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), variantType.getBody().back(),
-        *op.getVariant().getType().getTypeIndex(op.getTestType()));
+        op.getLoc(), variantType.getBody().back(), op.getIndex());
     rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::eq,
                                               discr, discrVal);
     return success();

@@ -991,9 +991,8 @@ Value KGEN::convertParameterToLLVM(
       return {};
 
     VariantHelper helper(b, b.getLoc(), tc);
-    return helper.materializeLLVMVariant(
-        variantType, value,
-        *variant.getType().getTypeIndex(variant.getValue().getType()));
+    return helper.materializeLLVMVariant(variantType, value,
+                                         variant.getIndex());
   }
 
   // Convert variadic sequence constants to an LLVM struct constant.

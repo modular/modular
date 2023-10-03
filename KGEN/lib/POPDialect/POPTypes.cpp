@@ -481,22 +481,6 @@ VariadicAttr POP::PackType::getVariadicAttr() const {
 // VariantType
 //===----------------------------------------------------------------------===//
 
-/// Canonicalize the possible types of a variant. Deduplicate the types.
-static SmallVector<TypedAttr>
-canonicalizeVariantTypes(ArrayRef<TypedAttr> types) {
-  SmallVector<TypedAttr> deduplicatedTypes;
-  SmallPtrSet<Attribute, 4> seenTypes;
-  deduplicatedTypes.reserve(types.size());
-  for (TypedAttr type : types)
-    if (seenTypes.insert(type).second)
-      deduplicatedTypes.push_back(type);
-  return deduplicatedTypes;
-}
-
-VariantType VariantType::get(MLIRContext *ctx, ArrayRef<TypedAttr> types) {
-  return Base::get(ctx, canonicalizeVariantTypes(types));
-}
-
 VariantType VariantType::get(ArrayRef<Type> types) {
   assert(!types.empty());
   SmallVector<TypedAttr> typeExprs;
@@ -507,13 +491,6 @@ VariantType VariantType::get(ArrayRef<Type> types) {
 
 /// Return the number of types in the variant.
 size_t VariantType::getNumTypes() { return getTypes().size(); }
-
-std::optional<int64_t> VariantType::getTypeIndex(Type type) const {
-  for (auto [idx, variantType] : llvm::enumerate(getTypes()))
-    if (ParamRefType::get(variantType) == type)
-      return idx;
-  return {};
-}
 
 SmallVector<Type> VariantType::getParameterizedElementTypes() const {
   SmallVector<Type> types;
@@ -583,7 +560,8 @@ std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess VariantType::writeTo(TypedAttr value, int64_t addr,
                                     InterpreterState &state) const {
   // Just write the value to the address and then the discriminator.
-  TypedAttr typeValue = value.cast<VariantAttr>().getValue();
+  auto variant = ::cast<VariantAttr>(value);
+  TypedAttr typeValue = variant.getValue();
   ErrorOrSuccess result = state.writeAttributeToMemory(addr, typeValue);
   if (result.isError())
     return result.takeError();
@@ -593,7 +571,7 @@ ErrorOrSuccess VariantType::writeTo(TypedAttr value, int64_t addr,
   ErrorOr<void *> mem = state.getWritableMemory(addr, discrSize);
   if (mem.isError())
     return mem.takeError();
-  APInt discrVal(discrSize * CHAR_BIT, *getTypeIndex(typeValue.getType()));
+  APInt discrVal(discrSize * CHAR_BIT, variant.getIndex());
   llvm::StoreIntToMemory(discrVal, reinterpret_cast<uint8_t *>(*mem),
                          discrSize);
   return success();
@@ -611,12 +589,13 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
   llvm::LoadIntFromMemory(discrVal, reinterpret_cast<const uint8_t *>(*mem),
                           discrSize);
 
-  TypedAttr type = getTypes()[discrVal.getZExtValue()];
+  unsigned index = discrVal.getZExtValue();
+  TypedAttr type = getTypes()[index];
   ErrorOr<TypedAttr> result = state.readAttributeFromMemory(
       addr, type.cast<ConcreteTypeConstantAttr>().getValue());
   if (result.isError())
     return result.takeError();
-  return VariantAttr::get(result.takeValue(), *this);
+  return VariantAttr::get(result.takeValue(), index, *this);
 }
 
 //===----------------------------------------------------------------------===//

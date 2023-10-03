@@ -1233,7 +1233,7 @@ OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
   auto value = llvm::cast_if_present<TypedAttr>(adaptor.getOperand());
   if (!value)
     return {};
-  return VariantAttr::get(value, getType());
+  return VariantAttr::get(value, getIndex(), getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1244,8 +1244,7 @@ OpFoldResult VariantIsOp::fold(FoldAdaptor adaptor) {
   auto variant = dyn_cast_if_present<VariantAttr>(adaptor.getVariant());
   if (!variant)
     return {};
-  return BoolAttr::get(getContext(),
-                       variant.getValue().getType() == getTestType());
+  return BoolAttr::get(getContext(), variant.getIndex() == getIndex());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1442,7 +1441,7 @@ OpFoldResult VariadicGetOp::fold(FoldAdaptor adaptor) {
   auto indexAttr = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
   if (!indexAttr)
     return {};
-  auto index = static_cast<size_t>(indexAttr.getInt());
+  unsigned index = indexAttr.getInt();
 
   if (auto variadic = dyn_cast_or_null<VariadicAttr>(adaptor.getVariadic())) {
     if (index >= variadic.getValues().size())

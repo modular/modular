@@ -118,14 +118,14 @@ lit.struct.decl @Int {}
 lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.declref<@Int>) -> !pop.variant<@Error, @Int> {
   hlcf.if %raise {
     // CHECK: %[[ERR:.*]] = pop.variant.create %err
-    %result = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, @Int>
+    %result = pop.variant.create %err, 0 : <@Error, @Int>
     // CHECK: kgen.return %[[ERR]]
     kgen.return %result : !pop.variant<@Error, @Int>
   } else {
     hlcf.yield
   }
   // CHECK: %[[VALUE:.*]] = pop.variant.create %value
-  %result = pop.variant.create %value : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
+  %result = pop.variant.create %value, 1 : <@Error, @Int>
   // CHECK: kgen.return %[[VALUE]]
   kgen.return %result : !pop.variant<@Error, @Int>
 }
@@ -350,7 +350,7 @@ lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>
 lit.func @throwing_caller() throws -> !pop.variant<@Error, none> {
   %y = lit.varlet.decl "y" var : !lit.ref<mut @MyStruct, *"life">
   %none = kgen.param.constant: none = <#kgen.none>
-  %ret = kgen.param.constant: !pop.variant<@Error, none> = <#pop.variant<:!kgen.none #kgen.none>>
+  %ret = kgen.param.constant: !pop.variant<@Error, none> = <#pop.variant<:!kgen.none #kgen.none, 1>>
   // CHECK: [[YPTR:%.*]] = lit.ref.to_pointer
   %yptr = lit.ref.to_pointer %y: !lit.ref<mut @MyStruct, *"life">
   // CHECK: lit.handle_variant %variant, [[YPTR]] : (!pop.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
@@ -371,7 +371,7 @@ lit.struct.decl @Error {}
 
 lit.func @throwing_func() throws -> !pop.variant<@Error, none> {
   %1 = lit.struct.create() : () -> !kgen.declref<@Error>
-  %2 = pop.variant.create %1 : !kgen.declref<@Error> -> !pop.variant<@Error, none>
+  %2 = pop.variant.create %1, 0 : <@Error, none>
   // CHECK: lit.error_return %{{.*}} : <@Error, none>
   lit.error_return %2 : !pop.variant<@Error, none>
 }

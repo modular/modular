@@ -460,10 +460,10 @@ def propagateErrorInDef():
     # CHECK: %[[VALUE:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
     # CHECK: %1 = lit.handle_variant %0 : (!pop.variant<!Error, !Int>) -> !Int
     # CHECK: {
-    # CHECK:    [[VAR:%.*]] = pop.variant.get %0 : !pop.variant<!Error, !Int> as !Int
+    # CHECK:    [[VAR:%.*]] = pop.variant.get %0, 1 : <!Error, !Int>
     # CHECK:    lit.yield [[VAR]] : !Int
     # CHECK: } else {
-    # CHECK:    [[ERR:%.*]] = pop.variant.get %0 : !pop.variant<!Error, !Int> as !Error
+    # CHECK:    [[ERR:%.*]] = pop.variant.get %0, 0 : <!Error, !Int>
     # CHECK:    lit.raise [[ERR]] : !Error
     # CHECK:    kgen.unreachable
     # CHECK:  }

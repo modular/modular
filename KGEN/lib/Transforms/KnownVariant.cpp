@@ -22,23 +22,28 @@ namespace {
 
 /// This state represents the known possible types of a variant.
 struct VariantTypes {
+  VariantTypes() : VariantTypes(0) {}
+  VariantTypes(size_t size) : knownDiscrs(size) {}
+  VariantTypes(llvm::BitVector bvec) : knownDiscrs(std::move(bvec)) {}
+
   static VariantTypes join(const VariantTypes &lhs, const VariantTypes &rhs) {
-    auto knownTypes = lhs.knownTypes;
-    knownTypes.insert(rhs.knownTypes.begin(), rhs.knownTypes.end());
-    return {std::move(knownTypes)};
+    llvm::BitVector next = lhs.knownDiscrs;
+    next |= rhs.knownDiscrs;
+    return {std::move(next)};
   }
 
   bool operator==(const VariantTypes &rhs) const {
-    return knownTypes.getArrayRef() == rhs.knownTypes.getArrayRef();
+    return knownDiscrs == rhs.knownDiscrs;
   }
 
   void print(raw_ostream &os) const {
     os << '{';
-    llvm::interleaveComma(knownTypes, os);
+    for (int i = 0, e = knownDiscrs.size(); i != e; ++i)
+      os << knownDiscrs.test(i);
     os << '}';
   }
 
-  llvm::SetVector<Type, SmallVector<Type, 4>, SmallPtrSet<Type, 4>> knownTypes;
+  llvm::BitVector knownDiscrs;
 };
 
 struct VariantState : public Lattice<VariantTypes> {
@@ -56,8 +61,8 @@ struct KnownVariantAnalysis
   void visitOperation(Operation *op, ArrayRef<const VariantState *> operands,
                       ArrayRef<VariantState *> results) override {
     if (auto create = dyn_cast<VariantCreateOp>(op)) {
-      VariantTypes value;
-      value.knownTypes.insert(create.getOperand().getType());
+      VariantTypes value(create.getType().getNumTypes());
+      value.knownDiscrs.set(create.getIndex());
       propagateIfChanged(results.front(), results.front()->join(value));
       return;
     }
@@ -67,8 +72,8 @@ struct KnownVariantAnalysis
   void setToEntryState(VariantState *state) override {
     if (auto variant = dyn_cast<VariantType>(state->getPoint().getType())) {
       SmallVector<Type> types = variant.getParameterizedElementTypes();
-      VariantTypes value;
-      value.knownTypes.insert(types.begin(), types.end());
+      VariantTypes value(variant.getNumTypes());
+      value.knownDiscrs.set();
       propagateIfChanged(state, state->join(value));
     }
   }
@@ -97,16 +102,16 @@ struct ConstantPropagation : public HLCF::SparseConstantPropagation {
     if (auto test = dyn_cast<VariantIsOp>(op)) {
       const VariantTypes &value =
           getOrCreateFor<VariantState>(op, test.getOperand())->getValue();
-      if (value.knownTypes.empty())
+      if (value.knownDiscrs.none())
         return;
       // If the set does not contain the type, optimistically assume false.
       // Otherwise, if the set contains only the type, optimistically assume
       // true. In any other case, we cannot definitively assume a value (and the
       // state reaches a pessimistic fixpoint).
       Attribute cvValue;
-      if (!value.knownTypes.contains(test.getTestType()))
+      if (!value.knownDiscrs.test(test.getIndex()))
         cvValue = BoolAttr::get(op->getContext(), /*value=*/false);
-      else if (value.knownTypes.size() == 1)
+      else if (value.knownDiscrs.count() == 1)
         cvValue = BoolAttr::get(op->getContext(), /*value=*/true);
       propagateIfChanged(results.front(), results.front()->join(ConstantValue(
                                               cvValue, /*dialect=*/nullptr)));
@@ -176,7 +181,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
 
   // Rewrite the signatures of operations that return variants that are known to
   // be a particular type.
-  DenseMap<StringAttr, SmallVector<std::pair<unsigned, Type>>> rewrites;
+  DenseMap<StringAttr, SmallVector<std::pair<unsigned, int>>> rewrites;
   for (FuncOp func : getOperation().getOps<FuncOp>()) {
     // Reset the visibility to the default.
     func.setPublic();
@@ -192,12 +197,13 @@ void PruneImpossibleVariantsPass::runOnOperation() {
 
     SmallVector<std::optional<VariantTypes>> types;
     for (auto [i, type] : llvm::enumerate(func.getResultTypes())) {
-      if (!isa<VariantType>(type)) {
+      auto variant = dyn_cast<VariantType>(type);
+      if (!variant) {
         types.push_back(std::nullopt);
         continue;
       }
       // Merge the known variant types across all reachable returns.
-      VariantTypes merged;
+      VariantTypes merged(variant.getNumTypes());
       for (Operation *ret : returns) {
         // Ignore the return if its parent block is dead.
         if (!solver.lookupState<Executable>(ret->getBlock())->isLive())
@@ -224,16 +230,16 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     }
 
     // Rewrite all variant operands of returns known to be a particular type.
-    SmallVector<std::pair<unsigned, Type>> resultRewrites;
+    SmallVector<std::pair<unsigned, int>> resultRewrites;
     for (auto [idx, type] : llvm::enumerate(types)) {
-      if (!type || type->knownTypes.size() != 1)
+      if (!type || type->knownDiscrs.count() != 1)
         continue;
-      Type knownType = type->knownTypes.front();
-      resultRewrites.emplace_back(idx, knownType);
+      int knownIndex = type->knownDiscrs.find_first();
+      resultRewrites.emplace_back(idx, knownIndex);
       for (Operation *ret : returns) {
         OpBuilder b(ret);
-        Value result = b.create<VariantGetOp>(ret->getLoc(), knownType,
-                                              ret->getOperand(idx));
+        Value result = b.create<VariantGetOp>(ret->getLoc(),
+                                              ret->getOperand(idx), knownIndex);
         ret->setOperand(idx, result);
       }
     }
@@ -261,11 +267,13 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     // Update the result types in the signature.
     SmallVector<Type> types(call.getCallee().getType().getValueResults());
     // Wrap rewritten results and change their type.
-    for (auto [idx, type] : it->second) {
+    for (auto [idx, typeIndex] : it->second) {
       OpResult result = call->getOpResult(idx);
-      auto create =
-          b.create<VariantCreateOp>(call.getLoc(), result.getType(), result);
+      auto variant = cast<VariantType>(result.getType());
+      auto create = b.create<VariantCreateOp>(call.getLoc(), result.getType(),
+                                              result, typeIndex);
       result.replaceAllUsesExcept(create.getResult(), create);
+      Type type = variant.getType(typeIndex);
       result.setType(type);
       types[idx] = type;
     }

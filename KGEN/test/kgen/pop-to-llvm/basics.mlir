@@ -639,7 +639,7 @@ kgen.func @test(%a: !pop.variant<f32, i64, struct<i8, i8, f64>>) -> i1 {
   // CHECK: %[[DISCR:.*]] = llvm.extractvalue %[[VAR]][1]
   // CHECK: %[[DISCR_VAL:.*]] = llvm.mlir.constant(0 : i2)
   // CHECK: %[[VAL:.*]] = llvm.icmp "eq" %[[DISCR]], %[[DISCR_VAL]]
-  %0 = pop.variant.is f32, %a : !pop.variant<f32, i64, struct<i8, i8, f64>>
+  %0 = pop.variant.is %a, 0 : <f32, i64, struct<i8, i8, f64>>
   // CHECK: return %[[VAL]]
   kgen.return %0 : i1
 }
@@ -647,7 +647,7 @@ kgen.func @test(%a: !pop.variant<f32, i64, struct<i8, i8, f64>>) -> i1 {
 // CHECK-LABEL: @one_variant_type
 // CHECK: !llvm.struct<(array<1 x i64>, i1)>
 kgen.func @one_variant_type(%a: !pop.variant<i32>) -> i1 {
-  %0 = pop.variant.is i32, %a : !pop.variant<i32>
+  %0 = pop.variant.is %a, 0 : <i32>
   kgen.return %0 : i1
 }
 

@@ -1480,10 +1480,8 @@ def LIT_HandleVariantOp : LITOp<"handle_variant",
         !pop.variant<@Error, none> as !kgen.none
       lit.yield %7 : !kgen.none
     } else {
-      %8 = pop.variant.get %0 : !pop.variant<@Error, none>
-        as !kgen.declref<@Error>
-      %9 = pop.variant.create %8 :
-        !kgen.declref<@Error> -> !pop.variant<@Error, none>
+      %8 = pop.variant.get %0, 0 : <@Error, none>
+      %9 = pop.variant.create %8, 0 : <@Error, none>
   	  kgen.return %9 : !pop.variant<@Error, none>
     }
     ```
@@ -1523,11 +1521,10 @@ def LIT_YieldOp : LITOp<"yield", [Pure,
     ```mlir
     %1 = lit.handle_variant %0, %x : (!pop.variant<@Error, none>,
       !kgen.pointer<@MyStruct>) -> !kgen.none {
-      %7 = pop.variant.get %0 : !pop.variant<@Error, none> as !kgen.none
+      %7 = pop.variant.get %0, 1 : <@Error, none>
       lit.yield %7 : !kgen.none
     } else {
-      %8 = pop.variant.get %0 : !pop.variant<@Error, none>
-        as !kgen.declref<@Error>
+      %8 = pop.variant.get %0, 0 : <@Error, none>
       lit.try.raise %8 : !kgen.declref<@Error>
     }
     ```

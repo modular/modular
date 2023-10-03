@@ -511,16 +511,16 @@ POP::StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr StructExtractAttr::get(TypedAttr structValue, int64_t fieldNo) {
+TypedAttr StructExtractAttr::get(TypedAttr structValue, unsigned fieldNo) {
   auto structType = ::cast<StructType>(structValue.getType());
-  assert(static_cast<size_t>(fieldNo) < structType.getElementTypes().size() &&
+  assert(fieldNo < structType.getElementTypes().size() &&
          "struct extract index out of range");
   return get(structValue.getContext(), structValue, fieldNo,
              ParamRefType::get(structType.getElementTypes()[fieldNo]));
 }
 
 TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
-                                 int64_t fieldNo, Type resultType) {
+                                 unsigned fieldNo, Type resultType) {
   if (auto value = dyn_cast_if_present<StructAttr>(structValue))
     return value.getValues()[fieldNo];
 
@@ -607,11 +607,15 @@ bool POP::PackAttr::isConstant() const {
 //===----------------------------------------------------------------------===//
 
 LogicalResult VariantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr value, VariantType type) {
-  if (type.getTypeIndex(value.getType()))
+                                  TypedAttr value, unsigned index,
+                                  VariantType type) {
+  if (index >= type.getNumTypes())
+    return emitError() << "variant index " << index << " is out of bounds";
+  if (type.getType(index) == value.getType())
     return success();
   return emitError() << "variant attribute value type " << value.getType()
-                     << " is not a possible variant subtype";
+                     << " does not match type at index " << index
+                     << " which is " << type.getType(index);
 }
 
 /// The variant attribute is a constant if the value type is a constant and its
