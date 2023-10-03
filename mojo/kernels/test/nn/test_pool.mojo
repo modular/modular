@@ -61,17 +61,20 @@ fn pool(pool_method: Int):
     let stride = StaticIntTuple[2](2, 3)
     let dilation = StaticIntTuple[2](1, 1)
 
+    alias simd_width = simdwidthof[DType.float32]()
+
     with Runtime() as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
         if pool_method == PoolMethod.MAX:
             Pool2d[
                 out_shape,
                 in_shape,
+                simd_width,
                 DType.float32,
                 Image2DLayout.NHWC,
-                max_pool_init_fn[DType.float32],
-                max_pool_update_fn[DType.float32],
-                max_pool_reduce_fn[DType.float32],
+                max_pool_init_fn[simd_width, DType.float32],
+                max_pool_update_fn[simd_width, DType.float32],
+                max_pool_reduce_fn[simd_width, DType.float32],
             ].run(
                 output_buffer,
                 input_buffer,
@@ -86,11 +89,12 @@ fn pool(pool_method: Int):
             Pool2d[
                 out_shape,
                 in_shape,
+                simd_width,
                 DType.float32,
                 Image2DLayout.NHWC,
-                avg_pool_init_fn[DType.float32],
-                avg_pool_update_fn[DType.float32],
-                avg_pool_reduce_fn[DType.float32],
+                avg_pool_init_fn[simd_width, DType.float32],
+                avg_pool_update_fn[simd_width, DType.float32],
+                avg_pool_reduce_fn[simd_width, DType.float32],
             ].run(
                 output_buffer,
                 input_buffer,

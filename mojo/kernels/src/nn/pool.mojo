@@ -8,9 +8,9 @@ from math import add, div_ceil, max, min
 from math.limit import neginf
 from sys.info import simdwidthof
 
-from algorithm import async_parallelize, vectorize_unroll
+from algorithm import elementwise
 from Image import Image2DLayout, ImageData, ImageShape
-from memory.buffer import NDBuffer
+from memory.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from runtime.llcl import OutputChainPtr
 from ShapeFuncUtils import get_sliding_window_out_dim
 
@@ -39,11 +39,12 @@ struct PoolMethod:
 struct Pool2d[
     static_output_shape: DimList,
     static_input_shape: DimList,
+    width: Int,
     type: DType,
     static_data_layout: Image2DLayout,
-    init_fn: fn () -> SIMD[type, 1],
-    update_fn: fn (SIMD[type, 1], SIMD[type, 1]) -> SIMD[type, 1],
-    reduce_fn: fn (SIMD[type, 1], Int) -> SIMD[type, 1],
+    init_fn: fn () -> SIMD[type, width],
+    update_fn: fn (SIMD[type, width], SIMD[type, width]) -> SIMD[type, width],
+    reduce_fn: fn (SIMD[type, width], Int) -> SIMD[type, width],
 ]:
     """Struct wrapper for pool implementation."""
 
@@ -55,7 +56,6 @@ struct Pool2d[
     var filter_shape: StaticIntTuple[2]
     var stride: StaticIntTuple[2]
     var dilation: StaticIntTuple[2]
-    var num_tasks: Int
 
     # Derived params.
     var output_shape: ImageShape
@@ -92,24 +92,27 @@ struct Pool2d[
         """
         # TODO: Find a heuristic to replace the magic numbers.
         alias min_task_num_slices = 64
-        alias simd_width = simdwidthof[type]()
         alias unroll_factor = 8
 
         let num_threads = out_chain.get_runtime().parallelism_level()
         let num_tasks = min(
             div_ceil(output.num_elements(), min_task_num_slices), num_threads
         )
-
-        let work = output.num_elements()
-        let work_block_size = div_ceil(work, num_tasks)
+        let N = output.dim(0)
+        let H = output.dim(1)
+        let W = output.dim(2)
+        let C = output.dim(3)
 
         @always_inline
         @parameter
-        fn task_func_nhwc(task_id: Int):
+        fn task_func_nhwc[
+            sim_width: Int, rank: Int
+        ](point: StaticIntTuple[rank]):
             # Create an instance of the pooling op.
             let pool2d = Pool2d[
                 static_output_shape,
                 static_input_shape,
+                width,
                 type,
                 static_data_layout,
                 init_fn,
@@ -123,35 +126,43 @@ struct Pool2d[
                 filter_shape,
                 stride,
                 dilation,
-                num_tasks,
             )
 
-            let offset = task_id * work_block_size
-
-            @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
-                var values = SIMD[type, simd_width](0)
-
-                for i in range(simd_width):
-                    # Compute the result value at this specific output position.
-                    values[i] = pool2d._compute_point_nhwc(offset + idx + i)
-
-                # Store the computed output at the given output position.
-                pool2d.output.data.simd_store[simd_width](
-                    offset + idx,
+            let load_size = min(C - point[3], width)
+            if load_size != width:
+                let values = pool2d._compute_point_nhwc[True](
+                    StaticIntTuple[4](point[0], point[1], point[2], point[3]),
+                    load_size,
+                )
+                partial_simd_store[type, width](
+                    pool2d.output._offset(
+                        StaticIntTuple[4](
+                            point[0], point[1], point[2], point[3]
+                        )
+                    ),
+                    0,
+                    load_size,
                     values,
                 )
-
-            vectorize_unroll[simd_width, unroll_factor, func_wrapper](
-                min(work_block_size, work - offset)
-            )
+            else:
+                let values = pool2d._compute_point_nhwc[True](
+                    StaticIntTuple[4](point[0], point[1], point[2], point[3]),
+                    load_size,
+                )
+                pool2d.output.simd_store(
+                    StaticIntTuple[4](point[0], point[1], point[2], point[3]),
+                    values,
+                )
 
         debug_assert(
             static_data_layout == Image2DLayout.NHWC,
             "Only NHWC layot format is supported.",
         )
-        async_parallelize[task_func_nhwc](out_chain, num_tasks)
+
+        elementwise[4, width, task_func_nhwc](
+            StaticIntTuple[4](N, H, W, C),
+            out_chain,
+        )
 
     fn __init__(
         output: NDBuffer[4, static_output_shape, type],
@@ -161,10 +172,10 @@ struct Pool2d[
         filter_shape: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
-        num_tasks: Int,
     ) -> Pool2d[
         static_output_shape,
         static_input_shape,
+        width,
         type,
         static_data_layout,
         init_fn,
@@ -202,7 +213,6 @@ struct Pool2d[
             filter_shape: filter_shape,
             stride: stride,
             dilation: dilation,
-            num_tasks: num_tasks,
             # Derive layout agnostic shape information.
             output_shape: ImageShape.__init__[
                 static_output_shape, type, static_data_layout
@@ -212,7 +222,9 @@ struct Pool2d[
             ](input),
         }
 
-    fn _compute_point_nhwc(self, idx: Int) -> SIMD[type, 1]:
+    fn _compute_point_nhwc[
+        sub_vector: Bool
+    ](self, idx: StaticIntTuple[4], vec_size: Int) -> SIMD[type, width]:
         """Implementation of the inner loop computation of a nhwc pooling
         operator producing a single scalar value at the given output tensor
         index.
@@ -222,13 +234,11 @@ struct Pool2d[
               produce.
         """
 
-        let n_idx = (idx // self.output.stride(0)) % self.output.dim(0)
-        let h_idx = (idx // self.output.stride(1)) % self.output.dim(1)
-        let w_idx = (idx // self.output.stride(2)) % self.output.dim(2)
-        let c_idx = (idx) % self.output.dim(3)
+        let n_idx = idx[0]
+        let c_idx = idx[3]
 
         # Initialize the result of this point.
-        var value: SIMD[type, 1] = init_fn()
+        var value = init_fn()
 
         # Extract the H and W size of the input image.
         let image_bound = StaticIntTuple[2](
@@ -244,8 +254,8 @@ struct Pool2d[
                     # Output HxW with striding.
                     (
                         Index(
-                            h_idx,
-                            w_idx,
+                            idx[1],  # H
+                            idx[2],  # W
                         )
                         * self.stride
                     )
@@ -265,49 +275,70 @@ struct Pool2d[
                     < image_bound
                 ):
                     # Compute function on input data.
-                    value = update_fn(
-                        value,
-                        self.input[
-                            n_idx,
-                            input_image_index[0],  # H
-                            input_image_index[1],  # W
-                            c_idx,
-                        ],
-                    )
-        return reduce_fn(value, self.filter_shape[0] * self.filter_shape[1])
+                    if sub_vector:
+                        let elem = partial_simd_load[type, width](
+                            self.input._offset(
+                                StaticIntTuple[4](
+                                    n_idx,
+                                    input_image_index[0],  # H
+                                    input_image_index[1],  # W
+                                    c_idx,
+                                )
+                            ),
+                            0,
+                            vec_size,
+                            init_fn()[0],
+                        )
+                        value = update_fn(value, elem)
+                    else:
+                        let elem = self.input.simd_load[width](
+                            StaticIntTuple[4](
+                                n_idx,
+                                input_image_index[0],  # H
+                                input_image_index[1],  # W
+                                c_idx,
+                            )
+                        )
+                        value = update_fn(value, elem)
+        let res = reduce_fn(value, self.filter_shape[0] * self.filter_shape[1])
+        return res
 
 
 @always_inline
-fn max_pool_init_fn[type: DType]() -> SIMD[type, 1]:
+fn max_pool_init_fn[width: Int, type: DType]() -> SIMD[type, width]:
     return neginf[type]()
 
 
 @always_inline
 fn max_pool_update_fn[
-    type: DType
-](a: SIMD[type, 1], b: SIMD[type, 1]) -> SIMD[type, 1]:
+    width: Int, type: DType
+](a: SIMD[type, width], b: SIMD[type, width]) -> SIMD[type, width]:
     return max(a, b)
 
 
 @always_inline
-fn max_pool_reduce_fn[type: DType](a: SIMD[type, 1], s: Int) -> SIMD[type, 1]:
+fn max_pool_reduce_fn[
+    width: Int, type: DType
+](a: SIMD[type, width], s: Int) -> SIMD[type, width]:
     return a
 
 
 @always_inline
-fn avg_pool_init_fn[type: DType]() -> SIMD[type, 1]:
+fn avg_pool_init_fn[width: Int, type: DType]() -> SIMD[type, width]:
     return 0
 
 
 @always_inline
 fn avg_pool_update_fn[
-    type: DType
-](a: SIMD[type, 1], b: SIMD[type, 1]) -> SIMD[type, 1]:
+    width: Int, type: DType
+](a: SIMD[type, width], b: SIMD[type, width]) -> SIMD[type, width]:
     return add(a, b)
 
 
 @always_inline
-fn avg_pool_reduce_fn[type: DType](a: SIMD[type, 1], s: Int) -> SIMD[type, 1]:
+fn avg_pool_reduce_fn[
+    width: Int, type: DType
+](a: SIMD[type, width], s: Int) -> SIMD[type, width]:
     return a / s
 
 
@@ -400,11 +431,12 @@ fn pool_shape[
 
 @always_inline
 fn _pool_dispatcher[
+    width: Int,
     type: DType,
     int_type: DType,
-    init_fn: fn () -> SIMD[type, 1],
-    update_fn: fn (SIMD[type, 1], SIMD[type, 1]) -> SIMD[type, 1],
-    reduce_fn: fn (SIMD[type, 1], Int) -> SIMD[type, 1],
+    init_fn: fn () -> SIMD[type, width],
+    update_fn: fn (SIMD[type, width], SIMD[type, width]) -> SIMD[type, width],
+    reduce_fn: fn (SIMD[type, width], Int) -> SIMD[type, width],
 ](
     input: NDBuffer[4, DimList.create_unknown[4](), type],
     filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
@@ -435,6 +467,7 @@ fn _pool_dispatcher[
     Pool2d[
         DimList.create_unknown[4](),  # Output shape.
         DimList.create_unknown[4](),  # Input shape.
+        width,
         type,  # Data type.
         layout,  # Data Layout.
         init_fn,
@@ -485,13 +518,15 @@ fn max_pool[
             return out_chain.mark_error(
                 "Non-zero padding is not supported yet."
             )
+    alias simd_width = simdwidthof[type]()
 
     _pool_dispatcher[
+        simd_width,
         type,
         int_type,
-        max_pool_init_fn[type],
-        max_pool_update_fn[type],
-        max_pool_reduce_fn[type],
+        max_pool_init_fn[simd_width, type],
+        max_pool_update_fn[simd_width, type],
+        max_pool_reduce_fn[simd_width, type],
     ](input, filter, strides, dilations, output, out_chain)
 
 
@@ -528,11 +563,13 @@ fn avg_pool[
             return out_chain.mark_error(
                 "Non-zero padding is not supported yet."
             )
+    alias simd_width = simdwidthof[type]()
 
     _pool_dispatcher[
+        simd_width,
         type,
         int_type,
-        avg_pool_init_fn[type],
-        avg_pool_update_fn[type],
-        avg_pool_reduce_fn[type],
+        avg_pool_init_fn[simd_width, type],
+        avg_pool_update_fn[simd_width, type],
+        avg_pool_reduce_fn[simd_width, type],
     ](input, filter, strides, dilations, output, out_chain)
