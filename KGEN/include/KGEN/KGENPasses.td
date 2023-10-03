@@ -406,8 +406,8 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
   let options = [
     Option<"enableSearch", "enable-search", "bool", "false",
            "If true, benchmark implementations to find the fastest one.">,
-    Option<"testDiagnostics", "test-diagnostics", "bool", "false",
-           "If true, emit additional interesting diagnostics.">,
+    Option<"allowMultiplePrimaryImpls", "allow-multiple-primary-impls", "bool",
+           "false", "Allow primary generators to have multiple implementations.">,
     Option<"maxDepth", "max-depth", "unsigned",
            "std::numeric_limits<unsigned>::max()",
            "The maximum elaborator instantiation depth.">,
