@@ -312,3 +312,19 @@ kgen.generator @failed_param_rebind() {
   kgen.param.declare value: i32 = <rebind(:i64 2)>
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{primary generator with more than one successful implementation}}
+// expected-note @below {{select one implementation using search or remove forks in the implementation}}
+kgen.generator @kernel() {
+  kgen.param.fork a = <[1, 2]>
+  kgen.return
+}
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator export @top() {
+  // expected-note @below {{failed to run the pass manager}}
+  kgen.param.constant: string = <compile_assembly(current_target(), :() -> () @kernel)>
+  kgen.return
+}
