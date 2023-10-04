@@ -444,13 +444,7 @@ fn elementwise_wrapper[
     out_chain: OutputChainPtr,
 ):
     @parameter
-    if target == "cuda":
-        # Convey func into gpu impl
-        # Calculate blockDimX etc.
-        # Load CUfunction
-        # Launch kernel using out_chain.get_stream()
-        pass
-    else:
+    if target != "cuda":
 
         @always_inline
         @parameter
@@ -472,12 +466,12 @@ fn elementwise_wrapper[
 
         out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
 
-        _elementwise_impl[
-            rank, simd_width, single_thread_blocking_override, func
-        ](
-            buffer.dynamic_shape,
-            out_chain,
-        )
+    _elementwise_impl[
+        rank, simd_width, single_thread_blocking_override, func, target=target
+    ](
+        buffer.dynamic_shape,
+        out_chain,
+    )
 
 
 # ===----------------------------------------------------------------------===#
