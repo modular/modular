@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math import div_ceil, erf, exp, tanh
-from sys.info import sizeof
+from sys.info import simdwidthof
 
 from Activations import gelu
 from algorithm import elementwise
@@ -45,7 +45,7 @@ fn test_elementwise_1d():
             vector.simd_store[simd_width](idx[0], val)
 
         let out_chain = OwningOutputChainPtr(rt)
-        elementwise[1, sizeof[DType.float32](), func](
+        elementwise[1, simdwidthof[DType.float32](), func](
             StaticIntTuple[1](num_elements), out_chain.borrow()
         )
         out_chain.wait()
