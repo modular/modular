@@ -46,6 +46,8 @@ public:
 private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  LogicalResult checkOneOperand(AnyValue value, ASTType expectedType,
+                                ValueInputConvention expectedConvention);
   LogicalResult checkOneOperand(ASTExprAnd<AnyValue> operand,
                                 ASTType expectedType,
                                 ValueInputConvention expectedConvention);
@@ -152,21 +154,21 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 }
 
 LogicalResult ParameterInferenceState::checkOneOperand(
-    ASTExprAnd<AnyValue> operand, ASTType expectedType,
+    AnyValue value, ASTType expectedType,
     ValueInputConvention expectedConvention) {
   // We'll bind the next provided value.
   switch (expectedConvention) {
   case ValueInputConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for type
     // checking, just let it pass.
-    if (PValue pValue = operand.ir.getIfPValue())
+    if (PValue pValue = value.getIfPValue())
       if (isa<UnknownAttr>(pValue.get()))
         return success();
     [[fallthrough]];
   case ValueInputConvention::ByRef:
   case ValueInputConvention::ByRefResult: {
     // The actual value must be an lvalue if callee takes things by-ref.
-    LValue argVal = operand.ir.getIfLValue();
+    LValue argVal = value.getIfLValue();
     if (!argVal)
       return failure();
 
@@ -185,16 +187,22 @@ LogicalResult ParameterInferenceState::checkOneOperand(
   case ValueInputConvention::BorrowedInReg:
     // Otherwise, we pass as an r-value if we know the type.
     // TODO: Consider implicit conversions?
-    if (CValue cValue = operand.ir.getIfCValue())
+    if (CValue cValue = value.getIfCValue())
       return matchTypes(cValue.getRValueType(), expectedType);
     // Consider the types of ORValues with single candidates.
-    if (ORValue orValue = operand.ir.getIfORValue())
+    if (ORValue orValue = value.getIfORValue())
       if (PValue pValue = orValue->emitAsPValue())
         return matchTypes(pValue.getType(), expectedType);
     return success();
   }
   llvm_unreachable("invalid value input convention");
 };
+
+LogicalResult ParameterInferenceState::checkOneOperand(
+    ASTExprAnd<AnyValue> operand, ASTType expectedType,
+    ValueInputConvention expectedConvention) {
+  return checkOneOperand(operand.ir, expectedType, expectedConvention);
+}
 
 PValue ParameterInferenceState::infer(LITSignatureType signature,
                                       ArrayRef<TypedAttr> bindingsSoFar,
@@ -246,7 +254,21 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
         continue;
       }
 
-      // TODO: If this argument is defaulted, infer against it.
+      // If available, we check the default argument value.
+      // NOTE: The type of the default argument has to match the argument type,
+      // meaning there can't be anything to infer here directly, but we still
+      // check to make sure that the default value doesn't contradict already
+      // inferred parameters.
+      ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
+      size_t numArgs = signature.getNumInputs();
+      if (expectedArgIdx >= numArgs - defaultArgs.size()) {
+        PValue defaultVal =
+            defaultArgs[expectedArgIdx + defaultArgs.size() - numArgs];
+        if (failed(
+                checkOneOperand(defaultVal, expectedType, expectedConvention)))
+          return {};
+        continue;
+      }
 
       // Otherwise we have an argument count mismatch, just fail.
       return {};

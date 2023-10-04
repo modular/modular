@@ -709,6 +709,16 @@ fn call_with_tail_types():
     # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}Int]>
     tail_types(1, 77)
 
+# COM: We can't infer parameters from the default value, but we need to test if
+# COM: if other parameters are inferred correctly in their presence.
+fn infer_with_default_arg[T: AnyType](a: T, b: Int = 7):
+    pass
+
+# CHECK-LABEL: lit.func @"test_infer_with_default_arg()"
+fn test_infer_with_default_arg():
+    # kgen.call @{{.*}}::@"infer_with_default_arg[AnyType]($0,{{.*}}::Int)"<:type !Int>
+    infer_with_default_arg(128)
+
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##
