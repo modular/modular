@@ -1221,18 +1221,6 @@ fn _elementwise_impl[
     async_parallelize[task_func](out_chain, num_workers)
 
 
-@export("_elementwise_gpu_kernel")
-fn _elementwise_gpu_kernel[
-    rank: Int,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-](shape: StaticIntTuple[rank]):
-    @parameter
-    if not triple_is_nvidia_cuda():
-        return
-
-    let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
-
-
 @always_inline
 @adaptive
 fn _elementwise_impl[
@@ -1263,17 +1251,19 @@ fn _elementwise_impl[
     constrained[rank == 1, "Specialization for 1D where N = 1"]()
     constrained[target == "gpu", "Target must be gpu"]()
 
-    alias func_type = fn[
-        rank: Int,
-        func: fn[width: Int, rank: Int] (
-            StaticIntTuple[rank]
-        ) capturing -> None,
-    ] (StaticIntTuple[rank]) -> None
-
     alias block_dim = 32
     let length = shape.flattened_length()
 
+    @export("_elementwise_gpu_kernel")
+    fn _elementwise_gpu_kernel(shape: StaticIntTuple[rank]):
+        @parameter
+        if not triple_is_nvidia_cuda():
+            return
+
+        let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+
     try:
+        alias func_type = fn (StaticIntTuple[rank]) -> None
         let gpu_func = Function[
             func_type, rebind[func_type](_elementwise_gpu_kernel)
         ]("_elementwise_gpu_kernel")
