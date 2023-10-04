@@ -1277,6 +1277,41 @@ fn _elementwise_impl[
         print(e)
 
 
+@always_inline
+@adaptive
+fn _elementwise_impl[
+    rank: Int,
+    simd_width: Int,
+    use_blocking_impl: Bool,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
+    combination of width and indices so as to cover shape on the GPU.
+
+    All free vars in func must be "async safe", see async_parallelize.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        use_blocking_impl: If true this is a blocking op.
+        func: The body function.
+        target: The target to run on.
+
+    Args:
+        shape: The shape of the buffer.
+        out_chain: The our chain to attach results to.
+    """
+
+    constrained[rank > 1, "Specialization for ND where N > 1"]()
+    constrained[target == "gpu", "Target must be gpu"]()
+
+    # We do not want to write this yet, so just ignore the operation
+
+    pass
+
+
 # ===----------------------------------------------------------------------===#
 # parallelize_over_rows
 # ===----------------------------------------------------------------------===#
