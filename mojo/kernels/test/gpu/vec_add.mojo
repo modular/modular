@@ -40,17 +40,6 @@ fn vec_add(
     out.store(tid, in0.load(tid) + in1.load(tid))
 
 
-# CHECK-LABEL: run_cuda_mem_ops
-fn run_cuda_mem_ops() raises:
-    print("== run_cuda_mem_ops")
-
-    alias length = 1
-
-    let device_mem = _malloc[Int](length)
-
-    _free(device_mem)
-
-
 # CHECK-LABEL: run_vec_add
 fn run_vec_add() raises:
     print("== run_vec_add")
@@ -123,9 +112,6 @@ fn run_vec_add() raises:
 def main():
     try:
         with Context() as ctx:
-            # TODO: Figure out why I need these mem ops. Without it I get
-            # CUDA_ERROR: FILE_NOT_FOUND!
-            run_cuda_mem_ops()
             run_vec_add()
     except e:
         print("CUDA_ERROR:", e)
