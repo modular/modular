@@ -499,10 +499,10 @@ function(add_mojo_doc target visibility doc_filename output_file output_director
   )
 
   # Only add PUBLIC Mojo files to the top-level doc validation target.
-  # This ensures that `modular-doc-validate` only fails when our public
+  # This ensures that `check-docs` only fails when our public
   # libraries are legitimately missing documentation.
   if (is_public)
-    add_dependencies(modular-doc-validate "${target}DocValidate")
+    add_dependencies(check-docs "${target}DocValidate")
   endif()
 endfunction()
 
