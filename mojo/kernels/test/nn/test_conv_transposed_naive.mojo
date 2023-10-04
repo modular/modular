@@ -7,7 +7,7 @@
 
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
-from ConvTranspose import convtranspose
+from ConvTranspose import conv_transpose
 
 
 # CHECK-LABEL: test_convtranspose_pads
@@ -133,21 +133,15 @@ fn test_convtranspose_pads():
     pads[2] = 1
     pads[3] = 2
 
-    @always_inline
-    @parameter
-    fn epilogue_fn(index: Int, update_val: SIMD[type, 1]) -> SIMD[type, 1]:
-        return 0
-
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[rank, type, epilogue_fn,](
+        conv_transpose[rank, type, DType.index, DType.index, DType.index](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
             strides.make_dims_unknown(),
             dilations.make_dims_unknown(),
             pads.make_dims_unknown(),
-            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -282,21 +276,15 @@ fn test_convtranspose():
     pads[2] = 0
     pads[3] = 0
 
-    @always_inline
-    @parameter
-    fn epilogue_fn(index: Int, update_val: SIMD[type, 1]) -> SIMD[type, 1]:
-        return 0
-
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[rank, type, epilogue_fn,](
+        conv_transpose[rank, type, DType.index, DType.index, DType.index](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
             strides.make_dims_unknown(),
             dilations.make_dims_unknown(),
             pads.make_dims_unknown(),
-            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -410,21 +398,15 @@ fn test_convtranspose_dilation():
     pads[2] = 0
     pads[3] = 0
 
-    @always_inline
-    @parameter
-    fn epilogue_fn(index: Int, update_val: SIMD[type, 1]) -> SIMD[type, 1]:
-        return 0
-
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[rank, type, epilogue_fn,](
+        conv_transpose[rank, type, DType.index, DType.index, DType.index](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
             strides.make_dims_unknown(),
             dilations.make_dims_unknown(),
             pads.make_dims_unknown(),
-            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -571,21 +553,15 @@ fn test_convtranspose_attributes():
     pads[2] = 0
     pads[3] = 0
 
-    @always_inline
-    @parameter
-    fn epilogue_fn(index: Int, update_val: SIMD[type, 1]) -> SIMD[type, 1]:
-        return 0
-
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[rank, type, epilogue_fn,](
+        conv_transpose[rank, type, DType.index, DType.index, DType.index](
             output.make_dims_unknown(),
             input.make_dims_unknown(),
             kernel.make_dims_unknown(),
             strides.make_dims_unknown(),
             dilations.make_dims_unknown(),
             pads.make_dims_unknown(),
-            output_padding.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -602,163 +578,8 @@ fn test_convtranspose_attributes():
     print()
 
 
-# CHECK-LABEL: test_convtranspose_bias
-# CHECK: 2.0 ,3.0 ,5.0 ,5.0 ,4.0 ,
-# CHECK: 5.0 ,10.0 ,17.0 ,14.0 ,9.0 ,
-# CHECK: 11.0 ,23.0 ,38.0 ,29.0 ,17.0 ,
-# CHECK: 11.0 ,22.0 ,35.0 ,26.0 ,15.0 ,
-# CHECK: 8.0 ,15.0 ,23.0 ,17.0 ,10.0 ,
-# CHECK: 3.0 ,4.0 ,6.0 ,6.0 ,5.0 ,
-# CHECK: 6.0 ,11.0 ,18.0 ,15.0 ,10.0 ,
-# CHECK: 12.0 ,24.0 ,39.0 ,30.0 ,18.0 ,
-# CHECK: 12.0 ,23.0 ,36.0 ,27.0 ,16.0 ,
-# CHECK: 9.0 ,16.0 ,24.0 ,18.0 ,11.0 ,
-fn test_convtranspose_bias():
-    print("== test_convtranspose_bias")
-    alias rank = 4
-    alias type = DType.float32
-
-    let input = NDBuffer[
-        rank,
-        DimList(1, 1, 3, 3),
-        type,
-    ].stack_allocation()
-
-    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
-    input[StaticIntTuple[rank](0, 0, 0, 1)] = 1
-    input[StaticIntTuple[rank](0, 0, 0, 2)] = 2
-
-    input[StaticIntTuple[rank](0, 0, 1, 0)] = 3
-    input[StaticIntTuple[rank](0, 0, 1, 1)] = 4
-    input[StaticIntTuple[rank](0, 0, 1, 2)] = 5
-
-    input[StaticIntTuple[rank](0, 0, 2, 0)] = 6
-    input[StaticIntTuple[rank](0, 0, 2, 1)] = 7
-    input[StaticIntTuple[rank](0, 0, 2, 2)] = 8
-
-    let kernel = NDBuffer[
-        rank,
-        DimList(1, 2, 3, 3),
-        type,
-    ].stack_allocation()
-
-    kernel[StaticIntTuple[rank](0, 0, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 0, 0, 2)] = 1
-
-    kernel[StaticIntTuple[rank](0, 0, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 0, 1, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 0, 1, 2)] = 1
-
-    kernel[StaticIntTuple[rank](0, 0, 2, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 0, 2, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 0, 2, 2)] = 1
-
-    kernel[StaticIntTuple[rank](0, 1, 0, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 0, 2)] = 1
-
-    kernel[StaticIntTuple[rank](0, 1, 1, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 1, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 1, 2)] = 1
-
-    kernel[StaticIntTuple[rank](0, 1, 2, 0)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 2, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 2, 2)] = 1
-
-    let output = NDBuffer[
-        rank,
-        DimList(1, 2, 5, 5),
-        type,
-    ].stack_allocation()
-
-    for i in range(1):
-        for j in range(2):
-            for k in range(5):
-                for l in range(5):
-                    output[StaticIntTuple[rank](i, j, k, l)] = 0
-
-    let bias = NDBuffer[
-        1,
-        DimList(2),
-        type,
-    ].stack_allocation()
-
-    bias[StaticIntTuple[1](0)] = 2
-    bias[StaticIntTuple[1](1)] = 3
-
-    let strides = NDBuffer[
-        1,
-        DimList(2),
-        DType.index,
-    ].stack_allocation()
-
-    strides[0] = 1
-    strides[1] = 1
-
-    let dilations = NDBuffer[
-        1,
-        DimList(2),
-        DType.index,
-    ].stack_allocation()
-
-    dilations[0] = 1
-    dilations[1] = 1
-
-    let output_padding = NDBuffer[
-        1,
-        DimList(2),
-        DType.index,
-    ].stack_allocation()
-
-    output_padding[0] = 0
-    output_padding[1] = 0
-
-    let pads = NDBuffer[
-        1,
-        DimList(4),
-        DType.index,
-    ].stack_allocation()
-
-    pads[0] = 0
-    pads[1] = 0
-    pads[2] = 0
-    pads[3] = 0
-
-    @always_inline
-    @parameter
-    fn epilogue_fn(index: Int, update_val: SIMD[type, 1]) -> SIMD[type, 1]:
-        return bias[index]
-
-    with Runtime() as rt:
-        let out_chain = OwningOutputChainPtr(rt)
-        convtranspose[rank, type, epilogue_fn,](
-            output.make_dims_unknown(),
-            input.make_dims_unknown(),
-            kernel.make_dims_unknown(),
-            strides.make_dims_unknown(),
-            dilations.make_dims_unknown(),
-            pads.make_dims_unknown(),
-            output_padding.make_dims_unknown(),
-            out_chain.borrow(),
-        )
-        out_chain.wait()
-
-    print()
-    for i in range(1):
-        for j in range(2):
-            for k in range(5):
-                for l in range(5):
-                    print_no_newline(output[i, j, k, l], ",")
-                print()
-            print()
-        print()
-    print()
-
-
 fn main():
     test_convtranspose_pads()
     test_convtranspose()
     test_convtranspose_dilation()
     test_convtranspose_attributes()
-    test_convtranspose_bias()

@@ -24,19 +24,19 @@ alias PADS_W_END = 3
 #       (https://github.com/onnx/onnx/blob/main/docs/Operators.md#ConvTranspose)
 #       - dilations (optional): if not provided, create (1,1) as default.
 #       - kernel_shape (optional): if not provided, obtain from argument-provided kernel.
-#       - output_padding (optional): if not provided, create (0,0) as default.
 #       - strides (optional): if not provided, create (1,1) as default.
-#       - bias (optional): currently, we use bias_add parameter to use or ignore.
 #       - output_shape (optional): if specified, pads values are ignored.
 #       modular/Kernels/test/test_convtranspose.mojo provides examples of calls.
 #       StarGAN, CycleGAN-and-pix2pix, Mask-RCNN are covered by this version.
 
 
 @always_inline
-fn convtranspose[
+fn conv_transpose[
     rank: Int,
     type: DType,
-    epilogue_fn: fn (Int, SIMD[type, 1]) capturing -> SIMD[type, 1],
+    strides_type: DType,
+    dilations_type: DType,
+    pads_type: DType,
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     input: NDBuffer[
@@ -49,23 +49,20 @@ fn convtranspose[
         DimList.create_unknown[rank](),
         type,
     ],
-    strides: NDBuffer[1, DimList.create_unknown[1](), DType.index],
-    dilations: NDBuffer[1, DimList.create_unknown[1](), DType.index],
-    pads: NDBuffer[1, DimList.create_unknown[1](), DType.index],
-    output_padding: NDBuffer[1, DimList.create_unknown[1](), DType.index],
+    strides: NDBuffer[1, DimList.create_unknown[1](), strides_type],
+    dilations: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
+    pads: NDBuffer[1, DimList.create_unknown[1](), pads_type],
     out_chain: OutputChainPtr,
 ):
     """
-    Implements the ConvTranspose operator from the ONNX spec:
-    https://github.com/onnx/onnx/blob/main/docs/Operators.md#ConvTranspose
-    Computes cumulative sum of the input elements along the given axis.
-    Cumulative sum can be inclusive or exclusive of the top element, and
-    normal or reverse (direction along a given axis).
+    Implements the ConvTranspose operator from the MO spec.
 
     Parameters:
         rank: Rank of the input, output, and kernel tensors.
         type: Type of the input, output, and kernel tensors.
-        epilogue_fn: Epilogue function used to calculate bias.
+        strides_type: Element type of strides,
+        dilations_type: Element type of dilations,
+        pads_type: Element type of pads,
 
     Args:
         output: Output data tensor that contains the result of the convolution.
@@ -79,8 +76,6 @@ fn convtranspose[
         dilations: Dilation value along each spatial axis of the filter.
         pads: Padding at the beginning and ending of each spatial axis. Follows
               the format [x1_begin, x2_begin, x1_end, x2_end].
-        output_padding: Additional elements added to the side with higher
-                        coordinate indices in the output.
         out_chain: The OutputChainPtr used to mark competion or error of the task.
     """
 
@@ -93,36 +88,24 @@ fn convtranspose[
     let S = Int(kernel.dim(3))  # Filter width
     let F = Int(kernel.dim(1))  # Number of output channels
 
-    let HO = (
-        strides[0] * (H - 1)
-        + output_padding[0]
-        + ((R - 1) * dilations[0] + 1)
-        - pads[PADS_H_START]
-        - pads[PADS_H_END]
-    ).to_int()
-    let WO = (
-        strides[1] * (W - 1)
-        + output_padding[1]
-        + ((S - 1) * dilations[1] + 1)
-        - pads[PADS_W_START]
-        - pads[PADS_W_END]
-    ).to_int()
+    let HO = Int(output.dim(2))
+    let WO = Int(output.dim(3))
 
     for n in range(N):
         for c in range(C):
             for f in range(F):
                 for i in range(H):
-                    let indX_out = i * strides[0] - pads[PADS_H_START]
+                    let indX_out = i * strides[0].to_int() - pads[
+                        PADS_H_START
+                    ].to_int()
                     for j in range(W):
-                        let indY_out = j * strides[1] - pads[PADS_W_START]
+                        let indY_out = j * strides[1].to_int() - pads[
+                            PADS_W_START
+                        ].to_int()
                         for r in range(R):
                             for s in range(S):
-                                let x_out = (
-                                    indX_out + r * dilations[0]
-                                ).to_int()
-                                let y_out = (
-                                    indY_out + s * dilations[1]
-                                ).to_int()
+                                let x_out = indX_out + r * dilations[0].to_int()
+                                let y_out = indY_out + s * dilations[1].to_int()
                                 if (
                                     x_out >= 0
                                     and x_out < HO
@@ -136,15 +119,4 @@ fn convtranspose[
                                         tmp
                                         + input[n, c, i, j] * kernel[c, f, r, s]
                                     )
-
-    # Add bias.
-    for n in range(N):
-        for i in range(HO):
-            for j in range(WO):
-                for f in range(F):
-                    let index = f
-                    output[StaticIntTuple[rank](n, f, i, j)] += epilogue_fn(
-                        f, output[StaticIntTuple[rank](n, f, i, j)]
-                    )
-
     out_chain.mark_ready()
