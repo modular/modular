@@ -659,7 +659,14 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
                             buf = buf.copy()]() mutable {
           // Extract out the bitcode from the key, as LLVM bitcode dies if the
           // buffer contains other data.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#endif
           StringRef bitcodeBuffer = ((BufferRef &)(keyBuf))->getBuffer();
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
           bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
 
           // Load the cached bytecode into a new context. This is necessary to
