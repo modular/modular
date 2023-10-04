@@ -1718,16 +1718,14 @@ struct FunctionHandle:
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()
 
+    fn __call__(self, grid_dim: Dim, block_dim: Dim, /, stream: Stream) raises:
+        self._call_impl(
+            grid_dim, block_dim, Pointer[Pointer[AnyType]](), stream=stream
+        )
+
     fn __call__[
         T0: AnyType
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        /,
-        borrowed stream: Stream,
-    ) raises:
+    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, /, stream: Stream) raises:
         var _arg0 = arg0
 
         let args = stack_allocation[1, Pointer[AnyType]]()
@@ -1744,7 +1742,7 @@ struct FunctionHandle:
         arg0: T0,
         arg1: T1,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1765,7 +1763,7 @@ struct FunctionHandle:
         arg1: T1,
         arg2: T2,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1789,7 +1787,7 @@ struct FunctionHandle:
         arg2: T2,
         arg3: T3,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1816,7 +1814,7 @@ struct FunctionHandle:
         arg3: T3,
         arg4: T4,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1851,7 +1849,7 @@ struct FunctionHandle:
         arg4: T4,
         arg5: T5,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1890,7 +1888,7 @@ struct FunctionHandle:
         arg5: T5,
         arg6: T6,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1933,7 +1931,7 @@ struct FunctionHandle:
         arg6: T6,
         arg7: T7,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1980,7 +1978,7 @@ struct FunctionHandle:
         arg7: T7,
         arg8: T8,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -2031,7 +2029,7 @@ struct FunctionHandle:
         arg8: T8,
         arg9: T9,
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -2064,7 +2062,7 @@ struct FunctionHandle:
         block_dim: Dim,
         args: Pointer[Pointer[AnyType]],
         /,
-        borrowed stream: Stream,
+        stream: Stream,
     ) raises:
         _check_error(
             _get_dylib_function[
@@ -2125,9 +2123,20 @@ struct Function[func_type: AnyType, func: func_type]:
         self,
         grid_dim: Dim,
         block_dim: Dim,
+        /,
+        stream: Stream = _StreamImpl(),
+    ) raises:
+        self.func_handle(grid_dim, block_dim, stream=stream)
+
+    fn __call__[
+        T0: AnyType
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
         arg0: T0,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(grid_dim, block_dim, arg0, stream=stream)
 
@@ -2140,7 +2149,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg0: T0,
         arg1: T1,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(grid_dim, block_dim, arg0, arg1, stream=stream)
 
@@ -2154,7 +2163,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg1: T1,
         arg2: T2,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(grid_dim, block_dim, arg0, arg1, arg2, stream=stream)
 
@@ -2169,7 +2178,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg2: T2,
         arg3: T3,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim, block_dim, arg0, arg1, arg2, arg3, stream=stream
@@ -2187,7 +2196,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg3: T3,
         arg4: T4,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, stream=stream
@@ -2211,7 +2220,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg4: T4,
         arg5: T5,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim,
@@ -2245,7 +2254,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg5: T5,
         arg6: T6,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim,
@@ -2282,7 +2291,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg6: T6,
         arg7: T7,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim,
@@ -2322,7 +2331,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg7: T7,
         arg8: T8,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim,
@@ -2365,7 +2374,7 @@ struct Function[func_type: AnyType, func: func_type]:
         arg8: T8,
         arg9: T9,
         /,
-        borrowed stream: Stream = _StreamImpl(),
+        stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim,
