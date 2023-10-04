@@ -437,33 +437,47 @@ fn elementwise_wrapper[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    @always_inline
     @parameter
-    fn description_fn() -> String:
-        let name_str = String("name=") + trace_description
-        let shape_str = String("shape=") + String("x").join(buffer.get_shape())
+    if target == "cuda":
+        # Convey func into gpu impl
+        # Calculate blockDimX etc.
+        # Load CUfunction
+        # Launch kernel using out_chain.get_stream()
+        pass
+    else:
 
-        let vector_width_str = String("vector_width=") + simd_width
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            let name_str = String("name=") + trace_description
+            let shape_str = String("shape=") + String("x").join(
+                buffer.get_shape()
+            )
 
-        let info = String(";").join(name_str, shape_str, vector_width_str)
+            let vector_width_str = String("vector_width=") + simd_width
 
-        return (
-            info
-            + String(";single_thread_blocking_override=")
-            + single_thread_blocking_override
+            let info = String(";").join(name_str, shape_str, vector_width_str)
+
+            return (
+                info
+                + String(";single_thread_blocking_override=")
+                + single_thread_blocking_override
+            )
+
+        out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
+
+        _elementwise_impl[
+            rank, simd_width, single_thread_blocking_override, func
+        ](
+            buffer.dynamic_shape,
+            out_chain,
         )
-
-    out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
-
-    _elementwise_impl[rank, simd_width, single_thread_blocking_override, func](
-        buffer.dynamic_shape,
-        out_chain,
-    )
 
 
 # ===----------------------------------------------------------------------===#
