@@ -1635,7 +1635,7 @@ struct _ModuleImpl:
         return self.handle.__bool__()
 
 
-struct Module:
+struct ModuleHandle:
     var module: _ModuleImpl
 
     fn __init__(inout self):
@@ -1650,6 +1650,15 @@ struct Module:
             ]("cuModuleLoad")(Pointer.address_of(module), path_str._as_ptr())
         )
         _ = path_str
+        self.module = module
+
+    fn __init__(inout self, content: StringRef) raises:
+        var module = _ModuleImpl()
+        _check_error(
+            _get_dylib_function[
+                fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
+            ]("cuModuleLoadData")(Pointer.address_of(module), content.data)
+        )
         self.module = module
 
     fn __init__(inout self, content: String) raises:
@@ -1669,13 +1678,17 @@ struct Module:
                 )(self.module)
             )
 
-    fn load(self, name: String) raises -> Function:
-        var func = Function()
+    fn load(self, name: String) raises -> FunctionHandle:
+        var func = FunctionHandle()
         _check_error(
             _get_dylib_function[
+                # fmt: off
                 fn (
-                    Pointer[Function], _ModuleImpl, DTypePointer[DType.int8]
+                    Pointer[FunctionHandle],
+                    _ModuleImpl,
+                    DTypePointer[DType.int8]
                 ) -> Result
+                # fmt: on
             ]("cuModuleGetFunction")(
                 Pointer.address_of(func), self.module, name._as_ptr()
             )
@@ -1684,13 +1697,13 @@ struct Module:
 
 
 # ===----------------------------------------------------------------------===#
-# Function
+# FunctionHandle
 # ===----------------------------------------------------------------------===#
 
 
 @value
 @register_passable("trivial")
-struct Function:
+struct FunctionHandle:
     var handle: DTypePointer[DType.invalid]
 
     fn __init__() -> Self:
@@ -2021,7 +2034,7 @@ struct Function:
             _get_dylib_function[
                 # fmt: off
                 fn (
-                  Function,
+                  Self,
                   UInt32, # GridDimZ
                   UInt32, # GridDimY
                   UInt32, # GridDimX
@@ -2047,6 +2060,232 @@ struct Function:
                 args,
                 DTypePointer[DType.invalid](),
             )
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Function
+# ===----------------------------------------------------------------------===#
+
+
+struct Function[func_type: AnyType, func: func_type]:
+    var mod_handle: ModuleHandle
+    var func_handle: FunctionHandle
+
+    fn __init__(inout self, name: String) raises:
+        alias ptx = _compile_nvptx_asm[func_type, func]()
+        self.mod_handle = ModuleHandle(StringRef(ptx))
+        self.func_handle = self.mod_handle.load(name)
+
+    fn __del__(owned self) raises:
+        pass
+
+    fn __bool__(self) -> Bool:
+        return self.func_handle.__bool__()
+
+    fn __call__[
+        T0: AnyType
+    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0) raises:
+        var _arg0 = arg0
+
+        let args = stack_allocation[1, Pointer[AnyType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+
+        self.func_handle(grid_dim, block_dim, args)
+
+    fn __call__[
+        T0: AnyType, T1: AnyType
+    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, arg1: T1) raises:
+        self.func_handle(grid_dim, block_dim, arg0, arg1)
+
+    fn __call__[
+        T0: AnyType, T1: AnyType, T2: AnyType
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+    ) raises:
+        self.func_handle(grid_dim, block_dim, arg0, arg1, arg2)
+
+    fn __call__[
+        T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+    ) raises:
+        self.func_handle(grid_dim, block_dim, arg0, arg1, arg2, arg3)
+
+    fn __call__[
+        T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType, T4: AnyType
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+    ) raises:
+        self.func_handle(grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4)
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+    ) raises:
+        self.func_handle(
+            grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, arg5
+        )
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+        T6: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+        arg6: T6,
+    ) raises:
+        self.func_handle(
+            grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, arg5, arg6
+        )
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+        T6: AnyType,
+        T7: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+        arg6: T6,
+        arg7: T7,
+    ) raises:
+        self.func_handle(
+            grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7
+        )
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+        T6: AnyType,
+        T7: AnyType,
+        T8: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+        arg6: T6,
+        arg7: T7,
+        arg8: T8,
+    ) raises:
+        self.func_handle(
+            grid_dim,
+            block_dim,
+            arg0,
+            arg1,
+            arg2,
+            arg3,
+            arg4,
+            arg5,
+            arg6,
+            arg7,
+            arg8,
+        )
+
+    fn __call__[
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
+        T5: AnyType,
+        T6: AnyType,
+        T7: AnyType,
+        T8: AnyType,
+        T9: AnyType,
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        arg2: T2,
+        arg3: T3,
+        arg4: T4,
+        arg5: T5,
+        arg6: T6,
+        arg7: T7,
+        arg8: T8,
+        arg9: T9,
+    ) raises:
+        self.func_handle(
+            grid_dim,
+            block_dim,
+            arg0,
+            arg1,
+            arg2,
+            arg3,
+            arg4,
+            arg5,
+            arg6,
+            arg7,
+            arg8,
+            arg9,
         )
 
 
@@ -2161,3 +2400,36 @@ fn _copy_device_to_host[
 
 fn synchronize() raises:
     _check_error(_get_dylib_function[fn () -> Result]("cuCtxSynchronize")())
+
+
+# ===----------------------------------------------------------------------===#
+# Compilation
+# ===----------------------------------------------------------------------===#
+
+
+alias NVPTXTarget = __mlir_attr[
+    `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+    `arch = "sm_75", `,
+    `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+    `simd_bit_width = 128> : !kgen.target`,
+]
+
+
+fn __compile_nvptx_asm[
+    func_type: AnyType, func: func_type->asm: StringLiteral
+]():
+    param_return[
+        __mlir_attr[
+            `#kgen.param.expr<compile_assembly,`,
+            NVPTXTarget,
+            `, `,
+            func,
+            `> : !kgen.string`,
+        ]
+    ]
+
+
+fn _compile_nvptx_asm[func_type: AnyType, func: func_type]() -> StringLiteral:
+    alias asm: StringLiteral
+    __compile_nvptx_asm[func_type, func -> asm]()
+    return asm
