@@ -294,6 +294,12 @@ ASTType SharedState::getNoneType() const { return impl->noneType; }
 NoneAttr SharedState::getNoneAttr() const { return impl->noneAttr; }
 ASTType SharedState::getLifetimeType() const { return impl->lifetimeType; }
 
+StringAttr SharedState::getMangledParameterName(const Twine &baseName,
+                                                SMLoc loc) {
+  auto [line, col] = getSourceMgr().getLineAndColumn(loc);
+  return StringAttr::get(getContext(), mangleParameter(baseName, line, col));
+}
+
 /// Add declarations for magic things to the builtins decl.
 void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   DeclResolver &resolver = *declResolver;

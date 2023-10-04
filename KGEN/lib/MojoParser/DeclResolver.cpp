@@ -1464,9 +1464,9 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
     // Bind the parsed type expression so references from other parameters
     // can be resolved. The parameter names in ParamDeclAttr are mangled with
     // the location so that parameter names in mojo are unique in the IR.
-    auto [line, col] = emitter.getSourceMgr().getLineAndColumn(arg.loc);
-    auto newDecl =
-        ParamDeclAttr::get(mangleParameter(arg.name, line, col), type);
+    auto newDecl = ParamDeclAttr::get(
+        emitter.shared.getMangledParameterName(arg.name.getValue(), arg.loc),
+        type);
     params.push_back(newDecl);
 
     // The unmangled names are also collected to aid keyword parameter binding.
@@ -1543,13 +1543,52 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
 
+/// Given a type that potentially has all of its parameters unbound, implicitly
+/// add the parameter declarations to the function input parameters.
+/// TODO(#22627): When metatypes and partial binding are in, this logic needs
+/// to be updated to work with partially bound types.
+static ASTType
+addImplicitTypeParams(SharedState &shared, ASTType type,
+                      const ParsedArgument &arg,
+                      SmallVectorImpl<StringAttr> &inputParamNames,
+                      SmallVectorImpl<ParamDeclAttr> &inputParamDecls) {
+  // Look for a struct type.
+  ASTDecl *decl = type.getDecl(shared);
+  if (!decl)
+    return type;
+  auto structDecl = dyn_cast<StructDeclOp>(decl->getIfOperation());
+  if (!structDecl)
+    return type;
+
+  // Check if the type has unbound parameters.
+  ArrayRef<ParamDeclAttr> inputParams = structDecl.getInputParams();
+  if (inputParams.empty() || !type.getParamBindings().empty())
+    return type;
+
+  unsigned nameCounter = 0;
+  SmallVector<ParamBindAttr> bindings;
+  for (ParamDeclAttr decl : inputParams) {
+    auto funcDecl = ParamDeclAttr::get(
+        shared.getMangledParameterName(
+            arg.name.getValue() + Twine(nameCounter++), arg.loc),
+        decl.getType());
+    inputParamNames.push_back(StringAttr::get(shared.getContext()));
+    inputParamDecls.push_back(funcDecl);
+    bindings.push_back(
+        ParamBindAttr::get(decl.getName(), ParamDeclRefAttr::get(funcDecl)));
+  }
+  return DeclRefType::get(cast<DeclRefType>(type.mlirType).getSymbol(),
+                          bindings);
+}
+
 ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     function_ref<ParseResult()> reportError, SharedState &shared,
-    ExprEmitter &typeEmitter, const ExprNode *resultTypeExpr,
-    FnEffects &effects, SmallVectorImpl<ParsedArgument> &args,
-    SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaults,
-    bool isDef, SMLoc resultLoc, ASTDecl &scope, SpecialFunctionInfo fnInfo,
-    StringRef funcName) {
+    ExprEmitter &typeEmitter, SmallVectorImpl<StringAttr> &inputParamNames,
+    SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
+    const ExprNode *resultTypeExpr, FnEffects &effects,
+    SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
+    SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
+    ASTDecl &scope, SpecialFunctionInfo fnInfo, StringRef funcName) {
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
   ASTType resultType;
@@ -1617,7 +1656,10 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
   for (auto [idx, arg] : llvm::enumerate(llvm::drop_begin(args, skipIndex))) {
     ASTType type;
     if (arg.typeExpr) {
-      type = typeEmitter.emitExprType(arg.typeExpr);
+      // Emit the argument type. Allow argument types to be "automatically"
+      // parameterized: if the type is fully unbound, its input parameters are
+      // appended to the function input parameters.
+      type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
 
       // If the type couldn't be emitted, mark this argument erroneous (so uses
       // within the body of the function don't trigger secondary errors) and
@@ -1628,6 +1670,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
           return {};
         type = shared.getTypeCheckErrorType();
       }
+      type = addImplicitTypeParams(shared, type, arg, inputParamNames,
+                                   inputParamDecls);
     }
     argTypes.push_back(type);
 
@@ -2609,8 +2653,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
-      reportError, shared, typeEmitter, resultTypeExpr, effects, args, argTypes,
-      argDefaults, funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), fnInfo);
+      reportError, shared, typeEmitter, paramNames, inputParamDecls,
+      resultTypeExpr, effects, args, argTypes, argDefaults, funcOp.getIsDef(),
+      resultLoc, *decl.getParentDecl(), fnInfo);
   if (!resultType)
     return failure();
 

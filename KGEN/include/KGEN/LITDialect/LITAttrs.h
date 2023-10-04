@@ -22,9 +22,9 @@ class MetaTypeType;
 class StructFieldOp;
 
 /// Mangle a parameter name with the line and column index where it's declared.
-inline std::string mangleParameter(StringRef name, unsigned line,
+inline std::string mangleParameter(const Twine &baseName, unsigned line,
                                    unsigned col) {
-  return ("_" + Twine(line) + "x" + Twine(col) + "_" + name).str();
+  return ("_" + Twine(line) + "x" + Twine(col) + "_" + baseName).str();
 }
 
 /// Demangle a mangled parameter name if it is mangled.

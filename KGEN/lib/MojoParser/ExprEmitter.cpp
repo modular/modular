@@ -1406,7 +1406,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 //===----------------------------------------------------------------------===//
 // Emission helpers for specific value types.
 
-ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
+ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   // We have two ambiguous expressions that can either be types or dynamic
   // values: an empty tuple () and None.  In a type context, we want to treat
   // these as types, and not dynamic values.  Sniff these out to see if we have
@@ -1433,6 +1433,13 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
   // can only handle fully bound types.
   auto *decl = type.getDecl(shared);
   if (!decl) // MLIR types are never parameterized.
+    return type;
+
+  // If the caller accepts a fully unbound type and the type is unbound, return
+  // it now without verifying the bindings.
+  // TODO(#22627): When metatypes and partial binding are in, this logic needs
+  // to be updated to allow partial binding.
+  if (allowUnbound && type.getParamBindings().empty())
     return type;
 
   auto structDecl = dyn_cast<StructDeclOp>(*decl);

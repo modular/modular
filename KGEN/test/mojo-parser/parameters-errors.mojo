@@ -26,9 +26,6 @@ struct Thing[a: Int, b: Int]:
 fn GoodUseOfThing(a: Thing[4, 5]):
   pass
 
-fn MissingThingMetaParams(a: Thing):  # expected-error {{'Thing' expects 2 input parameters, but 0 were specified}}
-  pass
-
 # expected-error-re @below {{cannot apply more parameters to an already parameterized type 'Thing[{{.*}}1{{.*}}, {{.*}}2{{.*}}]'}}
 fn MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
