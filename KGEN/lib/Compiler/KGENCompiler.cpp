@@ -206,6 +206,8 @@ static ErrorOr<BufferRef> compileElaboratorAsm(GeneratorOp func,
       AsyncValueRef<Chain>::createReady(runtime), std::move(key),
       std::move(runTransformation), onCacheHit);
   await(result);
+  if (result.isError())
+    return std::move(result.takeDiagnostic().getMessage());
   return std::move(result.get<BufferRef>());
 }
 

@@ -228,6 +228,11 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
       cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
   assert(func && "expected a valid generator reference");
 
+  // Specialize the generator with another target by slicing it and its
+  // transitive dependencies out of the IR and re-invoking the elaborator. If it
+  // turns out that the specialization has more than one implementation, then
+  // the elaborator invocation will fail due to multiple implementations of a
+  // primary generator, and the functor will return an error.
   ErrorOr<BufferRef> buffer =
       elaborator->getCompileAsmFn()(func, symtabCopy, target);
   if (buffer.isError()) {
