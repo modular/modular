@@ -1325,12 +1325,14 @@ static PValue substituteParametersIntoUserDefinedType(
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
   for (const Operand &operand : subscript.operands) {
-    // TODO(#22021): Add support for keyword parameters in structs.
-    assert(!operand.isKeyword() && "keyword parameters not supported yet");
     auto indexVal = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
     if (!indexVal)
       return {};
-    paramBindings.add(operand.value, indexVal.get());
+
+    if (operand.isKeywordOrUnpackedKeyword())
+      paramBindings.add(operand.value, indexVal.get(), operand.name);
+    else
+      paramBindings.add(operand.value, indexVal.get());
   }
 
   // Check the bindings.
@@ -1519,15 +1521,6 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types.
     if (auto declRef = dyn_cast<DeclRefType>(typeValue)) {
-      // TODO(#22021): Support keyword parameters in structs
-      for (const Operand &operand : operands) {
-        SMLoc loc = operand.getLoc();
-        if (operand.isKeyword()) {
-          emitter.emitError(loc,
-                            "keyword parameters in structs not supported yet");
-          return {};
-        }
-      }
       PValue result =
           substituteParametersIntoUserDefinedType(declRef, *this, emitter);
       return emitter.emitResult(result, this, dest);

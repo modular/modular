@@ -199,7 +199,7 @@ struct M:
     return M(0)
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam
-# CHECK-SAME: <[[PARAM:.*]]: !lit.signature
+# CHECK-SAME: <[[PARAM:.*]][comparator]: !lit.signature
 # CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow)
 struct StructWithFuncParam[comparator: fn[T: AnyType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
@@ -1262,7 +1262,7 @@ struct MemoryType:
 struct RegType: pass
 
 # CHECK-LABEL: lit.struct.decl @ParamType
-# CHECK-SAME: <[[A:.*]]: !Int>
+# CHECK-SAME: <[[A:.*]][a]: !Int>
 @register_passable
 struct ParamType[a: Int]: pass
 

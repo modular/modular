@@ -23,20 +23,20 @@ lit.func @vardecl<ty : dtype>(%x : i32) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7>
-lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7> {
+// CHECK-LABEL: lit.struct.decl @SomeStruct<_1x2_ty[ty]: dtype, _1x7_n[n]: scalar<si32> = 7>
+lit.struct.decl @SomeStruct<_1x2_ty[ty]: dtype, _1x7_n[n]: scalar<si32> = 7> {
   // CHECK-NEXT: lit.func @foo() {
   lit.func @foo() {
     kgen.return
   }
 
-  // CHECK: %size = lit.varlet.decl "size" var : !lit.ref<mut scalar<ty>, life>
-  %size = lit.varlet.decl "size" var : !lit.ref<mut scalar<ty>, life>
+  // CHECK: %size = lit.varlet.decl "size" var : !lit.ref<mut scalar<_1x2_ty>, life>
+  %size = lit.varlet.decl "size" var : !lit.ref<mut scalar<_1x2_ty>, life>
 
   // CHECK: lit.func @getMyType
-  // CHECK-NEXT: kgen.param.constant: dtype = <ty>
+  // CHECK-NEXT: kgen.param.constant: dtype = <_1x2_ty>
   lit.func @getMyType() -> !kgen.dtype {
-    %dtype = kgen.param.constant: dtype = <ty>
+    %dtype = kgen.param.constant: dtype = <_1x2_ty>
     kgen.return %dtype : !kgen.dtype
   }
 }

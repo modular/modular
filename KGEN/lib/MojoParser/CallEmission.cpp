@@ -398,13 +398,10 @@ InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
     evaluator.setParameterValue(structOp.getInputParams()[declIdx], value);
   };
 
-  // TODO(#22021): support keyword parameters in structs.
-  auto emptyStr = StringAttr::get(structOp->getContext());
-  SmallVector<StringAttr> paramNames(paramTypes.size(), emptyStr);
-  auto [bindingValuesAttr, _] =
-      verifyBindings(paramTypes, paramNames, structOp.getDefaultParameters(),
-                     emitter, structOp.getParamVarArgs(), structOp.getName(),
-                     structOp.getLoc(), exprLoc, setParamValue);
+  auto [bindingValuesAttr, _] = verifyBindings(
+      paramTypes, structOp.getParamNames(), structOp.getDefaultParameters(),
+      emitter, structOp.getParamVarArgs(), structOp.getName(),
+      structOp.getLoc(), exprLoc, setParamValue);
   return bindingValuesAttr;
 }
 

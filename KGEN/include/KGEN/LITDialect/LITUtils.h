@@ -15,6 +15,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M {
+class StringArrayAttr;
 class TypeArrayAttr;
 
 namespace KGEN {
@@ -71,9 +72,11 @@ void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
 /// StructDeclOp parameter printing/parsing.
 ParseResult parseStructParameterSpec(AsmParser &p,
                                      ParamDeclArrayAttr &inputParamDecls,
+                                     StringArrayAttr &paramNames,
                                      ParameterExprArrayAttr &defaultParameters);
 void printStructParameterSpec(AsmPrinter &p, Operation *op,
                               ArrayRef<ParamDeclAttr> inputParamDecls,
+                              ArrayRef<StringAttr> paramNames,
                               ParameterExprArrayAttr defaultParameters);
 
 /// Parse an optional parameter or argument name.

@@ -408,7 +408,7 @@ fn thing_that_raises(value: Int, c: Bool) raises -> MemExample:
     raise Error("TypeError: cannot invert values of this type")
 
 # CHECK-LABEL: lit.struct.decl @Parameterized
-# CHECK-SAME: <{{.*}}level: !Int>
+# CHECK-SAME: <{{.*}}[level]: !Int>
 struct Parameterized[level: Int]:
     fn __init__(inout self): pass
 
