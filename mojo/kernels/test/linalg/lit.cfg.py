@@ -35,8 +35,14 @@ config.test_exec_root = os.path.join(
 if is_apple_silicon():
     config.available_features.add("apple-m1")
 
-if platform.system() == "Linux" and "avx2" in Path("/proc/cpuinfo").read_text():
-    config.available_features.add("avx2")
+if platform.system() == "Linux":
+    cpu_info = Path("/proc/cpuinfo").read_text()
+    if "avx2" in cpu_info:
+        config.available_features.add("avx2")
+    if "avx512vnni" in cpu_info:
+        config.available_features.add("avx512vnni")
+    if "amx_tile" in cpu_info:
+        config.available_features.add("intel_amx")
 
 
 tool_dirs = [config.modular_tools_dir]

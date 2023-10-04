@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: avx2
+# REQUIRES: avx512vnni
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys.info import simdwidthof
