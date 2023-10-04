@@ -10,7 +10,6 @@ add_modular_library(LowerLIT
   ConstraintReduction.cpp
   ConstraintSet.cpp
   LowerLIT.cpp
-  LowerPreElaboratedLIT.cpp
   LowerSemanticCF.cpp
   LowerStructs.cpp
   StripParserMetadata.cpp

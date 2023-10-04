@@ -64,13 +64,14 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
     pm.addNestedPass<GeneratorOp>(createConstraintReduction());
   }
 }
+
 void KGEN::buildElaborateModulePipeline(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     BuildInfoAttr build, EvaluatorExecutorFn evaluatorExecutorFn,
     ElaboratorCompileAsmFn compileAsmFn, const CompilationOptions &options) {
   // At the end of the LIT lowering pipeline, pull in the bodies of constructs
   // that were already elaborated.
-  pm.addPass(createLowerPreElaboratedLIT());
+  pm.addPass(createMaterializePackages());
 
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.

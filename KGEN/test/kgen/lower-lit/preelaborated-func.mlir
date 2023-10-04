@@ -1,6 +1,6 @@
 // RUN: kgen-opt -test-generate-elaborated-body %s | FileCheck %s --check-prefix=ATTACH
 // RUN: kgen-opt -test-generate-elaborated-body -lower-lit %s | FileCheck %s --check-prefix=LOWER_LIT
-// RUN: kgen-opt -test-generate-elaborated-body -lower-lit -lower-preelaborated-lit %s | FileCheck %s
+// RUN: kgen-opt -test-generate-elaborated-body -lower-lit -materialize-packages %s | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 // The `doNotExtern` attribute is a marker for the test pass - it won't attempt to generate a kgen.func for this lit.func.
@@ -17,7 +17,7 @@ lit.func @caller() -> index attributes {doNotExtern} {
 // When the build target doesn't match the module target ("" in this case), func
 // ops are "inflated." Inflated ops have their `export` attribute removed during
 // pre-elaborated LIT lowering.
-// ATTACH: lit.package.link @link_exported_func
+// ATTACH: kgen.package.link @link_exported_func
 // ATTACH-SAME: archive(<target = {{.*}}, elaboratedModule = dense_resource<exported_func_generated_body_attr>
 // ATTACH-LABEL: lit.func export @exported_func
 // ATTACH-SAME: preCompiledModuleRef = @link_exported_func
@@ -31,7 +31,7 @@ lit.func export @exported_func(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
 
-// ATTACH: lit.package.link @link_precompiled_func
+// ATTACH: kgen.package.link @link_precompiled_func
 // ATTACH-SAME: archive(<target = {{.*}}, elaboratedModule = dense_resource<precompiled_func_generated_body_attr>
 // ATTACH-LABEL: lit.func @precompiled_func
 // ATTACH-SAME: preCompiledModuleRef = @link_precompiled_func
@@ -45,7 +45,7 @@ lit.func @precompiled_func(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
 
-// ATTACH: lit.package.link @link_different_precompiled_func
+// ATTACH: kgen.package.link @link_different_precompiled_func
 // ATTACH-SAME: archive(<target = {{.*}}, elaboratedModule = dense_resource<different_precompiled_func_generated_body_attr>
 // ATTACH-LABEL: lit.func @different_precompiled_func
 // ATTACH-SAME: preCompiledModuleRef = @link_different_precompiled_func

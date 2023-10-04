@@ -154,14 +154,19 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerPreElaboratedLIT
+// MaterializePackages
 //===----------------------------------------------------------------------===//
 
-def LowerPreElaboratedLIT : Pass<"lower-preelaborated-lit", "mlir::ModuleOp"> {
-  let summary = "Lower the pre-elaborated `lit` dialect to the `kgen` dialect.";
+def MaterializePackages : Pass<"materialize-packages", "ModuleOp"> {
+  let summary = "Materialize precompiled IR into the module.";
   let description = [{
-    This pass lowers high level abstractions, that have already been elaborated,
-    from "lit" to "kgen" and diagnoses any errors that are found along the way.
+    The `materialize-packages` pass pulls in precompiled IR into the module.
+    It finds referenced external symbols via `kgen.extern.generator` operations
+    and pulls in their bodies from `kgen.package.link` operations.
+
+    If the current module does not specify a target or specifies a target for
+    which post-elaboration IR is not available, the pass falls back to pulling
+    in pre-elaboration IR.
   }];
 
   // FIXME(#15949): Should not require all these dialects to be loaded.

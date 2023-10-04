@@ -95,7 +95,7 @@ public:
                                   const ExportMap &exportedSymbols);
 
   /// Sets the given archive on the package op that's being built.
-  void attachArchive(LIT::PackageArchiveAttr archive);
+  void attachArchive(PackageArchiveAttr archive);
 
   /// Returns an owning reference to the module that contains the newly created
   /// package, as well as the package itself. This releases the builer's owning
@@ -303,7 +303,7 @@ PackageBuilder::createPostElaborationModuleAttr(
   return bytecodeResource;
 }
 
-void PackageBuilder::attachArchive(LIT::PackageArchiveAttr archive) {
+void PackageBuilder::attachArchive(PackageArchiveAttr archive) {
   thePackage.setArchiveAttr(archive);
 }
 
@@ -484,7 +484,7 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
       createPackageArchive(symtab, exportMap, compilationOptions, runtime);
   if (archiveOr.isError())
     return archiveOr.takeError();
-  packageBuilder.attachArchive(LIT::PackageArchiveAttr::get(
+  packageBuilder.attachArchive(PackageArchiveAttr::get(
       packageArgs.target, elaboratedBytecode, archiveOr.takeValue()));
   return packageBuilder.build();
 }

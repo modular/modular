@@ -15,6 +15,7 @@ include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
+include "Support/MDialect/MAttrs.td"
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -1156,6 +1157,48 @@ def KGEN_GlobalAddressOp : KGENOp<"global.address", [Pure,
   let results = (outs PointerType:$result);
 
   let assemblyFormat = "$global attr-dict `:` type($result)";
+}
+
+//===----------------------------------------------------------------------===//
+// PackageLinkOp
+//===----------------------------------------------------------------------===//
+
+def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
+  let summary = "link to a precompiled package's artifacts";
+  let description = [{
+    A `kgen.package.link` defines a link to the compiled artifacts of a package.
+    It contains a reference to the precompiled archive, providing an anchor for
+    functions and other operations defined within the package during the
+    lowering pipeline. It may also contain the pre-elaboration body which can be
+    used to compile the package if the compiled target is not compatible with
+    the current target of compilation.
+
+    Example:
+
+    ```mlir
+    kgen.package.link @foo
+      pre_elaboration(dense_resource<...> : tensor<...xi8>)
+      archive(<target = #M.target<...>,
+               elaboratedModule = dense_resource<...> : tensor<...xi8>,
+               archive = dense_resource<...> : tensor<...xi8>>)
+    ```
+  }];
+
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
+
+    // FIXME(#17326): This should be a map of precompiled targets, not one.
+    KGEN_EnvAttr:$compiledEnv,
+    KGEN_PackageArchiveAttr:$archive
+  );
+
+  let assemblyFormat = [{
+    $sym_name
+    (`pre_elaboration` `(` $preElaborationModule^ `)`)?
+     `archive` `(` $archive `)`
+    attr-dict-with-keyword
+  }];
 }
 
 //===----------------------------------------------------------------------===//

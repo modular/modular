@@ -58,12 +58,6 @@ def LITDialectTypes : DialectTypes<"lit"> {
 // LITDialect Attributes
 //===----------------------------------------------------------------------===//
 
-def PackageArchiveAttr : DialectAttribute<(attr
-  ConcreteAttribute<"TargetInfoAttr">:$target,
-  ConcreteAttribute<"DenseResourceElementsAttr">:$elaboratedModule,
-  ConcreteAttribute<"DenseResourceElementsAttr">:$archive
-)>;
-
 def FnMetadataAttr : DialectAttribute<(attr
   StringAttrArray:$argNames,
   StringAttrArray:$paramNames,
@@ -107,7 +101,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     LifetimeAttr,
     UnresolvedAliasValueAttr,
     StructAttr,
-    PackageArchiveAttr
     /*StructExtractAttr*/
   ];
 }

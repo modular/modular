@@ -169,6 +169,13 @@ enum AttributeCode {
   ///    value: varint
   ///  }
   kExportKindAttr = 24,
+  ///
+  ///  PackageArchiveAttr {
+  ///    target: TargetInfoAttr
+  ///    elaboratedModule: DenseResourceElementsAttr
+  ///    archive: DenseResourceElementsAttr
+  ///  }
+  kPackageArchiveAttr = 25,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -257,6 +264,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   ExportKindAttr readExportKindAttr(BytecodeReader &reader) const;
   IntLiteralAttr readIntLiteralAttr(BytecodeReader &reader) const;
   Attribute readMLIROpAttr(BytecodeReader &reader) const;
+  PackageArchiveAttr readPackageArchiveAttr(BytecodeReader &reader) const;
   ParamBindAttr readParamBindAttr(BytecodeReader &reader) const;
   ParamDeclAttr readParamDeclAttr(BytecodeReader &reader) const;
   Attribute readParamOperatorAttr(BytecodeReader &reader) const;
@@ -285,6 +293,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(ExportKindAttr attr, BytecodeWriter &writer) const;
   void write(IntLiteralAttr attr, BytecodeWriter &writer) const;
   void write(MLIROpAttr attr, BytecodeWriter &writer) const;
+  void write(PackageArchiveAttr attr, BytecodeWriter &writer) const;
   void write(ParamBindAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclRefAttr attr, BytecodeWriter &writer) const;
@@ -377,6 +386,8 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readArrayOfAttrs<DecoratorsAttr>(reader);
   case Encoding::kExportKindAttr:
     return readExportKindAttr(reader);
+  case Encoding::kPackageArchiveAttr:
+    return readPackageArchiveAttr(reader);
   default:
     reader.emitError() << "unknown kgen attribute code: " << code;
     return Attribute();
@@ -397,10 +408,10 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
   return TypeSwitch<Attribute, LogicalResult>(attr)
       .Case<BuildInfoParamAttr, ConcreteTypeConstantAttr, ConstraintAttr,
             DTypeConstantAttr, EnvAttr, ExportKindAttr, IntLiteralAttr,
-            MLIROpAttr, ParamBindAttr, ParamDeclAttr, ParamDeclRefAttr,
-            ParamIndexRefAttr, ParamOperatorAttr, ParameterizedTypeConstantAttr,
-            SymbolConstantAttr, TargetParamAttr, UnboundAttr, UnknownAttr,
-            VariadicAttr>([&](auto attr) {
+            MLIROpAttr, PackageArchiveAttr, ParamBindAttr, ParamDeclAttr,
+            ParamDeclRefAttr, ParamIndexRefAttr, ParamOperatorAttr,
+            ParameterizedTypeConstantAttr, SymbolConstantAttr, TargetParamAttr,
+            UnboundAttr, UnknownAttr, VariadicAttr>([&](auto attr) {
         write(attr, writer);
         return success();
       })
@@ -592,6 +603,28 @@ void KGENBytecodeInterface::write(MLIROpAttr attr,
   writer.writeAttribute(attr.getName());
   writer.writeAttribute(attr.getAttrs());
   writer.writeType(attr.getType());
+}
+
+//===----------------------------------------------------------------------===//
+// PackageArchiveAttr
+
+PackageArchiveAttr
+KGENBytecodeInterface::readPackageArchiveAttr(BytecodeReader &reader) const {
+  TargetInfoAttr target;
+  DenseResourceElementsAttr elaboratedModule, archive;
+  if (failed(reader.readAttribute(target)) ||
+      failed(reader.readAttribute(elaboratedModule)) ||
+      failed(reader.readAttribute(archive)))
+    return {};
+  return PackageArchiveAttr::get(target, elaboratedModule, archive);
+}
+
+void KGENBytecodeInterface::write(PackageArchiveAttr attr,
+                                  BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kPackageArchiveAttr);
+  writer.writeAttribute(attr.getTarget());
+  writer.writeAttribute(attr.getElaboratedModule());
+  writer.writeAttribute(attr.getArchive());
 }
 
 //===----------------------------------------------------------------------===//
