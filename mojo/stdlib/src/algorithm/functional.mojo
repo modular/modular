@@ -1030,7 +1030,7 @@ fn elementwise[
 
     Args:
         shape: The shape of the buffer.
-        out_chain: The our chain to attach results to.
+        out_chain: The output chain to attach results to.
     """
 
     _elementwise_impl[
