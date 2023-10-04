@@ -8,6 +8,7 @@
 from os.atomic import Atomic
 from sys import external_call
 from sys.param_env import is_defined
+from gpu.nvidia_host import Stream, _StreamImpl
 
 from builtin.coroutine import _coro_resume_fn
 from memory.unsafe import DTypePointer, Pointer
@@ -406,9 +407,6 @@ struct OutputChainPtr:
     alias ptr_type = DTypePointer[DType.invalid]
     var ptr: Self.ptr_type
 
-    # Actually a CUstream
-    alias cuda_stream_handle_type = DTypePointer[DType.invalid]
-
     @always_inline
     fn __init__() -> OutputChainPtr:
         """Casts a raw null OutputChainPtr."""
@@ -546,12 +544,12 @@ struct OutputChainPtr:
         )
 
     @always_inline
-    fn get_cuda_stream(self) -> Self.cuda_stream_handle_type:
+    fn get_cuda_stream(self) -> Stream:
         """Return the CUstream to use for launching CUDA kernels from the
         CPU kernel 'shim'. These CPU kernels should never call mark_ready()."""
         return external_call[
             "KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream",
-            Self.cuda_stream_handle_type,
+            _StreamImpl,
         ](self.ptr)
 
 
