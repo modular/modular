@@ -12,6 +12,8 @@ from gpu.nvidia_host import (
     Function,
     Context,
     Dim,
+    Stream,
+    _StreamImpl,
     _malloc,
     _free,
     _copy_host_to_device,
@@ -46,6 +48,8 @@ fn run_vec_add() raises:
 
     alias length = 1024
 
+    let stream = Stream()
+
     let in0_host = Pointer[Float32].alloc(length)
     let in1_host = Pointer[Float32].alloc(length)
     let out_host = Pointer[Float32].alloc(length)
@@ -79,6 +83,7 @@ fn run_vec_add() raises:
         in1_device,
         out_device,
         length,
+        stream=stream,
     )
     synchronize()
 
@@ -106,6 +111,7 @@ fn run_vec_add() raises:
     out_host.free()
 
     _ = func ^
+    _ = stream ^
 
 
 # CHECK-NOT: CUDA_ERROR
