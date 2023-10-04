@@ -15,6 +15,8 @@ from algorithm import map
 from math import div_ceil, max, min
 from math.numerics import FlushDenormals
 from sys.info import triple_is_nvidia_cuda
+from gpu import ThreadIdx, BlockDim, BlockIdx
+from gpu.nvidia_host import Function, Dim, Stream
 
 from runtime.llcl import (
     AsyncTaskGroupPtr,
@@ -1049,6 +1051,8 @@ fn _elementwise_impl[
     simd_width: Int,
     use_blocking_impl: Bool,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
@@ -1058,12 +1062,14 @@ fn _elementwise_impl[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: If true this is a blocking op.
         func: The body function.
+        target: The target to run on.
 
     Args:
         shape: The shape of the buffer.
         out_chain: The our chain to attach results to.
     """
     constrained[rank == 1, "Specialization for 1D"]()
+    constrained[target == "cpu", "Target must be cpu"]()
 
     alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1116,6 +1122,8 @@ fn _elementwise_impl[
     simd_width: Int,
     use_blocking_impl: Bool,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
@@ -1127,6 +1135,7 @@ fn _elementwise_impl[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: If true this is a blocking op.
         func: The body function.
+        target: The target to run on.
 
     Args:
         shape: The shape of the buffer.
@@ -1134,6 +1143,7 @@ fn _elementwise_impl[
     """
 
     constrained[rank > 1, "Specialization for ND where N > 1"]()
+    constrained[target == "cpu", "Target must be cpu"]()
 
     alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1209,6 +1219,77 @@ fn _elementwise_impl[
             ](shape[rank - 1])
 
     async_parallelize[task_func](out_chain, num_workers)
+
+
+@export("_elementwise_gpu_kernel")
+fn _elementwise_gpu_kernel[
+    rank: Int,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+](shape: StaticIntTuple[rank]):
+    @parameter
+    if not triple_is_nvidia_cuda():
+        return
+
+    let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+
+
+@always_inline
+@adaptive
+fn _elementwise_impl[
+    rank: Int,
+    simd_width: Int,
+    use_blocking_impl: Bool,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
+    combination of width and indices so as to cover shape on the GPU.
+
+    All free vars in func must be "async safe", see async_parallelize.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        use_blocking_impl: If true this is a blocking op.
+        func: The body function.
+        target: The target to run on.
+
+    Args:
+        shape: The shape of the buffer.
+        out_chain: The our chain to attach results to.
+    """
+
+    constrained[rank == 1, "Specialization for 1D where N = 1"]()
+    constrained[target == "gpu", "Target must be gpu"]()
+
+    alias func_type = fn[
+        rank: Int,
+        func: fn[width: Int, rank: Int] (
+            StaticIntTuple[rank]
+        ) capturing -> None,
+    ] (StaticIntTuple[rank]) -> None
+
+    alias block_dim = 32
+    let length = shape.flattened_length()
+
+    try:
+        let gpu_func = Function[
+            func_type, rebind[func_type](_elementwise_gpu_kernel)
+        ]("_elementwise_gpu_kernel")
+        gpu_func(
+            (length // block_dim,),
+            (block_dim,),
+            shape,
+            stream=out_chain.get_cuda_stream(),
+        )
+    except e:
+        print(e)
+
+
+# ===----------------------------------------------------------------------===#
+# parallelize_over_rows
+# ===----------------------------------------------------------------------===#
 
 
 fn parallelize_over_rows[
