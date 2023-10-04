@@ -37,7 +37,7 @@ fn bar():
 
 
 @register_passable("trivial")
-# CHECK: lit.struct.decl @TrivialStuff<[[S:.*]]: variadic
+# CHECK: lit.struct.decl @TrivialStuff<[[S:.*]][size]: variadic
 struct TrivialStuff[*size: Int]:
     pass
 

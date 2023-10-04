@@ -3518,10 +3518,12 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                           decl.getParentDecl());
 
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
-  // TODO(#22021): support keyword parameters.
   SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> paramDefaults;
   SmallVector<SymbolRefAttr> traits;
+
+  structOp.setParamNamesAttr(
+      StringArrayAttr::get(structOp->getContext(), paramNames));
 
   bool paramVarArgs = false;
   SMLoc identifierLoc;
@@ -3544,6 +3546,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setParamVarArgs(paramVarArgs);
   structOp.setDefaultParametersAttr(
       ParameterExprArrayAttr::get(structOp->getContext(), paramDefaults));
+  structOp.setParamNamesAttr(
+      StringArrayAttr::get(structOp->getContext(), paramNames));
 
   if (!traits.empty())
     structOp.setTraitsAttr(

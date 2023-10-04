@@ -65,7 +65,7 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
-# CHECK-SAME: [[A:.*]]: !Int>
+# CHECK-SAME: [[A:.*]][A]: !Int>
 @value
 @register_passable
 struct TestParamStruct[A: Int]:
@@ -144,7 +144,7 @@ fn implConversion[a: StructWithIntParam[42]]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @Pair<
-# CHECK-SAME: [[DT:.*]]: !DType>
+# CHECK-SAME: [[DT:.*]][dt]: !DType>
 @register_passable
 struct Pair[dt: DType]:
  # CHECK: lit.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: !Int = {{.*}}42{{.*}}, [[SIMDDT:.*]]: !DType = [[DT]]>>
@@ -177,7 +177,7 @@ fn makePair(a: OurSIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
   return Pair[DType.float32]{a: a, b: b}
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
-# CHECK-SAME: <[[TYPE:.*]]: type>
+# CHECK-SAME: <[[TYPE:.*]][type]: type>
 struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
   # CHECK: @"bar($parameters::TypeParameter{{.*}})"(%self: {{.*}} borrow_in_mem, %val: !kgen.paramref<[[TYPE]]> borrow)
   fn bar(self, val: type):
@@ -185,7 +185,7 @@ struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
 
 # Test that parameter decls can refine subsequent ones in the same param list.
 # CHECK-LABEL: lit.struct.decl @ParamSubst
-# CHECK-SAME: <[[TYPE:.*]]: type, [[SH:.*]]: variadic<[[TYPE]]>>
+# CHECK-SAME: <[[TYPE:.*]][type]: type, [[SH:.*]][shape]: variadic<[[TYPE]]>>
 struct ParamSubst[
     type: AnyType,
     shape: __mlir_type[`!kgen.variadic<`, type,`>`],
@@ -474,7 +474,7 @@ alias boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
 alias FOURTY_TWO = 42
 
 # CHECK-LABEL: lit.struct.decl @A
-# CHECK-SAME: <[[V:.*]]: !Int>
+# CHECK-SAME: <[[V:.*]][v]: !Int>
 struct A[v: Int]:
   # CHECK: lit.alias.decl {{.*}}member: !Int = <apply({{.*}}__add__{{.*}}, [[V]], {{.*}}42
   alias member = v + FOURTY_TWO
@@ -516,7 +516,7 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup
-# CHECK-SAME: <[[PARAM:.*]]: !Int>
+# CHECK-SAME: <[[PARAM:.*]][param]: !Int>
 struct UnqualAliasLookup[param: Int]:
   # CHECK: lit.alias.decl {{.*}}member: !Int = <apply({{.*}}__add__{{.*}}, [[PARAM]], {{.*}}1{{.*}})>
   alias member = param+1
@@ -533,7 +533,7 @@ fn fnWithVariadics[*b: Int]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithVariadics
-# CHECK-SAME: <[[B:.*]]: variadic<!Int>>
+# CHECK-SAME: <[[B:.*]][b]: variadic<!Int>>
 struct StructWithVariadics[*b: Int]:
     fn __init__(inout self, i: Int):
         pass
@@ -890,7 +890,7 @@ fn test_default_param_struct_all_default():
 
 
 ##===----------------------------------------------------------------------===##
-# Keyword parameters
+# Function keyword parameters
 ##===----------------------------------------------------------------------===##
 
 fn take_kw_params[a: Int, b: Int = 2, c: Int = 3](): pass
@@ -940,3 +940,26 @@ fn test_kw_params_overload[a: Int, b: Int]():
     overloaded_kw_param[b=b, a=a]()
     # CHECK: kgen.call @{{.*}}@"overloaded_kw_param[{{.*}}::Int,{{.*}}::MyInt]()"
     overloaded_kw_param[b = MyInt(b), a=a]()
+
+
+##===----------------------------------------------------------------------===##
+# Struct keyword parameters
+##===----------------------------------------------------------------------===##
+
+@value
+struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3]: pass
+
+# CHECK-LABEL: lit.func @"test_struct_kw_params()"
+fn test_struct_kw_params():
+    # CHECK: lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 3}>>,
+    _ = KwParamStruct[5, b=7]()
+    # CHECK: lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    _ = KwParamStruct[5, b=7, c=9]()
+    # CHECK: lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 2}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    _ = KwParamStruct[5, c=9]()
+    # CHECK: lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    _ = KwParamStruct[5, c=9, b=7]()
+    # CHECK: lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    _ = KwParamStruct[a=5, c=9, b=7]()
+    # CHECK: lit.varlet.decl {{.*}} var synth : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    _ = KwParamStruct[c=9, b=7, a=5]()

@@ -13,7 +13,8 @@ lit.struct.decl @SomeStruct {
 }) {sym_name = "StructArgs",
     decorators = #kgen<decorators[]>,
     defaultParameters = #kgen<exprs[]>,
-    inputParams = #kgen<param.decls[]>
+    inputParams = #kgen<param.decls[]>,
+    paramNames = #M<strings[]>
     } : () -> ()
 
 // -----

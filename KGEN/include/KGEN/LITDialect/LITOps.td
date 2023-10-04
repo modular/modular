@@ -277,6 +277,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     KGEN_ParamDeclArrayAttr:$inputParams,
+    StringArrayAttr:$paramNames,
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$paramVarArgs,
     KGEN_ParameterExprArrayAttr:$defaultParameters,
@@ -291,7 +292,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
-    $sym_name `` custom<StructParameterSpec>($inputParams, $defaultParameters)
+    $sym_name ``
+    custom<StructParameterSpec>($inputParams, $paramNames, $defaultParameters)
     (`(`$traits^`)`)?
     attr-dict-with-keyword custom<OptionalDecorators>($decorators)
     $fields

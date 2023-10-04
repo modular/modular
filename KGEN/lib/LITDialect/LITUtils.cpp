@@ -175,29 +175,30 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
 
 ParseResult
 LIT::parseStructParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
+                              StringArrayAttr &paramNames,
                               ParameterExprArrayAttr &defaultParameters) {
   SmallVector<TypedAttr> defaultParams;
-  // TODO(#22021): add support for keyword parameters.
-  SmallVector<StringAttr> paramNames;
+  SmallVector<StringAttr> paramNamesArr;
   ParamDeclArrayAttr resultParams;
   llvm::SMLoc loc = p.getCurrentLocation();
-  if (parseOptionalParameterSpec(p, inputParamDecls, resultParams, paramNames,
-                                 defaultParams))
+  if (parseOptionalParameterSpec(p, inputParamDecls, resultParams,
+                                 paramNamesArr, defaultParams))
     return failure();
   if (!resultParams.empty())
     return p.emitError(loc, "expected no result parameters");
-  defaultParameters =
-      ParameterExprArrayAttr::get(p.getContext(), defaultParams);
+
+  MLIRContext *ctx = p.getContext();
+  defaultParameters = ParameterExprArrayAttr::get(ctx, defaultParams);
+  paramNames = StringArrayAttr::get(ctx, paramNamesArr);
+
   return success();
 }
 
 void LIT::printStructParameterSpec(AsmPrinter &p, Operation *op,
                                    ArrayRef<ParamDeclAttr> inputParamDecls,
+                                   ArrayRef<StringAttr> paramNames,
                                    ParameterExprArrayAttr defaultParameters) {
   ParameterEvaluator evaluator;
-  // TODO(#22021): add support for keyword parameters.
-  auto emptyStr = StringAttr::get(op->getContext());
-  SmallVector<StringAttr> paramNames(inputParamDecls.size(), emptyStr);
   printOptionalParameterSpec(
       p, inputParamDecls,
       /*resultParamDecls=*/{}, paramNames,

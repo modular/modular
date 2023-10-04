@@ -839,7 +839,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
-        DecoratorsAttr::get(ctx, {}), /*paramVarArgs=*/false,
+        StringArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
+        /*paramVarArgs=*/false,
         /*defaultParameters=*/ParameterExprArrayAttr::get(ctx, {}),
         /*registerPassable=*/0,
         /*traits=*/nullptr,

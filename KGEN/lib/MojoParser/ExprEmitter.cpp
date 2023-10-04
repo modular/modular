@@ -1447,7 +1447,6 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
     return type;
 
   // Build up a InputParamBindings set to validate and check the bindings.
-  // TODO(#22021): Add support for keyword parameters in structs.
   InputParamBindings paramBindings;
   for (ParamBindAttr binding : type.getParamBindings())
     paramBindings.addPrechecked(binding.getValue());

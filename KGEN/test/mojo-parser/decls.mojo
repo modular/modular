@@ -797,7 +797,7 @@ fn callVariadic[p: Int](x: Int):
 
 
 # CHECK-LABEL: lit.struct.decl @MyTuple
-# CHECK-SAME: <[[TUPLETS:.*]]: variadic<type>>
+# CHECK-SAME: <[[TUPLETS:.*]][Ts]: variadic<type>>
 struct MyTuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
     var elements: __mlir_type[`!pop.pack<`, Ts, `>`]
 
@@ -961,7 +961,7 @@ struct EmptyStruct:
 
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.struct.decl @OneLineStruct<{{.*}}size: !Int> {
+# CHECK-LABEL: lit.struct.decl @OneLineStruct<{{.*}}[size]: !Int> {
 struct OneLineStruct[size: Int]:
     pass
     pass
