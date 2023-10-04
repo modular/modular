@@ -1646,7 +1646,7 @@ void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
       if (failed(
               collectConcreteImplementations(call, inode, genNode, concrete)))
         break;
-      // Process the multiple concrete nodes. If this causing multi-versioning,
+      // Process the multiple concrete nodes. If this causes multi-versioning,
       // the forks will correctly get rescheduled on the worklists with no
       // stacks, and then immediately fallthrough to this function.
       ElaborationState result = completeGeneratorUserProcessing(

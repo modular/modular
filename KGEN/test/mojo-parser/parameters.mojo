@@ -66,14 +66,9 @@ fn call_generic[dt: DType]():
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
 # CHECK-SAME: [[A:.*]]: !Int>
+@value
 @register_passable
 struct TestParamStruct[A: Int]:
-
-  fn __copyinit__(self) -> Self:
-    return Self{}
-
-  fn __init__() -> TestParamStruct[A]:
-    return TestParamStruct[A]{}
 
   # CHECK: lit.func @"method{{.*}}<[[B:.*_B]][B]: !Int>(%self: !kgen.declref<{{.*}}TestParamStruct<[[A]]: !Int = [[A]]>> borrow,
   # CHECK-SAME: %other: !kgen.declref<@"$parameters"::@TestParamStruct<[[A]]: !Int = apply({{.*}}__add__{{.*}}, [[A]], [[B]])>> borrow)
@@ -234,6 +229,42 @@ struct TwoParams[a: Int, b: Int]:
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
+# CHECK-LABEL: lit.func @"my_constrained{{.*}}()"
+# CHECK-SAME: <[[COND:.*_cond]][cond]: !Bool, [[MESSAGE:.*_message]][message]: !StringLiteral>
+fn my_constrained[cond: Bool, message: StringLiteral]():
+    # CHECK: kgen.param.assert <apply({{.*}}__mlir_i1__{{.*}}, [[COND]])>, #lit.struct.extract<{{.*}}[[MESSAGE]], "value">
+    __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
+    return
+
+
+# CHECK-LABEL: lit.func @"pass_str_param
+fn pass_str_param():
+    # CHECK: kgen.call {{.+}}my_constrained{{.*}}"<{{.*}}true{{.*}}, :!StringLiteral {{.*}}"foo"{{.*}}>()
+    my_constrained[1==1, "foo"]()
+
+# CHECK-LABEL: lit.func @"implicit_params
+# CHECK-SAME: <{{.*}}value0: !Int, {{.*}}value1: !Int>
+# CHECK-SAME: %value: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}value0, {{.*}}b: !Int = {{.*}}value1>
+fn implicit_params(value: TwoParams):
+    pass
+
+# CHECK-LABEL: lit.func @"implicit_params_with_others
+# CHECK-SAME: <{{.*}}a[a]: !Int, {{.*}}lhs0: !Int, {{.*}}lhs1: !Int, {{.*}}rhs0: !Int, {{.*}}rhs1: !Int>
+# CHECK-SAME: %lhs: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}lhs0, {{.*}}b: !Int = {{.*}}lhs1>
+# CHECK-SAME: %rhs: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}rhs0, {{.*}}b: !Int = {{.*}}rhs1>
+fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
+    pass
+
+# CHECK-LABEL: lit.func @"infer_implicit_params()"
+fn infer_implicit_params():
+    # CHECK: call {{.*}}implicit_params{{.*}}<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 2}>
+    let one = TwoParams[1, 2]()
+    implicit_params(one)
+    let two = TwoParams[3, 4]()
+    # CHECK: call {{.*}}implicit_params_with_others{{.*}}<:!Int #lit.struct<{value = 42}>,
+    # CHECK-SAME: :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!Int #lit.struct<{value = 4}>>
+    implicit_params_with_others[42](one, two)
+
 ##===----------------------------------------------------------------------===##
 # Memory-primary parameters
 ##===----------------------------------------------------------------------===##
@@ -287,6 +318,44 @@ fn callMemoryValueParam():
 # CHECK-SAME: <{{.*}}[value]: !MemoryType>()
 fn memoryParam[value: MemoryType]():
     pass
+
+##===----------------------------------------------------------------------===##
+# First-class functions as parameters.
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"takeCallable{{.*}}"
+# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow) -> index>>(%a: index borrow) -> index
+fn takeCallable[
+     callable: fn(__mlir_type.index) -> __mlir_type.index
+   ](a: __mlir_type.index) -> __mlir_type.index:
+  # CHECK-NEXT: %0 = kgen.call_param[!lit.signature<(index borrow) -> index>: [[CALLABLE]]](%a)
+  # CHECK-NEXT: lit.return %0
+  return callable(a)
+
+fn takeAndReturnIndex(x: __mlir_type.index) -> __mlir_type.index:
+  return x
+
+# CHECK-LABEL: lit.func @"takeAndReturnIndex
+fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
+  # CHECK: kgen.call @"$parameters"::@"takeCallable{{.*}}<:!lit.signature<(index borrow) -> index>
+  # CHECK-SAME: rebind(:!lit.signature<("x": index borrow) -> index> @"$parameters"::@"takeAndReturnIndex{{.*}}")>(%a)
+  return takeCallable[takeAndReturnIndex](a)
+
+# CHECK-LABEL: lit.func @"callableWithParam{{.*}}"<{{.*}}[type]: dtype>() -> !kgen.none
+fn callableWithParam[type: __mlir_type.`!kgen.dtype`]():
+  pass
+
+# CHECK-LABEL: lit.func @"takeCallable2
+fn takeCallable2[
+      func: fn[dt: __mlir_type.`!kgen.dtype`]() -> None
+  ]():
+      pass
+
+# CHECK-LABEL: lit.func @"passFunctionParam2
+fn passFunctionParam2():
+  # CHECK: kgen.call @"$parameters"::@"takeCallable2{{.*}}"<
+  # CHECK-SAME: :!lit.signature<<"dt": dtype>() -> !kgen.none> rebind(:!lit.signature<<"type": dtype>() -> !kgen.none> @"$parameters"::@"callableWithParam
+  takeCallable2[callableWithParam]()
 
 ##===----------------------------------------------------------------------===##
 # Result parameters
@@ -394,59 +463,6 @@ fn testMultipleParamReturn[a: Bool -> b: Int]():
     else:
         # CHECK: lit.param_return<{{.*}} 2}
         param_return[2]
-
-##===----------------------------------------------------------------------===##
-# First-class functions as parameters.
-##===----------------------------------------------------------------------===##
-
-# CHECK-LABEL: lit.func @"takeCallable{{.*}}"
-# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow) -> index>>(%a: index borrow) -> index
-fn takeCallable[
-     callable: fn(__mlir_type.index) -> __mlir_type.index
-   ](a: __mlir_type.index) -> __mlir_type.index:
-  # CHECK-NEXT: %0 = kgen.call_param[!lit.signature<(index borrow) -> index>: [[CALLABLE]]](%a)
-  # CHECK-NEXT: lit.return %0
-  return callable(a)
-
-fn takeAndReturnIndex(x: __mlir_type.index) -> __mlir_type.index:
-  return x
-
-# CHECK-LABEL: lit.func @"takeAndReturnIndex
-fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
-  # CHECK: kgen.call @"$parameters"::@"takeCallable{{.*}}<:!lit.signature<(index borrow) -> index>
-  # CHECK-SAME: rebind(:!lit.signature<("x": index borrow) -> index> @"$parameters"::@"takeAndReturnIndex{{.*}}")>(%a)
-  return takeCallable[takeAndReturnIndex](a)
-
-##===--------------------Test function with parameters---------------------===##
-
-# CHECK-LABEL: lit.func @"callableWithParam{{.*}}"<{{.*}}[type]: dtype>() -> !kgen.none
-fn callableWithParam[type: __mlir_type.`!kgen.dtype`]():
-  pass
-
-# CHECK-LABEL: lit.func @"takeCallable2
-fn takeCallable2[
-      func: fn[dt: __mlir_type.`!kgen.dtype`]() -> None
-  ]():
-      pass
-
-# CHECK-LABEL: lit.func @"passFunctionParam2
-fn passFunctionParam2():
-  # CHECK: kgen.call @"$parameters"::@"takeCallable2{{.*}}"<
-  # CHECK-SAME: :!lit.signature<<"dt": dtype>() -> !kgen.none> rebind(:!lit.signature<<"type": dtype>() -> !kgen.none> @"$parameters"::@"callableWithParam
-  takeCallable2[callableWithParam]()
-
-# CHECK-LABEL: lit.func @"my_constrained{{.*}}()"
-# CHECK-SAME: <[[COND:.*_cond]][cond]: !Bool, [[MESSAGE:.*_message]][message]: !StringLiteral>
-fn my_constrained[cond: Bool, message: StringLiteral]():
-    # CHECK: kgen.param.assert <apply({{.*}}__mlir_i1__{{.*}}, [[COND]])>, #lit.struct.extract<{{.*}}[[MESSAGE]], "value">
-    __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
-    return
-
-
-# CHECK-LABEL: lit.func @"pass_str_param
-fn pass_str_param():
-    # CHECK: kgen.call {{.+}}my_constrained{{.*}}"<{{.*}}true{{.*}}, :!StringLiteral {{.*}}"foo"{{.*}}>()
-    my_constrained[1==1, "foo"]()
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution

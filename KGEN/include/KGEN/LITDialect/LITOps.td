@@ -679,6 +679,12 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     Type getType() { return getParamDecl().getType(); }
   }];
 
+  let builders = [
+    OpBuilder<(ins "ParamDeclAttr":$decl, "TypedAttr":$value), [{
+      build($_builder, $_state, decl, value, /*docString=*/{});
+    }]>
+  ];
+
   let hasVerifier = 1;
 }
 

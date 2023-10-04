@@ -129,6 +129,9 @@ public:
   /// This returns a NoneAttr.
   NoneAttr getNoneAttr() const;
 
+  /// Get a mangled parameter name based on the source location.
+  StringAttr getMangledParameterName(const Twine &baseName, SMLoc loc);
+
   /// Emit an error.
   InflightDiag emitError(Location loc, const Twine &message = {});
   InflightDiag emitError(llvm::SMLoc loc, const Twine &message = {});

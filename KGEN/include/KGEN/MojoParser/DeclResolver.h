@@ -385,11 +385,12 @@ struct ParsedArgument {
   /// the argument conventions.
   static ASTType emitFunctionArgumentsAndResults(
       function_ref<ParseResult()> reportError, SharedState &shared,
-      ExprEmitter &typeEmitter, const ExprNode *resultTypeExpr,
-      FnEffects &effects, SmallVectorImpl<ParsedArgument> &args,
-      SmallVectorImpl<Type> &argTypes, SmallVectorImpl<TypedAttr> &defaults,
-      bool isDef, SMLoc resultLoc, ASTDecl &Scope,
-      SpecialFunctionInfo fnInfo = SpecialFunctionInfo(),
+      ExprEmitter &typeEmitter, SmallVectorImpl<StringAttr> &inputParamNames,
+      SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
+      const ExprNode *resultTypeExpr, FnEffects &effects,
+      SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
+      SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
+      ASTDecl &Scope, SpecialFunctionInfo fnInfo = SpecialFunctionInfo(),
       StringRef funcName = "");
 };
 
