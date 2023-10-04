@@ -1531,12 +1531,15 @@ struct _StreamImpl:
 struct Stream:
     var stream: _StreamImpl
 
+    fn __init__(inout self, stream: _StreamImpl):
+        self.stream = stream
+
     fn __init__(inout self, flags: Int = 0) raises:
         var stream = _StreamImpl()
 
         _check_error(
             _get_dylib_function[fn (Pointer[_StreamImpl], Int32) -> Result](
-                "cuStreamCreate_v2"
+                "cuStreamCreate"
             )(Pointer.address_of(stream), Int32(0))
         )
 
@@ -1546,7 +1549,7 @@ struct Stream:
         if self.stream:
             _check_error(
                 _get_dylib_function[fn (_StreamImpl) -> Result](
-                    "cuStreamDestroy_v2"
+                    "cuStreamDestroy"
                 )(self.stream)
             )
 
@@ -1717,17 +1720,32 @@ struct FunctionHandle:
 
     fn __call__[
         T0: AnyType
-    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0) raises:
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        /,
+        borrowed stream: Stream,
+    ) raises:
         var _arg0 = arg0
 
         let args = stack_allocation[1, Pointer[AnyType]]()
         args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType, T1: AnyType
-    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, arg1: T1) raises:
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        /,
+        borrowed stream: Stream,
+    ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
 
@@ -1735,7 +1753,7 @@ struct FunctionHandle:
         args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
         args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType
@@ -1746,6 +1764,8 @@ struct FunctionHandle:
         arg0: T0,
         arg1: T1,
         arg2: T2,
+        /,
+        borrowed stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1756,7 +1776,7 @@ struct FunctionHandle:
         args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
         args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType
@@ -1768,6 +1788,8 @@ struct FunctionHandle:
         arg1: T1,
         arg2: T2,
         arg3: T3,
+        /,
+        borrowed stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1780,7 +1802,7 @@ struct FunctionHandle:
         args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
         args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType, T4: AnyType
@@ -1793,6 +1815,8 @@ struct FunctionHandle:
         arg2: T2,
         arg3: T3,
         arg4: T4,
+        /,
+        borrowed stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1807,7 +1831,7 @@ struct FunctionHandle:
         args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
         args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType,
@@ -1826,6 +1850,8 @@ struct FunctionHandle:
         arg3: T3,
         arg4: T4,
         arg5: T5,
+        /,
+        borrowed stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1842,7 +1868,7 @@ struct FunctionHandle:
         args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
         args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType,
@@ -1863,6 +1889,8 @@ struct FunctionHandle:
         arg4: T4,
         arg5: T5,
         arg6: T6,
+        /,
+        borrowed stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1881,7 +1909,7 @@ struct FunctionHandle:
         args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
         args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType,
@@ -1904,6 +1932,8 @@ struct FunctionHandle:
         arg5: T5,
         arg6: T6,
         arg7: T7,
+        /,
+        borrowed stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1924,7 +1954,7 @@ struct FunctionHandle:
         args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
         args.store(7, Pointer.address_of(_arg7).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType,
@@ -1949,6 +1979,8 @@ struct FunctionHandle:
         arg6: T6,
         arg7: T7,
         arg8: T8,
+        /,
+        borrowed stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -1971,7 +2003,7 @@ struct FunctionHandle:
         args.store(7, Pointer.address_of(_arg7).bitcast[AnyType]())
         args.store(8, Pointer.address_of(_arg8).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn __call__[
         T0: AnyType,
@@ -1998,6 +2030,8 @@ struct FunctionHandle:
         arg7: T7,
         arg8: T8,
         arg9: T9,
+        /,
+        borrowed stream: Stream,
     ) raises:
         var _arg0 = arg0
         var _arg1 = arg1
@@ -2022,13 +2056,15 @@ struct FunctionHandle:
         args.store(8, Pointer.address_of(_arg8).bitcast[AnyType]())
         args.store(9, Pointer.address_of(_arg9).bitcast[AnyType]())
 
-        self._call_impl(grid_dim, block_dim, args)
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
 
     fn _call_impl(
         self,
         grid_dim: Dim,
         block_dim: Dim,
         args: Pointer[Pointer[AnyType]],
+        /,
+        borrowed stream: Stream,
     ) raises:
         _check_error(
             _get_dylib_function[
@@ -2056,7 +2092,7 @@ struct FunctionHandle:
                 UInt32(block_dim.y()),
                 UInt32(block_dim.z()),
                 UInt32(0),
-                _StreamImpl(),
+                stream.stream,
                 args,
                 DTypePointer[DType.invalid](),
             )
@@ -2085,18 +2121,28 @@ struct Function[func_type: AnyType, func: func_type]:
 
     fn __call__[
         T0: AnyType
-    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0) raises:
-        var _arg0 = arg0
-
-        let args = stack_allocation[1, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-
-        self.func_handle(grid_dim, block_dim, args)
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
+    ) raises:
+        self.func_handle(grid_dim, block_dim, arg0, stream=stream)
 
     fn __call__[
         T0: AnyType, T1: AnyType
-    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, arg1: T1) raises:
-        self.func_handle(grid_dim, block_dim, arg0, arg1)
+    ](
+        self,
+        grid_dim: Dim,
+        block_dim: Dim,
+        arg0: T0,
+        arg1: T1,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
+    ) raises:
+        self.func_handle(grid_dim, block_dim, arg0, arg1, stream=stream)
 
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType
@@ -2107,8 +2153,10 @@ struct Function[func_type: AnyType, func: func_type]:
         arg0: T0,
         arg1: T1,
         arg2: T2,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(grid_dim, block_dim, arg0, arg1, arg2)
+        self.func_handle(grid_dim, block_dim, arg0, arg1, arg2, stream=stream)
 
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType
@@ -2120,8 +2168,12 @@ struct Function[func_type: AnyType, func: func_type]:
         arg1: T1,
         arg2: T2,
         arg3: T3,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(grid_dim, block_dim, arg0, arg1, arg2, arg3)
+        self.func_handle(
+            grid_dim, block_dim, arg0, arg1, arg2, arg3, stream=stream
+        )
 
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType, T4: AnyType
@@ -2134,8 +2186,12 @@ struct Function[func_type: AnyType, func: func_type]:
         arg2: T2,
         arg3: T3,
         arg4: T4,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4)
+        self.func_handle(
+            grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, stream=stream
+        )
 
     fn __call__[
         T0: AnyType,
@@ -2154,9 +2210,19 @@ struct Function[func_type: AnyType, func: func_type]:
         arg3: T3,
         arg4: T4,
         arg5: T5,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
-            grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, arg5
+            grid_dim,
+            block_dim,
+            arg0,
+            arg1,
+            arg2,
+            arg3,
+            arg4,
+            arg5,
+            stream=stream,
         )
 
     fn __call__[
@@ -2178,9 +2244,20 @@ struct Function[func_type: AnyType, func: func_type]:
         arg4: T4,
         arg5: T5,
         arg6: T6,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
-            grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, arg5, arg6
+            grid_dim,
+            block_dim,
+            arg0,
+            arg1,
+            arg2,
+            arg3,
+            arg4,
+            arg5,
+            arg6,
+            stream=stream,
         )
 
     fn __call__[
@@ -2204,9 +2281,21 @@ struct Function[func_type: AnyType, func: func_type]:
         arg5: T5,
         arg6: T6,
         arg7: T7,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
-            grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7
+            grid_dim,
+            block_dim,
+            arg0,
+            arg1,
+            arg2,
+            arg3,
+            arg4,
+            arg5,
+            arg6,
+            arg7,
+            stream=stream,
         )
 
     fn __call__[
@@ -2232,6 +2321,8 @@ struct Function[func_type: AnyType, func: func_type]:
         arg6: T6,
         arg7: T7,
         arg8: T8,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim,
@@ -2245,6 +2336,7 @@ struct Function[func_type: AnyType, func: func_type]:
             arg6,
             arg7,
             arg8,
+            stream=stream,
         )
 
     fn __call__[
@@ -2272,6 +2364,8 @@ struct Function[func_type: AnyType, func: func_type]:
         arg7: T7,
         arg8: T8,
         arg9: T9,
+        /,
+        borrowed stream: Stream = _StreamImpl(),
     ) raises:
         self.func_handle(
             grid_dim,
@@ -2286,6 +2380,7 @@ struct Function[func_type: AnyType, func: func_type]:
             arg7,
             arg8,
             arg9,
+            stream=stream,
         )
 
 
