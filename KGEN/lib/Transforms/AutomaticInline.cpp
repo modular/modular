@@ -51,7 +51,8 @@ struct CallGraphNode {
   /// If an error occurred during inlining, nodes can end up owning the function
   /// upon destruction. Erase the function.
   ~CallGraphNode() {
-    if (func && isAllInlined() && !func.isExternal() && !func.isExported()) {
+    if (func && (isAllInlined() || !reachable) && !func.isExternal() &&
+        !func.isExported()) {
       func->remove();
       func->erase();
     }
@@ -528,7 +529,8 @@ void AutomaticInline::runOnOperation() {
     LLCL::ForkJoin state(*rt);
     std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
-      if (!func || (node.isAllInlined() && !func.isExported()) ||
+      if (!func ||
+          ((node.isAllInlined() || !node.reachable) && !func.isExported()) ||
           node.callSites.empty())
         continue;
 
