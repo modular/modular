@@ -3,7 +3,7 @@
 // CHECK-NOT: #doc_string
 #doc_string = #lit.doc.string<"Package docstring">
 #doc_string1 = #lit.doc.string<"Module docstrig">
-#archive = #lit.package.archive<
+#archive = #kgen.package.archive<
   target = #M.target<triple = "", arch = "", features = "", data_layout = "",
                      simd_bit_width = 256>,
   elaboratedModule = dense_resource<bytecode_0> : tensor<2893xui8>,

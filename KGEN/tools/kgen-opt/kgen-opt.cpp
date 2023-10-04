@@ -135,11 +135,11 @@ struct TestGeneratePreElaboratedBody
       OpBuilder linkBuilder(func);
       auto bytecodeBufferAttr = createResourceAttr(
           &getContext(), buffer, func.getSymName() + "_generated_body_attr");
-      linkBuilder.create<KGEN::LIT::PackageLinkOp>(
+      linkBuilder.create<KGEN::PackageLinkOp>(
           func.getLoc(), linkName, bytecodeBufferAttr,
-          M::KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
-          M::KGEN::LIT::PackageArchiveAttr::get(funcTarget, bytecodeBufferAttr,
-                                                bytecodeBufferAttr));
+          KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
+          KGEN::PackageArchiveAttr::get(funcTarget, bytecodeBufferAttr,
+                                        bytecodeBufferAttr));
     }
   }
 };
@@ -204,11 +204,11 @@ int main(int argc, char **argv) {
   KGEN::registerLowerKGENCoroutinesAsync();
   KGEN::registerLowerKGENToLLVM();
   KGEN::registerLowerLIT();
-  KGEN::registerLowerPreElaboratedLIT();
   KGEN::registerLowerPOPToLLVM();
   KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();
   KGEN::registerLowerStructs();
+  KGEN::registerMaterializePackages();
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerPruneImpossibleVariants();

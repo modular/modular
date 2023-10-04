@@ -20,6 +20,7 @@ add_modular_library(KGENTransforms
   LoopUnrolling.cpp
   LowerClosures.cpp
   LowerLoops.cpp
+  MaterializePackages.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
   RaiseForLoops.cpp

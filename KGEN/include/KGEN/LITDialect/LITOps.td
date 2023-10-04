@@ -206,7 +206,7 @@ def PackageOp : LITOp<"package", [
     // FIXME(#17326): This should be a map of precompiled targets, not one.
     OptionalAttr<KGEN_EnvAttr>:$compiledEnv,
     // An optional precompiled archive for the package.
-    OptionalAttr<LIT_PackageArchiveAttr>:$archive
+    OptionalAttr<KGEN_PackageArchiveAttr>:$archive
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -221,48 +221,6 @@ def PackageOp : LITOp<"package", [
   let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
   let skipDefaultBuilders = 1;
   let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// PackageLinkOp
-//===----------------------------------------------------------------------===//
-
-def PackageLinkOp : LITOp<"package.link", [Symbol]> {
-  let summary = "link to a precompiled package's artifacts";
-  let description = [{
-    A `lit.package.link` defines a link to the compiled artifacts of a package.
-    It contains a reference to the precompiled archive, providing an anchor for
-    functions and other operations defined within the package during the
-    lowering pipeline. It may also contain the pre-elaboration body which can be
-    used to compile the package if the compiled target is not compatible with
-    the current target of compilation.
-
-    Example:
-
-    ```mlir
-    lit.package.link @foo
-      pre_elaboration(dense_resource<...> : tensor<...xi8>)
-      archive(<target = #M.target<...>,
-               elaboratedModule = dense_resource<...> : tensor<...xi8>,
-               archive = dense_resource<...> : tensor<...xi8>>)
-    ```
-  }];
-
-  let arguments = (ins
-    SymbolNameAttr:$sym_name,
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
-
-    // FIXME(#17326): This should be a map of precompiled targets, not one.
-    KGEN_EnvAttr:$compiledEnv,
-    LIT_PackageArchiveAttr:$archive
-  );
-
-  let assemblyFormat = [{
-    $sym_name
-    (`pre_elaboration` `(` $preElaborationModule^ `)`)?
-     `archive` `(` $archive `)`
-    attr-dict-with-keyword
-  }];
 }
 
 //===----------------------------------------------------------------------===//

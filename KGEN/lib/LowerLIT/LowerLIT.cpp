@@ -482,7 +482,7 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
                                              SymbolTable &symtab) {
   // If the package wasn't compiled for anything, it's a source package, so
   // there are no link directives to insert.
-  LIT::PackageArchiveAttr archive = package.getArchiveAttr();
+  PackageArchiveAttr archive = package.getArchiveAttr();
   if (!archive)
     return success();
 

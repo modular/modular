@@ -6,7 +6,6 @@
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -25,7 +24,7 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERPREELABORATEDLIT
+#define GEN_PASS_DEF_MATERIALIZEPACKAGES
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
@@ -87,13 +86,13 @@ static LogicalResult readFromBytecode(Operation *op,
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct LowerPreElaboratedLITPass
-    : M::KGEN::impl::LowerPreElaboratedLITBase<LowerPreElaboratedLITPass> {
+struct MaterializePackagesPass
+    : impl::MaterializePackagesBase<MaterializePackagesPass> {
   void runOnOperation() override;
 };
 } // namespace
 
-void LowerPreElaboratedLITPass::runOnOperation() {
+void MaterializePackagesPass::runOnOperation() {
   auto theModule = cast<ModuleOp>(getOperation());
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
@@ -106,8 +105,7 @@ void LowerPreElaboratedLITPass::runOnOperation() {
 
   mlir::ParserConfig parserConfig(&getContext(), /*verifyAfterParse=*/false);
   for (auto &[moduleRef, funcs] : toInflate) {
-    LIT::PackageLinkOp packageLink =
-        symtab.lookup<LIT::PackageLinkOp>(moduleRef);
+    auto packageLink = symtab.lookup<PackageLinkOp>(moduleRef);
     if (!packageLink) {
       funcs[0].emitOpError("unable to find the link for preCompiledModuleRef");
       return signalPassFailure();

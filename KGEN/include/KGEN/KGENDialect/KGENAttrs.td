@@ -839,4 +839,46 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
   let assemblyFormat = "`<` $value `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// PackageArchiveAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_PackageArchiveAttr : KGENAttr<"PackageArchive", "package.archive"> {
+  let summary = "A pre-compiled, standalone archive for a package";
+  let description = [{
+    The `#kgen.package.archive` attribute stores binary artifacts for an
+    elaborated Mojo package module that has been compiled into a standalone
+    archive for a specific target.
+
+    Example:
+
+    ```mlir
+    #archive = #kgen.package.archive<
+      target = #M.target<triple = "arm64-apple-darwin21.6.0", arch="apple-m1">,
+      elaboratedModule = dense_resource<foo> : tensor<42xui8>,
+      archive = dense_resource<bar> : tensor<13xui8>
+    >
+    ```
+  }];
+
+  let parameters = (ins
+    "TargetInfoAttr":$target,
+    "DenseResourceElementsAttr":$elaboratedModule,
+    "DenseResourceElementsAttr":$archive
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "TargetInfoAttr":$target,
+      "DenseResourceElementsAttr":$elaboratedModule,
+      "DenseResourceElementsAttr":$archive), [{
+        return get(target.getContext(), target, elaboratedModule, archive);
+      }]>
+  ];
+
+  let assemblyFormat = "`<` struct(params) `>`";
+
+  let genVerifyDecl = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

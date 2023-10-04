@@ -380,6 +380,31 @@ std::optional<bool> DTypeConstantAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseIntLiteral(AsmParser &p, IPInt &result) {
+  APInt resultAP;
+  OptionalParseResult parseResult = p.parseInteger(resultAP);
+  if (!parseResult.has_value() || failed(*parseResult)) {
+    result = {};
+    return failure();
+  }
+  result = IPInt(resultAP);
+  return success();
+}
+
+static void printIntLiteral(AsmPrinter &p, const IPInt &value) {
+  p.getStream() << value;
+}
+
+Type IntLiteralAttr::getType() const {
+  return IntLiteralType::get(this->getContext());
+}
+
+bool IntLiteralAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
@@ -1907,29 +1932,22 @@ TypedAttr KGEN::emitMLIROperationCall(
 }
 
 //===----------------------------------------------------------------------===//
-// IntLiteralAttr
+// PackageArchiveAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseIntLiteral(AsmParser &p, IPInt &result) {
-  APInt resultAP;
-  OptionalParseResult parseResult = p.parseInteger(resultAP);
-  if (!parseResult.has_value() || failed(*parseResult)) {
-    result = {};
-    return failure();
-  }
-  result = IPInt(resultAP);
+LogicalResult
+PackageArchiveAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           TargetInfoAttr target,
+                           DenseResourceElementsAttr elaboratedModule,
+                           DenseResourceElementsAttr archive) {
+  if (elaboratedModule.empty())
+    return emitError() << "elaborated module cannot be empty";
+
+  if (archive.empty())
+    return emitError() << "archive cannot be empty";
+
   return success();
 }
-
-static void printIntLiteral(AsmPrinter &p, const IPInt &value) {
-  p.getStream() << value;
-}
-
-Type IntLiteralAttr::getType() const {
-  return IntLiteralType::get(this->getContext());
-}
-
-bool IntLiteralAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
