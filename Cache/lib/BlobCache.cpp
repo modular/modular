@@ -43,7 +43,7 @@ static bool checkOrCreateWriteableDirectory(std::filesystem::path path) {
     if (!std::filesystem::is_directory(path, existsErr))
       return false;
     // Otherwise, check the write access permissions for the existing directory.
-    return !llvm::sys::fs::access(path.c_str(),
+    return !llvm::sys::fs::access(path.string(),
                                   llvm::sys::fs::AccessMode::Write);
   }
 
