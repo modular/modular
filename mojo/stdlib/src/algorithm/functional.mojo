@@ -13,7 +13,7 @@ from algorithm import map
 """
 
 from math import div_ceil, max, min
-from math.numerics import FlushDenormals
+from math._numerics import FlushDenormals
 from sys.info import triple_is_nvidia_cuda
 from gpu import ThreadIdx, BlockDim, BlockIdx
 from gpu.nvidia_host import Function, Dim, Stream
