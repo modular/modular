@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from math.numerics import FPUtils
+from math._numerics import FPUtils
 
 alias FPU64 = FPUtils[DType.float64]
 
