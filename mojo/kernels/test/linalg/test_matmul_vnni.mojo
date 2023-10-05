@@ -8,7 +8,7 @@
 # and outputs a 16x16 int32 matrix
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: avx512vnni
+# REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory import memcmp

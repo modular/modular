@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: avx512vnni
+# REQUIRES: avx512_vnni
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys.info import simdwidthof
@@ -102,7 +102,7 @@ fn test_micro_kernel():
 
     matmul_inner_loop(c, a, b_packed)
 
-    # CHECK: 255.0
+    # CHECK: 255
     print(c[0, 0])
 
 

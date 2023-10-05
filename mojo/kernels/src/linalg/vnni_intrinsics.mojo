@@ -374,7 +374,7 @@ fn dot_i8_to_i32_AVX2[
             _dot_i8_to_i32_4(
                 rebind[SIMD[DType.int32, 4]](src),
                 bitcast[DType.int8, 16](rebind[SIMD[DType.int32, 4]](a)),
-                bitcast[DType.int8, 16](rebind[SIMD[DType.int32, 4]](a)),
+                bitcast[DType.int8, 16](rebind[SIMD[DType.int32, 4]](b)),
             )
         )
 

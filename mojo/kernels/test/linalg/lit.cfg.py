@@ -39,8 +39,8 @@ if platform.system() == "Linux":
     cpu_info = Path("/proc/cpuinfo").read_text()
     if "avx2" in cpu_info:
         config.available_features.add("avx2")
-    if "avx512vnni" in cpu_info:
-        config.available_features.add("avx512vnni")
+    if "avx512_vnni" in cpu_info:
+        config.available_features.add("avx512_vnni")
     if "amx_tile" in cpu_info:
         config.available_features.add("intel_amx")
 
