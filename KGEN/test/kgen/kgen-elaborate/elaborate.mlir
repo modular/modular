@@ -1963,3 +1963,16 @@ kgen.generator export @top() {
   kgen.param.constant: string = <compile_assembly(current_target(), :() -> () @kernel)>
   kgen.return
 }
+
+// -----
+
+kgen.generator @func() {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @top
+kgen.generator export @top() {
+  // CHECK: constant: string = <"func">
+  kgen.param.constant: string = <get_linkage_name(:() -> () @func)>
+  kgen.return
+}
