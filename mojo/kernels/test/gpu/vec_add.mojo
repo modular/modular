@@ -73,7 +73,7 @@ fn run_vec_add() raises:
           Int) -> None,
         # fmt: on
         vec_add
-    ]()
+    ](debug=True)
 
     let block_dim = 32
     func(
