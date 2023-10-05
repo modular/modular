@@ -186,7 +186,7 @@ struct Result:
     alias CONTEXT_ALREADY_CURRENT = Result(202)
     """This indicated that the context being supplied as a parameter to the
     API call was already the active context.
-    \\deprecated
+    [[depricated]]
     This error return is deprecated as of CUDA 3.2. It is no longer an
     error to attempt to push the active context via ::cuCtxPushCurrent().
     """
@@ -1617,6 +1617,280 @@ struct Context:
     fn __takeinit__(inout self, inout existing: Self):
         self.ctx = existing.ctx
         existing.ctx = _ContextImpl()
+
+
+# ===----------------------------------------------------------------------===#
+# JitOptions
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct JitOptions:
+    var _value: Int32
+
+    alias MAX_REGISTERS: JitOptions = 0
+    """Max number of registers that a thread may use.
+      Option type: unsigned int
+      Applies to: compiler only
+    """
+
+    alias THREADS_PER_BLOCK: JitOptions = 1
+    """IN: Specifies minimum number of threads per block to target compilation
+    for
+    OUT: Returns the number of threads the compiler actually targeted.
+    This restricts the resource utilization of the compiler (e.g. max
+    registers) such that a block with the given number of threads should be
+    able to launch based on register limitations. Note, this option does not
+    currently take into account any other resource limitations, such as
+    shared memory utilization.
+    Cannot be combined with ::CU_JIT_TARGET.
+    Option type: unsigned int
+    Applies to: compiler only
+    """
+    alias WALL_TIME: JitOptions = 2
+    """Overwrites the option value with the total wall clock time, in
+      milliseconds, spent in the compiler and linker
+      Option type: float
+      Applies to: compiler and linker
+    """
+    alias INFO_LOG_BUFFER: JitOptions = 3
+    """Pointer to a buffer in which to print any log messages
+      that are informational in nature (the buffer size is specified via
+      option ::CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES)
+      Option type: char *
+      Applies to: compiler and linker
+    """
+    alias INFO_LOG_BUFFER_SIZE_BYTES: JitOptions = 4
+    """IN: Log buffer size in bytes.  Log messages will be capped at this size
+      (including null terminator)
+      OUT: Amount of log buffer filled with messages
+      Option type: unsigned int
+      Applies to: compiler and linker
+    """
+    alias ERROR_LOG_BUFFER: JitOptions = 5
+    """Pointer to a buffer in which to print any log messages that
+      reflect errors (the buffer size is specified via option
+      ::CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES)
+      Option type: char *
+      Applies to: compiler and linker
+    """
+    alias ERROR_LOG_BUFFER_SIZE_BYTES: JitOptions = 6
+    """IN: Log buffer size in bytes.  Log messages will be capped at this size
+      (including null terminator)
+      OUT: Amount of log buffer filled with messages
+      Option type: unsigned int
+      Applies to: compiler and linker
+    """
+    alias OPTIMIZATION_LEVEL: JitOptions = 7
+    """Level of optimizations to apply to generated code (0 - 4), with 4
+      being the default and highest level of optimizations.
+      Option type: unsigned int
+      Applies to: compiler only
+    """
+    alias TARGET_FROM_CUCONTEXT: JitOptions = 8
+    """No option value required. Determines the target based on the current
+      attached context (default)
+      Option type: No option value needed
+      Applies to: compiler and linker
+    """
+    alias TARGET: JitOptions = 9
+    """Target is chosen based on supplied ::CUjit_target.  Cannot be
+      combined with ::CU_JIT_THREADS_PER_BLOCK.
+      Option type: unsigned int for enumerated type ::CUjit_target
+      Applies to: compiler and linker
+    """
+    alias FALLBACK_STRATEGY: JitOptions = 10
+    """Specifies choice of fallback strategy if matching cubin is not found.
+      Choice is based on supplied ::CUjit_fallback.  This option cannot be
+      used with cuLink* APIs as the linker requires exact matches.
+      Option type: unsigned int for enumerated type ::CUjit_fallback
+      Applies to: compiler only
+    """
+    alias GENERATE_DEBUG_INFO: JitOptions = 11
+    """Specifies whether to create debug information in output (-g)
+      (0: false, default)
+      Option type: int
+      Applies to: compiler and linker
+    """
+    alias LOG_VERBOSE: JitOptions = 12
+    """Generate verbose log messages (0: false, default)
+      Option type: int
+      Applies to: compiler and linker
+    """
+    alias GENERATE_LINE_INFO: JitOptions = 13
+    """Generate line number information (-lineinfo) (0: false, default)
+      Option type: int
+      Applies to: compiler only
+    """
+    alias CACHE_MODE: JitOptions = 14
+    """Specifies whether to enable caching explicitly (-dlcm)
+      Choice is based on supplied ::CUjit_cacheMode_enum.
+      Option type: unsigned int for enumerated type ::CUjit_cacheMode_enum
+      Applies to: compiler only
+    """
+    alias NEW_SM3X_OPT: JitOptions = 15
+    """[[depricated]]
+      This jit option is deprecated and should not be used.
+    """
+    alias FAST_COMPILE: JitOptions = 16
+    """This jit option is used for internal purpose only.
+    """
+    alias GLOBAL_SYMBOL_NAMES: JitOptions = 17
+    """Array of device symbol names that will be relocated to the corresponding
+      host addresses stored in ::CU_JIT_GLOBAL_SYMBOL_ADDRESSES.
+      Must contain ::CU_JIT_GLOBAL_SYMBOL_COUNT entries.
+      When loading a device module, driver will relocate all encountered
+      unresolved symbols to the host addresses.
+      It is only allowed to register symbols that correspond to unresolved
+      global variables.
+      It is illegal to register the same device symbol at multiple addresses.
+      Option type: const char **
+      Applies to: dynamic linker only
+    """
+    alias GLOBAL_SYMBOL_ADDRESSES: JitOptions = 18
+    """Array of host addresses that will be used to relocate corresponding
+      device symbols stored in ::CU_JIT_GLOBAL_SYMBOL_NAMES.
+      Must contain ::CU_JIT_GLOBAL_SYMBOL_COUNT entries.
+      Option type: void **
+      Applies to: dynamic linker only
+    """
+    alias GLOBAL_SYMBOL_COUNT: JitOptions = 19
+    """Number of entries in ::CU_JIT_GLOBAL_SYMBOL_NAMES and
+      ::CU_JIT_GLOBAL_SYMBOL_ADDRESSES arrays.
+      Option type: unsigned int
+      Applies to: dynamic linker only
+    """
+    alias LTO: JitOptions = 20
+    """[[depricated]]
+      Enable link-time optimization (-dlto) for device code (Disabled by default).
+      This option is not supported on 32-bit platforms.
+      Option type: int
+      Applies to: compiler and linker
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias FTZ: JitOptions = 21
+    """[[depricated]]
+      Control single-precision denormals (-ftz) support (0: false, default).
+      1 : flushes denormal values to zero
+      0 : preserves denormal values
+      Option type: int
+      Applies to: link-time optimization specified with CU_JIT_LTO
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias PREC_DIV: JitOptions = 22
+    """[[depricated]]
+      Control single-precision floating-point division and reciprocals
+      (-prec-div) support (1: true, default).
+      1 : Enables the IEEE round-to-nearest mode
+      0 : Enables the fast approximation mode
+      Option type: int
+      Applies to: link-time optimization specified with CU_JIT_LTO
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias PREC_SQRT: JitOptions = 23
+    """[[depricated]]
+      Control single-precision floating-point square root
+      (-prec-sqrt) support (1: true, default).
+      1 : Enables the IEEE round-to-nearest mode
+      0 : Enables the fast approximation mode
+      Option type: int
+      Applies to: link-time optimization specified with CU_JIT_LTO
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias FMA: JitOptions = 24
+    """[[depricated]]
+      Enable/Disable the contraction of floating-point multiplies
+      and adds/subtracts into floating-point multiply-add (-fma)
+      operations (1: Enable, default; 0: Disable).
+      Option type: int
+      Applies to: link-time optimization specified with CU_JIT_LTO
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias REFERENCED_KERNEL_NAMES: JitOptions = 25
+    """[[depricated]]
+      Array of kernel names that should be preserved at link time while others
+      can be removed.
+      Must contain ::CU_JIT_REFERENCED_KERNEL_COUNT entries.
+      Note that kernel names can be mangled by the compiler in which case the
+      mangled name needs to be specified.
+      Wildcard "*" can be used to represent zero or more characters instead of
+      specifying the full or mangled name.
+      It is important to note that the wildcard "*" is also added implicitly.
+      For example, specifying "foo" will match "foobaz", "barfoo", "barfoobaz" and
+      thus preserve all kernels with those names. This can be avoided by providing
+      a more specific name like "barfoobaz".
+      Option type: const char **
+      Applies to: dynamic linker only
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias REFERENCED_KERNEL_COUNT: JitOptions = 26
+    """[[depricated]]
+      Number of entries in ::CU_JIT_REFERENCED_KERNEL_NAMES array.
+      Option type: unsigned int
+      Applies to: dynamic linker only
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias REFERENCED_VARIABLE_NAMES: JitOptions = 27
+    """[[depricated]]
+      Array of variable names (__device__ and/or __constant__) that should be
+      preserved at link time while others can be removed.
+      Must contain ::CU_JIT_REFERENCED_VARIABLE_COUNT entries.
+      Note that variable names can be mangled by the compiler in which case the
+      mangled name needs to be specified.
+      Wildcard "*" can be used to represent zero or more characters instead of
+      specifying the full or mangled name.
+      It is important to note that the wildcard "*" is also added implicitly.
+      For example, specifying "foo" will match "foobaz", "barfoo", "barfoobaz" and
+      thus preserve all variables with those names. This can be avoided by providing
+      a more specific name like "barfoobaz".
+      Option type: const char **
+      Applies to: link-time optimization specified with CU_JIT_LTO
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias REFERENCED_VARIABLE_COUNT: JitOptions = 28
+    """[[depricated]]
+      Number of entries in ::CU_JIT_REFERENCED_VARIABLE_NAMES array.
+      Option type: unsigned int
+      Applies to: link-time optimization specified with CU_JIT_LTO
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias OPTIMIZE_UNUSED_DEVICE_VARIABLES: JitOptions = 29
+    """[[depricated]]
+      This option serves as a hint to enable the JIT compiler/linker
+      to remove constant (__constant__) and device (__device__) variables
+      unreferenced in device code (Disabled by default).
+      Note that host references to constant and device variables using APIs like
+      ::cuModuleGetGlobal() with this option specified may result in undefined behavior unless
+      the variables are explicitly specified using ::CU_JIT_REFERENCED_VARIABLE_NAMES.
+      Option type: int
+      Applies to: link-time optimization specified with CU_JIT_LTO
+      *
+      Only valid with LTO-IR compiled with toolkits prior to CUDA 12.0
+    """
+    alias POSITION_INDEPENDENT_CODE: JitOptions = 30
+    """Generate position independent code (0: false)
+      Option type: int
+      Applies to: compiler only
+    """
+
+    fn __init__() -> Self:
+        return Self {_value: 0}
+
+    fn __init__(value: Int) -> Self:
+        return Self {_value: value}
+
+    fn __init__(value: Int32) -> Self:
+        return Self {_value: value}
 
 
 # ===----------------------------------------------------------------------===#
