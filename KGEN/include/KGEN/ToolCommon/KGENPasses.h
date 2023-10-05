@@ -47,6 +47,7 @@ class KGENCallOpInterface;
 class KGENDialect;
 class FuncOp;
 class GeneratorOp;
+class PackageLinkOp;
 
 namespace POP {
 class POPDialect;
@@ -193,13 +194,24 @@ void buildGenerateLibraryPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 // ElaborateModulePipeline
 //===----------------------------------------------------------------------===//
 
+/// During module elaboration, `kgen.package_link` ops that link to `.mojopkg`
+/// packages may appear in the module. These linked packages may only contain
+/// pre-elaborated MLIR bytecode for the target being built. In that case, this
+/// callback is invoked. The callback is expected to return an attribute
+/// containing the MLIR bytecode that the `materialize-packages` pass will load
+/// into the module that is importing the package (i.e.: the module that
+/// contains the `kgen.package_link` op).
+using PackageLinkHandlerFn = std::function<ErrorOr<DenseResourceElementsAttr>(
+    PackageLinkOp, TargetInfoAttr, BuildInfoAttr)>;
+
 /// This populates the passes to produce a fully concrete KGEN module. That
 /// means it runs the elaborator and any dependent passes.
 void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
                                   TargetInfoAttr target, BuildInfoAttr build,
+                                  const CompilationOptions &options,
                                   EvaluatorExecutorFn evaluatorExecutorFn,
                                   ElaboratorCompileAsmFn compileAsmFn,
-                                  const CompilationOptions &options);
+                                  PackageLinkHandlerFn packageLinkHandlerFn);
 //===----------------------------------------------------------------------===//
 // PostElaborationPipeline
 //===----------------------------------------------------------------------===//
@@ -208,6 +220,14 @@ void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 /// These passes are intended to run immediately after the elaborator.
 void buildPostElaborationPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
                                   const CompilationOptions &options);
+
+//===----------------------------------------------------------------------===//
+// MaterializePackages
+//===----------------------------------------------------------------------===//
+
+/// Create a MaterializePackages pass with the specified behavior.
+std::unique_ptr<mlir::Pass>
+createMaterializePackages(PackageLinkHandlerFn packageLinkHandlerFn = nullptr);
 
 } // namespace KGEN
 } // namespace M

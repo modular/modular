@@ -12,9 +12,11 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -210,7 +212,13 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   // Add the module into the layer. This will actually compile it down to the
   // post-elaboration phase, because before that phase we don't have flat
   // symbols.
-  if (ErrorOrSuccess err = compilerLayer.add("exec", moduleOp))
+  if (ErrorOrSuccess err = compilerLayer.add(
+          "exec", moduleOp,
+          [&](PackageLinkOp packageLink, TargetInfoAttr targetInfo,
+              BuildInfoAttr buildInfo) {
+            return loadAndElaborateBytecode(packageLink, targetInfo, buildInfo,
+                                            options, runtime);
+          }))
     return state.reportError(err.getError());
 
   // Generate a symbol table and an export map for the module post-compile.

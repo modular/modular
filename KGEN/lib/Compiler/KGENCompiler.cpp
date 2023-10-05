@@ -215,23 +215,24 @@ static ErrorOr<BufferRef> compileElaboratorAsm(GeneratorOp func,
 // populateElaborateModulePasses
 //===----------------------------------------------------------------------===//
 
-void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
-                                         LLCL::Runtime &runtime,
-                                         TargetInfoAttr target,
-                                         BuildInfoAttr build,
-                                         const CompilationOptions &options) {
+void KGEN::populateElaborateModulePasses(
+    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
+    BuildInfoAttr build, const CompilationOptions &options,
+    PackageLinkHandlerFn packageLinkHandlerFn) {
   buildElaborateModulePipeline(
-      pm, runtime, target, build,
+      pm, runtime, target, build, options,
+      /*evaluatorExecutorFn=*/
       [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
                                        options, specializations);
       },
+      /*compileAsmFn=*/
       [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
                     TargetInfoAttr target) {
         return compileElaboratorAsm(func, symtab, runtime, target, options);
       },
-      options);
+      packageLinkHandlerFn);
   buildPostElaborationPipeline(pm, runtime, options);
 }
 
@@ -330,7 +331,9 @@ KGENCompilerLayer::KGENCompilerLayer(
       RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend));
 }
 
-ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
+ErrorOrSuccess
+KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
+                       PackageLinkHandlerFn packageLinkHandlerFn) {
   TimeTraceScope<> traceScope("KGENCompilerLayer::add(" + libName.str() + ")");
   auto dylibOr = getOrCreateDylib(libName);
   if (dylibOr.isError())
@@ -345,7 +348,8 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   setBuildInfo(theModule, build);
   // Populate the passes.
   buildGenerateLibraryPipeline(pm, runtime, options);
-  populateElaborateModulePasses(pm, runtime, target, build, options);
+  populateElaborateModulePasses(pm, runtime, target, build, options,
+                                packageLinkHandlerFn);
 
   // Run the passes as a cached transform. Don't deflate the op as part of this
   // - we don't want that cost right now.

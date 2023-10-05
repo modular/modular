@@ -6,6 +6,7 @@
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -86,9 +87,29 @@ static LogicalResult readFromBytecode(Operation *op,
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct MaterializePackagesPass
-    : impl::MaterializePackagesBase<MaterializePackagesPass> {
+class MaterializePackagesPass
+    : public impl::MaterializePackagesBase<MaterializePackagesPass> {
+public:
+  explicit MaterializePackagesPass(
+      PackageLinkHandlerFn packageLinkHandlerFn = nullptr)
+      : MaterializePackagesBase(), packageLinkHandlerFn(packageLinkHandlerFn) {}
+
+  LogicalResult initialize(MLIRContext *context) override {
+    if (!packageLinkHandlerFn)
+      packageLinkHandlerFn = [](PackageLinkOp packageLink,
+                                TargetInfoAttr targetInfo, BuildInfoAttr) {
+        packageLink.emitError("package link could not be handled for target ")
+            << targetInfo.getTripleStr();
+        return Error("package link handler is null");
+      };
+
+    return success();
+  }
+
   void runOnOperation() override;
+
+private:
+  PackageLinkHandlerFn packageLinkHandlerFn;
 };
 } // namespace
 
@@ -111,37 +132,51 @@ void MaterializePackagesPass::runOnOperation() {
       return signalPassFailure();
     }
     TargetInfoAttr compiledFor = packageLink.getArchive().getTarget();
-    DenseResourceElementsAttr precompiledBody =
+    // Currently all package link ops have a precompiled archive attribute --
+    // but the archive may not have been precompiled for the target we're
+    // currently building.
+    // TODO(#17326): Support 0 or multiple precompiled archives for a single
+    // package.
+    DenseResourceElementsAttr bytecode =
         packageLink.getArchive().getElaboratedModule();
-    bool isPreElaborated = true;
 
-    // Get the target on the module. If we don't have a target or if the
-    // target doesn't match, check for a fallback where we can compile the
-    // package right now on-demand.
-    TargetInfoAttr target = M::lookupTargetInfo(theModule);
+    // Get the target on the module. If we don't have a target or if the target
+    // doesn't match, check for a pre-elaborated module that we can then compile
+    // on-demand.
+    TargetInfoAttr target = lookupTargetInfo(theModule);
+    BuildInfoAttr build = lookupBuildInfo(theModule);
     if (!target || target != compiledFor) {
-      // If we have the pre-elaboration module, just recompile the package.
-      // Otherwise, emit an error that we can't use this package.
-      precompiledBody = packageLink.getPreElaborationModuleAttr();
-      if (!precompiledBody) {
+      // If we don't have a precompiled archive for our target, then we can only
+      // proceed if we have a pre-elaborated module.
+      if (!packageLink.getPreElaborationModuleAttr()) {
         auto diag = packageLink.emitError("package was compiled for ")
                     << compiledFor << " but current target is " << target;
         diag.attachNote() << "no generic fallback was found to recompile "
                              "package for current target";
         return signalPassFailure();
       }
-      isPreElaborated = false;
+
+      // The callback function is given the pre-elaborated module and returns
+      // the package module bytecode that is to be imported into the module
+      // currently being built.
+      ErrorOr<DenseResourceElementsAttr> bytecodeOr =
+          packageLinkHandlerFn(packageLink, target, build);
+      if (bytecodeOr.isError()) {
+        packageLink.emitError(bytecodeOr.getError());
+        return signalPassFailure();
+      }
+      bytecode = *bytecodeOr;
     }
 
-    // Get the data for the precompiled body.
-    mlir::AsmResourceBlob *blob = precompiledBody.getRawHandle().getBlob();
+    // Get the data for the imported module body.
+    mlir::AsmResourceBlob *blob = bytecode.getRawHandle().getBlob();
     if (!blob) {
       funcs[0].emitError("unable to find the precompiled body blob");
       return signalPassFailure();
     }
-    ArrayRef<char> bytecode = blob->getData();
+    ArrayRef<char> bytecodeData = blob->getData();
     llvm::MemoryBufferRef bufferRef(
-        StringRef(bytecode.begin(), bytecode.size()), "");
+        StringRef(bytecodeData.begin(), bytecodeData.size()), "");
 
     // Start lazy loading the bytecode for the function bodies.
     auto sourceMgr = std::make_shared<llvm::SourceMgr>();
@@ -154,30 +189,17 @@ void MaterializePackagesPass::runOnOperation() {
     if (failed(reader.materialize(bytecodeModule)))
       return signalPassFailure();
 
-    // If we're "inflating" pre-elaborated ops into the current module, then
-    // make sure they're not exported -- the user exports their own functions.
-    if (!isPreElaborated) {
-      SmallVector<std::pair<ExportInterface, ExportKind>> exportKinds;
-      for (ExportInterface op : bytecodeModule.getOps<ExportInterface>()) {
-        auto exportKind = op.getExportKind();
-        if (exportKind != ExportKind::NotExported) {
-          exportKinds.push_back({op, exportKind});
-          op.setNotExported();
-        }
-      }
-    }
-
     // Collect the symbols within the bytecode.
     SymbolTable bytecodeSymtab(cast<ModuleOp>(block.front()));
 
-    // Replace the high level functions with the precompiled counter parts in
-    // the bytecode module.
+    // Replace the high level functions with their counter parts in the package
+    // bytecode module.
     SmallVector<Operation *> operationsToInflate;
     for (ExternGeneratorOp func : funcs) {
       auto result = bytecodeSymtab.lookup<ExportInterface>(func.getName());
       if (!result) {
         func.emitError() << "unable to find " << func.getName()
-                         << " in precompiled bytecode";
+                         << " in imported package bytecode";
         return signalPassFailure();
       }
       operationsToInflate.push_back(result);
@@ -199,10 +221,13 @@ void MaterializePackagesPass::runOnOperation() {
     if (failed(reader.finalize()))
       return signalPassFailure();
 
-    // Convert the package link to a kgen link directive if we're using the
-    // fully compiled package. If we're recompiling the package, just drop the
-    // package link altogether.
-    if (isPreElaborated) {
+    // If we read in the elaborated functions, convert the `kgen.package_link`
+    // op to a `kgen.link` op`, signifying that the package is now linked in as
+    // a library. Otherwise, erase the `kgen.package_link` op altogether -- the
+    // imported functions now exist as part of the module they were imported
+    // into.
+    if (bytecode == packageLink.getArchive().getElaboratedModule()) {
+      // Convert the package link to a kgen link directive.
       OpBuilder b(packageLink);
       auto linkOp = b.create<KGEN::LinkOp>(
           packageLink.getLoc(), packageLink.getSymNameAttr(), StringAttr(),
@@ -213,4 +238,9 @@ void MaterializePackagesPass::runOnOperation() {
       symtab.erase(packageLink);
     }
   }
+}
+
+std::unique_ptr<mlir::Pass>
+M::KGEN::createMaterializePackages(PackageLinkHandlerFn packageLinkHandlerFn) {
+  return std::make_unique<MaterializePackagesPass>(packageLinkHandlerFn);
 }

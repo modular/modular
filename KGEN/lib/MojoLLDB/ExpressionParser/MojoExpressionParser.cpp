@@ -18,6 +18,7 @@
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
@@ -146,12 +147,24 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
                                *compilationOptions);
   buildElaborateModulePipeline(
       *fullCompilationPM, typeSystem->getRuntime(), targetInfo, buildInfo,
+      compilationOptions,
+      /*evaluatorExecutorFn=*/
       [&](KGEN::FuncOp evaluator, const SymbolTable &symtab,
           TargetInfoAttr target, ArrayRef<KGEN::FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, target,
                                        specializations);
       },
-      /*compileAsmFn=*/{}, compilationOptions);
+      /*compileAsmFn=*/{},
+      /*packageLinkHandlerFn=*/
+      [](PackageLinkOp packageLink, TargetInfoAttr, BuildInfoAttr) {
+        // FIXME(#22766): MCJIT crashes when using precompiled archives. So,
+        // load the pre-elaborated bytecode into the importing module, instead
+        // of compiling it on-demand into a package archive. Note that the
+        // pre-elaborated functions are still marked as "exported" from the
+        // module that now imports them -- this is subtly incorrect but has no
+        // significance in the REPL.
+        return packageLink.getPreElaborationModuleAttr();
+      });
   buildPostElaborationPipeline(*fullCompilationPM, typeSystem->getRuntime(),
                                compilationOptions);
 
@@ -758,7 +771,9 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Compile the module to a standalone archive.
   SymbolTable symbolTable(*module);
-  ExportMap exportedSymbols = getExportedSymbols(*module);
+  ExportMap exportedSymbols;
+  exportedSymbols.insert({StringAttr::get(module->getContext(), exprFnName),
+                          ExportedSymbol(ExportKind::Exported)});
   auto bufferOr =
       impl->compiler->produceStandaloneArchive(symbolTable, exportedSymbols);
   if (bufferOr.isError()) {
@@ -820,7 +835,10 @@ Status MojoExpressionParser::prepareForExecution(
   // Build the IR execution unit responsible for executing the generated IR.
   ConstString functionName(impl->expr.FunctionName());
   SymbolTable symbolTable(*mlirModule);
-  ExportMap exportedSymbols = getExportedSymbols(*mlirModule);
+  ExportMap exportedSymbols;
+  exportedSymbols.insert(
+      {StringAttr::get(mlirModule->getContext(), functionName.GetStringRef()),
+       ExportedSymbol(ExportKind::Exported)});
   executionUnit = std::make_shared<JITExecutionUnit>(
       symbolTable, exportedSymbols, std::move(archive), functionName,
       exeCtx.GetTargetSP(), sc, features);
