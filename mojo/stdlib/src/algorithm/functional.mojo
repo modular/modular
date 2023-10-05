@@ -1266,7 +1266,7 @@ fn _elementwise_impl[
         alias func_type = fn (StaticIntTuple[rank]) capturing -> None
         let gpu_func = Function[
             func_type, rebind[func_type](_elementwise_gpu_kernel)
-        ]("_elementwise_gpu_kernel")
+        ]()
         gpu_func(
             (length // block_dim,),
             (block_dim,),
