@@ -23,7 +23,9 @@ struct _NDBufferVector[rank: Int, type: DType]:
 
     alias stack_capacity = 20
     alias BufferType = NDBuffer[rank, DimList.create_unknown[rank](), type]
-    alias StorageType = InlinedFixedVector[Self.stack_capacity, Self.BufferType]
+    alias StorageType = InlinedFixedVector[
+        Self.BufferType, size = Self.stack_capacity
+    ]
     var storage: Self.StorageType
 
     @always_inline

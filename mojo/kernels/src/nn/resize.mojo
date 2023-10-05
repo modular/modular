@@ -266,7 +266,7 @@ fn _resize[
 ):
     var scales = StaticTuple[rank, Float32]()
 
-    var resize_dims = InlinedFixedVector[rank, Int](rank)
+    var resize_dims = InlinedFixedVector[Int, size=rank](rank)
     var tmp_dims = StaticIntTuple[rank](0)
     for i in range(rank):
         # need to consider output dims when upsampling and input dims when downsampling
