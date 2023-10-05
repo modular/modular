@@ -138,9 +138,16 @@ fn test[
     )
     chain0.wait()
 
-    # Pre-packed filter for static shapes. This can use a different
-    # micro kernel than the default one.
-    alias micro_kernel_shape = get_micro_kernel_shape[WO, F, simd_size]()
+    alias conv_attr_static = ConvInfoStatic(
+        DimList(pad_h[0], pad_h[1]),
+        DimList(pad_w[0], pad_w[1]),
+        DimList(stride[0], stride[1]),
+        DimList(dilation[0], dilation[1]),
+    )
+
+    alias micro_kernel_shape = get_micro_kernel_shape[
+        WO, F, conv_attr_static, simd_size
+    ]()
     alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
     alias num_f_micro_tiles = div_ceil(F, micro_kernel_f_size)
     alias rounded_F_static = num_f_micro_tiles * micro_kernel_f_size
@@ -159,13 +166,6 @@ fn test[
         rebind[NDBuffer[5, DimList.create_unknown[5](), type]](
             packed_filter_static
         ),
-    )
-
-    alias conv_attr_static = ConvInfoStatic(
-        DimList(pad_h[0], pad_h[1]),
-        DimList(pad_w[0], pad_w[1]),
-        DimList(stride[0], stride[1]),
-        DimList(dilation[0], dilation[1]),
     )
 
     let chain1 = OwningOutputChainPtr(rt)

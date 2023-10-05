@@ -26,6 +26,8 @@ from algorithm import (
 )
 from ConvUtils import (
     ConvShape,
+    ConvInfoStatic,
+    ConvInfo,
     get_conv2d_shape,
     get_conv_num_partitions,
     get_conv_num_tasks,
@@ -66,7 +68,6 @@ from ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList, VariadicList
-from utils.optional_param import OptionalParamInts
 
 alias MAX_NUM_CHANNELS_TILE = 384
 
@@ -2540,7 +2541,10 @@ struct ConvDirectNHWC[
     ):
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
-            shape_output.at[2](), shape_output.at[3](), simd_size
+            shape_output.at[2](),
+            shape_output.at[3](),
+            conv_attr,
+            simd_size,
         ]()
         alias micro_kernel_height = micro_kernel_shape[0]
         alias micro_kernel_width = micro_kernel_shape[1]
@@ -2731,8 +2735,10 @@ struct ConvDirectNHWC[
         @always_inline
         @parameter
         fn c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
+            # Only apply static shape optimizations to shapes with padding since
+            # there is a fast path for pointwise (no padding) conv with strides.
             @parameter
-            if self.fully_static:
+            if self.fully_static and padded:
                 self._f_tile_loop_static[False](n, c_tile_offset, c_tile_size)
             else:
                 self._f_tile_loop[padded, False](n, c_tile_offset, c_tile_size)
@@ -2753,7 +2759,7 @@ struct ConvDirectNHWC[
 
             # Update the last c tile with fusion
             @parameter
-            if self.fully_static:
+            if self.fully_static and padded:
                 self._f_tile_loop_static[True](
                     n, c_round_by_tile, self.conv_shape.c - c_round_by_tile
                 )
@@ -3871,7 +3877,9 @@ struct ConvDirectNHWC[
         alias WO = shape_output.at[2]().get()  # NHWC
         alias F = shape_output.at[3]().get()  # NHWC
         alias simd_size = simdwidthof[output_type]()
-        alias micro_kernel_shape = get_micro_kernel_shape[WO, F, simd_size]()
+        alias micro_kernel_shape = get_micro_kernel_shape[
+            WO, F, conv_attr, simd_size
+        ]()
         alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 
         alias pad_left = conv_attr.pad_w.at[0]().get()
@@ -3916,10 +3924,9 @@ struct ConvDirectNHWC[
             simd_size,
         )
 
-        let residual = self.conv_shape.f - f_round_by_simd
+        let residual = F - f_round_by_simd
         if (
-            self.partition_offsets[2] + self.partition_sizes[2]
-            == self.conv_shape.f
+            self.partition_offsets[2] + self.partition_sizes[2] == F
             and residual > 0
         ):
             self._h_loop_static[
@@ -4026,9 +4033,18 @@ struct ConvDirectNHWC[
                 )
             # The row is split into multiple micro kernels.
             else:
+                # micro kernel height for left and right boundaries.
+                # IF WO is just 1-2 points more than micro kernel height, the
+                # following would divide the row evely by two micro kernels.
+                alias micro_kernel_height_lbound = min(
+                    micro_kernel_height, WO // 2
+                )
+                alias micro_kernel_height_rbound = min(
+                    micro_kernel_height, WO - WO // 2
+                )
                 # Left boundary
                 self._inner_loops_static[
-                    micro_kernel_height,
+                    micro_kernel_height_lbound,
                     micro_kernel_width,
                     True,
                     False,
@@ -4048,12 +4064,12 @@ struct ConvDirectNHWC[
                     c_tile_size,
                     n,
                     ho,
-                    0,  # wo
+                    0,  # beginning of wo dimension
                 )
                 input_base = input_base.offset(
-                    micro_kernel_height * strides[1] * C
+                    micro_kernel_height_lbound * strides[1] * C
                 )
-                output_base = output_base.offset(micro_kernel_height * F)
+                output_base = output_base.offset(micro_kernel_height_lbound * F)
 
                 # Update middle points if any. They aren't effected by padding.
                 @always_inline
@@ -4082,21 +4098,24 @@ struct ConvDirectNHWC[
                         ho,
                         wo,
                     )
-                    input_base = input_base.offset(
-                        height * self.conv_shape.stride[1] * self.conv_shape.c,
-                    )
-                    output_base = output_base.offset(height * self.conv_shape.f)
+                    input_base = input_base.offset(height * strides[1] * C)
+                    output_base = output_base.offset(height * F)
 
+                # Middle points are the points not updated by micro kernels
+                # on left or right boundary
+                alias num_middle_points = WO - micro_kernel_height_lbound - micro_kernel_height_rbound
                 # `tile` can't handle zero tile size.
-                alias remainder_height = WO % micro_kernel_height if WO % micro_kernel_height > 0 else 1
+                alias micro_kernel_height_middle = num_middle_points % micro_kernel_height if num_middle_points % micro_kernel_height > 0 else 1
                 tile[
                     update_middle,
-                    VariadicList[Int](micro_kernel_height, remainder_height),
-                ](micro_kernel_height, WO - micro_kernel_height)
+                    VariadicList[Int](
+                        micro_kernel_height, micro_kernel_height_middle
+                    ),
+                ](micro_kernel_height_lbound, WO - micro_kernel_height_rbound)
 
                 # Right boundary.
                 self._inner_loops_static[
-                    micro_kernel_height,
+                    micro_kernel_height_rbound,
                     micro_kernel_width,
                     False,
                     True,
@@ -4116,7 +4135,7 @@ struct ConvDirectNHWC[
                     c_tile_size,
                     n,
                     ho,
-                    WO - micro_kernel_height,  # wo
+                    WO - micro_kernel_height_rbound,  # offset in wo dimension
                 )
 
     @always_inline
@@ -4373,8 +4392,8 @@ fn pack_filter[
     """This packs the filter form RSCF to FRSCf.
 
     Parameters:
-        type: The data type of the filter.
-        simd_size: The simd size of the output type.
+        type: filter data type
+        simd_size: can differ from the simd size of the input type.
         micro_kernel_f_size: The size of the last dimension in FRSCf, which is
             equals the size of the micro kernel's F dimension.
 
@@ -4582,56 +4601,6 @@ fn conv_shape[
     output_shape[3] = output_channels
 
     return output_shape
-
-
-# must be register passable because it is used as a parameter
-@value
-@register_passable("trivial")
-struct ConvInfoStatic:
-    var pad_h: DimList
-    var pad_w: DimList
-    var stride: DimList
-    var dilation: DimList
-
-    @always_inline
-    fn all_known(self) -> Bool:
-        return (
-            self.pad_h.all_known[2]()
-            and self.pad_w.all_known[2]()
-            and self.stride.all_known[2]()
-            and self.dilation.all_known[2]()
-        )
-
-    @always_inline
-    @staticmethod
-    fn create_unknown() -> Self:
-        return rebind[Self](
-            ConvInfoStatic(
-                DimList.create_unknown[2](),
-                DimList.create_unknown[2](),
-                DimList.create_unknown[2](),
-                DimList.create_unknown[2](),
-            )
-        )
-
-
-struct ConvInfo[conv_info_static: ConvInfoStatic]:
-    var pad_h: OptionalParamInts[2, conv_info_static.pad_h]
-    var pad_w: OptionalParamInts[2, conv_info_static.pad_w]
-    var stride: OptionalParamInts[2, conv_info_static.stride]
-    var dilation: OptionalParamInts[2, conv_info_static.dilation]
-
-    fn __init__(
-        inout self,
-        pad_h: StaticIntTuple[2],
-        pad_w: StaticIntTuple[2],
-        stride: StaticIntTuple[2],
-        dilation: StaticIntTuple[2],
-    ):
-        self.pad_h = pad_h
-        self.pad_w = pad_w
-        self.stride = stride
-        self.dilation = dilation
 
 
 alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (

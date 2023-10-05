@@ -21,6 +21,7 @@ from memory.buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
+from utils.optional_param import OptionalParamInts
 
 
 # conv uses a different kernel than matmul
@@ -287,6 +288,56 @@ fn get_conv_tile_shape[
     return Index(c_tile_size, f_tile_size)
 
 
+# must be register passable because it is used as a parameter
+@value
+@register_passable("trivial")
+struct ConvInfoStatic:
+    var pad_h: DimList
+    var pad_w: DimList
+    var stride: DimList
+    var dilation: DimList
+
+    @always_inline
+    fn all_known(self) -> Bool:
+        return (
+            self.pad_h.all_known[2]()
+            and self.pad_w.all_known[2]()
+            and self.stride.all_known[2]()
+            and self.dilation.all_known[2]()
+        )
+
+    @always_inline
+    @staticmethod
+    fn create_unknown() -> Self:
+        return rebind[Self](
+            ConvInfoStatic(
+                DimList.create_unknown[2](),
+                DimList.create_unknown[2](),
+                DimList.create_unknown[2](),
+                DimList.create_unknown[2](),
+            )
+        )
+
+
+struct ConvInfo[conv_info_static: ConvInfoStatic]:
+    var pad_h: OptionalParamInts[2, conv_info_static.pad_h]
+    var pad_w: OptionalParamInts[2, conv_info_static.pad_w]
+    var stride: OptionalParamInts[2, conv_info_static.stride]
+    var dilation: OptionalParamInts[2, conv_info_static.dilation]
+
+    fn __init__(
+        inout self,
+        pad_h: StaticIntTuple[2],
+        pad_w: StaticIntTuple[2],
+        stride: StaticIntTuple[2],
+        dilation: StaticIntTuple[2],
+    ):
+        self.pad_h = pad_h
+        self.pad_w = pad_w
+        self.stride = stride
+        self.dilation = dilation
+
+
 fn get_direct_conv_micro_kernel_height() -> Int:
     @parameter
     if has_avx512f():
@@ -310,16 +361,26 @@ fn get_direct_conv_micro_kernel_width() -> Int:
 
 
 fn get_micro_kernel_shape[
-    WO: Dim, F: Dim, simd_size: Int
+    WO: Dim, F: Dim, conv_attr: ConvInfoStatic, simd_size: Int
 ]() -> StaticIntTuple[2]:
+    alias optimize_static_shapes = WO.has_value() and F.has_value() and conv_attr.all_known()
+
     # Number of named simd registers for each architecture.
     # TODO: configure micro kernel shape are other architectures.
     alias num_avx512_registers = 32
 
     @parameter
-    if WO.has_value() and F.has_value() and has_avx512f():
+    if optimize_static_shapes and has_avx512f():
         alias WO_val = WO.get()
         alias F_val = F.get()
+        alias pad_h_val = Index(
+            conv_attr.pad_h.at[0]().get(), conv_attr.pad_h.at[1]().get()
+        )
+        alias pad_w_val = Index(
+            conv_attr.pad_w.at[0]().get(), conv_attr.pad_w.at[1]().get()
+        )
+        alias has_padding = pad_h_val != Index(0, 0) or pad_w_val != Index(0, 0)
+
         # The micro tile is m rows by n*simd_size columns.
         # The register usage in tiling for avx512/avx2:
         #   (1) load n registers in F dimension.
@@ -331,21 +392,20 @@ fn get_micro_kernel_shape[
         # Iterating n from 2, we get possible (m, n) combinations including
         # (14, 2), (9, 3), (6, 4), and (5, 5).
 
-        # There must be less than WO*F tiles so the values are updated
-        # in the following loop.
-        var min_num_tiles = WO_val * F_val
-        var micro_kernel_height = -1
-        var micro_kernel_width = -1
+        # Static shapes enable a better algorithm for padding, which can choose micro
+        # kernel shape based on input and output sizes.
+        if has_padding:
+            # Traverse the possible combinations (14, 2), (9, 3), (6, 4), and (5, 5).
+            for n in range(2, 6):
+                let m = (num_avx512_registers - 1) // n - 1
+                # Short circuit if the row fit in one micro kernel and F is divisible.
+                # E.x. for WO=7 and F=512, 7x2 can be a better micro kernel than 7x3
+                # for multi-threading due to partition granularity (kernel width) in F.
+                if F_val % (n * simd_size) == 0 and WO_val <= m:
+                    return Index(WO_val, n)
+        # Use 6x4 by default as it achieves the best performance for most shapes.
+        return Index(6, 4)
 
-        # Traverse the possible combinations (9, 3), (6, 4), and (5, 5).
-        for n in range(2, 6):
-            let m = min((num_avx512_registers - 1) // n - 1, WO_val)
-            let num_tiles = div_ceil(WO_val, m) * div_ceil(F_val, n * simd_size)
-            if num_tiles < min_num_tiles:
-                micro_kernel_height = m
-                micro_kernel_width = n
-                min_num_tiles = num_tiles
-        return Index(micro_kernel_height, micro_kernel_width)
     else:  # Default options for dynamic shapes.
 
         @parameter
