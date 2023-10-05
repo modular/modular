@@ -775,3 +775,10 @@ kgen.generator @compile_assembly() {
   kgen.param.constant: string = <compile_assembly(nvptx, :() -> () @kernel)>
   kgen.return
 }
+
+// CHECK-LABEL: @get_likage_name
+kgen.generator @get_likage_name() {
+  // CHECK: constant: string = <get_linkage_name(:() -> () @kernel)>
+  kgen.param.constant: string = <get_linkage_name(:() -> () @kernel)>
+  kgen.return
+}

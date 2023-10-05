@@ -926,6 +926,10 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     p << ", ";
     printColonTypeParamValue(p, operands[1]);
     break;
+
+  case POC::GetLinkageName:
+    printColonTypeParamValue(p, operands[0]);
+    break;
   }
 }
 

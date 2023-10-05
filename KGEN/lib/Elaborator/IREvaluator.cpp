@@ -105,6 +105,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return evaluateGetAllImpls(op);
   case POC::CompileAssembly:
     return evaluateCompileAssembly(op);
+  case POC::GetLinkageName:
+    return evaluateGetLinkageName(op);
   default:
     return failure();
   }
@@ -240,6 +242,29 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
     return failure();
   }
   return {StringAttr::get(buffer.takeValue()->getBuffer(), op.getType())};
+}
+
+FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
+  // This only supports generators with an empty set of parameters, otherwise we
+  // need to resolve the symbol name after elaboration.
+  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
+  if (!symbol || !symbol.getType().isConcrete()) {
+    emitError({*errorLoc, "'get_linkage_name' function is not concrete"});
+    return failure();
+  }
+  auto funcSymbl = cast<FlatSymbolRefAttr>(symbol.getSymbol());
+  auto symbolName = funcSymbl.getAttr();
+  auto genOp = elaborator->getSymbolTable().read(
+      [&](const SymbolTable &symtab) -> GeneratorOp {
+        return symtab.lookup<GeneratorOp>(funcSymbl.getAttr());
+      });
+  assert(genOp && "expected a valid generator reference");
+  if (!genOp.getInputParams().empty() || !genOp.getResultParams().empty()) {
+    emitError({*errorLoc,
+               "'get_linkage_name' operand requires to be parameter free"});
+    return failure();
+  }
+  return {StringAttr::get(symbolName.getValue(), op.getType())};
 }
 
 //===----------------------------------------------------------------------===//

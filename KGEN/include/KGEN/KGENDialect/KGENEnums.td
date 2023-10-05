@@ -67,7 +67,8 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // Evaluator.
   I32EnumAttrCase<"GetAllImpls", 28, "get_all_impls">,
   I32EnumAttrCase<"VariadicGet", 29, "variadic_get">,
-  I32EnumAttrCase<"CompileAssembly", 30, "compile_assembly">
+  I32EnumAttrCase<"CompileAssembly", 30, "compile_assembly">,
+  I32EnumAttrCase<"GetLinkageName", 31, "get_linkage_name">
 ]>;
 
 //===----------------------------------------------------------------------===//

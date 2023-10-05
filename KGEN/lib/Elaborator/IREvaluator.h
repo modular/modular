@@ -77,6 +77,8 @@ private:
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
   /// Evaluate a `compile_assembly` operator.
   FailureOr<TypedAttr> evaluateCompileAssembly(ParamOperatorAttr op);
+  /// Evaluate a `get_linkage_name` operator.
+  FailureOr<TypedAttr> evaluateGetLinkageName(ParamOperatorAttr op);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);

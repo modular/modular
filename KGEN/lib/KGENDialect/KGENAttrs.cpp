@@ -886,6 +886,10 @@ LogicalResult ParamOperatorAttr::verify(
              << "'compile_assembly' first operand should be a target type";
     break;
   }
+  case POC::GetLinkageName:
+    if (operands.size() != 1)
+      return emitError() << "`get_linkage_name` requires 1 operand";
+    break;
   }
   return success();
 }
@@ -1791,6 +1795,9 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     result = {};
     break;
   case POC::CompileAssembly:
+    result = {};
+    break;
+  case POC::GetLinkageName:
     result = {};
     break;
   }
