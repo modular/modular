@@ -724,6 +724,27 @@ fn referencesDefaultArgumentFunction():
     let f = defaultArgument
 
 
+fn byref_default(inout x: Int = 2): pass
+
+fn byref_default_mem_only(inout y: MemoryType = MemoryType(1)): pass
+
+# CHECK-LABEL: lit.func @"test_byref_default()"
+fn test_byref_default():
+    # CHECK-DAG: %[[DEF_ARG_0:.*]] = lit.varlet.decl "__default_arg_0__" var synth : !lit.ref<mut !Int,
+    # CHECK-DAG: %[[DEF_VAL_0:.*]] = kgen.param.constant: !Int
+    # CHECK: lit.ref.store %[[DEF_VAL_0]], %[[DEF_ARG_0]]
+    # CHECK: %[[ARG0:.*]] = lit.ref.to_pointer %[[DEF_ARG_0]]
+    # CHECK: kgen.call @{{.*}}::@"byref_default({{.*}}::Int&)"(%[[ARG0]])
+    byref_default()
+
+    # CHECK-DAG: %[[DEF_ARG_1:.*]] = lit.varlet.decl "__default_arg_0__" var synth : !lit.ref<mut !MemoryType,
+    # CHECK-DAG: %[[DEF_VAL_1:.*]] = kgen.param.materialize: !MemoryType
+    # CHECK: lit.ref.store %[[DEF_VAL_1]], %[[DEF_ARG_1]] : <mut !MemoryType, *"`__default_arg_0__1">
+    # CHECK: %[[ARG1:.*]] = lit.ref.to_pointer %[[DEF_ARG_1]] : <mut !MemoryType, *"`__default_arg_0__1">
+    # CHECK: kgen.call @{{.*}}::@"byref_default_mem_only({{.*}}::MemoryType&)"(%[[ARG1]])
+    byref_default_mem_only()
+
+
 struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
     alias StorageType = __mlir_type[`!kgen.variadic<`, EltType, `>`]
     var value: Self.StorageType

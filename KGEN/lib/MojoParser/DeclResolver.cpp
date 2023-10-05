@@ -2870,7 +2870,7 @@ static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
   std::string lifetimeName = "`" + argName.str();
   auto varDecl =
       builder.create<VarLetDeclOp>(mloc, declType, argName, lifetimeName,
-                                   /*isVar*/ true, /*isSynthesized*/ true);
+                                   /*isVar=*/true, /*isSynthesized=*/true);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
