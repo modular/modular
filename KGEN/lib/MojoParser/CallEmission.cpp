@@ -642,8 +642,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     return {};
   }
 
-  // TODO: This is using an exact match which is perhaps too specific of a
-  // check.  We could do some amount of parameter inference to support cases
+  // TODO(#22771): This is using an exact match which is perhaps too specific of
+  // a check. We could do some amount of parameter inference to support cases
   // like:
   //
   //    fn foo[Type: mlirtype]() -> Type
@@ -655,7 +655,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
       [&](LITSignatureType candidateType) -> ParameterExprArrayAttr {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.
-    // TODO: Parameter inference.
+    // TODO(#22771): Parameter inference.
     auto [newBindings, _] =
         inputParamBindings.verifyBindings(candidateType, emitter);
     return newBindings;
