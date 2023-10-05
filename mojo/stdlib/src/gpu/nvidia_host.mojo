@@ -7,6 +7,7 @@
 
 from sys.ffi import DLHandle
 from memory import stack_allocation
+from memory.unsafe import bitcast
 from utils.index import StaticIntTuple, Index
 from sys.info import sizeof
 from pathlib import Path
@@ -1930,13 +1931,64 @@ struct ModuleHandle:
         _ = path_str
         self.module = module
 
-    fn __init__(inout self, content: StringRef) raises:
+    fn __init__(inout self, content: StringRef, debug: Bool = False) raises:
         var module = _ModuleImpl()
-        _check_error(
-            _get_dylib_function[
-                fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
-            ]("cuModuleLoadData")(Pointer.address_of(module), content.data)
-        )
+        if debug:
+            alias buffer_size = 4096
+            alias num_options = 4
+
+            let opts = stack_allocation[num_options, JitOptions]()
+            opts.store(0, JitOptions.INFO_LOG_BUFFER)
+            opts.store(1, JitOptions.INFO_LOG_BUFFER_SIZE_BYTES)
+            opts.store(2, JitOptions.ERROR_LOG_BUFFER)
+            opts.store(3, JitOptions.ERROR_LOG_BUFFER_SIZE_BYTES)
+
+            let info_buffer = stack_allocation[buffer_size, Int8]()
+            let error_buffer = stack_allocation[buffer_size, Int8]()
+
+            let buffer_size_ptr = bitcast[AnyType](buffer_size)
+
+            let option_vals = stack_allocation[num_options, Pointer[AnyType]]()
+            option_vals.store(0, info_buffer.bitcast[AnyType]())
+            option_vals.store(1, buffer_size_ptr)
+            option_vals.store(2, info_buffer.bitcast[AnyType]())
+            option_vals.store(3, buffer_size_ptr)
+
+            _check_error(
+                _get_dylib_function[
+                    # fmt: off
+                    fn (
+                        Pointer[_ModuleImpl],
+                        DTypePointer[DType.int8],
+                        UInt32,
+                        Pointer[JitOptions],
+                        Pointer[Pointer[AnyType]]
+                    ) -> Result
+                    # fmt: on
+                ]("cuModuleLoadDataEx")(
+                    Pointer.address_of(module),
+                    content.data,
+                    UInt32(num_options),
+                    opts,
+                    option_vals,
+                )
+            )
+
+            let info_buffer_str = StringRef(info_buffer)
+            if info_buffer_str:
+                print(info_buffer_str)
+
+            let error_buffer_str = StringRef(error_buffer)
+            if error_buffer_str:
+                print(error_buffer_str)
+        else:
+            _check_error(
+                _get_dylib_function[
+                    fn (
+                        Pointer[_ModuleImpl], DTypePointer[DType.int8]
+                    ) -> Result
+                ]("cuModuleLoadData")(Pointer.address_of(module), content.data)
+            )
         self.module = module
 
     fn __init__(inout self, content: String) raises:
@@ -2381,10 +2433,10 @@ struct Function[func_type: AnyType, func: func_type]:
     var mod_handle: ModuleHandle
     var func_handle: FunctionHandle
 
-    fn __init__(inout self) raises:
+    fn __init__(inout self, debug: Bool = False) raises:
         alias ptx = _compile_nvptx_asm[func_type, func]()
         alias name = get_linkage_name[func_type, func]()
-        self.mod_handle = ModuleHandle(StringRef(ptx))
+        self.mod_handle = ModuleHandle(StringRef(ptx), debug)
         self.func_handle = self.mod_handle.load(name)
 
     fn __del__(owned self) raises:
