@@ -22,6 +22,7 @@ add_modular_tool(kgen
   KGENCompiler
   KGENEmitObject
   KGENExecutionEngine
+  KGENPackage
   LLCLRuntimeGlobals
   MArchTarget
   MSupportGlobals

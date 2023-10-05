@@ -5,8 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Package/Package.h"
+#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Buffer.h"
 
@@ -14,9 +17,14 @@
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/BLAKE3.h"
+#include "llvm/Support/SourceMgr.h"
 
 using namespace M;
 using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// createElaboratedBytecodeAttr
+//===----------------------------------------------------------------------===//
 
 ErrorOr<DenseResourceElementsAttr>
 M::KGEN::createElaboratedBytecodeAttr(const SymbolTable &symtab,
@@ -50,6 +58,10 @@ M::KGEN::createElaboratedBytecodeAttr(const SymbolTable &symtab,
                             "bytecode_" +
                                 llvm::toHex(hash, /*LowerCase=*/true));
 }
+
+//===----------------------------------------------------------------------===//
+// createPackageArchive
+//===----------------------------------------------------------------------===//
 
 ErrorOr<DenseResourceElementsAttr> M::KGEN::createPackageArchive(
     const SymbolTable &symtab, const ExportMap &exportedSymbols,
@@ -86,4 +98,119 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::createPackageArchive(
       theModule.getContext(),
       ArrayRef(archive->getBufferStart(), archive->getBufferSize()),
       "archive_" + llvm::toHex(hash, /*LowerCase=*/true));
+}
+
+//===----------------------------------------------------------------------===//
+// loadAndElaborateBytecode
+//===----------------------------------------------------------------------===//
+
+/// Given a pre-elaborated module representing a package linked to by the given
+/// package_link op, elaborates the module for the given target and creates an
+/// attribute for the resulting bytecode. If successful, this returns the
+/// attribute, the elaborated module's symbol table, and a map of its exported
+/// symbols, or if unsuccessful this returns an error.
+static ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
+elaborateBytecode(ModuleOp packageModule, PackageLinkOp packageLink,
+                  TargetInfoAttr targetInfo, BuildInfoAttr buildInfo,
+                  const CompilationOptions &compileOptions,
+                  LLCL::Runtime &runtime) {
+  // Run elaboration passes on the pre-elaborated module.
+  auto cacheBackends = getMojoCacheBackends(runtime);
+  if (cacheBackends.isError())
+    return cacheBackends.takeError();
+  auto transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(cacheBackends->first));
+  auto regionCache =
+      RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
+
+  setTargetInfo(packageModule, targetInfo);
+  setBuildInfo(packageModule, buildInfo);
+  mlir::PassManager elaboratePM(packageModule->getContext());
+  populateElaborateModulePasses(elaboratePM, runtime, targetInfo, buildInfo,
+                                compileOptions);
+  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+      packageModule, regionCache.copy(), transformCache.copy(),
+      runtime.getReadyChain().copy(), elaboratePM, /*deflateTarget=*/false);
+  LLCL::await(ready);
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
+
+  // Construct the symbol table and export map.
+  SymbolTable symtab(packageModule);
+  ExportMap exportMap = getExportedSymbols(packageModule);
+
+  // Create the elaborated bytecode attribute, and set it on the link op.
+  auto bytecodeResourceOr = createElaboratedBytecodeAttr(
+      symtab, FlatSymbolRefAttr::get(packageLink.getSymNameAttr()));
+  if (bytecodeResourceOr.isError())
+    return bytecodeResourceOr.takeError();
+  DenseResourceElementsAttr bytecodeResource = bytecodeResourceOr.takeValue();
+
+  return std::make_tuple(bytecodeResource, symtab, exportMap);
+}
+
+/// Loads serialized MLIR bytecode representing a pre-elaborated module for a
+/// package, elaborates it, and generates a static archive. If successful, the
+/// given package_link op will have its elaborated bytecode and static archive
+/// attributes set.
+ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
+    PackageLinkOp packageLink, TargetInfoAttr targetInfo,
+    BuildInfoAttr buildInfo, const CompilationOptions &compileOptions,
+    LLCL::Runtime &runtime) {
+  // Load the pre-elaborated bytecode, which contains the package module.
+  // We'll run the elaborator on this bytecode module.
+  mlir::AsmResourceBlob *blob =
+      packageLink.getPreElaborationModuleAttr().getRawHandle().getBlob();
+  if (!blob)
+    return Error("unable to find the pre-elaborated module blob");
+  ArrayRef<char> bytecode = blob->getData();
+  llvm::MemoryBufferRef bufferRef(StringRef(bytecode.begin(), bytecode.size()),
+                                  "");
+
+  // Read the entirety of the bytecode in the buffer; no lazy loading.
+  auto sourceMgr = std::make_shared<llvm::SourceMgr>();
+  mlir::ParserConfig parserConfig(packageLink.getContext());
+  mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/false,
+                              sourceMgr);
+  Block block;
+  if (failed(reader.readTopLevel(&block)))
+    return Error("unable to read pre-elaborated module blob");
+  ModuleOp packageModule = cast<ModuleOp>(block.front());
+
+  // Elaborate the bytecode for the given target, and set the resulting bytecode
+  // as an attribute on the package_link op.
+  auto elaborateOr = elaborateBytecode(packageModule, packageLink, targetInfo,
+                                       buildInfo, compileOptions, runtime);
+  if (elaborateOr.isError())
+    return elaborateOr.takeError();
+  auto [bytecodeResource, symtab, exportedSymbols] = elaborateOr.takeValue();
+
+  // Create the compiled archive of the package, and set the resulting archive
+  // bytes as an attribute on the package_link op.
+  auto archiveOr =
+      createPackageArchive(symtab, exportedSymbols, compileOptions, runtime);
+  if (archiveOr.isError())
+    return archiveOr.takeError();
+  packageLink.setArchiveAttr(PackageArchiveAttr::get(
+      targetInfo, bytecodeResource, archiveOr.takeValue()));
+
+  return packageLink.getArchive().getElaboratedModule();
+}
+
+//===----------------------------------------------------------------------===//
+// populateElaborateModulePasses
+//===----------------------------------------------------------------------===//
+
+void M::KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
+                                            LLCL::Runtime &runtime,
+                                            TargetInfoAttr target,
+                                            BuildInfoAttr build,
+                                            const CompilationOptions &options) {
+  populateElaborateModulePasses(
+      pm, runtime, target, build, options,
+      [=, &runtime](PackageLinkOp packageLink, TargetInfoAttr targetInfo,
+                    BuildInfoAttr buildInfo) {
+        return loadAndElaborateBytecode(packageLink, targetInfo, buildInfo,
+                                        options, runtime);
+      });
 }

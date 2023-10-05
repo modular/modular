@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/Pass/PassManager.h"
 
 namespace M {
 namespace LLCL {
@@ -20,6 +21,7 @@ class Runtime;
 namespace M::KGEN {
 
 class CompilationOptions;
+class PackageLinkOp;
 
 /// Given the symbol table of an elaborated module for a Mojo package, as well
 /// as that package's name, returns either an attribute to store the module
@@ -34,6 +36,23 @@ createElaboratedBytecodeAttr(const SymbolTable &symtab,
 ErrorOr<DenseResourceElementsAttr> createPackageArchive(
     const SymbolTable &symtab, const ExportMap &exportedSymbols,
     const CompilationOptions &compileOptions, LLCL::Runtime &runtime);
+
+/// Loads the serialized MLIR bytecode representing a pre-elaborated module for
+/// package off of the given `packageLink` op, elaborates it, and generates a
+/// static archive. If successful, an archive will be set on the given op.
+ErrorOr<DenseResourceElementsAttr>
+loadAndElaborateBytecode(PackageLinkOp packageLink, TargetInfoAttr targetInfo,
+                         BuildInfoAttr buildInfo,
+                         const CompilationOptions &compileOptions,
+                         LLCL::Runtime &runtime);
+
+/// This populates the passes to produce a fully concrete KGEN module. It's the
+/// equivalent of the `buildElaborateModulePipeline` function defined in
+/// KGENCompiler, but with a default handler for package link ops.
+void populateElaborateModulePasses(mlir::PassManager &pm,
+                                   LLCL::Runtime &runtime,
+                                   TargetInfoAttr target, BuildInfoAttr build,
+                                   const CompilationOptions &options);
 } // namespace M::KGEN
 
 #endif // KGEN_PACKAGE_PACKAGE_H

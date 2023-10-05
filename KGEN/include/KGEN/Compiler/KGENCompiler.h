@@ -26,12 +26,14 @@ namespace M::KGEN {
 // populateElaborateModulePasses
 //===----------------------------------------------------------------------===//
 
-/// This populates the passes to produce a fully concrete KGEN module. It is the
-/// same as the function above, but allows the user to specify their own JIT.
+/// This populates the passes to produce a fully concrete KGEN module. It's the
+/// equivalent of the `buildElaborateModulePipeline` function, but with common
+/// defaults for elaboration handlers.
 void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
                                    TargetInfoAttr target, BuildInfoAttr build,
-                                   const CompilationOptions &options);
+                                   const CompilationOptions &options,
+                                   PackageLinkHandlerFn packageLinkHandlerFn);
 
 //===----------------------------------------------------------------------===//
 // Caching
@@ -70,7 +72,8 @@ public:
 
   /// Add a module to the JIT. This module will be modified in-place as
   /// compilation occurs, and will be forwarded to the ObjectCompilerLayer.
-  ErrorOrSuccess add(StringRef libName, ModuleOp theModule);
+  ErrorOrSuccess add(StringRef libName, ModuleOp theModule,
+                     PackageLinkHandlerFn packageLinkHandlerFn);
 
   /// Given a library name and a module, emit the code for it. This runs
   /// the passes in `populateElaborateModulePasses` and calls `emit` on the
