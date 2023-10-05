@@ -1263,7 +1263,7 @@ fn _elementwise_impl[
         let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
 
     try:
-        alias func_type = fn (StaticIntTuple[rank]) -> None
+        alias func_type = fn (StaticIntTuple[rank]) capturing -> None
         let gpu_func = Function[
             func_type, rebind[func_type](_elementwise_gpu_kernel)
         ]("_elementwise_gpu_kernel")
