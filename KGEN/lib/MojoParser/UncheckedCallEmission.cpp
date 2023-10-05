@@ -259,11 +259,13 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
 CallEmitter::emitArgValues(const CallOperands &operands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
-  size_t nextOperandIdx = 0;
-  size_t nextDefaultIdx = 0;
+  size_t posOperandIdx = 0;
+
+  size_t numInputs = calleeSig.getNumInputs();
+  ArrayRef<TypedAttr> defaultArgs = calleeSig.getDefaultArguments();
 
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
-  argumentValues.reserve(calleeSig.getNumInputs());
+  argumentValues.reserve(numInputs);
   for (auto [argIdx, argName, expectedTypeX, convention] :
        llvm::enumerate(calleeSig.getArgNames(), calleeSig.getValueInputs(),
                        calleeSig.getInputConventions())) {
@@ -300,51 +302,66 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // If we ran out of operands, fulfill this with a keyword argument, default
     // value, empty variadic list, or empty pack.
-    if (nextOperandIdx == posOperands.size()) {
-      Attribute argAttr;
+    if (posOperandIdx == posOperands.size()) {
       if (calleeSig.isVarArg(argIdx)) {
         // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
-        argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
-                                    expectedType.cast<VariadicType>());
-      } else if (auto packType = getIfPackType(calleeSig, argIdx)) {
+        auto argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
+                                         expectedType.cast<VariadicType>());
+        argumentValues.push_back({PValue(argAttr), callExpr});
+        continue;
+      }
+      if (auto packType = getIfPackType(calleeSig, argIdx)) {
         // Pack arguments are fulfilled with an empty !pop.pack sequence.
         assert(packType.isEmpty() &&
                "pack type already checked against operand count");
-        argAttr = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
-      } else if (auto kwOperandOr = operands.findKwArg(argName);
-                 kwOperandOr.has_value()) {
+        auto argAttr = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
+        argumentValues.push_back({PValue(argAttr), callExpr});
+        continue;
+      }
+      if (auto kwOperandOr = operands.findKwArg(argName);
+          kwOperandOr.has_value()) {
         // The argument is passed as a keyword operand.
         AnyValue argVal =
             emitOneArgVal(*kwOperandOr, argIdx, convention, expectedType);
         if (!argVal)
           return failure();
         argumentValues.push_back({argVal, kwOperandOr->expr});
-        if (argIdx >=
-            calleeSig.getNumInputs() - calleeSig.getDefaultArguments().size()) {
-          // If we provided a keyword operand for an argument with a default
-          // value, advance the index.
-          ++nextDefaultIdx;
-        }
         continue;
-      } else {
-        // Otherwise, apply the default argument. We've ensured above that we
-        // have a default argument for each missing operand.
-        argAttr = calleeSig.getDefaultArguments()[nextDefaultIdx++];
       }
-      argumentValues.push_back({PValue(argAttr), callExpr});
+
+      // Otherwise, apply the default argument. We've ensured before that we
+      // have a default argument for each missing operand.
+      size_t defaultStartIdx = numInputs - defaultArgs.size();
+      assert(argIdx >= defaultStartIdx);
+
+      TypedAttr defaultArg = defaultArgs[argIdx - defaultStartIdx];
+      if (convention == ValueInputConvention::ByRef) {
+        // If a default value is specified for an `inout` argument, we emit a
+        // mutable variable and pass that instead.
+        if (auto memWrapper = dyn_cast<StoreToMemAttr>(defaultArg))
+          defaultArg = memWrapper.getValue();
+
+        auto nameAttr =
+            builder->getStringAttr("__default_arg_" + Twine(argIdx) + "__");
+        auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
+        auto varOp = builder->create<VarLetDeclOp>(
+            loc, defaultArg.getType(), nameAttr, lifetimeAttr,
+            /*isVar=*/true, /*isSynth=*/true);
+        if (!emitter.emitPValueToXLValue({PValue(defaultArg), callExpr},
+                                         MLValue(varOp), EC_CallArgValue))
+          return failure();
+        argumentValues.push_back({XLValue(varOp), callExpr});
+      } else {
+        argumentValues.push_back({PValue(defaultArg), callExpr});
+      }
       continue;
-    } else if (argIdx >= calleeSig.getNumInputs() -
-                             calleeSig.getDefaultArguments().size()) {
-      // If we provided a positional operand for an argument with a default
-      // value, advance the index.
-      ++nextDefaultIdx;
     }
 
     // Otherwise, we're applying one or more arguments to this.
     // For a normal (not a vararg or a pack) argument, we just emit it and add
     // it to our list.
     if (!calleeSig.isVarArg(argIdx) && !isa<POP::PackType>(expectedType)) {
-      ASTExprAnd<AnyValue> operand = posOperands[nextOperandIdx++];
+      ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
       AnyValue argVal =
           emitOneArgVal(operand, argIdx, convention, expectedType);
       if (!argVal)
@@ -356,8 +373,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // At this point, we must be dealing with variadic or pack arguments. We
     // handle these all at once (or fail).
     SmallVector<ASTExprAnd<AnyValue>> remainingOperands(
-        posOperands.begin() + nextOperandIdx, posOperands.end());
-    nextOperandIdx = posOperands.size();
+        posOperands.begin() + posOperandIdx, posOperands.end());
+    posOperandIdx = posOperands.size();
 
     if (succeeded(emitRemainingPosOperands(argIdx, remainingOperands,
                                            convention, expectedType,
@@ -367,7 +384,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     return failure();
   }
 
-  assert(nextOperandIdx == posOperands.size() &&
+  assert(posOperandIdx == posOperands.size() &&
          "typechecking confirmed that we would use up all operands");
   return argumentValues;
 }
