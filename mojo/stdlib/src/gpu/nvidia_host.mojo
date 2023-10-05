@@ -26,6 +26,7 @@ alias CUDA_DRIVER_PATH = "/usr/lib/x86_64-linux-gnu/libcuda.so"
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn _check_error(err: Result) raises:
     if err != Result.SUCCESS:
         raise Error(err.__str__())
@@ -1954,24 +1955,22 @@ struct ModuleHandle:
             option_vals.store(2, info_buffer.bitcast[AnyType]())
             option_vals.store(3, buffer_size_ptr)
 
-            _check_error(
-                _get_dylib_function[
-                    # fmt: off
-                    fn (
-                        Pointer[_ModuleImpl],
-                        DTypePointer[DType.int8],
-                        UInt32,
-                        Pointer[JitOptions],
-                        Pointer[Pointer[AnyType]]
-                    ) -> Result
-                    # fmt: on
-                ]("cuModuleLoadDataEx")(
-                    Pointer.address_of(module),
-                    content.data,
-                    UInt32(num_options),
-                    opts,
-                    option_vals,
-                )
+            let result = _get_dylib_function[
+                # fmt: off
+                fn (
+                    Pointer[_ModuleImpl],
+                    DTypePointer[DType.int8],
+                    UInt32,
+                    Pointer[JitOptions],
+                    Pointer[Pointer[AnyType]]
+                ) -> Result
+                # fmt: on
+            ]("cuModuleLoadDataEx")(
+                Pointer.address_of(module),
+                content.data,
+                UInt32(num_options),
+                opts,
+                option_vals,
             )
 
             let info_buffer_str = StringRef(info_buffer)
@@ -1981,6 +1980,8 @@ struct ModuleHandle:
             let error_buffer_str = StringRef(error_buffer)
             if error_buffer_str:
                 print(error_buffer_str)
+
+            _check_error(result)
         else:
             _check_error(
                 _get_dylib_function[
@@ -2811,6 +2812,18 @@ fn _copy_host_to_device[
     )
 
 
+fn _copy_host_to_device[
+    type: DType
+](
+    device_dest: DTypePointer[type], host_src: DTypePointer[type], count: Int
+) raises:
+    _copy_host_to_device[SIMD[type, 1]](
+        device_dest.as_scalar_pointer(),
+        host_src.as_scalar_pointer(),
+        count,
+    )
+
+
 fn _copy_device_to_host[
     type: AnyType
 ](host_dest: Pointer[type], device_src: Pointer[type], count: Int) raises:
@@ -2822,6 +2835,18 @@ fn _copy_device_to_host[
             device_src.bitcast[UInt32](),
             count * sizeof[type](),
         )
+    )
+
+
+fn _copy_device_to_host[
+    type: DType
+](
+    host_dest: DTypePointer[type], device_src: DTypePointer[type], count: Int
+) raises:
+    _copy_device_to_host[SIMD[type, 1]](
+        host_dest.as_scalar_pointer(),
+        device_src.as_scalar_pointer(),
+        count,
     )
 
 
