@@ -11,6 +11,7 @@ from utils.index import StaticIntTuple, Index
 from sys.info import sizeof
 from pathlib import Path
 from math import floor
+from utils._reflection import get_linkage_name
 
 # ===----------------------------------------------------------------------===#
 # Globals
@@ -2106,8 +2107,9 @@ struct Function[func_type: AnyType, func: func_type]:
     var mod_handle: ModuleHandle
     var func_handle: FunctionHandle
 
-    fn __init__(inout self, name: String) raises:
+    fn __init__(inout self) raises:
         alias ptx = _compile_nvptx_asm[func_type, func]()
+        alias name = get_linkage_name[func_type, func]()
         self.mod_handle = ModuleHandle(StringRef(ptx))
         self.func_handle = self.mod_handle.load(name)
 
