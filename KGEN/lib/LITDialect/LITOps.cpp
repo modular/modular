@@ -673,6 +673,16 @@ LogicalResult LIT::FuncOp::verify() {
       return emitOpError(
           "external function requires attribute 'preElaborationName'");
   }
+  // Any argument without an argument name needs an entry in the positional
+  // argument names attribute.
+  unsigned positionalArgumentCount = 0;
+  for (StringAttr name : getSignature().getMetadata().getArgNames()) {
+    if (name.empty())
+      ++positionalArgumentCount;
+  }
+  if (getPosArgNames().size() != positionalArgumentCount)
+    return emitOpError("every positional only argument must have an entry in "
+                       "the positional argument names attribute");
 
   return success();
 }

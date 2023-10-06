@@ -72,12 +72,13 @@ addClosureSelfArgToFunctionSignature(Type closureType, LITSignatureType sig) {
   if (hasResultSlot) {
     callMemberSignatureInputs.push_back(sig.getValueInputs()[0]);
     callMemberInputConventions.push_back(ValueInputConvention::ByRefResult);
-    callMemberArgNames.push_back(StringAttr::get(ctx, "__result__"));
+    callMemberArgNames.push_back(StringAttr::get(ctx, ""));
   }
   // Add self.
   callMemberSignatureInputs.push_back(closureType);
   callMemberInputConventions.push_back(ValueInputConvention::BorrowedInMem);
-  callMemberArgNames.push_back(StringAttr::get(ctx, "self"));
+  callMemberArgNames.push_back(StringAttr::get(ctx, ""));
+
   // Add the rest of the arguments.
   for (unsigned j = hasResultSlot, e = sig.getNumInputs(); j < e; j++) {
     callMemberSignatureInputs.push_back(sig.getValueInputs()[j]);
@@ -482,7 +483,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   if (hasByRefReturn) {
     callInputTypes.push_back(closureWrapperSignature.getValueInputs()[0]);
     callConventions.push_back(closureWrapperSignature.getInputConvention(0));
-    callNames.push_back(StringAttr::get(ctx, "__result__"));
+    callNames.push_back(StringAttr::get(ctx, ""));
   }
 
   // Currently Closure Impls are not register passable, so use BorrowInMem
