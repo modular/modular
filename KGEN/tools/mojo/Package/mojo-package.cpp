@@ -17,6 +17,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Package/Package.h"
+#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -78,7 +79,7 @@ class PackageBuilder {
 public:
   /// Construct the PackageBuilder from the parsed package op.
   PackageBuilder(LIT::PackageOp parsedPackageOp, TargetInfoAttr target,
-                 EnvAttr env);
+                 EnvAttr env, const CompilationOptions &options);
 
   /// Given a pre-elaboration module, attach the bytecode for the pre-elaborated
   /// versions of each non-parametric function to the high level lit.func in
@@ -114,7 +115,7 @@ private:
   LIT::PackageOp thePackage;
   /// This maps from a flattened name to the LIT::FuncOp in the package
   /// module.
-  DenseMap<StringAttr, LIT::FuncOp> flattenedNameToFunc;
+  DenseMap<StringAttr, std::pair<LIT::FuncOp, StringAttr>> flattenedNameToFunc;
 };
 } // namespace
 
@@ -147,7 +148,8 @@ static bool canExternalize(LIT::FuncOp func) {
 }
 
 PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
-                               TargetInfoAttr target, EnvAttr env) {
+                               TargetInfoAttr target, EnvAttr env,
+                               const CompilationOptions &options) {
   packageModule = ModuleOp::create(parsedPackageOp->getLoc());
   OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
 
@@ -227,10 +229,17 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
           // Map the function to the alias it will have. Otherwise, use the
           // mangled version of the original func, because that's what its name
           // will be post-elaboration.
-          StringAttr postElaborationName = func.getLinkageNameAttr();
-          if (!postElaborationName)
-            postElaborationName = LIT::MangledSymbol::mangle(func).mangled;
-          flattenedNameToFunc.try_emplace(postElaborationName, clonedFunc);
+          StringAttr preElaborationName = func.getLinkageNameAttr();
+          if (!preElaborationName)
+            preElaborationName = LIT::MangledSymbol::mangle(func).mangled;
+          StringAttr postElaborationName = preElaborationName;
+          // If we are sanitizing symbols during elaboration, the
+          // post-elaboration name will be different than the pre-elaboration
+          // name.
+          if (options.sanitizeMangledSymbols)
+            postElaborationName = sanitizeSymbolToAlnum(postElaborationName);
+          flattenedNameToFunc.insert(
+              {postElaborationName, {clonedFunc, preElaborationName}});
         })
         // Drop export ops unconditionally.
         .Case([&](LIT::UnresolvedImportOp op) {
@@ -283,7 +292,7 @@ PackageBuilder::createPostElaborationModuleAttr(
   DenseResourceElementsAttr bytecodeResource = bytecodeResourceOr.takeValue();
 
   for (auto [symName, exportSym] : exportedSymbols) {
-    LIT::FuncOp hlFunc = flattenedNameToFunc.lookup(symName);
+    auto [hlFunc, preElaborationName] = flattenedNameToFunc.lookup(symName);
 
     // We only care about functions in the package.
     if (!hlFunc)
@@ -297,6 +306,7 @@ PackageBuilder::createPostElaborationModuleAttr(
       return Error("could not find kgen.func with name " + symName.getValue());
 
     hlFunc.setPreCompiledModuleRefAttr(packageName);
+    hlFunc.setPreElaborationNameAttr(preElaborationName);
     hlFunc.setLinkageName(symName);
   }
 
@@ -457,7 +467,7 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
   // Set up the package builder.
   PackageBuilder packageBuilder(parsedPackageOp, packageArgs.target,
-                                packageArgs.env);
+                                packageArgs.env, packageArgs.compileOptions);
   mlir::MLIRContext *ctx = packageBuilder.getContext();
   const CompilationOptions &compilationOptions = packageArgs.compileOptions;
 

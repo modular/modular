@@ -237,7 +237,8 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_ParamDeclArrayAttr:$resultParams,
                        KGEN_ExportKindAttr:$exportKind,
-                       OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef);
+                       OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef,
+                       OptionalAttr<StrAttr>:$linkageName);
   let regions = (region SizedRegion<0>:$body);
 
   let extraClassDeclaration = [{

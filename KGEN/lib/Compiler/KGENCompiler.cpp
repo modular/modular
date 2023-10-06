@@ -8,6 +8,7 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
+#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -145,6 +146,7 @@ static ErrorOr<BufferRef> compileElaboratorAsm(GeneratorOp func,
   elaboratorOptions.elaborateLocations =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
+  elaboratorOptions.sanitizeSymbolNames = options.sanitizeMangledSymbols;
   mlir::PassManager pm(target.getContext());
   pm.addPass(createElaborateGenerators(
       runtime, target, BuildInfoAttr::getForCurrentBuild(target.getContext()),

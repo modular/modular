@@ -19,6 +19,7 @@ add_custom_target(mojo-sdk DEPENDS mojo-stdlib)
 
 # KGEN MLIR dialects.
 add_subdirectory(include/KGEN)
+add_subdirectory(lib/Support)
 add_subdirectory(lib/Interpreter)
 add_subdirectory(lib/HLCFDialect)
 add_subdirectory(lib/KGENDialect)

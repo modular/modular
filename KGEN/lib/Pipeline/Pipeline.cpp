@@ -89,6 +89,7 @@ void KGEN::buildElaborateModulePipeline(
   elaboratorOptions.elaborateLocations =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
+  elaboratorOptions.sanitizeSymbolNames = options.sanitizeMangledSymbols;
   pm.addPass(createElaborateGenerators(
       runtime, target, build, elaboratorOptions, std::move(evaluatorExecutorFn),
       std::move(compileAsmFn)));

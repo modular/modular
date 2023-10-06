@@ -10,12 +10,12 @@
 
 
 @no_inline
-fn use(i: Int):
+fn three_times(i: Int):
     pass
 
 
 fn main():
     @unroll
-    # CHECK-COUNT-3: kgen.call @"$unroll-guarantee::use
+    # CHECK-COUNT-3: kgen.call @{{.*}}three_times
     for i in range(3):
-        use(i)
+        three_times(i)

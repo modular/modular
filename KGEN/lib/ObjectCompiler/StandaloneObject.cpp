@@ -380,32 +380,6 @@ addBinaryToArchive(llvm::MemoryBufferRef bufferRef,
   // Otherwise, expand the archive and add its children to the new member list.
   auto *archive = cast<llvm::object::Archive>(binary.get());
 
-  // In theory, we could inspect the archive to find the members we actually
-  // need and only add those, but that's a pretty big chunk of the job of a
-  // linker. We do correctness checking here, to ensure the symbols we expect to
-  // find are in the archive. Don't use `findSym` in a loop here because it
-  // basically just iterates all the symbols in the archive for each call, so we
-  // inline the logic here.
-  llvm::StringSet<> foundSymbols;
-  for (auto symbol : archive->symbols()) {
-    StringRef symName = symbol.getName().ltrim('_');
-    if (users.contains(symName))
-      foundSymbols.insert(symName);
-  }
-
-  // Set difference computes A - B, so put `users` first since `foundSymbols` is
-  // a strict subset.
-  llvm::StringSet<> missingSymbols = llvm::set_difference(users, foundSymbols);
-  if (!missingSymbols.empty()) {
-    std::string tmp;
-    llvm::raw_string_ostream stream(tmp);
-    stream << "could not find definitions for symbols: [";
-    llvm::interleaveComma(missingSymbols, stream,
-                          [&](const auto &p) { stream << p.getKey(); });
-    stream << "]";
-    return Error(tmp);
-  }
-
   // Add all the children in the archive to the new output archive.
   llvm::Error err = llvm::Error::success();
   for (auto &child : archive->children(err)) {
@@ -657,8 +631,8 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
         chain.andThenAsync([this, nonBitcodeKeySize, loc,
                             output = output.copy(), keyBuf = std::move(keyBuf),
                             buf = buf.copy()]() mutable {
-          // Extract out the bitcode from the key, as LLVM bitcode dies if the
-          // buffer contains other data.
+    // Extract out the bitcode from the key, as LLVM bitcode dies if the
+    // buffer contains other data.
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"

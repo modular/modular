@@ -239,21 +239,22 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     signature = IndexRefRemapper::prependParams(signature, parentInputParams);
   }
 
-  // If the function has an alias name, rename it.
-  if (StringAttr newName = gen.getLinkageNameAttr()) {
-    renamedSymbols[gen.getNameAttr()] = newName;
-    gen.setSymName(newName);
-  }
-
   OpBuilder b(gen->getContext());
   Operation *result;
   if (gen.isExternal()) {
     // Replace external functions with `kgen.extern.generator` ops.
     result = b.create<ExternGeneratorOp>(
-        gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
+        gen.getLoc(), gen.getPreElaborationNameAttr(), TypeAttr::get(signature),
         gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
-        gen.getExportKindAttr(), gen.getPreCompiledModuleRefAttr());
+        gen.getExportKindAttr(), gen.getPreCompiledModuleRefAttr(),
+        gen.getLinkageNameAttr());
   } else {
+    // If the function has an alias name, rename it.
+    if (StringAttr newName = gen.getLinkageNameAttr()) {
+      renamedSymbols[gen.getNameAttr()] = newName;
+      gen.setSymName(newName);
+    }
+
     // Directly lower since these operations are exactly identical right now.
     auto newGen = b.create<GeneratorOp>(
         gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),

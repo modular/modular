@@ -125,6 +125,7 @@ void MaterializePackagesPass::runOnOperation() {
     toInflate[func.getPreCompiledModuleRefAttr().getAttr()].emplace_back(func);
 
   mlir::ParserConfig parserConfig(&getContext(), /*verifyAfterParse=*/false);
+  DenseMap<StringAttr, StringAttr> renamedSymbols;
   for (auto &[moduleRef, funcs] : toInflate) {
     auto packageLink = symtab.lookup<PackageLinkOp>(moduleRef);
     if (!packageLink) {
@@ -196,11 +197,23 @@ void MaterializePackagesPass::runOnOperation() {
     // bytecode module.
     SmallVector<Operation *> operationsToInflate;
     for (ExternGeneratorOp func : funcs) {
-      auto result = bytecodeSymtab.lookup<ExportInterface>(func.getName());
+      // Try the post-elaboration (linkage) name first, and then fallback to the
+      // pre-elaboration name.
+      StringAttr linkageName = func.getLinkageNameAttr();
+      StringAttr preElaborationName = func.getSymNameAttr();
+      auto result = bytecodeSymtab.lookup<ExportInterface>(linkageName);
       if (!result) {
-        func.emitError() << "unable to find " << func.getName()
-                         << " in imported package bytecode";
-        return signalPassFailure();
+        result = bytecodeSymtab.lookup<ExportInterface>(preElaborationName);
+        if (!result) {
+          (void)reader.finalize();
+          mlir::emitError(func.getLoc(), "unable to find ")
+              << preElaborationName.getValue()
+              << " in imported package bytecode";
+          return signalPassFailure();
+        }
+      } else {
+        // The post-elaboration name is different, so we need to do a rename.
+        renamedSymbols.insert({func.getSymNameAttr(), linkageName});
       }
       operationsToInflate.push_back(result);
       result->moveAfter(func);
@@ -238,6 +251,20 @@ void MaterializePackagesPass::runOnOperation() {
       symtab.erase(packageLink);
     }
   }
+  // Rename post-elaboration references.
+  mlir::parallelForEach(
+      &getContext(), getOperation().getOps(), [&renamedSymbols](Operation &op) {
+        mlir::AttrTypeReplacer replacer;
+        replacer.addReplacement([&renamedSymbols](FlatSymbolRefAttr ref) {
+          if (auto it = renamedSymbols.find(ref.getAttr());
+              it != renamedSymbols.end())
+            return FlatSymbolRefAttr::get(it->second);
+          return ref;
+        });
+        replacer.recursivelyReplaceElementsIn(&op, /*replaceAttrs=*/true,
+                                              /*replaceLocs=*/false,
+                                              /*replaceTypes=*/true);
+      });
 }
 
 std::unique_ptr<mlir::Pass>

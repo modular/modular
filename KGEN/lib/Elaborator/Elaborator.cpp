@@ -17,6 +17,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Support/ForkJoin.h"
@@ -516,7 +517,7 @@ public:
                  EvaluatorExecutorFnRef evaluatorExecutorFn,
                  ElaboratorCompileAsmFnRef compileAsmFn, LLCL::Runtime &runtime,
                  const ElaborateGeneratorsOptions &config)
-      : Elaborator(symtab, target), config(config), g(runtime),
+      : Elaborator(symtab, target, config), g(runtime),
         paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
         evaluatorExecutorFn(evaluatorExecutorFn), compileAsmFn(compileAsmFn),
         runtime(runtime) {}
@@ -697,9 +698,6 @@ private:
   /// proper data structure.
   Shared<DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>>>
       knownGraphs;
-
-  /// The elaborator config.
-  ElaborateGeneratorsOptions config;
 
   /// The callgraph being expanded.
   ExpansionGraph g;
@@ -2392,6 +2390,34 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
         successfulFuncs.emplace_back(impl.func.getSymName(), impl.func);
       }
 
+      symtab.get().remove(node.gen);
+      auto renameFunc = [&funcsToRename, symtab = &symtab.get()](
+                            FuncOp func, StringAttr newName) {
+        funcsToRename[func.getNameAttr()] = newName;
+        symtab->remove(func);
+        func.setSymNameAttr(newName);
+        symtab->insert(func);
+      };
+
+      Builder b(theModule.getContext());
+      if (node.inputParams.empty() && first) {
+        // Rename the first successful function for concrete top-level
+        // generators, if there is one. Sanitize the symbol name if requested.
+        StringAttr newName = node.gen.getSymNameAttr();
+        if (config.sanitizeSymbolNames)
+          newName = sanitizeSymbolToAlnum(newName);
+        renameFunc(first, newName);
+      }
+      // Sanitize the rest of the symbol names if requested.
+      if (config.sanitizeSymbolNames) {
+        for (auto [_, func] : successfulFuncs) {
+          // Don't re-sanitize the first implementation.
+          if (func != first)
+            continue;
+          renameFunc(func, sanitizeSymbolToAlnum(func.getSymNameAttr()));
+        }
+      }
+
       // Sort the successful instantiations, if there are more than 1.
       if (successfulFuncs.size() > 1) {
         llvm::sort(successfulFuncs,
@@ -2399,17 +2425,6 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       }
       genInstantiations[node.gen].emplace_back(
           mlir::debugString(node.inputParams), std::move(successfulFuncs));
-
-      // Rename the first successful function for concrete top-level generators,
-      // if there is one.
-      symtab.get().remove(node.gen);
-      if (node.inputParams.empty() && first) {
-        StringAttr newName = node.gen.getSymNameAttr();
-        funcsToRename[first.getNameAttr()] = newName;
-        symtab.get().remove(first);
-        first.setSymNameAttr(newName);
-        symtab.get().insert(first);
-      }
     }
 
     // Now reorder all instantiations of each generator to be deterministic.
@@ -2435,18 +2450,37 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     TimeTraceScope traceScope("replaceCallSymbols");
     mlir::parallelForEach(
         theModule.getContext(), theModule.getOps<FuncOp>(),
-        [&funcsToRename](FuncOp func) {
-          func.getBodyRegion().walk([&](GeneratorUserOpInterface call) {
+        [&funcsToRename, sanitize = config.sanitizeSymbolNames](FuncOp func) {
+          func.getBodyRegion().walk([&](Operation *op) {
             // If this is a reference to a function that got renamed, update its
             // target.
-            auto callee = cast<SymbolConstantAttr>(call.getCallee());
-            if (StringAttr newName = funcsToRename.lookup(
-                    cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr())) {
-              call.updateCallee(SymbolConstantAttr::get(
-                  FlatSymbolRefAttr::get(newName), callee.getType()));
+            if (auto call = dyn_cast<GeneratorUserOpInterface>(op)) {
+              auto callee = cast<SymbolConstantAttr>(call.getCallee());
+              if (StringAttr newName = funcsToRename.lookup(
+                      cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr())) {
+                call.updateCallee(SymbolConstantAttr::get(
+                    FlatSymbolRefAttr::get(newName), callee.getType()));
+              }
+            } else if (auto addr = dyn_cast<GlobalAddressOp>(op)) {
+              if (sanitize)
+                addr.setGlobalAttr(FlatSymbolRefAttr::get(sanitizeSymbolToAlnum(
+                    addr.getGlobalAttr().getRootReference())));
             }
           });
         });
+    if (config.sanitizeSymbolNames) {
+      for (auto global : theModule.getOps<GlobalOp>()) {
+        if (SymbolRefAttr name = global.getCtorAttr())
+          global.setCtorAttr(FlatSymbolRefAttr::get(
+              sanitizeSymbolToAlnum(name.getRootReference())));
+        if (SymbolRefAttr name = global.getDtorAttr())
+          global.setDtorAttr(FlatSymbolRefAttr::get(
+              sanitizeSymbolToAlnum(name.getRootReference())));
+        symtab.get().remove(global);
+        global.setSymNameAttr(sanitizeSymbolToAlnum(global.getSymNameAttr()));
+        symtab.get().insert(global);
+      }
+    }
   }
 
   return success();
@@ -2593,7 +2627,8 @@ public:
             analysis, paramCache, *rt, target, primaryGenerators,
             evaluatorExecutorFn, compileAsmFn,
             ElaborateGeneratorsOptions{enableSearch, allowMultiplePrimaryImpls,
-                                       maxDepth, elaborateLocations})))
+                                       maxDepth, elaborateLocations,
+                                       sanitizeSymbolNames})))
       return signalPassFailure();
   }
 

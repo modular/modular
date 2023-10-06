@@ -447,7 +447,7 @@ lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStru
 
 // CHECK-LABEL: @external_func
 // CHECK-NEXT: lit.extern_func
-lit.func @external_func(%arg: !kgen.pointer<@MyStruct> owned_in_mem) attributes {preCompiledModuleRef = @package} {
+lit.func @external_func(%arg: !kgen.pointer<@MyStruct> owned_in_mem) attributes {preCompiledModuleRef = @package, preElaborationName = "external_func"} {
   lit.extern_func
 }
 

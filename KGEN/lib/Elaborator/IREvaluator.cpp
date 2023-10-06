@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Support/NameMangling.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -253,7 +254,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
     return failure();
   }
   auto funcSymbl = cast<FlatSymbolRefAttr>(symbol.getSymbol());
-  auto symbolName = funcSymbl.getAttr();
+  StringAttr symbolName = funcSymbl.getAttr();
   auto genOp = elaborator->getSymbolTable().read(
       [&](const SymbolTable &symtab) -> GeneratorOp {
         return symtab.lookup<GeneratorOp>(funcSymbl.getAttr());
@@ -264,6 +265,10 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
                "'get_linkage_name' operand requires to be parameter free"});
     return failure();
   }
+
+  if (elaborator->getOptions().sanitizeSymbolNames)
+    symbolName = sanitizeSymbolToAlnum(symbolName);
+
   return {StringAttr::get(symbolName.getValue(), op.getType())};
 }
 
