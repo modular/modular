@@ -169,10 +169,11 @@ struct ImplNode {
   /// shared prevents crashes, but means bindings propagation across cycles is
   /// nondeterministic. The only way to correctly propagate bindings in the
   /// presence of cycles is through fixed-point iteration...
-  Shared<DenseMap<std::pair<ArrayAttr, GeneratorOp>, ImplNode *>> bindings;
+  Shared<DenseMap<std::pair<ParameterExprArrayAttr, GeneratorOp>, ImplNode *>>
+      bindings;
   /// When you have result parameters, we need to store them to access them from
   /// outer scopes.
-  ArrayAttr resultParams;
+  ParameterExprArrayAttr resultParams;
   /// An error contained by this node. This allows us to delay error handling in
   /// cases where an error is recoverable.
   std::optional<ErrorTree> error;
@@ -275,8 +276,8 @@ private:
 /// dependencies in order to make that graph explicit.
 struct ParamNode {
   /// Create an expansion tree node to represent a generator instantiation.
-  ParamNode(LLCL::Runtime &runtime, GeneratorOp gen, ArrayAttr vals,
-            size_t depth)
+  ParamNode(LLCL::Runtime &runtime, GeneratorOp gen,
+            ParameterExprArrayAttr vals, size_t depth)
       : gen(gen), inputParams(vals), depth(depth),
         paramCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
 
@@ -314,7 +315,7 @@ struct ParamNode {
   /// The generator represented by this node.
   GeneratorOp gen;
   /// The input parameters with which the generator is being instantiated.
-  ArrayAttr inputParams;
+  ParameterExprArrayAttr inputParams;
   /// The current depth of the node. The depth varies based on the traversal
   /// order of the callgraph.
   size_t depth;
