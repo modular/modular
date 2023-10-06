@@ -26,9 +26,11 @@ class ParameterExprArrayAttr;
 
 namespace LIT {
 /// Parse an optional default value of the given type. `defaultVal` is not
-/// modified if a default value was not present.
+/// modified if a default value was not present. If `hasAddress` is set, the
+/// default value is parsed as if `type` is an address type: either a pointer or
+/// reference. The method is tolerant if `type` is not actually one.
 ParseResult parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
-                                      Type type);
+                                      Type type, bool hasAddress = false);
 
 /// Parse and print a ParamDeclAttr which has syntactic form `declName ([ name
 /// ])? (: declType )?`. `name` is the unmangled name (i.e. as the user declared

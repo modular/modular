@@ -445,7 +445,9 @@ static ParseResult parseLITFunctionSignature(
 
     // Parse an optional default value.
     TypedAttr defaultVal;
-    if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
+    if (failed(parseOptionalDefaultValue(
+            p, defaultVal, type,
+            SignatureType::hasAddress(inputConventions.back()))))
       return {};
     if (defaultVal)
       defaults.emplace_back(defaultVal);

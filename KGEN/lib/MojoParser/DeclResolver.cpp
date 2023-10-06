@@ -1784,12 +1784,6 @@ void DeclResolver::computeArgumentConventions(
       } else {
         argType = PointerType::get(argType);
       }
-
-      if (i >= defaultOffset) {
-        // Add the PValue to LValue conversion in the default value.
-        size_t index = i - defaultOffset;
-        defaults[index] = StoreToMemAttr::get(defaults[index], argType);
-      }
     }
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);

@@ -128,7 +128,9 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
     // Parse an optional default value.
     TypedAttr defaultVal;
-    if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
+    if (failed(parseOptionalDefaultValue(
+            p, defaultVal, type,
+            SignatureType::hasAddress(inputConventions.back()))))
       return {};
     if (defaultVal)
       argDefaults.emplace_back(defaultVal);
