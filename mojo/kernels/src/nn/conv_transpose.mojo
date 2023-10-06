@@ -60,16 +60,16 @@ fn conv_transpose[
     Parameters:
         rank: Rank of the input, output, and kernel tensors.
         type: Type of the input, output, and kernel tensors.
-        strides_type: Element type of strides,
-        dilations_type: Element type of dilations,
-        pads_type: Element type of pads,
+        strides_type: Element type of strides.
+        dilations_type: Element type of dilations.
+        pads_type: Element type of pads.
 
     Args:
         output: Output data tensor that contains the result of the convolution.
-        input: Input data tensor from previous layer, with size of (N x C x H x W),
+        input: Input data tensor from previous layer, with size of (N x H x W x C),
                where N is the batch size, C is the number of channels, and H and
                W are the height and width.
-        kernel: The weight (kernel) tensor, with size of (N x M/group x kH x kW),
+        kernel: The weight (kernel) tensor, with size of (kH x kW x N x M/group),
                 where C is the number of channels, kH and kW are the height and
                 width of the kernel, and M is the number of feature maps.
         strides: Stride along each spatial axis.
@@ -80,16 +80,16 @@ fn conv_transpose[
     """
 
     let N = Int(input.dim(0))  # Number of images (num. batches)
-    let H = Int(input.dim(2))  # Input height
-    let W = Int(input.dim(3))  # Input width
-    let C = Int(input.dim(1))  # Number of input channels
+    let H = Int(input.dim(1))  # Input height
+    let W = Int(input.dim(2))  # Input width
+    let C = Int(input.dim(3))  # Number of input channels
 
-    let R = Int(kernel.dim(2))  # Filter height
-    let S = Int(kernel.dim(3))  # Filter width
-    let F = Int(kernel.dim(1))  # Number of output channels
+    let R = Int(kernel.dim(0))  # Filter height
+    let S = Int(kernel.dim(1))  # Filter width
+    let F = Int(kernel.dim(3))  # Number of output channels
 
-    let HO = Int(output.dim(2))
-    let WO = Int(output.dim(3))
+    let HO = Int(output.dim(1))
+    let WO = Int(output.dim(2))
 
     for n in range(N):
         for c in range(C):
@@ -112,11 +112,11 @@ fn conv_transpose[
                                     and y_out >= 0
                                     and y_out < WO
                                 ):
-                                    let tmp = output[n, f, x_out, y_out]
+                                    let tmp = output[n, x_out, y_out, f]
                                     output[
-                                        StaticIntTuple[rank](n, f, x_out, y_out)
+                                        StaticIntTuple[rank](n, x_out, y_out, f)
                                     ] = (
                                         tmp
-                                        + input[n, c, i, j] * kernel[c, f, r, s]
+                                        + input[n, i, j, c] * kernel[r, s, c, f]
                                     )
     out_chain.mark_ready()
