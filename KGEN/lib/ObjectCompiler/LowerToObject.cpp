@@ -553,13 +553,20 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
     if (auto err = toModularErrorOr((*delMr)->replace(std::move(delMu))))
       return err.takeError();
   }
-  LLVM_DEBUG(
-      llvm::dbgs() << "MaterializationResponsibility leftover symbols (should "
-                      "be empty): [";
-      llvm::interleaveComma(mr.getSymbols(), llvm::dbgs(),
-                            [](auto ptr) { llvm::dbgs() << *ptr.getFirst(); });
-      llvm::dbgs() << "]\n";);
-  return success();
+
+  // If all symbols have been materialized, then return success.
+  if (mr.getSymbols().empty())
+    return success();
+
+  // Otherwise, complain about not being able to find the leftover symbols.
+  std::string msg;
+  llvm::raw_string_ostream os(msg);
+  os << "Failed to materialize all symbols, leftover "
+        "MaterializationResponsibility symbols: [\n";
+  for (llvm::orc::SymbolStringPtr ptr : llvm::make_first_range(mr.getSymbols()))
+    os << "  " << *ptr << "\n";
+  os << "]\n";
+  return Error(std::move(msg));
 }
 
 llvm::orc::MaterializationUnit::Interface
