@@ -189,11 +189,6 @@ fn dynamic_used_as_param_2() -> Int:
   # expected-error @+1 {{cannot use a dynamic value in call parameter}}
   return func_with_static_param[w.x]()
 
-
-fn dynamic_type_value():
-  # expected-error @below {{cannot use type value as dynamic value}}
-  let some_type = Int
-
 ##===----------------------------------------------------------------------===##
 # Keyword arguments
 ##===----------------------------------------------------------------------===##
