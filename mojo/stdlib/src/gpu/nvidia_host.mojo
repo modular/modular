@@ -2818,8 +2818,8 @@ fn _copy_host_to_device[
     device_dest: DTypePointer[type], host_src: DTypePointer[type], count: Int
 ) raises:
     _copy_host_to_device[SIMD[type, 1]](
-        device_dest.as_scalar_pointer(),
-        host_src.as_scalar_pointer(),
+        device_dest._as_scalar_pointer(),
+        host_src._as_scalar_pointer(),
         count,
     )
 
@@ -2844,8 +2844,8 @@ fn _copy_device_to_host[
     host_dest: DTypePointer[type], device_src: DTypePointer[type], count: Int
 ) raises:
     _copy_device_to_host[SIMD[type, 1]](
-        host_dest.as_scalar_pointer(),
-        device_src.as_scalar_pointer(),
+        host_dest._as_scalar_pointer(),
+        device_src._as_scalar_pointer(),
         count,
     )
 

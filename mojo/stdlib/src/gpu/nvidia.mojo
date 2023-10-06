@@ -1041,7 +1041,7 @@ struct DTypeDevicePointer[
         ](self.address)
 
     @always_inline
-    fn as_scalar_pointer(self) -> DevicePointer[SIMD[type, 1], address_space]:
+    fn _as_scalar_pointer(self) -> DevicePointer[SIMD[type, 1], address_space]:
         """Converts the `DTypePointer` to a scalar pointer of the same dtype.
 
         Returns:
