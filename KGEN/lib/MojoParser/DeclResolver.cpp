@@ -1718,7 +1718,6 @@ void DeclResolver::computeArgumentConventions(
     SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
     MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes,
     MutableArrayRef<TypedAttr> defaults) {
-  size_t defaultOffset = args.size() - defaults.size();
   for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
