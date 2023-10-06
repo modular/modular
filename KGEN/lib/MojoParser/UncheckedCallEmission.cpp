@@ -336,11 +336,6 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
       TypedAttr defaultArg = defaultArgs[argIdx - defaultStartIdx];
       if (convention == ValueInputConvention::ByRef) {
-        // If a default value is specified for an `inout` argument, we emit a
-        // mutable variable and pass that instead.
-        if (auto memWrapper = dyn_cast<StoreToMemAttr>(defaultArg))
-          defaultArg = memWrapper.getValue();
-
         auto nameAttr =
             builder->getStringAttr("__default_arg_" + Twine(argIdx) + "__");
         auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
@@ -664,7 +659,7 @@ CValue CallEmitter::emitCallInParamContext(
     TypedAttr arg = pValue.get();
     // Put memory-only arguments into memory ("PRValue" to "PLValue"
     // conversion).
-    if (SignatureType::hasAddress(convention) && !isa<StoreToMemAttr>(arg))
+    if (SignatureType::hasAddress(convention))
       arg = StoreToMemAttr::get(arg, PointerType::get(arg.getType()));
     // Emit a rebind if the refined type does not match the callee arg type.
     if (arg.getType() != calleeArgType)

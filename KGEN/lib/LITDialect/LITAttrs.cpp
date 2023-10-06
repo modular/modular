@@ -108,33 +108,6 @@ LogicalResult FnMetadataAttr::verifySignature(
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
     FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
     FnEffects effects) const {
-  // Verify default arguments and parameters.
-  auto verifyDefaults = [emitError](ArrayRef<TypedAttr> defaults,
-                                    ArrayRef<Type> types,
-                                    StringRef kind) -> LogicalResult {
-    if (defaults.size() > types.size()) {
-      return emitError() << "there are more default " << kind
-                         << "s than inputs : " << defaults.size() << " > "
-                         << types.size();
-    }
-    for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
-      size_t index = types.size() - defaults.size() + defaultsIndex;
-      Type expected = types[index];
-      if (value.getType() != expected) {
-        return emitError() << kind << " #" << index << " has type " << expected
-                           << " but default " << kind << " has type "
-                           << value.getType();
-      }
-    }
-    return success();
-  };
-
-  if (failed(verifyDefaults(getDefaultArguments(), values.getInputs(),
-                            "argument")) ||
-      failed(
-          verifyDefaults(getDefaultParameters(), inputParamTypes, "parameter")))
-    return failure();
-
   if (getParamNames().size() != inputParamTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
                           "input parameter types";
@@ -173,6 +146,45 @@ LogicalResult FnMetadataAttr::verifySignature(
                          << type;
     }
   }
+
+  // Verify default arguments and parameters.
+  auto verifyDefaults = [emitError](ArrayRef<TypedAttr> defaults,
+                                    ArrayRef<Type> types,
+                                    ArrayRef<ValueInputConvention> convs,
+                                    StringRef kind) -> LogicalResult {
+    if (defaults.size() > types.size()) {
+      return emitError() << "there are more default " << kind
+                         << "s than inputs : " << defaults.size() << " > "
+                         << types.size();
+    }
+    for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
+      size_t index = types.size() - defaults.size() + defaultsIndex;
+      Type expected = types[index];
+
+      // Memory-only arguments store their default values as pure values.
+      if (!convs.empty()) {
+        if (SignatureType::hasAddress(convs[index])) {
+          if (auto ptr = ::dyn_cast<PointerType>(expected))
+            expected = ptr.getElementAsType();
+          else
+            expected = ::cast<RefType>(expected).getElementAsType();
+        }
+      }
+
+      if (value.getType() != expected) {
+        return emitError() << kind << " #" << index << " has type " << expected
+                           << " but default " << kind << " has type "
+                           << value.getType();
+      }
+    }
+    return success();
+  };
+
+  if (failed(verifyDefaults(getDefaultArguments(), values.getInputs(),
+                            inputConventions, "argument")) ||
+      failed(verifyDefaults(getDefaultParameters(), inputParamTypes, {},
+                            "parameter")))
+    return failure();
 
   return success();
 }

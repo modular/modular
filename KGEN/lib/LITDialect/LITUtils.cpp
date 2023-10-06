@@ -12,13 +12,20 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/LITTypes.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
 ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
-                                           Type type) {
+                                           Type type, bool hasAddress) {
+  if (hasAddress) {
+    if (auto ptr = dyn_cast<PointerType>(type))
+      type = ptr.getElementAsType();
+    else if (auto ref = dyn_cast<RefType>(type))
+      type = ref.getElementAsType();
+  }
   if (succeeded(p.parseOptionalEqual()))
     return parseParamValue(p, defaultVal, type);
   return success();

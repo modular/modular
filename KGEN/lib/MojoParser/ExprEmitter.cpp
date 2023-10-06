@@ -731,10 +731,6 @@ MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
 XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
                                          ExprContext context) {
   PValue pvalue = value.ir;
-  // FIXME: This is a hack around default arguments requiring types to match.
-  if (auto memWrapper = dyn_cast<StoreToMemAttr>(pvalue.get()))
-    pvalue = memWrapper.getValue();
-
   auto nameAttr = StringAttr::get(getContext(), "anonymous*");
   auto lifetimeAttr = declScope.getAnonymousLifetimeFor(nameAttr);
 

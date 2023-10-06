@@ -66,3 +66,11 @@ lit.func @call_default_param() {
     :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, #kgen.unbound)>
   kgen.return
 }
+
+// CHECK-LABEL: @address_default
+// CHECK-SAME: %p: !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>
+lit.func @address_default(%p: !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) {
+  // CHECK: ref: !lit.signature<("p": !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) -> ()> = <@address_default>
+  kgen.param.declare ref: !lit.signature<("p": !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) -> ()> = <@address_default>
+  kgen.return
+}
