@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: nvptx_backend
-# RUN: kgen -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_75 --target-features="" %s | FileCheck %s
+# RUN: kgen -disable-prebuilt-packages -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_75 --target-features="" %s | FileCheck %s
 
 from sys.info import simdwidthof, triple_is_nvidia_cuda
 
@@ -44,6 +44,18 @@ fn parameterized_on_cuda_impl() -> Int:
 @export
 fn parameterized_on_cuda() -> Int:
     return parameterized_on_cuda_impl()
+
+
+# ===----------------------------------------------------------------------===#
+# Check print
+# ===----------------------------------------------------------------------===#
+
+
+# CHECK: printf
+# CHECK: hello_mojo
+@export
+fn hello_mojo():
+    print("Hello")
 
 
 # ===----------------------------------------------------------------------===#
