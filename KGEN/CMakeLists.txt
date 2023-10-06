@@ -329,19 +329,13 @@ endfunction()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH;NO_DEBUG" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS;LINK_DIRS" ${ARGN})
+  cmake_parse_arguments(KGEN "SFF_DEBUG;NO_DEBUG" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
   _setup_arch()
   _setup_defines()
   _setup_debug_flags()
   _setup_santizer_flags()
-
-  # If we built with MODULAR_KGEN_ENABLE_SEARCH=ON, then turn on
-  # KGEN_ENABLE_SEARCH unconditionally.
-  if (MODULAR_KGEN_ENABLE_SEARCH)
-    set(KGEN_ENABLE_SEARCH ON)
-  endif ()
 
   if (NOT KGEN_OUTPUT_NAME)
     get_filename_component(KGEN_OUTPUT_NAME ${KGEN_SOURCE} NAME_WE)
@@ -356,7 +350,7 @@ function(add_kgen_kernel target)
     COMMAND $<TARGET_FILE:kgen> -emit-header
     ${MOJO_ARCH_FLAGS}
     ${MOJO_DEFINES}
-    $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
+    -enable-search
     -o ${header_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
     -d ${header_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
@@ -387,7 +381,7 @@ function(add_kgen_kernel target)
     ${MOJO_ARCH_FLAGS}
     ${MOJO_DEFINES}
     $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
-    $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
+    -enable-search
     -o ${archive_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
     -d ${archive_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
