@@ -2790,12 +2790,21 @@ fn _malloc[type: AnyType](count: Int) raises -> Pointer[type]:
     return ptr.bitcast[type]()
 
 
+fn _malloc[type: DType](count: Int) raises -> DTypePointer[type]:
+    let res = _malloc[SIMD[type, 1]](count)
+    return DTypePointer[type](res.address)
+
+
 fn _free[type: AnyType](ptr: Pointer[type]) raises:
     _check_error(
         _get_dylib_function[fn (Pointer[UInt32]) -> Result]("cuMemFree_v2")(
             ptr.bitcast[UInt32]()
         )
     )
+
+
+fn _free[type: DType](ptr: DTypePointer[type]) raises:
+    _free(ptr._as_scalar_pointer())
 
 
 fn _copy_host_to_device[
