@@ -40,6 +40,7 @@ print(gray_scale_image.shape().__str__())
 from .tensor_shape import TensorShape
 from .tensor_spec import TensorSpec
 from memory.buffer import NDBuffer
+from memory import memset_zero
 
 # ===----------------------------------------------------------------------===#
 # Tensor
@@ -94,6 +95,7 @@ struct Tensor[dtype: DType]:
         let num_elements = spec.num_elements()
         self._spec = spec
         self._ptr = DTypePointer[dtype].alloc(num_elements)
+        memset_zero(self._ptr, num_elements)
 
     @always_inline
     fn __init__(
