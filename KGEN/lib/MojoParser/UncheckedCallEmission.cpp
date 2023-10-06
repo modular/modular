@@ -217,10 +217,18 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     for (ASTExprAnd<AnyValue> operand : remainingOperands)
       args.push_back(operand.ir.getIfPValue().get());
     Attribute attr;
-    if (calleeSig.isVarArg(argIdx))
-      attr = VariadicAttr::get(args, expectedType.cast<VariadicType>());
-    else
-      attr = POP::PackAttr::get(args, expectedType.cast<POP::PackType>());
+    if (calleeSig.isVarArg(argIdx)) {
+      auto varType = cast<VariadicType>(expectedType);
+      Type varElType = varType.getElementAsType();
+
+      // If dealing with a memory-only type, remove the pointer.
+      if (convention == ValueInputConvention::OwnedInMem ||
+          convention == ValueInputConvention::BorrowedInMem)
+        varElType = cast<PointerType>(varElType).getElementAsType();
+      attr = VariadicAttr::get(args, VariadicType::get(varElType));
+    } else {
+      attr = POP::PackAttr::get(args, cast<POP::PackType>(expectedType));
+    }
     argumentValues.push_back({PValue(attr), remainingOperands[0].expr});
     return success();
   }
@@ -293,7 +301,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       continue;
     }
 
-    // Memory-primary result slots are allocated automatically by the apply
+    // Memory-only result slots are allocated automatically by the apply
     // operator.
     if (!builder && llvm::is_contained({ValueInputConvention::ByRefResult,
                                         ValueInputConvention::InitSelf},
@@ -650,17 +658,30 @@ CValue CallEmitter::emitCallInParamContext(
   SmallVector<TypedAttr> operands({callee.getIfPValue().get()});
   bool dropFirst =
       calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
-  for (auto [argValAndExpr, calleeArgType, convention] : llvm::zip(
-           argumentValues, calleeSig.getValueInputs().drop_front(dropFirst),
-           calleeSig.getInputConventions().drop_front(dropFirst))) {
+  for (auto [argIdx, argValAndExpr, calleeArgType, convention] :
+       llvm::enumerate(argumentValues,
+                       calleeSig.getValueInputs().drop_front(dropFirst),
+                       calleeSig.getInputConventions().drop_front(dropFirst))) {
     PValue pValue = argValAndExpr.ir.getIfPValue();
     if (!pValue)
       return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
     TypedAttr arg = pValue.get();
     // Put memory-only arguments into memory ("PRValue" to "PLValue"
     // conversion).
-    if (SignatureType::hasAddress(convention))
-      arg = StoreToMemAttr::get(arg, PointerType::get(arg.getType()));
+    if (SignatureType::hasAddress(convention)) {
+      Type actualArgType = arg.getType();
+      if (calleeSig.isVarArg(argIdx)) {
+        // If dealing with a variadic argument, we put each element into memory.
+        auto varType = cast<VariadicType>(actualArgType);
+        auto varElType = PointerType::get(varType.getElementAsType());
+        SmallVector<TypedAttr> storedAttrs;
+        for (TypedAttr var : cast<VariadicAttr>(arg).getValues())
+          storedAttrs.push_back(StoreToMemAttr::get(var, varElType));
+        arg = VariadicAttr::get(storedAttrs, VariadicType::get(varElType));
+      } else {
+        arg = StoreToMemAttr::get(arg, PointerType::get(actualArgType));
+      }
+    }
     // Emit a rebind if the refined type does not match the callee arg type.
     if (arg.getType() != calleeArgType)
       arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);
@@ -756,11 +777,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   SmallVector<Value> callArgs;
   SmallVector<Value, 1> byRefResults;
-  for (auto [argValAndExpr, conventionX, calleeArgTypeAndIdx] :
-       llvm::zip(argumentValues, calleeSig.getInputConventions(),
-                 llvm::enumerate(calleeSig.getValueInputs()))) {
-    auto calleeArgType = calleeArgTypeAndIdx.value();
-    auto argIdx = calleeArgTypeAndIdx.index();
+  for (auto [argIdx, argValAndExpr, conventionX, calleeArgType] :
+       llvm::enumerate(argumentValues, calleeSig.getInputConventions(),
+                       calleeSig.getValueInputs())) {
     ValueInputConvention convention = conventionX;
 
     // If this is a variadic operation, the N operands have already been emitted

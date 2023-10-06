@@ -266,7 +266,7 @@ fn infer_implicit_params():
     implicit_params_with_others[42](one, two)
 
 ##===----------------------------------------------------------------------===##
-# Memory-primary parameters
+# Memory-only parameters
 ##===----------------------------------------------------------------------===##
 
 @value

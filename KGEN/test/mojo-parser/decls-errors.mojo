@@ -69,6 +69,22 @@ fn badTypeErrorMessage():
   # expected-error @+1 {{cannot use a dynamic value in type specification}}
   let ptr: Pointer[Int].address_of(x)
 
+fn test_var_let_type_literal_value():
+  # expected-error @below {{expected a type, not a value}}
+  var c: 6
+
+
+# COM: Issue #957 https://github.com/modularml/mojo/issues/957
+struct MemoryStruct:
+  fn __init__(inout self, s: Int): pass
+
+fn foo(*elements: MemoryStruct): pass
+
+fn test_var_let_type_variadic_func():
+  # expected-error @below {{expected a type, not a value}}
+  var a: foo(6)
+
+
 struct StructWithLets:
   let struct_thing : Int # expected-error {{'let' fields in structs are not supported yet}}
 
@@ -394,16 +410,16 @@ struct TestOverloading:
 
 
 # Test that static methods don't get dispatched if their first arg is self type.
-struct MyStruct:
+struct StructWithStaticMethod:
     fn __init__(inout self): pass
 
     # expected-note @+2 {{function declared here}}
     @staticmethod
-    fn bar(inout f: MyStruct): pass
+    fn bar(inout f: StructWithStaticMethod): pass
 
 
 fn test_static_overload():
-    var a = MyStruct()
+    var a = StructWithStaticMethod()
     # expected-error @below {{call to 'bar': callee expects 1 argument, but 0 were specified}}
     a.bar()
 

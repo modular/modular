@@ -889,6 +889,23 @@ fn usePacks(x: Float32, y: Int):
     variadicParameter(Int(2).value)
 
 
+# COM: Test variadic arguments in a parameter context.
+@value
+struct MemStruct:
+    alias t = 5
+
+fn variadic_mem_only(*values: MemStruct) -> Int:
+    return values[1].t
+
+# CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<
+# CHECK-SAME: [[X:.*]][x]: !MemStruct, [[Y:.*]][y]: !MemStruct>()
+fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
+    # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
+    # CHECK-SAME: :!lit.signature<("values": !kgen.variadic<pointer<!MemStruct>> borrow_in_mem) vararg -> !Int> @{{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)",
+    # CHECK-SAME: [store_to_mem([[X]]), store_to_mem([[Y]])])>
+    alias b = variadic_mem_only(x, y)
+
+
 # CHECK-LABEL: lit.func @"implicit_return_obj
 # CHECK-SAME: object{{.*}} byref_result
 def implicit_return_obj():
