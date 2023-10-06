@@ -200,9 +200,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
             resultParams, /*constraints=*/{}, /*decorators=*/{},
             InlineLevel::Automatic, ExportKind::NotExported);
     }]>,
-    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
-                   "FunctionType":$functionType), [{
-      build($_builder, $_state, name, signature, functionType, {}, {});
+    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
+      build($_builder, $_state, name, signature, signature.getValues(), {}, {});
     }]>
   ];
 

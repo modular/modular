@@ -21,13 +21,23 @@
 namespace M::KGEN {
 
 //===----------------------------------------------------------------------===//
+// mangleParameterValues
+//===----------------------------------------------------------------------===//
+
+/// This returns a name to use when the specified generator is specialized
+/// with the specified input parameters.
+std::string mangleParameterValues(GeneratorOp generator,
+                                  ArrayRef<TypedAttr> inputParamValues);
+
+//===----------------------------------------------------------------------===//
 // Elaborator
 //===----------------------------------------------------------------------===//
 
 using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
-using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<BufferRef>(
-    GeneratorOp, const SymbolTable &, TargetInfoAttr)>;
+using ElaboratorCompileAsmFnRef =
+    function_ref<ErrorOr<BufferRef>(GeneratorOp, SymbolConstantAttr, StringAttr,
+                                    const SymbolTable &, TargetInfoAttr)>;
 
 class Elaborator {
 public:

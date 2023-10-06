@@ -61,7 +61,11 @@ public:
                                                     ModuleOp module);
 
   /// Produce a standalone MLIR module by slicing out the dependencies of the
-  /// provided exported ops.
+  /// provided exported ops. An `IRMapping` can be provided to be able to map
+  /// into the sliced module.
+  OwningOpRef<ModuleOp>
+  produceStandaloneModule(const SymbolTable &symtab,
+                          const ExportMap &exportedSymbols, IRMapping &mapping);
   OwningOpRef<ModuleOp>
   produceStandaloneModule(const SymbolTable &symtab,
                           const ExportMap &exportedSymbols);

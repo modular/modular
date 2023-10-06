@@ -230,6 +230,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     theModule = importMojoFile(mgr, config, litScope, &includedFiles);
   } else if (options.getDebugInfoLevelForInput() >
              CompilationOptions::kSynthetic) {
+    ctx->loadDialect<DebugInfo::DebugInfoDialect>();
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, options.getDIEmissionKind());
   } else {

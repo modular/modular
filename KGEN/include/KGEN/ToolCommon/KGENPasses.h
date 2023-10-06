@@ -48,6 +48,7 @@ class KGENDialect;
 class FuncOp;
 class GeneratorOp;
 class PackageLinkOp;
+class SymbolConstantAttr;
 
 namespace POP {
 class POPDialect;
@@ -81,9 +82,11 @@ using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
 
 /// Function to slice and compile the generator to assembly with the provided
-/// target.
+/// input parameters and target. The expected mangled name of the generate is
+/// passed to be used as the entry point.
 using ElaboratorCompileAsmFn = std::function<ErrorOr<BufferRef>(
-    GeneratorOp, const SymbolTable &, TargetInfoAttr)>;
+    GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
+    TargetInfoAttr)>;
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.

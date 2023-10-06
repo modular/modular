@@ -18,6 +18,8 @@
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
@@ -106,11 +108,11 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func` and
 /// elaborate it and compile to assembly for the provided `target.
-static ErrorOr<BufferRef> compileElaboratorAsm(GeneratorOp func,
-                                               const SymbolTable &symtab,
-                                               LLCL::Runtime &runtime,
-                                               TargetInfoAttr target,
-                                               CompilationOptions options) {
+static ErrorOr<BufferRef>
+compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
+                     StringAttr name, const SymbolTable &symtab,
+                     LLCL::Runtime &runtime, TargetInfoAttr target,
+                     CompilationOptions options) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
@@ -134,11 +136,48 @@ static ErrorOr<BufferRef> compileElaboratorAsm(GeneratorOp func,
   // Slice out a pre-elaboration module for the new target to compile for.
   ExportMap exportedSymbols;
   exportedSymbols.insert({func.getSymNameAttr(), ExportKind::Exported});
+  // Make sure to slice out anything referenced in the input parameters. When
+  // generator references are instantiated in the standalone module, they are
+  // instantiated with the new target.
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](SymbolConstantAttr ref) {
+    exportedSymbols.insert(
+        {ref.getSymbol().getRootReference(), ExportKind::NotExported});
+  });
+  for (TypedAttr attr : symbol.getParamValues())
+    walker.walk(attr);
+
+  IRMapping mapping;
   OwningOpRef<ModuleOp> module =
-      compiler.produceStandaloneModule(symtab, exportedSymbols);
+      compiler.produceStandaloneModule(symtab, exportedSymbols, mapping);
   // Override the target.
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
+
+  // If there are input parameters, we have to go generate a stub to root
+  // instantiation of the generator. Go find the cloned generator.
+  if (!symbol.getParamValues().empty()) {
+    GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
+    ImplicitLocOpBuilder b(sliced.getLoc(), OpBuilder(sliced));
+    sliced.setNotExported();
+    sliced.setInlineLevel(InlineLevel::Always);
+    StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
+    sliced.setSymNameAttr(stubName);
+    SignatureType sig = symbol.getType();
+    auto wrapper = b.create<GeneratorOp>(name, sig);
+    wrapper.setExported();
+    Block *entry =
+        b.createBlock(&wrapper.getBodyRegion(), {}, sig.getValueInputs(),
+                      llvm::map_to_vector(sliced.getArguments(),
+                                          [](Value v) { return v.getLoc(); }));
+    b.setInsertionPointToStart(wrapper.getBody());
+    auto call = b.create<CallOp>(
+        sig.getValueResults(),
+        SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
+                                symbol.getParamValues(), sig),
+        std::nullopt, entry->getArguments());
+    b.create<ReturnOp>(call.getResults());
+  }
 
   // Run elaboration through to the end of the optimization pipeline.
   ElaborateGeneratorsOptions elaboratorOptions;
@@ -156,10 +195,12 @@ static ErrorOr<BufferRef> compileElaboratorAsm(GeneratorOp func,
         return evaluateSpecializations(evaluator, symtab, runtime, target,
                                        options, specializations);
       },
-      [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
+      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
+                    StringAttr name, const SymbolTable &symtab,
                     TargetInfoAttr target) {
         // Recursion...!
-        return compileElaboratorAsm(func, symtab, runtime, target, options);
+        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+                                    options);
       }));
   buildPostElaborationPipeline(pm, runtime, options);
 
@@ -230,9 +271,11 @@ void KGEN::populateElaborateModulePasses(
                                        options, specializations);
       },
       /*compileAsmFn=*/
-      [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
+      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
+                    StringAttr name, const SymbolTable &symtab,
                     TargetInfoAttr target) {
-        return compileElaboratorAsm(func, symtab, runtime, target, options);
+        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+                                    options);
       },
       packageLinkHandlerFn);
   buildPostElaborationPipeline(pm, runtime, options);
@@ -410,17 +453,20 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
 
 std::unique_ptr<Pass>
 KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
+  CompilationOptions options;
+  options.sanitizeMangledSymbols = false;
   return createElaborateGenerators(
       runtime, /*target=*/{}, /*build=*/{}, /*options=*/{},
       [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
-                                       /*options=*/{}, specializations);
+                                       options, specializations);
       },
-      [=, &runtime](GeneratorOp func, const SymbolTable &symtab,
+      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
+                    StringAttr name, const SymbolTable &symtab,
                     TargetInfoAttr target) {
-        return compileElaboratorAsm(func, symtab, runtime, target,
-                                    /*options=*/{});
+        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+                                    options);
       });
 }
 
