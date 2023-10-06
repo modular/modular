@@ -83,7 +83,7 @@ struct LValuesRvalues:
 
   def normalMethod3(self, a: Float32): pass
 
-struct MemoryPrimaryPair:
+struct MemoryOnlyPair:
   var x: Int
   var y: Int
   fn __init__(inout self):
@@ -129,13 +129,13 @@ def testLValuesRvalues() -> None:
   let nc3 = nc1 # expected-error {{value of type 'NonCopyable' cannot be copied into its destination}}
   let nc4 = nc2 # expected-error {{value of type 'NonCopyable' cannot be copied into its destination}}
 
-  let mpPair = MemoryPrimaryPair()
+  let mpPair = MemoryOnlyPair()
 
-  # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind generic !mlirtype to memory-only type 'MemoryPrimaryPair'}}
-  generic_on_type_bad[MemoryPrimaryPair](mpPair)
+  # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind generic !mlirtype to memory-only type 'MemoryOnlyPair'}}
+  generic_on_type_bad[MemoryOnlyPair](mpPair)
 
   # This should be allowed.
-  generic_on_type_ok[MemoryPrimaryPair]()
+  generic_on_type_ok[MemoryOnlyPair]()
 
 # expected-note @+1 {{function declared here}}
 fn badRef(inout val: Int):

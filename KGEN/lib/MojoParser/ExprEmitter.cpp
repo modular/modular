@@ -690,7 +690,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
                                          ExprContext context) {
   // PValues don't have lifetimes and are immortal with respect to the compiler.
-  // Emit a memcpy into the MLValue. Creating an SSA value of the memory-primary
+  // Emit a memcpy into the MLValue. Creating an SSA value of the memory-only
   // type for the sake of memcpy is safe because the bulk store will ensure the
   // variable does not get promoted off the stack, and after struct lowering,
   // the type is erased down to its MLIR constituents anyways.
@@ -706,7 +706,7 @@ MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
 XBValue ExprEmitter::emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
                                          ExprContext context) {
   // PValues don't have lifetimes and are immortal with respect to the compiler.
-  // Emit a memcpy into the MLValue. Creating an SSA value of the memory-primary
+  // Emit a memcpy into the MLValue. Creating an SSA value of the memory-only
   // type for the sake of memcpy is safe because the bulk store will ensure the
   // variable does not get promoted off the stack, and after struct lowering,
   // the type is erased down to its MLIR constituents anyways.
