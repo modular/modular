@@ -32,8 +32,9 @@ using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<BufferRef>(
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTable &symtab, TargetInfoAttr target)
-      : symtab(symtab), target(target) {}
+  Elaborator(SymbolTable &symtab, TargetInfoAttr target,
+             const ElaborateGeneratorsOptions &config)
+      : symtab(symtab), target(target), config(config) {}
 
   virtual ~Elaborator() = default;
 
@@ -58,7 +59,9 @@ public:
   /// Get the symbol table associated with this instance of the elaborator.
   Shared<SymbolTable &> &getSymbolTable() { return symtab; }
   /// Get the target associated with this instance of the elaborator.
-  TargetInfoAttr getTarget() { return target; }
+  TargetInfoAttr getTarget() const { return target; }
+  /// Get the elaborator config.
+  const ElaborateGeneratorsOptions &getOptions() const { return config; }
 
 protected:
   /// This symbol table allows efficient lookups across the module.
@@ -66,6 +69,9 @@ protected:
 
   /// The target we are compiling code for.
   TargetInfoAttr target;
+
+  /// The elaborator config.
+  ElaborateGeneratorsOptions config;
 };
 
 } // namespace M::KGEN

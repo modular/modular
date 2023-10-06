@@ -77,6 +77,8 @@ def LIT_FuncOp : LITOp<"func", [
     // The linkage name of this function within the compiled artifact. If null,
     // the flattened full symbol reference of the function will be used.
     OptionalAttr<StrAttr>:$linkageName,
+    // The name of this function in the pre-elaborated IR stage.
+    OptionalAttr<StrAttr>:$preElaborationName,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$bodyRegion);

@@ -9,7 +9,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: kgen.generator @caller
 lit.func @caller() -> index attributes {doNotExtern} {
   %0 = index.constant 32
-  // CHECK: kgen.call @precompiled_func_precompiled
+  // CHECK: kgen.call @precompiled_func
   %1 = kgen.call @precompiled_func(%0) : (index) -> index
   kgen.return %1 : index
 }
@@ -22,11 +22,11 @@ lit.func @caller() -> index attributes {doNotExtern} {
 // ATTACH-LABEL: lit.func export @exported_func
 // ATTACH-SAME: preCompiledModuleRef = @link_exported_func
 
-// LOWER_LIT-LABEL: kgen.extern.generator export @exported_func_precompiled
+// LOWER_LIT-LABEL: kgen.extern.generator export @exported_func
 // LOWER_LIT-SAME: preCompiledModuleRef = @link_exported_func
 
 // CHECK: kgen.link dense_resource<exported_func_generated_body_attr> {{.*}} as @link_exported_func
-// CHECK-LABEL: kgen.func @exported_func_precompiled
+// CHECK-LABEL: kgen.func @exported_func
 lit.func export @exported_func(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
@@ -36,11 +36,11 @@ lit.func export @exported_func(%arg0: index) -> index {
 // ATTACH-LABEL: lit.func @precompiled_func
 // ATTACH-SAME: preCompiledModuleRef = @link_precompiled_func
 
-// LOWER_LIT-LABEL: kgen.extern.generator @precompiled_func_precompiled
+// LOWER_LIT-LABEL: kgen.extern.generator @precompiled_func
 // LOWER_LIT-SAME: preCompiledModuleRef = @link_precompiled_func
 
 // CHECK: kgen.link dense_resource<precompiled_func_generated_body_attr> {{.*}} as @link_precompiled_func
-// CHECK-LABEL: kgen.func @precompiled_func_precompiled
+// CHECK-LABEL: kgen.func @precompiled_func
 lit.func @precompiled_func(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
@@ -50,11 +50,11 @@ lit.func @precompiled_func(%arg0: index) -> index {
 // ATTACH-LABEL: lit.func @different_precompiled_func
 // ATTACH-SAME: preCompiledModuleRef = @link_different_precompiled_func
 
-// LOWER_LIT-LABEL: kgen.extern.generator @different_precompiled_func_precompiled
+// LOWER_LIT-LABEL: kgen.extern.generator @different_precompiled_func
 // LOWER_LIT-SAME: preCompiledModuleRef = @link_different_precompiled_func
 
 // CHECK: kgen.link dense_resource<different_precompiled_func_generated_body_attr> {{.*}} as @link_different_precompiled_func
-// CHECK-LABEL: kgen.func @different_precompiled_func_precompiled
+// CHECK-LABEL: kgen.func @different_precompiled_func
 lit.func @different_precompiled_func(%arg0: index) -> index {
   kgen.return %arg0 : index
 }

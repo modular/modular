@@ -669,6 +669,9 @@ LogicalResult LIT::FuncOp::verify() {
         !isa<LIT::ExternFuncOp>(&getBody()->front()))
       return emitOpError("expected external function body to contain a single "
                          "`lit.extern_func`");
+    if (!getPreElaborationNameAttr())
+      return emitOpError(
+          "external function requires attribute 'preElaborationName'");
   }
 
   return success();
@@ -762,7 +765,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
-        StringAttr(), DocStringAttr());
+        StringAttr(), StringAttr(), DocStringAttr());
 
   result.regions[0]->push_back(new Block());
 }
@@ -1564,9 +1567,9 @@ void ErrorReturnOp::getBranchTargets(
 //===----------------------------------------------------------------------===//
 
 LogicalResult LIT::ExternFuncOp::verify() {
-  if (!getParentOp().isExternal())
-    return emitOpError("expected an external parent function");
-  return success();
+  if (getParentOp().isExternal())
+    return success();
+  return emitOpError("expected an external parent function");
 }
 
 //===----------------------------------------------------------------------===//

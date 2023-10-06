@@ -468,6 +468,6 @@ lit.file_module @module {
 }
 
 // CHECK: kgen.extern.generator @extern() attributes {preCompiledModuleRef = @module}
-lit.func @extern() attributes {preCompiledModuleRef = @module} {
+lit.func @extern() attributes {preCompiledModuleRef = @module, preElaborationName = "extern"} {
   lit.extern_func
 }

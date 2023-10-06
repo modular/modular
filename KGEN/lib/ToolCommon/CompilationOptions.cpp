@@ -75,5 +75,7 @@ void CompilationOptions::print(raw_ostream &os) const {
   os << ", linkDirs: [";
   llvm::interleaveComma(linkDirs, os);
   os << "]";
+  os << ", debugInfoLang: " << debugInfoLanguage
+     << ", sanitizeMangledSymbols: " << sanitizeMangledSymbols;
   os << " }";
 }
