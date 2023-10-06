@@ -70,6 +70,9 @@ struct StmtParser : public ParserBase {
 
   ASTDecl &getParentDecl() { return parentDecl; }
   OpBuilder &getBuilder() { return builder; }
+  UnresolvedType getUnresolvedType() {
+    return UnresolvedType::get(getContext());
+  }
 
   /// Push a debug info lexical block to represent a local variable scope.
   void pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard);
@@ -944,10 +947,9 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
-  StringAttr targetLifenameName = curDeclScope->getAnonymousLifetimeFor(target);
-  auto varDeclOp = builder.create<VarLetDeclOp>(
-      forLoc, UnresolvedType::get(getContext()), target, targetLifenameName,
-      /*isVar=*/funcOp && funcOp.getIsDef(), /*isSynth=*/true);
+  VarLetDeclOp varDeclOp =
+      getEmitter().emitVarLetDecl(target, getUnresolvedType(), forLoc,
+                                  /*isVar=*/funcOp && funcOp.getIsDef());
 
   // If there is a failure before we parse the for loop body, we still
   // want to call the parser on it so that it builds an ASTDecl node
@@ -969,12 +971,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return {};
 
   // Emit a call to __iter__ into a var with an inferred type.
-  StringAttr rangeName = StringAttr::get(builder.getContext(), "$RANGE");
-  StringAttr rangeLifenameName =
-      curDeclScope->getAnonymousLifetimeFor(rangeName);
-  auto rangeRef = builder.create<VarLetDeclOp>(
-      forLoc, UnresolvedType::get(getContext()), rangeName, rangeLifenameName,
-      /*isVar*/ true, /*isSynth=*/true);
+  VarLetDeclOp rangeRef =
+      getEmitter().emitVarLetDecl("$RANGE", getUnresolvedType(), forLoc);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert,
@@ -1091,11 +1089,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       if (func && func.getIsDef()) {
         // If we are parsing inside a 'def', create a mutable LValue to allow
         // reassignment.
-        StringAttr errLifetimeName =
-            curDeclScope->getAnonymousLifetimeFor(errName);
-        auto varDecl = builder.create<VarLetDeclOp>(
-            errVal.getLoc(), errVal.getType(), errName, errLifetimeName,
-            /*isVar=*/true, /*isSynth=*/true);
+        VarLetDeclOp varDecl = getEmitter().emitVarLetDecl(
+            errName, errVal.getType(), errVal.getLoc());
         decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
         builder.create<RefStoreOp>(errVal.getLoc(), errVal, varDecl);
       } else {
@@ -1219,11 +1214,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         return failure();
       }
     } else {
-      StringAttr lifetimeName = curDeclScope->getAnonymousLifetimeFor(name);
-      targetDecl = builder.create<VarLetDeclOp>(
-          shared.translateLocation(targetLoc),
-          UnresolvedType::get(getContext()), name, lifetimeName,
-          /*isVar=*/!useLexicalScope, /*isSynth=*/true);
+      targetDecl = getEmitter().emitVarLetDecl(
+          name, getUnresolvedType(), shared.translateLocation(targetLoc),
+          /*isVar=*/!useLexicalScope);
       enterDest = ValueDest(targetDecl, EC_WithContextMgr);
       addDecl = true;
     }
@@ -1384,11 +1377,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     OpBuilder::InsertionGuard g(builder);
     builder.setInsertionPoint(tryOp);
 
-    StringAttr name = StringAttr::get(builder.getContext(), "__with_exc__");
-    StringAttr lifetimeName = curDeclScope->getAnonymousLifetimeFor(name);
-    excVar = builder.create<VarLetDeclOp>(loc, builder.getI1Type(), name,
-                                          lifetimeName,
-                                          /*isVar=*/true, /*isSynth=*/true);
+    excVar =
+        getEmitter().emitVarLetDecl("__with_exc__", builder.getI1Type(), loc);
     builder.create<RefStoreOp>(
         loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
   }
@@ -1863,7 +1853,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
                       &identifierLoc))
     return failure();
 
-  auto unresolvedType = UnresolvedType::get(getContext());
+  auto unresolvedType = getUnresolvedType();
   bool delayAddingName = false;
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
@@ -1890,9 +1880,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
-    auto lifetimeAttr = curDeclScope->getAnonymousLifetimeFor(name);
-    declOp = builder.create<VarLetDeclOp>(
-        loc, unresolvedType, name, lifetimeAttr, isVar, /*isSynth=*/false);
+    declOp = getEmitter().emitVarLetDecl(name, unresolvedType, loc, isVar,
+                                         /*isSynth=*/false);
     delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
@@ -2029,7 +2018,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 
   // Before parsing the rest of the alias, the type is unresolved and value is
   // UnresolvedAliasValueAttr.
-  auto type = UnresolvedType::get(getContext());
+  auto type = getUnresolvedType();
   auto value = UnresolvedAliasValueAttr::get(type);
   auto decl = ParamDeclAttr::get(
       shared.getMangledParameterName(name.getValue(), smLoc), type);

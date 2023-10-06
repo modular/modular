@@ -7,7 +7,6 @@
 #ifndef KGEN_MOJOPARSER_EXPREMITTER_H
 #define KGEN_MOJOPARSER_EXPREMITTER_H
 
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
@@ -23,6 +22,8 @@ enum class SpecialFunctionKind : uint8_t;
 enum class CallSyntax : uint8_t;
 class ExprEmitter;
 struct CallOperands;
+class AliasDeclOp;
+class VarLetDeclOp;
 
 //===----------------------------------------------------------------------===//
 // ExprContext
@@ -529,6 +530,15 @@ public:
                              const ExprNode *expr, ValueDest &dest,
                              Capture &capture);
   AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls);
+
+  //===--------------------------------------------------------------------===//
+  // Var/let emission helpers.
+
+  /// Helper to emit a VarLetDeclOp with a uniquely generated lifetime name.
+  VarLetDeclOp emitVarLetDecl(const Twine &name, Type type, Location loc,
+                              bool isVar = true, bool isSynth = true);
+  VarLetDeclOp emitVarLetDecl(StringAttr name, Type type, Location loc,
+                              bool isVar = true, bool isSynth = true);
 };
 
 } // namespace M::KGEN::LIT

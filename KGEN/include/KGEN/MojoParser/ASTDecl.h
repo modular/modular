@@ -183,7 +183,7 @@ public:
   /// Create an anonymous lifetime name for the specified value name that cannot
   /// collide with any other parameters.  This is done by prepending a ` and
   /// postpending a unique ID.
-  StringAttr getAnonymousLifetimeFor(StringAttr valueName);
+  StringAttr getAnonymousLifetimeFor(const Twine &valueName);
 
 private:
   /// This is set to true if there is an entry for body-decorators in a backing

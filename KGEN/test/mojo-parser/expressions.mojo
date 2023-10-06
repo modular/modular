@@ -674,7 +674,7 @@ fn mvalueStructField():
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: %a_0 = lit.varlet.decl "a"
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: %b_1 = lit.varlet.decl "b" var synth : !lit.ref<mut !Int, *"`b">
+  # CHECK: %b_1 = lit.varlet.decl "b" var synth : !lit.ref<mut !Int, *"`b1">
   # CHECK: lit.ref.store %b, %b_1
   # CHECK: [[B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: lit.ref.store [[B]], %a_0
