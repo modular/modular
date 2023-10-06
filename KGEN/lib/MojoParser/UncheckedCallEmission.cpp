@@ -16,10 +16,13 @@
 #include "Utils.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
+
 #include "Support/Compiler/OperationUtils.h"
+
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -290,13 +293,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (convention == ValueInputConvention::ByRefResult && builder) {
       assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
       assert(argName.empty());
-      auto name = emitter.builder->getStringAttr("__call_result_tmp__");
-      auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(name);
+
       // TODO(references): drop this cast eventually.
       expectedType = cast<PointerType>(expectedType).getElementAsType();
-      auto resultTmp = builder->create<VarLetDeclOp>(
-          loc, expectedType, name, lifetimeAttr, /*isVar=*/true,
-          /*isSynth=*/true);
+      auto resultTmp =
+          emitter.emitVarLetDecl("__call_result_tmp__", expectedType, loc);
       argumentValues.push_back({XLValue(resultTmp), callExpr});
       continue;
     }
@@ -344,12 +345,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
       TypedAttr defaultArg = defaultArgs[argIdx - defaultStartIdx];
       if (convention == ValueInputConvention::ByRef) {
-        auto nameAttr =
-            builder->getStringAttr("__default_arg_" + Twine(argIdx) + "__");
-        auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
-        auto varOp = builder->create<VarLetDeclOp>(
-            loc, defaultArg.getType(), nameAttr, lifetimeAttr,
-            /*isVar=*/true, /*isSynth=*/true);
+        VarLetDeclOp varOp = emitter.emitVarLetDecl(
+            "__default_arg_" + Twine(argIdx) + "__", defaultArg.getType(), loc);
         if (!emitter.emitPValueToXLValue({PValue(defaultArg), callExpr},
                                          MLValue(varOp), EC_CallArgValue))
           return failure();

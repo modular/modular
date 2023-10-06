@@ -408,11 +408,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                            bool isSynth) -> VarLetDeclOp {
     auto contextualType = dest.getIfLValueInitializerType();
     assert(contextualType && "must have contextual type");
-    auto loc = getLocation(emitter);
-    auto name = StringAttr::get(loc.getContext(), spelling);
-    StringAttr lifetimeName = emitter.declScope.getAnonymousLifetimeFor(name);
-    return builder.create<VarLetDeclOp>(loc, contextualType, name, lifetimeName,
-                                        isVar, isSynth);
+    return emitter.emitVarLetDecl(spelling, contextualType,
+                                  getLocation(emitter), isVar, isSynth);
   };
 
   // If that lookup failed, but we can synthesize a variable declaration in this

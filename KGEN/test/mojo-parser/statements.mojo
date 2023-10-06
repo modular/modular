@@ -467,6 +467,7 @@ def propagateErrorInDef():
     # CHECK:    lit.raise [[ERR]] : !Error
     # CHECK:    kgen.unreachable
     # CHECK:  }
+    # CHECK: %a = lit.varlet.decl "a"
     # CHECK-NEXT: lit.ref.store %1, %a
     a = maybeRaises()
 

@@ -97,10 +97,7 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
   return {};
 }
 
-/// Create an anonymous lifetime name for the specified value name that cannot
-/// collide with any other parameters.  This is done by prepending a ` and
-/// postpending a unique ID.
-StringAttr ASTDecl::getAnonymousLifetimeFor(StringAttr valueName) {
+StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName) {
   // Find the enclosing isolated from above decl that will scope parameter
   // names.
   ASTDecl *outermostFuncScope = nullptr;
@@ -124,9 +121,8 @@ StringAttr ASTDecl::getAnonymousLifetimeFor(StringAttr valueName) {
   }
   assert(outermostFuncScope && "couldn't find an enclosing function");
   return StringAttr::get(
-      valueName.getContext(),
-      Twine("`") + valueName.strref() +
-          Twine(outermostFuncScope->anonymousLifetimeCounter++));
+      outermostFuncScope->getContext(),
+      "`" + valueName + Twine(outermostFuncScope->anonymousLifetimeCounter++));
 }
 
 void ASTDecl::dump() const {
@@ -2858,12 +2854,8 @@ static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
 
   // Emit the initializer expression into the slot.
   ExprEmitter emitter(shared, parentDecl, builder);
-
-  ASTType declType = argValue.getRValueType();
-  std::string lifetimeName = "`" + argName.str();
-  auto varDecl =
-      builder.create<VarLetDeclOp>(mloc, declType, argName, lifetimeName,
-                                   /*isVar=*/true, /*isSynthesized=*/true);
+  VarLetDeclOp varDecl =
+      emitter.emitVarLetDecl(argName, argValue.getRValueType(), mloc);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));

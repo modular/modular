@@ -350,15 +350,11 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       slotType = requiredType;
   }
 
-  auto nameAttr = StringAttr::get(emitter.getContext(), "anonymous*");
-
   // We model this as an immutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
-  auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
-  return XLValue(emitter.builder->create<VarLetDeclOp>(
-      emitter.translateLocation(loc), slotType, nameAttr, lifetimeAttr,
-      /*isVar*/ true, /*isSynth=*/true));
+  return XLValue(emitter.emitVarLetDecl("anonymous*", slotType,
+                                        emitter.translateLocation(loc)));
 }
 
 /// Return an MLValue for this destination of the specified type that we can
@@ -726,15 +722,11 @@ MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
 XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
                                          ExprContext context) {
   PValue pvalue = value.ir;
-  auto nameAttr = StringAttr::get(getContext(), "anonymous*");
-  auto lifetimeAttr = declScope.getAnonymousLifetimeFor(nameAttr);
-
   // We model this as an immutable let value with a separately stored
   // initializer.
-  auto var =
-      builder->create<VarLetDeclOp>(translateLocation(value.expr->getLoc()),
-                                    pvalue.getType(), nameAttr, lifetimeAttr,
-                                    /*isVar=*/false, /*isSynth=*/true);
+  VarLetDeclOp var = emitVarLetDecl("anonymous*", pvalue.getType(),
+                                    translateLocation(value.expr->getLoc()),
+                                    /*isVar=*/false);
   if (!emitPValueToXLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
   return XRValue(var);
@@ -1812,11 +1804,8 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // store(tmp -> base)
   auto loc = expr->getLocation(emitter);
   ASTType rvalueType = baseVal.ir->elementType;
-  auto nameAttr = StringAttr::get(loc.getContext(), "__store_tmp__");
-  auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
-  Value tmpDecl = emitter.builder->create<VarLetDeclOp>(
-      loc, rvalueType, nameAttr, lifetimeAttr,
-      /*isVar=*/false, /*isSynth=*/false);
+  Value tmpDecl = emitter.emitVarLetDecl("__store_tmp__", rvalueType, loc,
+                                         /*isVar=*/false, /*isSynth=*/false);
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(XLValue(tmpDecl), EC_AttributeRefBase);
@@ -1973,4 +1962,23 @@ void GlobalDLValue::emitStore(ASTExprAnd<CValue> value,
   auto global = emitter.builder->create<GlobalVarRefOp>(
       emitter.translateLocation(loc), getGlobal());
   emitter.emitStoreToLValue(value, MLValue(global), EC_Assignment);
+}
+
+//===--------------------------------------------------------------------===//
+// Var/let emission helpers.
+
+VarLetDeclOp ExprEmitter::emitVarLetDecl(const Twine &name, Type type,
+                                         Location loc, bool isVar,
+                                         bool isSynth) {
+  StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name);
+  return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
+                                       isVar, isSynth);
+}
+
+VarLetDeclOp ExprEmitter::emitVarLetDecl(StringAttr name, Type type,
+                                         Location loc, bool isVar,
+                                         bool isSynth) {
+  StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name.strref());
+  return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
+                                       isVar, isSynth);
 }

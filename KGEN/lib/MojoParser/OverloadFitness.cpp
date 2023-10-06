@@ -14,7 +14,7 @@
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "Utils.h"
 
-#include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITOps.h"
 
 #include "llvm/ADT/StringSet.h"
 
