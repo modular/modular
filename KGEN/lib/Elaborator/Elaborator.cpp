@@ -56,7 +56,7 @@ using namespace LLCL;
 /// This returns a name to use when the specified generator is specialized
 /// with the specified input parameters.
 static std::string mangleParameterValues(GeneratorOp generator,
-                                         ArrayRef<Attribute> inputParamValues) {
+                                         ArrayRef<TypedAttr> inputParamValues) {
   Builder b(generator.getContext());
   if (inputParamValues.empty())
     return generator.getName().str();
@@ -189,8 +189,8 @@ struct ExpansionGraph {
       : worklistCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
 
   /// Map from generator instantiation to expansion tree node.
-  Shared<
-      DenseMap<std::pair<ArrayAttr, GeneratorOp>, std::unique_ptr<ParamNode>>>
+  Shared<DenseMap<std::pair<ParameterExprArrayAttr, GeneratorOp>,
+                  std::unique_ptr<ParamNode>>>
       nodes;
 
   /// Map from concrete function to implementation node.
@@ -206,12 +206,11 @@ struct ExpansionGraph {
   LLCL::AsyncValueRef<LLCL::Chain> worklistCh;
 
   /// Get or create the node for a generator instantiation.
-  ParamNode *getOrCreate(LLCL::Runtime &runtime, ArrayAttr values,
+  ParamNode *getOrCreate(LLCL::Runtime &runtime, ParameterExprArrayAttr values,
                          GeneratorOp gen, size_t depth) {
     // TODO: Split this into `get` and `create` methods, so that some can be
     // read-only accesses.
-    return nodes.modify([&](DenseMap<std::pair<ArrayAttr, GeneratorOp>,
-                                     std::unique_ptr<ParamNode>> &map) {
+    return nodes.modify([&](auto &map) {
       std::unique_ptr<ParamNode> &n = map[{values, gen}];
       if (!n)
         n = std::make_unique<ParamNode>(runtime, gen, values, depth);
@@ -349,7 +348,7 @@ static ElaborationState processParamResultBindOp(ImplNode *node,
                                                  ParamResultBindOp op) {
   // Concretize the result parameter values.
   IREvaluator &evaluator = node->getEvaluator();
-  SmallVector<Attribute> resultParams;
+  SmallVector<TypedAttr> resultParams;
 
   // Retrieve the required parameter decls from the nearest declaration.
   // However, if it refers to the function being elaborated, the declarations
@@ -365,14 +364,15 @@ static ElaborationState processParamResultBindOp(ImplNode *node,
   for (auto [decl, value] : llvm::zip(resultParamDecls, op.getParameters())) {
     Attribute resultValue;
     HANDLE_EVALUATOR_CONC(resultValue, node, op.getLoc(), value);
-    resultParams.push_back(resultValue);
+    resultParams.push_back(cast<TypedAttr>(resultValue));
     evaluator.setOrOverwriteParameterValue(decl, resultParams.back());
   }
 
   // If this operation binds values for the result parameters of the generator,
   // set them in the node.
   if (isFunc)
-    node->resultParams = ArrayAttr::get(op.getContext(), resultParams);
+    node->resultParams =
+        ParameterExprArrayAttr::get(op.getContext(), resultParams);
 
   op.erase();
   return ElaborationState::advance();
@@ -587,7 +587,7 @@ private:
   /// reference.
   ElaborationState instantiateGeneratorReference(
       ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
-      ArrayAttr &inputParamKey, GeneratorOp &gen,
+      ParameterExprArrayAttr &inputParamKey, GeneratorOp &gen,
       std::vector<ImplNode *> &concrete,
       function_ref<bool(ParamNode *)> shouldWait = [](ParamNode *) {
         return true;
@@ -614,7 +614,7 @@ private:
   /// if required.
   ElaborationState completeGeneratorUserProcessing(
       GeneratorUserOpInterface user, ArrayRef<ParamDeclAttr> decls,
-      ImplNode *parent, ArrayAttr inputParamKey, GeneratorOp gen,
+      ImplNode *parent, ParameterExprArrayAttr inputParamKey, GeneratorOp gen,
       ArrayRef<ImplNode *> concrete);
 
   /// Given a user of a completed parameter node, collect concrete
@@ -877,11 +877,7 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
   if (auto func = dyn_cast<FuncOp>(gen))
     return {func};
 
-  SmallVector<Attribute> inputParams;
-  for (TypedAttr value : paramValues)
-    inputParams.push_back(cast<Attribute>(value));
-
-  auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
+  auto vals = ParameterExprArrayAttr::get(symbolRef.getContext(), paramValues);
 
   // Lookup the node if it already exists.
   ParamNode *node =
@@ -908,14 +904,10 @@ std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
         return symtab.lookup<GeneratorOp>(name);
       });
 
-  SmallVector<Attribute> inputParams;
-  for (TypedAttr value : paramValues)
-    inputParams.push_back(cast<Attribute>(value));
-
-  auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
-
   // Lookup the node if it already exists.
-  ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
+  ParamNode *node = g.getOrCreate(
+      runtime, ParameterExprArrayAttr::get(loc.getContext(), paramValues), gen,
+      /*depth=*/0);
   ElaborationState result =
       specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
   if (result.isError())
@@ -1050,7 +1042,7 @@ void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
 
 ElaborationState ElaboratorImpl::instantiateGeneratorReference(
     ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
-    ArrayAttr &inputParamKey, GeneratorOp &gen,
+    ParameterExprArrayAttr &inputParamKey, GeneratorOp &gen,
     std::vector<ImplNode *> &concrete,
     function_ref<bool(ParamNode *)> shouldWait) {
   // Lookup the callee.
@@ -1075,10 +1067,8 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
                logger << " with input bindings: ";
                llvm::interleaveComma(calleeSymbol.getParamValues(), logger);
                logger << "\n");
-
-    SmallVector<Attribute> boundInputParams;
-    llvm::append_range(boundInputParams, calleeSymbol.getParamValues());
-    inputParamKey = ArrayAttr::get(user->getContext(), boundInputParams);
+    inputParamKey = ParameterExprArrayAttr::get(user->getContext(),
+                                                calleeSymbol.getParamValues());
   }
 
   LLVM_DEBUG({
@@ -1195,7 +1185,7 @@ ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
   LLVM_DEBUG(logger.logOp("User", user));
 
   std::vector<ImplNode *> concrete;
-  ArrayAttr inputParamKey;
+  ParameterExprArrayAttr inputParamKey;
   GeneratorOp gen;
   bool wasSkipped = false;
   ParamNode *calleeNode;
@@ -1246,7 +1236,7 @@ ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
 
 ElaborationState ElaboratorImpl::completeGeneratorUserProcessing(
     GeneratorUserOpInterface user, ArrayRef<ParamDeclAttr> decls,
-    ImplNode *parent, ArrayAttr inputParamKey, GeneratorOp gen,
+    ImplNode *parent, ParameterExprArrayAttr inputParamKey, GeneratorOp gen,
     ArrayRef<ImplNode *> concrete) {
   // There are more concrete things, we have to multi-version the parent!
   for (auto *c : llvm::drop_begin(concrete)) {
@@ -1398,7 +1388,7 @@ ElaborationState ElaboratorImpl::completeCallProcessing(
   // meaning we're in an infinite recursive loop. Essentially, we came back to
   // the same combination of generator + input parameters without resolving the
   // result parameters yet.
-  ArrayAttr resultParams = thisNode->resultParams;
+  ParameterExprArrayAttr resultParams = thisNode->resultParams;
   assert(resultParams && "expected result parameters to be set");
 
   // Bind the result parameters to the output parameter decls.
@@ -1430,7 +1420,7 @@ ElaborationState ElaboratorImpl::processEvaluateOp(ImplNode *parent,
   Attribute evaluatorFn;
   HANDLE_EVALUATOR_CONC(evaluatorFn, parent, op.getLoc(), op.getEvaluator());
 
-  ArrayAttr inputParamKey;
+  ParameterExprArrayAttr inputParamKey;
   GeneratorOp gen;
   std::vector<ImplNode *> evaluators;
   ElaborationState result = instantiateGeneratorReference(
@@ -1910,7 +1900,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   GeneratorOp generator = genNode->gen;
 
   // Bind all parameter values in this scope.
-  ArrayRef<Attribute> inputParamValues = genNode->inputParams.getValue();
+  ArrayRef<TypedAttr> inputParamValues = genNode->inputParams.getValue();
   ArrayRef<ParamDeclAttr> inputParamDecls = generator.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
@@ -2203,10 +2193,10 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
       ParameterEvaluator &eval = inode->getEvaluator();
       auto callee =
           cast<SymbolConstantAttr>(eval.getReboundAttribute(call.getCallee()));
-      SmallVector<Attribute> inputParams;
-      llvm::append_range(inputParams, callee.getParamValues());
       ParamNode *calleeNode = g.getOrCreate(
-          runtime, ArrayAttr::get(call.getContext(), inputParams),
+          runtime,
+          ParameterExprArrayAttr::get(call.getContext(),
+                                      callee.getParamValues()),
           symtab.get().lookup<GeneratorOp>(
               cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr()),
           /*depth=*/0);
@@ -2282,7 +2272,8 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
             .get());
   }
 
-  auto emptyInputParamKey = ArrayAttr::get(theModule.getContext(), {});
+  auto emptyInputParamKey =
+      ParameterExprArrayAttr::get(theModule.getContext(), {});
   std::vector<AnyAsyncValueRef> primaryChs;
   std::vector<std::unique_ptr<ImplNode>> rootNodes;
   std::vector<ParamNode *> primaryNodes;
