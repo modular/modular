@@ -1976,3 +1976,39 @@ kgen.generator export @top() {
   kgen.param.constant: string = <get_linkage_name(:() -> () @func)>
   kgen.return
 }
+
+// -----
+
+kgen.generator @no_params() {
+  kgen.return
+}
+
+kgen.generator @params<a, b>() -> (index, index) {
+  %0 = kgen.param.constant = <a>
+  %1 = kgen.param.constant = <b>
+  kgen.return %0, %1 : index, index
+}
+
+kgen.generator @func_param<f: <index, index>() -> (index, index)>() -> index {
+  kgen.param.declare bind: () -> (index, index) = <bind_signature(:<index, index>() -> (index, index) f, 7, 9)>
+  %0, %1 = kgen.call_param[() -> (index, index): bind]()
+  %2 = index.add %0, %1
+  kgen.return %2 : index
+}
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() {
+  // CHECK-NEXT: constant: string = <"{{.*}}no_params
+  %0 = kgen.param.constant: string = <compile_assembly(current_target(), :() -> () @no_params)>
+  // CHECK-NEXT: constant: string = <"no_params">
+  %1 = kgen.param.constant: string = <get_linkage_name(:() -> () @no_params)>
+  // CHECK-NEXT: constant: string = <"{{.*}}params,a=1,b=2
+  %2 = kgen.param.constant: string = <compile_assembly(current_target(), :() -> (index, index) @params<1, 2>)>
+  // CHECK-NEXT: constant: string = <"params,a=1,b=2">
+  %3 = kgen.param.constant: string = <get_linkage_name(:() -> (index, index) @params<1, 2>)>
+  // CHECK-NEXT: constant: string = <"{{.*}}func_param,f=@params
+  %4 = kgen.param.constant: string = <compile_assembly(current_target(), :() -> index @func_param<:<index, index>() -> (index, index) @params>)>
+  // CHECK-NEXT: constant: string = <"func_param,f=@params">
+  %5 = kgen.param.constant: string = <get_linkage_name(:() -> index @func_param<:<index, index>() -> (index, index) @params>)>
+  kgen.return
+}

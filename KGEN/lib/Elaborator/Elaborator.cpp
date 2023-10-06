@@ -53,10 +53,8 @@ using namespace LLCL;
 // mangleParameterValues
 //===----------------------------------------------------------------------===//
 
-/// This returns a name to use when the specified generator is specialized
-/// with the specified input parameters.
-static std::string mangleParameterValues(GeneratorOp generator,
-                                         ArrayRef<TypedAttr> inputParamValues) {
+std::string KGEN::mangleParameterValues(GeneratorOp generator,
+                                        ArrayRef<TypedAttr> inputParamValues) {
   Builder b(generator.getContext());
   if (inputParamValues.empty())
     return generator.getName().str();
@@ -2551,7 +2549,8 @@ public:
 
     // Default compile assembly hook will just error.
     if (!compileAsmFn) {
-      compileAsmFn = [](GeneratorOp, const SymbolTable &, TargetInfoAttr) {
+      compileAsmFn = [](GeneratorOp, SymbolConstantAttr, StringAttr,
+                        const SymbolTable &, TargetInfoAttr) {
         return Error("internal error: cannot compile assembly without a JIT");
       };
     }

@@ -17,6 +17,7 @@
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SetOperations.h"
@@ -99,6 +100,14 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
 OwningOpRef<ModuleOp>
 ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
                                         const ExportMap &exportedSymbols) {
+  IRMapping unused;
+  return produceStandaloneModule(symtab, exportedSymbols, unused);
+}
+
+OwningOpRef<ModuleOp>
+ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
+                                        const ExportMap &exportedSymbols,
+                                        IRMapping &mapping) {
   TimeTraceScope traceScope("produceStandaloneModule");
   auto module = cast<ModuleOp>(symtab.getOp());
   // Create a new module for these funcs. This will go away at the end
@@ -120,7 +129,7 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
     // the current module. Make sure the function is also exported in the slice.
     auto sliceFn = sliceSymtab.lookup<ExportInterface>(sym);
     if (!sliceFn) {
-      sliceFn = func.clone();
+      sliceFn = cast<ExportInterface>(func->clone(mapping));
       sliceSymtab.insert(sliceFn);
     }
     ExportKind kind = func.getExportKind();

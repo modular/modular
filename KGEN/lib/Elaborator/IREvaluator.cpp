@@ -212,6 +212,18 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   return {BoolAttr::get(op.getContext(), static_cast<bool>(value))};
 }
 
+/// Compute the expected mangled name of a generator, assuming it has one
+/// successful implementation. If it doesn't, elaboration will fail anyways.
+static StringAttr getExpectedMangledName(GeneratorOp func,
+                                         ArrayRef<TypedAttr> params,
+                                         bool sanitize) {
+  auto baseName =
+      StringAttr::get(func.getContext(), mangleParameterValues(func, params));
+  if (sanitize)
+    baseName = sanitizeSymbolToAlnum(baseName);
+  return baseName;
+}
+
 FailureOr<TypedAttr>
 IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // Cheeky copy. The state of the symbol table right at this moment is
@@ -236,8 +248,11 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // turns out that the specialization has more than one implementation, then
   // the elaborator invocation will fail due to multiple implementations of a
   // primary generator, and the functor will return an error.
+  StringAttr name =
+      getExpectedMangledName(func, symbol.getParamValues(),
+                             elaborator->getOptions().sanitizeSymbolNames);
   ErrorOr<BufferRef> buffer =
-      elaborator->getCompileAsmFn()(func, symtabCopy, target);
+      elaborator->getCompileAsmFn()(func, symbol, name, symtabCopy, target);
   if (buffer.isError()) {
     emitError({*errorLoc, buffer.takeError()});
     return failure();
@@ -253,23 +268,15 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
     emitError({*errorLoc, "'get_linkage_name' function is not concrete"});
     return failure();
   }
-  auto funcSymbl = cast<FlatSymbolRefAttr>(symbol.getSymbol());
-  StringAttr symbolName = funcSymbl.getAttr();
   auto genOp = elaborator->getSymbolTable().read(
-      [&](const SymbolTable &symtab) -> GeneratorOp {
-        return symtab.lookup<GeneratorOp>(funcSymbl.getAttr());
-      });
+      [name = symbol.getSymbol().getRootReference()](const SymbolTable &symtab)
+          -> GeneratorOp { return symtab.lookup<GeneratorOp>(name); });
   assert(genOp && "expected a valid generator reference");
-  if (!genOp.getInputParams().empty() || !genOp.getResultParams().empty()) {
-    emitError({*errorLoc,
-               "'get_linkage_name' operand requires to be parameter free"});
-    return failure();
-  }
 
-  if (elaborator->getOptions().sanitizeSymbolNames)
-    symbolName = sanitizeSymbolToAlnum(symbolName);
-
-  return {StringAttr::get(symbolName.getValue(), op.getType())};
+  StringAttr name =
+      getExpectedMangledName(genOp, symbol.getParamValues(),
+                             elaborator->getOptions().sanitizeSymbolNames);
+  return {StringAttr::get(name.getValue(), op.getType())};
 }
 
 //===----------------------------------------------------------------------===//
