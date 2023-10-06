@@ -675,11 +675,6 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
         builder->create<CreateClosureOp>(location, sig, attr, ValueRange()));
   }
 
-  if (isa<MLIRTypeType, MetaTypeType>(value.ir.getType().mlirType)) {
-    emitError(expr->getLoc(), "cannot use type value as dynamic value");
-    return {};
-  }
-
   // Otherwise, emit a generalized parameter constant.
   return SRValue(
       value.ir.getRValueType().isTrivial(value.expr->getLoc(), shared)

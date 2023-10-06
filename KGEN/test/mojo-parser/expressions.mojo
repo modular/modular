@@ -1571,6 +1571,29 @@ fn indirect_kw_args():
     KwCallable()(n=7, msg="woof")
 
 ##===----------------------------------------------------------------------===##
+# Test Type Expressions
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"type_function
+# CHECK-SAME: (%a: !Bool borrow) -> !kgen.mlirtype
+fn type_function(a: Bool) -> AnyType:
+    # CHECK: [[TYPE:%.*]] = hlcf.if %{{.*}} -> !kgen.mlirtype
+    # CHECK-NEXT: %type = kgen.param.constant: type = <!Int>
+    # CHECK-NEXT: yield %type
+    # CHECK-NEXT: else
+    # CHECK-NEXT: %type = kgen.param.constant: type = <!Bool>
+    # CHECK-NEXT: yield %type
+    # CHECK: return [[TYPE]] : !kgen.mlirtype
+    return Int if a else Bool
+
+
+# CHECK-LABEL: lit.func @"static_type
+# CHECK-SAME: <[[PARAM:.*]][a]: !Bool>
+# CHECK-SAME: %x: !kgen.paramref<apply(:!lit.signature<("a": !Bool borrow) -> !kgen.mlirtype> {{.*}}@"type_function{{.*}}, [[PARAM]])> borrow)
+fn static_type[a: Bool](x: type_function(a)):
+    pass
+
+##===----------------------------------------------------------------------===##
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
