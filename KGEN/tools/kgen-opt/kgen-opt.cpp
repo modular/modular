@@ -214,6 +214,7 @@ int main(int argc, char **argv) {
   KGEN::registerOutlineClosures();
   KGEN::registerPruneImpossibleVariants();
   KGEN::registerRaiseForLoops();
+  KGEN::registerResolveCompilerPromises();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
   KGEN::registerStackReuse();

@@ -24,6 +24,7 @@ add_modular_library(KGENTransforms
   Mem2Reg.cpp
   OutlineClosures.cpp
   RaiseForLoops.cpp
+  ResolveCompilerPromises.cpp
   SimplifyCF.cpp
   SROA.cpp
   StackReuse.cpp
