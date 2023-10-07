@@ -190,6 +190,7 @@ fn batched_matmul[
     elementwise_epilogue_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
+    satruated_vnni: Bool,
     single_thread_blocking_override: Bool,
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -289,6 +290,7 @@ fn batched_matmul[
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     rowwise_epilogue_enabled: Bool,
+    saturated_vnni: Bool,
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -454,6 +456,7 @@ fn batched_matmul[
                 elementwise_epilogue_enabled,
                 elementwise_lambda_2d,
                 rowwise_epilogue_enabled,
+                saturated_vnni,
             ](
                 c_view,
                 a_view,
@@ -464,6 +467,41 @@ fn batched_matmul[
             )
 
     sync_parallelize[task_func](out_chain, num_tasks)
+
+
+@always_inline
+fn batched_matmul[
+    rank: Int,
+    type: DType,
+    adj_a: Bool,
+    adj_b: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    rowwise_epilogue_enabled: Bool,
+](
+    c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    a_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    b_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    # fmt: off
+    rowwise_epilogue: fn (Int,
+                          Int,
+                          NDBuffer[2, DimList.create_unknown[2](), type]
+                         ) capturing -> None,
+    # fmt: on
+    out_chain: OutputChainPtr,
+):
+    batched_matmul[
+        rank,
+        type,
+        adj_a,
+        adj_b,
+        elementwise_epilogue_enabled,
+        elementwise_epilogue_fn,
+        rowwise_epilogue_enabled,
+        saturated_vnni=False,
+    ](c_buf, a_buf, b_buf, rowwise_epilogue, out_chain)
 
 
 @always_inline

@@ -62,6 +62,9 @@ struct MatmulConfig:
     # use VNNI
     var use_vnni: Bool
 
+    # If true, then perform saturated matmul
+    var saturated_vnni: Bool
+
 
 @register_passable("trivial")
 struct MatmulDataType:
@@ -612,6 +615,7 @@ fn search_mm_config[
     c_type: DType,
     b_packed: Bool,
     critical_stride: Bool,
+    saturated_vnni: Bool,
 ]() -> MatmulConfig:
     alias a_row_size = get_matmul_a_row_size[critical_stride]()
     alias pack_inner_size = get_matmul_pack_inner_size[critical_stride]()
@@ -636,13 +640,40 @@ fn search_mm_config[
     #         __mlir_attr.`#kgen.param.decl.ref<"result_hidden2"> : index`
     #     )
     alias mm_config1 = get_matmul_config[
-        a_type, b_type, c_type, a_row_size, pack_inner_size
+        a_type,
+        b_type,
+        c_type,
+        a_row_size,
+        pack_inner_size,
+        saturated_vnni,
     ]()
     # FIXME: The 8,2 config is giving erroneous results.
     # alias mm_config2 = get_matmul_config[8, 2]()
 
     # alias mm_config = autotune(mm_config1, mm_config2)
     return mm_config1
+
+
+@always_inline
+fn search_mm_config[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    b_packed: Bool,
+    critical_stride: Bool,
+]() -> MatmulConfig:
+    return search_mm_config[
+        a_type, b_type, c_type, b_packed, critical_stride, False
+    ]()
+
+
+@always_inline
+fn search_mm_config[
+    type: DType, b_packed: Bool, critical_stride: Bool
+]() -> MatmulConfig:
+    return search_mm_config[
+        type, type, type, b_packed, critical_stride, False
+    ]()
 
 
 @always_inline
@@ -655,19 +686,13 @@ fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     )
 
 
-@always_inline
-fn search_mm_config[
-    type: DType, b_packed: Bool, critical_stride: Bool
-]() -> MatmulConfig:
-    return search_mm_config[type, type, type, b_packed, critical_stride]()
-
-
 fn get_matmul_config[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     a_row_size: Int,
     pack_inner_size: Int,
+    saturated: Bool,
 ]() -> MatmulConfig:
     """Utility function to extract matmul configuration parameters for exported
     Functions.
@@ -691,6 +716,7 @@ fn get_matmul_config[
         pack_data_size: get_pack_data_size[b_type](),
         prefetch_b_distance_k: prefetch_b_distance_k,
         use_vnni: use_vnni_fn[a_type, b_type, c_type](),
+        saturated_vnni: saturated,
     }
 
 

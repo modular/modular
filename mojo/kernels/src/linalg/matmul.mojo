@@ -46,7 +46,7 @@ from memory.buffer import (
 from memory.unsafe import DTypePointer, bitcast
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from Transpose import transpose_inplace
-from VNNI import dot_i8_to_i32_saturated_x86
+from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList, VariadicList
@@ -660,6 +660,7 @@ struct MatmulInnerLoopBPacked[
     # Skip the output c space boundary check if True.
     skip_boundary_check: Bool,
     prefetch_b_distance: Int,
+    saturated_vnni: Bool,
 ]:
     """Inner loop implementation for mlas-style tiled matmul. Accumulates a
     tile of input defined by (a_row_size, TileN, TileK).
@@ -1034,9 +1035,14 @@ struct MatmulInnerLoopBPacked[
                 let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
                     simd_size, alignment
                 ]().cast[c_type]()
-                c_val = dot_i8_to_i32_saturated_x86[simd_size](
-                    c_val, a_val, b_val
-                )
+
+                @parameter
+                if saturated_vnni:
+                    c_val = dot_i8_to_i32_saturated_x86[simd_size](
+                        c_val, a_val, b_val
+                    )
+                else:
+                    c_val = dot_i8_to_i32_x86[simd_size](c_val, a_val, b_val)
                 c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
     @adaptive
@@ -1383,6 +1389,7 @@ struct TiledMatmul[
                     m_loop_pack_inner_size,
                     skip_col_bound,
                     config.prefetch_b_distance_k,
+                    config.saturated_vnni,
                 ].run(
                     self.c,
                     self.a,
@@ -2090,6 +2097,7 @@ fn matmul[
     b_packed: Bool,
     elementwise_epilogue_enabled: Bool,
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    saturated_vnni: Bool,
     single_thread_blocking_override: Bool,
 ](
     c: NDBuffer[2, DimList.create_unknown[2](), c_type],
@@ -2126,6 +2134,7 @@ fn matmul[
             b_packed,
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
+            saturated_vnni,
         ](c, a, b, new_chain.borrow(), num_threads)
         new_chain.wait()
     else:
@@ -2138,6 +2147,7 @@ fn matmul[
             b_packed,
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
+            saturated_vnni,
         ](c, a, b, out_chain, num_threads)
 
 
@@ -2170,6 +2180,41 @@ fn matmul[
         b_packed,
         False,
         null_lambda,
+        False,
+    ](c, a, b, out_chain, num_threads)
+
+
+fn matmul[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+    saturated_vnni: Bool,
+](
+    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
+    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
+    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    out_chain: OutputChainPtr,
+    num_threads: Int = -1,
+):
+    @parameter
+    fn null_lambda[
+        val_type: DType, width: Int
+    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
+        pass
+
+    matmul[
+        a_type,
+        b_type,
+        c_type,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        False,
+        null_lambda,
+        saturated_vnni,
     ](c, a, b, out_chain, num_threads)
 
 
@@ -2182,6 +2227,7 @@ fn matmul[
     b_packed: Bool,
     elementwise_epilogue_enabled: Bool,
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    saturated_vnni: Bool,
 ](
     c: NDBuffer[2, DimList.create_unknown[2](), c_type],
     a: NDBuffer[2, DimList.create_unknown[2](), a_type],
@@ -2222,6 +2268,7 @@ fn matmul[
             b_packed,
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
+            saturated_vnni,
         ](c, a, b, sub_matmul_config.shape, sub_matmul_config.offset)
 
     # TODO (#12624): Closure captures some state on the stack so this needs
@@ -2239,6 +2286,7 @@ fn _submatmul_sequential_sync[
     elementwise_epilogue_enabled: Bool,
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
     rowwise_epilogue_enabled: Bool,
+    saturated_vnni: Bool,
 ](
     c: NDBuffer[
         2,
@@ -2267,7 +2315,7 @@ fn _submatmul_sequential_sync[
     @parameter
     fn dispatch_on_critical_stride[critical_stride: Bool]():
         alias mm_config = search_mm_config[
-            a_type, b_type, c_type, b_packed, critical_stride
+            a_type, b_type, c_type, b_packed, critical_stride, saturated_vnni
         ]()
 
         fn elementwise_closure(offset: GemmShape, shape: GemmShape):
@@ -2348,6 +2396,7 @@ fn _submatmul_sequential_sync[
         # elementwise_epilogue_enabled,
         False,
         null_lambda,
+        False,
     ](c, a, b, sub_matrix_shape, sub_matrix_offset)
 
 
@@ -2360,6 +2409,7 @@ fn _submatmul_sequential_sync[
     b_packed: Bool,
     elementwise_epilogue_enabled: Bool,
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    saturated_vnni: Bool,
 ](
     c: NDBuffer[
         2,
@@ -2389,4 +2439,5 @@ fn _submatmul_sequential_sync[
         elementwise_epilogue_enabled,
         elementwise_lambda_fn,
         False,
+        saturated_vnni,
     ](c, a, b, sub_matrix_shape, sub_matrix_offset, _null_rowwise_epilogue)

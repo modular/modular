@@ -46,7 +46,9 @@ fn test_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
+    saturated: Bool,
 ]():
+
     let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
     let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
@@ -90,11 +92,13 @@ fn test_matmul[
         c1_ptr, Index(m, n)
     )
 
+    # saturated VNNI only has a range [0,127] for the input a
+    let vnni_range: Int = 128 if saturated else 256
     var cnt: Int = 0
     for i in range(m):
         for p in range(k):
             # uint8 but limited to [0,127]
-            am[i, p] = cnt % 128
+            am[i, p] = cnt % vnni_range
             cnt += 1
 
     cnt = 0
@@ -116,7 +120,7 @@ fn test_matmul[
             pack_b_ndbuffer[a_type, b_type, c_type](b, bp, out_chain.borrow())
             out_chain.wait()
         let out_chain = OwningOutputChainPtr(runtime)
-        matmul[a_type, b_type, c_type, False, transpose_b, b_packed](
+        matmul[a_type, b_type, c_type, False, transpose_b, b_packed, saturated](
             c, a, bp, out_chain.borrow()
         )
         out_chain.wait()
@@ -156,6 +160,7 @@ fn test_matmul_vnni():
         DType.uint8,
         DType.int8,
         DType.int32,
+        saturated=False,
     ]()
 
 
@@ -170,9 +175,42 @@ fn test_matmul_vnni_bpacked():
         DType.uint8,
         DType.int8,
         DType.int32,
+        saturated=False,
+    ]()
+
+
+fn test_matmul_vnni_saturated():
+    print("== test_matmul_vnni_saturated")
+    test_matmul[
+        N,
+        M,
+        K,
+        False,  # transpose_b
+        False,  # b_packed
+        DType.uint8,
+        DType.int8,
+        DType.int32,
+        True,
+    ]()
+
+
+fn test_matmul_vnni_bpacked_saturated():
+    print("== test_matmul_vnni_bpacked_saturated")
+    test_matmul[
+        N,
+        M,
+        K,
+        False,  # transpose_b
+        True,  # b_packed
+        DType.uint8,
+        DType.int8,
+        DType.int32,
+        True,
     ]()
 
 
 fn main():
     test_matmul_vnni()
     test_matmul_vnni_bpacked()
+    test_matmul_vnni_saturated()
+    test_matmul_vnni_bpacked_saturated()
