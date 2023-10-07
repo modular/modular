@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CallGraphUtils.h"
 #include "InliningUtils.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -17,19 +18,16 @@
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "Support/STLExtras.h"
 #include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/IR/Threading.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/RWMutex.h"
 
 #define DEBUG_TYPE "kgen-inlining"
 
@@ -603,41 +601,6 @@ void inlineGeneratorCall(CallOp call, GeneratorOp callee, InlineLevel level,
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// A node in the inlining graph contains a function, edges to its callers, and
-/// edges to its callees. A node is ready to inline its callees when all of
-/// its callees have been processed.
-template <typename DerivedT, typename FuncT, typename CallT>
-struct InliningGraphNodeBase {
-  using FuncOpT = FuncT;
-  using CallOpT = CallT;
-
-  /// Create the node for the given function.
-  explicit InliningGraphNodeBase(FuncT func) : func(func) {}
-
-  /// This class is only move-constructed when the node map in
-  /// `InliningGraphBase` is resized. That occurs before any references are
-  /// taken to instances of this object, so just default-construct all other
-  /// members of this class.
-  InliningGraphNodeBase(InliningGraphNodeBase &&other) : func(other.func) {}
-
-  /// The function represented by the node.
-  FuncOpT func;
-
-  /// Nodes of functions that inline call this function. These are the child
-  /// edges.
-  std::vector<DerivedT *> callers;
-  /// Calls and callees to inline inside this function. These are the parent
-  /// edges.
-  std::vector<std::pair<CallOpT, DerivedT *>> callsites;
-  /// This mutex guards `callsites` and `callers` during parallel graph
-  /// construction.
-  llvm::sys::SmartRWMutex<true> mutex;
-
-  /// The number of processed calls. When the value of this counter equals the
-  /// size of `callsites`, then all calls for this function have been processed.
-  std::atomic<size_t> numProcessedCalls = 0;
-};
-
 /// An inlining graph is a call graph between functions of concrete calls to
 /// functions that must be inlined. The root nodes of the graph are
 /// `always_inline` functions with no calls to other such functions, and the
@@ -651,18 +614,11 @@ struct InliningGraphNodeBase {
 /// This structure is implemented as a CRTP class so that the core algorithm can
 /// be shared between both inliners.
 template <typename DerivedT, typename NodeT>
-struct InliningGraphBase {
-  using FuncOpT = typename NodeT::FuncOpT;
-  using CallOpT = typename NodeT::CallOpT;
-
+struct InliningGraphBase : public CallGraphBase<DerivedT, NodeT> {
   explicit InliningGraphBase(LLCL::Runtime &runtime)
       : runtime(runtime), state(runtime) {}
 
-  /// Get a reference to the derived class.
-  DerivedT &getDerived() { return *static_cast<DerivedT *>(this); }
-
-  /// Build the inlining graph for a module.
-  void build(ModuleOp module, const SymbolTable &symtab);
+  using CallGraphBase<DerivedT, NodeT>::getDerived;
 
   /// Process the graph by performing all requested inlining from the root
   /// nodes.
@@ -674,9 +630,6 @@ struct InliningGraphBase {
   // increment the `numProcessedCalls` counters N times as appropriate.
   void complete(NodeT *node);
 
-  /// The nodes in the graph. The map does not resize after it is constructed,
-  /// so references always remain valid.
-  llvm::MapVector<FuncOpT, NodeT> nodes;
   /// The runtime to use.
   LLCL::Runtime &runtime;
 
@@ -687,48 +640,6 @@ struct InliningGraphBase {
   std::atomic<size_t> numProcessed = 0;
 };
 } // namespace
-
-template <typename DerivedT, typename NodeT>
-void InliningGraphBase<DerivedT, NodeT>::build(ModuleOp module,
-                                               const SymbolTable &symtab) {
-  TimeTraceScope traceScope("InliningGraphBase::build");
-
-  // Instantiate the nodes for each generator first.
-  for (auto func : llvm::make_early_inc_range(module.getOps<FuncOpT>()))
-    nodes.insert(std::make_pair(func, NodeT(func)));
-
-  // Build the graph by walking all the calls in each function and adding edges
-  // as appropriate.
-  auto workFn = [this, &symtab](std::pair<FuncOpT, NodeT> &value) {
-    auto &[func, node] = value;
-    NodeT *callerNode = &node;
-    func.getBodyRegion().walk([&](CallOpT call) {
-      Operation *calleeOp = symtab.lookup(
-          cast<FlatSymbolRefAttr>(
-              cast<SymbolConstantAttr>(call.getCallee()).getSymbol())
-              .getAttr());
-      assert(calleeOp && "invalid IR?");
-      // Only add the edge if the symbol we found is of the type we expect.
-      auto callee = dyn_cast<FuncOpT>(calleeOp);
-      if (!callee)
-        return;
-
-      NodeT *calleeNode = &nodes.find(callee)->second;
-      // Filter calls that do not satisfy the inlining level.
-      if (!getDerived().shouldInline(calleeNode))
-        return;
-      {
-        llvm::sys::SmartScopedWriter<true> lock(callerNode->mutex);
-        callerNode->callsites.emplace_back(call, calleeNode);
-      }
-      {
-        llvm::sys::SmartScopedWriter<true> lock(calleeNode->mutex);
-        calleeNode->callers.push_back(callerNode);
-      }
-    });
-  };
-  mlir::parallelForEach(module.getContext(), nodes, workFn);
-}
 
 template <typename DerivedT, typename NodeT>
 void InliningGraphBase<DerivedT, NodeT>::complete(NodeT *node) {
@@ -758,7 +669,7 @@ void InliningGraphBase<DerivedT, NodeT>::process() {
   TimeTraceScope traceScope("InliningGraphBase::process");
 
   // Populate the worklist with root nodes.
-  for (auto &[func, node] : nodes) {
+  for (auto &[func, node] : this->nodes) {
     // Root nodes are already complete.
     if (!node.callsites.empty())
       continue;
@@ -776,13 +687,13 @@ void InliningGraphBase<DerivedT, NodeT>::process() {
 
 namespace {
 struct ParametricInliningGraphNode
-    : public InliningGraphNodeBase<ParametricInliningGraphNode, GeneratorOp,
-                                   CallOp> {
+    : public CallGraphNodeBase<ParametricInliningGraphNode, GeneratorOp,
+                               CallOp> {
   explicit ParametricInliningGraphNode(GeneratorOp func)
-      : InliningGraphNodeBase(func), level(func.getInlineLevel()),
+      : CallGraphNodeBase(func), level(func.getInlineLevel()),
         calleeParamGraph(func.getBodyRegion()) {}
   ParametricInliningGraphNode(ParametricInliningGraphNode &&other)
-      : InliningGraphNodeBase(other.func), level(other.level),
+      : CallGraphNodeBase(other.func), level(other.level),
         calleeParamGraph(other.func.getBodyRegion()) {}
 
   /// Compute the caller parameter graph and declarations.
@@ -917,12 +828,11 @@ std::unique_ptr<mlir::Pass> KGEN::createAlwaysInlineParametric(
 //===----------------------------------------------------------------------===//
 namespace {
 struct InliningGraphNode
-    : public InliningGraphNodeBase<InliningGraphNode, FuncOp,
-                                   KGENCallOpInterface> {
+    : public CallGraphNodeBase<InliningGraphNode, FuncOp, KGENCallOpInterface> {
   /// If the function will be inlined, removed it from the module so that it can
   /// later be erased in parallel. Ownership is passed to the node.
   explicit InliningGraphNode(FuncOp func)
-      : InliningGraphNodeBase(func), level(func.getInlineLevel()),
+      : CallGraphNodeBase(func), level(func.getInlineLevel()),
         signature(func.getSignature()) {
     if (shouldInline())
       func->remove();
@@ -931,7 +841,7 @@ struct InliningGraphNode
   /// This node takes ownership of the function. Everything else is
   /// default-initialized.
   explicit InliningGraphNode(InliningGraphNode &&other)
-      : InliningGraphNodeBase(std::move(other)), level(other.level),
+      : CallGraphNodeBase(std::move(other)), level(other.level),
         signature(other.signature) {
     other.func = nullptr;
   }
