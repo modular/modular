@@ -1877,6 +1877,7 @@ fn matmul[
         b_packed,
         lambdas_have_fusion,
         epilogue_wrapper,
+        True,  # saturated_vnni
         single_thread_blocking_override,
     ](
         c,
@@ -1943,6 +1944,7 @@ fn batched_matmul[
         adj_b,
         lambdas_have_fusion,
         epilogue_wrapper,
+        True,  # saturated_vnni
         single_thread_blocking_override,
     ](c, a, b, out_chain)
 
