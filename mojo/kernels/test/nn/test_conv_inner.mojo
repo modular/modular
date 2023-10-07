@@ -99,6 +99,7 @@ fn test_micro_kernel():
         dilation: cs_dilation,
         pad_h: cs_pad_h,
         pad_w: cs_pad_w,
+        num_groups: 1,
     }
 
     let c = NDBuffer[2, shape_c, type].aligned_stack_allocation[128]()

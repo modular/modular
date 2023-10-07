@@ -74,6 +74,7 @@ fn test[
         dilation: dilation,
         pad_h: pad_h,
         pad_w: pad_w,
+        num_groups: 1,
     }
 
     let input_ptr = DTypePointer[input_type].alloc(N * H * W * C)
@@ -127,7 +128,7 @@ fn test[
     @parameter
     if filter_packed:
         pack_filter[filter_type, simd_size, micro_kernel_f_size](
-            filter, packed_filter
+            filter, packed_filter, conv_shape.num_groups
         )
 
     # Reference: naive conv
@@ -160,6 +161,7 @@ fn test[
         pad_w,
         stride,
         dilation,
+        conv_shape.num_groups,
     )
 
     # Test direct conv

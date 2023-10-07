@@ -41,12 +41,14 @@ alias dilation_h = 1
 alias dilation_w = 1
 alias HO = (H + pad_left + pad_right - dilation_h * (R - 1) - 1) // stride_h + 1
 alias WO = (W + pad_top + pad_bottom - dilation_w * (S - 1) - 1) // stride_w + 1
+alias num_groups = 1
 
 alias conv_attr = ConvInfoStatic(
     DimList(pad_bottom, pad_top),
     DimList(pad_left, pad_right),
     DimList(stride_h, stride_w),
     DimList(dilation_h, dilation_w),
+    Dim(num_groups),
 )
 
 alias value_type = DType.float32
@@ -67,7 +69,6 @@ fn static_conv(
         value_type,
     ],
 ):
-
     let conv_shape = ConvShape {
         n: N,
         h: H,
@@ -82,6 +83,7 @@ fn static_conv(
         dilation: Index(dilation_h, dilation_w),
         pad_h: Index(pad_bottom, pad_top),
         pad_w: Index(pad_left, pad_right),
+        num_groups: num_groups,
     }
 
     let tile_size = get_conv_tile_shape[value_type, micro_kernel_shape[1]](

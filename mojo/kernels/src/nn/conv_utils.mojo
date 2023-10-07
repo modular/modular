@@ -21,7 +21,7 @@ from memory.buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
-from utils.optional_param import OptionalParamInts
+from utils.optional_param import OptionalParamInt, OptionalParamInts
 
 
 # conv uses a different kernel than matmul
@@ -64,6 +64,37 @@ struct ConvShape:
     var dilation: StaticIntTuple[2]  # Dilation on [H, W]
     var pad_h: StaticIntTuple[2]  # Padding on H dimension in (Low, High)
     var pad_w: StaticIntTuple[2]  # Padding on W dimension in (Low, High)
+    var num_groups: Int
+
+    @always_inline
+    fn c_per_group(self) -> Int:
+        """Returns the number of channels per group. Channel count must be divisible by group size."""
+        return self.c // self.num_groups
+
+    @always_inline
+    fn f_per_group(self) -> Int:
+        """Returns the number of filters per group. Filter count must be divisible by group size."""
+        return self.f // self.num_groups
+
+    @always_inline
+    fn f_to_group(self, f_idx: Int) -> Int:
+        """Given a global filter idx, returns the group idx of the group the filter belongs to."""
+        return f_idx // self.f_per_group()
+
+    @always_inline
+    fn c_to_group(self, c_idx: Int) -> Int:
+        """Given a global channel idx, returns the group idx of the group the channel belongs to."""
+        return c_idx // self.c_per_group()
+
+    @always_inline
+    fn f_in_group(self, f_idx: Int) -> Int:
+        """Given a global filter idx, returns the offset of the filter in its group."""
+        return f_idx % self.f_per_group()
+
+    @always_inline
+    fn c_in_group(self, c_idx: Int) -> Int:
+        """Given a global channel idx, returns the offset of the channel in its group."""
+        return c_idx % self.c_per_group()
 
 
 @adaptive
@@ -82,6 +113,7 @@ fn get_conv2d_shape[
     pad_w: StaticIntTuple[2],
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
+    num_groups: Int,
 ) -> ConvShape:
     constrained[data_layout == Image2DLayout.NCHW]()
     constrained[filter_layout == Image2DLayout.NCHW]()
@@ -100,6 +132,7 @@ fn get_conv2d_shape[
         dilation: dilation,
         pad_h: pad_h,
         pad_w: pad_w,
+        num_groups: num_groups,
     }
 
 
@@ -119,6 +152,7 @@ fn get_conv2d_shape[
     pad_w: StaticIntTuple[2],
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
+    num_groups: Int,
 ) -> ConvShape:
     constrained[data_layout == Image2DLayout.NHWC]()
     constrained[filter_layout == Image2DLayout.NHWC]()
@@ -137,6 +171,7 @@ fn get_conv2d_shape[
         dilation: dilation,
         pad_h: pad_h,
         pad_w: pad_w,
+        num_groups: num_groups,
     }
 
 
@@ -156,6 +191,7 @@ fn get_conv2d_shape[
     pad_w: StaticIntTuple[2],
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
+    num_groups: Int,
 ) -> ConvShape:
     constrained[data_layout == Image2DLayout.NHWC]()
     constrained[filter_layout == Image2DLayout.RSCF]()
@@ -174,6 +210,7 @@ fn get_conv2d_shape[
         dilation: dilation,
         pad_h: pad_h,
         pad_w: pad_w,
+        num_groups: num_groups,
     }
 
 
@@ -193,6 +230,7 @@ fn get_conv2d_shape[
     pad_w: StaticIntTuple[2],
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
+    num_groups: Int,
 ) -> ConvShape:
     constrained[data_layout == Image2DLayout.NHWC]()
     constrained[
@@ -216,6 +254,7 @@ fn get_conv2d_shape[
             dilation: dilation,
             pad_h: pad_h,
             pad_w: pad_w,
+            num_groups: num_groups,
         }
 
     # default case: filter is packed, FRSCf
@@ -233,6 +272,7 @@ fn get_conv2d_shape[
         dilation: dilation,
         pad_h: pad_h,
         pad_w: pad_w,
+        num_groups: num_groups,
     }
 
 
@@ -296,6 +336,7 @@ struct ConvInfoStatic:
     var pad_w: DimList
     var stride: DimList
     var dilation: DimList
+    var num_groups: Dim
 
     @always_inline
     fn all_known(self) -> Bool:
@@ -304,6 +345,7 @@ struct ConvInfoStatic:
             and self.pad_w.all_known[2]()
             and self.stride.all_known[2]()
             and self.dilation.all_known[2]()
+            and self.num_groups.has_value()
         )
 
     @always_inline
@@ -315,6 +357,7 @@ struct ConvInfoStatic:
                 DimList.create_unknown[2](),
                 DimList.create_unknown[2](),
                 DimList.create_unknown[2](),
+                Dim(),
             )
         )
 
@@ -324,6 +367,7 @@ struct ConvInfo[conv_info_static: ConvInfoStatic]:
     var pad_w: OptionalParamInts[2, conv_info_static.pad_w]
     var stride: OptionalParamInts[2, conv_info_static.stride]
     var dilation: OptionalParamInts[2, conv_info_static.dilation]
+    var num_groups: OptionalParamInt[conv_info_static.num_groups]
 
     fn __init__(
         inout self,
@@ -331,11 +375,13 @@ struct ConvInfo[conv_info_static: ConvInfoStatic]:
         pad_w: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
+        num_groups: Int,
     ):
         self.pad_h = pad_h
         self.pad_w = pad_w
         self.stride = stride
         self.dilation = dilation
+        self.num_groups = num_groups
 
 
 fn get_direct_conv_micro_kernel_height() -> Int:
@@ -471,9 +517,10 @@ fn get_conv_num_partitions[
     var num_col_tasks = ideal_num_col_tasks
 
     # There must at least have enough elements to support a micro kernel.
+    # Do not partition F when num_groups > 1.
     var max_num_col_tasks = min(
         div_ceil(matmul_N, micro_kernel_f), max_num_tasks
-    )
+    ) if conv_shape.num_groups == 1 else 1
     if ideal_num_col_tasks > max_num_col_tasks:
         num_col_tasks = max_num_col_tasks
         num_row_tasks = max_num_tasks // num_col_tasks
@@ -498,7 +545,10 @@ fn get_conv_num_partitions[
     let max_num_row_tasks = max(matmul_M // min_rows_per_task, 1)
     num_row_tasks = min(max_num_row_tasks, num_row_tasks)
 
-    let max_num_channel_tasks = max(conv_shape.c // min_c_per_task, 1)
+    # Do not partition channels when num_groups > 1.
+    let max_num_channel_tasks = max(
+        conv_shape.c // min_c_per_task, 1
+    ) if conv_shape.num_groups == 1 else 1
     let num_channel_tasks = min(
         max_num_channel_tasks,
         max_num_tasks // (num_row_tasks * num_col_tasks),

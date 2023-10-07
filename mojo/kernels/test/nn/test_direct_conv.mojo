@@ -6,11 +6,17 @@
 # RUN: %mojo %s | FileCheck %s
 
 from math import abs, div_ceil, min, isclose
-from random import rand
+from random import rand, seed
 from sys import external_call
 from sys.info import simdwidthof
 
-from Conv import ConvDirectNHWC, Naive2dConvolution, pack_filter, ConvInfoStatic
+from Conv import (
+    ConvDirectNHWC,
+    Naive2dConvolution,
+    pack_filter,
+    ConvInfoStatic,
+    pack_conv_filter_shape,
+)
 from ConvUtils import (
     ConvShape,
     get_conv_num_partitions,
@@ -46,6 +52,7 @@ fn test[
     dilation: StaticIntTuple[2],
     pad_h: StaticIntTuple[2],
     pad_w: StaticIntTuple[2],
+    num_groups: Int,
     rt: Runtime,
 ):
     print("== test_direct_conv")
@@ -69,6 +76,7 @@ fn test[
         dilation: dilation,
         pad_h: pad_h,
         pad_w: pad_w,
+        num_groups: num_groups,
     }
 
     let input_ptr = DTypePointer[type].alloc(N * H * W * C)
@@ -92,23 +100,22 @@ fn test[
     # Rounded C and F size for pre-packed filter.
     let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
-    let packed_filter_ptr = DTypePointer[type].alloc(R * S * C * rounded_F)
 
     let input = NDBuffer[4, DimList.create_unknown[4](), type](
         input_ptr, Index(N, H, W, C)
     )
     let filter = NDBuffer[4, DimList.create_unknown[4](), type](
-        filter_ptr, Index(R, S, C, F)
+        filter_ptr, Index(R, S, C // num_groups, F)
+    )
+    let packed_filter_shape = pack_conv_filter_shape[type, False](
+        filter, num_groups
+    )
+    let packed_filter_ptr = DTypePointer[type].alloc(
+        packed_filter_shape.flattened_length()
     )
     let packed_filter = NDBuffer[5, DimList.create_unknown[5](), type](
         packed_filter_ptr,
-        Index(
-            div_ceil(F, micro_kernel_width * simd_size),
-            R,
-            S,
-            C,
-            micro_kernel_width * simd_size,
-        ),
+        packed_filter_shape,
     )
     let output = NDBuffer[4, DimList.create_unknown[4](), type](
         output_ptr, Index(N, HO, WO, F)
@@ -119,7 +126,7 @@ fn test[
 
     @parameter
     if filter_packed:
-        pack_filter[type](filter, packed_filter)
+        pack_filter[type](filter, packed_filter, num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -151,6 +158,7 @@ fn test[
         pad_w,
         stride,
         dilation,
+        num_groups,
     )
 
     # Test direct conv
@@ -241,6 +249,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -256,6 +265,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -271,6 +281,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -286,6 +297,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -301,6 +313,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -316,6 +329,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -332,6 +346,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -347,6 +362,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -366,6 +382,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -381,6 +398,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -396,6 +414,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -411,6 +430,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -426,6 +446,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -442,6 +463,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -457,6 +479,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -475,6 +498,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -490,6 +514,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -505,6 +530,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -520,6 +546,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -535,6 +562,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -550,6 +578,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -565,6 +594,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -580,6 +610,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -595,6 +626,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -610,6 +642,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -625,6 +658,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -643,6 +677,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -661,6 +696,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -676,6 +712,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -691,6 +728,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 0),  # pad_h
             Index(2, 2),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -706,6 +744,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(2, 2),  # pad_h
             Index(2, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -721,6 +760,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(2, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -736,6 +776,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(3, 3),  # pad_h
             Index(3, 3),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -751,6 +792,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -766,6 +808,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -781,6 +824,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -796,6 +840,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -811,6 +856,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -826,6 +872,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -841,6 +888,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -856,6 +904,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -873,6 +922,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -888,6 +938,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -903,6 +954,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -918,6 +970,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(2, 2),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -933,6 +986,7 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
+            1,  # num_groups
             rt,
         )
 
@@ -948,5 +1002,169 @@ fn main():
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(2, 2),  # pad_w
+            1,  # num_groups
+            rt,
+        )
+
+        # grouped conv tests
+        # focus on C, F, and num_groups since grouped conv is independent of spatial dims
+        test[DType.float32, True](
+            1,  # N
+            1,  # H
+            1,  # W
+            2,  # C
+            1,  # R
+            1,  # S
+            2,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            2,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            1,  # H
+            1,  # W
+            25,  # C
+            1,  # R
+            1,  # S
+            25,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            5,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            1,  # H
+            1,  # W
+            16,  # C
+            16,  # R
+            1,  # S
+            4,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            2,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            1,  # H
+            1,  # W
+            32,  # C
+            1,  # R
+            1,  # S
+            20,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            2,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            1,  # H
+            1,  # W
+            34,  # C
+            1,  # R
+            1,  # S
+            40,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            2,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            13,  # H
+            13,  # W
+            16,  # C
+            5,  # R
+            5,  # S
+            64,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            4,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            1,  # H
+            1,  # W
+            2,  # C
+            1,  # R
+            1,  # S
+            2,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            2,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            3,  # H
+            3,  # W
+            18,  # C
+            3,  # R
+            3,  # S
+            18,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            3,  # num_groups
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            11,  # H
+            7,  # W
+            33,  # C
+            3,  # R
+            5,  # S
+            90,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(2, 2),  # pad_w
+            3,  # num_groups
+            rt,
+        )
+
+        # depthwise conv
+        test[DType.float32, True](
+            1,  # N
+            11,  # H
+            7,  # W
+            33,  # C
+            3,  # R
+            5,  # S
+            66,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(2, 2),  # pad_w
+            33,  # num_groups
             rt,
         )

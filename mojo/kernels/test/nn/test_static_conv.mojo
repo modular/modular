@@ -54,6 +54,7 @@ fn test[
     # fmt: on
     alias type = DType.float32
     alias simd_size = simdwidthof[type]()
+    alias num_groups = 1
 
     let conv_shape = ConvShape {
         n: N,
@@ -69,6 +70,7 @@ fn test[
         dilation: dilation,
         pad_h: pad_h,
         pad_w: pad_w,
+        num_groups: num_groups,
     }
 
     let input_ptr = DTypePointer[type].alloc(N * H * W * C)
@@ -112,7 +114,7 @@ fn test[
         ),
     )
 
-    pack_filter[type](filter, packed_filter_dynamic)
+    pack_filter[type](filter, packed_filter_dynamic, num_groups)
 
     # Conv attributes.
     alias conv_attr_dynamic = ConvInfoStatic.create_unknown()
@@ -143,6 +145,7 @@ fn test[
         DimList(pad_w[0], pad_w[1]),
         DimList(stride[0], stride[1]),
         DimList(dilation[0], dilation[1]),
+        Dim(num_groups),
     )
 
     alias micro_kernel_shape = get_micro_kernel_shape[
@@ -166,6 +169,7 @@ fn test[
         rebind[NDBuffer[5, DimList.create_unknown[5](), type]](
             packed_filter_static
         ),
+        num_groups,
     )
 
     let chain1 = OwningOutputChainPtr(rt)
