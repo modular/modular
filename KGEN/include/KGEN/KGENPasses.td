@@ -502,6 +502,17 @@ def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ResolveCompilerPromises
+//===----------------------------------------------------------------------===//
+
+def ResolveCompilerPromises : Pass<"resolve-compiler-promises", "ModuleOp"> {
+  let summary = "reverse callgraph specialization to resolve promises";
+  let description = [{
+    TODO
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // CleanupCompilerGlobals
 //===----------------------------------------------------------------------===//
 

@@ -64,6 +64,9 @@ struct CallGraphBase {
   /// Build the inlining graph for a module.
   void build(ModuleOp module, const SymbolTable &symtab);
 
+  /// Dump the callgraph. For debugging.
+  void dump();
+
   /// The nodes in the graph. The map does not resize after it is constructed,
   /// so references always remain valid.
   llvm::MapVector<FuncOpT, NodeT> nodes;
@@ -109,6 +112,16 @@ void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
     });
   };
   mlir::parallelForEach(module.getContext(), nodes, workFn);
+}
+
+template <typename DerivedT, typename NodeT>
+void CallGraphBase<DerivedT, NodeT>::dump() {
+  for (auto &[func, node] : nodes) {
+    llvm::errs() << "@" << func.getSymName() << ":\n";
+    for (auto [call, callee] : node.callsites)
+      llvm::errs() << "  -> @" << callee->func.getSymName() << "\n";
+    llvm::errs() << "\n";
+  }
 }
 } // namespace M::KGEN
 
