@@ -1172,8 +1172,8 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
   // is undefined behaviour for that to be anything but `0` so we can replace it
   // with the constant `0`. This frees the use to be DCE'd and unblocks other
   // optimizations.
-  auto zero = rewriter.create<KGEN::ParamConstantOp>(op.getLoc(),
-                                                     rewriter.getIndexAttr(0));
+  auto zero =
+      rewriter.create<ParamConstantOp>(op.getLoc(), rewriter.getIndexAttr(0));
   rewriter.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), op.getArray(),
                                           zero);
   return success();

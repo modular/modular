@@ -164,3 +164,16 @@ kgen.func @use_crosses_region(%arg0: index) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @copy_elision_alias
+// TODO(#22921): The pass should be able to elide this. Just make sure it
+// doesn't crash for now.
+kgen.func @copy_elision_alias() {
+  %0 = pop.stack_allocation 1 x struct<struct<index>>
+  %1 = pop.struct.gep %0[0] : <struct<struct<index>>>
+  %2 = pop.load %1 : !kgen.pointer<struct<index>>
+  %3 = pop.stack_allocation 1 x struct<index>
+  pop.store %2, %3 : !kgen.pointer<struct<index>>
+  pop.load %3 : !kgen.pointer<struct<index>>
+  kgen.return
+}
