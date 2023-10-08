@@ -14,6 +14,6 @@
 # CHECK-NOT: hello
 # CHECK: Process {{.*}} stopped
 # CHECK: stop reason = breakpoint 1.1
-# CHECK: JIT(0x{{.*}})`$test::jitbp()_concrete at test.mojo:9:10
+# CHECK: JIT(0x{{.*}})`{{.*}}jitbp{{.*}} at test.mojo:9:10
 # CHECK: -> 9        print("hello\n")
 # CHECK: Process {{.*}} launched: {{.*}}
