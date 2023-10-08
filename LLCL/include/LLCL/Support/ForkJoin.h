@@ -7,6 +7,7 @@
 #ifndef LLCL_SUPPORT_FORKJOIN_H
 #define LLCL_SUPPORT_FORKJOIN_H
 
+#include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 
 namespace M::LLCL {

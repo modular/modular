@@ -101,6 +101,7 @@ createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
 // Inlining
 //===----------------------------------------------------------------------===//
 
+/// Create a ForceInline pass with an LLCL runtime.
 std::unique_ptr<mlir::Pass>
 createAlwaysInlineParametric(LLCL::Runtime &runtime,
                              const AlwaysInlineParametricOptions &options = {});
@@ -116,6 +117,10 @@ std::unique_ptr<mlir::Pass> createForceInline(
 std::unique_ptr<mlir::Pass> createAutomaticInline(
     LLCL::Runtime &runtime, const AutomaticInlineOptions &options = {},
     std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
+
+/// Create a ResolveCompilerPromises pass with an LLCL runtime.
+std::unique_ptr<mlir::Pass>
+createResolveCompilerPromises(LLCL::Runtime &runtime);
 
 //===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline

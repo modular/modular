@@ -102,7 +102,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addPass(createEliminateDeadSymbols());
 
   // Then immediately resolve compiler promises.
-  pm.addPass(createResolveCompilerPromises());
+  pm.addPass(createResolveCompilerPromises(runtime));
 
   // Run the ForceInline pass with an inner function pass pipeline.
   auto buildForceInlineFuncPasses = [options](mlir::OpPassManager &pm) {
