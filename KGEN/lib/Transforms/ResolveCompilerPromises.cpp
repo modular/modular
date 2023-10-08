@@ -36,8 +36,17 @@ struct CallGraphNode
 };
 
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
-  /// Consider every call edge.
-  bool shouldInline(CallGraphNode *node) { return true; }
+  /// It turns out we have to rely on propagation of the `capturing` bit on
+  /// functions in the parser, where a function with a `capturing` signature in
+  /// its input or result parameters also needs to be marked as `capturing`,
+  /// because otherwise `kgen.create_closure` does not know whether to create a
+  /// function pointer or a closure with a capture list.
+  ///
+  /// In that case, we can also rely on the bit to form the edges in the graph
+  /// to be processed, circumventing the issue with cycles.
+  bool shouldInline(CallGraphNode *node) {
+    return node->func.getSignature().isCapturing();
+  }
 };
 } // namespace
 
@@ -122,6 +131,9 @@ void ResolveCompilerPromisesPass::runOnOperation() {
       // function it is calling. Rewrite the call to provide them.
       if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
         auto symbol = cast<SymbolConstantAttr>(call.getCallee());
+        // Calls to functions that are not capturing cannot have captures.
+        if (!symbol.getType().isCapturing())
+          return;
         auto callee =
             symtab.lookup<FuncOp>(symbol.getSymbol().getRootReference());
         assert(callee);
@@ -182,5 +194,38 @@ void ResolveCompilerPromisesPass::runOnOperation() {
         worklist.push_back(node);
   }
 
-  // TODO: Find and diagnostic cycles.
+  // FIXME: Actually, this pass should be able to handle cycles. I.e., the
+  // following should work:
+  //
+  // ```mlir
+  // kgen.func @recursive_closure() capturing {
+  //   %0 = pop.compiler.global_load "var" : index
+  //   use(%0)
+  //   pop.compiler.global_store "var", %0 : index
+  //   kgen.call @recursive_closure()
+  // }
+  // ```
+  //
+  // Fixed-point iterating on this should yield:
+  //
+  // ```mlir
+  // kgen.func @recursive_closure(%x: index) capturing {
+  //   use(%x)
+  //   pop.compiler.global_store "var", %x : index
+  //   kgen.call @recursive_closure()
+  // }
+  // ```
+  //
+  // And the next iteration will converge:
+  //
+  // ```mlir
+  // kgen.func @recursive_closure(%x: index) capturing {
+  //   use(%x)
+  //   kgen.call @recursive_closure(%x)
+  // }
+  //
+  // In order to do this without killing compile time, the fixed-point iteration
+  // should be bound to SCCs. That is, the pass needs to organize CG nodes into
+  // SCCs and then resolve the SCCs as a DAG, where each SCC is resolved by
+  // fixed-point iterating until convergence.
 }
