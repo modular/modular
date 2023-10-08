@@ -189,7 +189,6 @@ int main(int argc, char **argv) {
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerCheckRecursiveStructs();
-  KGEN::registerCleanupCompilerGlobals();
   KGEN::registerConstraintReduction();
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerExternalizePrecompiledFunctions();

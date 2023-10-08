@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -cleanup-compiler-globals | FileCheck %s
+// RUN: kgen-opt %s -resolve-compiler-promises | FileCheck %s
 
 // CHECK-LABEL: @useAGlobalForNoReason
 kgen.func @useAGlobalForNoReason() -> index {
@@ -8,16 +8,6 @@ kgen.func @useAGlobalForNoReason() -> index {
   %0 = pop.compiler.global_load "aGlobal" : index
   // CHECK-NEXT: kgen.return
   kgen.return %0 : index
-}
-
-// CHECK-LABEL: @storeOnly
-kgen.func @storeOnly() {
-  // CHECK-NEXT: index.constant
-  %idx0 = index.constant 0
-  // CHECK-NOT: pop.compiler.global_store
-  pop.compiler.global_store "aGlobal", %idx0 : index
-  // CHECK-NEXT: kgen.return
-  kgen.return
 }
 
 // CHECK-LABEL: @multiLoad
