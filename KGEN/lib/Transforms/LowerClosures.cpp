@@ -215,14 +215,6 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
   }
 
   WalkResult result = func.walk([&](Operation *op) -> WalkResult {
-    // If this is an async function, update the return sites.
-    if (isAsyncFn) {
-      if (auto ret = dyn_cast<ReturnOp>(op)) {
-        createCoroutineFinalize(b, coroHdl, ret);
-        ret->setOperands(coroHdl);
-        return WalkResult::advance();
-      }
-    }
     // Replace async calls with a simple `kgen.call`.
     if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       b.setLoc(call.getLoc());
@@ -251,7 +243,19 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     }
     return WalkResult::advance();
   });
-  return failure(result.wasInterrupted());
+  if (result.wasInterrupted())
+    return failure();
+
+  // If the surrounding function is an async function, go rewrite all the return
+  // sites now. Do this after nested `lit.async.execute` ops are lifted to not
+  // clobber their returns.
+  if (isAsyncFn) {
+    func.getBodyRegion().walk([&](ReturnOp ret) {
+      createCoroutineFinalize(b, coroHdl, ret);
+      ret->setOperands(coroHdl);
+    });
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
