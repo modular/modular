@@ -7,7 +7,6 @@
 add_modular_library(KGENTransforms
   AutomaticInline.cpp
   Canonicalizer.cpp
-  CleanupCompilerGlobals.cpp
   ControlFlowUtils.cpp
   EliminateDeadSymbols.cpp
   ExternalizePrecompiledFunctions.cpp
