@@ -804,7 +804,11 @@ void CallOp::concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee) {
 
 void CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
   auto symbol = callee.get<SymbolRefAttr>();
-  setCalleeAttr(KGEN::SymbolConstantAttr::get(symbol, getCallee().getType()));
+  setCalleeAttr(SymbolConstantAttr::get(symbol, getCallee().getType()));
+}
+
+void CallOp::setCalleeAttr(TypedAttr callee) {
+  setCalleeAttr(cast<SymbolConstantAttr>(callee));
 }
 
 //===----------------------------------------------------------------------===//

@@ -442,6 +442,8 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
       Get the parameter expression of the operation's callee.
     }], "TypedAttr", "getCallee", (ins)>,
     InterfaceMethod<[{
+    }], "void", "setCalleeAttr", (ins "::mlir::TypedAttr":$callee)>,
+    InterfaceMethod<[{
       Get the call arguments.
     }], "ValueRange", "getArguments", (ins), [{}], [{
       return $_op.getOperands();
