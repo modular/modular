@@ -214,7 +214,6 @@ int main(int argc, char **argv) {
   KGEN::registerOutlineClosures();
   KGEN::registerPruneImpossibleVariants();
   KGEN::registerRaiseForLoops();
-  KGEN::registerResolveCompilerPromises();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
   KGEN::registerStackReuse();
@@ -236,6 +235,8 @@ int main(int argc, char **argv) {
   mlir::registerPass(
       [&] { return KGEN::createAlwaysInlineParametric(runtime); });
   mlir::registerPass([&] { return KGEN::createAutomaticInline(runtime); });
+  mlir::registerPass(
+      [&] { return KGEN::createResolveCompilerPromises(runtime); });
 
   return failed(
       mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));
