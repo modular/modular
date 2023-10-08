@@ -136,7 +136,7 @@ kgen.func @call_it() {
 
 // -----
 
-kgen.func @capturing_closure() capturing -> index {
+kgen.func @capturing_closure() capturing -> index always_inline {
   %0 = pop.compiler.global_load "var" : index
   kgen.return %0 : index
 }
@@ -152,7 +152,7 @@ kgen.func @caller() {
 
 // -----
 
-kgen.func @callee(%arg0: index, %arg1: index) capturing {
+kgen.func @callee(%arg0: index, %arg1: index) capturing always_inline {
   "use"(%arg0, %arg1) : (index, index) -> ()
   kgen.return
 }

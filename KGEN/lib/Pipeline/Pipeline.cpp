@@ -101,9 +101,11 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
 
+  // Then immediately resolve compiler promises.
+  pm.addPass(createResolveCompilerPromises());
+
   // Run the ForceInline pass with an inner function pass pipeline.
   auto buildForceInlineFuncPasses = [options](mlir::OpPassManager &pm) {
-    pm.addPass(createCleanupCompilerGlobals());
     if (options.optimizationLevel < 1)
       return;
     pm.addPass(createSimplifyCF());
