@@ -848,8 +848,7 @@ struct InliningGraphNode
 
   /// Return true if the node should be inlined.
   bool shouldInline() {
-    return level == InlineLevel::Always ||
-           level == InlineLevel::AlwaysNoDebug || signature.isCapturing();
+    return level == InlineLevel::Always || level == InlineLevel::AlwaysNoDebug;
   }
 
   /// If an error occurred during inlining, nodes can end up owning the function
