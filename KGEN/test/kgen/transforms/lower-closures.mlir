@@ -132,3 +132,18 @@ kgen.func @create_closure() {
   }
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @async_closure_in_async_async_closure_0()
+// CHECK: [[PROMISE:%.*]] = pop.coroutine.promise {{.*}} : <() -> index>
+// CHECK: [[GEP:%.*]] = pop.struct.gep [[PROMISE]][0]
+// CHECK: store %idx5, [[GEP]]
+
+// CHECK-LABEL: kgen.func @async_closure_in_async
+kgen.func @async_closure_in_async(%arg1: index) async {
+  %0 = lit.async.execute <() -> index> {
+    %idx = index.constant 5
+    kgen.return %idx : index
+  }
+  // CHECK: pop.coroutine.promise {{.*}} : <() -> ()>
+  kgen.return
+}
