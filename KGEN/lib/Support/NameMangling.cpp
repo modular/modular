@@ -5,10 +5,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Support/NameMangling.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "llvm/ADT/SmallString.h"
 
 using namespace M;
 using namespace KGEN;
+
+/// Return whether the character is valid. Alnum, underscore, and period
+/// characters are valid.
+static constexpr bool isValid(char c) {
+  return c == '_' || c == '.' || std::isalnum(c);
+}
 
 /// Produce an array of all the valid characters. This array will be used to
 /// encode the unsupported characters.
@@ -28,30 +36,38 @@ static constexpr auto produceCipher() {
   return cipher;
 }
 
+namespace {
+/// `std::pair<char, char>` is not constexpr apparently.
+struct TwoChars {
+  char d0, d1;
+};
+} // namespace
+
+/// Encode each invalid character as a pair of valid characters.
+static constexpr auto produceEncoding() {
+  auto cipher = produceCipher();
+  static_assert(cipher.size() * cipher.size() >= 256,
+                "not enough valid characters");
+  std::array<TwoChars, 256> encoding = {};
+  for (int c = 0; c < 256; ++c)
+    encoding[c] = {cipher[c % cipher.size()], cipher[c / cipher.size()]};
+  return encoding;
+}
+
 StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name) {
+  TimeTraceScope traceScope("sanitizeSymbolToAlnum",
+                            [name] { return name.str(); });
   // Replace contiguous sections of invalid symbols with a single '_' while
-  // tallying all the invalid symbols.
-  //
-  // This algorithm will iterate over `name` while appending allowed characters
-  // to `result` and using a flag `carryingInvalid` to replace ranges of invalid
-  // characters with a single underscore. At the same type, the bytes of all
-  // invalid characters are appended together to from a big integer. The big
-  // integer is then encoded using a cipher of the allowed characters.
-  auto isValid = [](char c) { return c == '_' || c == '.' || std::isalnum(c); };
+  // tallying all the invalid symbols. They are encoded and placed at the end of
+  // the string.
 
-  // APInt accepts a constructor of an array of 64-bit integer "segments", so
-  // build the big int by filling in this vector.
-  SmallVector<uint64_t> invalid;
-
-  // The current big int segment being built.
-  uint64_t curSegment = 0;
-  // The byte offset into the current segment to be filled with a character
-  // next.
-  uint8_t curOffset = 0;
-
-  // The resultant string.
-  std::string result;
-  result.reserve(name.size() * 2);
+  // The resultant string. Each invalid character is encoded as 2 characters
+  // additional characters and replaced with at most 1 underscore, meaning the
+  // resulting string will be at most 3 times the size of the input string.
+  SmallVector<char, 256> invalid;
+  invalid.reserve(name.size());
+  SmallString<1024> result;
+  result.reserve(name.size() * 3);
   bool carryingInvalid = false;
   for (char c : name) {
     if (isValid(c)) {
@@ -64,40 +80,16 @@ StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name) {
       result.push_back(c);
       continue;
     }
+    invalid.push_back(c);
     carryingInvalid = true;
-    // Overflow. Push the complete segment onto the vector and start a new one.
-    if (curOffset >= 8) {
-      invalid.push_back(curSegment);
-      curOffset = 0;
-      curSegment = 0;
-    }
-    // Write the byte into the current big int segment at the current offset.
-    curSegment |= ((uint64_t)c) << (curOffset++ * 8);
   }
-  // If any invalid characters were found, a byte would have been written and
-  // `curOffset` will not be zero. If nothing changed, just return the result.
-  if (!curOffset) {
-    assert(result == name && "no invalid symbols");
+  if (invalid.empty())
     return name;
+  static constexpr auto encoding = produceEncoding();
+  for (char c : invalid) {
+    auto [d0, d1] = encoding[c];
+    result.push_back(d0);
+    result.push_back(d1);
   }
-  // `carryingInvalid` doesn't matter since we will always add a '_' here.
-  result.push_back('_');
-  // Add the last segment in.
-  invalid.push_back(curSegment);
-
-  // Use the cipher to encode the invalid characters at the end of the symbol.
-  // Compute the number of bits accounting for the fact that the last segment
-  // may have been partial.
-  APInt bigVal((invalid.size() - 1) * 64 + curOffset * 8, invalid);
-  constexpr auto cipher = produceCipher();
-  // Run the loop at least once, because zero should be encoded.
-  do {
-    // Compute the next valid character to push onto the string.
-    APInt quotient;
-    uint64_t remainder;
-    APInt::udivrem(bigVal, cipher.size(), quotient, remainder);
-    result.push_back(cipher[remainder]);
-    bigVal = std::move(quotient);
-  } while (!bigVal.isZero());
   return StringAttr::get(name.getContext(), result);
 }

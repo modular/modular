@@ -747,7 +747,10 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
     os << forkParam << '=' << getParamAsString(value);
   else
     os << '@' << cast<StringAttr>(value).getValue();
-  clone.setSymName(name);
+  auto forkName = StringAttr::get(value.getContext(), name);
+  if (config.sanitizeSymbolNames)
+    forkName = sanitizeSymbolToAlnum(forkName);
+  clone.setSymName(forkName);
   // Insert the new function at a location relative to the current one. This
   // ensures all forks are inserted in a deterministic order, regardless of
   // which occur first.
@@ -1965,10 +1968,12 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
   OpBuilder b(generator.getContext());
+  StringAttr mangledName = b.getStringAttr(
+      baseName + Twine(inputParamValues.empty() ? "_concrete" : ""));
+  if (config.sanitizeSymbolNames)
+    mangledName = sanitizeSymbolToAlnum(mangledName);
   auto newFunc = b.create<FuncOp>(
-      generator.getLoc(),
-      b.getStringAttr(baseName +
-                      Twine(inputParamValues.empty() ? "_concrete" : "")),
+      generator.getLoc(), mangledName,
       SignatureType::get(generator.getFunctionType(),
                          generator.getSignature().getInputConventions(),
                          generator.getSignature().getFnEffects()),
@@ -2366,6 +2371,8 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
         genInstantiations;
     for (ParamNode &node :
          llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
+      TimeTraceScope traceScope(
+          "processGen", [name = node.gen.getSymName()] { return name.str(); });
       FuncOp first;
       // Erase all erroneous functions.
       SmallVector<std::pair<StringRef, FuncOp>, 1> successfulFuncs;
@@ -2397,15 +2404,6 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
           newName = sanitizeSymbolToAlnum(newName);
         renameFunc(first, newName);
       }
-      // Sanitize the rest of the symbol names if requested.
-      if (config.sanitizeSymbolNames) {
-        for (auto [_, func] : successfulFuncs) {
-          // Don't re-sanitize the first implementation.
-          if (func != first)
-            continue;
-          renameFunc(func, sanitizeSymbolToAlnum(func.getSymNameAttr()));
-        }
-      }
 
       // Sort the successful instantiations, if there are more than 1.
       if (successfulFuncs.size() > 1) {
@@ -2418,6 +2416,9 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 
     // Now reorder all instantiations of each generator to be deterministic.
     for (auto &[gen, instantiations] : genInstantiations) {
+      TimeTraceScope traceScope(
+          "sortInstantiations",
+          [name = gen.getSymNameAttr()] { return name.str(); });
       llvm::sort(instantiations,
                  [](auto &lhs, auto &rhs) { return lhs.first > rhs.first; });
       for (auto &[_, implFuncs] : instantiations)
@@ -2440,6 +2441,9 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     mlir::parallelForEach(
         theModule.getContext(), theModule.getOps<FuncOp>(),
         [&funcsToRename, sanitize = config.sanitizeSymbolNames](FuncOp func) {
+          TimeTraceScope traceScope("replaceSymbolsIn", [func]() mutable {
+            return func.getSymName().str();
+          });
           func.getBodyRegion().walk([&](Operation *op) {
             // If this is a reference to a function that got renamed, update its
             // target.
@@ -2458,6 +2462,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
           });
         });
     if (config.sanitizeSymbolNames) {
+      TimeTraceScope traceScope("sanitizeGlobalNames");
       for (auto global : theModule.getOps<GlobalOp>()) {
         if (SymbolRefAttr name = global.getCtorAttr())
           global.setCtorAttr(FlatSymbolRefAttr::get(

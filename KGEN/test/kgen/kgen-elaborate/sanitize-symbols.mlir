@@ -1,12 +1,12 @@
 // RUN: kgen-opt %s -elaborate-generators='sanitize-symbols=true' | FileCheck %s
 
-// CHECK: [[F0:@_mojo_nutty_names_int_Int_int_Int_v_1_[a-zA-Z0-9_]+]]()
-// CHECK: [[F1:@_mojo_nutty_names_int_Int_int_Int_v_8_[a-zA-Z0-9_]+]]()
+// CHECK: [[F0:@_mojo_nutty_names_int_Int_int_Int_v_1[a-zA-Z0-9_]+]]()
+// CHECK: [[F1:@_mojo_nutty_names_int_Int_int_Int_v_8[a-zA-Z0-9_]+]]()
 kgen.generator @"$mojo::nutty::names[$int::Int]($int::\22Int\22)"<v>() {
   kgen.return
 }
 
-// CHECK: [[F2:@_no_concrete_plz_[a-zA-Z0-9_]+]]()
+// CHECK: [[F2:@_no_concrete_plz[a-zA-Z0-9_]+]]()
 kgen.generator @"$no::concrete::plz()"() {
   kgen.return
 }
@@ -22,17 +22,17 @@ kgen.generator export @a_VALID_name123() {
   kgen.return
 }
 
-// CHECK: kgen.func @_ctor_fn_x_[[CTOR:.*]]()
+// CHECK: kgen.func @_ctor_fn_x[[CTOR:.*]]()
 kgen.generator @"(ctor_fn)x"() {
-  // CHECK: kgen.global.address @_some_module_x_[[VAR:.*]] :
+  // CHECK: kgen.global.address @_some_module_x[[VAR:.*]] :
   kgen.global.address @"$some_module::x" : <i32>
   kgen.return
 }
 
-// CHECK: kgen.func @_dtor_fn_x_[[DTOR:.*]]()
+// CHECK: kgen.func @_dtor_fn_x[[DTOR:.*]]()
 kgen.generator @"(dtor_fn)x"() {
   kgen.return
 }
 
-// CHECK: kgen.global @_some_module_x_[[VAR]] : i32 [@_ctor_fn_x_[[CTOR]], @_dtor_fn_x_[[DTOR]]](2)
+// CHECK: kgen.global @_some_module_x[[VAR]] : i32 [@_ctor_fn_x[[CTOR]], @_dtor_fn_x[[DTOR]]](2)
 kgen.global @"$some_module::x" : i32 [@"(ctor_fn)x", @"(dtor_fn)x"](2)
