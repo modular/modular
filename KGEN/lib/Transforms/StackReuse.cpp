@@ -277,7 +277,9 @@ static void scanRegion(
         canElide.find(alloc)->second.insert(maybeReuse);
 
       // Save the value of the load for copy elision.
-      loadValues.try_emplace(load, value);
+      // TODO(#22921): Support copy elision on aliases.
+      if (alloc.getResult() == load.getPtr())
+        loadValues.try_emplace(load, value);
       continue;
     }
 
@@ -365,7 +367,9 @@ static void processRegion(
       // If the alloc cannot be elided, move on.
       if (!canElide.contains(alloc)) {
         // Save the value of the load for copy elision.
-        loadValues.try_emplace(load, value);
+        // TODO(#22921): Support copy elision on aliases.
+        if (alloc.getResult() == load.getPtr())
+          loadValues.try_emplace(load, value);
         continue;
       }
 
@@ -393,7 +397,9 @@ static void processRegion(
       operand->set(reuse);
 
       // Save the value of the load for copy elision.
-      loadValues.try_emplace(load, value);
+      // TODO(#22921): Support copy elision on aliases.
+      if (alloc.getResult() == load.getPtr())
+        loadValues.try_emplace(load, value);
       continue;
     }
 
