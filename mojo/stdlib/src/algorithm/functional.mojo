@@ -1249,7 +1249,7 @@ fn _elementwise_impl[
     """
 
     constrained[rank == 1, "Specialization for 1D where N = 1"]()
-    constrained[target == "gpu", "Target must be gpu"]()
+    constrained[target == "cuda", "Target must be cuda"]()
 
     alias block_dim = 32
     let length = shape.flattened_length()
@@ -1305,7 +1305,7 @@ fn _elementwise_impl[
     """
 
     constrained[rank > 1, "Specialization for ND where N > 1"]()
-    constrained[target == "gpu", "Target must be gpu"]()
+    constrained[target == "cuda", "Target must be cuda"]()
 
     # We do not want to write this yet, so just ignore the operation
 
