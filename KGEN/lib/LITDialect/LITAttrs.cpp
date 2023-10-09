@@ -35,19 +35,18 @@ void LITDialect::registerAttributes() {
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numArgs,
-                                   unsigned numParams) {
-  auto emptyStr = StringAttr::get(ctx);
-  SmallVector<StringAttr> argNames(numArgs, emptyStr);
-  SmallVector<StringAttr> paramNames(numParams, emptyStr);
-  return get(ctx, argNames, paramNames);
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *context,
+                                   ArrayRef<StringAttr> argNames) {
+  return get(context, argNames, /*paramNames=*/ArrayRef<StringAttr>(),
+             /*defaultArguments=*/ArrayRef<TypedAttr>(),
+             /*defaultParameters=*/ArrayRef<TypedAttr>());
 }
 
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx,
-                                   ArrayRef<StringAttr> argNames,
-                                   ArrayRef<StringAttr> paramNames) {
-  return get(ctx, argNames, paramNames, ArrayRef<TypedAttr>(),
-             ArrayRef<TypedAttr>());
+FnMetadataAttr FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames) const {
+  ArrayRef<TypedAttr> defaultArgs = getDefaultArguments();
+  assert(argNames.size() >= defaultArgs.size());
+  return get(getContext(), argNames, getParamNames(), defaultArgs,
+             getDefaultParameters());
 }
 
 LogicalResult FnMetadataAttr::verify(

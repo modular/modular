@@ -89,8 +89,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, LITSignatureType sig) {
   // captured in the self argument we are inserting in this function.
 
   assert(callMemberArgNames.size() == callMemberInputConventions.size());
-  auto metadata =
-      FnMetadataAttr::get(ctx, callMemberArgNames, sig.getParamNames());
+  FnMetadataAttr metadata = sig.getMetadata().cloneWith(callMemberArgNames);
   return SignatureType::get(
       FunctionType::get(ctx, callMemberSignatureInputs, sig.getValueResults()),
       sig.getInputParamTypes(), sig.getResultParamTypes(),
@@ -115,8 +114,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   // function ptr fields
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
 
-  auto dtorMetadata =
-      FnMetadataAttr::get(ctx, {b.getStringAttr("self")}, /*paramNames=*/{});
+  auto dtorMetadata = FnMetadataAttr::get(ctx, {b.getStringAttr("self")});
   auto dtorSig = SignatureType::get(b.getFunctionType(opaquePointer, noneType),
                                     ValueInputConvention::OwnedInReg,
                                     /*effects=*/{}, dtorMetadata);
@@ -135,8 +133,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
       ArrayRef<Type>({PointerType::get(opaquePtrType), opaquePtrType}),
       noneType);
   auto metadata = FnMetadataAttr::get(
-      b.getContext(), {b.getStringAttr("ptrToImpl"), b.getStringAttr("other")},
-      /*paramNames=*/{});
+      b.getContext(), {b.getStringAttr("ptrToImpl"), b.getStringAttr("other")});
   auto cpySignatureType =
       SignatureType::get(fnType,
                          {ValueInputConvention::BorrowedInReg,
@@ -390,17 +387,17 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   llvm::append_range(closureImplSigArgNames,
                      closureWrapperSignature.getArgNames());
 
-  auto metadata = FnMetadataAttr::get(ctx, closureImplSigArgNames,
-                                      closureWrapperSignature.getParamNames());
+  FnMetadataAttr metadata =
+      closureWrapperSignature.getMetadata().cloneWith(closureImplSigArgNames);
   auto fnType = FunctionType::get(ctx, closureImplSigTypes,
                                   closureWrapperSignature.getValueResults());
-  auto closureImplSignature = SignatureType::get(
+  auto closureImplSignature = LITSignatureType::get(
       fnType, closureWrapperSignature.getInputParamTypes(),
       closureWrapperSignature.getResultParamTypes(), closureImplSigConventions,
       closureWrapperSignature.getFnEffects(), metadata);
 
-  std::pair<SignatureType, StringAttr> key(closureImplSignature,
-                                           fileModuleOp.getSymNameAttrName());
+  std::pair<LITSignatureType, StringAttr> key(
+      closureImplSignature, fileModuleOp.getSymNameAttrName());
   if (auto existing = cache.getExisting(key)) {
     nestedFunction->erase();
     return existing;
