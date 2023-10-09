@@ -70,7 +70,7 @@ fn test_case[
     # last example 3,2,2,3 ; original: 3,2,3,3
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        scatter_nd_generator[reduce_fn](
+        scatter_nd_generator[reduce_fn, type, DType.int64, 3, 2, 3, False](
             data._to_ndbuffer[3](),
             indices._to_ndbuffer[2](),
             updates._to_ndbuffer[3](),

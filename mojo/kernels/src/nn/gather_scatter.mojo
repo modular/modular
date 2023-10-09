@@ -437,13 +437,15 @@ fn scatter_nd_generator[
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
     type: DType,
+    indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
     updates_rank: Int,
+    single_thread_blocking_override: Bool,
 ](
     data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), DType.int64
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
     updates: NDBuffer[
         updates_rank, DimList.create_unknown[updates_rank](), type
@@ -458,10 +460,12 @@ fn scatter_nd_generator[
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
                    min.
         type: Type of data, updates, and output tensors.
+        indices_type: Type of the indices tensor.
         data_rank: Rank of input (data) tensor (data_rank >= 1).
         indices_rank: Rank of input (data) tensor (indices_rank >= 1).
         updates_rank: Rank of updates tensor (updates_rank = data_rank +
                       indices_rank - indices_shape[-1] - 1).
+        single_thread_blocking_override: Whether this function can block.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -495,12 +499,6 @@ fn scatter_nd_generator[
     let data_shape = data.get_shape()
     let indices_shape = indices.get_shape()
     let last_shape_of_indices = indices_shape[indices_rank - 1]
-
-    # idx[] stores the index to where to scatter the requested elements.
-    let idx_ptr = DTypePointer[DType.index].alloc(last_shape_of_indices)
-    let idx = NDBuffer[1, DimList.create_unknown[1](), DType.index](
-        idx_ptr, last_shape_of_indices
-    )
 
     # Depending on r_minus_m = data_rank - last_shape_of_indices,
     # we will be copying (gather):
@@ -543,12 +541,23 @@ fn scatter_nd_generator[
         for dim in range(_rank):
             updates_index_tensor[dim] = indices_coords[dim]
 
-        # Construct the full index on output, i.e., where to copy updates to.
+        # Construct the output_index_tensor whose elements contain the indices
+        # for each dimension of the output, i.e., where to copy updates to.
+        # As part of that we need to construct the indices_index, which is the
+        # index to the indices tensor, where we get the elements for the
+        # output_index_tensor from.
+        var indices_index = StaticIntTuple[indices_rank]()
         for dim in range(last_shape_of_indices):
             # Size of current dimension on data.
             # Used to compare to index on this dimension (idx_on_axis).
             let input_ax_dim = data_shape[dim]
-            let idx_on_axis = indices[indices_coords[dim], dim]
+
+            for i in range(_rank):
+                indices_index[i] = indices_coords[i]
+            indices_index[indices_rank - 1] = dim
+
+            let idx_on_axis = indices[indices_index]
+
             # Index (from indices tensor) needs to be [-s, s), where s is the
             # max index of given dimension.
             debug_assert(
@@ -560,6 +569,7 @@ fn scatter_nd_generator[
                     " data_shape[axis])"
                 ),
             )
+
             # Handle conversion of negative indices.
             let pos_idx_on_axis = (
                 idx_on_axis.__int__() if idx_on_axis
@@ -594,21 +604,32 @@ fn scatter_nd_generator[
     var iter_shape = StaticIntTuple[indices_rank - 1]()
     for i in range(len(indices.get_shape()) - 1):
         iter_shape[i] = indices.get_shape()[i]
-    elementwise[indices_rank - 1, 1, update_func](iter_shape, out_chain)
+    # Execute `elementwise()` synchronously because parametric closures capture
+    # variables by reference without extending their lifetimes.
+    let new_out_chain = OwningOutputChainPtr(out_chain.get_runtime())
+    elementwise[indices_rank - 1, 1, update_func](
+        iter_shape, new_out_chain.borrow()
+    )
+    new_out_chain.wait()
 
-    idx_ptr.free()
+    # Avoid prematurely marking `out_chain` as ready if this kernel is fused.
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
 
 
 @always_inline
 fn scatter_nd[
     type: DType,
+    indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
     updates_rank: Int,
+    single_thread_blocking_override: Bool,
 ](
     data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), DType.int64
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
     updates: NDBuffer[
         updates_rank, DimList.create_unknown[updates_rank](), type
@@ -630,9 +651,11 @@ fn scatter_nd[
     scatter_nd_generator[
         use_update,
         type,
+        indices_type,
         data_rank,
         indices_rank,
         updates_rank,
+        single_thread_blocking_override,
     ](data, indices, updates, output, out_chain)
 
 
