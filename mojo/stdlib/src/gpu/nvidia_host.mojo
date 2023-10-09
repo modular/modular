@@ -1531,7 +1531,7 @@ struct _StreamImpl:
         return self.handle.__bool__()
 
 
-struct Stream:
+struct Stream[is_borrowed: Bool = False]:
     var stream: _StreamImpl
 
     fn __init__(inout self, stream: _StreamImpl):
@@ -1549,6 +1549,9 @@ struct Stream:
         self.stream = stream
 
     fn __del__(owned self) raises:
+        @parameter
+        if is_borrowed:
+            return
         if self.stream:
             _check_error(
                 _get_dylib_function[fn (_StreamImpl) -> Result](
