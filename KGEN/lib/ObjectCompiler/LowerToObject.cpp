@@ -541,6 +541,12 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
       delegatedSymbols.insert(symbol);
       symbolFlags.try_emplace(symbol, flags);
     }
+
+    // If for whatever reason all delegated symbols were rejected, then there is
+    // nothing to do.
+    if (delegatedSymbols.empty())
+      continue;
+
     auto delMr = toModularErrorOr(mr.delegate(delegatedSymbols));
     if (delMr.isError())
       return delMr.takeError();
