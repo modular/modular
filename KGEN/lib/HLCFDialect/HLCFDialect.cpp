@@ -6,6 +6,10 @@
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/KGENDialect/KGENOps.h"
+
+using namespace M;
+using namespace HLCF;
 
 //===----------------------------------------------------------------------===//
 // HLCFDialect
@@ -18,6 +22,11 @@ void M::HLCF::HLCFDialect::initialize() {
 #define GET_OP_LIST
 #include "KGEN/HLCFDialect/HLCF.cpp.inc"
       >();
+}
+
+Operation *HLCFDialect::materializeConstant(OpBuilder &b, Attribute value,
+                                            Type type, Location loc) {
+  return b.create<KGEN::ParamConstantOp>(loc, cast<TypedAttr>(value));
 }
 
 //===----------------------------------------------------------------------===//
