@@ -570,14 +570,10 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     for (size_t i = 0; i < numPosArgs; ++i)
       newArgNames[i] = StringAttr::get(ctx);
 
-    auto newMetadata = FnMetadataAttr::get(
-        ctx, newArgNames, metadata.getParamNames(),
-        metadata.getDefaultArguments(), metadata.getDefaultParameters());
-
-    signature = SignatureType::get(
+    signature = LITSignatureType::get(
         signature.getValues(), signature.getInputParamTypes(),
         signature.getResultParamTypes(), signature.getInputConventions(),
-        signature.getFnEffects(), newMetadata);
+        signature.getFnEffects(), metadata.cloneWith(newArgNames));
   } else {
     posArgNames = StringArrayAttr::get(ctx, {});
   }

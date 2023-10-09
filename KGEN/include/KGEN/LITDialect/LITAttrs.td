@@ -31,7 +31,7 @@ class LITTypedAttr<string attrName, string attrMnemonic, list<Trait> traits = []
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
+def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     [DeclareAttrInterfaceMethods<FnMetadataAttrInterface>]> {
   let summary = "Function metadata.";
   let description = [{
@@ -70,10 +70,15 @@ def KGEN_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   }];
 
   let builders = [
-    AttrBuilder<(ins "unsigned":$numArgs, "unsigned":$numParams)>,
-    AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames,
-                     "ArrayRef<StringAttr>":$paramNames)>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames)>,
   ];
+
+  let extraClassDeclaration = [{
+    // Create a new metadata attribute with the given argument names. Only use
+    // this helper if certain that the default arguments do not need to be
+    // modified (e.g. because prepending a positional-only argument).
+    FnMetadataAttr cloneWith(ArrayRef<StringAttr> argNames) const;
+  }];
 
   let genVerifyDecl = 1;
 }

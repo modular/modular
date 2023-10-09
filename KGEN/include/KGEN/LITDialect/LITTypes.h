@@ -54,10 +54,10 @@ public:
   static LITSignatureType get(MLIRContext *ctx, TypeRange inputs = {},
                               TypeRange results = {});
   static LITSignatureType get(FunctionType values,
-                              TypeArrayAttr inputParams = {},
-                              TypeArrayAttr resultParams = {},
-                              ArrayRef<ValueInputConvention> convs = {},
-                              FnEffects effects = {}, Attribute metadata = {});
+                              TypeArrayAttr inputParamTypes,
+                              TypeArrayAttr resultParamTypes,
+                              ArrayRef<ValueInputConvention> convs,
+                              FnEffects effects, Attribute metadata);
 };
 } // namespace M::KGEN::LIT
 

@@ -42,8 +42,7 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
       StructDeclOp::RP_RegisterPassableTrivial)
     fnEffects.setOwnedRegisterResult();
 
-  auto metadata =
-      FnMetadataAttr::get(builder.getContext(), argNames, /*paramNames=*/{});
+  auto metadata = FnMetadataAttr::get(builder.getContext(), argNames);
   SmallVector<StringAttr> posOnlyNames;
   for (auto [i, argName] : llvm::enumerate(argNames)) {
     if (argName.empty())
@@ -51,9 +50,9 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
           StringAttr::get(shared.getContext(), "arg" + std::to_string(i)));
   }
 
-  auto signature = SignatureType::get(fnType, /*inputParamTypes=*/{},
-                                      /*resultParamTypes=*/{}, argConventions,
-                                      fnEffects, metadata);
+  auto signature = LITSignatureType::get(fnType, /*inputParamTypes=*/{},
+                                         /*resultParamTypes=*/{},
+                                         argConventions, fnEffects, metadata);
 
   // Create the empty function.
   StringAttr nameAttr =

@@ -260,18 +260,22 @@ bool LITSignatureType::classof(Type type) {
 
 LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
                                        TypeRange results) {
-  return get(FunctionType::get(ctx, inputs, results));
+  auto funcType = FunctionType::get(ctx, inputs, results);
+
+  auto emptyStr = StringAttr::get(ctx);
+  SmallVector<StringAttr> argNames(funcType.getNumInputs(), emptyStr);
+  auto metadata = FnMetadataAttr::get(ctx, argNames);
+  return LITSignatureType::get(funcType, /*inputParamTypes=*/{},
+                               /*resultParamTypes=*/{},
+                               /*convs=*/{}, /*effects=*/{}, metadata);
 }
 
 LITSignatureType LITSignatureType::get(FunctionType values,
-                                       TypeArrayAttr inputParams,
-                                       TypeArrayAttr resultParams,
+                                       TypeArrayAttr inputParamTypes,
+                                       TypeArrayAttr resultParamTypes,
                                        ArrayRef<ValueInputConvention> convs,
                                        FnEffects effects, Attribute metadata) {
-  if (!metadata) {
-    metadata = FnMetadataAttr::get(values.getContext(), values.getNumInputs(),
-                                   inputParams ? inputParams.size() : 0);
-  }
-  return SignatureType::get(values, inputParams, resultParams, convs, effects,
-                            metadata);
+  assert(metadata && "LITSignatureType must have non-null metadata");
+  return SignatureType::get(values, inputParamTypes, resultParamTypes, convs,
+                            effects, metadata);
 }
