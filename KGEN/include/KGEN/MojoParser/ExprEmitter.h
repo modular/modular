@@ -421,6 +421,10 @@ public:
   AnyValue emitExpr(const ExprNode *expr, ExprContext context,
                     ASTType resultType = {});
 
+  /// This emits the specified value to a CRValue with the specified context.
+  CRValue emitExprCRValue(const ExprNode *expr, ExprContext context,
+                          ASTType resultType = {});
+
   /// This emits the specified value to an RValue with the specified context.
   RValue emitExprRValue(const ExprNode *expr, ExprContext context,
                         ASTType resultType = {});
@@ -481,12 +485,12 @@ public:
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// I1 value that we can test directly.  This reports and error and returns
   /// null on error.
-  RValue emitI1(ASTExprAnd<CValue> value);
+  CRValue emitI1(ASTExprAnd<CValue> value);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
   /// on error.
-  RValue emitExprI1(const ExprNode *condExpr, ExprContext context);
+  CRValue emitExprI1(const ExprNode *condExpr, ExprContext context);
 
   /// Given a value, emit it into an index value by invoking its `__index__`
   /// method.

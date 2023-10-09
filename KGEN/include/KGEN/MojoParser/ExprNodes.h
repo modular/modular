@@ -568,8 +568,8 @@ struct ChainedCmpOpNode final : public ExprNode {
   }
 
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
-  AnyValue emitNextCmp(ExprEmitter &emitter, size_t opIdx, SRValue lastCmp,
-                       SRValue lastExpr) const;
+  CRValue emitNextCmp(ExprEmitter &emitter, size_t opIdx, CRValue lastCmp,
+                      CRValue lastExpr, bool hasPrevIfOp) const;
 };
 
 struct FunctionTypeNode final : public ExprNode {

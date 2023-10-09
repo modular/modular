@@ -2689,43 +2689,123 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 ///  value of b in the previous comparison (a < b). lastCmpExpr is the value
 ///  of a < b.
 ///  Note that a < b  is handled by ChainedCmpOpNode::emitIR.
-AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
-                                       SRValue lastCmpExpr,
-                                       SRValue lastExpr) const {
-  Location ifLoc = lastCmpExpr.getLoc();
-  OpBuilder lastBuilder = emitter.builder.value();
-  RValue lastCmpI1Value = emitter.emitI1({lastCmpExpr, this});
-  SRValue lastCmpI1RValue =
-      emitter.emitSRValue({AnyValue(lastCmpI1Value), this}, EC_BoolCondition);
-  if (!lastCmpI1RValue)
+CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
+                                      CRValue prevCmpVal, CRValue prevRHS,
+                                      bool hasPrevIfOp) const {
+  bool isLastOne = opIdx + 1 == ops.size();
+  SMLoc ifLoc = exprs[opIdx - 1]->getLoc();
+  Location ifLocation = emitter.translateLocation(ifLoc);
+  std::optional<OpBuilder> lastBuilder = {};
+  if (emitter.builder)
+    lastBuilder = emitter.builder.value();
+  CRValue prevCmpI1Value = emitter.emitI1({prevCmpVal, this});
+  if (!prevCmpI1Value)
     return {};
-  auto ifOp = emitter.builder->create<HLCF::IfOp>(
-      ifLoc, lastCmpI1RValue.getType().mlirType, lastCmpI1RValue);
-  emitter.builder->createBlock(&ifOp.getThenRegion());
-  SRValue exprValue =
-      emitter.emitExprSRValue(exprs[opIdx + 1], EC_OperatorOperandValue);
-  if (!exprValue)
+  SRValue prevCmpI1SRValue = {};
+  HLCF::IfOp ifOp = {};
+  if (emitter.builder) {
+    prevCmpI1SRValue =
+        emitter.emitSRValue({prevCmpI1Value, this}, EC_BoolCondition);
+    if (!prevCmpI1SRValue)
+      return {};
+    // In the dynamic case we need to build the RHS evaluation in the Then
+    // region of an IfOp.  But if we end up having all parameters, it will not
+    // have been necessary.
+    ifOp = emitter.builder->create<HLCF::IfOp>(
+        ifLocation, prevCmpVal.getType().mlirType, prevCmpI1SRValue);
+    emitter.builder->createBlock(&ifOp.getThenRegion());
+  }
+  CRValue newRHS =
+      emitter.emitExprCRValue(exprs[opIdx + 1], EC_OperatorOperandValue);
+  if (!newRHS)
     return {};
-  AnyValue lastBinOp =
-      emitBinOpCall({lastExpr, exprs[opIdx]}, {exprValue, exprs[opIdx + 1]},
+  AnyValue newCmp =
+      emitBinOpCall({prevRHS, exprs[opIdx]}, {newRHS, exprs[opIdx + 1]},
                     ops[opIdx], ValueDest::none(), this, emitter);
-  SRValue lastRV =
-      emitter.emitSRValue({lastBinOp, exprs[opIdx + 1]}, EC_BoolCondition);
-  if (!lastRV)
+  CRValue newCmpCRV = newCmp.getIfCRValue();
+  if (!newCmpCRV)
     return {};
+  CRValue newOrNextResult = newCmpCRV;
 
-  if (opIdx + 1 == ops.size())
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, lastRV);
-  else if (!emitNextCmp(emitter, opIdx + 1, lastRV, exprValue))
-    return {};
+  if (prevCmpVal.getIfPValue() && prevCmpI1Value.getIfPValue() &&
+      newCmpCRV.getIfPValue()) {
+    // Since we have PValues, we didn't actually need that ifOp after all. Let's
+    // clean up before returning a PValue directly or recurring.
+    if (emitter.builder) {
+      ifOp.erase();
+      emitter.builder = lastBuilder;
+    }
+    if (!prevCmpVal.getRValueType().isEqualCanon(newCmpCRV.getRValueType())) {
+      emitter.emitError(
+          ifLocation,
+          "comparison result types of chained comparison must match");
+      return {};
+    }
+    auto chainedBool = ParamOperatorAttr::get(
+        POC::Cond,
+        {prevCmpI1Value.getIfPValue(), /*trueVal=*/newCmpCRV.getIfPValue(),
+         /*falseVal=*/prevCmpVal.getIfPValue()});
+    CRValue ret =
+        isLastOne ? chainedBool
+                  : emitNextCmp(emitter, opIdx + 1, chainedBool, newRHS, false);
+    if (hasPrevIfOp) {
+      emitter.builder->create<HLCF::YieldOp>(
+          ifLocation,
+          emitter.emitSRValue({ret, exprs[opIdx]}, EC_BoolCondition));
+    }
+    return ret;
+  }
 
+  if (isLastOne)
+    emitter.builder->create<HLCF::YieldOp>(
+        ifLocation,
+        emitter.emitSRValue({newCmpCRV, exprs[opIdx]}, EC_BoolCondition));
+  if (!isLastOne) {
+    AnyValue emitNextCmpResult = {};
+    emitNextCmpResult =
+        emitNextCmp(emitter, opIdx + 1, newCmpCRV, newRHS, true);
+    if (!emitNextCmpResult)
+      return {};
+    emitNextCmpResult = emitter.emitRValue(
+        {emitNextCmpResult, exprs[opIdx + 1]}, EC_BoolCondition);
+    if (!emitNextCmpResult)
+      return {};
+    CRValue emitNextCmpCRV = emitNextCmpResult.getIfCRValue();
+    if (!emitNextCmpCRV)
+      return {};
+    newOrNextResult = emitNextCmpCRV;
+  }
+
+  if (!newOrNextResult.getRValueType().isEqualCanon(prevCmpVal.getType())) {
+    emitter.emitError(
+        ifLocation, "comparison result types of chained comparison must match");
+  }
   emitter.builder->createBlock(&ifOp.getElseRegion());
-  ifOp->getResult(0).setType(lastCmpExpr.getType());
-  emitter.builder->create<HLCF::YieldOp>(ifLoc, lastCmpExpr);
-  emitter.builder = lastBuilder;
-  if (opIdx > 1)
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, ifOp->getResult(0));
-  return SRValue(ifOp->getResult(0));
+  ifOp->getResult(0).setType(prevCmpVal.getType());
+  emitter.builder->create<HLCF::YieldOp>(
+      ifLocation,
+      emitter.emitSRValue({prevCmpVal, exprs[opIdx - 1]}, EC_BoolCondition));
+  if (lastBuilder)
+    emitter.builder = lastBuilder;
+  auto r0 = ifOp->getResult(0);
+  if (hasPrevIfOp)
+    emitter.builder->create<HLCF::YieldOp>(ifLocation, r0);
+  // We need to return the result of the IfOp as a CRValue.
+  // More concretely, it will be an SRValue or, for exotic memory-only bool
+  // equivalents, one of the pointer type CRValues.
+  // But for simplicity, let's only support return values that can fit in an
+  // SRValue.
+  // TODO - make this more general.
+  // To refuse memory types right now, check what (other) comparison results
+  // are.
+  if (!newOrNextResult.getRValueType().isRegisterPassable(ifLoc,
+                                                          emitter.shared)) {
+    emitError(ifLocation,
+              "chained comparison operator does not currently support "
+              "memory-only return types");
+    return {};
+  }
+  return SRValue(r0);
 }
 
 AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2740,14 +2820,14 @@ AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (exprs.size() == 2)
     return cmpe0e1RV;
 
-  SRValue lastCmpExpr =
-      emitter.emitSRValue({cmpe0e1RV, exprs[1]}, EC_BoolCondition);
-  SRValue e1RV =
-      emitter.emitSRValue({e1Rep, exprs[1]}, EC_OperatorOperandValue);
+  CRValue lastCmpExpr =
+      emitter.emitCRValue({cmpe0e1RV, exprs[1]}, EC_BoolCondition);
+  CRValue e1RV =
+      emitter.emitCRValue({e1Rep, exprs[1]}, EC_OperatorOperandValue);
   if (!lastCmpExpr || !e1RV)
     return {};
-  return emitter.emitResult(emitNextCmp(emitter, 1, lastCmpExpr, e1RV), this,
-                            dest);
+  return emitter.emitResult(emitNextCmp(emitter, 1, lastCmpExpr, e1RV, false),
+                            this, dest);
 }
 
 AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
