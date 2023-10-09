@@ -93,6 +93,7 @@ public:
   DebugInfoLanguage debugInfoLanguage = kLangC;
 
   std::string saveTempsPrefix = "";
+  bool emitAllElaboratorDiags = false;
 };
 } // namespace M::KGEN
 

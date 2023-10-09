@@ -429,7 +429,9 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
     Option<"elaborateLocations", "elaborate-locations", "bool", "false",
            "If true, parameter references in locations will be concretized.">,
     Option<"sanitizeSymbolNames", "sanitize-symbols", "bool", "false",
-           "If true, the elaborator will sanitize and rename symbols to alnum.">
+           "If true, the elaborator will sanitize and rename symbols to alnum.">,
+    Option<"diagAllFailures", "diag-all-failures", "bool", "false",
+           "If true, emit remarks for why any implementation failed.">
   ];
 }
 

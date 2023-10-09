@@ -2377,6 +2377,12 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       SmallVector<std::pair<StringRef, FuncOp>, 1> successfulFuncs;
       for (ImplNode &impl : llvm::make_pointee_range(node.impls)) {
         if (impl.error) {
+          if (config.diagAllFailures) {
+            mlir::emitRemark(impl.func.getLoc(), "other failed instantiations");
+            std::move(*impl.error).emit([](Location loc) {
+              return mlir::emitRemark(loc);
+            });
+          }
           eraseFunc(impl.func);
           continue;
         }
@@ -2622,7 +2628,7 @@ public:
             evaluatorExecutorFn, compileAsmFn,
             ElaborateGeneratorsOptions{enableSearch, allowMultiplePrimaryImpls,
                                        maxDepth, elaborateLocations,
-                                       sanitizeSymbolNames})))
+                                       sanitizeSymbolNames, diagAllFailures})))
       return signalPassFailure();
   }
 
