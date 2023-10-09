@@ -544,7 +544,7 @@ struct OutputChainPtr:
         )
 
     @always_inline
-    fn get_cuda_stream(self) -> Stream:
+    fn get_cuda_stream(self) -> Stream[is_borrowed=True]:
         """Return the CUstream to use for launching CUDA kernels from the
         CPU kernel 'shim'. These CPU kernels should never call mark_ready()."""
         return external_call[
