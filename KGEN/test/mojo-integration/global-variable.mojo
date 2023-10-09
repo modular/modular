@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo --parsing-stdlib -debug-level full %s | FileCheck %s
-# RUN: %mojo build --parsing-stdlib %s -o %t
+# RUN: mojo --parsing-stdlib -debug-level full %s | FileCheck %s
+# RUN: mojo build --parsing-stdlib %s -o %t
 # RUN: %t | FileCheck %s
 
 
