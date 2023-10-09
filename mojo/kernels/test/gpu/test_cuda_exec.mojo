@@ -9,7 +9,7 @@
 
 
 from gpu.nvidia_host import (
-    Module,
+    ModuleHandle,
     Context,
     Dim,
     _malloc,
@@ -62,7 +62,7 @@ fn run_cuda_mem_ops() raises:
 fn run_vec_add() raises:
     print("== run_vec_add")
 
-    let module = Module((Path(CURRENT_DIR) / "vec_add.ptx"))
+    let module = ModuleHandle((Path(CURRENT_DIR) / "vec_add.ptx"))
 
     let func = module.load("vec_add")
 
