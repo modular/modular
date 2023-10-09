@@ -92,10 +92,6 @@ void OutputChain::recordProfilerEntry() && {
   std::move(profilerEntry).record();
 }
 
-void *OutputChain::getCUDAStream() const {
-  return chain.get<CUDA::CUDAChain>().getStream();
-}
-
 void OutputChain::complete() {
   // IMPORTANT: Stop the profiling enry before doing any other work.
   // Even the innocent looking refs.clear() may trigger frees which can

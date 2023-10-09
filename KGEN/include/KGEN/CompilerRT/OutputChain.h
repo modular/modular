@@ -100,6 +100,11 @@ struct OutputChain {
   /// Other odd's 'n end's to keep alive also.
   SmallVector<LLCL::GenericUniquePtr> extras;
 
+  /// HACK HACK HACK https://github.com/modularml/modular/issues/22959
+  /// For kernel calls using cuda.kernel.execute.via_cpu only: The CUDA stream
+  /// on which launched CUDA kernels should synchronize.
+  void *cudaStream = nullptr;
+
   OutputChain(AnyAsyncValueRef chain, LLCL::EncodedLocation loc)
       : chain(std::move(chain)), loc(std::move(loc)) {}
 
@@ -208,10 +213,11 @@ struct OutputChain {
   /// has enabled task overhang detection.
   void taskIsDone();
 
+  /// HACK HACK HACK https://github.com/modularml/modular/issues/22959
   /// For kernel calls using cuda.kernel.execute.via_cpu only: Returns the
   /// CUDA CUstream handle being used to synchronize execution of the launched
   /// CUDA kernel. We'll use a void* to avoid including any CUDA headers.
-  void *getCUDAStream() const;
+  void *getCUDAStream() const { return cudaStream; }
 
 private:
   /// Cleanup all resource held by the OutputChain in preparation for emplacing
