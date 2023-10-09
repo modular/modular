@@ -232,7 +232,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
              CompilationOptions::kSynthetic) {
     ctx->loadDialect<DebugInfo::DebugInfoDialect>();
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
-        mgr, ctx, options.getDIEmissionKind());
+        mgr, ctx, options.getDIEmissionKind(),
+        static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage));
   } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   }

@@ -147,9 +147,12 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
   ];
 
   let options = [
-    Option<"debugInfoLanguage", "debug-info-language", "unsigned", "2",
-           "The DWARF language code to specify in the debug info. Defaults to "
-           "C (2).">,
+    Option<"debugInfoLanguage", "debug-info-language",
+           "llvm::dwarf::SourceLanguage", "llvm::dwarf::DW_LANG_C",
+           "The DWARF language to specify in the debug info, either `C` or "
+           "`Mojo`. Defaults to `C`.",
+           "llvm::cl::values(clEnumValN(llvm::dwarf::DW_LANG_C, \"C\", \"C language.\"),"
+           "clEnumValN(llvm::dwarf::DW_LANG_Mojo, \"Mojo\", \"Mojo language\"))">,
   ];
 }
 
@@ -321,9 +324,12 @@ def LowerKGENCoroutinesAsync : Pass<"lower-coroutines-async",
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
 
   let options = [
-    Option<"debugInfoLanguage", "debug-info-language", "unsigned", "2",
-           "The DWARF language code to specify in the debug info. Defaults to "
-           "C (2).">,
+    Option<"debugInfoLanguage", "debug-info-language",
+           "llvm::dwarf::SourceLanguage", "llvm::dwarf::DW_LANG_C",
+           "The DWARF language to specify in the debug info, either `C` or "
+           "`Mojo`. Defaults to `C`.",
+           "llvm::cl::values(clEnumValN(llvm::dwarf::DW_LANG_C, \"C\", \"C language.\"),"
+           "clEnumValN(llvm::dwarf::DW_LANG_Mojo, \"Mojo\", \"Mojo language\"))">,
   ];
 }
 
@@ -848,9 +854,12 @@ def LowerRuntimeClosures : Pass<"lower-runtime-closures", "mlir::ModuleOp"> {
   let dependentDialects = ["KGENDialect", "POP::POPDialect"];
 
   let options = [
-    Option<"debugInfoLanguage", "debug-info-language", "unsigned", "2",
-           "The DWARF language code to specify in the debug info. Defaults to "
-           "C (2).">,
+    Option<"debugInfoLanguage", "debug-info-language",
+           "llvm::dwarf::SourceLanguage", "llvm::dwarf::DW_LANG_C",
+           "The DWARF language to specify in the debug info, either `C` or "
+           "`Mojo`. Defaults to `C`.",
+           "llvm::cl::values(clEnumValN(llvm::dwarf::DW_LANG_C, \"C\", \"C language.\"),"
+           "clEnumValN(llvm::dwarf::DW_LANG_Mojo, \"Mojo\", \"Mojo language\"))">,
   ];
 }
 
@@ -871,9 +880,12 @@ def SynthesizeDebugInfo : Pass<"synth-debuginfo", "mlir::ModuleOp"> {
   let dependentDialects = ["DebugInfo::DebugInfoDialect"];
 
   let options = [
-    Option<"debugInfoLanguage", "debug-info-language", "unsigned", "2",
-           "The DWARF language code to specify in the debug info. Defaults to "
-           "C (2).">,
+    Option<"debugInfoLanguage", "debug-info-language",
+           "llvm::dwarf::SourceLanguage", "llvm::dwarf::DW_LANG_C",
+           "The DWARF language to specify in the debug info, either `C` or "
+           "`Mojo`. Defaults to `C`.",
+           "llvm::cl::values(clEnumValN(llvm::dwarf::DW_LANG_C, \"C\", \"C language.\"),"
+           "clEnumValN(llvm::dwarf::DW_LANG_Mojo, \"Mojo\", \"Mojo language\"))">,
   ];
 }
 

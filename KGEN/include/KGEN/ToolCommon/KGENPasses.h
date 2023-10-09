@@ -158,10 +158,13 @@ struct LowerToLLVMOptions
                                   "llvm",
                                   "Generate debug info for the LLVM level."))};
 
-  Option<unsigned> debugInfoLanguage{
+  Option<llvm::dwarf::SourceLanguage> debugInfoLanguage{
       *this, "debug-info-language",
-      llvm::cl::desc("The DWARF language code to specify in the debug info. "
-                     "Defaults to C (2)"),
+      llvm::cl::desc("The DWARF language to specify in the debug info. "
+                     "Either `C` or `Mojo`. Defaults to `C`."),
+      llvm::cl::values(
+          clEnumValN(llvm::dwarf::DW_LANG_C, "C", "C language."),
+          clEnumValN(llvm::dwarf::DW_LANG_Mojo, "Mojo", "Mojo language")),
       llvm::cl::init(llvm::dwarf::DW_LANG_C)};
 
   Option<std::string> alignedAllocFnName{

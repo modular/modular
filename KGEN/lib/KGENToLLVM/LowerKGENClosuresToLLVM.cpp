@@ -424,8 +424,7 @@ void LowerRuntimeClosuresPass::runOnOperation() {
   target.addIllegalOp<CreateClosureOp>();
   target.addIllegalOp<CallSignatureOp>();
   patterns.insert<CreateRuntimeClosureOpConversion>(
-      symtab, typeConverter,
-      static_cast<llvm::dwarf::SourceLanguage>(debugInfoLanguage.getValue()));
+      symtab, typeConverter, debugInfoLanguage.getValue());
   patterns.insert<CallSignatureOpConversion>(typeConverter);
 
   if (failed(

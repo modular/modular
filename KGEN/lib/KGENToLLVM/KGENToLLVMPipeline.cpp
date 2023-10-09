@@ -46,7 +46,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   if (options.debugAtLevel.hasValue() &&
       options.debugAtLevel == CompilationOptions::kDebugAtLLVM) {
     pm.addPass(DebugInfo::createDebugInfoSnapshot(
-        {options.debugInfoLevel, /*filename*/ ""}));
+        {options.debugInfoLevel, /*filename*/ "", options.debugInfoLanguage}));
   }
 
   // Run the LLVM lowering for debug info last.

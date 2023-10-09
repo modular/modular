@@ -49,9 +49,11 @@ namespace {
 class DebugInfoBuilder {
 public:
   DebugInfoBuilder(MLIRContext *context, mlir::AsmParserState &asmState,
-                   llvm::SourceMgr &sourceMgr, EmissionKind emissionKind)
+                   llvm::SourceMgr &sourceMgr, EmissionKind emissionKind,
+                   llvm::dwarf::SourceLanguage debugInfoLanguage)
       : builder(context), dibuilder(context), asmState(asmState),
-        sourceMgr(sourceMgr), emissionKind(emissionKind) {
+        sourceMgr(sourceMgr), emissionKind(emissionKind),
+        debugInfoLanguage(debugInfoLanguage) {
     // Build the main file descriptor.
     StringRef filename = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())
                              ->getBufferIdentifier();
@@ -104,6 +106,9 @@ private:
 
   /// The kind of debug information emission.
   EmissionKind emissionKind;
+
+  /// The language to specify in the debug info.
+  llvm::dwarf::SourceLanguage debugInfoLanguage;
 };
 } // namespace
 
@@ -113,8 +118,8 @@ void DebugInfoBuilder::build(Operation *op) {
   auto fileGuard = dibuilder.pushScopeGuard(fileAttr);
 
   // Attach compile unit information to `op`.
-  dibuilder.initializeCompileUnit(llvm::dwarf::SourceLanguage::DW_LANG_C,
-                                  fileAttr, /*producer=*/"MLIR",
+  dibuilder.initializeCompileUnit(debugInfoLanguage, fileAttr,
+                                  /*producer=*/"MLIR",
                                   /*isOptimized=*/true, EmissionKind::Full);
 
   // Populate debug information for operations nested under `op`.
@@ -317,10 +322,9 @@ DebugInfoBuilder::extractLineColumn(llvm::SMRange loc) {
 // Parser Entry
 //===----------------------------------------------------------------------===//
 
-OwningOpRef<ModuleOp>
-DebugInfo::parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
-                                        const mlir::ParserConfig &config,
-                                        EmissionKind emissionKind) {
+OwningOpRef<ModuleOp> DebugInfo::parseSourceFileWithDebugInfo(
+    llvm::SourceMgr &sourceMgr, const mlir::ParserConfig &config,
+    EmissionKind emissionKind, llvm::dwarf::SourceLanguage debugInfoLanguage) {
   const auto *sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
   // If the buffer is bytecode we can't attach debug info directly on parse, so
@@ -328,8 +332,8 @@ DebugInfo::parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
   if (mlir::isBytecode(*sourceBuf)) {
     OwningOpRef<ModuleOp> module =
         mlir::parseSourceFile<ModuleOp>(sourceMgr, config);
-    if (!module ||
-        failed(snapshotDebugInfo(*module, /*filename=*/"", emissionKind)))
+    if (!module || failed(snapshotDebugInfo(*module, /*filename=*/"",
+                                            emissionKind, debugInfoLanguage)))
       return nullptr;
     return module;
   }
@@ -350,7 +354,7 @@ DebugInfo::parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
 
   // Attach debug info to the module op.
   DebugInfoBuilder builder(config.getContext(), parserState, sourceMgr,
-                           emissionKind);
+                           emissionKind, debugInfoLanguage);
   builder.build(*moduleOp);
   return moduleOp;
 }
@@ -359,8 +363,10 @@ DebugInfo::parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
 // Snapshot Entry
 //===----------------------------------------------------------------------===//
 
-LogicalResult DebugInfo::snapshotDebugInfo(Operation *op, StringRef filename,
-                                           EmissionKind emissionKind) {
+LogicalResult
+DebugInfo::snapshotDebugInfo(Operation *op, StringRef filename,
+                             EmissionKind emissionKind,
+                             llvm::dwarf::SourceLanguage debugInfoLanguage) {
   // Kill any pre-existing debug info operations.
   op->walk([](Operation *op) {
     if (llvm::isa_and_present<DebugInfoDialect>(op->getDialect()))
@@ -407,7 +413,7 @@ LogicalResult DebugInfo::snapshotDebugInfo(Operation *op, StringRef filename,
   // Attach debug info to the newly parsed operation.
   Operation *parsedOp = &block.front();
   DebugInfoBuilder builder(op->getContext(), parserState, sourceMgr,
-                           emissionKind);
+                           emissionKind, debugInfoLanguage);
   builder.build(parsedOp);
 
   // Replace the current operation with the reconstructed parser version.
@@ -441,6 +447,7 @@ struct DebugInfoSnapshot
 } // namespace
 
 void DebugInfoSnapshot::runOnOperation() {
-  if (failed(snapshotDebugInfo(getOperation(), filename, emissionKind)))
+  if (failed(snapshotDebugInfo(getOperation(), filename, emissionKind,
+                               debugInfoLanguage)))
     signalPassFailure();
 }
