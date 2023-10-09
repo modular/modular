@@ -833,6 +833,20 @@ fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
 fn test_mem_only_default_param():
     mem_only_default_param()
 
+# CHECK-LABEL: lit.func @"param_default{{.*}}"
+# CHECK-SAME: <[[X:.*]][x]: !Int = #lit.struct<{value = 1}>>(%y: !Int borrow = [[X]])
+fn param_default[x: Int = 1](y: Int = x):
+    pass
+
+# CHECK-LABEL: lit.func @"test_param_default
+fn test_param_default():
+    # CHECK: [[C:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 4}>>
+    # CHECK-NEXT: call {{.*}}param_default{{.*}}<:!Int #lit.struct<{value = 4}>>([[C]]
+    param_default[4]()
+    # CHECK: [[C:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
+    # CHECK-NEXT: call {{.*}}param_default{{.*}}<:!Int #lit.struct<{value = 1}>>([[C]]
+    param_default()
+
 ##===----------------------------------------------------------------------===##
 # Default struct parameters
 ##===----------------------------------------------------------------------===##
