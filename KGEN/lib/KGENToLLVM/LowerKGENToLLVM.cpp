@@ -461,6 +461,11 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
       module.getLoc(),
       b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalCtorFnName))),
       prioritiesAttr);
+
+  // HACK HACK HACK https://github.com/modularml/modular/issues/22959
+  // HACK: NVPTX doesn't support global destructors.
+  if (tc.getTarget().getTripleStr().find("nvptx") != std::string::npos)
+    return success();
   b.create<LLVM::GlobalDtorsOp>(
       module.getLoc(),
       b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalDtorFnName))),
