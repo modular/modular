@@ -81,36 +81,6 @@ LogicalResult impl::verifyExportInterface(Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// FuncInterface
-//===----------------------------------------------------------------------===//
-
-/// If the specified operation is non-null and contains parameters, collect
-/// them into the specified array.
-static void collectContextParameters(Operation *op,
-                                     SmallVector<ParamDeclAttr> &params) {
-  auto decl = dyn_cast_or_null<DeclInterface>(op);
-  if (!decl || isa<FuncInterface>(*decl))
-    return;
-  collectContextParameters(op->getParentOp(), params);
-  llvm::append_range(params, decl.getInputParams());
-}
-
-/// Return the full signature of this declaration, including parameters from
-/// enclosing struct declarations.
-SignatureType KGEN::getFullSignature(FuncInterface decl) {
-  SignatureType signature = decl.getSignature();
-
-  // Collect contextual params, if there are none, the full signature is the
-  // same as the local signature.
-  SmallVector<ParamDeclAttr> inputParams;
-  collectContextParameters(decl.getOperation()->getParentOp(), inputParams);
-  if (inputParams.empty())
-    return signature;
-
-  return IndexRefRemapper::prependParams(signature, inputParams);
-}
-
-//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

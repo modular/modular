@@ -117,6 +117,10 @@ def LIT_FuncOp : LITOp<"func", [
     /// strings for positional-only arguments. This function will return all
     /// argument names in a single vector, including the positional-only ones.
     SmallVector<StringAttr> getArgNames();
+
+    /// Return the full signature of this declaration, including parameters from
+    /// enclosing struct declarations.
+    LITSignatureType getFullSignature();
   }];
 
   let builders = [

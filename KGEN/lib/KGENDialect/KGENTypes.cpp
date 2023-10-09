@@ -488,16 +488,20 @@ auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)
   return value.replaceImmediateSubElements(newAttrs, newTypes);
 }
 
+void IndexRefRemapper::populate(ArrayRef<ParamDeclAttr> params, bool isResult,
+                                bool addOffset) {
+  if (addOffset)
+    offset += params.size();
+  for (auto [idx, param] : llvm::enumerate(params))
+    mapping.try_emplace(param.getName(), std::make_pair(idx, isResult));
+}
+
 IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
                                    ArrayRef<ParamDeclAttr> resultParams,
                                    size_t offset)
     : offset(offset) {
-  auto mapIndices = [&](ArrayRef<ParamDeclAttr> params, bool isResult) {
-    for (auto [idx, param] : llvm::enumerate(params))
-      mapping.try_emplace(param.getName(), std::make_pair(idx, isResult));
-  };
-  mapIndices(inputParams, /*isResult=*/false);
-  mapIndices(resultParams, /*isResult=*/true);
+  populate(inputParams, /*isResult=*/false);
+  populate(resultParams, /*isResult=*/true);
 }
 
 Attribute IndexRefRemapper::remapAttrImpl(Attribute attr) {
@@ -513,7 +517,7 @@ SignatureType IndexRefRemapper::remapToSignature(
     FunctionType functionType, ArrayRef<ValueInputConvention> inputConventions,
     FnEffects effects, Attribute metadata,
     function_ref<InFlightDiagnostic()> emitError) {
-  IndexRefRemapper remapper(inputParams, resultParams);
+  IndexRefRemapper remapper(inputParams, resultParams, /*offset=*/0);
   SmallVector<Type> inputParamTypes, resultParamTypes;
   for (ParamDeclAttr param : inputParams)
     inputParamTypes.push_back(remapper.remap(param.getType()));
@@ -537,7 +541,8 @@ SignatureType IndexRefRemapper::remapToSignature(
 SignatureType
 IndexRefRemapper::prependParams(SignatureType sig,
                                 ArrayRef<ParamDeclAttr> parentParams) {
-  IndexRefRemapper remapper(parentParams, {}, parentParams.size());
+  IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
+                            parentParams.size());
   SmallVector<Type> inputParamTypes;
   for (ParamDeclAttr param : parentParams)
     inputParamTypes.push_back(remapper.remap(param.getType()));

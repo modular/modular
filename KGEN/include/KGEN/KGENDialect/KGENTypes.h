@@ -40,6 +40,12 @@ public:
   IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
                    ArrayRef<ParamDeclAttr> resultParams, size_t offset = 0);
 
+  /// Populate the remapper with the given named input parameters. If
+  /// 'addOffset' is true, the underlying offset of references to root
+  /// parameters will be incremented by the size of 'params'
+  void populate(ArrayRef<ParamDeclAttr> params, bool isResult,
+                bool addOffset = false);
+
   /// Remap a value.
   template <typename T>
   T remap(T value) {

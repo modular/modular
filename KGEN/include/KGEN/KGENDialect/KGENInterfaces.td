@@ -120,10 +120,6 @@ def FuncInterface : OpInterface<"FuncInterface"> {
   ];
 
   let extraSharedClassDeclaration = [{
-    /// Return the function's signature including contextual parameters from
-    /// higher scopes.
-    SignatureType getFullSignature() { return KGEN::getFullSignature($_op); }
-
     /// Returns the argument types of this function.
     ArrayRef<Type> getArgumentTypes() {
       return $_op.getFunctionType().getInputs();
