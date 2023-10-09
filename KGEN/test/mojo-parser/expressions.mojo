@@ -1211,6 +1211,48 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: lit.ref.store %[[IF]], %res
     res = a < b < c and d < e
 
+# Test chained comparison op in parameter domain for issue
+# https://github.com/modularml/modular/issues/22050
+# CHECK: lit.alias.decl{{.*}}chainedCmpAlias1: !Bool ={{.*}}false
+alias chainedCmpAlias1 = 1 == 2 == 3 == 4 == 5
+# CHECK: lit.alias.decl{{.*}}chainedCmpAlias2: !Bool ={{.*}}true
+alias chainedCmpAlias2 = 1 <= 2 <= 3 <= 4 <= 5
+# CHECK: lit.alias.decl{{.*}}chainedCmpAlias3: !Bool ={{.*}}false
+alias chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
+fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
+  # CHECK: [[XCMP:%.*]] = lit.varlet.decl "xCmp"
+  # CHECK-NEXT: [[IFCOND:%.*]] = kgen.param.constant: i1 = <1>
+  # CHECK-NEXT: [[FINALRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
+  # CHECK-NEXT:   [[PV:%.*]] = {{.*}}constant{{.*}}77
+  # CHECK-NEXT:   [[CMPRESULT1:%.*]] = {{.*}}__lt__{{.*}}([[PV]], %x)
+  # CHECK-NEXT:   [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT1]])
+  # CHECK-NEXT:   [[INNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
+  # CHECK-NEXT:     [[PV:%.*]] = {{.*}}constant{{.*}}105
+  # CHECK-NEXT:     [[CMPRESULT2:%.*]] = {{.*}}__lt__{{.*}}(%x, [[PV]])
+  # CHECK-NEXT:     [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT2]])
+  # CHECK-NEXT:     [[MOSTINNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
+  # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}true
+  # CHECK-NEXT:       hlcf.yield [[TRUEPARAM]]
+  # CHECK-NEXT:     } else {
+  # CHECK-NEXT:       hlcf.yield [[CMPRESULT2]]
+  # CHECK-NEXT:     }
+  # CHECK-NEXT:     hlcf.yield [[MOSTINNERRESULT]]
+  # CHECK-NEXT:   } else {
+  # CHECK-NEXT:     hlcf.yield [[CMPRESULT1]]
+  # CHECK-NEXT:   }
+  # CHECK-NEXT:   hlcf.yield [[INNERRESULT]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}true
+  # CHECK-NEXT:   hlcf.yield [[TRUEPARAM]]
+  # CHECK-NEXT: }
+  # CHECK-NEXT: lit.ref.store [[FINALRESULT]], [[XCMP]]
+  var xCmp = 5 < 77 < x < 105 < 177
+  # A fully deep check of this would be a lot of work, but this at least
+  # shows that its not choking during parsing on a mix of dynamic and
+  # parameter comparisons.  It required some care with the interaction
+  # between recursive calls of emitNextCmp calls to get this to work.
+  var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
+
 # CHECK-LABEL: lit.func @"foo_adaptive[{{.*}}$int::Int](){{.*}} {isAdaptive
 @adaptive
 fn foo_adaptive[x: Int]() -> Int:
@@ -1627,3 +1669,4 @@ fn testUnmovable(a: Unmovable):
    # CHECK-NEXT: %0 = lit.ref.to_pointer %x
    # CHECK-NEXT: kgen.call {{.*}}(%0, %a)
    var x : Unmovable = getUnmovable(a)
+

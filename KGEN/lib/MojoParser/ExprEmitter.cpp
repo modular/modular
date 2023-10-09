@@ -1105,6 +1105,11 @@ RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
   return emitRValue({emitExpr(expr, context, resultType), expr}, context);
 }
 
+CRValue ExprEmitter::emitExprCRValue(const ExprNode *expr, ExprContext context,
+                                     ASTType resultType) {
+  return emitCRValue({emitExpr(expr, context, resultType), expr}, context);
+}
+
 CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
   assert(expr && "cannot emit a null node");
   return emitCValue({emitExpr(expr, context), expr}, context);
@@ -1455,7 +1460,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   return type;
 }
 
-RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
+CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
   if (!value.ir)
     return {};
 
@@ -1463,7 +1468,7 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
 
   // If this is already an 'i1', then we're done.
   if (valueRValueType.mlirType.isInteger(1))
-    return emitRValue(value, EC_BoolCondition);
+    return emitCRValue(value, EC_BoolCondition);
 
   // TODO: Python manual includes this off-hand comment:
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
@@ -1486,10 +1491,10 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
       "__mlir_i1__", {{{value.ir, value.expr}}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, value.expr);
 
-  return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);
+  return emitCRValue({litBoolCall, value.expr}, EC_BoolCondition);
 }
 
-RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
+CRValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
   return emitI1({emitExprCValue(condExpr, context), condExpr});
 }
 
