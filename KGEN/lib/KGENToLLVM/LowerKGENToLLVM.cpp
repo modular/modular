@@ -381,9 +381,18 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 // convertGlobals
 //===----------------------------------------------------------------------===//
 
+/// Convert all the `kgen.global` operations in the module to LLVM globals. This
+/// involves generate `llvm.mlir.global` operations for each but also generating
+/// the correct global constructors and destructors.
+///
+/// In JIT mode, instead of generating `llvm.global_ctors` and
+/// `llvm.global_dtors`, an extra pair of constructor and destructor functions
+/// are generated with the provided names.
 static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
-                                    bool disableGlobalDtors) {
-  SmallVector<Attribute> ctors, dtors, priorities;
+                                    StringRef globalCtorFnName,
+                                    StringRef globalDtorFnName) {
+  SmallVector<FlatSymbolRefAttr> ctors, dtors;
+  SmallVector<int32_t> priorities;
 
   for (auto global : llvm::make_early_inc_range(module.getOps<GlobalOp>())) {
     // Replace the `pop.global` with an `llvm.mlir.global`, raise the
@@ -394,9 +403,9 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
       return global.emitError("could not convert global type");
 
     if (global.getCtor()) {
-      ctors.push_back(*global.getCtor());
-      dtors.push_back(*global.getDtor());
-      priorities.push_back(global.getPriorityAttr());
+      ctors.push_back(cast<FlatSymbolRefAttr>(global.getCtorAttr()));
+      dtors.push_back(cast<FlatSymbolRefAttr>(global.getDtorAttr()));
+      priorities.push_back(*global.getPriority());
     }
 
     // Create the LLVM global.
@@ -416,19 +425,46 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
     b.create<LLVM::ReturnOp>(llvmGlobal.getLoc(), undef);
   }
 
-  // Don't generate anything if there are no globals.
-  if (ctors.empty())
-    return success();
-
-  // Create the `llvm.mlir.global_ctors` and `llvm.mlir.global_dtors`.
   auto b = OpBuilder::atBlockBegin(module.getBody());
-  mlir::ArrayAttr prioritiesAttr = b.getArrayAttr(priorities);
-  b.create<LLVM::GlobalCtorsOp>(module.getLoc(), b.getArrayAttr(ctors),
-                                prioritiesAttr);
-  // FIXME(#16605): Global destructors don't work in JIT mode.
-  if (!disableGlobalDtors)
-    b.create<LLVM::GlobalDtorsOp>(module.getLoc(), b.getArrayAttr(dtors),
-                                  prioritiesAttr);
+  // Sort the constructor function indices. Lower priority is earlier.
+  SmallVector<unsigned> order =
+      llvm::to_vector(llvm::seq<unsigned>(0, priorities.size()));
+  llvm::sort(order, [&](unsigned lhs, unsigned rhs) {
+    return priorities[lhs] < priorities[rhs];
+  });
+
+  auto populateCalls = [&b](LLVM::LLVMFuncOp func,
+                            ArrayRef<FlatSymbolRefAttr> refs, auto order) {
+    b.createBlock(&func.getRegion());
+    for (unsigned i : order)
+      b.create<LLVM::CallOp>(func.getLoc(), TypeRange(),
+                             cast<FlatSymbolRefAttr>(refs[i]));
+    b.create<LLVM::ReturnOp>(func.getLoc(), ValueRange());
+  };
+
+  auto type =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(b.getContext()), {});
+  LLVM::LLVMFuncOp ctor =
+      createLLVMFunc(b, tc.getTarget(), module.getLoc(), globalCtorFnName, type,
+                     LLVM::Linkage::Weak);
+  LLVM::LLVMFuncOp dtor =
+      createLLVMFunc(b, tc.getTarget(), module.getLoc(), globalDtorFnName, type,
+                     LLVM::Linkage::Weak);
+  populateCalls(ctor, ctors, order);
+  populateCalls(dtor, dtors, llvm::reverse(order));
+
+  // Create the `llvm.mlir.global_ctors` and `llvm.mlir.global_dtors`, where
+  // each just invokes the respective functions we generated.
+  b.setInsertionPointToStart(module.getBody());
+  mlir::ArrayAttr prioritiesAttr = b.getArrayAttr(b.getI32IntegerAttr(0));
+  b.create<LLVM::GlobalCtorsOp>(
+      module.getLoc(),
+      b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalCtorFnName))),
+      prioritiesAttr);
+  b.create<LLVM::GlobalDtorsOp>(
+      module.getLoc(),
+      b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalDtorFnName))),
+      prioritiesAttr);
   return success();
 }
 
@@ -702,7 +738,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
   theModule->setAttrs(moduleAttrs.getDictionary(&getContext()));
 
   // Convert global ops and generator global constructors and destructors.
-  if (failed(convertGlobals(theModule, typeConverter, disableGlobalDtors)))
+  if (failed(convertGlobals(theModule, typeConverter, globalCtorFnName,
+                            globalDtorFnName)))
     return signalPassFailure();
 
   // Populate patterns and run the conversion.

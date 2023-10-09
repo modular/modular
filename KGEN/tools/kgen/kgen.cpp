@@ -325,8 +325,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   auto engineOr = initializeExecutionEngine(
       *runtime, pm, options, std::move(eeOptions),
       /*isJIT=*/clOptions.cmd == Command::kExecute, target);
+  if (failed(engineOr))
+    return failure(clOptions.reportError(engineOr.getError()));
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
-
   auto &objLayer = engine->getLayer<ObjectCompilerLayer>();
   auto &compileLayer = engine->getLayer<KGENCompilerLayer>();
 
@@ -341,7 +342,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   };
   if (ErrorOrSuccess err =
           compileLayer.add("exec", *theModule, packageLinkHandlerFn))
-    return failure(clOptions.reportError("compilation failed"));
+    return failure(clOptions.reportError(err.getError()));
 
   // If all we're doing is generating a library file or elaborating, we're done
   // now.
@@ -350,8 +351,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Construct the symbol table and the export map.
   SymbolTable symtab(*theModule);
-  llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols =
-      getExportedSymbols(*theModule);
+  ExportMap exportedSymbols = getExportedSymbols(*theModule);
 
   // Handle LLVM output.
   if (clOptions.cmd == Command::kEmitLLVM) {
@@ -444,16 +444,17 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   auto execFunc = [&](FuncOp theFunc, StringAttr name,
                       const CommandLineFunc &clFunc) -> LogicalResult {
     TimeTraceScope<> traceScope("execute-function", name);
-    auto compiledFuncOr = engine->lookup(name);
-    if (failed(compiledFuncOr))
-      return failure(clOptions.reportError(compiledFuncOr.getError()));
+    // Trigger compilation so we can pull out the archive.
+    ErrorOr<CompiledFunc> funcOr = engine->lookup(name);
+    if (failed(funcOr))
+      return failure(clOptions.reportError(funcOr.getError()));
 
     if (auto err = clFunc.verifyFuncSignature(theFunc.getFunctionType())) {
       mlir::emitError(theFunc.getLoc(), err.getError());
       return failure(!clOptions.ignoreFailures);
     }
 
-    if (auto err = clFunc.executeAndPrint(*compiledFuncOr)) {
+    if (auto err = clFunc.executeAndPrint(*funcOr)) {
       mlir::emitError(theFunc.getLoc(), err.getError());
       return failure(!clOptions.ignoreFailures);
     }

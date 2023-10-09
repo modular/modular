@@ -141,17 +141,21 @@ kgen.extern.func @external_func() -> () from @libc
 
 // -----
 
-// COM: Don't generate globals where there are none.
+// CHECK-LABEL: module
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK-NOT: llvm.mlir.global_ctors
-  // CHECK-NOT: llvm.mlir.global_dtors
-}
+  // CHECK: llvm.mlir.global_ctors {ctors = [@kgenGlobalCtor], priorities = [0 : i32]}
+  // CHECK: llvm.mlir.global_dtors {dtors = [@kgenGlobalDtor], priorities = [0 : i32]}
 
-// -----
+  // CHECK: llvm.func weak @kgenGlobalCtor
+  // CHECK-NEXT: call @noop()
+  // CHECK-NEXT: call @foo_c()
+  // CHECK-NEXT: call @bar_c()
 
-module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK: llvm.mlir.global_ctors {ctors = [@foo_c, @bar_c, @noop], priorities = [2 : i32, 5 : i32, 0 : i32]}
-  // CHECK: llvm.mlir.global_dtors {dtors = [@foo_d, @bar_d, @noop], priorities = [2 : i32, 5 : i32, 0 : i32]}
+  // CHECK: llvm.func weak @kgenGlobalDtor
+  // CHECK-NEXT: call @bar_d()
+  // CHECK-NEXT: call @foo_d()
+  // CHECK-NEXT: call @noop()
+
   llvm.func @foo_c() {
     llvm.return
   }
@@ -164,19 +168,13 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   llvm.func @bar_d() {
     llvm.return
   }
-
-  // CHECK: llvm.mlir.global internal @foo() {{.*}} : i32
-  kgen.global @foo : i32 [@foo_c, @foo_d](2)
-  // CHECK: llvm.mlir.global internal @bar() {{.*}} : i64
-  kgen.global @bar : i64 [@bar_c, @bar_d](5)
-
   llvm.func @noop() {
     llvm.return
   }
-  // CHECK: llvm.mlir.global external @exported() {{.*}} : f32
-  // CHECK-NEXT: [[UNDEF:%.*]] = llvm.mlir.undef
-  // CHECK-NEXT: llvm.return [[UNDEF]]
-  kgen.global export @exported : f32 [@noop, @noop](0)
+
+  kgen.global @foo : i32 [@foo_c, @foo_d](2)
+  kgen.global @bar : i64 [@bar_c, @bar_d](5)
+  kgen.global @exported : f32 [@noop, @noop](0)
 }
 
 // -----

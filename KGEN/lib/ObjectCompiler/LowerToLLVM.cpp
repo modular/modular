@@ -79,7 +79,8 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   LowerToLLVMOptions llvmOptions(
       options.getDIEmissionKind(), options.debugAtLevel,
       static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage));
-  llvmOptions.isJIT = isJIT;
+  llvmOptions.globalCtorFnName = ExecutionEngine::getGlobalCtorFnName();
+  llvmOptions.globalDtorFnName = ExecutionEngine::getGlobalDtorFnName();
   // Use KGENCompilerRT allocators.
   llvmOptions.alignedAllocFnName = "KGEN_CompilerRT_AlignedAlloc";
   llvmOptions.alignedFreeFnName = "KGEN_CompilerRT_AlignedFree";

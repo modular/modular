@@ -1907,7 +1907,8 @@ ExportMap KGEN::getExportedSymbols(ModuleOp module) {
   for (auto op : module.getOps<ExportInterface>()) {
     if (op.isExported())
       exportedSymbols.insert(
-          {op.getLinkageNameAttr(), ExportedSymbol(op.getExportKind())});
+          {op.getLinkageNameAttr(),
+           ExportedSymbol(op.getExportKind(), isa<GlobalOp>(*op))});
   }
   return exportedSymbols;
 }

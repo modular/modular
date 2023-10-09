@@ -323,6 +323,15 @@ public:
   ErrorOrSuccess runProgram(StringRef libName, StringRef entryPoint,
                             function_ref<ErrorOrSuccess(void *)> runFn);
 
+  /// Get the name of the global constructor function to call in JIT mode.
+  static constexpr const char *getGlobalCtorFnName() {
+    return "KGEN_EE_JIT_GlobalConstructor";
+  }
+  /// Get the name of the global destructor function to call in JIT mode.
+  static constexpr const char *getGlobalDtorFnName() {
+    return "KGEN_EE_JIT_GlobalDestructor";
+  }
+
   //===--------------------------------------------------------------------===//
   // Misc
   //===--------------------------------------------------------------------===//

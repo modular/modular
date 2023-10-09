@@ -612,51 +612,23 @@ ExecutionEngine::runProgram(StringRef libName, StringRef entryPoint,
                             function_ref<ErrorOrSuccess(void *)> runFn) {
   using namespace llvm::orc;
 
-  // The platform will be non-null if the ORC RT was available.
-  if (executionSession->getPlatform()) {
-    // If the ORC runtime is available, it can be used to get platform support
-    // for stuff like global initializers and destructors. Invoke the function
-    // by using the JIT dylib functions directly.
-    ErrorOr<CompiledFunc> dlopenFn = lookup("__orc_rt_jit_dlopen");
-    if (dlopenFn.isError())
-      return dlopenFn.takeError();
-    ErrorOr<CompiledFunc> dlsymFn = lookup("__orc_rt_jit_dlsym");
-    if (dlsymFn.isError())
-      return dlsymFn.takeError();
-    ErrorOr<CompiledFunc> dlerrorFn = lookup("__orc_rt_jit_dlerror");
-    if (dlerrorFn.isError())
-      return dlerrorFn.takeError();
-    ErrorOr<CompiledFunc> dlcloseFn = lookup("__orc_rt_jit_dlclose");
-    if (dlcloseFn.isError())
-      return dlcloseFn.takeError();
-
-    std::string libNameStr = libName.str();
-    void *dylib = dlopenFn->invoke<void *, const char *, int>(
-        libNameStr.c_str(), /*ORC_RT_RTLD_LAZY=*/0x1);
-    if (!dylib)
-      return Error(dlerrorFn->invoke<const char *>());
-
-    std::string entryPointStr = entryPoint.str();
-    void *fnPtr = dlsymFn->invoke<void *, void *, const char *>(
-        dylib, entryPointStr.c_str());
-    if (!fnPtr)
-      return Error(dlerrorFn->invoke<const char *>());
-
-    ErrorOrSuccess result = runFn(fnPtr);
-
-    // A result of `-1` indicates that `dlclose` failed.
-    if (dlcloseFn->invoke<int, void *>(dylib) == -1)
-      return Error(dlerrorFn->invoke<const char *>());
-
-    return result;
-  }
+  ErrorOr<CompiledFunc> ctorResult = lookup(getGlobalCtorFnName());
+  if (failed(ctorResult))
+    return ctorResult.takeError();
+  ErrorOr<CompiledFunc> dtorResult = lookup(getGlobalDtorFnName());
+  if (failed(dtorResult))
+    return dtorResult.takeError();
 
   // Lookup the entry point symbol and directly invoke it rather than going
   // through the runtime.
   ErrorOr<CompiledFunc> mainFn = lookup(entryPoint);
   if (mainFn.isError())
     return mainFn.takeError();
-  return runFn(mainFn->getFunctionPointer());
+  ctorResult->invoke<void>();
+  if (ErrorOrSuccess err = runFn(mainFn->getFunctionPointer()))
+    return err.takeError();
+  dtorResult->invoke<void>();
+  return success();
 }
 
 llvm::orc::SymbolStringPtr

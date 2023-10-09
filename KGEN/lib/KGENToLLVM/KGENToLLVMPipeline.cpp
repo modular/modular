@@ -28,8 +28,8 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addPass(createLowerCallingConvention());
 
   // Run all LLVM lowering passes.
-  pm.addPass(createLowerKGENToLLVM(
-      LowerKGENToLLVMOptions{/*disableGlobalDtors=*/options.isJIT}));
+  pm.addPass(createLowerKGENToLLVM(LowerKGENToLLVMOptions{
+      options.globalCtorFnName, options.globalDtorFnName}));
   pm.addPass(createLowerRuntimeClosures({options.debugInfoLanguage}));
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createTweakSpilledAllocas());

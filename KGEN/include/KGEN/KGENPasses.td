@@ -265,8 +265,12 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
   ];
 
   let options = [
-    Option<"disableGlobalDtors", "disable-global-dtors", "bool", "false",
-           "If true, global destructors are not generated.">,
+    Option<"globalCtorFnName", "global-ctor-fn-name", "std::string",
+           "\"kgenGlobalCtor\"",
+           "The name of the global init function in JIT mode.">,
+    Option<"globalDtorFnName", "global-dtor-fn-name", "std::string",
+           "\"kgenGlobalDtor\"",
+           "The name of the global deinit function in JIT mode.">,
   ];
 }
 
