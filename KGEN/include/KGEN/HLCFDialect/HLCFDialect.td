@@ -134,6 +134,7 @@ def HLCFDialect : Dialect {
   }];
   // TODO: Remove this once dialects have been updated to use properties.
   let usePropertiesForAttributes = 0;
+  let hasConstantMaterializer = 1;
 }
 
 #endif // HLCFDIALECT_TD
