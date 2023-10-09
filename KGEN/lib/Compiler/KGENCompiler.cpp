@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/KGENCompiler.h"
+#include "KGEN/Compiler/JITSupport.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
@@ -437,22 +438,14 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
   llvm::orc::MangleAndInterner mangler(session, dataLayout);
   llvm::orc::SymbolFlagsMap symbols;
 
-  for (auto &[name, symbol] : exports) {
-    symbols[mangler(name)] =
-        (symbol.isData ? llvm::JITSymbolFlags::None
-                       : llvm::JITSymbolFlags::Callable) |
-        llvm::JITSymbolFlags::Exported |
-        (symbol.kind == ExportKind::Weak ? llvm::JITSymbolFlags::Weak
-                                         : llvm::JITSymbolFlags::None);
-  }
+  for (auto &[name, symbol] : exports)
+    symbols[mangler(name)] = getFlagsForExportedSymbol(symbol);
 
   if (baseLayer.getRawCompiler().getIsJIT()) {
     symbols[mangler(ExecutionEngine::getGlobalCtorFnName())] =
-        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
-        llvm::JITSymbolFlags::Weak;
+        getGlobalFnSymbolFlags();
     symbols[mangler(ExecutionEngine::getGlobalDtorFnName())] =
-        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
-        llvm::JITSymbolFlags::Weak;
+        getGlobalFnSymbolFlags();
   }
 
   return {std::move(symbols), /*InitSymbol=*/nullptr};

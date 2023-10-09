@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(KGENEmitObject
+  JITSupport.cpp
   LowerToLLVM.cpp
   LowerToObject.cpp
   LLVMPassesPipeline.cpp

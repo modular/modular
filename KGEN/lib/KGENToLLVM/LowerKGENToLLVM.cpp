@@ -382,8 +382,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 //===----------------------------------------------------------------------===//
 
 /// Convert all the `kgen.global` operations in the module to LLVM globals. This
-/// involves generate `llvm.mlir.global` operations for each but also generating
-/// the correct global constructors and destructors.
+/// involves generating `llvm.mlir.global` operations for each but also
+/// generating the correct global constructors and destructors.
 ///
 /// In JIT mode, instead of generating `llvm.global_ctors` and
 /// `llvm.global_dtors`, an extra pair of constructor and destructor functions

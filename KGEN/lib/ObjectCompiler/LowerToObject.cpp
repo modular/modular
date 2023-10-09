@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Compiler/JITSupport.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
@@ -576,14 +577,8 @@ ObjectCompilerLayer::getInterface(const SymbolTable &symtab,
   llvm::orc::SymbolFlagsMap symbols;
 
   auto addSymbols = [&](const ExportMap &exportedSymbols) {
-    for (auto &[name, symbol] : exports) {
-      symbols[mangler(name)] =
-          (symbol.isData ? llvm::JITSymbolFlags::None
-                         : llvm::JITSymbolFlags::Callable) |
-          llvm::JITSymbolFlags::Exported |
-          (symbol.kind == ExportKind::Weak ? llvm::JITSymbolFlags::Weak
-                                           : llvm::JITSymbolFlags::None);
-    }
+    for (auto &[name, symbol] : exports)
+      symbols[mangler(name)] = getFlagsForExportedSymbol(symbol);
   };
 
   // If we don't have any exports, infer them from the module.
@@ -594,11 +589,9 @@ ObjectCompilerLayer::getInterface(const SymbolTable &symtab,
 
   if (objectCompiler.isJIT) {
     symbols[mangler(ExecutionEngine::getGlobalCtorFnName())] =
-        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
-        llvm::JITSymbolFlags::Weak;
+        getGlobalFnSymbolFlags();
     symbols[mangler(ExecutionEngine::getGlobalDtorFnName())] =
-        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
-        llvm::JITSymbolFlags::Weak;
+        getGlobalFnSymbolFlags();
   }
 
   return {std::move(symbols), /*InitSymbol=*/nullptr};
