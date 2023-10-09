@@ -26,10 +26,6 @@ class FunctionLike;
 class GeneratorUserOpInterface;
 class KGENCallOpInterface;
 
-/// Return the full signature of this declaration, including parameters from
-/// enclosing struct declarations.
-SignatureType getFullSignature(FuncInterface decl);
-
 /// This class describes how a parameter value can be defined. A parameter
 /// definition can depend on a number of parameter expressions and regions.
 ///

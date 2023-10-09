@@ -132,7 +132,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetAllImpls(ParamOperatorAttr op) {
   refs.reserve(funcs.size());
   for (FuncOp f : funcs)
     refs.emplace_back(SymbolConstantAttr::get(
-        SymbolRefAttr::get(f.getSymNameAttr()), f.getFullSignature()));
+        SymbolRefAttr::get(f.getSymNameAttr()), f.getSignature()));
 
   return {VariadicAttr::get(refs, cast<VariadicType>(op.getType()))};
 }

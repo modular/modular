@@ -467,8 +467,8 @@ LogicalResult DeclResolver::aliasDeclsImpl(
         if (isAdaptive)
           return true;
 
-        SignatureType declSignature = declOp.getFullSignature();
-        SignatureType existingSignature = existingOp.getFullSignature();
+        LITSignatureType declSignature = declOp.getFullSignature();
+        LITSignatureType existingSignature = existingOp.getFullSignature();
         // If the value input types match exactly *and* the input parameter
         // types match exactly, then we don't want to merge this decl into the
         // set. We also need to remove the by-ref result type from the
@@ -1099,7 +1099,7 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   auto func = cast<LIT::FuncOp>(*decl);
   if (func.getInlineLevel() == InlineLevel::Automatic)
     return Error("function is not always_inline");
-  SignatureType fullSig = func.getFullSignature();
+  LITSignatureType fullSig = func.getFullSignature();
   if (!fullSig.getInputParamTypes().empty() ||
       !fullSig.getResultParamTypes().empty())
     return Error("function is parametric");
@@ -1568,6 +1568,10 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
         shared.getMangledParameterName(
             arg.name.getValue() + Twine(nameCounter++), arg.loc),
         decl.getType());
+    // TODO(#21951): set argument names once passingkind is stored explicitly
+    // and maybe pass these with a dedicated implicit passing kind instead of
+    // hacking it into positional-only parameters? This logic is also
+    // problematic if the function has default arguments.
     inputParamNames.push_back(StringAttr::get(shared.getContext()));
     inputParamDecls.push_back(funcDecl);
     bindings.push_back(

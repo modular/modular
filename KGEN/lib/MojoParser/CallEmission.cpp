@@ -715,7 +715,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
       return getCallee(validCandidates, baseName, inputParamBindings, expr,
                        emitter);
 
-    auto candidateType = cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
+    LITSignatureType candidateType =
+        cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
 
     InputParamBindings newBindings;
     for (TypedAttr bind : getBindingsForSignature(candidateType))

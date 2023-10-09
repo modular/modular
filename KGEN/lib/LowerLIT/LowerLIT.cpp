@@ -224,7 +224,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   lowerLITOps(gen);
 
   ParamDeclArrayAttr inputParams = gen.getInputParamsAttr();
-  SignatureType signature = gen.getSignature();
+  LITSignatureType signature = gen.getSignature();
   // Prepend the parameters from the parent decl if present.
   if (!parentInputParams.empty()) {
     // Concat the parent and generator input parameter decls.

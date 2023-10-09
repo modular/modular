@@ -50,8 +50,8 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
                             ArrayRef(symbols).drop_front());
 }
 
-std::pair<SignatureType, ParameterExprArrayAttr>
-LIT::getUnboundSpecializedSignature(SignatureType type,
+std::pair<LITSignatureType, ParameterExprArrayAttr>
+LIT::getUnboundSpecializedSignature(LITSignatureType type,
                                     ParameterExprArrayAttr bindings) {
   if (bindings.empty())
     return {type, bindings};
@@ -387,7 +387,7 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
   // parameters substituted in.  The function reference binds any parameter
   // bindings present on the access (in bindings), which typically concretizes
   // the signature.
-  SignatureType resultType;
+  LITSignatureType resultType;
   std::tie(resultType, bindings) =
       getUnboundSpecializedSignature(getFullSignature(), bindings);
 
@@ -706,6 +706,30 @@ void LIT::FuncOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 /// This operation has no uses to collect in its current scope.
 void LIT::FuncOp::collectParameterUses(function_ref<void(Attribute)> scanAttr,
                                        function_ref<void(Type)> scanType) {}
+
+/// If the specified operation is non-null and contains parameters, collect
+/// them into the specified array.
+static void collectContextParameters(Operation *op,
+                                     SmallVector<ParamDeclAttr> &params) {
+  auto decl = dyn_cast_or_null<DeclInterface>(op);
+  if (!decl || isa<FuncInterface>(*decl))
+    return;
+  collectContextParameters(op->getParentOp(), params);
+  llvm::append_range(params, decl.getInputParams());
+}
+
+LITSignatureType LIT::FuncOp::getFullSignature() {
+  LITSignatureType signature = getSignature();
+
+  // Collect contextual params, if there are none, the full signature is the
+  // same as the local signature.
+  SmallVector<ParamDeclAttr> inputParams;
+  collectContextParameters(getOperation()->getParentOp(), inputParams);
+  if (inputParams.empty())
+    return signature;
+
+  return IndexRefRemapper::prependParams(signature, inputParams);
+}
 
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   auto context = builder.getContext();

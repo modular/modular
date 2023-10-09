@@ -454,7 +454,8 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
       llvm::append_range(paramDecls,
                          ::cast<DeclInterface>(op).getInputParams());
 
-    IndexRefRemapper remapper(paramDecls, {}, paramDecls.size());
+    IndexRefRemapper remapper(paramDecls, /*resultParams=*/{},
+                              paramDecls.size());
     SignatureType baseSig = func.getSignature();
     SmallVector<Type> inputParamTypes;
     for (ParamDeclAttr param : paramDecls)

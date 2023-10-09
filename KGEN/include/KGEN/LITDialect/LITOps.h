@@ -53,8 +53,8 @@ Type getSignatureUserResultType(SignatureType sigType, ArrayRef<Type> argTypes,
 /// KGEN does not since it cannot always have access to a symbol table.
 /// Specialize a signature type while rebinding the input parameter values to
 /// the expected input parameter types.
-std::pair<SignatureType, ParameterExprArrayAttr>
-getUnboundSpecializedSignature(SignatureType type,
+std::pair<LITSignatureType, ParameterExprArrayAttr>
+getUnboundSpecializedSignature(LITSignatureType type,
                                ParameterExprArrayAttr bindings);
 
 } // namespace LIT
