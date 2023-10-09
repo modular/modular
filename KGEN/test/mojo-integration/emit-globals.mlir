@@ -1,8 +1,8 @@
 // RUN: kgen -emit-llvm %s -o - | FileCheck %s
 
 // CHECK-DAG: @global_var = internal global float
-// CHECK-DAG: @llvm.global_ctors = appending global {{.*}} @global_init
-// CHECK-DAG: @llvm.global_dtors = appending global {{.*}} @global_dtor
+// CHECK-DAG: @llvm.global_ctors = appending global {{.*}} @KGEN_EE_JIT_GlobalConstructor
+// CHECK-DAG: @llvm.global_dtors = appending global {{.*}} @KGEN_EE_JIT_GlobalDestructor
 
 kgen.func @global_init() {
   kgen.return

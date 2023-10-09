@@ -439,9 +439,20 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
 
   for (auto &[name, symbol] : exports) {
     symbols[mangler(name)] =
-        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
+        (symbol.isData ? llvm::JITSymbolFlags::None
+                       : llvm::JITSymbolFlags::Callable) |
+        llvm::JITSymbolFlags::Exported |
         (symbol.kind == ExportKind::Weak ? llvm::JITSymbolFlags::Weak
                                          : llvm::JITSymbolFlags::None);
+  }
+
+  if (baseLayer.getRawCompiler().getIsJIT()) {
+    symbols[mangler(ExecutionEngine::getGlobalCtorFnName())] =
+        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
+        llvm::JITSymbolFlags::Weak;
+    symbols[mangler(ExecutionEngine::getGlobalDtorFnName())] =
+        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported |
+        llvm::JITSymbolFlags::Weak;
   }
 
   return {std::move(symbols), /*InitSymbol=*/nullptr};

@@ -4,17 +4,32 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo %s | FileCheck %s
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo --parsing-stdlib -debug-level full %s | FileCheck %s
+# RUN: %mojo build --parsing-stdlib %s -o %t
+# RUN: %t | FileCheck %s
 
-# COM: This test will pass when https://reviews.llvm.org/D154802 lands.
-# XFAIL: system-linux
+
+@register_passable("trivial")
+struct ThreeInts:
+    var x: Int
+    var y: Int
+    var z: Int
+
+    fn __init__() -> Self:
+        return Self {x: 0, y: 0, z: 0}
 
 
 struct OwnedInt:
     var value: Int
 
-    fn __init__(inout self, value: Int):
+    fn __init__(inout self, value: Int, inout ints: ThreeInts):
+        if ints.x == 0:
+            ints.x = value
+        elif ints.y == 0:
+            ints.y = value
+        elif ints.z == 0:
+            ints.z = value
+
         print("got initialized:", value)
         self.value = value
 
@@ -22,28 +37,23 @@ struct OwnedInt:
         print("got deleted: ", self.value)
 
 
-var x = OwnedInt(10)
-let y = OwnedInt(20)
+var ints = ThreeInts()
 
-
-fn mutate(inout reff: OwnedInt):
-    reff.value += 5
-    x.value = y.value + reff.value
+let x = OwnedInt(10, ints)
+let y = OwnedInt(x.value + 20, ints)
+let z = OwnedInt(y.value + 30, ints)
 
 
 fn main():
-    # CHECK-LABEL: === test_globals
-    print("=== test_globals")
-    # CHECK-NEXT: x: 10
-    print("x:", x.value)
-    # CHECK-NEXT: y: 20
-    print("y:", y.value)
-    mutate(x)
-    # CHECK-NEXT: x: 35
-    print("x:", x.value)
-    # CHECK-NEXT: x: 60
-    mutate(x)
-    print("x:", x.value)
-    # FIXME(#16605): Global destructors don't work in JIT mode.
-    # XCHECK-NEXT: got deleted: 60
-    # XCHECK-NEXT: got deleted: 20
+    # CHECK: got initialized: 10
+    # CHECK-NEXT: got initialized: 30
+    # CHECK-NEXT: got initialized: 60
+
+    # CHECK: 10 30 60
+    print(x.value, y.value, z.value)
+    # CHECK: 10 30 60
+    print(ints.x, ints.y, ints.z)
+
+    # CHECK-NEXT: got deleted: 60
+    # CHECK-NEXT: got deleted: 30
+    # CHECK-NEXT: got deleted: 10

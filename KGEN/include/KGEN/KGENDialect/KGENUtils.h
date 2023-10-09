@@ -24,9 +24,13 @@ class FuncInterface;
 
 /// This struct represents the data for an exported symbol.
 struct ExportedSymbol {
-  ExportedSymbol(ExportKind kind) : kind(kind) {}
+  ExportedSymbol(ExportKind kind, bool isData = false)
+      : kind(kind), isData(isData) {}
 
+  /// The export kind of the symbol.
   ExportKind kind;
+  /// True if the symbol is a global variable.
+  bool isData;
 };
 
 /// This type is a bit of a mouthful, add a useful alias for it.

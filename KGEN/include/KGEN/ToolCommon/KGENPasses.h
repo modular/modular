@@ -174,9 +174,15 @@ struct LowerToLLVMOptions
       llvm::cl::desc("The name of the aligned free function"),
       llvm::cl::init("kgenAlignedFree")};
 
-  Option<bool> isJIT{
-      *this, "is-jit",
-      llvm::cl::desc("True if the module is being compiled for JIT mode.")};
+  Option<std::string> globalCtorFnName{
+      *this, "global-ctor-fn-name",
+      llvm::cl::desc("The name of the global init function in JIT mode."),
+      llvm::cl::init("kgenGlobalCtor")};
+
+  Option<std::string> globalDtorFnName{
+      *this, "global-dtor-fn-name",
+      llvm::cl::desc("The name of the global deinit function in JIT mode"),
+      llvm::cl::init("kgenGlobalDtor")};
 };
 
 /// Build the pass pipeline to convert post-elaboration KGEN IR to LLVM IR.

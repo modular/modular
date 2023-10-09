@@ -938,8 +938,7 @@ ErrorOrSuccess ElaboratorImpl::evaluateFunctions(ImplNode *inode,
   });
 
   // Cheeky copy. The state of the symbol right at this moment is sufficient to
-  // produce a standalone object for the functions being JIT'd. Acquiring a lock
-  // on the symbol table for the duration of evaluation will deadlock.
+  // produce a standalone object for the functions being JIT'd.
   SymbolTable symtabCopy = symtab.read(
       [](const SymbolTable &symtab) -> SymbolTable { return symtab; });
   ErrorOr<ElaboratorSearchFn> searchFn =

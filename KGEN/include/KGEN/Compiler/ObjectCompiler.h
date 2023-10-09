@@ -103,6 +103,9 @@ public:
   /// Configure the object compiler to be used for search.
   void setForSearch(bool useForSearch) { isSearch = useForSearch; }
 
+  /// Get whether compilation is for JIT.
+  bool getIsJIT() const { return isJIT; }
+
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,

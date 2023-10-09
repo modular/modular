@@ -216,11 +216,10 @@ public:
       // symbols into the same split.
       splitValue(&global);
     }
-    for (auto &fn : mainModule.functions()) {
-      if (fn.isDeclaration() || !fn.hasExternalLinkage())
-        continue;
-      splitValue(&fn);
-    }
+    for (auto &fn : mainModule.functions())
+      if (!fn.isDeclaration() &&
+          (fn.hasExternalLinkage() || fn.hasWeakLinkage()))
+        splitValue(&fn);
 
     // If we had no functions to split, just process the main module.
     if (splitModules.empty())
@@ -495,8 +494,7 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
 
       // If we are saving the temp files we don't want to split.
       bool savingTemps = !options.saveTempsPrefix.empty();
-      // HACK HACK HACK
-      // If we are generating PTX we don't want to split.
+      // HACK: If we are generating PTX we don't want to split.
       bool generatingPtx =
           options.targetTriple.find("nvptx") != std::string::npos;
 
@@ -640,16 +638,9 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
         chain.andThenAsync([this, nonBitcodeKeySize, loc,
                             output = output.copy(), keyBuf = std::move(keyBuf),
                             buf = buf.copy()]() mutable {
-    // Extract out the bitcode from the key, as LLVM bitcode dies if the
-    // buffer contains other data.
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
-#endif
-          StringRef bitcodeBuffer = ((BufferRef &)(keyBuf))->getBuffer();
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
+          // Extract out the bitcode from the key, as LLVM bitcode dies if the
+          // buffer contains other data.
+          StringRef bitcodeBuffer = BufferRef(std::move(keyBuf))->getBuffer();
           bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
 
           // Load the cached bytecode into a new context. This is necessary to
@@ -674,9 +665,8 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
           // Set the data layout on the module.
           module->setDataLayout((*machineOr)->createDataLayout());
 
-          // HACK HACK HACK
-          // Some targets like PTX don't support object files so can only emit
-          // assembly.
+          // HACK: Some targets like PTX don't support object files so can only
+          // emit assembly.
           bool emitAssembly =
               (*machineOr)->getTargetTriple().str().find("nvptx") !=
               std::string::npos;
