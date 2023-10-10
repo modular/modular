@@ -78,8 +78,7 @@ ParseResult M::parseParenOperandListWithDefaultType(OpAsmParser &parser,
     OpAsmParser::UnresolvedOperand unresolvedOperand;
 
     // Parse the input operand.
-    if (parser.parseOperand(unresolvedOperand,
-                            /*allowResultNumber=*/false))
+    if (parser.parseOperand(unresolvedOperand))
       return failure();
 
     // Parse optional type annotation
