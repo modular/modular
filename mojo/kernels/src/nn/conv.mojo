@@ -130,6 +130,7 @@ struct Naive2dConvolution[
                 with assumed tuple def (StrideH, StrideW).
             dilation: Dilations on height and width
                 dimensions with assumed tuple def (dilation_h, dilation_w).
+            num_groups: The number of groups in the convolution.
         """
         # Create an instance of the convolution op.
         let naive2d_convolution = Naive2dConvolution[
@@ -174,6 +175,7 @@ struct Naive2dConvolution[
                 with assumed tuple def (StrideH, StrideW).
             dilation: Dilations on height and width dimensi-
                 ons with assumed tuple def (dilation_h, dilation_w).
+            num_groups: The number of groups in the convolution.
         """
         # Register input/output buffers and parameters.
         self.output = output
@@ -4439,6 +4441,7 @@ fn pack_conv_filter_shape[
 
     Args:
         filter_buf: The filter to be packed.
+        num_groups: The number of groups in the convolution.
 
     Returns:
         The output shape.
@@ -4632,8 +4635,8 @@ fn pack_conv_filter[
 ](
     filter: NDBuffer[4, DimList.create_unknown[4](), type],
     packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
-    out_chain: OutputChainPtr,
     num_groups: Int,
+    out_chain: OutputChainPtr,
 ):
     """This packs the filter form RSCF to FRSCf.
 
@@ -4643,6 +4646,7 @@ fn pack_conv_filter[
             F       - the index of continuous segments in micro kernel.
             R, S, C - original R, S, C.
             f       - the index within a continuous segments.
+        num_groups: The number of groups in the convolution.
         out_chain: Chain to signal when writes to `packed_filter` have finished.
     """
     pack_filter(filter, packed_filter, num_groups)
