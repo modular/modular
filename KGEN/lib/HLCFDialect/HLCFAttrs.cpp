@@ -32,7 +32,7 @@ static ParseResult parseUnrollLevel(AsmParser &p,
     return success();
   }
   llvm::SMLoc loc = p.getCurrentLocation();
-  int32_t value;
+  int32_t value = 0;
   OptionalParseResult result = p.parseOptionalInteger(value);
   if (!result.has_value())
     return p.emitError(loc, "expected 'none', 'full', or a positive integer");
