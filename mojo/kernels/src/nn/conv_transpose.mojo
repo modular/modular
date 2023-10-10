@@ -124,3 +124,100 @@ fn conv_transpose[
                                         + input[n, i, j, c] * kernel[r, s, c, f]
                                     )
     out_chain.mark_ready()
+
+
+@always_inline
+fn conv_transpose_shape[
+    input_rank: Int,
+    kernel_rank: Int,
+    type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    pads_type: DType,
+    output_pads_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[
+        input_rank,
+        DimList.create_unknown[input_rank](),
+        type,
+    ],
+    kernel: NDBuffer[
+        kernel_rank,
+        DimList.create_unknown[kernel_rank](),
+        type,
+    ],
+    strides: NDBuffer[1, DimList.create_unknown[1](), strides_type],
+    dilations: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
+    pads: NDBuffer[1, DimList.create_unknown[1](), pads_type],
+    output_pads: NDBuffer[1, DimList.create_unknown[1](), output_pads_type],
+) -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `conv-transpose` operation, and assert the
+    inputs are compatible.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        kernel_rank: Rank of the kernel tensor.
+        type: Element type of the input and kernel tensor.
+        strides_type: Element type of the strides tensor.
+        dilations_type: Element type of the dilations tensor.
+        pads_type: Element type of the pads tensor.
+        output_pads_type: Element type of the output_pads tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input: The input tensor.
+        kernel: The kernel tensor.
+        strides: The strides tensor.
+        dilations: The dilations tensor.
+        pads: The paddings tensor.
+        output_pads: The output paddings tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # TODO(#17512)
+    debug_assert(input_rank == 4, "input rank must be 4")
+    debug_assert(input_rank == kernel_rank, "input rank must match kernel rank")
+    debug_assert(
+        strides.dim(0) == input_rank - 2 and dilations.dim(0) == input_rank - 2,
+        "strides and dilations size must be input rank - 2",
+    )
+    debug_assert(
+        pads.dim(0) == 2 * (input_rank - 2),
+        "paddings size must be 2 * (input rank - 2)",
+    )
+
+    # Assume input has layout NHWC
+    let batch_size = input.dim(0)
+    let input_channels = input.dim(3)
+
+    # Assume kernel has layout RSCF, the output channel is C because this is a
+    # convolution transpose shape function (inverse of regular convolution).
+    let output_channels = kernel.dim(2)
+
+    # compute and return the output shape
+    let output_height = (
+        strides[0].to_int() * (input.dim(1) - 1)
+        + output_pads[0].to_int()
+        + ((kernel.dim(0) - 1) * dilations[0].to_int() + 1)
+        - pads[PADS_H_START].to_int()
+        - pads[PADS_H_END].to_int()
+    )
+    let output_width = (
+        strides[1].to_int() * (input.dim(2) - 1)
+        + output_pads[1].to_int()
+        + ((kernel.dim(1) - 1) * dilations[1].to_int() + 1)
+        - pads[PADS_W_START].to_int()
+        - pads[PADS_W_END].to_int()
+    )
+
+    var output_shape = StaticIntTuple[input_rank]()
+    output_shape[0] = batch_size
+    output_shape[1] = output_height
+    output_shape[2] = output_width
+    output_shape[3] = output_channels
+
+    return output_shape
