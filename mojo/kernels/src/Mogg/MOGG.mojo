@@ -2147,9 +2147,7 @@ fn scatter_nd[
         updates_rank, DimList.create_unknown[updates_rank](), output_type
     ],
     indices: NDBuffer[
-        indices_rank,
-        DimList.create_unknown[indices_rank](),
-        indices_type,
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
     output: NDBuffer[
         output_rank, DimList.create_unknown[output_rank](), output_type
@@ -2159,11 +2157,11 @@ fn scatter_nd[
     return _scatter_nd[
         output_type,
         indices_type,
-        updates_rank,
-        indices_rank,
         output_rank,
+        indices_rank,
+        updates_rank,
         single_thread_blocking_override,
-    ](input, updates, indices, output, out_chain)
+    ](input, indices, updates, output, out_chain)
 
 
 @always_inline
@@ -2192,20 +2190,20 @@ fn scatter_nd_add[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn reduce_func(
-        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
-    ) -> SIMD[output_type, 1]:
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs + rhs
 
     scatter_nd_generator[
+        reduce_func,
         output_type,
         indices_type,
-        updates_rank,
-        indices_rank,
         output_rank,
+        indices_rank,
+        updates_rank,
         single_thread_blocking_override,
-        reduce_func,
-    ](input, updates, indices, output, out_chain)
+    ](input, indices, updates, output, out_chain)
 
 
 @always_inline
@@ -2234,20 +2232,20 @@ fn scatter_nd_max[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn reduce_func(
-        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
-    ) -> SIMD[output_type, 1]:
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.max(rhs)
 
     scatter_nd_generator[
+        reduce_func,
         output_type,
         indices_type,
-        updates_rank,
-        indices_rank,
         output_rank,
+        indices_rank,
+        updates_rank,
         single_thread_blocking_override,
-        reduce_func,
-    ](input, updates, indices, output, out_chain)
+    ](input, indices, updates, output, out_chain)
 
 
 @always_inline
@@ -2276,20 +2274,20 @@ fn scatter_nd_min[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn reduce_func(
-        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
-    ) -> SIMD[output_type, 1]:
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.min(rhs)
 
     scatter_nd_generator[
+        reduce_func,
         output_type,
         indices_type,
-        updates_rank,
-        indices_rank,
         output_rank,
+        indices_rank,
+        updates_rank,
         single_thread_blocking_override,
-        reduce_func,
-    ](input, updates, indices, output, out_chain)
+    ](input, indices, updates, output, out_chain)
 
 
 @always_inline
@@ -2318,20 +2316,20 @@ fn scatter_nd_mul[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn reduce_func(
-        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
-    ) -> SIMD[output_type, 1]:
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs * rhs
 
     scatter_nd_generator[
+        reduce_func,
         output_type,
         indices_type,
-        updates_rank,
-        indices_rank,
         output_rank,
+        indices_rank,
+        updates_rank,
         single_thread_blocking_override,
-        reduce_func,
-    ](input, updates, indices, output, out_chain)
+    ](input, indices, updates, output, out_chain)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
