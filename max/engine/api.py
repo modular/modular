@@ -35,6 +35,14 @@ class TensorFlowLoadOptions:
     exported_name: str = field(default="serving_default")
     """The exported name from the TensorFlow model's signature."""
 
+    type: str = "tf"
+
+
+@dataclass
+class ExperimentalLoadOptions:
+    """Base class for experimental load options.
+    These are for internal use only."""
+
 
 class Model:
     """A loaded model that you can execute.
@@ -260,17 +268,6 @@ class TensorSpec:
         return self._impl.name
 
 
-@dataclass
-class TorchLoadOptions:
-    """Configures how to load PyTorch models."""
-
-    input_specs: List[TensorSpec] = field(default_factory=list)
-    """The tensor specifications (shape and data type) for each of the
-    model inputs. Required for lowering serialized TorchScript models which
-    have no type and shape annotations.
-    """
-
-
 def _unwrap_pybind_objects_dict_factory(
     data: List[Tuple[str, Any]]
 ) -> Dict[str, Any]:
@@ -328,7 +325,7 @@ class InferenceSession:
         self,
         model_path: Union[str, Path],
         options: Optional[
-            Union[TensorFlowLoadOptions, TorchLoadOptions]
+            Union[TensorFlowLoadOptions, ExperimentalLoadOptions]
         ] = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
@@ -339,7 +336,7 @@ class InferenceSession:
             Path to a model. May be a TensorFlow model in the SavedModel
             format or a traceable PyTorch model.
 
-        options: Union[TensorFlowLoadOptions, TorchLoadOptions]
+        options: Union[TensorFlowLoadOptions, ExperimentalLoadOptions]
             Load options for configuring how the model should be compiled.
 
         Returns
@@ -361,11 +358,9 @@ class InferenceSession:
             options_dict = asdict(
                 options, dict_factory=_unwrap_pybind_objects_dict_factory
             )
-            if isinstance(options, TensorFlowLoadOptions):
-                options_dict["type"] = "tf"
-            elif isinstance(options, TorchLoadOptions):
-                options_dict["type"] = "torch"
-            else:
+            if not isinstance(
+                options, TensorFlowLoadOptions
+            ) and not isinstance(options, ExperimentalLoadOptions):
                 raise TypeError("Invalid compilation options object.")
 
         model_path = Path(str(model_path))
