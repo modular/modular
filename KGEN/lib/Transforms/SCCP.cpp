@@ -59,7 +59,11 @@ public:
 private:
   /// ConstantValue lattice states for ControlFlow type of nodes.
   struct ControlFlowOperationState {
+    /// work list for analyzing loops, each item in the list is possible
+    /// constant values mapped to the inputs to each loop iteration.
     std::queue<SmallVector<Attribute>> entryStates;
+
+    /// Lattice for op results that will be updated by ControlFlowTerminators.
     ConstantStateType exitStates;
   };
 
@@ -72,15 +76,16 @@ private:
                                     ConstantStateType &state);
 
   /// Visit a general operation to apply the transform function.
-  LogicalResult visitOperation(mlir::Operation *op, ConstantStateType &state);
+  static LogicalResult visitOperation(mlir::Operation *op,
+                                      ConstantStateType &state);
 
   /// Get the lattice element for value from state.
   static ConstantState *getLatticeElement(Value value,
                                           ConstantStateType &state);
 
   /// Get the lattice elements for op's operands.
-  static void getOperandsLattice(SmallVectorImpl<Attribute> &attributes,
-                                 Operation *op, ConstantStateType &state);
+  static void getValuesLattice(SmallVectorImpl<Attribute> &attributes,
+                               ValueRange value, ConstantStateType &state);
 
   /// Set state to Unknown.
   static void setToEntryState(ConstantState *state);
@@ -97,7 +102,7 @@ private:
                                   ConstantStateType &state);
 
   /// Update parentOp's exit states.
-  static void updateParentOpOutputState(HLCF::ControlFlowTerminator term,
+  static void updateParentOpOutputState(ValueRange termValues,
                                         Operation *parentOp,
                                         ConstantStateType &termState,
                                         ConstantStateType &parentOutputState);
@@ -124,6 +129,17 @@ private:
 
 } // namespace
 
+/// Print lattice content for debugging.
+static void printState(SCCPAnalysis::ConstantStateType &state,
+                       llvm::raw_ostream &os) {
+  for (auto &[value, lattice] : state) {
+    os << "============================\n";
+    os << "value: " << value << "\n";
+    lattice.print(os);
+    os << "\n";
+  }
+}
+
 ChangeResult SCCPAnalysis::joinStates(ConstantStateType &lhs,
                                       ConstantStateType &rhs) {
   ChangeResult changed = ChangeResult::NoChange;
@@ -135,8 +151,8 @@ ChangeResult SCCPAnalysis::joinStates(ConstantStateType &lhs,
   return changed;
 }
 
-ChangeResult SCCPAnalysis::mergeStates(SCCPAnalysis::ConstantStateType &current,
-                                       SCCPAnalysis::ConstantStateType &state) {
+ChangeResult SCCPAnalysis::mergeStates(ConstantStateType &current,
+                                       ConstantStateType &state) {
   ChangeResult changed = ChangeResult::NoChange;
   for (auto &[value, lattice] : state) {
     ConstantState *lattice0 = getLatticeElement(value, current);
@@ -154,9 +170,10 @@ SCCPAnalysis::getLatticeElement(Value value, ConstantStateType &state) {
   return &iter->getSecond();
 }
 
-void SCCPAnalysis::getOperandsLattice(SmallVectorImpl<Attribute> &attributes,
-                                      Operation *op, ConstantStateType &state) {
-  for (Value value : op->getOperands()) {
+void SCCPAnalysis::getValuesLattice(SmallVectorImpl<Attribute> &attributes,
+                                    ValueRange values,
+                                    ConstantStateType &state) {
+  for (auto value : values) {
     ConstantState *lattice = getLatticeElement(value, state);
     assert(!lattice->getValue().isUninitialized() &&
            "All operands should have initialized lattice value.");
@@ -176,7 +193,7 @@ void SCCPAnalysis::setAllToEntryStates(ArrayRef<ConstantState *> states) {
 LogicalResult SCCPAnalysis::visitOperation(mlir::Operation *op,
                                            ConstantStateType &state) {
   SmallVector<Attribute> constantOperands;
-  getOperandsLattice(constantOperands, op, state);
+  getValuesLattice(constantOperands, op->getOperands(), state);
 
   SmallVector<ConstantState *> results;
   for (Value result : op->getResults())
@@ -227,6 +244,11 @@ LogicalResult SCCPAnalysis::visitOperation(mlir::Operation *op,
 int64_t SCCPAnalysis::getLoopConvergeThreshold(Operation *op) {
   // TODO: use decorator or more sophisticated heuristics to set per loop
   // threshold.
+  if (auto forOp = dyn_cast<HLCF::ForOp>(op); forOp && forOp.getTripCount()) {
+    // Use trip count as threshold for a for-loop.
+    return forOp.getTripCount().value();
+  }
+
   if (optimizationLevel < 2)
     return 100;
   else
@@ -236,12 +258,13 @@ int64_t SCCPAnalysis::getLoopConvergeThreshold(Operation *op) {
 void SCCPAnalysis::processControlFlowNode(HLCF::ControlFlowNode node,
                                           ConstantStateType &state,
                                           bool &shouldContinue) {
-  // TODO: Add support for other ControlFlowNode, e.g. hlcf.for, etc.
+  // TODO: Add support for other ControlFlowNode, e.g. kgen.try, etc.
   // TODO: This function should work more generally for ControlFlowInterfaces.
-  if (auto ifOp = dyn_cast<HLCF::IfOp>(node.getOperation())) {
+  if (isa<HLCF::IfOp, HLCF::SwitchOp>(node.getOperation())) {
     // TODO: extend this logic to SwitchOp.
     SmallVector<Attribute> constantOperands;
-    getOperandsLattice(constantOperands, node.getOperation(), state);
+    getValuesLattice(constantOperands, node.getOperation()->getOperands(),
+                     state);
     SmallVector<HLCF::ControlFlowTarget> targets;
     node.getEntryTargets(constantOperands, targets);
 
@@ -265,18 +288,21 @@ void SCCPAnalysis::processControlFlowNode(HLCF::ControlFlowNode node,
         }
       }
     }
-    mergeStates(state, controlFlowOperationStates[ifOp].exitStates);
-    controlFlowOperationStates.erase(ifOp);
+    mergeStates(state,
+                controlFlowOperationStates[node.getOperation()].exitStates);
+    controlFlowOperationStates.erase(node.getOperation());
     return;
   }
 
-  if (HLCF::LoopOp loop = dyn_cast<HLCF::LoopOp>(node.getOperation())) {
+  if (isa<HLCF::LoopOp, HLCF::ForOp>(node.getOperation())) {
+    Operation *op = node.getOperation();
     // Prepare for initial loop inputs.
     SmallVector<Attribute> constantOperands;
-    getOperandsLattice(constantOperands, node.getOperation(), state);
+    getValuesLattice(constantOperands, node.getOperation()->getOperands(),
+                     state);
 
     // Prepare the workList for analyzing the loop.
-    ControlFlowOperationState &cfStates = controlFlowOperationStates[loop];
+    ControlFlowOperationState &cfStates = controlFlowOperationStates[op];
     std::queue<SmallVector<Attribute>> &workList = cfStates.entryStates;
     workList.push(constantOperands);
 
@@ -284,7 +310,8 @@ void SCCPAnalysis::processControlFlowNode(HLCF::ControlFlowNode node,
     ConstantStateType currState = state;
     ConstantStateType mergedState = state;
 
-    SmallVector<Attribute> &inputValues = currentLoopInputs[loop];
+    SmallVector<Attribute> &inputValues =
+        currentLoopInputs[node.getOperation()];
 
     while (!workList.empty() &&
            iter < getLoopConvergeThreshold(node.getOperation())) {
@@ -294,17 +321,18 @@ void SCCPAnalysis::processControlFlowNode(HLCF::ControlFlowNode node,
       ConstantStateType nestedState = currState;
       bool shouldJoin = true;
       // Prepare for input arguments for this iteration.
-      for (auto [inputValue, blockArg] :
-           llvm::zip(inputValues, loop.getRegion().front().getArguments())) {
+      for (auto [inputValue, blockArg] : llvm::zip(
+               inputValues, op->getRegions().front().front().getArguments())) {
         ConstantState *lattice = getLatticeElement(blockArg, nestedState);
         if (!inputValue)
           setToEntryState(lattice);
         else
-          lattice->join(ConstantValue(inputValue, loop->getDialect()));
+          lattice->join(ConstantValue(inputValue, op->getDialect()));
       }
 
       // Process loop body.
-      (void)processRegion(loop.getRegion(), nestedState, shouldJoin, false);
+      (void)processRegion(op->getRegions().front(), nestedState, shouldJoin,
+                          false);
 
       // Each loop iteration should run with clean state for values in the
       // scope of the loop body. Only join nestedState (result of current
@@ -331,8 +359,8 @@ void SCCPAnalysis::processControlFlowNode(HLCF::ControlFlowNode node,
     }
     // Clean up states (which is being updated by this op's terminators) when
     // analyzing is done.
-    controlFlowOperationStates.erase(loop);
-    currentLoopInputs.erase(loop);
+    controlFlowOperationStates.erase(op);
+    currentLoopInputs.erase(op);
     return;
   }
 
@@ -343,10 +371,10 @@ void SCCPAnalysis::processControlFlowNode(HLCF::ControlFlowNode node,
 }
 
 void SCCPAnalysis::updateParentOpOutputState(
-    HLCF::ControlFlowTerminator term, Operation *parentOp,
-    ConstantStateType &termState, ConstantStateType &parentOutputState) {
+    ValueRange termValues, Operation *parentOp, ConstantStateType &termState,
+    ConstantStateType &parentOutputState) {
   for (auto [operand, opResult] :
-       llvm::zip(term.getOperation()->getOperands(), parentOp->getResults())) {
+       llvm::zip(termValues, parentOp->getResults())) {
     ConstantState *lattice0 = getLatticeElement(operand, termState);
     ConstantState *lattice1 = getLatticeElement(opResult, parentOutputState);
     lattice1->join(*lattice0);
@@ -354,16 +382,16 @@ void SCCPAnalysis::updateParentOpOutputState(
 }
 
 void SCCPAnalysis::processControlFlowTerminator(
-    HLCF::ControlFlowTerminator term, ConstantStateType &state) {
-
-  // TODO: Add support for other ControlFlowTerminators, e.g. hlcf.for.yield,
-  // kgen.return, etc.
+    HLCF::ControlFlowTerminator term, ConstantStateType &termState) {
+  // TODO: Add support for other ControlFlowTerminators, e.g. kgen.return, etc.
   if (auto breakOp = dyn_cast<HLCF::BreakOp>(term.getOperation())) {
     Operation *parentLoop = HLCF::getParentNode(term);
     // Update parent loop's exit state.
-    ControlFlowOperationState &states = controlFlowOperationStates[parentLoop];
-    ConstantStateType &outputState = states.exitStates;
-    updateParentOpOutputState(term, parentLoop, state, outputState);
+    ControlFlowOperationState &cfOpStates =
+        controlFlowOperationStates[parentLoop];
+
+    updateParentOpOutputState(term->getOperands(), parentLoop, termState,
+                              cfOpStates.exitStates);
     return;
   }
 
@@ -371,31 +399,54 @@ void SCCPAnalysis::processControlFlowTerminator(
     auto parentLoop = HLCF::getParentNode(term);
     // Prepare new inputs for parent loop.
     SmallVector<Attribute> constantOperands;
-    getOperandsLattice(constantOperands, term.getOperation(), state);
+    getValuesLattice(constantOperands, term.getOperation()->getOperands(),
+                     termState);
 
-    ControlFlowOperationState &states = controlFlowOperationStates[parentLoop];
-
+    ControlFlowOperationState &cfOpStates =
+        controlFlowOperationStates[parentLoop];
     // Only push the new inputs if it is different from current one.
     if (constantOperands != currentLoopInputs[parentLoop])
-      states.entryStates.push(constantOperands);
+      cfOpStates.entryStates.push(constantOperands);
 
     return;
   }
 
   if (auto yieldOp = dyn_cast<HLCF::YieldOp>(term.getOperation())) {
     Operation *parentOp = HLCF::getParentNode(term);
-
-    ControlFlowOperationState &states = controlFlowOperationStates[parentOp];
+    ControlFlowOperationState &cfOpstates =
+        controlFlowOperationStates[parentOp];
     // update parent op's exit state
-    ConstantStateType &outputState = states.exitStates;
-    updateParentOpOutputState(term, parentOp, state, outputState);
+    updateParentOpOutputState(term->getOperands(), parentOp, termState,
+                              cfOpstates.exitStates);
+    return;
+  }
+
+  if (auto forYieldOp = dyn_cast<HLCF::ForYieldOp>(term.getOperation())) {
+    Operation *parentOp = HLCF::getParentNode(term);
+    SmallVector<Attribute> constantOperands;
+    getValuesLattice(constantOperands, forYieldOp.getOperation()->getOperands(),
+                     termState);
+    SmallVector<HLCF::ControlFlowTarget> targets;
+    forYieldOp.getBranchTargets(constantOperands, targets);
+    ControlFlowOperationState &cfOpstates =
+        controlFlowOperationStates[parentOp];
+
+    for (auto target : targets) {
+      if (target.index) {
+        // Branch back to for-loop body.
+        // Only push the new inputs if it is different from current one.
+        if (constantOperands != currentLoopInputs[parentOp])
+          cfOpstates.entryStates.push(constantOperands);
+      } else
+        updateParentOpOutputState(forYieldOp.getReturnValues(), parentOp,
+                                  termState, cfOpstates.exitStates);
+    }
     return;
   }
 
   // Otherwise, mark all results as Unknown.
-  for (Value r : term.getOperation()->getResults()) {
-    setToEntryState(getLatticeElement(r, state));
-  }
+  for (Value result : term.getOperation()->getResults())
+    setToEntryState(getLatticeElement(result, termState));
 }
 
 LogicalResult SCCPAnalysis::processRegion(Region &region,
@@ -525,17 +576,6 @@ void SCCPAnalysis::rewrite(ConstantStateType &state, MLIRContext *context,
     builder.setInsertionPointToStart(block);
     for (BlockArgument arg : block->getArguments())
       (void)replaceWithConstant(state, builder, folder, arg);
-  }
-}
-
-/// Print lattice content for debugging.
-static void printState(SCCPAnalysis::ConstantStateType &state,
-                       llvm::raw_ostream &os) {
-  for (auto iter : state) {
-    os << "============================\n";
-    os << "value: " << iter.getFirst() << "\n";
-    iter.getSecond().print(os);
-    os << "\n";
   }
 }
 

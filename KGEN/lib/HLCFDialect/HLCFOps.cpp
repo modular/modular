@@ -484,13 +484,47 @@ void ForYieldOp::getBranchTargets(ArrayRef<Attribute> operands,
                                   SmallVectorImpl<ControlFlowTarget> &targets) {
 
   assert(operands.size() == getNumOperands());
-
   ForOp forLoop = this->getParentOp<ForOp>();
-  // Branch to the beginning of the body region.
-  targets.emplace_back(0, getOperands());
-  // Though `hlcf.for.yield` can exit when iter count meets upperbound.
-  targets.emplace_back(std::nullopt, getOperands().drop_front().take_front(
-                                         forLoop.getNumResults()));
+  IntegerAttr iter;
+  if (!operands.empty())
+    iter = dyn_cast_or_null<IntegerAttr>(operands.front());
+
+  auto upperBound = forLoop.getUpperBoundAsInt();
+  auto step = forLoop.getStepAsInt();
+  if (!iter || !upperBound || !step) {
+    // Branch to the beginning of the body region.
+    targets.emplace_back(0, getOperands());
+    // Though `hlcf.for.yield` can exit when iter count meets upperbound.
+    targets.emplace_back(std::nullopt, getOperands().drop_front().take_front(
+                                           forLoop.getNumResults()));
+    return;
+  }
+
+  HLCF::ForLoopBoundCmpPredicate pred = forLoop.getCmpPredicateType();
+  HLCF::ForLoopIndVarCompute opType = forLoop.getIndVarComputeType();
+
+  bool continueFor = (step.value() > 0 && iter.getInt() < upperBound.value() &&
+                      opType == HLCF::ForLoopIndVarCompute::ADD) ||
+                     (step.value() < 0 && iter.getInt() > upperBound.value() &&
+                      opType == HLCF::ForLoopIndVarCompute::ADD) ||
+                     (step.value() < 0 && iter.getInt() < upperBound.value() &&
+                      opType == HLCF::ForLoopIndVarCompute::SUB) ||
+                     (step.value() > 0 && iter.getInt() > upperBound.value() &&
+                      opType == HLCF::ForLoopIndVarCompute::SUB);
+
+  continueFor |= (iter.getInt() == upperBound.value() &&
+                  pred == HLCF::ForLoopBoundCmpPredicate::SGE) ||
+                 (iter.getInt() == upperBound.value() &&
+                  pred == HLCF::ForLoopBoundCmpPredicate::SLE);
+
+  if (continueFor) {
+    // Branch to the beginning of the body region if continues.
+    targets.emplace_back(0, getOperands());
+  } else {
+    // Though `hlcf.for.yield` can exit when iter count meets upperbound.
+    targets.emplace_back(std::nullopt, getOperands().drop_front().take_front(
+                                           forLoop.getNumResults()));
+  }
 }
 
 ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
@@ -511,9 +545,23 @@ ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
   if (!step)
     return ErrorTree(getLoc(), "non-integer parent for-loop step.");
 
+  HLCF::ForLoopBoundCmpPredicate pred = forLoop.getCmpPredicateType();
+  HLCF::ForLoopIndVarCompute opType = forLoop.getIndVarComputeType();
+
   bool continueFor =
-      (step.getInt() > 0 && iter.getInt() < upperBound.getInt()) ||
-      (step.getInt() < 0 && iter.getInt() > upperBound.getInt());
+      (step.getInt() > 0 && iter.getInt() < upperBound.getInt() &&
+       opType == HLCF::ForLoopIndVarCompute::ADD) ||
+      (step.getInt() < 0 && iter.getInt() > upperBound.getInt() &&
+       opType == HLCF::ForLoopIndVarCompute::ADD) ||
+      (step.getInt() < 0 && iter.getInt() < upperBound.getInt() &&
+       opType == HLCF::ForLoopIndVarCompute::SUB) ||
+      (step.getInt() > 0 && iter.getInt() > upperBound.getInt() &&
+       opType == HLCF::ForLoopIndVarCompute::SUB);
+
+  continueFor |= (iter.getInt() == upperBound.getInt() &&
+                  pred == HLCF::ForLoopBoundCmpPredicate::SGE) ||
+                 (iter.getInt() == upperBound.getInt() &&
+                  pred == HLCF::ForLoopBoundCmpPredicate::SLE);
 
   if (continueFor)
     state.transferControlFlowTo(&forLoop.getBody().front(), operands);
