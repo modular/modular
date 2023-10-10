@@ -26,7 +26,6 @@ from utils.optional_param import OptionalParamInt
 
 from memory import stack_allocation, memset_zero
 from MOGG import reshape
-from algorithm import elementwise
 
 
 ## gather_reduce_2D_axis_1
@@ -476,7 +475,6 @@ fn scatter_nd_generator[
         output: Tensor of rank data_rank, shaped the same as data tensor.
         out_chain: The OutputChainPtr used to mark competion or error of the task.
     """
-
     if data.get_shape() != output.get_shape():
         return out_chain.mark_error(
             "Input and output shapes in scatter_nd must be the same."
@@ -604,6 +602,7 @@ fn scatter_nd_generator[
     var iter_shape = StaticIntTuple[indices_rank - 1]()
     for i in range(len(indices.get_shape()) - 1):
         iter_shape[i] = indices.get_shape()[i]
+
     # Execute `elementwise()` synchronously because parametric closures capture
     # variables by reference without extending their lifetimes.
     let new_out_chain = OwningOutputChainPtr(out_chain.get_runtime())
