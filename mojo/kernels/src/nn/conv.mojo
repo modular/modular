@@ -4658,6 +4658,7 @@ fn conv_shape[
     strides_type: DType,
     dilations_type: DType,
     paddings_type: DType,
+    num_groups_type: DType,
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
@@ -4669,6 +4670,7 @@ fn conv_shape[
     strides_buf: NDBuffer[1, DimList.create_unknown[1](), strides_type],
     dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
     paddings_buf: NDBuffer[1, DimList.create_unknown[1](), paddings_type],
+    num_groups_buf: NDBuffer[1, DimList.create_unknown[1](), num_groups_type],
 ) -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `conv` operation, and assert the inputs are
@@ -4682,6 +4684,7 @@ fn conv_shape[
         strides_type: Type of the strides tensor.
         dilations_type: Type of the dilations tensor.
         paddings_type: Type of the paddings tensor.
+        num_groups_type: Type of the num_groups tensor.
         single_thread_blocking_override: Whether this function can block.
 
     Args:
@@ -4690,6 +4693,7 @@ fn conv_shape[
         strides_buf: The strides tensor.
         dilations_buf: The dilations tensor.
         paddings_buf: The paddings tensor.
+        num_groups_buf: The num_groups tensor.
 
     Returns:
         The output shape.
@@ -4713,13 +4717,19 @@ fn conv_shape[
     let input_channels = input_buf.dim(3)
     # Assume filter has layout RSCF
     let filter_channels = filter_buf.dim(2)
+    let num_groups = num_groups_buf[0].to_int()
     let output_channels = filter_buf.dim(3)
 
     # TODO(#17512)
     debug_assert(
-        input_channels == filter_channels,
-        "channel dimension of input and filter must match",
+        input_channels == (num_groups * filter_channels),
+        "input channels and groups times filter channels must match",
     )
+    debug_assert(
+        (output_channels % num_groups) == 0,
+        "output_channels must be divisible by the number of groups",
+    )
+
     # compute and return the output shape
     var output_shape = StaticIntTuple[input_rank]()
     output_shape[0] = batch_size
