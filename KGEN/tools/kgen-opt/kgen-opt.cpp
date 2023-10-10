@@ -220,6 +220,7 @@ int main(int argc, char **argv) {
   KGEN::registerTweakSpilledAllocas();
   KGEN::registerVerifyParameters();
   KGEN::registerLowerToLLVMPipeline();
+  KGEN::registerSCCP();
   KGEN::registerStripParserMetadata();
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();

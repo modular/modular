@@ -982,3 +982,22 @@ def AutomaticInline: Pass<"automatic-inline", "mlir::ModuleOp"> {
            "Specify the inner pipeline to use on functions.">
   ];
 }
+
+//===----------------------------------------------------------------------===//
+// SCCP
+//===----------------------------------------------------------------------===//
+
+def SCCP: Pass<"sccp", "mlir::ModuleOp"> {
+  let summary = "KGEN sparse conditional constant propagation pass";
+  let description = [{
+    Sparse conditional constant propagation.
+    This pass doesn't have inter-procedural support (yet).
+  }];
+
+  let options = [
+    Option<"optimizationLevel", "optimization-level", "unsigned", "1",
+           "Specify the compilation optimization level.">
+  ];
+
+  let dependentDialects = ["HLCF::HLCFDialect"];
+}
