@@ -4,9 +4,65 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
-from algorithm.sort import sort, partition
+from algorithm.sort import sort, partition, _small_sort
 
 from utils.vector import DynamicVector
+
+
+# CHECK-LABEL: test_sort_small_3
+fn test_sort_small_3():
+    print("== test_sort_small_3")
+    alias length = 3
+
+    var vector = DynamicVector[Int]()
+
+    vector.push_back(9)
+    vector.push_back(1)
+    vector.push_back(2)
+
+    @parameter
+    fn _less_than_equal[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Int](lhs) <= rebind[Int](rhs)
+
+    _small_sort[length, Int, _less_than_equal](vector.data)
+
+    # CHECK: 1
+    # CHECK: 2
+    # CHECK: 9
+    for i in range(length):
+        print(vector[i])
+
+    vector._del_old()
+
+
+# CHECK-LABEL: test_sort_small_5
+fn test_sort_small_5():
+    print("== test_sort_small_5")
+    alias length = 5
+
+    var vector = DynamicVector[Int]()
+
+    vector.push_back(9)
+    vector.push_back(1)
+    vector.push_back(2)
+    vector.push_back(3)
+    vector.push_back(4)
+
+    @parameter
+    fn _less_than_equal[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Int](lhs) <= rebind[Int](rhs)
+
+    _small_sort[length, Int, _less_than_equal](vector.data)
+
+    # CHECK: 1
+    # CHECK: 2
+    # CHECK: 3
+    # CHECK: 4
+    # CHECK: 9
+    for i in range(length):
+        print(vector[i])
+
+    vector._del_old()
 
 
 # CHECK-LABEL: test_sort0
@@ -305,6 +361,8 @@ fn test_partition_top_k(length: Int, k: Int):
 
 
 fn main():
+    test_sort_small_3()
+    test_sort_small_5()
     test_sort0()
     test_sort2()
     test_sort3()

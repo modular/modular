@@ -273,13 +273,13 @@ fn _sort_partial_3[
     let a = array.load(offset0)
     let b = array.load(offset1)
     let c = array.load(offset2)
-    var r = cmp_fn[type](a, c)
-    array.store(offset2, c if r else a)
-    let tmp = a if r else c
-    r = cmp_fn[type](tmp, b)
-    if not r:
-        array.store(offset0, a if r else b)
-        array.store(offset1, b if r else tmp)
+    let r = cmp_fn[type](c, a)
+    let t = c if r else a
+    if r:
+        array.store(offset2, a)
+    if cmp_fn[type](b, t):
+        array.store(offset0, b)
+        array.store(offset1, t)
 
 
 @always_inline
