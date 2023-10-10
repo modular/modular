@@ -73,6 +73,10 @@ from Conv import (
     pack_conv_filter as _pack_conv_filter,
     pack_conv_filter_shape as _pack_conv_filter_shape,
 )
+from ConvTranspose import (
+    conv_transpose as conv_transpose_impl,
+    conv_transpose_shape,
+)
 from Cumsum import cumsum as _cumsum
 from GatherScatter import gather as _gather
 from GatherScatter import gather_shape
@@ -163,6 +167,8 @@ fn MOGGExport():
     alias _concat = concat
     alias _concat_shape = concat_shape
     alias _conv_shape = conv_shape
+    alias _conv_transpose = conv_transpose
+    alias _conv_transpose_shape = conv_transpose_shape
     alias _cumsum = cumsum
     alias _conv = conv
     alias _cos = cos
@@ -2637,6 +2643,53 @@ fn conv[
         lambdas_have_fusion,
         epilogue_wrapper,
     ](input, filter, output, conv_info, out_chain)
+
+
+@always_inline
+fn conv_transpose[
+    input_type: DType,
+    strides_type: DType,
+    dilation_type: DType,
+    padding_type: DType,
+    output_padding_type: DType,
+](
+    input: NDBuffer[4, DimList.create_unknown[4](), input_type],
+    filter: NDBuffer[4, DimList.create_unknown[4](), input_type],
+    strides: NDBuffer[1, DimList.create_unknown[1](), strides_type],
+    dilation: NDBuffer[1, DimList.create_unknown[1](), dilation_type],
+    paddings: NDBuffer[1, DimList.create_unknown[1](), padding_type],
+    output_paddings: NDBuffer[
+        1, DimList.create_unknown[1](), output_padding_type
+    ],
+    output: NDBuffer[4, DimList.create_unknown[4](), input_type],
+    out_chain: OutputChainPtr,
+):
+    constrained[
+        strides_type.is_integral()
+        and dilation_type.is_integral()
+        and output_padding_type.is_integral(),
+        "stride, dilation and output_paddings must have integral type",
+    ]()
+
+    if strides.size() != 2:
+        return out_chain.mark_error("2 values expected in strides input")
+
+    if dilation.size() != 2:
+        return out_chain.mark_error("2 values expected in dilation input")
+
+    if output_paddings.size() != 2:
+        return out_chain.mark_error("2 values expected in output_paddings")
+
+    if paddings.size() != 4:
+        return out_chain.mark_error("4 values expected in paddings input")
+
+    conv_transpose_impl[
+        4,
+        input_type,
+        strides_type,
+        dilation_type,
+        padding_type,
+    ](output, input, filter, strides, dilation, paddings, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
