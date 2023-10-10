@@ -133,6 +133,136 @@ kgen.func @nested_if_constant_result(%cond: i1) -> index {
   kgen.return %2 : index
 }
 
+// CHECK-LABEL: @test_switches
+kgen.func @test_switches(%arg0: index) -> (index, index, index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+
+  %0 = index.add %idx1, %idx2
+  %1 = index.mul %0, %0
+
+  // CHECK-DAG: [[INDEX2:%.*]] = kgen.param.constant = <2>
+  // CHECK-DAG: [[IDX9:%.*]] = index.constant 9
+  // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
+  // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
+  // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
+  // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
+
+  // switch result is constant.
+  %2 = hlcf.switch %arg0 -> index
+  default {
+    %3 = index.mul %0, %0
+
+    // CHECK: hlcf.yield [[IDX9]]
+    hlcf.yield %3: index
+  }
+  case 2 {
+    // CHECK: hlcf.yield [[IDX9]]
+    hlcf.yield %1: index
+  }
+
+  // switch result is unknown.
+  // CHECK: [[V4:%.*]] = hlcf.switch
+  %4 = hlcf.switch %arg0 -> index
+  default {
+    hlcf.yield %arg0: index
+  }
+  case 1 {
+    hlcf.yield %1: index
+  }
+
+  // complex switch result is constant.
+  %5 = hlcf.switch %arg0 -> index
+  default {
+    // loop result is constant
+    %6 = hlcf.loop(%arg1 = %idx0: index) -> index {
+      %7 = index.cmp slt(%arg1, %idx2)
+      hlcf.if %7 {
+        hlcf.yield
+      } else {
+        hlcf.break %arg1: index
+      }
+      %8 = index.add %arg1, %idx1
+      hlcf.continue %8 : index
+    }
+    // CHECK: hlcf.yield [[INDEX2]]
+    hlcf.yield %6: index
+  }
+  case 2 {
+    hlcf.yield %idx2: index
+  }
+
+  // CHECK: kgen.return [[IDX9]], [[V4]], [[INDEX2]]
+  kgen.return %2, %4, %5: index, index, index
+}
+
+kgen.func @test_for_loop(%arg0: index) -> (index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+
+  // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
+  // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
+  // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
+
+  %0 = hlcf.for [%idx0 to %idx2 step %idx1 slt add] (%arg1 = %idx0 : index, %arg2 = %idx0: index) -> index {
+    %1 = index.add %arg1, %idx1
+    kgen.call @foo(%1, %arg0) : (index, index) -> ()
+    hlcf.for.yield [induction_var (%1 : index)] [retvals (%1: index)] [iterargs ()]
+  }
+
+  // CHECK: kgen.return [[IDX2]]
+  kgen.return %0: index
+}
+
+// CHECK-LABEL: @nested_loops
+kgen.func @nested_loops() -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %idx10 = index.constant 10
+
+  %0 = index.add %idx1, %idx2
+  %1 = index.mul %0, %0
+
+  // CHECK-DAG: [[IDX27:%.*]] = index.constant 27
+  // CHECK-DAG: [[IDX10:%.*]] = index.constant 10
+  // CHECK-DAG: [[IDX9:%.*]] = index.constant 9
+  // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
+  // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
+  // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
+  // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
+
+  // The result of this loop will be 2
+  %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
+    %3 = hlcf.loop(%arg1 = %idx0: index) -> index {
+      %4 = index.cmp slt(%arg1, %arg0)
+      hlcf.if %4 {
+        hlcf.yield
+      } else {
+        %5 = index.add %arg1, %1
+        hlcf.break %5: index
+      }
+      %6 = index.add %arg1, %idx1
+      hlcf.continue %6: index
+    }
+
+    %7 = index.cmp slt(%3, %idx10)
+    hlcf.if %7 {
+      hlcf.yield
+    } else {
+      %8 = index.add %3, %1
+      // CHECK: hlcf.break [[IDX27]]
+      hlcf.break %8: index
+    }
+
+    hlcf.continue %3 : index
+  }
+
+  // CHECK: kgen.return [[IDX27]]
+  kgen.return %2: index
+}
 
 // CHECK-LABEL: @loop_generates_constant_but_hits_limit
 kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
