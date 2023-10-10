@@ -911,8 +911,11 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
     // Get a symbol for the underlying function.
+    InputParamBindings inputParamBindings;
+    for (ParamBindAttr binding : baseRVType.getParamBindings())
+      inputParamBindings.addPrechecked(binding.getValue());
     auto result =
-        ORValue::create(spelling, memberDecls, baseRVType.getParamBindings(),
+        ORValue::create(spelling, memberDecls, std::move(inputParamBindings),
                         this, CallSyntax::kDirectCall);
 
     // If the callee is a static method, we can directly reference it
