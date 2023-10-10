@@ -70,8 +70,8 @@ from Conv import (
     ConvInfoStatic,
     conv_2d_nhwc_direct,
     conv_shape,
-    pack_conv_filter,
-    pack_conv_filter_shape,
+    pack_conv_filter as _pack_conv_filter,
+    pack_conv_filter_shape as _pack_conv_filter_shape,
 )
 from Cumsum import cumsum as _cumsum
 from GatherScatter import gather as _gather
@@ -176,7 +176,7 @@ fn MOGGExport():
     alias _gather = gather
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
-    alias _pack_conv_filter_shape = tmp_pack_conv_filter_shape_no_groups
+    alias _pack_conv_filter_shape = pack_conv_filter_shape
     alias _pad = pad
     alias _pad_shape = pad_shape
     alias _greater = greater
@@ -191,7 +191,7 @@ fn MOGGExport():
     alias _logsoftmax = logsoftmax
     alias _pack_b_ndbuffer = pack_b_ndbuffer
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
-    alias _pack_conv_filter = tmp_pack_conv_filter_no_groups
+    alias _pack_conv_filter = pack_conv_filter
     alias _pow = pow_wrapped
     alias _max_pool_shape = pool_shape
     alias _max_pool = max_pool
@@ -2818,26 +2818,29 @@ fn gather_nd[
         out_chain.mark_ready()
 
 
-# Temporary wrapper until graph compiler passes num_groups to packing function.
+# Wrappers that take `num_groups` as a parameter.
+# This is required unti `mo.layout.transform` passes `num_groups` as a runtime
+# value.
 @always_inline
-fn tmp_pack_conv_filter_no_groups[
-    type: DType,
+fn pack_conv_filter[
+    filter_type: DType,
+    num_groups: Int,
 ](
-    filter: NDBuffer[4, DimList.create_unknown[4](), type],
-    packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
+    filter: NDBuffer[4, DimList.create_unknown[4](), filter_type],
+    packed_filter: NDBuffer[5, DimList.create_unknown[5](), filter_type],
     out_chain: OutputChainPtr,
 ):
-    pack_conv_filter(filter, packed_filter, out_chain, num_groups=1)
+    _pack_conv_filter(filter, packed_filter, num_groups, out_chain)
 
 
-# Temporary wrapper until graph compiler passes num_groups to packing function.
 @always_inline
-fn tmp_pack_conv_filter_shape_no_groups[
+fn pack_conv_filter_shape[
     filter_type: DType,
+    num_groups: Int,
     single_thread_blocking_override: Bool,
 ](
     filter_buf: NDBuffer[4, DimList.create_unknown[4](), filter_type],
 ) -> StaticIntTuple[5]:
-    return pack_conv_filter_shape[filter_type, single_thread_blocking_override](
-        filter_buf, num_groups=1
-    )
+    return _pack_conv_filter_shape[
+        filter_type, single_thread_blocking_override
+    ](filter_buf, num_groups)
