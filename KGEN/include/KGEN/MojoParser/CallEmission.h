@@ -274,12 +274,10 @@ public:
   const ExprNode *expr;
   CallSyntax syntax;
 
-  /// Form an overload set with the specified function overloads.
+  /// Form an overload set with the specified function overloads and the given
+  /// parameter bindings. The parameter bindings are taken ownership of.
   OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-              ParameterExprArrayAttr bindings, const ExprNode *expr,
-              CallSyntax syntax);
-  OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-              ParamBindArrayAttr bindings, const ExprNode *expr,
+              InputParamBindings &&inputParamBindings, const ExprNode *expr,
               CallSyntax syntax);
 
   /// Form an OverloadSet with a lookup of a named method on the specified type.

@@ -419,27 +419,12 @@ InputParamBindings::verifyBindings(LITSignatureType sig, ExprEmitter &emitter,
 // OverloadSet Implementation
 //===----------------------------------------------------------------------===//
 
-/// Get a symbol for a direct reference to the specified function in its
-/// enclosing context.  This does not bind any values to arguments.
 OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                         ParameterExprArrayAttr bindingsAttr,
+                         InputParamBindings &&inputParamBindings,
                          const ExprNode *expr, CallSyntax syntax)
-    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
-      syntax(syntax) {
-  if (bindingsAttr)
-    for (TypedAttr precheckedBinding : bindingsAttr)
-      inputParamBindings.addPrechecked(precheckedBinding);
-}
-
-OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                         ParamBindArrayAttr bindingsAttr, const ExprNode *expr,
-                         CallSyntax syntax)
-    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
-      syntax(syntax) {
-  if (bindingsAttr)
-    for (ParamBindAttr precheckedBinding : bindingsAttr)
-      inputParamBindings.addPrechecked(precheckedBinding.getValue());
-}
+    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()),
+      inputParamBindings(std::move(inputParamBindings)), expr(expr),
+      syntax(syntax) {}
 
 // Assuming we have at least one valid candidate, filter the candidate list to
 // the ones with the lowest number of implicit conversions required. If there is
@@ -901,13 +886,11 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
     return;
 
   // Handle method references, which might be overloaded.
-  SmallVector<TypedAttr> parentBindings;
+  InputParamBindings inputParamBindings;
   for (ParamBindAttr binding : type.getParamBindings())
-    parentBindings.push_back(binding.getValue());
-  *this = OverloadSet(
-      methodName, resultDecls,
-      ParameterExprArrayAttr::get(shared.getContext(), parentBindings), expr,
-      syntax);
+    inputParamBindings.addPrechecked(binding.getValue());
+  *this = OverloadSet(methodName, resultDecls, std::move(inputParamBindings),
+                      expr, syntax);
 }
 
 /// Lookup of a named named method on the specified type, filtered to match a
@@ -1192,7 +1175,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     return {};
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindArrayAttr(), callExpr,
+  OverloadSet bindings{"callee", /*fnDecls=*/{}, InputParamBindings(), callExpr,
                        CallSyntax::kIndirectCall};
   auto fitness =
       OverloadFitness::evaluate(calleeSig, bindings, callOperands,

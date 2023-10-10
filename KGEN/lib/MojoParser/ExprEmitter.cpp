@@ -1645,9 +1645,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 
   // Functions form an address, and may be overloaded.
   if (auto firstCandidate = dyn_cast<LIT::FuncOp>(*decls[0])) {
-    ParamBindArrayAttr paramBindings = {};
     // Form an overload set value with all the candidates.
-    auto result = ORValue::create(spelling, decls, paramBindings, expr,
+    auto result = ORValue::create(spelling, decls, InputParamBindings(), expr,
                                   CallSyntax::kDirectCall);
     return emitResult(result, expr, dest);
   }
