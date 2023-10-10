@@ -2546,6 +2546,7 @@ fn conv[
     strides_type: DType,
     dilation_type: DType,
     padding_type: DType,
+    num_groups_type: DType,
     output_type: DType,
     filter_packed: Bool,
     lambdas_have_fusion: Bool,
@@ -2566,6 +2567,7 @@ fn conv[
     paddings: NDBuffer[
         padding_rank, DimList.create_unknown[padding_rank](), padding_type
     ],
+    num_groups: NDBuffer[1, DimList.create_unknown[1](), num_groups_type],
     output: NDBuffer[4, DimList.create_unknown[4](), output_type],
     out_chain: OutputChainPtr,
 ):
@@ -2611,7 +2613,11 @@ fn conv[
     # parameters here when they are constant in the graph
     alias conv_info_static = ConvInfoStatic.create_unknown()
     let conv_info = ConvInfo[conv_info_static](
-        pad_h_tuple, pad_w_tuple, strides_tuple, dilation_tuple, num_groups=1
+        pad_h_tuple,
+        pad_w_tuple,
+        strides_tuple,
+        dilation_tuple,
+        num_groups[0].to_int(),
     )
 
     # Specialize the function to take 4D coordiantes.
