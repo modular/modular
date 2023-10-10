@@ -50,7 +50,7 @@ fn test_convtranspose_pads():
 
     let kernel = NDBuffer[
         rank,
-        DimList(3, 3, 1, 2),
+        DimList(3, 3, 2, 1),
         type,
     ].stack_allocation()
 
@@ -66,28 +66,23 @@ fn test_convtranspose_pads():
     kernel[StaticIntTuple[rank](2, 1, 0, 0)] = 1
     kernel[StaticIntTuple[rank](2, 2, 0, 0)] = 1
 
-    kernel[StaticIntTuple[rank](0, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](0, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](0, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](0, 2, 1, 0)] = 1
 
-    kernel[StaticIntTuple[rank](1, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](1, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](1, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](1, 2, 1, 0)] = 1
 
-    kernel[StaticIntTuple[rank](2, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](2, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](2, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
 
     let output = NDBuffer[
         rank,
         DimList(1, 7, 3, 2),
         type,
     ].stack_allocation()
-
-    for i in range(7):
-        for j in range(3):
-            for k in range(2):
-                output[StaticIntTuple[rank](0, i, j, k)] = 0
 
     let bias = NDBuffer[
         1,
@@ -192,7 +187,7 @@ fn test_convtranspose():
 
     let kernel = NDBuffer[
         rank,
-        DimList(3, 3, 1, 2),
+        DimList(3, 3, 2, 1),
         type,
     ].stack_allocation()
 
@@ -208,29 +203,23 @@ fn test_convtranspose():
     kernel[StaticIntTuple[rank](2, 1, 0, 0)] = 1
     kernel[StaticIntTuple[rank](2, 2, 0, 0)] = 1
 
-    kernel[StaticIntTuple[rank](0, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](0, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](0, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](0, 2, 1, 0)] = 1
 
-    kernel[StaticIntTuple[rank](1, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](1, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](1, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](1, 2, 1, 0)] = 1
 
-    kernel[StaticIntTuple[rank](2, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](2, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](2, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
 
     let output = NDBuffer[
         rank,
         DimList(1, 5, 5, 2),
         type,
     ].stack_allocation()
-
-    for i in range(1):
-        for j in range(5):
-            for k in range(5):
-                for l in range(2):
-                    output[StaticIntTuple[rank](i, j, k, l)] = 0
 
     let bias = NDBuffer[
         1,
@@ -348,12 +337,6 @@ fn test_convtranspose_dilation():
         type,
     ].stack_allocation()
 
-    for i in range(1):
-        for j in range(5):
-            for k in range(5):
-                for l in range(1):
-                    output[StaticIntTuple[rank](i, j, k, l)] = 0
-
     let bias = NDBuffer[
         1,
         DimList(2),
@@ -469,7 +452,7 @@ fn test_convtranspose_attributes():
 
     let kernel = NDBuffer[
         rank,
-        DimList(3, 3, 1, 2),
+        DimList(3, 3, 2, 1),
         type,
     ].stack_allocation()
 
@@ -485,29 +468,23 @@ fn test_convtranspose_attributes():
     kernel[StaticIntTuple[rank](2, 1, 0, 0)] = 1
     kernel[StaticIntTuple[rank](2, 2, 0, 0)] = 1
 
-    kernel[StaticIntTuple[rank](0, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](0, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](0, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](0, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](0, 2, 1, 0)] = 1
 
-    kernel[StaticIntTuple[rank](1, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](1, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](1, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](1, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](1, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](1, 2, 1, 0)] = 1
 
-    kernel[StaticIntTuple[rank](2, 0, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](2, 1, 0, 1)] = 1
-    kernel[StaticIntTuple[rank](2, 2, 0, 1)] = 1
+    kernel[StaticIntTuple[rank](2, 0, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](2, 1, 1, 0)] = 1
+    kernel[StaticIntTuple[rank](2, 2, 1, 0)] = 1
 
     let output = NDBuffer[
         rank,
         DimList(1, 10, 8, 2),
         type,
     ].stack_allocation()
-
-    for i in range(1):
-        for j in range(10):
-            for k in range(8):
-                for l in range(2):
-                    output[StaticIntTuple[rank](i, j, k, l)] = 0
 
     let bias = NDBuffer[
         1,

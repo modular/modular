@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.buffer import NDBuffer
+from memory.memory import memset_zero
 from runtime.llcl import Runtime, OutputChainPtr
 
 # Indicate position in pads tensor for height, width.
@@ -69,7 +70,7 @@ fn conv_transpose[
         input: Input data tensor from previous layer, with size of (N x H x W x C),
                where N is the batch size, C is the number of channels, and H and
                W are the height and width.
-        kernel: The weight (kernel) tensor, with size of (kH x kW x N x M/group),
+        kernel: The weight (kernel) tensor, with size of (kH x kW x M/groups x C),
                 where C is the number of channels, kH and kW are the height and
                 width of the kernel, and M is the number of feature maps.
         strides: Stride along each spatial axis.
@@ -86,14 +87,17 @@ fn conv_transpose[
 
     let R = Int(kernel.dim(0))  # Filter height
     let S = Int(kernel.dim(1))  # Filter width
-    let F = Int(kernel.dim(3))  # Number of output channels
+    let C_filter = Int(kernel.dim(2))  # Number of input channels
 
     let HO = Int(output.dim(1))
     let WO = Int(output.dim(2))
 
+    # Initialize output to zero
+    memset_zero[type](output.data, N * C_filter * HO * WO)
+
     for n in range(N):
         for c in range(C):
-            for f in range(F):
+            for f in range(C_filter):
                 for i in range(H):
                     let indX_out = i * strides[0].to_int() - pads[
                         PADS_H_START
