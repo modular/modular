@@ -10,11 +10,7 @@ import {MOJOContext} from '../mojoContext';
 import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
 
-import {
-  RpcLaunchServer,
-  RpcLaunchServerOptions,
-  UriLaunchServer
-} from './externalDebugLauncher';
+import {RpcLaunchServer, UriLaunchServer} from './externalDebugLauncher';
 
 /**
  * This class defines a factory used to find the lldb-vscode binary to use
@@ -31,8 +27,9 @@ class MojoDebugAdapterDescriptorFactory implements
                                      _executable: vscode.DebugAdapterExecutable|
                                      undefined):
       Promise<vscode.DebugAdapterDescriptor|null> {
-    let config =
-        await this.context?.getSDK().resolveConfig(session.workspaceFolder);
+
+    let config = await this.context?.getSDK().resolveConfig(
+        session.configuration.modularHomePath || session.workspaceFolder);
     if (!config)
       return null;
     return new vscode.DebugAdapterExecutable(config.mojoLLDBVSCodePath, []);
@@ -124,19 +121,29 @@ export class MojoDebugContext extends DisposableContext {
     // Register the RPC-based debug launcher.
     this.pushSubscription(
         vscode.workspace.onDidChangeWorkspaceFolders((event) => {
-          for (const folder of event.removed) {
-            this.disposeRpcServer(folder);
+          // We fully restart all the servers after a workspace event for
+          // simplicity.
+          for (const [_, rpcServer] of this.rpcServers) {
+            rpcServer.dispose();
           }
-          for (const folder of event.added) {
-            this.updateOrCreateRpcServer(folder);
-          }
+          this.rpcServers.clear();
+          this.launchRpcServers();
         }));
+    // Initialize the RPC servers.
+    this.launchRpcServers();
+  }
 
-    // Initialize the RPC server.
-    this.updateOrCreateRpcServer();
+  private launchRpcServers(): void {
+    // It's not possible to ask VS Code for the settings that are specific to a
+    // given workspace or to the user. In fact, you can only provide some
+    // "context" and then VS Code will return a set of settings that might come
+    // from different places all merged together. Because of this, we need to
+    // fetch settings from different contexts and reuse servers whenever
+    // possible.
     for (const folder of vscode.workspace.workspaceFolders || []) {
       this.updateOrCreateRpcServer(folder);
     }
+    this.updateOrCreateRpcServer();
   }
 
   /**
@@ -144,46 +151,30 @@ export class MojoDebugContext extends DisposableContext {
    * workspace is undefined, then a global config is used instead.
    */
   private updateOrCreateRpcServer(workspaceFolder?: vscode.WorkspaceFolder) {
-    let options =
-        config.get<RpcLaunchServerOptions>('lldb.rpcServer', workspaceFolder);
+    let options = config.get<{port?: number, token?: string}>('lldb.rpcServer',
+                                                              workspaceFolder);
     if (!options || Object.keys(options).length == 0)
       return;
-
-    let uri = workspaceFolder?.uri.toString() || "";
-    if (workspaceFolder)
+    const port = options.port;
+    if (port === undefined) {
       this.context.getLoggingService().logInfo(
-          `Starting RPC server for workspace '${uri}'`, options);
-    else
-      this.context.getLoggingService().logInfo(
-          "Starting RPC server defined by global config", options);
-
-    this.disposeRpcServer(workspaceFolder);
-    let rpcServer = new RpcLaunchServer(this.context.getLoggingService(),
-                                        workspaceFolder, options);
-    this.pushSubscription(rpcServer);
-    rpcServer.listen();
-    this.rpcServers.set(uri, rpcServer);
-  }
-
-  /**
-   * Dispose the debug RPC server that was created by the given workspace
-   * folder. If the workspace is undefined, then the global server is disposed
-   * instead.
-   */
-  private disposeRpcServer(workspaceFolder: vscode.WorkspaceFolder|undefined) {
-    let uri = workspaceFolder?.uri.toString() || "";
-    let rpcServer = this.rpcServers.get(uri);
-    if (!rpcServer)
+          `The 'port' key was not found in the mojo.lldb.rpcServer settings.`,
+          options);
       return;
-
-    if (workspaceFolder) {
-      this.context.getLoggingService().logInfo(
-          `Stopping RPC server for workspace '${uri}'`);
-    } else {
-      this.context.getLoggingService().logInfo(
-          `Stopping RPC server defined by global config`);
     }
-    rpcServer.dispose();
-    this.rpcServers.delete(uri);
+
+    const key = `${port}`;
+    const existingServer = this.rpcServers.get(key);
+    if (existingServer) {
+      existingServer.addServerToken(options.token);
+    } else {
+      let rpcServer = new RpcLaunchServer(this.context.getLoggingService(),
+                                          port, options.token);
+      this.context.getLoggingService().logInfo(`Starting RPC server for port:`,
+                                               port);
+      this.pushSubscription(rpcServer);
+      rpcServer.listen();
+      this.rpcServers.set(key, rpcServer);
+    }
   }
 }
