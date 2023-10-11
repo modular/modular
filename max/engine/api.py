@@ -327,6 +327,7 @@ class InferenceSession:
         options: Optional[
             Union[TensorFlowLoadOptions, ExperimentalLoadOptions]
         ] = None,
+        **kwargs,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -362,6 +363,14 @@ class InferenceSession:
                 options, TensorFlowLoadOptions
             ) and not isinstance(options, ExperimentalLoadOptions):
                 raise TypeError("Invalid compilation options object.")
+
+        # Merge experimental options with existing options.
+        if kwargs and "experimental_options" in kwargs:
+            for key, value in kwargs["experimental_options"].items():
+                if key != "type":
+                    options_dict[key] = value
+                elif key not in options_dict:
+                    options_dict[key] = value
 
         model_path = Path(str(model_path))
         _model = self._impl.compile(model_path, options_dict)
