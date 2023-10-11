@@ -35,10 +35,10 @@ fn test[
     R: Int,
     S: Int,
     F: Int,
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
+    pad_h: StaticIntTuple[2],
+    pad_w: StaticIntTuple[2],
 ](rt: Runtime):
     # Skip architectures other than avx512 for now.
     # TODO: tune on other architectures and enable testing.
@@ -238,12 +238,12 @@ fn main():
     with Runtime() as rt:
         test[
             1,  # N
-            7,  # H
-            7,  # W
-            512,  # C
+            14,  # H
+            14,  # W
+            256,  # C
             3,  # R
             3,  # S
-            512,  # F
+            256,  # F
             Index(1, 1),  # stride
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
@@ -252,20 +252,6 @@ fn main():
 
         # Each test will build a specialization of the conv kernel.
         # Disable the following tests for now to monitor build time.
-
-        # test[
-        #     1,  # N
-        #     224,  # H
-        #     224,  # W
-        #     3,  # C
-        #     7,  # R
-        #     7,  # S
-        #     64,  # F
-        #     Index(2, 2),  # stride
-        #     Index(1, 1),  # dilation
-        #     Index(3, 3),  # pad_h
-        #     Index(3, 3),  # pad_w
-        # ](rt)
 
         # test[
         #     1,  # N
@@ -279,6 +265,48 @@ fn main():
         #     Index(1, 1),  # dilation
         #     Index(1, 1),  # pad_h
         #     Index(1, 1),  # pad_w
+        # ](rt)
+
+        # test[
+        #     1,  # N
+        #     28,  # H
+        #     28,  # W
+        #     128,  # C
+        #     3,  # R
+        #     3,  # S
+        #     128,  # F
+        #     Index(1, 1),  # stride
+        #     Index(1, 1),  # dilation
+        #     Index(1, 1),  # pad_h
+        #     Index(1, 1),  # pad_w
+        # ](rt)
+
+        # test[
+        #     1,  # N
+        #     7,  # H
+        #     7,  # W
+        #     512,  # C
+        #     3,  # R
+        #     3,  # S
+        #     512,  # F
+        #     Index(1, 1),  # stride
+        #     Index(1, 1),  # dilation
+        #     Index(1, 1),  # pad_h
+        #     Index(1, 1),  # pad_w
+        # ](rt)
+
+        # test[
+        #     1,  # N
+        #     224,  # H
+        #     224,  # W
+        #     3,  # C
+        #     7,  # R
+        #     7,  # S
+        #     64,  # F
+        #     Index(2, 2),  # stride
+        #     Index(1, 1),  # dilation
+        #     Index(3, 3),  # pad_h
+        #     Index(3, 3),  # pad_w
         # ](rt)
 
         # test[
@@ -313,11 +341,11 @@ fn main():
         #     1,  # N
         #     14,  # H
         #     14,  # W
-        #     256,  # C
+        #     512,  # C
         #     3,  # R
         #     3,  # S
-        #     256,  # F
-        #     Index(1, 1),  # stride
+        #     512,  # F
+        #     Index(2, 2),  # stride
         #     Index(1, 1),  # dilation
         #     Index(1, 1),  # pad_h
         #     Index(1, 1),  # pad_w
