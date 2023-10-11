@@ -125,11 +125,11 @@ fn run_matmul() raises:
     alias n = 512
     alias k = 512
 
-    let stream = Stream()
+    let stream = Stream[False]()
 
-    var a_host = Tensor[DType.index](m * k)
-    var b_host = Tensor[DType.index](k * n)
-    var c_host = Tensor[DType.index](m * n)
+    var a_host = Tensor[DType.index](m, k)
+    var b_host = Tensor[DType.index](k, n)
+    var c_host = Tensor[DType.index](m, n)
 
     for i in range(m):
         for j in range(k):

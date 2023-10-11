@@ -7,7 +7,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from gpu import *
+from gpu import BlockIdx, BlockDim, ThreadIdx, AddressSpace
 from gpu.nvidia_host import (
     Function,
     Context,
@@ -22,6 +22,7 @@ from gpu.nvidia_host import (
 )
 from sys.param_env import env_get_string
 from pathlib import Path
+from memory.unsafe import DTypePointer
 from memory.buffer import NDBuffer
 from sys.info import triple_is_nvidia_cuda
 from utils.index import Index
@@ -29,14 +30,12 @@ from utils.list import DimList
 from memory import memset_zero
 from tensor import Tensor
 from math import div_ceil
+from builtin.io import _printf
 
 
-alias TILE_SZ_A = 128
-alias TILE_SZ_B = 16
-alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
+alias BLOCK_DIM = 8
 
 
-@export("matmul")
 fn matmul(
     a_ptr: DTypePointer[DType.float32],
     b_ptr: DTypePointer[DType.float32],
@@ -49,6 +48,12 @@ fn matmul(
     if not triple_is_nvidia_cuda():
         return
 
+    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    let y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+
+    if x >= m or y >= n:
+        return
+
     let a = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
         a_ptr, Index(m, k)
     )
@@ -59,75 +64,19 @@ fn matmul(
         c_ptr, Index(m, n)
     )
 
-    # Compute C = A x B
-    #   where A is a (m x k) matrix
-    #   where B is a (k x n) matrix
-    #   where C is a (m x n) matrix
-    #
-    # Use register and shared memory tiling and thread coarsening
-    #
-    # NOTE: A and C are column major, B is row major.
-
-    # Allocate B array into shared memory for tiling.
-    let b_shared = stack_allocation[
-        TILE_SZ_RATIO * TILE_SZ_B, DType.float32, AddressSpace.SHARED
-    ]()
-
-    # Thread indexing offsets.
-    let row = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    let col = BlockIdx.y() * TILE_SZ_B
-
-    # Privatization of the C matrix.
-    let c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
-
-    memset_zero(c_reg, TILE_SZ_B)
-
-    # Loop over each input tile.
-    for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        let i = ThreadIdx.x() // TILE_SZ_B
-        let j = ThreadIdx.x() % TILE_SZ_B
-
-        # Load the B matrix into shared memory.
-        let b_val: Float32
-        if tile_idx * TILE_SZ_RATIO + i < k and col + j < n:
-            b_val = b[tile_idx * TILE_SZ_RATIO + i, col + j]
-        else:
-            b_val = 0
-        b_shared.store(i * TILE_SZ_B + j, b_val)
-
-        barrier()
-
-        # Loop within the tile.
-        for idx in range(TILE_SZ_RATIO):
-            # Load the A tile into the register.
-            let a_reg: Float32
-            if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
-                a_reg = a[row, tile_idx * TILE_SZ_RATIO + idx]
-            else:
-                a_reg = 0
-
-            # Compute the output element for each thread.
-            for out_idx in range(TILE_SZ_B):
-                c_reg.store(
-                    out_idx,
-                    c_reg.load(out_idx)
-                    + a_reg * b_shared.load(idx * TILE_SZ_RATIO + out_idx),
-                )
-        barrier()
-
-    # Store the values into the output matrix.
-    for out_idx in range(TILE_SZ_B):
-        if row < m and col + out_idx < n:
-            c[Index(row, col + out_idx)] = c_reg.load(out_idx)
+    var accum = Float32(0)
+    for i in range(k):
+        accum = a[x, i] * b[i, y] + accum
+    c[Index(x, y)] = accum
 
 
 # CHECK-LABEL: run_matmul
 fn run_matmul() raises:
     print("== run_matmul")
 
-    alias m = 512
-    alias n = 512
-    alias k = 512
+    alias m = 64
+    alias n = 64
+    alias k = 64
 
     let stream = Stream[False]()
 
@@ -137,7 +86,7 @@ fn run_matmul() raises:
 
     for i in range(m):
         for j in range(k):
-            a_host[Index(i, j)] = 1
+            a_host[Index(i, j)] = 0.1
 
     for i in range(k):
         for j in range(n):
@@ -165,8 +114,8 @@ fn run_matmul() raises:
     ](debug=True)
 
     func(
-        (div_ceil(m, TILE_SZ_A), div_ceil(n, TILE_SZ_B)),
-        (TILE_SZ_A, 1),
+        (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+        (BLOCK_DIM, BLOCK_DIM),
         a_device,
         b_device,
         c_device,
@@ -179,9 +128,16 @@ fn run_matmul() raises:
 
     _copy_device_to_host(c_host.data(), c_device, m * n)
 
-    for i in range(10):
-        for j in range(10):
-            print("at index = [", i, ",", j, "] the value is", c_host[i, j])
+    for i in range(BLOCK_DIM):
+        for j in range(BLOCK_DIM):
+            print(
+                "at index = [",
+                i,
+                ",",
+                j,
+                "] the value is",
+                c_host[i, j],
+            )
 
     _free(a_device)
     _free(b_device)
@@ -195,19 +151,10 @@ fn run_matmul() raises:
     _ = stream ^
 
 
-fn run_cuda_mem_ops() raises:
-    alias length = 1
-
-    let device_mem = _malloc[Int](length)
-
-    _free(device_mem)
-
-
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
         with Context() as ctx:
-            # run_cuda_mem_ops()
             run_matmul()
     except e:
         print("CUDA_ERROR:", e)
