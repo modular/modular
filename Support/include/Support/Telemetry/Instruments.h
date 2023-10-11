@@ -35,7 +35,10 @@ private:
 template <typename T>
 class Counter {
 public:
-  void add(T value) { counter->Add(value); }
+  template <class... TArgs>
+  void add(T value, TArgs &&...args) {
+    counter->Add(value, std::forward<TArgs>(args)...);
+  }
 
   Counter(Counter &&) = default;
   Counter &operator=(Counter &&) = default;
