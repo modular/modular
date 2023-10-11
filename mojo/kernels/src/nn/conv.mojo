@@ -2867,17 +2867,13 @@ struct ConvDirectNHWC[
         # by simd_size. If F is not multiple of simd_size, the residual
         # is padded with 0 to fit a simd vector in the packed filter.
         tile[
-            VariadicList[Int](
-                micro_kernel_f_size, micro_kernel_f_size, simd_size
-            ),
+            VariadicList[Int](micro_kernel_f_size, simd_size),
             simd_size,
             f_tile_iteration,
         ](
             f_group_offset,
             f_group_end_align_simd,
-            VariadicList[Int](
-                self.cf_tile_size[1], micro_kernel_f_size, simd_size
-            ),
+            VariadicList[Int](micro_kernel_f_size, simd_size),
             simd_size,
         )
 
@@ -3022,95 +3018,96 @@ struct ConvDirectNHWC[
             output_type,
         ].aligned_stack_allocation[alignment]()
 
-        for f in range(
-            f_tile_offset, f_tile_offset + f_tile_size, micro_kernel_f_size
-        ):
-            let n_ho_wo = n * self.conv_shape.out_h * self.conv_shape.out_w + ho_wo
-            if self.is_new_c_accum(c_tile_offset):
-                self._init_output_micro_tile[
-                    micro_kernel_height, micro_kernel_width, simd_size
-                ](output_micro_tile)
-            else:
-                self._load_output_micro_tile[
-                    micro_kernel_height,
-                    micro_kernel_width,
-                    simd_size,
-                    has_residual,
-                ](
-                    self.output.data.offset(n_ho_wo * self.conv_shape.f + f),
-                    output_micro_tile,
-                )
-
-            var filter_ptr: DTypePointer[filter_type] = self.filter.data
-
-            @parameter
-            if filter_packed:
-                filter_ptr = _get_group_filter_base(
-                    self.filter,
-                    self.conv_shape.c_to_group(c_tile_offset),
-                    self.conv_shape.f,
-                    self.conv_shape.num_groups,
-                )
-                filter_ptr = filter_ptr.offset(
-                    self.conv_shape.f_in_group(f)
-                    * self.conv_shape.r
-                    * self.conv_shape.s
-                    * self.conv_shape.c_per_group()
-                    + self.conv_shape.c_in_group(c_tile_offset)
-                    * micro_kernel_f_size
-                )
-
-            for r in range(self.conv_shape.r):
-                for s in range(self.conv_shape.s):
-                    let input_offset = self.conv_shape.c * (
-                        s + self.conv_shape.w * r
-                    )
-
-                    # Unpacked version. For each (r, s), we first offset the
-                    # filter pointer by (r, s) plus c_tile_offset. Later for
-                    # each c, we access micro_kernel_f_size contiguous elements.
-                    # These contiguous segments are strided by F.
-                    @parameter
-                    if not filter_packed:
-                        filter_ptr = self.filter.data.offset(
-                            (s + r * self.conv_shape.s)
-                            * self.conv_shape.c
-                            * self.conv_shape.f
-                            + c_tile_offset * self.conv_shape.f
-                            + f
-                        )
-
-                    self._accumulate[
-                        micro_kernel_height,
-                        micro_kernel_width,
-                        simd_size,
-                        c_fully_cached,
-                        has_residual,
-                        # prefetch offset
-                        4 if not has_neon() else -1,
-                    ](
-                        input_base_offsets,
-                        input_offset,
-                        c_tile_size,
-                        filter_ptr,
-                        output_micro_tile,
-                    )
-
-                    # Shift C*f to get the next point in stencil (s+1) for FRSCf layout.
-                    if filter_packed:
-                        filter_ptr = filter_ptr.offset(
-                            self.conv_shape.c_per_group() * micro_kernel_f_size
-                        )
-
-            self._store_output_micro_tile[
+        let n_ho_wo = n * self.conv_shape.out_h * self.conv_shape.out_w + ho_wo
+        if self.is_new_c_accum(c_tile_offset):
+            self._init_output_micro_tile[
+                micro_kernel_height, micro_kernel_width, simd_size
+            ](output_micro_tile)
+        else:
+            self._load_output_micro_tile[
                 micro_kernel_height,
                 micro_kernel_width,
                 simd_size,
                 has_residual,
             ](
+                self.output.data.offset(
+                    n_ho_wo * self.conv_shape.f + f_tile_offset
+                ),
                 output_micro_tile,
-                self.output.data.offset(n_ho_wo * self.conv_shape.f + f),
             )
+
+        var filter_ptr: DTypePointer[filter_type] = self.filter.data
+
+        @parameter
+        if filter_packed:
+            filter_ptr = _get_group_filter_base(
+                self.filter,
+                self.conv_shape.c_to_group(c_tile_offset),
+                self.conv_shape.f,
+                self.conv_shape.num_groups,
+            )
+            filter_ptr = filter_ptr.offset(
+                self.conv_shape.f_in_group(f_tile_offset)
+                * self.conv_shape.r
+                * self.conv_shape.s
+                * self.conv_shape.c_per_group()
+                + self.conv_shape.c_in_group(c_tile_offset)
+                * micro_kernel_f_size
+            )
+
+        for r in range(self.conv_shape.r):
+            for s in range(self.conv_shape.s):
+                let input_offset = self.conv_shape.c * (
+                    s + self.conv_shape.w * r
+                )
+
+                # Unpacked version. For each (r, s), we first offset the
+                # filter pointer by (r, s) plus c_tile_offset. Later for
+                # each c, we access micro_kernel_f_size contiguous elements.
+                # These contiguous segments are strided by F.
+                @parameter
+                if not filter_packed:
+                    filter_ptr = self.filter.data.offset(
+                        (s + r * self.conv_shape.s)
+                        * self.conv_shape.c
+                        * self.conv_shape.f
+                        + c_tile_offset * self.conv_shape.f
+                        + f_tile_offset
+                    )
+
+                self._accumulate[
+                    micro_kernel_height,
+                    micro_kernel_width,
+                    simd_size,
+                    c_fully_cached,
+                    has_residual,
+                    # prefetch offset
+                    4 if not has_neon() else -1,
+                ](
+                    input_base_offsets,
+                    input_offset,
+                    c_tile_size,
+                    filter_ptr,
+                    output_micro_tile,
+                )
+
+                # Shift C*f to get the next point in stencil (s+1) for FRSCf layout.
+                if filter_packed:
+                    filter_ptr = filter_ptr.offset(
+                        self.conv_shape.c_per_group() * micro_kernel_f_size
+                    )
+
+        self._store_output_micro_tile[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+            has_residual,
+        ](
+            output_micro_tile,
+            self.output.data.offset(
+                n_ho_wo * self.conv_shape.f + f_tile_offset
+            ),
+        )
 
         @parameter
         if elementwise_epilogue_enabled and last_c_tile:
@@ -3876,87 +3873,77 @@ struct ConvDirectNHWC[
             output_type,
         ].aligned_stack_allocation[alignment]()
 
-        var filter_tile = filter_base
-        # TODO: #18141 Verify if using filter tile larger than micro_kernel_f_size
-        # improve performance or not.
-        for f in range(
-            f_tile_offset, f_tile_offset + f_tile_size, micro_kernel_f_size
-        ):
-            # Initialize micro tile with 0 for its first use
-            if self.is_new_c_accum(c_tile_offset):
-                self._init_output_micro_tile[
-                    micro_kernel_height, micro_kernel_width, simd_size
-                ](output_micro_tile)
-            # Load micro tile from output buffer.
-            else:
-                self._load_output_micro_tile[
-                    micro_kernel_height,
-                    micro_kernel_width,
-                    simd_size,
-                    has_residual,
-                ](output_base.offset(f - f_tile_offset), output_micro_tile)
-
-            # Shift in input H when shifting 1 in filter stencil' R dimension.
-            var h_shift = 0
-            # h index in input image
-            let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
-            for r in range(self.conv_shape.r):
-                # Skip if row falls in padding.
-                if h + h_shift < 0 or h + h_shift >= self.conv_shape.h:
-                    h_shift += self.conv_shape.dilation[0]
-                    continue
-
-                var input_ptr = input_base.offset(
-                    h_shift * self.conv_shape.c * self.conv_shape.w
-                )
-                var filter_ptr = filter_tile.offset(
-                    r * self.conv_shape.s * filter_S_stride
-                )
-
-                var w = wo * self.conv_shape.stride[1] - self.conv_shape.pad_w[
-                    0
-                ]
-                for s in range(self.conv_shape.s):
-                    # Skip neighbor points in padding, if current point is
-                    # effected by padding.
-                    @parameter
-                    if w_padding_impact:
-                        if w < 0 or w >= self.conv_shape.w:
-                            w += self.conv_shape.dilation[1]
-                            filter_ptr = filter_ptr.offset(filter_S_stride)
-                            input_ptr = input_ptr.offset(input_shift)
-                            continue
-
-                    self._accumulate[
-                        micro_kernel_height,
-                        micro_kernel_width,
-                        simd_size,
-                        has_residual,
-                        # prefetch offset, default to 4 for now
-                        4,
-                    ](
-                        c_tile_size,
-                        wo_stride_in_input,
-                        input_ptr,
-                        filter_ptr,
-                        output_micro_tile.data,
-                    )
-
-                    w += self.conv_shape.dilation[1]
-                    filter_ptr = filter_ptr.offset(filter_S_stride)
-                    input_ptr = input_ptr.offset(input_shift)
-
-                h_shift += self.conv_shape.dilation[0]
-
-            # Store the micro tile
-            self._store_output_micro_tile[
+        # Initialize micro tile with 0 for its first use
+        if self.is_new_c_accum(c_tile_offset):
+            self._init_output_micro_tile[
+                micro_kernel_height, micro_kernel_width, simd_size
+            ](output_micro_tile)
+        # Load micro tile from output buffer.
+        else:
+            self._load_output_micro_tile[
                 micro_kernel_height,
                 micro_kernel_width,
                 simd_size,
                 has_residual,
-            ](output_micro_tile, output_base.offset(f - f_tile_offset))
+            ](output_base, output_micro_tile)
 
-            filter_tile = filter_tile.offset(filter_F_stride)
+        # Shift in input H when shifting 1 in filter stencil' R dimension.
+        var h_shift = 0
+        # h index in input image
+        let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
+        for r in range(self.conv_shape.r):
+            # Skip if row falls in padding.
+            if h + h_shift < 0 or h + h_shift >= self.conv_shape.h:
+                h_shift += self.conv_shape.dilation[0]
+                continue
+
+            var input_ptr = input_base.offset(
+                h_shift * self.conv_shape.c * self.conv_shape.w
+            )
+            var filter_ptr = filter_base.offset(
+                r * self.conv_shape.s * filter_S_stride
+            )
+
+            var w = wo * self.conv_shape.stride[1] - self.conv_shape.pad_w[0]
+            for s in range(self.conv_shape.s):
+                # Skip neighbor points in padding, if current point is
+                # effected by padding.
+                @parameter
+                if w_padding_impact:
+                    if w < 0 or w >= self.conv_shape.w:
+                        w += self.conv_shape.dilation[1]
+                        filter_ptr = filter_ptr.offset(filter_S_stride)
+                        input_ptr = input_ptr.offset(input_shift)
+                        continue
+
+                self._accumulate[
+                    micro_kernel_height,
+                    micro_kernel_width,
+                    simd_size,
+                    has_residual,
+                    # prefetch offset, default to 4 for now
+                    4,
+                ](
+                    c_tile_size,
+                    wo_stride_in_input,
+                    input_ptr,
+                    filter_ptr,
+                    output_micro_tile.data,
+                )
+
+                w += self.conv_shape.dilation[1]
+                filter_ptr = filter_ptr.offset(filter_S_stride)
+                input_ptr = input_ptr.offset(input_shift)
+
+            h_shift += self.conv_shape.dilation[0]
+
+        # Store the micro tile
+        self._store_output_micro_tile[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+            has_residual,
+        ](output_micro_tile, output_base)
 
         # Apply elmentwise epilogue to the
         @parameter
@@ -4008,17 +3995,13 @@ struct ConvDirectNHWC[
             ](n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size)
 
         tile[
-            VariadicList[Int](
-                micro_kernel_f_size, micro_kernel_f_size, simd_size
-            ),
+            VariadicList[Int](micro_kernel_f_size, simd_size),
             simd_size,
             f_tile_iteration,
         ](
             self.partition_offsets[2],
             f_round_by_simd,
-            VariadicList[Int](
-                self.cf_tile_size[1], micro_kernel_f_size, simd_size
-            ),
+            VariadicList[Int](micro_kernel_f_size, simd_size),
             simd_size,
         )
 
@@ -4280,91 +4263,85 @@ struct ConvDirectNHWC[
             output_type,
         ].stack_allocation()
 
-        var filter_tile = filter_base
-        for f in range(
-            f_tile_offset, f_tile_offset + f_tile_size, micro_kernel_f_size
-        ):
-            # Initialize micro tile with 0 for its first use
-            if self.is_new_c_accum(c_tile_offset):
-                self._init_output_micro_tile[
-                    micro_kernel_height, micro_kernel_width, simd_size
-                ](output_micro_tile)
-            # Load micro tile from output buffer.
-            else:
-                self._load_output_micro_tile[
-                    micro_kernel_height,
-                    micro_kernel_width,
-                    simd_size,
-                    has_residual,
-                ](output_base.offset(f - f_tile_offset), output_micro_tile)
-
-            alias W = shape_input.at[2]().get()  # NHWC
-            alias H = shape_input.at[1]().get()  # NHWC
-            alias WO = shape_output.at[2]().get()  # NHWC
-            # Shift in input H when shifting 1 in filter stencil' R dimension.
-            var h_shift = 0
-            # h index in input image
-            let h = ho * strides[0] - pad_bottom
-            for r in range(R):
-                # Skip if row falls in padding.
-                if h + h_shift < 0 or h + h_shift >= H:
-                    h_shift += dilations[0]
-                    continue
-
-                var input_ptr = input_base.offset(h_shift * C * W)
-                var filter_ptr = filter_tile.offset(r * S * filter_S_stride)
-                var w = wo * strides[1] - pad_left
-
-                @parameter
-                @always_inline
-                fn body[s: Int]():
-                    # Adjustment of micro kernel height for left padding
-                    # The first left_adjust x micro_kernel_width registers are
-                    # ignored because they fall in padding.
-                    alias left_adjust = max(
-                        div_ceil(pad_left - s * dilations[1], strides[1]), 0
-                    ) if padded_left else 0
-                    # Adjustment of micro kernel height for right padding
-                    # The last left_adjust x micro_kernel_width registers are ignored.
-                    alias right_adjust = max(
-                        WO
-                        - 1
-                        - (W - 1 + pad_left - s * dilations[1]) // strides[1],
-                        0,
-                    ) if padded_right else 0
-                    self._accumulate[
-                        micro_kernel_height - left_adjust - right_adjust,
-                        micro_kernel_width,
-                        simd_size,
-                        has_residual,
-                        # prefetch offset, default to 4 for now
-                        4,
-                    ](
-                        c_tile_size,
-                        wo_stride_in_input,
-                        input_ptr.offset(left_adjust * wo_stride_in_input),
-                        filter_ptr,
-                        output_micro_tile.data.offset(
-                            left_adjust * micro_kernel_f_size
-                        ),
-                    )
-
-                    filter_ptr = filter_ptr.offset(filter_S_stride)
-                    input_ptr = input_ptr.offset(s_stride_in_input)
-
-                unroll[S, body]()
-
-                h_shift += dilations[0]
-
-            # Store the micro tile
-            self._store_output_micro_tile[
+        # Initialize micro tile with 0 for its first use
+        if self.is_new_c_accum(c_tile_offset):
+            self._init_output_micro_tile[
+                micro_kernel_height, micro_kernel_width, simd_size
+            ](output_micro_tile)
+        # Load micro tile from output buffer.
+        else:
+            self._load_output_micro_tile[
                 micro_kernel_height,
                 micro_kernel_width,
                 simd_size,
                 has_residual,
-            ](output_micro_tile, output_base.offset(f - f_tile_offset))
+            ](output_base, output_micro_tile)
 
-            filter_tile = filter_tile.offset(filter_F_stride)
+        alias W = shape_input.at[2]().get()  # NHWC
+        alias H = shape_input.at[1]().get()  # NHWC
+        alias WO = shape_output.at[2]().get()  # NHWC
+        # Shift in input H when shifting 1 in filter stencil' R dimension.
+        var h_shift = 0
+        # h index in input image
+        let h = ho * strides[0] - pad_bottom
+        for r in range(R):
+            # Skip if row falls in padding.
+            if h + h_shift < 0 or h + h_shift >= H:
+                h_shift += dilations[0]
+                continue
+
+            var input_ptr = input_base.offset(h_shift * C * W)
+            var filter_ptr = filter_base.offset(r * S * filter_S_stride)
+            var w = wo * strides[1] - pad_left
+
+            @parameter
+            @always_inline
+            fn body[s: Int]():
+                # Adjustment of micro kernel height for left padding
+                # The first left_adjust x micro_kernel_width registers are
+                # ignored because they fall in padding.
+                alias left_adjust = max(
+                    div_ceil(pad_left - s * dilations[1], strides[1]), 0
+                ) if padded_left else 0
+                # Adjustment of micro kernel height for right padding
+                # The last left_adjust x micro_kernel_width registers are ignored.
+                alias right_adjust = max(
+                    WO
+                    - 1
+                    - (W - 1 + pad_left - s * dilations[1]) // strides[1],
+                    0,
+                ) if padded_right else 0
+                self._accumulate[
+                    micro_kernel_height - left_adjust - right_adjust,
+                    micro_kernel_width,
+                    simd_size,
+                    has_residual,
+                    # prefetch offset, default to 4 for now
+                    4,
+                ](
+                    c_tile_size,
+                    wo_stride_in_input,
+                    input_ptr.offset(left_adjust * wo_stride_in_input),
+                    filter_ptr,
+                    output_micro_tile.data.offset(
+                        left_adjust * micro_kernel_f_size
+                    ),
+                )
+
+                filter_ptr = filter_ptr.offset(filter_S_stride)
+                input_ptr = input_ptr.offset(s_stride_in_input)
+
+            unroll[S, body]()
+
+            h_shift += dilations[0]
+
+        # Store the micro tile
+        self._store_output_micro_tile[
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+            has_residual,
+        ](output_micro_tile, output_base)
 
         # Apply elmentwise epilogue to the
         alias F = shape_output.at[3]().get()
