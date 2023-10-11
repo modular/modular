@@ -67,23 +67,36 @@ export class MOJOSDK {
   }
 
   /**
-   * Resolve the Modular config for the given workspace directory.
+   * Resolve the Modular config for the given context. It'll look for the
+   * corresponding SDK in the given context if it's a string, in the environment
+   * of the VS Code process or in the VS Code settings at workspace and user
+   * level, depending on whether the context is a WorkspaceFolder.
    *
-   * @param workspaceFolder The current workspace folder, or undefined.
+   * @param context The current workspace folder if its type is
+   *     vscode.WorkspaceFolder, or the Mojo SDK path if its type is string, or
+   *     undefined.
    * @param promptSDKInstall Whether to prompt the user to install the SDK
    *                            if it is missing.
    */
-  public async resolveConfig(workspaceFolder: vscode.WorkspaceFolder|
+  public async resolveConfig(context: vscode.WorkspaceFolder|string|
                              undefined): Promise<MOJOSDKConfig|undefined> {
-    let workspaceFolderStr =
-        workspaceFolder ? workspaceFolder.uri.toString() : "";
-    let mojoConfig = this.workspaceConfigs.get(workspaceFolderStr);
+    let key = typeof (context) === "string" ? context
+              : context                     ? context.uri.fsPath
+                                            : "";
+    let mojoConfig = this.workspaceConfigs.get(key);
     if (mojoConfig)
       return mojoConfig;
 
-    // Check to see if a path was specified in the config.
-    let modularPath =
-        await this.tryGetModularHomePathFromConfig(workspaceFolder);
+    let modularPath: string|undefined;
+
+    // Check to see if a path was specified explicitly.
+    if (typeof (context) == "string") {
+      modularPath = context;
+
+      // Check to see if a path was specified in the config.
+    } else {
+      modularPath = await this.tryGetModularHomePathFromConfig(context);
+    }
 
     // Otherwise, check to see if the environment variable is set.
     if (!modularPath) {
@@ -139,7 +152,7 @@ export class MOJOSDK {
     mojoConfig.mojoLLDBPluginPath = modularConfig.mojo.lldb_plugin_path;
 
     // Cache the config for the workspace.
-    this.workspaceConfigs.set(workspaceFolderStr, mojoConfig);
+    this.workspaceConfigs.set(key, mojoConfig);
     return mojoConfig;
   }
 

@@ -115,9 +115,6 @@ export class UriLaunchServer implements UriHandler {
   }
 }
 
-export type RpcLaunchServerOptions =
-    net.ListenOptions&{token : string | undefined};
-
 /**
  * RPC-based debug launcher.
  *
@@ -126,9 +123,9 @@ export type RpcLaunchServerOptions =
  */
 export class RpcLaunchServer extends DisposableContext {
   private inner: net.Server;
-  private options: RpcLaunchServerOptions;
+  private port: number;
+  private tokens = new Set<string>();
   private errorEmitter = new EventEmitter<Error>();
-  readonly workspaceFolder: vscode.WorkspaceFolder|undefined;
   private loggingService: LoggingService;
 
   /**
@@ -136,18 +133,18 @@ export class RpcLaunchServer extends DisposableContext {
    * `token` attribute from the incoming debug configuration requests as a
    * safety mechanism.
    */
-  constructor(loggingService: LoggingService,
-              workspaceFolder: vscode.WorkspaceFolder|undefined,
-              options: RpcLaunchServerOptions) {
+  constructor(loggingService: LoggingService, port: number,
+              token: string|undefined) {
     super();
     this.loggingService = loggingService;
-    this.workspaceFolder = workspaceFolder;
+    this.port = port;
+    this.addServerToken(token);
+
     this.pushSubscription(this.errorEmitter.event((e: Error) => {
       this.loggingService.logError(
           "RPC Server error. You might need to restart VS Code to fix this issue.",
           e);
     }));
-    this.options = options;
 
     this.inner = net.createServer({allowHalfOpen : true});
     this.inner.on('error', err => { this.errorEmitter.fire(err); });
@@ -166,6 +163,15 @@ export class RpcLaunchServer extends DisposableContext {
   }
 
   /**
+   * Adds the given token, if not undefined, to the list of tokens used for
+   * basic security of this server.
+   */
+  addServerToken(token: string|undefined) {
+    if (token !== undefined)
+      this.tokens.add(token)
+  }
+
+  /**
    * Process a JSON debug configuration. It should contain a token field with
    * the same value as the one defined to create the RPC server.
    */
@@ -177,14 +183,14 @@ export class RpcLaunchServer extends DisposableContext {
     };
     Object.assign(debugConfig, YAML.parse(request));
     debugConfig.name = debugConfig.name || debugConfig.program;
-    if (this.options.token) {
-      if (debugConfig.token !== this.options.token)
-        return 'Invalid secret';
+    if (this.tokens.size != 0) {
+      if (!this.tokens.has(debugConfig.token || ''))
+        return 'Invalid token. This mojo.lldb.rpcServer expects a different `token` attribute for the launch configuration.';
       delete debugConfig.token;
     }
     try {
-      let success =
-          await debug.startDebugging(this.workspaceFolder, debugConfig);
+      let success = await debug.startDebugging(/*workspaceFolder=*/ undefined,
+                                               debugConfig);
       return JSON.stringify({success : success});
     } catch (err) {
       return JSON.stringify({success : false, message : `${err}`});
@@ -196,8 +202,9 @@ export class RpcLaunchServer extends DisposableContext {
    */
   public async listen() {
     return new Promise<net.AddressInfo|string>(
-        resolve => this.inner.listen(
-            this.options, () => resolve(this.inner.address() || "")));
+        resolve =>
+            this.inner.listen({port : this.port, host : "127.0.0.1"},
+                              () => resolve(this.inner.address() || "")));
   }
 
   /**

@@ -2,7 +2,7 @@
   "name": "vscode-mojo",
   "displayName": "Mojo 🔥",
   "description": "Mojo language support",
-  "version": "0.2.1",
+  "version": "4.0.0-dev",
   "publisher": "modular-mojotools",
   "icon": "icon.png",
   "engines": {
@@ -120,17 +120,16 @@
         },
         "mojo.lldb.rpcServer": {
           "scope": "resource",
-          "description": "Start an RPC server that will accept debug requests.",
+          "description": "Start an RPC server that will accept debug requests. This server is not linked to any workspace folders, so variable substitution in the debug configuration is not supported at that level. To use the server, the `MODULAR_HOME` environment variable must be defined in the VS Code environment, or the `mojo.modularHomePath` VS Code setting must be set, or otherwise all debug configuration requests must include the `modularHomePath` entry.",
           "type": "object",
           "properties": {
-            "host": {
-              "type": "string"
-            },
-            "post": {
-              "type": "number"
+            "port": {
+              "type": "number",
+              "description": "The port to use for creating this server in localhost."
             },
             "token": {
-              "type": "string"
+              "type": "string",
+              "description": "An optional string that is used for basic security. If set, debug configurations must include the `token` entry with this value."
             }
           },
           "order": 2
