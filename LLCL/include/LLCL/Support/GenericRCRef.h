@@ -34,11 +34,8 @@ public:
   /// Forms a new reference to payload, incrementing its reference count.
   template <typename T>
   static GenericRCRef copy(T *payload) {
-    if (payload) {
-      // Call addRef via RCRef.
-      RCRef<T> rcref = RCRef<T>::copy(payload);
-      rcref.release();
-    }
+    if (payload)
+      RCRef<T>::lowLevelAddRef(payload);
     return take(payload);
   }
 
@@ -49,8 +46,7 @@ public:
     result.payload = payload;
     result.typeId = LLCL::TypeID::get<T>();
     result.dropRef = [](void *ptr) {
-      // Call dropRef via RCRef.
-      RCRef<T> rcref = RCRef<T>::take(static_cast<T *>(ptr));
+      RCRef<T>::lowLevelDropRef(static_cast<T *>(ptr));
     };
     return result;
   }
