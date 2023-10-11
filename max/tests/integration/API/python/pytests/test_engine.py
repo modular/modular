@@ -6,6 +6,9 @@
 """Test the modular.engine Python bindings with MOF."""
 
 import os
+import subprocess
+import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +32,24 @@ def mo_model_path(modular_path: Path) -> Path:
     return modular_path / "All" / "test" / "API" / "c" / "mo-model.api"
 
 
+@pytest.fixture
+def mo_custom_ops_model_path(modular_path: Path) -> Path:
+    """Returns the path to the generated BasicMLP model."""
+    return (
+        modular_path / "All" / "test" / "API" / "c" / "custom-ops-override.api"
+    )
+
+
+@pytest.fixture
+def custom_ops_package_path(tmp_path: Path, modular_path: Path) -> Path:
+    package_src = modular_path / "All" / "test" / "API" / "test_user_op"
+    package_path = tmp_path / "user_op.mojopkg"
+    subprocess.check_output(
+        ["mojo", "package", package_src, "-o", package_path]
+    )
+    return package_path
+
+
 def test_execute_success(mo_model_path: Path):
     session = me.InferenceSession()
     model = session.load(mo_model_path)
@@ -37,4 +58,36 @@ def test_execute_success(mo_model_path: Path):
     assert np.allclose(
         output["output"],
         np.array([4.0, 2.0, -5.0, 3.0, 6.0]).astype(np.float32),
+    )
+
+
+# TODO: Move to an experimental modular engine package
+@dataclass
+class CustomOptions(me.ExperimentalLoadOptions):
+    type: str = "experimental"
+    custom_ops_path: str = field(default="")
+
+
+def test_custom_ops(
+    mo_custom_ops_model_path: Path, custom_ops_package_path: Path
+):
+    session = me.InferenceSession()
+    model = session.load(mo_custom_ops_model_path)
+    inputs = np.ones((1)) * 4
+    output = model.execute(input0=inputs)
+    assert "output" in output.keys()
+    assert np.allclose(
+        output["output"],
+        np.array([2.0]).astype(np.float32),
+    )
+
+    options = CustomOptions()
+    options.custom_ops_path = str(custom_ops_package_path)
+    model_with_custom_op = session.load(mo_custom_ops_model_path, options)
+    inputs = np.ones((1)) * 4
+    output = model_with_custom_op.execute(input0=inputs)
+    assert "output" in output.keys()
+    assert np.allclose(
+        output["output"],
+        np.array([4.0]).astype(np.float32),
     )
