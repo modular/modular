@@ -1874,6 +1874,7 @@ fn matmul[
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
 
+    # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     _matmul[
         a_type,
         b_type,
@@ -1883,7 +1884,7 @@ fn matmul[
         b_packed,
         lambdas_have_fusion,
         epilogue_wrapper,
-        True,  # saturated_vnni
+        False,  # saturated_vnni
         single_thread_blocking_override,
     ](
         c,
@@ -1950,7 +1951,7 @@ fn batched_matmul[
         adj_b,
         lambdas_have_fusion,
         epilogue_wrapper,
-        True,  # saturated_vnni
+        False,  # saturated_vnni
         single_thread_blocking_override,
     ](c, a, b, out_chain)
 
