@@ -11,6 +11,8 @@
 using namespace M;
 using namespace M::LLCL;
 
+namespace {
+
 //===----------------------------------------------------------------------===//
 // Runtime contexts
 //===----------------------------------------------------------------------===//
@@ -91,3 +93,5 @@ TEST(RuntimeTest, Contexturations_ExpectDeath) {
                             "set already holds object of type");
 }
 #endif
+
+} // namespace

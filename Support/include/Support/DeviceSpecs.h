@@ -16,6 +16,7 @@
 #define SUPPORT_DEVICE_SPECS_H
 
 #include "Support/ErrorOr.h"
+#include "Support/ReferenceCounted.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/JSON.h"
@@ -140,6 +141,14 @@ struct DeviceSpec {
 /// matching devices spec available in the runtime environment.
 using DeviceSpecMap =
     llvm::DenseMap<DeviceRef, std::pair<DeviceSpec, DeviceSpec>>;
+
+/// A reference counted version of DeviceSpecMap, suitable for use in the
+/// runtime.
+struct RuntimeDeviceSpecMap : public ReferenceCounted<RuntimeDeviceSpecMap> {
+  DeviceSpecMap map;
+
+  RuntimeDeviceSpecMap(DeviceSpecMap map) : map(std::move(map)) {}
+};
 
 //===----------------------------------------------------------------------===//
 // DeviceSpecCollection

@@ -10,6 +10,8 @@
 
 using namespace M::LLCL;
 
+namespace {
+
 #if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
 TEST(UseAfterFreeAllocator, Detects) {
   auto allocator = createUseAfterFreeAllocator();
@@ -22,3 +24,5 @@ TEST(UseAfterFreeAllocator, Detects) {
   allocator->deallocate(ptr2);
 }
 #endif
+
+} // namespace

@@ -19,6 +19,8 @@
 
 using namespace M::LLCL;
 
+namespace {
+
 enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
@@ -664,3 +666,5 @@ TEST_P(AsyncValueTest, AddTaskOverflow_DeadlockOnFailure) {
   // Will deadlock if an extra task was dropped.
   await(extraFinished);
 }
+
+} // namespace
