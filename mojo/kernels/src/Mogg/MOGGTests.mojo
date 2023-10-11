@@ -135,3 +135,24 @@ fn sqrt_wrapped[
 ](value: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     print("In override sqrt")
     return value
+
+
+@mogg_register("test_static_shape_deduction")
+@export
+fn test_static_shape_deduction[
+    type: DType, rank: Int, input_0_static_shape: DimList
+](tensor: NDBuffer[rank, input_0_static_shape, type],):
+    print("Printing shape: ")
+
+    @always_inline
+    @parameter
+    fn body[idx: Int]():
+        alias dim = input_0_static_shape.at[idx]()
+
+        @parameter
+        if dim.is_dynamic():
+            print("unknown")
+        else:
+            print(dim.get())
+
+    unroll[rank, body]()

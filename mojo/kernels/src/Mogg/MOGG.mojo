@@ -364,6 +364,29 @@ fn TensorIndicesTypeDef[
     return ty
 
 
+@mogg_register("dim_type")
+@export
+fn DimTypeDef(ty: Dim) -> Dim:
+    return ty
+
+
+# ===----------------------------------------------------------------------===#
+# Hooks to help build static shapes.
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("create_unknown_dim")
+@export
+fn create_unknown_dim() -> Dim:
+    return Dim()
+
+
+@mogg_register("create_known_dim")
+@export
+fn create_known_dim[known_val: Int]() -> Dim:
+    return Dim(known_val)
+
+
 # ===----------------------------------------------------------------------===#
 # Basic generated kernel building blocks
 # ===----------------------------------------------------------------------===#
@@ -489,9 +512,9 @@ fn elementwise_wrapper[
 
 @always_inline
 fn _compute_flat_index[
-    type: DType, rank: Int, iters: Int
+    type: DType, rank: Int, iters: Int, static_shape: DimList
 ](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    buffer: NDBuffer[rank, static_shape, type],
     index: StaticIntTuple[rank],
 ) -> Int:
     var flat_index: Int = 0
@@ -507,10 +530,10 @@ fn _compute_flat_index[
 
 @always_inline
 fn _simd_load_internal[
-    simd_width: Int, type: DType, rank: Int
-](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type], index: Int
-) -> SIMD[type, simd_width]:
+    simd_width: Int, type: DType, rank: Int, static_shape: DimList
+](buffer: NDBuffer[rank, static_shape, type], index: Int) -> SIMD[
+    type, simd_width
+]:
     @parameter
     if type == DType.bool:
         let v = buffer.data.bitcast[DType.uint8]().simd_load[simd_width](index)
@@ -522,12 +545,14 @@ fn _simd_load_internal[
 @mogg_register("simd_load")
 @always_inline
 fn simd_load[
-    type: DType, simd_width: Int, rank: Int
+    type: DType, simd_width: Int, rank: Int, input_0_static_shape: DimList
 ](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    buffer: NDBuffer[rank, input_0_static_shape, type],
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
-    let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
+    let flat_index = _compute_flat_index[
+        type, rank, rank, input_0_static_shape
+    ](buffer, index)
     let stride = buffer.dynamic_stride[rank - 1]
 
     if buffer.dynamic_stride[rank - 1] == 0:
@@ -544,7 +569,9 @@ fn simd_load[
             return strided_load[type, simd_width](
                 buffer.data.offset(flat_index), stride
             )
-    return _simd_load_internal[simd_width, type, rank](buffer, flat_index)
+    return _simd_load_internal[simd_width, type, rank, input_0_static_shape](
+        buffer, flat_index
+    )
 
 
 @mogg_register("simd_store")
