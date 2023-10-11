@@ -15,6 +15,8 @@ namespace M::LLCL {
 /// A type-erased version of std::unique_ptr<T>, where T is recorded using
 /// a TypeID::get<T>() and cast (with type safety check) on access. Not
 /// thread safe.
+///
+/// See also GenericRCRef for the reference counting equivalent.
 class GenericUniquePtr {
 public:
   /// Constructs the null pointer.

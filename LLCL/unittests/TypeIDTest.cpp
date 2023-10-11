@@ -35,6 +35,8 @@ namespace ns1::ns2 {
 struct bar;
 }
 
+namespace {
+
 TEST(TypeID, typeName) {
   using namespace M::LLCL::Detail;
   using namespace std::string_view_literals;
@@ -124,3 +126,5 @@ TEST(TypeID, Smoke) {
     EXPECT_EQ(typeIDsB[i], typeIDsB.front());
   }
 }
+
+} // namespace

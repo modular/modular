@@ -11,6 +11,8 @@
 using namespace M;
 using namespace M::LLCL;
 
+namespace {
+
 TEST(Resource, Correct) {
   auto resource = Resource::allocate("test");
   auto use1 = resource->beginUse("use1");
@@ -131,3 +133,5 @@ TEST(Resource, Resource_SectionReadWriteRace_ExpectDeath) {
       "requested section for writing overlaps with existing section "
       "\\[5, 10\\) for reading with active uses \\{'read'\\}");
 }
+
+} // namespace

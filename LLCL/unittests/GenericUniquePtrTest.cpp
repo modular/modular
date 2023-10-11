@@ -10,6 +10,8 @@
 
 using namespace M::LLCL;
 
+namespace {
+
 struct TypeA {
   int i = 42;
 
@@ -54,3 +56,5 @@ TEST(GenericUniquePtr, IllTyped_ExpectDeath) {
                             "mismatch between actual and expected type ids");
 }
 #endif
+
+} // namespace
