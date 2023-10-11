@@ -126,6 +126,7 @@ from Slice import slice_as_view, slice_shape
 from Softmax import logsoftmax as _logsoftmax
 from Softmax import softmax as _softmax
 from Split import split as _split
+from Tile import tile
 from TopK import top_k as _top_k
 from TopK import top_k_shape
 
@@ -273,6 +274,7 @@ fn MOGGExport():
     alias _top_k = top_k
     alias _bottom_k = bottom_k
     alias _top_k_shape = top_k_shape
+    alias _tile = tile
 
 
 # ===----------------------------------------------------------------------===#
