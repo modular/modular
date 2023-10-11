@@ -19,7 +19,6 @@ from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 fn tile[
     rank: Int, type: DType, rank_repeats: Int, type_repeats: DType
 ](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     input: NDBuffer[
         rank,
         DimList.create_unknown[rank](),
@@ -30,6 +29,7 @@ fn tile[
         DimList.create_unknown[rank_repeats](),
         type_repeats,
     ],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
     """

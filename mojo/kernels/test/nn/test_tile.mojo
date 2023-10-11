@@ -56,9 +56,9 @@ fn test_tile_eg1():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -119,9 +119,9 @@ fn test_tile_eg2():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -180,9 +180,9 @@ fn test_tile_eg3():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -251,9 +251,9 @@ fn test_tile_eg4():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -324,9 +324,9 @@ fn test_tile_eg5():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -385,9 +385,9 @@ fn test_tile_eg6():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -446,9 +446,9 @@ fn test_tile_eg7():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -511,9 +511,9 @@ fn test_tile_eg8():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -595,9 +595,9 @@ fn test_tile_eg9():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -684,9 +684,9 @@ fn test_tile_eg10():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -795,9 +795,9 @@ fn test_tile_eg11():
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         tile[rank, type, rank_repeats, type_repeats](
-            output.make_dims_unknown(),
             input.make_dims_unknown(),
             repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
             out_chain.borrow(),
         )
         out_chain.wait()
