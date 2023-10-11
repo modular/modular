@@ -3967,15 +3967,6 @@ struct ConvDirectNHWC[
         ]()
         alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 
-        alias pad_left = conv_attr.pad_w.at[0]().get()
-        alias pad_bottom = conv_attr.pad_h.at[0]().get()
-        alias strides = Index(
-            conv_attr.stride.at[0]().get(), conv_attr.stride.at[1]().get()
-        )
-        alias dilations = Index(
-            conv_attr.dilation.at[0]().get(), conv_attr.dilation.at[1]().get()
-        )
-
         let f_round_by_simd = (
             (self.partition_offsets[2] + self.partition_sizes[2]) // simd_size
         ) * simd_size
@@ -3988,10 +3979,6 @@ struct ConvDirectNHWC[
                 size // simd_size,
                 False,
                 last_c_tile,
-                pad_left,
-                pad_bottom,
-                strides,
-                dilations,
             ](n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size)
 
         tile[
@@ -4015,10 +4002,6 @@ struct ConvDirectNHWC[
                 1,
                 True,
                 last_c_tile,
-                pad_left,
-                pad_bottom,
-                strides,
-                dilations,
             ](n, f_round_by_simd, simd_size, c_tile_offset, c_tile_size)
 
     @always_inline
@@ -4027,10 +4010,6 @@ struct ConvDirectNHWC[
         micro_kernel_width: Int,
         has_residual: Bool,
         last_c_tile: Bool,
-        pad_left: Int,
-        pad_bottom: Int,
-        strides: StaticIntTuple[2],
-        dilations: StaticIntTuple[2],
     ](
         self,
         n: Int,
@@ -4076,10 +4055,10 @@ struct ConvDirectNHWC[
             self.partition_offsets[3],
             self.partition_offsets[3] + self.partition_sizes[3],
         ):
-            let h = ho * strides[0] - pad_bottom
+            let h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
             # Point to (n, 0, ho, c_tile_offset) mapped in input
             var input_base = input_curr_image.offset(
-                c_tile_offset + C * (-pad_left + W * h)
+                c_tile_offset + C * (-conv_attr.pad_left() + W * h)
             )
             # Point to (n, 0, ho, f_tile_offset) mapped in input
             var output_base = output_curr_image.offset(
@@ -4096,10 +4075,6 @@ struct ConvDirectNHWC[
                     True,
                     has_residual,
                     last_c_tile,
-                    pad_left,
-                    pad_bottom,
-                    strides,
-                    dilations,
                 ](
                     input_base,
                     filter_base,
@@ -4131,10 +4106,6 @@ struct ConvDirectNHWC[
                     False,
                     has_residual,
                     last_c_tile,
-                    pad_left,
-                    pad_bottom,
-                    strides,
-                    dilations,
                 ](
                     input_base,
                     filter_base,
@@ -4148,7 +4119,7 @@ struct ConvDirectNHWC[
                     0,  # beginning of wo dimension
                 )
                 input_base = input_base.offset(
-                    micro_kernel_height_lbound * strides[1] * C
+                    micro_kernel_height_lbound * conv_attr.strides()[1] * C
                 )
                 output_base = output_base.offset(micro_kernel_height_lbound * F)
 
@@ -4163,10 +4134,6 @@ struct ConvDirectNHWC[
                         False,
                         has_residual,
                         last_c_tile,
-                        pad_left,
-                        pad_bottom,
-                        strides,
-                        dilations,
                     ](
                         input_base,
                         filter_base,
@@ -4179,7 +4146,9 @@ struct ConvDirectNHWC[
                         ho,
                         wo,
                     )
-                    input_base = input_base.offset(height * strides[1] * C)
+                    input_base = input_base.offset(
+                        height * conv_attr.strides()[1] * C
+                    )
                     output_base = output_base.offset(height * F)
 
                 # Middle points are the points not updated by micro kernels
@@ -4202,10 +4171,6 @@ struct ConvDirectNHWC[
                     True,
                     has_residual,
                     last_c_tile,
-                    pad_left,
-                    pad_bottom,
-                    strides,
-                    dilations,
                 ](
                     input_base,
                     filter_base,
@@ -4227,10 +4192,6 @@ struct ConvDirectNHWC[
         padded_right: Bool,
         has_residual: Bool,
         last_c_tile: Bool,
-        pad_left: Int,
-        pad_bottom: Int,
-        strides: StaticIntTuple[2],
-        dilations: StaticIntTuple[2],
     ](
         self,
         input_base: DTypePointer[
@@ -4252,8 +4213,8 @@ struct ConvDirectNHWC[
         alias R = shape_filter.at[1]().get()  # FRSCf
         alias S = shape_filter.at[2]().get()
         alias C = shape_input.at[3]().get()  # NHWC
-        alias s_stride_in_input = dilations[1] * C
-        alias wo_stride_in_input = strides[1] * C
+        alias s_stride_in_input = conv_attr.dilations()[1] * C
+        alias wo_stride_in_input = conv_attr.strides()[1] * C
         alias filter_S_stride = C * micro_kernel_f_size
         alias filter_F_stride = R * S * filter_S_stride
 
@@ -4283,16 +4244,16 @@ struct ConvDirectNHWC[
         # Shift in input H when shifting 1 in filter stencil' R dimension.
         var h_shift = 0
         # h index in input image
-        let h = ho * strides[0] - pad_bottom
+        let h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
         for r in range(R):
             # Skip if row falls in padding.
             if h + h_shift < 0 or h + h_shift >= H:
-                h_shift += dilations[0]
+                h_shift += conv_attr.dilations()[0]
                 continue
 
             var input_ptr = input_base.offset(h_shift * C * W)
             var filter_ptr = filter_base.offset(r * S * filter_S_stride)
-            var w = wo * strides[1] - pad_left
+            var w = wo * conv_attr.strides()[1] - conv_attr.pad_left()
 
             @parameter
             @always_inline
@@ -4301,16 +4262,21 @@ struct ConvDirectNHWC[
                 # The first left_adjust x micro_kernel_width registers are
                 # ignored because they fall in padding.
                 alias left_adjust = max(
-                    div_ceil(pad_left - s * dilations[1], strides[1]), 0
+                    div_ceil(
+                        conv_attr.pad_left() - s * conv_attr.dilations()[1],
+                        conv_attr.strides()[1],
+                    ),
+                    0,
                 ) if padded_left else 0
                 # Adjustment of micro kernel height for right padding
                 # The last left_adjust x micro_kernel_width registers are ignored.
+                # fmt: off
                 alias right_adjust = max(
-                    WO
-                    - 1
-                    - (W - 1 + pad_left - s * dilations[1]) // strides[1],
+                    WO - 1 - (W - 1 + conv_attr.pad_left() - s * conv_attr.dilations()[1])
+                             // conv_attr.strides()[1],
                     0,
                 ) if padded_right else 0
+                # fmt: on
                 self._accumulate[
                     micro_kernel_height - left_adjust - right_adjust,
                     micro_kernel_width,
@@ -4333,7 +4299,7 @@ struct ConvDirectNHWC[
 
             unroll[S, body]()
 
-            h_shift += dilations[0]
+            h_shift += conv_attr.dilations()[0]
 
         # Store the micro tile
         self._store_output_micro_tile[

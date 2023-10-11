@@ -349,6 +349,22 @@ struct ConvInfoStatic:
         )
 
     @always_inline
+    fn pad_left(self) -> Int:
+        return self.pad_w.at[0]().get()
+
+    @always_inline
+    fn pad_bottom(self) -> Int:
+        return self.pad_h.at[0]().get()
+
+    @always_inline
+    fn strides(self) -> StaticIntTuple[2]:
+        return Index(self.stride.at[0]().get(), self.stride.at[1]().get())
+
+    @always_inline
+    fn dilations(self) -> StaticIntTuple[2]:
+        return Index(self.dilation.at[0]().get(), self.dilation.at[1]().get())
+
+    @always_inline
     @staticmethod
     fn create_unknown() -> Self:
         return rebind[Self](
