@@ -81,6 +81,10 @@ MojoTypeDataLayoutContext::Impl::getOrCalculate(MojoASTTypeRef type) {
 
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
+  // A REPLResultRefType is effectively a pointer, so we transform it into one.
+  if (auto replType = dyn_cast<LIT::REPLResultRefType>(type))
+    return calculate(KGEN::PointerType::get(replType.getElementType()));
+
   if (MojoASTDeclRef declRef = context.getDecl(type)) {
     if (LIT::StructDeclOp structDeclOp =
             dyn_cast_if_present<LIT::StructDeclOp>(declRef.getIfOperation())) {

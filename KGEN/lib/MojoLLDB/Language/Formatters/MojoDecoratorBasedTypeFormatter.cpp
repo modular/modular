@@ -5,17 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoDecoratorBasedTypeFormatter.h"
-#include "../TypeSystem/MojoTypeSystem.h"
+#include "../../TypeSystem/MojoTypeSystem.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENTypes.h"
-#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
-#include "lldb/Core/ValueObject.h"
-#include "lldb/DataFormatters/FormattersHelpers.h"
+#include "MojoWrappingTypeSyntheticFrontEnd.h"
 
 using namespace lldb;
 using namespace lldb_private;
-using namespace lldb_private::formatters;
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::Mojo;
@@ -59,7 +55,7 @@ M::KGEN::Mojo::MojoDecoratorBasedTypeSyntheticFrontEndCreator(
           symbol.getRootReference() == "$utils" &&
           nestedReferences[0].getValue() == "$lldb" &&
           nestedReferences[1].getValue() == "lldb_formatter_wrapping_type()") {
-        return new WrappingTypeSyntheticFrontEnd(*valobjSP);
+        return new MojoWrappingTypeSyntheticFrontEnd(*valobjSP);
       }
     }
   }

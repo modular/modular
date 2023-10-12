@@ -5,9 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoDynamicVectorTypeFormatter.h"
-#include "../TypeSystem/MojoTypeSystem.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
-#include "lldb/Core/ValueObject.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 
 using namespace lldb;
@@ -22,8 +20,6 @@ MojoDynamicVectorSyntheticFrontEnd::MojoDynamicVectorSyntheticFrontEnd(
   if (backend)
     Update();
 }
-
-MojoDynamicVectorSyntheticFrontEnd::~MojoDynamicVectorSyntheticFrontEnd() {}
 
 size_t MojoDynamicVectorSyntheticFrontEnd::CalculateNumChildren() {
   return size;
