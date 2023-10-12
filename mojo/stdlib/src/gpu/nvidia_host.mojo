@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA host functions."""
 
-import sys
 from sys.ffi import DLHandle
 from memory import stack_allocation
 from memory.unsafe import bitcast
