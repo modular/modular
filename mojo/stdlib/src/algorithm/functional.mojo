@@ -1274,7 +1274,7 @@ fn _elementwise_impl[
             stream=out_chain.get_cuda_stream(),
         )
     except e:
-        print(e)
+        out_chain.mark_error(e)
 
 
 @always_inline
