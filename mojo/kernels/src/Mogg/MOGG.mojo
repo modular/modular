@@ -122,6 +122,7 @@ from Resize import (
     RoundMode,
     CoordinateTransformationMode,
 )
+from ROIAlign import roi_align_nhwc
 from Slice import slice_as_view, slice_shape
 from Softmax import logsoftmax as _logsoftmax
 from Softmax import softmax as _softmax
@@ -260,6 +261,7 @@ fn MOGGExport():
     alias _resize_shape = resize_shape
     alias _round = round
     alias _roundeven = roundeven
+    alias _roi_align_shape = roi_align_shape
     alias _slice_shape = slice_shape
     alias _transpose = transpose
     alias _transpose_shape = transpose_shape
@@ -2524,6 +2526,66 @@ fn resize_shape[
     @unroll
     for i in range(rank):
         shape[i] = size[i].to_int()
+    return shape
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG ROI Align
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mo.roi_align")
+@export
+fn roi_align[
+    type: DType, aligned: Bool, mode: StringLiteral
+](
+    input: NDBuffer[4, DimList.create_unknown[4](), type],
+    rois: NDBuffer[2, DimList.create_unknown[2](), type],
+    output_height: NDBuffer[1, DimList.create_unknown[1](), DType.int64],
+    output_width: NDBuffer[1, DimList.create_unknown[1](), DType.int64],
+    spatial_scale: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
+    sampling_ratio: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
+    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    out_chain: OutputChainPtr,
+):
+    roi_align_nhwc[
+        type,
+        DimList.create_unknown[4](),
+        DimList.create_unknown[2](),
+        aligned,
+        mode,
+    ](
+        output,
+        input,
+        rois,
+        output_height[0].to_int(),
+        output_width[0].to_int(),
+        spatial_scale[0],
+        sampling_ratio[0],
+    )
+    out_chain.mark_ready()
+
+
+fn roi_align_shape[
+    inpTy: DType,
+    roisTy: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[4, DimList.create_unknown[4](), inpTy],
+    rois: NDBuffer[2, DimList.create_unknown[2](), roisTy],
+    output_height: NDBuffer[1, DimList.create_unknown[1](), DType.int64],
+    output_width: NDBuffer[1, DimList.create_unknown[1](), DType.int64],
+) -> StaticIntTuple[4]:
+    var shape = StaticIntTuple[4]()
+
+    # input shape is [N, H, W, C]
+    # rois shape is [M, 5]
+    # output shape is [M, output_height, output_width, C]
+    shape[0] = rois.get_shape()[0]
+    shape[1] = output_height[0].to_int()
+    shape[2] = output_width[0].to_int()
+    shape[3] = input.get_shape()[3]
+
     return shape
 
 
