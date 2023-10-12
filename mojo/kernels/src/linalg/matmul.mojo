@@ -2176,9 +2176,7 @@ fn matmul[
             stream=out_chain.get_cuda_stream(),
         )
     except e:
-        let s = e.__str__()
-        out_chain.mark_error(s._strref_dangerous())
-        s._strref_keepalive()
+        out_chain.mark_error(e)
 
 
 @always_inline
