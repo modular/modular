@@ -1935,7 +1935,7 @@ struct ModuleHandle:
         _ = path_str
         self.module = module
 
-    fn __init__(inout self, content: StringRef, debug: Bool = False) raises:
+    fn __init__(inout self, content: String, debug: Bool = False) raises:
         var module = _ModuleImpl()
         if debug:
             alias buffer_size = 4096
@@ -1970,7 +1970,7 @@ struct ModuleHandle:
                 # fmt: on
             ]("cuModuleLoadDataEx")(
                 Pointer.address_of(module),
-                content.data,
+                content._as_ptr(),
                 UInt32(num_options),
                 opts,
                 option_vals,
@@ -1991,9 +1991,12 @@ struct ModuleHandle:
                     fn (
                         Pointer[_ModuleImpl], DTypePointer[DType.int8]
                     ) -> Result
-                ]("cuModuleLoadData")(Pointer.address_of(module), content.data)
+                ]("cuModuleLoadData")(
+                    Pointer.address_of(module), content._as_ptr()
+                )
             )
         self.module = module
+        _ = content
 
     fn __init__(inout self, content: String) raises:
         var module = _ModuleImpl()
@@ -2438,9 +2441,9 @@ struct Function[func_type: AnyType, func: func_type]:
     var func_handle: FunctionHandle
 
     fn __init__(inout self, debug: Bool = False) raises:
-        alias ptx = _compile_nvptx_asm[func_type, func]()
         alias name = get_linkage_name[func_type, func]()
-        self.mod_handle = ModuleHandle(StringRef(ptx), debug)
+        let ptx = _compile_nvptx_asm[func_type, func]()
+        self.mod_handle = ModuleHandle(ptx, debug)
         self.func_handle = self.mod_handle.load(name)
 
     fn __del__(owned self) raises:
@@ -2886,7 +2889,8 @@ fn _get_nvtx_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn __compile_nvptx_asm[
+@always_inline
+fn __compile_nvptx_asm_impl[
     func_type: AnyType, func: func_type->asm: StringLiteral
 ]():
     param_return[
@@ -2900,7 +2904,13 @@ fn __compile_nvptx_asm[
     ]
 
 
-fn _compile_nvptx_asm[func_type: AnyType, func: func_type]() -> StringLiteral:
+@always_inline
+fn _compile_nvptx_asm[func_type: AnyType, func: func_type]() -> String:
     alias asm: StringLiteral
-    __compile_nvptx_asm[func_type, func -> asm]()
-    return asm
+    __compile_nvptx_asm_impl[func_type, func -> asm]()
+    return _cleanup_asm(asm)
+
+
+@always_inline
+fn _cleanup_asm(asm: String) -> String:
+    return asm.replace(".version 6.3\n", ".version 8.1\n")
