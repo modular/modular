@@ -1926,13 +1926,15 @@ struct ModuleHandle:
 
     fn __init__(inout self, path: Path) raises:
         var module = _ModuleImpl()
-        let path_str = path.__str__()
+        let path_cstr = _cleanup_string(path.__str__())
+
         _check_error(
             _get_dylib_function[
                 fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
-            ]("cuModuleLoad")(Pointer.address_of(module), path_str._as_ptr())
+            ]("cuModuleLoad")(Pointer.address_of(module), path_cstr._as_ptr())
         )
-        _ = path_str
+
+        _ = path_cstr
         self.module = module
 
     fn __init__(
@@ -1976,6 +1978,8 @@ struct ModuleHandle:
                 option_vals.store(num_options, bitcast[AnyType](1))
                 num_options += 1
 
+            # Note that content has already gone through _cleanup_asm and
+            # is null terminated.
             let result = _get_dylib_function[
                 # fmt: off
                 fn (
@@ -2005,6 +2009,8 @@ struct ModuleHandle:
 
             _check_error(result)
         else:
+            # Note that content has already gone through _cleanup_asm and
+            # is null terminated.
             _check_error(
                 _get_dylib_function[
                     fn (
@@ -2014,11 +2020,14 @@ struct ModuleHandle:
                     Pointer.address_of(module), content._as_ptr()
                 )
             )
+
         self.module = module
         _ = content
 
     fn __init__(inout self, content: String) raises:
         var module = _ModuleImpl()
+        # Note that content has already gone through _cleanup_asm and
+        # is null terminated.
         _check_error(
             _get_dylib_function[
                 fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
@@ -2036,6 +2045,8 @@ struct ModuleHandle:
 
     fn load(self, name: String) raises -> FunctionHandle:
         var func = FunctionHandle()
+        let name_cstr = _cleanup_string(name)
+
         _check_error(
             _get_dylib_function[
                 # fmt: off
@@ -2046,9 +2057,12 @@ struct ModuleHandle:
                 ) -> Result
                 # fmt: on
             ]("cuModuleGetFunction")(
-                Pointer.address_of(func), self.module, name._as_ptr()
+                Pointer.address_of(func), self.module, name_cstr._as_ptr()
             )
         )
+
+        _ = name_cstr
+
         return func
 
 
@@ -2934,4 +2948,9 @@ fn _compile_nvptx_asm[func_type: AnyType, func: func_type]() -> String:
 
 @always_inline
 fn _cleanup_asm(asm: String) -> String:
-    return asm.replace(".version 6.3\n", ".version 8.1\n")
+    return _cleanup_string(asm.replace(".version 6.3\n", ".version 8.1\n"))
+
+
+@always_inline
+fn _cleanup_string(name: String) -> String:
+    return name + "\0"
