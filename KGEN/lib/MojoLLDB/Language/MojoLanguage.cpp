@@ -5,8 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoLanguage.h"
-#include "MojoDecoratorBasedTypeFormatter.h"
-#include "MojoDynamicVectorTypeFormatter.h"
+#include "Formatters/MojoDecoratorBasedTypeFormatter.h"
+#include "Formatters/MojoDynamicVectorTypeFormatter.h"
+#include "Formatters/MojoLLDBResultRefTypeFormatter.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/FormatManager.h"
@@ -42,18 +43,26 @@ Language *MojoLanguage::CreateInstance(lldb::LanguageType language) {
   }
 }
 
-static void LoadLibMojoFormatters(lldb::TypeCategoryImplSP mojoCategorySP) {
+static void
+LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   if (!mojoCategorySP)
     return;
 
   SyntheticChildren::Flags synthFlags;
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
   // Formatters are matched in reverse order, so this one that uses .* should
-  // be added first so that it's the last one to be used.
+  // be added first so that it's the last one to be matched against. In fact,
+  // this formatter acts like a sink that will match everything that doesn't
+  // match the other formatters.
   AddCXXSynthetic(mojoCategorySP,
                   MojoDecoratorBasedTypeSyntheticFrontEndCreator,
                   "Mojo decorator-based synthetic children", ".*", synthFlags,
                   /*regex=*/true);
+  // This formatter will replace a REPLResultRef with the value of its inner
+  // type. REPLResultRef owns a pointer, so we need to dereference the pointer.
+  AddCXXSynthetic(mojoCategorySP, MojoREPLResultRefTypeSyntheticFrontEndCreator,
+                  "REPLResultRefType synthetic children",
+                  "^!lit.replresultref<.*>$", synthFlags, /*regex=*/true);
   AddCXXSynthetic(
       mojoCategorySP, MojoDynamicVectorSyntheticFrontEndCreator,
       "Mojo DynamicVector synthetic children",

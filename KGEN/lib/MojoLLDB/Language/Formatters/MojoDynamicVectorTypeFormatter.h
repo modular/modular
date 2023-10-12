@@ -16,7 +16,7 @@ class MojoDynamicVectorSyntheticFrontEnd
 public:
   MojoDynamicVectorSyntheticFrontEnd(lldb::ValueObjectSP backend);
 
-  ~MojoDynamicVectorSyntheticFrontEnd() override;
+  ~MojoDynamicVectorSyntheticFrontEnd() override = default;
 
   size_t CalculateNumChildren() override;
 
