@@ -29,7 +29,7 @@ struct BoxCoords[type: DType]:
         return Self {y1: y1, x1: x1, y2: y2, x2: x2}
 
 
-fn fill_boxes[
+def fill_boxes[
     type: DType
 ](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> Tensor[type]:
     let num_boxes = box_list.__len__() // batch_size
@@ -58,7 +58,7 @@ fn linear_offset_to_coords[
     return output
 
 
-fn fill_scores[
+def fill_scores[
     type: DType
 ](
     batch_size: Int, num_classes: Int, scores_list: VariadicList[SIMD[type, 1]]
@@ -86,38 +86,41 @@ fn test_case[
     box_list: VariadicList[BoxCoords[type]],
     scores_list: VariadicList[SIMD[type, 1]],
 ):
-    let boxes = fill_boxes[type](batch_size, box_list)
-    let scores = fill_scores[type](batch_size, num_classes, scores_list)
+    try:
+        let boxes = fill_boxes[type](batch_size, box_list)
+        let scores = fill_scores[type](batch_size, num_classes, scores_list)
 
-    let shape = non_max_suppression_shape_func(
-        boxes._to_ndbuffer[3](),
-        scores._to_ndbuffer[3](),
-        max_output_boxes_per_class,
-        iou_threshold,
-        score_threshold,
-    )
-    let selected_idxs = Tensor[DType.int64](shape[0], shape[1])
-    non_max_suppression(
-        boxes._to_ndbuffer[3](),
-        scores._to_ndbuffer[3](),
-        selected_idxs._to_ndbuffer[2](),
-        max_output_boxes_per_class,
-        iou_threshold,
-        score_threshold,
-    )
+        let shape = non_max_suppression_shape_func(
+            boxes._to_ndbuffer[3](),
+            scores._to_ndbuffer[3](),
+            max_output_boxes_per_class,
+            iou_threshold,
+            score_threshold,
+        )
+        let selected_idxs = Tensor[DType.int64](shape[0], shape[1])
+        non_max_suppression(
+            boxes._to_ndbuffer[3](),
+            scores._to_ndbuffer[3](),
+            selected_idxs._to_ndbuffer[2](),
+            max_output_boxes_per_class,
+            iou_threshold,
+            score_threshold,
+        )
 
-    # FIXME: missing lifetimes support, needed so that these tensors don't get destroyed
-    _ = boxes
-    _ = scores
+        # FIXME: missing lifetimes support, needed so that these tensors don't get destroyed
+        _ = boxes
+        _ = scores
 
-    for i in range(selected_idxs.dim(0)):
-        print_no_newline(selected_idxs[i, 0])
-        print_no_newline(",")
-        print_no_newline(selected_idxs[i, 1])
-        print_no_newline(",")
-        print_no_newline(selected_idxs[i, 2])
-        print_no_newline(",")
-        print("")
+        for i in range(selected_idxs.dim(0)):
+            print_no_newline(selected_idxs[i, 0])
+            print_no_newline(",")
+            print_no_newline(selected_idxs[i, 1])
+            print_no_newline(",")
+            print_no_newline(selected_idxs[i, 2])
+            print_no_newline(",")
+            print("")
+    except e:
+        print(e)
 
 
 fn main():
