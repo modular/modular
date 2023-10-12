@@ -1866,9 +1866,6 @@ fn matmul[
     c: NDBuffer[2, DimList.create_unknown[2](), c_type],
     out_chain: OutputChainPtr,
 ):
-    if target == "cuda":
-        return
-
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = packed_in_1
@@ -1907,7 +1904,9 @@ fn matmul[
             + single_thread_blocking_override
         )
 
-    out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
+    @parameter
+    if target == "cpu":
+        out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     _matmul[
@@ -1920,7 +1919,8 @@ fn matmul[
         lambdas_have_fusion,
         epilogue_wrapper,
         False,  # saturated_vnni
-        single_thread_blocking_override,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
     ](
         c,
         a,
