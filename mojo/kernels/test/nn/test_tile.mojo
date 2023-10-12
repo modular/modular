@@ -812,6 +812,295 @@ fn test_tile_eg11():
     print()
 
 
+# CHECK-LABEL: test_tile_eg12
+# CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
+# CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
+# CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
+# CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
+fn test_tile_eg12():
+    print("== test_tile_eg12")
+    alias rank = 4
+    alias type = DType.float32
+
+    let input = NDBuffer[
+        rank,
+        DimList(1, 1, 2, 2),
+        type,
+    ].stack_allocation()
+
+    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
+    input[StaticIntTuple[rank](0, 0, 0, 1)] = 1
+    input[StaticIntTuple[rank](0, 0, 1, 0)] = 2
+    input[StaticIntTuple[rank](0, 0, 1, 1)] = 3
+
+    # rank_repeats is always 1
+    alias rank_repeats = 1
+    # type_repeats is always DType.int64
+    alias type_repeats = DType.int64
+
+    let repeats = NDBuffer[
+        rank_repeats,
+        DimList(4),
+        type_repeats,
+    ].stack_allocation()
+
+    repeats[StaticIntTuple[rank_repeats](0)] = 1
+    repeats[StaticIntTuple[rank_repeats](1)] = 1
+    repeats[StaticIntTuple[rank_repeats](2)] = 2
+    repeats[StaticIntTuple[rank_repeats](3)] = 3
+
+    # Output rank = input rank
+    # output_dim[i] = input_dim[i] * repeats[i]
+    let output = NDBuffer[
+        rank,
+        DimList(1, 1, 4, 6),
+        type,
+    ].stack_allocation()
+
+    for i in range(1):
+        for j in range(1):
+            for k in range(4):
+                for l in range(6):
+                    output[StaticIntTuple[rank](i, j, k, l)] = 0
+
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
+
+    print()
+    for i in range(1):
+        for j in range(1):
+            for k in range(4):
+                for l in range(6):
+                    print_no_newline(output[i, j, k, l], ",")
+                print()
+            print()
+        print()
+    print()
+
+
+# CHECK-LABE: test_tile_eg13
+# CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
+# CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
+# CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
+# CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
+# CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,4.0 ,5.0 ,
+# CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
+# CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,4.0 ,5.0 ,
+# CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
+# CHECK: 8.0 ,9.0 ,8.0 ,9.0 ,8.0 ,9.0 ,
+# CHECK: 10.0 ,11.0 ,10.0 ,11.0 ,10.0 ,11.0 ,
+# CHECK: 8.0 ,9.0 ,8.0 ,9.0 ,8.0 ,9.0 ,
+# CHECK: 10.0 ,11.0 ,10.0 ,11.0 ,10.0 ,11.0 ,
+# CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
+# CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
+# CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
+# CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
+fn test_tile_eg13():
+    print("== test_tile_eg13")
+    alias rank = 4
+    alias type = DType.float32
+
+    let input = NDBuffer[
+        rank,
+        DimList(2, 2, 2, 2),
+        type,
+    ].stack_allocation()
+
+    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
+    input[StaticIntTuple[rank](0, 0, 0, 1)] = 1
+    input[StaticIntTuple[rank](0, 0, 1, 0)] = 2
+    input[StaticIntTuple[rank](0, 0, 1, 1)] = 3
+
+    input[StaticIntTuple[rank](0, 1, 0, 0)] = 4
+    input[StaticIntTuple[rank](0, 1, 0, 1)] = 5
+    input[StaticIntTuple[rank](0, 1, 1, 0)] = 6
+    input[StaticIntTuple[rank](0, 1, 1, 1)] = 7
+
+    input[StaticIntTuple[rank](1, 0, 0, 0)] = 8
+    input[StaticIntTuple[rank](1, 0, 0, 1)] = 9
+    input[StaticIntTuple[rank](1, 0, 1, 0)] = 10
+    input[StaticIntTuple[rank](1, 0, 1, 1)] = 11
+
+    input[StaticIntTuple[rank](1, 1, 0, 0)] = 12
+    input[StaticIntTuple[rank](1, 1, 0, 1)] = 13
+    input[StaticIntTuple[rank](1, 1, 1, 0)] = 14
+    input[StaticIntTuple[rank](1, 1, 1, 1)] = 15
+
+    # rank_repeats is always 1
+    alias rank_repeats = 1
+    # type_repeats is always DType.int64
+    alias type_repeats = DType.int64
+
+    let repeats = NDBuffer[
+        rank_repeats,
+        DimList(4),
+        type_repeats,
+    ].stack_allocation()
+
+    repeats[StaticIntTuple[rank_repeats](0)] = 1
+    repeats[StaticIntTuple[rank_repeats](1)] = 2
+    repeats[StaticIntTuple[rank_repeats](2)] = 2
+    repeats[StaticIntTuple[rank_repeats](3)] = 3
+
+    # Output rank = input rank
+    # output_dim[i] = input_dim[i] * repeats[i]
+    let output = NDBuffer[
+        rank,
+        DimList(2, 4, 4, 6),
+        type,
+    ].stack_allocation()
+
+    for i in range(2):
+        for j in range(4):
+            for k in range(4):
+                for l in range(6):
+                    output[StaticIntTuple[rank](i, j, k, l)] = 0
+
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
+
+    print()
+    for i in range(2):
+        for j in range(4):
+            for k in range(4):
+                for l in range(6):
+                    print_no_newline(output[i, j, k, l], ",")
+                print()
+            print()
+        print()
+    print()
+
+
+# CHECK-LABE: test_tile_eg14
+# CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
+# CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
+# CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
+# CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
+# CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,4.0 ,5.0 ,
+# CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
+# CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,4.0 ,5.0 ,
+# CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
+# CHECK: 8.0 ,9.0 ,8.0 ,9.0 ,8.0 ,9.0 ,
+# CHECK: 10.0 ,11.0 ,10.0 ,11.0 ,10.0 ,11.0 ,
+# CHECK: 8.0 ,9.0 ,8.0 ,9.0 ,8.0 ,9.0 ,
+# CHECK: 10.0 ,11.0 ,10.0 ,11.0 ,10.0 ,11.0 ,
+# CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
+# CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
+# CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
+# CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
+# CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
+# CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
+# CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
+# CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
+# CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,4.0 ,5.0 ,
+# CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
+# CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,4.0 ,5.0 ,
+# CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
+# CHECK: 8.0 ,9.0 ,8.0 ,9.0 ,8.0 ,9.0 ,
+# CHECK: 10.0 ,11.0 ,10.0 ,11.0 ,10.0 ,11.0 ,
+# CHECK: 8.0 ,9.0 ,8.0 ,9.0 ,8.0 ,9.0 ,
+# CHECK: 10.0 ,11.0 ,10.0 ,11.0 ,10.0 ,11.0 ,
+# CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
+# CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
+# CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
+# CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
+fn test_tile_eg14():
+    print("== test_tile_eg14")
+    alias rank = 4
+    alias type = DType.float32
+
+    let input = NDBuffer[
+        rank,
+        DimList(2, 2, 2, 2),
+        type,
+    ].stack_allocation()
+
+    input[StaticIntTuple[rank](0, 0, 0, 0)] = 0
+    input[StaticIntTuple[rank](0, 0, 0, 1)] = 1
+    input[StaticIntTuple[rank](0, 0, 1, 0)] = 2
+    input[StaticIntTuple[rank](0, 0, 1, 1)] = 3
+
+    input[StaticIntTuple[rank](0, 1, 0, 0)] = 4
+    input[StaticIntTuple[rank](0, 1, 0, 1)] = 5
+    input[StaticIntTuple[rank](0, 1, 1, 0)] = 6
+    input[StaticIntTuple[rank](0, 1, 1, 1)] = 7
+
+    input[StaticIntTuple[rank](1, 0, 0, 0)] = 8
+    input[StaticIntTuple[rank](1, 0, 0, 1)] = 9
+    input[StaticIntTuple[rank](1, 0, 1, 0)] = 10
+    input[StaticIntTuple[rank](1, 0, 1, 1)] = 11
+
+    input[StaticIntTuple[rank](1, 1, 0, 0)] = 12
+    input[StaticIntTuple[rank](1, 1, 0, 1)] = 13
+    input[StaticIntTuple[rank](1, 1, 1, 0)] = 14
+    input[StaticIntTuple[rank](1, 1, 1, 1)] = 15
+
+    # rank_repeats is always 1
+    alias rank_repeats = 1
+    # type_repeats is always DType.int64
+    alias type_repeats = DType.int64
+
+    let repeats = NDBuffer[
+        rank_repeats,
+        DimList(4),
+        type_repeats,
+    ].stack_allocation()
+
+    repeats[StaticIntTuple[rank_repeats](0)] = 2
+    repeats[StaticIntTuple[rank_repeats](1)] = 2
+    repeats[StaticIntTuple[rank_repeats](2)] = 2
+    repeats[StaticIntTuple[rank_repeats](3)] = 3
+
+    # Output rank = input rank
+    # output_dim[i] = input_dim[i] * repeats[i]
+    let output = NDBuffer[
+        rank,
+        DimList(4, 4, 4, 6),
+        type,
+    ].stack_allocation()
+
+    for i in range(4):
+        for j in range(4):
+            for k in range(4):
+                for l in range(6):
+                    output[StaticIntTuple[rank](i, j, k, l)] = 0
+
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        tile[rank, type, rank_repeats, type_repeats](
+            input.make_dims_unknown(),
+            repeats.make_dims_unknown(),
+            output.make_dims_unknown(),
+            out_chain.borrow(),
+        )
+        out_chain.wait()
+
+    print()
+    for i in range(4):
+        for j in range(4):
+            for k in range(4):
+                for l in range(6):
+                    print_no_newline(output[i, j, k, l], ",")
+                print()
+            print()
+        print()
+    print()
+
+
 fn main():
     test_tile_eg1()
     test_tile_eg2()
@@ -824,3 +1113,6 @@ fn main():
     test_tile_eg9()
     test_tile_eg10()
     test_tile_eg11()
+    test_tile_eg12()
+    test_tile_eg13()
+    test_tile_eg14()
