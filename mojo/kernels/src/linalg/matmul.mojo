@@ -7,6 +7,8 @@
 from math import align_down, align_up, div_ceil, fma, min
 from sys.info import alignof, has_avx2, has_neon, simdwidthof
 from sys.intrinsics import PrefetchOptions, external_call
+from gpu import BlockIdx, BlockDim, ThreadIdx
+from gpu.nvidia_host import Function, Stream
 
 from algorithm import (
     sync_parallelize,
@@ -2088,6 +2090,7 @@ fn _small_matmul[
 
 
 @always_inline
+@adaptive
 fn matmul[
     a_type: DType,
     b_type: DType,
@@ -2098,7 +2101,8 @@ fn matmul[
     elementwise_epilogue_enabled: Bool,
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
     saturated_vnni: Bool,
-    single_thread_blocking_override: Bool,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
 ](
     c: NDBuffer[2, DimList.create_unknown[2](), c_type],
     a: NDBuffer[2, DimList.create_unknown[2](), a_type],
@@ -2106,6 +2110,100 @@ fn matmul[
     out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
+    constrained[target == "cuda", "only valid on CUDA GPUs"]()
+    # constrained[
+    #     single_thread_blocking_override == False,
+    #     "only valid with single_thread_blocking_override = False",
+    # ]()
+    constrained[transpose_a == False, "only NN matmul is supported"]()
+    constrained[transpose_b == False, "only NN matmul is supported"]()
+
+    alias BLOCK_DIM = 16
+
+    let shape = GemmShape.get[False, transpose_b](c, a, b)
+    let m = shape.M
+    let n = shape.N
+    let k = shape.K
+
+    fn matmul_kernel(
+        a_ptr: DTypePointer[a_type],
+        b_ptr: DTypePointer[b_type],
+        c_ptr: DTypePointer[c_type],
+        m: Int,
+        n: Int,
+        k: Int,
+    ):
+        @parameter
+        if not triple_is_nvidia_cuda():
+            return
+
+        let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+        let y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+
+        if x >= m or y >= n:
+            return
+
+        let a = NDBuffer[2, DimList.create_unknown[2](), a_type](
+            a_ptr, Index(m, k)
+        )
+        let b = NDBuffer[2, DimList.create_unknown[2](), b_type](
+            b_ptr, Index(k, n)
+        )
+        let c = NDBuffer[2, DimList.create_unknown[2](), c_type](
+            c_ptr, Index(m, n)
+        )
+
+        var accum = SIMD[c_type, 1]()
+        for i in range(k):
+            accum = a[x, i].cast[c_type]() * b[i, y].cast[c_type]() + accum
+        c[Index(x, y)] = accum
+
+    try:
+        # fmt: off
+        alias func_type = fn (DTypePointer[a_type],
+                              DTypePointer[b_type],
+                              DTypePointer[c_type],
+                              Int,
+                              Int,
+                              Int
+                             ) capturing -> None
+        # fmt: on
+        let gpu_func = Function[func_type, rebind[func_type](matmul_kernel)]()
+        gpu_func(
+            (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+            (BLOCK_DIM, BLOCK_DIM),
+            shape,
+            stream=out_chain.get_cuda_stream(),
+        )
+    except e:
+        let s = e.__str__()
+        out_chain.mark_error(s._strref_dangerous())
+        s._strref_keepalive()
+
+
+@always_inline
+@adaptive
+fn matmul[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    saturated_vnni: Bool,
+    single_thread_blocking_override: Bool = False,
+    target: StringLiteral = "cpu",
+](
+    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
+    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
+    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    out_chain: OutputChainPtr,
+    num_threads: Int = -1,
+):
+    constrained[target == "cpu", "only valid on CPUs"]()
+
     @parameter
     if (
         single_thread_blocking_override
@@ -2151,6 +2249,8 @@ fn matmul[
         ](c, a, b, out_chain, num_threads)
 
 
+@always_inline
+@adaptive
 fn matmul[
     a_type: DType,
     b_type: DType,
@@ -2184,6 +2284,8 @@ fn matmul[
     ](c, a, b, out_chain, num_threads)
 
 
+@always_inline
+@adaptive
 fn matmul[
     a_type: DType,
     b_type: DType,
