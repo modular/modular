@@ -7,7 +7,7 @@
 
 from math import abs, div_ceil, min, isclose
 from random import rand
-from sys.info import simdwidthof
+from sys.info import simdwidthof, has_avx512f, has_avx2
 from Conv import (
     ConvDirectNHWC,
     direct_null_elementwise_epilogue,
@@ -43,7 +43,7 @@ fn test[
     # Skip architectures other than avx512 for now.
     # TODO: tune on other architectures and enable testing.
     @parameter
-    if not has_avx512f():
+    if not (has_avx512f() or has_avx2()):
         print("Succeed")
         return
 

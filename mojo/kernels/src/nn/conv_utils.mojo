@@ -8,6 +8,7 @@ from math import clamp, div_ceil, max, min, sqrt
 from sys.build import is_debug_build
 from sys.info import (
     has_avx512f,
+    has_avx2,
     has_neon,
     is_neoverse_n1,
     os_is_macos,
@@ -277,6 +278,9 @@ fn get_conv2d_shape[
 
 
 fn get_conv_tile_size[type: DType]() -> Int:
+    # The rule-of-thumb is 1/2 of L2 cache size. It's common to have 3x3
+    # filter window in convolution. So the cache tile size (in terms of
+    # elements) is rounded up to multiple of 9.
     alias KB = 1024
 
     # See MatmulUtils for context on tile size for debug built and macos.
@@ -290,12 +294,12 @@ fn get_conv_tile_size[type: DType]() -> Int:
 
     @parameter
     if has_neon() or has_avx512f():
-        # This should be 1/2 of L2 cache size. Graviton 2 and Skylake server
-        # have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache.
-        # Use 576 instead of 512 to accommodate important shapes in resnet.
+        #  Graviton 2 and Skylake server
+        # have a 1 MiB L2 cache
         return 576 * KB // sizeof[type]()
 
-    return 256 * KB // sizeof[type]()
+    # AMD Rome has a 512 KiB L2 cache.
+    return 288 * KB // sizeof[type]()
 
 
 fn get_conv_tile_shape[
@@ -430,9 +434,11 @@ fn get_micro_kernel_shape[
     # Number of named simd registers for each architecture.
     # TODO: configure micro kernel shape are other architectures.
     alias num_avx512_registers = 32
+    alias num_avx2_registers = 16
 
     @parameter
-    if optimize_static_shapes and has_avx512f():
+    if optimize_static_shapes:
+
         alias WO_val = WO.get()
         alias F_val = F.get()
         alias pad_h_val = Index(
@@ -443,30 +449,58 @@ fn get_micro_kernel_shape[
         )
         alias has_padding = pad_h_val != Index(0, 0) or pad_w_val != Index(0, 0)
 
-        # The micro tile is m rows by n*simd_size columns.
-        # The register usage in tiling for avx512/avx2:
-        #   (1) load n registers in F dimension.
-        #   (2) broadcast 1 element from each row into 1 register. The same
-        #       is used for all rows. This doesn't serialize the accumulation
-        #       because register renaming can resolve RAR dependence.
-        #   (3) accumulate m * n registers.
-        # There are in total m*n + n + 1 registers needed.
-        # Iterating n from 2, we get possible (m, n) combinations including
-        # (14, 2), (9, 3), (6, 4), and (5, 5).
+        @parameter
+        if has_avx512f():
+            # The micro tile is m rows by n*simd_size columns.
+            # The register usage in tiling for avx512/avx2:
+            #   (1) load n registers in F dimension.
+            #   (2) broadcast 1 element from each row into 1 register. The same
+            #       is used for all rows. This doesn't serialize the accumulation
+            #       because register renaming can resolve RAR dependence.
+            #   (3) accumulate m * n registers.
+            # There are in total m*n + n + 1 registers needed.
+            # Iterating n from 2, we get possible (m, n) combinations including
+            # (14, 2), (9, 3), (6, 4), and (5, 5).
 
-        # Static shapes enable a better algorithm for padding, which can choose micro
-        # kernel shape based on input and output sizes.
-        if has_padding:
-            # Traverse the possible combinations (14, 2), (9, 3), (6, 4), and (5, 5).
-            for n in range(2, 6):
-                let m = (num_avx512_registers - 1) // n - 1
-                # Short circuit if the row fit in one micro kernel and F is divisible.
-                # E.x. for WO=7 and F=512, 7x2 can be a better micro kernel than 7x3
-                # for multi-threading due to partition granularity (kernel width) in F.
-                if F_val % (n * simd_size) == 0 and WO_val <= m:
-                    return Index(WO_val, n)
-        # Use 6x4 by default as it achieves the best performance for most shapes.
-        return Index(6, 4)
+            # Static shapes enable a better algorithm for padding, which can choose micro
+            # kernel shape based on input and output sizes.
+            if has_padding:
+                # Traverse the possible combinations (14, 2), (9, 3), (6, 4), and (5, 5).
+                for n in range(2, 6):
+                    let m = (num_avx512_registers - 1) // n - 1
+                    # Short circuit if the row fit in one micro kernel and F is divisible.
+                    # E.x. for WO=7 and F=512, 7x2 can be a better micro kernel than 7x3
+                    # for multi-threading due to partition granularity (kernel width) in F.
+                    if F_val % (n * simd_size) == 0 and WO_val <= m:
+                        return Index(WO_val, n)
+            # Use 6x4 by default as it achieves the best performance for most shapes.
+            return Index(6, 4)
+
+        @parameter
+        if has_avx2():
+            if has_padding:
+                # Register usage formula is the same as avx512.
+                # There are in total 16 named simd registers, the viable micro kernels
+                # are (6, 2) and (4, 3).
+
+                # The heuristic searchs the micro kernel shape leading to the
+                # least remainder.
+                var min_num_residual = WO_val * F_val
+                var micro_kernel_height = -1
+                var micro_kernel_width = -1
+                for n in range(2, 3):
+                    let m = (num_avx2_registers - 1) // n - 1
+                    let num_residual = WO_val * (F_val % (n * simd_size)) + (
+                        WO_val % m
+                    ) * F_val
+                    if num_residual < min_num_residual:
+                        micro_kernel_height = m
+                        micro_kernel_width = n
+                        min_num_residual = num_residual
+                return Index(micro_kernel_height, micro_kernel_width)
+            return Index(6, 2)
+
+        return Index(6, 2)
 
     else:  # Default options for dynamic shapes.
 
