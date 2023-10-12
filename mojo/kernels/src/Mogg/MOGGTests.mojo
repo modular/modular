@@ -158,6 +158,28 @@ fn test_static_shape_deduction[
     unroll[rank, body]()
 
 
+@mogg_register("test_static_shape_output")
+@export
+fn test_static_shape_output[
+    type: DType, rank: Int, output_0_static_shape: DimList
+]() -> NDBuffer[rank, output_0_static_shape, type]:
+    print("Printing output shape: ")
+
+    @always_inline
+    @parameter
+    fn body[idx: Int]():
+        alias dim = output_0_static_shape.at[idx]()
+        if dim.is_dynamic():
+            print("unknown")
+        else:
+            print(dim.get())
+
+    unroll[rank, body]()
+    return NDBuffer[rank, output_0_static_shape, type](
+        DTypePointer[type](), StaticIntTuple[rank](), StaticIntTuple[rank]()
+    )
+
+
 @mogg_register("test_int_list_param")
 @export
 fn test_int_list_param[length: Int, int_list: DimList]():
@@ -167,8 +189,6 @@ fn test_int_list_param[length: Int, int_list: DimList]():
     @parameter
     fn body[idx: Int]():
         alias dim = int_list.at[idx]()
-
-        @parameter
         if dim.is_dynamic():
             print("unknown")
         else:
