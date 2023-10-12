@@ -1168,3 +1168,20 @@ fn main():
             33,  # num_groups
             rt,
         )
+
+        # 1D edge case
+        test[DType.float32, True](
+            2,  # N
+            1,  # H
+            49,  # W
+            1024,  # C
+            1,  # R
+            128,  # S
+            1024,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(64, 64),  # pad_w
+            1,  # num_groups
+            rt,
+        )

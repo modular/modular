@@ -3711,6 +3711,49 @@ struct ConvDirectNHWC[
             * self.conv_shape.f
         )
 
+        # Temporary fix for #23189, edge case where padding is larger than input.
+        # Use 1 x width kernel for all output points.
+        if left_pad_impact_end >= right_pad_impact_start:
+            for ho in range(
+                self.partition_offsets[3],
+                self.partition_offsets[3] + self.partition_sizes[3],
+            ):
+                let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[
+                    0
+                ]
+                # Point to (n, 0, ho, c_tile_offset) mapped in input
+                var input_base = input_curr_image.offset(
+                    c_tile_offset
+                    + self.conv_shape.c
+                    * (-self.conv_shape.pad_w[0] + self.conv_shape.w * h)
+                )
+                # Point to (n, 0, ho, f_tile_offset) mapped in input
+                var output_base = output_curr_image.offset(
+                    f_tile_offset
+                    + self.conv_shape.f * self.conv_shape.out_w * ho
+                )
+
+                for wo in range(self.conv_shape.out_w):
+                    self._inner_loops_padding[
+                        1, micro_kernel_width, True, has_residual, last_c_tile
+                    ](
+                        input_base,
+                        filter_base,
+                        output_base,
+                        f_tile_offset,
+                        f_tile_size,
+                        c_tile_offset,
+                        c_tile_size,
+                        n,
+                        ho,
+                        wo,
+                    )
+                    input_base = input_base.offset(
+                        self.conv_shape.stride[1] * self.conv_shape.c
+                    )
+                    output_base = output_base.offset(self.conv_shape.f)
+            return
+
         for ho in range(
             self.partition_offsets[3],
             self.partition_offsets[3] + self.partition_sizes[3],
