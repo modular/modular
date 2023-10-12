@@ -94,4 +94,43 @@ TEST(RuntimeTest, Contexturations_ExpectDeath) {
 }
 #endif
 
+/// Test to ensure that we can utilize the full range of indices for runtime.
+/// This is mostly meant to be a precursor to check that the full range of
+/// runtime indices is available
+TEST(RuntimeTest, MaxRuntime) {
+  std::vector<std::unique_ptr<Runtime>> allRuntimes;
+  for (int i = 0; i < 255; ++i) {
+    allRuntimes.emplace(allRuntimes.end(), createRuntime());
+  }
+  for (int i = 0; i < 255; ++i) {
+    allRuntimes[i].reset();
+  }
+  allRuntimes.clear();
+}
+
+/// Test to ensure that we can utilize the full range of indices for runtime. It
+/// checks the free indices first, and then fills up the index space. Next it
+/// then removes 10 instances from the middle of the range and then attempts to
+/// add 10 instances again which should succeed.
+TEST(RuntimeTest, MaxRuntimeUtilize) {
+  std::vector<std::unique_ptr<Runtime>> allRuntimes;
+  uint8_t numRuntimes = 0;
+  for (uint8_t i = 0; i < 255; ++i) {
+    if (M::LLCL::Globals::getRuntime(i) != nullptr) {
+      numRuntimes++;
+    }
+  }
+  for (uint8_t i = 0; i < (255 - numRuntimes); ++i) {
+    allRuntimes.emplace(allRuntimes.end(), createRuntime());
+  }
+  // now remove 10 indices from the middle of the indices range
+  for (uint8_t i = 0; i < 10; ++i) {
+    allRuntimes[i * 10].reset();
+  }
+  // now add back 10 runtime instances
+  std::vector<std::unique_ptr<Runtime>> newRuntimes;
+  for (uint8_t i = 0; i < 10; ++i) {
+    newRuntimes.emplace(newRuntimes.end(), createRuntime());
+  }
+}
 } // namespace
