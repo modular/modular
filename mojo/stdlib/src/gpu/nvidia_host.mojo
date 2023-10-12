@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA host functions."""
 
+import sys
 from sys.ffi import DLHandle
 from memory import stack_allocation
 from memory.unsafe import bitcast
@@ -1935,28 +1936,46 @@ struct ModuleHandle:
         _ = path_str
         self.module = module
 
-    fn __init__(inout self, content: String, debug: Bool = False) raises:
+    fn __init__(
+        inout self,
+        content: String,
+        debug: Bool = False,
+        verbose: Bool = False,
+    ) raises:
         var module = _ModuleImpl()
-        if debug:
+        if debug or verbose:
             alias buffer_size = 4096
-            alias num_options = 4
-
-            let opts = stack_allocation[num_options, JitOptions]()
-            opts.store(0, JitOptions.INFO_LOG_BUFFER)
-            opts.store(1, JitOptions.INFO_LOG_BUFFER_SIZE_BYTES)
-            opts.store(2, JitOptions.ERROR_LOG_BUFFER)
-            opts.store(3, JitOptions.ERROR_LOG_BUFFER_SIZE_BYTES)
+            alias max_num_options = 6
+            var num_options = 0
 
             let info_buffer = stack_allocation[buffer_size, Int8]()
             let error_buffer = stack_allocation[buffer_size, Int8]()
 
-            let buffer_size_ptr = bitcast[AnyType](buffer_size)
+            let opts = stack_allocation[max_num_options, JitOptions]()
+            let option_vals = stack_allocation[
+                max_num_options, Pointer[AnyType]
+            ]()
 
-            let option_vals = stack_allocation[num_options, Pointer[AnyType]]()
-            option_vals.store(0, info_buffer.bitcast[AnyType]())
-            option_vals.store(1, buffer_size_ptr)
-            option_vals.store(2, info_buffer.bitcast[AnyType]())
-            option_vals.store(3, buffer_size_ptr)
+            opts.store(num_options, JitOptions.INFO_LOG_BUFFER)
+            option_vals.store(num_options, info_buffer.bitcast[AnyType]())
+            num_options += 1
+
+            opts.store(num_options, JitOptions.INFO_LOG_BUFFER_SIZE_BYTES)
+            option_vals.store(num_options, bitcast[AnyType](buffer_size))
+            num_options += 1
+
+            opts.store(num_options, JitOptions.ERROR_LOG_BUFFER)
+            option_vals.store(num_options, info_buffer.bitcast[AnyType]())
+            num_options += 1
+
+            opts.store(num_options, JitOptions.ERROR_LOG_BUFFER_SIZE_BYTES)
+            option_vals.store(num_options, bitcast[AnyType](buffer_size))
+            num_options += 1
+
+            if debug:
+                opts.store(num_options, JitOptions.GENERATE_DEBUG_INFO)
+                option_vals.store(num_options, bitcast[AnyType](1))
+                num_options += 1
 
             let result = _get_dylib_function[
                 # fmt: off
@@ -1976,13 +1995,14 @@ struct ModuleHandle:
                 option_vals,
             )
 
-            let info_buffer_str = StringRef(info_buffer)
-            if info_buffer_str:
-                print(info_buffer_str)
+            if verbose:
+                let info_buffer_str = StringRef(info_buffer)
+                if info_buffer_str:
+                    print(info_buffer_str)
 
-            let error_buffer_str = StringRef(error_buffer)
-            if error_buffer_str:
-                print(error_buffer_str)
+                let error_buffer_str = StringRef(error_buffer)
+                if error_buffer_str:
+                    print(error_buffer_str)
 
             _check_error(result)
         else:
@@ -2440,10 +2460,12 @@ struct Function[func_type: AnyType, func: func_type]:
     var mod_handle: ModuleHandle
     var func_handle: FunctionHandle
 
-    fn __init__(inout self, debug: Bool = False) raises:
+    fn __init__(inout self, debug: Bool = False, verbose: Bool = False) raises:
         alias name = get_linkage_name[func_type, func]()
         let ptx = _compile_nvptx_asm[func_type, func]()
-        self.mod_handle = ModuleHandle(ptx, debug)
+        self.mod_handle = ModuleHandle(
+            ptx, debug=debug, verbose=verbose or debug
+        )
         self.func_handle = self.mod_handle.load(name)
 
     fn __del__(owned self) raises:
