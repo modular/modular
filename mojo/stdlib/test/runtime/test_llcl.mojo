@@ -139,7 +139,7 @@ fn test_runtime_asynctaskgroup():
         atg.add_task(run(ptr))
         out_chain.wait()
         # CHECK: 2
-        print(Int(completed.value))
+        print(Int(completed.value.value))
 
 
 fn main():
