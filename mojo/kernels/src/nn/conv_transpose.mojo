@@ -121,7 +121,7 @@ fn conv_transpose[
                                         StaticIntTuple[rank](n, x_out, y_out, f)
                                     ] = (
                                         tmp
-                                        + input[n, i, j, c] * kernel[r, s, c, f]
+                                        + input[n, i, j, c] * kernel[r, s, f, c]
                                     )
     out_chain.mark_ready()
 
