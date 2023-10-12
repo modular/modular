@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: nvptx_backend
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 from gpu import BlockIdx, BlockDim, ThreadIdx, AddressSpace
 from gpu.nvidia_host import (
