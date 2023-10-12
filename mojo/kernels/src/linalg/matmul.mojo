@@ -2125,6 +2125,7 @@ fn matmul[
     let n = shape.N
     let k = shape.K
 
+    @export
     fn matmul_kernel(
         a_ptr: DTypePointer[a_type],
         b_ptr: DTypePointer[b_type],
@@ -2172,7 +2173,12 @@ fn matmul[
         gpu_func(
             (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
             (BLOCK_DIM, BLOCK_DIM),
-            shape,
+            a.data,
+            b.data,
+            c.data,
+            m,
+            n,
+            k,
             stream=out_chain.get_cuda_stream(),
         )
     except e:
