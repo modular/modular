@@ -2592,6 +2592,9 @@ fn conv[
     output_type: DType,
     filter_packed: Bool,
     lambdas_have_fusion: Bool,
+    static_strides: DimList,
+    static_dilations: DimList,
+    static_padding: DimList,
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[output_type, width]
     ) capturing -> None,

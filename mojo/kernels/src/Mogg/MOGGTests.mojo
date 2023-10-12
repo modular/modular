@@ -156,3 +156,22 @@ fn test_static_shape_deduction[
             print(dim.get())
 
     unroll[rank, body]()
+
+
+@mogg_register("test_int_list_param")
+@export
+fn test_int_list_param[length: Int, int_list: DimList]():
+    print("Printing parameter: ")
+
+    @always_inline
+    @parameter
+    fn body[idx: Int]():
+        alias dim = int_list.at[idx]()
+
+        @parameter
+        if dim.is_dynamic():
+            print("unknown")
+        else:
+            print(dim.get())
+
+    unroll[length, body]()
