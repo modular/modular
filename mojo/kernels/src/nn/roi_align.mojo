@@ -98,34 +98,40 @@ fn _bilinear_interpolate[
 @always_inline
 fn roi_align_nhwc[
     type: DType,
-    output_shape: DimList,
     input_shape: DimList,
     roi_shape: DimList,
-    spatial_scale: Float32,
-    sampling_ration: Float32,
     aligned: Bool,
-    mode: String = "AVG",
+    mode: StringLiteral = "AVG",
 ](
-    output: NDBuffer[4, output_shape, type],
+    output: NDBuffer[4, DimList.create_unknown[4](), type],
     input: NDBuffer[4, input_shape, type],
     rois: NDBuffer[2, roi_shape, type],
+    output_height: Int,
+    output_width: Int,
+    spatial_scale: Float32,
+    sampling_ration: Float32,
 ):
     """
-    Compute ROIAlign a batch of rois of shape [N, 4] where inner most dims
-    are region box with (y0, x0) (y1, x1) cooridnates. For inputs of NHWC format.
+    Compute ROIAlign a batch of rois of shape [M, 5] where the first dim is the
+    batch index, followed by region box coordinates (y0, x0) (y1, x1). For
+    inputs of NHWC format. The output shape is
+    [M, output_height, output_width, C].
 
     Paramerers:
         type: Type of the input tensor.
-        output_shape: Shape of the output tensor.
         input_shape: Shape of the input tensor.
         roi_shape: Shape of regions of interests (ROI).
-        spatial_scale: Scale ROIs from spatial scale to pooling scale.
         aligned: If not true offset the ROIs by 0.5.
         mode: The pooling mode "AVG" for average and "MAX" for max pooling.
     Args:
         output: Pre-allocated output tensor.
         input: Batched images to the roi_align with NHWC format.
         rois: Batched ROIs box coordinates.
+        output_height: Pooled output height.
+        output_width: Pooled output width.
+        spatial_scale: Scale of ROIs from spatial scale to pooling scale.
+        sampling_ratio: Number of sampling points in the interpolation grid
+        used to compute the output value of each pooled bin.
     """
 
     constrained[
@@ -139,8 +145,9 @@ fn roi_align_nhwc[
     let height = input.dim(1)
     let width = input.dim(2)
     let channles = input.dim(3)
-    let pooled_height = output.dim(1)
-    let pooled_width = output.dim(2)
+
+    let pooled_height = output_height
+    let pooled_width = output_width
     let offset = 0.5 if aligned else 0.0
 
     for ri in range(n_regions):
