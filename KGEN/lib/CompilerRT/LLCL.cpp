@@ -176,7 +176,7 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError(LLCLOutputChainRef outChain,
                                               const char *messagePtr,
                                               ssize_t messageLen) {
-  StringRef message(messagePtr, messageLen);
+  std::string message(messagePtr, messageLen);
   unwrap(outChain).markError(message);
 }
 
