@@ -468,8 +468,9 @@ fn elementwise_wrapper[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    target: StringLiteral,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
@@ -1857,12 +1858,17 @@ fn matmul[
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
 ](
     a: NDBuffer[2, DimList.create_unknown[2](), a_type],
     b: NDBuffer[2, DimList.create_unknown[2](), b_type],
     c: NDBuffer[2, DimList.create_unknown[2](), c_type],
     out_chain: OutputChainPtr,
 ):
+    if target == "cuda":
+        return
+
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = packed_in_1
