@@ -454,33 +454,54 @@ struct OutputChainPtr:
     @always_inline
     fn mark_error[
         single_thread_blocking_override: Bool
-    ](self, message: StringRef):
-        """Marks the output chain as having an error with message.
+    ](self, message: StringLiteral):
+        """Marks the output chain as having an error with a message.
         The underlying LLCL::OutputChain is not moved.
         """
 
         @parameter
         if not single_thread_blocking_override:
-            external_call[
-                "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
-            ](
-                self.ptr,
-                message.data,
-                message.length.value,
-            )
+            self.mark_error(message)
 
     @always_inline
-    fn mark_error(self, message: StringRef):
-        """Marks the output chain as having an error with message.
+    fn mark_error[single_thread_blocking_override: Bool](self, err: Error):
+        """Marks the output chain as having an error.
         The underlying LLCL::OutputChain is not moved.
         """
+
+        @parameter
+        if not single_thread_blocking_override:
+            self.mark_error(err)
+
+    @always_inline
+    fn mark_error(self, message: StringLiteral):
+        """Marks the output chain as having an error with a message.
+        The underlying LLCL::OutputChain is not moved.
+        """
+        let strref = StringRef(message)
         external_call[
             "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
         ](
             self.ptr,
-            message.data,
-            message.length.value,
+            strref.data,
+            strref.length,
         )
+
+    @always_inline
+    fn mark_error(self, err: Error):
+        """Marks the output chain as having an error.
+        The underlying LLCL::OutputChain is not moved.
+        """
+        let str = err.__str__()
+        let strref = str._strref_dangerous()
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
+        ](
+            self.ptr,
+            strref.data,
+            strref.length,
+        )
+        str._strref_keepalive()
 
     @always_inline
     fn trace[level: TraceLevel](self, label: StringRef):
