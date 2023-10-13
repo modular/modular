@@ -2473,9 +2473,16 @@ struct Function[func_type: AnyType, func: func_type]:
     var mod_handle: ModuleHandle
     var func_handle: FunctionHandle
 
-    fn __init__(inout self, debug: Bool = False, verbose: Bool = False) raises:
+    fn __init__(
+        inout self,
+        debug: Bool = False,
+        verbose: Bool = False,
+        print_ptx: Bool = False,
+    ) raises:
         alias name = get_linkage_name[func_type, func]()
         let ptx = _compile_nvptx_asm[func_type, func]()
+        if print_ptx:
+            print(ptx)
         self.mod_handle = ModuleHandle(
             ptx, debug=debug, verbose=verbose or debug
         )
@@ -2896,6 +2903,30 @@ fn _copy_device_to_host[
     _copy_device_to_host[SIMD[type, 1]](
         host_dest._as_scalar_pointer(),
         device_src._as_scalar_pointer(),
+        count,
+    )
+
+
+fn _memset[
+    type: AnyType
+](device_dest: Pointer[type], val: UInt8, count: Int) raises:
+    _check_error(
+        _get_dylib_function[fn (Pointer[UInt32], UInt8, Int) -> Result](
+            "cuMemsetD8_v2"
+        )(
+            device_dest.bitcast[UInt32](),
+            val,
+            count * sizeof[type](),
+        )
+    )
+
+
+fn _memset[
+    type: DType
+](device_dest: DTypePointer[type], val: UInt8, count: Int) raises:
+    _memset[SIMD[type, 1]](
+        device_dest._as_scalar_pointer(),
+        val,
         count,
     )
 
