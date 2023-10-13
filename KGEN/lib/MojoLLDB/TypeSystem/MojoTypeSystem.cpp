@@ -275,7 +275,7 @@ lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
   if (flags & lldb::eTypeIsPointer) {
     if (isa<KGEN::StringType>(MojoASTTypeRef(type)))
       return lldb::eFormatCString;
-    return lldb::eFormatAddressInfo;
+    return lldb::eFormatHex;
   }
   if (flags & lldb::eTypeIsClass)
     return lldb::eFormatHex;
