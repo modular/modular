@@ -55,7 +55,7 @@ fn structured_for_loop() -> __mlir_type.index:
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[
-        _type=__mlir_type.index, _region="loop_body".value
+        _type = __mlir_type.index, _region = "loop_body".value
     ](Int(0).value)
 
 
@@ -64,17 +64,17 @@ fn structured_for_loop() -> __mlir_type.index:
 from imported_module import VeryUniqueStruct
 
 # CHECK-DAG: #[[FILE:file[0-9]+]] = #debuginfo.file<"[[FILENAME:.*imported_module.mojo]]" in
+# CHECK-DAG: #[[LINE_LOC:loc[0-9]+]] = loc("{{.*}}imported_module.mojo":
 
-# CHECK-DAG: #[[LOCAL_VAR:local_variable[0-9]*]] = #debuginfo.local_variable<scope = #[[SP:subprogram[0-9]+]], name = "very_unique_arg", file = #[[FILE]],
+# CHECK-DAG: #[[LOCAL_VAR:local_variable[0-9]*]] = #debuginfo.local_variable<scope = #[[SP:subprogram[0-9]+]], name = "C-3PO", file = #[[FILE]],
 
 # CHECK-DAG: lit.struct.decl @VeryUniqueStruct
 # CHECK-DAG: lit.struct.field very_unique_field : index loc(#[[LOC:loc[0-9]+]])
-# CHECK-DAG: lit.func @"very_unique_func($builtin::$int::Int)"(%very_unique_arg: !Int loc("[[FILENAME]]"
-# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %very_unique_arg : !Int loc(#[[VALUE_LOC:loc[0-9]+]])
+# CHECK-DAG: lit.func @"very_unique_func({{.*}}::Int)"(%C-3PO[*"C-3PO"]: !Int loc(#[[LINE_LOC]]
+# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %C-3PO : !Int loc(#[[VALUE_LOC:loc[0-9]+]])
 
 # CHECK-DAG: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
-# CHECK-DAG: #[[VALUE_LOC]] = loc(fused<#[[SP]]>[#[[LINE_LOC:loc[0-9]+]]])
-# CHECK-DAG: #[[LINE_LOC]] = loc("[[FILENAME]]"
+# CHECK-DAG: #[[VALUE_LOC]] = loc(fused<#[[SP]]>[#[[LINE_LOC]]])
 
 
 fn caller():
@@ -100,13 +100,13 @@ fn caller():
 # CHECK-DAG:   %[[VAL2:.*]] = pop.load %[[VAL1:.*]] : !kgen.pointer<index> loc(#[[COPY_LOC:loc[0-9]*]])
 # CHECK-DAG:   pop.store %[[VAL2]], %[[VAL0:.*]] : !kgen.pointer<index> loc(#[[COPY_LOC]])
 # CHECK-DAG:   %[[VAL0]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
-# CHECK-DAG:   %[[VAL1]] = lit.struct.gep %existing[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
+# CHECK-DAG:   %[[VAL1]] = lit.struct.gep %other[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
 
 # CHECK-DAG: lit.func @"__moveinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)"
 # CHECK-DAG:   %[[VAL3:.*]] = lit.load.consume %[[VAL4:.*]] : !kgen.pointer<index> loc(#[[MOVE_LOC:loc[0-9]*]])
 # CHECK-DAG:   pop.store %[[VAL3]], %[[VAL5:.*]] : !kgen.pointer<index> loc(#[[MOVE_LOC]])
 # CHECK-DAG:   %[[VAL5]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
-# CHECK-DAG:   %[[VAL4]] = lit.struct.gep %existing[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
+# CHECK-DAG:   %[[VAL4]] = lit.struct.gep %other[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
 
 # CHECK-DAG: #[[INIT_LOC]] = loc(fused<#[[SP_INIT]]>[#[[DEC_LOC:loc[0-9]*]]])
 # CHECK-DAG: #[[COPY_LOC]] = loc(fused<#[[SP_COPY]]>[#[[DEC_LOC]]])

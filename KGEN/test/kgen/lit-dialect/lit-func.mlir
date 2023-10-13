@@ -1,13 +1,32 @@
 // RUN: kgen-opt %s -verify-parameters | kgen-opt -verify-parameters | FileCheck %s
 
-// CHECK: lit.func @positional_args(%a: index, %b: index) numPosArgs(1)
+// CHECK-LABEL: lit.func @argNameParsing(
+// CHECK-SAME: %a[a]: index, %woof[woof]: index, %21451[*"!451"]: index, %arg[TooLong]: index, %arg_0[tooLong]: index)
+lit.func @argNameParsing(%a: index, %b[woof]: index, %c[*"!451"]: index, %d[TooLong]: index, %tooLong: index) {
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @outer(%foo[foo]: index) {
+lit.func @outer(%a[foo]: index) {
+  // CHECK-NEXT: lit.func @inner(%foo_0[foo]: index, %foo_0_1[foo_0]: index) {
+  lit.func @inner(%b[foo]: index, %c[foo_0]: index) {
+    // CHECK-NEXT: lit.func @more_inner(%foo_2[foo]: index) {
+    lit.func @more_inner(%d[foo]: index) {
+      kgen.return
+    }
+    kgen.return
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @positional_args(%a[a]: index, %b[b]: index) numPosArgs(1)
 lit.func @positional_args(%a: index, %b: index) numPosArgs(1) {
   // CHECK: self: !lit.signature<(index, "b": index) -> ()> = <@positional_args>
   kgen.param.declare self: !lit.signature<(index, "b": index) -> ()> = <@positional_args>
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1)
+// CHECK-LABEL: lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a[a]: index borrow = 1)
 lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1) {
   // CHECK: self: !lit.signature<<dtype, scalar<*(0,0)>>("a": index borrow = 1) -> ()> = <@signature_type>
   kgen.param.declare self: !lit.signature<<dtype, scalar<*(0,0)>>("a": index borrow = 1) -> ()> = <@signature_type>
@@ -16,7 +35,7 @@ lit.func @signature_type<dt: dtype, w: scalar<dt>>(%a: index borrow = 1) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @default_params<_1x3_a[a]: dtype, _1x6_b[b]: dtype = f32, _1x9_w[w]: scalar<si32> = 1>(%z: index borrow = 42)
+// CHECK-LABEL: lit.func @default_params<_1x3_a[a]: dtype, _1x6_b[b]: dtype = f32, _1x9_w[w]: scalar<si32> = 1>(%z[z]: index borrow = 42)
 lit.func @default_params<_1x3_a[a]: dtype, _1x6_b[b]: dtype = f32, _1x9_w[w]: scalar<si32> = 1>(%z: index borrow = 42) {
   // CHECK: self: !lit.signature<<"a": dtype, "b": dtype = f32, "w": scalar<si32> = 1>("z": index borrow = 42) -> ()> = <@default_params>
   kgen.param.declare self: !lit.signature<<"a": dtype, "b": dtype = f32, "w": scalar<si32> = 1>("z": index borrow = 42) -> ()> = <@default_params>
@@ -30,7 +49,7 @@ lit.func @create_simd<x>() -> !pop.simd<x, si8> {
 }
 
 // CHECK-LABEL: lit.func @parametric_default_arg
-// CHECK-SAME: <x>(%y: !pop.simd<x, si8> =
+// CHECK-SAME: <x>(%y[y]: !pop.simd<x, si8> =
 // CHECK-SAME: apply(:!lit.signature<() -> !pop.simd<x, si8>> @create_simd<x>))
 lit.func @parametric_default_arg<x>(%y: !pop.simd<x, si8> =
     apply(:!lit.signature<() -> !pop.simd<x, si8>> @create_simd<x>)) {
@@ -68,7 +87,7 @@ lit.func @call_default_param() {
 }
 
 // CHECK-LABEL: @address_default
-// CHECK-SAME: %p: !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>
+// CHECK-SAME: %p[p]: !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>
 lit.func @address_default(%p: !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) {
   // CHECK: ref: !lit.signature<("p": !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) -> ()> = <@address_default>
   kgen.param.declare ref: !lit.signature<("p": !kgen.pointer<simd<2, si8>> owned_in_mem = <1, 2>) -> ()> = <@address_default>

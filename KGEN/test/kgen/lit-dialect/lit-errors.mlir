@@ -120,7 +120,7 @@ kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
 
 // -----
 
-// expected-error @below {{custom op 'lit.func' arguments require SSA names}}
+// expected-error @below {{expected SSA operand}}
 lit.func @no_names(index)
 
 // -----

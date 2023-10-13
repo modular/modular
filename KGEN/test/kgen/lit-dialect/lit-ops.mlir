@@ -1,11 +1,5 @@
 // RUN: kgen-opt -split-input-file -allow-unregistered-dialect %s | kgen-opt -split-input-file -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: lit.func @trivial_generator(%name: si32)
-lit.func @trivial_generator(%name: si32) -> si32 {
-  // CHECK-NEXT: kgen.return %name : si32
-  kgen.return %name : si32
-}
-
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
@@ -331,7 +325,7 @@ lit.func @ref_it() {
 // CHECK-LABEL: lit.struct.decl @FuncParamStruct
 // CHECK-SAME: <c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()>>
 lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()>>  {
-  // CHECK: lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>)
+  // CHECK: lit.func @foo(%x[x]: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>)
   lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) {
     lit.end_func
   }

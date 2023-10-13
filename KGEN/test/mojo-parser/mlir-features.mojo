@@ -7,7 +7,7 @@
 # RUN: kgen-translate -import-mojo %s -verify-diagnostics | FileCheck %s
 
 
-# CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16 borrow, %y: f8E5M2 borrow)
+# CHECK: lit.func @"mlirMagicTest{{.*}}(%x[x]: bf16 borrow, %y[y]: f8E5M2 borrow)
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
@@ -119,7 +119,7 @@ struct MyPointer[elType: __mlir_type.`!kgen.mlirtype`]:
 
 
 # CHECK-LABEL: getAddressOf{{.*}}"<
-# CHECK-SAME: [[T:.*_T]][T]: type>(%arg: !kgen.pointer<[[T]]> byref)
+# CHECK-SAME: [[T:.*_T]][T]: type>(%arg[arg]: !kgen.pointer<[[T]]> byref)
 fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type = MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)

@@ -8,7 +8,6 @@
 # and does not include any useful testing by itself.
 
 
-
 fn imported_fn():
     return
 
@@ -22,6 +21,8 @@ fn _ignored_wildcard_fn():
 struct VeryUniqueStruct:
     var very_unique_field: __mlir_type.index
 
+    # C-3PO is a short and very unique argument name. We use it to make
+    # FileCheck matching easier.
     @staticmethod
-    fn very_unique_func(very_unique_arg: Int) -> VeryUniqueStruct:
-        return Self {very_unique_field: very_unique_arg.__mlir_index__()}
+    fn very_unique_func(`C-3PO`: Int) -> VeryUniqueStruct:
+        return Self {very_unique_field: `C-3PO`.__mlir_index__()}

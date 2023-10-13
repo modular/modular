@@ -426,33 +426,40 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<TypedAttr> defaults;
   SmallVector<ValueInputConvention> inputConventions;
   auto parseElt = [&]() -> Type {
-    // Parse the argument type and its input convention.
-    OptionalParseResult result =
-        p.parseOptionalArgument(args.emplace_back(), /*allowType=*/true);
-    if (result.has_value() && failed(*result))
+    // Parse the ssa name first.
+    OpAsmParser::Argument &arg = args.emplace_back();
+    StringAttr &argName = argNames.emplace_back();
+    if (p.parseOperand(arg.ssaName, /*allowResultNumber=*/false))
       return {};
-    Type &type = args.back().type;
-    if (!result.has_value() && p.parseType(type))
-      return {};
+    // A user defined name might follow in brackets, e.g. `%arg0[someName]`; if
+    // omitted, we just use the SSA name.
+    if (succeeded(p.parseOptionalLSquare())) {
+      // The user defined names might be escaped, since we allow arbitrary
+      // identifiers, e.g.: `%arg1[*"!415weirdname"]`.
+      if (parseParamName(p, argName) || p.parseRSquare())
+        return {};
+    } else {
+      // The parsed SSA name comes prepended with '%', so drop it.
+      argName = p.getBuilder().getStringAttr((arg.ssaName.name.drop_front()));
+    }
 
-    if (parseInputConvention(p, inputConventions.emplace_back()))
+    // A colon and type should come next, followed by an optional location and
+    // input convention.
+    if (p.parseColonType(arg.type) ||
+        p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
+        parseInputConvention(p, inputConventions.emplace_back()))
       return {};
-
-    StringRef argName = args.back().ssaName.name;
-    if (!argName.empty())
-      argName = argName.drop_front();
-    argNames.push_back(p.getBuilder().getStringAttr(argName));
 
     // Parse an optional default value.
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(
-            p, defaultVal, type,
+            p, defaultVal, arg.type,
             SignatureType::hasAddress(inputConventions.back()))))
       return {};
     if (defaultVal)
       defaults.emplace_back(defaultVal);
 
-    return type;
+    return arg.type;
   };
 
   FnEffects effects;
@@ -469,6 +476,7 @@ static ParseResult parseLITFunctionSignature(
 }
 
 static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
+                                      ArrayRef<StringAttr> argNames,
                                       ArrayRef<ParamDeclAttr> inputParams,
                                       ArrayRef<ParamDeclAttr> resultParams,
                                       FunctionType functionType,
@@ -480,15 +488,25 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
   // Substitute input and result parameters when printing default arguments.
   ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
+  size_t defaultStartIndex = signature.getNumInputs() - defaultArgs.size();
   auto printElt = [&](unsigned i) {
-    p.printRegionArgument(region->getArgument(i));
+    // Print the SSA name first, followed by the user-defined argument name in
+    // brackets, and the type.
+    BlockArgument arg = region->getArgument(i);
+    p.printOperand(arg);
+    p << "[";
+    printParamName(p, argNames[i]);
+    p << "]: ";
+    p.printType(arg.getType());
+
+    // Then we print the optional location before and input convention.
+    p.printOptionalLocationSpecifier(arg.getLoc());
     printInputConvention(p, signature.getInputConvention(i));
 
-    size_t defaultIndex = signature.getNumInputs() - defaultArgs.size();
-    if (i >= defaultIndex) {
+    if (i >= defaultStartIndex) {
       p << " = ";
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
-                             defaultArgs[i - defaultIndex])));
+                             defaultArgs[i - defaultStartIndex])));
     }
   };
   printSignatureValues(p, printElt, functionType, signature,
@@ -513,7 +531,6 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   result.addAttribute(getSymNameAttrName(result.name), nameAttr);
 
   // Parse the function signature.
-  llvm::SMLoc sigLoc = parser.getCurrentLocation();
   SmallVector<OpAsmParser::Argument> entryArgs;
   ParamDeclArrayAttr inputParams, resultParams;
   FunctionType functionType;
@@ -521,9 +538,6 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parseLITFunctionSignature(parser, entryArgs, inputParams, resultParams,
                                 functionType, signature))
     return failure();
-  for (StringAttr name : signature.getArgNames())
-    if (name.empty())
-      return parser.emitError(sigLoc, "arguments require SSA names");
 
   // Parse additional function attributes.
   ConstraintArrayAttr constraints;
@@ -619,8 +633,9 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   else
     p.printSymbolName(getSymName());
 
-  // Print the function arguments.
-  printLITFunctionSignature(p, &getBodyRegion(), getInputParams(),
+  // Print the function arguments. Here we need all the use defined names.
+  SmallVector<StringAttr> argNames = getArgNames();
+  printLITFunctionSignature(p, &getBodyRegion(), argNames, getInputParams(),
                             getResultParams(), getFunctionType(),
                             getSignature());
   printOptionalInline(p, getInlineLevel());
@@ -645,12 +660,18 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
 // Name the arguments of the region with the argument names.
 void LIT::FuncOp::getAsmBlockArgumentNames(
     Region &region, llvm::function_ref<void(Value, StringRef)> setNameFn) {
-  // Set a name for each argument.
   if (region.empty())
     return;
-  Block *bodyBlock = getBody();
-  for (auto [arg, name] : llvm::zip(bodyBlock->getArguments(), getArgNames()))
-    setNameFn(arg, name);
+
+  // Set a name for each argument.
+  auto resName = StringAttr::get(getContext(), "__result__");
+  for (auto [arg, name] : llvm::zip(getBody()->getArguments(), getArgNames())) {
+    // If the user defined name is short and simple, we use it for the SSA names
+    // to make testing a bit easier. Otherwise we use 'arg' and let the
+    // interface unique the name.
+    bool shouldSugarSSA = name == resName || name.size() <= 5;
+    setNameFn(arg, shouldSugarSSA ? name.strref() : "arg");
+  }
 }
 
 LogicalResult LIT::FuncOp::verify() {

@@ -375,7 +375,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     fieldTypes.push_back(fieldType);
 
     closureImplSigArgNames.push_back(
-        StringAttr::get(ctx, "field" + std::to_string(i)));
+        StringAttr::get(ctx, "fld" + std::to_string(i)));
   }
 
   // Create the closure impl signature from the captures and the wrapper
@@ -487,7 +487,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // convention.
   callInputTypes.push_back(ptrToClosureImplType);
   callConventions.push_back(ValueInputConvention::BorrowedInMem);
-  callNames.push_back(StringAttr::get(ctx, "self"));
+  callNames.push_back(StringAttr::get(ctx, ""));
   for (unsigned i = hasByRefReturn, e = closureWrapperSignature.getNumInputs();
        i < e; ++i) {
     callInputTypes.push_back(closureWrapperSignature.getValueInputs()[i]);
