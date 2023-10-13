@@ -253,8 +253,8 @@ fn test_shuffle_up(val: Float32) -> Float32:
 
     # CHECK: shfl.sync.up.b32
     @unroll
-    for mask in range(limit, 0, -1):
-        res += shuffle_up[DType.float32](val, 1 << mask)
+    for mask in range(limit - 1, -1, -1):
+        res += shuffle_up[DType.float32](res, 1 << mask)
     return res
 
 
@@ -267,8 +267,8 @@ fn test_shuffle_down(val: Int32) -> Int32:
 
     # CHECK: shfl.sync.down.b32
     @unroll
-    for mask in range(limit, 0, -1):
-        res += shuffle_down[DType.int32](val, 1 << mask)
+    for mask in range(limit - 1, -1, -1):
+        res += shuffle_down[DType.int32](res, 1 << mask)
     return res
 
 
@@ -286,8 +286,8 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 
     # CHECK: shfl.sync.bfly.b32
     @unroll
-    for mask in range(limit, 0, -1):
-        res += shuffle_xor[DType.float32](val, 1 << mask)
+    for mask in range(limit - 1, -1, -1):
+        res += shuffle_xor[DType.float32](res, 1 << mask)
     return res
 
 
