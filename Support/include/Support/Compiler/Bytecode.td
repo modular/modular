@@ -40,7 +40,7 @@ class OptionalAttribute<string type> :
 
 class EnumAttr<string type> :
   WithParser<"succeeded(M::readEnum<" # type # ">($_reader, $_var))",
-  WithPrinter<"$_writer.writeVarInt(static_cast<uint64_t>($_getter))",
+  WithPrinter<"M::writeEnum($_writer, $_getter)",
   WithType<type>>>;
 
 def StringAttrArray :
@@ -54,5 +54,10 @@ def TypedAttrArray :
   WithBuilder<"$_args",
   WithPrinter<"$_writer.writeAttributes($_getter)",
   WithType<"SmallVector<TypedAttr>">>>>;
+
+class EnumAttrArray<string type> :
+  WithParser<"succeeded(M::readEnumArray<" # type # ">($_reader, $_var))",
+  WithPrinter<"M::writeEnumArray($_writer, $_getter)",
+  WithType<"SmallVector<" # type # ">">>>;
 
 #endif // SUPPORT_BYTECODE_TD
