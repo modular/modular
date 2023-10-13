@@ -6,6 +6,35 @@
 
 from pathlib import Path
 
+from lit.llvm import llvm_config
+
+# name: The name of this test suite.
+config.name = "API Integration Tests"
+
+# suffixes: A list of file extensions to treat as test files.
+config.suffixes = [".api"]
+
+# test_source_root: The root path where tests are located.
+config.test_source_root = os.path.dirname(__file__)
+
+# test_exec_root: The root path where tests should be run.
+config.test_exec_root = os.path.join(
+    config.modular_obj_root, "All", "test", "API"
+)
+
+config.substitutions.append(
+    ("%modelsdir", str(Path(config.modular_src_root) / "Models"))
+)
+
+tool_dirs = [
+    config.modular_tools_dir,
+    config.modular_utils_dir,
+    config.mlir_tools_dir,
+    config.llvm_tools_dir,
+]
+tools = ["modular-api-executor"]
+llvm_config.add_tool_substitutions(tools, tool_dirs)
+
 multi_tenancy_api_models_dir = (
     Path(config.modular_obj_root) / "multi-tenancy" / "api-models"
 )
