@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import clamp, div_ceil, max, min, sqrt
+from math import clamp, div_ceil, max, min, sqrt, align_down
 from sys.build import is_debug_build
 from sys.info import (
     has_avx512f,
@@ -542,8 +542,18 @@ fn get_conv_num_partitions[
     The actual number of tasks are the product of return num_partitions.
     """
 
-    alias min_rows_per_task = (196 // micro_kernel_w) * micro_kernel_w
-    alias min_c_per_task = 64
+    # Heuristic parameters for partitioning
+    # AVX512, partitioning channel can be beneficial for some shapes.
+    alias min_rows_per_task_avx512 = align_down(196, micro_kernel_w)
+    alias min_c_per_task_avx512 = 64
+    # Otherwise, discourage partitioning channel.
+    alias min_rows_per_task = min_rows_per_task_avx512 if has_avx512f() else align_down(
+        64, micro_kernel_w
+    )
+    alias min_c_per_task = min_c_per_task_avx512 if has_avx512f() else 1024
+
+    # alias min_rows_per_task = (196 // micro_kernel_w) * micro_kernel_w
+    # alias min_c_per_task = 64
 
     let matmul_M = conv_shape.n * conv_shape.out_h * conv_shape.out_w
     let matmul_N = conv_shape.f
@@ -586,7 +596,7 @@ fn get_conv_num_partitions[
         ) * ideal_num_col_tasks
         while num_col_tasks_tmp <= max_num_col_tasks:
             let num_row_tasks_tmp = max_num_tasks // num_col_tasks_tmp
-            if num_row_tasks_tmp * num_col_tasks_tmp > num_threads_used:
+            if num_row_tasks_tmp * num_col_tasks_tmp >= num_threads_used:
                 num_col_tasks = num_col_tasks_tmp
                 num_row_tasks = num_row_tasks_tmp
                 num_threads_used = num_row_tasks_tmp * num_col_tasks_tmp
