@@ -14,6 +14,12 @@ mlir_tablegen(LITAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=lit)
 add_public_tablegen_target(MLIRLITAttrsIncGen)
 add_dependencies(MLIRLITIncGen MLIRLITAttrsIncGen)
 
+set(LLVM_TARGET_DEFINITIONS LITEnums.td)
+mlir_tablegen(LITEnums.h.inc -gen-enum-decls)
+mlir_tablegen(LITEnums.cpp.inc -gen-enum-defs)
+add_public_tablegen_target(MLIRLITEnumsIncGen)
+add_dependencies(MLIRLITIncGen MLIRLITEnumsIncGen)
+
 set(LLVM_TARGET_DEFINITIONS LITDialectBytecode.td)
 mlir_tablegen(LITDialectBytecode.cpp.inc -gen-bytecode -bytecode-dialect="lit")
 add_public_tablegen_target(MLIRLITDialectBytecodeIncGen)
