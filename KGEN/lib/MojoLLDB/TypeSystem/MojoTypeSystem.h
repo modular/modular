@@ -72,7 +72,7 @@ public:
   // Dumping
   //===--------------------------------------------------------------------===//
 
-  void Dump(llvm::raw_ostream &output) override {}
+  void Dump(llvm::raw_ostream &output) override;
 
   void DumpValue(lldb::opaque_compiler_type_t type,
                  lldb_private::ExecutionContext *exeCtx,
@@ -81,13 +81,19 @@ public:
                  lldb::offset_t dataOffset, size_t dataByteSize,
                  uint32_t bitfieldBitSize, uint32_t bitfieldBitOffset,
                  bool showTypes, bool showSummary, bool verbose,
-                 uint32_t depth) override {}
+                 uint32_t depth) override {
+    // Note: this method is dead and
+    // https://github.com/llvm/llvm-project/pull/68927 kills it.
+  }
 
   void DumpSummary(lldb::opaque_compiler_type_t type,
                    lldb_private::ExecutionContext *exeCtx,
                    lldb_private::Stream &s,
                    const lldb_private::DataExtractor &data,
-                   lldb::offset_t dataOffset, size_t dataByteSize) override {}
+                   lldb::offset_t dataOffset, size_t dataByteSize) override {
+    // Note: this method is dead and
+    // https://github.com/llvm/llvm-project/pull/68927 kills it.
+  }
 
   bool DumpTypeValue(lldb::opaque_compiler_type_t type, lldb_private::Stream &s,
                      lldb::Format format,
@@ -104,7 +110,7 @@ public:
   /// Dump the type to stdout.
   void DumpTypeDescription(
       lldb::opaque_compiler_type_t type,
-      lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override {}
+      lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override;
 
   /// Print a description of the type to a stream. The exact implementation
   /// varies, but the expectation is that eDescriptionLevelFull returns a
@@ -112,7 +118,7 @@ public:
   /// does a dump of the underlying AST if applicable.
   void DumpTypeDescription(
       lldb::opaque_compiler_type_t type, lldb_private::Stream &s,
-      lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override {}
+      lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override;
 
   //===--------------------------------------------------------------------===//
   // Type Queries
@@ -136,29 +142,39 @@ public:
   lldb::Format GetFormat(lldb::opaque_compiler_type_t type) override;
 
   bool GetCompleteType(lldb::opaque_compiler_type_t type) override {
+    // This will be needed when we support incomplete types (like forward
+    // declarations) from DWARF.
     return true;
   }
 
   bool CanPassInRegisters(const lldb_private::CompilerType &type) override {
+    // This is used by ThreadPlan::GetReturnValueObject when stepping out of a
+    // function to figure out the return value. We don't need this functionality
+    // yet.
     return false;
   }
 
   unsigned GetTypeQualifiers(lldb::opaque_compiler_type_t type) override {
+    // This is very clang-specific.
     return 0;
   }
 
   const llvm::fltSemantics &GetFloatTypeSemantics(size_t byteSize) override {
+    // It seems that we should return more specific types only if the target's
+    // float standard differs from the host. We don't worry about that for now.
     return llvm::APFloatBase::Bogus();
   }
 
   size_t
   GetNumberOfFunctionArguments(lldb::opaque_compiler_type_t type) override {
+    // Unimplemented.
     return 0;
   }
 
   lldb_private::CompilerType
   GetFunctionArgumentAtIndex(lldb::opaque_compiler_type_t type,
                              const size_t index) override {
+    // Unimplemented.
     return {};
   }
 
@@ -180,38 +196,96 @@ public:
     return GetTypeInfo(type, /*pointeeOrElementCompilerType=*/nullptr);
   }
 
-  lldb::TypeClass GetTypeClass(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
+  lldb::TypeClass GetTypeClass(lldb::opaque_compiler_type_t type) override;
 
   std::optional<uint64_t>
   GetBitSize(lldb::opaque_compiler_type_t type,
              lldb_private::ExecutionContextScope *exeScope) override;
 
+  std::optional<size_t>
+  GetTypeBitAlign(lldb::opaque_compiler_type_t type,
+                  lldb_private::ExecutionContextScope *exeScope) override;
+
   lldb::Encoding GetEncoding(lldb::opaque_compiler_type_t type,
                              uint64_t &count) override;
+
+  int GetFunctionArgumentCount(lldb::opaque_compiler_type_t type) override {
+    // Unimplemented.
+    // -1 means that this couldn't be computed.
+    return -1;
+  }
+
+  lldb_private::CompilerType
+  GetFunctionArgumentTypeAtIndex(lldb::opaque_compiler_type_t type,
+                                 size_t idx) override {
+    // Unimplemented.
+    return {};
+  }
+
+  lldb_private::CompilerType
+  GetFunctionReturnType(lldb::opaque_compiler_type_t type) override {
+    // Unimplemented.
+    return {};
+  }
+
+  size_t GetNumMemberFunctions(lldb::opaque_compiler_type_t type) override {
+    // Unimplemented.
+    return {};
+  }
+
+  lldb_private::TypeMemberFunctionImpl
+  GetMemberFunctionAtIndex(lldb::opaque_compiler_type_t type,
+                           size_t idx) override {
+    // Unimplemented.
+    return {};
+  }
+
+  lldb_private::CompilerType
+  GetArrayElementType(lldb::opaque_compiler_type_t type,
+                      lldb_private::ExecutionContextScope *exeScope) override {
+    // This is C++-specific.
+    return {};
+  }
 
   //===--------------------------------------------------------------------===//
   // DeclContext
   //===--------------------------------------------------------------------===//
 
   lldb_private::ConstString DeclGetName(void *opaqueDecl) override {
+    // This will be used when we create decls from DWARF.
+    // https://github.com/modularml/modular/issues/20114
     return {};
   }
+
   lldb_private::CompilerType GetTypeForDecl(void *opaqueDecl) override {
+    // This will be used when we create decls from DWARF.
+    // https://github.com/modularml/modular/issues/20114
     return {};
   }
+
   lldb_private::ConstString DeclContextGetName(void *opaqueDeclCtx) override {
+    // This will be used when we create decls from DWARF.
+    // https://github.com/modularml/modular/issues/20114
     return {};
   }
+
   lldb_private::ConstString
   DeclContextGetScopeQualifiedName(void *opaqueDeclCtx) override {
+    // This will be used when we create decls from DWARF.
+    // https://github.com/modularml/modular/issues/20114
     return {};
   }
-  bool DeclContextIsClassMethod(void *opaqueDeclCtx) override { return {}; }
+
+  bool DeclContextIsClassMethod(void *opaqueDeclCtx) override {
+    // This will be used when we create decls from DWARF.
+    // https://github.com/modularml/modular/issues/20114
+    return {};
+  }
 
   bool DeclContextIsContainedInLookup(void *opaqueDeclCtx,
                                       void *otherOpaqueDeclCtx) override {
+    // This will be used when we create decls from DWARF.
+    // https://github.com/modularml/modular/issues/20114
     return {};
   }
 
@@ -224,47 +298,81 @@ public:
   //===--------------------------------------------------------------------===//
 
   bool IsRuntimeGeneratedType(lldb::opaque_compiler_type_t type) override {
+    // Note: this method is dead and
+    // https://github.com/llvm/llvm-project/pull/68927 kills it.
     return false;
   }
-  bool IsCharType(lldb::opaque_compiler_type_t type) override { return false; }
+
+  bool IsCharType(lldb::opaque_compiler_type_t type) override {
+    // We currently don't know if a 1-byte int is a char or not.
+    // https://github.com/modularml/modular/issues/23220.
+    return false;
+  }
+
   bool IsCompleteType(lldb::opaque_compiler_type_t type) override {
+    // We should revisit this when we add support for incomplete types from
+    // DWARF.
     return true;
   }
-  bool IsConst(lldb::opaque_compiler_type_t type) override { return false; }
+
+  bool IsConst(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
+    return false;
+  }
+
   bool IsFloatingPointType(lldb::opaque_compiler_type_t type, uint32_t &count,
                            bool &isComplex) override;
+
   bool IsIntegerType(lldb::opaque_compiler_type_t type,
                      bool &isSigned) override;
+
   bool IsScopedEnumerationType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return false;
   }
+
   bool IsScalarType(lldb::opaque_compiler_type_t type) override;
+
   bool IsCStringType(lldb::opaque_compiler_type_t type,
                      uint32_t &length) override {
+    // Note: this method is dead and
+    // https://github.com/llvm/llvm-project/pull/68927 kills it.
     return false;
   }
+
   bool IsVectorType(lldb::opaque_compiler_type_t type,
                     lldb_private::CompilerType *elementType,
                     uint64_t *size) override {
     return false;
   }
+
   uint32_t
   IsHomogeneousAggregate(lldb::opaque_compiler_type_t type,
                          lldb_private::CompilerType *baseTypePtr) override {
+    // This is used to detect "Homogeneous Floating-point Aggregates"
+    // Unimplemented.
     return 0;
   }
+
   bool IsBlockPointerType(
       lldb::opaque_compiler_type_t type,
       lldb_private::CompilerType *functionPointerTypePtr) override {
+    // This is Objective-C-specific.
     return false;
   }
+
   bool IsMemberFunctionPointerType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return false;
   }
+
   bool IsPolymorphicClass(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return false;
   }
+
   bool IsBeingDefined(lldb::opaque_compiler_type_t type) override {
+    // This might be useful when we support incomplete types from DWARF.
     return false;
   }
 
@@ -273,6 +381,7 @@ public:
                            lldb_private::CompilerType *pointeeType) override;
 
   bool IsTypedefType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return false;
   }
 
@@ -283,124 +392,106 @@ public:
   bool IsArrayType(lldb::opaque_compiler_type_t type,
                    lldb_private::CompilerType *elementType, uint64_t *size,
                    bool *isIncomplete) override {
+    // This is C++-specific.
     return false;
   }
 
-  bool IsAggregateType(lldb::opaque_compiler_type_t type) override {
+  bool IsAggregateType(lldb::opaque_compiler_type_t type) override;
+
+  bool IsDefined(lldb::opaque_compiler_type_t type) override {
+    // This might be useful when we support incomplete types from DWARF.
     return false;
   }
-
-  bool IsDefined(lldb::opaque_compiler_type_t type) override { return false; }
 
   bool IsFunctionType(lldb::opaque_compiler_type_t type) override {
+    // This is used by StackFrame to obtain the return value of a function.
+    // Unimplemented.
     return false;
   }
 
   bool IsFunctionPointerType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return false;
   }
 
   bool IsPossibleDynamicType(lldb::opaque_compiler_type_t type,
                              lldb_private::CompilerType *targetType,
                              bool checkCplusplus, bool checkObjc) override {
+    // This is C++-specific.
     return false;
   }
 
   bool IsPointerType(lldb::opaque_compiler_type_t type,
                      lldb_private::CompilerType *pointeeType) override;
 
-  bool IsVoidType(lldb::opaque_compiler_type_t type) override { return false; }
+  bool IsVoidType(lldb::opaque_compiler_type_t type) override {
+    // This is only used for the --element-count flag of the expr command.
+    // We might be able to replace it with None.
+    // Unimplemented.
+    return false;
+  }
 
   //===--------------------------------------------------------------------===//
-  // GetType Queries
+  // Type Creation Queries
   //===--------------------------------------------------------------------===//
 
   lldb_private::CompilerType
   GetEnumerationIntegerType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return {};
   }
+
   lldb_private::CompilerType
   GetBasicTypeFromAST(lldb::BasicType basic_type) override {
+    // This is C++-specific.
     return {};
   }
+
   lldb::BasicType
   GetBasicTypeEnumeration(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return lldb::eBasicTypeInvalid;
   }
 
   lldb_private::CompilerType
   GetLValueReferenceType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return {};
   }
 
   lldb_private::CompilerType
   GetRValueReferenceType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return {};
   }
 
   lldb_private::CompilerType
   GetNonReferenceType(lldb::opaque_compiler_type_t type) override;
 
-  std::optional<size_t>
-  GetTypeBitAlign(lldb::opaque_compiler_type_t type,
-                  lldb_private::ExecutionContextScope *exeScope) override {
-    return {};
-  }
-
   lldb_private::CompilerType
   GetBuiltinTypeForEncodingAndBitSize(lldb::Encoding encoding,
                                       size_t bitSize) override {
+    // Unimplemented.
     return {};
   }
 
   lldb_private::CompilerType
   GetTypedefedType(lldb::opaque_compiler_type_t type) override {
+    // This is C++-specific.
     return {};
   }
 
   lldb_private::CompilerType
   GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) override;
 
-  lldb_private::CompilerType
-  GetArrayElementType(lldb::opaque_compiler_type_t type,
-                      lldb_private::ExecutionContextScope *exeScope) override {
-    return {};
-  }
-
   lldb_private::CompilerType GetArrayType(lldb::opaque_compiler_type_t type,
                                           uint64_t size) override {
+    // This is C++-specific.
     return {};
   }
 
   lldb_private::CompilerType
-  GetCanonicalType(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
-
-  int GetFunctionArgumentCount(lldb::opaque_compiler_type_t type) override {
-    return -1;
-  }
-
-  lldb_private::CompilerType
-  GetFunctionArgumentTypeAtIndex(lldb::opaque_compiler_type_t type,
-                                 size_t idx) override {
-    return {};
-  }
-
-  lldb_private::CompilerType
-  GetFunctionReturnType(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
-
-  size_t GetNumMemberFunctions(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
-
-  lldb_private::TypeMemberFunctionImpl
-  GetMemberFunctionAtIndex(lldb::opaque_compiler_type_t type,
-                           size_t idx) override {
-    return {};
-  }
+  GetCanonicalType(lldb::opaque_compiler_type_t type) override;
 
   lldb_private::CompilerType
   GetPointeeType(lldb::opaque_compiler_type_t type) override;
@@ -417,6 +508,7 @@ public:
                  const lldb_private::ExecutionContext *exeCtx) override;
 
   uint32_t GetNumFields(lldb::opaque_compiler_type_t type) override {
+    // Unimplemented.
     return 0;
   }
 
@@ -425,27 +517,32 @@ public:
                                              uint64_t *bitOffsetPtr,
                                              uint32_t *bitfieldBitSizePtr,
                                              bool *isBitfieldPtr) override {
+    // Unimplemented.
     return {};
   }
 
   uint32_t GetNumDirectBaseClasses(lldb::opaque_compiler_type_t type) override {
+    // We don't have inheritance.
     return 0;
   }
 
   uint32_t
   GetNumVirtualBaseClasses(lldb::opaque_compiler_type_t type) override {
+    // We don't have inheritance.
     return 0;
   }
 
   lldb_private::CompilerType
   GetDirectBaseClassAtIndex(lldb::opaque_compiler_type_t type, size_t idx,
                             uint32_t *bitOffsetPtr) override {
+    // We don't have inheritance.
     return {};
   }
 
   lldb_private::CompilerType
   GetVirtualBaseClassAtIndex(lldb::opaque_compiler_type_t type, size_t idx,
                              uint32_t *bitOffsetPtr) override {
+    // We don't have inheritance.
     return {};
   }
 
@@ -461,6 +558,7 @@ public:
   uint32_t GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
                                    StringRef name,
                                    bool omitEmptyBaseClasses) override {
+    // Unimplemented.
     return 0;
   }
 
@@ -476,7 +574,7 @@ public:
   /// Return the list of decorators attached to the struct type, or an empty
   /// list if the type is not a struct.
   llvm::ArrayRef<TypedAttr>
-  GetStructDecorators(lldb::opaque_compiler_type_t type);
+  getStructDecorators(lldb::opaque_compiler_type_t type);
 
   //===--------------------------------------------------------------------===//
   // Expressions
