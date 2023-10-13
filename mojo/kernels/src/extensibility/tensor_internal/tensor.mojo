@@ -256,7 +256,7 @@ struct Tensor[dtype: DType]:
         return self.spec()[idx]
 
     @always_inline
-    fn __getitem__(self, index: Int) raises -> SIMD[dtype, 1]:
+    fn __getitem__(self, index: Int) -> SIMD[dtype, 1]:
         """Gets the value at the specified index.
 
         Args:
@@ -264,15 +264,12 @@ struct Tensor[dtype: DType]:
 
         Returns:
           The value at the specified indices.
-
-        Raises:
-          An exception if the rank of the tensor is not 1.
         """
-        self._check_rank_dimension_match(1)
+        debug_assert(self.rank() == 1, "rank must be 1")
         return self._ptr.load(index)
 
     @always_inline
-    fn __getitem__(self, *indices: Int) raises -> SIMD[dtype, 1]:
+    fn __getitem__(self, *indices: Int) -> SIMD[dtype, 1]:
         """Gets the value at the specified indices.
 
         Args:
@@ -280,15 +277,11 @@ struct Tensor[dtype: DType]:
 
         Returns:
           The value at the specified indices.
-
-        Raises:
-          An exception if the rank of the tensor does not match the indexing
-          length.
         """
         return self.simd_load[1](VariadicList[Int](indices))
 
     @always_inline
-    fn __getitem__(self, indices: VariadicList[Int]) raises -> SIMD[dtype, 1]:
+    fn __getitem__(self, indices: VariadicList[Int]) -> SIMD[dtype, 1]:
         """Gets the value at the specified indices.
 
         Args:
@@ -296,17 +289,13 @@ struct Tensor[dtype: DType]:
 
         Returns:
           The value at the specified indices.
-
-        Raises:
-          An exception if the rank of the tensor does not match the indexing
-          length.
         """
         return self.simd_load[1](indices)
 
     @always_inline
     fn __getitem__[
         len: Int
-    ](self, indices: StaticIntTuple[len]) raises -> SIMD[dtype, 1]:
+    ](self, indices: StaticIntTuple[len]) -> SIMD[dtype, 1]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -317,16 +306,11 @@ struct Tensor[dtype: DType]:
 
         Returns:
           The value at the specified indices.
-
-        Raises:
-          An exception if the rank of the tensor does not match the `len`.
         """
         return self.simd_load[1](indices)
 
     @always_inline
-    fn simd_load[
-        simd_width: Int
-    ](self, index: Int) raises -> SIMD[dtype, simd_width]:
+    fn simd_load[simd_width: Int](self, index: Int) -> SIMD[dtype, simd_width]:
         """Gets the SIMD value at the specified index.
 
         Parameters:
@@ -337,17 +321,14 @@ struct Tensor[dtype: DType]:
 
         Returns:
           The SIMD value at the specified indices.
-
-        Raises:
-          An exception if the rank of the tensor is not 1.
         """
-        self._check_rank_dimension_match(1)
+        debug_assert(self.rank() == 1, "rank must be 1")
         return self._ptr.simd_load[simd_width](index)
 
     @always_inline
     fn simd_load[
         simd_width: Int
-    ](self, *indices: Int) raises -> SIMD[dtype, simd_width]:
+    ](self, *indices: Int) -> SIMD[dtype, simd_width]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -358,17 +339,13 @@ struct Tensor[dtype: DType]:
 
         Returns:
           The SIMD value at the specified indices.
-
-        Raises:
-          An exception if the rank of the tensor does not match the indexing
-          length.
         """
         return self.simd_load[simd_width](VariadicList[Int](indices))
 
     @always_inline
     fn simd_load[
         simd_width: Int
-    ](self, indices: VariadicList[Int]) raises -> SIMD[dtype, simd_width]:
+    ](self, indices: VariadicList[Int]) -> SIMD[dtype, simd_width]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -379,12 +356,8 @@ struct Tensor[dtype: DType]:
 
         Returns:
           The SIMD value at the specified indices.
-
-        Raises:
-          An exception if the rank of the tensor does not match the indexing
-          length.
         """
-        self._check_rank_dimension_match(indices.__len__())
+        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
         return self._ptr.simd_load[simd_width](
             self._compute_linear_offset(indices)
         )
@@ -392,7 +365,7 @@ struct Tensor[dtype: DType]:
     @always_inline
     fn simd_load[
         simd_width: Int, len: Int
-    ](self, indices: StaticIntTuple[len]) raises -> SIMD[dtype, simd_width]:
+    ](self, indices: StaticIntTuple[len]) -> SIMD[dtype, simd_width]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -404,48 +377,37 @@ struct Tensor[dtype: DType]:
 
         Returns:
           The SIMD value at the specified indices.
-
-        Raises:
-          An exception if the rank of the tensor does not match `len`.
         """
-        self._check_rank_dimension_match(indices.__len__())
+        debug_assert(len == self.rank(), "invalid length value")
         return self._ptr.simd_load[simd_width](
             self._compute_linear_offset(indices)
         )
 
     @always_inline
-    fn __setitem__(inout self, index: Int, val: SIMD[dtype, 1]) raises:
+    fn __setitem__(inout self, index: Int, val: SIMD[dtype, 1]):
         """Sets the value at the specified index.
 
         Args:
           index: The index of the value to set.
           val: The value to store.
-
-        Raises:
-          An exception if the rank of the tensor is not 1.
         """
+        debug_assert(self.rank() == 1, "rank must be 1")
         self.simd_store[1](index, val)
 
     @always_inline
-    fn __setitem__(
-        inout self, indices: VariadicList[Int], val: SIMD[dtype, 1]
-    ) raises:
+    fn __setitem__(inout self, indices: VariadicList[Int], val: SIMD[dtype, 1]):
         """Sets the value at the specified indices.
 
         Args:
           indices: The indices of the value to set.
           val: The value to store.
-
-        Raises:
-          An exception if the rank of the tensor does not match the indexing
-          length.
         """
         self.simd_store[1](indices, val)
 
     @always_inline
     fn __setitem__[
         len: Int
-    ](inout self, indices: StaticIntTuple[len], val: SIMD[dtype, 1]) raises:
+    ](inout self, indices: StaticIntTuple[len], val: SIMD[dtype, 1]):
         """Sets the value at the specified indices.
 
         Parameters:
@@ -454,16 +416,13 @@ struct Tensor[dtype: DType]:
         Args:
           indices: The indices of the value to set.
           val: The value to store.
-
-        Raises:
-          An exception if the rank of the tensor is not `len`.
         """
         self.simd_store[1, len](indices, val)
 
     @always_inline
     fn simd_store[
         simd_width: Int
-    ](inout self, index: Int, val: SIMD[dtype, simd_width]) raises:
+    ](inout self, index: Int, val: SIMD[dtype, simd_width]):
         """Sets the SIMD value at the specified index.
 
         Parameters:
@@ -472,19 +431,14 @@ struct Tensor[dtype: DType]:
         Args:
           index: The index of the value to set.
           val: The SIMD value to store.
-
-        Raises:
-          An exception if the rank of the tensor is not 1.
         """
-        self._check_rank_dimension_match(1)
+        debug_assert(self.rank() == 1, "rank must be 1")
         self._ptr.simd_store[simd_width](index, val)
 
     @always_inline
     fn simd_store[
         simd_width: Int
-    ](
-        inout self, indices: VariadicList[Int], val: SIMD[dtype, simd_width]
-    ) raises:
+    ](inout self, indices: VariadicList[Int], val: SIMD[dtype, simd_width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
@@ -493,12 +447,8 @@ struct Tensor[dtype: DType]:
         Args:
           indices: The indices of the value to set.
           val: The SIMD value to store.
-
-        Raises:
-          An exception if the rank of the tensor does not match the indexing
-          length.
         """
-        self._check_rank_dimension_match(indices.__len__())
+        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
         self._ptr.simd_store[simd_width](
             self._compute_linear_offset(indices), val
         )
@@ -506,9 +456,7 @@ struct Tensor[dtype: DType]:
     @always_inline
     fn simd_store[
         simd_width: Int, len: Int
-    ](
-        inout self, indices: StaticIntTuple[len], val: SIMD[dtype, simd_width]
-    ) raises:
+    ](inout self, indices: StaticIntTuple[len], val: SIMD[dtype, simd_width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
@@ -518,23 +466,20 @@ struct Tensor[dtype: DType]:
         Args:
           indices: The indices of the value to set.
           val: The SIMD value to store.
-
-        Raises:
-          An exception if the rank of the tensor is not `len`.
         """
-        self._check_rank_dimension_match(indices.__len__())
+        debug_assert(len == self.rank(), "invalid length value")
         self._ptr.simd_store[simd_width](
             self._compute_linear_offset(indices), val
         )
 
     @always_inline
     fn _compute_linear_offset[
-        len: Int
-    ](self, indices: StaticIntTuple[len]) -> Int:
+        rank: Int
+    ](self, indices: StaticIntTuple[rank]) -> Int:
         """Computes the linear offset into the tensor from the indices provided.
 
         Parameters:
-          len: The rank of the indices.
+          rank: The rank of the indices.
 
         Args:
           indices: The indices to index against.
@@ -545,7 +490,7 @@ struct Tensor[dtype: DType]:
         var result = indices[0]
 
         @unroll
-        for i in range(len - 1):
+        for i in range(rank - 1):
             result = self.dim(i + 1) * result + indices[i + 1]
         return result
 
@@ -597,10 +542,3 @@ struct Tensor[dtype: DType]:
     @always_inline
     fn _to_buffer(self) -> Buffer[Dim(), dtype]:
         return Buffer[Dim(), dtype](self._ptr, self.num_elements())
-
-    @always_inline
-    fn _check_rank_dimension_match(self, dim: Int) raises:
-        if self.rank() != dim:
-            raise "Invalid dimension axis. The tensor is of rank " + String(
-                self.rank()
-            ) + " but the indexing dimension is of length " + dim
