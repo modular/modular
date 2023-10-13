@@ -208,3 +208,51 @@ fn tile[
             memcpy[type](dst_ptr, src_ptr, count)
 
     out_chain.mark_ready()
+
+
+@always_inline
+fn tile_shape[
+    input_rank: Int,
+    repeats_rank: Int,
+    input_type: DType,
+    repeats_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    repeats_buf: NDBuffer[
+        repeats_rank, DimList.create_unknown[repeats_rank](), repeats_type
+    ],
+) -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `tile` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Rank of the input tensor (can be any shape).
+        repeats_rank: Rank of the repeats tensor (must be 1).
+        input_type: Type of the input tensor.
+        repeats_type: Type of the repeats tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input_buf: The input tensor.
+        repeats_buf: The repeats tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # TODO(#17512)
+    debug_assert(repeats_rank == 1, "repeats rank must be 1")
+    debug_assert(
+        repeats_buf.dim(0) == input_rank, "repeats length must match input rank"
+    )
+
+    # Compute and return the output shape.
+    var output_shape = StaticIntTuple[input_rank]()
+    for i in range(input_rank):
+        output_shape[i] = input_buf.dim(i) * repeats_buf[i].to_int()
+
+    return output_shape
