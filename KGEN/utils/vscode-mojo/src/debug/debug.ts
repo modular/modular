@@ -57,8 +57,9 @@ class MojoDebugConfigurationProvider implements
       debugConfiguration["enableAutoVariableSummaries"] = true;
 
     // This setting shortens the length of address strings.
-    const initCommands =
-        [ "settings set target.show-hex-values-with-leading-zeroes false" ];
+    const initCommands = [
+      "settings set target.show-hex-variable-values-with-leading-zeroes false"
+    ];
 
     // Load the MojoLLDB plugin.
     let config = await this.context?.getSDK().resolveConfig(folder);
