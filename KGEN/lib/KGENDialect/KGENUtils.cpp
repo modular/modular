@@ -79,21 +79,18 @@ static ParseResult parseParameterSpec(AsmParser &parser,
 
 /// Parse an argument or type list with optional metadata. This is an optional
 /// parse, which allows the KGEN type parser to check if it is parsing a
-/// signature.
-static OptionalParseResult
-parseOptionalSignatureValues(AsmParser &p, function_ref<Type()> parseArg,
-                             FunctionType &values, FnEffects &effects,
-                             bool optionalResultList) {
+/// signature. The provided parseArg hook is responsible for parsing an
+/// individual argument and adding its type to the provided array.
+static OptionalParseResult parseOptionalSignatureValues(
+    AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
+    FunctionType &values, FnEffects &effects, bool optionalResultList) {
   SmallVector<Type> argTypes, resTypes;
 
-  auto parse = [&]() -> ParseResult {
-    argTypes.push_back(parseArg());
-    return success(!!argTypes.back());
-  };
   if (failed(p.parseOptionalLParen()))
     return std::nullopt;
   if (failed(p.parseOptionalRParen())) {
-    if (p.parseCommaSeparatedList(parse) || p.parseRParen())
+    if (p.parseCommaSeparatedList([&]() { return parseArg(argTypes); }) ||
+        p.parseRParen())
       return failure();
   }
 
@@ -131,19 +128,18 @@ static OptionalParseResult parseOptionalKGENSignature(AsmParser &p,
     return failure();
 
   SmallVector<ValueInputConvention> inputConventions;
-  auto parseElt = [&]() -> Type {
+  auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     // Parse the argument type and its input convention.
-    Type type;
-    if (p.parseType(type) ||
+    if (p.parseType(argTypes.emplace_back()) ||
         parseInputConvention(p, inputConventions.emplace_back()))
-      return {};
-    return type;
+      return failure();
+    return success();
   };
 
   FunctionType functionType;
   FnEffects effects;
   OptionalParseResult result = parseOptionalSignatureValues(
-      p, parseElt, functionType, effects, /*optionalResultList=*/false);
+      p, parseArg, functionType, effects, /*optionalResultList=*/false);
   if (result.has_value() && succeeded(*result)) {
     signature = SignatureType::getChecked(
         [&] { return p.emitError(loc); }, functionType,
@@ -1071,10 +1067,9 @@ void KGEN::printInputConvention(AsmPrinter &p,
     p << ' ' << stringifyValueInputConvention(convention);
 }
 
-ParseResult KGEN::parseSignatureValues(AsmParser &p,
-                                       function_ref<Type()> parseArg,
-                                       FunctionType &values, FnEffects &effects,
-                                       bool optionalResultList) {
+ParseResult KGEN::parseSignatureValues(
+    AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
+    FunctionType &values, FnEffects &effects, bool optionalResultList) {
   OptionalParseResult result = parseOptionalSignatureValues(
       p, parseArg, values, effects, optionalResultList);
   if (result.has_value())
@@ -1114,23 +1109,25 @@ ParseResult KGEN::parseFunctionSignature(
     return failure();
 
   SmallVector<ValueInputConvention> inputConventions;
-  auto parseElt = [&]() -> Type {
+  auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     // Parse the argument type and its input convention.
+    OpAsmParser::Argument &arg = args.emplace_back();
     OptionalParseResult result =
-        p.parseOptionalArgument(args.emplace_back(), /*allowType=*/true);
+        p.parseOptionalArgument(arg, /*allowType=*/true);
     if (result.has_value() && failed(*result))
-      return {};
-    if (!result.has_value() && p.parseType(args.back().type))
-      return {};
+      return failure();
+    if (!result.has_value() && p.parseType(arg.type))
+      return failure();
 
     if (parseInputConvention(p, inputConventions.emplace_back()))
-      return {};
+      return failure();
 
-    return args.back().type;
+    argTypes.push_back(arg.type);
+    return success();
   };
 
   FnEffects effects;
-  if (failed(parseSignatureValues(p, parseElt, functionType, effects,
+  if (failed(parseSignatureValues(p, parseArg, functionType, effects,
                                   /*optionalResultList=*/true)))
     return failure();
 
@@ -1273,17 +1270,16 @@ ParseResult KGEN::parseKGENSignature(AsmParser &p,
 
   SmallVector<StringAttr> argNames;
   SmallVector<ValueInputConvention> inputConventions;
-  auto parseElt = [&]() -> Type {
-    Type type;
-    if (p.parseType(type) ||
+  auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
+    if (p.parseType(argTypes.emplace_back()) ||
         parseInputConvention(p, inputConventions.emplace_back()))
-      return {};
-    return type;
+      return failure();
+    return success();
   };
 
   FnEffects effects;
   OptionalParseResult result =
-      parseOptionalSignatureValues(p, parseElt, functionType, effects,
+      parseOptionalSignatureValues(p, parseArg, functionType, effects,
                                    /*optionalResultList=*/false);
   if (result.has_value() && failed(*result))
     return failure();
