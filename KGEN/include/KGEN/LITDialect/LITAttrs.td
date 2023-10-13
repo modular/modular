@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This contains the LITDialect definition to be included in other files.
+// This defines attributes in the LIT dialect.
 //
 //===----------------------------------------------------------------------===//
 

@@ -322,5 +322,7 @@ TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/LITDialect/LITEnums.cpp.inc"
+
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/LITDialect/LITAttrs.cpp.inc"

@@ -3,6 +3,10 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// This defines operation interfaces in the LIT dialect.
+//
+//===----------------------------------------------------------------------===//
 
 #ifndef KGEN_LITDIALECT_LITDECLINTERFACE_TD
 #define KGEN_LITDIALECT_LITDECLINTERFACE_TD
@@ -40,7 +44,7 @@ def ASTDeclInterface : OpInterface<"ASTDeclInterface"> {
 
     InterfaceMethod<[{
       Clear the documentation string for this decl.
-    }], "Attribute", "removeDocStringAttr", (ins), [{}], [{ 
+    }], "Attribute", "removeDocStringAttr", (ins), [{}], [{
       return Attribute();
     }]>,
   ];

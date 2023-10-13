@@ -56,6 +56,8 @@ AttrOrType demangleIfNeeded(AttrOrType arg) {
 } // namespace LIT
 } // namespace M::KGEN
 
+#include "KGEN/LITDialect/LITEnums.h.inc"
+
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/LITDialect/LITAttrs.h.inc"
 
