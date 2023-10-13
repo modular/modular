@@ -425,19 +425,19 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaults;
   SmallVector<ValueInputConvention> inputConventions;
-  auto parseElt = [&]() -> Type {
+  auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     // Parse the ssa name first.
     OpAsmParser::Argument &arg = args.emplace_back();
     StringAttr &argName = argNames.emplace_back();
     if (p.parseOperand(arg.ssaName, /*allowResultNumber=*/false))
-      return {};
+      return failure();
     // A user defined name might follow in brackets, e.g. `%arg0[someName]`; if
     // omitted, we just use the SSA name.
     if (succeeded(p.parseOptionalLSquare())) {
       // The user defined names might be escaped, since we allow arbitrary
       // identifiers, e.g.: `%arg1[*"!415weirdname"]`.
       if (parseParamName(p, argName) || p.parseRSquare())
-        return {};
+        return failure();
     } else {
       // The parsed SSA name comes prepended with '%', so drop it.
       argName = p.getBuilder().getStringAttr((arg.ssaName.name.drop_front()));
@@ -448,22 +448,23 @@ static ParseResult parseLITFunctionSignature(
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
         parseInputConvention(p, inputConventions.emplace_back()))
-      return {};
+      return failure();
 
     // Parse an optional default value.
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(
             p, defaultVal, arg.type,
             SignatureType::hasAddress(inputConventions.back()))))
-      return {};
+      return failure();
     if (defaultVal)
       defaults.emplace_back(defaultVal);
 
-    return arg.type;
+    argTypes.push_back(arg.type);
+    return success();
   };
 
   FnEffects effects;
-  if (failed(parseSignatureValues(p, parseElt, functionType, effects,
+  if (failed(parseSignatureValues(p, parseArg, functionType, effects,
                                   /*optionalResultList=*/true)))
     return failure();
 

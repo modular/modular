@@ -115,31 +115,31 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> argDefaults;
   SmallVector<ValueInputConvention> inputConventions;
-  auto parseElt = [&]() -> Type {
+  auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     // Parse an optional argument name.
     if (parseOptionalName(p, argNames.emplace_back()))
-      return {};
+      return failure();
 
     // Parse the argument type and its input convention.
-    Type type;
+    Type &type = argTypes.emplace_back();
     if (p.parseType(type) ||
         parseInputConvention(p, inputConventions.emplace_back()))
-      return {};
+      return failure();
 
     // Parse an optional default value.
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(
             p, defaultVal, type,
             SignatureType::hasAddress(inputConventions.back()))))
-      return {};
+      return failure();
     if (defaultVal)
       argDefaults.emplace_back(defaultVal);
-    return type;
+    return success();
   };
 
   FunctionType functionType;
   FnEffects effects;
-  if (parseSignatureValues(p, parseElt, functionType, effects,
+  if (parseSignatureValues(p, parseArg, functionType, effects,
                            /*optionalResultList=*/false))
     return failure();
   signature = SignatureType::getChecked(
