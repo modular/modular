@@ -60,18 +60,19 @@ fn foo1(x:MemType, y:MemType, z:Int, u: __mlir_type.index) -> MemType:
 # CHECK-NEXT:      lit.end_func
 # CHECK-NEXT:      }
 
-# CHECK-NEXT:    lit.func @"__copyinit__
-# CHECK-SAME:    (%self: !kgen.pointer<{{.*}}> init_self,
-# CHECK-SAME:    %existing: !kgen.pointer<{{.*}}> borrow_in_mem) -> !kgen.none attributes {specialFnKind = 3 : i8} {
+# CHECK-NEXT:    lit.func @"__copyinit__(
+# CHECK-SAME:      %self[self]: !kgen.pointer<{{.*}}> init_self,
+# CHECK-SAME:      %other[other]: !kgen.pointer<{{.*}}> borrow_in_mem
+# CHECK-SAME:    ) -> !kgen.none attributes {specialFnKind = 3 : i8} {
 # CHECK-NEXT:    [[V0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
-# CHECK-NEXT:    [[V1:%.*]] = lit.struct.gep %existing[field0] : <!MemType>
+# CHECK-NEXT:    [[V1:%.*]] = lit.struct.gep %other[field0] : <!MemType>
 # CHECK-NEXT:    [[V2:%.*]] = kgen.call @{{.*}}__copyinit__{{.*}}"([[V0]], [[V1]])
 # CHECK-NEXT:    [[V3:%.*]] = lit.struct.gep %self[field1] : <!Int>
-# CHECK-NEXT:    [[V4:%.*]] = lit.struct.gep %existing[field1] : <!Int>
+# CHECK-NEXT:    [[V4:%.*]] = lit.struct.gep %other[field1] : <!Int>
 # CHECK-NEXT:    [[V5:%.*]] = pop.load [[V4]] : !kgen.pointer<!Int>
 # CHECK-NEXT:    pop.store [[V5]], [[V3]] : !kgen.pointer<!Int>
 # CHECK-NEXT:    [[V6:%.*]] = lit.struct.gep %self[field2] : <index>
-# CHECK-NEXT:    [[V7:%.*]] = lit.struct.gep %existing[field2] : <index>
+# CHECK-NEXT:    [[V7:%.*]] = lit.struct.gep %other[field2] : <index>
 # CHECK-NEXT:    [[V8:%.*]] = pop.load [[V7]] : !kgen.pointer<index>
 # CHECK-NEXT:    pop.store [[V8]], [[V6]] : !kgen.pointer<index>
 # CHECK-NEXT:    [[V9:%.*]] = kgen.param.constant: none = <#kgen.none>
@@ -79,33 +80,34 @@ fn foo1(x:MemType, y:MemType, z:Int, u: __mlir_type.index) -> MemType:
 # CHECK-NEXT:    lit.end_func
 # CHECK-NEXT:    }
 
-# CHECK-NEXT:      lit.func @"__moveinit__
-# CHECK-SAME:      (%self: !kgen.pointer<{{.*}}> init_self, %existing:
-# CHECK-SAME:      !kgen.pointer<{{.*}}> owned_in_mem) -> !kgen.none attributes {specialFnKind = 4 : i8} {
+# CHECK-NEXT:      lit.func @"__moveinit__(
+# CHECK-SAME:        %self[self]: !kgen.pointer<{{.*}}> init_self,
+# CHECK-SAME:        %other[other]: !kgen.pointer<{{.*}}> owned_in_mem
+# CHECK-SAME:      ) -> !kgen.none attributes {specialFnKind = 4 : i8} {
 # CHECK-NEXT:      [[W0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
-# CHECK-NEXT:      [[W1:%.*]] = lit.struct.gep %existing[field0] : <!MemType>
+# CHECK-NEXT:      [[W1:%.*]] = lit.struct.gep %other[field0] : <!MemType>
 # CHECK-NEXT:      [[W2:%.*]] = kgen.call @{{.*}}__moveinit__{{.*}}"([[W0]], [[W1]])
 # CHECK-NEXT:      [[W3:%.*]] = lit.struct.gep %self[field1] : <!Int>
-# CHECK-NEXT:      [[W4:%.*]] = lit.struct.gep %existing[field1] : <!Int>
+# CHECK-NEXT:      [[W4:%.*]] = lit.struct.gep %other[field1] : <!Int>
 # CHECK-NEXT:      [[W5:%.*]] = lit.load.consume [[W4]] : !kgen.pointer<!Int>
 # CHECK-NEXT:      pop.store [[W5]], [[W3]] : !kgen.pointer<!Int>
 # CHECK-NEXT:      [[W6:%.*]] = lit.struct.gep %self[field2] : <index>
-# CHECK-NEXT:      [[W7:%.*]] = lit.struct.gep %existing[field2] : <index>
+# CHECK-NEXT:      [[W7:%.*]] = lit.struct.gep %other[field2] : <index>
 # CHECK-NEXT:      [[W8:%.*]] = lit.load.consume [[W7]] : !kgen.pointer<index>
 # CHECK-NEXT:      pop.store [[W8]], [[W6]] : !kgen.pointer<index>
 # CHECK-NEXT:      [[W9:%.*]] = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT:      lit.ownership.mark_destroyed %existing
+# CHECK-NEXT:      lit.ownership.mark_destroyed %other
 # CHECK-NEXT:      lit.return %none : !kgen.none
 # CHECK-NEXT:      lit.end_func
 # CHECK-NEXT: }
 
 # CHECK-NEXT: lit.func @"__init__
 # CHECK-NEXT: [[Q0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
-# CHECK-NEXT: [[Q1:%.*]] = kgen.call @{{.*}}::@"__moveinit__{{.*}}"([[Q0]], %field0)
+# CHECK-NEXT: [[Q1:%.*]] = kgen.call @{{.*}}::@"__moveinit__{{.*}}"([[Q0]], %fld0)
 # CHECK-NEXT: [[Q2:%.*]] = lit.struct.gep %self[field1] : <!Int>
-# CHECK-NEXT: pop.store %field1, [[Q2]] : !kgen.pointer<!Int>
+# CHECK-NEXT: pop.store %fld1, [[Q2]] : !kgen.pointer<!Int>
 # CHECK-NEXT: [[Q3:%.*]] = lit.struct.gep %self[field2] : <index>
-# CHECK-NEXT: pop.store %field2, [[Q3]] : !kgen.pointer<index>
+# CHECK-NEXT: pop.store %fld2, [[Q3]] : !kgen.pointer<index>
 # CHECK-NEXT: [[Q4:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return [[Q4]] : !kgen.none
 # CHECK-NEXT: lit.end_func
@@ -184,23 +186,23 @@ struct MemType:
 
 # CHECK:         lit.func @"__copyinit__
 # CHECK-NEXT:      [[P0:%.*]] = lit.struct.gep %self[field0]
-# CHECK-NEXT:      [[existing_impl:%.*]] = lit.struct.gep %existing[field0]
+# CHECK-NEXT:      [[existing_impl:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:      [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
 # CHECK-NEXT:      pop.store [[loaded_existing_impl]], [[P0]]
 # CHECK-NEXT:      [[P1:%.*]] = lit.struct.gep %self[dtor]
-# CHECK-NEXT:      [[P2:%.*]] = lit.struct.gep %existing[dtor]
+# CHECK-NEXT:      [[P2:%.*]] = lit.struct.gep %other[dtor]
 # CHECK-NEXT:      [[P3:%.*]] = pop.load [[P2]]
 # CHECK-NEXT:      pop.store [[P3]], [[P1]]
 # CHECK-NEXT:      [[P4:%.*]] = lit.struct.gep %self[copy]
-# CHECK-NEXT:      [[P5:%.*]] = lit.struct.gep %existing[copy]
+# CHECK-NEXT:      [[P5:%.*]] = lit.struct.gep %other[copy]
 # CHECK-NEXT:      [[P6:%.*]] = pop.load [[P5]]
 # CHECK-NEXT:      pop.store [[P6]], [[P4]]
 # CHECK-NEXT:      [[P7:%.*]] = lit.struct.gep %self[call]
-# CHECK-NEXT:      [[P8:%.*]] = lit.struct.gep %existing[call]
+# CHECK-NEXT:      [[P8:%.*]] = lit.struct.gep %other[call]
 # CHECK-NEXT:      [[P9:%.*]] = pop.load [[P8]]
 # CHECK-NEXT:      pop.store [[P9]], [[P7]]
 # CHECK-NEXT:      kgen.param.constant: none
-# CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %existing[field0]
+# CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:      [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT:      [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
@@ -209,29 +211,29 @@ struct MemType:
 
 # CHECK:        lit.func @"__moveinit__
 # CHECK-NEXT:     [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
-# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.struct.gep %other[field0] : <pointer<array<0, i1>>>
 # CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:     pop.store [[mov_loaded_existing_impl]], [[M0]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:     [[M1:%.*]] = lit.struct.gep %self[dtor]
-# CHECK-NEXT:     [[M2:%.*]] = lit.struct.gep %existing[dtor]
+# CHECK-NEXT:     [[M2:%.*]] = lit.struct.gep %other[dtor]
 # CHECK-NEXT:     [[M3:%.*]] = lit.load.consume [[M2]]
 # CHECK-NEXT:     pop.store [[M3]], [[M1]]
 # CHECK-NEXT:     [[M4:%.*]] = lit.struct.gep %self[copy]
-# CHECK-NEXT:     [[M5:%.*]] = lit.struct.gep %existing[copy]
+# CHECK-NEXT:     [[M5:%.*]] = lit.struct.gep %other[copy]
 # CHECK-NEXT:     [[M6:%.*]] = lit.load.consume [[M5]]
 # CHECK-NEXT:     pop.store [[M6]], [[M4]]
 # CHECK-NEXT:     [[M7:%.*]] = lit.struct.gep %self[call]
-# CHECK-NEXT:     [[M8:%.*]] = lit.struct.gep %existing[call]
+# CHECK-NEXT:     [[M8:%.*]] = lit.struct.gep %other[call]
 # CHECK-NEXT:     [[M9:%.*]] = lit.load.consume [[M8]]
 # CHECK-NEXT:     pop.store [[M9]], [[M7]]
 # CHECK-NEXT:     %pointer = kgen.param.constant: pointer<array<0, i1>> = <0>
-# CHECK-NEXT:     [[V0:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:     [[V0:%.*]] = lit.struct.gep %other[field0] : <pointer<array<0, i1>>>
 # CHECK-NEXT:     pop.store %pointer, [[V0]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:     [[V3:%.*]] = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT:     lit.ownership.mark_destroyed %existing
+# CHECK-NEXT:     lit.ownership.mark_destroyed %other
 
 # CHECK: lit.func @"returns_escaping_closure({{.*}}::MemType)"
-# CHECK-SAME: (%__result__: !kgen.pointer<{{.*}}> byref_result, %m: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK-SAME: (%__result__[__result__]: !kgen.pointer<{{.*}}> byref_result, %m[m]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 fn returns_escaping_closure(m: MemType) -> fn(n:MemType) escaping -> MemType:
    fn myclosure(n:MemType) escaping -> MemType:
       return n + m
@@ -286,7 +288,7 @@ struct MemType:
 
 # CHECK: lit.struct.decl @"_CW_
 
-# CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<!escaping1> init_self, %impl: !kgen.pointer<!escaping> borrow_in_mem)
+# CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!escaping1> init_self, %impl[impl]: !kgen.pointer<!escaping> borrow_in_mem)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [!lit.signature<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
@@ -319,13 +321,13 @@ struct MemType:
 
 # CHECK: lit.struct.decl @MemType
 
-# CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>>) -> !kgen.none
+# CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self[self]: !kgen.pointer<array<0, i1>>) -> !kgen.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"([[arg0:%.*]]: !kgen.pointer<!MemType> byref_result, [[arg1:%.*]]: !kgen.pointer<array<0, i1>> borrow_in_mem, %n: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
-# CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast [[arg1]]
-# CHECK-NEXT: %[[A1:.*]] = kgen.call @{{.*}}@"__call__{{.*}}"([[arg0]], %[[A0]], %n)
+# CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<array<0, i1>> borrow_in_mem, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
+# CHECK-NEXT: %[[A1:.*]] = kgen.call @{{.*}}@"__call__{{.*}}"(%[[RES]], %[[A0]], %n)
 # CHECK-NEXT: lit.return %[[A1]] : !kgen.none
 # CHECK-NEXT: lit.end_func
 
@@ -354,8 +356,12 @@ struct MemType:
 # CHECK: lit.struct.field field6 : !Int
 
 # CHECK: lit.func @"__init__({{.*}}_CI_{{.*}} init_self,
-# CHECK-SAME: %field0: !kgen.pointer<!MemType>, %field1: !kgen.pointer<!MemType>, %field2: !kgen.pointer<!Int>,
-# CHECK-SAME: %field3: !kgen.pointer<index>, %field4: !kgen.pointer<!MemType> owned_in_mem, %field5: !kgen.pointer<!MemType> owned_in_mem
+# CHECK-SAME: %fld0[fld0]: !kgen.pointer<!MemType>,
+# CHECK-SAME: %fld1[fld1]: !kgen.pointer<!MemType>,
+# CHECK-SAME: %fld2[fld2]: !kgen.pointer<!Int>,
+# CHECK-SAME: %fld3[fld3]: !kgen.pointer<index>,
+# CHECK-SAME: %fld4[fld4]: !kgen.pointer<!MemType> owned_in_mem,
+# CHECK-SAME: %fld5[fld5]: !kgen.pointer<!MemType> owned_in_mem
 fn doNothing(x:__mlir_type[`!kgen.pointer<`, MemType, `>`], y:__mlir_type[`!kgen.pointer<`, MemType, `>`]):
    pass
 
@@ -398,7 +404,11 @@ fn foo(x:Int, y:MemType, z: MemType):
 # CHECK: lit.struct.field field0 : !Int
 # CHECK: lit.struct.field field1 : !MemType
 # CHECK: lit.struct.field field2 : !MemType
-# CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<{{.*}}> init_self, %field0: !Int, %field1: !kgen.pointer<!MemType> owned_in_mem, %field2: !kgen.pointer<!MemType> owned_in_mem)
+# CHECK: lit.func @"__init__{{.*}}"(
+# CHECK-SAME: %self[self]: !kgen.pointer<{{.*}}> init_self,
+# CHECK-SAME: %fld0[fld0]: !Int,
+# CHECK-SAME: %fld1[fld1]: !kgen.pointer<!MemType> owned_in_mem,
+# CHECK-SAME: %fld2[fld2]: !kgen.pointer<!MemType> owned_in_mem)
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure_3
 fn makes_escaping_closure_3(owned x: Int,
@@ -445,7 +455,12 @@ fn make_pointer() -> __mlir_type.`!kgen.pointer<index>`:
 # CHECK-NEXT: lit.struct.field field2 : !Int
 # CHECK-NEXT: lit.struct.field field3 : !Int
 
-# CHECK: (%self: !kgen.pointer<{{.*}}> init_self, %field0: !kgen.pointer<index>, %field1: !kgen.pointer<index>, %field2: !Int, %field3: !Int)
+# CHECK: lit.func @"__init__(
+# CHECK-SAME: %self[self]: !kgen.pointer<{{.*}}> init_self,
+# CHECK-SAME: %fld0[fld0]: !kgen.pointer<index>,
+# CHECK-SAME: %fld1[fld1]: !kgen.pointer<index>,
+# CHECK-SAME: %fld2[fld2]: !Int,
+# CHECK-SAME: %fld3[fld3]: !Int)
 fn foo(owned y:Int):
   var w = 5
   var q = make_pointer()
@@ -470,10 +485,10 @@ struct MemType:
    fn __add__(self, rhs: MemType) -> MemType:
       return MemType()
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %q: !Int, %ww: !Int borrow) -> !kgen.none
-# CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %self[field0] : <!Int>
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, %q[q]: !Int, %ww[ww]: !Int borrow) -> !kgen.none
+# CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %[[SELF]][field0] : <!Int>
 # CHECK-NEXT: %[[V0REF:.*]] = builtin.unrealized_conversion_cast %[[V0]]
-# CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %self[field1] : <!Int>
+# CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %[[SELF]][field1] : <!Int>
 # CHECK-NEXT: %[[V1REF:.*]] = builtin.unrealized_conversion_cast %[[V1]]
 # CHECK-NEXT: %q_0 = lit.varlet.decl "q" var synth :
 # CHECK-NEXT: lit.ref.store %q, %q_0
@@ -487,17 +502,17 @@ struct MemType:
 # CHECK-NEXT: lit.return %[[V7]] : !kgen.none
 # CHECK-NEXT: lit.end_func
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %p: !Int borrow) -> !kgen.none
-# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!MemType>
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, %p[p]: !Int borrow) -> !kgen.none
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %[[SELF]][field0] : <!MemType>
 # CHECK-NEXT: %[[W1:.*]] = kgen.call @{{.*}}::@"use{{.*}}"(%[[W0]])
 # CHECK-NEXT: %[[W2:.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %[[W2]] : !kgen.none
 # CHECK-NEXT: lit.end_func
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem) -> index
-# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0]
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem) -> index
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %[[SELF]][field0]
 # CHECK-NEXT: %[[W1:.*]] = pop.load %[[W0]]
-# CHECK-NEXT: %[[W2:.*]] = lit.struct.gep %self[field1]
+# CHECK-NEXT: %[[W2:.*]] = lit.struct.gep %[[SELF]][field1]
 # CHECK-NEXT: %[[W2REF:.*]] = builtin.unrealized_conversion_cast %[[W2]]
 # CHECK-NEXT: %[[W3:.*]] = lit.ref.struct.ger %[[W2REF]][value]
 # CHECK-NEXT: %[[W4:.*]] = lit.ref.load %[[W3]]
@@ -505,9 +520,9 @@ struct MemType:
 # CHECK-NEXT: lit.return %[[W5]] : index
 # CHECK-NEXT: lit.end_func
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"([[arg0:%.*]]: !kgen.pointer<!MemType> byref_result, [[arg1:%.*]]: !kgen.pointer<{{.*}}> borrow_in_mem, %y: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
-# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep [[arg1]][field0] : <!MemType>
-# CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}([[arg0]], %[[W0]], %y)
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, %y[y]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %[[SELF]][field0] : <!MemType>
+# CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%[[RES]], %[[W0]], %y)
 # CHECK-NEXT: %[[W4:.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %[[W4]] : !kgen.none
 # CHECK-NEXT: lit.end_func
@@ -536,22 +551,22 @@ fn make_diff_closures(m:MemType, z: __mlir_type.index, owned w: Int):
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.struct.field call : {{.*}}<(!kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!MemType> borrow_in_mem, "j": !Int borrow) -> !Int>
-# CHECK: lit.func @"__call__{{.*}}"([[arg0:%.*]]: !kgen.pointer<{{.*}}> borrow_in_mem, %n: !kgen.pointer<!MemType> borrow_in_mem, %j: !Int borrow) -> !Int
-# CHECK-NEXT: [[closure_impl_ref0:%.*]] = lit.struct.gep [[arg0]][field0]
+# CHECK: lit.func @"__call__{{.*}}"(%[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, %n[n]: !kgen.pointer<!MemType> borrow_in_mem, %j[j]: !Int borrow) -> !Int
+# CHECK-NEXT: [[closure_impl_ref0:%.*]] = lit.struct.gep %[[SELF]][field0]
 # CHECK-NEXT: [[closure_impl0:%.*]] = pop.load [[closure_impl_ref0]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT: [[casting_call_ref0:%.*]] = lit.struct.gep [[arg0]][call]
+# CHECK-NEXT: [[casting_call_ref0:%.*]] = lit.struct.gep %[[SELF]][call]
 # CHECK-NEXT: [[casting_call0:%.*]] = pop.load [[casting_call_ref0]]
 # CHECK-NEXT: [[result_of_typed_call0:%.*]] = kgen.call_signature [[casting_call0]]([[closure_impl0]], %n, %j)
 # CHECK-NEXT: lit.return [[result_of_typed_call0]] : !Int
 # CHECK-NEXT: lit.end_func
 # CHECK-NEXT: }
 # CHECK: lit.struct.field call : {{.*}}<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none>
-# CHECK: lit.func @"__call__{{.*}}"([[arg0:%.*]]: !kgen.pointer<!MemType> byref_result, [[arg1:%.*]]: !kgen.pointer<{{.*}}> borrow_in_mem, %n: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
-# CHECK-NEXT: [[closure_impl_ref:%.*]] = lit.struct.gep [[arg1]][field0]
+# CHECK: lit.func @"__call__{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK-NEXT: [[closure_impl_ref:%.*]] = lit.struct.gep %[[SELF]][field0]
 # CHECK-NEXT: [[closure_impl:%.*]] = pop.load [[closure_impl_ref]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT: [[casting_call_ref:%.*]] = lit.struct.gep [[arg1]][call]
+# CHECK-NEXT: [[casting_call_ref:%.*]] = lit.struct.gep %[[SELF]][call]
 # CHECK-NEXT: [[casting_call:%.*]] = pop.load [[casting_call_ref]]
-# CHECK-NEXT: [[result_of_typed_call:%.*]] = kgen.call_signature [[casting_call]]([[arg0]], [[closure_impl]], %n)
+# CHECK-NEXT: [[result_of_typed_call:%.*]] = kgen.call_signature [[casting_call]](%[[RES]], [[closure_impl]], %n)
 # CHECK-NEXT: lit.return [[result_of_typed_call]] : !kgen.none
 
 @value
@@ -659,25 +674,25 @@ fn makes_escaping_closure(m: MemType):
 # Copy Constructor
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.func @"__copyinit__{{.*}}(%self: !kgen.pointer<!escaping1> init_self, %existing: !kgen.pointer<!escaping1> borrow_in_mem) -> !kgen.none attributes {specialFnKind = 3 : i8} {
+# CHECK: lit.func @"__copyinit__{{.*}}(%self[self]: !kgen.pointer<!escaping1> init_self, %other[other]: !kgen.pointer<!escaping1> borrow_in_mem) -> !kgen.none attributes {specialFnKind = 3 : i8} {
 # CHECK-NEXT:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
-# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %existing[field0]
+# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
 # CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[M0]]
 # CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor]
-# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %existing[dtor]
+# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %other[dtor]
 # CHECK-NEXT:   [[M3:%.*]] = pop.load [[M2]]
 # CHECK-NEXT:   pop.store [[M3]], [[M1]]
 # CHECK-NEXT:   [[M4:%.*]] = lit.struct.gep %self[copy]
-# CHECK-NEXT:   [[M5:%.*]] = lit.struct.gep %existing[copy]
+# CHECK-NEXT:   [[M5:%.*]] = lit.struct.gep %other[copy]
 # CHECK-NEXT:   [[M6:%.*]] = pop.load [[M5]]
 # CHECK-NEXT:   pop.store [[M6]], [[M4]]
 # CHECK-NEXT:   [[M7:%.*]] = lit.struct.gep %self[call]
-# CHECK-NEXT:   [[M8:%.*]] = lit.struct.gep %existing[call]
+# CHECK-NEXT:   [[M8:%.*]] = lit.struct.gep %other[call]
 # CHECK-NEXT:   [[M9:%.*]] = pop.load [[M8]]
 # CHECK-NEXT:   pop.store [[M9]], [[M7]]
 # CHECK-NEXT:   kgen.param.constant: none
-# CHECK-NEXT:   [[W0:%.*]] = lit.struct.gep %existing[field0]
+# CHECK-NEXT:   [[W0:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:   [[W1:%.*]] = pop.load [[W0]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:   [[W2:%.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT:   [[W3:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
@@ -690,7 +705,7 @@ fn makes_escaping_closure(m: MemType):
 
 # CHECK-LABEL: lit.func @"materialize_escaping_closure
 
-# CHECK:      lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%ptrToImpl: !kgen.pointer<pointer<array<0, i1>>> borrow, %other: !kgen.pointer<array<0, i1>> borrow_in_mem) -> !kgen.none attributes {specialFnKind = 0 : i8} {
+# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<array<0, i1>>> borrow, %other[other]: !kgen.pointer<array<0, i1>> borrow_in_mem) -> !kgen.none attributes {specialFnKind = 0 : i8} {
 
 # Allocate memory on the heap for impl and copy existing contents into it.
 # CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(
@@ -701,7 +716,7 @@ fn makes_escaping_closure(m: MemType):
 
 # Store the address of the heap allocated memory into the self.
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]
-# CHECK-NEXT:  pop.store [[V4]], %ptrToImpl : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:  pop.store [[V4]], %[[PTR_TO_IMPL]] : !kgen.pointer<pointer<array<0, i1>>>
 
 @value
 struct MemType:

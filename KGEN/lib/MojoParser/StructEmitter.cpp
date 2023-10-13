@@ -426,7 +426,7 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
   Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
   Type ptrToSelf = PointerType::get(selfType);
   StringAttr selfName = b.getStringAttr("self");
-  StringAttr existingName = b.getStringAttr("existing");
+  StringAttr existingName = b.getStringAttr("other");
   LIT::FuncOp destructorFunc;
   LIT::FuncOp init;
   if (!valueInfo.hasFieldwiseInit() && generateFieldwiseInit) {

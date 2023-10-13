@@ -49,7 +49,7 @@ struct RegExample:
 fn consume(owned a: RegExample): pass
 
 # CHECK-LABEL: lit.func @"destructors
-# CHECK-SAME: (%arg0: !kgen.pointer<!MemExample> owned_in_mem)
+# CHECK-SAME: (%arg0[arg0]: !kgen.pointer<!MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%arg0)
 
@@ -846,17 +846,17 @@ struct MemoryUniqueMovable:
   fn __init__(inout self): self.state = MemExample()
 
   # CHECK: lit.func @"__moveinit__
-  fn __moveinit__(inout self, owned existing: Self):
-    # Mercilously steal 'existing's state which could be interesting.
+  fn __moveinit__(inout self, owned other: Self):
+    # Mercilessly steal 'other's state which could be interesting.
 
-    # CHECK-NEXT: %0 = lit.struct.gep %existing[state]
+    # CHECK-NEXT: %0 = lit.struct.gep %other[state]
     # CHECK-NEXT: %1 = lit.ownership.end_lifetime %0
     # CHECK-NEXT: %2 = lit.struct.gep %self[state]
     # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%2, %1)
-    self.state = existing.state^
+    self.state = other.state^
 
     # CHECK-NEXT: kgen.param.constant: none
-    # CHECK-NEXT: lit.ownership.mark_destroyed %existing
+    # CHECK-NEXT: lit.ownership.mark_destroyed %other
     # CHECK-NEXT: kgen.return
 
 
@@ -868,18 +868,18 @@ struct MemoryDestroyMovable:
   fn __init__(inout self): self.state = MemExample()
 
   # CHECK: lit.func @"__takeinit__
-  fn __takeinit__(inout self, inout existing: Self):
-    # Take 'existing's state which could be interesting.
-    # CHECK-NEXT: %0 = lit.struct.gep %existing[state]
+  fn __takeinit__(inout self, inout other: Self):
+    # Take 'other's state which could be interesting.
+    # CHECK-NEXT: %0 = lit.struct.gep %other[state]
     # CHECK-NEXT: %1 = lit.ownership.end_lifetime %0
     # CHECK-NEXT: %2 = lit.struct.gep %self[state]
     # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%2, %1)
-    self.state = existing.state^
+    self.state = other.state^
 
     # Replace it with a default initialized one that can be destructed.
-    # CHECK-NEXT: %4 = lit.struct.gep %existing[state]
+    # CHECK-NEXT: %4 = lit.struct.gep %other[state]
     # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%4)
-    existing.state = MemExample()
+    other.state = MemExample()
 
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
@@ -900,7 +900,7 @@ struct MemoryMovableCopyable:
     existing.state = MemExample()
 
   fn __moveinit__(inout self, owned existing: Self):
-    # Mercilously steal 'existing's state which could be interesting.
+    # Mercilessly steal 'existing's state which could be interesting.
     self.state = existing.state^
 
   fn __copyinit__(inout self, existing: Self): self.state = existing.state
@@ -1127,7 +1127,7 @@ fn optimizeCopyToMove():
 
 
 # CHECK-LABEL: lit.func @"def_borrowed
-# CHECK-SAME: %a: !kgen.pointer<!MemExample> borrow_in_mem
+# CHECK-SAME: %a[a]: !kgen.pointer<!MemExample> borrow_in_mem
 def def_borrowed(borrowed a: MemExample) -> None:
   # CHECK-NEXT: kgen.param.constant: none
   pass

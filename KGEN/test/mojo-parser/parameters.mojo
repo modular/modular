@@ -33,8 +33,8 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"fancy_signature
 # CHECK-SAME: <[[DT:.*_dt]][dt]: !DType, [[SIZE:.*_size]][size]: !Int>
-# CHECK-SAME: (%x: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: !Int = [[SIZE]], [[SIMDDT:.*]]: !DType = [[DT]]>> borrow,
-# CHECK-SAME: %exp: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE]]: !Int = [[SIZE]], [[SIMDDT]]: !DType = [[DT]]>> borrow) -> !Int
+# CHECK-SAME: (%x[x]: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: !Int = [[SIZE]], [[SIMDDT:.*]]: !DType = [[DT]]>> borrow,
+# CHECK-SAME: %exp[exp]: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE]]: !Int = [[SIZE]], [[SIMDDT]]: !DType = [[DT]]>> borrow) -> !Int
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
@@ -70,12 +70,12 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: Int]:
 
-  # CHECK: lit.func @"method{{.*}}<[[B:.*_B]][B]: !Int>(%self: !kgen.declref<{{.*}}TestParamStruct<[[A]]: !Int = [[A]]>> borrow,
-  # CHECK-SAME: %other: !kgen.declref<@"$parameters"::@TestParamStruct<[[A]]: !Int = apply({{.*}}__add__{{.*}}, [[A]], [[B]])>> borrow)
+  # CHECK: lit.func @"method{{.*}}<[[B:.*_B]][B]: !Int>(%self[self]: !kgen.declref<{{.*}}TestParamStruct<[[A]]: !Int = [[A]]>> borrow,
+  # CHECK-SAME: %other[other]: !kgen.declref<@"$parameters"::@TestParamStruct<[[A]]: !Int = apply({{.*}}__add__{{.*}}, [[A]], [[B]])>> borrow)
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
-  # CHECK-LABEL: lit.func @"aliases{{.*}}%x: !kgen.declref<@"$parameters"::@TestParamStruct<
+  # CHECK-LABEL: lit.func @"aliases{{.*}}%x[x]: !kgen.declref<@"$parameters"::@TestParamStruct<
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__mul__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
     alias B = A*A+1
@@ -179,7 +179,7 @@ fn makePair(a: OurSIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]][type]: type>
 struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
-  # CHECK: @"bar($parameters::TypeParameter{{.*}})"(%self: {{.*}} borrow_in_mem, %val: !kgen.paramref<[[TYPE]]> borrow)
+  # CHECK: @"bar($parameters::TypeParameter{{.*}})"(%self[self]: {{.*}} borrow_in_mem, %val[val]: !kgen.paramref<[[TYPE]]> borrow)
   fn bar(self, val: type):
     pass
 
@@ -244,14 +244,14 @@ fn pass_str_param():
 
 # CHECK-LABEL: lit.func @"implicit_params
 # CHECK-SAME: <{{.*}}value0: !Int, {{.*}}value1: !Int>
-# CHECK-SAME: %value: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}value0, {{.*}}b: !Int = {{.*}}value1>
+# CHECK-SAME: %value[value]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}value0, {{.*}}b: !Int = {{.*}}value1>
 fn implicit_params(value: TwoParams):
     pass
 
 # CHECK-LABEL: lit.func @"implicit_params_with_others
 # CHECK-SAME: <{{.*}}a[a]: !Int, {{.*}}lhs0: !Int, {{.*}}lhs1: !Int, {{.*}}rhs0: !Int, {{.*}}rhs1: !Int>
-# CHECK-SAME: %lhs: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}lhs0, {{.*}}b: !Int = {{.*}}lhs1>
-# CHECK-SAME: %rhs: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}rhs0, {{.*}}b: !Int = {{.*}}rhs1>
+# CHECK-SAME: %lhs[lhs]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}lhs0, {{.*}}b: !Int = {{.*}}lhs1>
+# CHECK-SAME: %rhs[rhs]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}rhs0, {{.*}}b: !Int = {{.*}}rhs1>
 fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
     pass
 
@@ -324,7 +324,7 @@ fn memoryParam[value: MemoryType]():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"takeCallable{{.*}}"
-# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow) -> index>>(%a: index borrow) -> index
+# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow) -> index>>(%a[a]: index borrow) -> index
 fn takeCallable[
      callable: fn(__mlir_type.index) -> __mlir_type.index
    ](a: __mlir_type.index) -> __mlir_type.index:
@@ -834,7 +834,7 @@ fn test_mem_only_default_param():
     mem_only_default_param()
 
 # CHECK-LABEL: lit.func @"param_default{{.*}}"
-# CHECK-SAME: <[[X:.*]][x]: !Int = #lit.struct<{value = 1}>>(%y: !Int borrow = [[X]])
+# CHECK-SAME: <[[X:.*]][x]: !Int = #lit.struct<{value = 1}>>(%y[y]: !Int borrow = [[X]])
 fn param_default[x: Int = 1](y: Int = x):
     pass
 
