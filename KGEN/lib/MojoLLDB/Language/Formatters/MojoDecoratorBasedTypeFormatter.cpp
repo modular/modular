@@ -47,7 +47,7 @@ M::KGEN::Mojo::MojoDecoratorBasedTypeSyntheticFrontEndCreator(
     return nullptr;
 
   for (TypedAttr decorator :
-       mojoTypeSystem->GetStructDecorators(type.GetOpaqueQualType())) {
+       mojoTypeSystem->getStructDecorators(type.GetOpaqueQualType())) {
     if (auto constantSymbol = dyn_cast<KGEN::SymbolConstantAttr>(decorator)) {
       SymbolRefAttr symbol = constantSymbol.getSymbol();
       auto nestedReferences = symbol.getNestedReferences();

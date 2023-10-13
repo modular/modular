@@ -183,6 +183,16 @@ bool MojoTypeSystem::IsPointerOrReferenceType(
          IsPointerType(type, pointeeType);
 }
 
+bool MojoTypeSystem::IsAggregateType(lldb::opaque_compiler_type_t type) {
+  switch (GetTypeClass(type)) {
+  case lldb::eTypeClassArray:
+  case lldb::eTypeClassStruct:
+    return true;
+  default:
+    return false;
+  }
+}
+
 bool MojoTypeSystem::IsPointerType(lldb::opaque_compiler_type_t type,
                                    lldb_private::CompilerType *pointeeType) {
   if (!type)
@@ -216,6 +226,25 @@ MojoTypeSystem::GetPointerType(lldb::opaque_compiler_type_t type) {
     return {};
   MojoASTTypeRef astType(type);
   return createCompilerType(KGEN::PointerType::get(astType.getMLIRType()));
+}
+
+lldb::TypeClass
+MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
+  if (!type)
+    return {};
+
+  MojoASTTypeRef astType(type);
+
+  if (auto ptrType = dyn_cast<PointerType>(astType))
+    return lldb::eTypeClassPointer;
+
+  if (isa<POP::SIMDType>(astType))
+    return lldb::eTypeClassVector;
+
+  if (impl->getIfStructDecl(astType))
+    return lldb::eTypeClassStruct;
+
+  return lldb::eTypeClassOther;
 }
 
 uint32_t MojoTypeSystem::GetTypeInfo(
@@ -252,7 +281,7 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     return lldb::eTypeIsFloat | lldb::eTypeHasValue | lldb::eTypeIsScalar;
 
   if (isa<POP::SIMDType>(astType))
-    return lldb::eTypeHasChildren | lldb::eTypeIsArray;
+    return lldb::eTypeHasChildren | lldb::eTypeIsVector;
 
   if (isa<KGEN::StringType>(astType))
     return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
@@ -294,6 +323,11 @@ MojoTypeSystem::GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) {
   return createCompilerType(type);
 }
 
+lldb_private::CompilerType
+MojoTypeSystem::GetCanonicalType(lldb::opaque_compiler_type_t type) {
+  return createCompilerType(type);
+}
+
 uint32_t MojoTypeSystem::GetPointerByteSize() {
   return impl->targetInfo.getDataLayout().getPointerSize();
 }
@@ -306,6 +340,18 @@ MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
 
   if (auto &layout = impl->dataLayoutContext->getOrCalculate(type))
     return layout->getByteSize() * CHAR_BIT;
+
+  return {};
+}
+
+std::optional<size_t>
+MojoTypeSystem::GetTypeBitAlign(lldb::opaque_compiler_type_t type,
+                                lldb_private::ExecutionContextScope *exeScope) {
+  if (!type)
+    return {};
+
+  if (auto &layout = impl->dataLayoutContext->getOrCalculate(type))
+    return layout->getAlignment() * CHAR_BIT;
 
   return {};
 }
@@ -547,7 +593,7 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
 //===--------------------------------------------------------------------===//
 
 llvm::ArrayRef<TypedAttr>
-MojoTypeSystem::GetStructDecorators(lldb::opaque_compiler_type_t type) {
+MojoTypeSystem::getStructDecorators(lldb::opaque_compiler_type_t type) {
   if (!type)
     return {};
   MojoASTTypeRef astType(type);
@@ -579,15 +625,37 @@ PersistentExpressionState *MojoTypeSystem::GetPersistentExpressionState() {
 // Dumping
 //===--------------------------------------------------------------------===//
 
+void MojoTypeSystem::Dump(llvm::raw_ostream &output) {
+  impl->parserContext->getModule()->dump();
+}
+
 bool MojoTypeSystem::DumpTypeValue(
     lldb::opaque_compiler_type_t type, lldb_private::Stream &s,
     lldb::Format format, const lldb_private::DataExtractor &data,
     lldb::offset_t dataOffset, size_t dataByteSize, uint32_t bitfieldBitSize,
     uint32_t bitfieldBitOffset, lldb_private::ExecutionContextScope *exeScope) {
+  if (!type)
+    return false;
   return lldb_private::DumpDataExtractor(
       data, &s, dataOffset, format, dataByteSize,
       /*itemCount=*/1, UINT32_MAX, LLDB_INVALID_ADDRESS, bitfieldBitSize,
       bitfieldBitOffset, exeScope);
+}
+
+void MojoTypeSystem::DumpTypeDescription(lldb::opaque_compiler_type_t type,
+                                         lldb::DescriptionLevel level) {
+  StreamFile s(stdout, false);
+  DumpTypeDescription(type, s, level);
+}
+
+void MojoTypeSystem::DumpTypeDescription(lldb::opaque_compiler_type_t type,
+                                         Stream &s,
+                                         lldb::DescriptionLevel level) {
+  if (!type)
+    return;
+  // TODO: complete the implementation. This should dump the type in a way that
+  // resembles the source code.
+  s << GetDisplayTypeName(type);
 }
 
 //===--------------------------------------------------------------------===//
