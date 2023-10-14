@@ -199,6 +199,16 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
   convs.resize(body->getNumArguments());
   func.setSignature(SignatureType::get(fnType, convs, sig.getFnEffects()));
 
+  // HACK HACK HACK https://github.com/modularml/modular/issues/22959
+  // HACK: If captures went up to an exported function, propagate them through
+  // the ABI boundary by encoding the capture names on the function.
+  if (func.isExported() && !node->requiredPromises.empty()) {
+    SmallVector<StringAttr> captures =
+        llvm::to_vector(llvm::make_first_range(node->requiredPromises));
+    func->setAttr("kgen.cross_device_captures",
+                  StringArrayAttr::get(func.getContext(), captures));
+  }
+
   // Now go schedule all the nodes that have been made available.
   for (CallGraphNode *node : node->callers)
     if (++node->numProcessedCalls == node->callsites.size())

@@ -9,6 +9,7 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
@@ -24,6 +25,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/Support/EndianStream.h"
 #include "llvm/Target/TargetMachine.h"
 
 #define DEBUG_TYPE "kgen-compiler"
@@ -106,10 +108,156 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 // compileElaboratorAsm
 //===----------------------------------------------------------------------===//
 
+/// Generate a stub function that calls into the sliced function with input
+/// parameters, then rename it to match the expected symbol name and export it
+/// This is how compilation is rooted at instantiations of parametric functions.
+static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
+                                    StringAttr name, IRMapping &mapping) {
+  GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
+  ImplicitLocOpBuilder b(sliced.getLoc(), OpBuilder(sliced));
+  sliced.setNotExported();
+  sliced.setInlineLevel(InlineLevel::Always);
+  StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
+  sliced.setSymNameAttr(stubName);
+  SignatureType sig = symbol.getType();
+  auto wrapper = b.create<GeneratorOp>(name, sig);
+  wrapper.setExported();
+  Block *entry =
+      b.createBlock(&wrapper.getBodyRegion(), {}, sig.getValueInputs(),
+                    llvm::map_to_vector(sliced.getArguments(),
+                                        [](Value v) { return v.getLoc(); }));
+  b.setInsertionPointToStart(wrapper.getBody());
+  auto call =
+      b.create<CallOp>(sig.getValueResults(),
+                       SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
+                                               symbol.getParamValues(), sig),
+                       std::nullopt, entry->getArguments());
+  b.create<ReturnOp>(call.getResults());
+}
+
+/// HACK HACK HACK https://github.com/modularml/modular/issues/22959
+/// HACK: Read out the magic attribute used to propagate captures across device
+/// boundaries, generate the capture function, and write them into the buffer.
+static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
+                                      WriteableBufferRef buf) {
+  // First, go find the elaborated instance of the function.
+  FuncOp sliced;
+  for (auto func : module.getOps<FuncOp>()) {
+    if (func.getSymNameAttr() == name) {
+      sliced = func;
+      break;
+    }
+  }
+  // This is held together with duct tape, so check the invariant.
+  assert(sliced && sliced.isExported() && "expected a sliced function");
+  ArrayRef<StringAttr> captures;
+  if (auto capturesAttr =
+          sliced->getAttrOfType<StringArrayAttr>("kgen.cross_device_captures"))
+    captures = capturesAttr;
+
+  // Generate a function on the host side that opaquely populates a piece of
+  // memory with the capture values.
+  ImplicitLocOpBuilder b(sliced.getLoc(), OpBuilder(name.getContext()));
+
+  // The expected signature is `fn(Pointer[None]) capturing -> None`.
+  auto noneType = b.getType<KGEN::NoneType>();
+  auto nonePtr = PointerType::get(noneType);
+  auto sig = SignatureType::get(
+      b.getFunctionType(PointerType::get(nonePtr), noneType),
+      ValueInputConvention::OwnedInReg, FnEffects().setCapturing());
+  OwningOpRef<FuncOp> func =
+      b.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),
+                       sig, InlineLevel::Always);
+
+  // Populate the body. Generate a local variable for each capture argument
+  // and store the addresses to the pointer. The function is marked as
+  // `always_inline`, so this is okay.
+  // FIXME: This does not account for copy constructors, obviously.
+  Block *body = b.createBlock(&func->getBodyRegion());
+  Value argPtrs = body->addArgument(sig.getValueInputs().front(), b.getLoc());
+  for (auto [i, type, capture] : llvm::enumerate(
+           sliced.getArgumentTypes().take_front(captures.size()), captures)) {
+    // ```
+    // %value = pop.compiler.global_load "var" : T
+    // %ptr = pop.stack_allocation 1 x T
+    // pop.store %value, %ptr
+    // %gep = pop.offset %argPtrs[%i]
+    // %opaque = pop.pointer.bitcast %pt : pointer<T> to pointer<none>
+    // pop.store %opaque, %gep
+    // ```
+    Value value = b.create<POP::CompilerGlobalLoadOp>(type, capture);
+    Value ptr = b.create<POP::StackAllocationOp>(PointerType::get(type), 1);
+    b.create<POP::StoreOp>(value, ptr);
+    Value gep = b.create<POP::OffsetOp>(
+        argPtrs, b.create<ParamConstantOp>(b.getIndexAttr(i)));
+    Value opaque = b.create<POP::PointerBitcastOp>(nonePtr, ptr);
+    b.create<POP::StoreOp>(opaque, gep);
+  }
+  b.create<ReturnOp>(
+      b.create<ParamConstantOp>(b.getAttr<NoneAttr>()).getResult());
+
+  // Now write this into the buffer as bytecode. Add space for a header that
+  // contains the size of the bytecode first.
+  uint64_t size = 0;
+  buf->write((char *)&size, sizeof(size));
+  // Then write the bytecode.
+  if (failed(mlir::writeBytecodeToFile(*func, *buf)))
+    return failure();
+  // Now write the size of the bytecode into the allocate header space. Be
+  // mindful of endianness here.
+  size = buf->tell() - sizeof(size);
+  size =
+      llvm::support::endian::byte_swap(size, llvm::support::endianness::little);
+  buf->pwrite((char *)&size, sizeof(size), /*Offset=*/0);
+
+  // Write the number of captures.
+  uint64_t numCaptures = llvm::support::endian::byte_swap(
+      captures.size(), llvm::support::endianness::little);
+  buf->write((char *)&numCaptures, sizeof(uint64_t));
+  return success();
+}
+
+/// HACK: Read out the capture function and generated code.
+static ErrorOr<CrossDeviceFunction> readCaptureArgs(MLIRContext *ctx,
+                                                    BufferRef buf) {
+  // First, read the bytecode header size.
+  const char *it = buf->getBufferStart();
+  uint64_t size = llvm::support::endian::read64le(it);
+  it += sizeof(uint64_t);
+
+  // Then read the bytecode for the capture population function.
+  std::unique_ptr<llvm::MemoryBuffer> bytecode =
+      llvm::MemoryBuffer::getMemBuffer(StringRef(it, size), /*BufferName=*/"",
+                                       /*RequiresNullTerminator=*/false);
+  Block container;
+  if (failed(mlir::readBytecodeFile(
+          *bytecode, &container,
+          mlir::ParserConfig(ctx, /*verifyAfterParse=*/false))))
+    return Error("failed to read capture function bytecode");
+  assert(container.getOperations().size() == 1 && "expected a single function");
+  it += size;
+
+  // Take ownership of the function.
+  Operation *captureFunc = &container.front();
+  captureFunc->remove();
+  OwningOpRef<Operation *> func = captureFunc;
+
+  // Read the number of captures.
+  uint64_t numCaptures = llvm::support::endian::read64le(it);
+  it += sizeof(uint64_t);
+
+  // Read out the rest of the data as the payload.
+  auto contents =
+      StringAttr::get(StringRef(it, std::distance(it, buf->getBufferEnd())),
+                      StringType::get(ctx));
+
+  return CrossDeviceFunction{contents, (unsigned)numCaptures, std::move(func)};
+}
+
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func` and
 /// elaborate it and compile to assembly for the provided `target.
-static ErrorOr<BufferRef>
+static ErrorOr<CrossDeviceFunction>
 compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
                      StringAttr name, const SymbolTable &symtab,
                      LLCL::Runtime &runtime, TargetInfoAttr target,
@@ -157,28 +305,8 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
   // If there are input parameters, we have to go generate a stub to root
   // instantiation of the generator. Go find the cloned generator.
-  if (!symbol.getParamValues().empty()) {
-    GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
-    ImplicitLocOpBuilder b(sliced.getLoc(), OpBuilder(sliced));
-    sliced.setNotExported();
-    sliced.setInlineLevel(InlineLevel::Always);
-    StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
-    sliced.setSymNameAttr(stubName);
-    SignatureType sig = symbol.getType();
-    auto wrapper = b.create<GeneratorOp>(name, sig);
-    wrapper.setExported();
-    Block *entry =
-        b.createBlock(&wrapper.getBodyRegion(), {}, sig.getValueInputs(),
-                      llvm::map_to_vector(sliced.getArguments(),
-                                          [](Value v) { return v.getLoc(); }));
-    b.setInsertionPointToStart(wrapper.getBody());
-    auto call = b.create<CallOp>(
-        sig.getValueResults(),
-        SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
-                                symbol.getParamValues(), sig),
-        std::nullopt, entry->getArguments());
-    b.create<ReturnOp>(call.getResults());
-  }
+  if (!symbol.getParamValues().empty())
+    generateInstantiateStub(func, symbol, name, mapping);
 
   // Run elaboration through to the end of the optimization pipeline.
   ElaborateGeneratorsOptions elaboratorOptions;
@@ -206,11 +334,13 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   buildPostElaborationPipeline(pm, runtime, options);
 
   // This functor runs the desired transformation to cache.
-  auto compileToAsm = [&pm, &compiler, &options, &runtime, tm = std::move(tm)](
-                          Operation *op,
-                          WriteableBufferRef buffer) mutable -> ErrorOrSuccess {
+  auto compileToAsm =
+      [&pm, &compiler, &options, &runtime, tm = std::move(tm), name](
+          Operation *op, WriteableBufferRef buffer) mutable -> ErrorOrSuccess {
     if (failed(pm.run(op)))
       return Error("failed to run the pass manager");
+    if (failed(writeCaptureArgs(cast<ModuleOp>(op), name, buffer.copy())))
+      return Error("failed to generate capture stub");
     llvm::LLVMContext llvmCtx;
     std::unique_ptr<llvm::Module> llvmModule =
         compiler.lowerAllFuncsToLLVM(llvmCtx, cast<ModuleOp>(op));
@@ -252,7 +382,9 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   await(result);
   if (result.isError())
     return std::move(result.takeDiagnostic().getMessage());
-  return std::move(result.get<BufferRef>());
+
+  BufferRef buf = std::move(result.get<BufferRef>());
+  return readCaptureArgs(func.getContext(), buf.copy());
 }
 
 //===----------------------------------------------------------------------===//

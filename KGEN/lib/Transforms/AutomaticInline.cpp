@@ -399,7 +399,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
         // Perform inlining callee.
         IRMapping map;
         auto [scope, singleExit] =
-            inlineRegion(map, call.value(), callee->func.getBodyRegion());
+            inlineRegion(map, *call, callee->func.getBodyRegion());
 
         // If we need to perform a debug info update, defer this until
         // inlining is done. Doing an update here results in quadratic

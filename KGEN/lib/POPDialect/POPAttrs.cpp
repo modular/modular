@@ -507,6 +507,13 @@ POP::StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+StructAttr StructAttr::get(ArrayRef<TypedAttr> values) {
+  assert(!values.empty() && "requires at least one value");
+  SmallVector<Type> types =
+      llvm::map_to_vector(values, [](TypedAttr v) { return v.getType(); });
+  return StructAttr::get(values, StructType::get(types));
+}
+
 //===----------------------------------------------------------------------===//
 // StructExtractAttr
 //===----------------------------------------------------------------------===//

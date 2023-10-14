@@ -11,6 +11,7 @@
 #include "Support/Buffer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/OwningOpRef.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassOptions.h"
 
@@ -81,10 +82,25 @@ using ElaboratorSearchFn = llvm::unique_function<ErrorOr<ssize_t>()>;
 using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
 
+/// This struct represents the result of a cross-device compilation, which is a
+/// function or closure reference.
+struct CrossDeviceFunction {
+  /// The compiled cross-device function contents, which can be assembly, object
+  /// code, or something else.
+  StringAttr contents;
+  /// The number of captures that need to be propagated to the cross-device
+  /// closure.
+  unsigned numCaptures;
+  /// A function for populating the captured values opaquely.
+  /// FIXME(#22670): The expected API is tightly bound with the GPU module in
+  /// the standard library.
+  OwningOpRef<Operation *> populateCapturesFn;
+};
+
 /// Function to slice and compile the generator to assembly with the provided
 /// input parameters and target. The expected mangled name of the generate is
 /// passed to be used as the entry point.
-using ElaboratorCompileAsmFn = std::function<ErrorOr<BufferRef>(
+using ElaboratorCompileAsmFn = std::function<ErrorOr<CrossDeviceFunction>(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
     TargetInfoAttr)>;
 

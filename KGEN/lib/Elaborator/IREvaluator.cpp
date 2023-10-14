@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/NameMangling.h"
 #include "Support/MDialect/MTypeInterfaces.h"
@@ -251,13 +252,21 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   StringAttr name =
       getExpectedMangledName(func, symbol.getParamValues(),
                              elaborator->getOptions().sanitizeSymbolNames);
-  ErrorOr<BufferRef> buffer =
+  ErrorOr<CrossDeviceFunction> closure =
       elaborator->getCompileAsmFn()(func, symbol, name, symtabCopy, target);
-  if (buffer.isError()) {
-    emitError({*errorLoc, buffer.takeError()});
+  if (closure.isError()) {
+    emitError({*errorLoc, closure.takeError()});
     return failure();
   }
-  return {StringAttr::get(buffer.takeValue()->getBuffer(), op.getType())};
+  auto populate = cast<FuncOp>(closure->populateCapturesFn.release());
+  elaborator->addDeferredFunction(populate);
+
+  Builder b(op.getContext());
+  return {POP::StructAttr::get(
+      {closure->contents, b.getIndexAttr(closure->numCaptures),
+       SymbolConstantAttr::get(
+           FlatSymbolRefAttr::get(populate.getSymNameAttr()),
+           populate.getSignature())})};
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {

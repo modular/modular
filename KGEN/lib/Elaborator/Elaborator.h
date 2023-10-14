@@ -35,9 +35,9 @@ std::string mangleParameterValues(GeneratorOp generator,
 
 using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
-using ElaboratorCompileAsmFnRef =
-    function_ref<ErrorOr<BufferRef>(GeneratorOp, SymbolConstantAttr, StringAttr,
-                                    const SymbolTable &, TargetInfoAttr)>;
+using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
+    GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
+    TargetInfoAttr)>;
 
 class Elaborator {
 public:
@@ -65,6 +65,11 @@ public:
 
   /// Get the functor for compiling a generator to assembly.
   virtual ElaboratorCompileAsmFnRef getCompileAsmFn() const = 0;
+
+  /// Add an owned function operation that should be appended to the module at
+  /// the end of elaboration. This is where generated functions during
+  /// elaboration should go.
+  virtual void addDeferredFunction(OwningOpRef<FuncOp> func) = 0;
 
   /// Get the symbol table associated with this instance of the elaborator.
   Shared<SymbolTable &> &getSymbolTable() { return symtab; }
