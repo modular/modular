@@ -2070,6 +2070,8 @@ struct ModuleHandle:
 # FunctionHandle
 # ===----------------------------------------------------------------------===#
 
+alias _populate_fn_type = fn (Pointer[Pointer[NoneType]]) capturing -> None
+
 
 @value
 @register_passable("trivial")
@@ -2085,23 +2087,29 @@ struct FunctionHandle:
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()
 
-    fn __call__(self, grid_dim: Dim, block_dim: Dim, /, stream: Stream) raises:
-        self._call_impl(
-            grid_dim, block_dim, Pointer[Pointer[NoneType]](), stream=stream
-        )
-
-    fn __call__[
-        T0: AnyType
-    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, /, stream: Stream) raises:
-        var _arg0 = arg0
-
-        let args = stack_allocation[1, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+    fn call_impl[
+        num_captures: Int, populate: _populate_fn_type
+    ](self, grid_dim: Dim, block_dim: Dim, /, stream: Stream) raises:
+        let args = stack_allocation[num_captures + 0, Pointer[NoneType]]()
+        populate(args)
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
-        T0: AnyType, T1: AnyType
+    fn call_impl[
+        num_captures: Int, populate: _populate_fn_type, T0: AnyType
+    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, /, stream: Stream) raises:
+        var _arg0 = arg0
+
+        let args = stack_allocation[num_captures + 1, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+
+        self._call_impl(grid_dim, block_dim, args, stream=stream)
+
+    fn call_impl[
+        num_captures: Int, populate: _populate_fn_type, T0: AnyType, T1: AnyType
     ](
         self,
         grid_dim: Dim,
@@ -2114,14 +2122,23 @@ struct FunctionHandle:
         var _arg0 = arg0
         var _arg1 = arg1
 
-        let args = stack_allocation[2, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 2, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
-        T0: AnyType, T1: AnyType, T2: AnyType
+    fn call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
     ](
         self,
         grid_dim: Dim,
@@ -2136,15 +2153,27 @@ struct FunctionHandle:
         var _arg1 = arg1
         var _arg2 = arg2
 
-        let args = stack_allocation[3, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 3, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
-        T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType
+    fn call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
     ](
         self,
         grid_dim: Dim,
@@ -2161,16 +2190,31 @@ struct FunctionHandle:
         var _arg2 = arg2
         var _arg3 = arg3
 
-        let args = stack_allocation[4, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 4, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
-        T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType, T4: AnyType
+    fn call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
+        T0: AnyType,
+        T1: AnyType,
+        T2: AnyType,
+        T3: AnyType,
+        T4: AnyType,
     ](
         self,
         grid_dim: Dim,
@@ -2189,16 +2233,29 @@ struct FunctionHandle:
         var _arg3 = arg3
         var _arg4 = arg4
 
-        let args = stack_allocation[5, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 5, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
+    fn call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
         T0: AnyType,
         T1: AnyType,
         T2: AnyType,
@@ -2225,17 +2282,32 @@ struct FunctionHandle:
         var _arg4 = arg4
         var _arg5 = arg5
 
-        let args = stack_allocation[6, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 6, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
+    fn call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
         T0: AnyType,
         T1: AnyType,
         T2: AnyType,
@@ -2265,18 +2337,35 @@ struct FunctionHandle:
         var _arg5 = arg5
         var _arg6 = arg6
 
-        let args = stack_allocation[7, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
-        args.store(6, Pointer.address_of(_arg6).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 7, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 6, Pointer.address_of(_arg6).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
+    fn call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
         T0: AnyType,
         T1: AnyType,
         T2: AnyType,
@@ -2309,19 +2398,38 @@ struct FunctionHandle:
         var _arg6 = arg6
         var _arg7 = arg7
 
-        let args = stack_allocation[8, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
-        args.store(6, Pointer.address_of(_arg6).bitcast[NoneType]())
-        args.store(7, Pointer.address_of(_arg7).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 8, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 6, Pointer.address_of(_arg6).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 7, Pointer.address_of(_arg7).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
+    fn call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
         T0: AnyType,
         T1: AnyType,
         T2: AnyType,
@@ -2357,20 +2465,41 @@ struct FunctionHandle:
         var _arg7 = arg7
         var _arg8 = arg8
 
-        let args = stack_allocation[9, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
-        args.store(6, Pointer.address_of(_arg6).bitcast[NoneType]())
-        args.store(7, Pointer.address_of(_arg7).bitcast[NoneType]())
-        args.store(8, Pointer.address_of(_arg8).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 9, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 6, Pointer.address_of(_arg6).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 7, Pointer.address_of(_arg7).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 8, Pointer.address_of(_arg8).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
-    fn __call__[
+    fn call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
         T0: AnyType,
         T1: AnyType,
         T2: AnyType,
@@ -2409,17 +2538,38 @@ struct FunctionHandle:
         var _arg8 = arg8
         var _arg9 = arg9
 
-        let args = stack_allocation[10, Pointer[NoneType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
-        args.store(6, Pointer.address_of(_arg6).bitcast[NoneType]())
-        args.store(7, Pointer.address_of(_arg7).bitcast[NoneType]())
-        args.store(8, Pointer.address_of(_arg8).bitcast[NoneType]())
-        args.store(9, Pointer.address_of(_arg9).bitcast[NoneType]())
+        let args = stack_allocation[num_captures + 10, Pointer[NoneType]]()
+        populate(args)
+        args.store(
+            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 6, Pointer.address_of(_arg6).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 7, Pointer.address_of(_arg7).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 8, Pointer.address_of(_arg8).bitcast[NoneType]()
+        )
+        args.store(
+            num_captures + 9, Pointer.address_of(_arg9).bitcast[NoneType]()
+        )
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2473,6 +2623,8 @@ struct Function[func_type: AnyType, func: func_type]:
     var mod_handle: ModuleHandle
     var func_handle: FunctionHandle
 
+    alias _impl = _compile_nvptx_asm[func_type, func]()
+
     fn __init__(
         inout self,
         debug: Bool = False,
@@ -2480,7 +2632,7 @@ struct Function[func_type: AnyType, func: func_type]:
         print_ptx: Bool = False,
     ) raises:
         alias name = get_linkage_name[func_type, func]()
-        let ptx = _compile_nvptx_asm[func_type, func]()
+        let ptx = _cleanup_asm(Self._impl.asm)
         if print_ptx:
             print(ptx)
         self.mod_handle = ModuleHandle(
@@ -2494,17 +2646,19 @@ struct Function[func_type: AnyType, func: func_type]:
     fn __bool__(self) -> Bool:
         return self.func_handle.__bool__()
 
-    fn __call__[
-        T0: AnyType
-    ](
+    @closure
+    fn __call__(
         self,
         grid_dim: Dim,
         block_dim: Dim,
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(grid_dim, block_dim, stream=stream)
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](grid_dim, block_dim, stream=stream)
 
+    @closure
     fn __call__[
         T0: AnyType
     ](
@@ -2515,8 +2669,11 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(grid_dim, block_dim, arg0, stream=stream)
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](grid_dim, block_dim, arg0, stream=stream)
 
+    @closure
     fn __call__[
         T0: AnyType, T1: AnyType
     ](
@@ -2528,8 +2685,11 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(grid_dim, block_dim, arg0, arg1, stream=stream)
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](grid_dim, block_dim, arg0, arg1, stream=stream)
 
+    @closure
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType
     ](
@@ -2542,8 +2702,11 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(grid_dim, block_dim, arg0, arg1, arg2, stream=stream)
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](grid_dim, block_dim, arg0, arg1, arg2, stream=stream)
 
+    @closure
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType
     ](
@@ -2557,10 +2720,11 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(
-            grid_dim, block_dim, arg0, arg1, arg2, arg3, stream=stream
-        )
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](grid_dim, block_dim, arg0, arg1, arg2, arg3, stream=stream)
 
+    @closure
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType, T4: AnyType
     ](
@@ -2575,10 +2739,11 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(
-            grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, stream=stream
-        )
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, stream=stream)
 
+    @closure
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -2599,7 +2764,9 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](
             grid_dim,
             block_dim,
             arg0,
@@ -2611,6 +2778,7 @@ struct Function[func_type: AnyType, func: func_type]:
             stream=stream,
         )
 
+    @closure
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -2633,7 +2801,9 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](
             grid_dim,
             block_dim,
             arg0,
@@ -2646,6 +2816,7 @@ struct Function[func_type: AnyType, func: func_type]:
             stream=stream,
         )
 
+    @closure
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -2670,7 +2841,9 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](
             grid_dim,
             block_dim,
             arg0,
@@ -2684,6 +2857,7 @@ struct Function[func_type: AnyType, func: func_type]:
             stream=stream,
         )
 
+    @closure
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -2710,7 +2884,9 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](
             grid_dim,
             block_dim,
             arg0,
@@ -2725,6 +2901,7 @@ struct Function[func_type: AnyType, func: func_type]:
             stream=stream,
         )
 
+    @closure
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -2753,7 +2930,9 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle(
+        self.func_handle.call_impl[
+            Self._impl.num_captures, Self._impl.populate
+        ](
             grid_dim,
             block_dim,
             arg0,
@@ -2955,26 +3134,54 @@ fn _get_nvtx_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
+@value
+@register_passable("trivial")
+struct _CompiledClosureImpl:
+    var asm: __mlir_type.`!kgen.string`
+    var num_captures: __mlir_type.index
+    var populate: fn (
+        __mlir_type.`!kgen.pointer<pointer<none>>`
+    ) capturing -> None
+
+
+@value
+@register_passable("trivial")
+struct _CompiledClosure:
+    var asm: StringLiteral
+    var num_captures: Int
+    var populate: fn (Pointer[Pointer[NoneType]]) capturing -> None
+
+
 @always_inline
 fn __compile_nvptx_asm_impl[
-    func_type: AnyType, func: func_type->asm: StringLiteral
+    func_type: AnyType, func: func_type->closure: _CompiledClosure
 ]():
+    alias impl = __mlir_attr[
+        `#kgen.param.expr<compile_assembly,`,
+        _get_nvtx_target(),
+        `, `,
+        func,
+        `> : `,
+        _CompiledClosureImpl,
+    ]
     param_return[
-        __mlir_attr[
-            `#kgen.param.expr<compile_assembly,`,
-            _get_nvtx_target(),
-            `, `,
-            func,
-            `> : !kgen.string`,
-        ]
+        _CompiledClosure(
+            impl.asm,
+            impl.num_captures,
+            rebind[fn (Pointer[Pointer[NoneType]]) capturing -> None](
+                impl.populate
+            ),
+        )
     ]
 
 
 @always_inline
-fn _compile_nvptx_asm[func_type: AnyType, func: func_type]() -> String:
-    alias asm: StringLiteral
-    __compile_nvptx_asm_impl[func_type, func -> asm]()
-    return _cleanup_asm(asm)
+fn _compile_nvptx_asm[
+    func_type: AnyType, func: func_type
+]() -> _CompiledClosure:
+    alias closure: _CompiledClosure
+    __compile_nvptx_asm_impl[func_type, func -> closure]()
+    return closure
 
 
 @always_inline
