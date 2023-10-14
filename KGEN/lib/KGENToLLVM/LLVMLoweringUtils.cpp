@@ -971,10 +971,6 @@ Value KGEN::convertParameterToLLVM(
       Value element = convertParameterToLLVM(b, tc, imc, scope, value);
       if (!element)
         return {};
-      // If this is a struct with one element, return it directly.
-      if (auto structAttr = dyn_cast<POP::StructAttr>(attr);
-          structAttr && structAttr.getValues().size() == 1)
-        return element;
       aggregate = b.create<LLVM::InsertValueOp>(aggregate, element, idx);
     }
     return aggregate;

@@ -213,10 +213,11 @@ def POP_StructAttr : POP_Attr<"Struct", "struct", [
   }];
 
   let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values)>,
     AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
                                         "StructType":$type), [{
       return get(type.getContext(), values, type);
-    }]>
+    }]>,
   ];
 
   let genVerifyDecl = 1;

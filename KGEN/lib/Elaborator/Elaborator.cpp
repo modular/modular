@@ -203,6 +203,9 @@ struct ExpansionGraph {
   /// threads.
   LLCL::AsyncValueRef<LLCL::Chain> worklistCh;
 
+  /// Concrete functions added directly to the expansion graph.
+  std::vector<std::unique_ptr<ImplNode>> elaboratedNodes;
+
   /// Get or create the node for a generator instantiation.
   ParamNode *getOrCreate(LLCL::Runtime &runtime, ParameterExprArrayAttr values,
                          GeneratorOp gen, size_t depth) {
@@ -213,6 +216,17 @@ struct ExpansionGraph {
       if (!n)
         n = std::make_unique<ParamNode>(runtime, gen, values, depth);
       return n.get();
+    });
+  }
+
+  /// Insert an ImplNode for a function that is already concrete.
+  void addConcreteFunc(FuncOp func) {
+    concreteNodes.modify([this, func](auto &map) mutable {
+      auto node = std::make_unique<ImplNode>(func, /*parent=*/nullptr,
+                                             func.getBodyRegion(),
+                                             func.getSymName().str());
+      map.try_emplace(func, node.get());
+      elaboratedNodes.push_back(std::move(node));
     });
   }
 };
@@ -533,6 +547,8 @@ public:
     return compileAsmFn;
   }
 
+  void addDeferredFunction(OwningOpRef<FuncOp> func) override;
+
   /// Given a list of primary generators (i.e. generators with no input
   /// parameters), run the elaborator. This will generate an expansion tree
   /// rooted on the module with base nodes for each primary generator. Once
@@ -727,8 +743,8 @@ private:
   /// The LLCL runtime instance to use.
   LLCL::Runtime &runtime;
 
-  /// Remove parameter declare regions after generator elaboration.
-  DenseMap<StringAttr, ParameterUseDefGraph *> knownRegions;
+  /// Deferred generated functions to append to the module.
+  SmallVector<FuncOp> deferredFunctions;
 };
 } // namespace
 
@@ -919,6 +935,19 @@ std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
   if (funcs.empty())
     return node->collectErrorsOrSuccess();
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::addDeferredFunction
+//===----------------------------------------------------------------------===//
+
+void ElaboratorImpl::addDeferredFunction(OwningOpRef<FuncOp> func) {
+  FuncOp op = func.release();
+  g.addConcreteFunc(op);
+  symtab.modify([this, op](SymbolTable &symtab) {
+    symtab.insert(op);
+    deferredFunctions.push_back(op);
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -2264,15 +2293,8 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 
   // Find any kgen.func we have already - they're already elaborated, and we do
   // not want to re-process them. Add concrete ImplNodes for each one.
-  std::vector<std::unique_ptr<ImplNode>> preElaboratedNodes;
-  for (auto func : theModule.getOps<FuncOp>()) {
-    g.concreteNodes.get().try_emplace(
-        func,
-        preElaboratedNodes
-            .emplace_back(std::make_unique<ImplNode>(
-                func, nullptr, func.getBodyRegion(), func.getSymName().str()))
-            .get());
-  }
+  for (auto func : theModule.getOps<FuncOp>())
+    g.addConcreteFunc(func);
 
   auto emptyInputParamKey =
       ParameterExprArrayAttr::get(theModule.getContext(), {});
@@ -2436,6 +2458,15 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       eraseFunc(gen);
 
     eraseState.join();
+  }
+
+  // Sort and then push on all the deferred functions.
+  llvm::sort(deferredFunctions, [](FuncOp lhs, FuncOp rhs) {
+    return lhs.getSymName() < rhs.getSymName();
+  });
+  for (FuncOp func : deferredFunctions) {
+    func->remove();
+    theModule.push_back(func);
   }
 
   // Perform any renaming at the end.  We cannot use the
