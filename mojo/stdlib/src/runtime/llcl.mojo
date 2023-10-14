@@ -129,16 +129,16 @@ fn _async_complete(chain: Pointer[Chain]):
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_global_runtime() -> Pointer[AnyType]:
+fn _init_global_runtime() -> Pointer[NoneType]:
     """Intialize the global runtime. This is a singleton that handle the common
     case where the runtime has the same number of threads as the number of cores.
     """
     return external_call[
-        "KGEN_CompilerRT_LLCL_CreateRuntime", Pointer[AnyType]
+        "KGEN_CompilerRT_LLCL_CreateRuntime", Pointer[NoneType]
     ](num_cores())
 
 
-fn _destroy_global_runtime(ptr: Pointer[AnyType]):
+fn _destroy_global_runtime(ptr: Pointer[NoneType]):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](ptr)
 
@@ -146,7 +146,7 @@ fn _destroy_global_runtime(ptr: Pointer[AnyType]):
 @always_inline
 fn _get_global_runtime() -> Runtime:
     """Gets or creats the global runtime."""
-    return external_call["KGEN_CompilerRT_GetGlobalOr", Pointer[AnyType]](
+    return external_call["KGEN_CompilerRT_GetGlobalOr", Pointer[NoneType]](
         StringRef("Runtime"), _init_global_runtime, _destroy_global_runtime
     )
 
@@ -160,7 +160,7 @@ fn _get_global_runtime() -> Runtime:
 # until we have traits for proper parametric types.
 @register_passable
 struct Runtime:
-    alias ptr_type = Pointer[AnyType]
+    alias ptr_type = Pointer[NoneType]
     var ptr: Self.ptr_type
 
     # TODO: Probably don't want the runtime to be implicitly copyable.
