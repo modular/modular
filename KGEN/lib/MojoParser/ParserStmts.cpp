@@ -965,8 +965,9 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   // retrieve the iterator object from the sequence expression
   auto tmpEmitter = getEmitter();
-  ASTExprAnd<AnyValue> loadedSeq = {
-      seqExpr->emitIR(ValueDest::none(), tmpEmitter), seqExpr};
+  ValueDest seqDest(EC_ForIterator);
+  ASTExprAnd<AnyValue> loadedSeq = {seqExpr->emitIR(seqDest, tmpEmitter),
+                                    seqExpr};
   if (!loadedSeq.ir)
     return {};
 
@@ -990,9 +991,10 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
+  ValueDest lengthDest(EC_ForIterator);
   AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", CallOperands({{XLValue(rangeRef), seqExpr}}),
-      ValueDest::none(), CallSyntax::kImplicitConvert, seqExpr);
+      "__len__", CallOperands({{XLValue(rangeRef), seqExpr}}), lengthDest,
+      CallSyntax::kImplicitConvert, seqExpr);
   CValue lengthIndex =
       getEmitter().emitMLIRIndex({currentLength, seqExpr}, EC_ForIterator);
   if (!lengthIndex)
@@ -1200,7 +1202,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     ArrayRef<ASTDecl *> decls = curDeclScope->lookupInCurrentScope(name);
     if (!useLexicalScope && !decls.empty()) {
       SMLoc declLoc = decls[0]->getLoc();
-      AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls);
+      AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls,
+                                                        EC_WithContextMgr);
       if (auto slval = emitted.getIfMLValue()) {
         enterDest = ValueDest(slval, EC_WithContextMgr);
       } else if (auto ref = emitted.getIfXLValue()) {
@@ -1336,8 +1339,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // This emits the call to the 'contextMgr.__exit__()' methods on the
   // context managers in the normal path.
   auto emitNormalExitLogic = [&]() {
+    ValueDest exitDest(EC_WithExitResult);
     (void)getEmitter().emitNamedMethodCall(
-        "__exit__", CallOperands({{contextRV, contextExp}}), ValueDest::none(),
+        "__exit__", CallOperands({{contextRV, contextExp}}), exitDest,
         CallSyntax::kMethodCall, contextExp);
   };
 
@@ -1429,11 +1433,13 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // TODO: this isn't using the same convention that Python does.  We support
   // overloading though and this is going to be way better for anything real
   // that wants to implement this. We can support both styles when we need to.
+  ValueDest exitResultDest(EC_WithExitResult);
   CValue exitResult = getEmitter().emitNamedMethodCall(
       "__exit__",
       CallOperands({{contextRV, contextExp}, {errorVal, contextExp}}),
-      ValueDest::none(), CallSyntax::kMethodCall, contextExp);
-  RValue exitI1RVal = getEmitter().emitI1({exitResult, contextExp});
+      exitResultDest, CallSyntax::kMethodCall, contextExp);
+  RValue exitI1RVal =
+      getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
   SRValue exitI1Val =
       getEmitter().emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
   if (!exitI1Val)

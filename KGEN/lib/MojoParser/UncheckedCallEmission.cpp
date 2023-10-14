@@ -766,6 +766,9 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
   if (!builder || forceParameterCall) {
     llvm::SaveAndRestore savedBuilder(builder, {});
+    assert(dest.getContext() != EC_Unknown &&
+           "parametric emitCallUnchecked must include an ExprContext");
+    llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
     return callEmitter.emitCallInParamContext(argumentValues);
   }
 

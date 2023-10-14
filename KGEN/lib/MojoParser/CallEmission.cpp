@@ -1028,7 +1028,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
   case ValueInputConvention::ByRef:
   case ValueInputConvention::InitSelf: {
-    LValue baseLV = emitter.emitLValue(baseValue, ValueDest::none());
+    ValueDest baseLVDest(dest.getContext());
+    LValue baseLV = emitter.emitLValue(baseValue, baseLVDest);
     if (!baseLV)
       return {};
 
@@ -1204,7 +1205,8 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
   CValue selfVal = posOperands[0].ir.getIfCValue();
   SmallVector<ASTExprAnd<AnyValue>> updatedPosOperands;
   if (!selfVal) {
-    selfVal = emitCValue(posOperands[0], ValueDest::none());
+    ValueDest selfDest(EC_CallArgValue);
+    selfVal = emitCValue(posOperands[0], selfDest);
     if (!selfVal)
       return {};
     // We can't mutate posOperands because it's an ArrayRef.  If something
@@ -1244,9 +1246,10 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     callee = OverloadSet::lookup(type, methodName, operands, callNode, syntax,
                                  *this);
     if (!callee) {
+      ValueDest selfDest(EC_CallArgValue);
       CValue convertedSelf = emitConstructorCall(
           nmTarget, CallOperands({{selfVal, posOperands[0].expr}}), callNode,
-          CallSyntax::kImplicitConvert, ValueDest::none(),
+          CallSyntax::kImplicitConvert, selfDest,
           /*allowImplicitConversion=*/true);
       if (!convertedSelf)
         return {};
@@ -1444,7 +1447,8 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
     return {};
 
   // Emit the call, but not into 'dest', typically init will return None.
-  CValue result = emitIndirectCall(calleeFn, operands, ValueDest::none(), expr);
+  ValueDest indirectDest(dest.getContext());
+  CValue result = emitIndirectCall(calleeFn, operands, indirectDest, expr);
   if (!result)
     return {};
 
