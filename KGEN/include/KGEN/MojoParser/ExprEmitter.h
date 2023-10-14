@@ -150,14 +150,6 @@ public:
   ValueDest(const ValueDest &) = delete;
   ValueDest &operator=(const ValueDest &) = delete;
 
-  // This is a "constructor" that allows accessing an empty ValueDest by
-  // reference.  By convention we know this will never get mutated, so the
-  // reference is safe to share.
-  static ValueDest &none() {
-    static ValueDest dummy;
-    return dummy;
-  }
-
   ~ValueDest() {
     assert(!isSpecified() && "ValueDest destroyed without being emitted into");
   }
@@ -485,7 +477,7 @@ public:
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// I1 value that we can test directly.  This reports and error and returns
   /// null on error.
-  CRValue emitI1(ASTExprAnd<CValue> value);
+  CRValue emitI1(ASTExprAnd<CValue> value, ExprContext context);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
@@ -533,7 +525,8 @@ public:
   AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls,
                              const ExprNode *expr, ValueDest &dest,
                              Capture &capture);
-  AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls);
+  AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls,
+                             ExprContext context);
 
   //===--------------------------------------------------------------------===//
   // Var/let emission helpers.

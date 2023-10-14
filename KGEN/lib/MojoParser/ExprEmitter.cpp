@@ -502,7 +502,8 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
 
     // It may return a BValue though (e.g. when accessing subfields with
     // computed lvalue bases), in which case we'll emit a copy of it.
-    result = emitCopyOfValue({result, value.expr}, ValueDest::none());
+    ValueDest copyDest(context);
+    result = emitCopyOfValue({result, value.expr}, copyDest);
   }
 }
 
@@ -839,7 +840,7 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
   // If this is a DLValue, see if it can be emitted as a PValue. PValues are
   // immutable, so try to load the DLValue in a parameter context.
   if (auto dl = value.ir.getIfDLValue()) {
-    ValueDest dest;
+    ValueDest dest(context);
     value.ir = dl->emitLoad(dest, *this);
     if (!value.ir) {
       dest.resetForError();
@@ -1018,11 +1019,12 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           // parameter domain.
           CValue converted;
           {
-            llvm::SaveAndRestore X(builder, {});
+            llvm::SaveAndRestore savedBuilder(builder, {});
+            llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
+            ValueDest ctorDest = ValueDest(dest.getContext());
             converted = emitConstructorCall(
                 requiredType, CallOperands({{cValue, expr}}), expr,
-                CallSyntax::kImplicitConvert, ValueDest::none(),
-                /*allowImplicitConversion=*/false);
+                CallSyntax::kImplicitConvert, ctorDest);
           }
           if (!converted) {
             dest.resetForError();
@@ -1214,8 +1216,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
     SmallVector<ASTExprAnd<AnyValue>> posOperands{
         ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
-    if (!emitNamedMethodCall("__copyinit__", posOperands,
-                             ValueDest::none(/*these return None*/),
+    ValueDest copyDest(dest.getContext());
+    if (!emitNamedMethodCall("__copyinit__", posOperands, copyDest,
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
     // If we required an implicit conversion, make sure it happens.
@@ -1279,13 +1281,17 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (auto dlValue = destLV.getIfDLValue()) {
     // If the value itself is an LValue, emit a load so we can call the setter.
     if (auto valueLV = value.ir.getIfLValue()) {
-      value.ir = emitLoadOfLValue({valueLV, value.expr}, ValueDest::none());
+      ValueDest loadDest(context);
+      value.ir = emitLoadOfLValue({valueLV, value.expr}, loadDest);
       if (!value)
         return {};
     }
 
     // Then store into the dest DLValue.
-    dlValue->emitStore(value, *this);
+    {
+      llvm::SaveAndRestore savedContext(paramContext, context);
+      dlValue->emitStore(value, *this);
+    }
 
     // Decay the input value to a BValue since ownership was taken by the store.
     return emitBValue(value, context, {});
@@ -1362,8 +1368,8 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // `__moveinit__(inout self, owned existing: Self)`.
     ASTExprAnd<AnyValue> operands[] = {
         ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
-    if (!emitNamedMethodCall("__moveinit__", {operands},
-                             ValueDest::none(/*these return None*/),
+    ValueDest moveDest(context);
+    if (!emitNamedMethodCall("__moveinit__", {operands}, moveDest,
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
     return MBValue(destPtr);
@@ -1377,8 +1383,8 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // `__takeinit__(inout self, inout existing: Self)`.
     ASTExprAnd<AnyValue> operands[] = {
         ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
-    if (!emitNamedMethodCall("__takeinit__", {operands},
-                             ValueDest::none(/*these return None*/),
+    ValueDest takeDest(context);
+    if (!emitNamedMethodCall("__takeinit__", {operands}, takeDest,
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
     return MBValue(destPtr);
@@ -1460,7 +1466,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   return type;
 }
 
-CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
+CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   if (!value.ir)
     return {};
 
@@ -1468,7 +1474,7 @@ CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
 
   // If this is already an 'i1', then we're done.
   if (valueRValueType.mlirType.isInteger(1))
-    return emitCRValue(value, EC_BoolCondition);
+    return emitCRValue(value, context);
 
   // TODO: Python manual includes this off-hand comment:
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
@@ -1481,21 +1487,23 @@ CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
                    [&]() { /*no error*/ })) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __mlir_i1__.
-    value.ir = emitNamedMethodCall("__bool__", {{{value.ir, value.expr}}},
-                                   ValueDest::none(),
-                                   CallSyntax::kImplicitConvert, value.expr);
+    ValueDest boolDest(context);
+    value.ir =
+        emitNamedMethodCall("__bool__", {{{value.ir, value.expr}}}, boolDest,
+                            CallSyntax::kImplicitConvert, value.expr);
   }
 
   // Then we use __mlir_i1__ to convert to an i1 value.
-  CValue litBoolCall = emitNamedMethodCall(
-      "__mlir_i1__", {{{value.ir, value.expr}}}, ValueDest::none(),
-      CallSyntax::kImplicitConvert, value.expr);
+  ValueDest boolDest(context);
+  CValue litBoolCall =
+      emitNamedMethodCall("__mlir_i1__", {{{value.ir, value.expr}}}, boolDest,
+                          CallSyntax::kImplicitConvert, value.expr);
 
-  return emitCRValue({litBoolCall, value.expr}, EC_BoolCondition);
+  return emitCRValue({litBoolCall, value.expr}, context);
 }
 
 CRValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
-  return emitI1({emitExprCValue(condExpr, context), condExpr});
+  return emitI1({emitExprCValue(condExpr, context), condExpr}, context);
 }
 
 CValue ExprEmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
@@ -1761,11 +1769,12 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 }
 
 AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
-                                        ArrayRef<ASTDecl *> decls) {
+                                        ArrayRef<ASTDecl *> decls,
+                                        ExprContext context) {
   SyntheticNode dummyNode({});
   Capture capture = {};
-  return emitDeclReference(spelling, decls, &dummyNode, ValueDest::none(),
-                           capture);
+  ValueDest dest(context);
+  return emitDeclReference(spelling, decls, &dummyNode, dest, capture);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1788,7 +1797,8 @@ void DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
 CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
                                            ExprEmitter &emitter) const {
   // To load x.y, we load x, then then load y out of it.
-  auto base = baseVal.ir->emitLoad(ValueDest::none(), emitter);
+  ValueDest baseDest(dest.getContext());
+  auto base = baseVal.ir->emitLoad(baseDest, emitter);
   if (!base)
     return {};
   return AttributeRefNode::emitStoredFieldRef({base, baseVal.expr}, getField(),
@@ -1853,8 +1863,9 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
       isSubscript() ? StringRef("__setitem__") : StringRef("__setattr__");
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithValue(posOperands);
   posOperandsWithValue.push_back(value);
-  emitter.emitNamedMethodCall(methodName, posOperandsWithValue,
-                              ValueDest::none(), CallSyntax::kSubscript, expr);
+  ValueDest storeDest(EC_Assignment);
+  emitter.emitNamedMethodCall(methodName, posOperandsWithValue, storeDest,
+                              CallSyntax::kSubscript, expr);
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.

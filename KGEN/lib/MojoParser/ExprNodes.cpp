@@ -488,8 +488,9 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   Capture capture;
-  AnyValue result = emitter.emitDeclReference(spelling, decls, this,
-                                              ValueDest::none(), capture);
+  ValueDest refDest(dest.getContext());
+  AnyValue result =
+      emitter.emitDeclReference(spelling, decls, this, refDest, capture);
 
   if (!capture)
     return emitter.emitResult(result, this, dest);
@@ -637,7 +638,8 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   }
 
   // We know the base.ir is a BValue or CRValue, decay to BValue.
-  BValue baseBVal = emitter.emitBValue(base, ValueDest::none());
+  ValueDest bvDest(dest.getContext());
+  BValue baseBVal = emitter.emitBValue(base, bvDest);
   if (!baseBVal)
     return {};
 
@@ -784,7 +786,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // In-order to allow parameter expressions which technically include a runtime
   // reference, i.e `x.static_field` we allow some values which would otherwise
   // produce a value in a parameter context to still propagate up.
-  AnyValue baseAnyVal = base->emitIR(ValueDest::none(), emitter);
+  ValueDest baseDest(EC_AttributeRefBase);
+  AnyValue baseAnyVal = base->emitIR(baseDest, emitter);
   if (!baseAnyVal)
     return {};
 
@@ -794,7 +797,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(overloads->getAdaptiveSet(emitter), this, dest);
 
   // Otherwise must have a concrete type.
-  CValue baseVal = emitter.emitCValue({baseAnyVal, this}, ValueDest::none());
+  CValue baseVal = emitter.emitCValue({baseAnyVal, this}, baseDest);
   if (!baseVal)
     return {};
 
@@ -1214,8 +1217,9 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                         "unpacked arguments are not supported yet");
       return {};
     }
+    ValueDest operandDest(EC_CallArgValue);
     ASTExprAnd<AnyValue> exprAndVal = {
-        operand.value->emitIR(ValueDest::none(), emitter), operand.value};
+        operand.value->emitIR(operandDest, emitter), operand.value};
     if (!exprAndVal)
       return {};
     if (operand.isPositional()) {
@@ -1476,7 +1480,8 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
 
 AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
-  auto baseAnyValue = base->emitIR(ValueDest::none(), emitter);
+  ValueDest baseDest(EC_SubscriptBase);
+  auto baseAnyValue = base->emitIR(baseDest, emitter);
   if (!baseAnyValue)
     return {};
 
@@ -1490,8 +1495,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Otherwise, this must be a concrete node to be able to further subscript it.
-  CValue baseValue =
-      emitter.emitCValue({baseAnyValue, base}, ValueDest::none());
+  CValue baseValue = emitter.emitCValue({baseAnyValue, base}, baseDest);
   if (!baseValue)
     return {};
 
@@ -1553,7 +1557,8 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands;
   for (const Operand &operand : operands) {
     ExprNode *expr = operand.value;
-    AnyValue exprVal = expr->emitIR(ValueDest::none(), emitter);
+    ValueDest indexDest(EC_Subscript);
+    AnyValue exprVal = expr->emitIR(indexDest, emitter);
     if (!exprVal)
       return {};
 
@@ -2261,7 +2266,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Emit the LHS value as a bool/i1 value.
   CValue lhsV = emitter.emitExprCValue(lhs, EC_OperatorOperandValue);
-  RValue lhsI1Value = emitter.emitI1({lhsV, lhs});
+  RValue lhsI1Value = emitter.emitI1({lhsV, lhs}, EC_OperatorOperandValue);
   SRValue lhsI1SRValue =
       emitter.emitSRValue({AnyValue(lhsI1Value), lhs}, EC_BoolCondition);
   if (!lhsI1SRValue)
@@ -2309,7 +2314,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     // If the RHS is already a Bool, we're good, otherwise convert to i1 then
     // back to Bool with a ctor.
     if (!rhsV.getRValueType().isEqualCanon(boolType)) {
-      RValue rhsI1Value = emitter.emitI1({rhsV, rhs});
+      RValue rhsI1Value = emitter.emitI1({rhsV, rhs}, EC_OperatorOperandValue);
       rhsV = convertValue({rhsI1Value, rhs}, boolType, /*isLHS=*/false);
     }
 
@@ -2444,7 +2449,8 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  auto exprRep = subExpr->emitIR(ValueDest::none(), emitter);
+  ValueDest subDest(EC_OperatorOperandValue);
+  auto exprRep = subExpr->emitIR(subDest, emitter);
   if (!exprRep)
     return {};
 
@@ -2483,9 +2489,9 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   Kind kindToEmit = kind;
   if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
-    argValue.ir = emitter.emitNamedMethodCall(
-        "__bool__", CallOperands(argValue), ValueDest::none(),
-        CallSyntax::kImplicitConvert, this);
+    argValue.ir =
+        emitter.emitNamedMethodCall("__bool__", CallOperands(argValue), subDest,
+                                    CallSyntax::kImplicitConvert, this);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -2694,14 +2700,15 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 ///  Note that a < b  is handled by ChainedCmpOpNode::emitIR.
 CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
                                       CRValue prevCmpVal, CRValue prevRHS,
-                                      bool hasPrevIfOp) const {
+                                      bool hasPrevIfOp, ValueDest &dest) const {
+  ExprContext context = dest.getContext();
   bool isLastOne = opIdx + 1 == ops.size();
   SMLoc ifLoc = exprs[opIdx - 1]->getLoc();
   Location ifLocation = emitter.translateLocation(ifLoc);
   std::optional<OpBuilder> lastBuilder = {};
   if (emitter.builder)
     lastBuilder = emitter.builder.value();
-  CRValue prevCmpI1Value = emitter.emitI1({prevCmpVal, this});
+  CRValue prevCmpI1Value = emitter.emitI1({prevCmpVal, this}, EC_BoolCondition);
   if (!prevCmpI1Value)
     return {};
   SRValue prevCmpI1SRValue = {};
@@ -2722,9 +2729,10 @@ CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
       emitter.emitExprCRValue(exprs[opIdx + 1], EC_OperatorOperandValue);
   if (!newRHS)
     return {};
+  ValueDest newCmpDest(context);
   AnyValue newCmp =
       emitBinOpCall({prevRHS, exprs[opIdx]}, {newRHS, exprs[opIdx + 1]},
-                    ops[opIdx], ValueDest::none(), this, emitter);
+                    ops[opIdx], newCmpDest, this, emitter);
   CRValue newCmpCRV = newCmp.getIfCRValue();
   if (!newCmpCRV)
     return {};
@@ -2748,29 +2756,27 @@ CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
         POC::Cond,
         {prevCmpI1Value.getIfPValue(), /*trueVal=*/newCmpCRV.getIfPValue(),
          /*falseVal=*/prevCmpVal.getIfPValue()});
-    CRValue ret =
-        isLastOne ? chainedBool
-                  : emitNextCmp(emitter, opIdx + 1, chainedBool, newRHS, false);
+    CRValue ret = isLastOne ? chainedBool
+                            : emitNextCmp(emitter, opIdx + 1, chainedBool,
+                                          newRHS, false, dest);
     if (hasPrevIfOp) {
       emitter.builder->create<HLCF::YieldOp>(
-          ifLocation,
-          emitter.emitSRValue({ret, exprs[opIdx]}, EC_BoolCondition));
+          ifLocation, emitter.emitSRValue({ret, exprs[opIdx]}, context));
     }
     return ret;
   }
 
   if (isLastOne)
     emitter.builder->create<HLCF::YieldOp>(
-        ifLocation,
-        emitter.emitSRValue({newCmpCRV, exprs[opIdx]}, EC_BoolCondition));
+        ifLocation, emitter.emitSRValue({newCmpCRV, exprs[opIdx]}, context));
   if (!isLastOne) {
     AnyValue emitNextCmpResult = {};
     emitNextCmpResult =
-        emitNextCmp(emitter, opIdx + 1, newCmpCRV, newRHS, true);
+        emitNextCmp(emitter, opIdx + 1, newCmpCRV, newRHS, true, dest);
     if (!emitNextCmpResult)
       return {};
     emitNextCmpResult = emitter.emitRValue(
-        {emitNextCmpResult, exprs[opIdx + 1]}, EC_BoolCondition);
+        {emitNextCmpResult, exprs[opIdx + 1]}, EC_OperatorOperandValue);
     if (!emitNextCmpResult)
       return {};
     CRValue emitNextCmpCRV = emitNextCmpResult.getIfCRValue();
@@ -2786,8 +2792,7 @@ CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   emitter.builder->createBlock(&ifOp.getElseRegion());
   ifOp->getResult(0).setType(prevCmpVal.getType());
   emitter.builder->create<HLCF::YieldOp>(
-      ifLocation,
-      emitter.emitSRValue({prevCmpVal, exprs[opIdx - 1]}, EC_BoolCondition));
+      ifLocation, emitter.emitSRValue({prevCmpVal, exprs[opIdx - 1]}, context));
   if (lastBuilder)
     emitter.builder = lastBuilder;
   auto r0 = ifOp->getResult(0);
@@ -2817,9 +2822,10 @@ AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!e0Rep || !e1Rep)
     return {};
 
-  AnyValue cmpe0e1RV = emitBinOpCall(
-      {e0Rep, exprs[0]}, {e1Rep, exprs[1]}, ops[0],
-      exprs.size() == 2 ? dest : ValueDest::none(), this, emitter);
+  ValueDest cmpDest(dest.getContext());
+  AnyValue cmpe0e1RV =
+      emitBinOpCall({e0Rep, exprs[0]}, {e1Rep, exprs[1]}, ops[0],
+                    exprs.size() == 2 ? dest : cmpDest, this, emitter);
   if (exprs.size() == 2)
     return cmpe0e1RV;
 
@@ -2829,8 +2835,8 @@ AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       emitter.emitCRValue({e1Rep, exprs[1]}, EC_OperatorOperandValue);
   if (!lastCmpExpr || !e1RV)
     return {};
-  return emitter.emitResult(emitNextCmp(emitter, 1, lastCmpExpr, e1RV, false),
-                            this, dest);
+  return emitter.emitResult(
+      emitNextCmp(emitter, 1, lastCmpExpr, e1RV, false, dest), this, dest);
 }
 
 AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2933,7 +2939,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
 
   // __get_lvalue_as_address(someMLValue) returns a pop.pointer.
   if (kind == kGetLValueAsAddress) {
-    LValue result = emitter.emitExprLValue(subExpr, EC_Unknown);
+    LValue result = emitter.emitExprLValue(subExpr, dest.getContext());
     if (!result)
       return {};
     if (XLValue resultRef = result.getIfXLValue())
@@ -2956,7 +2962,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
 
-  SRValue exprVal = emitter.emitExprSRValue(subExpr, EC_Unknown);
+  SRValue exprVal = emitter.emitExprSRValue(subExpr, dest.getContext());
   if (!exprVal)
     return {};
   auto pointerType = dyn_cast<PointerType>(exprVal.getType().mlirType);
