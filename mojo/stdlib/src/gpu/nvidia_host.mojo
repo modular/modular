@@ -54,15 +54,15 @@ fn _human_memory(size: Int) -> String:
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_dylib() -> Pointer[AnyType]:
+fn _init_dylib() -> Pointer[NoneType]:
     let ptr = Pointer[DLHandle].alloc(1)
     let handle = DLHandle(CUDA_DRIVER_PATH)
     _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
     __get_address_as_lvalue(ptr.address) = handle
-    return ptr.bitcast[AnyType]()
+    return ptr.bitcast[NoneType]()
 
 
-fn _destroy_dylib(ptr: Pointer[AnyType]):
+fn _destroy_dylib(ptr: Pointer[NoneType]):
     __get_address_as_lvalue(ptr.bitcast[DLHandle]().address)._del_old()
     ptr.free()
 
@@ -1954,28 +1954,28 @@ struct ModuleHandle:
 
             let opts = stack_allocation[max_num_options, JitOptions]()
             let option_vals = stack_allocation[
-                max_num_options, Pointer[AnyType]
+                max_num_options, Pointer[NoneType]
             ]()
 
             opts.store(num_options, JitOptions.INFO_LOG_BUFFER)
-            option_vals.store(num_options, info_buffer.bitcast[AnyType]())
+            option_vals.store(num_options, info_buffer.bitcast[NoneType]())
             num_options += 1
 
             opts.store(num_options, JitOptions.INFO_LOG_BUFFER_SIZE_BYTES)
-            option_vals.store(num_options, bitcast[AnyType](buffer_size))
+            option_vals.store(num_options, bitcast[NoneType](buffer_size))
             num_options += 1
 
             opts.store(num_options, JitOptions.ERROR_LOG_BUFFER)
-            option_vals.store(num_options, info_buffer.bitcast[AnyType]())
+            option_vals.store(num_options, info_buffer.bitcast[NoneType]())
             num_options += 1
 
             opts.store(num_options, JitOptions.ERROR_LOG_BUFFER_SIZE_BYTES)
-            option_vals.store(num_options, bitcast[AnyType](buffer_size))
+            option_vals.store(num_options, bitcast[NoneType](buffer_size))
             num_options += 1
 
             if debug:
                 opts.store(num_options, JitOptions.GENERATE_DEBUG_INFO)
-                option_vals.store(num_options, bitcast[AnyType](1))
+                option_vals.store(num_options, bitcast[NoneType](1))
                 num_options += 1
 
             # Note that content has already gone through _cleanup_asm and
@@ -1987,7 +1987,7 @@ struct ModuleHandle:
                     DTypePointer[DType.int8],
                     UInt32,
                     Pointer[JitOptions],
-                    Pointer[Pointer[AnyType]]
+                    Pointer[Pointer[NoneType]]
                 ) -> Result
                 # fmt: on
             ]("cuModuleLoadDataEx")(
@@ -2087,7 +2087,7 @@ struct FunctionHandle:
 
     fn __call__(self, grid_dim: Dim, block_dim: Dim, /, stream: Stream) raises:
         self._call_impl(
-            grid_dim, block_dim, Pointer[Pointer[AnyType]](), stream=stream
+            grid_dim, block_dim, Pointer[Pointer[NoneType]](), stream=stream
         )
 
     fn __call__[
@@ -2095,8 +2095,8 @@ struct FunctionHandle:
     ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, /, stream: Stream) raises:
         var _arg0 = arg0
 
-        let args = stack_allocation[1, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
+        let args = stack_allocation[1, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2114,9 +2114,9 @@ struct FunctionHandle:
         var _arg0 = arg0
         var _arg1 = arg1
 
-        let args = stack_allocation[2, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
+        let args = stack_allocation[2, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2136,10 +2136,10 @@ struct FunctionHandle:
         var _arg1 = arg1
         var _arg2 = arg2
 
-        let args = stack_allocation[3, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
+        let args = stack_allocation[3, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2161,11 +2161,11 @@ struct FunctionHandle:
         var _arg2 = arg2
         var _arg3 = arg3
 
-        let args = stack_allocation[4, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
+        let args = stack_allocation[4, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2189,12 +2189,12 @@ struct FunctionHandle:
         var _arg3 = arg3
         var _arg4 = arg4
 
-        let args = stack_allocation[5, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
+        let args = stack_allocation[5, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2225,13 +2225,13 @@ struct FunctionHandle:
         var _arg4 = arg4
         var _arg5 = arg5
 
-        let args = stack_allocation[6, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
+        let args = stack_allocation[6, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2265,14 +2265,14 @@ struct FunctionHandle:
         var _arg5 = arg5
         var _arg6 = arg6
 
-        let args = stack_allocation[7, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
-        args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
+        let args = stack_allocation[7, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
+        args.store(6, Pointer.address_of(_arg6).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2309,15 +2309,15 @@ struct FunctionHandle:
         var _arg6 = arg6
         var _arg7 = arg7
 
-        let args = stack_allocation[8, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
-        args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
-        args.store(7, Pointer.address_of(_arg7).bitcast[AnyType]())
+        let args = stack_allocation[8, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
+        args.store(6, Pointer.address_of(_arg6).bitcast[NoneType]())
+        args.store(7, Pointer.address_of(_arg7).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2357,16 +2357,16 @@ struct FunctionHandle:
         var _arg7 = arg7
         var _arg8 = arg8
 
-        let args = stack_allocation[9, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
-        args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
-        args.store(7, Pointer.address_of(_arg7).bitcast[AnyType]())
-        args.store(8, Pointer.address_of(_arg8).bitcast[AnyType]())
+        let args = stack_allocation[9, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
+        args.store(6, Pointer.address_of(_arg6).bitcast[NoneType]())
+        args.store(7, Pointer.address_of(_arg7).bitcast[NoneType]())
+        args.store(8, Pointer.address_of(_arg8).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2409,17 +2409,17 @@ struct FunctionHandle:
         var _arg8 = arg8
         var _arg9 = arg9
 
-        let args = stack_allocation[10, Pointer[AnyType]]()
-        args.store(0, Pointer.address_of(_arg0).bitcast[AnyType]())
-        args.store(1, Pointer.address_of(_arg1).bitcast[AnyType]())
-        args.store(2, Pointer.address_of(_arg2).bitcast[AnyType]())
-        args.store(3, Pointer.address_of(_arg3).bitcast[AnyType]())
-        args.store(4, Pointer.address_of(_arg4).bitcast[AnyType]())
-        args.store(5, Pointer.address_of(_arg5).bitcast[AnyType]())
-        args.store(6, Pointer.address_of(_arg6).bitcast[AnyType]())
-        args.store(7, Pointer.address_of(_arg7).bitcast[AnyType]())
-        args.store(8, Pointer.address_of(_arg8).bitcast[AnyType]())
-        args.store(9, Pointer.address_of(_arg9).bitcast[AnyType]())
+        let args = stack_allocation[10, Pointer[NoneType]]()
+        args.store(0, Pointer.address_of(_arg0).bitcast[NoneType]())
+        args.store(1, Pointer.address_of(_arg1).bitcast[NoneType]())
+        args.store(2, Pointer.address_of(_arg2).bitcast[NoneType]())
+        args.store(3, Pointer.address_of(_arg3).bitcast[NoneType]())
+        args.store(4, Pointer.address_of(_arg4).bitcast[NoneType]())
+        args.store(5, Pointer.address_of(_arg5).bitcast[NoneType]())
+        args.store(6, Pointer.address_of(_arg6).bitcast[NoneType]())
+        args.store(7, Pointer.address_of(_arg7).bitcast[NoneType]())
+        args.store(8, Pointer.address_of(_arg8).bitcast[NoneType]())
+        args.store(9, Pointer.address_of(_arg9).bitcast[NoneType]())
 
         self._call_impl(grid_dim, block_dim, args, stream=stream)
 
@@ -2427,7 +2427,7 @@ struct FunctionHandle:
         self,
         grid_dim: Dim,
         block_dim: Dim,
-        args: Pointer[Pointer[AnyType]],
+        args: Pointer[Pointer[NoneType]],
         /,
         stream: Stream,
     ) raises:
@@ -2444,7 +2444,7 @@ struct FunctionHandle:
                   UInt32, # BlockDimX
                   UInt32, # SharedMemSize
                   _StreamImpl, # Stream
-                  Pointer[Pointer[AnyType]], # Args
+                  Pointer[Pointer[NoneType]], # Args
                   DTypePointer[DType.invalid] # Extra
                 ) -> Result
                 # fmt: on
@@ -2860,10 +2860,10 @@ fn _copy_host_to_device[
 ](device_dest: Pointer[type], host_src: Pointer[type], count: Int) raises:
     _check_error(
         _get_dylib_function[
-            fn (Pointer[UInt32], Pointer[AnyType], Int) -> Result
+            fn (Pointer[UInt32], Pointer[NoneType], Int) -> Result
         ]("cuMemcpyHtoD_v2")(
             device_dest.bitcast[UInt32](),
-            host_src.bitcast[AnyType](),
+            host_src.bitcast[NoneType](),
             count * sizeof[type](),
         )
     )
@@ -2886,9 +2886,9 @@ fn _copy_device_to_host[
 ](host_dest: Pointer[type], device_src: Pointer[type], count: Int) raises:
     _check_error(
         _get_dylib_function[
-            fn (Pointer[AnyType], Pointer[UInt32], Int) -> Result
+            fn (Pointer[NoneType], Pointer[UInt32], Int) -> Result
         ]("cuMemcpyDtoH_v2")(
-            host_dest.bitcast[AnyType](),
+            host_dest.bitcast[NoneType](),
             device_src.bitcast[UInt32](),
             count * sizeof[type](),
         )
