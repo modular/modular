@@ -52,7 +52,7 @@ M::KGEN::Mojo::MojoDecoratorBasedTypeSyntheticFrontEndCreator(
       SymbolRefAttr symbol = constantSymbol.getSymbol();
       auto nestedReferences = symbol.getNestedReferences();
       if (nestedReferences.size() == 2 &&
-          symbol.getRootReference() == "$utils" &&
+          symbol.getRootReference() == "$debug" &&
           nestedReferences[0].getValue() == "$lldb" &&
           nestedReferences[1].getValue() == "lldb_formatter_wrapping_type()") {
         return new MojoWrappingTypeSyntheticFrontEnd(*valobjSP);
