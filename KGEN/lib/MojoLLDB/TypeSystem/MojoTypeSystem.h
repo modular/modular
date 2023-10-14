@@ -74,27 +74,6 @@ public:
 
   void Dump(llvm::raw_ostream &output) override;
 
-  void DumpValue(lldb::opaque_compiler_type_t type,
-                 lldb_private::ExecutionContext *exeCtx,
-                 lldb_private::Stream &s, lldb::Format format,
-                 const lldb_private::DataExtractor &data,
-                 lldb::offset_t dataOffset, size_t dataByteSize,
-                 uint32_t bitfieldBitSize, uint32_t bitfieldBitOffset,
-                 bool showTypes, bool showSummary, bool verbose,
-                 uint32_t depth) override {
-    // Note: this method is dead and
-    // https://github.com/llvm/llvm-project/pull/68927 kills it.
-  }
-
-  void DumpSummary(lldb::opaque_compiler_type_t type,
-                   lldb_private::ExecutionContext *exeCtx,
-                   lldb_private::Stream &s,
-                   const lldb_private::DataExtractor &data,
-                   lldb::offset_t dataOffset, size_t dataByteSize) override {
-    // Note: this method is dead and
-    // https://github.com/llvm/llvm-project/pull/68927 kills it.
-  }
-
   bool DumpTypeValue(lldb::opaque_compiler_type_t type, lldb_private::Stream &s,
                      lldb::Format format,
                      const lldb_private::DataExtractor &data,
@@ -332,13 +311,6 @@ public:
   }
 
   bool IsScalarType(lldb::opaque_compiler_type_t type) override;
-
-  bool IsCStringType(lldb::opaque_compiler_type_t type,
-                     uint32_t &length) override {
-    // Note: this method is dead and
-    // https://github.com/llvm/llvm-project/pull/68927 kills it.
-    return false;
-  }
 
   bool IsVectorType(lldb::opaque_compiler_type_t type,
                     lldb_private::CompilerType *elementType,
