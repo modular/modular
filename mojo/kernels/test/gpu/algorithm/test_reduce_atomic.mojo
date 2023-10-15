@@ -7,21 +7,23 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from gpu import *
-from gpu.host import Function, Context, Dim, Stream
-from gpu.host.memory import (
-    _malloc,
-    _free,
-    _copy_host_to_device,
-    _copy_device_to_host,
-    _memset,
-)
+from math import div_ceil
 from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
-from utils.index import Index
-from tensor import Tensor
-from math import div_ceil
+
 from builtin.io import _printf
+from gpu import *
+from gpu.host import Context, Dim, Function, Stream
+from gpu.host.memory import (
+    _copy_device_to_host,
+    _copy_host_to_device,
+    _free,
+    _malloc,
+    _memset,
+)
+from tensor import Tensor
+
+from utils.index import Index
 
 
 fn reduce(

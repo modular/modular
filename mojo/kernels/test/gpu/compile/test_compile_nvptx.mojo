@@ -7,6 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys.info import triple_is_nvidia_cuda
+
 from gpu import ThreadIdx
 from gpu.host._compile import _compile_nvptx_asm
 

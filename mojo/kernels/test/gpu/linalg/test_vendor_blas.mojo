@@ -7,32 +7,27 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from gpu import BlockIdx, BlockDim, ThreadIdx, AddressSpace
-from gpu.host import (
-    Function,
-    Context,
-    Dim,
-    Stream,
-    synchronize,
-)
-from gpu.host.memory import (
-    _malloc,
-    _free,
-    _copy_host_to_device,
-    _copy_device_to_host,
-)
-from sys.param_env import env_get_string
+from math import div_ceil
 from pathlib import Path
-from memory.unsafe import DTypePointer
-from memory.buffer import NDBuffer
 from sys.info import triple_is_nvidia_cuda
+from sys.param_env import env_get_string
+
+from builtin.io import _printf
+from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx
+from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host.memory import (
+    _copy_device_to_host,
+    _copy_host_to_device,
+    _free,
+    _malloc,
+)
+from memory import memset_zero
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
+from tensor import Tensor
+
 from utils.index import Index
 from utils.list import DimList
-from memory import memset_zero
-from tensor import Tensor
-from math import div_ceil
-from builtin.io import _printf
-
 
 alias BLOCK_DIM = 8
 

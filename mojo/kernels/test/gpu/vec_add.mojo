@@ -7,23 +7,18 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from gpu import *
-from gpu.host import (
-    Function,
-    Context,
-    Dim,
-    Stream,
-    synchronize,
-)
-from gpu.host.memory import (
-    _malloc,
-    _free,
-    _copy_host_to_device,
-    _copy_device_to_host,
-)
-from sys.param_env import env_get_string
 from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
+from sys.param_env import env_get_string
+
+from gpu import *
+from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host.memory import (
+    _copy_device_to_host,
+    _copy_host_to_device,
+    _free,
+    _malloc,
+)
 
 
 fn vec_func[
