@@ -8,7 +8,8 @@
 from os.atomic import Atomic
 from sys import external_call
 from sys.param_env import is_defined
-from gpu.nvidia_host import Stream, _StreamImpl
+from gpu.host import Stream
+from gpu.host.stream import _StreamImpl
 
 from builtin.coroutine import _coro_resume_fn
 from memory.unsafe import DTypePointer, Pointer
