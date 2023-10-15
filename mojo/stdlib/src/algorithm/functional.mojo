@@ -16,7 +16,7 @@ from math import div_ceil, max, min
 from math._numerics import FlushDenormals
 from sys.info import triple_is_nvidia_cuda
 from gpu import ThreadIdx, BlockDim, BlockIdx
-from gpu.nvidia_host import Function, Dim, Stream
+from gpu.host import Function, Dim, Stream
 
 from runtime.llcl import (
     AsyncTaskGroupPtr,
