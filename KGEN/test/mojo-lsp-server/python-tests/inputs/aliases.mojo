@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Activations import ActivationType
+from sys.ffi import RTLD
 
 alias IntAlias = 12
 """Int alias summary
@@ -27,4 +27,4 @@ struct StructWithAlias:
 
 alias AliasInStructRef = StructWithAlias.AliasInStruct
 
-alias ExternalAlias = ActivationType.IDENTITY
+alias ExternalAlias = RTLD.LAZY

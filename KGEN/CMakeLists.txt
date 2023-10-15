@@ -167,7 +167,10 @@ endif()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_mojo_package target)
-  cmake_parse_arguments(KGEN "STDLIB" "PACKAGE_DIR;OUTPUT_NAME" "PRIVATE;PUBLIC;LINK_LIBS;LINK_DIRS" ${ARGN})
+  cmake_parse_arguments(KGEN
+                        "STDLIB"
+                        "PACKAGE_DIR;OUTPUT_NAME"
+                        "PRIVATE;PUBLIC;LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
   _setup_arch()
@@ -329,7 +332,10 @@ endfunction()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "SFF_DEBUG;NO_DEBUG" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS;LINK_DIRS" ${ARGN})
+  cmake_parse_arguments(KGEN
+                        "SFF_DEBUG;NO_DEBUG"
+                        "SOURCE;OUTPUT_NAME"
+                        "KERNELS;DEPENDS;LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
   _setup_arch()
@@ -363,7 +369,7 @@ function(add_kgen_kernel target)
     DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS} mojo-sdk
   )
   add_custom_target(${target}-headers DEPENDS ${header_file_name})
-  add_dependencies(${target}-headers ${KGEN_LIB_DEPENDS} kgen mojo-sdk)
+  add_dependencies(${target}-headers ${KGEN_LIB_DEPENDS} kgen mojo-sdk ${KGEN_DEPENDS})
   set_target_properties(${target}-headers PROPERTIES
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
   )

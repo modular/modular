@@ -536,16 +536,22 @@ async def test_hover_external_symbol(client: LanguageClient):
         assert result.contents.value == expected
 
     await assert_hover(
-        "IDENTITY",
+        "LAZY",
         """```mojo
-alias IDENTITY = 0
-```""",
+alias LAZY = 1
+```
+---
+
+###
+Load library lazily (defer function resolution until needed).
+
+""",
     )
 
     await assert_hover(
         "ExternalAlias",
         """```mojo
-alias ExternalAlias = 0
+alias ExternalAlias = 1
 ```""",
     )
 
