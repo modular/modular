@@ -91,7 +91,6 @@ struct TestGeneratePreElaboratedBody
 
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
-    TargetInfoAttr target = M::lookupTargetInfo(theModule);
 
     // Attach a kgen.func to the lit.func. This dummy function simply contains
     // exactly the same operations as the lit.func, but has a slightly different
@@ -101,10 +100,13 @@ struct TestGeneratePreElaboratedBody
       if (func->hasAttr("doNotExtern"))
         continue;
 
-      // Allow some functions to specify that they use an incompatible target.
-      TargetInfoAttr funcTarget = target;
-      if (auto newTarget = func->getAttrOfType<TargetInfoAttr>("test.target"))
-        funcTarget = newTarget;
+      // This pass generates `package.link` ops with archives for each target
+      // specified by unctions that define attributes named "test.target.[0-9]".
+      SmallVector<TargetInfoAttr> targets;
+      for (size_t i = 0; i < 10; ++i)
+        if (auto target = func->getAttrOfType<TargetInfoAttr>(
+                llvm::formatv("test.target.{0}", i).str()))
+          targets.push_back(target);
 
       OpBuilder b(func.getContext());
       OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
@@ -136,11 +138,86 @@ struct TestGeneratePreElaboratedBody
       OpBuilder linkBuilder(func);
       auto bytecodeBufferAttr = createResourceAttr(
           &getContext(), buffer, func.getSymName() + "_generated_body_attr");
+      SmallVector<KGEN::PackageArchiveAttr> archives;
+      for (TargetInfoAttr target : targets) {
+        archives.push_back(KGEN::PackageArchiveAttr::get(
+            target, bytecodeBufferAttr, bytecodeBufferAttr));
+      }
       linkBuilder.create<KGEN::PackageLinkOp>(
           func.getLoc(), linkName, bytecodeBufferAttr,
           KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
-          KGEN::PackageArchiveAttr::get(funcTarget, bytecodeBufferAttr,
-                                        bytecodeBufferAttr));
+          KGEN::PackageArchiveArrayAttr::get(func.getContext(), archives));
+    }
+  }
+};
+
+struct TestMaterializePackages
+    : public mlir::PassWrapper<TestMaterializePackages,
+                               OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestMaterializePackages);
+
+  StringRef getArgument() const override {
+    return "test-materialize-packages";
+  };
+
+  void runOnOperation() override {
+    ModuleOp theModule = getOperation();
+
+    // Attach a kgen.func to the lit.func. This dummy function simply contains
+    // exactly the same operations as the lit.func, but has a slightly different
+    // name.
+    for (auto func : theModule.getOps<KGEN::LIT::FuncOp>()) {
+      // Allow the test to skip functions if they have the doNotExtern attr.
+      if (func->hasAttr("doNotExtern"))
+        continue;
+
+      // This pass generates `package.link` ops with archives for each target
+      // specified by unctions that define attributes named "test.target.[0-9]".
+      SmallVector<TargetInfoAttr> targets;
+      for (size_t i = 0; i < 10; ++i)
+        if (auto target = func->getAttrOfType<TargetInfoAttr>(
+                llvm::formatv("test.target.{0}", i).str()))
+          targets.push_back(target);
+
+      OpBuilder b(func.getContext());
+      OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
+      OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
+      KGEN::FuncOp fakeCompiledBody = fakeBuilder.create<KGEN::FuncOp>(
+          func.getLoc(), b.getStringAttr(func.getSymName() + "_precompiled"),
+          func.getSignature(), KGEN::InlineLevel::Automatic);
+
+      // Just clone the body in.
+      mlir::IRMapping map;
+      func.getBodyRegion().cloneInto(&fakeCompiledBody.getBodyRegion(), map);
+
+      // Generate the bytecode for the module bytecode.
+      SmallVector<char> buffer;
+      llvm::raw_svector_ostream stream(buffer);
+      if (failed(mlir::writeBytecodeToFile(*fakeModule, stream)))
+        return signalPassFailure();
+
+      // Externalize the function and attach the post elaboration metadata.
+      func.getBody()->clear();
+      OpBuilder::atBlockBegin(func.getBody())
+          .create<KGEN::LIT::ExternFuncOp>(func.getLoc());
+      StringAttr linkName = b.getStringAttr("link_" + func.getSymName());
+      func.setPreCompiledModuleRefAttr(FlatSymbolRefAttr::get(linkName));
+      func.setPreElaborationName(fakeCompiledBody.getSymNameAttr());
+      func.setLinkageName(fakeCompiledBody.getSymNameAttr());
+
+      // Generate a package link to the fake module.
+      OpBuilder linkBuilder(func);
+      auto bytecodeBufferAttr = createResourceAttr(
+          &getContext(), buffer, func.getSymName() + "_generated_body_attr");
+      SmallVector<KGEN::PackageArchiveAttr> archives;
+      for (TargetInfoAttr target : targets) {
+        archives.push_back(KGEN::PackageArchiveAttr::get(
+            target, bytecodeBufferAttr, bytecodeBufferAttr));
+      }
+      linkBuilder.create<KGEN::PackageLinkOp>(
+          func.getLoc(), linkName, bytecodeBufferAttr,
+          KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
+          KGEN::PackageArchiveArrayAttr::get(func.getContext(), archives));
     }
   }
 };
@@ -208,7 +285,6 @@ int main(int argc, char **argv) {
   KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();
   KGEN::registerLowerStructs();
-  KGEN::registerMaterializePackages();
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerPruneImpossibleVariants();
@@ -237,6 +313,14 @@ int main(int argc, char **argv) {
   mlir::registerPass([&] { return KGEN::createAutomaticInline(runtime); });
   mlir::registerPass(
       [&] { return KGEN::createResolveCompilerPromises(runtime); });
+
+  // Register passes that require other arguments.
+  mlir::registerPass([&] {
+    return KGEN::createMaterializePackages(
+        [](KGEN::PackageLinkOp packageLink, TargetInfoAttr, BuildInfoAttr) {
+          return packageLink.getPreElaborationModuleAttr();
+        });
+  });
 
   return failed(
       mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));

@@ -176,6 +176,11 @@ enum AttributeCode {
   ///    archive: DenseResourceElementsAttr
   ///  }
   kPackageArchiveAttr = 25,
+  ///
+  ///   PackageArchiveArrayAttr {
+  ///     value: Attribute[]
+  ///   }
+  kPackageArchiveArrayAttr = 26,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -388,6 +393,8 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readExportKindAttr(reader);
   case Encoding::kPackageArchiveAttr:
     return readPackageArchiveAttr(reader);
+  case Encoding::kPackageArchiveArrayAttr:
+    return readArrayOfAttrs<PackageArchiveArrayAttr>(reader);
   default:
     reader.emitError() << "unknown kgen attribute code: " << code;
     return Attribute();
@@ -426,6 +433,10 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
       })
       .Case([&](ParameterExprArrayAttr attr) {
         return writeArrayOfAttrs(attr, Encoding::kParameterExprArrayAttr,
+                                 writer);
+      })
+      .Case([&](PackageArchiveArrayAttr attr) {
+        return writeArrayOfAttrs(attr, Encoding::kPackageArchiveArrayAttr,
                                  writer);
       })
       .Case([&](DecoratorsAttr attr) {

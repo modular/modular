@@ -1167,20 +1167,22 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
   let summary = "link to a precompiled package's artifacts";
   let description = [{
     A `kgen.package.link` defines a link to the compiled artifacts of a package.
-    It contains a reference to the precompiled archive, providing an anchor for
+    It contains a reference to all precompiled archives, providing an anchor for
     functions and other operations defined within the package during the
     lowering pipeline. It may also contain the pre-elaboration body which can be
-    used to compile the package if the compiled target is not compatible with
-    the current target of compilation.
+    used to compile the package if none of the precompiled targets are
+    compatible with the current target of compilation.
 
     Example:
 
     ```mlir
     kgen.package.link @foo
       pre_elaboration(dense_resource<...> : tensor<...xi8>)
-      archive(<target = #M.target<...>,
-               elaboratedModule = dense_resource<...> : tensor<...xi8>,
-               archive = dense_resource<...> : tensor<...xi8>>)
+      archives([
+        <target = #M.target<...>,
+         elaboratedModule = dense_resource<...> : tensor<...xi8>,
+         archive = dense_resource<...> : tensor<...xi8>>
+      ])
     ```
   }];
 
@@ -1188,15 +1190,14 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
     SymbolNameAttr:$sym_name,
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
 
-    // FIXME(#17326): This should be a map of precompiled targets, not one.
     KGEN_EnvAttr:$compiledEnv,
-    KGEN_PackageArchiveAttr:$archive
+    KGEN_PackageArchiveArrayAttr:$archives
   );
 
   let assemblyFormat = [{
     $sym_name
     (`pre_elaboration` `(` $preElaborationModule^ `)`)?
-     `archive` `(` $archive `)`
+     `archives` `(` $archives `)`
     attr-dict-with-keyword
   }];
 }
