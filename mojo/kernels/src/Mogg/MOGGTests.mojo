@@ -6,7 +6,7 @@
 
 from algorithm import vectorize
 from memory.buffer import NDBuffer
-from MOGGDecorators import *
+from utils._annotations import *
 from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple
