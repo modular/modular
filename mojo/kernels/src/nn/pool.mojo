@@ -9,13 +9,14 @@ from math.limit import neginf
 from sys.info import simdwidthof
 
 from algorithm import elementwise
-from Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from runtime.llcl import OutputChainPtr
-from ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
+
+from .image import Image2DLayout, ImageData, ImageShape
+from .shape_utils import get_sliding_window_out_dim
 
 
 # Pooling method.
@@ -198,7 +199,6 @@ struct Pool2d[
               with assumed tuple def (stride_h, stride_w).
             dilation: Dilations on height and width dimensions
               with assumed tuple def (dilation_h, dilation_w).
-            num_tasks: Number of tasks to run in parallel.
 
         Returns:
             An instance of the pooling operator with the input and output buffers
@@ -232,6 +232,7 @@ struct Pool2d[
         Args:
             idx: Flat index specifying which value of the output tensor to
               produce.
+            vec_size: The size of the vector.
         """
 
         let n_idx = idx[0]

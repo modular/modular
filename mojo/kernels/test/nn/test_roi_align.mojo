@@ -7,7 +7,7 @@
 
 from memory.buffer import NDBuffer
 
-from ROIAlign import roi_align_nhwc
+from nn.roialign import roi_align_nhwc
 
 
 # CHECK-LABEL: test_roi_align_avg

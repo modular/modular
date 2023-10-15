@@ -7,7 +7,7 @@
 
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
-from ConvTranspose import conv_transpose
+from nn.conv_transpose import conv_transpose
 
 
 # CHECK-LABEL: test_convtranspose_pads

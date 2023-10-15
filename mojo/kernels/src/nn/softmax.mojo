@@ -4,12 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, exp, identity, log, min, max, mul, reciprocal, sub
-from math.limit import neginf, min_or_neginf
+from math import div_ceil, exp, identity, log, max, min, mul, reciprocal, sub
+from math.limit import min_or_neginf, neginf
 
 from algorithm import async_parallelize, vectorize_unroll
-from algorithm.reduction import _reduce_generator
-from algorithm.reduction import _get_nd_indices_from_flat_index
+from algorithm.reduction import (
+    _get_nd_indices_from_flat_index,
+    _reduce_generator,
+)
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OutputChainPtr
 from runtime.tracing import TraceLevel
@@ -299,7 +301,6 @@ fn _softmax_3_pass_base[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        input: The input buffer used to compute the softmax.
         out_chain: The output-chain pointer.
     """
     # STEP 1 - Calculate max
@@ -401,7 +402,6 @@ fn softmax_3_pass[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        input: The input buffer used to compute the softmax.
         out_chain: The output-chain pointer.
     """
     _softmax_3_pass_base[
@@ -458,7 +458,6 @@ fn logsoftmax[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        input: The input buffer used to compute the softmax.
         out_chain: The output-chain pointer.
     """
     _softmax_3_pass_base[

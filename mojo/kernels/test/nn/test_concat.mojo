@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Concat import _concat_parallel, concat
+from nn.concat import _concat_parallel, concat
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from memory.unsafe import DTypePointer
 from runtime.llcl import OwningOutputChainPtr, Runtime

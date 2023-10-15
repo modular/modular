@@ -7,7 +7,7 @@
 
 from math import iota
 
-from Activations import (
+from nn.activation import (
     elu,
     gelu,
     gelu_approximate,

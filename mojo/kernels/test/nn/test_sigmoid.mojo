@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Activations import sigmoid, sigmoid_grad
+from nn.activation import sigmoid, sigmoid_grad
 
 
 # CHECK-LABEL: test_sigmoid_float32

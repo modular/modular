@@ -7,7 +7,7 @@
 
 from memory.buffer import NDBuffer
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
-from Tile import tile
+from nn.tile import tile
 
 
 # CHECK-LABEL: test_tile_eg1

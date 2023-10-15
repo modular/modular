@@ -11,7 +11,7 @@ from algorithm import elementwise
 from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OwningOutputChainPtr, Runtime
-from Slice import slice_as_copy, slice_as_view
+from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList

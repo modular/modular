@@ -4,11 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import clamp, div_ceil, max, min, sqrt, align_down
+from math import align_down, clamp, div_ceil, max, min, sqrt
 from sys.build import is_debug_build
 from sys.info import (
-    has_avx512f,
     has_avx2,
+    has_avx512f,
     has_neon,
     is_neoverse_n1,
     os_is_macos,
@@ -16,14 +16,14 @@ from sys.info import (
     sizeof,
 )
 
-from Image import Image2DLayout, ImageData
-from MatmulUtils import partition_work
+from linalg.matmul_utils import partition_work
 from memory.buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 from utils.optional_param import OptionalParamInt, OptionalParamInts
 
+from .image import Image2DLayout, ImageData
 
 # conv uses a different kernel than matmul
 fn get_conv_a_row_size() -> Int:
@@ -438,7 +438,6 @@ fn get_micro_kernel_shape[
 
     @parameter
     if optimize_static_shapes:
-
         alias WO_val = WO.get()
         alias F_val = F.get()
         alias pad_h_val = Index(

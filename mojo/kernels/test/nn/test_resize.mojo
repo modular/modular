@@ -8,7 +8,7 @@
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 from testing import assert_almost_equal
-from Resize import (
+from nn.resize import (
     resize_nearest_neighbor,
     resize_linear,
     CoordinateTransformationMode,

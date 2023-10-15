@@ -10,14 +10,14 @@ from random import rand
 from sys import external_call
 from sys.info import simdwidthof
 
-from Conv import (
+from nn.conv import (
     ConvDirectNHWC,
     ConvIm2ColNHWC,
     Naive2dConvolution,
     pack_filter,
     ConvInfoStatic,
 )
-from ConvUtils import (
+from nn.conv_utils import (
     ConvAlgorithm,
     ConvShape,
     get_conv_a_row_size,
@@ -29,7 +29,7 @@ from ConvUtils import (
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
-from Image import Image2DLayout, ImageData, ImageShape
+from nn.image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from runtime.llcl import OwningOutputChainPtr, Runtime

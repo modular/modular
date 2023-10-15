@@ -12,7 +12,7 @@
 
 from sys.info import simdwidthof
 
-from GatherScatter import gather
+from nn.gather_scatter import gather
 from memory.buffer import NDBuffer
 from runtime.llcl import OwningOutputChainPtr, Runtime
 

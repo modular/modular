@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import randn
+
 from memory.buffer import NDBuffer
 
 

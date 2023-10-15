@@ -5,17 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-# ===----------------------------------------------------------------------=== #
-#
-# This file is Modular Inc proprietary.
-#
-# ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
-
-from ConvUtils import get_conv_num_partitions, ConvShape
-from MatmulUtils import partition_work
+from nn.conv_utils import get_conv_num_partitions, ConvShape
+from linalg.matmul_utils import partition_work
 from sys.info import simdwidthof
 from utils.index import Index, StaticIntTuple
+
 
 # CHECK-LABEL: test_conv_partition
 fn test_partition():

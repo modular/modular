@@ -7,7 +7,7 @@
 
 from tensor import Tensor, TensorShape
 from utils.index import Index
-from NonMaxSuppression import (
+from nn.nms import (
     non_max_suppression,
     non_max_suppression_shape_func,
 )

@@ -8,13 +8,13 @@
 from math import abs, div_ceil, min, isclose
 from random import rand
 from sys.info import simdwidthof, has_avx512f, has_avx2
-from Conv import (
+from nn.conv import (
     ConvDirectNHWC,
     direct_null_elementwise_epilogue,
     ConvInfoStatic,
     pack_filter,
 )
-from ConvUtils import (
+from nn.conv_utils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,

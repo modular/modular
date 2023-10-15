@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import max, min
-from tensor import Tensor, TensorShape
-from algorithm.sort import _quicksort
-from utils.vector import DynamicVector
-from utils.index import Index
-from math import iota, abs
+from math import abs, iota, max, min
 from math.limit import min_or_neginf
+
+from algorithm.sort import _quicksort
 from memory.buffer import NDBuffer
+from tensor import Tensor, TensorShape
+
+from utils.index import Index
+from utils.vector import DynamicVector
 
 
 @value

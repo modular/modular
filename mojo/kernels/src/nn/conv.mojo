@@ -4,14 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, fma, max, min, align_down, align_down_residual
+from math import align_down, align_down_residual, div_ceil, fma, max, min
 from sys.info import (
     alignof,
-    simd_byte_width,
-    simdwidthof,
     has_avx2,
     has_avx512f,
     has_neon,
+    simd_byte_width,
+    simdwidthof,
 )
 from sys.intrinsics import PrefetchOptions, external_call
 
@@ -24,20 +24,7 @@ from algorithm import (
     vectorize,
     vectorize_unroll,
 )
-from ConvUtils import (
-    ConvShape,
-    ConvInfoStatic,
-    ConvInfo,
-    get_conv2d_shape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
-    get_conv_tile_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
-    get_micro_kernel_shape,
-)
-from Image import Image2DLayout, ImageData, ImageShape
-from Matmul import (
+from linalg.matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
     PackMatrixCols,
@@ -45,7 +32,7 @@ from Matmul import (
     _null_elementwise_epilogue,
     calculate_tile_n_k,
 )
-from MatmulUtils import (
+from linalg.matmul_utils import (
     PartitionHeuristic,
     get_matmul_prefetch_b_distance_k,
     get_min_task_size,
@@ -63,11 +50,25 @@ from memory.buffer import (
     partial_simd_store,
 )
 from memory.unsafe import DTypePointer
+from .shape_utils import get_sliding_window_out_dim
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-from ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList, VariadicList
+
+from .conv_utils import (
+    ConvInfo,
+    ConvInfoStatic,
+    ConvShape,
+    get_conv2d_shape,
+    get_conv_num_partitions,
+    get_conv_num_tasks,
+    get_conv_tile_shape,
+    get_direct_conv_micro_kernel_height,
+    get_direct_conv_micro_kernel_width,
+    get_micro_kernel_shape,
+)
+from .image import Image2DLayout, ImageData, ImageShape
 
 alias MAX_NUM_CHANNELS_TILE = 384
 

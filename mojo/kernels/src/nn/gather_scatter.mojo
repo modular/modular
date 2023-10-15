@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, min, max
+from math import div_ceil, max, min
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
 
@@ -16,16 +16,15 @@ from algorithm import (
     vectorize_unroll,
 )
 from algorithm.functional import _elementwise_impl
+from memory import memset_zero, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
+from MOGG import reshape
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from runtime.tracing import TraceLevel
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt
-
-from memory import stack_allocation, memset_zero
-from MOGG import reshape
 
 
 ## gather_reduce_2D_axis_1

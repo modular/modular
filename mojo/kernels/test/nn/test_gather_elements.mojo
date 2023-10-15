@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full -I %S/.. %s | FileCheck %s
 
-from GatherScatter import gather_elements
+from nn.gather_scatter import gather_elements
 from tensor import Tensor, TensorShape
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import max

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Cumsum import cumsum
+from nn.cumsum import cumsum
 from memory.buffer import NDBuffer
 from math import iota
 

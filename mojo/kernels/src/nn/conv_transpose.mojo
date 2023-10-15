@@ -6,7 +6,7 @@
 
 from memory.buffer import NDBuffer
 from memory.memory import memset_zero
-from runtime.llcl import Runtime, OutputChainPtr
+from runtime.llcl import OutputChainPtr, Runtime
 
 # Indicate position in pads tensor for height, width.
 alias PADS_H_START = 0
