@@ -7,6 +7,7 @@
 
 from pathlib import Path
 
+from memory import memset_zero
 from memory.unsafe import DTypePointer, Pointer, bitcast
 
 from ._utils import (
@@ -343,6 +344,9 @@ struct ModuleHandle:
 
             let info_buffer = stack_allocation[buffer_size, Int8]()
             let error_buffer = stack_allocation[buffer_size, Int8]()
+
+            memset_zero(info_buffer, buffer_size)
+            memset_zero(error_buffer, buffer_size)
 
             let opts = stack_allocation[max_num_options, JitOptions]()
             let option_vals = stack_allocation[
