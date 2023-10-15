@@ -8,7 +8,7 @@
 from math import div_ceil, erf, exp, tanh
 from sys.info import simdwidthof
 
-from Activations import gelu
+from nn.activation import gelu
 from algorithm import elementwise
 from memory.buffer import Buffer
 from runtime.llcl import OwningOutputChainPtr, Runtime
