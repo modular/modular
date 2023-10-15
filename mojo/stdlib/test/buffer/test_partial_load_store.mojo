@@ -18,7 +18,6 @@ from memory.buffer import (
 from utils.index import StaticIntTuple
 from utils.list import DimList
 
-
 # CHECK-LABEL: test_partial_load_store
 fn test_partial_load_store():
     print("== test_partial_load_store")

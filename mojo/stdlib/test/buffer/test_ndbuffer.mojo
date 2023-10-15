@@ -14,7 +14,6 @@ from memory.buffer import NDBuffer, _compute_ndbuffer_offset
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
-
 # CHECK-LABEL: test_ndbuffer
 fn test_ndbuffer():
     print("== test_ndbuffer")

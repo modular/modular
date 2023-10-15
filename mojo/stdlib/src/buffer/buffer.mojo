@@ -13,11 +13,11 @@ from memory.buffer import Buffer
 """
 
 from math import fma, iota, max, min
+from pathlib import Path
 from sys.info import alignof, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import unroll, vectorize
-from pathlib import Path
 from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple

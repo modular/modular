@@ -10,7 +10,6 @@ from memory.buffer import NDBuffer, _compute_ndbuffer_offset
 
 from utils.list import Dim, DimList
 
-
 # CHECK-LABEL: test_ndbuffer_dynamic_shape
 fn test_ndbuffer_dynamic_shape():
     print("== test_ndbuffer_dynamic_shape")
