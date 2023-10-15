@@ -420,6 +420,9 @@ endfunction()
 function(add_mojo_doc target visibility doc_filename output_file output_directory)
   cmake_parse_arguments(KGEN "STDLIB" "" "LINK_LIBS;LINK_DIRS" ${ARGN})
 
+  # Sanitize the target so it does not contain slashes.
+  string(REPLACE "/" "_" target "${target}")
+
   _setup_libs()
 
   set(GEN_DOC_JSON_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.mojodoc.json)
