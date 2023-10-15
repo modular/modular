@@ -7,7 +7,6 @@
 
 from math import exp2
 
-
 # CHECK-LABEL: test_exp2
 fn test_exp2():
     print("== test_exp2")

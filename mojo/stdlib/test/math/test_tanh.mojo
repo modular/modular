@@ -7,7 +7,6 @@
 
 from math import iota, tanh
 
-
 # CHECK-LABEL: test_tanh_float32
 fn test_tanh_float32():
     print("== test_tanh_float32")

@@ -8,7 +8,6 @@
 from math import frexp, log, log2
 from math.limit import isinf
 
-
 # CHECK-LABEL: test_frexp
 fn test_frexp():
     print("== test_frexp")

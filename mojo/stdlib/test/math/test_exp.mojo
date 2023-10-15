@@ -7,7 +7,6 @@
 
 from math import exp
 
-
 # CHECK-LABEL: test_exp_float32
 fn test_exp_float32():
     print("== test_exp_float32")
