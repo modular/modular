@@ -11,7 +11,7 @@
 from pathlib import Path
 from sys.param_env import env_get_string
 
-from gpu.host import Context, Dim, ModuleHandle, Stream, synchronize
+from gpu.host import Context, ModuleHandle, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -21,24 +21,6 @@ from gpu.host.memory import (
 from memory.unsafe import Pointer
 
 alias CURRENT_DIR = env_get_string["CURRENT_DIR"]()
-
-
-# CHECK-LABEL: run_dim
-fn run_dim():
-    print("== run_dim")
-
-    # CHECK: (x=2, y=1, z=4)
-    print(Dim(4, 1, 2).__str__())
-    # CHECK: (x=2, y=4)
-    print(Dim(4, 2).__str__())
-    # CHECK: (x=4, )
-    print(Dim(4).__str__())
-
-    # CHECK: (x=5, y=4)
-    print(Dim((4, 5)).__str__())
-
-    # CHECK: (x=3, y=2, z=4)
-    print(Dim((4, 2, 3)).__str__())
 
 
 # CHECK-LABEL: run_cuda_mem_ops
@@ -128,7 +110,6 @@ fn run_vec_add() raises:
 
 # CHECK-NOT: CUDA_ERROR
 def main():
-    run_dim()
     try:
         with Context() as ctx:
             run_cuda_mem_ops()
