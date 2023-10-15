@@ -6,9 +6,9 @@
 
 from algorithm import vectorize
 from memory.buffer import NDBuffer
-from utils._annotations import *
 from runtime.llcl import OutputChainPtr
 
+from utils._annotations import *
 from utils.index import StaticIntTuple
 from utils.list import DimList
 

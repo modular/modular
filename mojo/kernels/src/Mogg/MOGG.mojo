@@ -20,19 +20,19 @@ from math import (
     greater_equal,
     isnan,
     log,
+    log1p,
     logical_and,
     logical_not,
     logical_xor,
-    log1p,
     max,
     min,
     mod,
     mul,
     not_equal,
     pow,
-    rsqrt,
     round,
     roundeven,
+    rsqrt,
     select,
     sin,
     sqrt,
@@ -44,8 +44,6 @@ from math.limit import isinf, max_or_inf, min_or_neginf
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 
-from nn.activation import gelu, relu, sigmoid
-from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
 from algorithm import (
@@ -56,45 +54,20 @@ from algorithm import (
     vectorize_unroll,
 )
 from algorithm.functional import _elementwise_impl
-from algorithm.reduction import _reduce_generator
-from algorithm.reduction import _get_nd_indices_from_flat_index
-from nn.arange import arange, arange_shape
+from algorithm.reduction import (
+    _get_nd_indices_from_flat_index,
+    _reduce_generator,
+)
+from linalg.batched_matmul import batched_matmul as _batched_matmul
 from linalg.batched_matmul import (
-    batched_matmul as _batched_matmul,
     get_trace_information as get_trace_information_batched_matmul,
 )
-from nn.concat import concat as _concat
-from nn.concat import concat_shape
-from nn.conv import (
-    ConvInfo,
-    ConvInfoStatic,
-    conv_2d_nhwc_direct,
-    conv_shape,
-    pack_conv_filter as _pack_conv_filter,
-    pack_conv_filter_shape as _pack_conv_filter_shape,
-)
-from nn.conv_transpose import (
-    conv_transpose as conv_transpose_impl,
-    conv_transpose_shape,
-)
-from nn.cumsum import cumsum as _cumsum
-from nn.gather_scatter import gather as _gather
-from nn.gather_scatter import gather_shape
-from nn.gather_scatter import gather_nd as _gather_nd
-from nn.gather_scatter import gather_reduce
-from nn.gather_scatter import (
-    scatter_elements,
-    scatter_elements_shape as scatter_shape,
-    scatter_nd as _scatter_nd,
-    scatter_nd_generator,
-)
+from linalg.matmul import matmul as _matmul
 from linalg.matmul import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
-from linalg.matmul import matmul as _matmul
-
 from linalg.matmul_utils import (
     GemmShape,
     get_trace_information,
@@ -105,23 +78,31 @@ from linalg.matrix_solve import matrix_solve
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer
-from utils._annotations import *
-from nn.nms import (
-    non_max_suppression,
-    non_max_suppression_shape_func,
-)
+from nn.activation import gelu, relu, sigmoid
+from nn.arange import arange, arange_shape
+from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
+from nn.concat import concat as _concat
+from nn.concat import concat_shape
+from nn.conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
+from nn.conv import pack_conv_filter as _pack_conv_filter
+from nn.conv import pack_conv_filter_shape as _pack_conv_filter_shape
+from nn.conv_transpose import conv_transpose as conv_transpose_impl
+from nn.conv_transpose import conv_transpose_shape
+from nn.cumsum import cumsum as _cumsum
+from nn.gather_scatter import gather as _gather
+from nn.gather_scatter import gather_nd as _gather_nd
+from nn.gather_scatter import gather_reduce, gather_shape, scatter_elements
+from nn.gather_scatter import scatter_elements_shape as scatter_shape
+from nn.gather_scatter import scatter_nd as _scatter_nd
+from nn.gather_scatter import scatter_nd_generator
+from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.norm import layer_norm
 from nn.pad import pad as _pad
 from nn.pad import pad_shape
 from nn.pool import avg_pool, max_pool, pool_shape
-from runtime.llcl import OutputChainPtr
-from runtime.tracing import Trace, TraceLevel
-from nn.resize import (
-    resize_linear as resize_linear_kernel,
-    resize_nearest_neighbor,
-    RoundMode,
-    CoordinateTransformationMode,
-)
+from nn.resize import CoordinateTransformationMode, RoundMode
+from nn.resize import resize_linear as resize_linear_kernel
+from nn.resize import resize_nearest_neighbor
 from nn.roialign import roi_align_nhwc
 from nn.slice import slice_as_view, slice_shape
 from nn.softmax import logsoftmax as _logsoftmax
@@ -130,7 +111,10 @@ from nn.split import split as _split
 from nn.tile import tile, tile_shape
 from nn.topk import top_k as _top_k
 from nn.topk import top_k_shape
+from runtime.llcl import OutputChainPtr
+from runtime.tracing import Trace, TraceLevel
 
+from utils._annotations import *
 from utils.index import Index, StaticIntTuple, product
 from utils.list import Dim, DimList, VariadicList
 from utils.optional_param import OptionalParamInt
