@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from nn.conv_utils import get_conv_num_partitions, ConvShape
-from linalg.matmul_utils import partition_work
 from sys.info import simdwidthof
-from utils.index import Index, StaticIntTuple
 
+from linalg.matmul_utils import partition_work
+from nn.conv_utils import ConvShape, get_conv_num_partitions
+
+from utils.index import Index, StaticIntTuple
 
 # CHECK-LABEL: test_conv_partition
 fn test_partition():

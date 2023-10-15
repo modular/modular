@@ -7,9 +7,9 @@
 
 from sys.info import simdwidthof
 
-from nn.conv import ConvNHWCInnerLoopFilterPacked, ConvShape
 from linalg.matmul import GemmShape
 from memory.buffer import NDBuffer
+from nn.conv import ConvNHWCInnerLoopFilterPacked, ConvShape
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

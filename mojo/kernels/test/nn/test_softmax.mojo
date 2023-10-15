@@ -8,11 +8,10 @@
 from sys.info import simdwidthof
 
 from memory.buffer import Buffer, NDBuffer
-from runtime.llcl import OwningOutputChainPtr, Runtime
 from nn.softmax import logsoftmax, softmax_2_pass
+from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.list import Dim, DimList
-
 
 # CHECK-LABEL: test_logsoftmax
 fn test_logsoftmax():

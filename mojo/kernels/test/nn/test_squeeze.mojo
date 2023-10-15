@@ -13,7 +13,6 @@ from MOGG import calculate_squeeze_shape, to_buffer
 from utils.index import StaticIntTuple
 from utils.list import DimList
 
-
 # CHECK-LABEL: test_calculate_squeeze_shape
 fn test_calculate_squeeze_shape():
     print("== test_calculate_squeeze_shape")

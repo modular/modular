@@ -6,9 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from nn.tile import tile
-
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
 # CHECK-LABEL: test_tile_eg1
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,

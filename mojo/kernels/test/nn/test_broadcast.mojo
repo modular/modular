@@ -5,12 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from nn.broadcast import broadcast
 from memory.buffer import NDBuffer
+from nn.broadcast import broadcast
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
-
 
 # CHECK-LABEL: test_broadcast_empty_shape
 fn test_broadcast_empty_shape():

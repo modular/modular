@@ -50,7 +50,6 @@ from memory.buffer import (
     partial_simd_store,
 )
 from memory.unsafe import DTypePointer
-from .shape_utils import get_sliding_window_out_dim
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 
 from utils.index import Index, StaticIntTuple
@@ -69,6 +68,7 @@ from .conv_utils import (
     get_micro_kernel_shape,
 )
 from .image import Image2DLayout, ImageData, ImageShape
+from .shape_utils import get_sliding_window_out_dim
 
 alias MAX_NUM_CHANNELS_TILE = 384
 

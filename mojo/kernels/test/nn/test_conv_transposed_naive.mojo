@@ -6,9 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import NDBuffer
-from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from nn.conv_transpose import conv_transpose
-
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
 # CHECK-LABEL: test_convtranspose_pads
 # CHECK: 1.0 ,1.0 ,3.0 ,

@@ -6,6 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from random import seed
+
 from memory.buffer import NDBuffer
 from nn.random import random_normal
 

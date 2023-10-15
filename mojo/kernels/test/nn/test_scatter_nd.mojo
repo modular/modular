@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full -I %S/.. %s | FileCheck %s
 
+from math import max, min
+
 from nn.gather_scatter import scatter_nd_generator
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
-from math import max, min
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 

@@ -12,13 +12,12 @@
 
 from sys.info import simdwidthof
 
-from nn.gather_scatter import gather
 from memory.buffer import NDBuffer
+from nn.gather_scatter import gather
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
-
 
 # CHECK-LABEL: test_gather
 fn test_gather():

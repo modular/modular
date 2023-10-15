@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from nn.concat import _concat_parallel, concat
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from memory.unsafe import DTypePointer
+from nn.concat import _concat_parallel, concat
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple

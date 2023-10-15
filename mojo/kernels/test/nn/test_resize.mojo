@@ -5,16 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full -I %S/.. %s | FileCheck %s
 
+from nn.resize import (
+    CoordinateTransformationMode,
+    RoundMode,
+    resize_linear,
+    resize_nearest_neighbor,
+)
+from runtime.llcl import OwningOutputChainPtr, Runtime
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 from testing import assert_almost_equal
-from nn.resize import (
-    resize_nearest_neighbor,
-    resize_linear,
-    CoordinateTransformationMode,
-    RoundMode,
-)
-from runtime.llcl import Runtime, OwningOutputChainPtr
 
 
 fn test_case_nearest[

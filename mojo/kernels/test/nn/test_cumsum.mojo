@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from nn.cumsum import cumsum
-from memory.buffer import NDBuffer
 from math import iota
 
+from memory.buffer import NDBuffer
+from nn.cumsum import cumsum
 
 # CHECK-LABEL: test_cumsum_1d
 # CHECK: 1.0 ,3.0 ,6.0 ,10.0 ,15.0 ,

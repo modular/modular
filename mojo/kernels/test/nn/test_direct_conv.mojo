@@ -5,17 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, div_ceil, min, isclose
+from math import abs, div_ceil, isclose, min
 from random import rand, seed
 from sys import external_call
 from sys.info import simdwidthof
 
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
 from nn.conv import (
     ConvDirectNHWC,
-    Naive2dConvolution,
-    pack_filter,
     ConvInfoStatic,
+    Naive2dConvolution,
     pack_conv_filter_shape,
+    pack_filter,
 )
 from nn.conv_utils import (
     ConvShape,
@@ -26,8 +28,6 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 from nn.image import Image2DLayout, ImageData, ImageShape
-from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import Index, StaticIntTuple

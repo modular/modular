@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from nn.image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import Buffer, NDBuffer
+from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import (
     Pool2d,
     avg_pool_init_fn,

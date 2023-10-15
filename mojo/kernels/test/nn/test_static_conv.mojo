@@ -5,13 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, div_ceil, min, isclose
+from math import abs, div_ceil, isclose, min
 from random import rand
-from sys.info import simdwidthof, has_avx512f, has_avx2
+from sys.info import has_avx2, has_avx512f, simdwidthof
+
+from memory.buffer import NDBuffer
 from nn.conv import (
     ConvDirectNHWC,
-    direct_null_elementwise_epilogue,
     ConvInfoStatic,
+    direct_null_elementwise_epilogue,
     pack_filter,
 )
 from nn.conv_utils import (
@@ -20,9 +22,8 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )
-from math import div_ceil
-from memory.buffer import NDBuffer
 from runtime.llcl import OwningOutputChainPtr, Runtime
+
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
