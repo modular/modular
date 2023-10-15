@@ -18,4 +18,9 @@
 #define MODULAR_ARM_NEON 1
 #endif
 
+#if defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64) ||           \
+    defined(_M_ARM)
+#define MODULAR_ARM 1
+#endif
+
 #endif // SUPPORT_PLATFORM_UTILS_H
