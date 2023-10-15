@@ -26,14 +26,8 @@ struct Dim:
     fn __init__(dims: Tuple[Int, Int, Int]) -> Self:
         return Self(dims.get[0, Int](), dims.get[1, Int](), dims.get[2, Int]())
 
-    fn __init__(z: Int, y: Int, x: Int) -> Self:
+    fn __init__(x: Int, y: Int = 1, z: Int = 1) -> Self:
         return Self {_value: Index(x, y, z)}
-
-    fn __init__(y: Int, x: Int) -> Self:
-        return Self(1, y, x)
-
-    fn __init__(x: Int) -> Self:
-        return Self(1, 1, x)
 
     fn __getitem__(self, idx: Int) -> Int:
         return self._value[idx]
