@@ -7,8 +7,8 @@
 
 from sys.info import simdwidthof
 
-from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
-from MatmulUtils import (
+from linalg.matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
+from linalg.matmul_utils import (
     get_matmul_a_row_size,
     get_matmul_pack_inner_size,
     get_matmul_prefetch_b_distance_k,

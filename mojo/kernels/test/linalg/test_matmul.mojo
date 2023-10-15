@@ -12,8 +12,8 @@
 
 from utils.index import Index, StaticIntTuple
 from memory.buffer import NDBuffer
-from Matrix import Matrix
-from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
+from linalg.matrix import Matrix
+from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
 from runtime.llcl import Runtime, OwningOutputChainPtr
 
 alias alignment = 64
@@ -48,7 +48,6 @@ fn test_matmul[
     c_type: DType,
     saturated: Bool,
 ]():
-
     let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
     let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))

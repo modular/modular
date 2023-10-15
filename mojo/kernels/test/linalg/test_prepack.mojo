@@ -7,7 +7,7 @@
 
 from math import div_ceil
 
-from Matmul import pack_b
+from linalg.matmul import pack_b
 from memory.buffer import Buffer, NDBuffer
 
 from utils.index import StaticIntTuple

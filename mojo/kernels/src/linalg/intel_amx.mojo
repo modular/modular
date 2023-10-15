@@ -10,14 +10,16 @@
 # ===----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
+from sys.info import is_x86, has_intel_amx
 
-from Matmul import Matrix
 from memory.unsafe import DTypePointer
 
 from utils.list import DimList
 from utils.static_tuple import StaticTuple
 
-alias void = DType.invalid.value
+from .matrix import Matrix
+
+alias void = DType.invalid
 
 
 struct __tile:
@@ -38,6 +40,10 @@ fn _tile_dpbssd[dst: Int, a: Int, b: Int]():
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_dpbssd
     """
+
+    @parameter
+    if not has_intel_amx():
+        return
     llvm_intrinsic["llvm.x86.tdpbssd", NoneType](Int8(dst), Int8(a), Int8(b))
 
 
@@ -52,6 +58,9 @@ fn _tile_release():
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_release
     """
 
+    @parameter
+    if not has_intel_amx():
+        return
     llvm_intrinsic["llvm.x86.tilerelease", NoneType]()
 
 
@@ -62,6 +71,9 @@ fn _tile_zero[tdest: Int]():
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_zero
     """
 
+    @parameter
+    if not has_intel_amx():
+        return
     llvm_intrinsic["llvm.x86.tilezero", NoneType](Int8(tdest))
 
 
@@ -71,6 +83,10 @@ fn _tile_loadd[dst: Int](base: DTypePointer[void], stride: Int):
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadd
     """
+
+    @parameter
+    if not has_intel_amx():
+        return
     llvm_intrinsic["llvm.x86.tileloadd64", NoneType](
         Int8(dst), base, stride.value
     )
@@ -82,6 +98,10 @@ fn _tile_stored[src: Int](base: DTypePointer[void], stride: Int):
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_stored
     """
+
+    @parameter
+    if not has_intel_amx():
+        return
     llvm_intrinsic["llvm.x86.tilestored64", NoneType](Int8(src), base, stride)
 
 
@@ -90,6 +110,10 @@ fn _tile_loadconfig(mem_addr: DTypePointer[void]):
     Load tile configuration from a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type pallette, the number of bytes per row, and the number of rows. If the specified pallette_id is zero, that signifies the init state for both the tile config and the tile data, and the tiles are zeroed. Any invalid configurations will result in #GP fault.
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadconfig
     """
+
+    @parameter
+    if not has_intel_amx():
+        return
     llvm_intrinsic["llvm.x86.ldtilecfg", NoneType](mem_addr)
 
 
@@ -98,10 +122,17 @@ fn _tile_storeconfig(mem_addr: DTypePointer[void]):
     Stores the current tile configuration to a 64-byte memory location specified by mem_addr. The tile configuration format is specified below, and includes the tile type pallette, the number of bytes per row, and the number of rows. If tiles are not configured, all zeroes will be stored to memory.
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_storeconfig
     """
+
+    @parameter
+    if not has_intel_amx():
+        return
     llvm_intrinsic["llvm.x86.sttilecfg", NoneType](mem_addr)
 
 
 fn init_intel_amx() -> Bool:
+    @parameter
+    if not has_intel_amx():
+        return False
     return __mlir_op.`pop.external_call`[
         func = "KGEN_CompilerRT_Init_Intel_AMX".value,
         _type = __mlir_type[`!pop.scalar<bool>`],
@@ -128,6 +159,9 @@ fn _tile_dpbssd_emulated(
     aptr: DTypePointer[DType.int8],
     bptr: DTypePointer[DType.int8],
 ):
+    @parameter
+    if not has_intel_amx():
+        return
     let a = Matrix[DimList(16, 64), DType.int8, False](aptr)
     let b = Matrix[DimList(16, 64), DType.int8, False](bptr)
     let c = Matrix[DimList(16, 16), DType.int32, False](cptr)

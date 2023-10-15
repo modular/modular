@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, max, min, sqrt, align_up
+from math import align_up, div_ceil, max, min, sqrt
 from sys.build import is_debug_build
 from sys.info import (
     has_avx2,

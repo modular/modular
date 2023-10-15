@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Matmul import GemmShape, MatmulOperandLayout
-from MatmulGenerator import (
+from linalg.matmul import GemmShape, MatmulOperandLayout
+from linalg.matmul_generator import (
     GemmIdentifiers,
     MatmulAction,
     MatmulActionKind,

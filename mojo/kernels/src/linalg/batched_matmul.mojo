@@ -10,8 +10,15 @@ from sys.info import simdwidthof
 from algorithm import sync_parallelize, vectorize_unroll
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from algorithm.reduction import _reduce_generator
-from Matmul import _submatmul_sequential_sync
-from MatmulUtils import (
+from memory import memset_zero
+from memory.buffer import NDBuffer
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
+
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
+
+from .matmul import _submatmul_sequential_sync
+from .matmul_utils import (
     PartitionHeuristic,
     get_matmul_num_tasks,
     get_min_task_size,
@@ -19,12 +26,6 @@ from MatmulUtils import (
     is_critical_stride,
     partition_work,
 )
-from memory import memset_zero
-from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-
-from utils.index import Index, StaticIntTuple
-from utils.list import DimList
 
 
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch

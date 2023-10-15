@@ -8,7 +8,14 @@ from math import div_ceil, max, min
 from sys.info import simd_byte_width, simdwidthof
 
 from algorithm import tile, tile_and_unswitch, vectorize_unroll
-from Matmul import (
+from memory import stack_allocation
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
+
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList, VariadicList
+
+from .matmul import (
     GemmShape,
     MatmulConfig,
     MatmulDataType,
@@ -18,13 +25,7 @@ from Matmul import (
     PackMatrixRows,
     calculate_tile_n_k,
 )
-from MatmulUtils import get_pack_data_size
-from memory import stack_allocation
-from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer
-
-from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList, VariadicList
+from .matmul_utils import get_pack_data_size
 
 
 @register_passable("trivial")

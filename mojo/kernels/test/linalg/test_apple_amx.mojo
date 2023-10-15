@@ -13,7 +13,7 @@
 
 from sys.info import is_apple_m1, sizeof
 
-from AppleAMX import amx_detail
+from linalg.apple_amx import amx_detail
 from memory.buffer import NDBuffer
 
 from utils.index import StaticIntTuple

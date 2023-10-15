@@ -14,7 +14,7 @@
 from sys.info import has_intel_amx, os_is_linux
 
 from algorithm import unroll
-from IntelAMX import (
+from linalg.intel_amx import (
     _tile_dpbssd,
     _tile_dpbssd_emulated,
     _tile_loadconfig,
@@ -26,17 +26,66 @@ from IntelAMX import (
     init_intel_amx,
     tileconfig,
 )
-from Matmul import Matrix, naive_matmul
+from linalg.matmul import Matrix, GemmShape
 from memory import memcmp, memset_zero
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer, Pointer
-from Transpose import transpose, transpose_inplace
+from linalg.transpose import transpose, transpose_inplace
 
 from utils.list import Dim, DimList
 
 alias void = DType.invalid.value
 alias int32_pop = __mlir_type.`!pop.scalar<si32>`
 alias int8_pop = __mlir_type.`!pop.scalar<si8>`
+
+
+@always_inline
+fn naive_matmul[
+    shape_a: DimList,
+    shape_b: DimList,
+    shape_c: DimList,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    epilogue_elemwise_func: fn[type: DType] (Int, Int, SIMD[type, 1]) -> SIMD[
+        type, 1
+    ],
+    epilogue_rowise_func: fn[type: DType] (Int, Buffer[Dim(), type]) -> None,
+](
+    c: NDBuffer[2, shape_c, c_type],
+    a: NDBuffer[2, shape_a, a_type],
+    b: NDBuffer[2, shape_b, b_type],
+):
+    """Computes matrix multiplication with a naive algorithm.
+
+    Args:
+        c: Buffer with allocated output space.
+        a: Buffer containing matrix operand A.
+        b: Buffer containing matrix operand B.
+    """
+    let gemm_shape = GemmShape.get[
+        transpose_a,
+        transpose_b,
+    ](c, a, b)
+    let matrix_a = Matrix[shape_a, a_type, transpose_a](a)
+    let matrix_b = Matrix[shape_b, b_type, transpose_b](b)
+    let matrix_c = Matrix[shape_c, c_type, False](c)
+
+    for m in range(gemm_shape.M):
+        var n: Int = 0
+        while n < gemm_shape.N:
+            var c_val: SIMD[c_type, 1] = 0
+            for k in range(gemm_shape.K):
+                let a_val = matrix_a[m, k].cast[c_type]()
+                let b_val = matrix_b[k, n].cast[c_type]()
+                c_val += a_val * b_val
+            c_val = epilogue_elemwise_func[c_type](m, n, c_val)
+            matrix_c[m, n] = c_val
+            n += 1
+        let row = Buffer[Dim(), c_type](c.data.offset(m * gemm_shape.N), n)
+        epilogue_rowise_func[c_type](m, row)
 
 
 fn print_buffer[n: Int, type: DType](a_ptr: DTypePointer[void]):
@@ -75,7 +124,6 @@ fn init_matrices(
     c_ptr: DTypePointer[DType.int32],
     c2_ptr: DTypePointer[DType.int32],
 ):
-
     let a = Buffer[Dim(), DType.int8](a_ptr.address, 1024)
     let b = Buffer[Dim(), DType.int8](b_ptr.address, 1024)
     let c = Buffer[Dim(), DType.int32](c_ptr.address, 256)
