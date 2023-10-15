@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from MOGGDecorators import *
+from utils._annotations import *
 from utils.index import StaticIntTuple
 
 
