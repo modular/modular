@@ -3,10 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the gpu package."""
+"""Implements the gpu host package."""
 
-from .globals import *
-from .id import *
+from .context import *
+from .dim import *
+from .function import *
+from .info import *
 from .memory import *
-from .shuffle import *
+from .module import *
+from .result import *
+from .stream import *
 from .sync import *

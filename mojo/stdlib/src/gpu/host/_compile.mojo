@@ -1,0 +1,80 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Implements CUDA compilation operations."""
+
+from ._utils import _add_string_terminator
+
+
+# ===----------------------------------------------------------------------===#
+# Compilation
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _get_nvtx_target() -> __mlir_type.`!kgen.target`:
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_75", `,
+        `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128> : !kgen.target`,
+    ]
+
+
+@value
+@register_passable("trivial")
+struct _CompiledClosureImpl:
+    var asm: __mlir_type.`!kgen.string`
+    var num_captures: __mlir_type.index
+    var populate: fn (
+        __mlir_type.`!kgen.pointer<pointer<none>>`
+    ) capturing -> None
+
+
+@value
+@register_passable("trivial")
+struct _CompiledClosure:
+    var asm: StringLiteral
+    var num_captures: Int
+    var populate: fn (Pointer[Pointer[NoneType]]) capturing -> None
+
+
+@always_inline
+fn __compile_nvptx_asm_impl[
+    func_type: AnyType, func: func_type->closure: _CompiledClosure
+]():
+    alias impl = __mlir_attr[
+        `#kgen.param.expr<compile_assembly,`,
+        _get_nvtx_target(),
+        `, `,
+        func,
+        `> : `,
+        _CompiledClosureImpl,
+    ]
+    param_return[
+        _CompiledClosure(
+            impl.asm,
+            impl.num_captures,
+            rebind[fn (Pointer[Pointer[NoneType]]) capturing -> None](
+                impl.populate
+            ),
+        )
+    ]
+
+
+@always_inline
+fn _compile_nvptx_asm[
+    func_type: AnyType, func: func_type
+]() -> _CompiledClosure:
+    alias closure: _CompiledClosure
+    __compile_nvptx_asm_impl[func_type, func -> closure]()
+    return closure
+
+
+@always_inline
+fn _cleanup_asm(asm: String) -> String:
+    return _add_string_terminator(
+        asm.replace(".version 6.3\n", ".version 8.1\n")
+    )
