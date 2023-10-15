@@ -11,14 +11,14 @@
 # REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory import memcmp
-from memory.buffer import Buffer
 from linalg.vnni import (
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
-    dot_i8_to_i32_x86,
     dot_i8_to_i32_saturated_x86,
+    dot_i8_to_i32_x86,
 )
+from memory import memcmp
+from memory.buffer import Buffer
 
 
 fn gemm(

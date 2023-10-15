@@ -10,7 +10,7 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from sys.info import sizeof, is_apple_m1
+from sys.info import is_apple_m1, sizeof
 
 from memory import memcpy, memset_zero
 from memory.buffer import NDBuffer

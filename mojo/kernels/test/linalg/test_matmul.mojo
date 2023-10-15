@@ -10,11 +10,12 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from utils.index import Index, StaticIntTuple
-from memory.buffer import NDBuffer
-from linalg.matrix import Matrix
 from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
-from runtime.llcl import Runtime, OwningOutputChainPtr
+from linalg.matrix import Matrix
+from memory.buffer import NDBuffer
+from runtime.llcl import OwningOutputChainPtr, Runtime
+
+from utils.index import Index, StaticIntTuple
 
 alias alignment = 64
 

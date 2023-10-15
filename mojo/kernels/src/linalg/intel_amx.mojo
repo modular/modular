@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
-from sys.info import is_x86, has_intel_amx
+from sys.info import has_intel_amx, is_x86
 
 from memory.unsafe import DTypePointer
 

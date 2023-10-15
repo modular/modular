@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from linalg.matmul_utils import get_partitioned_matmul_mojo, SubMatmulConfig
-
+from linalg.matmul_utils import SubMatmulConfig, get_partitioned_matmul_mojo
 
 # CHECK-LABEL: test_partition
 fn test_partition():

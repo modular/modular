@@ -26,11 +26,11 @@ from linalg.intel_amx import (
     init_intel_amx,
     tileconfig,
 )
-from linalg.matmul import Matrix, GemmShape
+from linalg.matmul import GemmShape, Matrix
+from linalg.transpose import transpose, transpose_inplace
 from memory import memcmp, memset_zero
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer, Pointer
-from linalg.transpose import transpose, transpose_inplace
 
 from utils.list import Dim, DimList
 

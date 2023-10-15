@@ -9,10 +9,10 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from debug import trap
 from sys import llvm_intrinsic
-from sys.info import has_avx512_vnni, has_avx2, has_avx512f, has_sse4, is_x86
+from sys.info import has_avx2, has_avx512_vnni, has_avx512f, has_sse4, is_x86
 
+from debug import trap
 from memory.unsafe import bitcast
 
 # ===----------------------------------------------------------------------===#

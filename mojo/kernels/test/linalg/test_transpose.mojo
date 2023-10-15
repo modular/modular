@@ -5,16 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory.buffer import Buffer, NDBuffer
 from linalg.transpose import (
     _simplify_transpose_perms,
     transpose,
     transpose_inplace,
 )
+from memory.buffer import Buffer, NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
-
 
 # CHECK-LABEL: test_transpose_4x4
 fn test_transpose_4x4():
