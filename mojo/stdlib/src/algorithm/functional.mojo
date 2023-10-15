@@ -1248,19 +1248,22 @@ fn _elementwise_impl[
         out_chain: The our chain to attach results to.
     """
 
-    constrained[rank == 1, "Specialization for 1D where N = 1"]()
     constrained[target == "cuda", "Target must be cuda"]()
 
     alias block_dim = 32
     let length = shape.flattened_length()
 
-    @export("_elementwise_gpu_kernel")
+    @parameter
     fn _elementwise_gpu_kernel(shape: StaticIntTuple[rank]):
         @parameter
         if not triple_is_nvidia_cuda():
             return
 
         let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+        if tid >= length:
+            return
+
+        func[1, rank](_get_start_indices_of_nth_subvolume[rank, 0](tid, shape))
 
     try:
         alias func_type = fn (StaticIntTuple[rank]) capturing -> None
@@ -1268,48 +1271,18 @@ fn _elementwise_impl[
             func_type, rebind[func_type](_elementwise_gpu_kernel)
         ]()
         gpu_func(
-            (length // block_dim,),
+            (div_ceil(length, block_dim),),
             (block_dim,),
             shape,
-            stream=out_chain.get_cuda_stream(),
+            stream=out_chain.get_cuda_stream() if out_chain else Stream[
+                is_borrowed=True
+            ](),
         )
     except e:
-        out_chain.mark_error(e)
-
-
-@always_inline
-@adaptive
-fn _elementwise_impl[
-    rank: Int,
-    simd_width: Int,
-    use_blocking_impl: Bool,
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-    /,
-    target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
-    combination of width and indices so as to cover shape on the GPU.
-
-    All free vars in func must be "async safe", see async_parallelize.
-
-    Parameters:
-        rank: The rank of the buffer.
-        simd_width: The SIMD vector width to use.
-        use_blocking_impl: If true this is a blocking op.
-        func: The body function.
-        target: The target to run on.
-
-    Args:
-        shape: The shape of the buffer.
-        out_chain: The our chain to attach results to.
-    """
-
-    constrained[rank > 1, "Specialization for ND where N > 1"]()
-    constrained[target == "cuda", "Target must be cuda"]()
-
-    # We do not want to write this yet, so just ignore the operation
-
-    pass
+        if out_chain:
+            out_chain.mark_error(e)
+        else:
+            print(e)
 
 
 # ===----------------------------------------------------------------------===#
