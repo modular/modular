@@ -37,10 +37,11 @@ print(gray_scale_image.shape().__str__())
 ```
 """
 
+from memory import memset_zero
+from memory.buffer import NDBuffer
+
 from .tensor_shape import TensorShape
 from .tensor_spec import TensorSpec
-from memory.buffer import NDBuffer
-from memory import memset_zero
 
 # ===----------------------------------------------------------------------===#
 # Tensor

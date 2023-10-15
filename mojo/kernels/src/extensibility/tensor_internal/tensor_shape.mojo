@@ -14,9 +14,9 @@ from tensor import TensorShape
 """
 
 
+from math import min
 from sys.info import is_little_endian, sizeof
 
-from math import min
 from memory import memcpy
 from memory.unsafe import DTypePointer, Pointer
 

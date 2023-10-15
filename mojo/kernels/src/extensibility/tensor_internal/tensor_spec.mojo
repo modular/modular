@@ -13,8 +13,9 @@ from tensor import TensorSpec
 ```
 """
 
-from .tensor_shape import TensorShape, _as_rep16
 from utils.vector import DynamicVector
+
+from .tensor_shape import TensorShape, _as_rep16
 
 # ===----------------------------------------------------------------------===#
 # TensorSpec
