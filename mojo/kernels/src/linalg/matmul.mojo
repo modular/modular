@@ -17,7 +17,7 @@ from algorithm import (
     vectorize_unroll,
 )
 from gpu import BlockDim, BlockIdx, ThreadIdx
-from gpu.nvidia_host import Function, Stream
+from gpu.host import Function, Stream
 from memory import memset_zero, stack_allocation
 from memory.buffer import (
     Buffer,
