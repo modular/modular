@@ -51,10 +51,10 @@ fn parameterized_on_cuda() -> Int:
 # ===----------------------------------------------------------------------===#
 
 
-# CHECK: printf
 # CHECK: hello_mojo
 @export
 fn hello_mojo():
+    # CHECK: vprintf
     print("Hello")
 
 

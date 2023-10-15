@@ -8,17 +8,18 @@
 # RUN: %mojo %s | FileCheck %s
 
 from gpu import *
-from gpu.nvidia_host import (
+from gpu.host import (
     Function,
     Context,
     Dim,
     Stream,
-    _StreamImpl,
+    synchronize,
+)
+from gpu.host.memory import (
     _malloc,
     _free,
     _copy_host_to_device,
     _copy_device_to_host,
-    synchronize,
 )
 from sys.param_env import env_get_string
 from pathlib import Path
@@ -158,7 +159,7 @@ fn run_matmul() raises:
           Int, Int, Int) -> None,
         # fmt: on
         matmul
-    ](debug=True)
+    ]()
 
     func(
         (div_ceil(m, TILE_SZ_A), div_ceil(n, TILE_SZ_B)),

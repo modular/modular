@@ -8,17 +8,18 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from gpu import BlockIdx, BlockDim, ThreadIdx, AddressSpace
-from gpu.nvidia_host import (
+from gpu.host import (
     Function,
     Context,
     Dim,
     Stream,
-    _StreamImpl,
+    synchronize,
+)
+from gpu.host.memory import (
     _malloc,
     _free,
     _copy_host_to_device,
     _copy_device_to_host,
-    synchronize,
 )
 from sys.param_env import env_get_string
 from pathlib import Path

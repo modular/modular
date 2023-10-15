@@ -8,17 +8,18 @@
 # RUN: %mojo %s | FileCheck %s
 
 from gpu import *
-from gpu.nvidia_host import (
+from gpu.host import (
     Function,
     Context,
     Dim,
     Stream,
-    _StreamImpl,
+    synchronize,
+)
+from gpu.host.memory import (
     _malloc,
     _free,
     _copy_host_to_device,
     _copy_device_to_host,
-    synchronize,
 )
 from sys.param_env import env_get_string
 from pathlib import Path
@@ -47,7 +48,7 @@ fn run_vec_add(capture: Float32) raises:
 
     alias length = 1024
 
-    let stream = Stream()
+    let stream = Stream[is_borrowed=False]()
 
     let in0_host = Pointer[Float32].alloc(length)
     let in1_host = Pointer[Float32].alloc(length)

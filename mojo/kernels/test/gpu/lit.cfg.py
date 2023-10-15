@@ -5,8 +5,34 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-
 from lit.llvm import llvm_config
+import platform
+from pathlib import Path
+from modular.utils.subprocess import get_command_output
+
+
+def has_gpu(modular_src_root, config=None):
+    if config and "nvptx" not in config.available_backend_targets:
+        return False
+
+    if platform.system() != "Linux":
+        return False
+
+    try:
+        get_command_output(
+            [
+                "mojo",
+                Path(modular_src_root)
+                / "Kernels"
+                / "tools"
+                / "cuda-query"
+                / "cuda-query.mojo",
+            ]
+        )
+        return True
+    except:
+        return False
+
 
 # Configuration file for the 'lit' test runner.
 
@@ -23,6 +49,10 @@ config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(
     config.modular_obj_root, "Kernels", "test", "gpu"
 )
+
+
+if has_gpu(config.modular_src_root, config):
+    config.available_features.add("has_cuda_device")
 
 tool_dirs = [config.modular_tools_dir]
 tools = ["mojo", "kgen"]

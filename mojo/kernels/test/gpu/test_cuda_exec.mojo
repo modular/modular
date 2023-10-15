@@ -8,18 +8,16 @@
 # RUN: %mojo -debug-level full -D CURRENT_DIR=%S %s | FileCheck %s
 
 
-from gpu.nvidia_host import (
-    ModuleHandle,
-    Context,
-    Dim,
+from gpu.host import ModuleHandle, Context, Dim, synchronize, Stream
+from gpu.host.memory import (
     _malloc,
     _free,
     _copy_host_to_device,
     _copy_device_to_host,
-    synchronize,
 )
 from sys.param_env import env_get_string
 from pathlib import Path
+from memory.unsafe import Pointer
 
 alias CURRENT_DIR = env_get_string["CURRENT_DIR"]()
 
@@ -28,18 +26,18 @@ alias CURRENT_DIR = env_get_string["CURRENT_DIR"]()
 fn run_dim():
     print("== run_dim")
 
-    # CHECK: (4, 1, 2)
+    # CHECK: (x=2, y=1, z=4)
     print(Dim(4, 1, 2).__str__())
-    # CHECK: (4, 2)
+    # CHECK: (x=2, y=4)
     print(Dim(4, 2).__str__())
-    # CHECK: (4,)
-    print(Dim(4, 1).__str__())
+    # CHECK: (x=4, )
+    print(Dim(4).__str__())
 
-    # CHECK: (4, 5)
+    # CHECK: (x=5, y=4)
     print(Dim((4, 5)).__str__())
 
-    # CHECK: (1, 2, 3)
-    print(Dim((1, 2, 3)).__str__())
+    # CHECK: (x=3, y=2, z=4)
+    print(Dim((4, 2, 3)).__str__())
 
 
 # CHECK-LABEL: run_cuda_mem_ops
@@ -83,14 +81,20 @@ fn run_vec_add() raises:
     _copy_host_to_device(in0_device, in0_host, length)
     _copy_host_to_device(in1_device, in1_host, length)
 
+    @parameter
+    @always_inline
+    fn populate(ptr: Pointer[Pointer[NoneType]]):
+        return
+
     let block_dim = 32
-    func(
+    func._call_impl[0, populate](
         (length // block_dim),
         (block_dim),
         out_device,
         in0_device,
         in1_device,
         length,
+        stream=Stream[is_borrowed=False](),
     )
     synchronize()
 

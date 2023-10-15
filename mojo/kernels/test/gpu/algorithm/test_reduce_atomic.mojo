@@ -8,11 +8,8 @@
 # RUN: %mojo %s | FileCheck %s
 
 from gpu import *
-from gpu.nvidia_host import (
-    Function,
-    Context,
-    Dim,
-    Stream,
+from gpu.host import Function, Context, Dim, Stream
+from gpu.host.memory import (
     _malloc,
     _free,
     _copy_host_to_device,
