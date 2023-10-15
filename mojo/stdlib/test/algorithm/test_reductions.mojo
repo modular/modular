@@ -10,24 +10,21 @@ from algorithm import (
     any_true,
     argmax,
     argmin,
+    cumsum,
     mean,
     none_true,
     product,
     sum,
     variance,
-    argmax,
-    argmin,
-    cumsum,
 )
 
 # TODO: Fold this import into the one above.
-from algorithm.reduction import max, min, _index_of_first_one
+from algorithm.reduction import _index_of_first_one, max, min
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
-
 
 # CHECK-LABEL: test_reductions
 fn test_reductions():

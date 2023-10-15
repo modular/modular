@@ -8,15 +8,14 @@
 from math import div_ceil, erf, exp, tanh
 from sys.info import simdwidthof
 
-from nn.activation import gelu
 from algorithm import elementwise
 from memory.buffer import Buffer
+from nn.activation import gelu
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils.vector import UnsafeFixedVector
-
 
 # CHECK-LABEL: test_elementwise_1d
 fn test_elementwise_1d():

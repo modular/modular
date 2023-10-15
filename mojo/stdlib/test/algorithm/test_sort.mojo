@@ -4,10 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
-from algorithm.sort import sort, partition, _small_sort
+from algorithm.sort import _small_sort, partition, sort
 
 from utils.vector import DynamicVector
-
 
 # CHECK-LABEL: test_sort_small_3
 fn test_sort_small_3():

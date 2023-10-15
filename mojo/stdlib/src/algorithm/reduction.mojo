@@ -19,7 +19,7 @@ from math import min as _min
 from math import none_true as _none_true
 from math.bit import cttz
 from math.limit import max_or_inf, min_or_neginf
-from sys.info import simdwidthof, sizeof, is_little_endian
+from sys.info import is_little_endian, simdwidthof, sizeof
 
 from algorithm import async_parallelize, unroll, vectorize
 from algorithm.functional import _get_num_workers

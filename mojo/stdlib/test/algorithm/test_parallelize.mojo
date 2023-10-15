@@ -11,7 +11,6 @@ from algorithm import async_parallelize, map, parallelize, sync_parallelize
 from memory.buffer import Buffer
 from runtime.llcl import OwningOutputChainPtr, Runtime, num_cores
 
-
 # CHECK-LABEL: test_async_parallelize
 fn test_async_parallelize():
     print("== test_async_parallelize")

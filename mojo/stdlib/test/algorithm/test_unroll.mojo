@@ -9,7 +9,6 @@ from algorithm import unroll
 
 from utils.index import StaticIntTuple
 
-
 # CHECK-LABEL: test_unroll
 fn test_unroll():
     print("test_unroll")

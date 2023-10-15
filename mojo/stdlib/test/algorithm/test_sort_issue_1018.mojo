@@ -6,6 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from random import rand
+
 from algorithm.sort import sort
 
 

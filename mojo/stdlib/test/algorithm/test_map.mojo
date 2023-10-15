@@ -8,7 +8,6 @@
 from algorithm import map
 from memory.buffer import Buffer
 
-
 # CHECK-LABEL: test_map
 fn test_map():
     print("== test_map")
