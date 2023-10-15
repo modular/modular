@@ -5,11 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA module operations."""
 
-from ._utils import _check_error, _get_dylib, _get_dylib_function
-from memory.unsafe import Pointer, DTypePointer
-from ._utils import _add_string_terminator
-from memory.unsafe import bitcast
 from pathlib import Path
+
+from memory.unsafe import DTypePointer, Pointer, bitcast
+
+from ._utils import (
+    _add_string_terminator,
+    _check_error,
+    _get_dylib,
+    _get_dylib_function,
+)
 
 # ===----------------------------------------------------------------------===#
 # JitOptions

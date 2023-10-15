@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Implements some utilties."""
 
-from .result import Result
 from sys.ffi import DLHandle
+
 from ._constants import CUDA_DRIVER_PATH
+from .result import Result
 
 # ===----------------------------------------------------------------------===#
 # Utilities

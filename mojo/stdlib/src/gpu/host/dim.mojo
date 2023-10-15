@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the dim type."""
 
-from utils.index import StaticIntTuple, Index
+from utils.index import Index, StaticIntTuple
 
 # ===----------------------------------------------------------------------===#
 # Dim

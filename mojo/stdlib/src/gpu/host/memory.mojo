@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA memory operations."""
 
-from ._utils import _check_error, _get_dylib, _get_dylib_function
-from memory.unsafe import Pointer, DTypePointer
 from sys.info import sizeof
+
+from memory.unsafe import DTypePointer, Pointer
+
+from ._utils import _check_error, _get_dylib, _get_dylib_function
 
 # ===----------------------------------------------------------------------===#
 # Memory
