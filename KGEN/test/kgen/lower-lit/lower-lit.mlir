@@ -448,7 +448,7 @@ lit.func @caller(%ref: !kgen.declref<@module::@Adder<size = 10>>)  {
 // -----
 
 // CHECK-NOT: lit.
-lit.package @package {
+lit.package @package [] {
   lit.file_module @module {
     // CHECK: kgen.link "lib.a" as @"package::module::lib"
     kgen.link "lib.a" as @lib

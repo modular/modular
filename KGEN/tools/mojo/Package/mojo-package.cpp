@@ -314,7 +314,7 @@ PackageBuilder::createPostElaborationModuleAttr(
 }
 
 void PackageBuilder::attachArchive(PackageArchiveAttr archive) {
-  thePackage.setArchiveAttr(archive);
+  thePackage.setArchives(archive);
 }
 
 //===----------------------------------------------------------------------===//

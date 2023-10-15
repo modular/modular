@@ -481,18 +481,20 @@ orderAndLowerGlobalVariables(ModuleOp module,
 /// precompiled. If this package is a source package, do nothing.
 static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
                                              SymbolTable &symtab) {
-  // If the package wasn't compiled for anything, it's a source package, so
-  // there are no link directives to insert.
-  PackageArchiveAttr archive = package.getArchiveAttr();
-  if (!archive)
+  // If the package wasn't compiled for anything, we currently treat it as a
+  // "source package." This means that there are no link directives to insert.
+  // FIXME: Once "source packages" no longer exist, insert a link directive
+  // regardless, and compile for the build target on-demand.
+  PackageArchiveArrayAttr archives = package.getArchivesAttr();
+  if (archives.getValue().empty())
     return success();
 
-  // We have an archive, insert the link directive.
+  // We have one or more archives, so insert the link directive.
   OpBuilder b(package.getContext());
   auto linkOp =
       b.create<PackageLinkOp>(package.getLoc(), package.getSymNameAttr(),
                               package.getPreElaborationModuleAttr(),
-                              package.getCompiledEnvAttr(), archive);
+                              package.getCompiledEnvAttr(), archives);
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do
