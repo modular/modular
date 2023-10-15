@@ -14,8 +14,8 @@ from benchmark import Benchmark
 
 from math import max, min
 from time import now
-from memory.unsafe import Pointer, DTypePointer
 
+from memory.unsafe import DTypePointer, Pointer
 
 # ===----------------------------------------------------------------------===#
 # Benchmark

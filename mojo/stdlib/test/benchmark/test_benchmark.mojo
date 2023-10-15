@@ -7,9 +7,8 @@
 
 from time import now, sleep
 
-from memory.unsafe import Pointer, DTypePointer
 from benchmark import Benchmark, clobber_memory, keep
-
+from memory.unsafe import DTypePointer, Pointer
 
 # CHECK-LABEL: test_benchmark
 fn test_benchmark():
