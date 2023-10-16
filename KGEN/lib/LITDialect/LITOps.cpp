@@ -470,10 +470,13 @@ static ParseResult parseLITFunctionSignature(
                                   /*optionalResultList=*/true)))
     return failure();
 
+  SmallVector<PassingKind> argPassingKinds(argNames.size(),
+                                           PassingKind::PosOnly);
+
   signature = IndexRefRemapper::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
-      FnMetadataAttr::get(p.getContext(), argNames, paramNames, defaults,
-                          defaultParams),
+      FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
+                          defaults, defaultParams),
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
@@ -586,11 +589,14 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     SmallVector<StringAttr> newArgNames(argNames);
     for (size_t i = 0; i < numPosArgs; ++i)
       newArgNames[i] = StringAttr::get(ctx);
+    SmallVector<PassingKind> newArgPassingKinds(newArgNames.size(),
+                                                PassingKind::PosOnly);
 
     signature = LITSignatureType::get(
         signature.getValues(), signature.getInputParamTypes(),
         signature.getResultParamTypes(), signature.getInputConventions(),
-        signature.getFnEffects(), metadata.cloneWith(newArgNames));
+        signature.getFnEffects(),
+        metadata.cloneWith(newArgNames, newArgPassingKinds));
   } else {
     posArgNames = StringArrayAttr::get(ctx, {});
   }

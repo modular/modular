@@ -12,7 +12,6 @@
 #define KGEN_LITDIALECT_LITTYPES_H
 
 #include "KGEN/KGENDialect/KGENTypes.h"
-#include "KGEN/LITDialect/LITDialect.h"
 
 //===----------------------------------------------------------------------===//
 // SignatureType
@@ -20,6 +19,7 @@
 
 namespace M::KGEN::LIT {
 class FnMetadataAttr;
+enum class PassingKind : uint32_t;
 
 class LITSignatureType : public SignatureType {
 public:
@@ -34,6 +34,9 @@ public:
 
   /// Return the name for the specified value input argument.
   StringAttr getArgName(size_t inputNo);
+
+  /// Get the function argument passing kinds (e.g. keyword-only).
+  ArrayRef<PassingKind> getArgPassingKinds();
 
   /// Get the function default arguments.
   ArrayRef<TypedAttr> getDefaultArguments();

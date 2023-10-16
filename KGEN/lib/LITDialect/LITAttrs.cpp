@@ -36,23 +36,32 @@ void LITDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context,
-                                   ArrayRef<StringAttr> argNames) {
-  return get(context, argNames, /*paramNames=*/ArrayRef<StringAttr>(),
+                                   ArrayRef<StringAttr> argNames,
+                                   ArrayRef<PassingKind> argPassingKinds) {
+  return get(context, argNames, argPassingKinds,
+             /*paramNames=*/ArrayRef<StringAttr>(),
              /*defaultArguments=*/ArrayRef<TypedAttr>(),
              /*defaultParameters=*/ArrayRef<TypedAttr>());
 }
 
-FnMetadataAttr FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames) const {
+FnMetadataAttr
+FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames,
+                          ArrayRef<PassingKind> argPassingKinds) const {
   ArrayRef<TypedAttr> defaultArgs = getDefaultArguments();
   assert(argNames.size() >= defaultArgs.size());
-  return get(getContext(), argNames, getParamNames(), defaultArgs,
-             getDefaultParameters());
+  return get(getContext(), argNames, argPassingKinds, getParamNames(),
+             defaultArgs, getDefaultParameters());
 }
 
 LogicalResult FnMetadataAttr::verify(
     function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> argNames,
-    ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> defaultArguments,
+    ArrayRef<PassingKind> argPassingKinds, ArrayRef<StringAttr> paramNames,
+    ArrayRef<TypedAttr> defaultArguments,
     ArrayRef<TypedAttr> defaultParameters) {
+  if (argNames.size() != argPassingKinds.size()) {
+    return emitError()
+           << "number of argument names and passing kinds must match";
+  }
   for (StringAttr name : argNames)
     if (!name)
       return emitError() << "argument name cannot be null";
@@ -67,11 +76,14 @@ FnMetadataAttr::getWithBoundArgs(size_t numBound) const {
   size_t numArgs = getArgNames().size() - numBound;
 
   ArrayRef<StringAttr> newArgNames = getArgNames().drop_front(numBound);
+  ArrayRef<PassingKind> newArgPassingKind =
+      getArgPassingKinds().drop_front(numBound);
   ArrayRef<TypedAttr> newDefaultArgs = getDefaultArguments();
   if (numArgs < newDefaultArgs.size())
     newDefaultArgs = newDefaultArgs.take_back(numArgs);
-  return get(getContext(), newArgNames, getParamNames(), newDefaultArgs,
-             getDefaultParameters());
+
+  return get(getContext(), newArgNames, newArgPassingKind, getParamNames(),
+             newDefaultArgs, getDefaultParameters());
 }
 
 FnMetadataAttrInterface
@@ -89,8 +101,8 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
     }
   }
 
-  return get(getContext(), getArgNames(), newParamNames, getDefaultArguments(),
-             newDefaultParams);
+  return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
+             getDefaultArguments(), newDefaultParams);
 }
 
 FnMetadataAttrInterface
@@ -98,8 +110,8 @@ FnMetadataAttr::prependPosParams(size_t numNewParams) const {
   auto emptyStr = StringAttr::get(getContext());
   SmallVector<StringAttr> newParamNames(numNewParams, emptyStr);
   llvm::append_range(newParamNames, getParamNames());
-  return get(getContext(), getArgNames(), newParamNames, getDefaultArguments(),
-             getDefaultParameters());
+  return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
+             getDefaultArguments(), getDefaultParameters());
 }
 
 LogicalResult FnMetadataAttr::verifySignature(

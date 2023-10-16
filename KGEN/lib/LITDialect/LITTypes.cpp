@@ -7,6 +7,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -142,13 +143,16 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   if (parseSignatureValues(p, parseArg, functionType, effects,
                            /*optionalResultList=*/false))
     return failure();
+
+  SmallVector<PassingKind> argPassingKinds(argNames.size(),
+                                           PassingKind::PosOnly);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(loc); }, functionType,
       TypeArrayAttr::get(p.getContext(), inputParamTypes),
       TypeArrayAttr::get(p.getContext(), resultParamTypes), inputConventions,
       effects,
-      FnMetadataAttr::get(p.getContext(), argNames, paramNames, argDefaults,
-                          defaultParamValues));
+      FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
+                          argDefaults, defaultParamValues));
   return success(!!signature);
 }
 
@@ -228,6 +232,10 @@ StringAttr LITSignatureType::getArgName(size_t inputNo) {
   return getArgNames()[inputNo];
 }
 
+ArrayRef<PassingKind> LITSignatureType::getArgPassingKinds() {
+  return getMetadata().getArgPassingKinds();
+}
+
 ArrayRef<TypedAttr> LITSignatureType::getDefaultArguments() {
   return getMetadata().getDefaultArguments();
 }
@@ -241,11 +249,12 @@ ArrayRef<StringAttr> LITSignatureType::getParamNames() {
 }
 
 LITSignatureType LITSignatureType::dropParamValues() {
-  auto metadata = FnMetadataAttr::get(getContext(), getArgNames(), {},
-                                      getDefaultArguments(), {});
-  return get(getValues(), TypeArrayAttr::get(getContext(), {}),
-             getResultParamTypes(), getInputConventions(), getFnEffects(),
-             metadata);
+  auto metadata = FnMetadataAttr::get(
+      getContext(), getArgNames(), getArgPassingKinds(), /*paramNames=*/{},
+      getDefaultArguments(), /*defaultParameters=*/{});
+  return get(
+      getValues(), /*inputParamTypes=*/TypeArrayAttr::get(getContext(), {}),
+      getResultParamTypes(), getInputConventions(), getFnEffects(), metadata);
 }
 
 bool LITSignatureType::classof(SignatureType type) {
@@ -264,7 +273,9 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
 
   auto emptyStr = StringAttr::get(ctx);
   SmallVector<StringAttr> argNames(funcType.getNumInputs(), emptyStr);
-  auto metadata = FnMetadataAttr::get(ctx, argNames);
+  SmallVector<PassingKind> argPassingKinds(argNames.size(),
+                                           PassingKind::PosOnly);
+  auto metadata = FnMetadataAttr::get(ctx, argNames, argPassingKinds);
   return LITSignatureType::get(funcType, /*inputParamTypes=*/{},
                                /*resultParamTypes=*/{},
                                /*convs=*/{}, /*effects=*/{}, metadata);
