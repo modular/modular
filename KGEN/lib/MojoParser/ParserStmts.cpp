@@ -292,7 +292,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 
   // If this type is a function with no arguments and an ignorable type, we
   // emit a warning with a fix it hint suggesting that it get called.
-  if (auto sig = dyn_cast<SignatureType>(valueType.mlirType)) {
+  if (auto sig = dyn_cast<SignatureType>(valueType)) {
     // TODO: This is incorrect for default arguments and varargs.
     assert(sig.getNumResults() == 1);
 

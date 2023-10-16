@@ -1427,7 +1427,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   if (allowUnbound && type.getParamBindings().empty())
     return type;
 
-  auto structDecl = dyn_cast<StructDeclOp>(*decl);
+  auto structDecl = dyn_cast<StructDeclOp>(decl);
   if (!structDecl)
     return type;
 
@@ -1643,7 +1643,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   shared.notifyListenerOnRef(decls, spelling, expr);
 
   // Functions form an address, and may be overloaded.
-  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(*decls[0])) {
+  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(decls[0])) {
     // Form an overload set value with all the candidates.
     auto result = ORValue::create(spelling, decls, InputParamBindings(), expr,
                                   CallSyntax::kDirectCall);

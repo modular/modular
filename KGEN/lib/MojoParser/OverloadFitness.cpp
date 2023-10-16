@@ -488,8 +488,8 @@ static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
     return;
   }
   // Try to detect mismatched byref result type.
-  auto lhsSig = dyn_cast<SignatureType>(payloadType.mlirType);
-  auto rhsSig = dyn_cast<SignatureType>(argType.mlirType);
+  auto lhsSig = dyn_cast<SignatureType>(payloadType);
+  auto rhsSig = dyn_cast<SignatureType>(argType);
   if (lhsSig && rhsSig) {
     auto getByRefResult = [](SignatureType sig) -> std::pair<bool, Type> {
       return {sig.hasMemoryOnlyResult(),

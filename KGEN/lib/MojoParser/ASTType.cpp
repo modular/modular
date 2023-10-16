@@ -78,14 +78,9 @@ bool ASTType::isTypeCheckErrorType() const {
 /// Return the nonmaterializable decorator target for the type, or null if there
 /// is none.
 ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
-  ASTDecl *decl = getDecl(shared);
-  if (!decl)
-    return {};
-
-  if (auto structOp = dyn_cast<StructDeclOp>(*decl))
-    if (auto targetMlirType = structOp.getNonmaterializableTarget())
-      return ASTType(*targetMlirType);
-
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(getDecl(shared)))
+    if (TypeAttr targetMlirType = structOp.getNonmaterializableTargetAttr())
+      return ASTType(targetMlirType.getValue());
   return {};
 }
 
@@ -105,7 +100,7 @@ uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
   if (isa<FileModuleOp, PackageOp>(*decl))
     return StructDeclOp::RP_MemoryOnly;
 
-  auto structOp = dyn_cast<StructDeclOp>(*decl);
+  auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");
   return structOp.getRegisterPassable();
 }
@@ -137,7 +132,7 @@ bool ASTType::hasDestructor(llvm::SMLoc loc, SharedState &shared) const {
   if (failed(shared.declResolver->resolveFully(*decl, loc)))
     return false;
 
-  auto structOp = dyn_cast<StructDeclOp>(*decl);
+  auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");
   return structOp.getDestructorAttr() != TypedAttr();
 }

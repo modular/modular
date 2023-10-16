@@ -439,7 +439,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     ArrayRef<ASTDecl *> failureDecls = lookup.getIfFailure();
     if (!failureDecls.empty()) {
       // Reject unqualified struct field references.
-      if (auto fieldOp = dyn_cast<StructFieldOp>(*failureDecls[0])) {
+      if (auto fieldOp = dyn_cast<StructFieldOp>(failureDecls[0])) {
         emitter.emitError(getLoc(), "cannot access instance field '")
             << spelling << "' directly; did you mean 'self.'?" << getRange()
             << FixIt::insertBeforeToken(getLoc(), "self.");
@@ -448,7 +448,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       } else if (isa<StructDeclOp>(*failureDecls[0]->getParentDecl())) {
         const char *replacement = "self.";
         // References to static methods can always use capital Self.
-        if (auto firstCandidate = dyn_cast<FuncOp>(*failureDecls[0]))
+        if (auto firstCandidate = dyn_cast<FuncOp>(failureDecls[0]))
           if (firstCandidate.getIsStatic())
             replacement = "Self.";
 
@@ -911,7 +911,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   emitter.shared.notifyListenerOnRef(memberDecls, spelling, this);
 
   // Handle method references, which might be overloaded.
-  if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
+  if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
     // Get a symbol for the underlying function.
     InputParamBindings inputParamBindings;
     for (ParamBindAttr binding : baseRVType.getParamBindings())
@@ -975,7 +975,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // to construct this specific type, not the shared type on the struct.
   if (auto parameter = memberDecl.getIfPValue()) {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
-    if (auto baseDecl = dyn_cast<DeclRefType>(baseRVType.mlirType)) {
+    if (auto baseDecl = dyn_cast<DeclRefType>(baseRVType)) {
       for (ParamBindAttr bind : baseDecl.getParamValues()) {
         // If this binding is for this parameter propagate the bound
         // parameter.
@@ -1511,7 +1511,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If this is a signature-type PValue callable, this is binding parameter
   // values to a call.
   if (PValue callable = baseValue.getIfPValue()) {
-    if (auto sig = dyn_cast<LITSignatureType>(callable.getType().mlirType)) {
+    if (auto sig = dyn_cast<LITSignatureType>(callable.getType())) {
       PValue result =
           bindToIndirectCall(callable, sig, operands, emitter, getIndexRange());
       if (!result)
@@ -1574,7 +1574,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Check if we are subscripting a variadic. Emit `pop.variadic.get`.
   // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
   // a standard library type that implements `__getitem__` and `__setitem__`.
-  if (auto variadic = dyn_cast<VariadicType>(baseType.mlirType)) {
+  if (auto variadic = dyn_cast<VariadicType>(baseType)) {
     // Attempt to convert the index.
     if (posOperands.size() != 2 || !kwOperands.empty()) {
       emitter.emitError(getLoc()) << "variadic can only be subscripted with a "
@@ -1671,7 +1671,7 @@ AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
     }
 
     // Reject non-alias results.
-    auto aliasDecl = dyn_cast<AliasForwardDeclOp>(*resultDecls[0]);
+    auto aliasDecl = dyn_cast<AliasForwardDeclOp>(resultDecls[0]);
     if (!aliasDecl || resultDecls.size() > 1) {
       auto diag = emitter.emitError(drn->getLoc(), "'")
                   << resultName << "' is not a forward declared alias"
@@ -1804,7 +1804,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   if (failed(emitter.getDeclResolver().resolveFully(*decl, base->getLoc())))
     return {};
 
-  auto structOp = dyn_cast<StructDeclOp>(*decl);
+  auto structOp = dyn_cast<StructDeclOp>(decl);
   if (!structOp) {
     emitter.emitError(getLoc(),
                       "can only initialize struct types with this syntax")
@@ -2952,7 +2952,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   SRValue exprVal = emitter.emitExprSRValue(subExpr, dest.getContext());
   if (!exprVal)
     return {};
-  auto pointerType = dyn_cast<PointerType>(exprVal.getType().mlirType);
+  auto pointerType = dyn_cast<PointerType>(exprVal.getType());
   if (!pointerType) {
     emitter.emitError(getLoc(),
                       "operand must have '!kgen.pointer<T>' type, not ")
