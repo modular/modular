@@ -431,6 +431,15 @@ fn badTakesAtLeastOneInt():
   takesAtLeastOneInt()
 
 
+# COM: Issue #23007
+# expected-note @+1 {{function declared here}}
+fn too_few_pos_only(a: String, b: String, /, msg: StringLiteral = "meow"): pass
+
+fn test_too_few_pos_only(a: String, msg: StringLiteral = "woof"):
+  # expected-error @+1 {{callee expects at least 2 positional-only arguments, but 1 was specified}}
+  too_few_pos_only(a, msg=msg)
+
+
 struct ConvertibleFromInt:
   fn __init__(inout self, value: Int):
     pass
