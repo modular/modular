@@ -494,7 +494,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       declOp.getLoc(), &declOp.getFields().front());
   LIT::FuncOp callFunc = createFunction(
       "__call__", callInputTypes, callConventions, callNames, closureResultType,
-      SpecialFunctionKind::kNormal, location, builder);
+      SpecialFunctionKind::kNormal, location, builder,
+      closureImplSignature.getFnEffects().setEscaping(false));
   declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
   // Populate the body of the call op.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
