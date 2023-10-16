@@ -91,7 +91,7 @@ ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
 /// Handles parsing '|' and '*' in lit IR and counts the number of arguments of
 /// different passing kinds.
-/// TODO: fix this when AsmParser can handle '/'.
+/// TODO(#23387): fix this when AsmParser can handle '/'.
 class StarSlashParser {
 public:
   StarSlashParser(AsmParser &parser, llvm::SMLoc loc)
