@@ -45,7 +45,7 @@ def custom_ops_package_path(tmp_path: Path, modular_path: Path) -> Path:
     package_src = modular_path / "All" / "test" / "API" / "test_user_op"
     package_path = tmp_path / "user_op.mojopkg"
     subprocess.check_output(
-        ["mojo", "package", package_src, "-o", package_path]
+        ["mojo", "package", "--parsing-stdlib", package_src, "-o", package_path]
     )
     return package_path
 
