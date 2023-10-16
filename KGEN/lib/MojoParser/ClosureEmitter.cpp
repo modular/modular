@@ -99,8 +99,7 @@ StructDeclOp
 ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
                                                SignatureType signatureType) {
   MLIRContext *ctx = fileModuleOp.getContext();
-  auto emptyList = POP::ArrayType::get(0, IntegerType::get(ctx, 1));
-  auto opaquePointer = PointerType::get(emptyList);
+  auto opaquePointer = PointerType::get(KGEN::NoneType::get(getContext()));
   SmallVector<Type> fieldTypes;
   fieldTypes.push_back(opaquePointer);
   StructDeclOp declOp =
@@ -125,8 +124,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   auto ptrToSelfType = PointerType::get(selfType);
 
   // Create Copy Member.
-  auto opaquePtrType =
-      PointerType::get(POP::ArrayType::get(0, b.getIntegerType(1)));
+  auto opaquePtrType = PointerType::get(KGEN::NoneType::get(getContext()));
   auto fnType = b.getType<FunctionType>(
       ArrayRef<Type>({PointerType::get(opaquePtrType), opaquePtrType}),
       noneType);
@@ -576,9 +574,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   if (auto init = findInitInStruct(closureWrapper, ptrToClosureImplType))
     return init;
 
-  auto emptyList =
-      POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1));
-  auto opaquePointer = PointerType::get(emptyList);
+  auto opaquePointer = PointerType::get(KGEN::NoneType::get(getContext()));
 
   SmallVector<Type> argTypes;
   SmallVector<ValueInputConvention> argConventions;
