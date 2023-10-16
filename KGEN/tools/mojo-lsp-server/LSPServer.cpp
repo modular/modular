@@ -152,31 +152,43 @@ void LSPServer::onShutdown(const NoParams &, Callback<std::nullptr_t> reply) {
 // Document Change
 
 void LSPServer::onDocumentDidOpen(const DidOpenTextDocumentParams &params) {
+  Logger::debug("--> textDocument/didOpen: uri='{0}', version={1}",
+                params.textDocument.uri, params.textDocument.version);
   server.addDocument(params.textDocument.uri,
                      std::string(params.textDocument.text),
                      params.textDocument.version);
 }
+
 void LSPServer::onDocumentDidClose(const DidCloseTextDocumentParams &params) {
   server.removeDocument(params.textDocument.uri);
 }
+
 void LSPServer::onDocumentDidChange(const DidChangeTextDocumentParams &params) {
+  Logger::debug("--> textDocument/didChange: uri='{0}', version={1}",
+                params.textDocument.uri, params.textDocument.version);
   server.updateDocument(params.textDocument.uri, params.contentChanges,
                         params.textDocument.version);
 }
 
 void LSPServer::onNotebookDocumentDidOpen(
     const DidOpenNotebookDocumentParams &params) {
+  Logger::debug("--> notebookDocument/didOpen: uri='{0}', version={1}",
+                params.notebookDocument.uri, params.notebookDocument.version);
   server.addNotebookDocument(
       params.notebookDocument.uri, params.notebookDocument.cells,
       params.notebookDocument.version, params.cellTextDocuments);
 }
+
 void LSPServer::onNotebookDocumentDidClose(
     const DidCloseNotebookDocumentParams &params) {
   server.removeNotebookDocument(params.notebookDocument.uri,
                                 params.cellTextDocuments);
 }
+
 void LSPServer::onNotebookDocumentDidChange(
     const DidChangeNotebookDocumentParams &params) {
+  Logger::debug("--> notebookDocument/didChange: uri='{0}', version={1}",
+                params.notebookDocument.uri, params.notebookDocument.version);
   server.updateNotebookDocument(params.notebookDocument.uri,
                                 params.notebookDocument.version, params.change);
 }
