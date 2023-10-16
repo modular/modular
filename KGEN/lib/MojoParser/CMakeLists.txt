@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MojoParser
+  ASTDecl.cpp
   ASTType.cpp
   CallEmission.cpp
   ClosureEmitter.cpp
