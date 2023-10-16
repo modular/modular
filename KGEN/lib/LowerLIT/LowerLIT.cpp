@@ -155,7 +155,7 @@ static void lowerLITOps(LIT::FuncOp func) {
       auto allocOp =
           b.create<POP::StackAllocationOp>(varDecl.getLoc(), varType, 1);
       // Replace !lit.ref result type with a cast from the pointer.  This will
-      // get squashed by LowerStructs.
+      // get squashed by LowerLITTypes.
       b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
           varDecl, ArrayRef<Type>(varDecl.getType()), allocOp.getResult());
 

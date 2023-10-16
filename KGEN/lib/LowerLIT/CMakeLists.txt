@@ -11,7 +11,7 @@ add_modular_library(LowerLIT
   ConstraintSet.cpp
   LowerLIT.cpp
   LowerSemanticCF.cpp
-  LowerStructs.cpp
+  LowerLITTypes.cpp
   StripParserMetadata.cpp
 
   DEPENDS
