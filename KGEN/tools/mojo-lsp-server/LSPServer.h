@@ -25,7 +25,7 @@ namespace M::KGEN::LIT {
 /// Run the main loop using the given transport.
 mlir::LogicalResult runMojoLSPServer(mlir::lsp::JSONTransport &transport,
                                      std::unique_ptr<LLCL::WorkQueue> workQueue,
-                                     bool waitOnShutdown);
+                                     bool waitOnShutdown, bool parseStdlib);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_LIB_MOJO_LSP_LSPSERVER_H
