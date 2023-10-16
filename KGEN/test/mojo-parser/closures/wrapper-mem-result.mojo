@@ -1,0 +1,96 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen-translate %s -import-mojo | FileCheck %s
+
+# COM: Check that just using the function type generates a closure wrapper.
+# COM: Check all the generated methods.
+
+
+@value
+struct MemType:
+    pass
+
+
+# CHECK:       lit.struct.decl @"_CW_
+# CHECK-NEXT:    lit.struct.field field0 : !kgen.pointer<array<0, i1>>
+# CHECK-NEXT:    lit.struct.field dtor : {{.*}}<("self": !kgen.pointer<array<0, i1>>) -> !kgen.none>
+# CHECK-NEXT:    lit.struct.field copy : {{.*}}<("ptrToImpl": !kgen.pointer<pointer<array<0, i1>>> borrow, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !kgen.none>
+# CHECK-NEXT:    lit.struct.field call : {{.*}}<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<array<0, i1>> borrow_in_mem) -> !kgen.none>
+
+# CHECK-NEXT:    lit.func @"__del__
+# CHECK-NEXT:      [[PTR_TO_IMPL:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:      [[OPAQUE_IMPL:%.*]] = pop.load [[PTR_TO_IMPL]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:      %index0 = kgen.param.constant = <0>
+# CHECK-NEXT:      [[SCALAR_IMPL:%.*]] = pop.pointer_to_index [[OPAQUE_IMPL]] : !kgen.pointer<array<0, i1>> to !pop.scalar<index>
+# CHECK-NEXT:      [[INDEX_IMPL:%.*]] = pop.cast_to_builtin [[SCALAR_IMPL]] : !pop.scalar<index> to index
+# CHECK-NEXT:      [[IS_NULL:%.*]] = index.cmp eq([[INDEX_IMPL]], %index0)
+# CHECK-NEXT:      hlcf.if [[IS_NULL]] {
+# CHECK-NEXT:        kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:        lit.ownership.mark_destroyed %self
+# CHECK-NEXT:        lit.return
+# CHECK-NEXT:        hlcf.yield
+# CHECK-NEXT:      } else {
+# CHECK-NEXT:        hlcf.yield
+# CHECK-NEXT:      }
+# CHECK-NEXT:      [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:      [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
+# CHECK-NEXT:      kgen.call_signature [[DTOR]]([[OPAQUE_IMPL]])
+# CHECK-NEXT:      kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:      lit.ownership.mark_destroyed %self
+# CHECK-NEXT:      lit.return %none : !kgen.none
+# CHECK-NEXT:      lit.end_func
+
+# CHECK:         lit.func @"__copyinit__
+# CHECK-NEXT:      [[P0:%.*]] = lit.struct.gep %self[field0]
+# CHECK-NEXT:      [[existing_impl:%.*]] = lit.struct.gep %other[field0]
+# CHECK-NEXT:      [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
+# CHECK-NEXT:      pop.store [[loaded_existing_impl]], [[P0]]
+# CHECK-NEXT:      [[P1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:      [[P2:%.*]] = lit.struct.gep %other[dtor]
+# CHECK-NEXT:      [[P3:%.*]] = pop.load [[P2]]
+# CHECK-NEXT:      pop.store [[P3]], [[P1]]
+# CHECK-NEXT:      [[P4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:      [[P5:%.*]] = lit.struct.gep %other[copy]
+# CHECK-NEXT:      [[P6:%.*]] = pop.load [[P5]]
+# CHECK-NEXT:      pop.store [[P6]], [[P4]]
+# CHECK-NEXT:      [[P7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:      [[P8:%.*]] = lit.struct.gep %other[call]
+# CHECK-NEXT:      [[P9:%.*]] = pop.load [[P8]]
+# CHECK-NEXT:      pop.store [[P9]], [[P7]]
+# CHECK-NEXT:      kgen.param.constant: none
+# CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %other[field0]
+# CHECK-NEXT:      [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:      [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:      [[COPY:%.*]] = pop.load [[COPY_PTR]]
+# CHECK-NEXT:      kgen.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
+
+# CHECK:        lit.func @"__moveinit__
+# CHECK-NEXT:     [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.struct.gep %other[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:     pop.store [[mov_loaded_existing_impl]], [[M0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:     [[M1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:     [[M2:%.*]] = lit.struct.gep %other[dtor]
+# CHECK-NEXT:     [[M3:%.*]] = lit.load.consume [[M2]]
+# CHECK-NEXT:     pop.store [[M3]], [[M1]]
+# CHECK-NEXT:     [[M4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:     [[M5:%.*]] = lit.struct.gep %other[copy]
+# CHECK-NEXT:     [[M6:%.*]] = lit.load.consume [[M5]]
+# CHECK-NEXT:     pop.store [[M6]], [[M4]]
+# CHECK-NEXT:     [[M7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:     [[M8:%.*]] = lit.struct.gep %other[call]
+# CHECK-NEXT:     [[M9:%.*]] = lit.load.consume [[M8]]
+# CHECK-NEXT:     pop.store [[M9]], [[M7]]
+# CHECK-NEXT:     %pointer = kgen.param.constant: pointer<array<0, i1>> = <0>
+# CHECK-NEXT:     [[V0:%.*]] = lit.struct.gep %other[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:     pop.store %pointer, [[V0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:     [[V3:%.*]] = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:     lit.ownership.mark_destroyed %other
+
+
+fn thing(x: fn () escaping -> MemType):
+    pass

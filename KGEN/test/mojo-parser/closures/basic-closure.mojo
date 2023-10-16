@@ -1,0 +1,91 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen-translate %s -import-mojo | FileCheck %s
+
+# COM: Check that a closure that captures a few things generates the right
+# COM: implementation struct.
+
+
+@value
+struct MemType:
+    fn __del__(owned self):
+        pass
+
+
+fn use(y: MemType, z: Int, u: __mlir_type.index):
+    pass
+
+
+# CHECK: lit.struct.decl @"_CI_
+# CHECK-NEXT: lit.struct.field field0 : !MemType
+# CHECK-NEXT: lit.struct.field field1 : !Int
+# CHECK-NEXT: lit.struct.field field2 : index
+# CHECK-NEXT: lit.func @"__del__
+# CHECK-NEXT:    [[VAR0:%.*]] = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:    lit.ownership.mark_destroyed %self
+# CHECK-NEXT:    lit.return [[VAR0]] : !kgen.none
+# CHECK-NEXT:    lit.end_func
+# CHECK-NEXT: }
+
+# CHECK-NEXT: lit.func @"__copyinit__(
+# CHECK-SAME:   %self[self]: !kgen.pointer<{{.*}}> init_self,
+# CHECK-SAME:   %other[other]: !kgen.pointer<{{.*}}> borrow_in_mem
+# CHECK-SAME: ) -> !kgen.none attributes {specialFnKind = 3 : i8} {
+# CHECK-NEXT:   [[V0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
+# CHECK-NEXT:   [[V1:%.*]] = lit.struct.gep %other[field0] : <!MemType>
+# CHECK-NEXT:   [[V2:%.*]] = kgen.call @{{.*}}__copyinit__{{.*}}"([[V0]], [[V1]])
+# CHECK-NEXT:   [[V3:%.*]] = lit.struct.gep %self[field1] : <!Int>
+# CHECK-NEXT:   [[V4:%.*]] = lit.struct.gep %other[field1] : <!Int>
+# CHECK-NEXT:   [[V5:%.*]] = pop.load [[V4]] : !kgen.pointer<!Int>
+# CHECK-NEXT:   pop.store [[V5]], [[V3]] : !kgen.pointer<!Int>
+# CHECK-NEXT:   [[V6:%.*]] = lit.struct.gep %self[field2] : <index>
+# CHECK-NEXT:   [[V7:%.*]] = lit.struct.gep %other[field2] : <index>
+# CHECK-NEXT:   [[V8:%.*]] = pop.load [[V7]] : !kgen.pointer<index>
+# CHECK-NEXT:   pop.store [[V8]], [[V6]] : !kgen.pointer<index>
+# CHECK-NEXT:   [[V9:%.*]] = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:   lit.return [[V9]] : !kgen.none
+# CHECK-NEXT:   lit.end_func
+# CHECK-NEXT: }
+
+# CHECK-NEXT: lit.func @"__moveinit__(
+# CHECK-SAME:   %self[self]: !kgen.pointer<{{.*}}> init_self,
+# CHECK-SAME:   %other[other]: !kgen.pointer<{{.*}}> owned_in_mem
+# CHECK-SAME: ) -> !kgen.none attributes {specialFnKind = 4 : i8} {
+# CHECK-NEXT:   [[W0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
+# CHECK-NEXT:   [[W1:%.*]] = lit.struct.gep %other[field0] : <!MemType>
+# CHECK-NEXT:   [[W2:%.*]] = kgen.call @{{.*}}__moveinit__{{.*}}"([[W0]], [[W1]])
+# CHECK-NEXT:   [[W3:%.*]] = lit.struct.gep %self[field1] : <!Int>
+# CHECK-NEXT:   [[W4:%.*]] = lit.struct.gep %other[field1] : <!Int>
+# CHECK-NEXT:   [[W5:%.*]] = lit.load.consume [[W4]] : !kgen.pointer<!Int>
+# CHECK-NEXT:   pop.store [[W5]], [[W3]] : !kgen.pointer<!Int>
+# CHECK-NEXT:   [[W6:%.*]] = lit.struct.gep %self[field2] : <index>
+# CHECK-NEXT:   [[W7:%.*]] = lit.struct.gep %other[field2] : <index>
+# CHECK-NEXT:   [[W8:%.*]] = lit.load.consume [[W7]] : !kgen.pointer<index>
+# CHECK-NEXT:   pop.store [[W8]], [[W6]] : !kgen.pointer<index>
+# CHECK-NEXT:   [[W9:%.*]] = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:   lit.ownership.mark_destroyed %other
+# CHECK-NEXT:   lit.return %none : !kgen.none
+# CHECK-NEXT:   lit.end_func
+# CHECK-NEXT: }
+
+# CHECK-NEXT: lit.func @"__init__
+# CHECK-NEXT:   [[Q0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
+# CHECK-NEXT:   [[Q1:%.*]] = kgen.call @{{.*}}::@"__moveinit__{{.*}}"([[Q0]], %fld0)
+# CHECK-NEXT:   [[Q2:%.*]] = lit.struct.gep %self[field1] : <!Int>
+# CHECK-NEXT:   pop.store %fld1, [[Q2]] : !kgen.pointer<!Int>
+# CHECK-NEXT:   [[Q3:%.*]] = lit.struct.gep %self[field2] : <index>
+# CHECK-NEXT:   pop.store %fld2, [[Q3]] : !kgen.pointer<index>
+# CHECK-NEXT:   [[Q4:%.*]] = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:   lit.return [[Q4]] : !kgen.none
+# CHECK-NEXT:   lit.end_func
+
+
+fn makes_escaping_closure(m: MemType, z: MemType, y: Bool):
+    let register_passable_var: Int = 3
+    let mlir_type_var: __mlir_type.index = register_passable_var.value
+
+    fn dummy(n: MemType) escaping:
+        use(m, register_passable_var, mlir_type_var)

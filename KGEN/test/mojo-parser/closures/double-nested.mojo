@@ -1,0 +1,38 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen-translate %s -import-mojo | FileCheck %s
+
+# CHECK: lit.file_module @"$[[F:.*]]"
+
+# CHECK-COUNT-2: lit.struct.decl @"_CI_
+
+# CHECK-LABEL: lit.func @"makes_escaping_closure
+
+
+@value
+struct MemType:
+    fn __add__(self, rhs: MemType) -> MemType:
+        return MemType()
+
+
+# CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth
+# CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : {{.*}}!MemType
+# CHECK-NEXT: [[ANONPTR_0:%.*]] = lit.ref.to_pointer %anonymous2A_0
+# CHECK-NEXT: [[V0:%.*]] = kgen.call @"{{.*}}::@MemType::@"__copyinit__({{.*}})"([[ANONPTR_0]], %m)
+# CHECK-NEXT: [[V1:%.*]] = kgen.call {{.*}}CI_$[[F]]_{{.*}}"::@"__init__{{.*}}([[ANONPTR]], [[ANONPTR_0]])
+# CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*" var synth
+# CHECK-NEXT: [[ANONPTR_1:%.*]] = lit.ref.to_pointer %anonymous2A_1
+# CHECK-NEXT:  = kgen.call {{.*}}CW_{{.*}}__init__{{.*}}([[ANONPTR_1]], [[ANONPTR]])
+# CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: none
+# CHECK-NEXT: lit.return [[V3]]
+# CHECK-NEXT: lit.end_func
+fn makes_escaping_closure(m: MemType):
+    fn myclosure(n: MemType) escaping -> MemType:
+        fn nested_nested(k: MemType, l: MemType) escaping -> MemType:
+            return n + k
+
+        return n + m
