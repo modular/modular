@@ -281,7 +281,11 @@ endfunction()
 # specify this target in the LINK_LIBS of another kgen_library or kgen_kernel
 # and the include flags will be setup correctly.
 function(add_kgen_library target)
-  cmake_parse_arguments(KGEN "SAVE_TEMPS;NO_DEBUG" "OUTPUT" "LINK_LIBS;LINK_DIRS" ${ARGN})
+  cmake_parse_arguments(KGEN
+    "DISABLE_PREBUILT_PACKAGES;SAVE_TEMPS;NO_DEBUG"
+    "OUTPUT"
+    "LINK_LIBS;LINK_DIRS"
+    ${ARGN})
 
   _setup_libs()
   _setup_arch()
@@ -298,6 +302,7 @@ function(add_kgen_library target)
     COMMAND $<TARGET_FILE:kgen>
       ${MOJO_ARCH_FLAGS}
       ${MOJO_DEFINES}
+      $<$<BOOL:${KGEN_DISABLE_PREBUILT_PACKAGES}>:-disable-prebuilt-packages>
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
       -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${KGEN_OUTPUT}
       -O${KGEN_OPTIMIZATION_LEVEL}
