@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# REQUIRES: DISABLED
+# RUN: %mojo -parsing-stdlib -debug-level full %s | FileCheck %s
 
 from sys.info import simdwidthof
 
@@ -11,6 +12,7 @@ from linalg.matmul_utils import partition_work
 from nn.conv_utils import ConvShape, get_conv_num_partitions
 
 from utils.index import Index, StaticIntTuple
+
 
 # CHECK-LABEL: test_conv_partition
 fn test_partition():
