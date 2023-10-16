@@ -10,12 +10,12 @@ from sys.info import simdwidthof
 
 from algorithm import elementwise
 from memory.buffer import Buffer
-from nn.activation import gelu
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils.vector import UnsafeFixedVector
+
 
 # CHECK-LABEL: test_elementwise_1d
 fn test_elementwise_1d():
@@ -40,7 +40,7 @@ fn test_elementwise_1d():
         @parameter
         fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
             let elem = vector.simd_load[simd_width](idx[0])
-            let val = gelu(exp(erf(tanh(elem))))
+            let val = exp(erf(tanh(elem + 1)))
             vector.simd_store[simd_width](idx[0], val)
 
         let out_chain = OwningOutputChainPtr(rt)
@@ -49,7 +49,7 @@ fn test_elementwise_1d():
         )
         out_chain.wait()
 
-        # CHECK: 0.84134{{[0-9]+}}
+        # CHECK: 2.051446{{[0-9]+}}
         print(vector[0])
 
         buf._del_old()
