@@ -22,7 +22,7 @@ fn test_dim():
     # CHECK: (x=4, )
     print(Dim(4).__str__())
 
-    # CHECK: (x=5, y=4)
+    # CHECK: (x=4, y=5)
     print(Dim((4, 5)).__str__())
 
     # CHECK: (x=4, y=2, z=3)
