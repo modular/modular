@@ -75,6 +75,16 @@ public:
   llvm::SMLoc getLoc() const { return loc; }
   ASTDecl *getParentDecl() const { return parentDecl; }
 
+  /// Get the nearest decl backed by one of the given operations. This can
+  /// return itself, a parent decl, or null if no such decl is found.
+  template <typename... OpTs>
+  ASTDecl *getNearestDeclOfType() {
+    ASTDecl *cur = this;
+    while (cur && !isa<OpTs...>(*cur))
+      cur = cur->getParentDecl();
+    return cur;
+  }
+
   /// Return the indentation of the introducer token or -1 if it wasn't on the
   /// start of line.
   ssize_t getIndentation() const { return indentation; }
