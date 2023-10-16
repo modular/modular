@@ -14,6 +14,9 @@ from memory.buffer import NDBuffer, _compute_ndbuffer_offset
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
+from tensor import Tensor
+
+
 # CHECK-LABEL: test_ndbuffer
 fn test_ndbuffer():
     print("== test_ndbuffer")
@@ -278,9 +281,26 @@ fn test_get_nd_index():
     print(matrix1.get_nd_index(104))
 
 
+# CHECK-LABEL: test_print
+fn test_print():
+    print("== test_print")
+    # CHECK{LITERAL}: NDBuffer([[[0, 1, 2],
+    # CHECK{LITERAL}: [3, 4, 5]],
+    # CHECK{LITERAL}: [[6, 7, 8],
+    # CHECK{LITERAL}: [9, 10, 11]]], dtype=index, shape=2x2x3)
+    let tensor = Tensor[DType.index](2, 2, 3)
+    iota(tensor.data(), tensor.num_elements())
+
+    let buffer = NDBuffer[3, DimList(2, 2, 3), DType.index](tensor.data())
+
+    print(buffer.__str__())
+    _ = tensor ^
+
+
 fn main():
     test_ndbuffer()
     test_fill()
     test_ndbuffer_prefetch()
     test_aligned_load_store()
     test_get_nd_index()
+    test_print()

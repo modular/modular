@@ -28,6 +28,9 @@ from utils.static_tuple import StaticTuple
 from .memory import stack_allocation
 from .unsafe import DTypePointer, Pointer
 
+from utils._serialize import _serialize
+from builtin.io import _Printable
+
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
 This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
@@ -870,6 +873,34 @@ struct NDBuffer[
             product *= self.dim(i)
 
         return product
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets the buffer as a string.
+
+        Returns:
+          A compact string of the buffer.
+        """
+        var res = String("NDBuffer(")
+
+        @parameter
+        fn serialize(val: _Printable):
+            res += val.__str__()
+
+        _serialize[serialize_fn=serialize, serialize_end_line=False](
+            self.data, self.dynamic_shape
+        )
+
+        return res + ")"
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Gets the buffer as a string.
+
+        Returns:
+          A compact string representation of the buffer.
+        """
+        return self.__str__()
 
     @always_inline
     fn _offset(self, idx: VariadicList[Int]) -> DTypePointer[type]:
