@@ -21,11 +21,10 @@ struct GeneratedStubs {
 public:
   GeneratedStubs() : initialized(false) {}
   GeneratedStubs(LIT::FuncOp dtor, LIT::FuncOp copyCtor, LIT::FuncOp moveCtr)
-      : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr), initialized(true) {}
+      : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr) {}
   GeneratedStubs(LIT::FuncOp dtor, LIT::FuncOp copyCtor, LIT::FuncOp moveCtr,
                  LIT::FuncOp init)
-      : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr), init(init),
-        initialized(true) {}
+      : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr), init(init) {}
   operator bool() const { return initialized; }
   LIT::FuncOp getDestructor() const { return dtor; }
   LIT::FuncOp getCopyConstrucotr() const { return copyCtr; }
@@ -37,7 +36,7 @@ private:
   LIT::FuncOp copyCtr;
   LIT::FuncOp moveCtr;
   LIT::FuncOp init;
-  bool initialized;
+  bool initialized = true;
 };
 
 class StructEmitter : public SharedStateUser {

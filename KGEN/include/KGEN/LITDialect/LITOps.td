@@ -356,6 +356,11 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
   );
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 
+  let builders = [
+    OpBuilder<(ins "StringAttr":$name, "Type":$type)>,
+    OpBuilder<(ins "const Twine &":$name, "Type":$type)>,
+  ];
+
   let extraClassDeclaration = [{
     /// Given a struct base value type that may have bound parameters,
     /// substitute those bound parameters into our type and return the result.
