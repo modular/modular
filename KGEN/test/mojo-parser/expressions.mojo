@@ -200,7 +200,7 @@ struct M:
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam
 # CHECK-SAME: <[[PARAM:.*]][comparator]: !lit.signature
-# CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow)
+# CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow, |)
 struct StructWithFuncParam[comparator: fn[T: AnyType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
     # CHECK-SAME: %self[self]: !kgen.pointer<{{.*}}<[[PARAM]]: !lit.signature<<"T": type>(!kgen.paramref<*(0,0)>
@@ -209,8 +209,8 @@ struct StructWithFuncParam[comparator: fn[T: AnyType] (T) -> None]:
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
-        # CHECK: call {{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow)
-        # CHECK-SAME: !kgen.pointer<{{.*}}<"T": type>(!kgen.paramref<*(0,0)> borrow)
+        # CHECK: call {{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
+        # CHECK-SAME: !kgen.pointer<{{.*}}<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
         self.f()
 
 # CHECK-LABEL: lit.func @"simpleMath
@@ -560,16 +560,16 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
   return i
 
-# CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}$int::Int) -> {{.*}}$int::Int]({{.*}}$int::Int)"
-# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(!Int borrow) -> !Int>>(%a[a]: !Int borrow) -> !Int
+# CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}::Int, /) -> {{.*}}::Int]({{.*}}::Int)"
+# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(!Int borrow, |) -> !Int>>(%a[a]: !Int borrow) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
-  # CHECK-NEXT: kgen.call_param[!lit.signature<(!Int borrow) -> !Int>: [[CALLABLE]]](%a)
+  # CHECK-NEXT: kgen.call_param[!lit.signature<(!Int borrow, |) -> !Int>: [[CALLABLE]]](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
-# CHECK-SAME: [[CALLABLE:.*_callable]][callable]: !lit.signature<<"x": !Int>(!Int borrow) -> !Int>, [[B:.*_b]][b]: !Int>(%a[a]: !Int borrow) -> !Int
+# CHECK-SAME: [[CALLABLE:.*_callable]][callable]: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>, [[B:.*_b]][b]: !Int>(%a[a]: !Int borrow) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: kgen.call_param[!lit.signature<(!Int borrow) -> !Int>: bind_signature({{.*}}[[CALLABLE]], [[B]])](%a)
+  # CHECK-NEXT: kgen.call_param[!lit.signature<(!Int borrow, |) -> !Int>: bind_signature({{.*}}[[CALLABLE]], [[B]])](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<{{.*}}[a]: !Int>() -> !Int
@@ -586,8 +586,8 @@ fn returnIndex2() -> Int:
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}$int::Int]({{.*}}$int::Int) -> {{.*}}$int::Int]()"
-# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<<"x": !Int>(!Int borrow) -> !Int>>() -> !Int
+# CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}::Int]({{.*}}::Int, /) -> {{.*}}::Int]()"
+# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
   # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}[[CALLABLE]], #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
   # CHECK-NEXT: return %0
@@ -1067,7 +1067,7 @@ fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
 struct MyInlineIntInit:
     var value: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%self[self]: !kgen.pointer<!MyInlineIntInit> init_self, %value[value]: !kgen.pointer<!MemoryOnlyInt> borrow_in_mem) -> !kgen.none
+    # CHECK-SAME: (%self[self]: !kgen.pointer<!MyInlineIntInit> init_self, |, %value[value]: !kgen.pointer<!MemoryOnlyInt> borrow_in_mem) -> !kgen.none
     fn __init__(inout self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.struct.gep %self[value]
         # CHECK: kgen.call {{.*}}__copyinit__{{.*}}(%0, %value)
@@ -1312,19 +1312,19 @@ struct ParamType[a: Int]: pass
 struct MemType: pass
 
 # CHECK-LABEL: lit.func @"function_types
-# CHECK-SAME: %{{.*}}[float0]: {{.*}}(!Int borrow) -> !Int
-# CHECK-SAME: %{{.*}}[float1]: {{.*}}(!kgen.pointer<!MemoryType> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem) -> !kgen.none
-# CHECK-SAME: %{{.*}}[float2]: {{.*}}(!RegType) ownedresult -> !RegType
-# CHECK-SAME: %{{.*}}[float3]: {{.*}}(!kgen.pointer<!MemoryType> owned_in_mem) -> !kgen.none
-# CHECK-SAME: %{{.*}}[float4]: {{.*}}(!kgen.pointer<!Int> byref) -> !kgen.none
-# CHECK-SAME: %{{.*}}[float5]: {{.*}}(!Int borrow) throws -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float6]: {{.*}}(!Int borrow) throws|async|capturing -> !pop.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float0]: {{.*}}(!Int borrow, |) -> !Int
+# CHECK-SAME: %{{.*}}[float1]: {{.*}}("__result__": !kgen.pointer<!MemoryType> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem, |) -> !kgen.none
+# CHECK-SAME: %{{.*}}[float2]: {{.*}}(!RegType, |) ownedresult -> !RegType
+# CHECK-SAME: %{{.*}}[float3]: {{.*}}(!kgen.pointer<!MemoryType> owned_in_mem, |) -> !kgen.none
+# CHECK-SAME: %{{.*}}[float4]: {{.*}}(!kgen.pointer<!Int> byref, |) -> !kgen.none
+# CHECK-SAME: %{{.*}}[float5]: {{.*}}(!Int borrow, |) throws -> !pop.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float6]: {{.*}}(!Int borrow, |) throws|async|capturing -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float7]: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float8]: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>> borrow) -> !kgen.none
+# CHECK-SAME: %{{.*}}[float8]: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>> borrow, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float9]: {{.*}}<[] -> !Int>() -> !kgen.none
 # CHECK-SAME: %{{.*}}[float10]: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float11]: {{.*}}<<"Ts": variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float12]: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>) -> !kgen.none>
+# CHECK-SAME: %{{.*}}[float12]: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
 # CHECK-SAME: %{{.*}}[named]: {{.*}}<("x": !kgen.pointer<!MemType> borrow_in_mem) -> !Int>
 fn function_types(
   float0: fn(Int) -> Int,
@@ -1669,4 +1669,3 @@ fn testUnmovable(a: Unmovable):
    # CHECK-NEXT: %0 = lit.ref.to_pointer %x
    # CHECK-NEXT: kgen.call {{.*}}(%0, %a)
    var x : Unmovable = getUnmovable(a)
-

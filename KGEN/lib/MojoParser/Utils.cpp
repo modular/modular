@@ -36,6 +36,17 @@ bool LIT::canZeroCostConvertSignature(Type fromType, Type toType) {
     return false;
   if (from.getParamNames().size() != to.getInputParamTypes().size())
     return false;
+
+  // Pos-or-kw arguments can be passed positionally.
+  for (auto [toKind, fromKind] :
+       llvm::zip(to.getArgPassingKinds(), from.getArgPassingKinds())) {
+    if (toKind != fromKind) {
+      if (toKind == PassingKind::PosOnly && fromKind == PassingKind::PosOrKw)
+        continue;
+      return false;
+    }
+  }
+
   auto newMetadata =
       FnMetadataAttr::get(from.getContext(), from.getArgNames(),
                           from.getArgPassingKinds(), from.getParamNames(),

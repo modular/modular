@@ -19,10 +19,80 @@ lit.func @outer(%a[foo]: index) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @positional_args(%a[a]: index, %b[b]: index) numPosArgs(1)
-lit.func @positional_args(%a: index, %b: index) numPosArgs(1) {
-  // CHECK: self: !lit.signature<(index, "b": index) -> ()> = <@positional_args>
-  kgen.param.declare self: !lit.signature<(index, "b": index) -> ()> = <@positional_args>
+// CHECK-LABEL: lit.func @slash(%a[a]: index, |, %b[b]: index, %c[c]: index)
+lit.func @slash(%a: index, |, %b: index, %c: index) {
+  // CHECK: !lit.signature<("a": index, |, "b": index, "c": index) -> ()>
+  kgen.param.declare self: !lit.signature<("a": index, |, "b": index, "c": index) -> ()> = <@slash>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @slashOnly()
+lit.func @slashOnly(|) {
+  // CHECK: !lit.signature<() -> ()>
+  kgen.param.declare self: !lit.signature<(|) -> ()> = <@slashOnly>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @slashFirst(%a[a]: index, %b[b]: index, %c[c]: index)
+lit.func @slashFirst(|, %a: index, %b: index, %c: index) {
+  // CHECK: !lit.signature<("a": index, "b": index, "c": index) -> ()>
+  kgen.param.declare self: !lit.signature<(|, "a": index, "b": index, "c": index) -> ()> = <@slashFirst>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @slashLast(%a[a]: index, %b[b]: index, %c[c]: index, |)
+lit.func @slashLast(%a: index, %b: index, %c: index, |) {
+  // CHECK: !lit.signature<("a": index, "b": index, "c": index, |) -> ()>
+  kgen.param.declare self: !lit.signature<("a": index, "b": index, "c": index, |) -> ()> = <@slashLast>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @star(%a[a]: index, *, %b[b]: index, %c[c]: index)
+lit.func @star(%a: index, *, %b: index, %c: index) {
+  // CHECK: !lit.signature<("a": index, *, "b": index, "c": index) -> ()>
+  kgen.param.declare self: !lit.signature<("a": index, *, "b": index, "c": index) -> ()> = <@star>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @starOnly()
+lit.func @starOnly(*) {
+  // CHECK: !lit.signature<() -> ()>
+  kgen.param.declare self: !lit.signature<(*) -> ()> = <@starOnly>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @starFirst(*, %a[a]: index, %b[b]: index, %c[c]: index)
+lit.func @starFirst(*, %a: index, %b: index, %c: index) {
+  // CHECK: !lit.signature<(*, "a": index, "b": index, "c": index) -> ()>
+  kgen.param.declare self: !lit.signature<(*, "a": index, "b": index, "c": index) -> ()> = <@starFirst>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @starLast(%a[a]: index, %b[b]: index, %c[c]: index)
+lit.func @starLast(%a: index, %b: index, %c: index, *) {
+  // CHECK: !lit.signature<("a": index, "b": index, "c": index) -> ()>
+  kgen.param.declare self: !lit.signature<("a": index, "b": index, "c": index, *) -> ()> = <@starLast>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @slashAndStar(%a[a]: index, |, %b[b]: index, *, %c[c]: index)
+lit.func @slashAndStar(%a: index, |,  %b: index, *, %c: index) {
+  // CHECK: !lit.signature<("a": index, |, "b": index, *, "c": index) -> ()>
+  kgen.param.declare self: !lit.signature<("a": index, |, "b": index, *, "c": index) -> ()> = <@slashAndStar>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @slashAndStarTogether(%a[a]: index, |, *, %b[b]: index, %c[c]: index)
+lit.func @slashAndStarTogether(%a: index, |, *,  %b: index, %c: index) {
+  // CHECK: !lit.signature<("a": index, |, *, "b": index, "c": index) -> ()>
+  kgen.param.declare self: !lit.signature<("a": index, |, *, "b": index, "c": index) -> ()> = <@slashAndStarTogether>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @slashAndStarOnly()
+lit.func @slashAndStarOnly(|, *) {
+  // CHECK: !lit.signature<() -> ()>
+  kgen.param.declare self: !lit.signature<(|, *) -> ()> = <@slashAndStarOnly>
   kgen.return
 }
 

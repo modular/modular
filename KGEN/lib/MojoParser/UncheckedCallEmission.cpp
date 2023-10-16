@@ -277,9 +277,10 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   argumentValues.reserve(numInputs);
-  for (auto [argIdx, argName, expectedTypeX, convention] :
+  for (auto [argIdx, argName, expectedTypeX, convention, passingKind] :
        llvm::enumerate(calleeSig.getArgNames(), calleeSig.getValueInputs(),
-                       calleeSig.getInputConventions())) {
+                       calleeSig.getInputConventions(),
+                       calleeSig.getArgPassingKinds())) {
     // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
     // rebind if the refined type is different than the expected type.
     Type expectedType = evaluator.refineType(expectedTypeX);
@@ -292,7 +293,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // replace it opportunistically later if we can.
     if (convention == ValueInputConvention::ByRefResult && builder) {
       assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
-      assert(argName.empty());
+      assert(passingKind == PassingKind::PosOnly);
 
       // TODO(references): drop this cast eventually.
       expectedType = cast<PointerType>(expectedType).getElementAsType();

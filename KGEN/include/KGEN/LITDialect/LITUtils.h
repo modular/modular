@@ -13,10 +13,13 @@
 #define KGEN_LITDIALECT_LITUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "llvm/Support/SMLoc.h"
 
 namespace M {
 class StringArrayAttr;
 class TypeArrayAttr;
+template <typename T>
+class ErrorOr;
 
 namespace KGEN {
 class ParamDeclAttr;
@@ -25,6 +28,8 @@ class ParameterEvaluator;
 class ParameterExprArrayAttr;
 
 namespace LIT {
+enum class PassingKind : uint32_t;
+
 /// Parse an optional default value of the given type. `defaultVal` is not
 /// modified if a default value was not present. If `hasAddress` is set, the
 /// default value is parsed as if `type` is an address type: either a pointer or
@@ -83,6 +88,53 @@ void printStructParameterSpec(AsmPrinter &p, Operation *op,
 
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
+
+/// Handles parsing '|' and '*' in lit IR and counts the number of arguments of
+/// different passing kinds.
+/// TODO: fix this when AsmParser can handle '/'.
+class StarSlashParser {
+public:
+  StarSlashParser(AsmParser &parser, llvm::SMLoc loc)
+      : parser(parser), loc(loc) {}
+
+  /// Try to parse a single optional '*' or '|', and emit an error if a
+  /// duplicate is found or a '|' comes after a '*'.
+  OptionalParseResult parseOptionalStarSlash();
+
+  /// Return the number of positional-only, positional-or-keyword, and
+  /// keyword-only arguments seen so far, respectively.
+  std::tuple<size_t, size_t, size_t> getNumPassingKinds() const;
+
+private:
+  AsmParser &parser;
+  llvm::SMLoc loc;
+  size_t idx = 0;
+  size_t numPosOnly = 0;
+  size_t numPosOrKw = 0;
+  bool foundSlash = false;
+  bool foundStar = false;
+};
+
+/// Handles printing '/' and '*' in lit IR and counts the number of arguments of
+/// different passing kinds. Optionally, it allows specifying a character to be
+/// used instead of '/'.
+class StarSlashPrinter {
+public:
+  StarSlashPrinter(raw_ostream &os, char slash = '/');
+  StarSlashPrinter(AsmPrinter &printer, char slash = '/');
+
+  /// Print a single '*' or '/' if needed.
+  void printOptionalStarSlash(PassingKind passingKind, bool isFirstArg);
+
+  /// Print a single trailing '/' at the end of a signature if needed.
+  void printOptionalTrailingSlash() const;
+
+private:
+  raw_ostream &os;
+  PassingKind prevPassingKind;
+  char slash; // TODO: remove this when AsmParser can handle '/'.
+};
+
 } // namespace LIT
 } // namespace KGEN
 } // namespace M

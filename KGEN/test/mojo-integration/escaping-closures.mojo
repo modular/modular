@@ -26,7 +26,7 @@ fn makes_escaping_closure(
 
 fn makes_escaping_closure_position_only(
     m: MemType,
-) -> fn (MemType) escaping -> MemType:
+) -> fn (n: MemType, /) escaping -> MemType:
     fn myclosure(n: MemType, /) escaping -> MemType:
         return n + m
 

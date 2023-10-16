@@ -39,6 +39,7 @@ class StructDeclOp;
 class StructFieldOp;
 class TraitDeclOp;
 struct ParsedArgument;
+enum class PassingKind : uint32_t;
 
 //===----------------------------------------------------------------------===//
 // DeclResolver
@@ -190,7 +191,8 @@ public:
                         LIT::FuncOp &funcOp, StringRef baseName);
 
   /// Given a fully resolved signature, compute the final types and KGEN input
-  /// conventions of the arguments.
+  /// conventions of the arguments. This function also ensures that self
+  /// arguments are marked as positional-only.
   void
   computeArgumentConventions(SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
                              MutableArrayRef<ParsedArgument> args,
@@ -392,6 +394,9 @@ struct ParsedArgument {
       SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
       ASTDecl &Scope, SpecialFunctionInfo fnInfo = SpecialFunctionInfo(),
       StringRef funcName = "");
+
+  /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
+  static PassingKind mapToPassingKind(KWArgHandling handling);
 };
 
 } // namespace M::KGEN::LIT

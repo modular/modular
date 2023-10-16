@@ -38,13 +38,13 @@ struct MemType: pass
 
 
 fn test_func_type():
-    # expected-error @below {{fn(Int) -> Int}}
+    # expected-error @below {{fn(Int, /) -> Int}}
     alias float0: fn(Int) -> Int = test_func_type
     # expected-error @below {{async fn() -> None}}
     alias float1: async fn() -> None = test_func_type
     # expected-error @below {{fn[Int]() -> MemType}}
     alias float2: fn[a: Int]() -> MemType = test_func_type
-    # expected-error @below {{fn[Int](owned Int) -> MemType}}
+    # expected-error @below {{fn[Int](owned Int, /) -> MemType}}
     alias float3: fn[a: Int](owned Int) -> MemType = test_func_type
     # expected-error @below {{fn[Int](inout *Int) -> None}}
     alias float4: fn[a: Int](inout *Int) -> None = test_func_type
@@ -54,6 +54,12 @@ fn test_func_type():
     alias float6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{fn[AnyType](inout *$0) capturing -> None}}
     alias float7: fn[T: AnyType](inout *T) capturing -> None = test_func_type
+    # expected-error @below {{unnamed argument cannot follow named argument}}
+    alias float8: fn (a: Int, String) -> Int = test_func_type
+    # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
+    alias float9: fn (Int, /, String) -> Int = test_func_type
+    # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
+    alias float10: fn (*, String) -> Int = test_func_type
 
     alias type = DType.float32
     # expected-error @below {{SIMD[__init__(type.value), 32]}}

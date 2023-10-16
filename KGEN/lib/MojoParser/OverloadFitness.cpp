@@ -664,7 +664,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       }
 
     // Argument name mismatches don't count as implicit conversions.
-    if (canZeroCostConvertSignature(expectedType, argType))
+    if (canZeroCostConvertSignature(argType, expectedType))
       break;
 
     // If we lack an exact match and conversions are disabled, this

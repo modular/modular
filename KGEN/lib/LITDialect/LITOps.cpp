@@ -407,10 +407,11 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "exportKind",   "isCExported", "constraints", "implements",  "signature",
-    "functionType", "sym_name",    "argNames",    "paramNames",  "evaluator",
-    "defaultImpl",  "inlineLevel", "paramDecl",   "inputParams", "resultParams",
-    "decorators",   "posArgNames"};
+    "exportKind",     "isCExported",  "constraints",  "implements",
+    "signature",      "functionType", "sym_name",     "argNames",
+    "paramNames",     "evaluator",    "defaultImpl",  "inlineLevel",
+    "paramDecl",      "inputParams",  "resultParams", "decorators",
+    "argPassingKinds"};
 
 static ParseResult parseLITFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
@@ -427,7 +428,13 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaults;
   SmallVector<ValueInputConvention> inputConventions;
+
+  StarSlashParser ssParser(p, loc);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
+    if (OptionalParseResult res = ssParser.parseOptionalStarSlash();
+        res.has_value())
+      return res.value();
+
     // Parse the ssa name first.
     OpAsmParser::Argument &arg = args.emplace_back();
     StringAttr &argName = argNames.emplace_back();
@@ -470,8 +477,10 @@ static ParseResult parseLITFunctionSignature(
                                   /*optionalResultList=*/true)))
     return failure();
 
-  SmallVector<PassingKind> argPassingKinds(argNames.size(),
-                                           PassingKind::PosOnly);
+  auto [numPosOnly, numPosOrKw, numKwOnly] = ssParser.getNumPassingKinds();
+  SmallVector<PassingKind> argPassingKinds(numPosOnly, PassingKind::PosOnly);
+  argPassingKinds.append(numPosOrKw, PassingKind::PosOrKw);
+  argPassingKinds.append(numKwOnly, PassingKind::KwOnly);
 
   signature = IndexRefRemapper::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
@@ -494,8 +503,14 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
   // Substitute input and result parameters when printing default arguments.
   ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
-  size_t defaultStartIndex = signature.getNumInputs() - defaultArgs.size();
+  size_t numInputs = signature.getNumInputs();
+  size_t defaultStartIndex = numInputs - defaultArgs.size();
+
+  StarSlashPrinter ssPrinter(p, '|');
   auto printElt = [&](unsigned i) {
+    ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
+                                     /*isFirstArg=*/i == 0);
+
     // Print the SSA name first, followed by the user-defined argument name in
     // brackets, and the type.
     BlockArgument arg = region->getArgument(i);
@@ -514,6 +529,10 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
                              defaultArgs[i - defaultStartIndex])));
     }
+
+    // Check if we are at the end; if so, we might still have to print a '/'.
+    if (i == numInputs - 1)
+      ssPrinter.printOptionalTrailingSlash();
   };
   printSignatureValues(p, printElt, functionType, signature,
                        /*optionalResultList=*/true);
@@ -564,43 +583,12 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     result.addAttribute(getParamDeclAttrName(result.name),
                         ParamDeclAttr::get(nameAttr, signature));
 
-  size_t numPosArgs = 0;
-  if (succeeded(parser.parseOptionalKeyword("numPosArgs"))) {
-    if (parser.parseLParen() || parser.parseInteger(numPosArgs) ||
-        parser.parseRParen())
-      return failure();
-  }
-
   // If function attributes are present, parse them.
   NamedAttrList parsedAttributes;
   llvm::SMLoc attributeDictLocation = parser.getCurrentLocation();
   if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
     return failure();
 
-  // We store positional-only argument names separately.
-  MLIRContext *ctx = parser.getContext();
-  StringArrayAttr posArgNames;
-  if (numPosArgs) {
-    FnMetadataAttr metadata = signature.getMetadata();
-    ArrayRef<StringAttr> argNames = metadata.getArgNames();
-
-    posArgNames = StringArrayAttr::get(ctx, argNames.take_front(numPosArgs));
-
-    SmallVector<StringAttr> newArgNames(argNames);
-    for (size_t i = 0; i < numPosArgs; ++i)
-      newArgNames[i] = StringAttr::get(ctx);
-    SmallVector<PassingKind> newArgPassingKinds(newArgNames.size(),
-                                                PassingKind::PosOnly);
-
-    signature = LITSignatureType::get(
-        signature.getValues(), signature.getInputParamTypes(),
-        signature.getResultParamTypes(), signature.getInputConventions(),
-        signature.getFnEffects(),
-        metadata.cloneWith(newArgNames, newArgPassingKinds));
-  } else {
-    posArgNames = StringArrayAttr::get(ctx, {});
-  }
-  result.addAttribute(getPosArgNamesAttrName(result.name), posArgNames);
   result.addAttribute(getSignatureAttrName(result.name),
                       TypeAttr::get(signature));
 
@@ -623,13 +611,6 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
-SmallVector<StringAttr> LIT::FuncOp::getArgNames() {
-  SmallVector<StringAttr> argNames(getSignature().getArgNames());
-  for (auto [i, posArgName] : llvm::enumerate(getPosArgNames()))
-    argNames[i] = posArgName;
-  return argNames;
-};
-
 // Print the LIT::FuncOp using the shared printing logic.
 void LIT::FuncOp::print(OpAsmPrinter &p) {
   using namespace mlir::function_interface_impl;
@@ -643,10 +624,9 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     p.printSymbolName(getSymName());
 
   // Print the function arguments. Here we need all the use defined names.
-  SmallVector<StringAttr> argNames = getArgNames();
-  printLITFunctionSignature(p, &getBodyRegion(), argNames, getInputParams(),
-                            getResultParams(), getFunctionType(),
-                            getSignature());
+  printLITFunctionSignature(p, &getBodyRegion(), getSignature().getArgNames(),
+                            getInputParams(), getResultParams(),
+                            getFunctionType(), getSignature());
   printOptionalInline(p, getInlineLevel());
   printOptionalConstraints(p, *this, getConstraints());
   printOptionalDecorators(p, *this, getDecorators());
@@ -655,9 +635,6 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
   ignoredAttrNames.emplace_back(mlir::SymbolTable::getSymbolAttrName());
-
-  if (size_t numPosArgs = getPosArgNames().size())
-    p << " numPosArgs(" << numPosArgs << ')';
 
   p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs(),
                                      ignoredAttrNames);
@@ -674,7 +651,8 @@ void LIT::FuncOp::getAsmBlockArgumentNames(
 
   // Set a name for each argument.
   auto resName = StringAttr::get(getContext(), "__result__");
-  for (auto [arg, name] : llvm::zip(getBody()->getArguments(), getArgNames())) {
+  for (auto [arg, name] :
+       llvm::zip(getBody()->getArguments(), getSignature().getArgNames())) {
     // If the user defined name is short and simple, we use it for the SSA names
     // to make testing a bit easier. Otherwise we use 'arg' and let the
     // interface unique the name.
@@ -699,16 +677,21 @@ LogicalResult LIT::FuncOp::verify() {
       return emitOpError(
           "external function requires attribute 'preElaborationName'");
   }
-  // Any argument without an argument name needs an entry in the positional
-  // argument names attribute.
-  unsigned positionalArgumentCount = 0;
-  for (StringAttr name : getSignature().getMetadata().getArgNames()) {
-    if (name.empty())
-      ++positionalArgumentCount;
+  // Verify order of positional-only, pos-or-kw, and keyword-only args.
+  PassingKind prevPassingKind = PassingKind::PosOnly;
+  for (PassingKind passingKind : getSignature().getArgPassingKinds()) {
+    if (prevPassingKind != passingKind) {
+      if (prevPassingKind == PassingKind::KwOnly) {
+        return emitOpError(
+            "keyword-only argument must follow all other arguments");
+      }
+      if (prevPassingKind == PassingKind::PosOrKw &&
+          passingKind == PassingKind::PosOnly) {
+        return emitOpError(
+            "positional-only argument cannot follow positional-or-keyword");
+      }
+    }
   }
-  if (getPosArgNames().size() != positionalArgumentCount)
-    return emitOpError("every positional only argument must have an entry in "
-                       "the positional argument names attribute");
 
   return success();
 }
@@ -804,8 +787,6 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
                       builder.getI8IntegerAttr(0));
   result.addAttribute(getInlineLevelAttrName(result.name),
                       InlineLevelAttr::get(context, InlineLevel::Automatic));
-  result.addAttribute(getPosArgNamesAttrName(result.name),
-                      StringArrayAttr::get(context, {}));
 
   result.addRegion()->push_back(new Block());
 }
@@ -815,8 +796,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name, SignatureType signature,
                         SpecialFunctionKind specialFnKind) {
   MLIRContext *ctx = builder.getContext();
-  build(builder, result, name, ParamDeclAttr(), StringArrayAttr::get(ctx, {}),
-        TypeAttr::get(signature), TypeAttr::get(signature.getValues()),
+  build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
+        TypeAttr::get(signature.getValues()),
         /*inputParams=*/ParamDeclArrayAttr::get(ctx, {}),
         /*resultParams=*/ParamDeclArrayAttr::get(ctx, {}),
         ConstraintArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),

@@ -2879,16 +2879,12 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   Builder b(emitter.getContext());
   SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
       args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
-  SmallVector<StringAttr> argNames =
-      llvm::map_to_vector(args, [&](const ParsedArgument &arg) {
-        if (arg.kwArgHandling ==
-                ParsedArgument::KWArgHandling::kPositionalOnly ||
-            !arg.name)
-          return b.getStringAttr("");
-        return arg.name;
+  SmallVector<PassingKind> argPassingKinds =
+      llvm::map_to_vector(args, [](const ParsedArgument &arg) {
+        return ParsedArgument::mapToPassingKind(arg.kwArgHandling);
       });
-  SmallVector<PassingKind> argPassingKinds(argNames.size(),
-                                           PassingKind::PosOnly);
+  SmallVector<StringAttr> argNames = llvm::map_to_vector(
+      args, [&](const ParsedArgument &arg) { return arg.name; });
 
   if (effects.isThrows()) {
     Type errorType =

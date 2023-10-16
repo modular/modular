@@ -43,13 +43,6 @@ LIT::FuncOp StructEmitter::createFunction(
 
   auto metadata =
       FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds);
-  SmallVector<StringAttr> posOnlyNames;
-  for (auto [i, argName] : llvm::enumerate(argNames)) {
-    if (argName.empty())
-      posOnlyNames.push_back(
-          StringAttr::get(shared.getContext(), "arg" + std::to_string(i)));
-  }
-
   auto signature = LITSignatureType::get(fnType, /*inputParamTypes=*/{},
                                          /*resultParamTypes=*/{},
                                          argConventions, fnEffects, metadata);
@@ -58,7 +51,6 @@ LIT::FuncOp StructEmitter::createFunction(
   StringAttr nameAttr =
       DeclResolver::getMangledName(builder.getStringAttr(name), signature);
   auto funcOp = builder.create<LIT::FuncOp>(nameAttr, signature, specialFnID);
-  funcOp.setPosArgNames(posOnlyNames);
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   DeclResolver::setLocationDebugScope(shared, diScopeGuard, funcOp, name);
