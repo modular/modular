@@ -29,7 +29,7 @@ using OnResultFn = llvm::unique_function<void(T)>;
 class MojoServer {
 public:
   MojoServer(std::unique_ptr<LLCL::WorkQueue> workQueue, bool waitOnShutdown,
-             SendDiagnosticsFn sendDiagnosticsFn);
+             SendDiagnosticsFn sendDiagnosticsFn, bool parseStdlib);
   ~MojoServer();
 
   /// Begin the shutdown sequence for the server.

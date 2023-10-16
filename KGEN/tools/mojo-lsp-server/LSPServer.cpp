@@ -279,12 +279,13 @@ void LSPServer::onSignatureHelp(const TextDocumentPositionParams &params,
 mlir::LogicalResult
 M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
                                std::unique_ptr<LLCL::WorkQueue> workQueue,
-                               bool waitOnShutdown) {
+                               bool waitOnShutdown, bool parseStdlib) {
   MessageHandler messageHandler(transport);
   MojoServer server(
       std::move(workQueue), waitOnShutdown,
       messageHandler.outgoingNotification<PublishDiagnosticsParams>(
-          "textDocument/publishDiagnostics"));
+          "textDocument/publishDiagnostics"),
+      parseStdlib);
   LSPServer lspServer(server, transport);
 
   // Initialization

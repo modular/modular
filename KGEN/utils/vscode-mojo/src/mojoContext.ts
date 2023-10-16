@@ -12,6 +12,7 @@ import {MojoDebugContext} from './debug/debug';
 import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
+import * as config from './utils/config';
 import * as configWatcher from './utils/configWatcher';
 import {DisposableContext} from './utils/disposableContext';
 
@@ -172,6 +173,9 @@ export class MOJOContext extends DisposableContext {
     let args = [];
     if (launchLanguageServerSuspended)
       args.push("--suspended");
+
+    if (config.get<boolean>("lsp.parseStdlib", workspaceFolder, false))
+      args.push("--parse-stdlib");
 
     // Configure the server options.
     const serverOptions: vscodelc.ServerOptions = {
