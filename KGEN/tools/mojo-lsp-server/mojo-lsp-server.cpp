@@ -56,7 +56,10 @@ int main(int argc, char **argv) {
           clEnumValN(Logger::Level::Info, "info",
                      "High level execution tracing"),
           clEnumValN(Logger::Level::Debug, "verbose", "Low level details")),
-      llvm::cl::init(Logger::Level::Info),
+      // We are still in basic development mode, so we set the logLevel to Debug
+      // to get more additional information for troubleshooting. When we become
+      // more confident of the LSP, we can switch this back to Info.
+      llvm::cl::init(Logger::Level::Debug),
   };
   llvm::cl::opt<bool> prettyPrint{
       "pretty",
