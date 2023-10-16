@@ -340,14 +340,12 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
 
   assert(kind == kSelfLiteral && "Unknown simple literal kind");
   // Self resolves to the type of the enclosing structure type.
-  ASTDecl *astDecl = &emitter.declScope;
-  while (!isa<StructDeclOp, TraitDeclOp>(*astDecl)) {
-    astDecl = astDecl->getParentDecl();
-    if (!astDecl) {
-      emitter.emitError(
-          getLoc(), "'Self' type may only be used inside a struct or trait");
-      return {};
-    }
+  ASTDecl *astDecl =
+      emitter.declScope.getNearestDeclOfType<StructDeclOp, TraitDeclOp>();
+  if (!astDecl) {
+    emitter.emitError(getLoc(),
+                      "'Self' type may only be used inside a struct or trait");
+    return {};
   }
 
   // Once we have the type in question we can just return its Self type as an
@@ -501,12 +499,10 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (livesInsideNestedFunc) {
     // if we have referenced a function that is not a closure, then there is no
     // state and this is not considered a capture.
-    if (!isa<LIT::FuncOp>(*decls[0])) {
+    ASTDecl *decl = decls.front();
+    if (!isa<LIT::FuncOp>(*decl)) {
       assert(decls.size() == 1 && "Only functions may be overloaded");
-      ASTDecl *decl = decls[0];
-      ASTDecl *funcDecl = &container;
-      while (funcDecl->getIfOperation() != nestedFunc)
-        funcDecl = funcDecl->getParentDecl();
+      ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
       if (decl->getParentDecl() && decl->getParentDecl() != funcDecl)
         emitter.shared.addCaptureToScope(*funcDecl, decl, capture);
     }
@@ -2913,22 +2909,12 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
   if (effects.isEscaping()) {
-    LIT::FileModuleOp fileModuleOp;
-    ASTDecl *astDecl = &emitter.declScope;
-    for (; !fileModuleOp && astDecl; astDecl = astDecl->getParentDecl()) {
-      fileModuleOp = dyn_cast<LIT::FileModuleOp>(*astDecl);
-      if (fileModuleOp)
-        break;
-    }
-    assert(fileModuleOp &&
-           "It should not be possible for the parser to parse a "
-           "type outside a file module op.");
-    if (fileModuleOp) {
-      StructDeclOp declOp = emitter.shared.getOrGenerateClosureWrapperStruct(
-          this->getLoc(), signature, fileModuleOp);
-      Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
-      return emitter.emitResult(ASTType(selfType), this, dest);
-    }
+    ASTDecl *astDecl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
+    auto moduleOp = cast<FileModuleOp>(*astDecl);
+    StructDeclOp declOp = emitter.shared.getOrGenerateClosureWrapperStruct(
+        getLoc(), signature, moduleOp);
+    Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
+    return emitter.emitResult(ASTType(selfType), this, dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);
 }

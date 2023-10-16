@@ -1969,15 +1969,14 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
   ssize_t selfArgNumber = -1;
-  if (auto *parentDecl = decl.getParentDecl()) {
-    if (isa<StructDeclOp, TraitDeclOp>(*parentDecl)) {
-      // The parent decl must be fully resolved in order to resolve any members
-      // of it.
-      assert(parentDecl->resolvedness == DeclResolvedness::fully);
-      selfType = parentDecl->getSelfType();
-      // If there is an in-memory result, self is passed as arg #1 otherwise #0.
-      selfArgNumber = hasMemoryResult ? 1 : 0;
-    }
+  if (ASTDecl *parent = decl.getParentDecl();
+      parent && isa<StructDeclOp, TraitDeclOp>(*parent)) {
+    // The parent decl must be fully resolved in order to resolve any of its
+    // members.
+    assert(parent->resolvedness == DeclResolvedness::fully);
+    selfType = parent->getSelfType();
+    // If there is an in-memory result, self is passed as arg #1 otherwise #0.
+    selfArgNumber = hasMemoryResult ? 1 : 0;
   }
 
   // __*init__ methods are weird - for memory-only results we define
