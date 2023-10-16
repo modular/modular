@@ -504,8 +504,11 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!isa<LIT::FuncOp>(*decls[0])) {
       assert(decls.size() == 1 && "Only functions may be overloaded");
       ASTDecl *decl = decls[0];
-      if (decl->getParentDecl() && decl->getParentDecl() != &container)
-        emitter.shared.addCaptureToScope(container, decl, capture);
+      ASTDecl *funcDecl = &container;
+      while (funcDecl->getIfOperation() != nestedFunc)
+        funcDecl = funcDecl->getParentDecl();
+      if (decl->getParentDecl() && decl->getParentDecl() != funcDecl)
+        emitter.shared.addCaptureToScope(*funcDecl, decl, capture);
     }
   }
   CValue value = result.getIfCValue();
