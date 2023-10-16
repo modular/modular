@@ -868,13 +868,8 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (rvType.isEqualCanon(requiredType))
     return true;
 
-  if (allowArgNameCheck) {
-    auto requiredSig = dyn_cast<SignatureType>(requiredType.mlirType);
-    auto valueSig = dyn_cast<SignatureType>(rvType.mlirType);
-    if (requiredSig && valueSig &&
-        canZeroCostConvertSignature(valueSig, requiredSig))
-      return true;
-  }
+  if (allowArgNameCheck && canZeroCostConvertSignature(requiredType, rvType))
+    return true;
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
@@ -1006,43 +1001,39 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       return {};
 
     if (!requiredType.isEqualCanon(rvalueType)) {
-      auto requiredSig = dyn_cast<SignatureType>(requiredType.mlirType);
-      auto valueSig = dyn_cast<SignatureType>(rvalueType.mlirType);
-      if (!requiredSig || !valueSig ||
-          !canZeroCostConvertSignature(valueSig, requiredSig)) {
-        // We disable implicit conversions to prevent converting T -> S -> U in
-        // one step, and to avoid infinite conversion cycles.
-        if (rvalueType.getNonmaterializableTarget(shared).isEqualCanon(
-                requiredType) &&
-            cValue.getIfPValue()) {
-          // For nonmaterializable types, we force a conversion to happen in the
-          // parameter domain.
-          CValue converted;
-          {
-            llvm::SaveAndRestore savedBuilder(builder, {});
-            llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
-            ValueDest ctorDest = ValueDest(dest.getContext());
-            converted = emitConstructorCall(
-                requiredType, CallOperands({{cValue, expr}}), expr,
-                CallSyntax::kImplicitConvert, ctorDest);
-          }
-          if (!converted) {
-            dest.resetForError();
-            return {};
-          }
-          return emitResult(converted, expr, dest);
-        } else {
-          return emitConstructorCall(requiredType,
-                                     CallOperands({{cValue, expr}}), expr,
-                                     CallSyntax::kImplicitConvert, dest,
-                                     /*allowImplicitConversion=*/false);
-        }
+      if (canZeroCostConvertSignature(requiredType, rvalueType)) {
+        // If we are dealing with signatures that differ only in argument names,
+        // we insert a rebind.
+        value = rebindValue(value, requiredType, expr->getLoc(), *this);
+        return emitCValue({value, expr}, dest);
       }
 
-      // If we are dealing with signatures that differ only in argument names,
-      // we insert a rebind.
-      value = rebindValue(value, requiredSig, expr->getLoc(), *this);
-      return emitCValue({value, expr}, dest);
+      // We disable implicit conversions to prevent converting T -> S -> U in
+      // one step, and to avoid infinite conversion cycles.
+      if (rvalueType.getNonmaterializableTarget(shared).isEqualCanon(
+              requiredType) &&
+          cValue.getIfPValue()) {
+        // For nonmaterializable types, we force a conversion to happen in the
+        // parameter domain.
+        CValue converted;
+        {
+          llvm::SaveAndRestore savedBuilder(builder, {});
+          llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
+          ValueDest ctorDest = ValueDest(dest.getContext());
+          converted =
+              emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
+                                  expr, CallSyntax::kImplicitConvert, ctorDest);
+        }
+        if (!converted) {
+          dest.resetForError();
+          return {};
+        }
+        return emitResult(converted, expr, dest);
+      }
+
+      return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
+                                 expr, CallSyntax::kImplicitConvert, dest,
+                                 /*allowImplicitConversion=*/false);
     }
   }
 

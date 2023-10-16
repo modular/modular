@@ -11,7 +11,7 @@
 #ifndef MOJOPARSER_UTILS_H
 #define MOJOPARSER_UTILS_H
 
-#include "Support/LLVMForwardDecls.h"
+#include "Support/LLVMCompilerForwardDecls.h"
 #include <cstddef>
 
 namespace M {
@@ -43,7 +43,7 @@ POP::PackType getIfPackType(SignatureType sig, size_t index);
 
 /// Returns whether the two signatures match, i.e. if they only differ in
 /// argument or parameter names.
-bool canZeroCostConvertSignature(LITSignatureType from, LITSignatureType to);
+bool canZeroCostConvertSignature(Type from, Type to);
 
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities
