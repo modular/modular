@@ -115,23 +115,28 @@ private:
   bool foundStar = false;
 };
 
-/// Handles printing '/' and '*' in lit IR and counts the number of arguments of
-/// different passing kinds. Optionally, it allows specifying a character to be
-/// used instead of '/'.
+/// Handles printing '/' and '*' in lit IR. Optionally, it allows specifying a
+/// character to be used instead of '/'. It also allows specifying a flag to
+/// suppress the '/' if it immediately follows the first argument (useful if
+/// printing methods with mojo syntax).
 class StarSlashPrinter {
 public:
-  StarSlashPrinter(raw_ostream &os, char slash = '/');
-  StarSlashPrinter(AsmPrinter &printer, char slash = '/');
+  StarSlashPrinter(raw_ostream &os, size_t numInputs,
+                   bool suppressSlashAfterSelf = false, char slash = '/');
+  StarSlashPrinter(AsmPrinter &printer, size_t numInputs, char slash = '/');
 
-  /// Print a single '*' or '/' if needed.
-  void printOptionalStarSlash(PassingKind passingKind, bool isFirstArg);
+  /// Print a single '*' or '/' if needed, given the passing kind, and the index
+  /// of the argument.
+  void printOptionalStarSlash(PassingKind passingKind, size_t idx);
 
   /// Print a single trailing '/' at the end of a signature if needed.
-  void printOptionalTrailingSlash() const;
+  void printOptionalTrailingSlash(size_t idx) const;
 
 private:
   raw_ostream &os;
+  size_t numInputs;
   PassingKind prevPassingKind;
+  bool suppressSlashAfterSelf;
   char slash; // TODO: remove this when AsmParser can handle '/'.
 };
 

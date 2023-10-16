@@ -220,6 +220,29 @@ fn fn_with_variant(
     return
 
 
+# CHECK:  "name": "pos_only_print",
+# CHECK:  "overloads":
+# CHECK:      "args":
+# CHECK:          "name": "obj"
+# CHECK:          "passingKind": "pos",
+# CHECK:          "type": "object"
+
+# CHECK:          "name": "sep"
+# CHECK:          "passingKind": "pos_or_kw",
+# CHECK:          "type": "StringLiteral"
+# CHECK:      "signature": "pos_only_print(obj: object, /, sep: StringLiteral)",
+
+
+fn pos_only_print(obj: object, /, sep: StringLiteral):
+    """Prints an object type.
+
+    Args:
+        obj: The object to print.
+        sep: The separator.
+    """
+    pass
+
+
 # CHECK:  "kind": "module",
 # CHECK:  "name": "mojo-doc",
 

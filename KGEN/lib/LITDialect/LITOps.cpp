@@ -506,10 +506,9 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   size_t numInputs = signature.getNumInputs();
   size_t defaultStartIndex = numInputs - defaultArgs.size();
 
-  StarSlashPrinter ssPrinter(p, '|');
+  StarSlashPrinter ssPrinter(p, numInputs, '|');
   auto printElt = [&](unsigned i) {
-    ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
-                                     /*isFirstArg=*/i == 0);
+    ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i], i);
 
     // Print the SSA name first, followed by the user-defined argument name in
     // brackets, and the type.
@@ -531,8 +530,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
-    if (i == numInputs - 1)
-      ssPrinter.printOptionalTrailingSlash();
+    ssPrinter.printOptionalTrailingSlash(i);
   };
   printSignatureValues(p, printElt, functionType, signature,
                        /*optionalResultList=*/true);

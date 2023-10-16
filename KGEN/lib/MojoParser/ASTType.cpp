@@ -422,11 +422,11 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     }
     os << '(';
     Type inMemResult;
-    StarSlashPrinter ssPrinter(os);
+    StarSlashPrinter ssPrinter(os, sig.getNumInputs());
     for (auto [i, type, convention, name, passingKind] :
          llvm::enumerate(sig.getValueInputs(), sig.getInputConventions(),
                          sig.getArgNames(), sig.getArgPassingKinds())) {
-      ssPrinter.printOptionalStarSlash(passingKind, /*isFirstArg=*/i == 0);
+      ssPrinter.printOptionalStarSlash(passingKind, i);
 
       if (i > (inMemResult ? 1 : 0))
         os << ", ";
@@ -479,8 +479,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       actualType.print(os, forDiag);
 
       // Check if we are at the end; if so, we might still have to print a '/'.
-      if (i == sig.getNumInputs() - 1)
-        ssPrinter.printOptionalTrailingSlash();
+      ssPrinter.printOptionalTrailingSlash(i);
     }
     os << ')';
     for (auto [enabled, effect] :

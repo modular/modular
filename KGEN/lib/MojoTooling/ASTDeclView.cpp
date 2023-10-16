@@ -6,6 +6,7 @@
 
 #include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
@@ -404,6 +405,7 @@ llvm::json::Object ArgumentDeclView::toJSON() const {
       {"name", getName()},
       {"owned", owned},
       {"type", type},
+      {"passingKind", stringifyPassingKind(passingKind)},
   };
 }
 
@@ -551,13 +553,23 @@ std::string FunctionDeclView::getSignature(
   }
 
   // Emit the arguments of the function.
-  signatureOS << "(";
-  interleaveComma(args, signatureOS, [&](const auto &arg) {
+  StarSlashPrinter ssPrinter(signatureOS, args.size(),
+                             /*suppressSlashAfterSelf=*/isMethod());
+  size_t idx = 0;
+  auto printArg = [&](const M::ArgumentDeclView &arg) {
+    ssPrinter.printOptionalStarSlash(arg.getPassingKind(), idx);
+
     unsigned argStart = signature.size();
     signatureOS << arg.getDeclarationSnippet();
     if (argumentOffsets)
       argumentOffsets->push_back({argStart, signature.size()});
-  });
+
+    // Check if we are at the end; if so, we might still have to print a '/'.
+    ssPrinter.printOptionalTrailingSlash(idx++);
+  };
+
+  signatureOS << "(";
+  interleaveComma(args, signatureOS, printArg);
   signatureOS << ")";
 
   // Emit the result type.
@@ -594,6 +606,8 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   ArrayRef<ValueInputConvention> argConventions =
       funcOp.getSignature().getInputConventions();
   ASTType resultType = funcOp.getUserResultType();
+  ArrayRef<PassingKind> argPassingKinds =
+      funcOp.getSignature().getArgPassingKinds();
 
   // Check for a by-ref result type, which gets modeled as the first argument
   // (as it needs to be passed through memory), and we don't want to include
@@ -603,6 +617,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     argTypes = argTypes.drop_front();
     argNames = argNames.drop_front();
     argConventions = argConventions.drop_front();
+    argPassingKinds = argPassingKinds.drop_front();
   }
 
   // If this is a method, grab the expected "Self" type.
@@ -611,10 +626,11 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     selfType = declRef->getParentDecl()->getSelfType();
 
   // Grab the types of the arguments to the function.
-  for (auto [type, name, convention] :
-       llvm::zip(argTypes, argNames, argConventions))
+  for (auto [type, name, convention, passingKind] :
+       llvm::zip(argTypes, argNames, argConventions, argPassingKinds))
     args.push_back(ArgumentDeclView(
         name.getValue(), generateTypeString(type, selfType, convention),
+        passingKind,
         /*inout=*/convention == ValueInputConvention::ByRef ||
             convention == ValueInputConvention::InitSelf,
         /*owned=*/convention == ValueInputConvention::OwnedInMem ||
