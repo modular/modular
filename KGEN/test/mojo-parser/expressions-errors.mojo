@@ -339,6 +339,11 @@ def bad_assignment1(a: Int, b: Int):
    # expected-error @+1 {{expected ')' in parenthesized expression}}
    a = (b += b)
 
+fn bad_walrus_implicit_decl_in_fn():
+  # expected-error @+1 {{use of unknown declaration 'a'}}
+  if a := 4:
+    pass
+
 fn unused_assignments():
   var a = 1
   a = a  # ok of course.
