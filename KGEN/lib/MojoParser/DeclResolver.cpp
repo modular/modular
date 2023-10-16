@@ -2732,11 +2732,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Compute the signature of the function.
+  SmallVector<PassingKind> argPassingKinds(argNames.size(),
+                                           PassingKind::PosOnly);
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
-      FnMetadataAttr::get(builder.getContext(), argNames, paramNames,
-                          argDefaults, paramDefaults),
+      FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
+                          paramNames, argDefaults, paramDefaults),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
@@ -3678,8 +3680,8 @@ static TypedAttr synthesizeEmptyDtor(SharedState &shared, StructDeclOp structOp,
   // Create the FuncOp and ASTDecl for the method.
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
-      "__del__", selfType.mlirType, convention, selfName, shared.getNoneType(),
-      structDecl, SpecialFunctionKind::kDel);
+      "__del__", selfType.mlirType, convention, selfName, PassingKind::PosOnly,
+      shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
 
   // Set up the body.
   Block *body = funcOp.getBody();

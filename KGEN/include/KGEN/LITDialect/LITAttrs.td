@@ -57,12 +57,14 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
   let parameters = (ins
     OptionalArrayRefParameter<"StringAttr">:$argNames,
+    OptionalArrayRefParameter<"PassingKind">:$argPassingKinds,
     OptionalArrayRefParameter<"StringAttr">:$paramNames,
     OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
     OptionalArrayRefParameter<"TypedAttr">:$defaultParameters
   );
   let assemblyFormat = [{
     `<` `[` (`]`) : ($argNames^          `]`)? `,`
+        `[` (`]`) : ($argPassingKinds^   `]`)? `,`
         `[` (`]`) : ($paramNames^        `]`)? `,`
         `[` (`]`) : ($defaultArguments^  `]`)? `,`
         `[` (`]`) : ($defaultParameters^ `]`)?
@@ -70,14 +72,16 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   }];
 
   let builders = [
-    AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames)>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames,
+                     "ArrayRef<PassingKind>":$argPassingKinds)>,
   ];
 
   let extraClassDeclaration = [{
     // Create a new metadata attribute with the given argument names. Only use
     // this helper if certain that the default arguments do not need to be
     // modified (e.g. because prepending a positional-only argument).
-    FnMetadataAttr cloneWith(ArrayRef<StringAttr> argNames) const;
+    FnMetadataAttr cloneWith(ArrayRef<StringAttr> argNames,
+                             ArrayRef<PassingKind> argPassingKinds) const;
   }];
 
   let genVerifyDecl = 1;

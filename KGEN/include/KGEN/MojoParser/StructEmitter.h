@@ -73,6 +73,7 @@ public:
                             ArrayRef<Type> argTypes,
                             ArrayRef<ValueInputConvention> argConventions,
                             ArrayRef<StringAttr> argNames,
+                            ArrayRef<PassingKind> argPassingKinds,
                             SpecialFunctionKind kind);
 
   /// Return the initializer method with the specified signature if it exists
@@ -83,9 +84,10 @@ public:
   /// are added to the body of the function but no ops are added to the cody.
   LIT::FuncOp createFunction(StringRef name, ArrayRef<Type> argTypes,
                              ArrayRef<ValueInputConvention> argConventions,
-                             ArrayRef<StringAttr> argNames, Type resultType,
-                             SpecialFunctionKind specialFnID, SMLoc loc,
-                             ImplicitLocOpBuilder &builder,
+                             ArrayRef<StringAttr> argNames,
+                             ArrayRef<PassingKind> argPassingKinds,
+                             Type resultType, SpecialFunctionKind specialFnID,
+                             SMLoc loc, ImplicitLocOpBuilder &builder,
                              FnEffects effects = FnEffects());
 
   /// This synthesizes an __init__ method that accepts values for every field of
@@ -93,16 +95,17 @@ public:
   LIT::FuncOp
   synthesizeMemberwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
                            ArrayRef<ValueInputConvention> argConventions,
-                           ArrayRef<StringAttr> argNames);
+                           ArrayRef<StringAttr> argNames,
+                           ArrayRef<PassingKind> argPassingKinds);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated.
-  std::pair<LIT::FuncOp, ASTDecl &>
-  synthesizeMethodInStruct(StringRef name, ArrayRef<Type> argTypes,
-                           ArrayRef<ValueInputConvention> argConventions,
-                           ArrayRef<StringAttr> argNames, Type resultType,
-                           ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-                           FnEffects effects = FnEffects());
+  std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
+      StringRef name, ArrayRef<Type> argTypes,
+      ArrayRef<ValueInputConvention> argConventions,
+      ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
+      Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
+      FnEffects effects = FnEffects());
 
 protected:
   Type noneType;

@@ -60,6 +60,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
 
 def FnMetadataAttr : DialectAttribute<(attr
   StringAttrArray:$argNames,
+  EnumAttrArray<"PassingKind">:$argPassingKinds,
   StringAttrArray:$paramNames,
   TypedAttrArray:$defaultArguments,
   TypedAttrArray:$defaultParameters

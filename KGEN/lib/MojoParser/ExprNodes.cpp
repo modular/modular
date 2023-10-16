@@ -2887,6 +2887,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           return b.getStringAttr("");
         return arg.name;
       });
+  SmallVector<PassingKind> argPassingKinds(argNames.size(),
+                                           PassingKind::PosOnly);
 
   if (effects.isThrows()) {
     Type errorType =
@@ -2907,8 +2909,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
-      FnMetadataAttr::get(b.getContext(), argNames, paramNames, argDefaults,
-                          paramDefaults),
+      FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
+                          argDefaults, paramDefaults),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");
