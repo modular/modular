@@ -1,0 +1,61 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen-translate %s -import-mojo | FileCheck %s
+
+# CHECK: lit.func @"__copyinit__{{.*}}(%self[self]: !kgen.pointer<!escaping1> init_self, %other[other]: !kgen.pointer<!escaping1> borrow_in_mem) -> !kgen.none attributes {specialFnKind = 3 : i8} {
+# CHECK-NEXT:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %other[field0]
+# CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
+# CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[M0]]
+# CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %other[dtor]
+# CHECK-NEXT:   [[M3:%.*]] = pop.load [[M2]]
+# CHECK-NEXT:   pop.store [[M3]], [[M1]]
+# CHECK-NEXT:   [[M4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:   [[M5:%.*]] = lit.struct.gep %other[copy]
+# CHECK-NEXT:   [[M6:%.*]] = pop.load [[M5]]
+# CHECK-NEXT:   pop.store [[M6]], [[M4]]
+# CHECK-NEXT:   [[M7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:   [[M8:%.*]] = lit.struct.gep %other[call]
+# CHECK-NEXT:   [[M9:%.*]] = pop.load [[M8]]
+# CHECK-NEXT:   pop.store [[M9]], [[M7]]
+# CHECK-NEXT:   kgen.param.constant: none
+# CHECK-NEXT:   [[W0:%.*]] = lit.struct.gep %other[field0]
+# CHECK-NEXT:   [[W1:%.*]] = pop.load [[W0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[W2:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:   [[W3:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[W4:%.*]] = pop.load [[W2]]
+
+# Call the copy constructor member with the uninitialized self and the untyped existing impl.
+# CHECK-NEXT:  [[W5:%.*]] = kgen.call_signature [[W4]]([[W3]], [[W1]])
+# CHECK-NEXT:  lit.return
+# CHECK-NEXT:  lit.end_func
+
+# CHECK-LABEL: lit.func @"materialize_escaping_closure
+
+# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<array<0, i1>>> borrow, %other[other]: !kgen.pointer<array<0, i1>> borrow_in_mem) -> !kgen.none attributes {specialFnKind = 0 : i8} {
+
+# Allocate memory on the heap for impl and copy existing contents into it.
+# CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(
+# CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(
+# CHECK-NEXT:  [[V0:%.*]] = pop.aligned_alloc %index_0, %index
+# CHECK-NEXT:  [[V1:%.*]] = pop.pointer.bitcast %other
+# CHECK-NEXT:  [[V2:%.*]] = kgen.call {{.*}}__copyinit__(${{.*}}::_CI_${{.*}}"([[V0]], [[V1]])
+
+# Store the address of the heap allocated memory into the self.
+# CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]
+# CHECK-NEXT:  pop.store [[V4]], %[[PTR_TO_IMPL]] : !kgen.pointer<pointer<array<0, i1>>>
+
+
+@value
+struct MemType:
+    fn __add__(self, rhs: MemType) -> MemType:
+        return MemType()
+
+
+fn materialize_escaping_closure(m: MemType):
+    fn unique(n: MemType) escaping -> MemType:
+        return m + n
