@@ -664,10 +664,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       }
 
     // Argument name mismatches don't count as implicit conversions.
-    auto expectedSig = dyn_cast<SignatureType>(expectedType.mlirType);
-    auto argSig = dyn_cast<SignatureType>(argType.mlirType);
-    if (expectedSig && argSig &&
-        canZeroCostConvertSignature(expectedSig, argSig))
+    if (canZeroCostConvertSignature(expectedType, argType))
       break;
 
     // If we lack an exact match and conversions are disabled, this

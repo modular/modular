@@ -668,8 +668,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     }
 
     return functionType.isEqualCanon(candidateType) ||
-           canZeroCostConvertSignature(
-               cast<SignatureType>(functionType.mlirType), candidateType);
+           canZeroCostConvertSignature(functionType, candidateType);
   };
 
   // Evaluate the fitness of each candidate in our overload set.

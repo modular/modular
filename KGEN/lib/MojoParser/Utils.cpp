@@ -26,8 +26,12 @@ POP::PackType LIT::getIfPackType(SignatureType sig, size_t index) {
              : nullptr;
 }
 
-bool LIT::canZeroCostConvertSignature(LITSignatureType from,
-                                      LITSignatureType to) {
+bool LIT::canZeroCostConvertSignature(Type fromType, Type toType) {
+  auto from = dyn_cast<LITSignatureType>(fromType);
+  auto to = dyn_cast<LITSignatureType>(toType);
+  if (!from || !to)
+    return false;
+
   if (from.getArgNames().size() != to.getInputConventions().size())
     return false;
   if (from.getParamNames().size() != to.getInputParamTypes().size())
