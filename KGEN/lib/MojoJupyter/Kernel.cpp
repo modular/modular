@@ -94,8 +94,7 @@ struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
     SetUnwindOnError(false);
     SetGenerateDebugInfo(true);
 
-    // FIXME(19136): Set an infinite timeout.
-    SetTimeoutInMicroSeconds(1000000000);
+    SetTimeoutInMicroSeconds(0);
 
     ref().SetREPLEnabled(true);
     ref().SetColorizeErrors(true);
