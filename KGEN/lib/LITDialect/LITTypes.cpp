@@ -116,7 +116,13 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> argDefaults;
   SmallVector<ValueInputConvention> inputConventions;
+
+  StarSlashParser ssParser(p, loc);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
+    if (OptionalParseResult res = ssParser.parseOptionalStarSlash();
+        res.has_value())
+      return res.value();
+
     // Parse an optional argument name.
     if (parseOptionalName(p, argNames.emplace_back()))
       return failure();
@@ -135,6 +141,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       return failure();
     if (defaultVal)
       argDefaults.emplace_back(defaultVal);
+
     return success();
   };
 
@@ -144,14 +151,17 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
                            /*optionalResultList=*/false))
     return failure();
 
-  SmallVector<PassingKind> argPassingKinds(argNames.size(),
-                                           PassingKind::PosOnly);
+  auto [numPosOnly, numPosOrKw, numKwOnly] = ssParser.getNumPassingKinds();
+  SmallVector<PassingKind> argPassingKinds(numPosOnly, PassingKind::PosOnly);
+  argPassingKinds.append(numPosOrKw, PassingKind::PosOrKw);
+  argPassingKinds.append(numKwOnly, PassingKind::KwOnly);
+
+  MLIRContext *ctx = p.getContext();
   signature = SignatureType::getChecked(
       [&] { return p.emitError(loc); }, functionType,
-      TypeArrayAttr::get(p.getContext(), inputParamTypes),
-      TypeArrayAttr::get(p.getContext(), resultParamTypes), inputConventions,
-      effects,
-      FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
+      TypeArrayAttr::get(ctx, inputParamTypes),
+      TypeArrayAttr::get(ctx, resultParamTypes), inputConventions, effects,
+      FnMetadataAttr::get(ctx, argNames, argPassingKinds, paramNames,
                           argDefaults, defaultParamValues));
   return success(!!signature);
 }
@@ -171,7 +181,7 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
     return genType;
   }
 
-  p.emitError(typeLoc) << "unknown  type `" << mnemonic << "` in dialect `"
+  p.emitError(typeLoc) << "unknown type `" << mnemonic << "` in dialect `"
                        << getNamespace() << "`";
   return {};
 }
@@ -188,7 +198,16 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
                               signature.getResultParamTypes(),
                               signature.getParamNames(),
                               signature.getMetadata().getDefaultParameters());
+
+  ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
+  size_t numInputs = signature.getNumInputs();
+  size_t defaultIndex = numInputs - defaultArgs.size();
+
+  StarSlashPrinter ssPrinter(p, '|');
   auto printElt = [&](unsigned i) {
+    ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
+                                     /*isFirstArg=*/i == 0);
+
     StringAttr argName = signature.getArgName(i);
     if (!argName.empty()) {
       p.printString(argName);
@@ -198,12 +217,14 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     p << signature.getValueInputs()[i];
 
     printInputConvention(p, signature.getInputConvention(i));
-    size_t defaultIndex =
-        signature.getNumInputs() - signature.getDefaultArguments().size();
     if (i >= defaultIndex) {
       p << " = ";
-      printParamValue(p, signature.getDefaultArguments()[i - defaultIndex]);
+      printParamValue(p, defaultArgs[i - defaultIndex]);
     }
+
+    // Check if we are at the end; if so, we might still have to print a '/'.
+    if (i == numInputs - 1)
+      ssPrinter.printOptionalTrailingSlash();
   };
 
   printSignatureValues(p, printElt, signature.getValues(), signature,
@@ -271,10 +292,9 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
                                        TypeRange results) {
   auto funcType = FunctionType::get(ctx, inputs, results);
 
-  auto emptyStr = StringAttr::get(ctx);
-  SmallVector<StringAttr> argNames(funcType.getNumInputs(), emptyStr);
-  SmallVector<PassingKind> argPassingKinds(argNames.size(),
-                                           PassingKind::PosOnly);
+  size_t numInputs = funcType.getNumInputs();
+  SmallVector<StringAttr> argNames(numInputs, StringAttr::get(ctx));
+  SmallVector<PassingKind> argPassingKinds(numInputs, PassingKind::PosOnly);
   auto metadata = FnMetadataAttr::get(ctx, argNames, argPassingKinds);
   return LITSignatureType::get(funcType, /*inputParamTypes=*/{},
                                /*resultParamTypes=*/{},

@@ -125,6 +125,27 @@ lit.func @no_names(index)
 
 // -----
 
+// expected-error @below {{only one '|' allowed in signature}}
+lit.func @twoSlash(%a: index, |, |, %b: index) {
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{only one '*' allowed in signature}}
+lit.func @twoStar(%a: index, *, *, %b: index) {
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{'*' cannot precede '|' in signature}}
+lit.func @slashAfterStar(%a: index, *, |, %b: index) {
+  kgen.return
+}
+
+// -----
+
 // expected-error @below {{'lit.func' expected parameter with default value}}
 lit.func @default_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
   %0 = kgen.param.constant: none = <#kgen.none>

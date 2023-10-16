@@ -57,7 +57,6 @@ def LIT_FuncOp : LITOp<"func", [
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
-    StringArrayAttr:$posArgNames,
     TypeAttrOf<LIT_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
@@ -111,12 +110,6 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return the decl name of the function.
     StringAttr getDeclName() { return getSymNameAttr(); }
-
-    /// Return the argument names of the function. This is _not_ the same as the
-    /// argument names of the signature, since the signature will contain empty
-    /// strings for positional-only arguments. This function will return all
-    /// argument names in a single vector, including the positional-only ones.
-    SmallVector<StringAttr> getArgNames();
 
     /// Return the full signature of this declaration, including parameters from
     /// enclosing struct declarations.

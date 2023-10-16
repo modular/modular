@@ -65,7 +65,7 @@ fn take_closure(
     g: fn(borrowed __mlir_type.index) capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ):
-    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow) capturing -> index>
+    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow, |) capturing -> index>
     let result = g(x)
 
 
@@ -79,9 +79,9 @@ fn take_closure_no_param_main():
     # CHECK: %0 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: *"g(__mlir_type.index)"]()
     # CHECK: %W = lit.letreg.decl "W" = %0
     # CHECK: %1 = kgen.rebind %W : !kgen.signature<!lit.signature<("y": index borrow) capturing -> index>>
-    # CHECK-SAME: to !kgen.signature<!lit.signature<(index borrow) capturing -> index>>
+    # CHECK-SAME: to !kgen.signature<!lit.signature<(index borrow, |) capturing -> index>>
     let W = g
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %index3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow) capturing -> index>> borrow, "x": index borrow) -> !kgen.none>
+    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %index3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow, |) capturing -> index>> borrow, "x": index borrow) -> !kgen.none>
     take_closure(W, Int(3).value)
 
 
@@ -120,7 +120,7 @@ fn take_closure_raises(
     g: fn(borrowed __mlir_type.index) raises capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ) raises:
-    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow) throws|capturing -> !pop.variant<!Error, index>>
+    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow, |) throws|capturing -> !pop.variant<!Error, index>>
     let result = g(x)
 
 
@@ -257,6 +257,15 @@ def var_decls() -> None:
 fn empty_def():
     pass
 
+# CHECK-LABEL: lit.func @"slash
+# CHECK-SAME: (%a[a]: !Int borrow, |, %b[b]: !Int borrow)
+fn slash(a: Int, /, b: Int):
+    pass
+
+# CHECK-LABEL: lit.func @"slashLast
+# CHECK-SAME: (%a[a]: !Int borrow, |, %b[b]: !Int borrow)
+fn slashLast(a: Int, /, b: Int):
+    pass
 
 # Method overloading.
 # CHECK-LABEL: lit.func @"testThing({{.*}}$int::Int)"
@@ -307,21 +316,21 @@ fn callOverload(a: Int):
     # CHECK: kgen.call @"$decls"::@"testThing({{.*}}$int::Int,{{.*}}$int::Int)"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: kgen.create_closure [!lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}>>:
+    # CHECK: kgen.create_closure [!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
     # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: kgen.create_closure [!lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}>>:
+    # CHECK: kgen.create_closure [!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
     # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.create_closure [!lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}>>:
+    # CHECK: %4 = kgen.create_closure [!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
     # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     let float2: IntToFloat32Type = testThing
 
-    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:
-    # CHECK-SAME: !lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}>> rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing{{.*}}")>()
+    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}::Int, /) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:
+    # CHECK-SAME: !lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}>> rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing{{.*}}")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -1107,7 +1116,7 @@ struct ShadowsOuterName:
 
 # CHECK-LABEL: lit.struct.decl @ValueMem attributes {
 # CHECK-SAME: moveInit = #kgen.symbol.constant<{{.*}}ValueMem::@"__moveinit__
-# CHECK-SAME: !kgen.signature<!lit.signature<({{.*}} init_self, {{.*}} owned_in_mem)
+# CHECK-SAME: !kgen.signature<!lit.signature<({{.*}} init_self, {{.*}} owned_in_mem, |)
 @value
 struct ValueMem:
     var a: Int  # Trivial
@@ -1127,7 +1136,7 @@ struct ValueMem:
 
 # CHECK: lit.func @"__copyinit__(
 # CHECK-SAME:  %self[self]: !kgen.pointer<!ValueMem> init_self,
-# CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> borrow_in_mem)
+# CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> borrow_in_mem, |)
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %other[a]
 # CHECK-NEXT: %2 = pop.load %1
@@ -1141,7 +1150,7 @@ struct ValueMem:
 
 # CHECK: lit.func @"__moveinit__(
 # CHECK-SAME:  %self[self]: !kgen.pointer<!ValueMem> init_self,
-# CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> owned_in_mem)
+# CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> owned_in_mem, |)
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %other[a]
 # CHECK-NEXT: %2 = lit.load.consume %1
@@ -1169,7 +1178,7 @@ struct ValueReg:
 # CHECK-NEXT: lit.end_func
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%other[other]: !ValueReg borrow)
+# CHECK-SAME: (%other[other]: !ValueReg borrow, |)
 # CHECK-SAME:  -> !ValueReg
 # CHECK-SAME: attributes {isStatic, specialFnKind = 7 : i8}
 # CHECK-NEXT: %0 = lit.struct.extract %other[a]
@@ -1521,11 +1530,11 @@ trait Trait:
     fn f2(inout self: Self):
         pass
 
-    # CHECK-DAG: lit.func @"f3({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, %self[self]: !lit.typecheckerror) throws -> !pop.variant<!Error, none>
+    # CHECK-DAG: lit.func @"f3({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !lit.typecheckerror) throws -> !pop.variant<!Error, none>
     # CHECK-NEXT:   lit.trait_func
     def f3(self: Self): ...
 
-    # CHECK-DAG: lit.func @"f4({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, %self[self]: !kgen.pointer<!lit.typecheckerror> byref) throws -> !pop.variant<!Error, none>
+    # CHECK-DAG: lit.func @"f4({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.pointer<!lit.typecheckerror> byref) throws -> !pop.variant<!Error, none>
     # CHECK-NEXT:   lit.trait_func
     def f4(inout self: Self):
         pass

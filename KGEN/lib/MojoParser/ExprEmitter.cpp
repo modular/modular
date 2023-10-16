@@ -868,7 +868,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (rvType.isEqualCanon(requiredType))
     return true;
 
-  if (allowArgNameCheck && canZeroCostConvertSignature(requiredType, rvType))
+  if (allowArgNameCheck && canZeroCostConvertSignature(rvType, requiredType))
     return true;
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
@@ -1001,7 +1001,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       return {};
 
     if (!requiredType.isEqualCanon(rvalueType)) {
-      if (canZeroCostConvertSignature(requiredType, rvalueType)) {
+      if (canZeroCostConvertSignature(rvalueType, requiredType)) {
         // If we are dealing with signatures that differ only in argument names,
         // we insert a rebind.
         value = rebindValue(value, requiredType, expr->getLoc(), *this);

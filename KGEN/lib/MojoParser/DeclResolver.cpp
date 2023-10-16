@@ -1207,6 +1207,10 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   }
 
+  // Set the name to empty string if it wasn't specified.
+  if (!name)
+    name = StringAttr::get(p.getContext());
+
   // Parse an optional default argument value: `"=" expression`.
   SMLoc equalLoc;
   if (p.consumeIf(Token::equal, &equalLoc)) {
@@ -1299,6 +1303,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
   };
 
   // This parses either an argument or a keyword argument specifier.
+  bool foundName = false;
   auto parseArgument = [&]() -> ParseResult {
     KWArgMarkerInfo marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
@@ -1311,6 +1316,19 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
       return handleSlashMarker(arg.loc), success();
     if (marker == KWArgMarkerInfo::kStar)
       return handleStarMarker(arg.loc, /*isMarker=*/true), success();
+
+    if (arg.name.empty()) {
+      if (foundName) {
+        return p.emitError(arg.loc,
+                           "unnamed argument cannot follow named argument");
+      }
+      if (hasSlashMarker || hasStarMarker) {
+        return p.emitError(arg.loc,
+                           "unnamed argument cannot follow '/' or '*'");
+      }
+    } else {
+      foundName = true;
+    }
 
     // Otherwise, if this is a varargs marker, handle it as a marker and an
     // argument.
@@ -1334,6 +1352,13 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
   // will leave its `kwargHandling` default initialized.
   if (p.parseCommaSeparatedList(parseArgument, stopTokens))
     return failure();
+
+  // We allow specifying signatures with only positional-only arguments if all
+  // the argument names are omitted, i.e. `fn(Int, Int) -> Int` is the same as
+  // `fn(Int, Int, /) -> Int`.
+  if (!foundName && !hasSlashMarker && !hasStarMarker)
+    for (ParsedArgument &arg : args)
+      arg.kwArgHandling = KWArgHandling::kPositionalOnly;
 
   // TODO(Keyword Args): now that we parsed a fully generic parameter list,
   // reject keyword-only arguments. Remove them from the signature since the
@@ -1712,8 +1737,6 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
   return resultType;
 }
 
-/// Once the types of arguments and special cases have been sorted out,
-/// compute the final MLIR types and KGEN conventions.
 void DeclResolver::computeArgumentConventions(
     SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
     MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes,
@@ -1745,6 +1768,8 @@ void DeclResolver::computeArgumentConventions(
       arg.kgenConvention = ValueInputConvention::ByRefResult;
       break;
     case ParsedArgument::kConventionInitSelfResult:
+      // We also force the passing kind of self to positional-only.
+      arg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
       arg.kgenConvention = ValueInputConvention::InitSelf;
       break;
     }
@@ -2273,6 +2298,8 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
 
     // Regardless force it to init_self so recovery follows the fix-it.
     args[0].convention = ParsedArgument::kConventionInitSelfResult;
+    // We also force the passing kind of self to positional-only.
+    args[0].kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
 
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
       if (args[1].convention != ParsedArgument::kConventionBorrowed)
@@ -2553,6 +2580,18 @@ static Value emitClosureInstance(SignatureType closureSignature,
   return closureWrapperInstance.getIfMRValue();
 }
 
+PassingKind ParsedArgument::mapToPassingKind(KWArgHandling handling) {
+  switch (handling) {
+  case ParsedArgument::KWArgHandling::kPositionalOnly:
+    return PassingKind::PosOnly;
+  case ParsedArgument::KWArgHandling::kKeywordOnly:
+    return PassingKind::KwOnly;
+  case ParsedArgument::KWArgHandling::kPositionalOrKeyword:
+    return PassingKind::PosOrKw;
+  }
+  llvm_unreachable("unhandled ParsedArgument::KWArgHandling");
+}
+
 /// funcdef   ::=  [decorators] def_or_fn identifier [param_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 /// def_or_fn ::= "def" | "fn"
@@ -2695,17 +2734,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Handle argument effects and build the ASTDecls for the arguments.
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
-  SmallVector<StringAttr> posArgNames;
+  SmallVector<PassingKind> argPassingKinds;
   SmallVector<ValueInputConvention> inputConventions;
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(shared.diags.translateLocation(arg.loc));
-    if (arg.kwArgHandling == ParsedArgument::KWArgHandling::kPositionalOnly) {
-      argNames.push_back(StringAttr::get(funcOp.getContext()));
-      posArgNames.push_back(arg.name);
-    } else {
-      argNames.push_back(arg.name);
-    }
-
+    argPassingKinds.emplace_back(
+        ParsedArgument::mapToPassingKind(arg.kwArgHandling));
+    argNames.push_back(arg.name);
     inputConventions.push_back(arg.kgenConvention);
 
     // Add an ASTDecl for the argument.  This will actually be set up during
@@ -2723,8 +2758,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   auto inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(inputParamDecls);
   auto resultParamsAttr = builder.getAttr<ParamDeclArrayAttr>(resultParamDecls);
 
-  attrs.set(funcOp.getPosArgNamesAttrName(),
-            builder.getAttr<StringArrayAttr>(posArgNames));
   attrs.set(funcOp.getInputParamsAttrName(), inputParamsAttr);
   attrs.set(funcOp.getResultParamsAttrName(), resultParamsAttr);
   FunctionType functionType =
@@ -2732,9 +2765,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Compute the signature of the function.
-  SmallVector<PassingKind> argPassingKinds(argNames.size(),
-                                           PassingKind::PosOnly);
-  auto signature = IndexRefRemapper::remapToSignature(
+  LITSignatureType signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
       FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
@@ -2934,12 +2965,12 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   Block *bodyBlock = funcOp.getBody();
   auto builder = OpBuilder::atBlockEnd(bodyBlock);
 
-  SignatureType funcSignature = funcOp.getSignature();
+  LITSignatureType funcSignature = funcOp.getSignature();
 
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
   for (auto [argName, bbArg, convention] :
-       llvm::zip(funcOp.getArgNames(), funcOp.getBody()->getArguments(),
+       llvm::zip(funcSignature.getArgNames(), funcOp.getBody()->getArguments(),
                  funcSignature.getInputConventions())) {
     // Don't bind byref-result, it is handled specially by 'return'.
     if (convention == ValueInputConvention::ByRefResult)

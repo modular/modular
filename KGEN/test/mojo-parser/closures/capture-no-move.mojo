@@ -25,7 +25,7 @@ fn use(x: StringNoMove):
     pass
 
 
-# CHECK: lit.struct.decl @"_CI_{{.*}}::StringNoMove)
+# CHECK: lit.struct.decl @"_CI_{{.*}}::StringNoMove, /)
 # CHECK: lit.struct.field field0 : !StringNoMove
 # CHECK: lit.func @"__del__
 # CHECK: lit.func @"__copyinit__

@@ -12,6 +12,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITTypes.h"
 
 using namespace M;
@@ -219,4 +220,69 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
       return failure();
   name = StringAttr::get(p.getContext(), argName);
   return success();
+}
+
+OptionalParseResult StarSlashParser::parseOptionalStarSlash() {
+  if (succeeded(parser.parseOptionalVerticalBar())) {
+    if (foundSlash)
+      return parser.emitError(loc, "only one '|' allowed in signature");
+    if (foundStar)
+      return parser.emitError(loc, "'*' cannot precede '|' in signature");
+    numPosOnly = idx;
+    foundSlash = true;
+    return mlir::success();
+  }
+  if (succeeded(parser.parseOptionalStar())) {
+    if (foundStar)
+      return parser.emitError(loc, "only one '*' allowed in signature");
+    foundStar = true;
+    numPosOrKw = idx - numPosOnly;
+    return mlir::success();
+  }
+
+  ++idx;
+  return std::nullopt;
+}
+
+std::tuple<size_t, size_t, size_t> StarSlashParser::getNumPassingKinds() const {
+  size_t numPosOrKwSoFar = numPosOrKw;
+  if (!foundStar)
+    numPosOrKwSoFar = idx - numPosOnly;
+  return {numPosOnly, numPosOrKwSoFar, idx - numPosOnly - numPosOrKwSoFar};
+}
+
+StarSlashPrinter::StarSlashPrinter(raw_ostream &os, char slash)
+    : os(os), prevPassingKind(PassingKind::PosOnly), slash(slash) {}
+
+StarSlashPrinter::StarSlashPrinter(AsmPrinter &printer, char slash)
+    : StarSlashPrinter(printer.getStream(), slash) {}
+
+void StarSlashPrinter::printOptionalStarSlash(PassingKind passingKind,
+                                              bool isFirstArg) {
+  if (prevPassingKind == passingKind)
+    return;
+
+  switch (prevPassingKind) {
+  case PassingKind::PosOnly:
+    // Check if we are in the starting state; if no, this was the last
+    // positional-only argument.
+    if (!isFirstArg)
+      os << slash << ", ";
+    if (passingKind == PassingKind::KwOnly)
+      os << "*, ";
+    break;
+  case PassingKind::PosOrKw:
+    assert(passingKind != PassingKind::PosOnly &&
+           "positional-only argument cannot follow positional-or-keyword");
+    os << "*, ";
+    break;
+  case PassingKind::KwOnly:
+    llvm_unreachable("keyword-only argument must follow all other arguments");
+  }
+  prevPassingKind = passingKind;
+}
+
+void StarSlashPrinter::printOptionalTrailingSlash() const {
+  if (prevPassingKind == PassingKind::PosOnly)
+    os << ", " << slash;
 }

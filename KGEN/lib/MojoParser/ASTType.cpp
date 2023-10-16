@@ -17,6 +17,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -421,9 +422,12 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     }
     os << '(';
     Type inMemResult;
-    for (auto [i, type, convention, name] :
+    StarSlashPrinter ssPrinter(os);
+    for (auto [i, type, convention, name, passingKind] :
          llvm::enumerate(sig.getValueInputs(), sig.getInputConventions(),
-                         sig.getArgNames())) {
+                         sig.getArgNames(), sig.getArgPassingKinds())) {
+      ssPrinter.printOptionalStarSlash(passingKind, /*isFirstArg=*/i == 0);
+
       if (i > (inMemResult ? 1 : 0))
         os << ", ";
       if (convention == ValueInputConvention::ByRefResult) {
@@ -431,8 +435,9 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         inMemResult = type;
         continue;
       }
-      if (name.size())
+      if (!name.empty())
         os << name.getValue() << " = ";
+
       bool needSpace = false;
       if (convention == ValueInputConvention::OwnedInMem ||
           convention == ValueInputConvention::OwnedInReg) {
@@ -472,6 +477,10 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         actualType = cast<PointerType>(actualType.mlirType).getElementType();
       }
       actualType.print(os, forDiag);
+
+      // Check if we are at the end; if so, we might still have to print a '/'.
+      if (i == sig.getNumInputs() - 1)
+        ssPrinter.printOptionalTrailingSlash();
     }
     os << ')';
     for (auto [enabled, effect] :

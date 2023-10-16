@@ -23,7 +23,7 @@ fn foo(x: Int, y: MemType, z: MemType):
 # CHECK-SAME: %self[self]: !kgen.pointer<{{.*}}> init_self,
 # CHECK-SAME: %fld0[fld0]: !Int,
 # CHECK-SAME: %fld1[fld1]: !kgen.pointer<!MemType> owned_in_mem,
-# CHECK-SAME: %fld2[fld2]: !kgen.pointer<!MemType> owned_in_mem)
+# CHECK-SAME: %fld2[fld2]: !kgen.pointer<!MemType> owned_in_mem, |)
 
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure_3

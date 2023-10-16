@@ -674,7 +674,7 @@ Type POPDialect::parseType(DialectAsmParser &p) const {
     return parseScalarType(p);
 
   p.emitError(p.getCurrentLocation())
-      << "unknown  type `" << mnemonic << "` in dialect `" << getNamespace()
+      << "unknown type `" << mnemonic << "` in dialect `" << getNamespace()
       << "`";
   return {};
 }

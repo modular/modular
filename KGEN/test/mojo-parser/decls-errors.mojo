@@ -13,7 +13,7 @@ from memory.unsafe import Pointer
 # Closures
 ##===----------------------------------------------------------------------===##
 
-fn bind_fat_to_thin_target[g: fn(Int) -> Int](x: Int):
+fn bind_fat_to_thin_target[g: fn(y: Int) -> Int](x: Int):
     pass
 
 
@@ -24,7 +24,7 @@ fn bind_fat_to_thin_main():
     fn g(y: Int) -> Int:
         return x
 
-    # expected-error @below {{cannot pass 'fn(y = Int) capturing -> Int' value, parameter expected 'fn(Int) -> Int'}}
+    # expected-error @below {{cannot pass 'fn(y = Int) capturing -> Int' value, parameter expected 'fn(y = Int) -> Int'}}
     alias Bound = bind_fat_to_thin_target[g]
     Bound(3)
 
