@@ -11,7 +11,9 @@
 #include "Utils.h"
 
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/POPDialect/POPTypes.h"
 
 #include "Support/Compiler/Diags.h"
@@ -26,12 +28,28 @@ POP::PackType LIT::getIfPackType(SignatureType sig, size_t index) {
              : nullptr;
 }
 
-bool LIT::canZeroCostConvertSignature(Type fromType, Type toType) {
+bool LIT::canZeroCostConvertSignature(SharedState &shared, ASTType fromType,
+                                      ASTType toType) {
+  // Check for closure structs and dig out their underlying signature types to
+  // check whether the conversion can occur.
+  auto fromDecl = dyn_cast_or_null<StructDeclOp>(fromType.getDecl(shared));
+  auto toDecl = dyn_cast_or_null<StructDeclOp>(toType.getDecl(shared));
+  if (fromDecl && toDecl) {
+    TypeAttr fromSig = fromDecl.getClosureSignatureAttr();
+    TypeAttr toSig = toDecl.getClosureSignatureAttr();
+    if (fromSig && toSig)
+      return canZeroCostConvertSignature(shared, fromSig.getValue(),
+                                         toSig.getValue());
+    return false;
+  }
+
   auto from = dyn_cast<LITSignatureType>(fromType);
   auto to = dyn_cast<LITSignatureType>(toType);
   if (!from || !to)
     return false;
 
+  // Allow signature types to be converted for free if they differ only in
+  // argument or parameter names.
   if (from.getArgNames().size() != to.getInputConventions().size())
     return false;
   if (from.getParamNames().size() != to.getInputParamTypes().size())

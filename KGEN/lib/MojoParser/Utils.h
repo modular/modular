@@ -27,7 +27,9 @@ class PackType;
 } // namespace M::KGEN::POP
 
 namespace M::KGEN::LIT {
+class ASTType;
 class LITSignatureType;
+class SharedState;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other. This is typically used to generate an "s" suffix, but can also be
@@ -43,7 +45,8 @@ POP::PackType getIfPackType(SignatureType sig, size_t index);
 
 /// Returns whether the two signatures match, i.e. if they only differ in
 /// argument or parameter names.
-bool canZeroCostConvertSignature(Type from, Type to);
+bool canZeroCostConvertSignature(SharedState &shared, ASTType fromType,
+                                 ASTType toType);
 
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities
