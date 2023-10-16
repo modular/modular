@@ -7,7 +7,7 @@
 
 # COM: Check that a nested function with an effect can form a closure.
 
-# CHECK: lit.struct.decl @"_CI_{{.*}}throws|escaping
+# CHECK: lit.struct.decl @"_CI_{{.*}} raises
 
 fn makes_escaping_closure(m: Int):
    fn two_effects(n: Int) escaping raises -> Int:

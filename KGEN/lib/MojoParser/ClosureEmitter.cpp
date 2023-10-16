@@ -30,13 +30,11 @@ using namespace M::KGEN::LIT;
 StringAttr ClosureEmitter::getClosureNameFromType(StringRef prefix,
                                                   FileModuleOp fileModuleOp,
                                                   SignatureType signatureType) {
-  std::string base(prefix);
-  llvm::raw_string_ostream stream(base);
-  stream << fileModuleOp.getSymName() << "_";
-  stream << DeclResolver::getMangledName(
-      StringAttr::get(fileModuleOp.getContext(), ""), signatureType);
-  stream << signatureType.getFnEffects().getImpl();
-  return StringAttr::get(signatureType.getContext(), stream.str());
+  // Note: Add the trailing "escaping" so that the type alias gets picked up.
+  return StringAttr::get(fileModuleOp.getContext(),
+                         prefix + fileModuleOp.getSymName() + "_" +
+                             ASTType(signatureType).getAsString() +
+                             "_escaping");
 }
 
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
