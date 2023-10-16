@@ -251,22 +251,27 @@ std::tuple<size_t, size_t, size_t> StarSlashParser::getNumPassingKinds() const {
   return {numPosOnly, numPosOrKwSoFar, idx - numPosOnly - numPosOrKwSoFar};
 }
 
-StarSlashPrinter::StarSlashPrinter(raw_ostream &os, char slash)
-    : os(os), prevPassingKind(PassingKind::PosOnly), slash(slash) {}
+StarSlashPrinter::StarSlashPrinter(raw_ostream &os, size_t numInputs,
+                                   bool suppressSlashAfterSelf, char slash)
+    : os(os), numInputs(numInputs), prevPassingKind(PassingKind::PosOnly),
+      suppressSlashAfterSelf(suppressSlashAfterSelf), slash(slash) {}
 
-StarSlashPrinter::StarSlashPrinter(AsmPrinter &printer, char slash)
-    : StarSlashPrinter(printer.getStream(), slash) {}
+StarSlashPrinter::StarSlashPrinter(AsmPrinter &printer, size_t numInputs,
+                                   char slash)
+    : StarSlashPrinter(printer.getStream(), numInputs,
+                       /*suppressSlashAfterSelf=*/false, slash) {}
 
 void StarSlashPrinter::printOptionalStarSlash(PassingKind passingKind,
-                                              bool isFirstArg) {
+                                              size_t idx) {
   if (prevPassingKind == passingKind)
     return;
 
   switch (prevPassingKind) {
   case PassingKind::PosOnly:
     // Check if we are in the starting state; if no, this was the last
-    // positional-only argument.
-    if (!isFirstArg)
+    // positional-only argument. Optionally, we may want to suppress '/' before
+    // the second argument.
+    if (idx != 0 && (!suppressSlashAfterSelf || idx != 1))
       os << slash << ", ";
     if (passingKind == PassingKind::KwOnly)
       os << "*, ";
@@ -282,7 +287,10 @@ void StarSlashPrinter::printOptionalStarSlash(PassingKind passingKind,
   prevPassingKind = passingKind;
 }
 
-void StarSlashPrinter::printOptionalTrailingSlash() const {
-  if (prevPassingKind == PassingKind::PosOnly)
-    os << ", " << slash;
+void StarSlashPrinter::printOptionalTrailingSlash(size_t idx) const {
+  if (suppressSlashAfterSelf && idx == 0)
+    return;
+  if (idx == numInputs - 1)
+    if (prevPassingKind == PassingKind::PosOnly)
+      os << ", " << slash;
 }

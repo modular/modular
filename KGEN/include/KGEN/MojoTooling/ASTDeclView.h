@@ -21,6 +21,10 @@ class Object;
 
 namespace M {
 
+namespace KGEN::LIT {
+enum class PassingKind : uint32_t;
+} // namespace KGEN::LIT
+
 class MojoASTDeclRef;
 
 //===----------------------------------------------------------------------===//
@@ -168,9 +172,10 @@ private:
 /// View for function arguments, including varargs arguments.
 class ArgumentDeclView : public DeclView {
 public:
-  ArgumentDeclView(StringRef name, StringRef type, bool inout, bool owned)
-      : DeclView(DK_ArgumentDeclView, name), type(type), inout(inout),
-        owned(owned) {}
+  ArgumentDeclView(StringRef name, StringRef type,
+                   KGEN::LIT::PassingKind passingKind, bool inout, bool owned)
+      : DeclView(DK_ArgumentDeclView, name), type(type),
+        passingKind(passingKind), inout(inout), owned(owned) {}
 
   std::string getDeclarationSnippet() const override;
 
@@ -184,6 +189,8 @@ public:
 
   bool isOwned() const { return owned; }
 
+  KGEN::LIT::PassingKind getPassingKind() const { return passingKind; };
+
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
 
@@ -196,6 +203,7 @@ public:
   ///    "inout": boolean,
   ///    "owned": boolean,
   ///    "type": string
+  ///    "passingKind": string
   ///  }
   llvm::json::Object toJSON() const override;
 
@@ -210,6 +218,7 @@ public:
 
 private:
   std::string type;
+  KGEN::LIT::PassingKind passingKind;
   bool inout;
   bool owned;
 

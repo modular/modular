@@ -203,10 +203,9 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   size_t numInputs = signature.getNumInputs();
   size_t defaultIndex = numInputs - defaultArgs.size();
 
-  StarSlashPrinter ssPrinter(p, '|');
+  StarSlashPrinter ssPrinter(p, numInputs, '|');
   auto printElt = [&](unsigned i) {
-    ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i],
-                                     /*isFirstArg=*/i == 0);
+    ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i], i);
 
     StringAttr argName = signature.getArgName(i);
     if (!argName.empty()) {
@@ -223,8 +222,7 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
-    if (i == numInputs - 1)
-      ssPrinter.printOptionalTrailingSlash();
+    ssPrinter.printOptionalTrailingSlash(i);
   };
 
   printSignatureValues(p, printElt, signature.getValues(), signature,
