@@ -364,6 +364,8 @@ struct DiagEmitter {
                                StringRef inputOrResult) const;
   InflightDiag wrongArgCount(size_t minRequiredArgs, size_t maxAllowedArgs,
                              size_t numOperands) const;
+  InflightDiag wrongPosOnlyArgCount(size_t minRequiredArgs,
+                                    size_t numOperands) const;
   InflightDiag resultGenericMemType(Type outputType) const;
   InflightDiag argGenericMemType(size_t expectedArgIdx,
                                  Type expectedType) const;
@@ -442,6 +444,15 @@ InflightDiag DiagEmitter::wrongArgCount(size_t minRequiredArgs,
   InflightDiag diag = initDiag() << "callee";
   emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
                            "argument");
+  return diag;
+}
+
+InflightDiag DiagEmitter::wrongPosOnlyArgCount(size_t minRequiredArgs,
+                                               size_t numOperands) const {
+  InflightDiag diag = initDiag() << "callee";
+  emitWrongArgOrParamCount(diag, minRequiredArgs,
+                           /*maxAllowed=*/numOperands, numOperands,
+                           "positional-only argument");
   return diag;
 }
 
@@ -695,10 +706,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // First, we collect all real argument names.
   StringSet<> argNames;
-  for (auto [argIdx, argName] :
-       llvm::enumerate(signature.getMetadata().getArgNames())) {
-    if (argName.empty())
-      continue; // Positional-only argument.
+  for (auto [argIdx, argName, argPassingKind] : llvm::enumerate(
+           signature.getArgNames(), signature.getArgPassingKinds())) {
+    if (argPassingKind == PassingKind::PosOnly)
+      continue;
     if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx))
       continue; // Variadic/pack args cannot be specified by keyword.
     auto [_, addedNew] = argNames.insert(argName);
@@ -803,6 +814,18 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     return emitDiagFor.wrongArgCount(minRequiredArgs, maxAllowedArgs,
                                      numOperands);
   }
+  auto isPosOnlyArg = [](auto p) {
+    auto [kind, convention] = p;
+    if (convention == ValueInputConvention::ByRefResult)
+      return false;
+    return kind == PassingKind::PosOnly;
+  };
+  size_t numPosOnlyArgs =
+      llvm::count_if(llvm::zip(signature.getArgPassingKinds(),
+                               signature.getInputConventions()),
+                     isPosOnlyArg);
+  if (numPosOperands < numPosOnlyArgs)
+    return emitDiagFor.wrongPosOnlyArgCount(numPosOnlyArgs, numPosOperands);
 
   // We will accumulate the implicit conversion in arguments to those counted
   // for the parameter bindings.
@@ -819,10 +842,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
-  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName] :
+  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName,
+             passingKind] :
        llvm::enumerate(signature.getValueInputs(),
-                       signature.getInputConventions(),
-                       signature.getMetadata().getArgNames())) {
+                       signature.getInputConventions(), signature.getArgNames(),
+                       signature.getArgPassingKinds())) {
     assert(!signature.isKWVarArg(expectedArgIdx) &&
            "`**arg` variadics not supported yet");
 
@@ -919,9 +943,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // Otherwise, we have an ordinary positional argument that is not varargs or
     // a pack. Ensure that it is not also passed as a keyword operand, then
     // process it as usual.
-    if (!argName.empty())
+    if (passingKind != PassingKind::PosOnly) {
+      assert(!argName.empty());
       if (callOperands.findKwArg(argName))
         return emitDiagFor.redundantArg(expectedArgIdx, argName);
+    }
     if (auto result = processPositionalOperand(expectedType))
       return std::move(*result);
   }
