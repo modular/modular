@@ -923,6 +923,16 @@ Type StructFieldOp::getReboundType(DeclRefType structSelfType) {
   return evaluator.getReboundType(getType());
 }
 
+void StructFieldOp::build(OpBuilder &odsBuilder, OperationState &odsState,
+                          StringAttr name, Type type) {
+  build(odsBuilder, odsState, name, type, nullptr);
+}
+
+void StructFieldOp::build(OpBuilder &odsBuilder, OperationState &odsState,
+                          const Twine &name, Type type) {
+  build(odsBuilder, odsState, odsBuilder.getStringAttr(name), type);
+}
+
 //===----------------------------------------------------------------------===//
 // StructCreateOp
 //===----------------------------------------------------------------------===//

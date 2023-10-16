@@ -52,7 +52,7 @@ enum class CallSyntax : uint8_t;
 /// parent function.
 class Capture {
 public:
-  Capture() : init(false) {}
+  Capture() = default;
   Capture(AnyValue value, Type fieldType, Type initType);
   bool operator==(Capture const &rhs) {
     return rhs.init == init && rhs.getMlirValue() == getMlirValue();
@@ -67,7 +67,7 @@ private:
   Type fieldType;
   Type initType;
   AnyValue anyValue;
-  bool init;
+  bool init = false;
 };
 
 /// This enum indicates how much parsing and type checking has been done on

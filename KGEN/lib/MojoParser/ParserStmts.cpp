@@ -1869,8 +1869,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // stronger init model with Definitive Initialization.
     if (!isVar)
       emitError(loc, "'let' fields in structs are not supported yet");
-    declOp = builder.create<StructFieldOp>(loc, name, unresolvedType,
-                                           DocStringAttr());
+    declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
 
     // Skip the body of this definition: go to a token the starts a line at the
     // same indent level (or less) as the current definition.

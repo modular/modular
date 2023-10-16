@@ -442,8 +442,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // The variable was persisted, insert a new field into the state struct.
     std::string newFieldName = ("__new_repl_var_" + name.strref()).str();
     structBuilder.create<LIT::StructFieldOp>(varOp->getLoc(), newFieldName,
-                                             PointerType::get(type),
-                                             /*docString=*/DocStringAttr());
+                                             PointerType::get(type));
 
     // Materialize a reference to the variable within the function.
     mlir::ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);

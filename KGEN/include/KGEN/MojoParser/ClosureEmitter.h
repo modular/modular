@@ -25,7 +25,7 @@ using ClosureHash = std::pair<SignatureType, StringAttr>;
 /// definitions from being generated.
 class ClosureCache {
 public:
-  virtual ~ClosureCache() {}
+  virtual ~ClosureCache() = default;
   virtual StructDeclOp getExisting(ClosureHash key) = 0;
   virtual void storeClosure(ClosureHash key, StructDeclOp closure) = 0;
 };
@@ -33,12 +33,15 @@ public:
 class ClosureEmitter : public StructEmitter {
 public:
   ClosureEmitter(LIT::FileModuleOp fileModuleOp, SharedState &shared)
-      : StructEmitter(shared), fileModuleOp(fileModuleOp),
-        dtorFieldAttr(StringAttr::get(shared.getContext(), "dtor")),
-        copyFieldAttr(StringAttr::get(shared.getContext(), "copy")),
-        callFieldAttr(StringAttr::get(shared.getContext(), "call")),
-        callMethodAttr(
-            StringAttr::get(shared.getContext(), "closureCallMethod")) {}
+      : StructEmitter(shared), ctx(shared.getContext()),
+        fileModuleOp(fileModuleOp), selfName(StringAttr::get(ctx, "self")),
+        otherName(StringAttr::get(ctx, "other")),
+        ptrToImplName(StringAttr::get(ctx, "ptrToImpl")),
+        dtorFieldAttr(StringAttr::get(ctx, "dtor")),
+        copyFieldAttr(StringAttr::get(ctx, "copy")),
+        callFieldAttr(StringAttr::get(ctx, "call")),
+        callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
+        opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))) {}
 
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.
@@ -62,11 +65,22 @@ public:
                                            SignatureType signatureType);
 
 private:
+  MLIRContext *ctx;
   FileModuleOp fileModuleOp;
+  StringAttr selfName;
+  StringAttr otherName;
+  StringAttr ptrToImplName;
   StringAttr dtorFieldAttr;
   StringAttr copyFieldAttr;
   StringAttr callFieldAttr;
   StringAttr callMethodAttr;
+  PointerType opaquePtrType;
+
+  /// Given a signature of a function, create a new signature by inserting a
+  /// closure argument at index 0 or 1 depending on the result type.
+  LITSignatureType
+  addClosureSelfArgToFunctionSignature(Type closureType,
+                                       LITSignatureType sig) const;
 };
 
 } // namespace M::KGEN::LIT
