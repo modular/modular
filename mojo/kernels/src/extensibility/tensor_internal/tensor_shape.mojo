@@ -816,6 +816,55 @@ struct TensorShape:
         self._rep = rep
 
     @always_inline
+    fn __init__[rank: Int](inout self, shapes: StaticIntTuple[rank]):
+        """Initializes a TensorShape from the values provided.
+
+        Args:
+          shapes: The shapes to initialize the shape with.
+        """
+
+        # Decide which representation we can use and initialize the elements.
+        # The most common case should fit into 4 dimensions.
+        @parameter
+        if rank <= 4:
+            var ok = True  # Checks if we did not loose precision.
+            var rep = _Rep32()
+            rep.rank = rank
+            for i in range(rank):
+                rep[i] = shapes[i]
+                if rep[i] != shapes[i]:
+                    ok = False
+                    break
+            if ok:
+                self._rep = rep
+                return
+
+        # Otherwise we fall through to try the next representation.
+        # Virtually everything else will fit into 6 dimensions.
+        @parameter
+        if rank <= 6:
+            var ok = True  # Checks if we did not loose precision.
+            var rep = _Rep16()
+            rep.rank = rank
+            for i in range(rank):
+                rep[i] = shapes[i]
+                if rep[i] != shapes[i]:
+                    ok = False
+                    break
+            if ok:
+                self._rep = rep
+                return
+
+        # Otherwise, we will store out of line.
+        var rep = _RepOutOfLine()
+        rep.rank = rank
+        rep.dims = DTypePointer[DType.index].alloc(rank)
+        for i in range(rank):
+            rep[i] = shapes[i]
+
+        self._rep = rep
+
+    @always_inline
     fn __copyinit__(inout self, other: Self):
         """Creates a deep copy of an existing shape.
 
@@ -867,13 +916,15 @@ struct TensorShape:
         Returns:
           The dimension at the specified index.
         """
+        let normalized_index = self.rank() + index if index < 0 else index
+
         let rep_kind = self._get_rep_kind()
         if rep_kind == _RepKind.KIND_16:
-            return _as_rep16(self._rep)[index]
+            return _as_rep16(self._rep)[normalized_index]
         if rep_kind == _RepKind.KIND_32:
-            return _as_rep32(self._rep)[index]
+            return _as_rep32(self._rep)[normalized_index]
         if rep_kind == _RepKind.KIND_OUT_OF_LINE:
-            return _as_rep_out_of_line(self._rep)[index]
+            return _as_rep_out_of_line(self._rep)[normalized_index]
         return -1
 
     @always_inline

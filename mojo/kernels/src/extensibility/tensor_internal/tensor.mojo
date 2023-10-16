@@ -39,6 +39,8 @@ print(gray_scale_image.shape().__str__())
 
 from memory import memset_zero
 from memory.buffer import NDBuffer
+from utils._serialize import _serialize
+from builtin.io import _Printable
 
 from .tensor_shape import TensorShape
 from .tensor_spec import TensorSpec
@@ -255,6 +257,34 @@ struct Tensor[dtype: DType]:
           The dimension at the specified index.
         """
         return self.spec()[idx]
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets the tensor as a string.
+
+        Returns:
+          A compact string of the tensor.
+        """
+        var res = String("Tensor(")
+
+        @parameter
+        fn serialize(val: _Printable):
+            res += val.__str__()
+
+        _serialize[serialize_fn=serialize, serialize_end_line=False](
+            self.data(), self.shape()
+        )
+
+        return res + ")"
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Gets the tensor as a string.
+
+        Returns:
+          A compact string representation of the tensor.
+        """
+        return self.__str__()
 
     @always_inline
     fn __getitem__(self, index: Int) -> SIMD[dtype, 1]:
