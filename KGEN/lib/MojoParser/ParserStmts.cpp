@@ -94,9 +94,8 @@ struct StmtParser : public ParserBase {
 
   // Expression emission.
 
-  ExprEmitter getEmitter(bool allowImplicitVarDecl = false) {
-    return ExprEmitter(shared, *curDeclScope, builder,
-                       allowImplicitVarDecl ? varDeclCursor : std::nullopt);
+  ExprEmitter getEmitter() {
+    return ExprEmitter(shared, *curDeclScope, builder, varDeclCursor);
   }
 
   /// Get an expression emitter for a parameter expression.
@@ -574,7 +573,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // Emit the expression and ignore the results.  If it is an assignment
   // statement, it will return None.  Other expressions can return whatever they
   // will naturally return.
-  auto emitter = getEmitter(/*allowImplicitVarDecl=*/true);
+  auto emitter = getEmitter();
   // Result is ignored, so we don't care where it goes.
   CValue result = emitter.emitExprCValue(expr, EC_TopLevelStmt);
   if (!result)
