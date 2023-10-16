@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-structs -allow-unregistered-dialect -split-input-file -verify-diagnostics | FileCheck %s
+// RUN: kgen-opt %s -lower-lit-types -allow-unregistered-dialect -split-input-file -verify-diagnostics | FileCheck %s
 
 //===----------------------------------------------------------------------===//
 // Parametric Structs

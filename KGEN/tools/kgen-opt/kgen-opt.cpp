@@ -284,7 +284,7 @@ int main(int argc, char **argv) {
   KGEN::registerLowerPOPToLLVM();
   KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();
-  KGEN::registerLowerStructs();
+  KGEN::registerLowerLITTypes();
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerPruneImpossibleVariants();

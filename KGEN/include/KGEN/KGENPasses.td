@@ -157,6 +157,22 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerLITTypes
+//===----------------------------------------------------------------------===//
+
+def LowerLITTypes : Pass<"lower-lit-types", "mlir::ModuleOp"> {
+  let summary = "Lower struct declarations to POP structs.";
+  let description = [{
+    This pass lowers a variety of high level Mojo types in the 'lit' dialect
+    to lower level KGEN abstractions.  Notably, this eliminates symbol based
+    struct references (in favor of `!pop.struct`), `!lit.ref` => `!kgen.pointer`
+    etc.  This runs immediately after the LowerLIT pass.
+  }];
+
+  let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // MaterializePackages
 //===----------------------------------------------------------------------===//
 
@@ -198,20 +214,6 @@ def LowerClosures : Pass<"lower-closures", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["POPDialect"];
-}
-
-//===----------------------------------------------------------------------===//
-// LowerStructs
-//===----------------------------------------------------------------------===//
-
-def LowerStructs : Pass<"lower-structs", "mlir::ModuleOp"> {
-  let summary = "Lower struct declarations to POP structs.";
-  let description = [{
-    This pass lowerings struct decls and decl reference types to in-inline POP
-    struct types.
-  }];
-
-  let dependentDialects = ["POP::POPDialect"];
 }
 
 //===----------------------------------------------------------------------===//

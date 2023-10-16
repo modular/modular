@@ -3,6 +3,13 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// This pass lowers a variety of high level Mojo types in the 'lit' dialect
+// to lower level KGEN abstractions.  Notably, this eliminates symbol based
+// struct references (in favor of `!pop.struct`), `!lit.ref` => `!kgen.pointer`
+// etc.  This runs immediately after the LowerLIT pass.
+//
+//===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -705,24 +712,24 @@ static LogicalResult lowerFuncOp(GeneratorOp func) {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerStructsPass
+// LowerLITTypesPass
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERSTRUCTS
+#define GEN_PASS_DEF_LOWERLITTYPES
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
 namespace {
-struct LowerStructsPass
-    : public KGEN::impl::LowerStructsBase<LowerStructsPass> {
-  using LowerStructsBase::LowerStructsBase;
+struct LowerLITTypesPass
+    : public KGEN::impl::LowerLITTypesBase<LowerLITTypesPass> {
+  using LowerLITTypesBase::LowerLITTypesBase;
 
   void runOnOperation() override;
 };
 } // namespace
 
-void LowerStructsPass::runOnOperation() {
+void LowerLITTypesPass::runOnOperation() {
   // Collect all struct declarations and erase them.
   auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
 

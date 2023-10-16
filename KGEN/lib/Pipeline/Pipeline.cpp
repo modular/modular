@@ -35,7 +35,7 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
   pm.addPass(createVerifyParameters());
 
-  pm.addPass(createLowerStructs());
+  pm.addPass(createLowerLITTypes());
   pm.addPass(createVerifyParameters());
   // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
   // need to be in the IR.
