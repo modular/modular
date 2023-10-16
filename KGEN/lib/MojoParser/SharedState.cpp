@@ -1856,7 +1856,7 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
                                                SignatureType signatureType,
                                                FileModuleOp fileModuleOp) {
   std::pair<SignatureType, StringAttr> key(signatureType,
-                                           fileModuleOp.getSymNameAttrName());
+                                           fileModuleOp.getSymNameAttr());
   StructDeclOp existing = impl->closureWrappers[key];
   if (!existing) {
     StringAttr name = ClosureEmitter::getClosureNameFromType(
