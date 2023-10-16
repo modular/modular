@@ -213,7 +213,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
   ASTDecl *declScope = functionDecl.getParentDecl();
   if (!declScope)
     return failure();
-  StructDeclOp declOp = dyn_cast<StructDeclOp>(*declScope);
+  StructDeclOp declOp = dyn_cast<StructDeclOp>(declScope);
   // We want to populate a move but the move/copy should be a method!
   if (!declOp)
     return failure();
@@ -327,7 +327,7 @@ struct ValueInfo {
 
       if (lookupResult.getIfSuccess().size() == 1) {
         ASTDecl *result = lookupResult.getIfSuccess().front();
-        if (auto func = dyn_cast<LIT::FuncOp>(*result))
+        if (auto func = dyn_cast<LIT::FuncOp>(result))
           if ((SpecialFunctionKind)func.getSpecialFnKind() == kind)
             existingFunctions[index].flip();
       }
@@ -358,7 +358,7 @@ struct ValueInfo {
     unsigned numFields = std::distance(structDeclOp.getFieldDecls().begin(),
                                        structDeclOp.getFieldDecls().end());
     for (ASTDecl *declaration : inits.getIfSuccess()) {
-      auto func = dyn_cast<LIT::FuncOp>(*declaration);
+      auto func = dyn_cast<LIT::FuncOp>(declaration);
       if (!func)
         continue;
       auto signature = func.getSignature();

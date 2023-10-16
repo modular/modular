@@ -16,7 +16,7 @@ using namespace KGEN;
 using namespace LIT;
 
 DocStringAttr ASTDecl::getDocString() const {
-  if (auto astDeclOp = dyn_cast<ASTDeclInterface>(*this))
+  if (auto astDeclOp = dyn_cast<ASTDeclInterface>(this))
     return astDeclOp.getDocStringAttr();
   return {};
 }

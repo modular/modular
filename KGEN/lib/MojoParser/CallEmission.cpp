@@ -1149,7 +1149,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
                                      const CallOperands &callOperands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
-  auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType().mlirType);
+  auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType());
   if (!calleeSig) {
     // If we are invoking something other than a SignatureType, try to invoke
     // its `__call__` method.

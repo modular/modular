@@ -151,7 +151,7 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
     // allows us to look up decls by symbol when referenced as types. Functions
     // don't have symbols until they are fully resolved, but decls inside
     // functions cannot be accessed anyways.
-    if (auto symbolDecl = dyn_cast<mlir::SymbolOpInterface>(*decl);
+    if (auto symbolDecl = dyn_cast<mlir::SymbolOpInterface>(decl);
         symbolDecl && !isa<LIT::FuncOp>(*decl)) {
       // Make sure there are no name conflicts with the MLIR symbol.  If there
       // are, then addDecl will have rejected it with an error.
@@ -193,8 +193,8 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   }
 
   // Check if we are adding an identical unresolved import.
-  if (auto import = dyn_cast<UnresolvedImportOp>(*decl)) {
-    auto prevOp = dyn_cast<UnresolvedImportOp>(*entries.front());
+  if (auto import = dyn_cast<UnresolvedImportOp>(decl)) {
+    auto prevOp = dyn_cast<UnresolvedImportOp>(entries.front());
     if (prevOp && import.getModuleNameAttr() == prevOp.getModuleNameAttr() &&
         import.getDeclNameAttr() == prevOp.getDeclNameAttr()) {
       entries.push_back(decl);
@@ -265,7 +265,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   // replacement is only known when the import decl is referenced (and thus
   // resolved), so we can't alias the import directly.
   ASTDecl *frontDecl = decls.front();
-  if (auto importOp = dyn_cast<UnresolvedImportOp>(*frontDecl)) {
+  if (auto importOp = dyn_cast<UnresolvedImportOp>(frontDecl)) {
     // If the import is overlapping with an existing declaration, let it slide.
     // FIXME: This is assuming that the import would resolve to the same decl.
     if (ArrayRef<ASTDecl *> decls = context.lookupInCurrentScope(name);
@@ -286,7 +286,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   // We hit an overlap, check to see if this is just resolving a module import.
   // If so, replace the unresolved import with the real decls.
   if (moduleName) {
-    auto importOp = dyn_cast<UnresolvedImportOp>(*it->second.back());
+    auto importOp = dyn_cast<UnresolvedImportOp>(it->second.back());
     if (importOp && importOp.getModuleNameAttr() == moduleName &&
         importOp.getDeclNameAttr() == declNameInModule) {
       // Mark the placeholder imports as being resolved.
@@ -1425,7 +1425,7 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
   ASTDecl *decl = type.getDecl(shared);
   if (!decl)
     return type;
-  auto structDecl = dyn_cast<StructDeclOp>(decl->getIfOperation());
+  auto structDecl = dyn_cast<StructDeclOp>(decl);
   if (!structDecl)
     return type;
 
@@ -2470,7 +2470,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // them and they are instance (not type-level) values.
   // TODO: Generalize this to support nested structs and functions.
   bool paramVarArg = false;
-  auto structDecl = dyn_cast<StructDeclOp>(*decl.getParentDecl());
+  auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
   if (structDecl) {
     SMLoc parentLoc = decl.getParentDecl()->getLoc();
     for (ParamDeclAttr param : structDecl.getInputParams()) {
@@ -3522,7 +3522,7 @@ static TypedAttr lookupCopyMoveTakeInit(ASTDecl &structDecl,
   ArrayRef<ASTDecl *> entries = inits.getIfSuccess();
   TypedAttr result;
   for (auto candidate : entries) {
-    LIT::FuncOp func = dyn_cast<LIT::FuncOp>(*candidate);
+    LIT::FuncOp func = dyn_cast<LIT::FuncOp>(candidate);
     if (!func || func.getSpecialFunctionKind() != specialKind)
       continue;
     if (!result) {

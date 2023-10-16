@@ -805,7 +805,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
   Value callResult;
   if (auto target = callee.getIfPValue()) {
-    if (auto sig = dyn_cast<SignatureType>(target.getType().mlirType);
+    if (auto sig = dyn_cast<SignatureType>(target.getType());
         sig && sig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
       // `!pop.coroutine<() -> T>` result in a `Coroutine[T]` object.

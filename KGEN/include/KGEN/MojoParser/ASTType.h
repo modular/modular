@@ -176,6 +176,24 @@ public:
   };
 };
 
+/// Cast from an (const) ASTType to a MLIR type.
+template <typename T>
+struct CastInfo<T, M::KGEN::LIT::ASTType>
+    : public NullableValueCastFailed<T>,
+      public DefaultDoCastIfPossible<T, M::KGEN::LIT::ASTType,
+                                     CastInfo<T, M::KGEN::LIT::ASTType>> {
+  // Provide isPossible here because here we have the const-stripping from
+  // ConstStrippingCast.
+  static bool isPossible(M::KGEN::LIT::ASTType type) {
+    return type && T::classof(type.mlirType);
+  }
+  static T doCast(M::KGEN::LIT::ASTType type) { return cast<T>(type.mlirType); }
+};
+template <typename T>
+struct CastInfo<T, const M::KGEN::LIT::ASTType>
+    : public ConstStrippingForwardingCast<T, const M::KGEN::LIT::ASTType,
+                                          CastInfo<T, M::KGEN::LIT::ASTType>> {
+};
 } // namespace llvm
 
 #endif // KGEN_MOJOPARSER_ASTTYPE_H

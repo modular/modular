@@ -1297,7 +1297,7 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
     // dependencies.
     for (auto &[name, decls] : moduleDecl.declsInScope) {
       for (ASTDecl *decl : decls)
-        if (auto importOp = dyn_cast<UnresolvedImportOp>(*decl))
+        if (auto importOp = dyn_cast<UnresolvedImportOp>(decl))
           dependencies.insert({importOp.getModuleNameAttr(), decl->getLoc()});
     }
     for (auto it : moduleDecl.unresolvedWildcardImports)
