@@ -3559,9 +3559,9 @@ static TypedAttr synthesizeEmptyDtor(SharedState &shared, StructDeclOp structOp,
   // Create the FuncOp and ASTDecl for the method.
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
-      "__del__", /*inputParameters=*/{}, selfType.mlirType, convention,
-      selfName, PassingKind::PosOnly, shared.getNoneType(), structDecl,
-      SpecialFunctionKind::kDel);
+      "__del__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
+      selfType.mlirType, convention, selfName, PassingKind::PosOnly,
+      shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
 
   // Set up the body.
   Block *body = funcOp.getBody();

@@ -70,6 +70,7 @@ public:
   /// terminators.
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                             ArrayRef<ParamDeclAttr> inputParameters,
+                            ArrayRef<PassingKind> paramPassingKinds,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ValueInputConvention> argConventions,
                             ArrayRef<StringAttr> argNames,
@@ -84,7 +85,8 @@ public:
   /// are added to the body of the function but no ops are added to the cody.
   LIT::FuncOp createFunction(
       StringRef name, ArrayRef<ParamDeclAttr> inputParameters,
-      ArrayRef<Type> argTypes, ArrayRef<ValueInputConvention> argConventions,
+      ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
+      ArrayRef<ValueInputConvention> argConventions,
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
       ImplicitLocOpBuilder &builder, FnEffects effects = FnEffects());
@@ -101,7 +103,8 @@ public:
   /// populated.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> inputParameters,
-      ArrayRef<Type> argTypes, ArrayRef<ValueInputConvention> argConventions,
+      ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
+      ArrayRef<ValueInputConvention> argConventions,
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
       Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
       FnEffects effects = FnEffects());

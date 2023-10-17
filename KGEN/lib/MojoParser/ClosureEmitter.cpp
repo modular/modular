@@ -268,7 +268,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(ptrToSelfType, signatureType);
   auto [callMethod, _] = synthesizeMethodInStruct(
-      "__call__", /*inputParameters=*/{},
+      "__call__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
       closureMethodSignatureType.getValueInputs(),
       closureMethodSignatureType.getInputConventions(),
       callMemberSignatureType.getArgNames(),
@@ -511,9 +511,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
                                                   &declOp.getFields().front());
   LIT::FuncOp callFunc = createFunction(
-      "__call__", /*inputParameters=*/{}, callInputTypes, callConventions,
-      callNames, callPassingKinds, closureResultType,
-      SpecialFunctionKind::kNormal, location, builder,
+      "__call__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
+      callInputTypes, callConventions, callNames, callPassingKinds,
+      closureResultType, SpecialFunctionKind::kNormal, location, builder,
       closureImplSignature.getFnEffects().setEscaping(false));
   declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
   // Populate the body of the call op.
@@ -604,8 +604,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   FuncOp init = addVoidMethod(
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared),
-      "__init__", /*inputParameters=*/{}, argTypes, argConventions, argNames,
-      argPassingKinds, SpecialFunctionKind::kInit);
+      "__init__", /*inputParameters=*/{}, /*paramPassingKinds=*/{}, argTypes,
+      argConventions, argNames, argPassingKinds, SpecialFunctionKind::kInit);
 
   ImplicitLocOpBuilder builder =
       ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
@@ -681,6 +681,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCopyInit = createFunction(
       generateName("_copyinit_"), /*inputParameters=*/{},
+      /*paramPassingKinds=*/{},
       {PointerType::get(opaquePtrType), opaquePtrType},
       {ValueInputConvention::BorrowedInReg,
        ValueInputConvention::BorrowedInMem},
@@ -722,9 +723,10 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
 
   LIT::FuncOp topLevelDtor = createFunction(
-      generateName("_dtor_"), /*inputParameters=*/{}, opaquePtrType,
-      ValueInputConvention::OwnedInReg, selfName, PassingKind::PosOnly,
-      noneType, SpecialFunctionKind::kNormal, location, builder);
+      generateName("_dtor_"), /*inputParameters=*/{}, /*paramPassingKinds=*/{},
+      opaquePtrType, ValueInputConvention::OwnedInReg, selfName,
+      PassingKind::PosOnly, noneType, SpecialFunctionKind::kNormal, location,
+      builder);
 
   // Populate destructor body.
   {
@@ -770,7 +772,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCall = createFunction(
-      generateName("_call_"), /*inputParameters=*/{},
+      generateName("_call_"), /*inputParameters=*/{}, /*paramPassingKinds=*/{},
       closureSignature.getValueInputs(), closureSignature.getInputConventions(),
       closureSignature.getArgNames(), closureSignature.getArgPassingKinds(),
       closureSignature.getValueResults().front(), SpecialFunctionKind::kNormal,
