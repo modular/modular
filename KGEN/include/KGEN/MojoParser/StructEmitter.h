@@ -69,6 +69,7 @@ public:
   /// Create a FuncOp within the scope of the given struct and add function
   /// terminators.
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
+                            ArrayRef<ParamDeclAttr> inputParameters,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ValueInputConvention> argConventions,
                             ArrayRef<StringAttr> argNames,
@@ -81,13 +82,12 @@ public:
 
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the cody.
-  LIT::FuncOp createFunction(StringRef name, ArrayRef<Type> argTypes,
-                             ArrayRef<ValueInputConvention> argConventions,
-                             ArrayRef<StringAttr> argNames,
-                             ArrayRef<PassingKind> argPassingKinds,
-                             Type resultType, SpecialFunctionKind specialFnID,
-                             SMLoc loc, ImplicitLocOpBuilder &builder,
-                             FnEffects effects = FnEffects());
+  LIT::FuncOp createFunction(
+      StringRef name, ArrayRef<ParamDeclAttr> inputParameters,
+      ArrayRef<Type> argTypes, ArrayRef<ValueInputConvention> argConventions,
+      ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
+      Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
+      ImplicitLocOpBuilder &builder, FnEffects effects = FnEffects());
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -100,8 +100,8 @@ public:
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
-      StringRef name, ArrayRef<Type> argTypes,
-      ArrayRef<ValueInputConvention> argConventions,
+      StringRef name, ArrayRef<ParamDeclAttr> inputParameters,
+      ArrayRef<Type> argTypes, ArrayRef<ValueInputConvention> argConventions,
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
       Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
       FnEffects effects = FnEffects());
