@@ -109,7 +109,7 @@ fn roi_align_nhwc[
     output_height: Int,
     output_width: Int,
     spatial_scale: Float32,
-    sampling_ratio: Float32,
+    sampling_ration: Float32,
 ):
     """
     Compute ROIAlign a batch of rois of shape [M, 5] where the first dim is the
@@ -130,7 +130,8 @@ fn roi_align_nhwc[
         output_height: Pooled output height.
         output_width: Pooled output width.
         spatial_scale: Scale of ROIs from spatial scale to pooling scale.
-        sampling_ratio: Number of sampling points in the interpolation grid.
+        sampling_ratio: Number of sampling points in the interpolation grid
+        used to compute the output value of each pooled bin.
     """
 
     constrained[
@@ -177,13 +178,13 @@ fn roi_align_nhwc[
         let bin_size_h = roi_height / pooled_height
         let bin_size_w = roi_width / pooled_width
 
-        # Use pooling window size as either sampling_ratio x sampling_ratio or
+        # Use pooling window size as either sampling_ration x sampling_ration or
         # ⌈bin_size_h x bin_size_w⌉.
         let roi_bin_grid_h = (
-            sampling_ratio if sampling_ratio > 0 else math.ceil(bin_size_h)
+            sampling_ration if sampling_ration > 0 else math.ceil(bin_size_h)
         ).to_int()
         let roi_bin_grid_w = (
-            sampling_ratio if sampling_ratio > 0 else math.ceil(bin_size_w)
+            sampling_ration if sampling_ration > 0 else math.ceil(bin_size_w)
         ).to_int()
 
         # Number of points in the pooling window.

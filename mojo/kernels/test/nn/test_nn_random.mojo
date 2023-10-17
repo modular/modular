@@ -8,7 +8,7 @@
 from random import seed
 
 from memory.buffer import NDBuffer
-from nn.random import random_normal
+from RandomNormal import random_normal
 
 
 fn test_random_normal():

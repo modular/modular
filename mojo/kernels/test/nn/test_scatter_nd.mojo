@@ -7,7 +7,7 @@
 
 from math import max, min
 
-from nn.gather_scatter import scatter_nd_generator
+from GatherScatter import scatter_nd_generator
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 from tensor import Tensor, TensorShape
 from test_utils import linear_fill

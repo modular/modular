@@ -8,11 +8,10 @@
 
 from sys.info import simdwidthof
 
-from linalg.matmul_utils import partition_work
-from nn.conv_utils import ConvShape, get_conv_num_partitions
+from ConvUtils import ConvShape, get_conv_num_partitions
+from MatmulUtils import partition_work
 
 from utils.index import Index, StaticIntTuple
-
 
 # CHECK-LABEL: test_conv_partition
 fn test_partition():

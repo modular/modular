@@ -10,8 +10,8 @@ from math import iota
 
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from memory.buffer import NDBuffer
-from nn.topk import _top_k
 from runtime.llcl import OwningOutputChainPtr, Runtime
+from TopK import _top_k
 
 
 struct TestTensor[rank: Int, type: DType]:

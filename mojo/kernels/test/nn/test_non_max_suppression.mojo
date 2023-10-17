@@ -5,7 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from nn.nms import non_max_suppression, non_max_suppression_shape_func
+from NonMaxSuppression import (
+    non_max_suppression,
+    non_max_suppression_shape_func,
+)
 from tensor import Tensor, TensorShape
 
 from utils.index import Index

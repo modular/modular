@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import NDBuffer
-from nn.roialign import roi_align_nhwc
+from ROIAlign import roi_align_nhwc
 
 # CHECK-LABEL: test_roi_align_avg
 fn test_roi_align_avg():

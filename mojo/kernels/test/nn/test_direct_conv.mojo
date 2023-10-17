@@ -10,16 +10,14 @@ from random import rand, seed
 from sys import external_call
 from sys.info import simdwidthof
 
-from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer
-from nn.conv import (
+from Conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
     pack_conv_filter_shape,
     pack_filter,
 )
-from nn.conv_utils import (
+from ConvUtils import (
     ConvShape,
     get_conv_num_partitions,
     get_conv_num_tasks,
@@ -27,7 +25,9 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
-from nn.image import Image2DLayout, ImageData, ImageShape
+from Image import Image2DLayout, ImageData, ImageShape
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import Index, StaticIntTuple

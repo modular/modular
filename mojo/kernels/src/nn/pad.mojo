@@ -11,11 +11,12 @@
 
 from sys.info import sizeof
 
-# TODO Refactor -- we should decide on and put them into a more common file
-from linalg.transpose import _fill_strides
 from memory import memcpy
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
+
+# TODO Refactor -- we should decide on and put them into a more common file
+from Transpose import _fill_strides
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
