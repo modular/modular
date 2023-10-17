@@ -37,10 +37,11 @@ print(gray_scale_image.shape().__str__())
 ```
 """
 
+from builtin.io import _Printable
 from memory import memset_zero
 from memory.buffer import NDBuffer
+
 from utils._serialize import _serialize
-from builtin.io import _Printable
 
 from .tensor_shape import TensorShape
 from .tensor_spec import TensorSpec
