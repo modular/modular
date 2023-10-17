@@ -19,11 +19,11 @@
 using namespace M;
 
 static llvm::StringRef copyString(llvm::StringRef str) {
-  if (str.empty())
-    return {};
-  void *ptr = alignedAlloc(kPreferredMemoryAlignment, str.size());
+  char *ptr = reinterpret_cast<char *>(
+      alignedAlloc(kPreferredMemoryAlignment, str.size() + 1));
   memcpy(ptr, str.data(), str.size());
-  return llvm::StringRef(reinterpret_cast<const char *>(ptr), str.size());
+  ptr[str.size()] = '\0';
+  return llvm::StringRef(ptr, str.size());
 }
 
 namespace {
