@@ -1,4 +1,4 @@
-// RUN: kgen-opt -force-inline=update-debug-info=true -mlir-print-debuginfo %s | FileCheck %s
+// RUN: kgen-opt -force-inline=update-debug-info=true -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 // COM: The attributes may be printed before or after the functions under test,
 // COM: so we try to keep the attribute close to its corresponding CHECK
@@ -67,9 +67,7 @@
 
 #valueLoc = loc(fused<#calleeSp>[#locCallsite])
 
-// -------------------------------------------------------------------------- //
 // Test nodebug behavior for debuginfo.value ops.
-// -------------------------------------------------------------------------- //
 
 kgen.func @nodebug_inline_me(%arg0: index) -> index always_inline_no_debug {
   %0 = index.add %arg0, %arg0 loc(#valueLoc)
@@ -86,9 +84,7 @@ kgen.func @call_nodebug_inline_me() -> index {
   kgen.return %1 : index
 }
 
-// -------------------------------------------------------------------------- //
 // Test location handling of inlining.
-// -------------------------------------------------------------------------- //
 
 #loc = loc("foo.mlir":13:1)
 #locArg = loc("foo.mlir":13:12)
@@ -108,9 +104,7 @@ kgen.func @call_inline_me() -> index {
   kgen.return %1 : index loc(#locCaller)
 } loc(#locCaller)
 
-// -------------------------------------------------------------------------- //
-// Test location handling of async closure staging.
-// -------------------------------------------------------------------------- //
+// COM: Test location handling of async closure staging.
 
 // CHECK-LABEL: kgen.func @call_async
 kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
@@ -126,9 +120,7 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
 // CHECK-NEXT: } loc(#[[LOC_SCOPED_CALLER]])
 } loc(#locAsyncCaller)
 
-// -------------------------------------------------------------------------- //
-// Test location handling of inlined closure staging.
-// -------------------------------------------------------------------------- //
+// COM: Test location handling of inlined closure staging.
 
 kgen.func @async_wrapper() -> !pop.coroutine<() -> (index)> always_inline {
   %idx3 = index.constant 3 loc(#locAsyncCaller)
@@ -157,9 +149,7 @@ kgen.func @call_async_no_debuginfo() -> !pop.coroutine<() -> (index)> {
   kgen.return %0 : !pop.coroutine<() -> (index)>
 }
 
-// -------------------------------------------------------------------------- //
 // Test nodebug behavior for func with multiple exists.
-// -------------------------------------------------------------------------- //
 
 kgen.func @nodebug_inline_me_multiple_exits(%arg0: index) -> index always_inline_no_debug {
   %idx1 = index.constant 1 loc(#valueLoc)
@@ -188,3 +178,25 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
 // CHECK-DAG: #[[LOC_VALUE_INLINED]] = loc(callsite(#[[LOC_VALUE:loc[0-9]+]] at #[[LOC_CALLSITE]]))
 // CHECK-DAG: #[[LOC_VALUE]] = loc(fused<#[[SP]]>[#[[LOC_ARG]]])
 // CHECK-DAG: #[[LOC_ASYNC_EXECUTE]] = loc(fused<#[[SP]]>[#[[LOC]]])
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 10, scopeLine = 10, subprogramFlags = Definition> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc = loc(fused<#subprogram>["foo.mlir":0:0])
+
+kgen.func @no_debuginfo() -> index always_inline {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @has_debuginfo
+kgen.func @has_debuginfo() {
+  // CHECK: index.constant 0 loc([[LOC:#.*]])
+  kgen.call @no_debuginfo() : () -> index loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)
+
+// CHECK: [[LOC]] = loc(fused<#subprogram>[#loc{{.*}}])
