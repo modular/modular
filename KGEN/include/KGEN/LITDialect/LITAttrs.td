@@ -59,6 +59,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     OptionalArrayRefParameter<"StringAttr">:$argNames,
     OptionalArrayRefParameter<"PassingKind">:$argPassingKinds,
     OptionalArrayRefParameter<"StringAttr">:$paramNames,
+    OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
     OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
     OptionalArrayRefParameter<"TypedAttr">:$defaultParameters
   );
@@ -66,6 +67,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     `<` `[` (`]`) : ($argNames^          `]`)? `,`
         `[` (`]`) : ($argPassingKinds^   `]`)? `,`
         `[` (`]`) : ($paramNames^        `]`)? `,`
+        `[` (`]`) : ($paramPassingKinds^   `]`)? `,`
         `[` (`]`) : ($defaultArguments^  `]`)? `,`
         `[` (`]`) : ($defaultParameters^ `]`)?
     `>`

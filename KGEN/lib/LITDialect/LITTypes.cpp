@@ -112,6 +112,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   if (failed(parseOptionalParamSignature(p, inputParamTypes, resultParamTypes,
                                          paramNames, defaultParamValues)))
     return failure();
+  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
+                                             PassingKind::PosOnly);
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> argDefaults;
@@ -162,7 +164,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       TypeArrayAttr::get(ctx, inputParamTypes),
       TypeArrayAttr::get(ctx, resultParamTypes), inputConventions, effects,
       FnMetadataAttr::get(ctx, argNames, argPassingKinds, paramNames,
-                          argDefaults, defaultParamValues));
+                          paramPassingKinds, argDefaults, defaultParamValues));
   return success(!!signature);
 }
 
@@ -267,10 +269,15 @@ ArrayRef<StringAttr> LITSignatureType::getParamNames() {
   return getMetadata().getParamNames();
 }
 
+ArrayRef<PassingKind> LITSignatureType::getParamPassingKinds() {
+  return getMetadata().getParamPassingKinds();
+}
+
 LITSignatureType LITSignatureType::dropParamValues() {
-  auto metadata = FnMetadataAttr::get(
-      getContext(), getArgNames(), getArgPassingKinds(), /*paramNames=*/{},
-      getDefaultArguments(), /*defaultParameters=*/{});
+  auto metadata =
+      FnMetadataAttr::get(getContext(), getArgNames(), getArgPassingKinds(),
+                          /*paramNames=*/{}, /*paramPassingKinds=*/{},
+                          getDefaultArguments(), /*defaultParameters=*/{});
   return get(
       getValues(), /*inputParamTypes=*/TypeArrayAttr::get(getContext(), {}),
       getResultParamTypes(), getInputConventions(), getFnEffects(), metadata);

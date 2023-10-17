@@ -2852,6 +2852,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ParsedArgument::processParameterInputArgs(
       typeEmitter, dummyScope, inputParams, inputParamDecls, paramNames,
       paramDefaults, paramVarArg);
+  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
+                                             PassingKind::PosOnly);
 
   ParsedArgument::processParameterResultArgs(
       typeEmitter, dummyScope, resultParams, resultParamDecls, paramVarArg);
@@ -2902,7 +2904,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
-                          argDefaults, paramDefaults),
+                          paramPassingKinds, argDefaults, paramDefaults),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");

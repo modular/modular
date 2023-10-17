@@ -65,10 +65,10 @@ bool LIT::canZeroCostConvertSignature(SharedState &shared, ASTType fromType,
     }
   }
 
-  auto newMetadata =
-      FnMetadataAttr::get(from.getContext(), from.getArgNames(),
-                          from.getArgPassingKinds(), from.getParamNames(),
-                          to.getDefaultArguments(), to.getDefaultParameters());
+  auto newMetadata = FnMetadataAttr::get(
+      from.getContext(), from.getArgNames(), from.getArgPassingKinds(),
+      from.getParamNames(), from.getParamPassingKinds(),
+      to.getDefaultArguments(), to.getDefaultParameters());
   auto newSig = LITSignatureType::get(
       to.getValues(), to.getInputParamTypes(), to.getResultParamTypes(),
       to.getInputConventions(), to.getFnEffects(), newMetadata);

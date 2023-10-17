@@ -47,6 +47,9 @@ public:
   /// Get the function's (unmangled) parameter names.
   ArrayRef<StringAttr> getParamNames();
 
+  /// Get the function parameter passing kinds (e.g. keyword-only).
+  ArrayRef<PassingKind> getParamPassingKinds();
+
   /// Return this signature with the input parameters dropped.
   LITSignatureType dropParamValues();
 
