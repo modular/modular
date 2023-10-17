@@ -1472,72 +1472,102 @@ void SharedState::cacheParsedModules() {
   await(results);
 }
 
+/// Function used to look up and resolve a decl with the given mangled name.
+static ASTDecl *lookupAndResolveMangledDecl(
+    SharedState &shared, StringRef baseName, StringRef mangledSymbol, SMLoc loc,
+    ASTDecl &container,
+    DeclResolvedness howResolved = DeclResolvedness::fully) {
+  LookupResult result = shared.lookupAndResolveDecl(
+      baseName, loc, container, /*searchParentScopes=*/false);
+  if (!result.isSuccess())
+    return nullptr;
+
+  // Functor used to emit an error if we couldn't find the symbol.
+  auto emitLookupError = [&] {
+    shared.emitError(loc, "unable to find '") << baseName << "' symbol";
+    return nullptr;
+  };
+
+  // Find the entry that matches the full symbol name.
+  for (ASTDecl *resultDecl : result.getIfSuccess()) {
+    auto symbolOp = dyn_cast_if_present<mlir::SymbolOpInterface>(
+        resultDecl->getIfOperation());
+    if (!symbolOp || symbolOp.getName() != mangledSymbol)
+      continue;
+
+    // Resolve the decl now that we've found it.
+    if (failed(shared.declResolver->resolve(*resultDecl, howResolved, loc)))
+      return nullptr;
+    return resultDecl;
+  }
+  return emitLookupError();
+}
+
 /// Builds an attribute/type walker to resolve references originating from
 /// bytecode decls.
 static mlir::AttrTypeWalker
-buildBytecodeDeclReferenceResolver(SharedState &sharedState,
-                                   DeclResolver &declResolver, ASTDecl &decl,
-                                   ASTDecl &topLevelDecl) {
+buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
   mlir::AttrTypeWalker walker;
-  walker.addWalk([&](SymbolRefAttr attr) -> WalkResult {
-    // Any source defined reference will be qualified, so any flat symbols
-    // references can be skipped (these are used for things like external_call).
-    if (isa<FlatSymbolRefAttr>(attr))
-      return WalkResult::advance();
+  SMLoc loc = decl.getLoc();
 
-    // Functor used to look up and resolve a decl with the given mangled name.
-    SMLoc loc = decl.getLoc();
-    auto lookupDecl = [&](StringRef mangledSymbol, ASTDecl &container,
-                          DeclResolvedness howResolved =
-                              DeclResolvedness::fully) -> ASTDecl * {
-      StringRef baseName = mangledSymbol.split('(').first.split('[').first;
-      LookupResult result = sharedState.lookupAndResolveDecl(
-          baseName, loc, container, /*searchParentScopes=*/false);
-      if (!result.isSuccess())
-        return nullptr;
-
-      // Functor used to emit an error if we couldn't find the symbol.
-      auto emitLookupError = [&] {
-        sharedState.emitError(loc, "unable to find '")
-            << baseName << "' symbol";
-        return nullptr;
-      };
-
-      // Find the entry that matches the full symbol name.
-      for (ASTDecl *resultDecl : result.getIfSuccess()) {
-        auto symbolOp = dyn_cast_if_present<mlir::SymbolOpInterface>(
-            resultDecl->getIfOperation());
-        if (!symbolOp || symbolOp.getName() != mangledSymbol)
-          continue;
-
-        // Resolve the decl now that we've found it.
-        if (failed(declResolver.resolve(*resultDecl, howResolved, loc)))
-          return nullptr;
-        return resultDecl;
-      }
-      return emitLookupError();
-    };
-
+  // Given a symbol reference, this functor fully resolves the parents of the
+  // symbol assuming that the parent references do not contain any mangling.
+  auto resolveParents = [&shared, loc](SymbolRefAttr symbol) -> ASTDecl * {
     // Resolve the top-level container for the reference. This should be a
     // package or module.
-    StringRef moduleName = attr.getRootReference();
+    StringRef moduleName = symbol.getRootReference();
     assert(moduleName.starts_with("$") &&
            "expected all references to be bound to a module/package");
-    ASTDecl *decl = &declResolver.shared.importModule(
-        moduleName.drop_front(), /*currentPackage=*/nullptr, loc);
+    ASTDecl *decl = &shared.importModule(moduleName.drop_front(),
+                                         /*currentPackage=*/nullptr, loc);
     if (decl->hasReferenceError)
-      return WalkResult::interrupt();
-    ArrayRef<FlatSymbolRefAttr> nestedRefs = attr.getNestedReferences();
-    for (FlatSymbolRefAttr name : nestedRefs.drop_back())
-      if (!(decl = lookupDecl(name.getValue(), *decl)))
-        return WalkResult::interrupt();
-    if (!lookupDecl(nestedRefs.back().getValue(), *decl,
-                    DeclResolvedness::signature))
-      return WalkResult::interrupt();
+      return {};
+    ArrayRef<FlatSymbolRefAttr> nestedRefs = symbol.getNestedReferences();
+    for (FlatSymbolRefAttr name : nestedRefs.drop_back()) {
+      if (!(decl = lookupAndResolveMangledDecl(shared, name.getValue(),
+                                               name.getValue(), loc, *decl)))
+        return {};
+    }
+    return decl;
+  };
 
-    // Don't recursively process the nested flat references.
-    return WalkResult::skip();
+  walker.addWalk([=, &shared](SymbolConstantAttr funcRef) -> WalkResult {
+    ASTDecl *moduleDecl = resolveParents(funcRef.getSymbol());
+    if (!moduleDecl)
+      return WalkResult::interrupt();
+    // The function reference itself is mangled.
+    FlatSymbolRefAttr leaf = funcRef.getSymbol().getNestedReferences().back();
+    StringRef baseName = leaf.getValue().split('(').first.split('[').first;
+    if (!lookupAndResolveMangledDecl(shared, baseName, leaf.getValue(), loc,
+                                     *moduleDecl, DeclResolvedness::signature))
+      return WalkResult::interrupt();
+    return WalkResult::advance();
   });
+  walker.addWalk([=, &shared](DeclRefType typeRef) -> WalkResult {
+    ASTDecl *moduleDecl = resolveParents(typeRef.getSymbol());
+    if (!moduleDecl)
+      return WalkResult::interrupt();
+    // Resolve the base type.
+    FlatSymbolRefAttr leaf = typeRef.getSymbol().getNestedReferences().back();
+    if (!lookupAndResolveMangledDecl(shared, leaf.getValue(), leaf.getValue(),
+                                     loc, *moduleDecl,
+                                     DeclResolvedness::signature))
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+  walker.addWalk([=, &shared](MetaTypeType typeRef) -> WalkResult {
+    ASTDecl *moduleDecl = resolveParents(typeRef.getSymbol());
+    if (!moduleDecl)
+      return WalkResult::interrupt();
+    // Resolve the base type.
+    FlatSymbolRefAttr leaf = typeRef.getSymbol().getNestedReferences().back();
+    if (!lookupAndResolveMangledDecl(shared, leaf.getValue(), leaf.getValue(),
+                                     loc, *moduleDecl,
+                                     DeclResolvedness::signature))
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+
   return walker;
 }
 
@@ -1547,8 +1577,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   Operation *declOp = decl.getIfOperation();
 
   // Collect the referenced types that need to be resolved.
-  mlir::AttrTypeWalker typeWalker = buildBytecodeDeclReferenceResolver(
-      *this, *declResolver, decl, *impl->topLevelDecl);
+  mlir::AttrTypeWalker typeWalker =
+      buildBytecodeDeclReferenceResolver(*this, decl);
   auto resolveTypes = [&](TypeRange types) {
     for (Type type : types)
       typeWalker.walk<mlir::WalkOrder::PreOrder>(type);

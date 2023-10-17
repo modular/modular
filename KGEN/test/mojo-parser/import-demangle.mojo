@@ -1,0 +1,19 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen-translate -import-mojo -I=%S %s | FileCheck %s
+# RUN: kgen-translate -import-mojo -I=%S %s | FileCheck %s
+
+# COM: Run it twice to ensure it works on a cache hit.
+
+from test_package.module import use_weird
+
+# CHECK: lit.package @"$test_package"
+# CHECK-NEXT: lit.file_module @"$module"
+# CHECK-NEXT: lit.struct.decl @"weird()struct[]"
+
+
+fn weird_struct():
+    _ = use_weird()
