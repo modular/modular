@@ -3391,9 +3391,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<TypedAttr> paramDefaults;
   SmallVector<SymbolRefAttr> traits;
 
-  structOp.setParamNamesAttr(
-      StringArrayAttr::get(structOp->getContext(), paramNames));
-
   bool paramVarArgs = false;
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
@@ -3417,6 +3414,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       ParameterExprArrayAttr::get(structOp->getContext(), paramDefaults));
   structOp.setParamNamesAttr(
       StringArrayAttr::get(structOp->getContext(), paramNames));
+  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
+                                             PassingKind::PosOnly);
+  structOp.setParamPassingKindsAttr(
+      PassingKindArrayAttr::get(structOp->getContext(), paramPassingKinds));
 
   if (!traits.empty())
     structOp.setTraitsAttr(

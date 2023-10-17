@@ -840,6 +840,10 @@ static DebugInfo::DIFileAttr getTopLevelScope(Operation *op) {
 }
 
 LogicalResult StructDeclOp::verify() {
+  if (getParamNames().size() != getParamPassingKinds().getValue().size()) {
+    return emitError()
+           << "number of parameter names and passing kinds must match";
+  }
   if (getFields().getNumArguments())
     return emitOpError("expected declaration body to have no arguments");
   return verifyTopLevelLocScope(*this);
@@ -885,7 +889,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
-        StringArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
+        StringArrayAttr::get(ctx, {}), PassingKindArrayAttr::get(ctx, {}),
+        DecoratorsAttr::get(ctx, {}),
         /*paramVarArgs=*/false,
         /*defaultParameters=*/ParameterExprArrayAttr::get(ctx, {}),
         /*registerPassable=*/0,

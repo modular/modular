@@ -14,7 +14,8 @@ lit.struct.decl @SomeStruct {
     decorators = #kgen<decorators[]>,
     defaultParameters = #kgen<exprs[]>,
     inputParams = #kgen<param.decls[]>,
-    paramNames = #M<strings[]>
+    paramNames = #M<strings[]>,
+    paramPassingKinds = #lit.passing.kinds<[]>
     } : () -> ()
 
 // -----

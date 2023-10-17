@@ -94,6 +94,10 @@ def StructAttr : DialectAttribute<(attr
   ConcreteType<"DeclRefType">:$type
 )>;
 
+def PassingKindArrayAttr : DialectAttribute<(attr
+  EnumAttrArray<"PassingKind">:$value
+)>;
+
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
     FnMetadataAttr,
@@ -103,6 +107,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     LifetimeAttr,
     UnresolvedAliasValueAttr,
     StructAttr,
+    PassingKindArrayAttr,
     /*StructExtractAttr*/
   ];
 }
