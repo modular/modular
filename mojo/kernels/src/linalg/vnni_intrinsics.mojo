@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
-from sys.info import has_avx512_vnni
+from sys.info import has_vnni
 
 from memory.unsafe import bitcast
 
@@ -394,7 +394,7 @@ fn dot_i8_to_i32_x86[
     """
 
     @parameter
-    if has_avx512_vnni():
+    if has_vnni():
         return vpdpbusd[width](src, a, b)
     else:
         return dot_i8_to_i32_AVX2[width](src, a, b)
@@ -430,7 +430,7 @@ fn dot_i8_to_i32_saturated_x86[
     """
 
     @parameter
-    if has_avx512_vnni():
+    if has_vnni():
         return vpdpbusd[width](src, a, b)
     else:
         return dot_i8_to_i32_saturated_AVX2[width](src, a, b)
