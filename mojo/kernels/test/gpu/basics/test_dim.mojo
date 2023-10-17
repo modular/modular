@@ -10,7 +10,6 @@
 
 from gpu.host import Dim
 
-
 # CHECK-LABEL: test_dim
 fn test_dim():
     print("== test_dim")

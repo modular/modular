@@ -10,6 +10,7 @@
 from math import exp
 from sys.info import triple_is_nvidia_cuda
 
+from algorithm.functional import _elementwise_impl
 from builtin.io import _printf
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream
@@ -20,12 +21,10 @@ from gpu.host.memory import (
     _malloc,
     _memset,
 )
-from tensor import Tensor
 from memory.buffer import NDBuffer
+from tensor import Tensor
 
 from utils.index import Index
-from algorithm.functional import _elementwise_impl
-
 
 # CHECK-LABEL: run_elementwise
 fn run_elementwise() raises:

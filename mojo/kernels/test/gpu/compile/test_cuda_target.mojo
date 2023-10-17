@@ -8,11 +8,11 @@
 
 from sys.info import simdwidthof, triple_is_nvidia_cuda
 
+from Activations import gelu
 from algorithm import elementwise
 from gpu import *
 from memory import memset_zero
 from memory.unsafe import DTypePointer
-from nn.activation import gelu
 from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple
