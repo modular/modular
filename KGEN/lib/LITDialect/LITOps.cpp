@@ -421,11 +421,10 @@ static ParseResult parseLITFunctionSignature(
 
   SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> defaultParams;
+  SmallVector<PassingKind> paramPassingKinds;
   if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
-                                 defaultParams))
+                                 paramPassingKinds, defaultParams))
     return failure();
-  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
-                                             PassingKind::PosOnly);
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaults;
@@ -502,6 +501,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, inputParams, resultParams,
                              signature.getParamNames(),
+                             signature.getParamPassingKinds(),
                              signature.getDefaultParameters(), evaluator);
 
   // Substitute input and result parameters when printing default arguments.

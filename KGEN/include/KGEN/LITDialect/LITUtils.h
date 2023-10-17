@@ -50,6 +50,7 @@ ParseResult
 parseOptionalParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
                            ParamDeclArrayAttr &resultParamDecls,
                            SmallVectorImpl<StringAttr> &paramNames,
+                           SmallVectorImpl<PassingKind> &paramPassingKinds,
                            SmallVectorImpl<TypedAttr> &defaultParams);
 
 /// Print a parameter specification in a lit op. A ParameterEvaluator is
@@ -58,6 +59,7 @@ void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<ParamDeclAttr> inputParamDecls,
                                 ArrayRef<ParamDeclAttr> resultParamDecls,
                                 ArrayRef<StringAttr> paramNames,
+                                ArrayRef<PassingKind> paramPassingKinds,
                                 ArrayRef<TypedAttr> defaultParams,
                                 ParameterEvaluator &evaluator);
 
@@ -68,6 +70,7 @@ parseOptionalParamSignature(AsmParser &p,
                             SmallVectorImpl<Type> &inputParamTypes,
                             SmallVectorImpl<Type> &resultParamTypes,
                             SmallVectorImpl<StringAttr> &paramNames,
+                            SmallVectorImpl<PassingKind> &paramPassingKinds,
                             SmallVectorImpl<TypedAttr> &defaultParams);
 
 /// Print the parameter type signature if there are any input or result types,
@@ -75,6 +78,7 @@ parseOptionalParamSignature(AsmParser &p,
 void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
                                  TypeArrayAttr resultParamTypes,
                                  ArrayRef<StringAttr> paramNames,
+                                 ArrayRef<PassingKind> paramPassingKinds,
                                  ArrayRef<TypedAttr> defaultParams);
 
 /// StructDeclOp parameter printing/parsing.

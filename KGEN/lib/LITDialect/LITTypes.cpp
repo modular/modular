@@ -109,11 +109,11 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<Type> inputParamTypes, resultParamTypes;
   SmallVector<TypedAttr> defaultParamValues;
   SmallVector<StringAttr> paramNames;
+  SmallVector<PassingKind> paramPassingKinds;
   if (failed(parseOptionalParamSignature(p, inputParamTypes, resultParamTypes,
-                                         paramNames, defaultParamValues)))
+                                         paramNames, paramPassingKinds,
+                                         defaultParamValues)))
     return failure();
-  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
-                                             PassingKind::PosOnly);
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> argDefaults;
@@ -197,10 +197,10 @@ void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
 void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   p << "!lit.signature<";
   auto signature = ::cast<LITSignatureType>(sig);
-  printOptionalParamSignature(p, signature.getInputParamTypes(),
-                              signature.getResultParamTypes(),
-                              signature.getParamNames(),
-                              signature.getMetadata().getDefaultParameters());
+  printOptionalParamSignature(
+      p, signature.getInputParamTypes(), signature.getResultParamTypes(),
+      signature.getParamNames(), signature.getParamPassingKinds(),
+      signature.getMetadata().getDefaultParameters());
 
   ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
   size_t numInputs = signature.getNumInputs();

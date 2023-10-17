@@ -2848,12 +2848,11 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   bool paramVarArg = false;
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
   SmallVector<StringAttr> paramNames;
+  SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> paramDefaults;
   ParsedArgument::processParameterInputArgs(
       typeEmitter, dummyScope, inputParams, inputParamDecls, paramNames,
-      paramDefaults, paramVarArg);
-  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
-                                             PassingKind::PosOnly);
+      paramPassingKinds, paramDefaults, paramVarArg);
 
   ParsedArgument::processParameterResultArgs(
       typeEmitter, dummyScope, resultParams, resultParamDecls, paramVarArg);
@@ -2866,8 +2865,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallVector<TypedAttr> argDefaults;
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       [&] { return failure(); }, emitter.shared, typeEmitter, paramNames,
-      inputParamDecls, resultTypeExpr, effects, args, argTypes, argDefaults,
-      isDef, resultLoc, emitter.declScope);
+      paramPassingKinds, inputParamDecls, resultTypeExpr, effects, args,
+      argTypes, argDefaults, isDef, resultLoc, emitter.declScope);
   if (!resultType)
     return {};
 
