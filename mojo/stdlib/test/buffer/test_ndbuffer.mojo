@@ -10,12 +10,10 @@ from sys.intrinsics import PrefetchOptions
 
 from memory import memcmp, memset_zero
 from memory.buffer import NDBuffer, _compute_ndbuffer_offset
+from tensor import Tensor
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
-
-from tensor import Tensor
-
 
 # CHECK-LABEL: test_ndbuffer
 fn test_ndbuffer():

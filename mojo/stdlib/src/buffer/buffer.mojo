@@ -18,8 +18,10 @@ from sys.info import alignof, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import unroll, vectorize
+from builtin.io import _Printable
 from runtime.llcl import OutputChainPtr
 
+from utils._serialize import _serialize
 from utils.index import StaticIntTuple
 from utils.index import product as tuple_product
 from utils.list import Dim, DimList, VariadicList
@@ -27,9 +29,6 @@ from utils.static_tuple import StaticTuple
 
 from .memory import stack_allocation
 from .unsafe import DTypePointer, Pointer
-
-from utils._serialize import _serialize
-from builtin.io import _Printable
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
