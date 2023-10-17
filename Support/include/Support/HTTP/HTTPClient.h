@@ -35,6 +35,11 @@ protected:
   friend class RCRef<HTTPContext>;
 
   HTTPContext();
+
+private:
+  friend class HTTPClient;
+  /// User agent to use for all requests.
+  std::string userAgent;
 };
 
 /// Represents an HTTP Request.
@@ -114,6 +119,7 @@ struct HTTPResponse {
     TransportError,    // Transport or CURL Error.
     HTTPResponseError, // Response code was not "200 Success" but an error of
                        // 4XX-5XX.
+    TimeoutError,      // Response exceeded timeout.
   } kind;
 
   // Can be compared against HTTPResponseCode for common HTTP Response Codes.

@@ -26,7 +26,7 @@ HTTPContextRef HTTPContext::init() {
   return HTTPContextRef::create();
 }
 
-HTTPContext::HTTPContext() {
+HTTPContext::HTTPContext() : userAgent("modular-installer/0.1") {
   // Warm up cURL's SSL backend, resolver cache, logging, etc
   curl_global_init(CURL_GLOBAL_ALL);
 }
@@ -41,6 +41,7 @@ ErrorOrSuccess HTTPResponse::asError(StringRef extraContext) {
   case Success:
     return success();
   case TransportError:
+  case TimeoutError:
     assert(transportErrorMessage && "current error is not set");
     return Error("http error: " + *transportErrorMessage + " - " +
                  extraContext);
@@ -113,8 +114,10 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   // TODO: All of these need return code checking - curl_easy_setopt returns a
   // CURLcode...
 
-  // Set HTTP Request timeout.
+  // Set total timeout.
   curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout.count());
+  // Set connection timeout to 20 seconds.
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 20L);
   // Set the headers.
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
 
@@ -145,7 +148,7 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   // Verify SSL certificate against peers
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, request.verifyTLSPeer ? 1 : 0);
   // Let the server know who we are.
-  curl_easy_setopt(curl, CURLOPT_USERAGENT, "modular-installer/0.1");
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, context->userAgent.c_str());
 
   // Execute our reqeust.
   CURLcode res = curl_easy_perform(curl);
@@ -153,7 +156,11 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   HTTPResponse response;
 
   if (res != CURLE_OK) {
-    response.kind = HTTPResponse::Kind::TransportError;
+    if (res == CURLE_OPERATION_TIMEDOUT)
+      response.kind = HTTPResponse::Kind::TimeoutError;
+    else
+      response.kind = HTTPResponse::Kind::TransportError;
+
     response.transportErrorMessage =
         llvm::formatv("failed to reach URL {0} with cURL error {1}",
                       request.URL, curl_easy_strerror(res));
