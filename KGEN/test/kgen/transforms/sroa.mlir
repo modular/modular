@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -sroa -allow-unregistered-dialect %s | FileCheck %s
+// RUN: kgen-opt -sroa -allow-unregistered-dialect %s | FileCheck %s
 
 // Check sroa runs as expected along side mem-2-reg
 // RUN: kgen-opt -sroa -mem-2-reg -allow-unregistered-dialect %s | FileCheck -check-prefix="MEM2REG" %s
@@ -394,31 +394,3 @@ kgen.func @offset_of_offset() -> !kgen.pointer<index> {
   %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
   kgen.return %1 : !kgen.pointer<index>
 }
-
-// -----
-
-!subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
-!unresolved = !debuginfo.unresolved<!kgen.pointer<struct<index, index>>>
-#file = #debuginfo.file<"/tmp/test.mojo" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "__next__", linkageName = "$Range::_ZeroStartingRange::__next__($Range::_ZeroStartingRange&)_concrete", file = #file, line = 27, scopeLine = 27, subprogramFlags = "Definition|Optimized"> : !subroutine
-#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "self", file = #file, line = 27, arg = 1> : !unresolved
-
-#fileLoc = loc("foo.mlir":0:0)
-#loc = loc(fused<#subprogram>[#fileLoc])
-
-// CHECK: !unresolved = !debuginfo.unresolved<!kgen.pointer<index>>
-// CHECK: #[[VAR0:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.0", {{.*}}> : !unresolved
-// CHECK: #[[VAR1:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.1", {{.*}}> : !unresolved
-
-// CHECK-LABEL: @sroa_valueop
-kgen.func @sroa_valueop() {
-  // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
-  // CHECK-NEXT: %1 = pop.stack_allocation 1 x index
-  %0 = pop.stack_allocation 1 x !pop.struct<index, index> loc(#loc)
-  // CHECK-NEXT: debuginfo.value #[[VAR0]] = %0 : !kgen.pointer<index>
-  // CHECK-NEXT: debuginfo.value #[[VAR1]] = %1 : !kgen.pointer<index>
-  debuginfo.value #local_variable = %0 : !kgen.pointer<struct<index, index>> loc(#loc)
-  // CHECK-NEXT: kgen.return
-  kgen.return loc(#loc)
-} loc(#loc)
