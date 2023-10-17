@@ -7,7 +7,7 @@
 
 from math import iota
 
-from linalg.matrix import Matrix
+from Matrix import Matrix
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer, Pointer
 

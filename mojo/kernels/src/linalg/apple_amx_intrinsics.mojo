@@ -10,7 +10,7 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from sys.info import is_apple_m1, sizeof
+from sys.info import sizeof
 
 from memory import memcpy, memset_zero
 from memory.buffer import NDBuffer
@@ -26,9 +26,6 @@ struct amx_detail:
 
     @staticmethod
     fn _no_op_imms[op: __mlir_type.si32, imm: __mlir_type.si32]():
-        @parameter
-        if not is_apple_m1():
-            return
         # In Apple's Accelerate, instruction 17 is apparently always prefixed by
         # three nops.
         __mlir_op.`pop.inline_asm`[
@@ -42,10 +39,6 @@ struct amx_detail:
 
     @staticmethod
     fn _op_gpr[op: __mlir_type.si32](gpr0: Int):
-        @parameter
-        if not is_apple_m1():
-            return
-
         let gpr = __mlir_op.`index.castu`[_type = __mlir_type.ui64](gpr0.value)
         __mlir_op.`pop.inline_asm`[
             _type=None,
@@ -403,10 +396,6 @@ struct amx_detail:
             DType.float32,
         ],
     ):
-        @parameter
-        if not is_apple_m1():
-            return
-
         # Performs a 16x16x16 matrix multiply on the given matrices storing the
         # result into the C matrix. The matrix multiplication is performed as:
         #

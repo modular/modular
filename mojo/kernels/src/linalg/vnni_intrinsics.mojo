@@ -10,9 +10,8 @@
 # ===----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
-from sys.info import has_avx2, has_avx512_vnni, has_avx512f, has_sse4, is_x86
+from sys.info import has_avx512_vnni
 
-from debug import trap
 from memory.unsafe import bitcast
 
 # ===----------------------------------------------------------------------===#
@@ -25,10 +24,6 @@ fn vpdpwssd(
     a: SIMD[DType.int32, 16],
     b: SIMD[DType.int32, 16],
 ) -> SIMD[DType.int32, 16]:
-    @parameter
-    if not has_avx512f():
-        trap()
-        return 0
     return llvm_intrinsic[
         "llvm.x86.avx512.vpdpwssd.512", SIMD[DType.int32, 16]
     ](src, a, b)
@@ -37,10 +32,6 @@ fn vpdpwssd(
 fn vpdpwssd(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int32, 8], b: SIMD[DType.int32, 8]
 ) -> SIMD[DType.int32, 8]:
-    @parameter
-    if not has_avx512f():
-        trap()
-        return 0
     return llvm_intrinsic["llvm.x86.avx512.vpdpwssd.256", SIMD[DType.int32, 8]](
         src, a, b
     )
@@ -49,9 +40,6 @@ fn vpdpwssd(
 fn vpdpwssd(
     src: SIMD[DType.int32, 4], a: SIMD[DType.int32, 4], b: SIMD[DType.int32, 4]
 ) -> SIMD[DType.int32, 4]:
-    @parameter
-    if not has_avx512f():
-        return 0
     return llvm_intrinsic["llvm.x86.avx512.vpdpwssd.128", SIMD[DType.int32, 4]](
         src, a, b
     )
@@ -67,10 +55,6 @@ fn vpdpwssds(
     a: SIMD[DType.int32, 16],
     b: SIMD[DType.int32, 16],
 ) -> SIMD[DType.int32, 16]:
-    @parameter
-    if not has_avx512f():
-        trap()  # Should never be called
-        return 0
     return llvm_intrinsic[
         "llvm.x86.avx512.vpdpwssds.512", SIMD[DType.int32, 16]
     ](src, a, b)
@@ -79,10 +63,6 @@ fn vpdpwssds(
 fn vpdpwssds(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int32, 8], b: SIMD[DType.int32, 8]
 ) -> SIMD[DType.int32, 8]:
-    @parameter
-    if not has_avx512f():
-        trap()  # Should never be called
-        return 0
     return llvm_intrinsic[
         "llvm.x86.avx512.vpdpwssds.256", SIMD[DType.int32, 8]
     ](src, a, b)
@@ -91,10 +71,6 @@ fn vpdpwssds(
 fn vpdpwssds(
     src: SIMD[DType.int32, 4], a: SIMD[DType.int32, 4], b: SIMD[DType.int32, 4]
 ) -> SIMD[DType.int32, 4]:
-    @parameter
-    if not has_avx512f():
-        trap()  # Should never be called
-        return 0
     return llvm_intrinsic[
         "llvm.x86.avx512.vpdpwssds.128", SIMD[DType.int32, 4]
     ](src, a, b)
@@ -110,10 +86,6 @@ fn vpdpbusd[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    @parameter
-    if not has_avx512f():
-        trap()  # Should never be called
-        return 0
     constrained[c_type == DType.int32, "the type of C must be int32"]()
 
     @parameter
@@ -142,10 +114,6 @@ fn vpdpbusds(
     a: SIMD[DType.int32, 16],
     b: SIMD[DType.int32, 16],
 ) -> SIMD[DType.int32, 16]:
-    @parameter
-    if not has_avx512f():
-        trap()  # Should never be called
-        return 0
     return llvm_intrinsic[
         "llvm.x86.avx512.vpdpbusds.512", SIMD[DType.int32, 16]
     ](src, a, b)
@@ -154,10 +122,6 @@ fn vpdpbusds(
 fn vpdpbusds(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int32, 8], b: SIMD[DType.int32, 8]
 ) -> SIMD[DType.int32, 8]:
-    @parameter
-    if not has_avx512f():
-        trap()  # Should never be called
-        return 0
     return llvm_intrinsic[
         "llvm.x86.avx512.vpdpbusds.256", SIMD[DType.int32, 8]
     ](src, a, b)
@@ -166,10 +130,6 @@ fn vpdpbusds(
 fn vpdpbusds(
     src: SIMD[DType.int32, 4], a: SIMD[DType.int32, 4], b: SIMD[DType.int32, 4]
 ) -> SIMD[DType.int32, 4]:
-    @parameter
-    if not has_avx512f():
-        trap()  # Should never be called
-        return 0
     return llvm_intrinsic[
         "llvm.x86.avx512.vpdpbusds.128", SIMD[DType.int32, 4]
     ](src, a, b)
@@ -178,10 +138,6 @@ fn vpdpbusds(
 fn _dot_i8_to_i32_16(
     src: SIMD[DType.int32, 16], a: SIMD[DType.int8, 64], b: SIMD[DType.int8, 64]
 ) -> SIMD[DType.int32, 16]:
-    @parameter
-    if not has_avx512f():
-        trap()  # Should never be called
-        return 0
     let mask_hi = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0100))
     let mask_lo = bitcast[DType.int8, 64](SIMD[DType.int16, 32](0x0001))
     let ah = llvm_intrinsic[
@@ -208,10 +164,6 @@ fn _dot_i8_to_i32_16(
 fn _dot_i8_to_i32_8(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int8, 32], b: SIMD[DType.int8, 32]
 ) -> SIMD[DType.int32, 8]:
-    @parameter
-    if not has_avx2():
-        trap()  # Should never be called
-        return 0
     let mask_hi = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0100))
     let mask_lo = bitcast[DType.int8, 32](SIMD[DType.int16, 16](0x0001))
 
@@ -239,11 +191,6 @@ fn _dot_i8_to_i32_8(
 fn _dot_i8_to_i32_4(
     src: SIMD[DType.int32, 4], a: SIMD[DType.int8, 16], b: SIMD[DType.int8, 16]
 ) -> SIMD[DType.int32, 4]:
-    @parameter
-    if not has_sse4():
-        trap()  # Should never be called
-        return 0
-
     let mask_hi = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0100))
     let mask_lo = bitcast[DType.int8, 16](SIMD[DType.int16, 8](0x0001))
 
@@ -271,10 +218,6 @@ fn _dot_i8_to_i32_4(
 fn _dot_i8_to_i32_saturated_16(
     src: SIMD[DType.int32, 16], a: SIMD[DType.int8, 64], b: SIMD[DType.int8, 64]
 ) -> SIMD[DType.int32, 16]:
-    @parameter
-    if not has_avx512f():
-        return 0
-
     let t1 = llvm_intrinsic[
         "llvm.x86.avx512.pmaddubs.w.512", SIMD[DType.int16, 32]
     ](a, b)
@@ -287,10 +230,6 @@ fn _dot_i8_to_i32_saturated_16(
 fn _dot_i8_to_i32_saturated_8(
     src: SIMD[DType.int32, 8], a: SIMD[DType.int8, 32], b: SIMD[DType.int8, 32]
 ) -> SIMD[DType.int32, 8]:
-    @parameter
-    if not has_avx2():
-        trap()  # Should never be called
-        return 0
     let t1 = llvm_intrinsic["llvm.x86.avx2.pmadd.ub.sw", SIMD[DType.int16, 16]](
         a, b
     )
@@ -305,10 +244,6 @@ fn _dot_i8_to_i32_saturated_4(
     a: SIMD[DType.int8, 16],
     b: SIMD[DType.int8, 16],
 ) -> SIMD[DType.int32, 4]:
-    @parameter
-    if not has_sse4():
-        trap()  # Should never be called
-        return 0
     let t1 = llvm_intrinsic[
         "llvm.x86.ssse3.pmadd.ub.sw.128", SIMD[DType.int16, 8]
     ](a, b)
@@ -345,11 +280,6 @@ fn dot_i8_to_i32_AVX2[
     Returns:
         A SIMD vector of width elements.
     """
-
-    @parameter
-    if not is_x86():
-        trap()  # Should never be called
-        return 0
 
     @parameter
     if width == 16:
@@ -408,11 +338,6 @@ fn dot_i8_to_i32_saturated_AVX2[
     """
 
     @parameter
-    if not is_x86():
-        trap()  # Should never be called
-        return 0
-
-    @parameter
     if width == 16:
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_saturated_16(
@@ -467,7 +392,6 @@ fn dot_i8_to_i32_x86[
     Returns:
       A SIMD vector of width elements.
     """
-    constrained[is_x86()]()
 
     @parameter
     if has_avx512_vnni():
@@ -504,10 +428,6 @@ fn dot_i8_to_i32_saturated_x86[
     Returns:
       A SIMD vector of width elements.
     """
-
-    @parameter
-    if not is_x86():
-        return 0
 
     @parameter
     if has_avx512_vnni():

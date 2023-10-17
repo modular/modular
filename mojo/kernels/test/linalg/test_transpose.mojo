@@ -5,12 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from linalg.transpose import (
-    _simplify_transpose_perms,
-    transpose,
-    transpose_inplace,
-)
 from memory.buffer import Buffer, NDBuffer
+from Transpose import _simplify_transpose_perms, transpose, transpose_inplace
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

@@ -18,21 +18,7 @@ from algorithm import (
 )
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Function, Stream
-from memory import memset_zero, stack_allocation
-from memory.buffer import (
-    Buffer,
-    DynamicRankBuffer,
-    NDBuffer,
-    partial_simd_load,
-    partial_simd_store,
-)
-from memory.unsafe import DTypePointer, bitcast
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-
-from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList, VariadicList
-
-from .matmul_utils import (
+from MatmulUtils import (
     GemmShape,
     MatmulConfig,
     MatmulDataType,
@@ -50,9 +36,22 @@ from .matmul_utils import (
     search_mm_config,
     use_vnni_fn,
 )
-from .matrix import Matrix
-from .transpose import transpose_inplace
-from .vnni import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
+from Matrix import Matrix
+from memory import memset_zero, stack_allocation
+from memory.buffer import (
+    Buffer,
+    DynamicRankBuffer,
+    NDBuffer,
+    partial_simd_load,
+    partial_simd_store,
+)
+from memory.unsafe import DTypePointer, bitcast
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
+from Transpose import transpose_inplace
+from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
+
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList, VariadicList
 
 
 @closure

@@ -7,11 +7,11 @@
 # Checks x86 int8 matmul C = A*B with prepacked B
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 
-from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
-from linalg.matrix import Matrix
+from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
+from Matrix import Matrix
 from memory.buffer import NDBuffer
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
