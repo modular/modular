@@ -24,3 +24,12 @@ fn call_nested_function():
 @value
 struct SomeType:
     var value: Int
+
+
+@value
+struct `weird()struct[]`:
+    pass
+
+
+fn use_weird() -> `weird()struct[]`:
+    return `weird()struct[]`()
