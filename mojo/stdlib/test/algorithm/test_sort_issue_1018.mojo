@@ -25,9 +25,10 @@ fn sort_test[D: DType](size: Int, max: Int, name: StringLiteral) raises:
             print("] =", p.load(i))
             print()
             raise "Failed"
+    p.free()
 
 
-def main():
+fn main():
     try:
         sort_test[DType.int8](300, 3_000, "int8")
         sort_test[DType.float32](3_000, 3_000, "float32")
