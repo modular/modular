@@ -2609,11 +2609,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Compute the signature of the function.
+  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
+                                             PassingKind::PosOnly);
   LITSignatureType signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
       FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
-                          paramNames, argDefaults, paramDefaults),
+                          paramNames, paramPassingKinds, argDefaults,
+                          paramDefaults),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();

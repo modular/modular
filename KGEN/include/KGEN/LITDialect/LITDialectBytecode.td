@@ -62,6 +62,7 @@ def FnMetadataAttr : DialectAttribute<(attr
   StringAttrArray:$argNames,
   EnumAttrArray<"PassingKind">:$argPassingKinds,
   StringAttrArray:$paramNames,
+  EnumAttrArray<"PassingKind">:$paramPassingKinds,
   TypedAttrArray:$defaultArguments,
   TypedAttrArray:$defaultParameters
 )>;

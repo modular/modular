@@ -424,6 +424,8 @@ static ParseResult parseLITFunctionSignature(
   if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
                                  defaultParams))
     return failure();
+  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
+                                             PassingKind::PosOnly);
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaults;
@@ -485,7 +487,7 @@ static ParseResult parseLITFunctionSignature(
   signature = IndexRefRemapper::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
       FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
-                          defaults, defaultParams),
+                          paramPassingKinds, defaults, defaultParams),
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }

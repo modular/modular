@@ -42,10 +42,13 @@ LIT::FuncOp StructEmitter::createFunction(
   SmallVector<StringAttr> parameterNames;
   for (ParamDeclAttr p : inputParameters)
     parameterNames.push_back(p.getName());
+  SmallVector<PassingKind> paramPassingKinds(parameterNames.size(),
+                                             PassingKind::PosOnly);
 
-  auto metadata = FnMetadataAttr::get(
-      builder.getContext(), argNames, argPassingKinds, parameterNames,
-      /*defaultArguments=*/{}, /*defaultParameters=*/{});
+  auto metadata =
+      FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
+                          parameterNames, paramPassingKinds,
+                          /*defaultArguments=*/{}, /*defaultParameters=*/{});
   FunctionType functionType = builder.getFunctionType(argTypes, {resultType});
   Location location = shared.translateLocation(loc);
   LITSignatureType signature = IndexRefRemapper::remapToSignature(
