@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: DISABLED
 # RUN: %mojo -parsing-stdlib -debug-level full %s | FileCheck %s
 
 from sys.info import simdwidthof
@@ -24,12 +23,12 @@ fn test_partition():
 
     let conv_shape = ConvShape {
         n: 1,
-        h: 14,
-        w: 14,
-        c: 256,
-        out_h: 14,
-        out_w: 14,
-        f: 256,
+        h: 56,
+        w: 56,
+        c: 64,
+        out_h: 56,
+        out_w: 56,
+        f: 64,
         r: 3,
         s: 3,
         stride: Index(1, 1),
@@ -44,7 +43,7 @@ fn test_partition():
         micro_kernel_height, micro_kernel_f_size
     ](num_threads, conv_shape)
 
-    # CHECK: (1, 2, 4, 1)
+    # CHECK: (1, 1, 1, 8)
     print(num_partitions)
 
     print("n partitions")
@@ -54,17 +53,13 @@ fn test_partition():
         print(n_range)
 
     print("c partitions")
-    # CHECK: (0, 128)
-    # CHECK: (128, 128)
+    # CHECK: (0, 64)
     for i in range(num_partitions[1]):
         let c_range = partition_work(i, num_partitions[1], conv_shape.c, 1)
         print(c_range)
 
     print("f partitions")
     # CHECK: (0, 64)
-    # CHECK: (64, 64)
-    # CHECK: (128, 64)
-    # CHECK: (192, 64)
     for i in range(num_partitions[2]):
         let f_range = partition_work(
             i, num_partitions[2], conv_shape.f, micro_kernel_f_size
@@ -72,7 +67,14 @@ fn test_partition():
         print(f_range)
 
     print("ho partitions")
-    # CHECK: (0, 14)
+    # CHECK: (0, 7)
+    # CHECK: (7, 7)
+    # CHECK: (14, 7)
+    # CHECK: (21, 7)
+    # CHECK: (28, 7)
+    # CHECK: (35, 7)
+    # CHECK: (42, 7)
+    # CHECK: (49, 7)
     for i in range(num_partitions[3]):
         let ho_range = partition_work(i, num_partitions[3], conv_shape.out_h, 1)
         print(ho_range)
