@@ -24,6 +24,7 @@ class FuncOp;
 class LITSignatureType;
 class ParserParamEvaluator;
 class StructDeclOp;
+enum class PassingKind : uint32_t;
 
 //===----------------------------------------------------------------------===//
 // InputParamBindings
@@ -115,16 +116,19 @@ public:
   /// Helper class to customizing diagnostic emission for verification. The
   /// default implementation suppresses all diagnostics.
   struct DiagEmitter {
-    /// Emit diagnostics for incorrect parameter count.
-    std::function<void()> emitParamCount;
+    /// Emit diagnostics for incorrect parameter count. The flag indicates if
+    /// this is due to an insufficient number of positional-only parameters.
+    std::function<void(bool posOnly)> emitParamCount;
     /// Emit diagnostics for incorrect type in a positional parameter.
     std::function<void(size_t, const Binding &, ASTType)> emitPosType;
     /// Emit diagnostics for incorrect type in a keyword parameter.
     std::function<void(StringAttr, const Binding &, ASTType)> emitKwType;
-    /// Emit diagnostics for a parameter given with an unknown keyword.
+    /// Emit diagnostics for parameters specified by an unknown keyword.
     std::function<void(SmallVectorImpl<StringRef> &&)> emitUnknownKw;
     /// Emit diagnostics for a parameter specified both by position and keyword.
     std::function<void(size_t, StringAttr)> emitRedundantKw;
+    /// Emit diagnostics for positional-only parameters specified by keyword.
+    std::function<void(SmallVectorImpl<StringRef> &&)> emitPosOnlyPassedByKw;
   };
 
   /// Verify the parameter bindings for the given signature. If the signature
@@ -164,6 +168,7 @@ private:
   /// customizing diagnostics by passing a custom DiagEmitter.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
+      ArrayRef<PassingKind> paramPassingKinds,
       ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
       bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
       bool isPackVarArg, SetEvaluatorHookTy setEvaluator,
@@ -177,6 +182,7 @@ private:
   /// work, this emits diagnostics using the locations and `baseName` provided.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
+      ArrayRef<PassingKind> paramPassingKinds,
       ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
       bool hasParamVarArgs, StringRef baseName, Location opLoc,
       llvm::SMLoc exprLoc, SetEvaluatorHookTy setEvaluator = {}) const;

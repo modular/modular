@@ -255,7 +255,7 @@ fn badCalls(arg: Int):
   # The user hasn't provided any arguments that could be used to infer `T`.
   # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
   parameterizedVariadic()
-  # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
+  # expected-error @+1 {{callee expects at least 1 positional input parameter, but 0 were specified}}
   let z = ParameterizedStruct()
   # We can't infer `T` with two arguments of different types.
   # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
@@ -436,7 +436,7 @@ fn badTakesAtLeastOneInt():
 fn too_few_pos_only(a: String, b: String, /, msg: StringLiteral = "meow"): pass
 
 fn test_too_few_pos_only(a: String, msg: StringLiteral = "woof"):
-  # expected-error @+1 {{callee expects at least 2 positional-only arguments, but 1 was specified}}
+  # expected-error @+1 {{callee expects at least 2 positional arguments, but 1 was specified}}
   too_few_pos_only(a, msg=msg)
 
 

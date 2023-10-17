@@ -1444,16 +1444,28 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
   size_t posIdx = 0;
   ArrayRef<TypedAttr> defaultParams = sig.getDefaultParameters();
   size_t numParams = sig.getNumInputParams();
-  for (auto [idx, paramType, paramName] :
-       llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames())) {
-    // Emit positional operand while possible.
+  for (auto [idx, paramType, paramName, paramPassingKind] :
+       llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
+                       sig.getParamPassingKinds())) {
+    // Emit positional operands while possible.
     if (posIdx < numPosOperands) {
       if (failed(addBoundOperand(posOperands[posIdx++], paramType)))
         return {};
       continue;
     }
 
-    // TODO(#21951): handle positional-only parameters
+    if (paramPassingKind == PassingKind::PosOnly) {
+      size_t numPosOnly = idx;
+      while (numPosOnly < numParams &&
+             sig.getParamPassingKinds()[numPosOnly] == PassingKind::PosOnly)
+        ++numPosOnly;
+
+      InflightDiag diag = emitter.emitError(range.getStart())
+                          << "parametric callable";
+      emitWrongArgOrParamCount(diag, numPosOnly, numParams, numPosOperands,
+                               "positional input parameter");
+      return {};
+    }
 
     // If we have no more positional operands, try keyword
     if (auto it = kwOperands.find(paramName); it != kwOperands.end()) {
@@ -1469,8 +1481,12 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
       continue;
     }
 
-    emitter.emitError(range.getStart(), "parametric callable expected ")
-        << numParams << " parameter" << plural(numParams) << range;
+    InflightDiag diag = emitter.emitError(range.getStart())
+                        << "parametric callable";
+    emitWrongArgOrParamCount(diag, numParams, numParams,
+                             numPosOperands + kwOperands.size(),
+                             "input parameter");
+    diag << range;
     return {};
   }
 
