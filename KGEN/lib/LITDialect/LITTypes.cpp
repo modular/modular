@@ -105,7 +105,7 @@ REPLResultRefType REPLResultRefType::get(Type elementType) {
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
-  llvm::SMLoc loc = p.getCurrentLocation();
+  llvm::SMLoc startLoc = p.getCurrentLocation();
   SmallVector<Type> inputParamTypes, resultParamTypes;
   SmallVector<TypedAttr> defaultParamValues;
   SmallVector<StringAttr> paramNames;
@@ -119,9 +119,10 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<TypedAttr> argDefaults;
   SmallVector<ValueInputConvention> inputConventions;
 
-  StarSlashParser ssParser(p, loc);
+  StarSlashParser ssParser(p);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
-    if (OptionalParseResult res = ssParser.parseOptionalStarSlash();
+    if (OptionalParseResult res =
+            ssParser.parseOptionalStarSlash(p.getCurrentLocation());
         res.has_value())
       return res.value();
 
@@ -160,7 +161,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
   MLIRContext *ctx = p.getContext();
   signature = SignatureType::getChecked(
-      [&] { return p.emitError(loc); }, functionType,
+      [&] { return p.emitError(startLoc); }, functionType,
       TypeArrayAttr::get(ctx, inputParamTypes),
       TypeArrayAttr::get(ctx, resultParamTypes), inputConventions, effects,
       FnMetadataAttr::get(ctx, argNames, argPassingKinds, paramNames,

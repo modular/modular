@@ -417,7 +417,7 @@ static ParseResult parseLITFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
     FunctionType &functionType, LITSignatureType &signature) {
-  llvm::SMLoc loc = p.getCurrentLocation();
+  llvm::SMLoc startLoc = p.getCurrentLocation();
 
   SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> defaultParams;
@@ -431,9 +431,10 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<TypedAttr> defaults;
   SmallVector<ValueInputConvention> inputConventions;
 
-  StarSlashParser ssParser(p, loc);
+  StarSlashParser ssParser(p);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
-    if (OptionalParseResult res = ssParser.parseOptionalStarSlash();
+    if (OptionalParseResult res =
+            ssParser.parseOptionalStarSlash(p.getCurrentLocation());
         res.has_value())
       return res.value();
 
@@ -488,7 +489,7 @@ static ParseResult parseLITFunctionSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
       FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
                           paramPassingKinds, defaults, defaultParams),
-      [&] { return p.emitError(loc); });
+      [&] { return p.emitError(startLoc); });
   return success(!!signature);
 }
 
