@@ -145,7 +145,7 @@ static std::optional<int> parseArgs(const State &state,
           options::OPT_target_features, options::OPT_march, options::OPT_mcpu,
           options::OPT_mtune, options::OPT_no_optimization,
           options::OPT_debug_level, options::OPT_sanitize,
-          options::OPT_debug_info_language)) {
+          options::OPT_debug_info_language, options::OPT_no_alnum_symbols)) {
     return state.reportError(err.getError());
   }
   return {};
