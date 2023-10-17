@@ -2157,7 +2157,12 @@ fn matmul[
         var accum = SIMD[c_type, 1]()
         for i in range(k):
             accum = a[x, i].cast[c_type]() * b[i, y].cast[c_type]() + accum
-        c[Index(x, y)] = accum
+
+        @parameter
+        if elementwise_epilogue_enabled:
+            elementwise_lambda_fn[c_type, 1](Index(x, y), accum)
+        else:
+            c[Index(x, y)] = accum
 
     try:
         # fmt: off
