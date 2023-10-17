@@ -6,6 +6,8 @@
 
 # RUN: kgen-translate -import-mojo %s -verify-diagnostics | kgen-opt -verify-parameters | FileCheck %s
 
+from test_package.module import ParameterizedType
+
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -759,6 +761,10 @@ fn reference_params_through_struct():
 
     # CHECK: kgen.call @{{.*}}foo{{.*}}<:!Int #lit.struct<{value = 3}>>
     foo[MultiStruct[1, 2, 3].p3]()
+
+    # CHECK: kgen.param.constant: !Int = <#lit.struct<{value = 10}>>
+    let cached_type: ParameterizedType[10]
+    let value = cached_type.value
 
 ##===----------------------------------------------------------------------===##
 # Default function parameters

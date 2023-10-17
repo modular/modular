@@ -1711,6 +1711,14 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
             structDecl.setSelfType(ASTDecl::computeSelfTypeForStruct(op));
+            for (ParamDeclAttr param : op.getInputParams()) {
+              // Add the input parameters as accessible member decls. Make sure
+              // to demangle the parameter name.
+              declResolver->addFullyResolvedDecl(
+                  PValue(ParamDeclRefAttr::get(param)),
+                  demangleParameterName(param.getName()), structDecl.getLoc(),
+                  &structDecl);
+            }
           })
           .Case([&](TraitDeclOp op) {
             ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());

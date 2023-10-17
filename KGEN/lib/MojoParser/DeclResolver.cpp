@@ -2479,10 +2479,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   bool paramVarArg = false;
   auto structDecl = dyn_cast<StructDeclOp>(decl.getParentDecl());
   if (structDecl) {
-    SMLoc parentLoc = decl.getParentDecl()->getLoc();
     for (ParamDeclAttr param : structDecl.getInputParams()) {
       auto paramRef = ParamDeclRefAttr::get(param);
-      addFullyResolvedDecl(PValue(paramRef), param.getName(), parentLoc,
+      addFullyResolvedDecl(PValue(paramRef), param.getName(), decl.getLoc(),
                            &sigDecl);
     }
     paramVarArg = structDecl.getParamVarArgs();

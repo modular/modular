@@ -33,3 +33,7 @@ struct `weird()struct[]`:
 
 fn use_weird() -> `weird()struct[]`:
     return `weird()struct[]`()
+
+
+struct ParameterizedType[value: Int]:
+    pass
