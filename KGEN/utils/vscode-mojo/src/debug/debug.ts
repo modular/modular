@@ -51,10 +51,20 @@ class MojoDebugConfigurationProvider implements
                                   debugConfiguration: vscode.DebugConfiguration,
                                   token?: vscode.CancellationToken):
       Promise<vscode.DebugConfiguration> {
+    // The timeout that will be used by LLDB when initializing the target in
+    // different scenarios. We use 5 minutes as a very conservative timeout when
+    // debugging massive LLVM targets.
+    const initializationTimeoutSec = 5 * 60;
+
     // This setting indicates LLDB to generate a useful summary for each
     // non-primitive type that is displayed right away in the IDE.
     if (!("enableAutoVariableSummaries" in debugConfiguration))
       debugConfiguration["enableAutoVariableSummaries"] = true;
+
+    // This timeout affects targets created with "attachCommands" or
+    // "launchCommands".
+    if (!("timeout" in debugConfiguration))
+      debugConfiguration["timeout"] = initializationTimeoutSec;
 
     // This setting shortens the length of address strings.
     const initCommands = [
@@ -74,14 +84,18 @@ class MojoDebugConfigurationProvider implements
       ...(debugConfiguration["initCommands"] || []),
     ];
 
+    const env = [
+      `LLDB_VSCODE_RIT_TIMEOUT_IN_MS=${
+          initializationTimeoutSec *
+          1000}` // runInTerminal initialization timeout.
+    ];
+
     // We add the MODULAR_HOME env var to enable debugging of SDK artifacts,
     // giving preference to the env specified by the user.
-    if (config) {
-      debugConfiguration["env"] = [
-        `MODULAR_HOME=${config.modularHomePath}`,
-        ...(debugConfiguration["env"] || [])
-      ];
-    }
+    if (config)
+      env.push(`MODULAR_HOME=${config.modularHomePath}`);
+
+    debugConfiguration["env"] = [...env, ...(debugConfiguration["env"] || []) ];
     return debugConfiguration;
   }
 }
