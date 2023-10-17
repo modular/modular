@@ -1692,3 +1692,12 @@ fn testUnmovable(a: Unmovable):
    # CHECK-NEXT: %0 = lit.ref.to_pointer %x
    # CHECK-NEXT: kgen.call {{.*}}(%0, %a)
    var x : Unmovable = getUnmovable(a)
+
+# Issue 23233 https://github.com/modularml/modular/issues/23233
+fn setitemParamToDLValue():
+  alias x = 3
+  var coords = StaticIntTuple[3](0)
+  # The main check is just that it's not erroring.
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <apply{{.*}}__neg__
+  # CHECK: kgen.call {{.*}}StaticIntTuple{{.*}}__setitem__{{.*}}[[VAR]]
+  coords[1] = -x

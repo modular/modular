@@ -73,7 +73,8 @@ public:
       ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// Emit a function call in a parameter context.
-  CValue emitCallInParamContext(ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
+  TypedAttr
+  emitCallInParamContext(ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// Emit any after-call actions collected during call emission.
   void emitAfterCallActions() { afterCallActions.emit(); }
@@ -636,7 +637,7 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
   return emitter.emitCResult(*res, callExpr, dest);
 }
 
-CValue CallEmitter::emitCallInParamContext(
+TypedAttr CallEmitter::emitCallInParamContext(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   assert(!emitter.builder && "not in parameter context");
 
@@ -694,7 +695,7 @@ CValue CallEmitter::emitCallInParamContext(
           : ASTType(calleeSig.getValueResults().front());
   TypedAttr result = ParamOperatorAttr::get(
       hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands, resultType);
-  return emitter.emitCResult(result, callExpr, dest);
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -766,11 +767,19 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       });
 
   if (!builder || forceParameterCall) {
-    llvm::SaveAndRestore savedBuilder(builder, {});
-    assert(dest.getContext() != EC_Unknown &&
-           "parametric emitCallUnchecked must include an ExprContext");
-    llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
-    return callEmitter.emitCallInParamContext(argumentValues);
+    TypedAttr paramCallResult;
+    {
+      llvm::SaveAndRestore savedBuilder(builder, {});
+      assert(dest.getContext() != EC_Unknown &&
+             "parametric emitCallUnchecked must include an ExprContext");
+      llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
+      paramCallResult = callEmitter.emitCallInParamContext(argumentValues);
+    }
+    // The dest might force further calls.  We delay calling it until after
+    // restoring the builder so that it is NOT forced to be in the parameter
+    // context.  In particular, dest may cause a call to set the paramCallResult
+    // into a DLValue.
+    return emitCResult(paramCallResult, callExpr, dest);
   }
 
   Location loc = translateLocation(callExpr->getLoc());
