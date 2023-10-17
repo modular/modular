@@ -74,11 +74,18 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
                                 ParamDeclArrayAttr &inputParamDecls,
                                 ParamDeclArrayAttr &resultParamDecls,
                                 SmallVectorImpl<StringAttr> &paramNames,
+                                SmallVectorImpl<PassingKind> &paramPassingKinds,
                                 SmallVectorImpl<TypedAttr> &defaultParams) {
   bool foundDefault = false;
+
+  StarSlashParser ssParser(p);
   auto parseWithDefault =
       [&](SmallVectorImpl<ParamDeclAttr> &decls) -> ParseResult {
     llvm::SMLoc loc = p.getCurrentLocation();
+
+    if (OptionalParseResult res = ssParser.parseOptionalStarSlash(loc);
+        res.has_value())
+      return res.value();
 
     ParamDeclAttr decl;
     StringAttr name;
@@ -99,14 +106,23 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
     return success();
   };
 
-  return KGEN::parseOptionalParameterSpec(p, inputParamDecls, resultParamDecls,
-                                          parseWithDefault);
+  if (failed(KGEN::parseOptionalParameterSpec(
+          p, inputParamDecls, resultParamDecls, parseWithDefault)))
+    return failure();
+
+  auto [numPosOnly, numPosOrKw, numKwOnly] = ssParser.getNumPassingKinds();
+  paramPassingKinds.append(numPosOnly, PassingKind::PosOnly);
+  paramPassingKinds.append(numPosOrKw, PassingKind::PosOrKw);
+  paramPassingKinds.append(numKwOnly, PassingKind::KwOnly);
+
+  return success();
 }
 
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      ArrayRef<ParamDeclAttr> inputParamDecls,
                                      ArrayRef<ParamDeclAttr> resultParamDecls,
                                      ArrayRef<StringAttr> paramNames,
+                                     ArrayRef<PassingKind> paramPassingKinds,
                                      ArrayRef<TypedAttr> defaultParams,
                                      ParameterEvaluator &evaluator) {
   // Substitute input and result parameters when printing default parameters.
@@ -115,29 +131,42 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   for (ParamDeclAttr param : resultParamDecls)
     evaluator.addResultValue(ParamDeclRefAttr::get(param));
 
-  size_t defaultIdxStart = inputParamDecls.size() - defaultParams.size();
+  size_t numParams = inputParamDecls.size();
+  size_t defaultIdxStart = numParams - defaultParams.size();
   size_t idx = 0;
+
+  StarSlashPrinter ssPrinter(p, numParams, '|');
   auto printWithDefault = [&](ParamDeclAttr decl) {
+    ssPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
+
     printParamDecl(p, decl, paramNames[idx]);
     if (idx >= defaultIdxStart) {
       p << " = ";
       printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
                              defaultParams[idx - defaultIdxStart])));
     }
-    ++idx;
+
+    // Check if we are at the end; if so, we might still have to print a '/'.
+    ssPrinter.printOptionalTrailingSlash(idx++);
   };
   printOptionalParameterSpec(p, inputParamDecls, resultParamDecls,
                              printWithDefault);
 }
 
-ParseResult
-LIT::parseOptionalParamSignature(AsmParser &p,
-                                 SmallVectorImpl<Type> &inputParamTypes,
-                                 SmallVectorImpl<Type> &resultParamTypes,
-                                 SmallVectorImpl<StringAttr> &paramNames,
-                                 SmallVectorImpl<TypedAttr> &defaultParams) {
+ParseResult LIT::parseOptionalParamSignature(
+    AsmParser &p, SmallVectorImpl<Type> &inputParamTypes,
+    SmallVectorImpl<Type> &resultParamTypes,
+    SmallVectorImpl<StringAttr> &paramNames,
+    SmallVectorImpl<PassingKind> &paramPassingKinds,
+    SmallVectorImpl<TypedAttr> &defaultParams) {
   // Parse the input parameter types and optional default values.
+  StarSlashParser ssParser(p);
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
+    if (OptionalParseResult res =
+            ssParser.parseOptionalStarSlash(p.getCurrentLocation());
+        res.has_value())
+      return res.value();
+
     // Parse an optional parameter name.
     if (parseOptionalName(p, paramNames.emplace_back()))
       return {};
@@ -153,18 +182,32 @@ LIT::parseOptionalParamSignature(AsmParser &p,
     return success();
   };
 
-  return KGEN::parseOptionalParamSignature(p, inputParamTypes, resultParamTypes,
-                                           parseInputParam);
+  if (failed(KGEN::parseOptionalParamSignature(
+          p, inputParamTypes, resultParamTypes, parseInputParam)))
+    return failure();
+
+  auto [numPosOnly, numPosOrKw, numKwOnly] = ssParser.getNumPassingKinds();
+  paramPassingKinds.append(numPosOnly, PassingKind::PosOnly);
+  paramPassingKinds.append(numPosOrKw, PassingKind::PosOrKw);
+  paramPassingKinds.append(numKwOnly, PassingKind::KwOnly);
+
+  return success();
 }
 
 void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       TypeArrayAttr inputParamTypes,
                                       TypeArrayAttr resultParamTypes,
                                       ArrayRef<StringAttr> paramNames,
+                                      ArrayRef<PassingKind> paramPassingKinds,
                                       ArrayRef<TypedAttr> defaultParams) {
-  size_t defaultIdxStart = inputParamTypes.size() - defaultParams.size();
+  size_t numParams = inputParamTypes.size();
+  size_t defaultIdxStart = numParams - defaultParams.size();
   size_t idx = 0;
+
+  StarSlashPrinter ssPrinter(p, numParams, '|');
   auto printWithDefault = [&](Type type) {
+    ssPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
+
     if (StringAttr name = paramNames[idx]; !name.empty()) {
       p.printString(name);
       p << ": ";
@@ -174,7 +217,9 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
       p << " = ";
       printParamValue(p, defaultParams[idx - defaultIdxStart]);
     }
-    ++idx;
+
+    // Check if we are at the end; if so, we might still have to print a '/'.
+    ssPrinter.printOptionalTrailingSlash(idx++);
   };
 
   KGEN::printOptionalParamSignature(p, inputParamTypes, resultParamTypes,
@@ -188,15 +233,15 @@ LIT::parseStructParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
                               ParameterExprArrayAttr &defaultParameters) {
   SmallVector<TypedAttr> defaultParams;
   SmallVector<StringAttr> paramNamesArr;
+  SmallVector<PassingKind> paramPassingKindsArr;
   ParamDeclArrayAttr resultParams;
   llvm::SMLoc loc = p.getCurrentLocation();
   if (parseOptionalParameterSpec(p, inputParamDecls, resultParams,
-                                 paramNamesArr, defaultParams))
+                                 paramNamesArr, paramPassingKindsArr,
+                                 defaultParams))
     return failure();
   if (!resultParams.empty())
     return p.emitError(loc, "expected no result parameters");
-  SmallVector<PassingKind> paramPassingKindsArr(paramNamesArr.size(),
-                                                PassingKind::PosOnly);
 
   MLIRContext *ctx = p.getContext();
   defaultParameters = ParameterExprArrayAttr::get(ctx, defaultParams);
@@ -214,7 +259,7 @@ void LIT::printStructParameterSpec(AsmPrinter &p, Operation *op,
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(
       p, inputParamDecls,
-      /*resultParamDecls=*/{}, paramNames,
+      /*resultParamDecls=*/{}, paramNames, paramPassingKinds.getValue(),
       defaultParameters ? defaultParameters : ArrayRef<TypedAttr>(), evaluator);
 }
 

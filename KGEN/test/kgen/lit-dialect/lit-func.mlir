@@ -114,6 +114,13 @@ lit.func @default_params<_1x3_a[a]: dtype, _1x6_b[b]: dtype = f32, _1x9_w[w]: sc
   kgen.return
 }
 
+// CHECK-LABEL: lit.func @star_slash_params<_1x3_a[a]: dtype, |, _1x6_b[b]: dtype = f32, *, _1x9_w[w]: scalar<si32> = 1>(%z[z]: index borrow = 42)
+lit.func @star_slash_params<_1x3_a[a]: dtype, |, _1x6_b[b]: dtype = f32, *, _1x9_w[w]: scalar<si32> = 1>(%z: index borrow = 42) {
+  // CHECK: self: !lit.signature<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index borrow = 42) -> ()> = <@star_slash_params>
+  kgen.param.declare self: !lit.signature<<"a": dtype, |, "b": dtype = f32, *, "w": scalar<si32> = 1>("z": index borrow = 42) -> ()> = <@star_slash_params>
+  kgen.return
+}
+
 lit.func @create_simd<x>() -> !pop.simd<x, si8> {
   kgen.unreachable
 }

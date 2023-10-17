@@ -1282,6 +1282,7 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
                                  ArrayRef<ParsedArgument> args,
                                  SmallVectorImpl<ParamDeclAttr> &params,
                                  SmallVectorImpl<StringAttr> &names,
+                                 SmallVectorImpl<PassingKind> &passingKinds,
                                  SmallVectorImpl<TypedAttr> &defaults,
                                  bool isResultParams, bool &paramVarArg) {
   bool seenInitExpr = false;
@@ -1339,9 +1340,11 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
     params.push_back(newDecl);
 
     // The unmangled names are also collected to aid keyword parameter binding.
-    // TODO(#21951): handle positional-only parameters.
-    if (!isResultParams)
+    if (!isResultParams) {
+      passingKinds.emplace_back(
+          ParsedArgument::mapToPassingKind(arg.kwArgHandling));
       names.push_back(arg.name);
+    }
 
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
@@ -1352,9 +1355,10 @@ static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
 void ParsedArgument::processParameterInputArgs(
     ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
     SmallVectorImpl<ParamDeclAttr> &params, SmallVectorImpl<StringAttr> &names,
+    SmallVectorImpl<PassingKind> &passingKinds,
     SmallVectorImpl<TypedAttr> &defaults, bool &paramVarArg) {
-  processParameterArgs(emitter, declScope, args, params, names, defaults,
-                       /*isResultParams=*/false, paramVarArg);
+  processParameterArgs(emitter, declScope, args, params, names, passingKinds,
+                       defaults, /*isResultParams=*/false, paramVarArg);
 }
 
 void ParsedArgument::processParameterResultArgs(
@@ -1362,8 +1366,9 @@ void ParsedArgument::processParameterResultArgs(
     SmallVectorImpl<ParamDeclAttr> &params, bool &paramVarArg) {
   SmallVector<TypedAttr> defaults;
   SmallVector<StringAttr> names;
-  processParameterArgs(emitter, declScope, args, params, names, defaults,
-                       /*isResultParams=*/true, paramVarArg);
+  SmallVector<PassingKind> passingKinds;
+  processParameterArgs(emitter, declScope, args, params, names, passingKinds,
+                       defaults, /*isResultParams=*/true, paramVarArg);
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -1374,6 +1379,7 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
                                 SmallVectorImpl<ParamDeclAttr> &inputParams,
                                 SmallVectorImpl<ParamDeclAttr> &resultParams,
                                 SmallVectorImpl<StringAttr> &names,
+                                SmallVectorImpl<PassingKind> &passingKinds,
                                 SmallVectorImpl<TypedAttr> &defaults,
                                 bool &paramVarArg) {
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
@@ -1396,8 +1402,9 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
 
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(p.shared, declScope, EC_Type);
-  ParsedArgument::processParameterInputArgs(
-      emitter, declScope, args, inputParams, names, defaults, paramVarArg);
+  ParsedArgument::processParameterInputArgs(emitter, declScope, args,
+                                            inputParams, names, passingKinds,
+                                            defaults, paramVarArg);
 
   // Parse the meta results if present.
   if (p.consumeIf(Token::minus_greater)) {
@@ -1420,6 +1427,7 @@ static ASTType
 addImplicitTypeParams(SharedState &shared, ASTType type,
                       const ParsedArgument &arg,
                       SmallVectorImpl<StringAttr> &inputParamNames,
+                      SmallVectorImpl<PassingKind> &inputParamPassingKinds,
                       SmallVectorImpl<ParamDeclAttr> &inputParamDecls) {
   // Look for a struct type.
   ASTDecl *decl = type.getDecl(shared);
@@ -1441,11 +1449,12 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
         shared.getMangledParameterName(
             arg.name.getValue() + Twine(nameCounter++), arg.loc),
         decl.getType());
-    // TODO(#21951): set argument names once passingkind is stored explicitly
-    // and maybe pass these with a dedicated implicit passing kind instead of
-    // hacking it into positional-only parameters? This logic is also
+    // TODO(#21951): Pass these with a dedicated implicit passing kind instead
+    // of hacking it into positional-only parameters? This logic is also
     // problematic if the function has default arguments.
-    inputParamNames.push_back(StringAttr::get(shared.getContext()));
+    inputParamNames.push_back(StringAttr::get(
+        funcDecl.getContext(), Twine("__impl_") + funcDecl.getName().strref()));
+    inputParamPassingKinds.push_back(PassingKind::PosOrKw);
     inputParamDecls.push_back(funcDecl);
     bindings.push_back(
         ParamBindAttr::get(decl.getName(), ParamDeclRefAttr::get(funcDecl)));
@@ -1457,6 +1466,7 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
 ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     function_ref<ParseResult()> reportError, SharedState &shared,
     ExprEmitter &typeEmitter, SmallVectorImpl<StringAttr> &inputParamNames,
+    SmallVectorImpl<PassingKind> &inputParamPassingKinds,
     SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
     const ExprNode *resultTypeExpr, FnEffects &effects,
     SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
@@ -1544,7 +1554,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         type = shared.getTypeCheckErrorType();
       }
       type = addImplicitTypeParams(shared, type, arg, inputParamNames,
-                                   inputParamDecls);
+                                   inputParamPassingKinds, inputParamDecls);
     }
     argTypes.push_back(type);
 
@@ -2482,6 +2492,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
   SmallVector<ParsedArgument> args;
   SmallVector<StringAttr> paramNames;
+  SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> paramDefaults;
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
@@ -2489,9 +2500,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramNames,
-                                      paramDefaults, paramVarArg))
+  if (parseOptionalParameterSignature(
+          p, sigDecl, inputParamDecls, resultParamDecls, paramNames,
+          paramPassingKinds, paramDefaults, paramVarArg))
     return failure();
 
   // Parse the argument list next if present.
@@ -2529,9 +2540,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
-      reportError, shared, typeEmitter, paramNames, inputParamDecls,
-      resultTypeExpr, effects, args, argTypes, argDefaults, funcOp.getIsDef(),
-      resultLoc, *decl.getParentDecl(), fnInfo);
+      reportError, shared, typeEmitter, paramNames, paramPassingKinds,
+      inputParamDecls, resultTypeExpr, effects, args, argTypes, argDefaults,
+      funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), fnInfo);
   if (!resultType)
     return failure();
 
@@ -2609,8 +2620,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Compute the signature of the function.
-  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
-                                             PassingKind::PosOnly);
   LITSignatureType signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
@@ -3388,6 +3397,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
   SmallVector<StringAttr> paramNames;
+  SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> paramDefaults;
   SmallVector<SymbolRefAttr> traits;
 
@@ -3397,9 +3407,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramNames,
-                                      paramDefaults, paramVarArgs) ||
+      parseOptionalParameterSignature(
+          p, sigDecl, inputParamDecls, resultParamDecls, paramNames,
+          paramPassingKinds, paramDefaults, paramVarArgs) ||
       parseOptionalParentList(p, sigDecl, traits, shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.hasReferenceError)
@@ -3414,8 +3424,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       ParameterExprArrayAttr::get(structOp->getContext(), paramDefaults));
   structOp.setParamNamesAttr(
       StringArrayAttr::get(structOp->getContext(), paramNames));
-  SmallVector<PassingKind> paramPassingKinds(paramNames.size(),
-                                             PassingKind::PosOnly);
   structOp.setParamPassingKindsAttr(
       PassingKindArrayAttr::get(structOp->getContext(), paramPassingKinds));
 

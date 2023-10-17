@@ -367,13 +367,12 @@ struct ParsedArgument {
   /// Process parsed parameter arguments into input parameters by determining
   /// the correct parameter types, conventions, and default parameter values.
   /// The unmangled parameter names are also collected.
-  static void processParameterInputArgs(ExprEmitter &emitter,
-                                        ASTDecl &declScope,
-                                        ArrayRef<ParsedArgument> args,
-                                        SmallVectorImpl<ParamDeclAttr> &params,
-                                        SmallVectorImpl<StringAttr> &names,
-                                        SmallVectorImpl<TypedAttr> &defaults,
-                                        bool &paramVarArg);
+  static void processParameterInputArgs(
+      ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
+      SmallVectorImpl<ParamDeclAttr> &params,
+      SmallVectorImpl<StringAttr> &names,
+      SmallVectorImpl<PassingKind> &passingKinds,
+      SmallVectorImpl<TypedAttr> &defaults, bool &paramVarArg);
 
   /// Process parsed parameter arguments into result parameters by determining
   /// the correct parameter types and conventions.
@@ -388,6 +387,7 @@ struct ParsedArgument {
   static ASTType emitFunctionArgumentsAndResults(
       function_ref<ParseResult()> reportError, SharedState &shared,
       ExprEmitter &typeEmitter, SmallVectorImpl<StringAttr> &inputParamNames,
+      SmallVectorImpl<PassingKind> &inputParamPassingKinds,
       SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
       const ExprNode *resultTypeExpr, FnEffects &effects,
       SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,

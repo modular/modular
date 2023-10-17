@@ -243,13 +243,13 @@ fn pass_str_param():
     my_constrained[1==1, "foo"]()
 
 # CHECK-LABEL: lit.func @"implicit_params
-# CHECK-SAME: <{{.*}}value0: !Int, {{.*}}value1: !Int>
+# CHECK-SAME: <{{.*}}value0]: !Int, {{.*}}value1]: !Int>
 # CHECK-SAME: %value[value]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}value0, {{.*}}b: !Int = {{.*}}value1>
 fn implicit_params(value: TwoParams):
     pass
 
 # CHECK-LABEL: lit.func @"implicit_params_with_others
-# CHECK-SAME: <{{.*}}a[a]: !Int, {{.*}}lhs0: !Int, {{.*}}lhs1: !Int, {{.*}}rhs0: !Int, {{.*}}rhs1: !Int>
+# CHECK-SAME: <{{.*}}a[a]: !Int, {{.*}}lhs0]: !Int, {{.*}}lhs1]: !Int, {{.*}}rhs0]: !Int, {{.*}}rhs1]: !Int>
 # CHECK-SAME: %lhs[lhs]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}lhs0, {{.*}}b: !Int = {{.*}}lhs1>
 # CHECK-SAME: %rhs[rhs]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}rhs0, {{.*}}b: !Int = {{.*}}rhs1>
 fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
