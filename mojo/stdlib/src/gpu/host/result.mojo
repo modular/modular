@@ -649,7 +649,12 @@ struct Result:
             return "LAUNCH_OUT_OF_RESOURCES"
         elif self == Result.LAUNCH_TIMEOUT:
             return "LAUNCH_TIMEOUT"
-        elif self == Result.LAUNCH_INCOMPATIBLE_TEXTURING:
+        else:
+            return self._str_shard()
+
+    # Shard the long if-elif-else chain in __str__ to work around #23478.
+    fn _str_shard(self) -> StringRef:
+        if self == Result.LAUNCH_INCOMPATIBLE_TEXTURING:
             return "LAUNCH_INCOMPATIBLE_TEXTURING"
         elif self == Result.PEER_ACCESS_ALREADY_ENABLED:
             return "PEER_ACCESS_ALREADY_ENABLED"
