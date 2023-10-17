@@ -396,8 +396,12 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
         if (!call)
           continue;
 
-        // Perform inlining callee.
         IRMapping map;
+        // Nuke debuginfo from the callee if inlining a function without
+        // debuginfo into one that does.
+        bool nukeDebugInfo =
+            !callee->func.getLocScope() && caller->func.getLocScope();
+        // Inline the callee.
         auto [scope, singleExit] =
             inlineRegion(map, *call, callee->func.getBodyRegion());
 
@@ -409,7 +413,8 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
           // attribute. Encode information {singleExit} as bits.
           scope->setAttr(
               updateAttrName,
-              OpBuilder(scope->getContext()).getI8IntegerAttr(singleExit));
+              OpBuilder(scope->getContext())
+                  .getI8IntegerAttr(singleExit | (nukeDebugInfo << 1)));
         } else if (singleExit) {
           foldTrivialLoop(scope);
         }

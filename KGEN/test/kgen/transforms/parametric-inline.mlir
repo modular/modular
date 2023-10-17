@@ -1190,3 +1190,25 @@ kgen.generator @bar() always_inline {
 // CHECK-DAG: #[[LOC]] = loc(fused<#[[SP]]>[#[[LOC_ORI]]])
 // CHECK-DAG: #[[LOC0]] = loc(fused<#[[SP0]]>[#[[LOC_ORI]]])
 #loc = loc(fused<#subprogram2>["foo.mlir":1317:13])
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 10, scopeLine = 10, subprogramFlags = Definition> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc = loc(fused<#subprogram>["foo.mlir":0:0])
+
+kgen.generator @no_debuginfo() -> index always_inline {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.generator @has_debuginfo
+kgen.generator @has_debuginfo() {
+  // CHECK: index.constant 0 loc([[LOC:#.*]])
+  kgen.call @no_debuginfo() : () -> index loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)
+
+// CHECK: [[LOC]] = loc(fused<#subprogram>[#loc{{.*}}])

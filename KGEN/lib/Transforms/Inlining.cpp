@@ -376,11 +376,12 @@ static void recursivelyMangleDefs(IRMapping &map, Region *calleeRegion,
   }
 }
 
-void inlineGeneratorCall(CallOp call, GeneratorOp callee, InlineLevel level,
-                         ParameterUseDefGraph &topLevelGraph,
-                         const ParameterUseDefGraph &calleeParams,
-                         const llvm::SetVector<StringAttr> &calleeDecls,
-                         AttrTypeMangler::Cache &manglerCache) {
+static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
+                                GeneratorOp callee, InlineLevel level,
+                                ParameterUseDefGraph &topLevelGraph,
+                                const ParameterUseDefGraph &calleeParams,
+                                const llvm::SetVector<StringAttr> &calleeDecls,
+                                AttrTypeMangler::Cache &manglerCache) {
   TimeTraceScope<> traceScope("inlineGeneratorCall",
                               [&] { return callee.getSymName().str(); });
 
@@ -543,7 +544,10 @@ void inlineGeneratorCall(CallOp call, GeneratorOp callee, InlineLevel level,
     propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
   }
 
-  bool stripDebugInfo = level == InlineLevel::AlwaysNoDebug;
+  // Nuke debuginfo if inlining an `always_inline_no_debug` function, or if the
+  // callee lacks debuginfo but the caller does not.
+  bool stripDebugInfo = level == InlineLevel::AlwaysNoDebug ||
+                        (!callee.getLocScope() && caller.getLocScope());
   scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Erase `debuginfo.value` operations when inlining without debug info.
     if (stripDebugInfo && isa<DebugInfo::ValueOp>(op)) {
@@ -772,9 +776,9 @@ void ParametricInliningGraph::performInlining(
   ParameterUseDefGraph callerParams(caller->func.getBodyRegion());
   callerParams.calculate(paramCaches.getThreadLocalCache());
   for (auto [call, callee] : caller->callsites) {
-    inlineGeneratorCall(call, callee->func, callee->level, callerParams,
-                        callee->calleeParamGraph, callee->allDecls,
-                        manglerCaches.getThreadLocalCache());
+    inlineGeneratorCall(caller->func, call, callee->func, callee->level,
+                        callerParams, callee->calleeParamGraph,
+                        callee->allDecls, manglerCaches.getThreadLocalCache());
   }
 }
 
@@ -915,6 +919,10 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
     bool singleExit;
     // Check if this is the last use of the function.
     callee->mutex.lock_shared();
+    // Nuke debuginfo from the callee if inlining a function without debuginfo
+    // into one that does.
+    bool nukeDebugInfo =
+        !callee->func.getLocScope() && caller->func.getLocScope();
     IRMapping map;
     if (callee->numTimesInlined.fetch_add(1) + 1 == callee->callers.size()) {
       // If so, we can take the body instead of cloning it. Acquire an exclusive
@@ -940,7 +948,8 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       // We don't know where the op will end up, so tag it with an attribute.
       // Encode information {singleExit, noDebug} as bits.
       uint8_t value =
-          singleExit | ((callee->level == InlineLevel::AlwaysNoDebug) << 1);
+          singleExit |
+          ((callee->level == InlineLevel::AlwaysNoDebug || nukeDebugInfo) << 1);
       scope->setAttr(updateAttrName,
                      OpBuilder(scope->getContext()).getI8IntegerAttr(value));
     } else if (singleExit) {

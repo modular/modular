@@ -1,4 +1,4 @@
-// RUN: kgen-opt -automatic-inline=update-debug-info=true -mlir-print-debuginfo %s | FileCheck %s
+// RUN: kgen-opt -automatic-inline=update-debug-info=true -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
@@ -73,9 +73,7 @@
 // CHECK-DAG: #[[LOC_SCOPED_CALLER:.*]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
 #locAsyncCaller = loc(fused<#asyncCallerSp>["bar.mlir":18:7])
 
-// -------------------------------------------------------------------------- //
-// Test location handling for two-level of fully-inlined exported function
-// -------------------------------------------------------------------------- //
+// COM: Test location handling for two-level of fully-inlined exported function
 
 #loc0 = loc("foo.mlir":13:1)
 #loc1 = loc("foo.mlir":13:2)
@@ -110,10 +108,8 @@ kgen.func @call_inline_me() -> index {
   kgen.return %1 : index loc(#locCaller)
 } loc(#locCaller)
 
-// -------------------------------------------------------------------------- //
 // Test location for inlining async call with a nodebug function that inlines
 // a function that has debugInfo. :-(
-// -------------------------------------------------------------------------- //
 
 kgen.func @nodebug_inline_me(%arg0: index) -> index {
   %0 = index.add %arg0, %arg0
@@ -128,9 +124,31 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
   // CHECK-NEXT: [[V0:%.*]]lit.async.execute <() -> index> {
   // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
-  // CHECK-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
+  // CHECK-NEXT: } {inliner_debuginfo_update = 3 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
   %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %0: !pop.coroutine<() -> (index)> loc(#locAsyncCaller)
 // CHECK-NEXT: } loc(#[[LOC_SCOPED_CALLER]])
 } loc(#locAsyncCaller)
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 10, scopeLine = 10, subprogramFlags = Definition> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc = loc(fused<#subprogram>["foo.mlir":0:0])
+
+kgen.func @no_debuginfo() -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func @has_debuginfo
+kgen.func @has_debuginfo() {
+  // CHECK: index.constant 0 loc([[LOC:#.*]])
+  kgen.call @no_debuginfo() : () -> index loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)
+
+// CHECK: [[LOC]] = loc(fused<#subprogram>[#loc{{.*}}])
