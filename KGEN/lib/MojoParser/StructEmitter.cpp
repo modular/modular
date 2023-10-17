@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "llvm/Support/SourceMgr.h"
 
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/StringExtras.h"
@@ -27,30 +28,41 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 LIT::FuncOp StructEmitter::createFunction(
-    StringRef name, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
+    StringRef name, ArrayRef<ParamDeclAttr> inputParameters,
+    ArrayRef<Type> argTypes, ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
     ImplicitLocOpBuilder &builder, FnEffects fnEffects) {
-  // Get the signature for the function.
-  auto fnType = builder.getFunctionType(argTypes, resultType);
-
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
       StructDeclOp::RP_RegisterPassableTrivial)
     fnEffects.setOwnedRegisterResult();
 
-  auto metadata =
-      FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds);
-  auto signature = LITSignatureType::get(fnType, /*inputParamTypes=*/{},
-                                         /*resultParamTypes=*/{},
-                                         argConventions, fnEffects, metadata);
+  SmallVector<StringAttr> parameterNames;
+  for (ParamDeclAttr p : inputParameters)
+    parameterNames.push_back(p.getName());
 
-  // Create the empty function.
+  auto metadata = FnMetadataAttr::get(
+      builder.getContext(), argNames, argPassingKinds, parameterNames,
+      /*defaultArguments=*/{}, /*defaultParameters=*/{});
+  FunctionType functionType = builder.getFunctionType(argTypes, {resultType});
+  Location location = shared.translateLocation(loc);
+  LITSignatureType signature = IndexRefRemapper::remapToSignature(
+      inputParameters, /*resultParams=*/{}, functionType, argConventions,
+      fnEffects, metadata, [&] { return mlir::emitError(location); });
   StringAttr nameAttr =
       DeclResolver::getMangledName(builder.getStringAttr(name), signature);
   auto funcOp = builder.create<LIT::FuncOp>(nameAttr, signature, specialFnID);
+
+  // Set the attributes on the FuncOp in bulk.
+  NamedAttrList attrs = funcOp->getAttrDictionary();
+  if (!inputParameters.empty())
+    attrs.set(funcOp.getInputParamsAttrName(),
+              builder.getAttr<ParamDeclArrayAttr>(inputParameters));
+  attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
+  funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
+
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   DeclResolver::setLocationDebugScope(shared, diScopeGuard, funcOp, name);
@@ -63,17 +75,18 @@ LIT::FuncOp StructEmitter::createFunction(
 }
 
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
-    StringRef name, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
+    StringRef name, ArrayRef<ParamDeclAttr> inputParameters,
+    ArrayRef<Type> argTypes, ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
     FnEffects effects) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  LIT::FuncOp funcOp = createFunction(name, argTypes, argConventions, argNames,
-                                      argPassingKinds, resultType, specialFnID,
-                                      structDecl.getLoc(), builder, effects);
+  LIT::FuncOp funcOp =
+      createFunction(name, inputParameters, argTypes, argConventions, argNames,
+                     argPassingKinds, resultType, specialFnID,
+                     structDecl.getLoc(), builder, effects);
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").
@@ -112,8 +125,8 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 
   // Create the FuncOp and ASTDecl for the method.
   auto [funcOp, _] = synthesizeMethodInStruct(
-      "__init__", argTypes, argConventions, argNames, argPassingKinds,
-      resultType, structDecl, specialFnId);
+      "__init__", /*inputParameters=*/{}, argTypes, argConventions, argNames,
+      argPassingKinds, resultType, structDecl, specialFnId);
 
   // Set up the body.
   ImplicitLocOpBuilder builder =
@@ -284,13 +297,14 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 ///          lit.end_func
 ///      }
 LIT::FuncOp StructEmitter::addVoidMethod(
-    ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
+    ASTDecl &structDecl, StringRef prefix,
+    ArrayRef<ParamDeclAttr> inputParameters, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     SpecialFunctionKind kind) {
   auto [func, _] = synthesizeMethodInStruct(
-      prefix, argTypes, argConventions, argNames, argPassingKinds,
-      shared.getNoneType(), structDecl, kind);
+      prefix, inputParameters, argTypes, argConventions, argNames,
+      argPassingKinds, shared.getNoneType(), structDecl, kind);
   Block *body = func.getBody();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())
@@ -484,9 +498,10 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
     }
 
     if (needsDtor) {
-      destructorFunc = addVoidMethod(
-          structDecl, "__del__", ptrToSelf, ValueInputConvention::OwnedInMem,
-          selfName, PassingKind::PosOnly, SpecialFunctionKind::kDel);
+      destructorFunc =
+          addVoidMethod(structDecl, "__del__", /*inputParameters=*/{},
+                        ptrToSelf, ValueInputConvention::OwnedInMem, selfName,
+                        PassingKind::PosOnly, SpecialFunctionKind::kDel);
     }
   }
   LIT::FuncOp copyFunc;
@@ -494,24 +509,26 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
                                   StructDeclOp::RP_RegisterPassableTrivial) {
     if (isMemoryOnly) {
       copyFunc = addVoidMethod(
-          structDecl, "__copyinit__", {ptrToSelf, ptrToSelf},
+          structDecl, "__copyinit__", /*inputParameters=*/{},
+          {ptrToSelf, ptrToSelf},
           {ValueInputConvention::InitSelf, ValueInputConvention::BorrowedInMem},
           {selfName, existingName},
           {PassingKind::PosOnly, PassingKind::PosOnly},
           SpecialFunctionKind::kCopyInit);
     } else {
-      copyFunc = synthesizeMethodInStruct("__copyinit__", selfType,
-                                          ValueInputConvention::BorrowedInReg,
-                                          existingName, PassingKind::PosOnly,
-                                          selfType, structDecl,
-                                          SpecialFunctionKind::kCopyInitReg)
+      copyFunc = synthesizeMethodInStruct(
+                     "__copyinit__", /*inputParameters=*/{}, selfType,
+                     ValueInputConvention::BorrowedInReg, existingName,
+                     PassingKind::PosOnly, selfType, structDecl,
+                     SpecialFunctionKind::kCopyInitReg)
                      .first;
     }
   }
   LIT::FuncOp moveFunc;
   if (!valueInfo.hasMove() && isMemoryOnly) {
     moveFunc = addVoidMethod(
-        structDecl, "__moveinit__", {ptrToSelf, ptrToSelf},
+        structDecl, "__moveinit__", /*inputParameters=*/{},
+        {ptrToSelf, ptrToSelf},
         {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem},
         {selfName, existingName}, {PassingKind::PosOnly, PassingKind::PosOnly},
         SpecialFunctionKind::kMoveInit);
