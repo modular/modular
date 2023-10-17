@@ -2910,9 +2910,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
   if (effects.isEscaping()) {
     ASTDecl *astDecl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
-    auto moduleOp = cast<FileModuleOp>(*astDecl);
     StructDeclOp declOp = emitter.shared.getOrGenerateClosureWrapperStruct(
-        getLoc(), signature, moduleOp);
+        getLoc(), signature, astDecl);
     Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
     return emitter.emitResult(ASTType(selfType), this, dest);
   }
