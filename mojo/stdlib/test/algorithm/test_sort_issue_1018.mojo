@@ -24,6 +24,7 @@ fn sort_test[D: DType](size: Int, max: Int, name: StringLiteral) raises:
             print_no_newline(i)
             print("] =", p.load(i))
             print()
+            p.free()
             raise "Failed"
     p.free()
 
