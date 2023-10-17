@@ -119,7 +119,6 @@ from utils.index import Index, StaticIntTuple, product
 from utils.list import Dim, DimList, VariadicList
 from utils.optional_param import OptionalParamInt
 
-
 # Prevent these functions from being DCE'd by explicitly exporting them.
 @export
 fn MOGGExport():
@@ -462,28 +461,23 @@ fn elementwise_wrapper[
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
+    @always_inline
     @parameter
-    if target != "cuda":
+    fn description_fn() -> String:
+        let name_str = String("name=") + trace_description
+        let shape_str = String("shape=") + String("x").join(buffer.get_shape())
 
-        @always_inline
-        @parameter
-        fn description_fn() -> String:
-            let name_str = String("name=") + trace_description
-            let shape_str = String("shape=") + String("x").join(
-                buffer.get_shape()
-            )
+        let vector_width_str = String("vector_width=") + simd_width
 
-            let vector_width_str = String("vector_width=") + simd_width
+        let info = String(";").join(name_str, shape_str, vector_width_str)
 
-            let info = String(";").join(name_str, shape_str, vector_width_str)
+        return (
+            info
+            + String(";single_thread_blocking_override=")
+            + single_thread_blocking_override
+        )
 
-            return (
-                info
-                + String(";single_thread_blocking_override=")
-                + single_thread_blocking_override
-            )
-
-        out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
+    out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
 
     _elementwise_impl[
         rank, simd_width, single_thread_blocking_override, func, target=target
