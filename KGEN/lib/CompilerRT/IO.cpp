@@ -112,7 +112,6 @@ private:
   FileHandle(int handle) : handle(handle) {}
   FileHandle(const FileHandle &other) = delete;
   void operator=(const FileHandle &other) = delete;
-  ~FileHandle() = delete;
 
   static llvm::sys::fs::FileAccess getFileAccess(llvm::StringRef mode) {
     llvm::sys::fs::FileAccess res = (llvm::sys::fs::FileAccess)0;
@@ -151,7 +150,9 @@ KGEN_CompilerRT_IO_FileOpen(llvm::StringRef path, llvm::StringRef mode,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_IO_FileClose(FileHandleWrapper file, llvm::StringRef *errMsg) {
-  unwrap(file)->close(errMsg);
+  FileHandle *handle = unwrap(file);
+  handle->close(errMsg);
+  delete handle;
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint64_t
