@@ -102,6 +102,16 @@ struct Replacer {
   }
 };
 
+/// For a decomposed struct, create a local variable for each struct element.
+static DebugInfo::DILocalVariableAttr
+getStructElementVar(DebugInfo::DILocalVariableAttr var, Type type, unsigned i) {
+  return DebugInfo::DILocalVariableAttr::get(
+      // FIXME(11743): We can do better with field names on the structs.
+      var.getScope(), (var.getName().getValue() + "." + Twine(i)).str(),
+      var.getFile(), var.getLine(), /*arg=*/0, /*alignInBits=*/0,
+      DebugInfo::DIUnresolvedMLIRType::get(type));
+};
+
 /// The extra helper class for structures.
 struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
   using ContainerType = POP::StructType;
@@ -126,7 +136,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
       // We can SROA loads if they are only used in extract ops.
       if (auto load = dyn_cast<POP::LoadOp>(user)) {
         for (Operation *loadUser : load->getUsers()) {
-          if (!isa<POP::StructGEPOp, POP::StructExtractOp>(loadUser))
+          if (!isa<POP::StructGEPOp, POP::StructExtractOp, DebugInfo::ValueOp>(
+                  loadUser))
             return false;
         }
       }
@@ -178,6 +189,17 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
           Value newVal = getOrCreateLoad(extract.getIndex());
           extract.replaceAllUsesWith(newVal);
           toDelete.push_back(extract);
+        } else {
+          auto value = cast<DebugInfo::ValueOp>(loadUser);
+          OpBuilder b(value);
+          DebugInfo::DILocalVariableAttr var = value.getValueInfo();
+          for (auto [i, alloc] : llvm::enumerate(newAllocas)) {
+            Value load = getOrCreateLoad(i);
+            b.create<DebugInfo::ValueOp>(
+                value.getLoc(), load,
+                getStructElementVar(var, load.getType(), i));
+          }
+          toDelete.push_back(value);
         }
       }
     } else if (auto value = dyn_cast<DebugInfo::ValueOp>(user)) {
@@ -185,21 +207,16 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
       // mapped into MLIR. Just generate separate variables for now.
       OpBuilder b(value);
       DebugInfo::DILocalVariableAttr var = value.getValueInfo();
-      auto getElementVar = [&](unsigned i) {
-        auto ptrType = cast<PointerType>(newAllocas[i].getType());
-        return DebugInfo::DILocalVariableAttr::get(
-            // FIXME(11743): We can do better with field names on the structs.
-            var.getScope(), (var.getName().getValue() + "." + Twine(i)).str(),
-            var.getFile(), var.getLine(), /*arg=*/0, /*alignInBits=*/0,
-            DebugInfo::DIUnresolvedMLIRType::get(ptrType));
-      };
-      for (auto [i, alloc] : llvm::enumerate(newAllocas))
-        b.create<DebugInfo::ValueOp>(value.getLoc(), alloc, getElementVar(i));
+      for (auto [i, alloc] : llvm::enumerate(newAllocas)) {
+        b.create<DebugInfo::ValueOp>(
+            value.getLoc(), alloc,
+            getStructElementVar(var, newAllocas[i].getType(), i));
+      }
     }
   }
 
   /// The extractor op for structures.
-  Value createExtract(mlir::Location loc, Value operand, int64_t index) {
+  Value createExtract(Location loc, Value operand, int64_t index) {
     return builder.create<POP::StructExtractOp>(loc, operand,
                                                 builder.getIndexAttr(index));
   }
