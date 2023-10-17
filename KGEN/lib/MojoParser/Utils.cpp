@@ -95,15 +95,28 @@ void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
        << " specified";
 }
 
+/// Emit a comma separated list of strings sorted alphabetically.
+static void emitSortedNames(InflightDiag &diag,
+                            SmallVectorImpl<StringRef> &&names) {
+  llvm::sort(names);
+  llvm::interleave(
+      names, [&](StringRef str) { diag << "'" << str << "'"; },
+      [&]() { diag << ", "; });
+}
+
 void LIT::emitUnexpectedKeywords(InflightDiag &diag,
                                  SmallVectorImpl<StringRef> &&unknownKeywords,
                                  StringRef argOrParam) {
-  size_t numUnknownKws = unknownKeywords.size();
-  diag << "unexpected keyword " << argOrParam << plural(numUnknownKws) << ": ";
+  diag << "unexpected keyword " << argOrParam << plural(unknownKeywords.size())
+       << ": ";
+  emitSortedNames(diag, std::move(unknownKeywords));
+}
 
-  // We need to sort the unknown keywords to have reproducible errors.
-  llvm::sort(unknownKeywords);
-  llvm::interleave(
-      unknownKeywords, [&](StringRef str) { diag << "'" << str << "'"; },
-      [&]() { diag << ", "; });
+void LIT::emitPosOnlyPassedByKw(InflightDiag &diag,
+                                SmallVectorImpl<StringRef> &&names,
+                                StringRef argOrParam) {
+  size_t numNames = names.size();
+  diag << "positional-only " << argOrParam << plural(numNames)
+       << " passed as keyword " << argOrParam << plural(numNames) << ": ";
+  emitSortedNames(diag, std::move(names));
 }

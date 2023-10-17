@@ -67,7 +67,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     `<` `[` (`]`) : ($argNames^          `]`)? `,`
         `[` (`]`) : ($argPassingKinds^   `]`)? `,`
         `[` (`]`) : ($paramNames^        `]`)? `,`
-        `[` (`]`) : ($paramPassingKinds^   `]`)? `,`
+        `[` (`]`) : ($paramPassingKinds^ `]`)? `,`
         `[` (`]`) : ($defaultArguments^  `]`)? `,`
         `[` (`]`) : ($defaultParameters^ `]`)?
     `>`

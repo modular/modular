@@ -97,39 +97,61 @@ static PValue emitSingleParameterValue(InputParamBindings::Binding binding,
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
-    ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-    bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
-    bool isPackVarArg, SetEvaluatorHookTy setEvaluator,
-    const DiagEmitter &diagEmitter) const {
+    ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultParams,
+    ExprEmitter &emitter, bool hasParamVarArgs,
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
+    SetEvaluatorHookTy setEvaluator, const DiagEmitter &diagEmitter) const {
   size_t numParams = expectedParamTypes.size();
   assert(paramNames.size() == numParams);
   auto isVarArg = [&](size_t idx) {
     return idx + 1 == numParams && hasParamVarArgs;
   };
 
-  // First, we collect all real parameter names.
-  SmallPtrSet<StringAttr, 4> argNames;
-  for (auto [idx, paramName] : llvm::enumerate(paramNames)) {
-    if (paramName.empty())
-      continue; // Positional-only parameter.
+  // First, we separate the expected parameter names into positional-only and
+  // keyword-passable (pos-or-keyword or kw-only), and ignore variadic names.
+  SmallPtrSet<StringAttr, 4> kwPassableNames;
+  SmallPtrSet<StringAttr, 4> posOnlyNames;
+  for (auto [idx, paramName, passingKind] :
+       llvm::enumerate(paramNames, paramPassingKinds)) {
     if (isVarArg(idx) || isPackVarArg)
       continue; // Variadic/pack parameters cannot be specified by keyword.
-    auto [_, addedNew] = argNames.insert(paramName);
+    if (passingKind == PassingKind::PosOnly) {
+      // Implicit parameters can be unnamed.
+      if (!paramName.empty()) {
+        auto [_, addedNew] = posOnlyNames.insert(paramName);
+        assert(addedNew && "duplicate pos-only parameter name in declaration");
+      }
+      continue;
+    }
+    assert(!paramName.empty());
+    auto [_, addedNew] = kwPassableNames.insert(paramName);
     assert(addedNew && "duplicate parameter name in declaration");
   }
 
-  // Then we find all the keyword parameters with unknown names.
+  // Then we find all the keyword parameters with unknown names, or specifying
+  // positional-only parameters; both of these will result in diagnostics.
   SmallPtrSet<StringAttr, 4> unknownKwParams;
-  for (auto [name, operandVal] : kwBindings)
-    if (!argNames.contains(name))
+  SmallPtrSet<StringAttr, 4> posOnlyPassedByKw;
+  for (auto [name, operandVal] : kwBindings) {
+    if (posOnlyNames.contains(name))
+      posOnlyPassedByKw.insert(name);
+    else if (!kwPassableNames.contains(name))
       unknownKwParams.insert(name);
+  }
 
+  auto setToVector = [](SmallPtrSet<StringAttr, 4> &names) {
+    return llvm::map_to_vector(names,
+                               [](StringAttr name) { return name.strref(); });
+  };
   Fitness fitness{0, false};
   if (!unknownKwParams.empty()) {
-    if (diagEmitter.emitUnknownKw) {
-      diagEmitter.emitUnknownKw(llvm::map_to_vector(
-          unknownKwParams, [](StringAttr name) { return name.strref(); }));
-    }
+    if (diagEmitter.emitUnknownKw)
+      diagEmitter.emitUnknownKw(setToVector(unknownKwParams));
+    return {{}, fitness};
+  }
+  if (!posOnlyPassedByKw.empty()) {
+    if (diagEmitter.emitPosOnlyPassedByKw)
+      diagEmitter.emitPosOnlyPassedByKw(setToVector(posOnlyPassedByKw));
     return {{}, fitness};
   }
 
@@ -163,8 +185,8 @@ InputParamBindings::verifyBindings(
 
   size_t posBindingIdx = 0;
   size_t numPosBindings = posBindings.size();
-  for (auto [idx, type, paramName] :
-       llvm::enumerate(expectedParamTypes, paramNames)) {
+  for (auto [idx, type, paramName, passingKind] :
+       llvm::enumerate(expectedParamTypes, paramNames, paramPassingKinds)) {
     // Check to see if we ran out of bindings to provide to this param decl.
     if (posBindingIdx == numPosBindings) {
       // Determine what type we expect next.
@@ -177,6 +199,8 @@ InputParamBindings::verifyBindings(
 
       // We first check if we have a keyword parameter.
       if (auto it = kwBindings.find(paramName); it != kwBindings.end()) {
+        assert(passingKind != PassingKind::PosOnly);
+
         const Binding &binding = it->getSecond();
 
         // If this value was already bound and checked, use it.
@@ -231,14 +255,17 @@ InputParamBindings::verifyBindings(
       // Otherwise, we're simply missing bindings.
       fitness.lastExpectedType = expectedType;
       if (diagEmitter.emitParamCount)
-        diagEmitter.emitParamCount();
+        diagEmitter.emitParamCount(passingKind == PassingKind::PosOnly);
       return {{}, fitness};
     }
 
     // Helper to check and emit diagnostics for redundant keyword parameters.
-    auto checkRedundantKwParam = [&, paramName = paramName]() -> LogicalResult {
-      if (paramName.empty())
-        return success(); // Positional-only parameter.
+    auto checkRedundantKwParam = [&, paramName = paramName,
+                                  passingKind =
+                                      passingKind]() -> LogicalResult {
+      if (passingKind == PassingKind::PosOnly)
+        return success();
+      assert(!paramName.empty());
       if (auto it = kwBindings.find(paramName); it == kwBindings.end())
         return success(); // Not redundant.
       if (diagEmitter.emitRedundantKw)
@@ -303,7 +330,7 @@ InputParamBindings::verifyBindings(
   // Check and complain if we have bindings that didn't get used.
   if (posBindingIdx != numPosBindings) {
     if (diagEmitter.emitParamCount)
-      diagEmitter.emitParamCount();
+      diagEmitter.emitParamCount(/*posOnly=*/false);
     return {{}, fitness};
   }
 
@@ -314,18 +341,31 @@ InputParamBindings::verifyBindings(
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                                    ArrayRef<StringAttr> paramNames,
+                                   ArrayRef<PassingKind> paramPassingKinds,
                                    ArrayRef<TypedAttr> defaultParams,
                                    ExprEmitter &emitter, bool hasParamVarArgs,
                                    StringRef baseName, Location opLoc,
                                    llvm::SMLoc exprLoc,
                                    SetEvaluatorHookTy setEvaluator) const {
   DiagEmitter diagEmitter{
-      /*emitParamCount=*/[&]() {
+      /*emitParamCount=*/[&](bool posOnly) {
         size_t minRequired = expectedParamTypes.size() - defaultParams.size();
         InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
-        emitWrongArgOrParamCount(diag, minRequired,
-                                 /*maxAllowed=*/expectedParamTypes.size(),
-                                 /*numActual=*/size(), "input parameter");
+        if (posOnly) {
+          auto isPosOnly = [](PassingKind kind) {
+            return kind == PassingKind::PosOnly;
+          };
+          size_t numPosOnly = llvm::count_if(paramPassingKinds, isPosOnly);
+          emitWrongArgOrParamCount(diag, numPosOnly,
+                                   /*maxAllowed=*/expectedParamTypes.size(),
+                                   /*numActual=*/posBindings.size(),
+                                   "positional input parameter");
+        } else {
+          emitWrongArgOrParamCount(diag, minRequired,
+                                   /*maxAllowed=*/expectedParamTypes.size(),
+                                   /*numActual=*/size(), "input parameter");
+        }
+
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       },
       /*emitPosType=*/
@@ -358,10 +398,16 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         diag << "parameter #" << paramIdx << " (" << paramName
              << ") passed both as positional and keyword operand";
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+      },
+      /*emitPosOnlyPassedByKw=*/
+      [&](SmallVectorImpl<StringRef> &&names) {
+        InflightDiag diag = emitter.emitError(exprLoc);
+        emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
+        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       }};
 
-  return verifyBindings(expectedParamTypes, paramNames, defaultParams, emitter,
-                        hasParamVarArgs,
+  return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
+                        defaultParams, emitter, hasParamVarArgs,
                         /*parameterInferenceHook=*/{},
                         /*isPackVarArg=*/false, setEvaluator, diagEmitter);
 }
@@ -370,19 +416,21 @@ std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     LITSignatureType sig, ExprEmitter &emitter, const DiagEmitter &diagEmitter,
     ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
-  return verifyBindings(
-      sig.getInputParamTypes(), sig.getParamNames(), sig.getDefaultParameters(),
-      emitter, sig.hasParamVarArgs(), parameterInferenceHook, isPackVarArg,
-      /*setEvaluator=*/{}, diagEmitter);
+  return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
+                        sig.getParamPassingKinds(), sig.getDefaultParameters(),
+                        emitter, sig.hasParamVarArgs(), parameterInferenceHook,
+                        isPackVarArg,
+                        /*setEvaluator=*/{}, diagEmitter);
 }
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(LITSignatureType sig,
                                    ExprEmitter &emitter) const {
-  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr};
+  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
   return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
-                        sig.getDefaultParameters(), emitter,
-                        sig.hasParamVarArgs(), /*parameterInferenceHook=*/{},
+                        sig.getParamPassingKinds(), sig.getDefaultParameters(),
+                        emitter, sig.hasParamVarArgs(),
+                        /*parameterInferenceHook=*/{},
                         /*isPackVarArg=*/false,
                         /*setEvaluator=*/{}, diagEmitter);
 }
@@ -399,9 +447,10 @@ InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
   };
 
   auto [bindingValuesAttr, _] = verifyBindings(
-      paramTypes, structOp.getParamNames(), structOp.getDefaultParameters(),
-      emitter, structOp.getParamVarArgs(), structOp.getName(),
-      structOp.getLoc(), exprLoc, setParamValue);
+      paramTypes, structOp.getParamNames(),
+      structOp.getParamPassingKinds().getValue(),
+      structOp.getDefaultParameters(), emitter, structOp.getParamVarArgs(),
+      structOp.getName(), structOp.getLoc(), exprLoc, setParamValue);
   return bindingValuesAttr;
 }
 
@@ -409,9 +458,10 @@ ParameterExprArrayAttr
 InputParamBindings::verifyBindings(LITSignatureType sig, ExprEmitter &emitter,
                                    StringRef baseName, Location opLoc,
                                    llvm::SMLoc exprLoc) const {
-  auto [newBindings, _] = verifyBindings(
-      sig.getInputParamTypes(), sig.getParamNames(), sig.getDefaultParameters(),
-      emitter, sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
+  auto [newBindings, _] =
+      verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
+                     sig.getParamPassingKinds(), sig.getDefaultParameters(),
+                     emitter, sig.hasParamVarArgs(), baseName, opLoc, exprLoc);
   return newBindings;
 }
 

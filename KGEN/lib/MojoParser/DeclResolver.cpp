@@ -1449,7 +1449,7 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
         shared.getMangledParameterName(
             arg.name.getValue() + Twine(nameCounter++), arg.loc),
         decl.getType());
-    // TODO(#21951): Pass these with a dedicated implicit passing kind instead
+    // TODO(#22786): Pass these with a dedicated implicit passing kind instead
     // of hacking it into positional-only parameters? This logic is also
     // problematic if the function has default arguments.
     inputParamNames.push_back(StringAttr::get(

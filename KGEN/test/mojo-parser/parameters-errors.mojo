@@ -82,7 +82,7 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 fn partialBindSignature[callable: fn[a: Int, b: Int]() -> None, a: __mlir_type.index]():
-  # expected-error @below {{parametric callable expected 2 parameters}}
+  # expected-error @below {{parametric callable expects 2 input parameters}}
   return callable[a]
 
 # expected-note @+1 {{function declared here}}
@@ -112,7 +112,7 @@ fn default_after_non_default[a: Int = 7, b: Int]():
 ##===----------------------------------------------------------------------===##
 
 # The keyword argument flags work in parameter lists.
-fn kw_only_param[a: Int, /, b: Int, *,
+fn kw_only_param[a: Int, *,
                  c: Int](): # expected-error {{keyword-only parameters not supported yet}}
     pass
 
@@ -318,6 +318,32 @@ fn test_func_kw_params3():
 
 
 ##===----------------------------------------------------------------------===##
+# Function positional-only parameters
+##===----------------------------------------------------------------------===##
+
+# expected-note @below {{declared here}}
+fn has_pos_only[a: Int, b: Int, /, c: Int = 9](): pass
+
+fn test_pos_only():
+    # expected-error @below {{positional-only parameter passed as keyword parameter: 'b'}}
+    has_pos_only[0, b=1, c=2]()
+    # expected-error @below {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
+    has_pos_only[b=1, a=3, c=2]()
+
+    # expected-error @below {{expects at least 2 positional input parameters, but 1 was specified}}
+    has_pos_only[1, c=9]
+
+fn indirect_callable_pos_only[
+    callable: fn[a: Int, b: Int, /, c: Int = 9] () -> None
+]():
+    # expected-error @below {{parametric callable expects at least 2 positional input parameters, but 1 was specified}}
+    _ = callable[0, b=1, c=2]
+    # expected-error @below {{parametric callable expects at least 2 positional input parameters, but 0 were specified}}
+    _ = callable[b=1, a=3, c=2]
+    # expected-error @below {{parametric callable expects at least 2 positional input parameters, but 1 was specified}}
+    _ = callable[1, c=9]
+
+##===----------------------------------------------------------------------===##
 # Struct keyword parameters
 ##===----------------------------------------------------------------------===##
 
@@ -346,3 +372,23 @@ fn test_struct_kw_params3():
     _ = KwParamStruct[7, z=13, c=9]()
     # expected-error @below {{parameter #0 ('a') passed both as positional and keyword operand}}
     _ = KwParamStruct[7, b=7, a=9]()
+
+
+##===----------------------------------------------------------------------===##
+# Struct positional-only parameters
+##===----------------------------------------------------------------------===##
+
+# expected-note @+2 {{declared here}}
+@value
+struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
+    pass
+
+
+fn test_pos_only_struct():
+    # expected-error @below {{positional-only parameter passed as keyword parameter: 'b'}}
+    _ = PosOnlyStruct[0, b=1, c=2]
+    # expected-error @below {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
+    _ = PosOnlyStruct[b=1, a=3, c=2]
+
+    # expected-error @below {{expects at least 2 positional input parameters, but 1 was specified}}
+    _ = PosOnlyStruct[1, c=9]

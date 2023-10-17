@@ -364,8 +364,8 @@ struct DiagEmitter {
                                StringRef inputOrResult) const;
   InflightDiag wrongArgCount(size_t minRequiredArgs, size_t maxAllowedArgs,
                              size_t numOperands) const;
-  InflightDiag wrongPosOnlyArgCount(size_t minRequiredArgs,
-                                    size_t numOperands) const;
+  InflightDiag wrongPosOnlyCount(size_t minRequiredArgs, size_t numOperands,
+                                 Twine argOrParam) const;
   InflightDiag resultGenericMemType(Type outputType) const;
   InflightDiag argGenericMemType(size_t expectedArgIdx,
                                  Type expectedType) const;
@@ -447,12 +447,13 @@ InflightDiag DiagEmitter::wrongArgCount(size_t minRequiredArgs,
   return diag;
 }
 
-InflightDiag DiagEmitter::wrongPosOnlyArgCount(size_t minRequiredArgs,
-                                               size_t numOperands) const {
+InflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
+                                            size_t numOperands,
+                                            Twine argOrParam) const {
   InflightDiag diag = initDiag() << "callee";
   emitWrongArgOrParamCount(diag, minRequiredArgs,
                            /*maxAllowed=*/numOperands, numOperands,
-                           "positional-only argument");
+                           "positional " + argOrParam);
   return diag;
 }
 
@@ -705,6 +706,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // operands passed. This keeps the subsequent code much simpler.
 
   // First, we collect all real argument names.
+  // TODO: improve error messages for pos-only pass by keyword.
   StringSet<> argNames;
   for (auto [argIdx, argName, argPassingKind] : llvm::enumerate(
            signature.getArgNames(), signature.getArgPassingKinds())) {
@@ -744,9 +746,19 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   InflightDiag diag = emitter.emitError(callLoc);
   InputParamBindings::DiagEmitter bindingDiag{
       /*emitParamCount=*/
-      [&]() {
-        diag = emitDiagFor.wrongParamCount(signature.getNumInputParams(),
-                                           posBindings.size(), "input");
+      [&](bool posOnly) {
+        if (posOnly) {
+          auto isPosOnly = [](PassingKind kind) {
+            return kind == PassingKind::PosOnly;
+          };
+          size_t numPosOnly =
+              llvm::count_if(signature.getParamPassingKinds(), isPosOnly);
+          diag = emitDiagFor.wrongPosOnlyCount(numPosOnly, posBindings.size(),
+                                               "input parameter");
+        } else {
+          diag = emitDiagFor.wrongParamCount(signature.getNumInputParams(),
+                                             posBindings.size(), "input");
+        }
       },
       /*emitPosType=*/
       [&](size_t paramIdx, const InputParamBindings::Binding &binding,
@@ -768,6 +780,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       [&](size_t paramIdx, StringAttr paramName) {
         diag << "parameter #" << paramIdx << " (" << paramName
              << ") passed both as positional and keyword operand";
+      },
+      /*emitPosOnlyPassedByKw=*/
+      [&](SmallVectorImpl<StringRef> &&names) {
+        emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
       },
   };
 
@@ -824,8 +840,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       llvm::count_if(llvm::zip(signature.getArgPassingKinds(),
                                signature.getInputConventions()),
                      isPosOnlyArg);
-  if (numPosOperands < numPosOnlyArgs)
-    return emitDiagFor.wrongPosOnlyArgCount(numPosOnlyArgs, numPosOperands);
+  if (numPosOperands < numPosOnlyArgs) {
+    return emitDiagFor.wrongPosOnlyCount(numPosOnlyArgs, numPosOperands,
+                                         "argument");
+  }
 
   // We will accumulate the implicit conversion in arguments to those counted
   // for the parameter bindings.
