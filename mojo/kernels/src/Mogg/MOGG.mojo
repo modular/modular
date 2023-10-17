@@ -44,6 +44,7 @@ from math.limit import isinf, max_or_inf, min_or_neginf
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 
+from Activations import gelu, relu, sigmoid
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
 from algorithm import (
@@ -58,61 +59,59 @@ from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
-from linalg.batched_matmul import batched_matmul as _batched_matmul
-from linalg.batched_matmul import (
+from Arange import arange, arange_shape
+from ArgNonzero import arg_nonzero, arg_nonzero_shape
+from BatchedMatmul import batched_matmul as _batched_matmul
+from BatchedMatmul import (
     get_trace_information as get_trace_information_batched_matmul,
 )
-from linalg.matmul import matmul as _matmul
-from linalg.matmul import (
+from Concat import concat as _concat
+from Concat import concat_shape
+from Conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
+from Conv import pack_conv_filter as _pack_conv_filter
+from Conv import pack_conv_filter_shape as _pack_conv_filter_shape
+from ConvTranspose import conv_transpose as conv_transpose_impl
+from ConvTranspose import conv_transpose_shape
+from Cumsum import cumsum as _cumsum
+from GatherScatter import gather as _gather
+from GatherScatter import gather_nd as _gather_nd
+from GatherScatter import gather_reduce, gather_shape, scatter_elements
+from GatherScatter import scatter_elements_shape as scatter_shape
+from GatherScatter import scatter_nd as _scatter_nd
+from GatherScatter import scatter_nd_generator
+from Matmul import matmul as _matmul
+from Matmul import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
-from linalg.matmul_utils import (
-    GemmShape,
-    get_trace_information,
-    search_mm_config,
-)
-from linalg.matrix_band_part import matrix_band_part
-from linalg.matrix_solve import matrix_solve
+from MatmulUtils import GemmShape, get_trace_information, search_mm_config
+from MatrixBandPart import matrix_band_part
+from MatrixSolve import matrix_solve
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer
-from nn.activation import gelu, relu, sigmoid
-from nn.arange import arange, arange_shape
-from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
-from nn.concat import concat as _concat
-from nn.concat import concat_shape
-from nn.conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
-from nn.conv import pack_conv_filter as _pack_conv_filter
-from nn.conv import pack_conv_filter_shape as _pack_conv_filter_shape
-from nn.conv_transpose import conv_transpose as conv_transpose_impl
-from nn.conv_transpose import conv_transpose_shape
-from nn.cumsum import cumsum as _cumsum
-from nn.gather_scatter import gather as _gather
-from nn.gather_scatter import gather_nd as _gather_nd
-from nn.gather_scatter import gather_reduce, gather_shape, scatter_elements
-from nn.gather_scatter import scatter_elements_shape as scatter_shape
-from nn.gather_scatter import scatter_nd as _scatter_nd
-from nn.gather_scatter import scatter_nd_generator
-from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.norm import layer_norm
-from nn.pad import pad as _pad
-from nn.pad import pad_shape
-from nn.pool import avg_pool, max_pool, pool_shape
-from nn.resize import CoordinateTransformationMode, RoundMode
-from nn.resize import resize_linear as resize_linear_kernel
-from nn.resize import resize_nearest_neighbor
-from nn.roialign import roi_align_nhwc
-from nn.slice import slice_as_view, slice_shape
-from nn.softmax import logsoftmax as _logsoftmax
-from nn.softmax import softmax as _softmax
-from nn.split import split as _split
-from nn.tile import tile, tile_shape
-from nn.topk import top_k as _top_k
-from nn.topk import top_k_shape
+from NonMaxSuppression import (
+    non_max_suppression,
+    non_max_suppression_shape_func,
+)
+from Normalization import layer_norm
+from Pad import pad as _pad
+from Pad import pad_shape
+from Pool import avg_pool, max_pool, pool_shape
+from Resize import CoordinateTransformationMode, RoundMode
+from Resize import resize_linear as resize_linear_kernel
+from Resize import resize_nearest_neighbor
+from ROIAlign import roi_align_nhwc
 from runtime.llcl import OutputChainPtr
 from runtime.tracing import Trace, TraceLevel
+from Slice import slice_as_view, slice_shape
+from Softmax import logsoftmax as _logsoftmax
+from Softmax import softmax as _softmax
+from Split import split as _split
+from Tile import tile, tile_shape
+from TopK import top_k as _top_k
+from TopK import top_k_shape
 
 from utils._annotations import *
 from utils.index import Index, StaticIntTuple, product
