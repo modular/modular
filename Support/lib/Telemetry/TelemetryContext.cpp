@@ -102,16 +102,16 @@ TelemetryContext::TelemetryContext(
   auto hostInfoOr = getHostMachineInfo();
   assert(!hostInfoOr.isError() && "could not get the host machine info");
   // Set the CPU and architecture.
-  attrs.SetAttribute("com.modular.cpu.description", hostInfoOr->cpuModelName);
-  attrs.SetAttribute("com.modular.cpu.arch", hostInfoOr->cpuArch);
+  attrs.SetAttribute("cpu.description", hostInfoOr->cpuModelName);
+  attrs.SetAttribute("cpu.arch", hostInfoOr->cpuArch);
   // Set the CPU features.
   std::vector<std::string_view> featuresView;
   for (auto &f : hostInfoOr->cpuFeatures)
     featuresView.emplace_back(f);
-  attrs.SetAttribute("com.modular.cpu.features", featuresView);
+  attrs.SetAttribute("cpu.features", featuresView);
   // Set some of the other useful features, like number of cores and operating
   // system.
-  attrs.SetAttribute("com.modular.cpu.cores", hostInfoOr->numPhysicalCores);
+  attrs.SetAttribute("cpu.cores", hostInfoOr->numPhysicalCores);
   attrs.SetAttribute("os.type", hostInfoOr->osName);
 
   // Set the values of any resources we've been provided.
