@@ -167,17 +167,17 @@ std::optional<int64_t> ForOp::getTripCount() {
 
   int64_t r = upperBound.value() - lowerBound.value();
 
-  HLCF::ForLoopBoundCmpPredicate pred = getCmpPredicateType();
-  HLCF::ForLoopIndVarCompute opType = getIndVarComputeType();
+  ForLoopBoundCmpPredicate pred = getCmpPredicateType();
+  ForLoopIndVarCompute opType = getIndVarComputeType();
   // When lowerBound and upperBound don't form a valid range, return 0.
   switch (opType) {
-  case HLCF::ForLoopIndVarCompute::ADD:
+  case ForLoopIndVarCompute::ADD:
     if (step.value() > 0 && r < 0)
       return 0;
     if (step.value() < 0 && r > 0)
       return 0;
     break;
-  case HLCF::ForLoopIndVarCompute::SUB:
+  case ForLoopIndVarCompute::SUB:
     if (step.value() > 0 && r > 0)
       return 0;
     if (step.value() < 0 && r < 0)
@@ -185,8 +185,8 @@ std::optional<int64_t> ForOp::getTripCount() {
   }
 
   r = std::abs(r);
-  if (pred == HLCF::ForLoopBoundCmpPredicate::SGE ||
-      pred == HLCF::ForLoopBoundCmpPredicate::SLE)
+  if (pred == ForLoopBoundCmpPredicate::SGE ||
+      pred == ForLoopBoundCmpPredicate::SLE)
     r += 1;
 
   return llvm::divideCeil(r, std::abs(step.value()));
@@ -217,7 +217,7 @@ void ForOp::insertVariants(ValueRange newOperands) {
 BlockArgument ForOp::insertArgumentToRegion(Location loc, Type argType,
                                             size_t argIdx, Region &region) {
   // Add argument to match both retValues and otherIterValues segments of the
-  // HLCF::ForOp with variants added as new operands.
+  // ForOp with variants added as new operands.
   region.insertArgument(1 + getNumResults() + argIdx, argType, loc);
   return region.addArgument(argType, loc);
 }
@@ -500,22 +500,22 @@ void ForYieldOp::getBranchTargets(ArrayRef<Attribute> operands,
     return;
   }
 
-  HLCF::ForLoopBoundCmpPredicate pred = forLoop.getCmpPredicateType();
-  HLCF::ForLoopIndVarCompute opType = forLoop.getIndVarComputeType();
+  ForLoopBoundCmpPredicate pred = forLoop.getCmpPredicateType();
+  ForLoopIndVarCompute opType = forLoop.getIndVarComputeType();
 
   bool continueFor = (step.value() > 0 && iter.getInt() < upperBound.value() &&
-                      opType == HLCF::ForLoopIndVarCompute::ADD) ||
+                      opType == ForLoopIndVarCompute::ADD) ||
                      (step.value() < 0 && iter.getInt() > upperBound.value() &&
-                      opType == HLCF::ForLoopIndVarCompute::ADD) ||
+                      opType == ForLoopIndVarCompute::ADD) ||
                      (step.value() < 0 && iter.getInt() < upperBound.value() &&
-                      opType == HLCF::ForLoopIndVarCompute::SUB) ||
+                      opType == ForLoopIndVarCompute::SUB) ||
                      (step.value() > 0 && iter.getInt() > upperBound.value() &&
-                      opType == HLCF::ForLoopIndVarCompute::SUB);
+                      opType == ForLoopIndVarCompute::SUB);
 
   continueFor |= (iter.getInt() == upperBound.value() &&
-                  pred == HLCF::ForLoopBoundCmpPredicate::SGE) ||
+                  pred == ForLoopBoundCmpPredicate::SGE) ||
                  (iter.getInt() == upperBound.value() &&
-                  pred == HLCF::ForLoopBoundCmpPredicate::SLE);
+                  pred == ForLoopBoundCmpPredicate::SLE);
 
   if (continueFor) {
     // Branch to the beginning of the body region if continues.
@@ -545,23 +545,23 @@ ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
   if (!step)
     return ErrorTree(getLoc(), "non-integer parent for-loop step.");
 
-  HLCF::ForLoopBoundCmpPredicate pred = forLoop.getCmpPredicateType();
-  HLCF::ForLoopIndVarCompute opType = forLoop.getIndVarComputeType();
+  ForLoopBoundCmpPredicate pred = forLoop.getCmpPredicateType();
+  ForLoopIndVarCompute opType = forLoop.getIndVarComputeType();
 
   bool continueFor =
       (step.getInt() > 0 && iter.getInt() < upperBound.getInt() &&
-       opType == HLCF::ForLoopIndVarCompute::ADD) ||
+       opType == ForLoopIndVarCompute::ADD) ||
       (step.getInt() < 0 && iter.getInt() > upperBound.getInt() &&
-       opType == HLCF::ForLoopIndVarCompute::ADD) ||
+       opType == ForLoopIndVarCompute::ADD) ||
       (step.getInt() < 0 && iter.getInt() < upperBound.getInt() &&
-       opType == HLCF::ForLoopIndVarCompute::SUB) ||
+       opType == ForLoopIndVarCompute::SUB) ||
       (step.getInt() > 0 && iter.getInt() > upperBound.getInt() &&
-       opType == HLCF::ForLoopIndVarCompute::SUB);
+       opType == ForLoopIndVarCompute::SUB);
 
   continueFor |= (iter.getInt() == upperBound.getInt() &&
-                  pred == HLCF::ForLoopBoundCmpPredicate::SGE) ||
+                  pred == ForLoopBoundCmpPredicate::SGE) ||
                  (iter.getInt() == upperBound.getInt() &&
-                  pred == HLCF::ForLoopBoundCmpPredicate::SLE);
+                  pred == ForLoopBoundCmpPredicate::SLE);
 
   if (continueFor)
     state.transferControlFlowTo(&forLoop.getBody().front(), operands);

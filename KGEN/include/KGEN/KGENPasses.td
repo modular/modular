@@ -992,14 +992,13 @@ def AutomaticInline: Pass<"automatic-inline", "mlir::ModuleOp"> {
 def SCCP: Pass<"sccp", "mlir::ModuleOp"> {
   let summary = "KGEN sparse conditional constant propagation pass";
   let description = [{
-    Sparse conditional constant propagation.
+    Sparse conditional constant propagation (SCCP).
+    SCCP is an optimization that combines Dead Code Elimination (DCE) and
+    Constant Propagation with the knowledge of the control flow
+    (back edges for repetition) and dataflow (SSA values) of the program.
+
     This pass doesn't have inter-procedural support (yet).
   }];
-
-  let options = [
-    Option<"optimizationLevel", "optimization-level", "unsigned", "1",
-           "Specify the compilation optimization level.">
-  ];
 
   let dependentDialects = ["HLCF::HLCFDialect"];
 }
