@@ -28,6 +28,7 @@ class ParameterEvaluator;
 class ParameterExprArrayAttr;
 
 namespace LIT {
+class PassingKindArrayAttr;
 enum class PassingKind : uint32_t;
 
 /// Parse an optional default value of the given type. `defaultVal` is not
@@ -80,10 +81,12 @@ void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
 ParseResult parseStructParameterSpec(AsmParser &p,
                                      ParamDeclArrayAttr &inputParamDecls,
                                      StringArrayAttr &paramNames,
+                                     PassingKindArrayAttr &paramPassingKinds,
                                      ParameterExprArrayAttr &defaultParameters);
 void printStructParameterSpec(AsmPrinter &p, Operation *op,
                               ArrayRef<ParamDeclAttr> inputParamDecls,
                               ArrayRef<StringAttr> paramNames,
+                              PassingKindArrayAttr paramPassingKinds,
                               ParameterExprArrayAttr defaultParameters);
 
 /// Parse an optional parameter or argument name.

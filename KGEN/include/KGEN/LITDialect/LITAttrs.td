@@ -269,4 +269,15 @@ def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// PassingKindArrayAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_PassingKindArrayAttr : LITAttr<"PassingKindArray", "passing.kinds"> {
+  let parameters = (ins
+    OptionalArrayRefParameter<"PassingKind">:$value
+  );
+  let assemblyFormat = "`<` `[` (`]`) : ($value^ `]`)? `>`";
+}
+
 #endif // KGEN_LITDIALECT_LITATTRS_TD
