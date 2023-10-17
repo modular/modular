@@ -42,18 +42,17 @@ HTTPCacheBackend::findImpl(StringRef keyHash,
   // Base64 encode the key hash so it's URL-safe.
   std::string keyHashB64 = encodeURLSafeBase64(keyHash);
 
-  // We didn't have it locally, so create a request to go get it.
-  HTTPClient client(ctx.copy());
-  HTTPRequest req{
-      /*URL=*/url + "/" + keyHashB64,
-      /*verifyTLSPeer=*/true,
-  };
-
   // 10min timeout for requests.
   using namespace std::chrono_literals;
   constexpr std::chrono::milliseconds timeout = 10min;
   // Maximum of 512M per request.
   constexpr size_t maxBytes = 1024 * 1024 * 512;
+
+  // We didn't have it locally, so create a request to go get it.
+  HTTPRequest req{
+      /*URL=*/url + "/" + keyHashB64,
+      /*verifyTLSPeer=*/true,
+  };
 
   // Either create a new WriteableBuffer or use the one that was passed in.
   auto writeBuf =
@@ -62,29 +61,55 @@ HTTPCacheBackend::findImpl(StringRef keyHash,
           : WriteableBuffer::get(/*size=*/0, /*alignment=*/std::nullopt,
                                  /*capacity=*/maxBytes);
 
-  // Execute the request.
-  HTTPResponse response =
-      client.executeRequest(req, *writeBuf, timeout, maxBytes);
+  int retryCount = 0;
+  while (true) {
+    HTTPClient client(ctx.copy());
 
-  // TODO: Will the result bytes be encoded or can we expect them to be raw
-  //       binary?
+    // Execute the request. This is a blocking request on this thread.
+    HTTPResponse response =
+        client.executeRequest(req, *writeBuf, timeout, maxBytes);
 
-  // Everything is fine, return the buffer.
-  if (response.isSuccess()) {
-    // Cache it, so we can avoid multiple requests at this level.
-    const_cast<HTTPCacheBackend *>(this)->cacheBuffer(keyHash, writeBuf.copy());
-    return std::move(writeBuf);
+    // TODO: Will the result bytes be encoded or can we expect them to be raw
+    //       binary?
+
+    // Everything is fine, return the buffer.
+    if (response.isSuccess()) {
+      // Cache it, so we can avoid multiple requests at this level.
+      const_cast<HTTPCacheBackend *>(this)->cacheBuffer(keyHash,
+                                                        writeBuf.copy());
+      return std::move(writeBuf);
+    }
+
+    // Content was not found - this is not an error, just return nullopt.
+    if (response.isError() && response.responseCode &&
+        *response.responseCode == HTTPResponseCode::NotFound)
+      return std::nullopt;
+
+    if (response.isError() &&
+        (response.kind == HTTPResponse::Kind::TimeoutError ||
+         response.kind == HTTPResponse::Kind::TransportError ||
+         (response.responseCode && *response.responseCode >= 500 &&
+          *response.responseCode < 600))) {
+
+      // Retry on timeout, transport error, or temporary server error up to 3
+      // times.
+      if (retryCount++ < 3) {
+        // Reset our write buffer in case we had some junk in there.
+        writeBuf = WriteableBuffer::get(/*size=*/0, /*alignment=*/std::nullopt,
+                                        /*capacity=*/maxBytes);
+        // Exponential backoff to wait until things are hopefully working again.
+        // Sleep for 2^retryCount seconds before retrying.
+        std::this_thread::sleep_for((1 << retryCount) * 1000ms);
+        continue;
+      }
+    }
+
+    // Every other kind of error is not recoverable so don't even try.
+    // Return the error we hit.
+    std::string errorContextStr =
+        llvm::formatv("Looking for {0}", keyHashB64).str();
+    return response.asError(errorContextStr).takeError();
   }
-
-  // Content was not found - this is not an error, just return nullopt.
-  if (response.isError() && response.responseCode &&
-      *response.responseCode == HTTPResponseCode::NotFound)
-    return std::nullopt;
-
-  // Return the error we hit.
-  std::string errorContextStr =
-      llvm::formatv("Looking for {0}", keyHashB64).str();
-  return response.asError(errorContextStr).takeError();
 }
 
 ErrorOrSuccess HTTPCacheBackend::clearImpl() {
