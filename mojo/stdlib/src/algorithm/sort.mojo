@@ -82,7 +82,7 @@ fn _partition[
     while left < right:
         if cmp_fn[type](array.load(left), pivot_value):
             left += 1
-        elif cmp_fn[type](pivot_value, array.load(right)):
+        elif not cmp_fn[type](array.load(right), pivot_value):
             right -= 1
         else:
             _swap(array, left, right)
