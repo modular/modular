@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Support/NameMangling.h"
 
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/IRMapping.h"
@@ -26,6 +27,18 @@
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
+
+ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
+    : StructEmitter(shared), ctx(shared.getContext()), moduleDecl(moduleDecl),
+      fileModuleOp(cast<FileModuleOp>(moduleDecl)),
+      selfName(StringAttr::get(ctx, "self")),
+      otherName(StringAttr::get(ctx, "other")),
+      ptrToImplName(StringAttr::get(ctx, "ptrToImpl")),
+      dtorFieldAttr(StringAttr::get(ctx, "dtor")),
+      copyFieldAttr(StringAttr::get(ctx, "copy")),
+      callFieldAttr(StringAttr::get(ctx, "call")),
+      callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
+      opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))) {}
 
 StringAttr ClosureEmitter::getClosureNameFromType(StringRef prefix,
                                                   FileModuleOp fileModuleOp,
@@ -138,10 +151,9 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
                                             callMemberSignatureType);
 
-  ASTDecl &parent = shared.declResolver->getDeclForTypeSymbol(
-      SymbolRefAttr::get(fileModuleOp.getDeclName()));
   ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
-      declOp.getOperation(), declOp.getDeclName(), parent.getLoc(), &parent);
+      declOp.getOperation(), declOp.getDeclName(), moduleDecl.getLoc(),
+      &moduleDecl);
   for (StructFieldOp field : declOp.getFieldDecls())
     shared.declResolver->addFullyResolvedDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
@@ -392,12 +404,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   StringAttr name =
       getClosureNameFromType("_CI_", fileModuleOp, closureImplSignature);
 
-  ASTDecl &parent = shared.declResolver->getDeclForTypeSymbol(
-      SymbolRefAttr::get(fileModuleOp.getDeclName()));
   StructDeclOp declOp =
       createStruct(fileModuleOp, name, fieldTypes, fileModuleOp.getLoc());
   ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
-      declOp.getOperation(), declOp.getDeclName(), parent.getLoc(), &parent);
+      declOp.getOperation(), declOp.getDeclName(), moduleDecl.getLoc(),
+      &moduleDecl);
 
   for (StructFieldOp field : declOp.getFieldDecls())
     shared.declResolver->addFullyResolvedDecl(

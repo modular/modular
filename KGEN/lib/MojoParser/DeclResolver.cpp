@@ -2377,18 +2377,15 @@ static Value emitClosureInstance(SignatureType closureSignature,
   builder.setInsertionPointAfter(nestedFunction);
   auto insertPoint = builder.saveInsertionPoint();
 
-  ASTDecl *parentFunctionDecl = nestedFunctionDecl.getParentDecl();
-
-  FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
+  ASTDecl *moduleDecl = nestedFunctionDecl.getNearestDeclOfType<FileModuleOp>();
   // Create ClosureWrapper first. Nested function cannot be referenced after the
   // Closure Impl replaces it.
   StructDeclOp closureWrapper = shared.getOrGenerateClosureWrapperStruct(
-      location, nestedFunction.getSignature(), fileModuleOp);
+      location, nestedFunction.getSignature(), moduleDecl);
   StructDeclOp closureImpl =
       shared.replaceNestedFunctionWithGeneratedClosureImplStruct(
-          location, nestedFunctionDecl, fileModuleOp);
-  ClosureEmitter emitter(closureWrapper->getParentOfType<FileModuleOp>(),
-                         shared);
+          location, nestedFunctionDecl, moduleDecl);
+  ClosureEmitter emitter(*moduleDecl, shared);
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, location);
 
   // Create an instance of the closure implementation in the parent function
@@ -2403,7 +2400,7 @@ static Value emitClosureInstance(SignatureType closureSignature,
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
   builder.restoreInsertionPoint(insertPoint);
 
-  ExprEmitter exprEmitter(shared, *parentFunctionDecl, builder);
+  ExprEmitter exprEmitter(shared, *nestedFunctionDecl.getParentDecl(), builder);
   SyntheticNode node(location);
 
   // Create a copy of the captured value.

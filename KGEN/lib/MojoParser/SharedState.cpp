@@ -1881,17 +1881,16 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }
 
-LIT::StructDeclOp
-SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
-                                               SignatureType signatureType,
-                                               FileModuleOp fileModuleOp) {
+LIT::StructDeclOp SharedState::getOrGenerateClosureWrapperStruct(
+    SMLoc location, SignatureType signatureType, ASTDecl *moduleDecl) {
+  auto fileModuleOp = cast<FileModuleOp>(moduleDecl);
   std::pair<SignatureType, StringAttr> key(signatureType,
                                            fileModuleOp.getSymNameAttr());
   StructDeclOp existing = impl->closureWrappers[key];
   if (!existing) {
     StringAttr name = ClosureEmitter::getClosureNameFromType(
         "_CW_", fileModuleOp, signatureType);
-    ClosureEmitter emitter(fileModuleOp, *this);
+    ClosureEmitter emitter(*moduleDecl, *this);
     existing = emitter.createClosureWrapperStructDecl(name, signatureType);
     impl->closureWrappers[key] = existing;
   }
@@ -1900,8 +1899,8 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
 
 LIT::StructDeclOp
 SharedState::replaceNestedFunctionWithGeneratedClosureImplStruct(
-    llvm::SMLoc location, ASTDecl &nestedFunc, FileModuleOp fileModuleOp) {
-  ClosureEmitter emitter(fileModuleOp, *this);
+    SMLoc location, ASTDecl &nestedFunc, ASTDecl *moduleDecl) {
+  ClosureEmitter emitter(*moduleDecl, *this);
   return emitter.replaceNestedFunctionWithClosureImplStructDecl(
       location, nestedFunc, *this->impl);
 }

@@ -32,16 +32,7 @@ public:
 
 class ClosureEmitter : public StructEmitter {
 public:
-  ClosureEmitter(LIT::FileModuleOp fileModuleOp, SharedState &shared)
-      : StructEmitter(shared), ctx(shared.getContext()),
-        fileModuleOp(fileModuleOp), selfName(StringAttr::get(ctx, "self")),
-        otherName(StringAttr::get(ctx, "other")),
-        ptrToImplName(StringAttr::get(ctx, "ptrToImpl")),
-        dtorFieldAttr(StringAttr::get(ctx, "dtor")),
-        copyFieldAttr(StringAttr::get(ctx, "copy")),
-        callFieldAttr(StringAttr::get(ctx, "call")),
-        callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
-        opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))) {}
+  ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared);
 
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.
@@ -66,7 +57,13 @@ public:
 
 private:
   MLIRContext *ctx;
+
+  /// The decl of the surrounding module where code should be synthesized.
+  ASTDecl &moduleDecl;
+  /// The surrounding file module operation.
   FileModuleOp fileModuleOp;
+
+  // Cached attributes and types.
   StringAttr selfName;
   StringAttr otherName;
   StringAttr ptrToImplName;

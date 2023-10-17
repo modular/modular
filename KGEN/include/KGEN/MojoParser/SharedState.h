@@ -359,13 +359,13 @@ public:
   Impl &getImpl() const { return *impl; }
 
   /// Emitters invoke this method to get a closure declaration.
-  StructDeclOp getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
+  StructDeclOp getOrGenerateClosureWrapperStruct(SMLoc location,
                                                  SignatureType signatureType,
-                                                 FileModuleOp fileModuleOp);
+                                                 ASTDecl *moduleDecl);
 
   /// Emitters invoke this method to get a closure declaration.
   StructDeclOp replaceNestedFunctionWithGeneratedClosureImplStruct(
-      llvm::SMLoc location, ASTDecl &nestedFunction, FileModuleOp fileModuleOp);
+      SMLoc location, ASTDecl &nestedFunction, ASTDecl *moduleDecl);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values in the form of a range: the begin and end iterators of the capture
