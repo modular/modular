@@ -10,7 +10,6 @@ alias IntAlias = 12
 """Int alias summary
 
 Int alias description."""
-
 alias ExplicitIntAlias: Int = 123
 
 
