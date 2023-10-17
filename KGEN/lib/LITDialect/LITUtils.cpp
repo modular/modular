@@ -227,7 +227,7 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
-OptionalParseResult StarSlashParser::parseOptionalStarSlash() {
+OptionalParseResult StarSlashParser::parseOptionalStarSlash(llvm::SMLoc loc) {
   if (succeeded(parser.parseOptionalVerticalBar())) {
     if (foundSlash)
       return parser.emitError(loc, "only one '|' allowed in signature");

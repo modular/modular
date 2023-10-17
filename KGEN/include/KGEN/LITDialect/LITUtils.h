@@ -97,12 +97,11 @@ ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 /// TODO(#23387): fix this when AsmParser can handle '/'.
 class StarSlashParser {
 public:
-  StarSlashParser(AsmParser &parser, llvm::SMLoc loc)
-      : parser(parser), loc(loc) {}
+  StarSlashParser(AsmParser &parser) : parser(parser) {}
 
   /// Try to parse a single optional '*' or '|', and emit an error if a
   /// duplicate is found or a '|' comes after a '*'.
-  OptionalParseResult parseOptionalStarSlash();
+  OptionalParseResult parseOptionalStarSlash(llvm::SMLoc loc);
 
   /// Return the number of positional-only, positional-or-keyword, and
   /// keyword-only arguments seen so far, respectively.
@@ -110,7 +109,6 @@ public:
 
 private:
   AsmParser &parser;
-  llvm::SMLoc loc;
   size_t idx = 0;
   size_t numPosOnly = 0;
   size_t numPosOrKw = 0;
