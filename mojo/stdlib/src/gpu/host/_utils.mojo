@@ -38,10 +38,6 @@ fn _human_memory(size: Int) -> String:
     return String(size) + "B"
 
 
-fn _add_string_terminator(s: String) -> String:
-    return s + "\0"
-
-
 # ===----------------------------------------------------------------------===#
 # Library Load
 # ===----------------------------------------------------------------------===#

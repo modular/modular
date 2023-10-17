@@ -11,7 +11,6 @@ from memory import memset_zero
 from memory.unsafe import DTypePointer, Pointer, bitcast
 
 from ._utils import (
-    _add_string_terminator,
     _check_error,
     _get_dylib,
     _get_dylib_function,
@@ -319,7 +318,7 @@ struct ModuleHandle:
 
     fn __init__(inout self, path: Path) raises:
         var module = _ModuleImpl()
-        let path_cstr = _add_string_terminator(path.__str__())
+        let path_cstr = path.__str__()
 
         _check_error(
             _get_dylib_function[
@@ -441,7 +440,7 @@ struct ModuleHandle:
 
     fn load(self, name: String) raises -> FunctionHandle:
         var func = FunctionHandle()
-        let name_cstr = _add_string_terminator(name)
+        let name_cstr = name
 
         _check_error(
             _get_dylib_function[

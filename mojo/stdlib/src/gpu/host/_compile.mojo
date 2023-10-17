@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
-from ._utils import _add_string_terminator
-
 # ===----------------------------------------------------------------------===#
 # Compilation
 # ===----------------------------------------------------------------------===#
@@ -74,6 +72,4 @@ fn _compile_nvptx_asm[
 
 @always_inline
 fn _cleanup_asm(asm: String) -> String:
-    return _add_string_terminator(
-        asm.replace(".version 6.3\n", ".version 8.1\n")
-    )
+    return asm.replace(".version 6.3\n", ".version 8.1\n")
