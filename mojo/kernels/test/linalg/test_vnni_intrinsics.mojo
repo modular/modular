@@ -63,14 +63,8 @@ fn main():
         let cv8sh = dot_i8_to_i32_saturated_AVX2[8](
             c.data.offset(8).simd_load[8](), av16s.slice[8](8), bv16.slice[8](8)
         )
-        let cbufs = Buffer[16, DType.int32].aligned_stack_allocation[64]()
-        let cbufu = Buffer[16, DType.int32].aligned_stack_allocation[64]()
-        cbufs.simd_store[8](0, cv8sl)
-        cbufs.simd_store[8](8, cv8sh)
-        cbufu.simd_store[8](0, cv8ul)
-        cbufu.simd_store[8](8, cv8uh)
-        cv16u = cbufu.simd_load[16](0)
-        cv16s = cbufs.simd_load[16](0)
+        cv16u = cv8ul.join(cv8uh)
+        cv16s = cv8sl.join(cv8sh)
 
     # CHECK: [-97906, -96769, -95504, -94111, -92590, -90941, -89164, -87259, -85226, -83065, -80776, -78359, -75814, -73141, -70340, -67411]
     print(cv16u)
