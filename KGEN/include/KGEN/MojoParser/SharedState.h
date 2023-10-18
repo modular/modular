@@ -52,22 +52,22 @@ enum class CallSyntax : uint8_t;
 /// parent function.
 class Capture {
 public:
-  Capture(AnyValue value, Type fieldType, Type initType);
+  Capture(CValue value, Type fieldType, Type initType);
   Type getFieldType() const { return fieldType; }
   Type getInitType() const { return initType; }
-  AnyValue getAnyValue() const { return anyValue; }
+  CValue getValue() const { return value; }
 
   /// Get the underlying MLIR value.
   Value getMlirValue() const;
 
 private:
+  /// The value of the capture.
+  CValue value;
   /// The type of the capture as it would appear in the closure struct
   /// fields.
   Type fieldType;
   /// The type of the capture as it would appear in the closure constructor.
   Type initType;
-  /// The value of the capture.
-  AnyValue anyValue;
 };
 
 /// This enum indicates how much parsing and type checking has been done on

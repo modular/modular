@@ -312,19 +312,6 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   return declOp;
 }
 
-static bool isMLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
-  return bool(astDecl->getIfMLValue());
-}
-
-static bool isXLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
-  Operation *op = astDecl->getIfOperation();
-  if (auto varlet = dyn_cast_or_null<VarLetDeclOp>(op)) {
-    return ASTType(varlet.getType().getElementAsType())
-        .isRegisterPassable(loc, shared);
-  }
-  return false;
-}
-
 StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     SMLoc location, ASTDecl &nestedFunctionDecl, ClosureCache &cache) {
   FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
@@ -557,25 +544,22 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       hasByRefReturn, ptrToClosureImplType, callFuncLocation);
   for (auto [declAndCapture, fieldOp] :
        llvm::zip(captureRange, declOp.getFieldDecls())) {
-    Capture capture = declAndCapture.second;
-    auto ptrToField = builder.create<StructGEPOp>(selfArg, fieldOp);
-    bool isRegisterPassable =
-        ASTType(fieldOp.getType()).isRegisterPassable(location, shared);
-    bool expectsPointer = !isRegisterPassable ||
-                          isMLValue(declAndCapture.first, location, shared) ||
-                          isXLValue(declAndCapture.first, location, shared);
-    Value target = ptrToField;
-    if (!expectsPointer)
+    auto [decl, capture] = declAndCapture;
+    Value target = builder.create<StructGEPOp>(selfArg, fieldOp);
+    // If the rvalue type matches the real type, then it lives in register.
+    if (capture.getValue().getRValueType().isEqualCanon(
+            capture.getValue().getType()))
       target = builder.create<POP::LoadOp>(target);
 
     Value captureValue = capture.getMlirValue();
     // FIXME(references): properly capture things as references instead of
     // capturing by raw pointer.
-    if (isa<RefType>(captureValue.getType()))
+    if (isa<RefType>(captureValue.getType())) {
       target = builder
                    .create<mlir::UnrealizedConversionCastOp>(
                        captureValue.getType(), target)
                    .getResult(0);
+    }
 
     replaceAllUsesInRegionWith(captureValue, target, callFunc.getBodyRegion());
   }
@@ -818,25 +802,25 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   return init;
 }
 
-Capture::Capture(AnyValue value, Type fieldType, Type initType)
-    : fieldType(fieldType), initType(initType), anyValue(value) {}
+Capture::Capture(CValue value, Type fieldType, Type initType)
+    : value(value), fieldType(fieldType), initType(initType) {}
 
 Value Capture::getMlirValue() const {
-  if (auto v = anyValue.getIfMLValue())
+  if (auto v = value.getIfMLValue())
     return v;
-  if (auto v = anyValue.getIfXLValue())
+  if (auto v = value.getIfXLValue())
     return v;
-  if (auto v = anyValue.getIfXBValue())
+  if (auto v = value.getIfXBValue())
     return v;
-  if (auto v = anyValue.getIfMBValue())
+  if (auto v = value.getIfMBValue())
     return v;
-  if (auto v = anyValue.getIfSBValue())
+  if (auto v = value.getIfSBValue())
     return v;
-  if (auto v = anyValue.getIfXRValue())
+  if (auto v = value.getIfXRValue())
     return v;
-  if (auto v = anyValue.getIfMRValue())
+  if (auto v = value.getIfMRValue())
     return v;
-  if (auto v = anyValue.getIfSRValue())
+  if (auto v = value.getIfSRValue())
     return v;
 
   return {};
