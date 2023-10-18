@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: DISABLED
 # RUN: %mojo %s | FileCheck %s
 
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.

@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import platform
-from pathlib import Path
+
 from lit.llvm import llvm_config
 
 # Configuration file for the 'lit' test runner.
@@ -24,11 +23,6 @@ config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(
     config.modular_obj_root, "Kernels", "test", "nn"
 )
-
-if platform.system() == "Linux":
-    cpu_info = Path("/proc/cpuinfo").read_text()
-    if "avx512" in cpu_info:
-        config.available_features.add("avx512")
 
 tool_dirs = [config.modular_tools_dir]
 tools = ["mojo"]
