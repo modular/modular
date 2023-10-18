@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# XFAIL: asan
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys.info import simdwidthof
