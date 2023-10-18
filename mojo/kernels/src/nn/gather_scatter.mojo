@@ -27,6 +27,24 @@ from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt
 
 
+@always_inline
+fn normalize_index[type: DType](idx: SIMD[type, 1], dim_size: Int) -> Int:
+    """Indices passed to gather and scatter ops may be negative. This performs
+    a normalization so that they can be used to index into a buffer.
+
+    Returns val + dim if val < 0 else val
+    """
+    debug_assert(
+        -dim_size <= idx.to_int() < dim_size,
+        "indices must be in range [-dim_size, dim_size)",
+    )
+    constrained[
+        type.is_integral(),
+        "normalize_index expects index to be an integral type",
+    ]()
+    return idx.to_int() + dim_size if idx < 0 else idx.to_int()
+
+
 ## gather_reduce_2D_axis_1
 @adaptive
 fn gather_reduce[
@@ -123,7 +141,6 @@ fn gather_reduce[
         let end_slice = min(
             (task_id + 1) * num_chunks_per_task, indices.dim[0]()
         )
-
         for i in range(start_slice, end_slice):
 
             @always_inline
@@ -133,7 +150,9 @@ fn gather_reduce[
                 for j in range(indices.dim[1]()):
                     """Computes output[i,k] = reduction over j of (input[indices[i,j],k])
                     for j in range [0,indices.dim[1])"""
-                    let idx = indices[i, j].value
+                    let idx = normalize_index(
+                        indices[i, j], input.get_shape()[0]
+                    )
 
                     # min so that we don't read beyond end of indices
                     @parameter
@@ -217,7 +236,9 @@ fn gather[
             let next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
-            input_coords[axis] = next_idx_ptr.load().to_int()
+            input_coords[axis] = normalize_index(
+                next_idx_ptr.load(), input.get_shape()[axis]
+            )
             input.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](input_coords)
@@ -372,7 +393,7 @@ fn gather[
         unroll[indices_rank, indices_get]()
 
         # The index we are gathering.
-        let data_index = indices_fn[1, indices_rank](indices_index).to_int()
+        let data_index = indices_fn[1, indices_rank](indices_index)
 
         # Update the indices with the new data index.
         var data_indices = StaticIntTuple[input_rank]()
@@ -385,7 +406,9 @@ fn gather[
         @parameter
         fn input_indices_get[unrolled_i: Int]():
             if unrolled_i == axis.get():
-                data_indices[unrolled_i] = data_index
+                data_indices[unrolled_i] = normalize_index(
+                    data_index, input_shape[axis.get()]
+                )
             elif unrolled_i > axis.get():
                 # Skip over any extra indices dimensions. These are essentially new dimensions.
                 data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
@@ -554,24 +577,7 @@ fn scatter_nd_generator[
             indices_index[indices_rank - 1] = dim
 
             let idx_on_axis = indices[indices_index]
-
-            # Index (from indices tensor) needs to be [-s, s), where s is the
-            # max index of given dimension.
-            debug_assert(
-                -Int64(input_ax_dim)
-                <= idx_on_axis.cast[DType.int64]()
-                < Int64(input_ax_dim),
-                (
-                    "Indices value must be in range [-data_shape[axis],"
-                    " data_shape[axis])"
-                ),
-            )
-
-            # Handle conversion of negative indices.
-            let pos_idx_on_axis = (
-                idx_on_axis.__int__() if idx_on_axis
-                >= 0 else (idx_on_axis + input_ax_dim).__int__()
-            )
+            let pos_idx_on_axis = normalize_index(idx_on_axis, input_ax_dim)
             output_index_tensor[dim] = pos_idx_on_axis
 
         # Calculate the updates_offset from where to copy the updates.
@@ -934,20 +940,7 @@ fn scatter_elements[
         let indices_coords = rebind[StaticIntTuple[rank]](_indices_coords)
         let idx_on_axis = indices[indices_coords]
         var output_coords = indices_coords
-        # need to convert negative indices to positive equivalent
-        debug_assert(
-            -Int64(input_ax_dim)
-            <= idx_on_axis.cast[DType.int64]()
-            < Int64(input_ax_dim),
-            (
-                "indices value must be in range [-input_shape[axis],"
-                " input_shape[axis)"
-            ),
-        )
-        output_coords[axis] = (
-            idx_on_axis.__int__() if idx_on_axis
-            >= 0 else (idx_on_axis + input_ax_dim).__int__()
-        )
+        output_coords[axis] = normalize_index(idx_on_axis, input_ax_dim)
         let curr = output[output_coords]
         output[output_coords] = reduce_fn[input_type, 1](
             curr, updates[indices_coords]
@@ -1060,20 +1053,7 @@ fn gather_elements[
         let output_coords = rebind[StaticIntTuple[rank]](_output_coords)
         let idx_on_axis = indices[output_coords]
         var input_coords = output_coords
-        # need to convert negative indices to positive equivalent
-        debug_assert(
-            -Int64(input_ax_dim)
-            <= idx_on_axis.cast[DType.int64]()
-            < Int64(input_ax_dim),
-            (
-                "indices value must be in range [-input_shape[axis],"
-                " input_shape[axis])"
-            ),
-        )
-        input_coords[axis] = (
-            idx_on_axis.__int__() if idx_on_axis
-            >= 0 else (idx_on_axis + input_ax_dim).__int__()
-        )
+        input_coords[axis] = normalize_index(idx_on_axis, input_ax_dim)
         output[output_coords] = input[input_coords]
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
@@ -1285,21 +1265,7 @@ fn gather_nd[
             for constr in range(reshaped_indices_shape[2]):
                 let input_ax_dim = reshaped_data.get_shape()[constr + 1]
                 let idx_on_axis = reshaped_indices[batch_dim, outer_dim, constr]
-                # Verify indices have valid values.
-                debug_assert(
-                    -Int64(input_ax_dim)
-                    <= idx_on_axis.cast[DType.int64]()
-                    < Int64(input_ax_dim),
-                    (
-                        "Indices value must be in range [-input_shape[axis],"
-                        " input_shape[axis])"
-                    ),
-                )
-                # Handle negative indices values.
-                idx[constr] = (
-                    idx_on_axis.__int__() if idx_on_axis
-                    >= 0 else (idx_on_axis + input_ax_dim).__int__()
-                )
+                idx[constr] = normalize_index(idx_on_axis, input_ax_dim)
 
             # Construct the full index on reshaped_data, where to copy from.
             start_tensor[0] = batch_dim

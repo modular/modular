@@ -50,6 +50,10 @@ fn test_gather():
 
         for i in range(num_indices):
             indices[StaticIntTuple[1](i)] = i // 2
+        indices[0] = -1
+        # TODO (#23233)
+        alias tmp_xx_neg = -num_rows  # parser crashes doing indices[1] = -num_rows
+        indices[1] = tmp_xx_neg
 
         # create output
         var output = NDBuffer[
@@ -72,10 +76,12 @@ fn test_gather():
             out_chain.wait()
 
         print(output[StaticIntTuple[2](0, 0)])
+        print(output[StaticIntTuple[2](1, 0)])
         print(output[StaticIntTuple[2](2, 0)])
         print(output[StaticIntTuple[2](6, 0)])
         print(output[StaticIntTuple[2](15, 0)])
 
+    # CHECK: 15.0
     # CHECK: 0.0
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
