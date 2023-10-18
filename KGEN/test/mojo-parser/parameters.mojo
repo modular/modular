@@ -909,6 +909,21 @@ fn test_default_param_struct_all_default():
     _ = AllDefaultParams[]()
 
 
+# COM: Issue #22763
+fn IntForType[T: AnyType]() -> Int:
+    return 1
+
+struct StructWithParametricDefaultValue[T: AnyType, N: Int = IntForType[T]()]:
+    pass
+
+# CHECK-LABEL: lit.func @"test_struct_with_parametric_default_value()"
+fn test_struct_with_parametric_default_value():
+    # CHECK: lit.alias.decl {{.*}}_a: type = <@{{.*}}::@StructWithParametricDefaultValue<
+    # CHECK-SAME: {{.*}}_T: type = !Int,
+    # CHECK-SAME: {{.*}}_N: !Int = apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyType]()"<:type !Int>)>>
+    alias a = StructWithParametricDefaultValue[Int]
+
+
 ##===----------------------------------------------------------------------===##
 # Function keyword parameters
 ##===----------------------------------------------------------------------===##
