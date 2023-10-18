@@ -14,9 +14,7 @@ using namespace KGEN;
 
 /// Return whether the character is valid. Alnum, underscore, and period
 /// characters are valid.
-static constexpr bool isValid(char c) {
-  return c == '_' || c == '.' || std::isalnum(c);
-}
+static constexpr bool isValid(char c) { return c == '_' || std::isalnum(c); }
 
 /// Produce an array of all the valid characters. This array will be used to
 /// encode the unsupported characters.
