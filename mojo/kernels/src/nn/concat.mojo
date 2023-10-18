@@ -467,7 +467,7 @@ fn concat_shape[
         return True
 
     var concat_axis_dim_sum = 0
-    for i in range(VariadicList(input_bufs).__len__()):
+    for i in range(input_bufs.__len__()):
         concat_axis_dim_sum += input_bufs[i].dim(axis)
         # TODO(#17512)
         debug_assert(
