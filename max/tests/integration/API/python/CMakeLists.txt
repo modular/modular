@@ -4,6 +4,12 @@
 #
 ##===----------------------------------------------------------------------===##
 
+# TODO(23590): Enable this back once issue with package and ASAN is figured out.
+if(LLVM_USE_SANITIZER)
+  message(STATUS "Disabling Modular Engine Python API integration tests with MO model in sanitizer build. Issue #23590.")
+  return()
+endif()
+
 # Set up ASAN only if enabled since otherwise errors occur in non-ASAN builds.
 if (LLVM_USE_SANITIZER)
   # Set environment variables to inject the ASAN runtime library since the
