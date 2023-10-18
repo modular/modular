@@ -1329,3 +1329,113 @@ fn parallelize_over_rows[
         func(start_row, end_row)
 
     sync_parallelize[task_func](out_chain, num_workers)
+
+
+# ===----------------------------------------------------------------------===#
+# stencil
+# ===----------------------------------------------------------------------===#
+
+
+fn stencil[
+    rank: Int,
+    stencil_rank: Int,
+    stencil_axis: StaticIntTuple[stencil_rank],
+    simd_width: Int,
+    type: DType,
+    map_fn: fn (StaticIntTuple[stencil_rank]) capturing -> (
+        StaticIntTuple[stencil_rank],
+        StaticIntTuple[stencil_rank],
+    ),
+    load_fn: fn[simd_width: Int, type: DType] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    compute_init_fn: fn[simd_width: Int] () capturing -> SIMD[type, simd_width],
+    compute_fn: fn[simd_width: Int] (
+        StaticIntTuple[rank], SIMD[type, simd_width], SIMD[type, simd_width]
+    ) capturing -> SIMD[type, simd_width],
+    compute_finalize_fn: fn[simd_width: Int] (
+        StaticIntTuple[rank], SIMD[type, simd_width]
+    ) capturing -> None,
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+    """Computes stencil operation in parallel.
+
+    Computes output as a function that processes input stencils, stencils are
+    computed as a continuous region for each output point that is determined
+    by map_fn : map_fn(y) -> lower_bound, upper_bound. The boundary conditions
+    for regions that fail out of the input domain are handled by load_fn.
+
+
+    Parameters:
+        rank: Input and output domain rank.
+        stencil_rank: Rank of stencil subdomain slice.
+        stencil_axis: Stencil subdomain axes.
+        simd_width: The SIMD vector width to use.
+        type: The input and output data type.
+        map_fn: A function that a point in the output domain to the input co-domain.
+        load_fn: A function that loads a vector of simd_width from input.
+        compute_init_fn: A function that initialzies vector compute over the stencil.
+        compute_fn: A function the process the value computed for each point in the stencil.
+        compute_finalize_fn: A function that finalizes the computation of a point in the output domain given a stencil.
+
+    Args:
+        shape: The shape of the buffer.
+        out_chain: The our chain to attach results to.
+    """
+    constrained[rank == 4, "Only stencil of rank-4 supported"]()
+    constrained[
+        stencil_axis[0] == 1 and stencil_axis[1] == 2,
+        "Only stencil spatial axes [1, 2] are supported",
+    ]()
+
+    let total_size = shape.flattened_length()
+
+    let num_workers = _get_num_workers(total_size, out_chain.get_runtime())
+    let parallelism_size = total_size // shape[rank - 1]
+    let chunk_size = div_ceil(parallelism_size, num_workers)
+
+    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+
+    @always_inline
+    @parameter
+    fn task_func(i: Int):
+        let start_parallel_offset = i * chunk_size
+        let end_parallel_offset = min((i + 1) * chunk_size, parallelism_size)
+
+        let len = end_parallel_offset - start_parallel_offset
+        if len <= 0:
+            return
+
+        for parallel_offset in range(
+            start_parallel_offset, end_parallel_offset
+        ):
+            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
+                parallel_offset, shape
+            )
+
+            @always_inline
+            @parameter
+            fn func_wrapper[simd_width: Int](idx: Int):
+                indices[rank - 1] = idx
+                let stencil_indices = StaticIntTuple[stencil_rank](
+                    indices[stencil_axis[0]], indices[stencil_axis[1]]
+                )
+                let bounds = map_fn(stencil_indices)
+                let lower_boudnd = bounds.get[0, StaticIntTuple[stencil_rank]]()
+                let upper_boudnd = bounds.get[1, StaticIntTuple[stencil_rank]]()
+                var result = compute_init_fn[simd_width]()
+                for i in range(lower_boudnd[0], upper_boudnd[0]):
+                    for j in range(lower_boudnd[1], upper_boudnd[1]):
+                        let point_idx = StaticIntTuple[rank](
+                            indices[0], i, j, indices[3]
+                        )
+                        let val = load_fn[simd_width, type](point_idx)
+                        result = compute_fn[simd_width](point_idx, result, val)
+                compute_finalize_fn[simd_width](indices, result)
+
+            vectorize_unroll[
+                simd_width,
+                unroll_factor,
+                func_wrapper,
+            ](shape[rank - 1])
+
+    async_parallelize[task_func](out_chain, num_workers)
