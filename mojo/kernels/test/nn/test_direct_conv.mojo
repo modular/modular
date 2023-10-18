@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# XFAIL: asan
 # RUN: %mojo %s | FileCheck %s
 
 from math import abs, div_ceil, isclose, min
