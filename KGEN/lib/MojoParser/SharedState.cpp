@@ -942,6 +942,12 @@ ASTType SharedState::getBuiltinListLiteralType(ASTDecl &context,
   return resolveBuiltinModuleType(context, loc, "ListLiteral", *this);
 }
 
+ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
+                                                llvm::SMLoc loc, bool inMem) {
+  return resolveBuiltinModuleType(
+      context, loc, inMem ? "VariadicListMem" : "VariadicList", *this);
+}
+
 ASTType SharedState::getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "FloatLiteral", *this);
 }
@@ -981,6 +987,34 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
       VariadicAttr::get(eltTypes, cast<VariadicType>(tupleParam.getType()));
   auto packBind = ParamBindAttr::get(tupleParam.getName(), packAttr);
   return DeclRefType::get(tupleLiteralDecl.getSymbolRef(), packBind);
+}
+
+ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
+                                                         llvm::SMLoc loc,
+                                                         Type elemType) {
+  bool elemInMem = false;
+  if (auto pointerType = dyn_cast<PointerType>(elemType)) {
+    elemInMem = true;
+    elemType = pointerType.getElementAsType();
+  }
+
+  ASTType varListType = getBuiltinVariadicListType(context, loc, elemInMem);
+  if (varListType.isTypeCheckErrorType())
+    return varListType;
+
+  // Get the type parameter from the VariadicList type.
+  ASTDecl &varListDecl = *varListType.getDecl(*this);
+  auto varListStruct = cast<StructDeclOp>(varListDecl);
+  assert(varListStruct.getInputParams().size() == 1);
+  ParamDeclAttr varListParam = varListStruct.getInputParams()[0];
+
+  SmallVector<ParamBindAttr> bindingValues;
+  bindingValues.push_back(ParamBindAttr::get(
+      varListParam.getName(), ParameterizedTypeConstantAttr::get(elemType)));
+
+  return DeclRefType::get(
+      varListDecl.getSymbolRef(),
+      ParamBindArrayAttr::get(varListStruct.getContext(), bindingValues));
 }
 
 void SharedState::loadModulesFromCache(

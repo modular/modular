@@ -346,6 +346,8 @@ public:
   ASTType getBuiltinStringLiteralType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinSliceType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinListLiteralType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinVariadicListType(ASTDecl &context, llvm::SMLoc loc,
+                                     bool inMem);
   ASTType getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinRaisingCoroutineType(ASTDecl &context, llvm::SMLoc loc);
@@ -354,6 +356,10 @@ public:
   /// installed.
   ASTType getBuiltinTupleInstantion(ASTDecl &context, llvm::SMLoc loc,
                                     ArrayRef<Type> elements);
+  /// This returns an instance of VariadicList[elemType] with the specified
+  /// element type installed.
+  ASTType getBuiltinVariadicListInstantiation(ASTDecl &context, llvm::SMLoc loc,
+                                              Type elemType);
 
   struct Impl;
   Impl &getImpl() const { return *impl; }

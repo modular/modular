@@ -366,14 +366,8 @@ An Int argument.
     await assert_decl(
         "init_kargs",
         """```mojo
-(argument) *init_kargs: Int
-```
----
-
-###
-Multiple arguments.
-
-""",
+(variable) let init_kargs: VariadicList[Int]
+```""",
     )
 
     # We currently can't recover an owned argument from its decl, so we just print its name.
