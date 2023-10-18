@@ -1,17 +1,6 @@
 // RUN: kgen-opt %s -lower-runtime-closures -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
 
-#file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 44,
-  scopeLine = 44,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":46:8)
@@ -25,7 +14,7 @@
 // CHECK-DAG: #[[LOC0:.*]] = loc("foo.mlir":46:8)
 // CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":44:1)
 // CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":48:8)
-// CHECK-DAG: #[[SUB_PROG:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo"
+// CHECK-DAG: #[[SUB_PROG:.*]] = #debuginfo.subprogram<{{.*}}name = "foo"
 // CHECK-DAG: #[[LOC3:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC0]]])
 // CHECK-DAG: #[[LOC4:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC1]]])
 // CHECK-DAG: #[[LOC5:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC2]]])
@@ -68,7 +57,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK:} loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
 }
 
-// CHECK: #[[SUB_PROG1:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit1, scope = #file, name = "closure_wrapper_fn", linkageName = "closure_wrapper_fn", file = #file, line = 46, scopeLine = 46, subprogramFlags = Definition> : !subroutine1
-// CHECK: #[[SUB_PROG2:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit1, scope = #file, name = "closure_wrapper_fn_0", linkageName = "closure_wrapper_fn_0", file = #file, line = 48, scopeLine = 48, subprogramFlags = Definition> : !subroutine1
+// CHECK: #[[SUB_PROG1:.*]] = #debuginfo.subprogram<name = "closure_wrapper_fn", linkageName = "closure_wrapper_fn">
+// CHECK: #[[SUB_PROG2:.*]] = #debuginfo.subprogram<name = "closure_wrapper_fn_0", linkageName = "closure_wrapper_fn_0">
 // CHECK: #[[CLOSURE_WRAPPER_FN_LOC]] = loc(fused<#[[SUB_PROG1]]>[#[[LOC0]]])
 // CHECK: #[[CLOSURE_WRAPPER_FN_LOC0]] = loc(fused<#[[SUB_PROG2]]>[#[[LOC2]]])

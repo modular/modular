@@ -34,14 +34,10 @@ llvm.func @coro_destroy() {
 
 // -----
 
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "async_fn_af", linkageName = "async_fn_af", file = #file, line = 17, scopeLine = 17, subprogramFlags = "Definition|Optimized">
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = "async_fn_af", linkageName = "async_fn_af">
 
 !subroutine = !debuginfo.subroutine<(i32) -> (!llvm.ptr<i8>): DW_CC_normal>
-#file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit, scope = #file, name = "async_fn", linkageName = "async_fn", file = #file, line = 17, scopeLine = 17, subprogramFlags = "Definition|Optimized"
-> : !subroutine
+#subprogram = #debuginfo.subprogram<name = "async_fn", linkageName = "async_fn"> : !subroutine
 
 
 // CHECK-DAG: #[[SUSPEND_LOC:.*]] = loc("foo.mlir":10:5)
@@ -156,17 +152,10 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 
 // -----
 
-!basic = !debuginfo.basic<i64 {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_unsigned}>
-!member = !debuginfo.member<value: !basic>
-!struct = !debuginfo.struct<"$builtin::$int::Int"(!member)>
-!subroutine = !debuginfo.subroutine<() -> (!struct): DW_CC_normal>
-#file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-
-// CHECK-DAG: #[[SP_AF:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo_af", linkageName = "foo_af", file = #file, line = 41, scopeLine = 41
+// CHECK-DAG: #[[SP_AF:.*]] = #debuginfo.subprogram<name = "foo_af", linkageName = "foo_af"
 // CHECK-DAG: #[[LOC0:.*]] = loc("foo.mlir":41:11)
 // CHECK-DAG: #[[LOC_AF:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC0]]])
-#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 41, scopeLine = 41, subprogramFlags = "Definition|Optimized"> : !subroutine
+#subprogram = #debuginfo.subprogram<name = "foo", linkageName = "foo"> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
 #loc8 = loc(fused<#subprogram>["foo.mlir":41:11])
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
@@ -197,8 +186,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 }
 
 // CHECK-DAG: ![[SUSP_TYPE:.*]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
-// CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo_af.suspend", linkageName = "foo_af.suspend", file = #file, line = 44, scopeLine = 44, subprogramFlags = Definition> : ![[SUSP_TYPE]]
-// CHECK-DAG: #[[SP2:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo_af.suspend_0", linkageName = "foo_af.suspend_0", file = #file, line = 42, scopeLine = 42, subprogramFlags = Definition> : ![[SUSP_TYPE]]
+// CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<name = "foo_af.suspend", linkageName = "foo_af.suspend"> : ![[SUSP_TYPE]]
+// CHECK-DAG: #[[SP2:.*]] = #debuginfo.subprogram<name = "foo_af.suspend_0", linkageName = "foo_af.suspend_0"> : ![[SUSP_TYPE]]
 
 // CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":44:38)
 // CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":42:41)

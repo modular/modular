@@ -30,10 +30,10 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   // Run all LLVM lowering passes.
   pm.addPass(createLowerKGENToLLVM(LowerKGENToLLVMOptions{
       options.globalCtorFnName, options.globalDtorFnName}));
-  pm.addPass(createLowerRuntimeClosures({options.debugInfoLanguage}));
+  pm.addPass(createLowerRuntimeClosures());
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createTweakSpilledAllocas());
-  pm.addPass(createLowerKGENCoroutinesAsync({options.debugInfoLanguage}));
+  pm.addPass(createLowerKGENCoroutinesAsync());
   pm.addPass(createLowerGlobalPOPToLLVM(LowerGlobalPOPToLLVMOptions{
       options.alignedAllocFnName, options.alignedFreeFnName}));
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());

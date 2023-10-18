@@ -22,24 +22,7 @@ kgen.generator @foo() {
 
 // -----
 
-#file = #debuginfo.file<"foo.mlir" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc("foo.mlir":7:8)
 
@@ -50,24 +33,8 @@ kgen.func @foo() {
 
 // -----
 
-#file = #debuginfo.file<"foo.mlir" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#file = #debuginfo.file<"foo.mlir" in "/">
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc("foo.mlir":7:8)
 
@@ -78,24 +45,7 @@ kgen.func @foo() {
 
 // -----
 
-#file = #debuginfo.file<"foo.mlir" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc("foo.mlir":7:8)
 #loc1 = loc("bar.mlir":5:6)
@@ -110,34 +60,9 @@ kgen.func @foo() {
 
 // -----
 
-#file = #debuginfo.file<"foo.mlir" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo1",
-  linkageName = "foo1",
-  file = #file,
-  line = 23,
-  scopeLine = 23,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#file = #debuginfo.file<"foo.mlir" in "/">
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<name = "foo1"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #lexical_block = #debuginfo.lexical_block<scope = #subprogram1, file = #file, line = 104, column = 17>
 #lexical_block1 = #debuginfo.lexical_block<scope = #lexical_block, file = #file, line = 120, column = 22>
 
@@ -184,28 +109,8 @@ kgen.func @foo() {
 
 // -----
 
-#file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 44,
-  scopeLine = 44,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "SomeClosure",
-  linkageName = "SomeClosure",
-  file = #file,
-  line = 325,
-  scopeLine = 325,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<name = "SomeClosure"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)
@@ -256,18 +161,7 @@ kgen.func @foo() {
 
 // -----
 
-#file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 44,
-  scopeLine = 44,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)

@@ -3,21 +3,10 @@
 // Check that debug info gets resolved during elaboration.
 
 #file = #debuginfo.file<"test.mlir" in "">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
-
 !unresolved = !debuginfo.unresolved<!kgen.paramref<ty>>
 
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}} name = "takeFnContextualType", linkageName = "takeFnContextualType,ty=index,fn=@sillyFn",
-#callerSp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "takeFnContextualType",
-  linkageName = "takeFnContextualType",
-  file = #file,
-  line = 2,
-  scopeLine = 2,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = "takeFnContextualType", linkageName = "takeFnContextualType,ty=index,fn=@sillyFn",
+#callerSp = #debuginfo.subprogram<file = #file, name = "takeFnContextualType"> : !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
 
 // CHECK-DAG: #[[VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0"
 #local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0", file = #file, line = 3, arg = 0, alignInBits = 0> : !unresolved

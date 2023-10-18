@@ -46,28 +46,8 @@ lit.globalvar.decl @foo : index {
 
 // -----
 
-#file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 44,
-  scopeLine = 44,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "SomeClosure",
-  linkageName = "SomeClosure",
-  file = #file,
-  line = 325,
-  scopeLine = 325,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<name = "SomeClosure"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)

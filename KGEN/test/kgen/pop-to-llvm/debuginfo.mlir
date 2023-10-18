@@ -107,8 +107,6 @@
   emissionKind = Full
 >
 #subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
   name = "foo",
   linkageName = "foo",
   file = #file,

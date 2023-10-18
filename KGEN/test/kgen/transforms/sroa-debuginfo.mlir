@@ -4,8 +4,7 @@
 !subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
 !unresolved = !debuginfo.unresolved<!kgen.pointer<struct<index, index>>>
 #file = #debuginfo.file<"/tmp/test.mojo" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "__next__", linkageName = "$Range::_ZeroStartingRange::__next__($Range::_ZeroStartingRange&)_concrete", file = #file, line = 27, scopeLine = 27, subprogramFlags = "Definition|Optimized"> : !subroutine
+#subprogram = #debuginfo.subprogram<name = "__next__"> : !subroutine
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "self", file = #file, line = 27, arg = 1> : !unresolved
 
 #fileLoc = loc("foo.mlir":0:0)
