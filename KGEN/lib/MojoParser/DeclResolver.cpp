@@ -2415,8 +2415,8 @@ static Value emitClosureInstance(SignatureType closureSignature,
 
   // Create a copy of the captured value.
   SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
-  for (auto &[decl, capture] : captureIteratorRange)
-    closureImplInitArgs.push_back({capture.getAnyValue(), &node});
+  for (auto &[_, capture] : captureIteratorRange)
+    closureImplInitArgs.push_back({capture.getValue(), &node});
 
   ValueDest closureDest;
   Type closureImplType = ASTDecl::computeSelfTypeForStruct(closureImpl);
