@@ -362,7 +362,7 @@ struct ParsedArgument {
   /// this parses 'raises' and other effects.
   static ParseResult parseAndResolveParenthesizedArgumentList(
       ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind,
-      FnEffects *fnEffects);
+      FnEffects &fnEffects);
 
   /// Process parsed parameter arguments into input parameters by determining
   /// the correct parameter types, conventions, and default parameter values.

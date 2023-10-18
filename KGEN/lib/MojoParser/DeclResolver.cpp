@@ -1230,7 +1230,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 /// parses 'raises' and other effects.
 ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
     ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind,
-    FnEffects *fnEffects) {
+    FnEffects &fnEffects) {
 
   if (p.parseToken(Token::l_paren, "expected '(' for argument list"))
     return failure();
@@ -1242,32 +1242,30 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
   }
 
   // If the client supports function effects, parse them as well.
-  if (fnEffects) {
-    // Parse other function effects.
-    while (p.getToken().isIdentifier()) {
-      SMLoc loc = p.getToken().getLoc();
-      StringRef spelling = p.getToken().getSpelling();
+  // Parse other function effects.
+  while (p.getToken().isIdentifier()) {
+    SMLoc loc = p.getToken().getLoc();
+    StringRef spelling = p.getToken().getSpelling();
 
-      auto handleEffect = [&](auto hasFn, auto setFn) {
-        if ((fnEffects->*hasFn)())
-          p.emitError(loc, "function effect '")
-              << spelling << "' was already specified";
-        (fnEffects->*setFn)(true);
-      };
+    auto handleEffect = [&](auto hasFn, auto setFn) {
+      if ((fnEffects.*hasFn)())
+        p.emitError(loc, "function effect '")
+            << spelling << "' was already specified";
+      (fnEffects.*setFn)(true);
+    };
 
-      if (spelling == "raises") {
-        handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
-      } else if (spelling == "capturing") {
-        handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
-      } else if (spelling == "escaping") {
-        handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
-      } else {
-        p.emitError(loc, "unknown function effect '")
-            << spelling << "', expected 'raises' or 'capturing'";
-      }
-
-      p.consumeIdentifier();
+    if (spelling == "raises") {
+      handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
+    } else if (spelling == "capturing") {
+      handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
+    } else if (spelling == "escaping") {
+      handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
+    } else {
+      p.emitError(loc, "unknown function effect '")
+          << spelling << "', expected 'raises' or 'capturing'";
     }
+
+    p.consumeIdentifier();
   }
 
   return success();
@@ -2506,7 +2504,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Parse the argument list next if present.
   if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
-          p, args, ParsedArgument::ArgListKind::kArgList, &effects))
+          p, args, ParsedArgument::ArgListKind::kArgList, effects))
     return failure();
 
   if (paramVarArg)
