@@ -1386,13 +1386,13 @@ struct TwoParamsStruct[a: Int, b: Int]:
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}})"<
 # CHECK-SAME: {{.*}}[idx]: !Int, [[A:.*_a]][a]: variadic<!Int>>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK-NEXT: lit.alias.decl {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<!Int> [[A]], 2)>
+    # CHECK-NEXT: %[[LIST:.*]] = kgen.call {{.*}}VariadicList{{.*}}__init__
+    # CHECK-NEXT: lit.letreg.decl "b" {{.*}}%[[LIST]]
+    # CHECK: lit.alias.decl {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<!Int> [[A]], 2)>
     alias v0 = a[2]
     # CHECK: pop.variadic.get %{{.*}}[%index3]
     let v1 = a[3]
-    # CHECK: %[[IDX:.*]] = kgen.call {{.*}}__index__
-    # CHECK-NEXT: %[[MLIR_IDX:.*]] = kgen.call {{.*}}__mlir_index__{{.*}}%[[IDX]]
-    # CHECK-NEXT: pop.variadic.get %b[%[[MLIR_IDX]]]
+    # CHECK: kgen.call {{.*}}__getitem__{{.*}}
     let v2 = b[idx]
 
 
@@ -1401,11 +1401,12 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 # CHECK-SAME:   a{{.*}} = variadic_get{{.*}}a, 0
 # CHECK-SAME:   b{{.*}} = variadic_get{{.*}}a, 1
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
-    # CHECK: [[V0:%.*]] = pop.variadic.get %b[%index1]
-    # CHECK: __copyinit__{{.*}}[[V0]]
+    # CHECK: %[[V0:.*]] = {{.*}}__getitem__{{.*}}%b
+    # CHECK: lit.letreg.decl{{.*}} = %[[V0]]
     let v0 = b[1]
-    # CHECK: [[V1:%.*]] = pop.variadic.get %b[%index2]
-    # CHECK: __copyinit__{{.*}}[[V1]]
+    # CHECK: %[[V1:.*]] = lit.varlet.decl
+    # CHECK: %[[B2:.*]] = {{.*}}__getitem__{{.*}}%b
+    # CHECK: lit.ref.store %[[B2]], %[[V1]]
     var v1 = b[2]
 
 fn takeMemory(a: MemoryType): pass

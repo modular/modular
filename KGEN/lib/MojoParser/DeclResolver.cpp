@@ -2735,6 +2735,27 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   return success();
 }
 
+static LetRegDeclOp makeVarArgLValueVarSlot(const CValue &argValue,
+                                            StringAttr argName,
+                                            ASTDecl &parentDecl,
+                                            OpBuilder &builder, SMLoc loc,
+                                            SharedState &shared) {
+  Location mloc = shared.translateLocation(loc);
+  ASTType varListType = shared.getBuiltinVariadicListInstantiation(
+      parentDecl, loc, argValue.getRValueType().getVariadicElementType());
+
+  // Emit the initializer expression into the slot.
+  ExprEmitter emitter(shared, parentDecl, builder);
+
+  // Expr to provide location information.
+  DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
+  SRValue val = emitter.emitSRValue({argValue, &srcExpr}, EC_DefArgumentShadow,
+                                    varListType);
+  LetRegDeclOp declOp = builder.create<LetRegDeclOp>(mloc, argName, val);
+
+  return declOp;
+}
+
 /// Create a mutable VarDecl for a function argument that captures its value.
 /// argValue specifies the argument with the correct valuetype.
 static VarLetDeclOp makeArgLValueVarSlot(const CValue &argValue,
@@ -2858,10 +2879,18 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     shared.buildArgDebugInfo(builder, bbArg, argName);
 
-    // VarArg arguments are always treated as their pop.variadic type
-    // by-value right now.  TODO(literals): Project to a list like thing.
-    if (funcSignature.isVarArg(bbArg.getArgNumber()) ||
-        isa<POP::PackType>(bbArg.getType())) {
+    // VarArg arguments are projected into a VariadicList.
+    if (funcSignature.isVarArg(bbArg.getArgNumber())) {
+      auto declOp = makeVarArgLValueVarSlot(SRValue(bbArg), argName, decl,
+                                            builder, argDecl.getLoc(), shared);
+      if (failed(setDecl(DeclIRValue(declOp))))
+        return failure();
+      continue;
+    }
+
+    // PackVarArg arguments are always treated as their pop.pack type
+    // by-value right now.  TODO(literals): Project to a tuple like thing.
+    if (isa<POP::PackType>(bbArg.getType())) {
       if (failed(setDecl(SRValue(bbArg))))
         return failure();
       continue;

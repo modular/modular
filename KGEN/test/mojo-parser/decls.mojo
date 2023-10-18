@@ -754,30 +754,13 @@ fn test_byref_default():
     byref_default_mem_only()
 
 
-struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
-    alias StorageType = __mlir_type[`!kgen.variadic<`, EltType, `>`]
-    var value: Self.StorageType
-
-    fn __copyinit__(inout self, existing: Self):
-        self.value = existing.value
-
-    fn __init__(inout self, value: Self.StorageType):
-        self.value = value
-
-    fn size(self) -> __mlir_type.index:
-        return __mlir_op.`pop.variadic.size`(self.value)
-
-    fn __getitem__(self, index: Int) -> EltType:
-        # TODO: Should assert the index is in-range.
-        return __mlir_op.`pop.variadic.get`(self.value, index.value)
-
-
 # CHECK-LABEL: lit.func @"variadics({{.*}}$int::Int*)"(%a[a]: !kgen.variadic<!Int> borrow) vararg
 fn variadics(*a: Int):
-    let vaArgs = VaList[Int](a)
-    let size = vaArgs.size()
-    let elt0 = vaArgs[0]
-    let elt1 = vaArgs[1]
+    # CHECK-NEXT: %[[LIST:.*]] = kgen.call {{.*}}VariadicList{{.*}}__init__
+    # CHECK-NEXT: lit.letreg.decl "a" {{.*}}%[[LIST]]
+    let size = len(a)
+    let elt0 = a[0]
+    let elt1 = a[1]
 
 
 fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T):
@@ -904,7 +887,7 @@ struct MemStruct:
     alias t = 5
 
 fn variadic_mem_only(*values: MemStruct) -> Int:
-    return values[1].t
+    return __get_address_as_lvalue(values[1]).t
 
 # CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<
 # CHECK-SAME: [[X:.*]][x]: !MemStruct, [[Y:.*]][y]: !MemStruct>()
