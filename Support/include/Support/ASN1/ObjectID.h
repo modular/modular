@@ -78,16 +78,17 @@ public:
   static ErrorOr<ObjectID> fromString(StringRef str);
 
 private:
-  // TODO (#20183): Apply for an enterprise number here:
-  //   https://www.iana.org/assignments/enterprise-numbers/assignment/apply/,
-  //   Eventually:
-  //   iso.org.dod.internet.private.enterprise.modular 1.3.6.1.4.1.XXXXX
-
-  /// For now, we're using an arc under the experimental
-  /// arc 1.3.6.1.3.77.XXX. Why 77? 77 is the ASCII code for `M`.
-  static constexpr std::array<uint8_t, 5> encodedModularPrefix = {40 * 1 + 3, 6,
-                                                                  1, 3, 77};
-  static constexpr std::array<uint64_t, 6> modularPrefix = {1, 3, 6, 1, 3, 77};
+  /// This is the encoded form of
+  /// `iso.org.dod.internet.private.enterprise.modular 1.3.6.1.4.1.61041`.
+  /// The funny bits at the end are the raw VLQ of 61041. There are 3 necessary
+  /// octets to encode 61041, so you can get this with
+  ///   {0x80 | ((61041 & (0x7f << 14)) >> 14),
+  ///    0x80 | ((61041 & (0x7f << 7)) >> 7),
+  ///    61041 & 0x7f}
+  static constexpr std::array<uint8_t, 8> encodedModularPrefix = {
+      40 * 1 + 3, 6, 1, 4, 1, 0x80 | 0x3, 0x80 | 0x5c, 0x71};
+  static constexpr std::array<uint64_t, 7> modularPrefix = {1, 3, 6,    1,
+                                                            4, 1, 61041};
 
   /// Whether this OID is in the Modular namespace or not.
   bool withModularPrefix;

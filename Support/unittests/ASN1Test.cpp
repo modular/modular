@@ -67,7 +67,7 @@ TEST(ASN1, RoundtripStringOID) {
 }
 
 TEST(ASN1, RoundtripStringModularOID) {
-  constexpr StringLiteral oidStr = "1.3.6.1.3.77.1.2.3.4.5.1230984";
+  constexpr StringLiteral oidStr = "1.3.6.1.4.1.61041.1.2.3.4.5.1230984";
   auto oidOr = ObjectID::fromString(oidStr);
   ASSERT_FALSE(oidOr.isError()) << oidOr.getError();
 
@@ -82,7 +82,7 @@ TEST(ASN1, RoundtripStringModularOID) {
 }
 
 TEST(ASN1, TrickyOIDEquality) {
-  constexpr StringLiteral oidStr = "1.3.6.1.3.77.1.2.3.4.5.1230984";
+  constexpr StringLiteral oidStr = "1.3.6.1.4.1.61041.1.2.3.4.5.1230984";
   auto oidOr = ObjectID::fromString(oidStr);
   ASSERT_FALSE(oidOr.isError()) << oidOr.getError();
 
@@ -119,11 +119,12 @@ TEST(ASN1, RoundtripOIDErrors) {
 }
 
 TEST(ASN1, TrickyOID) {
-  constexpr StringLiteral trickyModularOID = "1.3.6.1.3.77.1.3.6.1.3.77.123";
+  constexpr StringLiteral trickyModularOID =
+      "1.3.6.1.4.1.61041.1.3.6.1.4.1.61041.123";
   auto oidOr = ObjectID::fromString(trickyModularOID);
   ASSERT_FALSE(oidOr.isError()) << oidOr.getError();
 
-  std::array<uint64_t, 7> arc = {1, 3, 6, 1, 3, 77, 123};
+  std::array<uint64_t, 8> arc = {1, 3, 6, 1, 4, 1, 61041, 123};
   EXPECT_TRUE(oidOr->isModularOID());
   EXPECT_EQ(oidOr->getArc(), ArrayRef(arc));
 }
