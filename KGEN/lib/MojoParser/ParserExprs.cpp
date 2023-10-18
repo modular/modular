@@ -1049,7 +1049,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   if (parseOptionalFunctionParameters(*this, inputParams, resultParams) ||
       ParsedArgument::parseAndResolveParenthesizedArgumentList(
           *this, arguments, ParsedArgument::ArgListKind::kFnTypeArgList,
-          &effects))
+          effects))
     return failure();
 
   // Parse the result type.
@@ -1087,7 +1087,7 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
   if (getToken().is(Token::l_paren)) {
     // Parse general parenthesized argument list.
     if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
-            *this, arguments, ParsedArgument::ArgListKind::kArgList, &effects))
+            *this, arguments, ParsedArgument::ArgListKind::kArgList, effects))
       return failure();
   } else if (getToken().isNot(Token::colon)) {
     // Parse non-typed non-parenthesized argument list.
