@@ -21,7 +21,6 @@ from memory import memcpy
 from memory.unsafe import DTypePointer, Pointer
 
 from utils.index import StaticIntTuple
-from utils.list import VariadicList
 from utils.static_tuple import StaticTuple
 from utils.vector import DynamicVector
 
