@@ -880,10 +880,9 @@ fn concat[
     var axis_int = axis[0].to_int()
     if axis_int < 0:
         axis_int = axis_int + rank
-    let inputs = VariadicList(variadic_ins)
 
     _concat[rank, type, single_thread_blocking_override](
-        output, axis_int, inputs, out_chain
+        output, axis_int, variadic_ins, out_chain
     )
 
 
@@ -940,7 +939,7 @@ fn split[
         axis_int = axis_int + rank
 
     # NOTE: Synchronous, so stack allocated variadic list is safe
-    _split[type, rank](input, axis_int, VariadicList(variadic_outs), out_chain)
+    _split[type, rank](input, axis_int, variadic_outs, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
