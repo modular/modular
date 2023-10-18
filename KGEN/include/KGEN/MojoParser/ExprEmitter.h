@@ -524,7 +524,7 @@ public:
   /// FIXME: The `mlirValue` is a hack for closures and should be removed.
   AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls,
                              const ExprNode *expr, ValueDest &dest,
-                             Capture &capture);
+                             std::optional<Capture> &capture);
   AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls,
                              ExprContext context);
 

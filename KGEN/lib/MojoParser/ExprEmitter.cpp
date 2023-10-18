@@ -1647,7 +1647,7 @@ PValue ExprEmitter::resolveAliasDeclareValue(AliasDeclOp param,
 AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
                                         ArrayRef<ASTDecl *> decls,
                                         const ExprNode *expr, ValueDest &dest,
-                                        Capture &capture) {
+                                        std::optional<Capture> &capture) {
   shared.notifyListenerOnRef(decls, spelling, expr);
 
   // Functions form an address, and may be overloaded.
@@ -1771,7 +1771,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
                                         ArrayRef<ASTDecl *> decls,
                                         ExprContext context) {
   SyntheticNode dummyNode({});
-  Capture capture = {};
+  std::optional<Capture> capture;
   ValueDest dest(context);
   return emitDeclReference(spelling, decls, &dummyNode, dest, capture);
 }

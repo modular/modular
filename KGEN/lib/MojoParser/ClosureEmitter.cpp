@@ -819,11 +819,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 }
 
 Capture::Capture(AnyValue value, Type fieldType, Type initType)
-    : fieldType(fieldType), initType(initType), anyValue(value), init(true) {}
-
-Type Capture::getFieldType() const { return fieldType; }
-
-Type Capture::getInitType() const { return initType; }
+    : fieldType(fieldType), initType(initType), anyValue(value) {}
 
 Value Capture::getMlirValue() const {
   if (auto v = anyValue.getIfMLValue())
@@ -845,5 +841,3 @@ Value Capture::getMlirValue() const {
 
   return {};
 }
-
-AnyValue Capture::getAnyValue() const { return anyValue; }
