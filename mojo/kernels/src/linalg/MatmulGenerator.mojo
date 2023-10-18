@@ -24,7 +24,7 @@ from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 
 
 @register_passable("trivial")

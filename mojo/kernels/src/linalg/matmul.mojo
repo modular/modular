@@ -51,7 +51,7 @@ from Transpose import transpose_inplace
 from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 
 
 @closure

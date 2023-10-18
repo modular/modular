@@ -23,7 +23,7 @@ from memory.unsafe import DTypePointer
 from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple, StaticTuple
-from utils.list import DimList, VariadicList
+from utils.list import DimList
 
 
 fn _transpose_inplace_4x4[

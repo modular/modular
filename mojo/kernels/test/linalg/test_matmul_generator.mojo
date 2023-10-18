@@ -16,7 +16,6 @@ from MatmulGenerator import (
     MatmulStaticState,
 )
 
-from utils.list import VariadicList
 
 # CHECK-LABEL: test_tile_gen
 fn test_tile_gen():
