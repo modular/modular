@@ -180,7 +180,7 @@ lit.func @does_not_throw(%err: !kgen.declref<@Error>) {
 // -----
 
 lit.func @invalid_break() {
-  // expected-error @below {{'lit.break' op must be nested within an `hlcf.loop` operation}}
+  // expected-error @below {{'lit.break' op must be nested within an `hlcf.loop` or `lit.loop` operation}}
   lit.break
   lit.end_func
 }
@@ -188,7 +188,7 @@ lit.func @invalid_break() {
 // -----
 
 lit.func @invalid_continue() {
-  // expected-error @below {{'lit.continue' op must be nested within an `hlcf.loop` operation}}
+  // expected-error @below {{'lit.continue' op must be nested within an `hlcf.loop` or `lit.loop` operation}}
   lit.continue
   lit.end_func
 }

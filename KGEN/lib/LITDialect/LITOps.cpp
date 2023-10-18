@@ -1533,9 +1533,19 @@ LogicalResult RaiseOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static LogicalResult verifyBreakOrContinueOp(Operation *op) {
-  if (op->getParentOfType<HLCF::LoopOp>())
+  if (auto loop = op->getParentOfType<LIT::LoopOp>();
+      loop && op->getBlock() == &loop.getElseRegion().front()) {
+    if (!loop->getParentOfType<LIT::LoopOp>())
+      return op->emitOpError(
+          "A loop with continue or break in its else region should "
+          "have a parent loop.");
+  }
+
+  if (op->getParentOfType<HLCF::LoopOp>() || op->getParentOfType<LIT::LoopOp>())
     return success();
-  return op->emitOpError("must be nested within an `hlcf.loop` operation");
+  // TODO: remove HLCF::LoopOp check when parser is updated to use LIT::LoopOp.
+  return op->emitOpError(
+      "must be nested within an `hlcf.loop` or `lit.loop` operation");
 }
 
 LogicalResult BreakOp::verify() { return verifyBreakOrContinueOp(*this); }
