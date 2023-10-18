@@ -12,7 +12,7 @@ from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from runtime.llcl import OutputChainPtr
 
 from utils.index import product
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 from utils.vector import InlinedFixedVector
 
 

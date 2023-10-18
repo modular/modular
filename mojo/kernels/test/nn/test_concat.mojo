@@ -11,7 +11,7 @@ from memory.unsafe import DTypePointer
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 
 
 fn test_concat():

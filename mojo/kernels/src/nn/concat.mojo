@@ -18,7 +18,7 @@ from MOGG import simd_load, simd_store
 from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple, product
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # concat

@@ -67,7 +67,7 @@ from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 
 alias MAX_NUM_CHANNELS_TILE = 384
 

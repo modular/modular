@@ -24,8 +24,6 @@ from math.polynomial import polynomial_evaluate
 
 from runtime.llcl import OutputChainPtr
 
-from utils.list import VariadicList
-
 
 @value
 @register_passable("trivial")
