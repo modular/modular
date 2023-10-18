@@ -522,7 +522,6 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         out_chain: The our chain to attach results to.
     """
-
     let reduce_dim_normalized = (
         rank + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
@@ -616,9 +615,13 @@ fn _reduce_along_inner_dimension[
 
     @always_inline
     @parameter
-    fn reduce_rows_unrolled[simd_width: Int](start_row: Int, end_row: Int):
+    fn reduce_rows_unrolled(start_row: Int, end_row: Int):
         # Manually hoist this out of the loops anyway. Not clear if we want to
         # hoist it all the way out of the async body.
+
+        let unrolled_simd_compatible_size = (
+            reduce_dim_size // unrolled_simd_width
+        ) * unrolled_simd_width
         let simd_compatible_size = (reduce_dim_size // simd_width) * simd_width
 
         # Iterate over the non reduced dimensions.
@@ -628,8 +631,24 @@ fn _reduce_along_inner_dimension[
                 flat_index, shape, reduce_dim
             )
 
+            var acc_unrolled_simd = SIMD[type, unrolled_simd_width].splat(
+                init_value
+            )
+            for idx in range(
+                0, unrolled_simd_compatible_size, unrolled_simd_width
+            ):
+                indices[reduce_dim] = idx
+                let load_value = input_0_fn[type, unrolled_simd_width, rank](
+                    indices
+                )
+                acc_unrolled_simd = reduce_function[type, unrolled_simd_width](
+                    load_value, acc_unrolled_simd
+                )
+
             var acc_simd = SIMD[type, simd_width].splat(init_value)
-            for idx in range(0, simd_compatible_size, simd_width):
+            for idx in range(
+                unrolled_simd_compatible_size, simd_compatible_size, simd_width
+            ):
                 indices[reduce_dim] = idx
                 let load_value = input_0_fn[type, simd_width, rank](indices)
                 acc_simd = reduce_function[type, simd_width](
@@ -637,7 +656,10 @@ fn _reduce_along_inner_dimension[
                 )
 
             # Semi final reduction. SIMD -> scalar.
-            var acc_scalar = acc_simd.reduce[reduce_function]()
+            var acc_scalar = acc_unrolled_simd.reduce[reduce_function]()
+            acc_scalar = reduce_function[type, 1](
+                acc_simd.reduce[reduce_function](), acc_scalar
+            )
 
             # The simds might not cover all the elements so we still need to scalar reduce those too.
             for i in range(simd_compatible_size, reduce_dim_size, 1):
@@ -650,15 +672,6 @@ fn _reduce_along_inner_dimension[
             output_0_fn[type, 1, rank](indices, acc_scalar)
 
     @always_inline
-    fn reduce_rows_unrolled(reduce_dim_size: Int, start_row: Int, end_row: Int):
-        # We will unroll only if it is safe
-        # (i.e we won't unroll into other dimensions).
-        if unrolled_simd_width > reduce_dim_size:
-            reduce_rows_unrolled[simd_width](start_row, end_row)
-        else:
-            reduce_rows_unrolled[unrolled_simd_width](start_row, end_row)
-
-    @always_inline
     @parameter
     fn reduce_rows(i: Int):
         let start_parallel_offset = i * chunk_size
@@ -668,13 +681,11 @@ fn _reduce_along_inner_dimension[
         if len <= 0:
             return
 
-        reduce_rows_unrolled(
-            reduce_dim_size, start_parallel_offset, end_parallel_offset
-        )
+        reduce_rows_unrolled(start_parallel_offset, end_parallel_offset)
 
     @parameter
     if single_thread_blocking_override:
-        reduce_rows_unrolled(reduce_dim_size, 0, parallelism_size)
+        reduce_rows_unrolled(0, parallelism_size)
     else:
         async_parallelize[reduce_rows](out_chain, num_workers)
 
