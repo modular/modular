@@ -269,7 +269,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
       if (target.index) {
         // Analyze region with entry state.
         ConstantStateType nestedState = entryState;
-        bool hasEarlyExits = true;
+        bool hasEarlyExits = false;
         if (failed(processRegion(node->getRegion(target.index.value()),
                                  nestedState, hasEarlyExits, shouldContinue)))
           return failure();
@@ -277,7 +277,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
         // Directly merge nestedState with state here since we don't need to
         // reset local value's lattice.
         mergeStates(state, nestedState);
-        if (!hasEarlyExits)
+        if (hasEarlyExits)
           ++numShouldNotJoin;
       }
     }
@@ -331,7 +331,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
       }
 
       // Process loop body.
-      bool hasEarlyExits = true;
+      bool hasEarlyExits = false;
       if (failed(processRegion(node->getRegions().front(), nestedState,
                                hasEarlyExits, shouldContinue, false)))
         return failure();
@@ -488,8 +488,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
       // Tell parent region that there is early exit (so that the parent region
       // can decide whether to continue traverse the rest of the operation or
       // not).
-      hasEarlyExits = !(isa<ContinueOp>(op) || isa<BreakOp>(op) ||
-                        isa<KGEN::UnreachableOp>(op));
+      hasEarlyExits = isa<ContinueOp, BreakOp, KGEN::UnreachableOp>(op);
       break;
     }
 
@@ -498,7 +497,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
       for (Region &region : op.getRegions()) {
         ConstantStateType nestedState = entryState;
         bool shouldContinue = true;
-        bool hasEarlyExits = true;
+        bool hasEarlyExits = false;
         if (failed(processRegion(region, nestedState, hasEarlyExits,
                                  shouldContinue)))
           return failure();
@@ -598,7 +597,7 @@ LogicalResult SCCPAnalysis::rewrite(MLIRContext *context,
 
 LogicalResult SCCPAnalysis::run(Operation *op) {
   for (Region &region : op->getRegions()) {
-    bool hasEarlyExits = true;
+    bool hasEarlyExits = false;
     bool shouldContinue = true;
     if (failed(processRegion(region, topState, hasEarlyExits, shouldContinue)))
       return failure();
