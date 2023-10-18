@@ -483,8 +483,9 @@ fn get_micro_kernel_shape[
                 # are (6, 2) and (4, 3).
 
                 # The heuristic searchs the micro kernel shape leading to the
-                # least remainder.
-                var min_num_residual = WO_val * F_val
+                # least remainder. The following values will be overwritten since
+                # the residual is at most 2 * WO * F.
+                var min_num_residual = 3 * WO_val * F_val
                 var micro_kernel_height = -1
                 var micro_kernel_width = -1
                 for n in range(2, 3):
