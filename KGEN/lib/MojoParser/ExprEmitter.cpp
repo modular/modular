@@ -1689,47 +1689,32 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   if (auto pvalue = decl.getIfPValue())
     return emitResult(pvalue, expr, dest);
 
-  // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
-  // can check if it is captured in a function.
+  // Narrow the decl to a CValue.
   CValue value;
-  Value mlirValue;
-  // 'let' declarations resolve to an SBvalue when they are register_passable.
   if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
-    mlirValue = letDecl.getResult();
-    value = SBValue(mlirValue);
-
+    // 'let' declarations of a register passable value resolve to an SBvalue.
+    value = SBValue(letDecl.getResult());
   } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
-    // We handle both var and let's as mutable lvalues and let check lifetimes
-    // diagnose any problems.  This allows us to handle late-initialized lets.
-    mlirValue = var.getResult();
-    value = XLValue(mlirValue);
-  } else if (auto rvalue = decl.getIfRValue()) {
-    // RValue's resolve to their known value.
-    if (auto mrValue = rvalue.getIfMRValue())
-      mlirValue = mrValue;
-    else
-      mlirValue = rvalue.getIfSRValue();
-    value = rvalue;
-  } else if (auto bvalue = decl.getIfBValue()) {
-    if (auto mbValue = bvalue.getIfMBValue())
-      mlirValue = mbValue;
-    else
-      mlirValue = bvalue.getIfSBValue();
-    value = bvalue;
-  } else if (auto lvalue = decl.getIfMLValue()) {
-    mlirValue = lvalue;
-    value = lvalue;
+    // Treat both 'var' and 'let' decls as mutable values and defer to check
+    // lifetimes to verify 'let' decls. This allows lazy 'let' initialization.
+    value = XLValue(var);
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
-    // If this is a parameter context then we cannot return a dynamic field
+    // If this is a parameter context then we cannot return a dynamic field.
     if (!builder)
       return emitErrorForDynamicValueInParameter(expr);
+    // Return a mutable value only if the global variable is mutable.
     auto ref = builder->create<GlobalVarRefOp>(
         translateLocation(expr->getLoc()), globalOp);
-    mlirValue = ref;
     if (globalOp.getIsVar())
-      value = MLValue(mlirValue);
+      value = MLValue(ref);
     else
-      value = MBValue(mlirValue);
+      value = MBValue(ref);
+  } else if (auto rvalue = decl.getIfRValue()) {
+    value = rvalue;
+  } else if (auto bvalue = decl.getIfBValue()) {
+    value = bvalue;
+  } else if (auto lvalue = decl.getIfMLValue()) {
+    value = lvalue;
   } else {
     emitError(expr->getLoc(), "use of declaration \"")
         << spelling << "\" as a value isn't supported yet" << expr->getRange();
@@ -1741,10 +1726,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   // `value` the thing which calls this will still enforce the parameter-ness of
   // the result of the expression while still allowing the temporary reference
   // to `x` to lead to a final parameter value.
-  if (!builder) {
-    mlirValue = nullptr;
+  if (!builder)
     return emitResult(value, expr, dest);
-  }
 
   capture = Capture(value, value.getRValueType(), value.getType());
   if (value.getIfMLValue()) {
