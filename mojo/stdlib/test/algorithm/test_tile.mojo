@@ -8,7 +8,6 @@
 from algorithm import tile, tile_and_unswitch, unswitch
 
 from utils.index import Index, StaticIntTuple
-from utils.list import VariadicList
 
 
 # Helper workgroup function to test dynamic workgroup tiling.

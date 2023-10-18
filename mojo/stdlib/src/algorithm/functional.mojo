@@ -27,7 +27,6 @@ from runtime.llcl import (
 )
 
 from utils.index import StaticIntTuple
-from utils.list import VariadicList
 
 # ===----------------------------------------------------------------------===#
 # Map
