@@ -5,11 +5,6 @@
 ##===----------------------------------------------------------------------===##
 
 if(MODULAR_ENABLE_TELEMETRY)
-  if(${DISABLE_ALL_EXTERNAL})
-    message(FATAL_ERROR "Cannot enable Telemetry since OpenTelemetry is not available.")
-    return()
-  endif()
-
   include(AddOpenTelemetry)
 
   add_flag_if_supported("-Werror -Wno-covered-switch-default" SUPPORTS_TELEMETRYWNO_COVERED_SWITCH_DEFAULT)
