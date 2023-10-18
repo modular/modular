@@ -1,59 +1,16 @@
 // RUN: kgen-opt -automatic-inline=update-debug-info=true -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
-#file = #debuginfo.file<"foo.c" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-// CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<{{.*}}, name = "inline_me0", linkageName = "inline_me0",
-#callee0Sp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "inline_me0",
-  linkageName = "inline_me0",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+// CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<name = "inline_me0"
+#callee0Sp = #debuginfo.subprogram<name = "inline_me0"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-// CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}}, name = "inline_me1", linkageName = "inline_me1",
-#callee1Sp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "inline_me1",
-  linkageName = "inline_me1",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+// CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<name = "inline_me1"
+#callee1Sp = #debuginfo.subprogram<name = "inline_me1"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-#callerSp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "caller",
-  linkageName = "caller",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+#callerSp = #debuginfo.subprogram<name = "caller"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<{{.*}}, name = "call_async", linkageName = "call_async",
-#asyncCallerSp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "call_async",
-  linkageName = "call_async",
-  file = #file,
-  line = 50,
-  scopeLine = 50,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
+#file = #debuginfo.file<"foo.mlir" in "/">
+// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = "call_async"
+#asyncCallerSp = #debuginfo.subprogram<name = "call_async"> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
 #local_variable0 = #debuginfo.local_variable<
   scope = #callee0Sp,
   name = "foo",
@@ -135,7 +92,7 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 10, scopeLine = 10, subprogramFlags = Definition> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc(fused<#subprogram>["foo.mlir":0:0])
 

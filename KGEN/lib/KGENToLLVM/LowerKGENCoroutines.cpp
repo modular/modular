@@ -514,8 +514,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 static LogicalResult
 lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
                          CoroutineInfo &coro, TypeAttrCache &cache,
-                         LLVMFuncOp coroProjFn, POP::CoroutineAwaitOp op,
-                         llvm::dwarf::SourceLanguage debugInfoLanguage) {
+                         LLVMFuncOp coroProjFn, POP::CoroutineAwaitOp op) {
   b.setLoc(op.getLoc());
 
   // Outline the body of the await into a function.
@@ -556,10 +555,11 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   suspendFn.getBody().takeBody(awaitBody);
 
   // If possible, we need to add a subprogram scope to the new function.
-  ErrorOr<DebugInfo::DIScopeAttr> scopeOr =
-      DebugInfo::getScopeWithinBody(op.getLoc());
   auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
-  if (!scopeOr.isError() && *scopeOr) {
+  auto scope =
+      op.getLoc()
+          ->findInstanceOf<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>();
+  if (scope) {
     // Use unresolved types now for simplicity, these will get resolved during
     // compilation.
     auto mapUnresolvedType = [&](Type type) -> DebugInfo::DIType {
@@ -568,20 +568,11 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
     auto spType = DebugInfo::DISubroutineType::get(
         ctx, llvm::map_to_vector(captureTypes, mapUnresolvedType), {});
 
-    DebugInfo::DIBuilder dib(ctx);
-    DebugInfo::DIFileAttr fileAttr = dib.createFile(fileLoc);
-
-    dib.initializeCompileUnit(debugInfoLanguage, fileAttr, "kgen",
-                              /*isOptimized=*/true,
-                              DebugInfo::EmissionKind::Full);
-    DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
-
     // The insertion into the symtab might change the name, so we extract it.
-    StringAttr suspName = suspendFn.getSymNameAttr();
-    guard = dib.pushSubprogram(suspName, suspName, fileAttr, fileLoc.getLine(),
-                               fileLoc.getLine(),
-                               DebugInfo::SubprogramFlags::Definition, spType);
-    Location newLoc = dib.createScopedLoc(fileLoc);
+    StringRef suspName = suspendFn.getSymName();
+    Location newLoc = FusedLoc::get(
+        op.getContext(), Location(fileLoc),
+        scope.getMetadata().cloneWith(suspName, suspName, spType));
 
     // Okay, we can now overwrite the location with a scoped one. We also set
     // the builder location so anything else we insert (e.g. return) is correct.
@@ -637,8 +628,7 @@ static LogicalResult
 lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
                        TypeAttrCache &cache,
                        function_ref<LLVMFuncOp()> getCoroEndFn,
-                       function_ref<LLVMFuncOp()> getCoroProjFn,
-                       llvm::dwarf::SourceLanguage debugInfoLanguage) {
+                       function_ref<LLVMFuncOp()> getCoroProjFn) {
   // Collect all the relevant ops.
   SmallVector<POP::CoroutineHandleOp> handles;
   SmallVector<POP::CoroutineOpaqueHandleOp> opaques;
@@ -717,8 +707,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     op.erase();
   }
   for (POP::CoroutineAwaitOp op : awaits) {
-    if (failed(lowerCoroutineAwaitAsync(
-            symtab, b, *coro, cache, getCoroProjFn(), op, debugInfoLanguage)))
+    if (failed(lowerCoroutineAwaitAsync(symtab, b, *coro, cache,
+                                        getCoroProjFn(), op)))
       return failure();
   }
   return success();
@@ -766,8 +756,6 @@ void LowerKGENCoroutinesAsyncPass::runOnOperation() {
   // TODO: Do this in parallel.
   for (auto func : getOperation().getOps<LLVMFuncOp>())
     if (failed(lowerCoroutineFunction(symtab, func, b, cache, getCoroEndFn,
-                                      getCoroProjFn,
-                                      static_cast<llvm::dwarf::SourceLanguage>(
-                                          debugInfoLanguage.getValue()))))
+                                      getCoroProjFn)))
       return signalPassFailure();
 }

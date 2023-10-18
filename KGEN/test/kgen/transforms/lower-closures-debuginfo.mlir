@@ -1,37 +1,8 @@
 // RUN: kgen-opt -mlir-print-debuginfo -lower-closures %s | FileCheck %s
 
-#file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 44,
-  scopeLine = 44,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "SomeClosure",
-  linkageName = "SomeClosure",
-  file = #file,
-  line = 325,
-  scopeLine = 325,
-  subprogramFlags = "Definition|Optimized"
->  : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
-#subprogram2 = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "OtherClosure",
-  linkageName = "OtherClosure",
-  file = #file,
-  line = 412,
-  scopeLine = 412,
-  subprogramFlags = "Definition|Optimized"
->  : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<name = "SomeClosure">  : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
+#subprogram2 = #debuginfo.subprogram<name = "OtherClosure">  : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":46:8)
@@ -75,9 +46,9 @@ kgen.func @foo() {
   kgen.return loc(#loc5)
 } loc(#loc5)
 
-// CHECK-DAG: #[[SP_ASYNC_CL:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo_async_closure_0", linkageName = "foo_async_closure_0", file = #file, line = 325, scopeLine = 325,
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 44, scopeLine = 44,
-// CHECK-DAG: #[[SP_CL:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo_closure_1", linkageName = "foo_closure_1", file = #file, line = 412, scopeLine = 412,
+// CHECK-DAG: #[[SP_ASYNC_CL:.*]] = #debuginfo.subprogram<name = "foo_async_closure_0", linkageName = "foo_async_closure_0"
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = "foo"
+// CHECK-DAG: #[[SP_CL:.*]] = #debuginfo.subprogram<name = "foo_closure_1", linkageName = "foo_closure_1"
 
 // CHECK-DAG: #[[SOME_CL_LOC:.*]] = loc("bar.mlir":327:17)
 // CHECK-DAG: #[[FOO_ASYNC_CL_LOC]] = loc(fused<#[[SP_ASYNC_CL]]>[#[[SOME_CL_LOC]]])

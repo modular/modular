@@ -1,23 +1,6 @@
 // RUN: kgen-opt %s -mlir-print-debuginfo -check-lifetimes | FileCheck %s
 
-#file = #debuginfo.file<"foo.c" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-#subprogram = #debuginfo.subprogram<
-    compileUnit = #compile_unit,
-    scope = #file,
-    name = "__del__",
-    linkageName = "__del__(@HasMemFields::@__del__)",
-    file = #file,
-    line = 156,
-    scopeLine = 156,
-    subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<(!kgen.pointer<@HasMemFields>) -> (!kgen.none): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "__del__"> : !debuginfo.subroutine<(!kgen.pointer<@HasMemFields>) -> (!kgen.none): DW_CC_normal>
 
 // CHECK-DAG: #[[FILE_LOC:.*]] = loc("foo.mlir":
 // CHECK-DAG: #[[LOC:.*]] = loc(fused<#subprogram>[#[[FILE_LOC]]])

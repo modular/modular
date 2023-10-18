@@ -7,45 +7,11 @@
 // COM: code), we also don't use -split-file.
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "inline_me", linkageName = "inline_me", file = #file, line = 10, scopeLine = 10,
-#calleeSp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "inline_me",
-  linkageName = "inline_me",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
-#callerSp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "caller",
-  linkageName = "caller",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
-// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "call_async", linkageName = "call_async", file = #file, line = 50, scopeLine = 50,
-#asyncCallerSp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "call_async",
-  linkageName = "call_async",
-  file = #file,
-  line = 50,
-  scopeLine = 50,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = "inline_me"
+#calleeSp = #debuginfo.subprogram<name = "inline_me"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+#callerSp = #debuginfo.subprogram<name = "caller"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = "call_async"
+#asyncCallerSp = #debuginfo.subprogram<name = "call_async"> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<
   scope = #calleeSp,
   name = "foo",
@@ -183,7 +149,7 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
-#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 10, scopeLine = 10, subprogramFlags = Definition> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc(fused<#subprogram>["foo.mlir":0:0])
 

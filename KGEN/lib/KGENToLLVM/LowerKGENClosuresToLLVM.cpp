@@ -81,15 +81,13 @@ LogicalResult CreateClosureTypes::createClosureTypes(
 struct CreateRuntimeClosureOpConversion
     : public ConvertPOPToLLVMPattern<CreateClosureOp> {
 
-  CreateRuntimeClosureOpConversion(
-      SymbolTable &symTable, POPToLLVMTypeConverter &typeConverter,
-      llvm::dwarf::SourceLanguage debugInfoLanguage)
+  CreateRuntimeClosureOpConversion(SymbolTable &symTable,
+                                   POPToLLVMTypeConverter &typeConverter)
       : ConvertPOPToLLVMPattern<CreateClosureOp>(typeConverter),
-        symtab(symTable), debugInfoLanguage(debugInfoLanguage) {}
+        symtab(symTable) {}
 
 private:
   SymbolTable &symtab;
-  llvm::dwarf::SourceLanguage debugInfoLanguage;
 
   LLVM::LLVMFuncOp
   generateWrapperFunction(CreateClosureOp op,
@@ -136,9 +134,10 @@ private:
         "closure_wrapper_fn", wrapperFnType, LLVM::Linkage::Internal);
 
     // If possible, we need to add a subprogram scope to the new function.
-    ErrorOr<DebugInfo::DIScopeAttr> scopeOr =
-        DebugInfo::getScopeWithinBody(op.getLoc());
-    if (!scopeOr.isError() && isa<mlir::CallSiteLoc>(op.getLoc())) {
+    auto scope =
+        op.getLoc()
+            ->findInstanceOf<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>();
+    if (scope) {
       // Use unresolved types now for simplicity, these will get resolved during
       // compilation.
       auto mapUnresolvedType = [&](Type type) -> DebugInfo::DIType {
@@ -149,20 +148,10 @@ private:
           map_to_vector(wrapperFnType.getReturnTypes(), mapUnresolvedType));
 
       auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
-      DebugInfo::DIBuilder dib(op->getContext());
-      DebugInfo::DIFileAttr fileAttr = dib.createFile(fileLoc);
-
-      dib.initializeCompileUnit(debugInfoLanguage, fileAttr, "kgen",
-                                /*isOptimized=*/true,
-                                DebugInfo::EmissionKind::Full);
-      DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
-
-      StringAttr wrapperName = wrapperFn.getSymNameAttr();
-      guard = dib.pushSubprogram(
-          wrapperName, wrapperName, fileAttr, fileLoc.getLine(),
-          fileLoc.getLine(), DebugInfo::SubprogramFlags::Definition, spType);
-
-      wrapperFn->setLoc(dib.createScopedLoc(fileLoc));
+      StringRef wrapperName = wrapperFn.getSymName();
+      wrapperFn->setLoc(FusedLoc::get(
+          op.getContext(), Location(fileLoc),
+          scope.getMetadata().cloneWith(wrapperName, wrapperName, spType)));
     }
 
     wrapperFn.getBody().push_back(wrapperFnBody);
@@ -423,8 +412,7 @@ void LowerRuntimeClosuresPass::runOnOperation() {
 
   target.addIllegalOp<CreateClosureOp>();
   target.addIllegalOp<CallSignatureOp>();
-  patterns.insert<CreateRuntimeClosureOpConversion>(
-      symtab, typeConverter, debugInfoLanguage.getValue());
+  patterns.insert<CreateRuntimeClosureOpConversion>(symtab, typeConverter);
   patterns.insert<CallSignatureOpConversion>(typeConverter);
 
   if (failed(

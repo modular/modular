@@ -63,27 +63,14 @@ kgen.generator @foo(%arg0: index) -> !pop.array<0, i1> {
 #loc4 = loc("foo.mojo":1473:5)
 #loc5 = loc("foo.mojo":1489:9)
 
-#file = #debuginfo.file<"foo.mojo" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-
-// CHECK-DAG: #[[SP_FOO:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo", linkageName = "foo",
-// CHECK-DAG: #[[SP_CLOSURE:.*]] = #debuginfo.subprogram<{{.*}}, name = "Closure", linkageName = "foo_Closure",
-// CHECK-DAG: #[[SP_NESTED:.*]] = #debuginfo.subprogram<{{.*}}, name = "NestedClosure", linkageName = "foo_NestedClosure",
-#sp = #debuginfo.subprogram<
-  compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 170, scopeLine = 170, subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
-#spClosure = #debuginfo.subprogram<
-  compileUnit = #compile_unit, scope = #file, name = "Closure", linkageName = "Closure", file = #file, line = 239, scopeLine = 239, subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (!pop.array<0, i8>): DW_CC_normal>
-#spNested = #debuginfo.subprogram<
-  compileUnit = #compile_unit, scope = #file, name = "NestedClosure", linkageName = "NestedClosure", file = #file, line = 242, scopeLine = 242, subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (!pop.array<0, i32>): DW_CC_normal>
-#spCap = #debuginfo.subprogram<
-  compileUnit = #compile_unit, scope = #file, name = "Capturing", linkageName = "Capturing", file = #file, line = 1473, scopeLine = 1473, subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#spNestedCap = #debuginfo.subprogram<
-  compileUnit = #compile_unit, scope = #file, name = "NestedCapturing", linkageName = "NestedCapturing", file = #file, line = 1489, scopeLine = 1489, subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<() -> (index): DW_CC_normal>
+// CHECK-DAG: #[[SP_FOO:.*]] = #debuginfo.subprogram<name = "foo"
+// CHECK-DAG: #[[SP_CLOSURE:.*]] = #debuginfo.subprogram<name = "Closure"
+// CHECK-DAG: #[[SP_NESTED:.*]] = #debuginfo.subprogram<name = "NestedClosure"
+#sp = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#spClosure = #debuginfo.subprogram<name = "Closure"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#spNested = #debuginfo.subprogram<name = "NestedClosure"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#spCap = #debuginfo.subprogram<name = "Capturing"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#spNestedCap = #debuginfo.subprogram<name = "NestedCapturing"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 // CHECK-DAG: #[[LOC_NESTED]] = loc(fused<#[[SP_NESTED]]>[#[[LOC3]]])
 // CHECK-DAG: #[[LOC_CLOSURE]] = loc(fused<#[[SP_CLOSURE]]>[#[[LOC2]]])

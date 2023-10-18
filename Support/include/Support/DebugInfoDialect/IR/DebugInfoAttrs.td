@@ -219,24 +219,33 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
   }];
 
   let parameters = (ins
-    "DICompileUnitAttr":$compileUnit,
-    "DIScopeAttr":$scope,
+    OptionalParameter<"DICompileUnitAttr">:$compileUnit,
+    OptionalParameter<"DIScopeAttr">:$scope,
     "StringAttr":$name,
-    "StringAttr":$linkageName,
-    "DIFileAttr":$file,
-    "unsigned":$line,
-    "unsigned":$scopeLine,
-    "SubprogramFlags":$subprogramFlags,
+    OptionalParameter<"StringAttr">:$linkageName,
+    OptionalParameter<"DIFileAttr">:$file,
+    OptionalParameter<"unsigned">:$line,
+    OptionalParameter<"unsigned">:$scopeLine,
+    OptionalParameter<"SubprogramFlags">:$subprogramFlags,
     AttributeSelfTypeParameter<"", "DISubroutineType">:$type
   );
   let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope, "StringAttr":$name,
+      "StringAttr":$linkageName, "DIFileAttr":$file, "unsigned":$line,
+      "unsigned":$scopeLine, "SubprogramFlags":$subprogramFlags,
+      "DISubroutineType":$type
+    ), [{
+      return $_get(type.getContext(), compileUnit, scope, name, linkageName,
+                   file, line, scopeLine, subprogramFlags, type);
+    }]>,
     AttrBuilderWithInferredContext<(ins
       "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope, "StringRef":$name,
       "StringRef":$linkageName, "DIFileAttr":$file, "unsigned":$line,
       "unsigned":$scopeLine, "SubprogramFlags":$subprogramFlags,
       "DISubroutineType":$type
     ), [{
-      MLIRContext *ctx = file.getContext();
+      MLIRContext *ctx = type.getContext();
       return $_get(ctx, compileUnit, scope, StringAttr::get(ctx, name),
                    StringAttr::get(ctx, linkageName), file, line,
                    scopeLine, subprogramFlags, type);
@@ -246,7 +255,8 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
 
   let extraClassDeclaration = [{
     /// Returns a clone with a new name and linkage name.
-    DISubprogramAttr cloneWith(StringRef name, StringRef linkageName) const;
+    DISubprogramAttr cloneWith(StringRef name, StringRef linkageName,
+                               DISubroutineType type = {}) const;
   }];
 }
 
