@@ -1152,6 +1152,74 @@ def LIT_RaiseOp : LITOp<"raise"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LoopConditionOp
+//===----------------------------------------------------------------------===//
+
+def LIT_LoopConditionOp : LITOp<"loop.condition", [
+    ParentOneOf<["LoopOp"]>, Terminator]> {
+  let summary = "Condition for the loop.";
+  let description = [{
+    The `lit.loop.condition` operation is a terminator. It yields the condition
+    of a loop.
+
+    Example:
+
+    ```mlir
+    lit.loop.condition %cond
+    ```
+  }];
+
+  let arguments = (ins I1:$operand);
+
+  let assemblyFormat = "attr-dict $operand `:` type($operand)";
+}
+
+//===----------------------------------------------------------------------===//
+// LoopContinueOp
+//===----------------------------------------------------------------------===//
+
+def LIT_LoopContinueOp : LITOp<"loop.continue", [
+    ParentOneOf<["LoopOp"]>, Terminator]> {
+
+  let summary = "Loop continue.";
+  let description = [{
+    The `lit.loop.continue` operation is a terminator. The operation indicates
+    that control-flow should branch to the beginning of the enclosing loop. It
+    is only used as the terminator for the body of a `lit.loop`.
+
+    Example:
+
+    ```mlir
+    lit.loop.continue
+    ```
+  }];
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// LoopYieldOp
+//===----------------------------------------------------------------------===//
+
+def LIT_LoopYieldOp : LITOp<"loop.yield", [
+    ParentOneOf<["LoopOp"]>, Terminator]> {
+  let summary = "Loop yield.";
+  let description = [{
+    The `lit.loop.yield` operation is a terminator. The operation indicates
+    that control-flow should branch to the end of the enclosing loop (after the
+    else region finishes execution).
+
+    Example:
+
+    ```mlir
+    lit.loop.yield
+    ```
+  }];
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // BreakOp
 //===----------------------------------------------------------------------===//
 
@@ -1611,4 +1679,56 @@ def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"ref", "arg">]> {
 
   let arguments = (ins AnyType:$arg, LIT_RefType:$ref);
   let assemblyFormat = "$arg `,` $ref attr-dict `:` type($ref)";
+}
+
+//===----------------------------------------------------------------------===//
+// LoopOp
+//===----------------------------------------------------------------------===//
+
+def LIT_LoopOp: LITOp<"loop"> {
+  let summary = "loop operation";
+  let description = [{
+    The `lit.loop` operation defines a lexical single scoped control-flow
+    region. The operation has three regions:
+      - condition region
+      - body region
+      - else region
+
+    Control-flow transfers from the operation to the beginning of the body
+    region when the condition is true. The loop operation is the target of the
+    `lit.continue` and `lit.break` terminators.
+
+
+    ```mlir
+    lit.loop cond {
+      lit.loop.condition %0: i1
+    } body {
+      lit.loop.continue
+    } else {
+      lit.loop.yield
+    }
+    ```
+  }];
+
+  let arguments = (ins
+    DefaultValuedAttr<SI32Attr, "0">:$unrollLevel
+  );
+
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$condRegion,
+                        SizedRegion<1>:$bodyRegion,
+                        SizedRegion<1>:$elseRegion);
+
+  let assemblyFormat = [{
+    (`->` type($results)^)?
+    `cond` $condRegion
+    `body` $bodyRegion
+    `else` $elseRegion attr-dict
+  }];
+
+  let builders = [
+    OpBuilder<(ins "int32_t":$level), [{
+      build($_builder, $_state, {}, level);
+    }]>
+  ];
 }
