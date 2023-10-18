@@ -7,8 +7,6 @@
 
 from math import iota, reduce_bit_count
 
-from utils.list import VariadicList
-
 
 fn test_reduce_bit_count():
     print("== test_reduce_bit_count")

@@ -12,7 +12,6 @@ from math.polynomial import (
     polynomial_evaluate,
 )
 
-from utils.list import VariadicList
 
 # CHECK-LABEL: test_polynomial_evaluate_degree3
 fn test_polynomial_evaluate_degree3():
