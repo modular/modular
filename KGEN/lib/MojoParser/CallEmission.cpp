@@ -75,9 +75,8 @@ static PValue emitSingleParameterValue(InputParamBindings::Binding binding,
   // conversion if needed.
   expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
 
-  PValue bindingPVal = PValue(binding.getValue());
-
   // If the parameter already has the right type, then we're good.
+  PValue bindingPVal(binding.getValue());
   if (expectedType.isEqualCanon(binding.getValue().getType()))
     return bindingPVal;
 
@@ -191,7 +190,7 @@ InputParamBindings::verifyBindings(
     if (posBindingIdx == numPosBindings) {
       // Determine what type we expect next.
       Type requestedType = evaluator.getReboundType(type);
-      Type expectedType = requestedType;
+      ASTType expectedType = requestedType;
       // If this is a vararg parameter, infer using the element type.
       if (isVarArg(idx))
         if (auto varType = dyn_cast<VariadicType>(expectedType))
@@ -248,7 +247,14 @@ InputParamBindings::verifyBindings(
 
       // If available, we use a default parameter value.
       if (idx >= numParams - defaultParams.size()) {
-        setParamValue(defaultParams[idx + defaultParams.size() - numParams]);
+        // Default parameter values may reference other parameter values, so we
+        // need to evaluate these.
+        expectedType = evaluator.getReboundType(expectedType);
+        auto reboundAttr = cast<TypedAttr>(evaluator.getReboundAttribute(
+            defaultParams[idx + defaultParams.size() - numParams]));
+        assert(expectedType.isEqualCanon(reboundAttr.getType()));
+
+        setParamValue(reboundAttr);
         continue;
       }
 
