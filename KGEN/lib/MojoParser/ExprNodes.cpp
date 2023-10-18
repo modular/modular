@@ -485,7 +485,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  Capture capture;
+  std::optional<Capture> capture;
   ValueDest refDest(dest.getContext());
   AnyValue result =
       emitter.emitDeclReference(spelling, decls, this, refDest, capture);
@@ -504,11 +504,11 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       assert(decls.size() == 1 && "Only functions may be overloaded");
       ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
       if (decl->getParentDecl() && decl->getParentDecl() != funcDecl)
-        emitter.shared.addCaptureToScope(*funcDecl, decl, capture);
+        emitter.shared.addCaptureToScope(*funcDecl, decl, *capture);
     }
   }
   CValue value = result.getIfCValue();
-  Value mlirValue = capture.getMlirValue();
+  Value mlirValue = capture->getMlirValue();
 
   // If this is a capture inside a nonparametric function, emit a copy.
   if (livesInsideNestedFunc && !nestedFunc.getSignature().isEscaping()) {
@@ -865,7 +865,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
             getLoc());
     if (failed(decls))
       return {};
-    Capture unused;
+    std::optional<Capture> unused;
     return emitter.emitDeclReference(spelling, *decls, this, dest, unused);
   }
 
