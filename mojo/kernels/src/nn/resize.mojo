@@ -135,6 +135,9 @@ fn resize_nearest_neighbor[
             constrained[True, "round_mode not implemented"]()
             return val
 
+    # need a copy because `let` variables are captured by copy but `var` variables are not
+    let scales_copy = scales
+
     @parameter
     fn nn_interpolate[
         simd_width: Int, _rank: Int
@@ -146,7 +149,10 @@ fn resize_nearest_neighbor[
             in_coords[i] = min(
                 round(
                     coord_transform[coordinate_transformation_mode](
-                        out_coords[i], input.dim(i), output.dim(i), scales[i]
+                        out_coords[i],
+                        input.dim(i),
+                        output.dim(i),
+                        scales_copy[i],
                     )
                 ).to_int(),
                 input.dim(i) - 1,
@@ -154,15 +160,8 @@ fn resize_nearest_neighbor[
 
         output[rebind[StaticIntTuple[rank]](out_coords)] = input[in_coords]
 
-    # `scales` lives on the stack and is not captured properly by the closure so
-    # need to force elementwise to be synchronous
-    let new_out_chain = OwningOutputChainPtr(out_chain.get_runtime())
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[rank, 1, nn_interpolate](
-        output.get_shape(), new_out_chain.borrow()
-    )
-    new_out_chain.wait()
-    out_chain.mark_ready()
+    elementwise[rank, 1, nn_interpolate](output.get_shape(), out_chain)
 
 
 @always_inline
