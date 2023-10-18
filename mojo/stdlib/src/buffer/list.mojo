@@ -190,7 +190,7 @@ struct DimList:
         Returns:
             A dimension list.
         """
-        return VariadicList[Dim](values)
+        return values
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:

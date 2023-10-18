@@ -945,7 +945,7 @@ struct NDBuffer[
         Returns:
             The value of the element.
         """
-        return self.simd_load[1](VariadicList[Int](idx))
+        return self.simd_load[1](idx)
 
     @always_inline
     fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[type, 1]:
@@ -978,7 +978,7 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.simd_load[width](VariadicList[Int](idx))
+        return self.simd_load[width](idx)
 
     @always_inline
     fn simd_load[
@@ -1071,7 +1071,7 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.aligned_simd_load[width, alignment](VariadicList[Int](idx))
+        return self.aligned_simd_load[width, alignment](idx)
 
     @always_inline
     fn aligned_simd_load[
@@ -1445,7 +1445,7 @@ struct NDBuffer[
         Args:
             idx: The N-D index of the prefetched location.
         """
-        self._offset(VariadicList[Int](idx)).prefetch[params]()
+        self._offset(idx).prefetch[params]()
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, indices: StaticIntTuple[rank]):
