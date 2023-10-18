@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
-from algorithm.sort import _small_sort, partition, sort
+from algorithm.sort import _small_sort, partition, sort, _quicksort
 
 from utils.vector import DynamicVector
+
 
 # CHECK-LABEL: test_sort_small_3
 fn test_sort_small_3():
@@ -335,6 +336,110 @@ fn test_sort_any_103():
     vector._del_old()
 
 
+fn test_quick_sort_repeated_val():
+    print("==  test_quick_sort_repeated_val")
+
+    alias length = 36
+    var vector = DynamicVector[Float32](length)
+
+    for i in range(0, length // 4):
+        vector.push_back(i + 1)
+        vector.push_back(i + 1)
+        vector.push_back(i + 1)
+        vector.push_back(i + 1)
+
+    @parameter
+    fn _greater_than[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Float32](lhs) > rebind[Float32](rhs)
+
+    _quicksort[Float32, _greater_than](vector.data, vector.__len__())
+
+    # CHECK: 9.0
+    # CHECK: 9.0
+    # CHECK: 9.0
+    # CHECK: 9.0
+    # CHECK: 8.0
+    # CHECK: 8.0
+    # CHECK: 8.0
+    # CHECK: 8.0
+    # CHECK: 7.0
+    # CHECK: 7.0
+    # CHECK: 7.0
+    # CHECK: 7.0
+    # CHECK: 6.0
+    # CHECK: 6.0
+    # CHECK: 6.0
+    # CHECK: 6.0
+    # CHECK: 5.0
+    # CHECK: 5.0
+    # CHECK: 5.0
+    # CHECK: 5.0
+    # CHECK: 4.0
+    # CHECK: 4.0
+    # CHECK: 4.0
+    # CHECK: 4.0
+    # CHECK: 3.0
+    # CHECK: 3.0
+    # CHECK: 3.0
+    # CHECK: 3.0
+    # CHECK: 2.0
+    # CHECK: 2.0
+    # CHECK: 2.0
+    # CHECK: 2.0
+    # CHECK: 1.0
+    # CHECK: 1.0
+    # CHECK: 1.0
+    # CHECK: 1.0
+    for i in range(0, length):
+        print(vector[i])
+
+    @parameter
+    fn _less_than[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Float32](lhs) < rebind[Float32](rhs)
+
+    # CHECK: 1.0
+    # CHECK: 1.0
+    # CHECK: 1.0
+    # CHECK: 1.0
+    # CHECK: 2.0
+    # CHECK: 2.0
+    # CHECK: 2.0
+    # CHECK: 2.0
+    # CHECK: 3.0
+    # CHECK: 3.0
+    # CHECK: 3.0
+    # CHECK: 3.0
+    # CHECK: 4.0
+    # CHECK: 4.0
+    # CHECK: 4.0
+    # CHECK: 4.0
+    # CHECK: 5.0
+    # CHECK: 5.0
+    # CHECK: 5.0
+    # CHECK: 5.0
+    # CHECK: 6.0
+    # CHECK: 6.0
+    # CHECK: 6.0
+    # CHECK: 6.0
+    # CHECK: 7.0
+    # CHECK: 7.0
+    # CHECK: 7.0
+    # CHECK: 7.0
+    # CHECK: 8.0
+    # CHECK: 8.0
+    # CHECK: 8.0
+    # CHECK: 8.0
+    # CHECK: 9.0
+    # CHECK: 9.0
+    # CHECK: 9.0
+    # CHECK: 9.0
+    _quicksort[Float32, _less_than](vector.data, vector.__len__())
+    for i in range(0, length):
+        print(vector[i])
+
+    vector._del_old()
+
+
 fn test_partition_top_k(length: Int, k: Int):
     print_no_newline("== test_partition_top_k_")
     print_no_newline(length)
@@ -372,6 +477,7 @@ fn main():
     test_sort9()
     test_sort103()
     test_sort_any_103()
+    test_quick_sort_repeated_val()
 
     # CHECK-LABEL: test_partition_top_k_7_5
     # CHECK-NOT: incorrect top-k
