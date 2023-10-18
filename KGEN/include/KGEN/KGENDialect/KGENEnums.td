@@ -135,15 +135,15 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   /// indirectly.
   ///
   /// The MLIR type is always a PointerType, and the underlying type is a
-  /// memory-only type.  The caller passes a reference to an uninitialized
-  /// memory slot that may be read but not mutated by the callee.
+  /// memory-only type.  The caller passes a reference to an initialized memory
+  /// slot that may be read but not mutated by the callee.
   I32EnumAttrCase<"BorrowedInMem", 3, "borrow_in_mem">,
 
   /// This is used for by-ref arguments like `fn x(a&: Int)`.
   ///
   /// The MLIR type is always a PointerType, and the underlying type can be
-  /// anything.  The value is initialized on entry to the function and must be
-  /// initialized when the function returns.
+  /// anything.  The value is initialized before entry to the function and must
+  /// be initialized when the function returns.
   I32EnumAttrCase<"ByRef", 4, "byref">,
 
   /// This is used on the first argument of a function that returns a
