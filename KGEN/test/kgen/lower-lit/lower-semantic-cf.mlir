@@ -688,3 +688,40 @@ lit.func @coroutine_await(%arg0: i1) {
   lit.return
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @loop_with_else
+lit.func @loop_with_else(%arg0: i1) {
+  // CHECK: hlcf.loop "_loop_0"
+  lit.loop cond {
+    lit.loop.condition %arg0: i1
+  } body {
+    lit.loop cond {
+      lit.loop.condition %arg0: i1
+    } body {
+      // CHECK: hlcf.if %arg0 {
+      // CHECK-NEXT:   hlcf.yield
+      // CHECK-NEXT: } else {
+      // CHECK-NEXT:   hlcf.break
+      // CHECK-NEXT: }
+      // CHECK-NEXT: hlcf.loop {
+      // CHECK-NEXT:   hlcf.if %arg0 {
+      // CHECK-NEXT:     hlcf.yield
+      // CHECK-NEXT:   } else {
+      // CHECK-NEXT:     hlcf.continue "_loop_0"
+      // CHECK-NEXT:   }
+      // CHECK-NEXT:   hlcf.continue
+      // CHECK-NEXT: }
+      // CHECK-NEXT: kgen.unreachable
+      lit.loop.continue
+    } else {
+      lit.continue
+      lit.loop.yield
+    }
+    lit.loop.continue
+  } else {
+    lit.loop.yield
+  }
+
+  lit.return
+  lit.end_func
+}
