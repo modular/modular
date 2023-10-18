@@ -9,7 +9,7 @@
 #callerSp = #debuginfo.subprogram<file = #file, name = "takeFnContextualType"> : !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
 
 // CHECK-DAG: #[[VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0"
-#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0", file = #file, line = 3, arg = 0, alignInBits = 0> : !unresolved
+#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0"> : !unresolved
 
 // CHECK-DAG: #[[LOC_TRY_FILE:.*]] = loc("silly.mlir":17:3)
 // CHECK-DAG: #[[LOC_TRY:.*]] = loc(fused<#[[SP]]>[#[[LOC_TRY_FILE]]])

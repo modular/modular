@@ -8,23 +8,10 @@
 
 #callerSp = #debuginfo.subprogram<name = "caller"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-#file = #debuginfo.file<"foo.mlir" in "/">
 // CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = "call_async"
 #asyncCallerSp = #debuginfo.subprogram<name = "call_async"> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
-#local_variable0 = #debuginfo.local_variable<
-  scope = #callee0Sp,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1
-> : !debuginfo.unresolved<index>
-#local_variable1 = #debuginfo.local_variable<
-  scope = #callee1Sp,
-  name = "bar",
-  file = #file,
-  line = 10,
-  arg = 1
-> : !debuginfo.unresolved<index>
+#local_variable0 = #debuginfo.local_variable<scope = #callee0Sp, name = "foo"> : !debuginfo.unresolved<index>
+#local_variable1 = #debuginfo.local_variable<scope = #callee1Sp, name = "bar"> : !debuginfo.unresolved<index>
 
 // CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
 // CHECK-DAG: #[[LOC_SCOPED_CALLER:.*]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
@@ -90,8 +77,6 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
 
 // -----
 
-#file = #debuginfo.file<"foo.c" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
 #subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc(fused<#subprogram>["foo.mlir":0:0])

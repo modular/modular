@@ -59,7 +59,7 @@
 // CHECK-SAME:   name = "foo",
 // CHECK-SAME:   file = #[[FILE]],
 // CHECK-SAME:   line = 10,
-// CHECK-SAME:   arg = 0,
+// CHECK-SAME:   arg = 1,
 // CHECK-SAME:   alignInBits = 32
 // CHECK-SAME: > : ![[UNRESOLVED]]
 #local_variable = #debuginfo.local_variable<
@@ -67,7 +67,7 @@
   name = "foo",
   file = #file,
   line = 10,
-  arg = 0,
+  arg = 1,
   alignInBits = 32
 > : !debuginfo.unresolved<index>
 

@@ -459,13 +459,7 @@ lit.func @external_func(%arg: !kgen.pointer<@MyStruct> owned_in_mem) attributes 
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1
-> : !debuginfo.unresolved<!kgen.pointer<@MyStruct>>
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!kgen.pointer<@MyStruct>>
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])

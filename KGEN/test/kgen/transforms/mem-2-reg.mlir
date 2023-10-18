@@ -288,21 +288,9 @@ kgen.generator @unknown_region_op() {
 
 // -----
 
-#file = #debuginfo.file<"test.mlir" in "">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
+#callerSp = #debuginfo.subprogram<name = "mem2reg_valueop"> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
 
-#callerSp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "mem2reg_valueop",
-  linkageName = "mem2reg_valueop",
-  file = #file,
-  line = 0,
-  scopeLine = 0,
-  subprogramFlags = "Definition"
-> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
-
-#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0", file = #file, line = 0, arg = 0, alignInBits = 0> : !debuginfo.unresolved<!kgen.pointer<index>>
+#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0"> : !debuginfo.unresolved<!kgen.pointer<index>>
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#callerSp>[#fileLoc])

@@ -6,19 +6,12 @@
 // COM: getting confused with CHECK-DAG statements (and to reduce duplicate test
 // COM: code), we also don't use -split-file.
 
-#file = #debuginfo.file<"foo.c" in "/mlir/">
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = "inline_me"
 #calleeSp = #debuginfo.subprogram<name = "inline_me"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 #callerSp = #debuginfo.subprogram<name = "caller"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 // CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = "call_async"
 #asyncCallerSp = #debuginfo.subprogram<name = "call_async"> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #calleeSp,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1
-> : !debuginfo.unresolved<index>
+#local_variable = #debuginfo.local_variable<scope = #calleeSp, name = "foo"> : !debuginfo.unresolved<index>
 
 // CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
 // CHECK-DAG: #[[LOC_SCOPED_CALLER:.*]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
@@ -147,8 +140,6 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
 
 // -----
 
-#file = #debuginfo.file<"foo.c" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
 #subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc(fused<#subprogram>["foo.mlir":0:0])

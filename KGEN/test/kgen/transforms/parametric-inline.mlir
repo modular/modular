@@ -787,15 +787,8 @@ kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
 
 // -----
 
-#file = #debuginfo.file<"foo.c" in "/mlir/">
 #subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.paramref<T>>) -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1
-> : !debuginfo.unresolved<!kgen.paramref<T>>
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!kgen.paramref<T>>
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])

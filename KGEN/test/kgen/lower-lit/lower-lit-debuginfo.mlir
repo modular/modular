@@ -3,8 +3,8 @@
 // CHECK: ![[DIVAR_TYPE:.*]] = !debuginfo.unresolved<!kgen.pointer<index>>
 // CHECK: ![[DILETVAR_TYPE:.*]] = !debuginfo.unresolved<index>
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "varDecl", linkageName = "Int::varDecl", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
-// CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10, arg = 0> : ![[DIVAR_TYPE]]
-// CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11, arg = 0> : ![[DILETVAR_TYPE]]
+// CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10> : ![[DIVAR_TYPE]]
+// CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11> : ![[DILETVAR_TYPE]]
 
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
 // CHECK-SAME: (%[[ARG0:.*]]: index
@@ -43,8 +43,8 @@ lit.file_module @module {
 // CHECK: ![[DIVAR_TYPE:.*]] = !debuginfo.unresolved<!kgen.pointer<index>>
 // CHECK: ![[DILETVAR_TYPE:.*]] = !debuginfo.unresolved<index>
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "varDecl", linkageName = "Int::varDecl", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
-// CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10, arg = 0> : ![[DIVAR_TYPE]]
-// CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11, arg = 0> : ![[DILETVAR_TYPE]]
+// CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10> : ![[DIVAR_TYPE]]
+// CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11> : ![[DILETVAR_TYPE]]
 
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
 // CHECK-SAME: (%[[ARG0:.*]]: index
