@@ -219,8 +219,8 @@ llvm::raw_ostream &M::operator<<(llvm::raw_ostream &os,
                                  const ASN1::ObjectID &oid) {
   if (oid.isModularOID()) {
     llvm::interleave(
-        ASN1::ObjectID::getModularPrefix(), os,
-        [&](uint8_t u) { os << (int)u; }, ".");
+        ASN1::ObjectID::getModularPrefix(), os, [&](uint64_t u) { os << u; },
+        ".");
 
     // Separator dot between prefix and the arc.
     os << ".";
