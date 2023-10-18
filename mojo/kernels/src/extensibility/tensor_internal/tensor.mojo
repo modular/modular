@@ -310,7 +310,7 @@ struct Tensor[dtype: DType]:
         Returns:
           The value at the specified indices.
         """
-        return self.simd_load[1](VariadicList[Int](indices))
+        return self.simd_load[1](indices)
 
     @always_inline
     fn __getitem__(self, indices: VariadicList[Int]) -> SIMD[dtype, 1]:
@@ -372,7 +372,7 @@ struct Tensor[dtype: DType]:
         Returns:
           The SIMD value at the specified indices.
         """
-        return self.simd_load[simd_width](VariadicList[Int](indices))
+        return self.simd_load[simd_width](indices)
 
     @always_inline
     fn simd_load[
@@ -536,7 +536,7 @@ struct Tensor[dtype: DType]:
         Returns:
           The linearized index into the tensor data.
         """
-        return self._compute_linear_offset(VariadicList[Int](indices))
+        return self._compute_linear_offset(indices)
 
     @always_inline
     fn _compute_linear_offset(self, indices: VariadicList[Int]) -> Int:

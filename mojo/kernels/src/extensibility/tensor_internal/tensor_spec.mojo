@@ -42,7 +42,7 @@ struct TensorSpec:
           type: The dtype of the specification.
           shapes: The shapes to initialize the shape with.
         """
-        self = TensorSpec(type, VariadicList[Int](shapes))
+        self = TensorSpec(type, shapes)
 
     @always_inline
     fn __init__(inout self, type: DType, shapes: VariadicList[Int]):

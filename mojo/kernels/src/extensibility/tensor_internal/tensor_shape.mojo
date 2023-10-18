@@ -716,7 +716,7 @@ struct TensorShape:
         Args:
           shapes: The shapes to initialize the shape with.
         """
-        self = TensorShape(VariadicList[Int](shapes))
+        self = TensorShape(shapes)
 
     @always_inline
     fn __init__(inout self, shapes: VariadicList[Int]):
