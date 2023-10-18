@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: avx512
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
