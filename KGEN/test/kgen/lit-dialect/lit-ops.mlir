@@ -411,3 +411,20 @@ lit.trait.decl @Trait2 {
 // CHECK-LABEL: lit.struct.decl @StructHasTraits
 lit.struct.decl @StructHasTraits([@Trait1, @Trait2]) {
 }
+
+// CHECK-LABEL: lit.func @lit_loop
+lit.func @lit_loop() {
+  lit.loop cond {
+    %0 = index.bool.constant true
+    // CHECK: lit.loop.condition %{{.*}}: i1
+    lit.loop.condition %0: i1
+  } body {
+    // CHECK: lit.loop.continue
+    lit.loop.continue
+  } else {
+    // CHECK: lit.loop.yield
+    lit.loop.yield
+  }
+
+  kgen.return
+}
