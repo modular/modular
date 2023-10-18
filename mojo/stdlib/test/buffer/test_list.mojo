@@ -6,8 +6,9 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from utils.index import StaticIntTuple
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt, OptionalParamInts
+
 
 # CHECK-LABEL: test_dim_list
 fn test_dim_list():
@@ -33,25 +34,6 @@ fn test_dim():
     let dim1 = Dim()
     # CHECK: False
     print(dim1.is_multiple[4]())
-
-
-# CHECK-LABEL: test_list
-fn test_list():
-    print("== test_list")
-    # CHECK: 4
-    print(len([1, 2.0, 3.14, [-1, -2]]))
-
-
-# CHECK-LABEL: test_variadic_list
-fn test_variadic_list():
-    print("== test_variadic_list")
-
-    @parameter
-    fn print_len(*i: Int):
-        print(len(VariadicList[Int](i)))
-
-    # CHECK: 3
-    print_len(1, 2, 3)
 
 
 # CHECK-LABEL: test_opt_param_int
@@ -87,7 +69,5 @@ fn test_opt_param_ints():
 fn main():
     test_dim_list()
     test_dim()
-    test_list()
-    test_variadic_list()
     test_opt_param_int()
     test_opt_param_ints()

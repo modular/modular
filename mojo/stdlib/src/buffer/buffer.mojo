@@ -24,7 +24,7 @@ from runtime.llcl import OutputChainPtr
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
 from utils.index import product as tuple_product
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
 from .memory import stack_allocation
