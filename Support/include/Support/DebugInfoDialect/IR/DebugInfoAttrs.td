@@ -170,19 +170,27 @@ def DebugInfo_DILocalVariableAttr : DIAttr<"DILocalVariable", "local_variable", 
   let parameters = (ins
     "DILocalScopeAttr":$scope,
     "StringAttr":$name,
-    "DIFileAttr":$file,
-    "unsigned":$line,
-    "unsigned":$arg,
+    OptionalParameter<"DIFileAttr">:$file,
+    OptionalParameter<"unsigned">:$line,
+    OptionalParameter<"unsigned">:$arg,
     OptionalParameter<"unsigned", "0">:$alignInBits,
     AttributeSelfTypeParameter<"", "DIType">:$type
   );
   let builders = [
     AttrBuilderWithInferredContext<(ins
+      "DILocalScopeAttr":$scope, "StringAttr":$name, "DIFileAttr":$file,
+      "unsigned":$line, "unsigned":$arg, "unsigned":$alignInBits,
+      "DIType":$type
+    ), [{
+      return $_get(type.getContext(), scope, name, file, line, arg, alignInBits,
+                   type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins
       "DILocalScopeAttr":$scope, "StringRef":$name, "DIFileAttr":$file,
       "unsigned":$line, "unsigned":$arg, "unsigned":$alignInBits,
       "DIType":$type
     ), [{
-      MLIRContext *ctx = file.getContext();
+      MLIRContext *ctx = type.getContext();
       return $_get(ctx, scope, StringAttr::get(ctx, name), file, line,
                    arg, alignInBits, type);
     }]>

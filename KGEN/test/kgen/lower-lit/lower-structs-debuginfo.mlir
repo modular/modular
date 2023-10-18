@@ -19,22 +19,9 @@ lit.struct.decl @SmallVector<N, T: type> {
 
 // Test proper handling of debuginfo operations.
 
-#file = #debuginfo.file<"foo.c" in "/mlir/">
 #subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1
-> : !debuginfo.unresolved<!pop.array<3, i32>>
-#local_variable1 = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "bar",
-  file = #file,
-  line = 10,
-  arg = 1
-> : !debuginfo.unresolved<!pop.array<0, i32>>
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!pop.array<3, i32>>
+#local_variable1 = #debuginfo.local_variable<scope = #subprogram, name = "bar"> : !debuginfo.unresolved<!pop.array<0, i32>>
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])

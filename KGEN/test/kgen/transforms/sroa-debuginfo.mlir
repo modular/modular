@@ -3,16 +3,15 @@
 
 !subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
 !unresolved = !debuginfo.unresolved<!kgen.pointer<struct<index, index>>>
-#file = #debuginfo.file<"/tmp/test.mojo" in "/">
 #subprogram = #debuginfo.subprogram<name = "__next__"> : !subroutine
-#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "self", file = #file, line = 27, arg = 1> : !unresolved
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "self"> : !unresolved
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])
 
 // CHECK: !unresolved = !debuginfo.unresolved<!kgen.pointer<index>>
-// CHECK: #[[VAR0:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.0", {{.*}}> : !unresolved
-// CHECK: #[[VAR1:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.1", {{.*}}> : !unresolved
+// CHECK: #[[VAR0:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.0"> : !unresolved
+// CHECK: #[[VAR1:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.1"> : !unresolved
 
 // CHECK-LABEL: @sroa_valueop
 kgen.func @sroa_valueop() {
@@ -28,15 +27,13 @@ kgen.func @sroa_valueop() {
 
 // -----
 
-#file = #debuginfo.file<"foo.mojo" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "max", linkageName = "max", file = #file, line = 0, scopeLine = 0, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<scope = #sp, name = "x", file = #file, line = 0, arg = 1> : !debuginfo.unresolved<!pop.struct<index, index>>
+#sp = #debuginfo.subprogram<name = "max"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<scope = #sp, name = "x"> : !debuginfo.unresolved<!pop.struct<index, index>>
 
 #loc = loc(fused<#sp>["foo.mojo":0:0])
 
-// CHECK: [[VAR0:#.*]] = #debuginfo.local_variable<{{.*}}, name = "x.0", {{.*}}> : !unresolved
-// CHECK: [[VAR1:#.*]] = #debuginfo.local_variable<{{.*}}, name = "x.1", {{.*}}> : !unresolved
+// CHECK: [[VAR0:#.*]] = #debuginfo.local_variable<{{.*}}, name = "x.0"> : !unresolved
+// CHECK: [[VAR1:#.*]] = #debuginfo.local_variable<{{.*}}, name = "x.1"> : !unresolved
 
 // CHECK-LABEL: @load_debug_var
 kgen.func @load_debug_var(%arg0: !pop.struct<index, index>) {

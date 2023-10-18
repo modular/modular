@@ -12,13 +12,13 @@
 // CHECK-DAG: #[[ARG1_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg0", file = #[[FILE]], line = {{.*}}, arg = 1> : ![[BASIC]]
 // CHECK-DAG: #[[ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg1", file = #[[FILE]], line = {{.*}}, arg = 2> : ![[BASIC1]]
 
-// CHECK-DAG: #[[BB_ARG_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[BASIC]]
+// CHECK-DAG: #[[BB_ARG_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0", file = #[[FILE]], line = {{.*}}> : ![[BASIC]]
 
-// CHECK-DAG: #[[OP_VALUES_VAR_0:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#0", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[BASIC]]
-// CHECK-DAG: #[[OP_VALUES_VAR_1:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#1", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[BASIC]]
-// CHECK-DAG: #[[OP_VALUES_VAR_2:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#2", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[BASIC]]
+// CHECK-DAG: #[[OP_VALUES_VAR_0:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#0", file = #[[FILE]], line = {{.*}}> : ![[BASIC]]
+// CHECK-DAG: #[[OP_VALUES_VAR_1:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#1", file = #[[FILE]], line = {{.*}}> : ![[BASIC]]
+// CHECK-DAG: #[[OP_VALUES_VAR_2:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#2", file = #[[FILE]], line = {{.*}}> : ![[BASIC]]
 
-// CHECK-DAG: #[[BB_ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "2", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[BASIC]]
+// CHECK-DAG: #[[BB_ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "2", file = #[[FILE]], line = {{.*}}> : ![[BASIC]]
 
 // CHECK-LABEL: func.func @foo(
 // CHECK-SAME:   %[[ARG1:.*]]: i32
