@@ -115,7 +115,7 @@ from TopK import top_k_shape
 
 from utils._annotations import *
 from utils.index import Index, StaticIntTuple, product
-from utils.list import Dim, DimList, VariadicList
+from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt
 
 # Prevent these functions from being DCE'd by explicitly exporting them.
