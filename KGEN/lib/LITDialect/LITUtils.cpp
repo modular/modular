@@ -56,6 +56,12 @@ Attribute LIT::impl::demangleIfNeeded(Attribute arg) {
 
 Type LIT::impl::demangleIfNeeded(Type arg) { return demangleIfNeededImpl(arg); }
 
+void LIT::printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol) {
+  os << symbol.getRootReference().strref();
+  for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences())
+    os << "::" << nestedRef.getValue();
+}
+
 ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
                                            Type type, bool hasAddress) {
   if (hasAddress) {

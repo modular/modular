@@ -241,26 +241,25 @@ ASTType ASTType::getSignatureUserResultType() const {
 
 /// Pretty print a symbol reference.
 static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag) {
-  if (forDiag) {
-    StringAttr leaf;
-    if (symbol.getNestedReferences().empty())
-      leaf = symbol.getRootReference();
-    else
-      leaf = symbol.getNestedReferences().back().getAttr();
-    // Demangle the function name.
-    StringRef name = leaf.getValue();
-    if (size_t mangleStart = name.find('('); mangleStart != std::string::npos)
-      name = name.take_front(mangleStart);
-    // For constructors, print the type name instead.
-    // TODO: Handle other dunder methods.
-    if (name == "__init__" && symbol.getNestedReferences().size() == 2)
-      name = symbol.getNestedReferences().front().getValue();
-    os << name;
-  } else {
-    os << symbol.getRootReference().strref();
-    for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences())
-      os << "::" << nestedRef.getValue();
+  if (!forDiag) {
+    printNestedSymbolReference(os, symbol);
+    return;
   }
+
+  StringAttr leaf;
+  if (symbol.getNestedReferences().empty())
+    leaf = symbol.getRootReference();
+  else
+    leaf = symbol.getNestedReferences().back().getAttr();
+  // Demangle the function name.
+  StringRef name = leaf.getValue();
+  if (size_t mangleStart = name.find('('); mangleStart != std::string::npos)
+    name = name.take_front(mangleStart);
+  // For constructors, print the type name instead.
+  // TODO: Handle other dunder methods.
+  if (name == "__init__" && symbol.getNestedReferences().size() == 2)
+    name = symbol.getNestedReferences().front().getValue();
+  os << name;
 }
 
 /// Pretty print a parameter value.
