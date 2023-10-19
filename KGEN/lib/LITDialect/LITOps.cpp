@@ -1541,11 +1541,10 @@ static LogicalResult verifyBreakOrContinueOp(Operation *op) {
           "have a parent loop.");
   }
 
-  if (op->getParentOfType<HLCF::LoopOp>() || op->getParentOfType<LIT::LoopOp>())
+  if (op->getParentOfType<LIT::LoopOp>())
     return success();
 
-  return op->emitOpError(
-      "must be nested within an `hlcf.loop` or `lit.loop` operation");
+  return op->emitOpError("must be nested within a `lit.loop` operation");
 }
 
 LogicalResult BreakOp::verify() { return verifyBreakOrContinueOp(*this); }

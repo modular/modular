@@ -67,8 +67,15 @@ lit.file_module @FileModule {
   // CHECK-LABEL: lit.func @break_and_continue
   lit.func @break_and_continue(%c: i1) {
     // CHECK-NEXT: hlcf.loop
-    hlcf.loop {
-      // CHECK-NEXT: hlcf.if
+    // CHECK-NEXT: hlcf.if %c {
+    // CHECK-NEXT:   hlcf.yield
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT:   hlcf.break
+    // CHECK-NEXT: }
+    lit.loop cond {
+      lit.loop.condition %c: i1
+    } body {
+      // CHECK-NEXT: hlcf.if %c {
       hlcf.if %c {
         // CHECK-NEXT: hlcf.break
         lit.break
@@ -83,10 +90,13 @@ lit.file_module @FileModule {
       // CHECK-NEXT: }
       }
       // CHECK-NEXT: kgen.unreachable
+      // CHECK-NEXT: }
       lit.return  // expected-warning {{unreachable code after if statement with then/else that do not fall through}}
-      hlcf.continue
-    // CHECK-NEXT: }
+      lit.loop.continue
+    } else {
+      lit.loop.yield
     }
+
     // CHECK-NEXT: kgen.return
     lit.return
     lit.end_func
@@ -133,8 +143,10 @@ lit.func @if_true_return() -> index {
 }
 
 lit.func @while_true() -> index {
-  hlcf.loop {
-    %true = index.bool.constant true
+  %true = index.bool.constant true
+  lit.loop cond {
+    lit.loop.condition %true: i1
+  } body {
     hlcf.if %true {
       lit.continue
       hlcf.yield
@@ -142,11 +154,12 @@ lit.func @while_true() -> index {
       hlcf.yield
     }
     lit.break // expected-warning {{unreachable code after if statement with then/else that do not fall through}}
-    hlcf.continue
+    lit.loop.continue
+  } else {
+    lit.loop.yield
   }
   lit.end_func
 }
-
 
 // CHECK-LABEL: lit.func @if_false_raise
 lit.func @if_false_raise() throws -> !pop.variant<@Error, index> {
@@ -381,14 +394,21 @@ lit.func @if_else_return(%cond: i1) -> index {
   lit.end_func
 }
 
-// CHECK-LABEL: lit.func @coroutine
+// CHECK-LABEL: lit.func @coroutine2
 lit.func @coroutine2() async -> index {
   %0 = index.constant 0
-  hlcf.loop {
+  %true = index.bool.constant true
+
+  lit.loop cond {
+    lit.loop.condition %true: i1
+  } body {
     lit.return %0 : index
     lit.break  // expected-warning {{unreachable code after return statement}}
-    hlcf.continue
+    lit.loop.continue
+  } else {
+    lit.loop.yield
   }
+
   // CHECK: kgen.unreachable
   lit.end_func
 }
@@ -524,8 +544,17 @@ lit.func @finally_breaks() -> index {
 
 // CHECK-LABEL: lit.func @try_finally
 lit.func @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
-  // CHECK-NEXT: hlcf.loop
-  hlcf.loop {
+  %true = index.bool.constant true
+
+  // CHECK: hlcf.loop {
+  // CHECK-NEXT: hlcf.if %true {
+  // CHECK-NEXT:         hlcf.yield
+  // CHECK-NEXT:       } else {
+  // CHECK-NEXT:         kgen.unreachable
+  // CHECK-NEXT:       }
+  lit.loop cond {
+    lit.loop.condition %true: i1
+  } body {
     // CHECK-NEXT: lit.try
     lit.try {
       // CHECK-NEXT: hlcf.if %arg0
@@ -555,7 +584,10 @@ lit.func @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
       lit.try.yield
     }
     // CHECK: unreachable
-    hlcf.break
+    lit.break // expected-warning {{unreachable code after try statement that doesn't fall through}}
+    lit.loop.continue
+  } else {
+    lit.loop.yield
   }
   // CHECK: return %arg1, %arg2
   kgen.return %arg1, %arg2 : i32, i64
@@ -563,8 +595,18 @@ lit.func @try_finally(%arg0: i1, %arg1: i32, %arg2: i64) -> (i32, i64) {
 
 // CHECK-LABEL: lit.func @try_finally_return
 lit.func @try_finally_return(%arg0: index, %arg1: index, %arg2: i1) -> index {
-  // CHECK-NEXT: hlcf.loop
-  hlcf.loop {
+  %true = index.bool.constant true
+
+  // CHECK: hlcf.loop {
+  // CHECK-NEXT: hlcf.if %true {
+  // CHECK-NEXT:         hlcf.yield
+  // CHECK-NEXT:       } else {
+  // CHECK-NEXT:         kgen.unreachable
+  // CHECK-NEXT:       }
+
+  lit.loop cond {
+    lit.loop.condition %true: i1
+  } body {
     // CHECK-NEXT: lit.try
     lit.try {
       // CHECK-NEXT: hlcf.if %arg2
@@ -585,8 +627,12 @@ lit.func @try_finally_return(%arg0: index, %arg1: index, %arg2: i1) -> index {
     } finally {
       kgen.return %arg1 : index
     }
-    hlcf.break
+    lit.break // expected-warning {{unreachable code after try statement that doesn't fall through}}
+    lit.loop.continue
+  } else {
+    lit.loop.yield
   }
+
   kgen.return %arg1 : index
 }
 
@@ -635,12 +681,9 @@ lit.func @throwing_func<T: type>() throws -> !pop.variant<@Error, T> {
 
 // CHECK-LABEL: lit.func @try_in_loop
 lit.func @try_in_loop(%arg0: i1) {
-  hlcf.loop {
-    hlcf.if %arg0 {
-      hlcf.yield
-    } else {
-      hlcf.break
-    }
+  lit.loop cond {
+    lit.loop.condition %arg0: i1
+  } body {
     lit.try {
       lit.try.yield
     // CHECK: except
@@ -653,7 +696,9 @@ lit.func @try_in_loop(%arg0: i1) {
       lit.try.yield
     } {"suppressWarnings" = true}
     // CHECK: hlcf.continue
-    hlcf.continue
+    lit.loop.continue
+  } else {
+    lit.loop.yield
   }
   // CHECK: after.loop
   "after.loop"() : () -> ()
