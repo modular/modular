@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 from algorithm.sort import _small_sort, partition, sort, _quicksort
-
+from random import random_si64, seed
 from utils.vector import DynamicVector
 
 
@@ -464,6 +464,58 @@ fn test_partition_top_k(length: Int, k: Int):
     vector._del_old()
 
 
+# CHECK-LABEL: test_sort_stress
+fn test_sort_stress():
+    print("== test_sort_stress")
+    let lens = VariadicList[Int](3, 100, 117, 223, 500, 1000, 1500, 2000, 3000)
+    let random_seed = 0
+    seed(random_seed)
+
+    @parameter
+    fn test[
+        cmp_fn: fn[type: AnyType] (type, type) capturing -> Bool,
+        check_fn: fn[type: AnyType] (type, type) capturing -> Bool,
+    ](length: Int):
+        var vector = DynamicVector[Int](length)
+        for i in range(length):
+            vector.push_back(random_si64(-length, length).to_int())
+
+        _quicksort[Int, cmp_fn](vector.data, len(vector))
+
+        # CHECK-NOT: error
+        for i in range(length - 1):
+            if not check_fn[Int](vector[i], vector[i + 1]):
+                print("error: unsorted, seed is", random_seed)
+                return
+
+    @parameter
+    @always_inline
+    fn _gt[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Int](lhs) > rebind[Int](rhs)
+
+    @parameter
+    @always_inline
+    fn _geq[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Int](lhs) >= rebind[Int](rhs)
+
+    @parameter
+    @always_inline
+    fn _lt[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Int](lhs) < rebind[Int](rhs)
+
+    @parameter
+    @always_inline
+    fn _leq[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Int](lhs) <= rebind[Int](rhs)
+
+    for i in range(len(lens)):
+        let length = lens[i]
+        test[_gt, _geq](length)
+        test[_geq, _geq](length)
+        test[_lt, _leq](length)
+        test[_leq, _leq](length)
+
+
 fn main():
     test_sort_small_3()
     test_sort_small_5()
@@ -478,6 +530,8 @@ fn main():
     test_sort103()
     test_sort_any_103()
     test_quick_sort_repeated_val()
+
+    test_sort_stress()
 
     # CHECK-LABEL: test_partition_top_k_7_5
     # CHECK-NOT: incorrect top-k
