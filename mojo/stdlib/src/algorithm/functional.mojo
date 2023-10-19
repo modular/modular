@@ -1345,6 +1345,7 @@ fn stencil[
         StaticIntTuple[stencil_rank],
         StaticIntTuple[stencil_rank],
     ),
+    map_strides: StaticIntTuple[stencil_rank],
     load_fn: fn[simd_width: Int, type: DType] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -1371,6 +1372,7 @@ fn stencil[
         simd_width: The SIMD vector width to use.
         type: The input and output data type.
         map_fn: A function that a point in the output domain to the input co-domain.
+        map_strides: A list of integers for the strides in each point in the co-domain.
         load_fn: A function that loads a vector of simd_width from input.
         compute_init_fn: A function that initialzies vector compute over the stencil.
         compute_fn: A function the process the value computed for each point in the stencil.
@@ -1421,9 +1423,11 @@ fn stencil[
                 let bounds = map_fn(stencil_indices)
                 let lower_boudnd = bounds.get[0, StaticIntTuple[stencil_rank]]()
                 let upper_boudnd = bounds.get[1, StaticIntTuple[stencil_rank]]()
+                let step_i = map_strides[0]
+                let step_j = map_strides[1]
                 var result = compute_init_fn[simd_width]()
-                for i in range(lower_boudnd[0], upper_boudnd[0]):
-                    for j in range(lower_boudnd[1], upper_boudnd[1]):
+                for i in range(lower_boudnd[0], upper_boudnd[0], step_i):
+                    for j in range(lower_boudnd[1], upper_boudnd[1], step_j):
                         let point_idx = StaticIntTuple[rank](
                             indices[0], i, j, indices[3]
                         )

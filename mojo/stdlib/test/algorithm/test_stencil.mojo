@@ -6,6 +6,8 @@
 # Issue #23536
 # RUN: %mojo %s | FileCheck %s
 import math
+from math.limit import neginf
+
 
 from algorithm.functional import stencil
 from memory.buffer import NDBuffer
@@ -127,6 +129,7 @@ fn test_stencil_avg_pool():
             simd_with,
             dtype,
             map_fn[stencil_rank],
+            StaticIntTuple[stencil_rank](1, 1),
             load_fn,
             avg_pool_compute_init,
             avg_pool_compute,
@@ -242,6 +245,7 @@ fn test_stencil_avg_pool_padded():
             simd_with,
             dtype,
             map_fn[stencil_rank],
+            StaticIntTuple[stencil_rank](1, 1),
             load_fn,
             avg_pool_compute_init,
             avg_pool_compute,
@@ -260,6 +264,240 @@ fn test_stencil_avg_pool_padded():
         print("")
 
 
+# CHECK-LABEL: test_stencil_avg_pool_stride_2
+fn test_stencil_avg_pool_stride_2():
+    print("== test_stencil_avg_pool_stride_2")
+    alias rank = 4
+    alias stencil_rank = 2
+    alias dtype = DType.float32
+    alias simd_with = 1
+
+    alias input_width = 7
+    alias input_height = 7
+
+    alias stride = 2
+    alias pool_window_h = 3
+    alias pool_window_w = 3
+    alias dilation = 1
+
+    alias input_shape = DimList(1, input_height, input_width, 1)
+
+    alias output_heigh = (input_height - pool_window_h) // stride + 1
+    alias output_width = (input_width - pool_window_w) // stride + 1
+
+    alias output_shape = DimList(1, output_heigh, output_width, 1)
+
+    let pad_value = 0
+
+    let input = NDBuffer[rank, input_shape, dtype].stack_allocation()
+    let output = NDBuffer[rank, output_shape, dtype].stack_allocation()
+
+    fill_buffer(input)
+    output.fill(0)
+
+    @parameter
+    fn map_fn[
+        rank: Int
+    ](point: StaticIntTuple[stencil_rank]) -> (
+        StaticIntTuple[stencil_rank],
+        StaticIntTuple[stencil_rank],
+    ):
+        let lower_bound = StaticIntTuple[stencil_rank](
+            point[0] * stride, point[1] * stride
+        )
+        let upper_bound = StaticIntTuple[stencil_rank](
+            (point[0] * stride + pool_window_h),
+            (point[1] * stride + pool_window_w),
+        )
+        return lower_bound, upper_bound
+
+    @always_inline
+    @parameter
+    fn load_fn[
+        simd_width: Int, dtype: DType
+    ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
+        if (
+            point[1] < 0
+            or point[1] >= input_height
+            or point[2] < 0
+            or point[2] >= input_width
+        ):
+            return pad_value
+        return rebind[SIMD[dtype, simd_width]](
+            input.simd_load[simd_width](point)
+        )
+
+    @always_inline
+    @parameter
+    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+        return SIMD[dtype, simd_width](0)
+
+    @always_inline
+    @parameter
+    fn avg_pool_compute[
+        simd_width: Int
+    ](
+        point: StaticIntTuple[rank],
+        val: SIMD[dtype, simd_width],
+        result: SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width]:
+        return val + result
+
+    @always_inline
+    @parameter
+    fn avg_pool_compute_finalize[
+        simd_width: Int
+    ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
+        let res = val / (pool_window_h * pool_window_w)
+        output.simd_store(point, res)
+
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+        stencil[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_with,
+            dtype,
+            map_fn[stencil_rank],
+            StaticIntTuple[stencil_rank](1, 1),
+            load_fn,
+            avg_pool_compute_init,
+            avg_pool_compute,
+            avg_pool_compute_finalize,
+        ](output.get_shape(), out_chain.borrow())
+        let ptr = out_chain.borrow()
+        out_chain.wait()
+    # CHECK: 9.0     11.0    13.0
+    # CHECK: 23.0    25.0    27.0
+    # CHECK: 37.0    39.0    41.0
+    for i in range(0, output_heigh):
+        for j in range(0, output_width):
+            print_no_newline(output[0, i, j, 0], "\t")
+        print("")
+
+
+# CHECK-LABEL: test_stencil_max_pool_dilation_2
+fn test_stencil_max_pool_dilation_2():
+    print("== test_stencil_max_pool_dilation_2")
+    alias rank = 4
+    alias stencil_rank = 2
+    alias dtype = DType.float32
+    alias simd_with = 1
+
+    alias input_width = 7
+    alias input_height = 7
+
+    alias stride = 1
+    alias pool_window_h = 3
+    alias pool_window_w = 3
+    alias dilation = 2
+
+    alias input_shape = DimList(1, input_height, input_width, 1)
+
+    alias output_heigh = (
+        input_height - pool_window_h - (pool_window_h - 1) * (dilation - 1)
+    ) // stride + 1
+    alias output_width = (
+        input_width - pool_window_w - (pool_window_w - 1) * (dilation - 1)
+    ) // stride + 1
+
+    alias output_shape = DimList(1, output_heigh, output_width, 1)
+
+    let pad_value = 0
+
+    let input = NDBuffer[rank, input_shape, dtype].stack_allocation()
+    let output = NDBuffer[rank, output_shape, dtype].stack_allocation()
+
+    fill_buffer(input)
+    output.fill(0)
+
+    @parameter
+    fn map_fn[
+        rank: Int
+    ](point: StaticIntTuple[stencil_rank]) -> (
+        StaticIntTuple[stencil_rank],
+        StaticIntTuple[stencil_rank],
+    ):
+        let lower_bound = StaticIntTuple[stencil_rank](
+            point[0] * stride, point[1] * stride
+        )
+        let upper_bound = StaticIntTuple[stencil_rank](
+            (point[0] * stride + pool_window_h * dilation),
+            (point[1] * stride + pool_window_w * dilation),
+        )
+        return lower_bound, upper_bound
+
+    @always_inline
+    @parameter
+    fn load_fn[
+        simd_width: Int, dtype: DType
+    ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
+        if (
+            point[1] < 0
+            or point[1] >= input_height
+            or point[2] < 0
+            or point[2] >= input_width
+        ):
+            return pad_value
+        return rebind[SIMD[dtype, simd_width]](
+            input.simd_load[simd_width](point)
+        )
+
+    @always_inline
+    @parameter
+    fn max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+        return neginf[dtype]()
+
+    @always_inline
+    @parameter
+    fn max_pool_compute[
+        simd_width: Int
+    ](
+        point: StaticIntTuple[rank],
+        val: SIMD[dtype, simd_width],
+        result: SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width]:
+        return math.max(val, result)
+
+    @always_inline
+    @parameter
+    fn max_pool_compute_finalize[
+        simd_width: Int
+    ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
+        output.simd_store(point, val)
+
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+        stencil[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_with,
+            dtype,
+            map_fn[stencil_rank],
+            StaticIntTuple[stencil_rank](dilation, dilation),
+            load_fn,
+            max_pool_compute_init,
+            max_pool_compute,
+            max_pool_compute_finalize,
+        ](output.get_shape(), out_chain.borrow())
+        let ptr = out_chain.borrow()
+        out_chain.wait()
+
+    # CHECK: 33.0    34.0    35.0
+    # CHECK: 40.0    41.0    42.0
+    # CHECK: 47.0    48.0    49.0
+    for i in range(0, output_heigh):
+        for j in range(0, output_width):
+            print_no_newline(output[0, i, j, 0], "\t")
+        print("")
+
+
 fn main():
     test_stencil_avg_pool()
     test_stencil_avg_pool_padded()
+    test_stencil_avg_pool_stride_2()
+    test_stencil_max_pool_dilation_2()
