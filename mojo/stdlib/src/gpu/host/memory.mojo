@@ -31,6 +31,21 @@ fn _malloc[type: DType](count: Int) raises -> DTypePointer[type]:
     return DTypePointer[type](res.address)
 
 
+fn _malloc_managed[type: AnyType](count: Int) raises -> Pointer[type]:
+    var ptr = Pointer[UInt32]()
+    _check_error(
+        _get_dylib_function[fn (Pointer[Pointer[UInt32]], Int) -> Result](
+            "cuMemAllocManaged"
+        )(Pointer.address_of(ptr), count * sizeof[type]())
+    )
+    return ptr.bitcast[type]()
+
+
+fn _malloc_managed[type: DType](count: Int) raises -> DTypePointer[type]:
+    let res = _malloc_managed[SIMD[type, 1]](count)
+    return DTypePointer[type](res.address)
+
+
 fn _free[type: AnyType](ptr: Pointer[type]) raises:
     _check_error(
         _get_dylib_function[fn (Pointer[UInt32]) -> Result]("cuMemFree_v2")(
