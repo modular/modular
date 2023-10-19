@@ -1716,8 +1716,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   } else if (auto lvalue = decl.getIfMLValue()) {
     value = lvalue;
   } else {
-    emitError(expr->getLoc(), "use of declaration \"")
-        << spelling << "\" as a value isn't supported yet" << expr->getRange();
+    emitError(expr->getLoc(), "use of declaration '")
+        << spelling << "' as a value isn't supported yet" << expr->getRange();
     return {};
   }
 

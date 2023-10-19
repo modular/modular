@@ -236,7 +236,7 @@ fn nonDefaultArgumentFollowsDefaultArgument(a: Int = 0, b: Int): pass
 # expected-error @+1 {{use of unknown declaration 'unknown'}}
 fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 
-# expected-error @+1 {{use of unknown declaration 'a'}}
+# expected-error @+1 {{cannot use a dynamic value in default argument}}
 fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
 # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in default argument}}
