@@ -1462,14 +1462,16 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
 }
 
 ASTType ParsedArgument::emitFunctionArgumentsAndResults(
-    function_ref<ParseResult()> reportError, SharedState &shared,
-    ExprEmitter &typeEmitter, SmallVectorImpl<StringAttr> &inputParamNames,
+    function_ref<ParseResult()> reportError, ExprEmitter &typeEmitter,
+    SmallVectorImpl<StringAttr> &inputParamNames,
     SmallVectorImpl<PassingKind> &inputParamPassingKinds,
     SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
     const ExprNode *resultTypeExpr, FnEffects &effects,
     SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
     SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
-    ASTDecl &scope, ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
+    ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
+  SharedState &shared = typeEmitter.shared;
+  ASTDecl &sigDecl = typeEmitter.declScope;
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
   if (fnDecl) {
@@ -1509,7 +1511,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       type = selfType;
     } else if (isDef) {
       // In 'def', arguments with no types default to 'object'.
-      type = shared.lookupObjectType(arg.loc, scope);
+      type = shared.lookupObjectType(arg.loc, sigDecl);
       if (!type) {
         if (reportError())
           return {};
@@ -1523,6 +1525,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         return {};
       type = shared.getTypeCheckErrorType();
     }
+    assert(type && "must have an argument type");
     argTypes.push_back(type);
 
     // Determine the required function effects from the conventions.
@@ -1543,13 +1546,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     // Emit default argument values.
     if (const ExprNode *initExpr = arg.initExpr) {
       seenInitExpr = true;
-      Type argType = type;
-      if (isDef && !argType)
-        // Within a `def` and without any type expression specified, convert the
-        // default argument to `object` type.
-        argType = shared.lookupObjectType(arg.loc, scope);
       PValue value =
-          typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, argType);
+          typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
       if (!value)
         return {};
       defaults.push_back(value);
@@ -1575,7 +1573,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
       args.insert(args.begin(), resultArg);
       argTypes.insert(argTypes.begin(),
-                      shared.lookupObjectType(resultLoc, scope));
+                      shared.lookupObjectType(resultLoc, sigDecl));
       if (!argTypes.front()) {
         if (reportError())
           return {};
@@ -2546,9 +2544,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
-      reportError, shared, typeEmitter, paramNames, paramPassingKinds,
-      inputParamDecls, resultTypeExpr, effects, args, argTypes, argDefaults,
-      funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), &decl, fnInfo);
+      reportError, typeEmitter, paramNames, paramPassingKinds, inputParamDecls,
+      resultTypeExpr, effects, args, argTypes, argDefaults, funcOp.getIsDef(),
+      resultLoc, &decl, fnInfo);
   if (!resultType)
     return failure();
 
