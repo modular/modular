@@ -8,12 +8,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TD
-#define KGEN_TD
+#ifndef KGEN_KGENDIALECT_KGEN_TD
+#define KGEN_KGENDIALECT_KGEN_TD
 
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/KGENDialect/KGENOps.td"
 
-#endif // KGEN_TD
+#endif // KGEN_KGENDIALECT_KGEN_TD

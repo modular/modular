@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef POPTYPES_TD
-#define POPTYPES_TD
+#ifndef KGEN_POPDIALECT_POPTYPES_TD
+#define KGEN_POPDIALECT_POPTYPES_TD
 
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
@@ -322,4 +322,4 @@ class CoroutineResultTypes<string name, string ref> : TypesMatchWith<
 
 def OpaqueCoroutineHandle : PointerOf<I8>;
 
-#endif // POPTYPES_TD
+#endif // KGEN_POPDIALECT_POPTYPES_TD

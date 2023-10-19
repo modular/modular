@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGENENUMS_TD
-#define KGENENUMS_TD
+#ifndef KGEN_KGENDIALECT_KGENENUMS_TD
+#define KGEN_KGENDIALECT_KGENENUMS_TD
 
 include "KGEN/KGENDialect/KGENDialect.td"
 include "mlir/IR/EnumAttr.td"
@@ -235,4 +235,4 @@ def KGEN_IntLiteralBinopKind : I32EnumAttr<"IntLiteralBinopKind",
 
 def KGEN_IntLiteralBinopKindAttr : EnumAttr<KGENDialect, KGEN_IntLiteralBinopKind, "int_literal.binop_kind">;
 
-#endif // KGENENUMS_TD
+#endif // KGEN_KGENDIALECT_KGENENUMS_TD

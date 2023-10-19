@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef POPDIALECT_BYTECODE
-#define POPDIALECT_BYTECODE
+#ifndef KGEN_POPDIALECT_POPDIALECTBYTECODE_TD
+#define KGEN_POPDIALECT_POPDIALECTBYTECODE_TD
 
 include "Support/Compiler/Bytecode.td"
 
@@ -99,4 +99,4 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
   ];
 }
 
-#endif // POPDIALECT_BYTECODE
+#endif // KGEN_POPDIALECT_POPDIALECTBYTECODE_TD

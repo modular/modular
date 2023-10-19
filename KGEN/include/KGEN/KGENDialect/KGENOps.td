@@ -8,6 +8,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef KGEN_KGENDIALECT_KGENOPS_TD
+#define KGEN_KGENDIALECT_KGENOPS_TD
+
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENEnums.td"
@@ -1290,3 +1293,5 @@ def KGEN_IntLiteralCastOp : KGENOp<"int_literal.cast", [Pure]> {
   }];
   let hasFolder = 1;
 }
+
+#endif // KGEN_KGENDIALECT_KGENOPS_TD
