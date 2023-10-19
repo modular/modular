@@ -2377,6 +2377,73 @@ void DeclResolver::setLocationDebugScope(
       fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
   funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
 }
+// This function accepts a capture list and a signature and returns a self
+// contained signature by augmenting the original's  input parameter list for
+// each capture that appears in the original signature.
+static LITSignatureType
+createSelfContainedSignature(SharedState &shared, LITSignatureType original,
+                             CaptureTraversableMap capturedParams, SMLoc loc) {
+  mlir::AttrTypeReplacer replacer;
+  SmallDenseMap<StringAttr, ParamIndexRefAttr> newParameterReferences;
+  unsigned inputParameterIndex = original.getNumInputParams();
+  SmallVector<Type, 16> newParamInputTypes;
+  SmallVector<StringAttr, 16> newParamInputNames;
+  SmallVector<PassingKind, 16> newParamPassingKinds;
+  SmallVector<StringAttr, 16> argNames;
+  SmallVector<PassingKind, 16> argPassingKind;
+  llvm::append_range(newParamInputTypes, original.getInputParamTypes());
+  if (auto fnMetadata =
+          dyn_cast_or_null<FnMetadataAttr>(original.getMetadata())) {
+    llvm::append_range(newParamInputNames, fnMetadata.getParamNames());
+    llvm::append_range(newParamPassingKinds, fnMetadata.getParamPassingKinds());
+    llvm::append_range(argNames, fnMetadata.getArgNames());
+    llvm::append_range(argPassingKind, fnMetadata.getArgPassingKinds());
+  }
+
+  std::pair<unsigned, unsigned> lineCol =
+      shared.getSourceMgr().getLineAndColumn(loc);
+  unsigned line = lineCol.first, col = lineCol.second;
+
+  MLIRContext *ctx = shared.getContext();
+  replacer.addReplacement([&](ParamDeclRefAttr paramDeclRefAttr) -> TypedAttr {
+    llvm::MapVector<StringAttr, Type>::const_iterator existingParamIter =
+        capturedParams.find(paramDeclRefAttr.getName());
+    if (existingParamIter != capturedParams.end()) {
+      assert(existingParamIter->second == paramDeclRefAttr.getType() &&
+             "expected parameter names to be unique but encountered common "
+             "parameter names with unique types");
+      auto existing = newParameterReferences.find(paramDeclRefAttr.getName());
+      if (existing != newParameterReferences.end())
+        return existing->second;
+
+      // We have a reference to a capture with no input parameter. Create one.
+      newParamInputTypes.push_back(existingParamIter->second);
+      auto updatedRef = ParamIndexRefAttr::get(0, false, inputParameterIndex++,
+                                               existingParamIter->second);
+      newParameterReferences[existingParamIter->first] = updatedRef;
+
+      // Generate a unique parameter name.
+      newParamInputNames.push_back(StringAttr::get(
+          ctx, mangleParameter(existingParamIter->first.str(), line, col)));
+      newParamPassingKinds.push_back(PassingKind::PosOnly);
+      return updatedRef;
+    }
+    return paramDeclRefAttr;
+  });
+  LITSignatureType originalWithUpdatedParamRefs =
+      cast<SignatureType>(replacer.replace(original));
+  return SignatureType::get(
+      shared.getContext(),
+      TypeArrayAttr::get(shared.getContext(), newParamInputTypes),
+      /*resultParamTypes=*/TypeArrayAttr::get(shared.getContext(), {}),
+      FunctionType::get(shared.getContext(),
+                        originalWithUpdatedParamRefs.getValueInputs(),
+                        originalWithUpdatedParamRefs.getValueResults()),
+      originalWithUpdatedParamRefs.getInputConventions(),
+      originalWithUpdatedParamRefs.getFnEffects(),
+      FnMetadataAttr::get(shared.getContext(), argNames, argPassingKind,
+                          newParamInputNames, newParamPassingKinds, {}, {}));
+}
 
 static Value emitClosureInstance(SignatureType closureSignature,
                                  SharedState &shared,
@@ -2391,25 +2458,34 @@ static Value emitClosureInstance(SignatureType closureSignature,
       parentFunction.getLoc(), parentFunction.getBody());
   builder.setInsertionPointAfter(nestedFunction);
   auto insertPoint = builder.saveInsertionPoint();
-
   ASTDecl *moduleDecl = nestedFunctionDecl.getNearestDeclOfType<FileModuleOp>();
-  // Create ClosureWrapper first. Nested function cannot be referenced after the
-  // Closure Impl replaces it.
+  LITSignatureType nestedFunctionSignature = nestedFunction.getSignature();
+  // In order to emit an instance, we need the captures and in order to compute
+  // the captures we need to resolve the body.
+  if (failed(shared.declResolver->resolveFully(nestedFunctionDecl, location)))
+    return {};
+  CaptureTraversableMap capturedParams =
+      shared.getParameterCaptureRangeInScope(nestedFunctionDecl);
+
+  // Recreate the nested function signature so there are no references to the
+  // parent captures. This may require adding unbound parameters to the
+  // signature.
+  LITSignatureType closureWrapperSignature =
+      createSelfContainedSignature(shared, nestedFunctionSignature,
+                                   capturedParams, nestedFunctionDecl.getLoc());
   StructDeclOp closureWrapper = shared.getOrGenerateClosureWrapperStruct(
-      location, nestedFunction.getSignature(), moduleDecl);
+      location, closureWrapperSignature, moduleDecl);
+  if (!closureWrapper)
+    return {};
+
+  // Create an instance of the closure implementation in the parent function
+  // right after the nested function definition.
   StructDeclOp closureImpl =
       shared.replaceNestedFunctionWithGeneratedClosureImplStruct(
           location, nestedFunctionDecl, moduleDecl);
   ClosureEmitter emitter(*moduleDecl, shared);
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, location);
 
-  // Create an instance of the closure implementation in the parent function
-  // right after the nested function definition. In order to emit an instance,
-  // we need the captures and in order to compute the captures we need to
-  // resolve the body.
-  if (failed(shared.declResolver->resolveFully(nestedFunctionDecl, location)))
-    return {};
-  auto captureIteratorRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = parentFunction.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -2419,12 +2495,34 @@ static Value emitClosureInstance(SignatureType closureSignature,
   SyntheticNode node(location);
 
   // Create a copy of the captured value.
+  auto captureIteratorRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
   SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
   for (auto &[_, capture] : captureIteratorRange)
     closureImplInitArgs.push_back({capture.getValue(), &node});
 
   ValueDest closureDest;
+
+  // Create Closure Impl type by adding captured parameters to the ClosureImpl
+  // DeclType.
   Type closureImplType = ASTDecl::computeSelfTypeForStruct(closureImpl);
+  if (DeclRefType declRef = dyn_cast<DeclRefType>(closureImplType)) {
+    ASTDecl &typeDecl =
+        shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
+    SmallVector<ParamBindAttr> bindingValues;
+    unsigned capturedInputParamIndex =
+        closureWrapperSignature.getNumInputParams();
+    for (auto capturedParam : capturedParams) {
+      auto newParam = closureImpl.getInputParams()[capturedInputParamIndex++];
+      TypedAttr typedAttr =
+          ParamDeclRefAttr::get(capturedParam.first, capturedParam.second);
+      bindingValues.push_back(
+          ParamBindAttr::get(newParam.getName(), typedAttr));
+    }
+    closureImplType = DeclRefType::get(
+        typeDecl.getSymbolRef(),
+        ParamBindArrayAttr::get(shared.getContext(), bindingValues));
+  }
+
   CValue value = exprEmitter.emitConstructorCall(
       ASTType(closureImplType), closureImplInitArgs, &node,
       CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
@@ -2435,7 +2533,8 @@ static Value emitClosureInstance(SignatureType closureSignature,
   Type closureWrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
   CValue closureWrapperInstance = exprEmitter.emitConstructorCall(
       ASTType(closureWrapperType), closureWrapperInitArgs, &node,
-      CallSyntax::kTypeCall, closureWrapperDest);
+      CallSyntax::kTypeCall, closureWrapperDest,
+      /*allowImplicitConversion=*/false);
   return closureWrapperInstance.getIfMRValue();
 }
 
@@ -2713,7 +2812,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
             funcOp.getLoc(),
             "nonparametric capturing closure cannot be marked @adaptive");
       }
-      if (!inputParamDecls.empty() || !resultParamDecls.empty()) {
+      if (!signature.isEscaping() &&
+          (!inputParamDecls.empty() || !resultParamDecls.empty())) {
         return emitError(funcOp.getLoc(),
                          "nonparametric capturing closure cannot have input or "
                          "result parameters");
@@ -2726,13 +2826,21 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         return failure();
       // Emit Closure structures necessary for instantiating an escaping
       // closure.
-      if (signature.isEscaping())
-        decl.irValue = MBValue(
-            emitClosureInstance(signature, shared, decl, decl.getLoc()));
-      else
+      if (signature.isEscaping()) {
+        if (!inputParamDecls.empty() || !resultParamDecls.empty())
+          return emitError(
+              funcOp.getLoc(),
+              "escaping closures cannot have input or result parameters yet");
+        if (auto closure =
+                emitClosureInstance(signature, shared, decl, decl.getLoc()))
+          decl.irValue = MBValue(closure);
+        else
+          return failure();
+      } else {
         decl.irValue = SBValue(b.create<CreateClosureOp>(
             parent.getLoc(), signature,
             ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
+      }
     }
   }
 

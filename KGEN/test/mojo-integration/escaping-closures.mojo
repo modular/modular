@@ -24,6 +24,22 @@ fn makes_escaping_closure(
     return myclosure
 
 
+@value
+@register_passable
+struct Foo[a: Int]:
+    var b: Int
+
+    fn get(self) -> Int:
+        return a + self.b
+
+
+fn legal_type_ref[a: Int](c: Int) -> fn (x: Int, y: Int) escaping -> Int:
+    fn p_capture(x: Int, y: Int) escaping -> Int:
+        return Foo[a](x + c + y).get()
+
+    return p_capture
+
+
 fn makes_escaping_closure_position_only(
     m: MemType,
 ) -> fn (n: MemType, /) escaping -> MemType:
@@ -38,6 +54,10 @@ fn main():
     let c = makes_escaping_closure(x.value)
     # CHECK: 4
     print(c(x.value))
+
     let result: MemType = makes_escaping_closure_position_only(MemType(43))(42)
     # CHECK: 85
     print(result.member)
+
+    # CHECK: 53
+    print(legal_type_ref[45](1)(3, 4))
