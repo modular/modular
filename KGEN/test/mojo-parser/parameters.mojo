@@ -632,15 +632,10 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 
 # CHECK-LABEL: lit.struct.decl @Abstraction
 # CHECK-SAMEL <[[A:.*]]: !Int>
+@value
 @register_passable
 struct Abstraction[a: Int]:
   alias val = a.value
-
-  fn __init__() -> Self:
-      return Self{}
-
-  fn __copyinit__(self) -> Self:
-      return self
 
   @staticmethod
   fn push[b: Int]() -> Abstraction[a + b]:
@@ -720,6 +715,17 @@ fn infer_with_default_arg[T: AnyType](a: T, b: Int = 7):
 fn test_infer_with_default_arg():
     # kgen.call @{{.*}}::@"infer_with_default_arg[AnyType]($0,{{.*}}::Int)"<:type !Int>
     infer_with_default_arg(128)
+
+fn fn_with_param[x: Int](y: Abstraction[x]):
+    pass
+
+# CHECK-LABEL: lit.func @"indirect_call_infer_params
+fn indirect_call_infer_params():
+    alias callee = fn_with_param
+    # CHECK: call_param[!lit.signature<("y": {{.*}}Abstraction<{{.*}}a: !Int = #lit.struct<{value = 2}>>
+    # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction<{{.*}}a: !Int = *(0,0)>
+    # CHECK-SAME: callee, #lit.struct<{value = 2}>
+    callee(Abstraction[2]())
 
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
