@@ -40,6 +40,7 @@ print(gray_scale_image.shape().__str__())
 from builtin.io import _Printable
 from memory import memset_zero
 from memory.buffer import NDBuffer
+from memory.unsafe import bitcast
 
 from utils._serialize import _serialize
 
@@ -583,3 +584,23 @@ struct Tensor[dtype: DType]:
             path: Path to the output file.
         """
         self._to_buffer().tofile(path)
+
+    @staticmethod
+    fn fromfile(path: Path) raises -> Self:
+        """Read tensor from a file.
+
+        Args:
+          path: Path to the output file.
+
+        Returns:
+          The tensor read from file.
+        """
+        var tensor = Tensor[dtype]()
+        with open(path, "r") as f:
+            var str = f.read()
+            let byte_count = str.__len__()
+            tensor = Tensor(
+                bitcast[dtype](str._steal_ptr()),
+                byte_count // sizeof[dtype](),
+            )
+        return tensor
