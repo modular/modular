@@ -392,8 +392,8 @@ struct ParsedArgument {
       const ExprNode *resultTypeExpr, FnEffects &effects,
       SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
       SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
-      ASTDecl &Scope, SpecialFunctionInfo fnInfo = SpecialFunctionInfo(),
-      StringRef funcName = "");
+      ASTDecl &scope, ASTDecl *fnDecl = nullptr,
+      SpecialFunctionInfo fnInfo = SpecialFunctionInfo());
 
   /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
   static PassingKind mapToPassingKind(KWArgHandling handling);
