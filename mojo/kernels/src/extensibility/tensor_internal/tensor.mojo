@@ -574,3 +574,12 @@ struct Tensor[dtype: DType]:
     @always_inline
     fn _to_buffer(self) -> Buffer[Dim(), dtype]:
         return Buffer[Dim(), dtype](self._ptr, self.num_elements())
+
+    @always_inline
+    fn tofile(self, path: Path) raises:
+        """Write values to a file.
+
+        Args:
+            path: Path to the output file.
+        """
+        self._to_buffer().tofile(path)
