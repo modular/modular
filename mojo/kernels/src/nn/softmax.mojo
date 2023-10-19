@@ -301,7 +301,6 @@ fn _softmax_3_pass_base[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        input: The input buffer used to compute the softmax.
         out_chain: The output-chain pointer.
     """
     # STEP 1 - Calculate max
@@ -403,7 +402,6 @@ fn softmax_3_pass[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        input: The input buffer used to compute the softmax.
         out_chain: The output-chain pointer.
     """
     _softmax_3_pass_base[
@@ -460,7 +458,6 @@ fn logsoftmax[
 
     Args:
         output: The output buffer in which to store the softmax values.
-        input: The input buffer used to compute the softmax.
         out_chain: The output-chain pointer.
     """
     _softmax_3_pass_base[

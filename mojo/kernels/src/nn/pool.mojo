@@ -198,7 +198,6 @@ struct Pool2d[
               with assumed tuple def (stride_h, stride_w).
             dilation: Dilations on height and width dimensions
               with assumed tuple def (dilation_h, dilation_w).
-            num_tasks: Number of tasks to run in parallel.
 
         Returns:
             An instance of the pooling operator with the input and output buffers
@@ -232,6 +231,7 @@ struct Pool2d[
         Args:
             idx: Flat index specifying which value of the output tensor to
               produce.
+            vec_size: The vector size.
         """
 
         let n_idx = idx[0]
