@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import sys
 from pathlib import Path
 
 from lit.llvm import llvm_config
@@ -12,7 +13,7 @@ from lit.llvm import llvm_config
 config.name = "API Integration Tests"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".api"]
+config.suffixes = [".api", ".mojo"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
@@ -32,7 +33,7 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["modular-api-executor"]
+tools = ["modular-api-executor", "mojo"]
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
 multi_tenancy_api_models_dir = (
@@ -81,3 +82,28 @@ generated_models_path = (
 if generated_models_path.exists():
     config.substitutions.append("%test_models_dir", str(generated_models_path))
     config.available_features.add("GENERATED_TESTS")
+
+
+framework_lib_cfg = Path(config.test_exec_root) / "framework-lib-path.cfg"
+modular_framework_lib_path = framework_lib_cfg.read_text().strip()
+config.environment["MODULAR_AI_ENGINE_LIB_PATH"] = modular_framework_lib_path
+
+engine_pkg_dir = (
+    Path(config.modular_src_root) / "GenericML" / "lib" / "API" / "mojo"
+)
+
+config.substitutions.append(("%engine_pkg_dir", engine_pkg_dir))
+
+test_utils_dir = Path(config.modular_src_root) / "Kernels" / "test"
+config.substitutions.append(("%test_utils_pkg_dir", test_utils_dir))
+
+
+llvm_config.add_tool_substitutions(tools, tool_dirs)
+
+config.available_features.add(config.llvm_use_sanitizer.lower())
+
+
+if "numpy" in sys.modules:
+    config.available_features.add("numpy")
+
+config.excludes.update(["test_user_op"])
