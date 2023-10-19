@@ -862,16 +862,16 @@ fn usePacks(x: Float32, y: Int):
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} []>(%[[PACK3]])
     pack()
 
-    # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
+    # CHECK: %[[PACK4:.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK4]])
     pack(Int(1).value, x, y)
     # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
-    # CHECK: %[[PACK5:.*]] = pop.pack.create(%[[INTCTOR]], %x, %y)
+    # CHECK: %[[PACK5:.*]] = kgen.pack.create(%[[INTCTOR]], %x, %y)
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK5]])
     pack[Int, Float32, Int](Int(1).value, x, y)
 
     # CHECK: kgen.param.constant = <1>
-    # CHECK-NEXT: [[PACK6:%.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
+    # CHECK-NEXT: [[PACK6:%.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
     # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed(Int(1).value, x, y)
 

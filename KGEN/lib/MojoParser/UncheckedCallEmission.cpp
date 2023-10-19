@@ -262,8 +262,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     argVal =
         emitter.builder->create<POP::VariadicCreateOp>(loc, expectedType, args);
   else
-    argVal =
-        emitter.builder->create<POP::PackCreateOp>(loc, expectedType, args);
+    argVal = emitter.builder->create<PackCreateOp>(loc, expectedType, args);
   argumentValues.push_back({SRValue(argVal), remainingOperands[0].expr});
   return success();
 }

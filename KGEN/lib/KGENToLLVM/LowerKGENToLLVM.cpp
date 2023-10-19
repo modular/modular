@@ -343,6 +343,67 @@ struct ConvertKGENGlobalAddress
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENPackCreate
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENPackCreate : public ConvertPOPToLLVMPattern<PackCreateOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PackCreateOp op, PackCreateOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type packType = convertType(op.getType());
+    if (!packType) {
+      return rewriter.notifyMatchFailure(op.getLoc(),
+                                         "failed to convert pack type");
+    }
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    Value container = materializeLLVMStruct(b, packType, adaptor.getOperands());
+    rewriter.replaceOp(op, container);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENPackGet
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENPackGet : public ConvertPOPToLLVMPattern<PackGetOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PackGetOp op, PackGetOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Otherwise, extract the value at the specified index from the pack's
+    // underlying storage.
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+        op, adaptor.getPack(), cast<IntegerAttr>(op.getIndex()).getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENPackSize
+//===----------------------------------------------------------------------===//
+
+/// Converts a `kgen.pack.size` into an LLVM constant representing the number of
+/// elements in the pack's underlying struct.
+struct ConvertKGENPackSize : public ConvertPOPToLLVMPattern<PackSizeOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PackSizeOp op, PackSizeOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Return the number of elements in the pack's underlying storage.
+    auto type = cast<LLVM::LLVMStructType>(adaptor.getOperand().getType());
+    rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
+        op, rewriter.getIntegerAttr(getTypeConverter()->getIndexType(),
+                                    type.getBody().size()));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
@@ -359,6 +420,9 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertKGENCall,
       ConvertKGENGlobalAddress,
+      ConvertKGENPackCreate,
+      ConvertKGENPackGet,
+      ConvertKGENPackSize,
       ConvertKGENRebind,
       ConvertKGENReturn,
       ConvertKGENUnreachable,
