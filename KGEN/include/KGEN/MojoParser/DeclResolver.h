@@ -385,14 +385,14 @@ struct ParsedArgument {
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.
   static ASTType emitFunctionArgumentsAndResults(
-      function_ref<ParseResult()> reportError, SharedState &shared,
-      ExprEmitter &typeEmitter, SmallVectorImpl<StringAttr> &inputParamNames,
+      function_ref<ParseResult()> reportError, ExprEmitter &typeEmitter,
+      SmallVectorImpl<StringAttr> &inputParamNames,
       SmallVectorImpl<PassingKind> &inputParamPassingKinds,
       SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
       const ExprNode *resultTypeExpr, FnEffects &effects,
       SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
       SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
-      ASTDecl &scope, ASTDecl *fnDecl = nullptr,
+      ASTDecl *fnDecl = nullptr,
       SpecialFunctionInfo fnInfo = SpecialFunctionInfo());
 
   /// Map KWArgHandling to the PassingKind enum of the LIT dialect.
