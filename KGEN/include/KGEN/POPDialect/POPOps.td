@@ -8,6 +8,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef KGEN_POPDIALECT_POPOPS_TD
+#define KGEN_POPDIALECT_POPOPS_TD
+
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/POPDialect/POPAttrs.td"
@@ -2484,3 +2487,5 @@ def POP_DTypeFromUI8 : POPOp<"dtype.from_ui8", [Pure]> {
 
   let hasFolder = 1;
 }
+
+#endif // KGEN_POPDIALECT_POPOPS_TD

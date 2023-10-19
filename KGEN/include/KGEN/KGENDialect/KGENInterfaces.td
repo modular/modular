@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_KGENDIALECT_KGENDECLINTERFACE_TD
-#define KGEN_KGENDIALECT_KGENDECLINTERFACE_TD
+#ifndef KGEN_KGENDIALECT_KGENINTERFACES_TD
+#define KGEN_KGENDIALECT_KGENINTERFACES_TD
 
 include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
 include "mlir/IR/OpBase.td"
@@ -454,4 +454,4 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   }];
 }
 
-#endif // KGEN_KGENDIALECT_KGENDECLINTERFACE_TD
+#endif // KGEN_KGENDIALECT_KGENINTERFACES_TD
