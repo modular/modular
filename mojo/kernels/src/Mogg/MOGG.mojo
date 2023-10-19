@@ -58,6 +58,7 @@ from algorithm.functional import _elementwise_impl
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
+    mean as _mean,
 )
 from Arange import arange, arange_shape
 from ArgNonzero import arg_nonzero, arg_nonzero_shape
@@ -1021,79 +1022,17 @@ fn mean[
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
-    out_chain.trace[TraceLevel.OP]("mogg.mean")
-
-    # Only one reduce dimension supported currently, it must be deduced from
-    # the attached input lambda rather than read directly.
-    let reduce_dim = axis_buffer[0].to_int()
-
-    @always_inline
-    fn reduce_impl[
-        ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return v1 + v2
-
-    @always_inline
-    fn input_0_fn_wrapper[
-        _type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
-
-    # For floats apply the reciprocal as a multiply.
-    @parameter
-    if type.is_floating_point():
-        # Apply mean division before storing to the output lambda.
-        let reciprocal = 1.0 / input_shape[reduce_dim]
-
-        @always_inline
-        @parameter
-        fn wrapped_output_mul[
-            _type: DType, width: Int, rank: Int
-        ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-            let mean_val = value * reciprocal
-            output_0_fn[width, rank](
-                indices, rebind[SIMD[type, width]](mean_val)
-            )
-
-        _reduce_generator[
-            type,
-            rank,
-            simdwidthof[type](),
-            single_thread_blocking_override,
-            input_0_fn_wrapper,
-            wrapped_output_mul,
-            reduce_impl,
-        ](input_shape, 0, reduce_dim, out_chain)
-
-    else:
-        # For ints just a normal divide.
-        let dim_size = input_shape[reduce_dim]
-
-        @always_inline
-        @parameter
-        fn wrapped_output_div[
-            _type: DType, width: Int, rank: Int
-        ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-            let mean_val = value / dim_size
-            output_0_fn[width, rank](
-                indices, rebind[SIMD[type, width]](mean_val)
-            )
-
-        _reduce_generator[
-            type,
-            rank,
-            simdwidthof[type](),
-            single_thread_blocking_override,
-            input_0_fn_wrapper,
-            wrapped_output_div,
-            reduce_impl,
-        ](input_shape, 0, reduce_dim, out_chain)
+    _mean[type, rank, single_thread_blocking_override, input_0_fn, output_0_fn](
+        input_shape, axis_buffer[0].to_int(), output_shape, out_chain
+    )
 
 
 # ===----------------------------------------------------------------------===#
