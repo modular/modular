@@ -150,9 +150,7 @@ fn gather_reduce[
                 for j in range(indices.dim[1]()):
                     """Computes output[i,k] = reduction over j of (input[indices[i,j],k])
                     for j in range [0,indices.dim[1])"""
-                    let idx = normalize_index(
-                        indices[i, j], input.get_shape()[0]
-                    )
+                    let idx = indices[i, j].value
 
                     # min so that we don't read beyond end of indices
                     @parameter
