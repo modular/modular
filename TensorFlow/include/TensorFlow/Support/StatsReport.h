@@ -7,9 +7,13 @@
 #ifndef TENSORFLOW_SUPPORT_STATSREPORT_H
 #define TENSORFLOW_SUPPORT_STATSREPORT_H
 
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "mlir/IR/Operation.h"
+#include "llvm/ADT/StringMap.h"
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -23,22 +27,31 @@ namespace M::TF {
 /// configurable report file.
 struct StatsReport {
   explicit StatsReport(llvm::StringRef name)
-      : name(name), numTotalOps(0), numFallbackOps(0) {}
+      : name(name), numTotalOps(0), numFallbackOps(0) {
+    runtime = std::make_unique<LLCL::Runtime>(
+        LLCL::createMallocAllocator(), LLCL::createThreadPoolWorkQueue());
+    runtime->emplaceContext<Telemetry::TelemetryContext>();
+  }
 
   StatsReport() : StatsReport("") {}
 
   /// Record one instance of an input op.
-  void countOp();
+  void countOp(mlir::Operation &op);
   /// Record one instance of an op that was sent to fallback.
   void countFallback(mlir::Operation &op);
   /// Write the statistics to file.
   void writeToFile();
 
+  // Emits telemetry info on the ops collected
+  void emitTelemetry();
+
 private:
   std::string name;
   size_t numTotalOps;
   size_t numFallbackOps;
-  std::unordered_map<std::string, int> fallbackHistogram;
+  std::unique_ptr<LLCL::Runtime> runtime;
+  llvm::StringMap<size_t> fallbackHistogram;
+  llvm::StringMap<size_t> opHistogram{};
 };
 
 } // namespace M::TF
