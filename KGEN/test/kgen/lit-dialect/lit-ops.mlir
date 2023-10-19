@@ -151,9 +151,11 @@ lit.func @try_op(%err: !kgen.declref<@Error>, %int: !kgen.declref<@Int>) -> !kge
 
 // CHECK-LABEL: @try_in_loop
 lit.func @try_in_loop(%cond: i1) {
-  // CHECK-NEXT: hlcf.loop
-  hlcf.loop {
-    // CHECK-NEXT: lit.try
+  // CHECK-NEXT: lit.loop
+  lit.loop cond {
+    lit.loop.condition %cond : i1
+  } body {
+    // CHECK: lit.try
     lit.try {
       // CHECK-NEXT: hlcf.if
       hlcf.if %cond {
@@ -179,8 +181,10 @@ lit.func @try_in_loop(%cond: i1) {
       // CHECK-NEXT: lit.try.yield
       lit.try.yield
     }
-    // CHECK: hlcf.continue
-    hlcf.continue
+    // CHECK: lit.loop.continue
+    lit.loop.continue
+  } else {
+    lit.loop.yield
   }
   // CHECK: kgen.return
   kgen.return
@@ -213,8 +217,10 @@ lit.struct.decl @Error {}
 
 // CHECK-LABEL: @lexical_terminators
 lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> !pop.variant<i32, i64> {
-  // CHECK: hlcf.loop
-  hlcf.loop {
+  // CHECK: lit.loop
+  lit.loop cond {
+    lit.loop.condition %cond : i1
+  } body {
     // CHECK: hlcf.if
     hlcf.if %cond {
       // CHECK-NEXT: lit.break
@@ -226,8 +232,11 @@ lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> 
       lit.continue
       hlcf.yield
     }
-    hlcf.continue
+    lit.loop.continue
+  } else {
+    lit.loop.yield
   }
+
   // CHECK: lit.try
   lit.try {
     // CHECK-NEXT: lit.raise %err : <@Error>

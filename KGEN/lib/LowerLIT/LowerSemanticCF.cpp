@@ -578,22 +578,6 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       continue;
     }
 
-    // Process a loop op specially to propagate up the break flag.
-    if (auto loopOp = dyn_cast<HLCF::LoopOp>(op)) {
-      bool loopBodyBreaks = false, loopBodyFallThroughs = false;
-      lowerSemanticCFForBlock(loopOp.getBody().front(), doesRaise,
-                              loopBodyBreaks, loopBodyFallThroughs, loopLevel);
-      // TODO(Issue#11251): We have incorrect modeling of else blocks.
-
-      // If the loop body never breaks, then the code after it is unreachable.
-      if (!loopBodyBreaks) {
-        auto b = handleSemanticTerminatorOp(*loopOp, "infinite loop");
-        b.create<UnreachableOp>(loopOp.getLoc());
-        return;
-      }
-      continue;
-    }
-
     // Otherwise we must have an if operation.
     assert((isa<HLCF::IfOp, ParamIfOp, LIT::HandleVariantOp>(op)) &&
            "Unknown operation with regions");
