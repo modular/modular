@@ -22,20 +22,20 @@ kgen.generator @parameterIsolatedRegions<A>() {
 // -----
 
 // CHECK-LABEL: kgen.generator @struct_of_simd
-// CHECK-SAME: -> !pop.struct<simd<size, type>>
-kgen.generator @struct_of_simd<size, type: dtype>(%arg0: !pop.simd<size, type>) -> !pop.struct<simd<size, type>> {
-  %1 = pop.struct.create(%arg0) : !pop.struct<simd<size, type>>
-  kgen.return %1 : !pop.struct<simd<size, type>>
+// CHECK-SAME: -> !kgen.struct<simd<size, type>>
+kgen.generator @struct_of_simd<size, type: dtype>(%arg0: !pop.simd<size, type>) -> !kgen.struct<simd<size, type>> {
+  %1 = pop.struct.create(%arg0) : !kgen.struct<simd<size, type>>
+  kgen.return %1 : !kgen.struct<simd<size, type>>
 }
 
 // CHECK-LABEL: kgen.generator @call_it
-kgen.generator @call_it<size, type: dtype, target: dtype>(%arg0: !pop.struct<simd<size, type>>) -> !pop.struct<simd<size, target>> {
-  %1 = pop.struct.extract %arg0[0] : !pop.struct<simd<size, type>>
+kgen.generator @call_it<size, type: dtype, target: dtype>(%arg0: !kgen.struct<simd<size, type>>) -> !kgen.struct<simd<size, target>> {
+  %1 = pop.struct.extract %arg0[0] : !kgen.struct<simd<size, type>>
   %3 = pop.cast %1 : !pop.simd<size, type> to !pop.simd<size, target>
   // CHECK: kgen.call @struct_of_simd<size, :dtype target>
-  // CHECK-SAME: (!pop.simd<size, target>) -> !pop.struct<simd<size, target>>
-  %4 = kgen.call @struct_of_simd<size, :dtype target>(%3) : (!pop.simd<size, target>) -> !pop.struct<simd<size, target>>
-  kgen.return %4 : !pop.struct<simd<size, target>>
+  // CHECK-SAME: (!pop.simd<size, target>) -> !kgen.struct<simd<size, target>>
+  %4 = kgen.call @struct_of_simd<size, :dtype target>(%3) : (!pop.simd<size, target>) -> !kgen.struct<simd<size, target>>
+  kgen.return %4 : !kgen.struct<simd<size, target>>
 }
 
 // -----

@@ -589,29 +589,29 @@ kgen.func @simd_splat() -> !pop.simd<2, si8> {
 }
 
 // CHECK-LABEL: @struct_construct
-kgen.func @struct_construct() -> !pop.struct<si4, ui4> {
+kgen.func @struct_construct() -> !kgen.struct<si4, ui4> {
   // CHECK-NEXT: constant: struct<si4, ui4> = <{ -3, 7 }>
   %0 = kgen.param.constant: si4 = <-3>
   %1 = kgen.param.constant: ui4 = <7>
-  %2 = pop.struct.create(%0, %1) : !pop.struct<si4, ui4>
-  kgen.return %2 : !pop.struct<si4, ui4>
+  %2 = pop.struct.create(%0, %1) : !kgen.struct<si4, ui4>
+  kgen.return %2 : !kgen.struct<si4, ui4>
 }
 
 // CHECK-LABEL: @struct_get
 kgen.func @struct_get() -> si4 {
   // CHECK-NEXT: constant: si4 = <-3>
   %0 = kgen.param.constant: struct<si4, ui4> = <{ -3, 7 }>
-  %1 = pop.struct.extract %0[0] : !pop.struct<si4, ui4>
+  %1 = pop.struct.extract %0[0] : !kgen.struct<si4, ui4>
   kgen.return %1 : si4
 }
 
 // CHECK-LABEL: @struct_replace
-kgen.func @struct_replace() -> !pop.struct<si4, ui4> {
+kgen.func @struct_replace() -> !kgen.struct<si4, ui4> {
   // CHECK-NEXT: constant: struct<si4, ui4> = <{ -5, 7 }>
   %0 = kgen.param.constant: si4 = <-5>
   %1 = kgen.param.constant: struct<si4, ui4> = <{ -3, 7 }>
-  %2 = pop.struct.replace %0, %1[0] : !pop.struct<si4, ui4>
-  kgen.return %2 : !pop.struct<si4, ui4>
+  %2 = pop.struct.replace %0, %1[0] : !kgen.struct<si4, ui4>
+  kgen.return %2 : !kgen.struct<si4, ui4>
 }
 
 // CHECK-LABEL: @array_create
@@ -844,42 +844,42 @@ kgen.generator @cast_from_parameter<N>() -> !pop.scalar<index> {
 }
 
 // CHECK-LABEL: @pack_create(
-kgen.func @pack_create() -> !pop.pack<[ui8, i32]> {
+kgen.func @pack_create() -> !kgen.pack<[ui8, i32]> {
   // CHECK-NEXT: kgen.param.constant{{.*}} = <<5, -55>>
   %0 = kgen.param.constant: ui8 = <5>
   %1 = kgen.param.constant: i32 = <-55>
-  %2 = pop.pack.create(%0, %1) : !pop.pack<[ui8, i32]>
-  kgen.return %2 : !pop.pack<[ui8, i32]>
+  %2 = pop.pack.create(%0, %1) : !kgen.pack<[ui8, i32]>
+  kgen.return %2 : !kgen.pack<[ui8, i32]>
 }
 
 // CHECK-LABEL: @pack_create_empty(
-kgen.func @pack_create_empty() -> !pop.pack<[]> {
+kgen.func @pack_create_empty() -> !kgen.pack<[]> {
   // CHECK-NEXT: kgen.param.constant{{.*}} = <<>>
-  %1 = pop.pack.create() : !pop.pack<[]>
-  kgen.return %1 : !pop.pack<[]>
+  %1 = pop.pack.create() : !kgen.pack<[]>
+  kgen.return %1 : !kgen.pack<[]>
 }
 
 // CHECK-LABEL: @pack_get(
 kgen.func @pack_get() -> i4 {
   // CHECK-NEXT: kgen.param.constant: i4 = <3>
-  %0 = kgen.param.constant: !pop.pack<[f32, i4]> = <<-1.2, 3>>
-  %1 = pop.pack.get %0[1] : !pop.pack<[f32, i4]>
+  %0 = kgen.param.constant: !kgen.pack<[f32, i4]> = <<-1.2, 3>>
+  %1 = pop.pack.get %0[1] : !kgen.pack<[f32, i4]>
   kgen.return %1 : i4
 }
 
 // CHECK-LABEL: @pack_create_get(
 kgen.func @pack_create_get(%arg0: f32, %arg1: si8) -> f32 {
   // CHECK-NEXT: kgen.return %arg0
-  %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<[f32, si8]>
-  %1 = pop.pack.get %0[0] : !pop.pack<[f32, si8]>
+  %0 = pop.pack.create(%arg0, %arg1) : !kgen.pack<[f32, si8]>
+  %1 = pop.pack.get %0[0] : !kgen.pack<[f32, si8]>
   kgen.return %1 : f32
 }
 
 // CHECK-LABEL: @pack_size(
 kgen.func @pack_size() -> index {
   // CHECK-NEXT: kgen.param.constant = <2>
-  %0 = kgen.param.constant: !pop.pack<[i1, i4]> = <<0, 1>>
-  %1 = pop.pack.size %0 : !pop.pack<[i1, i4]>
+  %0 = kgen.param.constant: !kgen.pack<[i1, i4]> = <<0, 1>>
+  %1 = pop.pack.size %0 : !kgen.pack<[i1, i4]>
   kgen.return %1 : index
 }
 

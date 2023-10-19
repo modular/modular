@@ -484,4 +484,119 @@ def KGEN_BuildInfoType : KGENType<"BuildInfo", "build_info"> {
   let assemblyFormat = "";
 }
 
+//===----------------------------------------------------------------------===//
+// StructType
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructType : KGENType<"Struct", "struct", [
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+  let summary = "parameterized struct type";
+  let description = [{
+    This type represents a struct. A struct contains element types arranged in
+    their order of declaration.
+
+    Example:
+
+    ```mlir
+    // A struct with primitive element types.
+    !kgen.struct<scalar<f32>, simd<4, ui64>>
+
+    // A struct with nested types.
+    !kgen.struct<
+      !kgen.pointer<simd<4, si8>>,
+      !kgen.array<24, scalar<si64>>,
+      !kgen.struct<
+        !kgen.scalar<f32>,
+        !kgen.scalar<f64>
+      >
+    >
+
+    // A struct with parameterized element types.
+    !kgen.struct<type, array<size, scalar<dtype>>>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$elementTypes);
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<TypeParamValues>($elementTypes)^ `>`)?
+  }];
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilder<(ins "ArrayRef<Type>":$elementTypes)>,
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$elementTypes)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Try to narrow all the element type expressions to MLIR types.
+    LogicalResult
+    resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const;
+
+    /// Get the number of struct elements.
+    unsigned getNumElements() const { return getElementTypes().size(); }
+
+    /// Get the element types as parameterized types.
+    SmallVector<Type> getParameterizedElementTypes() const;
+
+    /// Get a concrete element type.
+    Type getConcreteElementType(unsigned i) const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// PackType
+//===----------------------------------------------------------------------===//
+
+def KGEN_PackType : KGENType<"Pack", "pack", [
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+  let summary = "parameterized pack type";
+  let description = [{
+    A `!kgen.pack` type represents a sequence of heterogeneously typed elements.
+    This type can be used to represent a tuple of 0 or more elements.
+
+    Example:
+
+    ```mlir
+    // A concrete pack type with no element types.
+    !kgen.pack<[]>
+
+    // A concrete pack type with two element types.
+    !kgen.pack<[i32, i64]>
+
+    kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T0: type, T1: type>(
+      // A pack type parameterized on a variadic sequence of elements.
+      %0: !kgen,pack<Ts>,
+      // A pack type parameterized on two element types.
+      %1: !kgen.pack<[T0, T1]>,
+    ) { kgen.return }
+    ```
+  }];
+
+  let parameters = (ins OptionalParameter<"TypedAttr">:$variadic);
+  let assemblyFormat = [{
+    `<` custom<ParamValue>(
+      $variadic, "VariadicType::get(MLIRTypeType::get($_ctxt))") `>`
+  }];
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic), [{
+      return get(variadic.getContext(), variadic);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Returns whether this is a concrete pack type with no elements.
+    bool isEmpty() const;
+
+    /// If the pack type is concrete, returns the attribute representing the
+    /// variadic sequence that the pack type is based upon. Otherwise, returns
+    /// a null attribute.
+    VariadicAttr getVariadicAttr() const;
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

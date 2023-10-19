@@ -265,7 +265,7 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag) {
 
 /// Pretty print a parameter value.
 static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
-  if (auto structAttr = dyn_cast<StructAttr>(param)) {
+  if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
     // If the struct has a single element, elide the braces.
     if (forDiag && structAttr.getValues().size() == 1) {
       printParam(os, std::get<1>(structAttr.getValues().front()), forDiag);
@@ -457,11 +457,11 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         os << '*';
         // This should always be a parameter reference. If not, print the value
         // directly.
-        TypedAttr types = cast<POP::PackType>(type).getVariadic();
+        TypedAttr types = cast<PackType>(type).getVariadic();
         if (auto ref = dyn_cast<ParamIndexRefAttr>(types))
           os << '$' << ref.getIndex();
         else
-          os << cast<POP::PackType>(type).getVariadic();
+          os << cast<PackType>(type).getVariadic();
         continue;
       }
       ASTType actualType = type;

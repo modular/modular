@@ -89,9 +89,9 @@ void OutlineClosuresPass::runOnOperation() {
       // Create a struct with the correct parameter decls if needed (i.e. if
       // there are any captures).
       StringAttr globalVar = nullptr;
-      POP::StructType structType = nullptr;
+      StructType structType = nullptr;
       if (!isolated) {
-        structType = b.getType<POP::StructType>(llvm::map_to_vector(
+        structType = b.getType<StructType>(llvm::map_to_vector(
             captures, [](Value capture) { return capture.getType(); }));
 
         LLVM_DEBUG(llvm::dbgs()

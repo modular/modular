@@ -28,8 +28,10 @@
 
 namespace M::KGEN {
 class DTypeType;
+class PackType;
 class PointerType;
 class StringType;
+class StructType;
 class VariadicType;
 } // namespace M::KGEN
 
@@ -43,9 +45,7 @@ class PrefetchLocalityAttr;
 
 class ArrayType;
 class CoroutineType;
-class PackType;
 class SIMDType;
-class StructType;
 class VariantType;
 } // namespace M::KGEN::POP
 

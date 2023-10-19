@@ -270,10 +270,10 @@ kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: index) -> !kgen.pointer<sc
 }
 
 // CHECK-LABEL: @pop_select
-kgen.func @pop_select(%arg0: i1, %arg1: !pop.struct<f32>, %arg2: !pop.struct<f32>) -> !pop.struct<f32> {
+kgen.func @pop_select(%arg0: i1, %arg1: !kgen.struct<f32>, %arg2: !kgen.struct<f32>) -> !kgen.struct<f32> {
   // CHECK: llvm.select %arg0, {{.*}}, {{.*}} {fastmathFlags = #llvm.fastmath<contract>} : i1, !llvm.struct<(f32)>
-  %0 = pop.select %arg0, %arg1, %arg2 : !pop.struct<f32>
-  kgen.return %0 : !pop.struct<f32>
+  %0 = pop.select %arg0, %arg1, %arg2 : !kgen.struct<f32>
+  kgen.return %0 : !kgen.struct<f32>
 }
 
 // CHECK-LABEL: @shifts
@@ -773,14 +773,14 @@ kgen.func @pack_create(%a: i32, %b: f64, %c: f32) {
   // CHECK: %[[P1:.*]] = llvm.insertvalue %[[A0]], %[[P0]][0] : !llvm.struct<(i32, f64, f32)>
   // CHECK: %[[P2:.*]] = llvm.insertvalue %[[A1]], %[[P1]][1] : !llvm.struct<(i32, f64, f32)>
   // CHECK: llvm.insertvalue %[[A2]], %[[P2]][2] : !llvm.struct<(i32, f64, f32)>
-  %0 = pop.pack.create(%a, %b, %c) : !pop.pack<[i32, f64, f32]>
+  %0 = pop.pack.create(%a, %b, %c) : !kgen.pack<[i32, f64, f32]>
   kgen.return
 }
 
 // CHECK-LABEL: @pack_get
 kgen.func @pack_get(
-  %p0: !pop.pack<[i1]>,
-  %p1: !pop.pack<[i32, f32]>
+  %p0: !kgen.pack<[i1]>,
+  %p1: !kgen.pack<[i32, f32]>
 ) -> (i1, f32) {
   // CHECK: llvm.extractvalue %0[0] : !llvm.struct<(i1)>
   %0 = pop.pack.get %p0[0] : <[i1]>

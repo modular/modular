@@ -103,10 +103,10 @@ static TypedAttr readStructExtractAttr(DialectBytecodeReader &reader) {
   if (failed(reader.readAttribute(structValue)) ||
       failed(reader.readAttribute(field)) || failed(reader.readType(type)))
     return {};
-  return StructExtractAttr::get(structValue, field, type);
+  return LIT::StructExtractAttr::get(structValue, field, type);
 }
 
-static LogicalResult writeStructExtractAttr(StructExtractAttr attr,
+static LogicalResult writeStructExtractAttr(LIT::StructExtractAttr attr,
                                             DialectBytecodeWriter &writer) {
   writer.writeAttribute(attr.getStructValue());
   writer.writeAttribute(attr.getField());
@@ -129,7 +129,7 @@ struct LITDialectBytecodeInterface : public mlir::BytecodeDialectInterface {
 
   LogicalResult writeAttribute(Attribute attr,
                                DialectBytecodeWriter &writer) const override {
-    auto structExtract = dyn_cast<StructExtractAttr>(attr);
+    auto structExtract = dyn_cast<LIT::StructExtractAttr>(attr);
     writer.writeAPIntWithKnownWidth(APInt(1, static_cast<bool>(structExtract)));
     if (structExtract)
       return writeStructExtractAttr(structExtract, writer);

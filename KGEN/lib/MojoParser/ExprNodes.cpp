@@ -2022,7 +2022,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       return {};
     }
 
-    // If all the initializers are PValues, we can emit this as a StructAttr.
+    // If all the initializers are PValues, we can emit this as a LITStructAttr.
     if (allInitializersPValues) {
       fieldParamValues.push_back(
           {field.getNameAttr(), fieldVal.ir.getIfPValue()});
@@ -2039,8 +2039,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // If all the fields are PValues, form a new PValue.
   if (allInitializersPValues) {
-    auto result = StructAttr::get(emitter.getContext(), fieldParamValues,
-                                  cast<DeclRefType>(initType.mlirType));
+    auto result = LITStructAttr::get(emitter.getContext(), fieldParamValues,
+                                     cast<DeclRefType>(initType.mlirType));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -2628,7 +2628,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         return {};
       }
       return emitter.emitResult(
-          TypeConstantAttr::get(POP::PackType::get(pValue.get())), this, dest);
+          TypeConstantAttr::get(PackType::get(pValue.get())), this, dest);
     }
   } else if (kind == kAwait) {
     // Diagnose errors with 'await'.

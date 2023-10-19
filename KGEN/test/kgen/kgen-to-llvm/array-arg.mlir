@@ -13,8 +13,8 @@ kgen.func export C @array_arg(%arr: !pop.array<4, i32>) {
 // CHECK-NEXT: %[[CAST:.*]] = builtin.unrealized_conversion_cast %[[V]]
 // CHECK-NEXT: "use"(%[[CAST]])
 
-kgen.func export C @array_in_struct(%s: !pop.struct<array<4, i32>>) {
-  "use"(%s) : (!pop.struct<array<4, i32>>) -> ()
+kgen.func export C @array_in_struct(%s: !kgen.struct<array<4, i32>>) {
+  "use"(%s) : (!kgen.struct<array<4, i32>>) -> ()
   kgen.return
 }
 

@@ -1255,22 +1255,22 @@ kgen.generator @constexprIfFunctionCallCondition() -> index {
   kgen.return %1 : index
 }
 
-kgen.generator @returnInputParam(%arg0: !pop.struct<scalar<bool>>) -> i1 {
-  %1 = pop.struct.extract %arg0[0] : !pop.struct<scalar<bool>>
+kgen.generator @returnInputParam(%arg0: !kgen.struct<scalar<bool>>) -> i1 {
+  %1 = pop.struct.extract %arg0[0] : !kgen.struct<scalar<bool>>
   %2 = pop.cast_to_builtin %1: !pop.scalar<bool> to i1
   kgen.return %2 : i1
 }
 
-kgen.generator @returnTrueStruct() -> !pop.struct<scalar<bool>> {
+kgen.generator @returnTrueStruct() -> !kgen.struct<scalar<bool>> {
   %0 = kgen.param.constant: scalar<bool> = <<true>>
-  %1 = pop.struct.create(%0) : !pop.struct<scalar<bool>>
-  kgen.return %1 : !pop.struct<scalar<bool>>
+  %1 = pop.struct.create(%0) : !kgen.struct<scalar<bool>>
+  kgen.return %1 : !kgen.struct<scalar<bool>>
 }
 
 // CHECK-LABEL: @"ifFn
-kgen.generator @ifFn<true: !pop.struct<scalar<bool>>>() -> index {
+kgen.generator @ifFn<true: !kgen.struct<scalar<bool>>>() -> index {
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %1 = kgen.param.if <apply(:(!pop.struct<scalar<bool>>) -> i1 @returnInputParam, true)> -> index {
+  %1 = kgen.param.if <apply(:(!kgen.struct<scalar<bool>>) -> i1 @returnInputParam, true)> -> index {
     %2 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
     kgen.param.yield %2 : index
@@ -1284,8 +1284,8 @@ kgen.generator @ifFn<true: !pop.struct<scalar<bool>>>() -> index {
 
 // CHECK-LABEL: @constexprIfFunctionCallCondition2
 kgen.generator @constexprIfFunctionCallCondition2() {
-  kgen.param.declare true: !pop.struct<scalar<bool>> = <apply(:() -> !pop.struct<scalar<bool>> @returnTrueStruct)>
-  %0 = kgen.call @ifFn<:!pop.struct<scalar<bool>> true>() : () -> index
+  kgen.param.declare true: !kgen.struct<scalar<bool>> = <apply(:() -> !kgen.struct<scalar<bool>> @returnTrueStruct)>
+  %0 = kgen.call @ifFn<:!kgen.struct<scalar<bool>> true>() : () -> index
   kgen.return
 }
 
@@ -1502,18 +1502,18 @@ kgen.generator @instantiate() {
 
 // -----
 
-kgen.generator @box(%a: index) -> !pop.struct<index> {
-  %0 = pop.struct.create(%a) : !pop.struct<index>
-  kgen.return %0 : !pop.struct<index>
+kgen.generator @box(%a: index) -> !kgen.struct<index> {
+  %0 = pop.struct.create(%a) : !kgen.struct<index>
+  kgen.return %0 : !kgen.struct<index>
 }
 
-kgen.generator @unbox(%a: !pop.struct<index>) -> index {
-  %0 = pop.struct.extract %a[0] : !pop.struct<index>
+kgen.generator @unbox(%a: !kgen.struct<index>) -> index {
+  %0 = pop.struct.extract %a[0] : !kgen.struct<index>
   kgen.return %0 : index
 }
 
-kgen.generator @callee<a: !pop.struct<index>>(
-    %a: !pop.array<apply(:(!pop.struct<index>) -> index @unbox, a), index>) {
+kgen.generator @callee<a: !kgen.struct<index>>(
+    %a: !pop.array<apply(:(!kgen.struct<index>) -> index @unbox, a), index>) {
   kgen.return
 }
 
@@ -1521,16 +1521,16 @@ kgen.generator @callee<a: !pop.struct<index>>(
 kgen.generator @unbox_in_result_sig() {
   // CHECK-NEXT: kgen.create_closure [(!pop.array<2, index>) -> (): @"callee,a={ 2 }"]()
   kgen.param.declare a = <2>
-  kgen.param.declare fn: <!pop.struct<index>>(
-    !pop.array<apply(:(!pop.struct<index>) -> index @unbox, *(0,0)), index>
+  kgen.param.declare fn: <!kgen.struct<index>>(
+    !pop.array<apply(:(!kgen.struct<index>) -> index @unbox, *(0,0)), index>
   ) -> () = <@callee>
   kgen.create_closure[(
-    !pop.array<apply(:(!pop.struct<index>) -> index @unbox,
-                     apply(:(index) -> !pop.struct<index> @box, a)),
+    !pop.array<apply(:(!kgen.struct<index>) -> index @unbox,
+                     apply(:(index) -> !kgen.struct<index> @box, a)),
                index>) -> ():
-    bind_signature(:<!pop.struct<index>>(
-      !pop.array<apply(:(!pop.struct<index>) -> index @unbox, *(0,0)), index>
-     ) -> () fn, apply(:(index) -> !pop.struct<index> @box, a))]()
+    bind_signature(:<!kgen.struct<index>>(
+      !pop.array<apply(:(!kgen.struct<index>) -> index @unbox, *(0,0)), index>
+     ) -> () fn, apply(:(index) -> !kgen.struct<index> @box, a))]()
   kgen.return
 }
 
@@ -1996,7 +1996,7 @@ kgen.generator @func_param<f: <index, index>() -> (index, index)>() -> index {
   kgen.return %2 : index
 }
 
-!capture = !pop.struct<string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none>
+!capture = !kgen.struct<string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none>
 
 // CHECK-LABEL: kgen.func export @main
 kgen.generator export @main() {
@@ -2017,7 +2017,7 @@ kgen.generator export @main() {
 
 // -----
 
-!capture = !pop.struct<string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none>
+!capture = !kgen.struct<string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none>
 
 kgen.generator @lambda() capturing -> index {
   %0 = pop.compiler.global_load "var" : index

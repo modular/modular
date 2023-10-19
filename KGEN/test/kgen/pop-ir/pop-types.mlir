@@ -31,33 +31,33 @@ kgen.generator @array<size, ty: type>(
 
 // CHECK-LABEL: @struct
 kgen.generator @struct<size, dtype: dtype, ty: type>(
-  // CHECK-SAME: !pop.struct<scalar<f32>, simd<4, ui64>>
-  %arg0: !pop.struct<scalar<f32>, simd<4, ui64>>,
-  // CHECK-SAME: !pop.struct<pointer<simd<4, si8>>, array<24, scalar<si64>>, struct<scalar<f32>, scalar<f64>>>
-  %arg1: !pop.struct<
+  // CHECK-SAME: !kgen.struct<scalar<f32>, simd<4, ui64>>
+  %arg0: !kgen.struct<scalar<f32>, simd<4, ui64>>,
+  // CHECK-SAME: !kgen.struct<pointer<simd<4, si8>>, array<24, scalar<si64>>, struct<scalar<f32>, scalar<f64>>>
+  %arg1: !kgen.struct<
     !kgen.pointer<simd<4, si8>>,
     !pop.array<24, scalar<si64>>,
-    !pop.struct<
+    !kgen.struct<
       !pop.scalar<f32>,
       !pop.scalar<f64>
     >
   >,
-  // CHECK: !pop.struct<ty, array<size, scalar<dtype>>>
-  %arg2: !pop.struct<ty, array<size, scalar<dtype>>>
+  // CHECK: !kgen.struct<ty, array<size, scalar<dtype>>>
+  %arg2: !kgen.struct<ty, array<size, scalar<dtype>>>
 ) {
   kgen.return
 }
 
 // CHECK-LABEL: @pack
 kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T0: type, T1: type>(
-  // CHECK-SAME: !pop.pack<Ts>
-  %arg0: !pop.pack<Ts>,
-  // CHECK-SAME: !pop.pack<[T0, T1]>
-  %arg1: !pop.pack<[T0, T1]>,
-  // CHECK-SAME: !pop.pack<[]>
-  %arg2: !pop.pack<[]>,
-  // CHECK-SAME: !pop.pack<[i32, i64]>
-  %arg3: !pop.pack<[i32, i64]>
+  // CHECK-SAME: !kgen.pack<Ts>
+  %arg0: !kgen.pack<Ts>,
+  // CHECK-SAME: !kgen.pack<[T0, T1]>
+  %arg1: !kgen.pack<[T0, T1]>,
+  // CHECK-SAME: !kgen.pack<[]>
+  %arg2: !kgen.pack<[]>,
+  // CHECK-SAME: !kgen.pack<[i32, i64]>
+  %arg3: !kgen.pack<[i32, i64]>
 ) {
   kgen.return
 }

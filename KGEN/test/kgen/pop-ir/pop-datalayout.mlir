@@ -57,15 +57,15 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   kgen.param.constant = <get_sizeof(struct<i32, i8>, #i32_align8)>
 
   // CHECK-NEXT: <0>
-  kgen.param.constant = <get_sizeof(!pop.pack<[]>, #target)>
+  kgen.param.constant = <get_sizeof(!kgen.pack<[]>, #target)>
   // CHECK-NEXT: <24>
-  kgen.param.constant = <get_sizeof(!pop.pack<[i8, i32, i64, i32]>, #target)>
+  kgen.param.constant = <get_sizeof(!kgen.pack<[i8, i32, i64, i32]>, #target)>
   // CHECK-NEXT: <1>
-  kgen.param.constant = <get_alignof(!pop.pack<[]>, #target)>
+  kgen.param.constant = <get_alignof(!kgen.pack<[]>, #target)>
   // CHECK-NEXT: <4>
-  kgen.param.constant = <get_alignof(!pop.pack<[i8, i32, i16]>, #target)>
+  kgen.param.constant = <get_alignof(!kgen.pack<[i8, i32, i16]>, #target)>
   // CHECK-NEXT: <16>
-  kgen.param.constant = <get_sizeof(!pop.pack<[i32, i8]>, #i32_align8)>
+  kgen.param.constant = <get_sizeof(!kgen.pack<[i32, i8]>, #i32_align8)>
 
   // CHECK-NEXT: <16>
   kgen.param.constant = <get_sizeof(variant<i32, i16>, #target)>

@@ -231,7 +231,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
         varElType = cast<PointerType>(varElType).getElementAsType();
       attr = VariadicAttr::get(args, VariadicType::get(varElType));
     } else {
-      attr = POP::PackAttr::get(args, cast<POP::PackType>(expectedType));
+      attr = PackAttr::get(args, cast<PackType>(expectedType));
     }
     argumentValues.push_back({PValue(attr), remainingOperands[0].expr});
     return success();
@@ -322,10 +322,10 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         continue;
       }
       if (auto packType = getIfPackType(calleeSig, argIdx)) {
-        // Pack arguments are fulfilled with an empty !pop.pack sequence.
+        // Pack arguments are fulfilled with an empty !kgen.pack sequence.
         assert(packType.isEmpty() &&
                "pack type already checked against operand count");
-        auto argAttr = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
+        auto argAttr = PackAttr::get(ArrayRef<TypedAttr>(), packType);
         argumentValues.push_back({PValue(argAttr), callExpr});
         continue;
       }
@@ -362,7 +362,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // Otherwise, we're applying one or more arguments to this.
     // For a normal (not a vararg or a pack) argument, we just emit it and add
     // it to our list.
-    if (!calleeSig.isVarArg(argIdx) && !isa<POP::PackType>(expectedType)) {
+    if (!calleeSig.isVarArg(argIdx) && !isa<PackType>(expectedType)) {
       ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
       AnyValue argVal =
           emitOneArgVal(operand, argIdx, convention, expectedType);
@@ -796,7 +796,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
-    if (calleeSig.isVarArg(argIdx) || isa<POP::PackType>(calleeArgType))
+    if (calleeSig.isVarArg(argIdx) || isa<PackType>(calleeArgType))
       convention = ValueInputConvention::OwnedInReg;
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(

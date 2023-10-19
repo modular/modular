@@ -237,7 +237,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
         break;
 
       // If we have a pack argument, then we're binding zero type values to it.
-      if (POP::PackType packType = getIfPackType(signature, expectedArgIdx)) {
+      if (PackType packType = getIfPackType(signature, expectedArgIdx)) {
         if (!inferredValues.empty())
           break;
         inferredValues.push_back(VariadicAttr::get(
@@ -949,7 +949,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
     // If we have a pack type, it must have a known number of elements, and so
     // consume exactly that many positional operands.
-    if (POP::PackType packType = getIfPackType(signature, expectedArgIdx)) {
+    if (PackType packType = getIfPackType(signature, expectedArgIdx)) {
       for (TypedAttr element : packType.getVariadicAttr().getValues()) {
         if (auto result = processPositionalOperand(ASTType(element)))
           return std::move(*result);

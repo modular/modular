@@ -156,8 +156,8 @@ kgen.func @repeat_zero() {
 // -----
 
 kgen.generator @pack_create<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8) {
-  // expected-error @below {{operand types cannot be inferred for resulting pack type '!pop.pack<Ts>'}}
-  %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<Ts>
+  // expected-error @below {{operand types cannot be inferred for resulting pack type '!kgen.pack<Ts>'}}
+  %0 = pop.pack.create(%arg0, %arg1) : !kgen.pack<Ts>
   kgen.return
 }
 
@@ -166,13 +166,13 @@ kgen.generator @pack_create<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8
 // CHECK-LABEL: @pack_attr
 kgen.generator @pack_attr<Ts: variadic<i32>>() {
   // expected-error @below {{pack attribute expected a variadic constant type, but got #kgen.param.decl.ref<"Ts"> : !kgen.variadic<type>}}
-  %0 = kgen.param.constant: !pop.pack<Ts> = <<>>
+  %0 = kgen.param.constant: !kgen.pack<Ts> = <<>>
   kgen.return
 }
 
 // -----
 
-kgen.func @pack_index_negative(%pack: !pop.pack<[si8]>) {
+kgen.func @pack_index_negative(%pack: !kgen.pack<[si8]>) {
   // expected-error @below {{pack element index must not be negative}}
   %0 = pop.pack.get %pack[-1] : <[si8]>
   kgen.return
@@ -180,7 +180,7 @@ kgen.func @pack_index_negative(%pack: !pop.pack<[si8]>) {
 
 // -----
 
-kgen.generator @pack_index_negative<Ts: variadic<f32>>(%pack: !pop.pack<Ts>) {
+kgen.generator @pack_index_negative<Ts: variadic<f32>>(%pack: !kgen.pack<Ts>) {
   // expected-error @below {{pack element index must not be negative}}
   %0 = pop.pack.get %pack[-2] : <Ts> -> f32
   kgen.return
@@ -188,7 +188,7 @@ kgen.generator @pack_index_negative<Ts: variadic<f32>>(%pack: !pop.pack<Ts>) {
 
 // -----
 
-kgen.func @pack_index_out_of_bounds(%pack: !pop.pack<[si8, ui8]>) {
+kgen.func @pack_index_out_of_bounds(%pack: !kgen.pack<[si8, ui8]>) {
   // expected-error @below {{pack element index out of bounds}}
   %0 = pop.pack.get %pack[2] : <[si8, ui8]>
   kgen.return

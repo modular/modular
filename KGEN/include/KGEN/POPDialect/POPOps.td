@@ -820,7 +820,7 @@ def POP_SelectOp : POPOp<"select", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.select %cond, %arg0, %arg1 : !pop.struct<f32>
+    %0 = pop.select %cond, %arg0, %arg1 : !kgen.struct<f32>
     ```
   }];
 
@@ -852,15 +852,15 @@ def POP_StructCreateOp : POPOp<"struct.create", [Pure,
 
     ```mlir
     %0 = pop.struct.create(%f32, %f64)
-      : !pop.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<scalar<f32>, scalar<f64>>
 
     %1 = pop.struct.create(%arr, %ptr, %v)
-      : !pop.struct<array<size, type>, pointer<type>, type>
+      : !kgen.struct<array<size, type>, pointer<type>, type>
     ```
   }];
 
   let arguments = (ins Variadic<AnyType>:$elements);
-  let results = (outs POP_StructType:$result);
+  let results = (outs KGEN_StructType:$result);
   let assemblyFormat = [{
     `(` operands `)` attr-dict `:` qualified(type($result))
   }];
@@ -884,15 +884,15 @@ def POP_StructExtractOp : POPOp<"struct.extract", [Pure,
     ```mlir
     // Extract the !pop.scalar<f32> at index 0.
     %0 = pop.struct.extract %struct[0]
-      : !pop.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<scalar<f32>, scalar<f64>>
 
     // Extract the !pop.scalar<f64> at index 1.
     %1 = pop.struct.extract %struct[1]
-      : !pop.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<scalar<f32>, scalar<f64>>
     ```
   }];
 
-  let arguments = (ins POP_StructType:$container, UnsignedIndexAttr:$index);
+  let arguments = (ins KGEN_StructType:$container, UnsignedIndexAttr:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $container `[` $index `]` attr-dict `:` qualified(type($container))
@@ -918,17 +918,17 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
     ```mlir
     // Insert the !pop.scalar<f32> at index 0.
     %0 = pop.struct.replace %f32, %struct[0]
-      : !pop.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<scalar<f32>, scalar<f64>>
 
     // Insert the !pop.scalar<f64> at index 1.
     %1 = pop.struct.replace %f64, %struct[1]
-      : !pop.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<scalar<f32>, scalar<f64>>
     ```
   }];
 
-  let arguments = (ins AnyType:$value, POP_StructType:$container,
+  let arguments = (ins AnyType:$value, KGEN_StructType:$container,
                        UnsignedIndexAttr:$index);
-  let results = (outs POP_StructType:$result);
+  let results = (outs KGEN_StructType:$result);
   let assemblyFormat = [{
     $value `,` $container `[` $index `]` attr-dict `:`
     qualified(type($container)) ``
@@ -948,13 +948,13 @@ def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "struct get element pointer";
   let description = [{
-    The `pop.struct.gep` operation takes a pointer to a `!pop.struct` and a
+    The `pop.struct.gep` operation takes a pointer to a `!kgen.struct` and a
     constant index and returns a pointer to the struct element at that index.
 
     Example:
 
     ```mlir
-    %struct = pop.stack_allocation 1 : !pop.struct<i32, i64>
+    %struct = pop.stack_allocation 1 : !kgen.struct<i32, i64>
     %i64Ptr = pop.struct.gep %struct[1] : <struct<i32, i64>>
     ```
 
@@ -962,13 +962,13 @@ def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
     must be stored into a block of allocated memory first.
 
     ```mlir
-    ^bb0(%struct: !pop.struct<i32, i64>):
-      %mem = pop.stack_allocation 1 : !pop.struct<i32, i64>
+    ^bb0(%struct: !kgen.struct<i32, i64>):
+      %mem = pop.stack_allocation 1 : !kgen.struct<i32, i64>
       pop.store %struct, %mem : !kgen.pointer<struct<i32, i64>>
     ```
   }];
 
-  let arguments = (ins PointerOf<POP_StructType>:$container,
+  let arguments = (ins PointerOf<KGEN_StructType>:$container,
                        UnsignedIndexAttr:$index);
   let results = (outs PointerType:$result);
   let assemblyFormat = [{
@@ -1163,7 +1163,7 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
 def PackCreateOp : POPOp<"pack.create", [Pure]> {
   let summary = "create a pack";
   let description = [{
-    The `pop.pack.create` operation creates a value of `!pop.pack` type,
+    The `pop.pack.create` operation creates a value of `!kgen.pack` type,
     populated with the given SSA values.
 
     Example:
@@ -1171,13 +1171,13 @@ def PackCreateOp : POPOp<"pack.create", [Pure]> {
     ```mlir
     kgen.generator @pack<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8) {
       // Create a pack of two elements.
-      %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<[f32, si8]>
+      %0 = pop.pack.create(%arg0, %arg1) : !kgen.pack<[f32, si8]>
 
       // Create that same pack of two elements, but with a parameterized result.
-      %1 = pop.pack.create(%arg0 : f32, %arg1 : si8) : !pop.pack<Ts>
+      %1 = pop.pack.create(%arg0 : f32, %arg1 : si8) : !kgen.pack<Ts>
 
       // Create an empty pack.
-      %2 = pop.pack.create() : !pop.pack<[]>
+      %2 = pop.pack.create() : !kgen.pack<[]>
 
       kgen.return
     }
@@ -1185,7 +1185,7 @@ def PackCreateOp : POPOp<"pack.create", [Pure]> {
   }];
 
   let arguments = (ins Variadic<AnyType>:$elements);
-  let results = (outs POP_PackType:$result);
+  let results = (outs KGEN_PackType:$result);
   let assemblyFormat = [{
     `(` $elements `)` attr-dict `:`
     custom<PackCreateType>(type($result), type($elements))
@@ -1212,7 +1212,7 @@ def POP_PackGetOp : POPOp<"pack.get", [Pure]> {
 
     ```mlir
     kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type, I: index>(
-      %arg0: !pop.pack<i32, T>
+      %arg0: !kgen.pack<i32, T>
       %arg1: Ts,
     ) {
       // Get the first element, of type `i32`.
@@ -1234,7 +1234,7 @@ def POP_PackGetOp : POPOp<"pack.get", [Pure]> {
     ```
   }];
 
-  let arguments = (ins POP_PackType:$pack, AttrOfType<Index>:$index);
+  let arguments = (ins KGEN_PackType:$pack, AttrOfType<Index>:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
@@ -1253,7 +1253,7 @@ def POP_PackGetOp : POPOp<"pack.get", [Pure]> {
 def POP_PackSizeOp : POPOp<"pack.size", [Pure]> {
   let summary = "given a pack, return its size";
   let description = [{
-    The `pop.pack.size` operation takes an operand with a `!pop.pack` type and
+    The `pop.pack.size` operation takes an operand with a `!kgen.pack` type and
     returns the number of elements in the pack.
 
     Example:
@@ -1266,7 +1266,7 @@ def POP_PackSizeOp : POPOp<"pack.size", [Pure]> {
     ```
   }];
 
-  let arguments = (ins POP_PackType:$operand);
+  let arguments = (ins KGEN_PackType:$operand);
   let results = (outs Index:$result);
 
   let assemblyFormat = [{
@@ -1290,8 +1290,8 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
 
     ```mlir
     // Create an `std::optional<T>` variant.
-    %none = pop.struct.create() : !pop.struct<>
-    %0 = pop.variant.create %none, 0 : !pop.struct<>
+    %none = pop.struct.create() : !kgen.struct<>
+    %0 = pop.variant.create %none, 0 : !kgen.struct<>
         -> !pop.variant<struct<>, T>
 
     // Create a variant of either a scalar float or integer.
@@ -2163,7 +2163,7 @@ def POP_CoroutinePromiseOp : POPOp<"coroutine.promise",
   }];
 
   let arguments = (ins POP_CoroutineType:$coroutine);
-  let results = (outs PointerOf<POP_StructType>:$promise);
+  let results = (outs PointerOf<KGEN_StructType>:$promise);
   let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
 }
 
@@ -2220,7 +2220,7 @@ def POP_CoroutineDestroyOp : POPOp<"coroutine.destroy"> {
 //===----------------------------------------------------------------------===//
 
 def POP_AtomicCmpXchgResultType : Type<And<[
-  POP_StructType.predicate,
+  KGEN_StructType.predicate,
   CPred<"$_self.cast<StructType>().getNumElements() == 2">,
   SubstLeaves<"$_self",
               "$_self.cast<StructType>().getParameterizedElementTypes()[0]",

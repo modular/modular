@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"

@@ -262,11 +262,11 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   elaborator->addDeferredFunction(populate);
 
   Builder b(op.getContext());
-  return {POP::StructAttr::get(
-      {closure->contents, b.getIndexAttr(closure->numCaptures),
-       SymbolConstantAttr::get(
-           FlatSymbolRefAttr::get(populate.getSymNameAttr()),
-           populate.getSignature())})};
+  return {
+      StructAttr::get({closure->contents, b.getIndexAttr(closure->numCaptures),
+                       SymbolConstantAttr::get(
+                           FlatSymbolRefAttr::get(populate.getSymNameAttr()),
+                           populate.getSignature())})};
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {

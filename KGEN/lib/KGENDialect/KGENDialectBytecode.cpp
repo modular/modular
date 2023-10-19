@@ -181,6 +181,25 @@ enum AttributeCode {
   ///     value: Attribute[]
   ///   }
   kPackageArchiveArrayAttr = 26,
+  ///
+  ///   StructAttr {
+  ///     values: TypedAttr[]
+  ///     type: Type
+  ///   }
+  kStructAttr = 27,
+  ///
+  ///   StructExtractAttr {
+  ///     structValue: TypedAttr
+  ///     fieldNo: varint
+  ///     type: Type
+  ///   }
+  kStructExtractAttr = 28,
+  ///
+  ///   PackAttr {
+  ///     values: TypedAttr[]
+  ///     type: Type
+  ///   }
+  kPackAttr = 29,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -240,6 +259,16 @@ enum TypeCode {
   ///   NoneType {
   ///   }
   kNoneType = 10,
+  ///
+  ///   StructType {
+  ///     values: TypedAttr[]
+  ///   }
+  kStructType = 11,
+  ///
+  ///   PackType {
+  ///     variadic: TypedAttr
+  ///   }
+  kPackType = 12,
 };
 
 } // namespace Encoding
@@ -281,6 +310,9 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   UnboundAttr readUnboundAttr(BytecodeReader &reader) const;
   UnknownAttr readUnknownAttr(BytecodeReader &reader) const;
   VariadicAttr readVariadicAttr(BytecodeReader &reader) const;
+  StructAttr readStructAttr(BytecodeReader &reader) const;
+  TypedAttr readStructExtractAttr(BytecodeReader &reader) const;
+  PackAttr readPackAttr(BytecodeReader &reader) const;
 
   LogicalResult writeAttribute(Attribute attr,
                                BytecodeWriter &writer) const override;
@@ -310,6 +342,9 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(UnboundAttr attr, BytecodeWriter &writer) const;
   void write(UnknownAttr attr, BytecodeWriter &writer) const;
   void write(VariadicAttr attr, BytecodeWriter &writer) const;
+  void write(StructAttr attr, BytecodeWriter &writer) const;
+  void write(StructExtractAttr attr, BytecodeWriter &writer) const;
+  void write(PackAttr attr, BytecodeWriter &writer) const;
 
   //===--------------------------------------------------------------------===//
   // Types
@@ -319,12 +354,16 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   Type readParamRefType(BytecodeReader &reader) const;
   Type readSignatureType(BytecodeReader &reader) const;
   Type readVariadicType(BytecodeReader &reader) const;
+  Type readStructType(BytecodeReader &reader) const;
+  Type readPackType(BytecodeReader &reader) const;
 
   LogicalResult writeType(Type type, BytecodeWriter &writer) const override;
   void write(DeclRefType type, BytecodeWriter &writer) const;
   void write(ParamRefType type, BytecodeWriter &writer) const;
   void write(SignatureType type, BytecodeWriter &writer) const;
   void write(VariadicType type, BytecodeWriter &writer) const;
+  void write(StructType type, BytecodeWriter &writer) const;
+  void write(PackType type, BytecodeWriter &writer) const;
 };
 } // namespace
 
@@ -395,6 +434,12 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readPackageArchiveAttr(reader);
   case Encoding::kPackageArchiveArrayAttr:
     return readArrayOfAttrs<PackageArchiveArrayAttr>(reader);
+  case Encoding::kStructAttr:
+    return readStructAttr(reader);
+  case Encoding::kStructExtractAttr:
+    return readStructExtractAttr(reader);
+  case Encoding::kPackAttr:
+    return readPackAttr(reader);
   default:
     reader.emitError() << "unknown kgen attribute code: " << code;
     return Attribute();
@@ -418,7 +463,8 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
             MLIROpAttr, PackageArchiveAttr, ParamBindAttr, ParamDeclAttr,
             ParamDeclRefAttr, ParamIndexRefAttr, ParamOperatorAttr,
             ParameterizedTypeConstantAttr, SymbolConstantAttr, TargetParamAttr,
-            UnboundAttr, UnknownAttr, VariadicAttr>([&](auto attr) {
+            UnboundAttr, UnknownAttr, VariadicAttr, StructAttr,
+            StructExtractAttr, PackAttr>([&](auto attr) {
         write(attr, writer);
         return success();
       })
@@ -852,6 +898,64 @@ void KGENBytecodeInterface::write(VariadicAttr attr,
 }
 
 //===----------------------------------------------------------------------===//
+// StructAttr
+
+StructAttr KGENBytecodeInterface::readStructAttr(BytecodeReader &reader) const {
+  SmallVector<TypedAttr> values;
+  StructType type;
+  if (failed(reader.readAttributes(values)) || failed(reader.readType(type)))
+    return StructAttr();
+  return StructAttr::get(getContext(), values, type);
+}
+
+void KGENBytecodeInterface::write(StructAttr attr,
+                                  BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kStructAttr);
+  writer.writeAttributes(attr.getValues());
+  writer.writeType(attr.getType());
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractAttr
+
+TypedAttr
+KGENBytecodeInterface::readStructExtractAttr(BytecodeReader &reader) const {
+  uint64_t fieldNo;
+  TypedAttr structValue;
+  Type type;
+  if (failed(reader.readAttribute(structValue)) ||
+      failed(reader.readVarInt(fieldNo)) || failed(reader.readType(type)))
+    return StructExtractAttr();
+  return StructExtractAttr::get(getContext(), structValue,
+                                static_cast<unsigned>(fieldNo), type);
+}
+
+void KGENBytecodeInterface::write(StructExtractAttr attr,
+                                  BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kStructExtractAttr);
+  writer.writeAttribute(attr.getStructValue());
+  writer.writeVarInt(static_cast<uint64_t>(attr.getFieldNo()));
+  writer.writeType(attr.getType());
+}
+
+//===----------------------------------------------------------------------===//
+// PackAttr
+
+PackAttr KGENBytecodeInterface::readPackAttr(BytecodeReader &reader) const {
+  SmallVector<TypedAttr> values;
+  PackType type;
+  if (failed(reader.readAttributes(values)) || failed(reader.readType(type)))
+    return PackAttr();
+  return PackAttr::get(getContext(), values, type);
+}
+
+void KGENBytecodeInterface::write(PackAttr attr, BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kPackAttr);
+  writer.writeAttributes(attr.getValues());
+  writer.writeType(attr.getType());
+}
+
+//===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
 
@@ -882,6 +986,10 @@ Type KGENBytecodeInterface::readType(BytecodeReader &reader) const {
     return readVariadicType(reader);
   case Encoding::kNoneType:
     return KGEN::NoneType::get(reader.getContext());
+  case Encoding::kStructType:
+    return readStructType(reader);
+  case Encoding::kPackType:
+    return readPackType(reader);
 
   default:
     reader.emitError() << "unknown kgen type code: " << code;
@@ -1026,4 +1134,35 @@ void KGENBytecodeInterface::write(VariadicType type,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kVariadicType);
   writer.writeAttribute(type.getElementType());
+}
+
+//===----------------------------------------------------------------------===//
+// StructType
+
+Type KGENBytecodeInterface::readStructType(BytecodeReader &reader) const {
+  SmallVector<TypedAttr> elementTypes;
+  if (failed(reader.readAttributes(elementTypes)))
+    return Type();
+  return StructType::get(getContext(), elementTypes);
+}
+
+void KGENBytecodeInterface::write(StructType type,
+                                  BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kStructType);
+  writer.writeAttributes(type.getElementTypes());
+}
+
+//===----------------------------------------------------------------------===//
+// PackType
+
+Type KGENBytecodeInterface::readPackType(BytecodeReader &reader) const {
+  TypedAttr variadic;
+  if (failed(reader.readAttribute(variadic)))
+    return Type();
+  return PackType::get(getContext(), variadic);
+}
+
+void KGENBytecodeInterface::write(PackType type, BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kPackType);
+  writer.writeAttribute(type.getVariadicAttr());
 }

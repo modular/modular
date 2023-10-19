@@ -3,7 +3,7 @@
 // Test proper handling of debug types.
 !arrayTest = !pop.array<2, array<3, array<4, simd<8, bool>>>>
 !coroutineTest = !pop.coroutine<() -> (i8, si8)>
-!packTest = !pop.pack<[index,
+!packTest = !kgen.pack<[index,
                        ui8, i8, si8,
                        ui16, i16, si16,
                        ui32, i32, si32,
@@ -15,7 +15,7 @@
 !voidPointerTest = !kgen.pointer<scalar<invalid>>
 !scalarTest = !pop.scalar<bool>
 !simdTest = !pop.simd<8, ui32>
-!structTest = !pop.struct<scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<pointer<scalar<bool>>, array<4, simd<8, si32>>>>
+!structTest = !kgen.struct<scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<pointer<scalar<bool>>, array<4, simd<8, si32>>>>
 
 // CHECK-DAG: ![[BASIC:.*]] = !debuginfo.basic<bool {sizeInBits = 1, alignInBits = 1, encoding = DW_ATE_boolean}>
 // CHECK-DAG: ![[BASIC1:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>

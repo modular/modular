@@ -12,12 +12,12 @@ kgen.func @array_constant() -> !pop.array<2, i32> {
 }
 
 // CHECK-LABEL: @struct_constant
-kgen.func @struct_constant() -> !pop.struct<array<1, i32>, struct<i32, i32>> {
+kgen.func @struct_constant() -> !kgen.struct<array<1, i32>, struct<i32, i32>> {
   // CHECK-NEXT: { [1 x i32], { i32, i32 } }
   // CHECK-SAME: { [1 x i32] [i32 1], { i32, i32 } { i32 2, i32 3 } }
   %0 = kgen.param.constant: struct<array<1, i32>, struct<i32, i32>> =
     <{ [1], { 2, 3 } }>
-  kgen.return %0 : !pop.struct<array<1, i32>, struct<i32, i32>>
+  kgen.return %0 : !kgen.struct<array<1, i32>, struct<i32, i32>>
 }
 
 // CHECK-LABEL: @simd_constant
@@ -57,7 +57,7 @@ kgen.func @variant_constant_0() -> !pop.variant<i32> {
 // CHECK-LABEL: @variant_constant_1
 kgen.func @variant_constant_1() -> !pop.variant<struct<i32, i64, i32>, struct<f64, f32>> {
   // CHECK-NEXT: { [2 x i64], i1 } { [2 x i64] [i64 8589934593, i64 12884901888], i1 false }
-  %0 = kgen.param.constant: variant<struct<i32, i64, i32>, struct<f64, f32>> = <#pop.variant<:!pop.struct<i32, i64, i32> { 1, 2, 3 }, 0>>
+  %0 = kgen.param.constant: variant<struct<i32, i64, i32>, struct<f64, f32>> = <#pop.variant<:!kgen.struct<i32, i64, i32> { 1, 2, 3 }, 0>>
   kgen.return %0 : !pop.variant<struct<i32, i64, i32>, struct<f64, f32>>
 }
 
@@ -87,17 +87,17 @@ kgen.func @variadic_constant_1() -> !kgen.variadic<i32> {
 }
 
 // CHECK-LABEL: @pack_constant_0
-kgen.func @pack_constant_0() -> !pop.pack<[i32, i8]> {
+kgen.func @pack_constant_0() -> !kgen.pack<[i32, i8]> {
   // CHECK-NEXT: { i32, i8 } { i32 1, i8 2 }
-  %0 = kgen.param.constant: !pop.pack<[i32, i8]> = <<1, 2>>
-  kgen.return %0 : !pop.pack<[i32, i8]>
+  %0 = kgen.param.constant: !kgen.pack<[i32, i8]> = <<1, 2>>
+  kgen.return %0 : !kgen.pack<[i32, i8]>
 }
 
 // CHECK-LABEL: @pack_constant_1
-kgen.func @pack_constant_1() -> !pop.pack<[]> {
+kgen.func @pack_constant_1() -> !kgen.pack<[]> {
   // CHECK-NEXT: {} undef
-  %0 = kgen.param.constant: !pop.pack<[]> = <<>>
-  kgen.return %0 : !pop.pack<[]>
+  %0 = kgen.param.constant: !kgen.pack<[]> = <<>>
+  kgen.return %0 : !kgen.pack<[]>
 }
 
 // CHECK-LABEL: @pointer_constant
