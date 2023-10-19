@@ -362,7 +362,7 @@ struct Buffer[size: Dim, type: DType]:
         self.simd_fill[simdwidthof[type]()](val)
 
     @always_inline
-    fn write_file(self, path: Path) raises:
+    fn tofile(self, path: Path) raises:
         """Write values to a file.
 
         Args:
@@ -1383,7 +1383,7 @@ struct NDBuffer[
         self.flatten().simd_fill[simd_width](val)
 
     @always_inline
-    fn write_file(self, path: Path) raises:
+    fn tofile(self, path: Path) raises:
         """Write values to a file.
 
         Args:
