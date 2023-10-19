@@ -502,7 +502,15 @@ static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
                                  const Twine &suffix = "") {
   std::string note;
   llvm::raw_string_ostream os(note);
-  os << prefix << op->getName() << '(';
+  os << prefix << op->getName();
+  if (!op->getAttrs().empty()) {
+    os << '{';
+    llvm::interleaveComma(op->getAttrs(), os, [&](const NamedAttribute &attr) {
+      os << attr.getName().getValue() << ": " << attr.getValue();
+    });
+    os << '}';
+  }
+  os << '(';
   llvm::interleaveComma(operands, os);
   os << ')' << suffix;
   return {op->getLoc(), Error(os.str())};
