@@ -20,11 +20,8 @@ class InflightDiag;
 
 namespace M::KGEN {
 class SignatureType;
-} // namespace M::KGEN
-
-namespace M::KGEN::POP {
 class PackType;
-} // namespace M::KGEN::POP
+} // namespace M::KGEN
 
 namespace M::KGEN::LIT {
 class ASTType;
@@ -41,7 +38,7 @@ inline const char *plural(size_t value, const char *one = "",
 
 /// If the argument at the given index is of pack type, returns that type.
 /// therwise, returns null.
-POP::PackType getIfPackType(SignatureType sig, size_t index);
+PackType getIfPackType(SignatureType sig, size_t index);
 
 /// Returns whether the two signatures match, i.e. if they only differ in
 /// argument or parameter names.

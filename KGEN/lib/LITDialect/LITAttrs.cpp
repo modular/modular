@@ -225,7 +225,7 @@ Type UnboundMLIROperationAttr::getType() const {
 Type LifetimeAttr::getType() const { return LifetimeType::get(getContext()); }
 
 //===----------------------------------------------------------------------===//
-// StructAttr
+// LITStructAttr
 //===----------------------------------------------------------------------===//
 
 static ParseResult
@@ -258,9 +258,9 @@ printStructElements(AsmPrinter &p,
 }
 
 LogicalResult
-StructAttr::verifySymbolUses(Operation *module,
-                             mlir::LockedSymbolTableCollection &symtab,
-                             Location loc) const {
+LITStructAttr::verifySymbolUses(Operation *module,
+                                mlir::LockedSymbolTableCollection &symtab,
+                                Location loc) const {
   auto structDecl =
       symtab.lookupSymbolIn<StructDeclOp>(module, getType().getSymbol());
   if (!structDecl)
@@ -305,7 +305,7 @@ StructAttr::verifySymbolUses(Operation *module,
   return success();
 }
 
-bool LIT::StructAttr::isConstant() const {
+bool LITStructAttr::isConstant() const {
   return llvm::all_of(getValues(), [&](const auto &value) {
     return ParameterAttr::isSimpleConstant(std::get<1>(value));
   });
@@ -315,21 +315,23 @@ bool LIT::StructAttr::isConstant() const {
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr StructExtractAttr::get(TypedAttr structValue, StructFieldOp fieldOp) {
+TypedAttr LIT::StructExtractAttr::get(TypedAttr structValue,
+                                      StructFieldOp fieldOp) {
   auto structType = ::cast<DeclRefType>(structValue.getType());
   ParameterEvaluator evaluator(structType.getParamValues());
   auto resultType = evaluator.getReboundType(fieldOp.getType());
   return get(structValue, fieldOp.getNameAttr(), resultType);
 }
 
-TypedAttr StructExtractAttr::get(TypedAttr structValue, StringAttr field,
-                                 Type resultType) {
+TypedAttr LIT::StructExtractAttr::get(TypedAttr structValue, StringAttr field,
+                                      Type resultType) {
   return get(structValue.getContext(), structValue, field, resultType);
 }
 
-TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
-                                 StringAttr field, Type resultType) {
-  if (auto value = dyn_cast_if_present<StructAttr>(structValue)) {
+TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
+                                      TypedAttr structValue, StringAttr field,
+                                      Type resultType) {
+  if (auto value = dyn_cast_if_present<LITStructAttr>(structValue)) {
     auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
       return std::get<0>(p) == field;
     });

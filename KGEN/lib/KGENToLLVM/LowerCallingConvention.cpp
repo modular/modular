@@ -129,16 +129,16 @@ static void rewriteCallingConventions(Operation &op) {
     // Handle `pop.coroutine.promise`. None types take up no space, so it is
     // safe to bitcast the promise pointer.
     if (auto promise = dyn_cast<POP::CoroutinePromiseOp>(op)) {
-      auto [anyNone, newResults] = removeNoneTypes(
-          cast<POP::StructType>(promise.getType().getElementAsType())
-              .getParameterizedElementTypes());
+      auto [anyNone, newResults] =
+          removeNoneTypes(cast<StructType>(promise.getType().getElementAsType())
+                              .getParameterizedElementTypes());
       if (!anyNone)
         return;
 
       OpBuilder b(promise);
       Value newPromise = b.create<POP::CoroutinePromiseOp>(
           promise.getLoc(),
-          PointerType::get(POP::StructType::get(op->getContext(), newResults)),
+          PointerType::get(StructType::get(op->getContext(), newResults)),
           promise.getCoroutine());
       Value casted = b.create<POP::PointerBitcastOp>(
           promise.getLoc(), promise.getType(), newPromise);

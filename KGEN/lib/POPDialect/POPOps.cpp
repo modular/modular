@@ -913,7 +913,7 @@ static Type getCmpXChgResultType(Type type) {
   auto eltType = pointerType.getElementAsType();
   auto boolType =
       SIMDType::get(1, DTypeConstantAttr::get(type.getContext(), DType::kBool));
-  return POP::StructType::get({eltType, boolType});
+  return StructType::get({eltType, boolType});
 }
 
 //===----------------------------------------------------------------------===//

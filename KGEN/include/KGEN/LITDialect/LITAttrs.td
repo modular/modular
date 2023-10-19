@@ -207,7 +207,7 @@ def UnresolvedAliasValueAttr
 // StructAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface,
+def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>,
     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "A constant struct value";

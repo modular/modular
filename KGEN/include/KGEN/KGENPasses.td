@@ -165,7 +165,7 @@ def LowerLITTypes : Pass<"lower-lit-types", "mlir::ModuleOp"> {
   let description = [{
     This pass lowers a variety of high level Mojo types in the 'lit' dialect
     to lower level KGEN abstractions.  Notably, this eliminates symbol based
-    struct references (in favor of `!pop.struct`), `!lit.ref` => `!kgen.pointer`
+    struct references (in favor of `!kgen.struct`), `!lit.ref` => `!kgen.pointer`
     etc.  This runs immediately after the LowerLIT pass.
   }];
 
@@ -786,7 +786,7 @@ def SROA : Pass<"sroa"> {
     down into scalar alternatives where possible.
 
     ```mlir
-    %struct = pop.stack_allocation 1 x !pop.struct<index, index, index, index>
+    %struct = pop.stack_allocation 1 x !kgen.struct<index, index, index, index>
     ```
 
     Becomes

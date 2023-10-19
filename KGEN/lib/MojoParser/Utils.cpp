@@ -22,10 +22,9 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-POP::PackType LIT::getIfPackType(SignatureType sig, size_t index) {
-  return sig.isPackVarArg(index)
-             ? ::cast<POP::PackType>(sig.getValueInputs()[index])
-             : nullptr;
+PackType LIT::getIfPackType(SignatureType sig, size_t index) {
+  return sig.isPackVarArg(index) ? ::cast<PackType>(sig.getValueInputs()[index])
+                                 : nullptr;
 }
 
 bool LIT::canZeroCostConvertSignature(SharedState &shared, ASTType fromType,

@@ -88,13 +88,13 @@ kgen.generator @foo() {
 #file = #debuginfo.file<"foo.mojo" in "/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 
-// CHECK-DAG: ![[CL_SP_TYPE:.*]] = !debuginfo.subroutine<(!kgen.pointer<scalar<#pop.struct.extract<2, 1>>>) -> (): DW_CC_normal>
+// CHECK-DAG: ![[CL_SP_TYPE:.*]] = !debuginfo.subroutine<(!kgen.pointer<scalar<#kgen.struct.extract<2, 1>>>) -> (): DW_CC_normal>
 // CHECK-DAG: ![[OTHER_SP_TYPE:.*]] = !debuginfo.subroutine<(!pop.array<K, index>) -> (): DW_CC_normal>
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = "foo"
 // CHECK-DAG: #[[CL_SP:.*]] = #debuginfo.subprogram<name = "SomeClosure"
 // CHECK-DAG: #[[OTHER_SP:.*]] = #debuginfo.subprogram<name = "OtherClosure"
 #subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<name = "SomeClosure"> : !debuginfo.subroutine<(!kgen.pointer<scalar<#pop.struct.extract<N, 1>>>) -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<name = "SomeClosure"> : !debuginfo.subroutine<(!kgen.pointer<scalar<#kgen.struct.extract<N, 1>>>) -> (): DW_CC_normal>
 #subprogram2 = #debuginfo.subprogram<name = "OtherClosure"> : !debuginfo.subroutine<(!pop.array<K, index>) -> (): DW_CC_normal>
 
 // CHECK-DAG: #[[LOC1:.*]] = loc("foo.mojo":25:1)

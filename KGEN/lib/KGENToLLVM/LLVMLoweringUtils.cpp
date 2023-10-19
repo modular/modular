@@ -248,12 +248,12 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return LLVM::LLVMStructType::getLiteral(&getContext(), types);
   };
 
-  addConversion([=](POP::StructType structType) -> std::optional<Type> {
+  addConversion([=](StructType structType) -> std::optional<Type> {
     return convertElementTypesToStruct(structType.getElementTypes());
   });
 
   // Packs are essentially identical to structs.
-  addConversion([=](POP::PackType type) -> std::optional<Type> {
+  addConversion([=](PackType type) -> std::optional<Type> {
     auto variadic = type.getVariadicAttr();
     if (!variadic)
       return {};
@@ -957,14 +957,14 @@ Value KGEN::convertParameterToLLVM(
     return convertSIMDAttr(b, tc, simd);
 
   // Convert array, struct, or pack constants to LLVM array or struct constants.
-  if (isa<POP::ArrayAttr, POP::StructAttr, POP::PackAttr>(attr)) {
+  if (isa<POP::ArrayAttr, StructAttr, PackAttr>(attr)) {
     Type type = tc.convertType(attr.getType());
     if (!type)
       return {};
     Value aggregate = b.create<LLVM::UndefOp>(type);
     ArrayRef<TypedAttr> values =
         TypeSwitch<Attribute, ArrayRef<TypedAttr>>(attr)
-            .Case<POP::ArrayAttr, POP::StructAttr, POP::PackAttr>(
+            .Case<POP::ArrayAttr, StructAttr, PackAttr>(
                 [](auto attr) { return attr.getValues(); });
 
     for (auto [idx, value] : llvm::enumerate(values)) {
@@ -1220,7 +1220,7 @@ buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
                                          converter.getPointerBitwidth());
   }
 
-  if (auto packType = dyn_cast<POP::PackType>(type)) {
+  if (auto packType = dyn_cast<PackType>(type)) {
     return buildDebugStructTypeFromTypeAttrs(
         ctx, packType.getVariadicAttr().getValues(), converter,
         StringAttr::get(ctx, "pack"), target);
@@ -1245,7 +1245,7 @@ buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
     return DebugInfo::DIVectorType::get(baseType, size);
   }
 
-  if (auto structType = dyn_cast<POP::StructType>(type)) {
+  if (auto structType = dyn_cast<StructType>(type)) {
     return buildDebugStructTypeFromTypeAttrs(
         ctx, structType.getElementTypes(), converter,
         StringAttr::get(ctx, "struct"), target);
@@ -1279,7 +1279,7 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
                                      target);
   });
 
-  addConversion([&converter, target](POP::PackType type) {
+  addConversion([&converter, target](PackType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
@@ -1294,7 +1294,7 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
                                      target);
   });
 
-  addConversion([&converter, target](POP::StructType type) {
+  addConversion([&converter, target](StructType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });

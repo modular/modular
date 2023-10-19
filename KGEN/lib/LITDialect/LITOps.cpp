@@ -1035,7 +1035,7 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
       return {};
     values.emplace_back(name, cast<TypedAttr>(value));
   }
-  return StructAttr::get(getContext(), values, getType());
+  return LITStructAttr::get(getContext(), values, getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1063,7 +1063,7 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
-  auto value = dyn_cast_if_present<StructAttr>(adaptor.getContainer());
+  auto value = dyn_cast_if_present<LITStructAttr>(adaptor.getContainer());
   if (!value || !adaptor.getValue())
     return {};
   auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
@@ -1074,7 +1074,7 @@ OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
   SmallVector<std::tuple<StringAttr, TypedAttr>> values(value.getValues());
   std::get<1>(values[std::distance(value.getValues().begin(), it)]) =
       cast<TypedAttr>(adaptor.getValue());
-  return StructAttr::get(getContext(), values, getType());
+  return LITStructAttr::get(getContext(), values, getType());
 }
 
 //===----------------------------------------------------------------------===//

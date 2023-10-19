@@ -28,14 +28,6 @@ def SIMDType : DialectType<(type
   TypedAttr:$dType
 )>;
 
-def StructType : DialectType<(type
-  TypedAttrArray:$elementTypes
-)>;
-
-def PackType : DialectType<(type
-  TypedAttr:$variadic
-)>;
-
 def VariantType : DialectType<(type
   TypedAttrArray:$types
 )>;
@@ -49,8 +41,6 @@ def POPDialectTypes : DialectTypes<"pop"> {
     ArrayType,
     PointerType,
     SIMDType,
-    StructType,
-    PackType,
     VariantType,
     CoroutineType
   ];
@@ -91,16 +81,6 @@ def ArrayAttr : DialectAttribute<(attr
   ConcreteType<"ArrayType">:$type
 )>;
 
-def StructAttr : DialectAttribute<(attr
-  TypedAttrArray:$values,
-  ConcreteType<"StructType">:$type
-)>;
-
-def PackAttr : DialectAttribute<(attr
-  TypedAttrArray:$values,
-  ConcreteType<"PackType">:$type
-)>;
-
 def VariantAttr : DialectAttribute<(attr
   TypedAttr:$value,
   VarInt:$index,
@@ -115,9 +95,6 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     FastmathFlagsAttr,
     SIMDAttr,
     ArrayAttr,
-    StructAttr,
-    /*StructExtractAttr*/
-    PackAttr,
     VariantAttr
   ];
 }

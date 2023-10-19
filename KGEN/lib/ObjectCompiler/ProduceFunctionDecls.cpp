@@ -117,7 +117,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     return success();
   }
 
-  if (auto structType = dyn_cast<POP::StructType>(t)) {
+  if (auto structType = dyn_cast<StructType>(t)) {
     SmallVector<Type> elementTypes;
     elementTypes.reserve(structType.getElementTypes().size());
     if (failed(structType.resolveElementTypes(elementTypes)))

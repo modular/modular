@@ -16,15 +16,15 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK: llvm.store %[[DTYPE_RESULT]], %[[DTYPE_OUT]]
   // CHECK: llvm.return
 
-  kgen.func export C @kernel(%a: !pop.struct<index, pointer<simd<1, invalid>>, dtype>) -> !pop.struct<index, pointer<simd<1, invalid>>, dtype> {
-    kgen.return %a : !pop.struct<index, pointer<simd<1, invalid>>, !kgen.dtype>
+  kgen.func export C @kernel(%a: !kgen.struct<index, pointer<simd<1, invalid>>, dtype>) -> !kgen.struct<index, pointer<simd<1, invalid>>, dtype> {
+    kgen.return %a : !kgen.struct<index, pointer<simd<1, invalid>>, !kgen.dtype>
   }
 
 }
 
 // -----
 
-!nestedStruct = !pop.struct<struct<>, struct<f32>>
+!nestedStruct = !kgen.struct<struct<>, struct<f32>>
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
@@ -51,7 +51,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK-SAME: %[[I:.*]]: f32
   // CHECK: llvm.return
 
-  kgen.func export C @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) {
+  kgen.func export C @kernel(%i: f32, %a: !kgen.struct<index, pointer<simd<1, f32>>, dtype>) {
     kgen.return
   }
 }
@@ -64,7 +64,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK: %[[RESULT:.*]] = llvm.mlir.constant(1 : i64) : i64
   // CHECK: llvm.return %[[RESULT]]
 
-  kgen.func export C @kernel(%a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
+  kgen.func export C @kernel(%a: !kgen.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
     %0 = llvm.mlir.constant(1 : i64) : i64
     kgen.return %0 : i64
   }

@@ -2897,7 +2897,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // PackVarArg arguments are always treated as their pop.pack type
     // by-value right now.  TODO(literals): Project to a tuple like thing.
-    if (isa<POP::PackType>(bbArg.getType())) {
+    if (isa<PackType>(bbArg.getType())) {
       if (failed(setDecl(SRValue(bbArg))))
         return failure();
       continue;

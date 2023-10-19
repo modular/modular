@@ -113,8 +113,8 @@ getStructElementVar(DebugInfo::DILocalVariableAttr var, Type type, unsigned i) {
 };
 
 /// The extra helper class for structures.
-struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
-  using ContainerType = POP::StructType;
+struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
+  using ContainerType = StructType;
 
   ReplaceStructs(OpBuilder &builder, StackAllocationOp alloc,
                  ContainerType container)
@@ -497,7 +497,7 @@ void SROAPass::runOnOperation() {
         ReplaceStack replacer{builder, alloc};
         changed |= replacer.run(toDelete);
       } else if (auto structTy =
-                     dyn_cast<POP::StructType>(ptrType.getElementAsType())) {
+                     dyn_cast<StructType>(ptrType.getElementAsType())) {
         ReplaceStructs replacer{builder, alloc, structTy};
         changed |= replacer.run(toDelete);
       } else if (auto arrayTy =

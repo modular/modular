@@ -812,23 +812,23 @@ fn callVariadic[p: Int](x: Int):
 # CHECK-LABEL: lit.struct.decl @MyTuple
 # CHECK-SAME: <[[TUPLETS:.*]][Ts]: variadic<type>>
 struct MyTuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
-    var elements: __mlir_type[`!pop.pack<`, Ts, `>`]
+    var elements: __mlir_type[`!kgen.pack<`, Ts, `>`]
 
     fn __init__(inout self, *args: *Ts):
         self.elements = args
 
 
-# CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!pop.pack<*(0,0)>)"<
-# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>(%args[args]: !pop.pack<[[TS]]>)
+# CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!kgen.pack<*(0,0)>)"<
+# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>(%args[args]: !kgen.pack<[[TS]]>)
 fn pack[*Ts: __mlir_type.`!kgen.mlirtype`](owned *args: *Ts):
-    # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<[[TS]]>
+    # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
     let copy = args
 
 
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}})"<
 # CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>
 fn packBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed *args: *Ts):
-    # CHECK: %copy = lit.letreg.decl "copy" = %args : !pop.pack<[[TS]]>
+    # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
     let copy = args
 
 
@@ -852,13 +852,13 @@ fn usePacks(x: Float32, y: Int):
     # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = []>
     let e = MyTuple()
 
-    # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
+    # CHECK: %[[PACK1:.*]] = kgen.param.constant: !kgen.pack<[index]> = <<1>>
     # CHECK: kgen.call @"$decls"::@"pack{{.*}}(%[[PACK1]])
     pack(Int(1).value)
-    # CHECK: %[[PACK2:.*]] = kgen.param.constant: !pop.pack<[index, {{.*}}FloatLiteral, index]> = <<1, {{.*}}3.14{{.*}}, 2>>
+    # CHECK: %[[PACK2:.*]] = kgen.param.constant: !kgen.pack<[index, {{.*}}FloatLiteral, index]> = <<1, {{.*}}3.14{{.*}}, 2>>
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, {{.*}}FloatLiteral, index]>(%[[PACK2]])
     pack(Int(1).value, 3.14, Int(2).value)
-    # CHECK: %[[PACK3:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
+    # CHECK: %[[PACK3:.*]] = kgen.param.constant: !kgen.pack<[]> = <<>>
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} []>(%[[PACK3]])
     pack()
 
@@ -1315,7 +1315,7 @@ struct SomeParamStruct[c_param: Int]:
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = []>>
 fn returnTup0() -> Tuple:
   # FIXME: Why isn't this a kgen.param.constant for the whole call?
-  # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[]> = <<>>
+  # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[]> = <<>>
   # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
   # CHECK-NEXT: lit.return
   return ()
@@ -1324,7 +1324,7 @@ fn returnTup0() -> Tuple:
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = []>>
 fn returnTup0a() -> ():
   # FIXME: Why isn't this a kgen.param.constant for the whole call?
-  # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[]> = <<>>
+  # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[]> = <<>>
   # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
   # CHECK-NEXT: lit.return
   return ()
@@ -1332,7 +1332,7 @@ fn returnTup0a() -> ():
 # CHECK-LABEL: lit.func @"returnTup1
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int]>>
 fn returnTup1() -> Tuple[Int]:
-  # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[!Int]>
+  # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[!Int]>
   # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
   # CHECK-NEXT: lit.return
   return (Int(4),)
@@ -1348,13 +1348,13 @@ fn returnTup1b() -> (Int,):
 # CHECK-LABEL: lit.func @"returnTup2
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int, !FloatLiteral]>>
 fn returnTup2() -> Tuple[Int, FloatLiteral]:
-  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  # CHECK-NEXT: kgen.param.constant: !kgen.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (Int(4), 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2a
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int, !FloatLiteral]>>
 fn returnTup2a() -> (Int, FloatLiteral):
-  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  # CHECK-NEXT: kgen.param.constant: !kgen.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (Int(4), 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2b

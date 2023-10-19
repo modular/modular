@@ -883,7 +883,7 @@ world"
 
 # CHECK-LABEL: lit.func @"tuples_rv
 fn tuples_rv(a: Int, b: Float32):
-    # CHECK: [[PACK0:%.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
+    # CHECK: [[PACK0:%.*]] = kgen.param.constant: !kgen.pack<[]> = <<>>
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK0]])
     _ = ()
 
@@ -1346,7 +1346,7 @@ struct MemType: pass
 # CHECK-SAME: %{{.*}}[float8]: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>> borrow, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float9]: {{.*}}<[] -> !Int>() -> !kgen.none
 # CHECK-SAME: %{{.*}}[float10]: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float11]: {{.*}}<<"Ts": variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float11]: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float12]: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
 # CHECK-SAME: %{{.*}}[named]: {{.*}}<("x": !kgen.pointer<!MemType> borrow_in_mem) -> !Int>
 fn function_types(

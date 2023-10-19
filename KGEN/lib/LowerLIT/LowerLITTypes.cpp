@@ -6,7 +6,7 @@
 //
 // This pass lowers a variety of high level Mojo types in the 'lit' dialect
 // to lower level KGEN abstractions.  Notably, this eliminates symbol based
-// struct references (in favor of `!pop.struct`), `!lit.ref` => `!kgen.pointer`
+// struct references (in favor of `!kgen.struct`), `!lit.ref` => `!kgen.pointer`
 // etc.  This runs immediately after the LowerLIT pass.
 //
 //===----------------------------------------------------------------------===//
@@ -35,10 +35,10 @@ using namespace LIT;
 
 namespace llvm {
 template <>
-struct PointerLikeTypeTraits<POP::StructType>
+struct PointerLikeTypeTraits<KGEN::StructType>
     : public PointerLikeTypeTraits<mlir::Type> {
-  static inline POP::StructType getFromVoidPointer(void *p) {
-    return POP::StructType::getFromOpaquePointer(p);
+  static inline KGEN::StructType getFromVoidPointer(void *p) {
+    return KGEN::StructType::getFromOpaquePointer(p);
   }
 };
 } // namespace llvm
@@ -69,15 +69,15 @@ struct StructOperationLowerer : public mlir::IRRewriter {
     return structDecls.fieldIndices.lookup({ref.getName(), name});
   }
 
-  /// Replace a KGEN struct with a POP struct or an arbitrary type if it is was
+  /// Replace a LIT struct with a POP struct or an arbitrary type if it is was
   /// a single-element type that got flattened.
-  /// This function returns PointerUnion<POP::StructType, Type> to
+  /// This function returns PointerUnion<KGEN::StructType, Type> to
   /// distinguish between a flatten single-element struct and a struct that has
   /// multiple elements.
-  /// Using PointerUnion<POP::StructType, Type> instead of Type because
+  /// Using PointerUnion<KGEN::StructType, Type> instead of Type because
   /// the single-element itself can also be a struct.
   /// PointerUnion doesn't know Type's RTTI.
-  PointerUnion<POP::StructType, Type> substituteStructRef(DeclRefType ref);
+  PointerUnion<KGEN::StructType, Type> substituteStructRef(DeclRefType ref);
 
   /// Try to build debug information for the given struct ref.
   DebugInfo::DIType
@@ -114,8 +114,8 @@ struct StructOperationLowerer : public mlir::IRRewriter {
   /// Set to the value of an invalid DeclRefType.
   DeclRefType errDeclRef;
 
-  /// The empty `#pop.struct<>` attribute, which has empty struct type.
-  POP::StructAttr emptyStructAttr;
+  /// The empty `#kgen.struct<>` attribute, which has empty struct type.
+  KGEN::StructAttr emptyStructAttr;
 
   /// Cache to memorize AttrType replacement results.
   DenseMap<const void *, const void *> attrTypeReplaceCache;
@@ -145,9 +145,9 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
                                                StructDeclarations &structDecls)
     : IRRewriter(ctx), structDecls(structDecls) {
 
-  // Get the empty `#pop.struct<>` attribute, which has empty struct type.
-  auto emptyStructType = POP::StructType::get(ctx, ArrayRef<Type>());
-  emptyStructAttr = POP::StructAttr::get({}, emptyStructType);
+  // Get the empty `#kgen.struct<>` attribute, which has empty struct type.
+  auto emptyStructType = KGEN::StructType::get(ctx, ArrayRef<Type>());
+  emptyStructAttr = KGEN::StructAttr::get({}, emptyStructType);
 
   // Build a converter to handle updating converted types within debug info
   // constructs.
@@ -214,8 +214,8 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   // Keep track of ancestor attributes.
   seenAttrs.insert(attr);
 
-  auto processStructAttr = [&](LIT::StructAttr attr) -> Attribute {
-    PointerUnion<POP::StructType, Type> newType =
+  auto processStructAttr = [&](LITStructAttr attr) -> Attribute {
+    PointerUnion<KGEN::StructType, Type> newType =
         substituteStructRef(attr.getType());
     // Flatten single-element structs.
     if (auto type = dyn_cast<Type>(newType)) {
@@ -229,7 +229,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
     SmallVector<TypedAttr> values;
     for (auto [name, value] : attr.getValues())
       values.push_back(cast<TypedAttr>(replace(value)));
-    return POP::StructAttr::get(values, cast<POP::StructType>(newType));
+    return KGEN::StructAttr::get(values, cast<KGEN::StructType>(newType));
   };
 
   auto processStructExtractAttr =
@@ -245,7 +245,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
       if (isa<Type>(substituteStructRef(litStructType)))
         return structValue;
 
-    return POP::StructExtractAttr::get(cast<TypedAttr>(structValue), fieldNo);
+    return KGEN::StructExtractAttr::get(cast<TypedAttr>(structValue), fieldNo);
   };
 
   auto processSymbolConstantAttr = [&](SymbolConstantAttr attr) -> Attribute {
@@ -277,7 +277,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   };
 
   Attribute result = attr;
-  if (auto sattr = dyn_cast<LIT::StructAttr>(attr)) {
+  if (auto sattr = dyn_cast<LITStructAttr>(attr)) {
     result = processStructAttr(sattr);
   } else if (auto sattr = dyn_cast<LIT::StructExtractAttr>(attr)) {
     result = processStructExtractAttr(sattr);
@@ -286,13 +286,13 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   } else if (auto paramOperator = dyn_cast<ParamOperatorAttr>(attr)) {
     result = processParamOperatorAttr(paramOperator);
   } else if (isa<LIT::LifetimeAttr>(attr)) {
-    result = emptyStructAttr; // #lit.lifetime => #pop.struct<>
+    result = emptyStructAttr; // #lit.lifetime => #kgen.struct<>
   } else if (auto paramDRE = dyn_cast<ParamDeclRefAttr>(attr)) {
     // References to parameters of lifetime type are folded to their singleton
     // value, completely eliminating any use of them, allowing us to just delete
     // them from signatures.
     if (isa<LIT::LifetimeType>(paramDRE.getType())) {
-      // p => #pop.struct<>
+      // p => #kgen.struct<>
       result = emptyStructAttr;
     } else {
       result = replaceImpl<Attribute, Attribute>(attr);
@@ -362,7 +362,7 @@ Type StructOperationLowerer::replace(Type type) {
   };
 
   auto processDeclRefType = [&](DeclRefType ref) -> Type {
-    PointerUnion<POP::StructType, Type> result = substituteStructRef(ref);
+    PointerUnion<KGEN::StructType, Type> result = substituteStructRef(ref);
     if (erasedType) {
       // If Pointer type erase happened, don't cache this type replacement
       // result.
@@ -376,7 +376,7 @@ Type StructOperationLowerer::replace(Type type) {
     if (auto type = dyn_cast<Type>(result))
       return type;
 
-    return cast<POP::StructType>(result);
+    return cast<KGEN::StructType>(result);
   };
 
   // Signature processing checks to see if there are any lifetime parameters;
@@ -409,7 +409,7 @@ Type StructOperationLowerer::replace(Type type) {
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     result = processSignatureType(signature);
   } else if (isa<LIT::LifetimeType>(type)) {
-    // !lit.lifetime => !pop.struct<>
+    // !lit.lifetime => !kgen.struct<>
     result = emptyStructAttr.getType();
   } else if (auto ref = dyn_cast<LIT::RefType>(type)) {
     // !lit.ref<@T, life> => !kgen.pointer<@T>
@@ -430,7 +430,7 @@ Type StructOperationLowerer::replace(Type type) {
   return result;
 }
 
-PointerUnion<POP::StructType, Type>
+PointerUnion<KGEN::StructType, Type>
 StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   auto it = structDecls.fields.find(ref.getName());
   if (LLVM_UNLIKELY(it == structDecls.fields.end())) {
@@ -450,7 +450,7 @@ StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   if (elementTypes.size() == 1)
     return elementTypes[0];
 
-  return POP::StructType::get(ref.getContext(), elementTypes);
+  return KGEN::StructType::get(ref.getContext(), elementTypes);
 }
 
 DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
@@ -473,7 +473,7 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
 
 static Value lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,
                            StructOperationLowerer &lowerer) {
-  PointerUnion<POP::StructType, Type> newType =
+  PointerUnion<KGEN::StructType, Type> newType =
       lowerer.substituteStructRef(op.getType());
 
   if (isa<Type>(newType)) {
@@ -483,7 +483,7 @@ static Value lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,
   }
 
   return lowerer.create<POP::StructCreateOp>(
-      op.getLoc(), cast<POP::StructType>(newType), adaptor.getOperands());
+      op.getLoc(), cast<KGEN::StructType>(newType), adaptor.getOperands());
 }
 
 static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
@@ -494,7 +494,7 @@ static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
   // Check to see if we need to flatten this.  Flattening an insert just
   // replaces the value.
 
-  PointerUnion<POP::StructType, Type> resultStructType =
+  PointerUnion<KGEN::StructType, Type> resultStructType =
       lowerer.substituteStructRef(op.getType());
   if (index == 0) {
     if (isa<Type>(resultStructType))
@@ -505,7 +505,7 @@ static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
       op.getLoc(), adaptor.getValue(), adaptor.getContainer(),
       lowerer.getIndexAttr(index));
 
-  auto structType = cast<POP::StructType>(result.getResult().getType());
+  auto structType = cast<KGEN::StructType>(result.getResult().getType());
   TypedAttr fieldTypedAttr = structType.getElementTypes()[index];
 
   if (auto attr = dyn_cast<TypeConstantAttr>(fieldTypedAttr)) {

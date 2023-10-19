@@ -899,4 +899,118 @@ def KGEN_PackageArchiveArrayAttr
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// StructAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructAttr : KGENAttr<"Struct", "struct", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "A heterogeneous list of elements.";
+  let description = [{
+    The `#kgen.struct` attribute contains a heterogenous list of elements of
+    struct type. It is used to represent constant struct values.
+
+    Example:
+
+    ```mlir
+    #kgen.struct<3, 3.5> : !kge.struct<index, f32>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
+                        AttributeSelfTypeParameter<"", "StructType">:$type);
+
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<StructElements>($values, ref($type))^ `>`)?
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values)>,
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
+                                        "StructType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>,
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructExtractAttr : KGENAttr<"StructExtract", "struct.extract",
+    [TypedAttrInterface]> {
+  let summary = "Extract an element from a struct value";
+  let description = [{
+    The `#kgen.struct.extract` attribute represents a field reference from a
+    constant struct, which may be parametric.
+
+    Example:
+
+    ```mlir
+    #kgen.struct.extract<p, 4> : index
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$structValue, "unsigned":$fieldNo,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat =
+    "`<` custom<ColonTypeParamValue>($structValue) `,` $fieldNo `>`";
+
+  let skipDefaultBuilders = 1;
+
+  let builders = [
+    // Override the default builder used by the generated parser.  This computes
+    // the result type correctly and performs inline folding.
+    AttrBuilderWithInferredContext<
+                (ins "TypedAttr":$structValue, "unsigned":$fieldNo),
+                     "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$structValue, "unsigned":$fieldNo,
+                     "Type":$resultType), "", "TypedAttr">
+
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// PackAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_PackAttr : KGENAttr<"Pack", "pack", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "heterogeneous list of constant elements";
+  let description = [{
+    The `#kgen.pack` attribute contains a heterogenously typed list of constant
+    elements. It can be used to represent constant pack values, and so is of
+    pack type.
+
+    Example:
+
+    ```mlir
+    // A pack of 3 elements.
+    %0 = kgen.param.constant: !kge.pack<[i8, ui4, i32]> = <<3, 1, 4>>
+    // An empty pack.
+    %1 = kgen.param.constant: !kge.pack<[]> = <<>>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
+                        AttributeSelfTypeParameter<"", "PackType">:$type);
+
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<PackElements>($values, ref($type))^ `>`)?
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
+                                        "PackType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

@@ -86,8 +86,8 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
     This interface describes attributes that are attached to a `!kgen.signature`
     type. Function metadata attributes carry additional information about a
     callable on top of the information in the base `SignatureType`. This
-    interface defines the require methods for this metadata attribute, including
-    verification and print hooks.
+    interface defines the required methods for this metadata attribute,
+    including verification and print hooks.
   }];
   let cppNamespace = "::M::KGEN";
 

@@ -87,7 +87,7 @@ def UnresolvedAliasValueAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
-def StructAttr : DialectAttribute<(attr
+def LITStructAttr : DialectAttribute<(attr
   WithParser<"succeeded(readStructValues($_reader, $_var))",
   WithPrinter<"writeStructValues($_writer, $_getter)",
   WithType<"SmallVector<std::tuple<StringAttr, TypedAttr>>">>>:$values,
@@ -106,7 +106,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     ModuleAttr,
     LifetimeAttr,
     UnresolvedAliasValueAttr,
-    StructAttr,
+    LITStructAttr,
     PassingKindArrayAttr,
     /*StructExtractAttr*/
   ];

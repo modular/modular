@@ -714,19 +714,19 @@ kgen.generator @callee<rank, shape: array<rank, index> -> output: array<rank, in
 // -----
 
 // CHECK-LABEL: kgen.generator @struct_extract
-kgen.generator @struct_extract(%arg0: !pop.struct<simd<2, f32>>) {
+kgen.generator @struct_extract(%arg0: !kgen.struct<simd<2, f32>>) {
   kgen.param.declare size = <1>
   kgen.param.declare type: dtype = <si32>
-  // CHECK: pop.struct.extract %0[0] : !pop.struct<simd<size0, type0>>
-  kgen.call @callee<2, :dtype f32>(%arg0) : (!pop.struct<simd<2, f32>>) -> ()
+  // CHECK: pop.struct.extract %0[0] : !kgen.struct<simd<size0, type0>>
+  kgen.call @callee<2, :dtype f32>(%arg0) : (!kgen.struct<simd<2, f32>>) -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<size, type: dtype>(%arg0: !pop.struct<simd<size, type>>) always_inline {
+kgen.generator @callee<size, type: dtype>(%arg0: !kgen.struct<simd<size, type>>) always_inline {
   kgen.param.declare cond: i1 = <1>
   kgen.param.if <cond> {
-    %0 = pop.struct.extract %arg0[0] : !pop.struct<simd<size, type>>
+    %0 = pop.struct.extract %arg0[0] : !kgen.struct<simd<size, type>>
     kgen.param.yield
   } else {
     kgen.param.yield
