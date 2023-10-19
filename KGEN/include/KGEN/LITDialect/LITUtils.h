@@ -13,6 +13,7 @@
 #define KGEN_LITDIALECT_LITUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "llvm/Support/SMLoc.h"
 
 namespace M {
@@ -30,6 +31,24 @@ class ParameterExprArrayAttr;
 namespace LIT {
 class PassingKindArrayAttr;
 enum class PassingKind : uint32_t;
+
+/// Mangle a parameter name with the line and column index where it's declared.
+std::string mangleParameter(const Twine &baseName, unsigned line, unsigned col);
+
+/// Demangle a mangled parameter name if it is mangled.
+StringRef demangleParameterName(StringRef name);
+
+namespace impl {
+Attribute demangleIfNeeded(Attribute arg);
+Type demangleIfNeeded(Type arg);
+} // namespace impl
+
+/// Recursively demangle the parameter names (declaration of references) in the
+/// given mlir type or attribute, if necessary.
+template <typename AttrOrType>
+AttrOrType demangleIfNeeded(AttrOrType arg) {
+  return cast<AttrOrType>(impl::demangleIfNeeded(arg));
+}
 
 /// Parse an optional default value of the given type. `defaultVal` is not
 /// modified if a default value was not present. If `hasAddress` is set, the
