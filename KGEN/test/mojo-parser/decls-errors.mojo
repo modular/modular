@@ -8,6 +8,17 @@
 
 from memory.unsafe import Pointer
 
+##===----------------------------------------------------------------------===##
+# Escaping Closures
+##===----------------------------------------------------------------------===##
+
+fn local_parameter_capture[a: Int](c: Int) -> fn (x:Bool) escaping -> Int:
+    alias X = a
+    fn p_capture(x:Bool) escaping -> Int:
+        # expected-error @below {{TODO: Support result parameters, local capture, and escaping closures.}}
+        return X + c
+    # expected-error @below {{cannot implicitly convert 'fn(x = Bool) -> Int' value to '_CW_$decls-errors_fn' in return value}}
+    return p_capture
 
 ##===----------------------------------------------------------------------===##
 # Closures

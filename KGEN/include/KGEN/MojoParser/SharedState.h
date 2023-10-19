@@ -70,6 +70,27 @@ private:
   Type initType;
 };
 
+/// The CaptureTraversableMap enables the owner of the map to return a map
+/// without copying the data. The interface allows callers to traverse entries
+/// of a map without mutating the map and to search by hash rather than
+/// traversing a list.
+struct CaptureTraversableMap {
+  CaptureTraversableMap(llvm::MapVector<StringAttr, Type> &capturedParams)
+      : capturedParams(capturedParams) {}
+  llvm::MapVector<StringAttr, Type>::const_iterator find(StringAttr key) const {
+    return capturedParams.find(key);
+  }
+  llvm::MapVector<StringAttr, Type>::const_iterator begin() const {
+    return capturedParams.begin();
+  }
+  llvm::MapVector<StringAttr, Type>::const_iterator end() const {
+    return capturedParams.end();
+  }
+
+private:
+  llvm::MapVector<StringAttr, Type> &capturedParams;
+};
+
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
 enum class DeclResolvedness : int8_t {
@@ -382,6 +403,16 @@ public:
   /// Given a nested function, a capture value, and the corresponding capture
   /// ASTDecl, store the capture associated with the nested function.
   void addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl, Capture capture);
+
+  /// Given a nested function, a captured parameter, and the corresponding
+  /// parameter ASTDecl, store the capture associated with the nested function.
+  void addCapturedParameterToScope(ASTDecl &scope, ASTDecl *captureDecl,
+                                   StringAttr parameterName,
+                                   Type parameterType);
+
+  /// Given a nested function, return a list of captured parameters in the form
+  /// of name-type pairs.
+  CaptureTraversableMap getParameterCaptureRangeInScope(ASTDecl &scope);
 
 private:
   /// The internal state of an imported module or package.

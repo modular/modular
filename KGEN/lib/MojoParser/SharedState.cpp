@@ -166,6 +166,11 @@ struct SharedState::Impl : public ClosureCache {
   /// function.
   llvm::DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>>
       capturesInScope;
+
+  /// The parameter values and decls associated with their enclosing nested
+  /// function.
+  llvm::DenseMap<ASTDecl *, llvm::MapVector<StringAttr, Type>>
+      capturedParametersInScope;
 };
 
 StructDeclOp SharedState::Impl::getExisting(ClosureHash key) {
@@ -1957,6 +1962,29 @@ SharedState::getCaptureRangeInScope(ASTDecl &scope) {
 void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
                                     Capture capture) {
   getImpl().capturesInScope[&scope].insert({captureDecl, capture});
+}
+
+void SharedState::addCapturedParameterToScope(ASTDecl &scope,
+                                              ASTDecl *captureDecl,
+                                              StringAttr parameterName,
+                                              Type parameterType) {
+  if (!getImpl().capturedParametersInScope.contains(&scope))
+    getImpl().capturedParametersInScope.insert(
+        {&scope, llvm::MapVector<StringAttr, Type>()});
+  llvm::MapVector<StringAttr, Type> &capturedParams =
+      getImpl().capturedParametersInScope[&scope];
+  if (!capturedParams.contains(parameterName))
+    capturedParams[parameterName] = parameterType;
+}
+
+CaptureTraversableMap
+SharedState::getParameterCaptureRangeInScope(ASTDecl &scope) {
+  if (!getImpl().capturedParametersInScope.contains(&scope))
+    getImpl().capturedParametersInScope.insert(
+        {&scope, llvm::MapVector<StringAttr, Type>()});
+  llvm::MapVector<StringAttr, Type> &capturedParams =
+      getImpl().capturedParametersInScope[&scope];
+  return CaptureTraversableMap(capturedParams);
 }
 
 //===----------------------------------------------------------------------===//
