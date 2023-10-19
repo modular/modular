@@ -1244,6 +1244,16 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     return {};
   }
 
+  // If we have inferred parameters, bind them here. An indirect call with
+  // inferred parameters must be a PValue.
+  if (!fitness.getParamBindings().empty()) {
+    SmallVector<TypedAttr> bindOperands;
+    bindOperands.push_back(calleeRV.getIfPValue());
+    assert(bindOperands.front() && "binding a dynamic callee?");
+    llvm::append_range(bindOperands, fitness.getParamBindings());
+    calleeRV = PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
+  }
+
   return emitCallUnchecked(calleeRV, callOperands,
                            /*resultParams=*/{}, dest, callExpr);
 }
