@@ -1469,7 +1469,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     const ExprNode *resultTypeExpr, FnEffects &effects,
     SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
     SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
-    ASTDecl &scope, SpecialFunctionInfo fnInfo, StringRef funcName) {
+    ASTDecl &scope, ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
   ASTType resultType;
@@ -1533,6 +1533,18 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     }
   }
 
+  // If this definition is a struct/class member, compute the self type.
+  ASTType selfType;
+  if (fnDecl) {
+    ASTDecl *parent = fnDecl->getParentDecl();
+    if (isa<StructDeclOp, TraitDeclOp>(*parent)) {
+      // The parent decl must be fully resolved in order to resolve any of its
+      // members.
+      assert(parent->resolvedness == DeclResolvedness::fully);
+      selfType = parent->getSelfType();
+    }
+  }
+
   bool seenInitExpr = false;
   for (auto [idx, arg] : llvm::enumerate(llvm::drop_begin(args, skipIndex))) {
     ASTType type;
@@ -1553,6 +1565,24 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       }
       type = addImplicitTypeParams(shared, type, arg, inputParamNames,
                                    inputParamPassingKinds, inputParamDecls);
+    } else if (!idx && selfType && !cast<LIT::FuncOp>(fnDecl).getIsStatic()) {
+      // If this is the 'self' argument in a struct, default the type to Self.
+      type = selfType;
+    } else if (isDef) {
+      // In 'def', arguments with no types default to 'object'.
+      type = shared.lookupObjectType(arg.loc, scope);
+      if (!type) {
+        if (reportError())
+          return {};
+        type = shared.getTypeCheckErrorType();
+      }
+    } else {
+      // In an 'fn' we report an error.
+      shared.emitError(arg.loc, "'fn' argument type must be specified")
+          << SourceRange(arg.loc, arg.loc);
+      if (reportError())
+        return {};
+      type = shared.getTypeCheckErrorType();
     }
     argTypes.push_back(type);
 
@@ -1950,7 +1980,7 @@ void Decorators::applyBodyDecorators(
 static void
 verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
                           SmallVector<ParsedArgument> &args,
-                          MutableArrayRef<Type> argTypes, ASTType &resultType,
+                          ArrayRef<Type> argTypes, ASTType &resultType,
                           const FnEffects &effects, SharedState &shared,
                           SpecialFunctionInfo fnInfo) {
   // On any semantic error we mark the declaration erroneous - so references to
@@ -2008,30 +2038,6 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
                      "are always movable by copying a register";
     }
   }
-
-  // Fill in any missing arguments or diagnose missing ones in fn's.
-  for (auto [i, arg, type] : llvm::enumerate(args, argTypes)) {
-    if (!type) {
-      // If this is the 'self' argument in a struct, default the type to Self.
-      if (static_cast<ssize_t>(i) == selfArgNumber && selfType &&
-          !funcOp.getIsStatic()) {
-        type = selfType;
-      } else if (funcOp.getIsDef()) {
-        // If we are in a 'def', we infer object type for Python compatibility.
-        type = shared.lookupObjectType(arg.loc, *decl.getParentDecl());
-        if (!type)
-          type = shared.getTypeCheckErrorType();
-      } else {
-        // In an 'fn' we report an error.
-        emitErrorLoc(arg.loc, "'fn' argument type must be specified")
-            << SourceRange(arg.loc, arg.loc);
-        type = shared.getTypeCheckErrorType();
-      }
-    }
-  }
-
-  ASTType declaredResultType =
-      hasMemoryResult ? ASTType(argTypes[0]) : resultType;
 
   // Check any special function information.
 
@@ -2098,6 +2104,9 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
       emitErrorLoc(args[selfArgNumber].loc,
                    "self argument cannot be passed by reference");
   }
+
+  ASTType declaredResultType =
+      hasMemoryResult ? ASTType(argTypes[0]) : resultType;
 
   // Some functions like __new__ require a Self result type.
   if (fnInfo.flags & SpecialFunctionInfo::kSelfResult &&
@@ -2539,7 +2548,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       reportError, shared, typeEmitter, paramNames, paramPassingKinds,
       inputParamDecls, resultTypeExpr, effects, args, argTypes, argDefaults,
-      funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), fnInfo);
+      funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), &decl, fnInfo);
   if (!resultType)
     return failure();
 
