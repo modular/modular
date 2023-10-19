@@ -26,6 +26,42 @@ bool DebugInfo::shouldMaterializeConstantsInto(Region &region) {
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
+/// Make sure that all locations within a fused location have the same scope on
+/// their locations.
+static ErrorOr<DIScopeAttr> getAndValidateScopeIn(Location loc) {
+  DIScopeAttr scope;
+  if (auto fusedLoc = dyn_cast<FusedLoc>(loc)) {
+    // FusedLoc _may_ contain the scope. If it doesn't, we need to ensure that
+    // all the fused locations have the same scope, which we extract.
+    scope = dyn_cast_or_null<DIScopeAttr>(fusedLoc.getMetadata());
+    if (ArrayRef<Location> nestedLocs = fusedLoc.getLocations();
+        !scope && !nestedLocs.empty()) {
+      {
+        auto scopeOr = getAndValidateScopeIn(nestedLocs.back());
+        if (scopeOr.isError())
+          return scopeOr.takeError();
+        scope = std::move(*scopeOr);
+      }
+      for (Location nestedLoc : nestedLocs.drop_back()) {
+        auto nestedScopeOr = getAndValidateScopeIn(nestedLoc);
+        if (nestedScopeOr.isError())
+          return nestedScopeOr.takeError();
+        auto nestedScope = std::move(*nestedScopeOr);
+        if (nestedScope != scope)
+          return Error("contains inconsistent scopes in fused location");
+      }
+    }
+  }
+
+  // If not dealing with an inlined location, we return a scope (if found).
+  auto callSiteLoc = dyn_cast<mlir::CallSiteLoc>(loc);
+  if (!callSiteLoc)
+    return scope;
+
+  // Otherwise, we walk up the inlining chain.
+  return getAndValidateScopeIn(callSiteLoc.getCaller());
+}
+
 /// Verify the location scope of ordinary op within a subprogram.
 static LogicalResult verifyScope(ErrorOr<DIScopeAttr> scopeOr,
                                  DISubprogramAttr funcScope, Operation *op) {
@@ -44,7 +80,7 @@ static LogicalResult verifyScope(ErrorOr<DIScopeAttr> scopeOr,
 
 /// Verify the location scope of ordinary op within a subprogram.
 static LogicalResult verifyScope(Operation *op, DISubprogramAttr funcScope) {
-  return verifyScope(getScopeWithinBody(op->getLoc()), funcScope, op);
+  return verifyScope(getAndValidateScopeIn(op->getLoc()), funcScope, op);
 }
 
 /// Verify the location scope of InlinedSubprogramScoped within a subprogram.
@@ -52,7 +88,7 @@ static LogicalResult verifyScope(InlinedSubprogramScoped inlined,
                                  DISubprogramAttr funcScope) {
   auto getScope = [](auto op) -> ErrorOr<DIScopeAttr> {
     if (mlir::LocationAttr callLoc = op.getCallLocAttr())
-      return getScopeWithinBody(callLoc);
+      return getAndValidateScopeIn(callLoc);
     return Error("must have callsite location");
   };
   return verifyScope(getScope(inlined), funcScope, inlined);

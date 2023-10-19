@@ -90,10 +90,7 @@ DIScopeAttr DebugInfo::extractScope(Operation *op) {
     return scopedOp.getLocScope();
 
   // For other ops, we look for the scope recursively.
-  ErrorOr<DIScopeAttr> scopeOr = getScopeWithinBody(op->getLoc());
-  if (scopeOr.isError())
-    return {};
-  return *scopeOr;
+  return extractScopeFrom<DIScopeAttr>(op->getLoc());
 }
 
 void DIAttrTypeReplacer::replaceElementsIn(Operation *op) {
@@ -123,40 +120,6 @@ void DebugInfo::updateSubprogram(mlir::FunctionOpInterface funcOp,
   replacer.addReplacement(
       [&](DISubprogramAttr sp) { return sp == funcSp ? newAttr : sp; });
   replacer.recursivelyReplaceElementsIn(funcOp);
-}
-
-ErrorOr<DIScopeAttr> DebugInfo::getScopeWithinBody(Location loc) {
-  DIScopeAttr scope;
-  if (auto fusedLoc = dyn_cast<FusedLoc>(loc)) {
-    // FusedLoc _may_ contain the scope. If it doesn't, we need to ensure that
-    // all the fused locations have the same scope, which we extract.
-    scope = dyn_cast_or_null<DIScopeAttr>(fusedLoc.getMetadata());
-    if (ArrayRef<Location> nestedLocs = fusedLoc.getLocations();
-        !scope && !nestedLocs.empty()) {
-      {
-        auto scopeOr = getScopeWithinBody(nestedLocs.back());
-        if (scopeOr.isError())
-          return scopeOr.takeError();
-        scope = std::move(*scopeOr);
-      }
-      for (Location nestedLoc : nestedLocs.drop_back()) {
-        auto nestedScopeOr = getScopeWithinBody(nestedLoc);
-        if (nestedScopeOr.isError())
-          return nestedScopeOr.takeError();
-        auto nestedScope = std::move(*nestedScopeOr);
-        if (nestedScope != scope)
-          return Error("contains inconsistent scopes in fused location");
-      }
-    }
-  }
-
-  // If not dealing with an inlined location, we return a scope (if found).
-  auto callSiteLoc = dyn_cast<mlir::CallSiteLoc>(loc);
-  if (!callSiteLoc)
-    return scope;
-
-  // Otherwise, we walk up the inlining chain.
-  return getScopeWithinBody(callSiteLoc.getCaller());
 }
 
 void DebugInfo::updateInlinedLoc(Operation *op, Location callerLoc,

@@ -557,8 +557,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   // If possible, we need to add a subprogram scope to the new function.
   auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
   auto scope =
-      op.getLoc()
-          ->findInstanceOf<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>();
+      DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(op.getLoc());
   if (scope) {
     // Use unresolved types now for simplicity, these will get resolved during
     // compilation.
@@ -570,9 +569,9 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
 
     // The insertion into the symtab might change the name, so we extract it.
     StringRef suspName = suspendFn.getSymName();
-    Location newLoc = FusedLoc::get(
-        op.getContext(), Location(fileLoc),
-        scope.getMetadata().cloneWith(suspName, suspName, spType));
+    Location newLoc =
+        FusedLoc::get(op.getContext(), Location(fileLoc),
+                      scope.cloneWith(suspName, suspName, spType));
 
     // Okay, we can now overwrite the location with a scoped one. We also set
     // the builder location so anything else we insert (e.g. return) is correct.
