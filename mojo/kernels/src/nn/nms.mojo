@@ -227,7 +227,7 @@ fn non_max_suppression[
             fn _greater_than[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
                 return (
                     per_class_scores[rebind[Int64](lhs).__int__()]
-                    > per_class_scores[rebind[Int64](rhs).__int__()]
+                    >= per_class_scores[rebind[Int64](rhs).__int__()]
                 )
 
             # sort box_idxs based on corresponding scores
@@ -271,6 +271,20 @@ fn non_max_suppression[
                 _quicksort[Int64, _greater_than](
                     box_idxs.data + pred_idx, num_boxes_curr_pred
                 )
+
+            @always_inline
+            fn sorted() -> Bool:
+                for i in range(len(box_idxs) - 1):
+                    if (
+                        per_class_scores[box_idxs[i].to_int()]
+                        < per_class_scores[box_idxs[i + 1].to_int()]
+                    ):
+                        return False
+                return True
+
+            debug_assert(
+                sorted(), "NonMaxSuppression boxes not sorted correctly"
+            )
 
     box_idxs._del_old()
     per_class_scores._del_old()
