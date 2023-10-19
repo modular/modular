@@ -4441,6 +4441,36 @@ fn pack_conv_filter_shape[
 
 
 @always_inline
+fn pack_conv_filter_shape[
+    filter_type: DType,
+    WO: Int,
+    single_thread_blocking_override: Bool,
+](
+    filter_buf: NDBuffer[4, DimList.create_unknown[4](), filter_type],
+    num_groups: Int,
+) -> StaticIntTuple[5]:
+    """
+    Compute the output shape of convolution filter packing.
+
+    Parameters:
+        filter_type: Type of the filter.
+        WO: Width dimension of the convolution output.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        filter_buf: The filter to be packed.
+        num_groups: The number of groups in the convolution.
+
+    Returns:
+        The output shape.
+    """
+    # TODO specialize via `WO`
+    return pack_conv_filter_shape[filter_type, single_thread_blocking_override](
+        filter_buf, num_groups
+    )
+
+
+@always_inline
 fn _get_group_filter_base[
     rank: Int, type: DType, dims: DimList
 ](
