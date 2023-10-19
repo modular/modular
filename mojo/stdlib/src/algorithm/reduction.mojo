@@ -20,6 +20,7 @@ from math import none_true as _none_true
 from math.bit import cttz
 from math.limit import max_or_inf, min_or_neginf
 from sys.info import is_little_endian, simdwidthof, sizeof
+from runtime.tracing import TraceLevel
 
 from algorithm import async_parallelize, unroll, vectorize
 from algorithm.functional import _get_num_workers
@@ -1138,6 +1139,7 @@ fn product[
 # ===----------------------------------------------------------------------===#
 
 
+@adaptive
 fn mean[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     """Computes the mean value of the elements in a buffer.
 
@@ -1165,6 +1167,7 @@ fn mean[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
         return total / buffer_len
 
 
+@adaptive
 fn mean[
     rank: Int,
     input_shape: DimList,
@@ -1217,6 +1220,107 @@ fn mean[
             dst_1d.simd_store[simd_width](idx, to_store)
 
         vectorize[simd_width, normalize_floating](dst_1d.__len__())
+
+
+@always_inline
+@adaptive
+fn mean[
+    type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+    input_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
+](
+    input_shape: StaticIntTuple[rank],
+    reduce_dim: Int,
+    output_shape: StaticIntTuple[rank],
+    out_chain: OutputChainPtr,
+):
+    """Computes the mean across the input and output shape.
+
+    This performs the mean computation on the domain specified by `input_shape`,
+    storing the results using the`input_0_fn`. The results' domain is
+    `output_shape` which are stored using the `output_0_fn`.
+
+    Parameters:
+        type: The type of the input and output.
+        rank: The rank of the domain.
+        single_thread_blocking_override: Whether the operation is performed async.
+        input_fn: The function to load the input.
+        output_fn: The function to store the output.
+        target: The target architecture.
+
+    Args:
+        input_shape: The input shape.
+        reduce_dim: The axis to perform the mean on.
+        output_shape: The output shape.
+        out_chain: The output chain to use.
+    """
+    out_chain.trace[TraceLevel.OP]("mogg.mean")
+
+    @always_inline
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return v1 + v2
+
+    @always_inline
+    fn input_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+
+    # For floats apply the reciprocal as a multiply.
+    @parameter
+    if type.is_floating_point():
+        # Apply mean division before storing to the output lambda.
+        let reciprocal = 1.0 / input_shape[reduce_dim]
+
+        @always_inline
+        @parameter
+        fn wrapped_output_mul[
+            _type: DType, width: Int, rank: Int
+        ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+            let mean_val = value * reciprocal
+            output_fn[width, rank](indices, rebind[SIMD[type, width]](mean_val))
+
+        _reduce_generator[
+            type,
+            rank,
+            simdwidthof[type](),
+            single_thread_blocking_override,
+            input_fn_wrapper,
+            wrapped_output_mul,
+            reduce_impl,
+        ](input_shape, 0, reduce_dim, out_chain)
+
+    else:
+        # For ints just a normal divide.
+        let dim_size = input_shape[reduce_dim]
+
+        @always_inline
+        @parameter
+        fn wrapped_output_div[
+            _type: DType, width: Int, rank: Int
+        ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
+            let mean_val = value / dim_size
+            output_fn[width, rank](indices, rebind[SIMD[type, width]](mean_val))
+
+        _reduce_generator[
+            type,
+            rank,
+            simdwidthof[type](),
+            single_thread_blocking_override,
+            input_fn_wrapper,
+            wrapped_output_div,
+            reduce_impl,
+        ](input_shape, 0, reduce_dim, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
