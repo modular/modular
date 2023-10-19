@@ -135,8 +135,7 @@ private:
 
     // If possible, we need to add a subprogram scope to the new function.
     auto scope =
-        op.getLoc()
-            ->findInstanceOf<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>();
+        DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(op.getLoc());
     if (scope) {
       // Use unresolved types now for simplicity, these will get resolved during
       // compilation.
@@ -149,9 +148,9 @@ private:
 
       auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
       StringRef wrapperName = wrapperFn.getSymName();
-      wrapperFn->setLoc(FusedLoc::get(
-          op.getContext(), Location(fileLoc),
-          scope.getMetadata().cloneWith(wrapperName, wrapperName, spType)));
+      wrapperFn->setLoc(
+          FusedLoc::get(op.getContext(), Location(fileLoc),
+                        scope.cloneWith(wrapperName, wrapperName, spType)));
     }
 
     wrapperFn.getBody().push_back(wrapperFnBody);

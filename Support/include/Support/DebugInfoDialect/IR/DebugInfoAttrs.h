@@ -72,10 +72,6 @@ DISubprogramAttr extractScope(mlir::FunctionOpInterface funcOp);
 
 /// Extract the debug info scope from the location of the given operation.
 DIScopeAttr extractScope(Operation *op);
-template <typename ScopeAttrT, typename T>
-ScopeAttrT extractScope(T value) {
-  return dyn_cast_or_null<ScopeAttrT>(extractScope(value));
-}
 
 /// This class represents an attribute/type replacer with proper defaults for
 /// updating debug information within operations.
@@ -104,7 +100,12 @@ void updateSubprogram(mlir::FunctionOpInterface op, StringAttr linkageName,
 /// Return the scope from a location of an op within a function's body,
 /// recursively walking up through a chain of inlined locations if needed,
 /// always following the caller location.
-ErrorOr<DebugInfo::DIScopeAttr> getScopeWithinBody(Location loc);
+template <typename ScopeT>
+ScopeT extractScopeFrom(Location loc) {
+  if (auto fused = loc->findInstanceOf<mlir::FusedLocWith<ScopeT>>())
+    return fused.getMetadata();
+  return {};
+}
 
 /// Update the location of the op as if it was inlined at the given caller
 /// location, handling special location interfaces. An optional flag can be
