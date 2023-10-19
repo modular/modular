@@ -424,7 +424,7 @@ lit.func @lit_loop() {
   } else {
     // CHECK: lit.loop.yield
     lit.loop.yield
-  }
+  } {unrollLevel = #hlcf<unroll_level full>}
 
   kgen.return
 }

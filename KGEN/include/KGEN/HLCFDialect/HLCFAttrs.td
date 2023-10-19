@@ -39,8 +39,8 @@ def HLCF_UnrollLevelAttr : HLCF_Attr<"UnrollLevel", "unroll_level"> {
   let parameters = (ins "UnrollLevel":$value);
   let assemblyFormat = "custom<UnrollLevel>($value)";
 
-  let returnType = "UnrollLevel";
-  let constBuilderCall = "UnrollLevelAttr::get($_builder.getContext(), $0)";
+  let returnType = "HLCF::UnrollLevel";
+  let constBuilderCall = "HLCF::UnrollLevelAttr::get($_builder.getContext(), $0)";
   let convertFromStorage = "$_self.getValue()";
 }
 

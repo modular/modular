@@ -176,14 +176,10 @@ fn param_if_and[a: Bool, b: Bool]():
 # CHECK:       %inside_a = lit.varlet.decl "inside_a" var
 # CHECK:       %inside_b = lit.varlet.decl "inside_b" var
 # CHECK:       %inside_else = lit.varlet.decl "inside_else" var
-# CHECK:       hlcf.loop {
-# CHECK:         hlcf.if
-# CHECK-NEXT:     hlcf.yield
-# CHECK-NEXT:    } else {
-# CHECK-NEXT:     kgen.param.constant: {{.*}} = <#lit.struct<{value = 2}>>
-# CHECK-NEXT:     lit.ref.store {{.+}}, %inside_else
-# CHECK-NEXT:     hlcf.break
-# CHECK-NEXT:    }
+# CHECK:       lit.loop cond {
+# CHECK:         [[V0:%.*]] = kgen.call {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)"(%a)
+# CHECK:         lit.loop.condition [[V0]] : i1
+# CHECK:       } body {
 # CHECK-NEXT:    kgen.param.constant: {{.*}} = <#lit.struct<{value = 0}>>
 # CHECK-NEXT:    lit.ref.store {{.+}}, %inside_a
 # CHECK:         hlcf.if
@@ -193,7 +189,11 @@ fn param_if_and[a: Bool, b: Bool]():
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    }
-# CHECK-NEXT:    hlcf.continue
+# CHECK-NEXT:    lit.loop.continue
+# CHECK-NEXT:  } else {
+# CHECK-NEXT:     kgen.param.constant: {{.*}} = <#lit.struct<{value = 2}>>
+# CHECK-NEXT:     lit.ref.store {{.+}}, %inside_else
+# CHECK-NEXT:    lit.loop.yield
 # CHECK-NEXT:  }
 # CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_func
@@ -212,14 +212,14 @@ fn test_while(a: Bool, b: Bool) -> Bool:
 
 
 # CHECK-LABEL: lit.func @"test_simple
-# CHECK:       hlcf.loop {
-# CHECK:       hlcf.if
-# CHECK-NEXT:       hlcf.yield
-# CHECK-NEXT:     } else {
-# CHECK-NEXT:       hlcf.break
-# CHECK-NEXT:     }
-# CHECK-NEXT:     hlcf.continue
-# CHECK-NEXT:   }
+# CHECK:       lit.loop cond {
+# CHECK:         [[V0:%.*]] = kgen.call {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)"(%a)
+# CHECK:         lit.loop.condition [[V0]] : i1
+# CHECK:       } body {
+# CHECK-NEXT:     lit.loop.continue
+# CHECK-NEXT:  } else {
+# CHECK-NEXT:    lit.loop.yield
+# CHECK-NEXT:  }
 # CHECK-NEXT:   %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:   lit.return %none :  !kgen.none
 # CHECK-NEXT:   lit.end_func
@@ -235,12 +235,18 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     # CHECK: lit.ref.store %a, %a_0
     # CHECK: hlcf.if {{.+}} {
     if b:
-        # CHECK: hlcf.loop
-        # CHECK: {{.+}} = lit.ref.load %a_0
+        # CHECK: lit.loop cond {
+        # CHECK:   [[V0:%.*]] = lit.ref.load %a_0
+        # CHECK:   [[V1:%.*]] = kgen.call {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)"([[V0]])
+        # CHECK:   lit.loop.condition [[V1]] : i1
+        # CHECK: } body {
         while a:
             # CHECK: lit.ref.store {{.+}}, %inside_a
             inside_a = 0
-            # CHECK: hlcf.continue
+            # CHECK: lit.loop.continue
+            # CHECK: } else {
+            # CHECK:   lit.loop.yield
+            # CHECK: }
     # CHECK: } else {
     else:
         # CHECK: lit.ref.store {{.+}}, %inside_else
@@ -252,8 +258,12 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_break_continue_inside_while
 def test_break_continue_inside_while(a: Bool) -> Bool:
-    # CHECK: hlcf.loop
-    # CHECK: hlcf.if
+
+    # CHECK: lit.loop cond {
+    # CHECK:   [[V0:%.*]] = lit.ref.load %a_0
+    # CHECK:   [[V1:%.*]] = kgen.call {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)"([[V0]])
+    # CHECK:   lit.loop.condition [[V1]] : i1
+    # CHECK: } body {
     while a:
         # CHECK:      hlcf.if
         if a:
@@ -267,7 +277,7 @@ def test_break_continue_inside_while(a: Bool) -> Bool:
             # CHECK-NEXT:   lit.continue
             continue
             # CHECK-NEXT:   hlcf.yield
-        # CHECK: hlcf.continue
+        # CHECK: lit.loop.continue
     return a
 
 
@@ -317,20 +327,25 @@ fn for_range_loop():
     # CHECK: [[LISTPTR:%.*]] = lit.ref.to_pointer %my_list
     # CHECK: [[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}([[RANGEPTR]], [[LISTPTR]])
     for item in my_list:
-        # CHECK: [[RANGEPTR:%.*]] = lit.ref.to_pointer %$RANGE
-        # CHECK: [[LENGTH:%.*]] = kgen.call {{.*}}__len__{{.*}}([[RANGEPTR]])
-        # CHECK: [[INDEX:%.*]] = kgen.call {{.*}}__index__{{.*}}([[LENGTH]])
-        # CHECK: [[MLIR_INDEX:%.*]] = kgen.call {{.*}}__mlir_index__{{.*}}([[INDEX]])
-        # CHECK: [[COND:%.*]] = index.cmp sgt([[MLIR_INDEX]], %idx0)
-        # CHECK: if [[COND]]
-        # CHECK-NEXT: yield
+        # CHECK: lit.loop cond {
+        # CHECK:   [[RANGEPTR:%.*]] = lit.ref.to_pointer %$RANGE
+        # CHECK:   [[LENGTH:%.*]] = kgen.call {{.*}}__len__{{.*}}([[RANGEPTR]])
+        # CHECK:   [[INDEX:%.*]] = kgen.call {{.*}}__index__{{.*}}([[LENGTH]])
+        # CHECK:   [[MLIR_INDEX:%.*]] = kgen.call {{.*}}__mlir_index__{{.*}}([[INDEX]])
+        # CHECK:   [[COND:%.*]] = index.cmp sgt([[MLIR_INDEX]], %idx0)
+        # CHECK:   lit.loop.condition [[COND]]
+        # CHECK: } body {
+        # CHECK:   lit.loop.continue
+        # CHECK: } else {
+        # CHECK-NEXT:   lit.loop.yield
+        # CHECK: }
         pass
 
 
 # CHECK-LABEL: @"induction_var_scope()"
 fn induction_var_scope():
     # CHECK: "item"
-    # CHECK: hlcf.loop
+    # CHECK: lit.loop
     for item in range(0):
         # CHECK: lit.ref.load %item
         # CHECK: "g" = %{{.*}}

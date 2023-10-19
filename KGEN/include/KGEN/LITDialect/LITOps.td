@@ -16,6 +16,7 @@ include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/POPDialect/POPTypes.td"
+include "KGEN/HLCFDialect/HLCFAttrs.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
@@ -1711,7 +1712,8 @@ def LIT_LoopOp: LITOp<"loop"> {
   }];
 
   let arguments = (ins
-    DefaultValuedAttr<SI32Attr, "0">:$unrollLevel
+    DefaultValuedAttr<HLCF_UnrollLevelAttr,
+                      "HLCF::UnrollLevel::none()">:$unrollLevel
   );
 
   let results = (outs Variadic<AnyType>:$results);
@@ -1727,7 +1729,7 @@ def LIT_LoopOp: LITOp<"loop"> {
   }];
 
   let builders = [
-    OpBuilder<(ins "int32_t":$level), [{
+    OpBuilder<(ins "HLCF::UnrollLevel":$level), [{
       build($_builder, $_state, {}, level);
     }]>
   ];
