@@ -124,11 +124,11 @@ POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
 
 ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
                                        InterpreterState &state) const {
-  auto dl = getElementAsType().cast<DataLayoutInterface>();
+  auto dl = ::cast<DataLayoutInterface>(getElementAsType());
   // Store each element spaced apart by padding according to its alignment.
   int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                  *dl.getTypeAlign(state.getTarget()));
-  for (TypedAttr value : value.cast<POP::ArrayAttr>().getValues()) {
+  for (TypedAttr value : ::cast<POP::ArrayAttr>(value).getValues()) {
     ErrorOrSuccess result = state.writeAttributeToMemory(addr, value);
     if (result.isError())
       return result.takeError();

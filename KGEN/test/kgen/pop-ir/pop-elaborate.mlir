@@ -235,6 +235,10 @@ kgen.generator export @do_it() {
   kgen.param.constant: i32 = <apply(
     :(!kgen.struct<i8, i16, i32>) -> i32 @struct_gep_load, { 12, 34, 56 })>
 
+  // CHECK-NEXT: <128>
+  kgen.param.constant: i32 = <apply(
+    :(!kgen.struct<i8, i16, i32>) -> i32 @struct_gep_load, { ?, ?, 128 })>
+
   // CHECK-NEXT: <{ 5, 0 }>
   kgen.param.constant: struct<scalar<ui8>, scalar<ui8>> = <apply(
     :() -> !kgen.struct<scalar<ui8>, scalar<ui8>> @bitcast_offset)>

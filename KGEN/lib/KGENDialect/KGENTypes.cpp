@@ -930,13 +930,17 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
                                    InterpreterState &state) const {
   int64_t offset = 0;
-  for (TypedAttr value : value.cast<StructAttr>().getValues()) {
-    auto dl = value.getType().cast<DataLayoutInterface>();
+  for (TypedAttr value : ::cast<StructAttr>(value).getValues()) {
+    auto dl = ::cast<DataLayoutInterface>(value.getType());
     // Store each element spaced apart by padding according to its alignment.
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
-    ErrorOrSuccess result = state.writeAttributeToMemory(addr + offset, value);
-    if (result.isError())
-      return result.takeError();
+    // Ignore unknown values. Just leave the memory as-is.
+    if (!::isa<UnknownAttr>(value)) {
+      ErrorOrSuccess result =
+          state.writeAttributeToMemory(addr + offset, value);
+      if (result.isError())
+        return result.takeError();
+    }
     offset += *dl.getTypeSize(state.getTarget());
   }
   return success();
