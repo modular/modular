@@ -185,3 +185,33 @@ kgen.func export @kernel() {
   kgen.return
 }
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+// CHECK-LABEL: @pack_create
+// CHECK-SAME: %[[A0:.*]]: i32
+// CHECK-SAME: %[[A1:.*]]: f64
+// CHECK-SAME: %[[A2:.*]]: f32
+kgen.func @pack_create(%a: i32, %b: f64, %c: f32) {
+  // CHECK: %[[P0:.*]] = llvm.mlir.undef : !llvm.struct<(i32, f64, f32)>
+  // CHECK: %[[P1:.*]] = llvm.insertvalue %[[A0]], %[[P0]][0] : !llvm.struct<(i32, f64, f32)>
+  // CHECK: %[[P2:.*]] = llvm.insertvalue %[[A1]], %[[P1]][1] : !llvm.struct<(i32, f64, f32)>
+  // CHECK: llvm.insertvalue %[[A2]], %[[P2]][2] : !llvm.struct<(i32, f64, f32)>
+  %0 = kgen.pack.create(%a, %b, %c) : !kgen.pack<[i32, f64, f32]>
+  kgen.return
+}
+
+// CHECK-LABEL: @pack_get
+kgen.func @pack_get(
+  %p0: !kgen.pack<[i1]>,
+  %p1: !kgen.pack<[i32, f32]>
+) -> (i1, f32) {
+  // CHECK: llvm.extractvalue %arg0[0] : !llvm.struct<(i1)>
+  %0 = kgen.pack.get %p0[0] : <[i1]>
+  // CHECK: llvm.extractvalue %arg1[1] : !llvm.struct<(i32, f32)>
+  %1 = kgen.pack.get %p1[1] : <[i32, f32]>
+
+  kgen.return %0, %1 : i1, f32
+}
+}

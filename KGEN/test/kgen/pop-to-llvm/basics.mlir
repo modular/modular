@@ -764,32 +764,6 @@ kgen.func @atomic_rmw(%ptr0: !kgen.pointer<scalar<index>>,
   kgen.return
 }
 
-// CHECK-LABEL: @pack_create
-// CHECK-SAME: %[[A0:.*]]: i32
-// CHECK-SAME: %[[A1:.*]]: f64
-// CHECK-SAME: %[[A2:.*]]: f32
-kgen.func @pack_create(%a: i32, %b: f64, %c: f32) {
-  // CHECK: %[[P0:.*]] = llvm.mlir.undef : !llvm.struct<(i32, f64, f32)>
-  // CHECK: %[[P1:.*]] = llvm.insertvalue %[[A0]], %[[P0]][0] : !llvm.struct<(i32, f64, f32)>
-  // CHECK: %[[P2:.*]] = llvm.insertvalue %[[A1]], %[[P1]][1] : !llvm.struct<(i32, f64, f32)>
-  // CHECK: llvm.insertvalue %[[A2]], %[[P2]][2] : !llvm.struct<(i32, f64, f32)>
-  %0 = pop.pack.create(%a, %b, %c) : !kgen.pack<[i32, f64, f32]>
-  kgen.return
-}
-
-// CHECK-LABEL: @pack_get
-kgen.func @pack_get(
-  %p0: !kgen.pack<[i1]>,
-  %p1: !kgen.pack<[i32, f32]>
-) -> (i1, f32) {
-  // CHECK: llvm.extractvalue %0[0] : !llvm.struct<(i1)>
-  %0 = pop.pack.get %p0[0] : <[i1]>
-  // CHECK: llvm.extractvalue %1[1] : !llvm.struct<(i32, f32)>
-  %1 = pop.pack.get %p1[1] : <[i32, f32]>
-
-  kgen.return %0, %1 : i1, f32
-}
-
 // CHECK-LABEL: @variadic_create
 // CHECK-SAME: %[[A0:.*]]: i24
 kgen.func @variadic_create(%a: i24) {

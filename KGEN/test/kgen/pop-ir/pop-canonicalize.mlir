@@ -848,14 +848,14 @@ kgen.func @pack_create() -> !kgen.pack<[ui8, i32]> {
   // CHECK-NEXT: kgen.param.constant{{.*}} = <<5, -55>>
   %0 = kgen.param.constant: ui8 = <5>
   %1 = kgen.param.constant: i32 = <-55>
-  %2 = pop.pack.create(%0, %1) : !kgen.pack<[ui8, i32]>
+  %2 = kgen.pack.create(%0, %1) : !kgen.pack<[ui8, i32]>
   kgen.return %2 : !kgen.pack<[ui8, i32]>
 }
 
 // CHECK-LABEL: @pack_create_empty(
 kgen.func @pack_create_empty() -> !kgen.pack<[]> {
   // CHECK-NEXT: kgen.param.constant{{.*}} = <<>>
-  %1 = pop.pack.create() : !kgen.pack<[]>
+  %1 = kgen.pack.create() : !kgen.pack<[]>
   kgen.return %1 : !kgen.pack<[]>
 }
 
@@ -863,15 +863,15 @@ kgen.func @pack_create_empty() -> !kgen.pack<[]> {
 kgen.func @pack_get() -> i4 {
   // CHECK-NEXT: kgen.param.constant: i4 = <3>
   %0 = kgen.param.constant: !kgen.pack<[f32, i4]> = <<-1.2, 3>>
-  %1 = pop.pack.get %0[1] : !kgen.pack<[f32, i4]>
+  %1 = kgen.pack.get %0[1] : !kgen.pack<[f32, i4]>
   kgen.return %1 : i4
 }
 
 // CHECK-LABEL: @pack_create_get(
 kgen.func @pack_create_get(%arg0: f32, %arg1: si8) -> f32 {
   // CHECK-NEXT: kgen.return %arg0
-  %0 = pop.pack.create(%arg0, %arg1) : !kgen.pack<[f32, si8]>
-  %1 = pop.pack.get %0[0] : !kgen.pack<[f32, si8]>
+  %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[f32, si8]>
+  %1 = kgen.pack.get %0[0] : !kgen.pack<[f32, si8]>
   kgen.return %1 : f32
 }
 
@@ -879,7 +879,7 @@ kgen.func @pack_create_get(%arg0: f32, %arg1: si8) -> f32 {
 kgen.func @pack_size() -> index {
   // CHECK-NEXT: kgen.param.constant = <2>
   %0 = kgen.param.constant: !kgen.pack<[i1, i4]> = <<0, 1>>
-  %1 = pop.pack.size %0 : !kgen.pack<[i1, i4]>
+  %1 = kgen.pack.size %0 : !kgen.pack<[i1, i4]>
   kgen.return %1 : index
 }
 

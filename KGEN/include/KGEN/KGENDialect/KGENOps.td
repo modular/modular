@@ -1294,4 +1294,124 @@ def KGEN_IntLiteralCastOp : KGENOp<"int_literal.cast", [Pure]> {
   let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// PackCreateOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure]> {
+  let summary = "create a pack";
+  let description = [{
+    The `kgen.pack.create` operation creates a value of `!kgen.pack` type,
+    populated with the given SSA values.
+
+    Example:
+
+    ```mlir
+    kgen.generator @pack<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8) {
+      // Create a pack of two elements.
+      %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[f32, si8]>
+
+      // Create that same pack of two elements, but with a parameterized result.
+      %1 = kgen.pack.create(%arg0 : f32, %arg1 : si8) : !kgen.pack<Ts>
+
+      // Create an empty pack.
+      %2 = kgen.pack.create() : !kgen.pack<[]>
+
+      kgen.return
+    }
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$elements);
+  let results = (outs KGEN_PackType:$result);
+  let assemblyFormat = [{
+    `(` $elements `)` attr-dict `:`
+    custom<PackCreateType>(type($result), type($elements))
+  }];
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// PackGetOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_PackGetOp : KGENOp<"pack.get", [Pure]> {
+  let summary = "pack get element";
+  let description = [{
+    The `kgen.pack.get` operation returns the element of a pack at the provided
+    index.
+
+    The index must be a compile-time constant. If the pack is also a constant
+    value, the index is verified to be within the bounds of the pack size, and
+    the return type is inferred to match the specific type at that index.
+
+    Example:
+
+    ```mlir
+    kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type, I: index>(
+      %arg0: !kgen.pack<i32, T>
+      %arg1: Ts,
+    ) {
+      // Get the first element, of type `i32`.
+      %0 = kgen.pack.get %arg0[0] : <[i32, T]>
+      // Get the second element, of type `!kgen.paramref<T>`.
+      %1 = kgen.pack.get %arg0[1] : <[i32, T]>
+
+      // Get the element at an offset `I + 1`. Because the type of the element
+      // at this index cannot be inferred, it must be provided explicitly (here
+      // as `!kgen.paramref<T>`).
+      %2 = kgen.pack.get %arg0[add(I, 1)] : <[i32, T]> -> !kgen.paramref<T>
+
+      // Get the element at index 3. Again, becuase its type cannot be inferred,
+      // it must be provided explicitly (here as `i8`).
+      %3 = kgen.pack.get %arg1[3] : <Ts> -> i8
+
+      kgen.return
+    }
+    ```
+  }];
+
+  let arguments = (ins KGEN_PackType:$pack, AttrOfType<Index>:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
+    custom<PackGetResultType>(ref($pack), ref(type($pack)), ref($index),
+                              type($result))
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// PackSizeOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_PackSizeOp : KGENOp<"pack.size", [Pure]> {
+  let summary = "given a pack, return its size";
+  let description = [{
+    The `kgen.pack.size` operation takes an operand with a `!kgen.pack` type and
+    returns the number of elements in the pack.
+
+    Example:
+
+    ```mlir
+    // Get the size of a pack.
+    kgen.pack.size %0 : <Ts>
+    // Get the size of a concrete pack with 2 elements.
+    kgen.pack.size %1 : <[i32, f32]>
+    ```
+  }];
+
+  let arguments = (ins KGEN_PackType:$operand);
+  let results = (outs Index:$result);
+
+  let assemblyFormat = [{
+    $operand attr-dict `:` type($operand)
+  }];
+
+  let hasFolder = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

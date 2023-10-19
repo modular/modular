@@ -850,34 +850,34 @@ kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type, I: index>(
   %arg2: f32,
   %arg3: i8
 ) -> i32 {
-  // CHECK: pop.pack.size %arg0 : <Ts>
-  %0 = pop.pack.size %arg0 : <Ts>
-  // CHECK: pop.pack.get %arg0[3] : <Ts> -> i8
-  %1 = pop.pack.get %arg0[3] : <Ts> -> i8
+  // CHECK: kgen.pack.size %arg0 : <Ts>
+  %0 = kgen.pack.size %arg0 : <Ts>
+  // CHECK: kgen.pack.get %arg0[3] : <Ts> -> i8
+  %1 = kgen.pack.get %arg0[3] : <Ts> -> i8
 
-  // CHECK: pop.pack.size %arg1 : <[i32, T]>
-  %2 = pop.pack.size %arg1 : <[i32, T]>
-  // CHECK: pop.pack.get %arg1[0] : <[i32, T]>
-  %3 = pop.pack.get %arg1[0] : <[i32, T]>
-  // CHECK: pop.pack.get %arg1[1] : <[i32, T]>
-  %4 = pop.pack.get %arg1[1] : <[i32, T]>
-  // CHECK: pop.pack.get %arg1[add(I, 1)] : <[i32, T]> -> !kgen.paramref<T>
-  %5 = pop.pack.get %arg1[add(I, 1)] : <[i32, T]> -> !kgen.paramref<T>
+  // CHECK: kgen.pack.size %arg1 : <[i32, T]>
+  %2 = kgen.pack.size %arg1 : <[i32, T]>
+  // CHECK: kgen.pack.get %arg1[0] : <[i32, T]>
+  %3 = kgen.pack.get %arg1[0] : <[i32, T]>
+  // CHECK: kgen.pack.get %arg1[1] : <[i32, T]>
+  %4 = kgen.pack.get %arg1[1] : <[i32, T]>
+  // CHECK: kgen.pack.get %arg1[add(I, 1)] : <[i32, T]> -> !kgen.paramref<T>
+  %5 = kgen.pack.get %arg1[add(I, 1)] : <[i32, T]> -> !kgen.paramref<T>
 
-  // CHECK: %[[PACK:.*]] = pop.pack.create(%arg2, %arg2, %arg3) : !kgen.pack<[f32, f32, i8]>
-  %6 = pop.pack.create(%arg2, %arg2, %arg3) : !kgen.pack<[f32, f32, i8]>
-  // CHECK: pop.pack.size %[[PACK]] : <[f32, f32, i8]>
-  %7 = pop.pack.size %6 : <[f32, f32, i8]>
-  // CHECK: pop.pack.create() : !kgen.pack<[]>
-  %8 = pop.pack.create() : !kgen.pack<[]>
+  // CHECK: %[[PACK:.*]] = kgen.pack.create(%arg2, %arg2, %arg3) : !kgen.pack<[f32, f32, i8]>
+  %6 = kgen.pack.create(%arg2, %arg2, %arg3) : !kgen.pack<[f32, f32, i8]>
+  // CHECK: kgen.pack.size %[[PACK]] : <[f32, f32, i8]>
+  %7 = kgen.pack.size %6 : <[f32, f32, i8]>
+  // CHECK: kgen.pack.create() : !kgen.pack<[]>
+  %8 = kgen.pack.create() : !kgen.pack<[]>
 
   kgen.return %3 : i32
 }
 
 // CHECK-LABEL: @parametric_pack
 kgen.generator @parametric_pack<N, T: type>(%arg0: !pop.simd<N, bool>, %arg1: !kgen.paramref<T>) {
-  // CHECK-NEXT: pop.pack.create(%arg0, %arg1) : !kgen.pack<[simd<N, bool>, T]>
-  %0 = pop.pack.create(%arg0, %arg1) : !kgen.pack<[!pop.simd<N, bool>, T]>
+  // CHECK-NEXT: kgen.pack.create(%arg0, %arg1) : !kgen.pack<[simd<N, bool>, T]>
+  %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[!pop.simd<N, bool>, T]>
   kgen.return
 }
 

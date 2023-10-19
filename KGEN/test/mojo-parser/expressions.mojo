@@ -887,24 +887,24 @@ fn tuples_rv(a: Int, b: Float32):
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK0]])
     _ = ()
 
-    # CHECK: [[PACK1:%.*]] = pop.pack.create(%a, %b)
+    # CHECK: [[PACK1:%.*]] = kgen.pack.create(%a, %b)
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
     _ = (a, b)
 
-    # CHECK: [[PACK1:%.*]] = pop.pack.create(%a, %b)
+    # CHECK: [[PACK1:%.*]] = kgen.pack.create(%a, %b)
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
     _ = a, b
 
-    # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
+    # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     _ = (a,)
 
-    # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
+    # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     _ = a,
 
     # CHECK: %c = lit.varlet.decl "c"
-    # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
+    # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
     # CHECK: [[TUP2:%.*]] = kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     # CHECK: lit.ref.store [[TUP2]], %c
     var c = a,
@@ -936,7 +936,7 @@ fn tuples_lv(i0: Int, f0: Float32):
 
    # CHECK: [[I2VAL:%.*]] = lit.ref.load %i2
    # CHECK-NEXT: [[I1VAL:%.*]] = lit.ref.load %i1
-   # CHECK-NEXT: [[PACK:%.*]] = pop.pack.create([[I2VAL]], [[I1VAL]])
+   # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[I2VAL]], [[I1VAL]])
    # CHECK-NEXT: [[TUPRV:%.*]] = kgen.call {{.*}}__init__{{.*}}([[PACK]])
    # CHECK-NEXT: [[I1VAL:%.*]] =  kgen.call {{.*}}Tuple::@"get{{.*}}({{.*}} = 0{{.*}}([[TUPRV]])
    # CHECK-NEXT: lit.ref.store [[I1VAL]], %i1
