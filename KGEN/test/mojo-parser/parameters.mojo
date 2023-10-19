@@ -766,6 +766,16 @@ fn reference_params_through_struct():
     let cached_type: ParameterizedType[10]
     let value = cached_type.value
 
+# CHECK-LABEL: lit.func @"ref_param_in_arg
+# CHECK-SAME: <{{.*}}x0[{{.*}}]: !Int>
+# CHECK-SAME: pointer<{{.*}}ParameterizedType<{{.*}}value: !Int = {{.*}}x0>> byref_result
+fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
+    # CHECK: lit.alias.fwd_decl "{{.*}}fn_type"
+    # CHECK-SAME: signature<<"{{.*}}x0": !Int>("x":
+    # CHECK-SAME: "y": !kgen.pointer<{{.*}}ParameterizedType<{{.*}}value: !Int = *(0,0)>>
+    alias fn_type: fn(x: ParameterizedType, y: ParameterizedType[x.value]) -> None
+    return x
+
 ##===----------------------------------------------------------------------===##
 # Default function parameters
 ##===----------------------------------------------------------------------===##

@@ -1484,6 +1484,15 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     }
   }
 
+  // HACK: Create a dummy value to assign to argument declarations during
+  // argument and result type emission.
+  MLIRContext *ctx = typeEmitter.shared.getContext();
+  SmallVector<OwningOpRef<ParamConstantOp>> argVals;
+  auto makeDummy = [&](Type type) -> Value {
+    return *argVals.emplace_back(OpBuilder(ctx).create<ParamConstantOp>(
+        UnknownLoc::get(ctx), UnboundAttr::get(type)));
+  };
+
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
   bool seenInitExpr = false;
@@ -1555,6 +1564,15 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       typeEmitter.emitError(arg.loc,
                             "non-default argument follows default argument")
           << arg.typeExpr->getRange();
+    }
+
+    // Add the declaration for the argument, now that is has been resolved. Use
+    // a placeholder value to allow the value to be referenced, but in function
+    // body resolution, it will be replaced with the actual function argument
+    // SSA value.
+    if (!arg.name.empty()) {
+      typeEmitter.getDeclResolver().addFullyResolvedDecl(
+          SRValue(makeDummy(type)), arg.name, arg.loc, &typeEmitter.declScope);
     }
   }
 
@@ -2700,15 +2718,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         ParsedArgument::mapToPassingKind(arg.kwArgHandling));
     argNames.push_back(arg.name);
     inputConventions.push_back(arg.kgenConvention);
-
-    // Add an ASTDecl for the argument.  This will actually be set up during
-    // body resolution (when the vardecls and other things are set up) because
-    // the argument types referenced are not necessarily fully resolved.  We
-    // create the decls here in order to pass location information for each
-    // argument over to body resolution.
-    if (arg.kgenConvention != ValueInputConvention::ByRefResult)
-      addDecl(DeclIRValue(), arg.loc, arg.name, &decl, arg.cursor, arg.cursor,
-              /*indent*/ 0);
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
