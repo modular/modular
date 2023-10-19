@@ -1938,7 +1938,8 @@ LIT::StructDeclOp SharedState::getOrGenerateClosureWrapperStruct(
     StringAttr name = ClosureEmitter::getClosureNameFromType(
         "_CW_", fileModuleOp, signatureType);
     ClosureEmitter emitter(*moduleDecl, *this);
-    existing = emitter.createClosureWrapperStructDecl(name, signatureType);
+    existing =
+        emitter.createClosureWrapperStructDecl(name, signatureType, location);
     impl->closureWrappers[key] = existing;
   }
   return existing;
@@ -1948,8 +1949,10 @@ LIT::StructDeclOp
 SharedState::replaceNestedFunctionWithGeneratedClosureImplStruct(
     SMLoc location, ASTDecl &nestedFunc, ASTDecl *moduleDecl) {
   ClosureEmitter emitter(*moduleDecl, *this);
+  llvm::MapVector<StringAttr, Type> &capturedParams =
+      getImpl().capturedParametersInScope[&nestedFunc];
   return emitter.replaceNestedFunctionWithClosureImplStructDecl(
-      location, nestedFunc, *this->impl);
+      location, nestedFunc, CaptureTraversableMap(capturedParams), *this->impl);
 }
 
 iterator_range<llvm::MapVector<ASTDecl *, Capture>::const_iterator>

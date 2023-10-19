@@ -20,6 +20,28 @@ fn local_parameter_capture[a: Int](c: Int) -> fn (x:Bool) escaping -> Int:
     # expected-error @below {{cannot implicitly convert 'fn(x = Bool) -> Int' value to '_CW_$decls-errors_fn' in return value}}
     return p_capture
 
+@value
+@register_passable
+struct Foo[a : Int]:
+   var b:Int
+   fn get(self) -> Int:
+      return a + self.b
+
+fn illegal_type_ref[a : Int](c:Int) -> fn(x:Int,y:Foo[a]) escaping -> Foo[a]:
+  # expected-error @below {{declared parameters in escaping closures are not supported yet}}
+  fn p_capture(x: Int, y:Foo[a]) escaping -> Foo[a]:
+     return Foo[a](x+c)
+  return p_capture
+
+fn has_result_param[a: Int->b: Int](dummyCapture: Int) -> fn () escaping -> Int:
+    fn foo() escaping -> Int:
+        print(dummyCapture)
+        # expected-error @below {{TODO: Support result parameters and escaping closures.}}
+        return a + b
+
+    param_return[a]
+    return foo
+
 ##===----------------------------------------------------------------------===##
 # Closures
 ##===----------------------------------------------------------------------===##

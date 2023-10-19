@@ -36,13 +36,16 @@ public:
 
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.
-  StructDeclOp createClosureWrapperStructDecl(StringAttr name,
-                                              SignatureType signatureType);
+  StructDeclOp
+  createClosureWrapperStructDecl(StringAttr name,
+                                 LITSignatureType signatureType,
+                                 SMLoc nestedFunctionOrTypeLocation);
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
   StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
-      SMLoc loc, ASTDecl &nestedFunctionDecl, ClosureCache &cache);
+      SMLoc loc, ASTDecl &nestedFunctionDecl,
+      CaptureTraversableMap capturedParams, ClosureCache &cache);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.
@@ -57,9 +60,9 @@ public:
 
 private:
   MLIRContext *ctx;
-
   /// The decl of the surrounding module where code should be synthesized.
   ASTDecl &moduleDecl;
+
   /// The surrounding file module operation.
   FileModuleOp fileModuleOp;
 
@@ -78,6 +81,10 @@ private:
   LITSignatureType
   addClosureSelfArgToFunctionSignature(Type closureType,
                                        LITSignatureType sig) const;
+  /// Given a Closure struct and parameter values, create the specialized self
+  /// type.
+  Type makeClosureImplSelfType(StructDeclOp closureImpl,
+                               SmallVector<ParamDeclAttr> paramValues);
 };
 
 } // namespace M::KGEN::LIT
