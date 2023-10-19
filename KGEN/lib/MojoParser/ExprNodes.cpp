@@ -387,6 +387,61 @@ AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   llvm_unreachable("emitIR is undefined for synthetic nodes.");
 }
 
+/// A value that represents where a parameter is defined with respect to a
+/// declaration.
+enum class ParameterRelation {
+  Undefined =
+      0,  // The parameter is not defined within the scope of this declaration.
+  Input,  // The parameter is declared as an input parameter in the declaration.
+  Result, // The parameter is declared as a result parameter in the declaration.
+  Local   // The parameter is defined in the body of the declaration.
+};
+
+/// Given a parameter and a function, return the relationship of that parameter
+/// to that function.
+static ParameterRelation
+parameterRelationshipToFunction(SharedState &shared, ASTDecl *functionDecl,
+                                ParamDeclRefAttr declRef,
+                                StringRef srcSpelling) {
+  if (!functionDecl)
+    return ParameterRelation::Undefined;
+  auto paramIsInArrayRef = [&](ArrayRef<ParamDeclAttr> arrayRef) {
+    for (auto entry : arrayRef)
+      if (entry.getName() == declRef.getName())
+        return true;
+    return false;
+  };
+
+  auto function = dyn_cast<LIT::FuncOp>(*functionDecl);
+  if (!function)
+    return ParameterRelation::Undefined;
+
+  if (paramIsInArrayRef(function.getInputParams()))
+    return ParameterRelation::Input;
+  if (paramIsInArrayRef(function.getResultParams()))
+    return ParameterRelation::Result;
+
+  // Okay, we may have referenced a parameter defined in the body. If this is
+  // the case we must search by spelling not the mangled parameter name.
+  LookupResult lookup = shared.lookupAndResolveDecl(
+      srcSpelling, functionDecl->getLoc(), *functionDecl, false);
+  if (lookup.isSuccess())
+    return ParameterRelation::Local;
+  return ParameterRelation::Undefined;
+}
+
+/// Return the first ASTDecl ancestor that is a function or null if does not
+/// exist.
+static ASTDecl *nearestParentFuncOpDecl(ASTDecl &decl, bool includeMe = false) {
+  ASTDecl *parentDecl = includeMe ? &decl : decl.getParentDecl();
+  while (parentDecl) {
+    if (auto function = dyn_cast<LIT::FuncOp>(*parentDecl))
+      return parentDecl;
+    parentDecl = parentDecl->getParentDecl();
+  }
+  return nullptr;
+}
+
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
 AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -489,37 +544,82 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ValueDest refDest(dest.getContext());
   AnyValue result =
       emitter.emitDeclReference(spelling, decls, this, refDest, capture);
+  LIT::FuncOp functionContainer;
+  ASTDecl *functionContainerDecl = nearestParentFuncOpDecl(container, true);
+  if (functionContainerDecl)
+    functionContainer = cast<LIT::FuncOp>(functionContainerDecl);
+  bool livesInsideNestedFunc = functionContainer &&
+                               !functionContainer.getIsParametric() &&
+                               functionContainer.getParamDeclAttr();
+  ASTDecl *declRef = nullptr;
+  if (!isa<LIT::FuncOp>(*decls[0])) {
+    assert(decls.size() == 1 && "Only functions may be overloaded");
+    declRef = decls[0];
+  }
+  bool declRefIsRecordableCapture =
+      livesInsideNestedFunc && declRef &&
+      functionContainer.getSignature().isEscaping();
+
+  // Record Parameter Capture.
+  if (result.getIfPValue() && declRefIsRecordableCapture) {
+    if (auto paramDeclRef =
+            dyn_cast<ParamDeclRefAttr>(result.getIfPValue().get())) {
+      StringRef srcSpelling = spelling;
+      ParameterRelation relationToContainerFuncion =
+          parameterRelationshipToFunction(emitter.shared, &container,
+                                          paramDeclRef, srcSpelling);
+      if (relationToContainerFuncion == ParameterRelation::Undefined) {
+        ASTDecl *parentDecl = nearestParentFuncOpDecl(*functionContainerDecl);
+        if (parentDecl) {
+          auto parentFunction = dyn_cast<FuncOp>(*parentDecl);
+          if (!parentFunction.getResultParams().empty()) {
+            emitter.emitError(
+                getLocation(emitter),
+                "TODO: Support result parameters and escaping closures.");
+            return {};
+          }
+          ParameterRelation paramRelationToParent =
+              parameterRelationshipToFunction(emitter.shared, parentDecl,
+                                              paramDeclRef, srcSpelling);
+          if (paramRelationToParent == ParameterRelation::Input) {
+            // We have captured a parameter.
+            // TODO: Collect all the parameters that this parameter depends on.
+            emitter.shared.addCapturedParameterToScope(container, declRef,
+                                                       paramDeclRef.getName(),
+                                                       paramDeclRef.getType());
+          } else {
+            emitter.emitError(getLoc(),
+                              "TODO: Support result parameters, local capture, "
+                              "and escaping closures.");
+            return {};
+          }
+        }
+      }
+    }
+  }
 
   if (!capture)
     return emitter.emitResult(result, this, dest);
-  auto nestedFunc =
-      getBlockParentOfType<FuncOp>(emitter.builder->getInsertionBlock());
-  bool livesInsideNestedFunc = nestedFunc && !nestedFunc.getIsParametric() &&
-                               nestedFunc.getParamDeclAttr();
-  if (livesInsideNestedFunc) {
-    // if we have referenced a function that is not a closure, then there is no
-    // state and this is not considered a capture.
-    ASTDecl *decl = decls.front();
-    if (!isa<LIT::FuncOp>(*decl)) {
-      assert(decls.size() == 1 && "Only functions may be overloaded");
-      ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
-      if (decl->getParentDecl() && decl->getParentDecl() != funcDecl)
-        emitter.shared.addCaptureToScope(*funcDecl, decl, *capture);
-    }
+
+  // Record Runtime Value Capture.
+  if (declRefIsRecordableCapture) {
+    ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
+    if (declRef->getParentDecl() && declRef->getParentDecl() != funcDecl)
+      emitter.shared.addCaptureToScope(*funcDecl, declRef, *capture);
   }
   CValue value = result.getIfCValue();
   Value mlirValue = capture->getMlirValue();
 
   // If this is a capture inside a nonparametric function, emit a copy.
-  if (livesInsideNestedFunc && !nestedFunc.getSignature().isEscaping()) {
+  if (livesInsideNestedFunc && !functionContainer.getSignature().isEscaping()) {
     assert(mlirValue && "unexpected PValue");
     if (mlirValue.getParentRegion()->isProperAncestor(
-            &nestedFunc.getBodyRegion())) {
+            &functionContainer.getBodyRegion())) {
       // This is a captured value. Emit a copy and bind the name within the
       // function to the copied value.
-      FuncOp parentFunc = nestedFunc->getParentOfType<FuncOp>();
+      FuncOp parentFunc = functionContainer->getParentOfType<FuncOp>();
       OpBuilder::InsertionGuard guard(*emitter.builder);
-      emitter.builder->setInsertionPoint(nestedFunc);
+      emitter.builder->setInsertionPoint(functionContainer);
       // Emit a raw stack allocation.
       auto ptrType = PointerType::get(value.getRValueType());
       Value tmp = emitter.builder->create<POP::StackAllocationOp>(
@@ -540,17 +640,17 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // Redeclare the value inside the closure region using a raw stack
       // allocation. We want the lifetime tracker to ignore this: the object
       // will live inside the closure.
-      emitter.builder->setInsertionPointToStart(nestedFunc.getBody());
+      emitter.builder->setInsertionPointToStart(functionContainer.getBody());
       Value localDecl = emitter.builder->create<POP::StackAllocationOp>(
-          nestedFunc.getLoc(), ptrType, 1);
+          functionContainer.getLoc(), ptrType, 1);
       // Copy the raw bytes in.
-      emitter.builder->create<POP::StoreOp>(nestedFunc.getLoc(), rawBytes,
-                                            localDecl);
+      emitter.builder->create<POP::StoreOp>(functionContainer.getLoc(),
+                                            rawBytes, localDecl);
 
       // If the parent function was malformed somehow, it may not get added
       // to the symbol table.
       ASTDecl *parentDecl = emitter.getDeclResolver().getDeclForFuncSymbol(
-          getFullyResolvedSymbolRef(nestedFunc));
+          getFullyResolvedSymbolRef(functionContainer));
       if (!parentDecl)
         return {};
 
