@@ -12,8 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -468,7 +470,21 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
         name, converter.convertDebugType(evaluator.getReboundType(type))));
   }
 
-  return DebugInfo::DIStructType::get(ref.getName(), elementTypes);
+  // Mangle the struct name.
+  std::string name;
+  llvm::raw_string_ostream os(name);
+  printNestedSymbolReference(os, ref.getSymbol());
+  if (!ref.getParamValues().empty()) {
+    os << '[';
+    llvm::interleaveComma(ref.getParamValues(), os, [&os](ParamBindAttr param) {
+      os << demangleParameterName(param.getName()) << '='
+         << getParamAsString(param.getValue());
+    });
+    os << ']';
+  }
+
+  return DebugInfo::DIStructType::get(StringAttr::get(ref.getContext(), name),
+                                      elementTypes);
 }
 
 static Value lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,

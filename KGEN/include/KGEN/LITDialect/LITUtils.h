@@ -50,6 +50,9 @@ AttrOrType demangleIfNeeded(AttrOrType arg) {
   return cast<AttrOrType>(impl::demangleIfNeeded(arg));
 }
 
+/// Pretty print a nested symbol reference to a name.
+void printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol);
+
 /// Parse an optional default value of the given type. `defaultVal` is not
 /// modified if a default value was not present. If `hasAddress` is set, the
 /// default value is parsed as if `type` is an address type: either a pointer or
