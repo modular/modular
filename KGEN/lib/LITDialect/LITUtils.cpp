@@ -19,6 +19,43 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+std::string LIT::mangleParameter(const Twine &baseName, unsigned line,
+                                 unsigned col) {
+  return ("_" + Twine(line) + "x" + Twine(col) + "_" + baseName).str();
+}
+
+StringRef LIT::demangleParameterName(StringRef name) {
+  llvm::Regex re("^_[0-9]+x[0-9]+_");
+  if (!re.match(name))
+    return name;
+  // Strip the prefix. Drop the leading underscore and the drop until the second
+  // underscore. This way, the function can avoid returning a `std::string`.
+  name = name.drop_front();
+  return name.drop_front(name.find('_') + 1);
+}
+
+/// Hide the implementation of `demangleIfNeeded` from the header file by
+/// putting the combined type and attribute implementation in the source file.
+template <typename AttrOrType>
+static AttrOrType demangleIfNeededImpl(AttrOrType arg) {
+  auto demangle = [](auto declOrRef) {
+    return decltype(declOrRef)::get(demangleParameterName(declOrRef.getName()),
+                                    demangleIfNeeded(declOrRef.getType()));
+  };
+
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](ParamDeclRefAttr declRef) { return demangle(declRef); });
+  replacer.addReplacement([&](ParamDeclAttr decl) { return demangle(decl); });
+  return replacer.replace(arg);
+}
+
+Attribute LIT::impl::demangleIfNeeded(Attribute arg) {
+  return demangleIfNeededImpl(arg);
+}
+
+Type LIT::impl::demangleIfNeeded(Type arg) { return demangleIfNeededImpl(arg); }
+
 ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
                                            Type type, bool hasAddress) {
   if (hasAddress) {
