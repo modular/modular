@@ -6,6 +6,7 @@
 
 #include "TensorFlow/Support/StatsReport.h"
 
+#include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Process.h"
@@ -19,7 +20,11 @@
 using namespace M;
 using namespace TF;
 
-void M::TF::StatsReport::countOp() { numTotalOps++; }
+void M::TF::StatsReport::countOp(mlir::Operation &op) {
+  auto opName = op.getName().stripDialect();
+  ++opHistogram[opName.str()];
+  ++numTotalOps;
+}
 
 void M::TF::StatsReport::countFallback(mlir::Operation &op) {
   numFallbackOps++;
@@ -72,9 +77,6 @@ void M::TF::StatsReport::countFallback(mlir::Operation &op) {
   }
   ss << "}";
 
-  if (fallbackHistogram.find(key) == fallbackHistogram.end()) {
-    fallbackHistogram.emplace(key, 0);
-  }
   fallbackHistogram[key]++;
 }
 
@@ -128,4 +130,21 @@ void M::TF::StatsReport::writeToFile() {
     reportFile.os() << value << "\t" << key << "\n";
   }
   reportFile.os() << "--------------------------------------\n\n";
+}
+
+void M::TF::StatsReport::emitTelemetry() {
+  auto &telemetryContext = *runtime->getContext<Telemetry::TelemetryContext>();
+  auto logger = telemetryContext.getLogger("modular");
+  llvm::StringMap<Telemetry::Logs::AttributeValue> attributes = {};
+  attributes["total_op_count"] = numTotalOps;
+  attributes["fallback_op_count"] = numFallbackOps;
+  logger->emitEvent("tf.stats", Telemetry::Logs::Severity::kInfo,
+                    Telemetry::Level::L1, "", attributes);
+
+  llvm::StringMap<Telemetry::Logs::AttributeValue> fallbackAttributes = {};
+  for (const auto &[fallbackOp, count] : fallbackHistogram) {
+    fallbackAttributes[fallbackOp] = count;
+  }
+  logger->emitEvent("tf.stats.fallback", Telemetry::Logs::Severity::kInfo,
+                    Telemetry::Level::L1, "", fallbackAttributes);
 }
