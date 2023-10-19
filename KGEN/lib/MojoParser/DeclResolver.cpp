@@ -1470,69 +1470,6 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
     SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
     ASTDecl &scope, ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
-  // Resolve the result type and any argument types that are present, leaving
-  // any unspecified types null.
-  ASTType resultType;
-  size_t skipIndex = 0;
-  if (!resultTypeExpr) {
-    resultType = shared.getNoneType();
-    // Don't insert the return value for certain special functions.
-    if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
-      // Insert an object memory-only result type.
-      ParsedArgument resultArg;
-      resultArg.loc = resultLoc;
-      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-      resultArg.convention = ParsedArgument::kConventionInOutResult;
-      resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
-      args.insert(args.begin(), resultArg);
-      skipIndex = 1;
-      argTypes.push_back(shared.lookupObjectType(resultLoc, scope));
-      if (!argTypes.back()) {
-        if (reportError())
-          return {};
-        argTypes.back() = shared.getTypeCheckErrorType();
-      }
-    }
-  } else if (resultTypeExpr->kind == ExprNode::kNoneLiteral) {
-    // If the result type is a `None` literal, then convert it to NoneType.
-    resultType = shared.getNoneType();
-  } else {
-    resultType = typeEmitter.emitExprType(resultTypeExpr);
-    // On error, a diagnostic will be emitted, but we don't want to kill the
-    // entire function definition.  We won't be able to correctly type check any
-    // calls to this function though.
-    if (!resultType) {
-      if (reportError())
-        return {};
-      resultType = shared.getTypeCheckErrorType();
-    }
-
-    // Memory-only types get passed as the first argument to the function
-    // by-reference.
-    uint8_t rp =
-        resultType.getRegisterPassability(resultTypeExpr->getLoc(), shared);
-    if (rp == StructDeclOp::RP_MemoryOnly) {
-      // Synthesize a result argument for this, and use None as the actual
-      // function result.
-      ParsedArgument resultArg;
-      resultArg.loc = resultTypeExpr->getLoc();
-      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
-      resultArg.convention = ParsedArgument::kConventionInOutResult;
-      resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
-      resultArg.typeExpr = resultTypeExpr;
-      args.insert(args.begin(), resultArg);
-      argTypes.push_back(resultType);
-      skipIndex = 1;
-      resultType = shared.getNoneType();
-    } else if (rp != StructDeclOp::RP_RegisterPassableTrivial) {
-      // We know the result type of the function is register passable (because
-      // otherwise it would be promoted to an argument).  If the result of the
-      // function is a non-trivial type, mark the function effect as having an
-      // owned result so ownership tracking will notice it.
-      effects.setOwnedRegisterResult();
-    }
-  }
-
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
   if (fnDecl) {
@@ -1545,8 +1482,10 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     }
   }
 
+  // Resolve all argument types, generating type check error types for any types
+  // that could not be correctly resolved.
   bool seenInitExpr = false;
-  for (auto [idx, arg] : llvm::enumerate(llvm::drop_begin(args, skipIndex))) {
+  for (auto [idx, arg] : llvm::enumerate(args)) {
     ASTType type;
     if (arg.typeExpr) {
       // Emit the argument type. Allow argument types to be "automatically"
@@ -1618,6 +1557,67 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       typeEmitter.emitError(arg.loc,
                             "non-default argument follows default argument")
           << arg.typeExpr->getRange();
+    }
+  }
+
+  // Compute the result type. If it is memory-only, insert it into the argument
+  // list to be added to the signature.
+  ASTType resultType;
+  if (!resultTypeExpr) {
+    resultType = shared.getNoneType();
+    // Don't insert the return value for certain special functions.
+    if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
+      // Insert an object memory-only result type.
+      ParsedArgument resultArg;
+      resultArg.loc = resultLoc;
+      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+      resultArg.convention = ParsedArgument::kConventionInOutResult;
+      resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
+      args.insert(args.begin(), resultArg);
+      argTypes.insert(argTypes.begin(),
+                      shared.lookupObjectType(resultLoc, scope));
+      if (!argTypes.front()) {
+        if (reportError())
+          return {};
+        argTypes.front() = shared.getTypeCheckErrorType();
+      }
+    }
+  } else if (resultTypeExpr->kind == ExprNode::kNoneLiteral) {
+    // If the result type is a `None` literal, then convert it to NoneType.
+    resultType = shared.getNoneType();
+  } else {
+    resultType = typeEmitter.emitExprType(resultTypeExpr);
+    // On error, a diagnostic will be emitted, but we don't want to kill the
+    // entire function definition.  We won't be able to correctly type check any
+    // calls to this function though.
+    if (!resultType) {
+      if (reportError())
+        return {};
+      resultType = shared.getTypeCheckErrorType();
+    }
+
+    // Memory-only types get passed as the first argument to the function
+    // by-reference.
+    uint8_t rp =
+        resultType.getRegisterPassability(resultTypeExpr->getLoc(), shared);
+    if (rp == StructDeclOp::RP_MemoryOnly) {
+      // Synthesize a result argument for this, and use None as the actual
+      // function result.
+      ParsedArgument resultArg;
+      resultArg.loc = resultTypeExpr->getLoc();
+      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+      resultArg.convention = ParsedArgument::kConventionInOutResult;
+      resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
+      resultArg.typeExpr = resultTypeExpr;
+      args.insert(args.begin(), resultArg);
+      argTypes.insert(argTypes.begin(), resultType);
+      resultType = shared.getNoneType();
+    } else if (rp != StructDeclOp::RP_RegisterPassableTrivial) {
+      // We know the result type of the function is register passable (because
+      // otherwise it would be promoted to an argument).  If the result of the
+      // function is a non-trivial type, mark the function effect as having an
+      // owned result so ownership tracking will notice it.
+      effects.setOwnedRegisterResult();
     }
   }
   return resultType;
