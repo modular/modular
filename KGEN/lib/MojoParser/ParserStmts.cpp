@@ -801,7 +801,7 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
   llvm::SMLoc loc = consumeToken(kind).getLoc();
 
   // Ensure the break statement is being parsed within a loop context.
-  if (!getBlockParentOfType<HLCF::LoopOp>(builder.getInsertionBlock())) {
+  if (!getBlockParentOfType<LIT::LoopOp>(builder.getInsertionBlock())) {
     emitError(loc, "'" + name + "' not inside a loop");
     return success();
   }
@@ -874,37 +874,39 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
 
-  auto loopOp = builder.create<HLCF::LoopOp>(whileLoc, unrollLevel);
-  Block *body = builder.createBlock(&loopOp.getBody());
-  builder = OpBuilder::atBlockEnd(body);
+  // Create the LoopOp
+  auto loopOp = builder.create<LIT::LoopOp>(whileLoc, unrollLevel.getFactor());
+  Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
+  Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
+  Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
 
+  // Create the condition region.
+  builder = OpBuilder::atBlockEnd(condBlock);
   RValue condRVal = getEmitter().emitExprI1(condExp, EC_BoolCondition);
   Value condVal =
       getEmitter().emitSRValue({AnyValue(condRVal), condExp}, EC_BoolCondition);
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
+  builder.create<LIT::LoopConditionOp>(whileLoc, condVal);
 
-  // Generate the while condition check.
-  auto condOp = builder.create<HLCF::IfOp>(whileLoc, condVal);
-  builder.createBlock(&condOp.getThenRegion());
-  builder.create<HLCF::YieldOp>(whileLoc);
-  Block *exit = builder.createBlock(&condOp.getElseRegion());
-  builder.create<HLCF::BreakOp>(whileLoc);
+  // Create the body region.
+  builder.setInsertionPointToStart(bodyBlock);
 
-  // Create the body.
-  builder.setInsertionPointAfter(condOp);
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
-  builder.create<HLCF::ContinueOp>(whileLoc);
+  builder.create<LIT::LoopContinueOp>(whileLoc);
 
+  // Create the else region.
+  builder.setInsertionPointToStart(elseBlock);
   // The 'else' block is executed only when the condition check fails.
   if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
       consumeIf(Token::kw_else)) {
-    builder.setInsertionPointToStart(exit);
     if (parseToken(Token::colon, "expected ':' after else") ||
         parseLocalScopeSuite(curIndent))
       return failure();
   }
+  builder.create<LIT::LoopYieldOp>(whileLoc);
+
   return success();
 }
 
@@ -984,9 +986,14 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return {};
   }
 
-  HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc, unrollLevel);
-  Block *body = builder.createBlock(&loopOp.getBody());
-  builder = OpBuilder::atBlockEnd(body);
+  // Create the LoopOp
+  auto loopOp = builder.create<LIT::LoopOp>(forLoc, unrollLevel.getFactor());
+  Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
+  Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
+  Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
+
+  // Create the condition region.
+  builder = OpBuilder::atBlockEnd(condBlock);
 
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
@@ -1005,18 +1012,13 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   Value shouldContinue = builder.create<mlir::index::CmpOp>(
       forLoc, mlir::index::IndexCmpPredicate::SGT, length,
       builder.create<mlir::index::ConstantOp>(forLoc, 0));
+  builder.create<LIT::LoopConditionOp>(forLoc, shouldContinue);
 
-  // Generate the for condition check.
-  auto condOp = builder.create<HLCF::IfOp>(forLoc, shouldContinue);
-  builder.createBlock(&condOp.getThenRegion());
-  builder.create<HLCF::YieldOp>(forLoc);
-  Block *exit = builder.createBlock(&condOp.getElseRegion());
-  builder.create<HLCF::BreakOp>(forLoc);
-
+  // Create the body region.
   // Create the body. Add Target element to the continue block by calling next
   // method. Emit the result into an implicitly declared variable at the current
   // scope.
-  builder.setInsertionPointAfter(condOp);
+  builder.setInsertionPointToStart(bodyBlock);
   ValueDest ivarDest(varDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
           "__next__", CallOperands({{XLValue(rangeRef), seqExpr}}), ivarDest,
@@ -1029,16 +1031,19 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   if (failed(parseLocalScopeSuite(curIndent,
                                   ScopeDecl{&*varDeclOp, targetLoc, target})))
     return failure();
-  builder.create<HLCF::ContinueOp>(forLoc);
+  builder.create<LIT::LoopContinueOp>(forLoc);
 
+  // Create the else region.
+  builder.setInsertionPointToStart(elseBlock);
   // The 'else' block is executed only when the condition check fails.
   if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
       consumeIf(Token::kw_else)) {
-    builder.setInsertionPointToStart(exit);
     if (parseToken(Token::colon, "expected ':' after else") ||
         parseLocalScopeSuite(curIndent))
       return failure();
   }
+  builder.create<LIT::LoopYieldOp>(forLoc);
+
   return success();
 }
 

@@ -563,7 +563,7 @@ fn adaptiveNestedFns(a: Int, b: Int):
 
 # CHECK-LABEL: lit.func @"nestedFnInLoop()"
 fn nestedFnInLoop():
-    # CHECK: hlcf.loop
+    # CHECK: lit.loop
     for i in range(10):
         # CHECK: kgen.call @{{.*}}__next__
         # CHECK: lit.func *"foo()"

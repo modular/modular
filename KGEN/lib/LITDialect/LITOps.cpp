@@ -1543,7 +1543,7 @@ static LogicalResult verifyBreakOrContinueOp(Operation *op) {
 
   if (op->getParentOfType<HLCF::LoopOp>() || op->getParentOfType<LIT::LoopOp>())
     return success();
-  // TODO: remove HLCF::LoopOp check when parser is updated to use LIT::LoopOp.
+
   return op->emitOpError(
       "must be nested within an `hlcf.loop` or `lit.loop` operation");
 }
