@@ -6,10 +6,10 @@
 """Implements CUDA module operations."""
 
 from pathlib import Path
-
 from memory import memset_zero
 from memory.unsafe import DTypePointer, Pointer, bitcast
 
+from .function import FunctionHandle
 from ._utils import (
     _check_error,
     _get_dylib,
@@ -310,13 +310,14 @@ struct _ModuleImpl:
         return self.handle.__bool__()
 
 
+@register_passable
 struct ModuleHandle:
     var module: _ModuleImpl
 
-    fn __init__(inout self):
-        self.module = _ModuleImpl()
+    fn __init__() -> Self:
+        return Self {module: _ModuleImpl()}
 
-    fn __init__(inout self, path: Path) raises:
+    fn __init__(path: Path) raises -> Self:
         var module = _ModuleImpl()
         let path_cstr = path.__str__()
 
@@ -327,14 +328,13 @@ struct ModuleHandle:
         )
 
         _ = path_cstr
-        self.module = module
+        return Self {module: module}
 
     fn __init__(
-        inout self,
         content: String,
         debug: Bool = False,
         verbose: Bool = False,
-    ) raises:
+    ) raises -> Self:
         var module = _ModuleImpl()
         if debug or verbose:
             alias buffer_size = 4096
@@ -416,10 +416,10 @@ struct ModuleHandle:
                 )
             )
 
-        self.module = module
         _ = content
+        return Self {module: module}
 
-    fn __init__(inout self, content: String) raises:
+    fn __init__(content: String) raises -> Self:
         var module = _ModuleImpl()
         # Note that content has already gone through _cleanup_asm and
         # is null terminated.
@@ -428,7 +428,7 @@ struct ModuleHandle:
                 fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
             ]("cuModuleLoadData")(Pointer.address_of(module), content._as_ptr())
         )
-        self.module = module
+        return Self {module: module}
 
     fn __del__(owned self) raises:
         if self.module:
@@ -455,7 +455,5 @@ struct ModuleHandle:
                 Pointer.address_of(func), self.module, name_cstr._as_ptr()
             )
         )
-
-        _ = name_cstr
 
         return func

@@ -12,5 +12,6 @@ from ._utils import _check_error, _get_dylib, _get_dylib_function
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn synchronize() raises:
     _check_error(_get_dylib_function[fn () -> Result]("cuCtxSynchronize")())
