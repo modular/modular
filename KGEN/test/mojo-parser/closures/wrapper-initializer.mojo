@@ -7,7 +7,7 @@
 
 # CHECK: lit.struct.decl @"_CW_
 
-# CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!escaping1> init_self, %impl[impl]: !kgen.pointer<!escaping> borrow_in_mem, |)
+# CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!escaping1> init_self, %impl[impl]: !kgen.pointer<!escaping> owned_in_mem, |)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [!lit.signature<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<none> borrow_in_mem, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
@@ -26,7 +26,7 @@
 # CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index : <!escaping>
 
 # Copy source (stack) into target (heap)
-# CHECK-NEXT:  %[[V1:.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%[[V0]], %impl)
+# CHECK-NEXT:  %[[V1:.*]] = kgen.call {{.*}}__moveinit__{{.*}}(%[[V0]], %impl)
 
 # Store heap pointer in ClosureWrapper field
 # CHECK-NEXT:  %[[V2:.*]] = lit.struct.gep %self[field0]
