@@ -3785,15 +3785,15 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
 
   StructEmitter structEmitter(shared);
   StructDeclOp declOp = dyn_cast<StructDeclOp>(structDecl);
-  GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
-      structDecl, /*generateFieldwiseInit=*/true);
+  std::optional<GeneratedStubs> stubs =
+      structEmitter.addMissingValueMemberStubsToStruct(
+          structDecl, /*generateFieldwiseInit=*/true);
   if (!stubs) {
     emitError(decoratorLoc, "'@value' cannot synthesize members of struct '")
         << declOp.getSymName() << "'";
     return;
   }
-  LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
-  if (copyCtr) {
+  if (LIT::FuncOp copyCtr = stubs->getCopyConstructor()) {
     ASTDecl *copyCtrDecl = getDeclResolver().getDeclForFuncSymbol(
         cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
     if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, false)))
@@ -3801,8 +3801,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
     else
       declOp.setCopyInitAttr(copyCtr.getBoundReference());
   }
-  LIT::FuncOp moveCtr = stubs.getMoveConstructor();
-  if (moveCtr) {
+  if (LIT::FuncOp moveCtr = stubs->getMoveConstructor()) {
     ASTDecl *moveCtrDecl = getDeclResolver().getDeclForFuncSymbol(
         cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
     if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, true)))

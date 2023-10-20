@@ -291,15 +291,20 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 }
 
 /// Given a struct and a list of arguments, generate a function. For example,
-/// given {MyStruct, "prefix", [ParamType1, ParamType2], [borrow_in_mem,
-/// borrow_in_mem], ["x","b"]}, this function produces:
-///       lit.func @prefixParam1Param2(%self: !kgen.pointer<@MyStruct>
-///       init_self, %x: ParamType1 borrow_in_mem, %b : ParamType2
-///       borrow_in_mem) -> !kgen.none  {
-///          %0 = kgen.param.constant: none = <#kgen.none>
-///          lit.return %0 : !kgen.none
-///          lit.end_func
-///      }
+/// given {
+///  MyStruct, "prefix", [ParamType1, ParamType2],
+///  [borrow_in_mem, borrow_in_mem], ["x","b"]
+/// }, this function produces:
+///
+/// ```
+/// lit.func @prefixParam1Param2(%self: !kgen.pointer<@MyStruct>
+///     init_self, %x: ParamType1 borrow_in_mem, %b : ParamType2 borrow_in_mem
+/// ) -> !kgen.none  {
+///   %0 = kgen.param.constant: none = <#kgen.none>
+///   lit.return %0 : !kgen.none
+///   lit.end_func
+/// }
+/// ```
 LIT::FuncOp StructEmitter::addVoidMethod(
     ASTDecl &structDecl, StringRef prefix,
     ArrayRef<ParamDeclAttr> inputParameters,
@@ -426,7 +431,7 @@ private:
   bool initialized;
 };
 
-GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
+std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     ASTDecl &structDecl, bool generateFieldwiseInit,
     bool forceGenerateDestructor) {
   auto declOp = cast<StructDeclOp>(structDecl);
@@ -540,9 +545,7 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
         SpecialFunctionKind::kMoveInit);
   }
 
-  if (init)
-    return GeneratedStubs(destructorFunc, copyFunc, moveFunc, init);
-  return GeneratedStubs(destructorFunc, copyFunc, moveFunc);
+  return GeneratedStubs(destructorFunc, copyFunc, moveFunc, init);
 }
 
 LIT::FuncOp StructEmitter::findInitInStruct(StructDeclOp structOp,

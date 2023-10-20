@@ -188,15 +188,15 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     shared.declResolver->addFullyResolvedDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
-  GeneratedStubs stubs = addMissingValueMemberStubsToStruct(
+  std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
       astDecl, /*generateFieldwiseInit=*/false,
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
-  LIT::FuncOp destructor = stubs.getDestructor();
-  LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
+  LIT::FuncOp destructor = stubs->getDestructor();
+  LIT::FuncOp copyCtr = stubs->getCopyConstructor();
   ASTDecl *copyCtrDecl = shared.declResolver->getDeclForFuncSymbol(
       cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
-  LIT::FuncOp moveCtr = stubs.getMoveConstructor();
+  LIT::FuncOp moveCtr = stubs->getMoveConstructor();
   ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
       cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
 
@@ -501,15 +501,15 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       initSigPassingKinds,
       llvm::drop_end(closureImplSigArgPassingKinds, wrapperNumArgs));
 
-  GeneratedStubs stubs = addMissingValueMemberStubsToStruct(
+  std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
       astDecl, /*generateFieldwiseInit=*/false);
   synthesizeMemberwiseInit(astDecl, initSigTypes, initSigConventions,
                            initSigNames, initSigPassingKinds);
 
-  LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
+  LIT::FuncOp copyCtr = stubs->getCopyConstructor();
   ASTDecl *copyCtrDecl = shared.declResolver->getDeclForFuncSymbol(
       cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
-  LIT::FuncOp moveCtr = stubs.getMoveConstructor();
+  LIT::FuncOp moveCtr = stubs->getMoveConstructor();
   ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
       cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
 

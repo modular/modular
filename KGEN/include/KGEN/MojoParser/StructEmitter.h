@@ -19,15 +19,11 @@ namespace M::KGEN::LIT {
 
 struct GeneratedStubs {
 public:
-  GeneratedStubs() : initialized(false) {}
-  GeneratedStubs(LIT::FuncOp dtor, LIT::FuncOp copyCtor, LIT::FuncOp moveCtr)
-      : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr) {}
   GeneratedStubs(LIT::FuncOp dtor, LIT::FuncOp copyCtor, LIT::FuncOp moveCtr,
                  LIT::FuncOp init)
       : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr), init(init) {}
-  operator bool() const { return initialized; }
   LIT::FuncOp getDestructor() const { return dtor; }
-  LIT::FuncOp getCopyConstrucotr() const { return copyCtr; }
+  LIT::FuncOp getCopyConstructor() const { return copyCtr; }
   LIT::FuncOp getMoveConstructor() const { return moveCtr; }
   LIT::FuncOp getFieldwiseInit() const { return init; }
 
@@ -36,7 +32,6 @@ private:
   LIT::FuncOp copyCtr;
   LIT::FuncOp moveCtr;
   LIT::FuncOp init;
-  bool initialized = true;
 };
 
 class StructEmitter : public SharedStateUser {
@@ -57,7 +52,7 @@ public:
   /// destructor but that struct has an init that allocates heap memory. In this
   /// case set the forceGenerateDestructor flag to true to force destructor
   /// generation.
-  GeneratedStubs
+  std::optional<GeneratedStubs>
   addMissingValueMemberStubsToStruct(ASTDecl &structDecl,
                                      bool generateFieldwiseInit,
                                      bool forceGenerateDestructor = false);
