@@ -901,7 +901,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   InterpreterMemoryConverter imc(symtab, typeConverter);
   populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc);
 
-  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
+  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
                                             typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
