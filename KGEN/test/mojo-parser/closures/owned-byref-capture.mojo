@@ -3,7 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
+
+
+@value
+@register_passable("trivial")
+struct Int:
+    pass
 
 
 @value
@@ -28,5 +34,5 @@ fn foo(x: Int, y: MemType, z: MemType):
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure_3
 fn makes_escaping_closure_3(owned x: Int, owned y: MemType, inout z: MemType):
-    fn take_owned_and_escape() escaping -> NoneType:
+    fn take_owned_and_escape() escaping:
         foo(x, y, z)
