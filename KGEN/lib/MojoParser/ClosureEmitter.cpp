@@ -193,10 +193,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
   LIT::FuncOp destructor = stubs->getDestructor();
+  declOp.setDestructorAttr(destructor.getBoundReference());
   LIT::FuncOp copyCtr = stubs->getCopyConstructor();
+  declOp.setCopyInitAttr(copyCtr.getBoundReference());
   ASTDecl *copyCtrDecl = shared.declResolver->getDeclForFuncSymbol(
       cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
   LIT::FuncOp moveCtr = stubs->getMoveConstructor();
+  declOp.setMoveInitAttr(moveCtr.getBoundReference());
   ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
       cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
 
@@ -269,7 +272,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         noneType, loadedFuncPtr,
         ArrayRef<Value>{ptrToImpl, loadedExistingImpl});
   }
-  if (failed(populateMoveCopy(*copyCtrDecl, false)))
+  if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     return {};
 
   // Populate move constructor.
@@ -289,7 +292,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     builder.create<POP::StoreOp>(
         nullPtr, builder.create<StructGEPOp>(copyExisting, impl));
   }
-  if (failed(populateMoveCopy(*moveCtrDecl, true)))
+  if (failed(populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
     return {};
 
   // Add the __call__ Method.
@@ -513,18 +516,20 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
       cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
 
-  if (failed(populateMoveCopy(*copyCtrDecl, false)))
-    shared.emitError(copyCtr.getLoc(), "Cannot copy captured value because")
-        << declOp.getSymName() << "` does not implement copy constructor.";
+  // Try to create a closure copy constructor if possible.
+  if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
+    copyCtr.erase();
+  else
+    declOp.setCopyInitAttr(copyCtr.getBoundReference());
 
-  // It is permissible for a closure implementation to not have a move
-  // constructor.
+  // Try to create a closure move constructor if possible.
   if (failed(populateMoveCopy(*moveCtrDecl, true)))
     moveCtr.erase();
   else
     declOp.setMoveInitAttr(moveCtr.getBoundReference());
 
-  declOp.setCopyInitAttr(copyCtr.getBoundReference());
+  if (LIT::FuncOp dtor = stubs->getDestructor())
+    declOp.setDestructorAttr(dtor.getBoundReference());
 
   // Generate the __call__ method.
 

@@ -224,16 +224,11 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 /// copyinit_of_type_of_field0(%targetField0, %field
 LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
                                               bool isMove) {
-  auto func = dyn_cast<LIT::FuncOp>(functionDecl);
-  if (!func)
-    return failure();
+  auto func = cast<LIT::FuncOp>(functionDecl);
   ASTDecl *declScope = functionDecl.getParentDecl();
-  if (!declScope)
-    return failure();
-  StructDeclOp declOp = dyn_cast<StructDeclOp>(declScope);
+  StructDeclOp declOp = cast<StructDeclOp>(declScope);
+
   // We want to populate a move but the move/copy should be a method!
-  if (!declOp)
-    return failure();
   SMLoc location = functionDecl.getLoc();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())
@@ -258,36 +253,33 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
                                 EC_AttributeRefBase);
     }
     return success();
-  } else {
-    assert(
-        func.getNumArguments() == 1 &&
-        "copy functions of register passable types should have one argument");
-    func.setIsStatic(true);
-    // Otherwise, extract all the values and finish with a struct create.  We
-    // know all the subfields must be register passable.
-    BlockArgument existingArg = func.getBody()->getArgument(0);
-    SmallVector<Value> fieldVals;
-    SmallVector<StringAttr> fieldNames;
-    for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
-      SyntheticNode srcExpr(location);
-      Value fieldValue = b.create<StructExtractOp>(existingArg, fieldOp);
-      // Emit an SBValue -> SRValue conversion to get ownership of the value.
-      Value copiedVal =
-          emitter.emitSRValue({SBValue(fieldValue), &srcExpr}, EC_CallArgValue);
-      if (!copiedVal)
-        return failure();
-      fieldVals.push_back(copiedVal);
-      fieldNames.push_back(fieldOp.getNameAttr());
-    }
-    Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
-    auto result = SRValue(b.create<StructCreateOp>(
-        selfType, fieldVals,
-        StringArrayAttr::get(func.getContext(), fieldNames)));
-
-    ExprEmitter::emitNormalReturn(b, result, func);
-    b.create<LIT::EndFuncOp>();
-    return success();
   }
+  assert(func.getNumArguments() == 1 &&
+         "copy functions of register passable types should have one argument");
+  // Otherwise, extract all the values and finish with a struct create.  We
+  // know all the subfields must be register passable.
+  BlockArgument existingArg = func.getBody()->getArgument(0);
+  SmallVector<Value> fieldVals;
+  SmallVector<StringAttr> fieldNames;
+  for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
+    SyntheticNode srcExpr(location);
+    Value fieldValue = b.create<StructExtractOp>(existingArg, fieldOp);
+    // Emit an SBValue -> SRValue conversion to get ownership of the value.
+    Value copiedVal =
+        emitter.emitSRValue({SBValue(fieldValue), &srcExpr}, EC_CallArgValue);
+    if (!copiedVal)
+      return failure();
+    fieldVals.push_back(copiedVal);
+    fieldNames.push_back(fieldOp.getNameAttr());
+  }
+  Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
+  auto result = SRValue(b.create<StructCreateOp>(
+      selfType, fieldVals,
+      StringArrayAttr::get(func.getContext(), fieldNames)));
+
+  ExprEmitter::emitNormalReturn(b, result, func);
+  b.create<LIT::EndFuncOp>();
+  return success();
 }
 
 /// Given a struct and a list of arguments, generate a function. For example,
