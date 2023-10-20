@@ -3037,12 +3037,11 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       break;
 
     case ValueInputConvention::BorrowedInReg:
+      argIRValue = SBValue(bbArg);
+      break;
+
     case ValueInputConvention::BorrowedInMem:
-      // If this was passed by-value, then it becomes an rvalue in a `fn`.
-      if (convention == ValueInputConvention::BorrowedInMem)
-        argIRValue = MBValue(bbArg);
-      else
-        argIRValue = SBValue(bbArg);
+      argIRValue = MBValue(bbArg);
       break;
     }
 

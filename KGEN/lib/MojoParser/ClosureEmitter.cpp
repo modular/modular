@@ -10,6 +10,7 @@
 
 #include "KGEN/MojoParser/ClosureEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -32,7 +33,7 @@ using namespace M::KGEN::LIT;
 
 ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
     : StructEmitter(shared), ctx(shared.getContext()), moduleDecl(moduleDecl),
-      fileModuleOp(cast<FileModuleOp>(moduleDecl)),
+      node(moduleDecl.getLoc()), fileModuleOp(cast<FileModuleOp>(moduleDecl)),
       selfName(StringAttr::get(ctx, "self")),
       otherName(StringAttr::get(ctx, "other")),
       ptrToImplName(StringAttr::get(ctx, "ptrToImpl")),
@@ -696,6 +697,18 @@ createTypedSymbol(SymbolConstantAttr symbol,
       specializedSignature);
 }
 
+/// Generate the code to allocate heap memory for the given pointer type.
+static Value allocateHeapMemory(PointerType ptrType, ImplicitLocOpBuilder &b) {
+  TypedAttr elementType = TypeConstantAttr::get(ptrType.getElementAsType());
+  TypedAttr target =
+      ParamOperatorAttr::get(POC::CurrentTarget, {}, b.getType<TargetType>());
+  Value sizeOf = b.create<ParamConstantOp>(
+      ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
+  Value alignOf = b.create<ParamConstantOp>(
+      ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
+  return b.create<POP::AlignedAllocOp>(ptrType, ValueRange{alignOf, sizeOf});
+}
+
 LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     StructDeclOp closureWrapper, StructDeclOp closureImpl, SMLoc location) {
   // The __init__ will take self and the impl. We first build the types.
@@ -720,13 +733,12 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   auto [line, col] = shared.getSourceMgr().getLineAndColumn(location);
   std::string identifier(mangleParameter("", line, col));
   SmallVector<ParamDeclAttr> initParams = inputParameters("init" + identifier);
-  auto ptrToClosureImplInitType =
+  auto closureImplType =
       PointerType::get(makeClosureImplSelfType(closureImpl, initParams));
-  if (auto init = findInitInStruct(closureWrapper, ptrToClosureImplInitType))
+  if (auto init = findInitInStruct(closureWrapper, closureImplType))
     return init;
   Type wrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
-  SmallVector<Type> argTypes{PointerType::get(wrapperType),
-                             ptrToClosureImplInitType};
+  SmallVector<Type> argTypes{PointerType::get(wrapperType), closureImplType};
 
   // Then build all other information needed for the __init__ signature.
   SmallVector<ValueInputConvention> argConventions{
@@ -739,53 +751,22 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       "__init__", initParams, paramPassingKinds, argTypes, argConventions,
       argNames, argPassingKinds, SpecialFunctionKind::kInit);
 
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = init.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
   ImplicitLocOpBuilder builder =
       ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
 
   // Allocate memory on heap and copy argument into allocated memory.
-
-  auto allocateHeapMemory = [](PointerType ptrToClosureImplType,
-                               ImplicitLocOpBuilder &builder) {
-    Type elementType = ptrToClosureImplType.getElementAsType();
-    Type indexType = builder.getIndexType();
-    TypedAttr targetAttr = ParamOperatorAttr::get(
-        POC::CurrentTarget, {}, builder.getType<TargetType>());
-    TypedAttr sizeOfAttr = ParamOperatorAttr::get(
-        POC::GetSizeOf,
-        {ParameterizedTypeConstantAttr::get(elementType), targetAttr},
-        builder.getType<TargetType>());
-    Value sizeOf = builder.create<ParamConstantOp>(indexType, sizeOfAttr);
-    TypedAttr alignOfAttr = ParamOperatorAttr::get(
-        POC::GetAlignOf,
-        {ParameterizedTypeConstantAttr::get(elementType), targetAttr},
-        indexType);
-    Value alignOf = builder.create<ParamConstantOp>(indexType, alignOfAttr);
-    return builder.create<POP::AlignedAllocOp>(
-        ptrToClosureImplType, ArrayRef<Value>{alignOf, sizeOf});
-  };
-  Value target = allocateHeapMemory(ptrToClosureImplInitType, builder);
+  Value target = allocateHeapMemory(closureImplType, builder);
+  Value source = init.getBody()->getArgument(1);
 
   // Copy the contents of the injected impl into the heap memory.
-  SymbolConstantAttr copySym;
-  // FIXME: This cannot use move initializer to take data from a borrowed
-  // argument.  Should this always use copyinit or should this check to see if
-  // the argument is borrowed vs owned?
-  // https://github.com/modularml/modular/issues/22471
-  if (false && closureImpl.getMoveInit().has_value()) {
-    copySym = cast<SymbolConstantAttr>(closureImpl.getMoveInit().value());
-  } else {
-    assert(closureImpl.getCopyInit().has_value() &&
-           "All closure Implementations should have a generated copy "
-           "constructor.");
-    copySym = cast<SymbolConstantAttr>(closureImpl.getCopyInit().value());
-  }
-  Value source = init.getBody()->getArgument(1);
-  MLIRContext *ctx = shared.getContext();
-  SymbolConstantAttr typedCopySymbol = createTypedSymbol(copySym, initParams);
-  builder.create<CallOp>(typedCopySymbol.getType().getValueResults(),
-                         typedCopySymbol,
-                         /*resultParamTypes=*/ParamDeclArrayAttr::get(ctx, {}),
-                         ValueRange({target, source}));
+  ExprEmitter emitter(shared, moduleDecl, builder);
+  ValueDest implDest(MLValue(target), EC_Assignment);
+  emitter.emitResult(MBValue(source), &node, implDest);
+
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(0);
   Value ptrToImpl = builder.create<LIT::StructGEPOp>(
@@ -842,8 +823,6 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   SmallVector<ParamDeclAttr> copyParams = inputParameters("copy" + identifier);
-  auto ptrToClosureImplCopyType =
-      PointerType::get(makeClosureImplSelfType(closureImpl, copyParams));
   LIT::FuncOp topLevelCopyInit = createFunction(
       generateName("_copyinit_"), copyParams, paramPassingKinds,
       {PointerType::get(opaquePtrType), opaquePtrType},
@@ -859,19 +838,18 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (DebugInfo::DIScopeAttr spAttr = topLevelCopyInit.getLocScope())
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-    // Allocate memory on heap and call copy constructor
-    Value target = allocateHeapMemory(ptrToClosureImplCopyType, builder);
-    Value existingPtr = builder.create<POP::PointerBitcastOp>(
-        ptrToClosureImplCopyType, body->getArgument(1));
 
-    if (TypedAttr symbol = closureImpl.getCopyInitAttr()) {
-      SymbolConstantAttr typedCopySym =
-          createTypedSymbol(cast<SymbolConstantAttr>(symbol), copyParams);
-      builder.create<CallOp>(
-          typedCopySym.getType().getValueResults(), typedCopySym,
-          /*resultParamTypes=*/ParamDeclArrayAttr::get(ctx, {}),
-          ValueRange({target, existingPtr}));
-    }
+    // Allocate memory on heap and call copy constructor
+    auto closureImplType =
+        PointerType::get(makeClosureImplSelfType(closureImpl, copyParams));
+    Value target = allocateHeapMemory(closureImplType, builder);
+    Value existingPtr = builder.create<POP::PointerBitcastOp>(
+        closureImplType, body->getArgument(1));
+
+    ValueDest copyDest(MLValue(target), EC_Assignment);
+    ExprEmitter emitter(shared, moduleDecl, builder);
+    emitter.emitResult(MBValue(existingPtr), &node, copyDest);
+
     // Store the allocated and populated impl into the closure wrapper.
     Value ptrToImpl = topLevelCopyInit.getBody()->getArgument(0);
     Value erasedType =
@@ -889,8 +867,6 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   SmallVector<ParamDeclAttr> delParams = inputParameters("del" + identifier);
-  auto ptrToClosureImplDelType =
-      PointerType::get(makeClosureImplSelfType(closureImpl, delParams));
   LIT::FuncOp topLevelDtor = createFunction(
       generateName("_dtor_"), delParams, paramPassingKinds, opaquePtrType,
       ValueInputConvention::OwnedInReg, selfName, PassingKind::PosOnly,
@@ -906,19 +882,12 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
     // Cast the opaque pointer back to the closure impl type.
+    ASTType closureImplType = makeClosureImplSelfType(closureImpl, delParams);
     Value implPtr = builder.create<POP::PointerBitcastOp>(
-        ptrToClosureImplDelType, body->getArgument(0));
+        PointerType::get(closureImplType), body->getArgument(0));
+    builder.create<OwnershipEndLifetimeOp>(builder.getLoc(), implPtr,
+                                           /*isRegister=*/false);
 
-    // Call the destructor on the closure wrapper if it has one.
-    if (closureImpl.getDestructor().has_value()) {
-      auto dtorSym = createTypedSymbol(
-          cast<SymbolConstantAttr>(closureImpl.getDestructor().value()),
-          delParams);
-      builder.create<CallOp>(
-          dtorSym.getType().getValueResults(), dtorSym,
-          /*resultParamTypes=*/ParamDeclArrayAttr::get(ctx, {}),
-          ValueRange({implPtr}));
-    }
     // Free the memory we allocated on the heap to store the closure.
     builder.create<POP::AlignedFreeOp>(implPtr);
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelDtor.getLoc(), body);
@@ -962,8 +931,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
     // Cast the opaque pointer back to the closure impl type.
     bool hasMemoryOnlyResult = closureSignature.hasMemoryOnlyResult();
-    Value closureArg =
-        hasMemoryOnlyResult ? body->getArgument(1) : body->getArgument(0);
+    Value closureArg = body->getArgument(hasMemoryOnlyResult);
     Value implPtr = builder.create<POP::PointerBitcastOp>(
         ptrToClosureImplCallType, closureArg);
     // Call the __call__ on the closure impl.
