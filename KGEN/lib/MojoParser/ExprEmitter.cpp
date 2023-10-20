@@ -1721,23 +1721,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     return {};
   }
 
-  capture = Capture(value, value.getRValueType(), value.getType());
-  if (value.getIfMLValue()) {
-    if (ASTType(value.getRValueType())
-            .isRegisterPassable(expr->getLoc(), shared))
-      capture = Capture(value, value.getRValueType(), value.getRValueType());
-  }
-
-  if (Value ref = value.getIfXLValue()) {
-    if (ASTType(value.getRValueType())
-            .isRegisterPassable(expr->getLoc(), shared))
-      capture = Capture(value, value.getRValueType(), value.getRValueType());
-    else {
-      // TODO(references): Capture references by pointer for now.
-      capture = Capture(value, value.getRValueType(),
-                        cast<RefType>(ref.getType()).getAsPointerType());
-    }
-  }
+  capture = Capture(value);
 
   return emitResult(value, expr, dest);
 }

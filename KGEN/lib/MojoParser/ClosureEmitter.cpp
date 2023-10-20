@@ -381,28 +381,18 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // TODO: Enable expression of how to capture.
   for (const auto &[i, declCaptureIter] : llvm::enumerate(captureRange)) {
     Capture capture = declCaptureIter.second;
-    closureImplSigTypes.push_back(capture.getInitType());
+    ASTType rvalueType = capture.getValue().getRValueType();
 
-    Type fieldType = capture.getFieldType();
-    if (ASTType(fieldType).isRegisterPassable(location, shared))
+    if (ASTType(rvalueType).isRegisterPassable(location, shared)) {
       closureImplSigConventions.push_back(ValueInputConvention::BorrowedInReg);
-    else
+      closureImplSigTypes.push_back(rvalueType);
+    } else {
       closureImplSigConventions.push_back(ValueInputConvention::BorrowedInMem);
-
-    if (auto signatureType = dyn_cast<SignatureType>(fieldType)) {
-      if (signatureType.isCapturing())
-        shared.emitError(location,
-                         "TODO: Cannot capture a signature type that "
-                         "captures until new closures are turned on.");
-      if (signatureType.isEscaping())
-        shared.emitError(location,
-                         "TODO: Cannot capture a signature type that escapes "
-                         "until new closures are turned on.");
+      closureImplSigTypes.push_back(PointerType::get(rvalueType));
     }
-    fieldTypes.push_back(fieldType);
+    fieldTypes.push_back(rvalueType);
 
-    closureImplSigArgNames.push_back(
-        StringAttr::get(ctx, "fld" + std::to_string(i)));
+    closureImplSigArgNames.push_back(StringAttr::get(ctx, "fld" + Twine(i)));
   }
   closureImplSigArgPassingKinds.append(captureCount, PassingKind::PosOnly);
 
@@ -951,8 +941,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   return init;
 }
 
-Capture::Capture(CValue value, Type fieldType, Type initType)
-    : value(value), fieldType(fieldType), initType(initType) {}
+Capture::Capture(CValue value) : value(value) {}
 
 Value Capture::getMlirValue() const {
   if (auto v = value.getIfMLValue())

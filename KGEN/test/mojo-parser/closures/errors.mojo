@@ -20,13 +20,3 @@ fn makes_escaping_closurenocopy(m: StringNoCopy):
     fn myclosure() escaping -> StringNoCopy:
         # expected-error @+1 {{value of type 'StringNoCopy' cannot be copied into its destination}}
         return m
-
-
-fn captures_closure(x: Int):
-    fn closure2(y: Int) -> Int:
-        return x * y
-
-    # expected-error @below {{TODO: Cannot capture a signature type that captures until new closures are turned on.}}
-    fn closure3(y: Int) escaping -> Int:
-        let w = closure2(y)
-        return w
