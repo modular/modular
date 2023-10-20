@@ -124,11 +124,27 @@ KGEN::DebugInfoTypeConverter::buildDebugSubroutineType(FunctionType type) {
   return DISubroutineType::get(type.getContext(), argTypes, resultTypes);
 }
 
+DIType KGEN::DebugInfoTypeConverter::buildPointerType(DIType type) {
+  return DIPointerType::get(type, tc.getPointerBitwidth(),
+                            tc.getPointerBitwidth());
+}
+
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(IndexType type) {
   // We treat index types as signed.
   return DIBasicSIntType::get(type.getContext(), "index",
                               tc.getIndexTypeBitwidth(),
                               tc.getIndexTypeBitwidth());
+}
+
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(StringType type) {
+  MLIRContext *ctx = type.getContext();
+  Builder b(ctx);
+  // This must be kept in sync with `getLLVMTYpeForKGENStringType`.
+  return DIStructType::get(
+      b.getStringAttr("!kgen.string"),
+      {DIMemberType::get("data", buildPointerType(buildDebugTypeFromDType(
+                                     ctx, KGENDType::si8, 0))),
+       DIMemberType::get("size", convertDebugType(IndexType::get(ctx)))});
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::ArrayType type) {
@@ -139,9 +155,8 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::ArrayType type) {
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::CoroutineType type) {
   // We map coroutine types to pointers to subroutine types.
-  DIType srType = buildDebugSubroutineType(type.getSignature().getValues());
-  return DIPointerType::get(srType, tc.getPointerBitwidth(),
-                            tc.getPointerBitwidth());
+  return buildPointerType(
+      buildDebugSubroutineType(type.getSignature().getValues()));
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PackType type) {
@@ -151,9 +166,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(PackType type) {
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PointerType type) {
-  DIType elementDIType = convertDebugType(type.getElementAsType());
-  return DIPointerType::get(elementDIType, tc.getPointerBitwidth(),
-                            tc.getPointerBitwidth());
+  return buildPointerType(convertDebugType(type.getElementAsType()));
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {
@@ -179,6 +192,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
 
   // Add direct debug info conversions.
   addConversion([&](IndexType type) { return buildDebugType(type); });
+  addConversion([&](StringType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });
   addConversion([&](POP::CoroutineType type) { return buildDebugType(type); });
   addConversion([&](PackType type) { return buildDebugType(type); });

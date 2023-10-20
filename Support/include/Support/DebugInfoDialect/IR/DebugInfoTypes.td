@@ -117,10 +117,12 @@ def DebugInfo_DIMemberType : DIType<"DIMember", "member"> {
     "DIType":$type
   );
   let builders = [
-    TypeBuilderWithInferredContext<(ins
-      "StringAttr":$name, "DIType":$type
-    ), [{
+    TypeBuilderWithInferredContext<(ins "StringAttr":$name, "DIType":$type), [{
       return $_get(name.getContext(), name, type);
+    }]>,
+    TypeBuilderWithInferredContext<(ins "const Twine &":$name, "DIType":$type), [{
+      MLIRContext *ctx = type.getContext();
+      return $_get(ctx, StringAttr::get(ctx, name), type);
     }]>
   ];
   let assemblyFormat = [{

@@ -12,40 +12,48 @@
 
 // CHECK-DAG: ![[BASIC:.*]] = !debuginfo.basic<bool {sizeInBits = 1, alignInBits = 1, encoding = DW_ATE_boolean}>
 // CHECK-DAG: ![[BASIC1:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
-// CHECK-DAG: !unspecified = !debuginfo.unspecified<"void">
-// CHECK-DAG: !array = !debuginfo.array<5 x !{{.*}}>
-// CHECK-DAG: !member = !debuginfo.member<m0: ![[BASIC1]]>
+// CHECK-DAG: ![[UNSPECIFIED:.*]] = !debuginfo.unspecified<"void">
+// CHECK-DAG: ![[ARRAY:.*]] = !debuginfo.array<5 x !{{.*}}>
+// CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<m0: ![[BASIC1]]>
 // CHECK-DAG: ![[MEMBER1:.*]] = !debuginfo.member<m1: !{{.*}}>
 // CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[BASIC]] {sizeInBits = 64, alignInBits = 64}>
-// CHECK-DAG: ![[PTR1:.*]] = !debuginfo.ptr<!unspecified {sizeInBits = 64, alignInBits = 64}>
+// CHECK-DAG: ![[PTR1:.*]] = !debuginfo.ptr<![[UNSPECIFIED]] {sizeInBits = 64, alignInBits = 64}>
 // CHECK-DAG: ![[SUBROUTINE:.*]] = !debuginfo.subroutine<() -> (![[BASIC1]], ![[BASIC1]]): DW_CC_normal>
-// CHECK-DAG: !vector = !debuginfo.vector<8 x ![[BASIC]]>
-// CHECK-DAG: !vector1 = !debuginfo.vector<8 x !{{.*}}>
-// CHECK-DAG: !vector2 = !debuginfo.vector<8 x !{{.*}}>
-// CHECK-DAG: !array1 = !debuginfo.array<4 x !vector>
-// CHECK-DAG: !array2 = !debuginfo.array<4 x !vector2>
+// CHECK-DAG: ![[VECTOR:.*]] = !debuginfo.vector<8 x ![[BASIC]]>
+// CHECK-DAG: ![[VECTOR1:.*]] = !debuginfo.vector<8 x !{{.*}}>
+// CHECK-DAG: ![[VECTOR2:.*]] = !debuginfo.vector<8 x !{{.*}}>
+// CHECK-DAG: ![[ARRAY1:.*]] = !debuginfo.array<4 x ![[VECTOR]]>
+// CHECK-DAG: ![[ARRAY2:.*]] = !debuginfo.array<4 x ![[VECTOR2]]>
 // CHECK-DAG: ![[MEMBER24:.*]] = !debuginfo.member<m0: ![[PTR]]>
 // CHECK-DAG: ![[MEMBER22:.*]] = !debuginfo.member<m0: ![[BASIC]]>
 // CHECK-DAG: ![[PTR2:.*]] = !debuginfo.ptr<![[SUBROUTINE]] {sizeInBits = 64, alignInBits = 64}>
-// CHECK-DAG: !array3 = !debuginfo.array<3 x !array1>
-// CHECK-DAG: !array4 = !debuginfo.array<5 x !array2>
-// CHECK-DAG: ![[MEMBER25:.*]] = !debuginfo.member<m1: !array2>
-// CHECK-DAG: !struct = !debuginfo.struct<pack(!member, ![[MEMBER1]])>
-// CHECK-DAG: !array5 = !debuginfo.array<2 x !array3>
-// CHECK-DAG: ![[MEMBER26:.*]] = !debuginfo.member<m1: !array4>
-// CHECK-DAG: !struct1 = !debuginfo.struct<struct(![[MEMBER24]], ![[MEMBER25]])>
-// CHECK-DAG: ![[MEMBER27:.*]] = !debuginfo.member<m2: !struct1>
-// CHECK-DAG: !struct2 = !debuginfo.struct<struct(![[MEMBER22]], ![[MEMBER26]], ![[MEMBER27]])>
-// CHECK-DAG: ![[SUBROUTINE1:.*]] = !debuginfo.subroutine<(!array5, ![[PTR2]], !struct, ![[PTR]], ![[PTR1]], ![[BASIC]], !vector1, !struct2) -> (): DW_CC_normal>
+// CHECK-DAG: ![[ARRAY3:.*]] = !debuginfo.array<3 x ![[ARRAY1]]>
+// CHECK-DAG: ![[ARRAY4:.*]] = !debuginfo.array<5 x ![[ARRAY2]]>
+// CHECK-DAG: ![[MEMBER25:.*]] = !debuginfo.member<m1: ![[ARRAY2]]>
+// CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<pack(![[MEMBER]], ![[MEMBER1]])>
+// CHECK-DAG: ![[ARRAY5:.*]] = !debuginfo.array<2 x ![[ARRAY3]]>
+// CHECK-DAG: ![[MEMBER26:.*]] = !debuginfo.member<m1: ![[ARRAY4]]>
+// CHECK-DAG: ![[STRUCT1:.*]] = !debuginfo.struct<struct(![[MEMBER24]], ![[MEMBER25]])>
+// CHECK-DAG: ![[MEMBER27:.*]] = !debuginfo.member<m2: ![[STRUCT1]]>
+// CHECK-DAG: ![[STRUCT2:.*]] = !debuginfo.struct<struct(![[MEMBER22]], ![[MEMBER26]], ![[MEMBER27]])>
 
-!test = !debuginfo.subroutine<(!debuginfo.unresolved<!arrayTest>,
-                               !debuginfo.unresolved<!coroutineTest>,
-                               !debuginfo.unresolved<!packTest>,
-                               !debuginfo.unresolved<!pointerTest>,
-                               !debuginfo.unresolved<!voidPointerTest>,
-                               !debuginfo.unresolved<!scalarTest>,
-                               !debuginfo.unresolved<!simdTest>,
-                               !debuginfo.unresolved<!structTest>) -> (): DW_CC_normal>
+// CHECK-DAG: ![[STRING_DATA:.*]] = !debuginfo.member<data: !ptr
+// CHECK-DAG: ![[STRING_SIZE:.*]] = !debuginfo.member<size: !basic
+// CHECK-DAG: ![[STRING:.*]] = !debuginfo.struct<"!kgen.string"(![[STRING_DATA]], ![[STRING_SIZE]])>
+
+// CHECK-DAG: !debuginfo.subroutine<(![[ARRAY5]], ![[PTR2]], ![[STRUCT]], ![[PTR]], ![[PTR1]], ![[BASIC]], ![[VECTOR1]], ![[STRUCT2]], ![[STRING]]) -> (): DW_CC_normal>
+
+!test = !debuginfo.subroutine<(
+  !debuginfo.unresolved<!arrayTest>,
+  !debuginfo.unresolved<!coroutineTest>,
+  !debuginfo.unresolved<!packTest>,
+  !debuginfo.unresolved<!pointerTest>,
+  !debuginfo.unresolved<!voidPointerTest>,
+  !debuginfo.unresolved<!scalarTest>,
+  !debuginfo.unresolved<!simdTest>,
+  !debuginfo.unresolved<!structTest>,
+  !debuginfo.unresolved<!kgen.string>
+) -> (): DW_CC_normal>
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
