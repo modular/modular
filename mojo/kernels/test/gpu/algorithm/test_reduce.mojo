@@ -112,13 +112,9 @@ fn run_reduce() raises:
     _memset(res_device, 0, 1)
 
     let func = Function[
-        # fmt: off
-      fn (Pointer[Float32],
-          DTypePointer[DType.float32],
-          Int
-         ) -> None,
-        # fmt: on
-        reduce[BLOCK_SIZE=BLOCK_SIZE]
+        fn (
+            Pointer[Float32], DTypePointer[DType.float32], Int
+        ) -> None, reduce[BLOCK_SIZE=BLOCK_SIZE]
     ](verbose=True, print_ptx=False)
 
     func(

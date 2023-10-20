@@ -65,13 +65,12 @@ fn run_vec_add(capture: Float32) raises:
         return capture + lhs + rhs
 
     let func = Function[
-        # fmt: off
-      fn (DTypePointer[DType.float32],
-          DTypePointer[DType.float32],
-          DTypePointer[DType.float32],
-          Int) capturing-> None,
-        # fmt: on
-        vec_func[add]
+        fn (
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            Int,
+        ) capturing -> None, vec_func[add]
     ](debug=True)
 
     let block_dim = 32

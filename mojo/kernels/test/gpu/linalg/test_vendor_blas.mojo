@@ -100,13 +100,14 @@ fn run_matmul() raises:
     _copy_host_to_device(b_device, b_host.data(), k * n)
 
     let func = Function[
-        # fmt: off
-      fn (DTypePointer[DType.float32],
-          DTypePointer[DType.float32],
-          DTypePointer[DType.float32],
-          Int, Int, Int) -> None,
-        # fmt: on
-        matmul
+        fn (
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            Int,
+            Int,
+            Int,
+        ) -> None, matmul
     ](debug=True)
 
     func(

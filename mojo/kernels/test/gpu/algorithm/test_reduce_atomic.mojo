@@ -58,13 +58,7 @@ fn run_reduce() raises:
     _memset(res_device, 0, 1)
 
     let func = Function[
-        # fmt: off
-      fn (Pointer[Float32],
-          DTypePointer[DType.float32],
-          Int
-         ) -> None,
-        # fmt: on
-        reduce
+        fn (Pointer[Float32], DTypePointer[DType.float32], Int) -> None, reduce
     ](verbose=True)
 
     func(
