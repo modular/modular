@@ -3,17 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
 # COM: Capture type cannot be moved.
 
 
 struct StringNoMove:
-    var size: Int
-
-    fn __init__(inout self, sz: Int):
-        self.size = sz
-
     fn __copyinit__(inout self, existing: Self):
         pass
 
@@ -25,7 +20,10 @@ fn use(x: StringNoMove):
     pass
 
 
-# CHECK: lit.struct.decl @"_CI_{{.*}}::StringNoMove, /)
+# CHECK: lit.struct.decl @"_CI_{{.*}}::StringNoMove{{.*}} attributes
+# CHECK-SAME: copyInit =
+# CHECK-SAME: destructor =
+# CHECK-SAME: moveInit =
 # CHECK: lit.struct.field field0 : !StringNoMove
 # CHECK: lit.func @"__del__
 # CHECK: lit.func @"__copyinit__

@@ -6,6 +6,9 @@
 # RUN: kgen-translate %s -import-mojo | FileCheck %s
 
 # CHECK: lit.struct.decl @"_CW_
+# CHECK-SAME: copyInit =
+# CHECK-SAME: destructor =
+# CHECK-SAME: moveInit =
 
 # CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!escaping1> init_self, %impl[impl]: !kgen.pointer<!escaping> owned_in_mem, |)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
