@@ -25,6 +25,7 @@ namespace M::KGEN {
 class KGENDType;
 class PackType;
 class PointerType;
+class StringType;
 class StructType;
 namespace POP {
 class ArrayType;
@@ -292,9 +293,13 @@ private:
   /// Build the debug type for a struct-like type.
   DebugInfo::DIType buildDebugStructTypeFromTypeAttrs(ArrayRef<TypedAttr> attrs,
                                                       StringAttr name);
+  /// Build the debug type for a function type.
   DebugInfo::DIType buildDebugSubroutineType(FunctionType type);
+  /// Build a pointer type.
+  DebugInfo::DIType buildPointerType(DebugInfo::DIType type);
 
   DebugInfo::DIType buildDebugType(IndexType type);
+  DebugInfo::DIType buildDebugType(StringType type);
   DebugInfo::DIType buildDebugType(POP::ArrayType type);
   DebugInfo::DIType buildDebugType(POP::CoroutineType type);
   DebugInfo::DIType buildDebugType(PackType type);
