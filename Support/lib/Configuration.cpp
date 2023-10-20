@@ -379,6 +379,12 @@ std::filesystem::path Config::getModularHomeDirPath() {
 
 std::filesystem::path Config::getConfigFilePath() {
   constexpr llvm::StringLiteral kModularConfigFileName = "modular.cfg";
+
+  // If MODULAR_HOME is defined, always use that.
+  auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
+  if (modularHome)
+    return std::filesystem::path(*modularHome) / kModularConfigFileName.str();
+
   // If we found the config file this way, then return it.
   auto configFile = findModularFile(kModularConfigFileName);
   if (configFile)
