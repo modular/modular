@@ -561,82 +561,6 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 }
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPStructConstruct
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPStructConstruct : ConvertPOPToLLVMPattern<StructCreateOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(StructCreateOp op, StructCreateOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type structType = convertType(op.getType());
-    if (!structType)
-      return rewriter.notifyMatchFailure(op.getLoc(),
-                                         "failed to convert struct type");
-    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    Value container =
-        materializeLLVMStruct(b, structType, adaptor.getOperands());
-    rewriter.replaceOp(op, container);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStructReplace
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPStructReplace : ConvertPOPToLLVMPattern<StructReplaceOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(StructReplaceOp op, StructReplaceOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
-        op, adaptor.getContainer(), adaptor.getValue(),
-        op.getIndexAttr().getInt());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStructGet
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPStructGet : ConvertPOPToLLVMPattern<StructExtractOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(StructExtractOp op, StructExtractOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getContainer(), op.getIndexAttr().getInt());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPStructGEP
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPStructGEP : ConvertPOPToLLVMPattern<POP::StructGEPOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(POP::StructGEPOp op, POP::StructGEPOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type ptrType = convertType(op.getType());
-    if (!ptrType)
-      return op.emitError("failed to convert result type");
-    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, ptrType, adaptor.getContainer(),
-        ArrayRef<LLVM::GEPArg>{
-            0, static_cast<int32_t>(op.getIndexAttr().getInt())});
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPArrayCreate
 //===----------------------------------------------------------------------===//
 
@@ -1382,10 +1306,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPStore,
       ConvertPOPStringAddress,
       ConvertPOPStringSize,
-      ConvertPOPStructConstruct,
-      ConvertPOPStructGEP,
-      ConvertPOPStructGet,
-      ConvertPOPStructReplace,
       ConvertPOPSub,
       ConvertPOPVariadicGet,
       ConvertPOPVariadicSize,

@@ -36,6 +36,17 @@ class KGEN_ExprAttr<string attrName, string attrMnemonic,
                [TypedAttrInterface,
                 DeclareAttrInterfaceMethods<ParameterAttrInterface>] # traits>;
 
+// IndexAttr whose return value is an `int64_t`.
+def UnsignedIndexAttr :
+    TypedAttrBase<
+      Index, "IntegerAttr",
+      And<[CPred<"isa<IntegerAttr>($_self)">,
+           CPred<"isa<IndexType>(cast<IntegerAttr>($_self).getType())">]>,
+      "index attribute"> {
+  let returnType = "unsigned";
+  let convertFromStorage = "$_self.getInt()";
+}
+
 //===----------------------------------------------------------------------===//
 // ParameterExprArrayAttr
 //===----------------------------------------------------------------------===//

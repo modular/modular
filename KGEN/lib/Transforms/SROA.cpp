@@ -124,8 +124,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
     for (Operation *user : alloc->getUsers()) {
       // If the user is something which actually expects the full structure like
       // a call then we cannot perfom the optimization.
-      if (!isa<POP::StructGEPOp, POP::StructExtractOp, POP::StoreOp,
-               POP::LoadOp, DebugInfo::ValueOp>(user))
+      if (!isa<StructGEPOp, StructExtractOp, POP::StoreOp, POP::LoadOp,
+               DebugInfo::ValueOp>(user))
         return false;
 
       // If the user is the argument of the store, then we cannot elide.
@@ -136,8 +136,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
       // We can SROA loads if they are only used in extract ops.
       if (auto load = dyn_cast<POP::LoadOp>(user)) {
         for (Operation *loadUser : load->getUsers()) {
-          if (!isa<POP::StructGEPOp, POP::StructExtractOp, DebugInfo::ValueOp>(
-                  loadUser))
+          if (!isa<StructGEPOp, StructExtractOp, DebugInfo::ValueOp>(loadUser))
             return false;
         }
       }
@@ -182,10 +181,10 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
       // Replace the *user* of each load with the loaded scalar or for GEPs the
       // pointer itself.
       for (Operation *loadUser : load->getUsers()) {
-        if (auto gep = dyn_cast<POP::StructGEPOp>(loadUser)) {
+        if (auto gep = dyn_cast<StructGEPOp>(loadUser)) {
           gep.replaceAllUsesWith(newAllocas[gep.getIndexAttr().getInt()]);
           toDelete.push_back(gep);
-        } else if (auto extract = dyn_cast<POP::StructExtractOp>(loadUser)) {
+        } else if (auto extract = dyn_cast<StructExtractOp>(loadUser)) {
           Value newVal = getOrCreateLoad(extract.getIndex());
           extract.replaceAllUsesWith(newVal);
           toDelete.push_back(extract);
@@ -217,8 +216,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
 
   /// The extractor op for structures.
   Value createExtract(Location loc, Value operand, int64_t index) {
-    return builder.create<POP::StructExtractOp>(loc, operand,
-                                                builder.getIndexAttr(index));
+    return builder.create<StructExtractOp>(loc, operand,
+                                           builder.getIndexAttr(index));
   }
 };
 
@@ -367,7 +366,7 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
       if (!isa<POP::OffsetOp, POP::StoreOp, POP::LoadOp, POP::ArrayGEPOp,
-               POP::StructGEPOp>(user))
+               StructGEPOp>(user))
         return false;
 
       // If the user is the argument of the store, then we cannot elide.
@@ -392,8 +391,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
         // We don't have to worry about handling constant offsets of constant
         // offsets, because they are canonicalized down to just one offset.
         for (Operation *user : offset->getUsers()) {
-          if (!isa<POP::StoreOp, POP::LoadOp, POP::ArrayGEPOp,
-                   POP::StructGEPOp>(user))
+          if (!isa<POP::StoreOp, POP::LoadOp, POP::ArrayGEPOp, StructGEPOp>(
+                  user))
             return false;
           // If the user is the argument of the store, then we cannot elide.
           if (auto store = dyn_cast<POP::StoreOp>(user))

@@ -1256,14 +1256,14 @@ kgen.generator @constexprIfFunctionCallCondition() -> index {
 }
 
 kgen.generator @returnInputParam(%arg0: !kgen.struct<scalar<bool>>) -> i1 {
-  %1 = pop.struct.extract %arg0[0] : !kgen.struct<scalar<bool>>
+  %1 = kgen.struct.extract %arg0[0] : !kgen.struct<scalar<bool>>
   %2 = pop.cast_to_builtin %1: !pop.scalar<bool> to i1
   kgen.return %2 : i1
 }
 
 kgen.generator @returnTrueStruct() -> !kgen.struct<scalar<bool>> {
   %0 = kgen.param.constant: scalar<bool> = <<true>>
-  %1 = pop.struct.create(%0) : !kgen.struct<scalar<bool>>
+  %1 = kgen.struct.create(%0) : !kgen.struct<scalar<bool>>
   kgen.return %1 : !kgen.struct<scalar<bool>>
 }
 
@@ -1503,12 +1503,12 @@ kgen.generator @instantiate() {
 // -----
 
 kgen.generator @box(%a: index) -> !kgen.struct<index> {
-  %0 = pop.struct.create(%a) : !kgen.struct<index>
+  %0 = kgen.struct.create(%a) : !kgen.struct<index>
   kgen.return %0 : !kgen.struct<index>
 }
 
 kgen.generator @unbox(%a: !kgen.struct<index>) -> index {
-  %0 = pop.struct.extract %a[0] : !kgen.struct<index>
+  %0 = kgen.struct.extract %a[0] : !kgen.struct<index>
   kgen.return %0 : index
 }
 

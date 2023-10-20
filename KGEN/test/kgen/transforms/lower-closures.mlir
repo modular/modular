@@ -8,7 +8,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   hlcf.if %arg0 {
     %idx1 = index.constant 1
     // CHECK: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]]
-    // CHECK-NEXT: %[[RES:.*]] = pop.struct.gep %[[PROMISE]][0]
+    // CHECK-NEXT: %[[RES:.*]] = kgen.struct.gep %[[PROMISE]][0]
     // CHECK-NEXT: pop.store %idx1, %[[RES]]
     // CHECK-NEXT: kgen.return %[[HDL]]
     kgen.return %idx1 : index
@@ -17,7 +17,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   }
   %idx0 = index.constant 0
   // CHECK: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]]
-  // CHECK-NEXT: %[[RES:.*]] = pop.struct.gep %[[PROMISE]][0]
+  // CHECK-NEXT: %[[RES:.*]] = kgen.struct.gep %[[PROMISE]][0]
   // CHECK-NEXT: pop.store %idx0, %[[RES]]
   // CHECK-NEXT: kgen.return %[[HDL]]
   kgen.return %idx0 : index
@@ -135,7 +135,7 @@ kgen.func @create_closure() {
 
 // CHECK-LABEL: kgen.func @async_closure_in_async_async_closure_0()
 // CHECK: [[PROMISE:%.*]] = pop.coroutine.promise {{.*}} : <() -> index>
-// CHECK: [[GEP:%.*]] = pop.struct.gep [[PROMISE]][0]
+// CHECK: [[GEP:%.*]] = kgen.struct.gep [[PROMISE]][0]
 // CHECK: store %idx5, [[GEP]]
 
 // CHECK-LABEL: kgen.func @async_closure_in_async

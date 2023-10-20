@@ -47,7 +47,7 @@ kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<T:type = f32>> {
 // CHECK-LABEL: @make_pair
 // CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
 kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
-  // CHECK: pop.struct.create(%arg1, %arg0) : !kgen.struct<i8, i8>
+  // CHECK: kgen.struct.create(%arg1, %arg0) : !kgen.struct<i8, i8>
   %0 = lit.struct.create(first=%b, second=%a) : (i8, i8) -> !i8Pair
   kgen.return %0 : !i8Pair
 }
@@ -55,21 +55,21 @@ kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
 // CHECK-LABEL: @struct_insert
 kgen.func @struct_insert(%pair: !i8Pair) -> !i8Pair {
   %c1 = llvm.mlir.constant(2 : i8) : i8
-  // CHECK: pop.struct.replace %{{.*}}, %{{.*}}[1]
+  // CHECK: kgen.struct.replace %{{.*}}, %{{.*}}[1]
   %0 = lit.struct.insert %c1, %pair[second] : i8 into !i8Pair
   kgen.return %0 : !i8Pair
 }
 
 // CHECK-LABEL: @struct_extract
 kgen.func @struct_extract(%pair: !i8Pair) -> i8 {
-  // CHECK: pop.struct.extract %{{.*}}[1]
+  // CHECK: kgen.struct.extract %{{.*}}[1]
   %0 = lit.struct.extract %pair[second] : i8 from !i8Pair
   kgen.return %0 : i8
 }
 
 // CHECK-LABEL: @struct_gep
 kgen.func @struct_gep(%pair: !kgen.pointer<!i8Pair>) -> !kgen.pointer<i8> {
-  // CHECK: pop.struct.gep %{{.*}}[1]
+  // CHECK: kgen.struct.gep %{{.*}}[1]
   %0 = lit.struct.gep %pair[second] : <i8> from <!i8Pair>
   kgen.return %0 : !kgen.pointer<i8>
 }
@@ -213,7 +213,7 @@ lit.struct.decl @PairStruct {
 // CHECK-LABEL: @gerToGEPFooFromBar
 kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime>
   (%arg0: !lit.ref<mut @PairStruct, l>, %arg1: si32) -> si32 {
-  // CHECK-NEXT: %0 = pop.struct.gep %arg0[0] : <struct<si32, ui32>>
+  // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<si32, ui32>>
   %0 = lit.ref.struct.ger %arg0[x] : !lit.ref<mut si32, l> from !lit.ref<mut @PairStruct, l>
 
   // CHECK-NEXT: pop.store %arg1, %0
@@ -306,7 +306,7 @@ lit.struct.decl @Pointer<ty: type> {
 // CHECK-LABEL: @gepFooFromBar
 kgen.func @gepFooFromBar(%s: !kgen.pointer<@Bar>) ->
 !kgen.pointer<@Pointer<ty: type = !foo_ref>> {
-  // CHECK: %0 = pop.struct.gep %arg0[0] : <struct<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>, ui32>>
+  // CHECK: %0 = kgen.struct.gep %arg0[0] : <struct<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>, ui32>>
   // CHECK: kgen.return %0 : !kgen.pointer<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>>
   %0 = lit.struct.gep %s[x] : <@Pointer<ty: type = !foo_ref>> from <@Bar>
   kgen.return %0 : !kgen.pointer<@Pointer<ty: type = !foo_ref>>
@@ -314,7 +314,7 @@ kgen.func @gepFooFromBar(%s: !kgen.pointer<@Bar>) ->
 
 // CHECK-LABEL: @makeFoo
 kgen.func @makeFoo(%arg0: !bar_ref, %arg1: f32) -> !foo_ref {
-  // CHECK: %0 = pop.struct.create(%arg0, %arg1) : !kgen.struct<struct<pointer<scalar<invalid>>, ui32>, f32>
+  // CHECK: %0 = kgen.struct.create(%arg0, %arg1) : !kgen.struct<struct<pointer<scalar<invalid>>, ui32>, f32>
   // CHECK: kgen.return %0 : !kgen.struct<struct<pointer<scalar<invalid>>, ui32>, f32>
   %0 = lit.struct.create(x=%arg0, y=%arg1) : (!bar_ref, f32) -> !foo_ref
   kgen.return %0 : !foo_ref
@@ -322,7 +322,7 @@ kgen.func @makeFoo(%arg0: !bar_ref, %arg1: f32) -> !foo_ref {
 
 // CHECK-LABEL: @makeBar
 kgen.func @makeBar(%arg0: !foo_ptr_ref, %arg1: ui32) -> !bar_ref {
-  // CHECK: %0 = pop.struct.create(%arg0, %arg1) : !kgen.struct<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>, ui32>
+  // CHECK: %0 = kgen.struct.create(%arg0, %arg1) : !kgen.struct<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>, ui32>
   // CHECK: kgen.return %1 : !kgen.struct<pointer<scalar<invalid>>, ui32>
   %0 = lit.struct.create(x=%arg0, y=%arg1) : (!foo_ptr_ref, ui32) -> !bar_ref
   kgen.return %0 : !bar_ref
@@ -330,7 +330,7 @@ kgen.func @makeBar(%arg0: !foo_ptr_ref, %arg1: ui32) -> !bar_ref {
 
 // CHECK-LABEL: @structInsertUIntToBar
 kgen.func @structInsertUIntToBar(%arg0: ui32, %arg1: !bar_ref) -> !bar_ref {
-  // CHECK: %0 = pop.struct.replace %arg0, %arg1[1] : !kgen.struct<pointer<scalar<invalid>>, ui32>
+  // CHECK: %0 = kgen.struct.replace %arg0, %arg1[1] : !kgen.struct<pointer<scalar<invalid>>, ui32>
   // CHECK: kgen.return %0 : !kgen.struct<pointer<scalar<invalid>>, ui32>
   %0 = lit.struct.insert %arg0, %arg1[y] : ui32 into !bar_ref
   kgen.return %0 : !bar_ref
@@ -339,7 +339,7 @@ kgen.func @structInsertUIntToBar(%arg0: ui32, %arg1: !bar_ref) -> !bar_ref {
 // CHECK-LABEL: @structInsertFooPtrToBar
 kgen.func @structInsertFooPtrToBar(%arg0: !foo_ptr_ref, %arg1: !bar_ref) -> !bar_ref {
   // CHECK: %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>> to !kgen.pointer<scalar<invalid>>
-  // CHECK: %1 = pop.struct.replace %0, %arg1[0] : !kgen.struct<pointer<scalar<invalid>>, ui32>
+  // CHECK: %1 = kgen.struct.replace %0, %arg1[0] : !kgen.struct<pointer<scalar<invalid>>, ui32>
   // CHECK: kgen.return %1 : !kgen.struct<pointer<scalar<invalid>>, ui32>
   %0 = lit.struct.insert %arg0, %arg1[x] : !foo_ptr_ref into !bar_ref
   kgen.return %0 : !bar_ref
@@ -348,7 +348,7 @@ kgen.func @structInsertFooPtrToBar(%arg0: !foo_ptr_ref, %arg1: !bar_ref) -> !bar
 // CHECK-LABEL: @structInsertBarToFoo
 kgen.func @structInsertBarToFoo(%arg0: !foo_ptr_ref, %arg1: ui32,  %arg2: !foo_ref) -> !foo_ref {
   // CHECK: %0 = kgen.call @makeBar(%arg0, %arg1) : (!kgen.pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>, ui32) -> !kgen.struct<pointer<scalar<invalid>>, ui32>
-  // CHECK: %1 = pop.struct.replace %0, %arg2[0] : !kgen.struct<struct<pointer<scalar<invalid>>, ui32>, f32>
+  // CHECK: %1 = kgen.struct.replace %0, %arg2[0] : !kgen.struct<struct<pointer<scalar<invalid>>, ui32>, f32>
   // CHECK: kgen.return %1 : !kgen.struct<struct<pointer<scalar<invalid>>, ui32>, f32>
   %0 = kgen.call @makeBar(%arg0, %arg1): (!foo_ptr_ref, ui32) -> !bar_ref
   %1 = lit.struct.insert %0, %arg2[x] : !bar_ref into !foo_ref
@@ -357,7 +357,7 @@ kgen.func @structInsertBarToFoo(%arg0: !foo_ptr_ref, %arg1: ui32,  %arg2: !foo_r
 
 // CHECK-LABEL: @structExtractFooFromBar
 kgen.func @structExtractFooFromBar(%arg0: !bar_ref) -> !foo_ptr_ref {
-  // CHECK: %0 = pop.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<invalid>>, ui32>
+  // CHECK: %0 = kgen.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<invalid>>, ui32>
   // CHECK: %1 = pop.pointer.bitcast %0 : !kgen.pointer<scalar<invalid>> to !kgen.pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>
   // CHECK: kgen.return %1 : !kgen.pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>
   %0 = lit.struct.extract %arg0[x] : !foo_ptr_ref from !bar_ref
@@ -366,7 +366,7 @@ kgen.func @structExtractFooFromBar(%arg0: !bar_ref) -> !foo_ptr_ref {
 
 // CHECK-LABEL: @structExtractBarFromFoo
 kgen.func @structExtractBarFromFoo(%arg0: !foo_ref) -> !bar_ref {
-  // CHECK: %0 = pop.struct.extract %arg0[0] : !kgen.struct<struct<pointer<scalar<invalid>>, ui32>, f32>
+  // CHECK: %0 = kgen.struct.extract %arg0[0] : !kgen.struct<struct<pointer<scalar<invalid>>, ui32>, f32>
   // CHECK: kgen.return %0 : !kgen.struct<pointer<scalar<invalid>>, ui32>
   %0 = lit.struct.extract %arg0[x] : !bar_ref from !foo_ref
   kgen.return %0 : !bar_ref

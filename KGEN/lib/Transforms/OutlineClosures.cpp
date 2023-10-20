@@ -180,9 +180,9 @@ void OutlineClosuresPass::runOnOperation() {
         auto load = b.create<POP::CompilerGlobalLoadOp>(structType, globalVar);
         // Create accesses for each capture.
         for (auto [idx, capture] : llvm::enumerate(captures)) {
-          mlir::replaceAllUsesInRegionWith(
-              capture, b.create<POP::StructExtractOp>(load, idx),
-              liftedWrapper.getBodyRegion());
+          mlir::replaceAllUsesInRegionWith(capture,
+                                           b.create<StructExtractOp>(load, idx),
+                                           liftedWrapper.getBodyRegion());
         }
       }
 
@@ -287,8 +287,8 @@ void OutlineClosuresPass::runOnOperation() {
         assert(globalVar && structType &&
                "global variable name/type/struct was undefined?");
 
-        auto container = b.create<POP::StructCreateOp>(
-            structType, llvm::to_vector(captures));
+        auto container =
+            b.create<StructCreateOp>(structType, llvm::to_vector(captures));
 
         // Get a pointer to the global and store the container in it.
         b.create<POP::CompilerGlobalStoreOp>(globalVar, container);

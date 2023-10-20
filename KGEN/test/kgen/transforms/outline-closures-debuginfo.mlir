@@ -18,7 +18,7 @@
 
 // CHECK-LABEL: kgen.generator @foo(
 // CHECK-SAME:      %[[ARG:.*]]: index
-// CHECK-NEXT:    %[[VAL:.*]] = pop.struct.create(%[[ARG]]) : !kgen.struct<index> loc(#[[LOC_FOO:.*]])
+// CHECK-NEXT:    %[[VAL:.*]] = kgen.struct.create(%[[ARG]]) : !kgen.struct<index> loc(#[[LOC_FOO:.*]])
 // CHECK-NEXT:    pop.compiler.global_store "foo_context_var_0", %[[VAL]] : !kgen.struct<index> loc(#[[LOC_FOO]])
 // CHECK-NEXT:    kgen.param.declare Closure: () -> !pop.array<0, i8> = <@foo_Closure> loc(#[[LOC_CLOSURE_DEC:.*]])
 // CHECK-NEXT:    kgen.param.declare OtherClosure: () -> () = <@foo_OtherClosure> loc(#[[LOC_FOO]])

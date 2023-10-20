@@ -15,14 +15,14 @@ kgen.func export C @someKernel(%arg1: f32, %arg2: index) -> f32 {
 // SCALAR: extern float someKernel(float, ssize_t);
 
 kgen.func export C @someBufferKernel(%a: !kgen.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>) -> index {
-  %size = pop.struct.extract %a[1] : !kgen.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>
+  %size = kgen.struct.extract %a[1] : !kgen.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>
   kgen.return %size : index
 }
 // BUFFER: extern ssize_t someBufferKernel(void *, ssize_t, uint8_t);
 
 
 kgen.func export C @someNDBufferKernel(%a: !kgen.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>) -> index {
-  %size = pop.struct.extract %a[1] : !kgen.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>
+  %size = kgen.struct.extract %a[1] : !kgen.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>
   kgen.return %size : index
 }
 // NDBUFFER: extern ssize_t someNDBufferKernel(void *, ssize_t, ssize_t[5], uint8_t);
