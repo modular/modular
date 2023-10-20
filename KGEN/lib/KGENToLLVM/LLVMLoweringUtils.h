@@ -23,6 +23,14 @@ class LLVMFuncOp;
 
 namespace M::KGEN {
 class KGENDType;
+class PackType;
+class PointerType;
+class StructType;
+namespace POP {
+class ArrayType;
+class CoroutineType;
+class SIMDType;
+} // namespace POP
 
 //===----------------------------------------------------------------------===//
 // LLVMDataLayout
@@ -274,10 +282,26 @@ Value convertParameterToLLVM(
 
 /// A specialized debug info type converter for converting from POP types to
 /// LLVM.
-struct POPToLLVMDebugInfoTypeConverter
+class POPToLLVMDebugInfoTypeConverter
     : public DebugInfo::DebugInfoTypeConverter {
-  POPToLLVMDebugInfoTypeConverter(POPToLLVMTypeConverter &converter,
-                                  TargetInfoAttr target);
+public:
+  POPToLLVMDebugInfoTypeConverter(POPToLLVMTypeConverter &tc);
+
+private:
+  POPToLLVMTypeConverter &tc;
+
+  /// Build the debug type for a struct-like type.
+  DebugInfo::DIType buildDebugStructTypeFromTypeAttrs(ArrayRef<TypedAttr> attrs,
+                                                      StringAttr name);
+  DebugInfo::DIType buildDebugSubroutineType(FunctionType type);
+
+  DebugInfo::DIType buildDebugType(IndexType type);
+  DebugInfo::DIType buildDebugType(POP::ArrayType type);
+  DebugInfo::DIType buildDebugType(POP::CoroutineType type);
+  DebugInfo::DIType buildDebugType(PackType type);
+  DebugInfo::DIType buildDebugType(PointerType type);
+  DebugInfo::DIType buildDebugType(POP::SIMDType type);
+  DebugInfo::DIType buildDebugType(StructType type);
 };
 
 //===----------------------------------------------------------------------===//
