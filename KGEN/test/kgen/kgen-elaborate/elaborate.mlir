@@ -1880,7 +1880,7 @@ kgen.generator @cost_of<fn: (i1) -> index>() -> index {
 
 // CHECK-LABEL: kgen.func export @main
 kgen.generator export @main() {
-  // CHECK-NEXT: <6>
+  // CHECK-NEXT: <1>
   %0 = kgen.param.constant = <apply(:() -> index @cost_of<:(i1) -> index @count_ops>)>
   kgen.return
 }
