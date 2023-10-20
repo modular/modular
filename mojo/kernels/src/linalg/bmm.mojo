@@ -295,12 +295,9 @@ fn batched_matmul[
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    # fmt: off
-    rowwise_epilogue: fn (Int,
-                          Int,
-                          NDBuffer[2, DimList.create_unknown[2](), type]
-                         ) capturing -> None,
-    # fmt: on
+    rowwise_epilogue: fn (
+        Int, Int, NDBuffer[2, DimList.create_unknown[2](), type]
+    ) capturing -> None,
     out_chain: OutputChainPtr,
 ):
     constrained[not adj_a, "batched matmul does not support adj_a yet"]()
@@ -484,12 +481,9 @@ fn batched_matmul[
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    # fmt: off
-    rowwise_epilogue: fn (Int,
-                          Int,
-                          NDBuffer[2, DimList.create_unknown[2](), type]
-                         ) capturing -> None,
-    # fmt: on
+    rowwise_epilogue: fn (
+        Int, Int, NDBuffer[2, DimList.create_unknown[2](), type]
+    ) capturing -> None,
     out_chain: OutputChainPtr,
 ):
     batched_matmul[

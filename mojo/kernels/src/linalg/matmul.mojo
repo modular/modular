@@ -2165,15 +2165,14 @@ fn matmul[
             c[Index(x, y)] = accum
 
     try:
-        # fmt: off
-        alias func_type = fn (DTypePointer[a_type],
-                              DTypePointer[b_type],
-                              DTypePointer[c_type],
-                              Int,
-                              Int,
-                              Int
-                             ) capturing -> None
-        # fmt: on
+        alias func_type = fn (
+            DTypePointer[a_type],
+            DTypePointer[b_type],
+            DTypePointer[c_type],
+            Int,
+            Int,
+            Int,
+        ) capturing -> None
         let gpu_func = Function[func_type, rebind[func_type](matmul_kernel)]()
         gpu_func(
             (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
