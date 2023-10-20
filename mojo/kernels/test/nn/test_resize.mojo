@@ -190,9 +190,24 @@ fn main():
 
         linear_fill[type](
             reference,
-            # fmt: off
-            VariadicList[SIMD[type, 1]](1.0000, 1.2500, 1.7500, 2.0000, 1.5000, 1.7500, 2.2500, 2.5000, 2.5000, 2.7500, 3.2500, 3.5000, 3.0000, 3.2500, 3.7500, 4.0000)
-            # fmt: on
+            VariadicList[SIMD[type, 1]](
+                1.0000,
+                1.2500,
+                1.7500,
+                2.0000,
+                1.5000,
+                1.7500,
+                2.2500,
+                2.5000,
+                2.5000,
+                2.7500,
+                3.2500,
+                3.5000,
+                3.0000,
+                3.2500,
+                3.7500,
+                4.0000,
+            ),
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
@@ -222,9 +237,24 @@ fn main():
         # print(y.flatten())
         linear_fill[type](
             reference,
-            # fmt: off
-            VariadicList[SIMD[type, 1]](1.0000, 1.3333, 1.6667, 2.0000, 1.6667, 2.0000, 2.3333, 2.6667, 2.3333, 2.6667, 3.0000, 3.3333, 3.0000, 3.3333, 3.6667, 4.0000)
-            # fmt: on
+            VariadicList[SIMD[type, 1]](
+                1.0000,
+                1.3333,
+                1.6667,
+                2.0000,
+                1.6667,
+                2.0000,
+                2.3333,
+                2.6667,
+                2.3333,
+                2.6667,
+                3.0000,
+                3.3333,
+                3.0000,
+                3.3333,
+                3.6667,
+                4.0000,
+            ),
         )
 
         test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
@@ -251,10 +281,7 @@ fn main():
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (1, 2), mode="bilinear")
         # print(y.flatten())
         linear_fill[type](
-            reference,
-            # fmt: off
-            VariadicList[SIMD[type, 1]](3.50000, 5.50000)
-            # fmt: on
+            reference, VariadicList[SIMD[type, 1]](3.50000, 5.50000)
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
@@ -282,12 +309,7 @@ fn main():
         #     torch.Tensor(x), (1, 2), mode="bilinear", align_corners=True
         # )
         # print(y.flatten())
-        linear_fill[type](
-            reference,
-            # fmt: off
-            VariadicList[SIMD[type, 1]](1, 4)
-            # fmt: on
-        )
+        linear_fill[type](reference, VariadicList[SIMD[type, 1]](1, 4))
 
         test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
             input, output, reference
@@ -365,9 +387,7 @@ fn main():
         # print(y.flatten())
         linear_fill[type](
             reference,
-            # fmt: off
-            VariadicList[SIMD[type, 1]](3.57143, 5.14286, 9.85714, 11.42857)
-            # fmt: on
+            VariadicList[SIMD[type, 1]](3.57143, 5.14286, 9.85714, 11.42857),
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, True](
