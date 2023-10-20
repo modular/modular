@@ -734,7 +734,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   // Then build all other information needed for the __init__ signature.
   SmallVector<ValueInputConvention> argConventions{
-      ValueInputConvention::InitSelf, ValueInputConvention::BorrowedInMem};
+      ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem};
   SmallVector<StringAttr> argNames{selfName, StringAttr::get(ctx, "impl")};
   SmallVector<PassingKind> argPassingKinds(2, PassingKind::PosOnly);
   FuncOp init = addVoidMethod(
@@ -757,7 +757,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // Copy the contents of the injected impl into the heap memory.
   ExprEmitter emitter(shared, moduleDecl, builder);
   ValueDest implDest(MLValue(target), EC_Assignment);
-  emitter.emitResult(MBValue(source), &node, implDest);
+  emitter.emitResult(MRValue(source), &node, implDest);
 
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(0);
