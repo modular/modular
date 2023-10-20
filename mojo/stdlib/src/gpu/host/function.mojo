@@ -547,21 +547,19 @@ struct FunctionHandle:
     ) raises:
         _check_error(
             _get_dylib_function[
-                # fmt: off
                 fn (
-                  Self,
-                  UInt32, # GridDimZ
-                  UInt32, # GridDimY
-                  UInt32, # GridDimX
-                  UInt32, # BlockDimZ
-                  UInt32, # BlockDimY
-                  UInt32, # BlockDimX
-                  UInt32, # SharedMemSize
-                  _StreamImpl, # Stream
-                  Pointer[Pointer[NoneType]], # Args
-                  DTypePointer[DType.invalid] # Extra
+                    Self,
+                    UInt32,  # GridDimZ
+                    UInt32,  # GridDimY
+                    UInt32,  # GridDimX
+                    UInt32,  # BlockDimZ
+                    UInt32,  # BlockDimY
+                    UInt32,  # BlockDimX
+                    UInt32,  # SharedMemSize
+                    _StreamImpl,  # Stream
+                    Pointer[Pointer[NoneType]],  # Args
+                    DTypePointer[DType.invalid],  # Extra
                 ) -> Result
-                # fmt: on
             ]("cuLaunchKernel")(
                 self.handle,
                 UInt32(grid_dim.x()),

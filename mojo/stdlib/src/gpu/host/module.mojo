@@ -376,15 +376,13 @@ struct ModuleHandle:
             # Note that content has already gone through _cleanup_asm and
             # is null terminated.
             let result = _get_dylib_function[
-                # fmt: off
                 fn (
                     Pointer[_ModuleImpl],
                     DTypePointer[DType.int8],
                     UInt32,
                     Pointer[JitOptions],
-                    Pointer[Pointer[NoneType]]
+                    Pointer[Pointer[NoneType]],
                 ) -> Result
-                # fmt: on
             ]("cuModuleLoadDataEx")(
                 Pointer.address_of(module),
                 content._as_ptr(),
@@ -444,13 +442,11 @@ struct ModuleHandle:
 
         _check_error(
             _get_dylib_function[
-                # fmt: off
                 fn (
                     Pointer[FunctionHandle],
                     _ModuleImpl,
-                    DTypePointer[DType.int8]
+                    DTypePointer[DType.int8],
                 ) -> Result
-                # fmt: on
             ]("cuModuleGetFunction")(
                 Pointer.address_of(func), self.module, name_cstr._as_ptr()
             )
