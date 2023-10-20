@@ -147,6 +147,10 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(StringType type) {
        DIMemberType::get("size", convertDebugType(IndexType::get(ctx)))});
 }
 
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::NoneType type) {
+  return DIStructType::get(StringAttr::get(type.getContext(), "!kgen.none"));
+}
+
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::ArrayType type) {
   int64_t size = *type.getResolvedSize();
   DIType elementType = convertDebugType(type.getElementAsType());
@@ -193,6 +197,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
   // Add direct debug info conversions.
   addConversion([&](IndexType type) { return buildDebugType(type); });
   addConversion([&](StringType type) { return buildDebugType(type); });
+  addConversion([&](KGEN::NoneType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });
   addConversion([&](POP::CoroutineType type) { return buildDebugType(type); });
   addConversion([&](PackType type) { return buildDebugType(type); });
