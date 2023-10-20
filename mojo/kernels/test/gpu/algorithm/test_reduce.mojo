@@ -115,7 +115,7 @@ fn run_reduce() raises:
         fn (
             Pointer[Float32], DTypePointer[DType.float32], Int
         ) -> None, reduce[BLOCK_SIZE=BLOCK_SIZE]
-    ](verbose=True, print_ptx=False)
+    ](verbose=True, dump_ptx=False)
 
     func(
         (div_ceil(n, BLOCK_SIZE),),
