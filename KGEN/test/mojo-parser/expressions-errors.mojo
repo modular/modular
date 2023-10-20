@@ -55,11 +55,11 @@ fn test_func_type():
     # expected-error @below {{fn[AnyType](inout *$0) capturing -> None}}
     alias float7: fn[T: AnyType](inout *T) capturing -> None = test_func_type
     # expected-error @below {{unnamed argument cannot follow named argument}}
-    alias float8: fn (a: Int, String) -> Int = test_func_type
+    alias float8: fn (a: Int, StringLiteral) -> Int = test_func_type
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    alias float9: fn (Int, /, String) -> Int = test_func_type
+    alias float9: fn (Int, /, StringLiteral) -> Int = test_func_type
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    alias float10: fn (*, String) -> Int = test_func_type
+    alias float10: fn (*, StringLiteral) -> Int = test_func_type
 
     alias type = DType.float32
     # expected-error @below {{SIMD[__init__(type.value), 32]}}

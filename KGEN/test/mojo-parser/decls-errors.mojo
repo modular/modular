@@ -466,9 +466,9 @@ fn badTakesAtLeastOneInt():
 
 # COM: Issue #23007
 # expected-note @+1 {{function declared here}}
-fn too_few_pos_only(a: String, b: String, /, msg: StringLiteral = "meow"): pass
+fn too_few_pos_only(a: Int, b: Int, /, msg: Int = 2): pass
 
-fn test_too_few_pos_only(a: String, msg: StringLiteral = "woof"):
+fn test_too_few_pos_only(a: Int, msg: Int = 3):
   # expected-error @+1 {{callee expects at least 2 positional arguments, but 1 was specified}}
   too_few_pos_only(a, msg=msg)
 
