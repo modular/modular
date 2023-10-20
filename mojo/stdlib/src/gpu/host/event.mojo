@@ -63,7 +63,6 @@ struct _EventImpl:
 struct Event:
     var _event: _EventImpl
 
-    @always_inline
     fn __init__(flags: Flag = Flag.DEFAULT) raises -> Self:
         var event = _EventImpl()
 
@@ -74,7 +73,6 @@ struct Event:
         )
         return Self {_event: event}
 
-    @always_inline
     fn __del__(owned self) raises:
         if not self._event:
             return
@@ -85,7 +83,6 @@ struct Event:
         )
         self._event = _EventImpl()
 
-    @always_inline
     fn sync(self) raises:
         _check_error(
             _get_dylib_function[fn (_EventImpl) -> Result](
