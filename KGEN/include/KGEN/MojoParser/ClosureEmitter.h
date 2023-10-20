@@ -13,6 +13,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoParser/StructEmitter.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -62,6 +63,8 @@ private:
   MLIRContext *ctx;
   /// The decl of the surrounding module where code should be synthesized.
   ASTDecl &moduleDecl;
+  /// A synthetic node to carry location information for emitting IR.
+  SyntheticNode node;
 
   /// The surrounding file module operation.
   FileModuleOp fileModuleOp;

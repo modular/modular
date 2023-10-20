@@ -42,6 +42,7 @@
 
 # CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self[self]: !kgen.pointer<none>, |) -> !kgen.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
+# CHECK-NEXT: lit.ownership.end_lifetime %0
 # CHECK-NEXT: pop.aligned_free %0
 
 # CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow_in_mem, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
