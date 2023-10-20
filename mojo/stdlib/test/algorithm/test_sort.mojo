@@ -488,6 +488,8 @@ fn test_sort_stress():
                 print("error: unsorted, seed is", random_seed)
                 return
 
+        vector._del_old()
+
     @parameter
     @always_inline
     fn _gt[type: AnyType](lhs: type, rhs: type) -> Bool:
