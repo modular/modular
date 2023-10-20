@@ -10,6 +10,7 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils._reflection import get_linkage_name
 
+from pathlib import Path
 from ._compile import _cleanup_asm, _compile_nvptx_asm
 from ._utils import _check_error, _get_dylib, _get_dylib_function
 from .dim import Dim
@@ -563,6 +564,39 @@ struct FunctionHandle:
 
 
 # ===----------------------------------------------------------------------===#
+# _PathOrBool
+# ===----------------------------------------------------------------------===#
+
+
+@value
+struct _PathOrBool:
+    """A type that contains a Path and a Bool type, of which only one can be
+    set at a given time.
+    """
+
+    var print_val: Bool
+    var path: Path
+
+    fn __init__(inout self):
+        self.print_val = False
+        self.path = Path("")
+
+    fn __init__(inout self, print_val: Bool):
+        self.print_val = print_val
+        self.path = Path("")
+
+    fn __init__(inout self, path: Path):
+        self.print_val = False
+        self.path = path
+
+    fn __bool__(self) -> Bool:
+        return self.print_val or self._is_path()
+
+    fn _is_path(self) -> Bool:
+        return self.path != ""
+
+
+# ===----------------------------------------------------------------------===#
 # Function
 # ===----------------------------------------------------------------------===#
 
@@ -577,12 +611,18 @@ struct Function[func_type: AnyType, func: func_type]:
         inout self,
         debug: Bool = False,
         verbose: Bool = False,
-        print_ptx: Bool = False,
+        dump_ptx: _PathOrBool = _PathOrBool(),
     ) raises:
         alias name = get_linkage_name[func_type, func]()
         let ptx = _cleanup_asm(Self._impl.asm)
-        if print_ptx:
-            print(ptx)
+
+        if dump_ptx:
+            if dump_ptx._is_path():
+                with open(dump_ptx.path, "w") as f:
+                    f.write(ptx)
+            else:
+                print(ptx)
+
         self.mod_handle = ModuleHandle(
             ptx, debug=debug, verbose=verbose or debug
         )
