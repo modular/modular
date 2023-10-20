@@ -712,29 +712,21 @@ static Value allocateHeapMemory(PointerType ptrType, ImplicitLocOpBuilder &b) {
 LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     StructDeclOp closureWrapper, StructDeclOp closureImpl, SMLoc location) {
   // The __init__ will take self and the impl. We first build the types.
-  auto inputParameters = [&](std::string prefix) {
-    SmallVector<ParamDeclAttr> inputParams;
-    for (ParamDeclAttr p : closureImpl.getInputParams()) {
-      inputParams.push_back(ParamDeclAttr::get(
-          shared.getContext(),
-          StringAttr::get(shared.getContext(), prefix + p.getName().str()),
-          p.getType()));
-    }
-    return inputParams;
-  };
-  SmallVector<Type> inputParams;
-  for (auto p : closureImpl.getInputParams())
-    inputParams.push_back(p.getType());
+  SmallVector<ParamDeclAttr> inputParams;
+  auto [line, col] = shared.getSourceMgr().getLineAndColumn(location);
+  std::string prefix = mangleParameter("", line, col);
+  for (ParamDeclAttr p : closureImpl.getInputParams()) {
+    inputParams.push_back(ParamDeclAttr::get(
+        StringAttr::get(shared.getContext(), prefix + p.getName().str()),
+        p.getType()));
+  }
+  auto closureImplType =
+      PointerType::get(makeClosureImplSelfType(closureImpl, inputParams));
 
-  SmallVector<PassingKind> paramPassingKinds(inputParams.size(),
-                                             PassingKind::PosOnly);
+  SmallVector<PassingKind> paramPassingKinds(
+      closureImpl.getInputParams().size(), PassingKind::PosOnly);
 
   // Create unique names for parameters.
-  auto [line, col] = shared.getSourceMgr().getLineAndColumn(location);
-  std::string identifier(mangleParameter("", line, col));
-  SmallVector<ParamDeclAttr> initParams = inputParameters("init" + identifier);
-  auto closureImplType =
-      PointerType::get(makeClosureImplSelfType(closureImpl, initParams));
   if (auto init = findInitInStruct(closureWrapper, closureImplType))
     return init;
   Type wrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
@@ -748,7 +740,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   FuncOp init = addVoidMethod(
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared),
-      "__init__", initParams, paramPassingKinds, argTypes, argConventions,
+      "__init__", inputParams, paramPassingKinds, argTypes, argConventions,
       argNames, argPassingKinds, SpecialFunctionKind::kInit);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -780,7 +772,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
         .str();
   };
   SmallVector<TypedAttr> bindings;
-  for (ParamDeclAttr initParam : initParams)
+  for (ParamDeclAttr initParam : inputParams)
     bindings.push_back(
         ParamDeclRefAttr::get(initParam.getName(), initParam.getType()));
   auto parameterExprArrayAttr =
@@ -822,9 +814,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // The copy constructor takes the Wrapper instance and the impl of the other.
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  SmallVector<ParamDeclAttr> copyParams = inputParameters("copy" + identifier);
   LIT::FuncOp topLevelCopyInit = createFunction(
-      generateName("_copyinit_"), copyParams, paramPassingKinds,
+      generateName("_copyinit_"), inputParams, paramPassingKinds,
       {PointerType::get(opaquePtrType), opaquePtrType},
       {ValueInputConvention::BorrowedInReg,
        ValueInputConvention::BorrowedInMem},
@@ -840,8 +831,6 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
     // Allocate memory on heap and call copy constructor
-    auto closureImplType =
-        PointerType::get(makeClosureImplSelfType(closureImpl, copyParams));
     Value target = allocateHeapMemory(closureImplType, builder);
     Value existingPtr = builder.create<POP::PointerBitcastOp>(
         closureImplType, body->getArgument(1));
@@ -866,9 +855,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // Create top level destructor.
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  SmallVector<ParamDeclAttr> delParams = inputParameters("del" + identifier);
   LIT::FuncOp topLevelDtor = createFunction(
-      generateName("_dtor_"), delParams, paramPassingKinds, opaquePtrType,
+      generateName("_dtor_"), inputParams, paramPassingKinds, opaquePtrType,
       ValueInputConvention::OwnedInReg, selfName, PassingKind::PosOnly,
       noneType, SpecialFunctionKind::kNormal, location, builder);
 
@@ -882,9 +870,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
     // Cast the opaque pointer back to the closure impl type.
-    ASTType closureImplType = makeClosureImplSelfType(closureImpl, delParams);
-    Value implPtr = builder.create<POP::PointerBitcastOp>(
-        PointerType::get(closureImplType), body->getArgument(0));
+    Value implPtr = builder.create<POP::PointerBitcastOp>(closureImplType,
+                                                          body->getArgument(0));
     builder.create<OwnershipEndLifetimeOp>(builder.getLoc(), implPtr,
                                            /*isRegister=*/false);
 
@@ -910,11 +897,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  SmallVector<ParamDeclAttr> callParams = inputParameters("call" + identifier);
-  auto ptrToClosureImplCallType =
-      PointerType::get(makeClosureImplSelfType(closureImpl, callParams));
   LIT::FuncOp topLevelCall = createFunction(
-      generateName("_call_"), callParams, paramPassingKinds,
+      generateName("_call_"), inputParams, paramPassingKinds,
       closureSignature.getValueInputs(), closureSignature.getInputConventions(),
       closureSignature.getArgNames(), closureSignature.getArgPassingKinds(),
       closureSignature.getValueResults().front(), SpecialFunctionKind::kNormal,
@@ -932,8 +916,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     // Cast the opaque pointer back to the closure impl type.
     bool hasMemoryOnlyResult = closureSignature.hasMemoryOnlyResult();
     Value closureArg = body->getArgument(hasMemoryOnlyResult);
-    Value implPtr = builder.create<POP::PointerBitcastOp>(
-        ptrToClosureImplCallType, closureArg);
+    Value implPtr =
+        builder.create<POP::PointerBitcastOp>(closureImplType, closureArg);
     // Call the __call__ on the closure impl.
     assert(closureImpl->hasAttr(callMethodAttr) &&
            "Closure Impls are generated with a __call__ method.");
@@ -948,7 +932,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
          i < e; ++i)
       args.push_back(topLevelCall.getArgument(i));
     SymbolConstantAttr typedSymbol =
-        createTypedSymbol(cast<SymbolConstantAttr>(symbol), callParams);
+        createTypedSymbol(cast<SymbolConstantAttr>(symbol), inputParams);
     Value result =
         builder
             .create<CallOp>(
