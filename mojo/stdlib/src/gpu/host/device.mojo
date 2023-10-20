@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements device query operations."""
+"""Implements device operations."""
 
 from sys.ffi import DLHandle
 
