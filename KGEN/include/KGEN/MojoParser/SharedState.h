@@ -52,9 +52,7 @@ enum class CallSyntax : uint8_t;
 /// parent function.
 class Capture {
 public:
-  Capture(CValue value, Type fieldType, Type initType);
-  Type getFieldType() const { return fieldType; }
-  Type getInitType() const { return initType; }
+  Capture(CValue value);
   CValue getValue() const { return value; }
 
   /// Get the underlying MLIR value.
@@ -63,11 +61,6 @@ public:
 private:
   /// The value of the capture.
   CValue value;
-  /// The type of the capture as it would appear in the closure struct
-  /// fields.
-  Type fieldType;
-  /// The type of the capture as it would appear in the closure constructor.
-  Type initType;
 };
 
 /// The CaptureTraversableMap enables the owner of the map to return a map
