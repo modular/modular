@@ -967,6 +967,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
                                  ValueDest &dest) {
   if (!value)
     return {};
+  ExprContext context = dest.getContext();
 
   // Attempt to further specialize the result value.
   value = refineResultValue(value, expr->getLoc(), *this);
@@ -1048,14 +1049,14 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // If the destination is just a required type, then we now know it must agree
   // and therefore don't need to do anything more.
   if (isa<ASTType>(dest.representation)) {
-    dest = ValueDest(); // Resolved the ValueDest;
+    dest = ValueDest(context); // Resolved the ValueDest;
     return cValue;
   }
 
   // If this destination was an LValue whose buffer was already taken to be
   // filled in by a client, then this is just completing the transaction.
   if (isa<LValueBufferTaken>(dest.representation)) {
-    dest = ValueDest(); // Resolved the ValueDest;
+    dest = ValueDest(context); // Resolved the ValueDest;
     // The client directly filled in an LValue we provided which is great, but
     // that LValue we provided took ownership of the value, so we need to return
     // the result as a borrow, not an owned reference.
@@ -1077,10 +1078,10 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // This will have completely resolved all the ValueDest possibilities.
   assert(!dest.isSpecified() || isa<LValueBufferTaken>(dest.representation));
-  dest = ValueDest();
+  dest = ValueDest(context);
 
   // Finally, store the value into the lvalue.
-  return emitStoreToLValue({cValue, expr}, destLV, dest.getContext());
+  return emitStoreToLValue({cValue, expr}, destLV, context);
 }
 
 CValue ExprEmitter::emitCResult(CValue value, const ExprNode *expr,

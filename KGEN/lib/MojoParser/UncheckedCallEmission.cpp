@@ -823,11 +823,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
           shared, declScope, callExpr->getLoc(), sig, resultTypes.front());
       if (!coroType)
         return {};
-      ValueDest dest;
+      ValueDest ctorDest(dest.getContext());
       // Emit the implicit conversion.
       callResult =
           emitConstructorCall(coroType, {{{SBValue(call), callExpr}}}, callExpr,
-                              CallSyntax::kImplicitConvert, dest)
+                              CallSyntax::kImplicitConvert, ctorDest)
               .getIfSRValue();
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
