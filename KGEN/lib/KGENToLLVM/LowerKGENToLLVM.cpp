@@ -569,6 +569,12 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
     b.create<LLVM::ReturnOp>(llvmGlobal.getLoc(), undef);
   }
 
+  // HACK HACK HACK https://github.com/modularml/modular/issues/22959
+  // HACK: NVPTX doesn't support global destructors.
+  if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
+                         tc.getTarget().getTriple().getArch()))
+    return success();
+
   auto b = OpBuilder::atBlockBegin(module.getBody());
   // Sort the constructor function indices. Lower priority is earlier.
   SmallVector<unsigned> order =
@@ -605,13 +611,6 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
       module.getLoc(),
       b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalCtorFnName))),
       prioritiesAttr);
-
-  // HACK HACK HACK https://github.com/modularml/modular/issues/22959
-  // HACK: NVPTX doesn't support global destructors.
-  if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
-                         tc.getTarget().getTriple().getArch()))
-    return success();
-
   b.create<LLVM::GlobalDtorsOp>(
       module.getLoc(),
       b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalDtorFnName))),
