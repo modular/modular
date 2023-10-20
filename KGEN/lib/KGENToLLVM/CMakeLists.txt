@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(KGENToLLVM
+  DebugInfoTypeConverter.cpp
   KGENToLLVMPipeline.cpp
   LLVMLoweringUtils.cpp
   LowerCallingConvention.cpp

@@ -277,15 +277,14 @@ Value convertParameterToLLVM(
     InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
-// POPToLLVMDebugInfoTypeConverter
+// DebugInfoTypeConverter
 //===----------------------------------------------------------------------===//
 
 /// A specialized debug info type converter for converting from POP types to
 /// LLVM.
-class POPToLLVMDebugInfoTypeConverter
-    : public DebugInfo::DebugInfoTypeConverter {
+class DebugInfoTypeConverter : public DebugInfo::DebugInfoTypeConverter {
 public:
-  POPToLLVMDebugInfoTypeConverter(POPToLLVMTypeConverter &tc);
+  DebugInfoTypeConverter(POPToLLVMTypeConverter &tc);
 
 private:
   POPToLLVMTypeConverter &tc;
