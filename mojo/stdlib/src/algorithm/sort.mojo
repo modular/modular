@@ -119,19 +119,17 @@ fn _quicksort[
             _small_sort[2, type, cmp_fn](array + start)
             continue
 
-        # TODO(#23638): enable
-        # if len == 3:
-        #     _small_sort[3, type, cmp_fn](array + start)
-        #     continue
+        if len == 3:
+            _small_sort[3, type, cmp_fn](array + start)
+            continue
 
         if len == 4:
             _small_sort[4, type, cmp_fn](array + start)
             continue
 
-        # TODO(#23638): enable
-        # if len == 5:
-        #     _small_sort[5, type, cmp_fn](array + start)
-        #     continue
+        if len == 5:
+            _small_sort[5, type, cmp_fn](array + start)
+            continue
 
         if len < 32:
             _insertion_sort[type, cmp_fn](array, start, end)
@@ -282,6 +280,8 @@ fn _sort_partial_3[
     if cmp_fn[type](b, t):
         array.store(offset0, b)
         array.store(offset1, t)
+    elif r:
+        array.store(offset0, t)
 
 
 @always_inline

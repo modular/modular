@@ -140,6 +140,42 @@ fn test_sort3():
     vector._del_old()
 
 
+# CHECK-LABEL test_sort3_dupe_elements
+fn test_sort3_dupe_elements():
+    print("== test_sort3_dupe_elements")
+
+    alias length = 3
+
+    fn test[
+        cmp_fn: fn[type: AnyType] (type, type) capturing -> Bool,
+    ]():
+        var vector = DynamicVector[Int](3)
+        vector.push_back(5)
+        vector.push_back(3)
+        vector.push_back(3)
+
+        _quicksort[Int, cmp_fn](vector.data, len(vector))
+
+        # CHECK: 3
+        # CHECK: 3
+        # CHECK: 5
+        for i in range(length):
+            print(vector[i])
+
+        vector._del_old()
+
+    @parameter
+    fn _lt[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Int](lhs) < rebind[Int](rhs)
+
+    @parameter
+    fn _leq[type: AnyType](lhs: type, rhs: type) -> Bool:
+        return rebind[Int](lhs) <= rebind[Int](rhs)
+
+    test[_lt]()
+    test[_leq]()
+
+
 # CHECK-LABEL: test_sort4
 fn test_sort4():
     print("== test_sort4")
@@ -524,6 +560,7 @@ fn main():
     test_sort0()
     test_sort2()
     test_sort3()
+    test_sort3_dupe_elements()
     test_sort4()
     test_sort5()
     test_sort_reverse()
