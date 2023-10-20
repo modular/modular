@@ -1721,14 +1721,6 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     return {};
   }
 
-  // If this is a param context we cannot return a concrete mlir value, however
-  // `value` may still be allowed. For instance. `x.static_field` requires
-  // `value` the thing which calls this will still enforce the parameter-ness of
-  // the result of the expression while still allowing the temporary reference
-  // to `x` to lead to a final parameter value.
-  if (!builder)
-    return emitResult(value, expr, dest);
-
   capture = Capture(value, value.getRValueType(), value.getType());
   if (value.getIfMLValue()) {
     if (ASTType(value.getRValueType())
