@@ -39,7 +39,7 @@ kgen.generator @variant_bitcast_discr(%arg0: !pop.variant<i32, i64>) -> i8 {
   %0 = pop.stack_allocation 1 x !pop.variant<i32, i64>
   pop.store %arg0, %0 : !kgen.pointer<variant<i32, i64>>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<variant<i32, i64>> to !kgen.pointer<struct<i64, i8>>
-  %2 = pop.struct.gep %1[1] : <struct<i64, i8>>
+  %2 = kgen.struct.gep %1[1] : <struct<i64, i8>>
   %3 = pop.load %2 : !kgen.pointer<i8>
   kgen.return %3 : i8
 }
@@ -56,7 +56,7 @@ kgen.generator @array_gep_load<I>(%arg0: !pop.array<3, i24>) -> i24 {
 kgen.generator @struct_gep_load(%arg0: !kgen.struct<i8, i16, i32>) -> i32 {
   %1 = pop.stack_allocation 1 x !kgen.struct<i8, i16, i32>
   pop.store %arg0, %1 : !kgen.pointer<struct<i8, i16, i32>>
-  %2 = pop.struct.gep %1[2] : <struct<i8, i16, i32>>
+  %2 = kgen.struct.gep %1[2] : <struct<i8, i16, i32>>
   %3 = pop.load %2 : !kgen.pointer<i32>
   kgen.return %3 : i32
 }
@@ -70,7 +70,7 @@ kgen.generator @bitcast_offset() -> !kgen.struct<scalar<ui8>, scalar<ui8>>{
   %idx1 = index.constant 1
   %3 = pop.offset %1[%idx1] : !kgen.pointer<scalar<ui8>>
   %4 = pop.load %3 : !kgen.pointer<scalar<ui8>>
-  %5 = pop.struct.create(%2, %4) : !kgen.struct<scalar<ui8>, scalar<ui8>>
+  %5 = kgen.struct.create(%2, %4) : !kgen.struct<scalar<ui8>, scalar<ui8>>
   kgen.return %5 : !kgen.struct<scalar<ui8>, scalar<ui8>>
 }
 
@@ -82,7 +82,7 @@ kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<pointer<i16>
   pop.store %arg0, %0 : !kgen.pointer<i16>
   %1 = pop.offset %0[%idx1] : !kgen.pointer<i16>
   pop.store %arg1, %1 : !kgen.pointer<i16>
-  %2 = pop.struct.create(%0, %1) : !kgen.struct<pointer<i16>, pointer<i16>>
+  %2 = kgen.struct.create(%0, %1) : !kgen.struct<pointer<i16>, pointer<i16>>
   kgen.return %2 : !kgen.struct<pointer<i16>, pointer<i16>>
 }
 
@@ -139,7 +139,7 @@ kgen.generator @const_string(%arg0: !kgen.pointer<i8>) -> !kgen.struct<i8, point
   %0 = pop.load %arg0 : !kgen.pointer<i8>
   %idx2 = index.constant 2
   %1 = pop.offset %arg0[%idx2] : !kgen.pointer<i8>
-  %2 = pop.struct.create(%0, %1) : !kgen.struct<i8, pointer<i8>>
+  %2 = kgen.struct.create(%0, %1) : !kgen.struct<i8, pointer<i8>>
   kgen.return %2 : !kgen.struct<i8, pointer<i8>>
 }
 

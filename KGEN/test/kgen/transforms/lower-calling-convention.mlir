@@ -42,7 +42,7 @@ kgen.func @async_fn() async -> !pop.coroutine<() -> !kgen.none> {
   // CHECK: [[PROMISE:%.*]] = pop.coroutine.promise [[HDL]] : <() -> ()>
   // CHECK: [[CASTED:%.*]] = pop.pointer.bitcast [[PROMISE]] : !kgen.pointer<struct<>> to !kgen.pointer<struct<none>>
   %1 = pop.coroutine.promise %0 : <() -> !kgen.none>
-  %2 = pop.struct.gep %1[0] : <struct<none>>
+  %2 = kgen.struct.gep %1[0] : <struct<none>>
   pop.store %none, %2 : !kgen.pointer<none>
   // CHECK: return %0 : !pop.coroutine<() -> ()>
   kgen.return %0 : !pop.coroutine<() -> !kgen.none>

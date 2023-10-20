@@ -520,7 +520,7 @@ ValueRef ValueSet::getValueRef(Value value) const {
 
   // If this is a GEP, check the base and focus in on a field of it.
   // TODO(references) remove this.
-  if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
+  if (auto structGEP = value.getDefiningOp<LIT::StructGEPOp>()) {
     ValueRef baseVal = getValueRef(structGEP.getContainer());
     if (!baseVal || !baseVal.isIndirect)
       return {};
@@ -894,7 +894,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<StructGEPOp, RefStructGEROp,
+  if (isa<LIT::StructGEPOp, RefStructGEROp,
           // TODO(references): remove these.
           RefToPointerOp, mlir::UnrealizedConversionCastOp>(op))
     return;
@@ -1434,7 +1434,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // This op is handled when used.
-  if (isa<StructGEPOp, RefStructGEROp,
+  if (isa<LIT::StructGEPOp, RefStructGEROp,
           // TODO(references): remove these.
           RefToPointerOp, mlir::UnrealizedConversionCastOp>(op))
     return;
@@ -1524,7 +1524,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // These operations consume their operands and define a result.
-  if (isa<LoadConsumeOp, OwnershipEndLifetimeOp, StructCreateOp>(op)) {
+  if (isa<LoadConsumeOp, OwnershipEndLifetimeOp, LIT::StructCreateOp>(op)) {
     checkDef(op.getResult(0), op);
     for (auto operand : op.getOperands())
       markConsumed(operand, op);
@@ -1929,9 +1929,9 @@ void DestructorInsertion::destroyValueIfNeeded(
   for (auto field : structDecl.getFieldDecls()) {
     Operation *fieldVal;
     if (valueRef.isIndirect)
-      fieldVal = builder.create<StructGEPOp>(value, field);
+      fieldVal = builder.create<LIT::StructGEPOp>(value, field);
     else
-      fieldVal = builder.create<StructExtractOp>(value, field);
+      fieldVal = builder.create<LIT::StructExtractOp>(value, field);
 
     unsigned numBits =
         valueSet.typeDeclInfo.getNumFieldsInType(field.getType());

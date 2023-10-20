@@ -1419,6 +1419,184 @@ LogicalResult PackGetOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// StructCreateOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
+  ArrayRef<Attribute> operands = adaptor.getOperands();
+  SmallVector<TypedAttr> values;
+  values.reserve(operands.size());
+  for (Attribute operand : operands) {
+    auto value = llvm::cast_if_present<TypedAttr>(operand);
+    if (!value)
+      return {};
+    values.push_back(value);
+  }
+  return StructAttr::get(values, getType());
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractOp
+//===----------------------------------------------------------------------===//
+
+/// Verify the value type matches the struct element type at the given index.
+static LogicalResult verifyStructValueType(Operation *op, StructType container,
+                                           IntegerAttr indexAttr,
+                                           Type valueType,
+                                           StringRef valueKind) {
+  ArrayRef<TypedAttr> elementTypes = container.getElementTypes();
+  size_t index = indexAttr.getInt();
+  if (index >= elementTypes.size())
+    return op->emitOpError("element index ")
+           << index << " out of bounds (>=" << elementTypes.size() << ")";
+  if (ParamRefType::get(elementTypes[index]) != valueType)
+    return op->emitOpError(valueKind)
+           << " type " << valueType
+           << " does not match struct element type at index " << index << ": "
+           << ParamRefType::get(elementTypes[index]);
+  return success();
+}
+
+LogicalResult StructExtractOp::verify() {
+  return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
+                               getType(), "result");
+}
+
+template <typename OpT>
+static FailureOr<TypedAttr>
+inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
+                       StructType structType, DictionaryAttr attrs) {
+  if (!structType)
+    return emitError("expected struct operand");
+  mlir::OperationName name(OpT::getOperationName(), attrs.getContext());
+  auto indexAttr =
+      dyn_cast_if_present<IntegerAttr>(attrs.get(OpT::getIndexAttrName(name)));
+  if (!indexAttr)
+    return emitError("expected an integer index attribute");
+  size_t index = indexAttr.getInt();
+  if (index >= structType.getNumElements())
+    return emitError("struct element index out of bounds");
+  return structType.getElementTypes()[index];
+}
+
+LogicalResult StructExtractOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location, ValueRange operands,
+    DictionaryAttr attributes, mlir::OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto emitError = [&](const Twine &msg) -> LogicalResult {
+    return mlir::emitOptionalError(location, msg);
+  };
+  if (operands.size() != 1)
+    return emitError("expected 1 operand");
+  auto structType = dyn_cast<StructType>(operands.front().getType());
+  FailureOr<TypedAttr> type = inferStructElementType<StructExtractOp>(
+      emitError, structType, attributes);
+  if (succeeded(type))
+    inferredReturnTypes.push_back(ParamRefType::get(*type));
+  return type;
+}
+
+OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
+  if (auto container = adaptor.getContainer())
+    return StructExtractAttr::get(cast<TypedAttr>(container),
+                                  getIndexAttr().getInt());
+  if (auto structCreate = getOperand().getDefiningOp<StructCreateOp>())
+    return structCreate.getOperand(adaptor.getIndex());
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// StructReplaceOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseStructValueType(AsmParser &p, Type &valueType,
+                                        Type structType, IntegerAttr index) {
+  ArrayRef<TypedAttr> elementTypes =
+      structType.cast<StructType>().getElementTypes();
+  if (index.getInt() > static_cast<int64_t>(elementTypes.size()))
+    return p.emitError(p.getCurrentLocation(), "element index out of bounds (")
+           << index.getInt() << " >= " << elementTypes.size() << ")";
+  // Infer the value type from the struct type and index.
+  valueType = ParamRefType::get(elementTypes[index.getInt()]);
+  return success();
+}
+
+static void printStructValueType(AsmPrinter &p, Operation *op, Type valueType,
+                                 Type structType, IntegerAttr index) {}
+
+LogicalResult StructReplaceOp::verify() {
+  return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
+                               getValue().getType(), "operand");
+}
+
+OpFoldResult StructReplaceOp::fold(FoldAdaptor adaptor) {
+  auto value = llvm::cast_if_present<TypedAttr>(adaptor.getValue());
+  auto container = dyn_cast_if_present<StructAttr>(adaptor.getContainer());
+  if (!value || !container)
+    return {};
+  SmallVector<TypedAttr> values(container.getValues());
+  values[getIndexAttr().getInt()] = value;
+  return StructAttr::get(values, getType());
+}
+
+//===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult StructGEPOp::verify() {
+  return verifyStructValueType(
+      *this, cast<StructType>(getContainer().getType().getElementAsType()),
+      getIndexAttr(), getType().getElementAsType(), "result");
+}
+
+LogicalResult StructGEPOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location, ValueRange operands,
+    DictionaryAttr attributes, mlir::OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto emitError = [&](const Twine &msg) -> LogicalResult {
+    return mlir::emitOptionalError(location, msg);
+  };
+  if (operands.size() != 1)
+    return emitError("expected 1 operand");
+  auto pointerType = dyn_cast<PointerType>(operands.front().getType());
+  if (!pointerType)
+    return emitError("expected pointer operand");
+  auto structType = dyn_cast<StructType>(pointerType.getElementAsType());
+  FailureOr<TypedAttr> type = inferStructElementType<StructExtractOp>(
+      emitError, structType, attributes);
+  if (succeeded(type))
+    inferredReturnTypes.push_back(PointerType::get(*type));
+  return type;
+}
+
+ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
+  if (!ptr)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  int64_t offset = 0;
+  auto structType = getContainer().getType().getElementAs<StructType>();
+
+  // Move the address over the elements before the one we are reading.
+  unsigned index = getIndexAttr().getInt();
+  for (unsigned i = 0; i != index; ++i) {
+    auto dl = cast<DataLayoutInterface>(structType.getConcreteElementType(i));
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+
+  // Align the address to the target element.
+  Type targetType = structType.getConcreteElementType(index);
+  offset = llvm::alignTo(
+      offset,
+      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  state.mapResults(
+      PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

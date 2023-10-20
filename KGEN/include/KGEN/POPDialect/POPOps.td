@@ -28,17 +28,6 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 class POPOp<string mnemonic, list<Trait> traits = []> :
     Op<POPDialect, mnemonic, traits>;
 
-// IndexAttr whose return value is an `int64_t`.
-def UnsignedIndexAttr :
-    TypedAttrBase<
-      Index, "IntegerAttr",
-      And<[CPred<"isa<IntegerAttr>($_self)">,
-           CPred<"isa<IndexType>(cast<IntegerAttr>($_self).getType())">]>,
-      "index attribute"> {
-  let returnType = "unsigned";
-  let convertFromStorage = "$_self.getInt()";
-}
-
 //===----------------------------------------------------------------------===//
 // UnaryOp
 //===----------------------------------------------------------------------===//
@@ -838,150 +827,6 @@ def POP_SelectOp : POPOp<"select", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// StructCreateOp
-//===----------------------------------------------------------------------===//
-
-def POP_StructCreateOp : POPOp<"struct.create", [Pure,
-    TypesMatchWith<"operand types match struct element types",
-                   "result", "elements",
-                   "$_self.cast<StructType>().getParameterizedElementTypes()">
-]> {
-  let summary = "create an instance of a struct";
-  let description = [{
-    The `pop.struct.create` operation creates a struct of the given type
-    from values corresponding to its element types.
-
-    Example:
-
-    ```mlir
-    %0 = pop.struct.create(%f32, %f64)
-      : !kgen.struct<scalar<f32>, scalar<f64>>
-
-    %1 = pop.struct.create(%arr, %ptr, %v)
-      : !kgen.struct<array<size, type>, pointer<type>, type>
-    ```
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$elements);
-  let results = (outs KGEN_StructType:$result);
-  let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` qualified(type($result))
-  }];
-
-  let hasFolder = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// StructExtractOp
-//===----------------------------------------------------------------------===//
-
-def POP_StructExtractOp : POPOp<"struct.extract", [Pure,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
-  let summary = "struct extract value";
-  let description = [{
-    The `pop.struct.extract` operation gets the struct element at the given
-    index from the provided struct.
-
-    Example:
-
-    ```mlir
-    // Extract the !pop.scalar<f32> at index 0.
-    %0 = pop.struct.extract %struct[0]
-      : !kgen.struct<scalar<f32>, scalar<f64>>
-
-    // Extract the !pop.scalar<f64> at index 1.
-    %1 = pop.struct.extract %struct[1]
-      : !kgen.struct<scalar<f32>, scalar<f64>>
-    ```
-  }];
-
-  let arguments = (ins KGEN_StructType:$container, UnsignedIndexAttr:$index);
-  let results = (outs AnyType:$result);
-  let assemblyFormat = [{
-    $container `[` $index `]` attr-dict `:` qualified(type($container))
-  }];
-
-  let hasVerifier = 1;
-  let hasFolder = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// StructReplaceOp
-//===----------------------------------------------------------------------===//
-
-def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
-    AllTypesMatch<["container", "result"]>]> {
-  let summary = "struct insert value";
-  let description = [{
-    The `pop.struct.replace` operation inserts the given value into the struct
-    at the given index. It returns a new struct with the inserted value.
-
-    Example:
-
-    ```mlir
-    // Insert the !pop.scalar<f32> at index 0.
-    %0 = pop.struct.replace %f32, %struct[0]
-      : !kgen.struct<scalar<f32>, scalar<f64>>
-
-    // Insert the !pop.scalar<f64> at index 1.
-    %1 = pop.struct.replace %f64, %struct[1]
-      : !kgen.struct<scalar<f32>, scalar<f64>>
-    ```
-  }];
-
-  let arguments = (ins AnyType:$value, KGEN_StructType:$container,
-                       UnsignedIndexAttr:$index);
-  let results = (outs KGEN_StructType:$result);
-  let assemblyFormat = [{
-    $value `,` $container `[` $index `]` attr-dict `:`
-    qualified(type($container)) ``
-    custom<StructValueType>(type($value), ref(type($container)), ref($index))
-  }];
-
-  let hasVerifier = 1;
-  let hasFolder = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// StructGEPOp
-//===----------------------------------------------------------------------===//
-
-def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "struct get element pointer";
-  let description = [{
-    The `pop.struct.gep` operation takes a pointer to a `!kgen.struct` and a
-    constant index and returns a pointer to the struct element at that index.
-
-    Example:
-
-    ```mlir
-    %struct = pop.stack_allocation 1 : !kgen.struct<i32, i64>
-    %i64Ptr = pop.struct.gep %struct[1] : <struct<i32, i64>>
-    ```
-
-    To get a pointer to a struct from a value-semantic struct, the struct value
-    must be stored into a block of allocated memory first.
-
-    ```mlir
-    ^bb0(%struct: !kgen.struct<i32, i64>):
-      %mem = pop.stack_allocation 1 : !kgen.struct<i32, i64>
-      pop.store %struct, %mem : !kgen.pointer<struct<i32, i64>>
-    ```
-  }];
-
-  let arguments = (ins PointerOf<KGEN_StructType>:$container,
-                       UnsignedIndexAttr:$index);
-  let results = (outs PointerType:$result);
-  let assemblyFormat = [{
-    $container `[` $index `]` attr-dict `:` type($container)
-  }];
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
 
@@ -1173,7 +1018,7 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
 
     ```mlir
     // Create an `std::optional<T>` variant.
-    %none = pop.struct.create() : !kgen.struct<>
+    %none = kgen.struct.create() : !kgen.struct<>
     %0 = pop.variant.create %none, 0 : !kgen.struct<>
         -> !pop.variant<struct<>, T>
 

@@ -487,7 +487,8 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
                                       elementTypes);
 }
 
-static Value lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,
+static Value lowerStructOp(LIT::StructCreateOp op,
+                           LIT::StructCreateOpAdaptor adaptor,
                            StructOperationLowerer &lowerer) {
   PointerUnion<KGEN::StructType, Type> newType =
       lowerer.substituteStructRef(op.getType());
@@ -498,7 +499,7 @@ static Value lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,
     return adaptor.getOperands()[0];
   }
 
-  return lowerer.create<POP::StructCreateOp>(
+  return lowerer.create<KGEN::StructCreateOp>(
       op.getLoc(), cast<KGEN::StructType>(newType), adaptor.getOperands());
 }
 
@@ -517,7 +518,7 @@ static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
       return adaptor.getValue();
   }
 
-  auto result = lowerer.create<POP::StructReplaceOp>(
+  auto result = lowerer.create<KGEN::StructReplaceOp>(
       op.getLoc(), adaptor.getValue(), adaptor.getContainer(),
       lowerer.getIndexAttr(index));
 
@@ -541,7 +542,8 @@ static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
   return result;
 }
 
-static Value lowerStructOp(StructExtractOp op, StructExtractOpAdaptor adaptor,
+static Value lowerStructOp(LIT::StructExtractOp op,
+                           LIT::StructExtractOpAdaptor adaptor,
                            StructOperationLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
@@ -553,11 +555,11 @@ static Value lowerStructOp(StructExtractOp op, StructExtractOpAdaptor adaptor,
       return adaptor.getContainer();
   }
 
-  return lowerer.create<POP::StructExtractOp>(
+  return lowerer.create<KGEN::StructExtractOp>(
       op.getLoc(), adaptor.getContainer(), lowerer.getIndexAttr(index));
 }
 
-static Value lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
+static Value lowerStructOp(LIT::StructGEPOp op, LIT::StructGEPOpAdaptor adaptor,
                            StructOperationLowerer &lowerer) {
   auto structType =
       cast<DeclRefType>(op.getContainer().getType().getElementAsType());
@@ -569,8 +571,8 @@ static Value lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
       return adaptor.getContainer();
   }
 
-  return lowerer.create<POP::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
-                                          lowerer.getIndexAttr(index));
+  return lowerer.create<KGEN::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
+                                           lowerer.getIndexAttr(index));
 }
 
 static Value lowerStructOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
@@ -610,8 +612,8 @@ static Value lowerStructOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
       return adaptor.getContainer();
   }
 
-  return lowerer.create<POP::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
-                                          lowerer.getIndexAttr(index));
+  return lowerer.create<KGEN::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
+                                           lowerer.getIndexAttr(index));
 }
 
 static Value getCastedToType(Value value, Type destType, OpBuilder &b) {
@@ -770,8 +772,9 @@ void LowerLITTypesPass::runOnOperation() {
   structLowerer.eraseRecursivePointerField = true;
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
-        .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp,
-              RefToPointerOp, RefStructGEROp, RefLoadOp, RefStoreOp>(
+        .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
+              LIT::StructGEPOp, RefToPointerOp, RefStructGEROp, RefLoadOp,
+              RefStoreOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Case<GeneratorOp>([&](auto op) { return lowerFuncOp(op); })
         .Default([](auto) { return success(); });

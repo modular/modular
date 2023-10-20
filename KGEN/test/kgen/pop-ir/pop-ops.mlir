@@ -755,21 +755,21 @@ kgen.generator @struct<ty: type, dt: dtype>(
   // CHECK-SAME: %[[B:.*]]: !pop.scalar<
   %b: !pop.scalar<dt>
 ) -> (!kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>) {
-  // CHECK: %[[S0:.*]] = pop.struct.create(%[[A]], %[[B]]) : !kgen.struct<ty, scalar<dt>>
-  %0 = pop.struct.create(%a, %b) : !kgen.struct<ty, scalar<dt>>
-  // CHECK: %[[V0:.*]] = pop.struct.extract %[[S0]][0] : !kgen.struct<ty, scalar<dt>>
-  %1 = pop.struct.extract %0[0] : !kgen.struct<ty, scalar<dt>>
-  // CHECK: %[[V1:.*]] = pop.struct.extract %[[S0]][1] : !kgen.struct<ty, scalar<dt>>
-  %2 = pop.struct.extract %0[1] : !kgen.struct<ty, scalar<dt>>
-  // CHECK: pop.struct.replace %{{.*}}, %[[S0]][0] : !kgen.struct<ty, scalar<dt>>
-  %3 = pop.struct.replace %1, %0[0] : !kgen.struct<ty, scalar<dt>>
-  // CHECK: pop.struct.replace %{{.*}}, %{{.*}}[1] : !kgen.struct<ty, scalar<dt>>
-  %4 = pop.struct.replace %2, %3[1] : !kgen.struct<ty, scalar<dt>>
+  // CHECK: %[[S0:.*]] = kgen.struct.create(%[[A]], %[[B]]) : !kgen.struct<ty, scalar<dt>>
+  %0 = kgen.struct.create(%a, %b) : !kgen.struct<ty, scalar<dt>>
+  // CHECK: %[[V0:.*]] = kgen.struct.extract %[[S0]][0] : !kgen.struct<ty, scalar<dt>>
+  %1 = kgen.struct.extract %0[0] : !kgen.struct<ty, scalar<dt>>
+  // CHECK: %[[V1:.*]] = kgen.struct.extract %[[S0]][1] : !kgen.struct<ty, scalar<dt>>
+  %2 = kgen.struct.extract %0[1] : !kgen.struct<ty, scalar<dt>>
+  // CHECK: kgen.struct.replace %{{.*}}, %[[S0]][0] : !kgen.struct<ty, scalar<dt>>
+  %3 = kgen.struct.replace %1, %0[0] : !kgen.struct<ty, scalar<dt>>
+  // CHECK: kgen.struct.replace %{{.*}}, %{{.*}}[1] : !kgen.struct<ty, scalar<dt>>
+  %4 = kgen.struct.replace %2, %3[1] : !kgen.struct<ty, scalar<dt>>
 
   // CHECK: %[[STRUCT_PTR:.*]] = pop.stack_allocation
   %struct = pop.stack_allocation 1 x !kgen.struct<i32, ty>
-  // CHECK: %[[EL_PTR:.*]] = pop.struct.gep %[[STRUCT_PTR]][1] : <struct<i32, ty>>
-  %el = pop.struct.gep %struct[1] : <struct<i32, ty>>
+  // CHECK: %[[EL_PTR:.*]] = kgen.struct.gep %[[STRUCT_PTR]][1] : <struct<i32, ty>>
+  %el = kgen.struct.gep %struct[1] : <struct<i32, ty>>
 
   // CHECK: return %[[V0]], %[[V1]], %[[EL_PTR]] : !kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>
   kgen.return %1, %2, %el : !kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>
@@ -777,8 +777,8 @@ kgen.generator @struct<ty: type, dt: dtype>(
 
 // CHECK-LABEL: @empty_struct_syntax
 kgen.generator @empty_struct_syntax() -> !kgen.struct<> {
-  // CHECK-NEXT: pop.struct.create() : !kgen.struct<>
-  %0 = pop.struct.create() : !kgen.struct<>
+  // CHECK-NEXT: kgen.struct.create() : !kgen.struct<>
+  %0 = kgen.struct.create() : !kgen.struct<>
   kgen.return %0 : !kgen.struct<>
 }
 
@@ -981,8 +981,8 @@ kgen.func @slow_function(%arg0: i32) -> !pop.coroutine<() -> i32> {
   %hdl = pop.coroutine.handle : <() -> i32>
   // CHECK-NEXT: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]] : <() -> i32>
   %promise = pop.coroutine.promise %hdl : <() -> i32>
-  // CHECK-NEXT: pop.struct.gep %[[PROMISE]][0] : <struct<i32>>
-  %res0 = pop.struct.gep %promise[0] : <struct<i32>>
+  // CHECK-NEXT: kgen.struct.gep %[[PROMISE]][0] : <struct<i32>>
+  %res0 = kgen.struct.gep %promise[0] : <struct<i32>>
   kgen.return %hdl : !pop.coroutine<() -> i32>
 }
 

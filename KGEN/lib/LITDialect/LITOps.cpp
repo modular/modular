@@ -954,7 +954,7 @@ static StructDeclOp lookupStructDecl(SymbolTableCollection &symbolTable,
 
 /// Verify the reference struct type.
 LogicalResult
-StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+LIT::StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Verify the types of the fields in the operands match those in the
   // struct declaration.
   ParameterEvaluator evaluator(getType().getParamValues());
@@ -1028,7 +1028,7 @@ static void printOperandsAndFields(OpAsmPrinter &p, Operation *op,
   p << ")";
 }
 
-OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
+OpFoldResult LIT::StructCreateOp::fold(FoldAdaptor adaptor) {
   SmallVector<std::tuple<StringAttr, TypedAttr>> values;
   for (auto [name, value] : llvm::zip(getFields(), adaptor.getOperands())) {
     if (!value)
@@ -1105,19 +1105,19 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
 }
 
 LogicalResult
-StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+LIT::StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return verifyStructFieldAndType(symbolTable, *this, getContainer().getType(),
                                   getFieldAttr(), getValue().getType());
 }
 
-void StructExtractOp::build(OpBuilder &builder, OperationState &result,
-                            Value structBase, StructFieldOp field) {
+void LIT::StructExtractOp::build(OpBuilder &builder, OperationState &result,
+                                 Value structBase, StructFieldOp field) {
   auto structType = cast<DeclRefType>(structBase.getType());
   build(builder, result, field.getReboundType(structType), structBase,
         field.getNameAttr());
 }
 
-OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
+OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
   if (auto value = adaptor.getContainer())
     return StructExtractAttr::get(cast<TypedAttr>(value), getFieldAttr(),
                                   getType());
@@ -1126,7 +1126,7 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   //  %S = lit.struct.create(a=%a, b=%b)
   //  %x = lit.struct.extract %S[a]
   // into %a.
-  if (auto create = getContainer().getDefiningOp<StructCreateOp>()) {
+  if (auto create = getContainer().getDefiningOp<LIT::StructCreateOp>()) {
     for (size_t i = 0, e = create->getNumOperands(); i < e; i++) {
       if (create.getFieldsAttr()[i] == getFieldAttr())
         return create.getOperand(i);
@@ -1152,15 +1152,15 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult
-StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+LIT::StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   Type structType = getContainer().getType().getElementAsType();
   return verifyStructFieldAndType(symbolTable, *this,
                                   cast<DeclRefType>(structType), getFieldAttr(),
                                   getResult().getType().getElementAsType());
 }
 
-void StructGEPOp::build(OpBuilder &builder, OperationState &result,
-                        Value structBasePtr, StructFieldOp field) {
+void LIT::StructGEPOp::build(OpBuilder &builder, OperationState &result,
+                             Value structBasePtr, StructFieldOp field) {
   Type eltType = cast<PointerType>(structBasePtr.getType()).getElementAsType();
   auto structType = field.getReboundType(cast<DeclRefType>(eltType));
   build(builder, result, PointerType::get(structType), field.getNameAttr(),

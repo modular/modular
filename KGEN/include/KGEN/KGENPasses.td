@@ -697,11 +697,11 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
       %s = pop.load %arg0 : !kgen.pointer<struct<index, index, index>>
 
       hlcf.loop {
-        %0 = pop.struct.extract %s[0] : !kgen.pointer<struct<index, index, index>>
+        %0 = kgen.struct.extract %s[0] : !kgen.pointer<struct<index, index, index>>
         hlcf.loop {
-          %1 = pop.struct.extract %s[1] : !kgen.pointer<struct<index, index, index>>
+          %1 = kgen.struct.extract %s[1] : !kgen.pointer<struct<index, index, index>>
           hlcf.if %arg2 {
-            %2 = pop.struct.extract %s[2] :
+            %2 = kgen.struct.extract %s[2] :
                         !kgen.pointer<struct<index, index, index>>
             // ...
           } else {
@@ -715,9 +715,9 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
 
     ```mlir
       %s = pop.load %arg0 : !kgen.pointer<struct<index, index, index>>
-      %0 = pop.struct.extract %s[0] : !kgen.pointer<struct<index, index, index>>
-      %1 = pop.struct.extract %s[1] : !kgen.pointer<struct<index, index, index>>
-      %2 = pop.struct.extract %s[2] : !kgen.pointer<struct<index, index, index>>
+      %0 = kgen.struct.extract %s[0] : !kgen.pointer<struct<index, index, index>>
+      %1 = kgen.struct.extract %s[1] : !kgen.pointer<struct<index, index, index>>
+      %2 = kgen.struct.extract %s[2] : !kgen.pointer<struct<index, index, index>>
 
       hlcf.loop {
         hlcf.loop {

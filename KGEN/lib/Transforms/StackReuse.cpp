@@ -59,7 +59,7 @@ struct StackReuse : public impl::StackReuseBase<StackReuse> {
 /// %s0 = pop.stack_allocation
 /// %s1 = pop.stack_allocation
 ///
-/// %gep = pop.struct.gep %s0[2]
+/// %gep = kgen.struct.gep %s0[2]
 /// pop.store %arg0, %gep
 ///
 /// %0 = pop.load %s0

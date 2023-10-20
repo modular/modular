@@ -404,6 +404,82 @@ struct ConvertKGENPackSize : public ConvertPOPToLLVMPattern<PackSizeOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENStructCreate
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENStructCreate : ConvertPOPToLLVMPattern<StructCreateOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StructCreateOp op, StructCreateOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type structType = convertType(op.getType());
+    if (!structType)
+      return rewriter.notifyMatchFailure(op.getLoc(),
+                                         "failed to convert struct type");
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    Value container =
+        materializeLLVMStruct(b, structType, adaptor.getOperands());
+    rewriter.replaceOp(op, container);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENStructReplace
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENStructReplace : ConvertPOPToLLVMPattern<StructReplaceOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StructReplaceOp op, StructReplaceOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+        op, adaptor.getContainer(), adaptor.getValue(),
+        op.getIndexAttr().getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENStructGet
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENStructGet : ConvertPOPToLLVMPattern<StructExtractOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StructExtractOp op, StructExtractOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+        op, adaptor.getContainer(), op.getIndexAttr().getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENStructGEP
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENStructGEP : ConvertPOPToLLVMPattern<StructGEPOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StructGEPOp op, StructGEPOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type ptrType = convertType(op.getType());
+    if (!ptrType)
+      return op.emitError("failed to convert result type");
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, ptrType, adaptor.getContainer(),
+        ArrayRef<LLVM::GEPArg>{
+            0, static_cast<int32_t>(op.getIndexAttr().getInt())});
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
@@ -423,6 +499,10 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENPackCreate,
       ConvertKGENPackGet,
       ConvertKGENPackSize,
+      ConvertKGENStructCreate,
+      ConvertKGENStructGEP,
+      ConvertKGENStructGet,
+      ConvertKGENStructReplace,
       ConvertKGENRebind,
       ConvertKGENReturn,
       ConvertKGENUnreachable,

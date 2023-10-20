@@ -107,9 +107,9 @@ module attributes {M.target = #M.target<triple="", arch="", features="", data_la
 kgen.generator @clobber_pointer(%arg0: i64) -> i64 {
   %0 = pop.stack_allocation 1 x i64
   %1 = pop.stack_allocation 1 x !kgen.struct<i64, !kgen.pointer<i64>>
-  %2 = pop.struct.gep %1[1] : <struct<i64, !kgen.pointer<i64>>>
+  %2 = kgen.struct.gep %1[1] : <struct<i64, !kgen.pointer<i64>>>
   pop.store %0, %2 : !kgen.pointer<pointer<i64>>
-  %3 = pop.struct.gep %1[0] : <struct<i64, !kgen.pointer<i64>>>
+  %3 = kgen.struct.gep %1[0] : <struct<i64, !kgen.pointer<i64>>>
   %4 = pop.pointer_to_index %3 : !kgen.pointer<i64> to !pop.scalar<index>
   %idx2 = kgen.param.constant: scalar<index> = <1>
   %5 = pop.add %4, %idx2 : !pop.scalar<index>

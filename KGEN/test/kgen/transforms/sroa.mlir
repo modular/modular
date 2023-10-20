@@ -13,9 +13,9 @@ kgen.func @simple_struct(%arg1: !kgen.struct<index, index>) -> !pop.scalar<index
   // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x index
 
   // Extract from the input and store into stack.
-  // CHECK-NEXT: %[[EXTRACT:.*]] = pop.struct.extract %[[ARG0:.*]][0] : !kgen.struct<index, index>
+  // CHECK-NEXT: %[[EXTRACT:.*]] = kgen.struct.extract %[[ARG0:.*]][0] : !kgen.struct<index, index>
   // CHECK-NEXT: pop.store %[[EXTRACT]], %[[MEM1]] : !kgen.pointer<index>
-  // CHECK-NEXT: %[[EXTRACT2:.*]] = pop.struct.extract %[[ARG0]][1] : !kgen.struct<index, index>
+  // CHECK-NEXT: %[[EXTRACT2:.*]] = kgen.struct.extract %[[ARG0]][1] : !kgen.struct<index, index>
   // CHECK-NEXT: pop.store %[[EXTRACT2]], %[[MEM2]] : !kgen.pointer<index>
 
 
@@ -25,13 +25,13 @@ kgen.func @simple_struct(%arg1: !kgen.struct<index, index>) -> !pop.scalar<index
 
 
   // When running with mem2reg check we get rid of the allocs.
-  // MEM2REG-NEXT: %[[SCALAR1:.*]] = pop.struct.extract %[[ARG0:.*]][0] : !kgen.struct<index, index>
-  // MEM2REG-NEXT: %[[SCALAR2:.*]] =  pop.struct.extract %[[ARG0]][1] : !kgen.struct<index, index>
+  // MEM2REG-NEXT: %[[SCALAR1:.*]] = kgen.struct.extract %[[ARG0:.*]][0] : !kgen.struct<index, index>
+  // MEM2REG-NEXT: %[[SCALAR2:.*]] =  kgen.struct.extract %[[ARG0]][1] : !kgen.struct<index, index>
   // MEM2REG-NEXT: pop.cast_from_builtin %[[SCALAR1]] : index to !pop.scalar<index>
   // MEM2REG-NEXT: pop.cast_from_builtin %[[SCALAR2]] : index to !pop.scalar<index>
 
-  %gep1 = pop.struct.gep %array[0] : <struct<index, index>>
-  %gep2 = pop.struct.gep %array[1] : <struct<index, index>>
+  %gep1 = kgen.struct.gep %array[0] : <struct<index, index>>
+  %gep2 = kgen.struct.gep %array[1] : <struct<index, index>>
 
   %load1 = pop.load %gep1 : !kgen.pointer<index>
   %load2 = pop.load %gep2 : !kgen.pointer<index>
@@ -90,12 +90,12 @@ kgen.func @struct_of_structs(%arg1: !kgen.struct<struct<scalar<index>>, struct<s
   hlcf.loop {
     %load = pop.load %memory : !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
     hlcf.loop "inlined_cf_scope" {
-      %getElem1 = pop.struct.extract %load[2] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-      %getElem2 = pop.struct.extract %getElem1[0] : !kgen.struct<scalar<index>>
+      %getElem1 = kgen.struct.extract %load[2] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+      %getElem2 = kgen.struct.extract %getElem1[0] : !kgen.struct<scalar<index>>
 
-      %gep = pop.struct.gep %memory[0] : <struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
+      %gep = kgen.struct.gep %memory[0] : <struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
       %newLoad = pop.load %gep : !kgen.pointer<struct<scalar<index>>>
-      %getElem3 = pop.struct.extract %newLoad[0] : !kgen.struct<scalar<index>>
+      %getElem3 = kgen.struct.extract %newLoad[0] : !kgen.struct<scalar<index>>
 
       %out = pop.div %getElem3, %getElem2 : !pop.scalar<index>
       hlcf.break
@@ -112,12 +112,12 @@ kgen.func @struct_of_structs(%arg1: !kgen.struct<struct<scalar<index>>, struct<s
   // sroa the argument. Still check that we are still left with no stack alloc
   // and that all the innerloop uses are of the fully extracted base type.
 
-  // MEM2REG: %[[OP0:.*]] = pop.struct.extract %[[ARG0:.*]][0] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-  // MEM2REG-DAG: %[[OP1:.*]] = pop.struct.extract %[[OP0]][0] : !kgen.struct<scalar<index>>
-  // MEM2REG-DAG: %[[OP2:.*]] = pop.struct.extract %[[ARG0]][1] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-  // MEM2REG-DAG: %[[OP3:.*]] = pop.struct.extract %[[OP2]][0] : !kgen.struct<scalar<index>>
-  // MEM2REG-DAG: %[[OP4:.*]] = pop.struct.extract %[[ARG0]][2] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-  // MEM2REG-DAG: %[[OP5:.*]] = pop.struct.extract %[[OP4]][0] : !kgen.struct<scalar<index>>
+  // MEM2REG: %[[OP0:.*]] = kgen.struct.extract %[[ARG0:.*]][0] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+  // MEM2REG-DAG: %[[OP1:.*]] = kgen.struct.extract %[[OP0]][0] : !kgen.struct<scalar<index>>
+  // MEM2REG-DAG: %[[OP2:.*]] = kgen.struct.extract %[[ARG0]][1] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+  // MEM2REG-DAG: %[[OP3:.*]] = kgen.struct.extract %[[OP2]][0] : !kgen.struct<scalar<index>>
+  // MEM2REG-DAG: %[[OP4:.*]] = kgen.struct.extract %[[ARG0]][2] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+  // MEM2REG-DAG: %[[OP5:.*]] = kgen.struct.extract %[[OP4]][0] : !kgen.struct<scalar<index>>
   // MEM2REG-DAG:  hlcf.loop {
   // MEM2REG-DAG:    hlcf.loop "inlined_cf_scope" {
   // MEM2REG-DAG:       pop.div %[[OP1]], %[[OP5]] : !pop.scalar<index>
@@ -269,13 +269,13 @@ kgen.func @n_stack_structs(%val: !kgen.struct<index, index>, %output : !kgen.poi
   // CHECK-NEXT: pop.stack_allocation 1 x index
 
 
-  // MEM2REG: pop.struct.extract %[[ARG0]][0] : !kgen.struct<index, index>
-  // MEM2REG-NEXT: pop.struct.extract %[[ARG0]][1] : !kgen.struct<index, index>
-  // MEM2REG-NEXT: pop.struct.extract %[[ARG0]][0] : !kgen.struct<index, index>
-  // MEM2REG-NEXT: pop.struct.extract %[[ARG0]][1] : !kgen.struct<index, index>
+  // MEM2REG: kgen.struct.extract %[[ARG0]][0] : !kgen.struct<index, index>
+  // MEM2REG-NEXT: kgen.struct.extract %[[ARG0]][1] : !kgen.struct<index, index>
+  // MEM2REG-NEXT: kgen.struct.extract %[[ARG0]][0] : !kgen.struct<index, index>
+  // MEM2REG-NEXT: kgen.struct.extract %[[ARG0]][1] : !kgen.struct<index, index>
 
-  %gep1 = pop.struct.gep %alloc[0] : <struct<index, index>>
-  %gep2 = pop.struct.gep %offset[1] : <struct<index, index>>
+  %gep1 = kgen.struct.gep %alloc[0] : <struct<index, index>>
+  %gep2 = kgen.struct.gep %offset[1] : <struct<index, index>>
 
   %load = pop.load %gep1 align 8  : !kgen.pointer<index>
   pop.store %load, %output : !kgen.pointer<index>

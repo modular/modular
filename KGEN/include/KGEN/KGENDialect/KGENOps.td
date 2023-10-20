@@ -1414,4 +1414,148 @@ def KGEN_PackSizeOp : KGENOp<"pack.size", [Pure]> {
   let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// StructCreateOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
+    TypesMatchWith<"operand types match struct element types",
+                   "result", "elements",
+                   "$_self.cast<StructType>().getParameterizedElementTypes()">
+]> {
+  let summary = "create an instance of a struct";
+  let description = [{
+    The `kgen.struct.create` operation creates a struct of the given type
+    from values corresponding to its element types.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.struct.create(%f32, %f64)
+      : !kgen.struct<scalar<f32>, scalar<f64>>
+
+    %1 = kgen.struct.create(%arr, %ptr, %v)
+      : !kgen.struct<array<size, type>, pointer<type>, type>
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$elements);
+  let results = (outs KGEN_StructType:$result);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` qualified(type($result))
+  }];
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "struct extract value";
+  let description = [{
+    The `kgen.struct.extract` operation gets the struct element at the given
+    index from the provided struct.
+
+    Example:
+
+    ```mlir
+    // Extract the !pop.scalar<f32> at index 0.
+    %0 = kgen.struct.extract %struct[0]
+      : !kgen.struct<scalar<f32>, scalar<f64>>
+
+    // Extract the !pop.scalar<f64> at index 1.
+    %1 = kgen.struct.extract %struct[1]
+      : !kgen.struct<scalar<f32>, scalar<f64>>
+    ```
+  }];
+
+  let arguments = (ins KGEN_StructType:$container, UnsignedIndexAttr:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $container `[` $index `]` attr-dict `:` qualified(type($container))
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructReplaceOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructReplaceOp : KGENOp<"struct.replace", [Pure,
+    AllTypesMatch<["container", "result"]>]> {
+  let summary = "struct insert value";
+  let description = [{
+    The `kgen.struct.replace` operation inserts the given value into the struct
+    at the given index. It returns a new struct with the inserted value.
+
+    Example:
+
+    ```mlir
+    // Insert the !pop.scalar<f32> at index 0.
+    %0 = kgen.struct.replace %f32, %struct[0]
+      : !kgen.struct<scalar<f32>, scalar<f64>>
+
+    // Insert the !pop.scalar<f64> at index 1.
+    %1 = kgen.struct.replace %f64, %struct[1]
+      : !kgen.struct<scalar<f32>, scalar<f64>>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$value, KGEN_StructType:$container,
+                       UnsignedIndexAttr:$index);
+  let results = (outs KGEN_StructType:$result);
+  let assemblyFormat = [{
+    $value `,` $container `[` $index `]` attr-dict `:`
+    qualified(type($container)) ``
+    custom<StructValueType>(type($value), ref(type($container)), ref($index))
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "struct get element pointer";
+  let description = [{
+    The `kgen.struct.gep` operation takes a pointer to a `!kgen.struct` and a
+    constant index and returns a pointer to the struct element at that index.
+
+    Example:
+
+    ```mlir
+    %struct = pop.stack_allocation 1 : !kgen.struct<i32, i64>
+    %i64Ptr = kgen.struct.gep %struct[1] : <struct<i32, i64>>
+    ```
+
+    To get a pointer to a struct from a value-semantic struct, the struct value
+    must be stored into a block of allocated memory first.
+
+    ```mlir
+    ^bb0(%struct: !kgen.struct<i32, i64>):
+      %mem = pop.stack_allocation 1 : !kgen.struct<i32, i64>
+      pop.store %struct, %mem : !kgen.pointer<struct<i32, i64>>
+    ```
+  }];
+
+  let arguments = (ins PointerOf<KGEN_StructType>:$container,
+                       UnsignedIndexAttr:$index);
+  let results = (outs PointerType:$result);
+  let assemblyFormat = [{
+    $container `[` $index `]` attr-dict `:` type($container)
+  }];
+
+  let hasVerifier = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENOPS_TD
