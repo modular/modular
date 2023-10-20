@@ -73,7 +73,7 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 
 # CHECK-NEXT: lit.func @"__init__
 # CHECK-NEXT:   [[Q0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
-# CHECK-NEXT:   [[Q1:%.*]] = kgen.call @{{.*}}::@"__moveinit__{{.*}}"([[Q0]], %fld0)
+# CHECK-NEXT:   [[Q1:%.*]] = kgen.call @{{.*}}::@"__copyinit__{{.*}}"([[Q0]], %fld0)
 # CHECK-NEXT:   [[Q2:%.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT:   pop.store %fld1, [[Q2]] : !kgen.pointer<!Int>
 # CHECK-NEXT:   [[Q3:%.*]] = lit.struct.gep %self[field2] : <index>

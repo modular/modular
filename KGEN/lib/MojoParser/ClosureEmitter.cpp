@@ -385,9 +385,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
     Type fieldType = capture.getFieldType();
     if (ASTType(fieldType).isRegisterPassable(location, shared))
-      closureImplSigConventions.push_back(ValueInputConvention::OwnedInReg);
+      closureImplSigConventions.push_back(ValueInputConvention::BorrowedInReg);
     else
-      closureImplSigConventions.push_back(ValueInputConvention::OwnedInMem);
+      closureImplSigConventions.push_back(ValueInputConvention::BorrowedInMem);
 
     if (auto signatureType = dyn_cast<SignatureType>(fieldType)) {
       if (signatureType.isCapturing())
