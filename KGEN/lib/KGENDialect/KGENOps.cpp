@@ -357,7 +357,13 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), body.takeError());
   // Count the number of ops in the body, including parents of regions.
   int64_t numOps = 0;
-  body.get()->walk([&numOps](Operation *) { ++numOps; });
+  body.get()->walk([&numOps](Operation *op) {
+    // Don't count constants and terminators.
+    if (op->hasTrait<OpTrait::ConstantLike>() ||
+        op->hasTrait<OpTrait::IsTerminator>())
+      return;
+    ++numOps;
+  });
   state.mapResults(Builder(getContext()).getIndexAttr(numOps));
   return success();
 }
