@@ -646,7 +646,9 @@ fn _reduce_along_inner_dimension[
                     load_value, acc_unrolled_simd
                 )
 
-            var acc_simd = SIMD[type, simd_width].splat(init_value)
+            var acc_simd = acc_unrolled_simd.reduce[
+                reduce_function, simd_width
+            ]()
             for idx in range(
                 unrolled_simd_compatible_size, simd_compatible_size, simd_width
             ):
@@ -657,10 +659,7 @@ fn _reduce_along_inner_dimension[
                 )
 
             # Semi final reduction. SIMD -> scalar.
-            var acc_scalar = acc_unrolled_simd.reduce[reduce_function]()
-            acc_scalar = reduce_function[type, 1](
-                acc_simd.reduce[reduce_function](), acc_scalar
-            )
+            var acc_scalar = acc_simd.reduce[reduce_function]()
 
             # The simds might not cover all the elements so we still need to scalar reduce those too.
             for i in range(simd_compatible_size, reduce_dim_size, 1):
