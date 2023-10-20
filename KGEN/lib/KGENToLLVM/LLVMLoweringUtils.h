@@ -25,6 +25,7 @@ namespace M::KGEN {
 class KGENDType;
 class PackType;
 class PointerType;
+class NoneType;
 class StringType;
 class StructType;
 namespace POP {
@@ -300,6 +301,7 @@ private:
 
   DebugInfo::DIType buildDebugType(IndexType type);
   DebugInfo::DIType buildDebugType(StringType type);
+  DebugInfo::DIType buildDebugType(KGEN::NoneType type);
   DebugInfo::DIType buildDebugType(POP::ArrayType type);
   DebugInfo::DIType buildDebugType(POP::CoroutineType type);
   DebugInfo::DIType buildDebugType(PackType type);

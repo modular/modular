@@ -41,7 +41,9 @@
 // CHECK-DAG: ![[STRING_SIZE:.*]] = !debuginfo.member<size: !basic
 // CHECK-DAG: ![[STRING:.*]] = !debuginfo.struct<"!kgen.string"(![[STRING_DATA]], ![[STRING_SIZE]])>
 
-// CHECK-DAG: !debuginfo.subroutine<(![[ARRAY5]], ![[PTR2]], ![[STRUCT]], ![[PTR]], ![[PTR1]], ![[BASIC]], ![[VECTOR1]], ![[STRUCT2]], ![[STRING]]) -> (): DW_CC_normal>
+// CHECK-DAG: ![[NONE:.*]] = !debuginfo.struct<"!kgen.none"()>
+
+// CHECK-DAG: !debuginfo.subroutine<(![[ARRAY5]], ![[PTR2]], ![[STRUCT]], ![[PTR]], ![[PTR1]], ![[BASIC]], ![[VECTOR1]], ![[STRUCT2]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(
   !debuginfo.unresolved<!arrayTest>,
@@ -52,7 +54,8 @@
   !debuginfo.unresolved<!scalarTest>,
   !debuginfo.unresolved<!simdTest>,
   !debuginfo.unresolved<!structTest>,
-  !debuginfo.unresolved<!kgen.string>
+  !debuginfo.unresolved<!kgen.string>,
+  !debuginfo.unresolved<!kgen.none>
 ) -> (): DW_CC_normal>
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
