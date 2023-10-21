@@ -1213,6 +1213,14 @@ ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
   auto _ = logger.scope("Processing Generator User");
   LLVM_DEBUG(logger.logOp("User", user));
 
+  // Not all operations can verify their callee type, if for instance, it is a
+  // generic type. Verify here as a fallback.
+  if (!calleeSymbol.getType().getInputParamTypes().empty()) {
+    parent->setToError(
+        ErrorTree(user.getLoc(), "cannot reference parametric function"));
+    return ElaborationState::error();
+  }
+
   std::vector<ImplNode *> concrete;
   ParameterExprArrayAttr inputParamKey;
   GeneratorOp gen;

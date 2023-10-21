@@ -27,6 +27,7 @@ void KGEN::collectParameterReferences(
     bool &hasConstExpr) {
   ParameterCollector::Analysis cache;
   ParameterCollector c(cache);
+  TimeTraceScope traceScope("collectParameters");
   c.collectUsesFromAttr(attr, results, hasConstExpr);
 }
 
@@ -36,6 +37,7 @@ void KGEN::collectParameterReferences(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasConstExpr) {
   ParameterCollector::Analysis cache;
   ParameterCollector c(cache);
+  TimeTraceScope traceScope("collectParameters");
   c.collectUsesFromType(type, results, hasConstExpr);
 }
 

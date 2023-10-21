@@ -414,9 +414,11 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
   SmallVector<ParamDeclRefAttr> uses;
 
   auto scanAttr = [&](Attribute attr) {
+    TimeTraceScope traceScope("collectParameters");
     c.collectUsesFromAttr(attr, uses, hasConstExpr);
   };
   auto scanType = [&](Type type) {
+    TimeTraceScope traceScope("collectParameters");
     c.collectUsesFromType(type, uses, hasConstExpr);
   };
 
@@ -625,8 +627,10 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
         isDefOrDecl = true;
         (*def)->index = index++;
         bool unused;
-        for (Attribute expr : value.exprs)
+        for (Attribute expr : value.exprs) {
+          TimeTraceScope traceScope("collectParameters");
           c.collectUsesFromAttr(expr, (*def)->uses, unused);
+        }
         // If the definition of this parameter depends on a region, defer
         // processing of the nested region uses.
         if (!value.regions.empty())
