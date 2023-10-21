@@ -73,15 +73,25 @@ config.substitutions.append(("%mojo_user_pkg", mojo_user_package))
 
 generated_models_path = (
     Path(config.modular_derived_dir)
-    / ".derived"
     / "build"
     / "GeneratedTests"
     / "BINARIES"
     / "models"
 )
 if generated_models_path.exists():
-    config.substitutions.append("%test_models_dir", str(generated_models_path))
+    config.substitutions.append(
+        ("%test_models_dir", str(generated_models_path))
+    )
     config.available_features.add("GENERATED_TESTS")
+
+generated_onnx_models_path = (
+    Path(config.modular_derived_dir) / "onnx-backend-tests"
+)
+if generated_onnx_models_path.exists():
+    config.substitutions.append(
+        ("%onnx_test_models_dir", str(generated_onnx_models_path))
+    )
+    config.available_features.add("GENERATED_ONNX_TESTS")
 
 
 framework_lib_cfg = Path(config.test_exec_root) / "framework-lib-path.cfg"
