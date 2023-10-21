@@ -26,6 +26,7 @@ add_modular_library(MojoLLDB SHARED
   Language/MojoLanguage.cpp
   Logging/MojoExpressionLogger.cpp
   REPL/MojoREPL.cpp
+  TypeSystem/MojoDWARFParser.cpp
   TypeSystem/MojoTypeDataLayout.cpp
   TypeSystem/MojoTypeSystem.cpp
 
@@ -53,6 +54,12 @@ add_modular_library(MojoLLDB SHARED
 
   liblldb
 )
+
+# This is needed to expose the headers of the LLDB plugins, which are based on
+# the root of the lldb project.
+target_include_directories(
+  MojoLLDB PRIVATE
+  "${MODULAR_SOURCE_DIR}/third-party/llvm-project/lldb/source/")
 
 # Ensure symbols from the plugin library are visible.
 set_target_properties(MojoLLDB PROPERTIES CXX_VISIBILITY_PRESET default)

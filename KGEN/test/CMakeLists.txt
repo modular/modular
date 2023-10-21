@@ -30,6 +30,7 @@ add_modular_testsuite(check-mojo
 add_subdirectory(kgen)
 add_subdirectory(mojo-integration)
 add_subdirectory(mojo-jupyter)
+add_subdirectory(mojo-lldb-dwarf)
 add_subdirectory(mojo-lldb-repl)
 add_subdirectory(mojo-lsp-server)
 add_subdirectory(mojo-parser)

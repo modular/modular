@@ -134,6 +134,10 @@ public:
   /// Initialize the shared state for the given top-level decl.
   void initialize(ASTDecl &topLevelDecl);
 
+  /// Return the top-level decl where modules can created in. This can only be
+  /// used after the SharedState has been initialized.
+  ASTDecl &getTopLevelDecl();
+
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
 
@@ -148,6 +152,10 @@ public:
 
   /// Get a mangled parameter name based on the source location.
   StringAttr getMangledParameterName(const Twine &baseName, SMLoc loc);
+
+  /// Return a mangled version of the given module name. This is used to avoid
+  /// conflicts with symbols that are actually visible.
+  StringAttr getMangledModuleName(MLIRContext *ctx, StringRef moduleName);
 
   /// Emit an error.
   InflightDiag emitError(Location loc, const Twine &message = {});

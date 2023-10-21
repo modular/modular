@@ -1,0 +1,54 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: mojo build --debug-level full -O0 --debug-info-language Mojo --no-alnum-symbols '%S/Inputs/builtin-types.mojo' -o %t
+
+# RUN: %lldb %t -o 'b builtin-types.mojo:58' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v a_struct.float16.value' | FileCheck %s
+
+# CHECK: (pointer<si64>) a_var_index = 0x
+# CHECK: (AStruct) a_struct = {
+# CHECK:   int = {
+# CHECK:     value = -101
+# CHECK:   }
+# CHECK:   f32 = {
+# CHECK:     value = 24.125
+# CHECK:   }
+# CHECK:   another_int = {
+# CHECK:     value = 101
+# CHECK:   }
+# CHECK:   float16 = {
+# CHECK:     value = 25.125
+# CHECK:   }
+# CHECK:   uint8 = {
+# CHECK:     value = 123
+# CHECK:   }
+# CHECK:   uint16 = {
+# CHECK:     value = 123
+# CHECK:   }
+# CHECK:   int32 = {
+# CHECK:     value = 485
+# CHECK:   }
+# CHECK: }
+# CHECK: (SIMD[type=#lit.struct<{value: dtype = f32}>, size=#lit.struct<{value = 1}>]) another_float = {
+# CHECK:   value = 4.125
+# CHECK: }
+# CHECK: (si64) a_let_index = 48
+# CHECK: (Int) an_int = {
+# CHECK:   value = 123
+# CHECK: }
+# CHECK: (FloatLiteral) a_literal_float = {
+# CHECK:   value = 3.125
+# CHECK: }
+# CHECK: (SIMD[type=#lit.struct<{value: dtype = f32}>, size=#lit.struct<{value = 1}>]) a_float = {
+# CHECK:   value = 3.125
+# CHECK: }
+# CHECK: (Int) ^ uncommon name = {
+# CHECK:   value = 1123123
+# CHECK: }
+
+# CHECK: (si64) *a_var_index = 48
+
+# CHECK: (f16) a_struct.float16.value = 25.125

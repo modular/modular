@@ -269,6 +269,8 @@ void SharedState::initialize(ASTDecl &topLevelDecl) {
   topLevelDecl.resolvedness = DeclResolvedness::fully;
 }
 
+ASTDecl &SharedState::getTopLevelDecl() { return *impl->topLevelDecl; }
+
 InflightDiag SharedState::emitError(Location loc, const Twine &message) {
   return diags.emitError(loc, message);
 }
@@ -304,6 +306,11 @@ StringAttr SharedState::getMangledParameterName(const Twine &baseName,
                                                 SMLoc loc) {
   auto [line, col] = getSourceMgr().getLineAndColumn(loc);
   return StringAttr::get(getContext(), mangleParameter(baseName, line, col));
+}
+
+StringAttr SharedState::getMangledModuleName(MLIRContext *ctx,
+                                             StringRef moduleName) {
+  return StringAttr::get(ctx, "$" + moduleName);
 }
 
 /// Add declarations for magic things to the builtins decl.
@@ -717,12 +724,6 @@ resolveModulePath(SharedState &sharedState, StringRef moduleName,
     return WalkResult::advance();
   });
   return result;
-}
-
-/// Return a mangled version of the given module name. This is used to avoid
-/// conflicts with symbols that are actually visible.
-static StringAttr getMangledModuleName(MLIRContext *ctx, StringRef moduleName) {
-  return StringAttr::get(ctx, "$" + moduleName);
 }
 
 ASTDecl &SharedState::importModule(StringRef name, PackageOp currentPackage,

@@ -5,14 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# COM: Setting the language to Mojo
-# RUN: mojo build --debug-level full -O0 --debug-info-language Mojo %s -o %t
-# RUN: mojo debug %t -o 'image lookup -vs _build_mojo_lang_dwarf_fookAtAtAtA6A6AoApA' -b | FileCheck %s --check-prefix CHECK-MOJO
-# CHECK-MOJO: language = "mojo"
-
 # COM: Setting the language to Mojo and using non-C-like symbols
 # RUN: mojo build --debug-level full -O0 --debug-info-language Mojo --no-alnum-symbols %s -o %t
 # RUN: mojo debug %t -o 'image lookup -vs $build-mojo-lang-dwarf::main()' -b | FileCheck %s --check-prefix CHECK-MOJO
+# CHECK-MOJO: language = "mojo"
 
 
 # COM: Using the default language C
