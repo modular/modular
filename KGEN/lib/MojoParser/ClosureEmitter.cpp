@@ -146,7 +146,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   StructDeclOp declOp =
       createStruct(fileModuleOp, name, fieldTypes, fileModuleOp.getLoc(),
                    signatureType.getInputParamTypes());
-  declOp.setClosureSignatureAttr(TypeAttr::get(signatureType));
+  declOp.setClosureSignature(signatureType);
 
   StructFieldOp impl = *declOp.getFieldDecls().begin();
   // function ptr fields
@@ -193,15 +193,19 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
   LIT::FuncOp destructor = stubs->getDestructor();
-  declOp.setDestructorAttr(destructor.getBoundReference());
+  declOp.setDestructorAttr(destructor.getBoundSymbolRef());
+
   LIT::FuncOp copyCtr = stubs->getCopyConstructor();
-  declOp.setCopyInitAttr(copyCtr.getBoundReference());
-  ASTDecl *copyCtrDecl = shared.declResolver->getDeclForFuncSymbol(
-      cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
+  SymbolConstantAttr copyCtrRef = copyCtr.getBoundSymbolRef();
+  declOp.setCopyInitAttr(copyCtrRef);
+  ASTDecl *copyCtrDecl =
+      shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
+
   LIT::FuncOp moveCtr = stubs->getMoveConstructor();
-  declOp.setMoveInitAttr(moveCtr.getBoundReference());
-  ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
-      cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
+  SymbolConstantAttr moveCtrRef = moveCtr.getBoundSymbolRef();
+  declOp.setMoveInitAttr(moveCtrRef);
+  ASTDecl *moveCtrDecl =
+      shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
 
   // Populate destructor.
   {
@@ -300,7 +304,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto ptrToSelfType = PointerType::get(selfType);
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(ptrToSelfType, signatureType);
-  auto [callMethod, _] = synthesizeMethodInStruct(
+  auto [callMethod, callDecl] = synthesizeMethodInStruct(
       "__call__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
       closureMethodSignatureType.getValueInputs(),
       closureMethodSignatureType.getInputConventions(),
@@ -308,15 +312,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       callMemberSignatureType.getArgPassingKinds(),
       signatureType.getValueResults().front(), astDecl,
       SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects());
-  ASTDecl *callDecl = shared.declResolver->getDeclForFuncSymbol(
-      cast<SymbolConstantAttr>(callMethod.getBoundReference()).getSymbol());
 
   // Populate the body of ClosureWrapper::__call__.
   {
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (DebugInfo::DIScopeAttr spAttr = callMethod.getLocScope())
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-    Location translatedLocation = shared.translateLocation(callDecl->getLoc());
+    Location translatedLocation = shared.translateLocation(callDecl.getLoc());
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
         translatedLocation, callMethod.getBody());
     Value callSelf = hasResultSlot ? callMethod.getBody()->getArgument(1)
@@ -505,26 +507,28 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
                            initSigNames, initSigPassingKinds);
 
   LIT::FuncOp copyCtr = stubs->getCopyConstructor();
-  ASTDecl *copyCtrDecl = shared.declResolver->getDeclForFuncSymbol(
-      cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
+  SymbolConstantAttr copyCtrRef = copyCtr.getBoundSymbolRef();
+  ASTDecl *copyCtrDecl =
+      shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
   LIT::FuncOp moveCtr = stubs->getMoveConstructor();
-  ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
-      cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
+  SymbolConstantAttr moveCtrRef = moveCtr.getBoundSymbolRef();
+  ASTDecl *moveCtrDecl =
+      shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
 
   // Try to create a closure copy constructor if possible.
   if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     copyCtr.erase();
   else
-    declOp.setCopyInitAttr(copyCtr.getBoundReference());
+    declOp.setCopyInitAttr(copyCtrRef);
 
   // Try to create a closure move constructor if possible.
   if (failed(populateMoveCopy(*moveCtrDecl, true)))
     moveCtr.erase();
   else
-    declOp.setMoveInitAttr(moveCtr.getBoundReference());
+    declOp.setMoveInitAttr(moveCtrRef);
 
   if (LIT::FuncOp dtor = stubs->getDestructor())
-    declOp.setDestructorAttr(dtor.getBoundReference());
+    declOp.setDestructorAttr(dtor.getBoundSymbolRef());
 
   // Generate the __call__ method.
 
@@ -889,8 +893,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // Create the __call__ function.
   assert(closureWrapper.getClosureSignature().has_value() &&
          "The closure signature should have been set at creation time");
-  auto functionSignature =
-      cast<SignatureType>(closureWrapper.getClosureSignatureAttr().getValue());
+  SignatureType functionSignature = *closureWrapper.getClosureSignature();
   LITSignatureType closureSignature =
       addClosureSelfArgToFunctionSignature(opaquePtrType, functionSignature);
   assert(closureSignature.getValueResults().size() == 1);
@@ -922,7 +925,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     assert(closureImpl->hasAttr(callMethodAttr) &&
            "Closure Impls are generated with a __call__ method.");
     SymbolConstantAttr symbol =
-        cast<SymbolConstantAttr>(closureImpl->getAttr(callMethodAttr));
+        closureImpl->getAttrOfType<SymbolConstantAttr>(callMethodAttr);
     SmallVector<Value> args;
     if (hasMemoryOnlyResult)
       args.push_back(topLevelCall.getArgument(0));
@@ -931,8 +934,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
                   e = closureSignature.getNumInputs();
          i < e; ++i)
       args.push_back(topLevelCall.getArgument(i));
-    SymbolConstantAttr typedSymbol =
-        createTypedSymbol(cast<SymbolConstantAttr>(symbol), inputParams);
+    SymbolConstantAttr typedSymbol = createTypedSymbol(symbol, inputParams);
     Value result =
         builder
             .create<CallOp>(
