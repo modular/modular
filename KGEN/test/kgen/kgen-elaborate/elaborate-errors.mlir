@@ -328,3 +328,16 @@ kgen.generator export @top() {
   kgen.param.constant: string = <compile_assembly(current_target(), :() -> () @kernel)>
   kgen.return
 }
+
+// -----
+
+kgen.generator @function<param>() {
+  kgen.return
+}
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator export @invalid_param_ref() {
+  // expected-note @below {{cannot reference parametric function}}
+  kgen.cost_of[<index>() -> (): @function]
+  kgen.return
+}

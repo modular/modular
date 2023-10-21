@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -65,7 +66,10 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     // lift this operator.
     SmallVector<ParamDeclRefAttr> uses;
     bool hasConstExpr;
-    collector.collectUsesFromAttr(op, uses, hasConstExpr);
+    {
+      TimeTraceScope traceScope("collectParameters");
+      collector.collectUsesFromAttr(op, uses, hasConstExpr);
+    }
 
     // Baseline is the top-level scope, which would be valid for empty uses.
     Region *upperBound = topLevel.scope;

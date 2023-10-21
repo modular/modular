@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -116,7 +117,11 @@ void OutlineClosuresPass::runOnOperation() {
       for (Value capture : captures) {
         capturedUses.clear();
         bool unused;
-        collector.collectUsesFromType(capture.getType(), capturedUses, unused);
+        {
+          TimeTraceScope traceScope("collectParameters");
+          collector.collectUsesFromType(capture.getType(), capturedUses,
+                                        unused);
+        }
         for (ParamDeclRefAttr capturedUse : capturedUses) {
           Operation *declOp =
               regionDeclUses->second.decls.find(capturedUse.getName())
