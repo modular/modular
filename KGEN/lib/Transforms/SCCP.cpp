@@ -40,7 +40,7 @@ public:
   using ConstantState = Lattice<ConstantValue>;
 
   /// Map type from Value to ConstantValue lattice element.
-  using ConstantStateType = DenseMap<Value, ConstantState>;
+  using ConstantStateType = DenseMap<Value, ConstantState *>;
 
   /// Process a Region operation.
   LogicalResult processRegion(Region &region, ConstantStateType &state,
@@ -78,15 +78,14 @@ private:
                                     ConstantStateType &state);
 
   /// Visit a general operation to apply the transform function.
-  static void visitOperation(Operation *op, ConstantStateType &state);
+  void visitOperation(Operation *op, ConstantStateType &state);
 
   /// Get the lattice element for value from state.
-  static ConstantState *getLatticeElement(Value value,
-                                          ConstantStateType &state);
+  ConstantState *getLatticeElement(Value value, ConstantStateType &state);
 
   /// Get the lattice elements for op's operands.
-  static void getValuesLattice(SmallVectorImpl<Attribute> &attributes,
-                               ValueRange value, ConstantStateType &state);
+  void getValuesLattice(SmallVectorImpl<Attribute> &attributes,
+                        ValueRange value, ConstantStateType &state);
 
   /// Set state to Unknown.
   static void setToEntryState(ConstantState *state);
@@ -95,29 +94,25 @@ private:
   static void setAllToEntryStates(ArrayRef<ConstantState *> states);
 
   /// Join lattice in rhs with lhs only if value exists in both maps.
-  static ChangeResult joinStates(ConstantStateType &lhs,
-                                 ConstantStateType &rhs);
+  ChangeResult joinStates(ConstantStateType &lhs, ConstantStateType &rhs);
 
   /// Merge lattice from state to current. Join the lattice if exist in both.
-  static ChangeResult mergeStates(ConstantStateType &current,
-                                  ConstantStateType &state);
+  ChangeResult mergeStates(ConstantStateType &current,
+                           ConstantStateType &state);
 
   /// Update parentOp's exit states.
-  static void updateParentOpOutputState(ValueRange termValues,
-                                        Operation *parentOp,
-                                        ConstantStateType &termState,
-                                        ConstantStateType &parentOutputState);
+  void updateParentOpOutputState(ValueRange termValues, Operation *parentOp,
+                                 ConstantStateType &termState,
+                                 ConstantStateType &parentOutputState);
 
   /// Helper function to rewrite the IR with SCCP analysis results.
-  static LogicalResult replaceWithConstant(ConstantStateType &state,
-                                           OpBuilder &builder,
-                                           mlir::OperationFolder &folder,
-                                           Value value);
+  LogicalResult replaceWithConstant(OpBuilder &builder,
+                                    mlir::OperationFolder &folder, Value value);
 
-  int64_t getLoopConvergeThreshold(Operation *op);
+  static int64_t getLoopConvergeThreshold(Operation *op);
 
   /// Map from a ControlFlowNode/Terminator to its states (entry/exit).
-  DenseMap<Operation *, ControlFlowOperationState> controlFlowOperationStates;
+  DenseMap<Operation *, ControlFlowOperationState *> controlFlowOperationStates;
 
   /// Input attributes to current Loop that is being processed.
   /// Used to detect early convergence point when analysing loops.
@@ -126,6 +121,16 @@ private:
 
   /// State for the top operation that the analysis starts from.
   ConstantStateType topState;
+
+  ConstantStateType cloneState(ConstantStateType &original);
+
+  ControlFlowOperationState *getOrCreateCFState(Operation *op);
+
+  // BumpPtr allocator for ControlFlowOperationState
+  llvm::SpecificBumpPtrAllocator<ControlFlowOperationState> cfStateAllocator;
+
+  // BumpPtr allocator for ConstantStates
+  llvm::SpecificBumpPtrAllocator<ConstantState> constantStateAllocator;
 };
 
 } // namespace
@@ -136,9 +141,38 @@ static void printState(SCCPAnalysis::ConstantStateType &state,
   for (auto &[value, lattice] : state) {
     os << "============================\n";
     os << "value: " << value << "\n";
-    lattice.print(os);
+    lattice->print(os);
     os << "\n";
   }
+}
+
+template <typename OT, typename... Args>
+static OT *bumpPtrAllocate(llvm::SpecificBumpPtrAllocator<OT> &allocator,
+                           Args... args) {
+  return new (allocator.Allocate()) OT(args...);
+}
+
+SCCPAnalysis::ConstantStateType
+SCCPAnalysis::cloneState(ConstantStateType &original) {
+  ConstantStateType target;
+  for (auto &[value, lattice] : original) {
+    auto iter =
+        target.insert({value, bumpPtrAllocate(constantStateAllocator, value)})
+            .first;
+    iter->second->join(*lattice);
+  }
+  return target;
+}
+
+SCCPAnalysis::ControlFlowOperationState *
+SCCPAnalysis::getOrCreateCFState(Operation *op) {
+  auto iter = controlFlowOperationStates.find(op);
+  if (iter == controlFlowOperationStates.end()) {
+    iter = controlFlowOperationStates
+               .insert({op, bumpPtrAllocate(cfStateAllocator)})
+               .first;
+  }
+  return iter->second;
 }
 
 ChangeResult SCCPAnalysis::joinStates(ConstantStateType &lhs,
@@ -146,7 +180,7 @@ ChangeResult SCCPAnalysis::joinStates(ConstantStateType &lhs,
   ChangeResult changed = ChangeResult::NoChange;
   for (auto &[value, lattice] : rhs) {
     if (auto iter = lhs.find(value); iter != lhs.end())
-      changed |= iter->getSecond().join(lattice);
+      changed |= iter->getSecond()->join(*lattice);
   }
   return changed;
 }
@@ -156,7 +190,7 @@ ChangeResult SCCPAnalysis::mergeStates(ConstantStateType &current,
   ChangeResult changed = ChangeResult::NoChange;
   for (auto &[value, lattice] : state) {
     ConstantState *currLattice = getLatticeElement(value, current);
-    changed |= currLattice->join(lattice);
+    changed |= currLattice->join(*lattice);
   }
   return changed;
 }
@@ -165,9 +199,10 @@ SCCPAnalysis::ConstantState *
 SCCPAnalysis::getLatticeElement(Value value, ConstantStateType &state) {
   auto iter = state.find(value);
   if (iter == state.end())
-    iter = state.insert({value, ConstantState(value)}).first;
+    iter = state.insert({value, bumpPtrAllocate(constantStateAllocator, value)})
+               .first;
 
-  return &iter->getSecond();
+  return iter->second;
 }
 
 void SCCPAnalysis::getValuesLattice(SmallVectorImpl<Attribute> &attributes,
@@ -263,12 +298,13 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
     node.getEntryTargets(constantOperands, targets);
 
     // Preserve the entry state.
-    ConstantStateType entryState = state;
+    ConstantStateType entryState = cloneState(state);
+
     size_t numShouldNotJoin = 0;
     for (ControlFlowTarget target : targets) {
       if (target.index) {
         // Analyze region with entry state.
-        ConstantStateType nestedState = entryState;
+        ConstantStateType nestedState = cloneState(entryState);
         bool hasEarlyExits = false;
         if (failed(processRegion(node->getRegion(target.index.value()),
                                  nestedState, hasEarlyExits, shouldContinue)))
@@ -287,8 +323,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
       // running the rest of the operations in the parent region.
       shouldContinue = false;
     }
-    mergeStates(state,
-                controlFlowOperationStates[node.getOperation()].exitStates);
+    mergeStates(state, getOrCreateCFState(node)->exitStates);
     controlFlowOperationStates.erase(node.getOperation());
     return success();
   }
@@ -303,23 +338,23 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
     getValuesLattice(constantOperands, node->getOperands(), state);
 
     // Prepare the workList for analyzing the loop.
-    ControlFlowOperationState &cfStates = controlFlowOperationStates[node];
-    std::queue<SmallVector<Attribute>> &workList = cfStates.entryStates;
+    ControlFlowOperationState *cfStates = getOrCreateCFState(node);
+    std::queue<SmallVector<Attribute>> &workList = cfStates->entryStates;
     workList.push(constantOperands);
 
-    int64_t iter = 0;
-    ConstantStateType currState = state;
-    ConstantStateType mergedState = state;
+    int64_t loopIter = 0;
+    ConstantStateType currState = cloneState(state);
+    ConstantStateType mergedState = cloneState(state);
 
     SmallVector<Attribute> &inputValues =
         currentLoopInputs[node.getOperation()];
 
-    while (!workList.empty() &&
-           iter < getLoopConvergeThreshold(node.getOperation())) {
-      inputValues = std::move(workList.front());
+    int64_t threshold = getLoopConvergeThreshold(node.getOperation());
+    while (!workList.empty() && loopIter < threshold) {
+      inputValues = workList.front();
       workList.pop();
 
-      ConstantStateType nestedState = currState;
+      ConstantStateType nestedState = cloneState(currState);
       // Prepare for input arguments for this iteration.
       for (auto [inputValue, blockArg] :
            llvm::zip(inputValues, node->getRegions().front().getArguments())) {
@@ -347,12 +382,12 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
       // constant between iterations, it will be unknown in mergedState and
       // will not be rewritten.
       mergeStates(mergedState, nestedState);
-      ++iter;
+      ++loopIter;
     }
 
     if (workList.empty()) {
       // Merge analysis states if analyze loop converges.
-      mergeStates(state, cfStates.exitStates);
+      mergeStates(state, cfStates->exitStates);
       mergeStates(state, mergedState);
     } else {
       // Mark loop results as Unknown.
@@ -390,11 +425,10 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
   if (auto breakOp = dyn_cast<BreakOp>(term.getOperation())) {
     Operation *parentLoop = getParentNode(term);
     // Update parent loop's exit state.
-    ControlFlowOperationState &cfOpStates =
-        controlFlowOperationStates[parentLoop];
+    ControlFlowOperationState *cfOpStates = getOrCreateCFState(parentLoop);
 
     updateParentOpOutputState(term->getOperands(), parentLoop, termState,
-                              cfOpStates.exitStates);
+                              cfOpStates->exitStates);
     return;
   }
 
@@ -405,22 +439,20 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
     getValuesLattice(constantOperands, term.getOperation()->getOperands(),
                      termState);
 
-    ControlFlowOperationState &cfOpStates =
-        controlFlowOperationStates[parentLoop];
+    ControlFlowOperationState *cfOpStates = getOrCreateCFState(parentLoop);
     // Only push the new inputs if it is different from current one.
     if (constantOperands != currentLoopInputs[parentLoop])
-      cfOpStates.entryStates.push(constantOperands);
+      cfOpStates->entryStates.push(constantOperands);
 
     return;
   }
 
   if (auto yieldOp = dyn_cast<YieldOp>(term.getOperation())) {
     Operation *parentOp = getParentNode(term);
-    ControlFlowOperationState &cfOpstates =
-        controlFlowOperationStates[parentOp];
+    ControlFlowOperationState *cfOpstates = getOrCreateCFState(parentOp);
     // update parent op's exit state
     updateParentOpOutputState(term->getOperands(), parentOp, termState,
-                              cfOpstates.exitStates);
+                              cfOpstates->exitStates);
     return;
   }
 
@@ -431,18 +463,17 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
                      termState);
     SmallVector<ControlFlowTarget> targets;
     forYieldOp.getBranchTargets(constantOperands, targets);
-    ControlFlowOperationState &cfOpstates =
-        controlFlowOperationStates[parentOp];
+    ControlFlowOperationState *cfOpstates = getOrCreateCFState(parentOp);
 
     for (ControlFlowTarget &target : targets) {
       if (target.index) {
         // Branch back to for-loop body.
         // Only push the new inputs if it is different from current one.
         if (constantOperands != currentLoopInputs[parentOp])
-          cfOpstates.entryStates.push(constantOperands);
+          cfOpstates->entryStates.push(constantOperands);
       } else
         updateParentOpOutputState(forYieldOp.getReturnValues(), parentOp,
-                                  termState, cfOpstates.exitStates);
+                                  termState, cfOpstates->exitStates);
     }
     return;
   }
@@ -464,6 +495,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
   }
 
   Block &block = region.front();
+  SmallVector<ConstantState *> blockArgLattice;
   if (setBlockArgToEntryState) {
     SmallVector<ConstantState *> blockArgLattice;
     for (BlockArgument &arg : block.getArguments())
@@ -493,9 +525,9 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
     }
 
     if (op.getNumRegions() > 0) {
-      ConstantStateType entryState = state;
+      ConstantStateType entryState = cloneState(state);
       for (Region &region : op.getRegions()) {
-        ConstantStateType nestedState = entryState;
+        ConstantStateType nestedState = cloneState(entryState);
         bool shouldContinue = true;
         bool hasEarlyExits = false;
         if (failed(processRegion(region, nestedState, hasEarlyExits,
@@ -519,10 +551,10 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
 /// Replace the given value with a constant if the corresponding lattice
 /// represents a constant. Returns success if the value was replaced, failure
 /// otherwise.
-LogicalResult SCCPAnalysis::replaceWithConstant(ConstantStateType &state,
-                                                OpBuilder &builder,
+LogicalResult SCCPAnalysis::replaceWithConstant(OpBuilder &builder,
                                                 mlir::OperationFolder &folder,
                                                 Value value) {
+  ConstantStateType &state = topState;
   ConstantState *lattice = getLatticeElement(value, state);
   if (!lattice || lattice->getValue().isUninitialized())
     return failure();
@@ -547,7 +579,6 @@ LogicalResult SCCPAnalysis::replaceWithConstant(ConstantStateType &state,
 /// many newly dead operations.
 LogicalResult SCCPAnalysis::rewrite(MLIRContext *context,
                                     MutableArrayRef<Region> initialRegions) {
-  ConstantStateType &state = topState;
   SmallVector<Block *> worklist;
   auto addToWorklist = [&](MutableArrayRef<Region> regions) {
     for (Region &region : regions)
@@ -569,8 +600,7 @@ LogicalResult SCCPAnalysis::rewrite(MLIRContext *context,
       // Replace any result with constants.
       bool replacedAll = op.getNumResults() != 0;
       for (Value result : op.getResults())
-        replacedAll &=
-            succeeded(replaceWithConstant(state, builder, folder, result));
+        replacedAll &= succeeded(replaceWithConstant(builder, folder, result));
 
       // If all of the results of the operation were replaced, try to erase
       // the operation completely.
@@ -589,7 +619,7 @@ LogicalResult SCCPAnalysis::rewrite(MLIRContext *context,
     for (BlockArgument arg : block->getArguments()) {
       // Ignore replaceWithConstant result here. It's okay if the value is not a
       // constant, just don't rewrite it.
-      (void)replaceWithConstant(state, builder, folder, arg);
+      (void)replaceWithConstant(builder, folder, arg);
     }
   }
   return success();
