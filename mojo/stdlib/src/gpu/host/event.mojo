@@ -83,7 +83,7 @@ struct Event:
         if not self._event:
             return
         _check_error(
-            _get_dylib_function[fn (_EventImpl) -> Result]("cuEventDestroy")(
+            _get_dylib_function[fn (_EventImpl) -> Result]("cuEventDestroy_v2")(
                 self._event
             )
         )
@@ -96,3 +96,23 @@ struct Event:
                 "cuEventSynchronize"
             )(self._event)
         )
+
+    @always_inline
+    fn record(self) raises:
+        _check_error(
+            _get_dylib_function[fn (_EventImpl) -> Result]("cuEventRecord")(
+                self._event
+            )
+        )
+
+    @always_inline
+    fn elapsed(self, other: Event) raises -> Float32:
+        var ms = Float32(0)
+        _check_error(
+            _get_dylib_function[
+                fn (Pointer[Float32], _EventImpl, _EventImpl) -> Result
+            ]("cuEventRecord")(
+                Pointer.address_of(ms), self._event, other._event
+            )
+        )
+        return ms
