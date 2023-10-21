@@ -6,6 +6,7 @@
 """This module includes NVIDIA GPUs intrinsics operations."""
 
 from .ptx_assembly import ptx_assembly
+from .sys import is_sm_greater_equal
 
 
 # ===----------------------------------------------------------------------===#
@@ -21,9 +22,12 @@ fn warpgroup_reg_alloc[count: Int]():
     Used to request additional registers such that the absolute per-thread
     maximum register count is increased from its current value to imm-reg-count.
     """
-    ptx_assembly[
-        "setmaxnreg.inc.sync.aligned.u32 $0", NoneType, constraints="i"
-    ](UInt32(count))
+
+    @parameter
+    if is_sm_greater_equal[90]():
+        ptx_assembly[
+            "setmaxnreg.inc.sync.aligned.u32 $0", NoneType, constraints="i"
+        ](UInt32(count))
 
 
 fn warpgroup_reg_dealloc[count: Int]():
@@ -34,6 +38,9 @@ fn warpgroup_reg_dealloc[count: Int]():
     Used to release extra registers such that the absolute per-thread maximum
     register count is reduced from its current value to imm-reg-count.
     """
-    ptx_assembly[
-        "setmaxnreg.dec.sync.aligned.u32 $0", NoneType, constraints="i"
-    ](UInt32(count))
+
+    @parameter
+    if is_sm_greater_equal[90]():
+        ptx_assembly[
+            "setmaxnreg.dec.sync.aligned.u32 $0", NoneType, constraints="i"
+        ](UInt32(count))

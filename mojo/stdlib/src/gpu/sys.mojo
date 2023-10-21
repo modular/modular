@@ -44,3 +44,8 @@ fn is_sm[compute: IntLiteral]() -> Bool:
 @always_inline("nodebug")
 fn is_sm_greater[compute: Int]() -> Bool:
     return _get_sm() > compute
+
+
+@always_inline("nodebug")
+fn is_sm_greater_equal[compute: Int]() -> Bool:
+    return _get_sm() >= compute
