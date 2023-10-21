@@ -128,10 +128,10 @@ struct MyValueStruct:
 # CHECK-DAG:    lit.func @"makes_escaping_closure
 # CHECK-DAG:    debuginfo.value #local_variable1 = %m : index loc(#[[LOC26:.*]])
 # CHECK-DAG:    debuginfo.value #local_variable2 = %z : index
-# CHECK-DAG:    %anonymous2A = lit.varlet.decl "anonymous*" var synth : {{.*}}
+# CHECK-DAG:    %anonymous2A = lit.varlet.decl "anonymous*" var synth anon : {{.*}}
 # CHECK-DAG:    %0 = lit.ref.to_pointer %anonymous2A
 # CHECK-DAG:    %1 = kgen.call {{.*}}CI{{.*}}__init__{{.*}}"(%0, %m)
-# CHECK-DAG:    %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : !lit.ref<mut !escaping1
+# CHECK-DAG:    %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth anon : !lit.ref<mut !escaping1
 # CHECK-DAG:    %2 = lit.ref.to_pointer %anonymous2A_0
 # CHECK-DAG:    %3 = kgen.call {{.*}}CW{{.*}}__init__{{.*}}(%2, %0)
 # CHECK-DAG:    %4 = kgen.call {{.*}}CW{{.*}}__copyinit__{{.*}}(%__result__, %2) {{.*}}

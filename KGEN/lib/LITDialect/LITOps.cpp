@@ -1386,14 +1386,14 @@ void VarLetDeclOp::walkDefinitions(
 
 void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
                          StringRef name, StringRef lifetimeName, bool isVar,
-                         bool isSynth) {
+                         bool isSynth, bool anonymous) {
   auto lifetimeType = b.getType<LifetimeType>();
   auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
   auto resultType = RefType::get(
-      /*mutable=*/true, elementType,
+      /*isMutable=*/true, elementType,
       ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));
-  build(b, state, resultType, name, isVar, isSynth, lifetimeDecl,
+  build(b, state, resultType, name, isVar, isSynth, anonymous, lifetimeDecl,
         /*docString=*/{});
 }
 

@@ -72,7 +72,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:       }
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     }
-    # CHECK-NEXT: %z = lit.varlet.decl "z"
+    # CHECK-NEXT: %z = lit.varlet.decl "z" var
     # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant{{.*}}4
     # CHECK-NEXT: store [[FOUR]], %z
     var z: Int = 4
@@ -231,7 +231,7 @@ fn test_simple(a: Bool):
 
 # CHECK-LABEL: lit.func @"test_else_outside_while
 def test_else_outside_while(a: Bool, b: Bool) -> Bool:
-    # CHECK: %a_0 = lit.varlet.decl "a"
+    # CHECK: %a_0 = lit.varlet.decl "a" var synth
     # CHECK: lit.ref.store %a, %a_0
     # CHECK: hlcf.if {{.+}} {
     if b:
@@ -322,7 +322,7 @@ struct MyList:
 fn for_range_loop():
     let my_list = MyList()
 
-    # CHECK: %$RANGE = lit.varlet.decl "$RANGE"
+    # CHECK: %$RANGE = lit.varlet.decl "$RANGE" var synth anon
     # CHECK: [[RANGEPTR:%.*]] = lit.ref.to_pointer %$RANGE
     # CHECK: [[LISTPTR:%.*]] = lit.ref.to_pointer %my_list
     # CHECK: [[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}([[RANGEPTR]], [[LISTPTR]])
@@ -434,7 +434,7 @@ def tryExceptArgDef():
         pass
     # CHECK: except (%arg0: !Error)
     except err:
-        # CHECK-NEXT: lit.varlet.decl "err" var
+        # CHECK-NEXT: lit.varlet.decl "err" var synth :
         # CHECK: [[ERRVAL:%.*]] = lit.ref.load %err
         # CHECK: eatError{{.*}}([[ERRVAL]])
         eatError(err)
@@ -661,7 +661,7 @@ fn noop(a: Int): pass
 
 # CHECK-LABEL: lit.func @"testWithNonRaising
 fn testWithNonRaising(a: ExampleCM):
-  # CHECK-NEXT: %val = lit.varlet.decl
+  # CHECK-NEXT: %val = lit.varlet.decl {{.*}} synth :
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: lit.ref.store [[TARGET]], %val
   # CHECK-NEXT: lit.try
@@ -685,7 +685,7 @@ fn testWithNonRaising(a: ExampleCM):
 
 # CHECK-LABEL: lit.func @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:
-  # CHECK-NEXT: %val = lit.varlet.decl
+  # CHECK-NEXT: %val = lit.varlet.decl {{.*}} synth :
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: lit.ref.store [[TARGET]], %val
   # CHECK: lit.ref.store %true, %__with_exc__
@@ -732,10 +732,10 @@ fn testWithScoping(a: ExampleCM):
   # statement inside a `fn` does not respect lexical scope and binds
   # its variable in its parent scope.
   with a as withDecl:
-    # CHECK: %withDecl = lit.varlet.decl "withDecl"
+    # CHECK: %withDecl = lit.varlet.decl "withDecl" synth :
     noop(withDecl)
   with a as withDecl:
-    # CHECK: %withDecl_0 = lit.varlet.decl "withDecl"
+    # CHECK: %withDecl_0 = lit.varlet.decl "withDecl" synth :
     noop(withDecl)
 
 # CHECK-LABEL: lit.func @"testWithInDef
