@@ -15,7 +15,7 @@ from algorithm import (
     vectorize,
     vectorize_unroll,
 )
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import _elementwise_impl, tile
 from memory import memset_zero, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from MOGG import reshape
@@ -45,8 +45,7 @@ fn normalize_index[type: DType](idx: SIMD[type, 1], dim_size: Int) -> Int:
     return idx.to_int() + dim_size if idx < 0 else idx.to_int()
 
 
-## gather_reduce_2D_axis_1
-@adaptive
+@always_inline
 fn gather_reduce[
     output_rank: Int,
     output_shape: DimList,
@@ -123,12 +122,12 @@ fn gather_reduce[
         NDBuffer[indices_rank, indices_shape, DType.int32]
     ](indices)
 
+    let gather_axis_size = input.get_shape()[gather_axis]
+
     @always_inline
     @parameter
     fn task_func(task_id: Int):
-        alias unroll_factor = 2
         alias prefetch_offset = -1
-        alias usimd_width = unroll_factor * simd_width
 
         let output = output_bind
         let input = input_bind
@@ -150,7 +149,7 @@ fn gather_reduce[
                 for j in range(indices.dim[1]()):
                     """Computes output[i,k] = reduction over j of (input[indices[i,j],k])
                     for j in range [0,indices.dim[1])"""
-                    let idx = indices[i, j].value
+                    let idx = normalize_index(indices[i, j], gather_axis_size)
 
                     # min so that we don't read beyond end of indices
                     @parameter
@@ -179,7 +178,16 @@ fn gather_reduce[
                 let out_idx = StaticIntTuple[2](i, k)
                 output.simd_store[simd_width](out_idx, accum)
 
-            vectorize[usimd_width, _accum_in_place](row_size)
+            tile[
+                _accum_in_place,
+                VariadicList[Int](
+                    8 * simd_width,
+                    4 * simd_width,
+                    2 * simd_width,
+                    simd_width,
+                    1,
+                ),
+            ](0, row_size)
 
     async_parallelize[task_func](out_chain, num_tasks)
 
