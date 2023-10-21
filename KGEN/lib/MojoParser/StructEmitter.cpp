@@ -139,7 +139,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   builder.setInsertionPointToStart(body);
   builder.setLoc(funcOp->getLoc());
   ASTDecl *funcDecl = shared.declResolver->getDeclForFuncSymbol(
-      cast<SymbolConstantAttr>(funcOp.getBoundReference()).getSymbol());
+      getFullyResolvedSymbolRef(funcOp));
   ExprEmitter emitter(shared, *funcDecl, builder);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;

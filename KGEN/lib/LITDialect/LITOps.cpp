@@ -379,8 +379,6 @@ Type LIT::FuncOp::getUserResultType() {
                                          getMLIRResultType());
 }
 
-/// Return a SymbolConstantAttr for this function, optionally bound to a set
-/// of parameter bindings.
 TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
   if (!bindings) // We allow null for convenience.
     bindings = ParameterExprArrayAttr::get(getContext(), {});
@@ -402,6 +400,11 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
 
   return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), bindings,
                                  resultType);
+}
+
+SymbolConstantAttr
+LIT::FuncOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
+  return cast<SymbolConstantAttr>(getBoundReference());
 }
 
 // These FuncOp attributes are disallowed while parsing since they can

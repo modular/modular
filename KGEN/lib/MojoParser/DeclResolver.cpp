@@ -3689,7 +3689,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 /// for the specified declaration (typically a var or argument declaration).
 /// This returns the destructor if successful, diagnoses an error if not, and
 /// returns null if there is no defined destructor.
-static TypedAttr lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
+static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
+                                           SharedState &shared) {
   auto dels = shared.lookupAndResolveDecl(
       "__del__", structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> entries = dels.getIfSuccess();
@@ -3709,39 +3710,35 @@ static TypedAttr lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
     shared.emitError(delDecl.getLoc(), "'__del__' must be a method");
     return {};
   }
-  return func.getBoundReference();
+  return func.getBoundSymbolRef();
 }
 
 /// Look up a __copyinit__/__moveinit__/__takeinit__  impl for the specified
 /// `type`.  This returns the method if successful, and returns null if there is
 /// none.
-static TypedAttr lookupCopyMoveTakeInit(ASTDecl &structDecl,
-                                        SharedState &shared,
-                                        SpecialFunctionKind specialKind) {
+static SymbolConstantAttr
+lookupCopyMoveTakeInit(ASTDecl &structDecl, SharedState &shared,
+                       SpecialFunctionKind specialKind) {
   const char *name = SpecialFunctionInfo::get(specialKind).name;
   LookupResult inits = shared.lookupAndResolveDecl(
       name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> entries = inits.getIfSuccess();
-  TypedAttr result;
-  for (auto candidate : entries) {
+  for (ASTDecl *candidate : entries) {
     LIT::FuncOp func = dyn_cast<LIT::FuncOp>(candidate);
-    if (!func || func.getSpecialFunctionKind() != specialKind)
-      continue;
-    if (!result) {
-      result = func.getBoundReference();
-      break;
-    }
+    if (func && func.getSpecialFunctionKind() == specialKind)
+      return func.getBoundSymbolRef();
   }
-  return result;
+  return {};
 }
 
 /// Given a struct that has no explicitly defined __del__ member, define a new
 /// one with an empty body.  This allows the CheckLifetimes pass to insert field
 /// dels as needed, and makes sure that anything that refers to this struct
 /// properly runs its destructor.
-static TypedAttr synthesizeEmptyDtor(SharedState &shared, StructDeclOp structOp,
-                                     ASTDecl &structDecl,
-                                     DeclResolver &resolver) {
+static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
+                                              StructDeclOp structOp,
+                                              ASTDecl &structDecl,
+                                              DeclResolver &resolver) {
   auto builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
 
@@ -3779,7 +3776,7 @@ static TypedAttr synthesizeEmptyDtor(SharedState &shared, StructDeclOp structOp,
   // Finish off the function with a return + lit.endfunc.
   appendDefaultReturnAndEndOp(funcOp, funcDecl, resolver.shared);
 
-  return funcOp.getBoundReference();
+  return funcOp.getBoundSymbolRef();
 }
 
 struct StructBodyDecorators : public SharedStateUser {
@@ -3837,20 +3834,22 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
     return;
   }
   if (LIT::FuncOp copyCtr = stubs->getCopyConstructor()) {
-    ASTDecl *copyCtrDecl = getDeclResolver().getDeclForFuncSymbol(
-        cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
+    SymbolConstantAttr ref = copyCtr.getBoundSymbolRef();
+    ASTDecl *copyCtrDecl =
+        getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
     if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
       copyCtr.erase();
     else
-      declOp.setCopyInitAttr(copyCtr.getBoundReference());
+      declOp.setCopyInitAttr(ref);
   }
   if (LIT::FuncOp moveCtr = stubs->getMoveConstructor()) {
-    ASTDecl *moveCtrDecl = getDeclResolver().getDeclForFuncSymbol(
-        cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
+    SymbolConstantAttr ref = moveCtr.getBoundSymbolRef();
+    ASTDecl *moveCtrDecl =
+        getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
     if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
       moveCtr.erase();
     else
-      declOp.setMoveInitAttr(moveCtr.getBoundReference());
+      declOp.setMoveInitAttr(ref);
   }
 }
 

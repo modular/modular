@@ -99,6 +99,7 @@ def LIT_FuncOp : LITOp<"func", [
     /// Return a reference for this function, optionally bound to a set of
     /// parameter bindings.
     TypedAttr getBoundReference(ParameterExprArrayAttr bindings = {});
+    SymbolConstantAttr getBoundSymbolRef(ParameterExprArrayAttr bindings = {});
 
     /// Return the SpecialFunctionKind ID that indicates if this is a special
     /// function like __init__ or __radd__.
@@ -285,9 +286,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
     OptionalAttr<M_SymbolRefArrayAttr>:$traits,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
-    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor,
-    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$moveInit,
-    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$copyInit,
+    OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
+    OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
+    OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );

@@ -113,20 +113,19 @@ private:
   DenseMap<std::pair<SymbolRefAttr, StringAttr>, unsigned> fieldIndices;
 };
 
-static SymbolConstantAttr
-getSpecialMemberForType(Type type, const TypeDeclInfo *typeDecls,
-                        std::function<TypedAttr(StructDeclOp)> getMember) {
+static SymbolConstantAttr getSpecialMemberForType(
+    Type type, const TypeDeclInfo *typeDecls,
+    std::function<SymbolConstantAttr(StructDeclOp)> getMember) {
   DeclRefType valueType = dyn_cast<DeclRefType>(type);
   if (!valueType) // Values of raw MLIR type don't have destructors.
     return {};
-  TypedAttr dtorAttr = getMember(typeDecls->getStructDeclForType(valueType));
-  if (!dtorAttr)
+  SymbolConstantAttr attr =
+      getMember(typeDecls->getStructDeclForType(valueType));
+  if (!attr)
     return {};
 
   // If there are parameters to the type, then the dtor will have those
   // parameters as well, substitute them in.
-  assert(isa<SymbolConstantAttr>(dtorAttr) && "What kind of dtor is this??");
-  SymbolConstantAttr attr = cast<SymbolConstantAttr>(dtorAttr);
   assert(attr.getParamValues().empty() && "dtor should be unparameterized");
   if (valueType.getParamValues().empty())
     return attr;
