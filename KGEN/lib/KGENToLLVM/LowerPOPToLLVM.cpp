@@ -1715,6 +1715,12 @@ public:
   LogicalResult
   matchAndRewrite(GlobalConstantOp op, GlobalConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    Type type = convertType(op.getType());
+    if (!type)
+      return rewriter.notifyMatchFailure(
+          op.getLoc(), "failed to convert constant result type");
+    auto ptrType = cast<LLVM::LLVMPointerType>(type);
+
     // Unique the constant.
     auto [it, inserted] = constants.try_emplace(
         std::make_pair(op.getValue(), op.getAlignmentAttr()), nullptr);
@@ -1722,12 +1728,7 @@ public:
       // If the constant doesn't exist, create it and insert it in the module.
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.clearInsertionPoint();
-      Type type = convertType(op.getType());
-      if (!type)
-        return rewriter.notifyMatchFailure(
-            op.getLoc(), "failed to convert constant result type");
 
-      auto ptrType = cast<LLVM::LLVMPointerType>(type);
       LLVM::GlobalOp global = rewriter.create<LLVM::GlobalOp>(
           op.getLoc(), ptrType.getElementType(), true, LLVM::Linkage::Internal,
           "global_constant", Attribute(),
@@ -1748,7 +1749,8 @@ public:
       symtab.insert(it->second = global);
     }
 
-    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(op, it->second);
+    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
+        op, ptrType, FlatSymbolRefAttr::get(it->second.getSymNameAttr()));
     return success();
   }
 
