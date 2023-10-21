@@ -28,6 +28,7 @@ struct Flag:
     """Event is suitable for interprocess use. Flag.DISABLE_TIMING must be
     set."""
 
+    @always_inline("nodebug")
     fn __init__(value: UInt32) -> Self:
         return Self {_value: value}
 
@@ -49,12 +50,15 @@ struct Flag:
 struct _EventImpl:
     var handle: DTypePointer[DType.invalid]
 
+    @always_inline
     fn __init__() -> Self:
         return Self {handle: DTypePointer[DType.invalid]()}
 
+    @always_inline
     fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
         return Self {handle: handle}
 
+    @always_inline
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()
 
@@ -63,6 +67,7 @@ struct _EventImpl:
 struct Event:
     var _event: _EventImpl
 
+    @always_inline
     fn __init__(flags: Flag = Flag.DEFAULT) raises -> Self:
         var event = _EventImpl()
 
@@ -73,6 +78,7 @@ struct Event:
         )
         return Self {_event: event}
 
+    @always_inline
     fn __del__(owned self) raises:
         if not self._event:
             return
@@ -83,6 +89,7 @@ struct Event:
         )
         self._event = _EventImpl()
 
+    @always_inline
     fn sync(self) raises:
         _check_error(
             _get_dylib_function[fn (_EventImpl) -> Result](

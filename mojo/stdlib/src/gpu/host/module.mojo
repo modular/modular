@@ -300,23 +300,28 @@ struct JitOptions:
 struct _ModuleImpl:
     var handle: DTypePointer[DType.invalid]
 
+    @always_inline
     fn __init__() -> Self:
         return Self {handle: DTypePointer[DType.invalid]()}
 
+    @always_inline
     fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
         return Self {handle: handle}
 
+    @always_inline
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()
 
 
+@value
+@register_passable
 struct ModuleHandle:
     var module: _ModuleImpl
 
-    fn __init__(inout self):
-        self.module = _ModuleImpl()
+    fn __init__() -> Self:
+        return Self {module: _ModuleImpl()}
 
-    fn __init__(inout self, path: Path) raises:
+    fn __init__(path: Path) raises -> Self:
         var module = _ModuleImpl()
         let path_cstr = path.__str__()
 
@@ -325,16 +330,12 @@ struct ModuleHandle:
                 fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
             ]("cuModuleLoad")(Pointer.address_of(module), path_cstr._as_ptr())
         )
-
         _ = path_cstr
-        self.module = module
+        return Self {module: module}
 
     fn __init__(
-        inout self,
-        content: String,
-        debug: Bool = False,
-        verbose: Bool = False,
-    ) raises:
+        content: String, debug: Bool = False, verbose: Bool = False
+    ) raises -> Self:
         var module = _ModuleImpl()
         if debug or verbose:
             alias buffer_size = 4096
@@ -414,10 +415,9 @@ struct ModuleHandle:
                 )
             )
 
-        self.module = module
-        _ = content
+        return Self {module: module}
 
-    fn __init__(inout self, content: String) raises:
+    fn __init__(content: String) raises -> Self:
         var module = _ModuleImpl()
         # Note that content has already gone through _cleanup_asm and
         # is null terminated.
@@ -426,7 +426,7 @@ struct ModuleHandle:
                 fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
             ]("cuModuleLoadData")(Pointer.address_of(module), content._as_ptr())
         )
-        self.module = module
+        return Self {module: module}
 
     fn __del__(owned self) raises:
         if self.module:

@@ -29,15 +29,19 @@ alias _populate_fn_type = fn (Pointer[Pointer[NoneType]]) capturing -> None
 struct FunctionHandle:
     var handle: DTypePointer[DType.invalid]
 
+    @always_inline
     fn __init__() -> Self:
         return Self {handle: DTypePointer[DType.invalid]()}
 
+    @always_inline
     fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
         return Self {handle: handle}
 
+    @always_inline
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()
 
+    @always_inline
     fn _call_impl[
         num_captures: Int, populate: _populate_fn_type
     ](self, grid_dim: Dim, block_dim: Dim, /, stream: Stream) raises:
@@ -46,6 +50,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int, populate: _populate_fn_type, T0: AnyType
     ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, /, stream: Stream) raises:
@@ -59,6 +64,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int, populate: _populate_fn_type, T0: AnyType, T1: AnyType
     ](
@@ -84,6 +90,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
@@ -118,6 +125,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
@@ -158,6 +166,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
@@ -204,6 +213,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
@@ -256,6 +266,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
@@ -314,6 +325,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
@@ -378,6 +390,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
@@ -448,6 +461,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
@@ -524,6 +538,7 @@ struct FunctionHandle:
 
         self.__call_impl(grid_dim, block_dim, args, stream=stream)
 
+    @always_inline
     fn __call_impl(
         self,
         grid_dim: Dim,
@@ -577,21 +592,26 @@ struct _PathOrBool:
     var print_val: Bool
     var path: Path
 
+    @always_inline
     fn __init__(inout self):
         self.print_val = False
         self.path = Path("")
 
+    @always_inline
     fn __init__(inout self, print_val: Bool):
         self.print_val = print_val
         self.path = Path("")
 
+    @always_inline
     fn __init__(inout self, path: Path):
         self.print_val = False
         self.path = path
 
+    @always_inline
     fn __bool__(self) -> Bool:
         return self.print_val or self._is_path()
 
+    @always_inline
     fn _is_path(self) -> Bool:
         return self.path != ""
 
@@ -601,18 +621,19 @@ struct _PathOrBool:
 # ===----------------------------------------------------------------------===#
 
 
+@register_passable
 struct Function[func_type: AnyType, func: func_type]:
     var mod_handle: ModuleHandle
     var func_handle: FunctionHandle
 
     alias _impl = _compile_nvptx_asm[func_type, func]()
 
+    @always_inline
     fn __init__(
-        inout self,
         debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: _PathOrBool = _PathOrBool(),
-    ) raises:
+    ) raises -> Self:
         alias name = get_linkage_name[func_type, func]()
         let ptx = _cleanup_asm(Self._impl.asm)
 
@@ -623,18 +644,23 @@ struct Function[func_type: AnyType, func: func_type]:
             else:
                 print(ptx)
 
-        self.mod_handle = ModuleHandle(
+        let mod_handle = ModuleHandle(
             ptx, debug=debug, verbose=verbose or debug
         )
-        self.func_handle = self.mod_handle.load(name)
+        let func_handle = mod_handle.load(name)
 
+        return Self {mod_handle: mod_handle, func_handle: func_handle}
+
+    @always_inline
     fn __del__(owned self) raises:
         pass
 
+    @always_inline
     fn __bool__(self) -> Bool:
         return self.func_handle.__bool__()
 
     @closure
+    @always_inline
     fn __call__(
         self,
         grid_dim: Dim,
@@ -647,6 +673,7 @@ struct Function[func_type: AnyType, func: func_type]:
         ](grid_dim, block_dim, stream=stream)
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType
     ](
@@ -662,6 +689,7 @@ struct Function[func_type: AnyType, func: func_type]:
         ](grid_dim, block_dim, arg0, stream=stream)
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType, T1: AnyType
     ](
@@ -678,6 +706,7 @@ struct Function[func_type: AnyType, func: func_type]:
         ](grid_dim, block_dim, arg0, arg1, stream=stream)
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType
     ](
@@ -695,6 +724,7 @@ struct Function[func_type: AnyType, func: func_type]:
         ](grid_dim, block_dim, arg0, arg1, arg2, stream=stream)
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType
     ](
@@ -713,6 +743,7 @@ struct Function[func_type: AnyType, func: func_type]:
         ](grid_dim, block_dim, arg0, arg1, arg2, arg3, stream=stream)
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType, T4: AnyType
     ](
@@ -732,6 +763,7 @@ struct Function[func_type: AnyType, func: func_type]:
         ](grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, stream=stream)
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -767,6 +799,7 @@ struct Function[func_type: AnyType, func: func_type]:
         )
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -805,6 +838,7 @@ struct Function[func_type: AnyType, func: func_type]:
         )
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -846,6 +880,7 @@ struct Function[func_type: AnyType, func: func_type]:
         )
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType,
         T1: AnyType,
@@ -890,6 +925,7 @@ struct Function[func_type: AnyType, func: func_type]:
         )
 
     @closure
+    @always_inline
     fn __call__[
         T0: AnyType,
         T1: AnyType,
