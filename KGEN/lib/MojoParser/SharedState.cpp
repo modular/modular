@@ -43,6 +43,7 @@
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/bit.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/EndianStream.h"
@@ -1366,7 +1367,7 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
         // Write the dependencies to the cache. Dependencies are written as a
         // sequence of (name, location) pairs. The location is the offset into
         // the module buffer where the dependency is located.
-        llvm::support::endian::Writer writer(*buf, llvm::support::little);
+        llvm::support::endian::Writer writer(*buf, llvm::endianness::little);
         writer.write((uint64_t)dependencies.size());
         for (auto &[name, loc] : dependencies) {
           writer.write((uint64_t)name.size());
@@ -1390,8 +1391,8 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
 
       // Functor for reading a uint64_t from the cache buffer.
       auto readInt = [&]() -> uint64_t {
-        return llvm::support::endian::readNext<uint64_t, llvm::support::little,
-                                               llvm::support::unaligned>(data);
+        return llvm::support::endian::readNext<
+            uint64_t, llvm::endianness::little, llvm::support::unaligned>(data);
       };
 
       // Read the dependencies from the cache.
