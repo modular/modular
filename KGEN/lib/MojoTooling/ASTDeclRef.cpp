@@ -62,6 +62,8 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*decl)
       .Case<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
+      .Case([&](FuncOp op) { return op.getFullSignature(); })
+      .Case([&](StructDeclOp op) { return decl->computeSelfTypeForStruct(op); })
       .Default({});
 }
 

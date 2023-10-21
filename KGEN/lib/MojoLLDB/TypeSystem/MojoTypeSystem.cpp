@@ -9,18 +9,20 @@
 #include "../ExpressionParser/MojoExpressionParser.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../ExpressionParser/MojoUserExpression.h"
-#include "MojoTypeDataLayout.h"
-
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "MojoTypeDataLayout.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"
@@ -31,18 +33,22 @@
 #include "lldb/Utility/Log.h"
 #include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/Process.h"
+#include <mlir/AsmParser/AsmParser.h>
 
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::Mojo;
 using namespace lldb_private;
+using namespace lldb_private::dwarf;
+using namespace lldb_private::plugin::dwarf;
 
 //===----------------------------------------------------------------------===//
 // MojoTypeSystem::Impl
 //===----------------------------------------------------------------------===//
 
 struct MojoTypeSystem::Impl {
-  Impl(Target &target) : target(target.shared_from_this()) {
+  Impl(Target *target, const ArchSpec &archSpec)
+      : target(target), archSpec(archSpec) {
     // Register all of the various dialect state.
     DialectRegistry registry;
     registerAllKGENDialects(registry);
@@ -57,13 +63,14 @@ struct MojoTypeSystem::Impl {
         LLCL::createThreadPoolWorkQueue(0, /*mainWillDonate=*/false));
 
     // Compute the target information for the expression.
+    compilationOptions.targetTriple = archSpec.GetTriple().str();
+
     // TODO: Populate cpu information properly here.
-    ArchSpec targetArch = target.GetArchitecture();
-    if (targetArch.IsValid()) {
-      compilationOptions.targetTriple = targetArch.GetTriple().str();
-      compilationOptions.relocModel =
-          targetArch.GetTriple().isOSBinFormatMachO() ? llvm::Reloc::PIC_
-                                                      : llvm::Reloc::Static;
+    if (archSpec.IsValid()) {
+      compilationOptions.targetTriple = archSpec.GetTriple().str();
+      compilationOptions.relocModel = archSpec.GetTriple().isOSBinFormatMachO()
+                                          ? llvm::Reloc::PIC_
+                                          : llvm::Reloc::Static;
     }
     compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
@@ -114,8 +121,11 @@ struct MojoTypeSystem::Impl {
   /// The main parser context used for compilation.
   std::unique_ptr<MojoParserContext> parserContext;
 
-  /// The target that this typesystem is associated with.
-  lldb::TargetWP target;
+  /// The target that this typesystem is associated with. It's available only
+  /// for expression evaluation.
+  lldb_private::Target *target;
+
+  lldb_private::ArchSpec archSpec;
 
   /// The persistent state for this typesystem.
   MojoPersistentExpressionState persistentState;
@@ -125,18 +135,25 @@ struct MojoTypeSystem::Impl {
 
   /// The cache to be used for querying data layouts.
   std::unique_ptr<MojoTypeDataLayoutContext> dataLayoutContext;
+
+  std::unique_ptr<MojoDWARFParser> dwarfParser;
 };
 
 //===----------------------------------------------------------------------===//
 // MojoTypeSystem
 //===----------------------------------------------------------------------===//
 
-MojoTypeSystem::MojoTypeSystem(Target &target)
-    : impl(std::make_unique<Impl>(target)) {}
+MojoTypeSystem::MojoTypeSystem(Target *target, const ArchSpec &archSpec)
+    : impl(std::make_unique<Impl>(target, archSpec)) {}
+
 MojoTypeSystem::~MojoTypeSystem() = default;
 char MojoTypeSystem::ID = 0;
 
 MLIRContext *MojoTypeSystem::getMLIRContext() { return &impl->mlirContext; }
+
+LIT::SharedState &MojoTypeSystem::getSharedState() {
+  return impl->parserContext->getSharedState();
+}
 
 MojoParserContext &MojoTypeSystem::getParserContext() {
   return *impl->parserContext;
@@ -155,10 +172,19 @@ LLCL::Runtime &MojoTypeSystem::getRuntime() { return *impl->runtime; }
 /// Create a MojoTypeSystem instance from the given module and target.
 static lldb::TypeSystemSP createInstance(lldb::LanguageType language,
                                          Module *module, Target *target) {
-  // TODO: Support creating a type system from a module.
-  if (language != lldb::eLanguageTypeMojo || !target)
-    return nullptr;
-  return std::make_shared<MojoTypeSystem>(*target);
+  if (language != lldb::eLanguageTypeMojo)
+    return {};
+
+  ArchSpec arch;
+  if (module)
+    arch = module->GetArchitecture();
+  else if (target)
+    arch = target->GetArchitecture();
+
+  if (!arch.IsValid())
+    return {};
+
+  return std::make_shared<MojoTypeSystem>(target, arch);
 }
 
 void MojoTypeSystem::Initialize() {
@@ -610,15 +636,208 @@ UserExpression *MojoTypeSystem::GetUserExpression(
     StringRef expr, StringRef prefix, lldb::LanguageType language,
     Expression::ResultType desiredType,
     const EvaluateExpressionOptions &options, ValueObject *ctxObj) {
-  lldb::TargetSP target = impl->target.lock();
-  if (!target || ctxObj)
+  if (!impl->target || ctxObj)
     return nullptr;
-  return new MojoUserExpression(*target.get(), expr, prefix, language,
+  return new MojoUserExpression(*impl->target, expr, prefix, language,
                                 desiredType, options);
 }
 
 PersistentExpressionState *MojoTypeSystem::GetPersistentExpressionState() {
   return &impl->persistentState;
+}
+
+//===--------------------------------------------------------------------===//
+// Debug info parsing
+//===--------------------------------------------------------------------===//
+
+DWARFASTParser *MojoTypeSystem::GetDWARFParser() {
+  if (!impl->dwarfParser)
+    impl->dwarfParser = std::make_unique<MojoDWARFParser>(*this);
+  return impl->dwarfParser.get();
+}
+
+CompilerType MojoTypeSystem::getBuiltinType(llvm::StringRef typeName,
+                                            uint32_t dwarfEncoding,
+                                            uint32_t byteSize) {
+  if (dwarfEncoding == DW_ATE_unsigned)
+    return createCompilerType(IntegerType::get(getMLIRContext(), byteSize * 8,
+                                               IntegerType::Unsigned));
+
+  if (dwarfEncoding == DW_ATE_signed)
+    return createCompilerType(
+        IntegerType::get(getMLIRContext(), byteSize * 8, IntegerType::Signed));
+
+  if (dwarfEncoding == DW_ATE_float) {
+    if (byteSize == 2) {
+      if (typeName == "bf16")
+        return createCompilerType(FloatType::getBF16(getMLIRContext()));
+      return createCompilerType(FloatType::getF16(getMLIRContext()));
+    }
+    if (byteSize == 4)
+      return createCompilerType(FloatType::getF32(getMLIRContext()));
+    if (byteSize == 8)
+      return createCompilerType(FloatType::getF64(getMLIRContext()));
+    if (byteSize == 10)
+      return createCompilerType(FloatType::getF80(getMLIRContext()));
+    if (byteSize == 16)
+      return createCompilerType(FloatType::getF128(getMLIRContext()));
+  }
+  return {};
+}
+
+MojoASTDeclRef
+MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
+                                      MojoASTDeclRef parentDeclRef) {
+  LIT::SharedState &sharedState = impl->parserContext->getSharedState();
+  LIT::ASTDecl &parentDecl =
+      parentDeclRef ? *parentDeclRef
+                    : impl->parserContext->getSharedState().getTopLevelDecl();
+
+  // We first check if the module already exists, in which case we just return
+  // its decl.
+  StringAttr mangledName =
+      sharedState.getMangledModuleName(getMLIRContext(), moduleName);
+  auto &declsInScope = parentDecl.getDeclsInScope();
+  if (auto it = declsInScope.find(mangledName); it != declsInScope.end()) {
+    assert(it->second.size() == 1 &&
+           "We expect one single module decl with a given name.");
+    return it->second[0];
+  }
+
+  // We create a fake empty file so that parser diagnostics can be emitted if
+  // we are doing somethig wrong when creating the decls. Otherwise, we hit
+  // asserts and LLDB aborts.
+  auto loc = FileLineColLoc::get(getMLIRContext(), moduleName, /*line=*/0,
+                                 /*column=*/0);
+  std::unique_ptr<llvm::MemoryBuffer> buffer =
+      llvm::MemoryBuffer::getMemBufferCopy("", loc.getFilename().getValue());
+  auto &sourceMgr = impl->parserContext->getSourceMgr();
+  const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(
+      sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc()));
+  LIT::Lexer lexer(impl->parserContext->getSharedState().diags, sourceBuf);
+
+  Operation *fileOp = parentDecl.getDeclEndBuilder().create<LIT::FileModuleOp>(
+      sharedState.translateLocation(parentDecl.getLoc()), mangledName);
+  return &sharedState.declResolver->addFullyResolvedDecl(
+      fileOp, mangledName, lexer.getToken().getLoc(), &parentDecl);
+}
+
+MojoASTDeclRef
+MojoTypeSystem::getOrCreateFunctionDecl(llvm::StringRef mangledName) {
+  // FIXME(23550): delete this line when this suffix is not emitted anymore.
+  mangledName.consume_back("_concrete");
+
+  auto mangled = StringAttr::get(getMLIRContext(), mangledName);
+  FailureOr<LIT::MangledSymbol> mangledSymbol =
+      LIT::MangledSymbol::demangle(mangled);
+  if (failed(mangledSymbol))
+    return {};
+
+  // We traverse modules and structs creating them as needed.
+  LIT::ASTDecl *parentDecl = nullptr;
+  LIT::SharedState &sharedState = impl->parserContext->getSharedState();
+
+  for (StringAttr moduleName : mangledSymbol->moduleNames)
+    parentDecl = &*getOrCreateModuleDecl(moduleName, parentDecl);
+
+  for (StringAttr structName : mangledSymbol->structNames)
+    parentDecl = &*getOrCreateStructDecl(structName, parentDecl);
+
+  assert(parentDecl != nullptr && "All functions must have a parent decl.");
+
+  StringAttr name = mangledSymbol->symName;
+
+  // We check if the function already exists, in which case we just return
+  // its decl.
+  auto &declsInScope = parentDecl->getDeclsInScope();
+  if (auto it = declsInScope.find(name); it != declsInScope.end()) {
+    assert(it->second.size() == 1 &&
+           "We expect one single function decl with a given name.");
+    return it->second[0];
+  }
+
+  auto builder = parentDecl->getDeclEndBuilder();
+  auto fnType = builder.getFunctionType({}, {NoneType::get(getMLIRContext())});
+  // We might need to fill in the full signature when expression evaluation is
+  // needed. We don't need it for now.
+  auto metadata = LIT::FnMetadataAttr::get(getMLIRContext(), {}, {});
+  auto signature = LIT::LITSignatureType::get(fnType, {}, {}, {}, {}, metadata);
+
+  // FIXME(23810): We need to support nested functions.
+
+  StringAttr nameAttr = LIT::DeclResolver::getMangledName(
+      builder.getStringAttr(name.getValue()), signature);
+  auto newFunction = builder.create<LIT::FuncOp>(
+      sharedState.translateLocation(parentDecl->getLoc()), nameAttr, signature);
+  return MojoASTDeclRef(&sharedState.declResolver->addDecl(
+      newFunction, parentDecl->getLoc(), name, parentDecl, {}, {}, -1));
+}
+
+MojoASTDeclRef
+MojoTypeSystem::getOrCreateStructDecl(StringRef structName,
+                                      MojoASTDeclRef parentDecl) {
+  StringAttr name = StringAttr::get(getMLIRContext(), structName);
+
+  // We first check if the struct already exists, in which case we just return
+  // its decl.
+  auto &declsInScope = parentDecl->getDeclsInScope();
+  if (auto it = declsInScope.find(name); it != declsInScope.end()) {
+    assert(it->second.size() == 1 &&
+           "We expect one single struct decl with a given name.");
+    return it->second[0];
+  }
+
+  auto newStruct = parentDecl->getDeclEndBuilder().create<LIT::StructDeclOp>(
+      getSharedState().translateLocation(parentDecl->getLoc()), name);
+  return MojoASTDeclRef(&getSharedState().declResolver->addDecl(
+      newStruct, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
+}
+
+MojoASTDeclRef MojoTypeSystem::getOrCreateStructDecl(StringRef mangledName) {
+  FailureOr<LIT::MangledSymbol> mangledSymbol = LIT::MangledSymbol::demangle(
+      StringAttr::get(getMLIRContext(), mangledName));
+  if (failed(mangledSymbol))
+    return {};
+
+  LIT::ASTDecl *parentDecl = nullptr;
+  for (StringAttr moduleName : mangledSymbol->moduleNames)
+    parentDecl = &*getOrCreateModuleDecl(moduleName, parentDecl);
+
+  assert(parentDecl != nullptr &&
+         "All structs must be defined within a module.");
+
+  return getOrCreateStructDecl(mangledSymbol->symName, parentDecl);
+}
+
+MojoASTDeclRef
+MojoTypeSystem::addFieldToStruct(MojoASTDeclRef structDecl, StringRef fieldName,
+                                 lldb::opaque_compiler_type_t type) {
+  StringAttr name = StringAttr::get(getMLIRContext(), fieldName);
+  auto newField = structDecl->getDeclEndBuilder().create<LIT::StructFieldOp>(
+      getSharedState().translateLocation(structDecl->getLoc()), name,
+      mlir::Type::getFromOpaquePointer(type), LIT::DocStringAttr());
+  return MojoASTDeclRef(&getSharedState().declResolver->addDecl(
+      newField, structDecl->getLoc(), name, &*structDecl, {}, {}, -1));
+}
+
+ConstString
+MojoTypeSystem::DeclContextGetScopeQualifiedName(void *opaqueDeclCtx) {
+  if (!opaqueDeclCtx)
+    return {};
+  return ConstString(MojoASTDeclRef(static_cast<LIT::ASTDecl *>(opaqueDeclCtx))
+                         .getType()
+                         .getAsString());
+}
+
+ConstString MojoTypeSystem::DeclContextGetName(void *opaqueDeclCtx) {
+  if (!opaqueDeclCtx) {
+    if (std::optional<StringRef> name =
+            MojoASTDeclRef(static_cast<LIT::ASTDecl *>(opaqueDeclCtx))
+                .getName()) {
+      return ConstString(*name);
+    }
+  }
+  return {};
 }
 
 //===--------------------------------------------------------------------===//

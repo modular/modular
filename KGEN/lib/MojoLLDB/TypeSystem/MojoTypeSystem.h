@@ -7,6 +7,8 @@
 #ifndef KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 
+#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "MojoDWARFParser.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
@@ -37,11 +39,15 @@ class MojoTypeSystem : public lldb_private::TypeSystem {
   static char ID;
 
 public:
-  MojoTypeSystem(lldb_private::Target &target);
+  MojoTypeSystem(lldb_private::Target *target,
+                 const lldb_private::ArchSpec &archSpec);
   ~MojoTypeSystem() override;
 
   /// Return the MLIR context for this type system.
   MLIRContext *getMLIRContext();
+
+  /// Return the parser's SharedState for this type system.
+  LIT::SharedState &getSharedState();
 
   /// Return the LLCL runtime for this type system.
   LLCL::Runtime &getRuntime();
@@ -242,18 +248,14 @@ public:
     return {};
   }
 
-  lldb_private::ConstString DeclContextGetName(void *opaqueDeclCtx) override {
-    // This will be used when we create decls from DWARF.
-    // https://github.com/modularml/modular/issues/20114
-    return {};
-  }
+  /// Return the name of the given decl context (i.e. a decl that is also a
+  /// scope).
+  lldb_private::ConstString DeclContextGetName(void *opaqueDeclCtx) override;
 
+  /// Return the type name of the given decl context (i.e. a decl that is also a
+  /// scope).
   lldb_private::ConstString
-  DeclContextGetScopeQualifiedName(void *opaqueDeclCtx) override {
-    // This will be used when we create decls from DWARF.
-    // https://github.com/modularml/modular/issues/20114
-    return {};
-  }
+  DeclContextGetScopeQualifiedName(void *opaqueDeclCtx) override;
 
   bool DeclContextIsClassMethod(void *opaqueDeclCtx) override {
     // This will be used when we create decls from DWARF.
@@ -576,7 +578,59 @@ public:
   lldb_private::CompilerType createCompilerType(MojoASTTypeRef type);
 
   //===--------------------------------------------------------------------===//
-  // RTTI support
+  // Debug Info Parsing
+  //===--------------------------------------------------------------------===//
+
+  /// Get the DWARF Parser for Mojo.
+  lldb_private::plugin::dwarf::DWARFASTParser *GetDWARFParser() override;
+
+  /// Get the MLIR type for the given DW_TAG_base_type entry.
+  ///
+  /// Return an invalid CompilerType if the couldn't be recovered.
+  lldb_private::CompilerType getBuiltinType(llvm::StringRef typeName,
+                                            uint32_t dwarfEncoding,
+                                            uint32_t byteSize);
+
+  /// Create a module decl given its name under the given parentDecl. If the
+  /// parent module already contains a module with that name, return it instead.
+  /// If the parent module is invalid, then the module becomes a top-level one.
+  ///
+  /// Return the decl of the module.
+  MojoASTDeclRef getOrCreateModuleDecl(StringRef moduleName,
+                                       MojoASTDeclRef parentDecl = {});
+
+  /// Create a function decl given its mangled name unless it already exists. If
+  /// its mangled name includes nested modules or structs, then they are created
+  /// as well if needed.
+  ///
+  /// Return the decl of the function, or an invalid decl if the function name
+  /// couldn't be demangled.
+  MojoASTDeclRef getOrCreateFunctionDecl(StringRef mangledName);
+
+  /// Create a struct decl given its name under the given parent decl. If the
+  /// parent decl already contains a struct with that name, return it instead.
+  ///
+  /// Return the decl of the struct.
+  MojoASTDeclRef getOrCreateStructDecl(StringRef structName,
+                                       MojoASTDeclRef parentDecl);
+
+  /// Create a struct decl given its mangled name unless it already exists. If
+  /// its mangled name includes nested modules, then they are created if as well
+  /// if needed.
+  ///
+  /// Return the decl of the struct, or an invalid decl if the struct name
+  /// couldn't be demangled.
+  MojoASTDeclRef getOrCreateStructDecl(StringRef mangledName);
+
+  /// Add a field at the end of the given struct decl and the given type.
+  ///
+  /// Return the decl of the newly created field.
+  MojoASTDeclRef addFieldToStruct(MojoASTDeclRef structDecl,
+                                  StringRef fieldName,
+                                  lldb::opaque_compiler_type_t type);
+
+  //===--------------------------------------------------------------------===//
+  // RTTI Support
   //===--------------------------------------------------------------------===//
 
   bool isA(const void *classID) const override { return classID == &ID; }
