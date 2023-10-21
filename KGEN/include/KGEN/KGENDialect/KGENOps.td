@@ -1275,11 +1275,12 @@ def KGEN_IntLiteralBinop : KGENOp<"int_literal.binop", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// IntLiteralCastOp
+// IntLiteralConvertOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_IntLiteralCastOp : KGENOp<"int_literal.cast", [Pure]> {
-  let summary = "Cast integer literal to int type usable at runtime.";
+def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
+  let summary = "Convert integer literal to int type usable at runtime.";
   let description = [{
     The `kgen.int_literal.cast` operator casts an infinite precision integer
     literal to a fixed width integer type.

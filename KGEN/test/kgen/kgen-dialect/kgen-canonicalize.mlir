@@ -236,10 +236,10 @@ kgen.func @hoist() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @int_literal_cast
-kgen.func @int_literal_cast() -> si64 {
-  %0 = kgen.param.constant: !kgen.int_literal = <123>
+// CHECK-LABEL: kgen.func @int_literal_convert
+kgen.func @int_literal_convert() -> si64 {
   // CHECK: constant: si64 = <123>
-  %1 = kgen.int_literal.cast %0 : to si64
+  %0 = kgen.param.constant: !kgen.int_literal = <123>
+  %1 = kgen.int_literal.convert %0 : to si64
   kgen.return %1 : si64
 }
