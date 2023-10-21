@@ -13,7 +13,7 @@ from benchmark import Benchmark
 """
 
 from math import max, min
-from time import now
+from time import time_function
 
 from memory.unsafe import DTypePointer, Pointer
 
@@ -81,13 +81,14 @@ struct Benchmark:
         """
 
         # run for specified number of warmup iterations
-        var tic = now()
-        for _ in range(self.num_warmup):
-            func()
-        var toc = now()
+        @parameter
+        @always_inline
+        fn warmup_fn():
+            for _ in range(self.num_warmup):
+                func()
 
         var prev_iters = self.num_warmup
-        var prev_dur = toc - tic if self.num_warmup > 0 else 0
+        var prev_dur = time_function[warmup_fn]() if self.num_warmup > 0 else 0
         var total_iters: Int = 0
         var time_elapsed: Int = 0
 
@@ -111,12 +112,13 @@ struct Benchmark:
             # (This also keeps n in int range on 32 bit platforms.)
             n = min(n, 1000_000_000)
 
-            tic = now()
-            for __ in range(n):
-                func()
-            toc = now()
+            @parameter
+            @always_inline
+            fn benchmark_fn():
+                for __ in range(n):
+                    func()
 
-            prev_dur = toc - tic
+            prev_dur = time_function[benchmark_fn]()
             prev_iters = n
             total_iters += prev_iters
             time_elapsed += prev_dur
