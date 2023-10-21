@@ -199,3 +199,17 @@ fn warp_id() -> Int:
     Returns: The warp ID of the the current thread.
     """
     return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.warpid", Int32]().to_int()
+
+
+# ===----------------------------------------------------------------------===#
+# sm_id
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn sm_id() -> Int:
+    """Returns the SM ID of the current thread.
+
+    Returns: The SM ID of the the current thread.
+    """
+    return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.smid", Int32]().to_int()
