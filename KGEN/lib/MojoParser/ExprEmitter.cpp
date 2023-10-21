@@ -1723,7 +1723,6 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   }
 
   capture = Capture(value);
-
   return emitResult(value, expr, dest);
 }
 

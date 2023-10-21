@@ -2283,6 +2283,7 @@ struct FnDecorators : public SharedStateUser {
 
 private:
   void applyAdaptive(const DeclRefNode &node);
+  void applyMoveCapture(const CallNode &node);
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
@@ -2326,6 +2327,8 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
       else if (declRef->spelling == "export")
         applyExport(decorator->getLoc(), shared, decl, baseName, *callNode,
                     funcOp);
+      else if (declRef->spelling == "__move_capture")
+        applyMoveCapture(*callNode);
       else
         return failure();
       return success();
@@ -2340,6 +2343,36 @@ void FnDecorators::applyAdaptive(const DeclRefNode &node) {
         << node.getRange();
 
   funcOp.setIsAdaptive(true);
+}
+
+void FnDecorators::applyMoveCapture(const CallNode &node) {
+  // HACK(#16110): Need to implement proper capture list syntax rather than rely
+  // on a special decorator.
+  for (const Operand &operand : node.operands) {
+    auto *declRef = dyn_cast<DeclRefNode>(operand.value);
+    if (!declRef) {
+      emitError(operand.getLoc(), "'@__move_capture' expected a declaration");
+      continue;
+    }
+
+    LookupResult lookup = shared.lookupAndResolveDecl(
+        declRef->spelling, declRef->getLoc(), *decl.getParentDecl(),
+        /*searcInParentScopes=*/true);
+    if (ArrayRef<ASTDecl *> decls = lookup.getIfSuccess(); !decls.empty()) {
+      ExprEmitter emitter(shared, decl, EC_CaptureCopy);
+      ValueDest dest(EC_CaptureCopy);
+      std::optional<Capture> capture;
+      if (emitter.emitDeclReference(declRef->spelling, decls, declRef, dest,
+                                    capture) &&
+          capture) {
+        shared.addCaptureToScope(decl, decls.front(),
+                                 Capture(capture->getValue(), /*isMove=*/true));
+        continue;
+      }
+    }
+    emitError(declRef->getLoc(), "cannot capture '")
+        << declRef->spelling << "'";
+  }
 }
 
 /// Given the lexical context of a function, return true if the default bit
@@ -2516,8 +2549,17 @@ static Value emitClosureInstance(SignatureType closureSignature,
   // Create a copy of the captured value.
   auto captureIteratorRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
   SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
-  for (auto &[_, capture] : captureIteratorRange)
-    closureImplInitArgs.push_back({capture.getValue(), &node});
+  for (auto &[_, capture] : captureIteratorRange) {
+    AnyValue arg = capture.getValue();
+    if (capture.isMoveCapture()) {
+      // HACK(#16110): This transfers ownership without an explicit `^` from the
+      // user, because we don't have capture list syntax.
+      UnaryOpNode transfer(ExprNode::kTransfer, location, &node);
+      ValueDest dest(EC_CaptureCopy);
+      arg = transfer.emitTransfer(arg, dest, exprEmitter);
+    }
+    closureImplInitArgs.push_back({arg, &node});
+  }
 
   ValueDest closureDest;
 

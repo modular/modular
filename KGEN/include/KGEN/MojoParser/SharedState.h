@@ -52,8 +52,9 @@ enum class CallSyntax : uint8_t;
 /// parent function.
 class Capture {
 public:
-  Capture(CValue value);
+  Capture(CValue value, bool isMove = false) : value(value), isMove(isMove) {}
   CValue getValue() const { return value; }
+  bool isMoveCapture() const { return isMove; }
 
   /// Get the underlying MLIR value.
   Value getMlirValue() const;
@@ -61,6 +62,8 @@ public:
 private:
   /// The value of the capture.
   CValue value;
+  /// True if the capture is by move, otherwise it is by copy.
+  bool isMove;
 };
 
 /// The CaptureTraversableMap enables the owner of the map to return a map

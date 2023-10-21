@@ -381,13 +381,18 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // TODO: Enable expression of how to capture.
   for (const auto &[i, declCaptureIter] : llvm::enumerate(captureRange)) {
     Capture capture = declCaptureIter.second;
+    bool move = capture.isMoveCapture();
     ASTType rvalueType = capture.getValue().getRValueType();
 
     if (ASTType(rvalueType).isRegisterPassable(location, shared)) {
-      closureImplSigConventions.push_back(ValueInputConvention::BorrowedInReg);
+      closureImplSigConventions.push_back(
+          move ? ValueInputConvention::OwnedInReg
+               : ValueInputConvention::BorrowedInReg);
       closureImplSigTypes.push_back(rvalueType);
     } else {
-      closureImplSigConventions.push_back(ValueInputConvention::BorrowedInMem);
+      closureImplSigConventions.push_back(
+          move ? ValueInputConvention::OwnedInMem
+               : ValueInputConvention::BorrowedInMem);
       closureImplSigTypes.push_back(PointerType::get(rvalueType));
     }
     fieldTypes.push_back(rvalueType);
@@ -940,8 +945,6 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   setMember(topLevelCall, callFieldAttr, topLevelCallType);
   return init;
 }
-
-Capture::Capture(CValue value) : value(value) {}
 
 Value Capture::getMlirValue() const {
   if (auto v = value.getIfMLValue())
