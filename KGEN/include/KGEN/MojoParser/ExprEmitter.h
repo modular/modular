@@ -533,9 +533,11 @@ public:
 
   /// Helper to emit a VarLetDeclOp with a uniquely generated lifetime name.
   VarLetDeclOp emitVarLetDecl(const Twine &name, Type type, Location loc,
-                              bool isVar = true, bool isSynth = true);
+                              bool isVar = true, bool isSynth = true,
+                              bool anonymous = true);
   VarLetDeclOp emitVarLetDecl(StringAttr name, Type type, Location loc,
-                              bool isVar = true, bool isSynth = true);
+                              bool isVar = true, bool isSynth = true,
+                              bool anonymous = true);
 };
 
 } // namespace M::KGEN::LIT

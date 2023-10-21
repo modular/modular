@@ -672,7 +672,7 @@ fn mvalueStructField():
 
 # CHECK-LABEL: lit.func @"defTests({{.*}}, %{{.*}}[untyped]: !kgen.pointer<!object> owned_in_mem)
 def defTests(a: Int, b: Int, untyped) -> None:
-  # CHECK: %a_0 = lit.varlet.decl "a"
+  # CHECK: %a_0 = lit.varlet.decl "a" var synth :
   # CHECK: lit.ref.store %a, %a_0
   # CHECK: %b_1 = lit.varlet.decl "b" var synth : !lit.ref<mut !Int, *"`b1">
   # CHECK: lit.ref.store %b, %b_1
@@ -686,8 +686,8 @@ def defTests(a: Int, b: Int, untyped) -> None:
 
 # CHECK-LABEL: lit.func @"basic_assignments
 def basic_assignments(a: Int, b: Int, c: M, d: M):
-  # CHECK:      %a_0 = lit.varlet.decl "a" var
-  # CHECK:      %b_1 = lit.varlet.decl "b" var
+  # CHECK:      %a_0 = lit.varlet.decl "a" var synth :
+  # CHECK:      %b_1 = lit.varlet.decl "b" var synth :
   # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__iadd__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
@@ -748,23 +748,23 @@ def basic_assignments(a: Int, b: Int, c: M, d: M):
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
 # CHECK-LABEL: lit.func @"walrus_implicit_decl
 def walrus_implicit_decl():
-  # CHECK:      %a = lit.varlet.decl "a" var synth
+  # CHECK:      %a = lit.varlet.decl "a" var synth :
   # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: {{.*}}value = 3
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
   # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load %a
   # CHECK-NEXT: kgen.call {{.*}}([[THREE]], [[VAR_A]])
   simpleMath(a := 3, a)
 
-  # CHECK:      %b = lit.varlet.decl "b" var synth
+  # CHECK:      %b = lit.varlet.decl "b" var synth :
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}value = 4
   # CHECK-NEXT: lit.ref.store [[FOUR]], %b
   if b := 4:
     print(b)
 
-  # CHECK:      %c = lit.varlet.decl "c" var synth
+  # CHECK:      %c = lit.varlet.decl "c" var synth :
   # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant: {{.*}}value = 5
   # CHECK-NEXT: lit.ref.store [[FIVE]], %c
-  # CHECK:      %d = lit.varlet.decl "d" var synth
+  # CHECK:      %d = lit.varlet.decl "d" var synth :
   # CHECK-NEXT: lit.ref.store [[FIVE]], %d
   d = c := 5
 

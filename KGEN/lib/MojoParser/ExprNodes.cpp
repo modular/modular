@@ -457,12 +457,13 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // This creates an untyped VarLetDeclOp which is then inferred from its
   // initializer.  `isVar` indicates whether this should be considered mutable.
-  auto createVarDecl = [&](OpBuilder &builder, bool isVar,
-                           bool isSynth) -> VarLetDeclOp {
+  auto createVarDecl = [&](OpBuilder &builder, bool isVar, bool isSynth,
+                           bool anonymous) -> VarLetDeclOp {
     auto contextualType = dest.getIfLValueInitializerType();
     assert(contextualType && "must have contextual type");
     return emitter.emitVarLetDecl(spelling, contextualType,
-                                  getLocation(emitter), isVar, isSynth);
+                                  getLocation(emitter), isVar, isSynth,
+                                  anonymous);
   };
 
   // If that lookup failed, but we can synthesize a variable declaration in this
@@ -478,7 +479,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         emitter.varDeclCursor->getInsertionBlock(),
         std::next(emitter.varDeclCursor->getInsertionPoint()));
     VarLetDeclOp varDecl = // Marked isSynth to disable warnings.
-        createVarDecl(varDeclBuilder, /*isVar=*/true, /*isSynth=*/true);
+        createVarDecl(varDeclBuilder, /*isVar=*/true, /*isSynth=*/true,
+                      /*anonymous=*/false);
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.

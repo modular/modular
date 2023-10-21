@@ -220,7 +220,7 @@ def let_decls() -> None:
 # CHECK-LABEL:  lit.func @"var_decls()
 def var_decls() -> None:
     # Implicit declaration is mutable.
-    # CHECK: %x = lit.varlet.decl "x" var
+    # CHECK: %x = lit.varlet.decl "x" var synth
     x = Int(123).value
     # CHECK: %y = lit.varlet.decl "y" var
     var y: Int
@@ -634,7 +634,7 @@ fn ownedConventionReg(
     borrowed b: RPStructWithInit,
     borrowed triv: RPStructWithInitTrivial,
 ):
-    # CHECK: %a_0 = lit.varlet.decl "a" var
+    # CHECK: %a_0 = lit.varlet.decl "a" var synth
     # CHECK: lit.ref.store %a, %a_0
 
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]
@@ -717,7 +717,7 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1): pass
 
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
-    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !MemoryType,
+    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth anon : !lit.ref<mut !MemoryType,
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}value = 1
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
     # CHECK: %1 = lit.ref.to_pointer %anonymous2A
@@ -739,14 +739,14 @@ fn byref_default_mem_only(inout y: MemoryType = MemoryType(1)): pass
 
 # CHECK-LABEL: lit.func @"test_byref_default()"
 fn test_byref_default():
-    # CHECK-DAG: %[[DEF_ARG_0:.*]] = lit.varlet.decl "__default_arg_0__" var synth : !lit.ref<mut !Int,
+    # CHECK-DAG: %[[DEF_ARG_0:.*]] = lit.varlet.decl "__default_arg_0__" var synth anon : !lit.ref<mut !Int,
     # CHECK-DAG: %[[DEF_VAL_0:.*]] = kgen.param.constant: !Int
     # CHECK: lit.ref.store %[[DEF_VAL_0]], %[[DEF_ARG_0]]
     # CHECK: %[[ARG0:.*]] = lit.ref.to_pointer %[[DEF_ARG_0]]
     # CHECK: kgen.call @{{.*}}::@"byref_default({{.*}}::Int&)"(%[[ARG0]])
     byref_default()
 
-    # CHECK-DAG: %[[DEF_ARG_1:.*]] = lit.varlet.decl "__default_arg_0__" var synth : !lit.ref<mut !MemoryType,
+    # CHECK-DAG: %[[DEF_ARG_1:.*]] = lit.varlet.decl "__default_arg_0__" var synth anon : !lit.ref<mut !MemoryType,
     # CHECK-DAG: %[[DEF_VAL_1:.*]] = kgen.param.materialize: !MemoryType
     # CHECK: lit.ref.store %[[DEF_VAL_1]], %[[DEF_ARG_1]] : <mut !MemoryType, *"`__default_arg_0__1">
     # CHECK: %[[ARG1:.*]] = lit.ref.to_pointer %[[DEF_ARG_1]] : <mut !MemoryType, *"`__default_arg_0__1">

@@ -1941,17 +1941,17 @@ void GlobalDLValue::emitStore(ASTExprAnd<CValue> value,
 // Var/let emission helpers.
 
 VarLetDeclOp ExprEmitter::emitVarLetDecl(const Twine &name, Type type,
-                                         Location loc, bool isVar,
-                                         bool isSynth) {
+                                         Location loc, bool isVar, bool isSynth,
+                                         bool anonymous) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name);
   return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       isVar, isSynth);
+                                       isVar, isSynth, anonymous);
 }
 
 VarLetDeclOp ExprEmitter::emitVarLetDecl(StringAttr name, Type type,
-                                         Location loc, bool isVar,
-                                         bool isSynth) {
+                                         Location loc, bool isVar, bool isSynth,
+                                         bool anonymous) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name.strref());
   return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       isVar, isSynth);
+                                       isVar, isSynth, anonymous);
 }

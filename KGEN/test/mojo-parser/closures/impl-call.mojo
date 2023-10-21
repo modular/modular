@@ -17,7 +17,7 @@ struct MemType:
 # CHECK-NEXT: %[[V0REF:.*]] = builtin.unrealized_conversion_cast %[[V0]]
 # CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %[[SELF]][field1] : <!Int>
 # CHECK-NEXT: %[[V1REF:.*]] = builtin.unrealized_conversion_cast %[[V1]]
-# CHECK-NEXT: %q_0 = lit.varlet.decl "q" var synth :
+# CHECK-NEXT: %q_0 = lit.varlet.decl "q" var synth
 # CHECK-NEXT: lit.ref.store %q, %q_0
 # CHECK-NEXT: %[[V2:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V3:.*]] = lit.ref.load %[[V0REF]]
