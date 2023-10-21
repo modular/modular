@@ -101,6 +101,25 @@ kgen.generator @call_it() {
 
 // -----
 
+// expected-note @below {{failed to interpret function @int_literal_convert}}
+kgen.generator @int_literal_convert() -> si64 {
+
+  %0 = kgen.param.constant: !kgen.int_literal = <36893488147419103232>
+  // expected-note @below {{failed to interpret operation kgen.int_literal.convert(#kgen.int_literal<36893488147419103232> : !kgen.int_literal)}}
+  // expected-note @below {{integer value 36893488147419103232 requires 67 bits to store, but the destination bit width is only 64 bits wide}}
+  %1 = kgen.int_literal.convert %0 : to si64
+  kgen.return %1 : si64
+}
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator @call_convert() {
+  // expected-note @below {{failed to evaluate 'apply'}}
+  kgen.param.constant: si64 = <apply(:() -> si64 @int_literal_convert)>
+  kgen.return
+}
+
+// -----
+
 module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
 
 // expected-note @below {{failed to interpret function @clobber_pointer}}

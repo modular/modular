@@ -1282,31 +1282,59 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
 // IntLiteralCastOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult IntLiteralCastOp::fold(FoldAdaptor adaptor) {
-  auto in = dyn_cast_if_present<IntLiteralAttr>(adaptor.getInput());
-  if (!in)
-    return {};
-  IPInt invalIP = in.getValue();
+static ErrorTreeOrSuccess intLiteralConvertOpHelper(IPInt invalIP,
+                                                    mlir::Type outType,
+                                                    IntegerAttr &attrResult,
+                                                    Location loc) {
   APInt invalAP = invalIP.getAPInt();
   unsigned outWidth = 64;
   bool isUnsigned = false;
   APInt result;
-  if (!getType().isIndex()) {
-    outWidth = getType().getIntOrFloatBitWidth();
-    if (getType().isUnsignedInteger())
+  if (!outType.isIndex()) {
+    outWidth = outType.getIntOrFloatBitWidth();
+    if (outType.isUnsignedInteger())
       isUnsigned = true;
   }
-  // TODO - this should fail if the bitwidth is greater, but our existing
-  // parser just truncates, and we rely on this to represent u64_max as a
-  // literal.  We need to instead have a cast from IntLiteral to SIMD types to
-  // not go through int, then we should detect this issue and raise some kind
-  // of error.
-  // if (inval.getBitWidth() > outWidth) return {};
+  if (invalAP.getBitWidth() > outWidth) {
+    std::string msg;
+    llvm::raw_string_ostream msgStream(msg);
+    msgStream << "integer value " << invalIP << " requires "
+              << invalAP.getBitWidth()
+              << " bits to store, but the destination bit width is only "
+              << outWidth << " bits wide";
+    return ErrorTree(loc, Error(msgStream.str()));
+  }
   if (isUnsigned)
     result = invalAP.zextOrTrunc(outWidth);
   else
     result = invalAP.sextOrTrunc(outWidth);
-  return IntegerAttr::get(getType(), result);
+  attrResult = IntegerAttr::get(outType, result);
+  return success();
+}
+
+ErrorTreeOrSuccess IntLiteralConvertOp::interpret(ArrayRef<Attribute> operands,
+                                                  InterpreterState &state) {
+  assert(!operands.empty() && "IntLiteralConvertOp must have an operand");
+  auto inval = ::dyn_cast<IntLiteralAttr>(operands[0]);
+  IntegerAttr attrResult;
+  ErrorTreeOrSuccess errOrSuccess = intLiteralConvertOpHelper(
+      inval.getValue(), getType(), attrResult, getLoc());
+  if (errOrSuccess.isError())
+    return errOrSuccess;
+  state.mapResults(attrResult);
+  return success();
+}
+
+OpFoldResult IntLiteralConvertOp::fold(FoldAdaptor adaptor) {
+  auto in = dyn_cast_if_present<IntLiteralAttr>(adaptor.getInput());
+  if (!in)
+    return {};
+  IntegerAttr attrResult;
+  ErrorTreeOrSuccess errOrSuccess =
+      intLiteralConvertOpHelper(in.getValue(), getType(), attrResult, getLoc());
+  if (errOrSuccess.isError())
+    return {};
+  return attrResult;
 }
 
 //===----------------------------------------------------------------------===//
