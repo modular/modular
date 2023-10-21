@@ -58,11 +58,11 @@ fn test_case[
     updates_vals: VariadicList[SIMD[type, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
 ):
-    let data = Tensor[type](input_shape)
+    var data = Tensor[type](input_shape)
     linear_fill(data, data_vals)
-    let indices = Tensor[DType.int32](indices_shape)
+    var indices = Tensor[DType.int32](indices_shape)
     linear_fill(indices, indices_vals)
-    let updates = Tensor[type](indices_shape)
+    var updates = Tensor[type](indices_shape)
     linear_fill(updates, updates_vals)
     let output = Tensor[type](input_shape)
 
@@ -82,7 +82,7 @@ fn test_case[
     _ = indices
     _ = updates
 
-    let output_ref = Tensor[type](input_shape)
+    var output_ref = Tensor[type](input_shape)
     linear_fill(output_ref, output_ref_vals)
 
     for i in range(output.num_elements()):

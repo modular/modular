@@ -69,7 +69,7 @@ fn main():
     fn test_upsample_sizes_nearest_1():
         print("== test_upsample_sizes_nearest_1")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 2, 2)
+        var input = Tensor[type](1, 1, 2, 2)
         linear_fill[type](input, VariadicList[SIMD[type, 1]](1, 2, 3, 4))
         let output = Tensor[type](1, 1, 4, 6)
         test_case_nearest[
@@ -83,7 +83,7 @@ fn main():
     fn test_downsample_sizes_nearest():
         print("== test_downsample_sizes_nearest")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 2, 4)
+        var input = Tensor[type](1, 1, 2, 4)
         linear_fill[type](
             input, VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8)
         )
@@ -100,7 +100,7 @@ fn main():
     fn test_upsample_sizes_nearest_2():
         print("== test_upsample_sizes_nearest_2")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 2, 2)
+        var input = Tensor[type](1, 1, 2, 2)
         linear_fill[type](input, VariadicList[SIMD[type, 1]](1, 2, 3, 4))
         let output = Tensor[type](1, 1, 7, 8)
 
@@ -115,7 +115,7 @@ fn main():
     fn test_upsample_sizes_nearest_floor_align_corners():
         print("== test_upsample_sizes_nearest_floor_align_corners")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 4, 4)
+        var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](
@@ -135,7 +135,7 @@ fn main():
     fn test_upsample_sizes_nearest_round_half_up_asymmetric():
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 4, 4)
+        var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](
@@ -155,7 +155,7 @@ fn main():
     fn test_upsample_sizes_nearest_ceil_half_pixel():
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 4, 4)
+        var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](
@@ -175,13 +175,13 @@ fn main():
     fn test_upsample_sizes_linear():
         print("== test_upsample_sizes_linear")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 2, 2)
+        var input = Tensor[type](1, 1, 2, 2)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](1, 2, 3, 4),
         )
         let output = Tensor[type](1, 1, 4, 4)
-        let reference = Tensor[type](1, 1, 4, 4)
+        var reference = Tensor[type](1, 1, 4, 4)
 
         # TORCH REFERENCE:
         # x = np.array([[[[1, 2], [3, 4]]]])
@@ -222,13 +222,13 @@ fn main():
     fn test_upsample_sizes_linear_align_corners():
         print("== test_upsample_sizes_linear_align_corners")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 2, 2)
+        var input = Tensor[type](1, 1, 2, 2)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](1, 2, 3, 4),
         )
         let output = Tensor[type](1, 1, 4, 4)
-        let reference = Tensor[type](1, 1, 4, 4)
+        var reference = Tensor[type](1, 1, 4, 4)
 
         # TORCH REFERENCE:
         # x = np.array([[[[1, 2], [3, 4]]]])
@@ -269,13 +269,13 @@ fn main():
     fn test_downsample_sizes_linear():
         print("== test_downsample_sizes_linear")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 2, 4)
+        var input = Tensor[type](1, 1, 2, 4)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8),
         )
         let output = Tensor[type](1, 1, 1, 2)
-        let reference = Tensor[type](1, 1, 1, 2)
+        var reference = Tensor[type](1, 1, 1, 2)
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (1, 2), mode="bilinear")
@@ -296,13 +296,13 @@ fn main():
     fn test_downsample_sizes_linear_align_corners():
         print("== test_downsample_sizes_linear_align_corners")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 2, 4)
+        var input = Tensor[type](1, 1, 2, 4)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](1, 2, 3, 4, 5, 6, 7, 8),
         )
         let output = Tensor[type](1, 1, 1, 2)
-        let reference = Tensor[type](1, 1, 1, 2)
+        var reference = Tensor[type](1, 1, 1, 2)
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(
@@ -323,7 +323,7 @@ fn main():
     fn test_upsample_sizes_trilinear():
         print("== test_upsample_sizes_trilinear")
         alias type = DType.float32
-        let input = Tensor[type](1, 4, 2, 2)
+        var input = Tensor[type](1, 4, 2, 2)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](
@@ -331,7 +331,7 @@ fn main():
             ),
         )
         let output = Tensor[type](1, 6, 4, 4)
-        let reference = Tensor[type](1, 6, 4, 4)
+        var reference = Tensor[type](1, 6, 4, 4)
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 2, 2))
         # y = torch.nn.functional.interpolate(
@@ -370,7 +370,7 @@ fn main():
     fn test_downsample_sizes_linear_antialias():
         print("== test_downsample_sizes_linear_antialias")
         alias type = DType.float32
-        let input = Tensor[type](1, 1, 4, 4)
+        var input = Tensor[type](1, 1, 4, 4)
         linear_fill[type](
             input,
             VariadicList[SIMD[type, 1]](
@@ -378,7 +378,7 @@ fn main():
             ),
         )
         let output = Tensor[type](1, 1, 2, 2)
-        let reference = Tensor[type](1, 1, 2, 2)
+        var reference = Tensor[type](1, 1, 2, 2)
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 4))
         # y = torch.nn.functional.interpolate(
