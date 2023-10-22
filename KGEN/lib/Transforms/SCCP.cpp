@@ -288,7 +288,8 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
                                                    ConstantStateType &state,
                                                    bool &shouldContinue) {
   // TODO: Add support for other ControlFlowNode, e.g. kgen.try, etc.
-  // TODO: This function should work more generally for ControlFlowInterfaces.
+  // TODO: issue #23376, this function should work more generally for
+  // ControlFlowInterfaces.
   if (isa<IfOp, SwitchOp>(node.getOperation())) {
     // TODO: extend this logic to SwitchOp.
     SmallVector<Attribute> constantOperands;
@@ -401,7 +402,20 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
     return success();
   }
 
-  // Otherwise, mark all results as Unknown.
+  // Otherwise, process subregions if any and mark all results as Unknown.
+  if (node->getNumRegions() > 0) {
+    ConstantStateType entryState = cloneState(state);
+    for (Region &region : node->getRegions()) {
+      ConstantStateType nestedState = cloneState(entryState);
+      bool shouldContinue = true;
+      bool hasEarlyExits = false;
+      if (failed(processRegion(region, nestedState, hasEarlyExits,
+                               shouldContinue)))
+        return failure();
+      mergeStates(state, nestedState);
+    }
+  }
+
   for (Value result : node.getOperation()->getResults())
     setToEntryState(getLatticeElement(result, state));
 
