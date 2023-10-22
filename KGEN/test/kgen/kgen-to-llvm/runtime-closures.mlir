@@ -18,8 +18,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   llvm.func internal @main_closure_arg() {
     // CHECK: [[ARG:%.*]] = builtin.unrealized_conversion_cast %idx98 : index to i64
     // CHECK: [[UNDEF:%.*]] = llvm.mlir.undef : !llvm.struct<(ptr, ptr)>
-    // CHECK: [[ADDR:%.*]] = llvm.mlir.addressof @closure_wrapper_fn : !llvm.ptr
-    // CHECK: [[OPAQUE:%.*]] = llvm.bitcast [[ADDR]] : !llvm.ptr to !llvm.ptr
+    // CHECK: [[ADDR:%.*]] = llvm.mlir.addressof @closure_wrapper_fn : !llvm.ptr<func<i64 (ptr)>>
+    // CHECK: [[OPAQUE:%.*]] = llvm.bitcast [[ADDR]] : !llvm.ptr<func<i64 (ptr)>> to !llvm.ptr
     // CHECK: [[S0:%.*]] = llvm.insertvalue [[OPAQUE]], [[UNDEF]][0] : !llvm.struct<(ptr, ptr)>
     // CHECK: [[C1:%.*]] = llvm.mlir.constant(1 : i8) : i8
     // CHECK: [[STATE:%.*]] = llvm.alloca [[C1]] x !llvm.struct<(i64)> : (i8) -> !llvm.ptr<struct<(i64)>>

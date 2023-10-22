@@ -206,12 +206,13 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   // Now write the size of the bytecode into the allocate header space. Be
   // mindful of endianness here.
   size = buf->tell() - sizeof(size);
-  size = llvm::support::endian::byte_swap(size, llvm::endianness::little);
+  size =
+      llvm::support::endian::byte_swap(size, llvm::support::endianness::little);
   buf->pwrite((char *)&size, sizeof(size), /*Offset=*/0);
 
   // Write the number of captures.
   uint64_t numCaptures = llvm::support::endian::byte_swap(
-      captures.size(), llvm::endianness::little);
+      captures.size(), llvm::support::endianness::little);
   buf->write((char *)&numCaptures, sizeof(uint64_t));
   return success();
 }

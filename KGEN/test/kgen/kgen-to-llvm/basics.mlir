@@ -78,8 +78,8 @@ kgen.func @unknown() -> index {
 kgen.func @constant_str() -> !kgen.string {
   // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64
   // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
-  // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @[[STATIC_STRING:.*]] : !llvm.ptr
-  // CHECK: %[[GEP:.*]] = llvm.bitcast %[[GLOBAL_STR]] : !llvm.ptr to !llvm.ptr<i8>
+  // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @[[STATIC_STRING:.*]] : !llvm.ptr<array<3 x i8>>
+  // CHECK: %[[GEP:.*]] = llvm.bitcast %[[GLOBAL_STR]] : !llvm.ptr<array<3 x i8>> to !llvm.ptr<i8>
   // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[GEP]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
   // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr<i8>, i64)>
   %0 = kgen.param.constant: string = <"AB">
@@ -88,7 +88,7 @@ kgen.func @constant_str() -> !kgen.string {
 }
 
 kgen.func @constant_str_2() -> !kgen.string {
-  // CHECK: llvm.mlir.addressof @[[STATIC_STRING]] : !llvm.ptr
+  // CHECK: llvm.mlir.addressof @[[STATIC_STRING]] : !llvm.ptr<array<3 x i8>>
   %0 = kgen.param.constant: string = <"AB">
   kgen.return %0 : !kgen.string
 }
