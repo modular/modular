@@ -367,3 +367,20 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
    // CHECK: kgen.return %idx6, %idx1
    kgen.return %2, %6 : index, index
  }
+
+// CHECK-LABEL: @none_hlcf_controlflownode_donot_crash
+kgen.generator @none_hlcf_controlflownode_donot_crash() -> index {
+  // COM: Conservatively mark all results as Unknown, but process the subregions.
+  kgen.param.declare condition: i1 = <0>
+  %0 = kgen.param.if <condition> -> index {
+    %i0 = index.constant 0
+    kgen.param.yield %i0: index
+  } else {
+    %i1 = index.constant 1
+    kgen.param.yield %i1: index
+  }
+
+  // CHECK: kgen.return [[V0:%.*]]
+  kgen.return %0: index
+}
+
