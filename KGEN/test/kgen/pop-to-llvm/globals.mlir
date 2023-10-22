@@ -37,11 +37,11 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @global_constant
   kgen.func @global_constant() {
-    // CHECK: llvm.mlir.addressof @global_constant_0 : !llvm.ptr<i32>
+    // CHECK: llvm.mlir.addressof @global_constant_0
     %0 = pop.global_constant: ui32 = <5>
-    // CHECK: llvm.mlir.addressof @global_constant_0 : !llvm.ptr<i32>
+    // CHECK: llvm.mlir.addressof @global_constant_0
     %1 = pop.global_constant: ui32 = <5>
-    // CHECK: llvm.mlir.addressof @global_constant_1 : !llvm.ptr<vector<2xi32>>
+    // CHECK: llvm.mlir.addressof @global_constant_1
     %2 = pop.global_constant: simd<2, si32> = <<2, 5>>
     kgen.return
   }
@@ -49,8 +49,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK-LABEL: llvm.mlir.global internal @global_alloc_global_alloc() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
   // CHECK-LABEL: kgen.func @global_alloc
   kgen.func @global_alloc() -> !kgen.pointer<scalar<f32>, 3> {
-    // CHECK-NEXT: %0 = llvm.mlir.addressof @global_alloc_global_alloc : !llvm.ptr<3>
-    // CHECK-NEXT: %1 = llvm.bitcast %0 : !llvm.ptr<3> to !llvm.ptr<f32, 3>
+    // CHECK-NEXT: %0 = llvm.mlir.addressof @global_alloc_global_alloc : !llvm.ptr<array<2 x f32>, 3>
+    // CHECK-NEXT: %1 = llvm.bitcast %0 : !llvm.ptr<array<2 x f32>, 3> to !llvm.ptr<f32, 3>
     %0 = pop.global_alloc 2 x !pop.scalar<f32> address_space 3 align 4
     kgen.return %0 : !kgen.pointer<scalar<f32>, 3>
   }

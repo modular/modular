@@ -34,7 +34,7 @@ kgen.func @stack_shared() {
 
 // CHECK-LABEL: llvm.func internal @global
 kgen.func @global() -> !kgen.pointer<i8> {
-  // CHECK: %[[BASE:.*]] = llvm.mlir.addressof @mem_global : !llvm.ptr
+  // CHECK: %[[BASE:.*]] = llvm.mlir.addressof @mem_global : !llvm.ptr<array<4 x i8>>
   // CHECK: %[[BASE_OPAQUE:.*]] = llvm.bitcast %[[BASE]]
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE_OPAQUE]][2]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
