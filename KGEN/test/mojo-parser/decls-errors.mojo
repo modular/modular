@@ -144,9 +144,6 @@ fn __add__(): pass
 # expected-error @+1 {{special function must be a method}}
 fn __sub__(self: Int, a: Int): pass
 
-# Test differences between fn and def.
-fn noArgType(a: Int, b): pass # expected-error {{'fn' argument type must be specified}}
-
 fn mutArgAndImplicit(a: Int):
   a = a  # expected-error {{expression must be mutable in assignment}}
   c = a  # expected-error {{use of unknown declaration 'c', 'fn' declarations require explicit variable declarations}}
@@ -230,8 +227,27 @@ fn issue14191() -> Int:
 # Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
 
-# expected-error @+1 {{non-default argument follows default argument}}
-fn nonDefaultArgumentFollowsDefaultArgument(a: Int = 0, b: Int): pass
+# COM: Issue https://github.com/modularml/mojo/issues/1091
+fn missing_arg_type_or_default(
+    a: Int = 9,
+    # expected-error @+2 {{non-default argument follows default argument}}
+    # expected-error @+1 {{'fn' argument type must be specified}}
+    b,
+    c: Int,  # expected-error {{non-default argument follows default argument}}
+    d: Int = 0,
+    # expected-error @+2 {{non-default argument follows default argument}}
+    # expected-error @+1 {{'fn' argument type must be specified}}
+    e,
+):
+    pass
+
+def missing_default(
+    a=9,
+    b,  # expected-error {{non-default argument follows default argument}}
+    c=0,
+    d,  # expected-error {{non-default argument follows default argument}}
+):
+    pass
 
 # expected-error @+1 {{use of unknown declaration 'unknown'}}
 fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
