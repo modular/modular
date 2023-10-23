@@ -192,7 +192,8 @@ LogicalResult FnMetadataAttr::verifySignature(
         }
       }
 
-      if (value.getType() != expected) {
+      if (value.getType() != expected &&
+          !llvm::isa<TypeCheckErrorType>(expected)) {
         return emitError() << kind << " #" << index << " has type " << expected
                            << " but default " << kind << " has type "
                            << value.getType();

@@ -1562,9 +1562,11 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
         return {};
       defaults.push_back(value);
     } else if (seenInitExpr) {
-      typeEmitter.emitError(arg.loc,
-                            "non-default argument follows default argument")
-          << arg.typeExpr->getRange();
+      InflightDiag diag = typeEmitter.emitError(
+          arg.loc, "non-default argument follows default argument");
+      // Depending on `reportError`, the type might also be missing.
+      if (arg.typeExpr)
+        diag << arg.typeExpr->getRange();
     }
 
     // Add the declaration for the argument, now that is has been resolved. Use
