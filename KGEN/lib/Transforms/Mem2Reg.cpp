@@ -58,6 +58,7 @@ static bool canPromote(StackAllocationOp alloc) {
 /// Given a type in a DILocalVariableAttr, unwrap one level of
 /// KGEN::PointerType or DIPointerType. This does not perform any other
 /// replacements.
+/// TODO(#23914): Track this optimization with DWARF expressions.
 static DebugInfo::DILocalVariableAttr
 unwrapPointer(DebugInfo::DILocalVariableAttr diVarAttr) {
   DebugInfo::DIType type = diVarAttr.getType();
