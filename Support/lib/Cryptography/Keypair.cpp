@@ -50,8 +50,8 @@ static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
   return 0;
 }
 
-static constexpr llvm::StringLiteral privKeyFilename = "priv.der";
-static constexpr llvm::StringLiteral pubKeyFilename = "pub.der";
+static constexpr llvm::StringLiteral privKeyFilename = "client_priv.der";
+static constexpr llvm::StringLiteral pubKeyFilename = "client_pub.der";
 
 ErrorOr<Keypair> Keypair::generate(std::optional<std::filesystem::path> dir) {
   // Set up the keypair for generation.
