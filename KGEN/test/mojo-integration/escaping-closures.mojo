@@ -40,6 +40,15 @@ fn legal_type_ref[a: Int](c: Int) -> fn (x: Int, y: Int) escaping -> Int:
     return p_capture
 
 
+fn parameter_capture[a: Int](c: Int) -> fn (x: Int) escaping -> Int:
+    alias X = Foo[a](1)
+
+    fn p_capture(x: Int) escaping -> Int:
+        return X.get() + c
+
+    return p_capture
+
+
 fn makes_escaping_closure_position_only(
     m: MemType,
 ) -> fn (n: MemType, /) escaping -> MemType:
@@ -61,3 +70,6 @@ fn main():
 
     # CHECK: 53
     print(legal_type_ref[45](1)(3, 4))
+
+    # CHECK: 49
+    print(parameter_capture[43](5)(43))

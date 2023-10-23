@@ -12,14 +12,6 @@ from memory.unsafe import Pointer
 # Escaping Closures
 ##===----------------------------------------------------------------------===##
 
-fn local_parameter_capture[a: Int](c: Int) -> fn (x:Bool) escaping -> Int:
-    alias X = a
-    fn p_capture(x:Bool) escaping -> Int:
-        # expected-error @below {{TODO: Support result parameters, local capture, and escaping closures.}}
-        return X + c
-    # expected-error @below {{cannot implicitly convert 'fn(x = Bool) -> Int' value to '_CW_$decls-errors_fn' in return value}}
-    return p_capture
-
 @value
 @register_passable
 struct Foo[a : Int]:
@@ -41,6 +33,13 @@ fn has_result_param[a: Int->b: Int](dummyCapture: Int) -> fn () escaping -> Int:
 
     param_return[a]
     return foo
+
+
+fn illegal_alias_ref[a : Int](c:Int):
+  alias Y = Foo[a](2)
+  fn p_capture(x: Int, y:Foo[Y.get()]) escaping -> Int: # expected-error {{declared parameters in escaping closures are not supported yet}}
+     return Foo[a](x+c).get()
+  return p_capture
 
 ##===----------------------------------------------------------------------===##
 # Closures

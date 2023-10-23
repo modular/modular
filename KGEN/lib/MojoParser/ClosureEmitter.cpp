@@ -428,10 +428,16 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     return {};
   }
 
-  for (auto [capturedParamName, capturedParamType] : capturedParams) {
-    closureImplInputParams.push_back(capturedParamType);
-    closureImplInputParamNames.push_back(capturedParamName);
-    closureImplInputParamPassingKinds.push_back(PassingKind::PosOnly);
+  auto [line, col] = shared.getSourceMgr().getLineAndColumn(location);
+  SmallVector<ParameterCapture> parameterExpressions;
+  for (auto [capturedParamName, capturedParam] : capturedParams) {
+    if (!capturedParam.isInputOrResultParameter()) {
+      parameterExpressions.push_back(capturedParam);
+    } else {
+      closureImplInputParams.push_back(capturedParam.getType());
+      closureImplInputParamNames.push_back(capturedParamName);
+      closureImplInputParamPassingKinds.push_back(PassingKind::PosOnly);
+    }
   }
 
   auto metadata = FnMetadataAttr::get(
@@ -465,8 +471,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
         "Add parameters of nested function to parent function and capture "
         "them. Parameters declared in nested functions are not supported yet");
 
-  for (auto [index, capturedParam] : llvm::enumerate(capturedParams))
-    parentRefToClosureImplParamIndex[capturedParam.first] = index;
+  for (auto [i, capturedParam] : llvm::enumerate(capturedParams))
+    if (capturedParam.second.isInputOrResultParameter())
+      parentRefToClosureImplParamIndex[capturedParam.first] = i++;
 
   StructDeclOp declOp =
       createStruct(fileModuleOp, name, fieldTypes, fileModuleOp.getLoc(),
@@ -616,16 +623,35 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     });
     replacer.recursivelyReplaceElementsIn(callFunc, true, true);
   }
+
+  // If the closure captured an alias, clone the alias operation into the body
+  // of the closure.
+  builder =
+      ImplicitLocOpBuilder::atBlockBegin(callFunc.getLoc(), callFunc.getBody());
+  SmallDenseMap<StringAttr, StringAttr> oldParamExpToNewParamExpName;
+  for (ParameterCapture paramExp : parameterExpressions) {
+    if (auto alias = dyn_cast<AliasDeclOp>(paramExp.getDefiningOp())) {
+      StringAttr newName = builder.getStringAttr(
+          Twine(line) + alias.getParamDecl().getName().strref());
+      auto paramDecl = ParamDeclAttr::get(newName, alias.getType());
+      builder.create<AliasDeclOp>(paramDecl, alias.getValue());
+      StringAttr oldName = alias.getParamDecl().getName();
+      oldParamExpToNewParamExpName[oldName] = newName;
+    }
+  }
+
   // Replace parent parameter references with references to the closure impl's
   // parameters.
   mlir::AttrTypeReplacer capturedParamReplacer;
-  auto replaceParamDeclRef = [&parentRefToClosureImplParamIndex,
-                              &declOp](ParamDeclRefAttr paramRef) {
-    if (parentRefToClosureImplParamIndex.contains(paramRef.getName())) {
+  auto replaceParamDeclRef = [&](ParamDeclRefAttr paramRef) {
+    StringAttr paramName = paramRef.getName();
+    if (parentRefToClosureImplParamIndex.contains(paramName)) {
       return ParamDeclRefAttr::get(
-          declOp.getInputParams()
-              [parentRefToClosureImplParamIndex[paramRef.getName()]]);
+          declOp.getInputParams()[parentRefToClosureImplParamIndex[paramName]]);
     }
+    if (auto it = oldParamExpToNewParamExpName.find(paramName);
+        it != oldParamExpToNewParamExpName.end())
+      return ParamDeclRefAttr::get(it->getSecond(), paramRef.getType());
     return paramRef;
   };
   capturedParamReplacer.addReplacement(replaceParamDeclRef);

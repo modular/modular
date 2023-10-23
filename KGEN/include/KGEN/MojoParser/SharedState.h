@@ -66,25 +66,46 @@ private:
   bool isMove;
 };
 
+/// ParameterCapture represents a nested function value whose declaration is in
+/// the parent function.
+class ParameterCapture {
+public:
+  ParameterCapture(StringAttr name, Type type, Operation *definingOp = nullptr)
+      : name(name), type(type), definingOp(definingOp) {}
+  StringAttr getName() const { return name; }
+  Type getType() const { return type; }
+  Operation *getDefiningOp() const { return definingOp; }
+  bool isInputOrResultParameter() const { return definingOp == nullptr; };
+
+private:
+  /// The name of the captured parameter.
+  StringAttr name;
+  /// The type of the captured parameter.
+  Type type;
+  /// DefiningOp is the operation that declares and defines the parameter. It is
+  /// null if the parameter is defined in an Input or Result parameter list of a
+  /// struct or function.
+  Operation *definingOp;
+};
+
 /// The CaptureTraversableMap enables the owner of the map to return a map
 /// without copying the data. The interface allows callers to traverse entries
 /// of a map without mutating the map and to search by hash rather than
 /// traversing a list.
 struct CaptureTraversableMap {
-  CaptureTraversableMap(llvm::MapVector<StringAttr, Type> &capturedParams)
+  CaptureTraversableMap(
+      llvm::MapVector<StringAttr, ParameterCapture> &capturedParams)
       : capturedParams(capturedParams) {}
-  llvm::MapVector<StringAttr, Type>::const_iterator find(StringAttr key) const {
-    return capturedParams.find(key);
-  }
-  llvm::MapVector<StringAttr, Type>::const_iterator begin() const {
+  auto find(StringAttr key) const { return capturedParams.find(key); }
+  llvm::MapVector<StringAttr, ParameterCapture>::const_iterator begin() const {
     return capturedParams.begin();
   }
-  llvm::MapVector<StringAttr, Type>::const_iterator end() const {
+  llvm::MapVector<StringAttr, ParameterCapture>::const_iterator end() const {
     return capturedParams.end();
   }
 
 private:
-  llvm::MapVector<StringAttr, Type> &capturedParams;
+  llvm::MapVector<StringAttr, ParameterCapture> &capturedParams;
 };
 
 /// This enum indicates how much parsing and type checking has been done on
@@ -411,8 +432,7 @@ public:
   /// Given a nested function, a captured parameter, and the corresponding
   /// parameter ASTDecl, store the capture associated with the nested function.
   void addCapturedParameterToScope(ASTDecl &scope, ASTDecl *captureDecl,
-                                   StringAttr parameterName,
-                                   Type parameterType);
+                                   ParameterCapture parameterCapture);
 
   /// Given a nested function, return a list of captured parameters in the form
   /// of name-type pairs.
