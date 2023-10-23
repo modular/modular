@@ -1900,6 +1900,8 @@ fn batched_matmul[
     return _batched_matmul[
         rank,
         type,
+        type,
+        type,
         adj_a,
         adj_b,
         lambdas_have_fusion,
