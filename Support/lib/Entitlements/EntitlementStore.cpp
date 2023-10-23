@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Entitlements/EntitlementStore.h"
+#include "Support/Buffer.h"
 #include "Support/Configuration.h"
 #include "Support/Cryptography/Keypair.h"
 #include "Support/Random.h"
@@ -12,7 +13,6 @@
 #include "mbedtls/x509_crt.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
 #ifdef __APPLE__
@@ -245,12 +245,10 @@ ErrorOr<EntitlementStore>
 EntitlementStore::open(const std::filesystem::path &clientCertPath,
                        const std::filesystem::path &clientPrivKeyPath,
                        mbedtls_x509_crt *caCerts) {
-  auto mbufOr =
-      llvm::MemoryBuffer::getFile(clientCertPath.string(), /*IsText=*/false,
-                                  /*RequiresNullTerminator=*/false);
-  if (!mbufOr)
-    return Error(mbufOr.getError().message());
-  std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+  auto mbufOr = Buffer::getFile(clientCertPath.string());
+  if (mbufOr.isError())
+    return mbufOr.takeError();
+  BufferRef mbuf = mbufOr.takeValue();
 
   // Init the certificate chain.
   mbedtls_x509_crt cert;
