@@ -17,6 +17,7 @@ from math import any_true as _any_true
 from math import div_ceil, iota
 from math import min as _min
 from math import none_true as _none_true
+from math import align_down
 from math.bit import cttz
 from math.limit import max_or_inf, min_or_neginf
 from sys.info import is_little_endian, simdwidthof, sizeof
@@ -620,10 +621,10 @@ fn _reduce_along_inner_dimension[
         # Manually hoist this out of the loops anyway. Not clear if we want to
         # hoist it all the way out of the async body.
 
-        let unrolled_simd_compatible_size = (
-            reduce_dim_size // unrolled_simd_width
-        ) * unrolled_simd_width
-        let simd_compatible_size = (reduce_dim_size // simd_width) * simd_width
+        let unrolled_simd_compatible_size = align_down(
+            reduce_dim_size, unrolled_simd_width
+        )
+        let simd_compatible_size = align_down(reduce_dim_size, simd_width)
 
         # Iterate over the non reduced dimensions.
         for flat_index in range(start_row, end_row):
@@ -635,37 +636,39 @@ fn _reduce_along_inner_dimension[
             var acc_unrolled_simd = SIMD[type, unrolled_simd_width].splat(
                 init_value
             )
-            for idx in range(
-                0, unrolled_simd_compatible_size, unrolled_simd_width
-            ):
-                indices[reduce_dim] = idx
-                let load_value = input_0_fn[type, unrolled_simd_width, rank](
-                    indices
-                )
-                acc_unrolled_simd = reduce_function[type, unrolled_simd_width](
-                    load_value, acc_unrolled_simd
-                )
 
+            @always_inline
+            @parameter
+            fn reduce_helper_fn[
+                width: Int
+            ](start: Int, finish: Int, init: SIMD[type, width]) -> SIMD[
+                type, width
+            ]:
+                var acc = init
+                for idx in range(start, finish, width):
+                    indices[reduce_dim] = idx
+                    let load_value = input_0_fn[type, width, rank](indices)
+                    acc = reduce_function[type, width](load_value, acc)
+                return acc
+
+            # Loop over unroll_factor*simd_width chunks.
+            acc_unrolled_simd = reduce_helper_fn(
+                0, unrolled_simd_compatible_size, acc_unrolled_simd
+            )
+
+            # Loop over remaining simd_width chunks.
             var acc_simd = acc_unrolled_simd.reduce[
                 reduce_function, simd_width
             ]()
-            for idx in range(
-                unrolled_simd_compatible_size, simd_compatible_size, simd_width
-            ):
-                indices[reduce_dim] = idx
-                let load_value = input_0_fn[type, simd_width, rank](indices)
-                acc_simd = reduce_function[type, simd_width](
-                    load_value, acc_simd
-                )
+            acc_simd = reduce_helper_fn(
+                unrolled_simd_compatible_size, simd_compatible_size, acc_simd
+            )
 
-            # Semi final reduction. SIMD -> scalar.
             var acc_scalar = acc_simd.reduce[reduce_function]()
-
-            # The simds might not cover all the elements so we still need to scalar reduce those too.
-            for i in range(simd_compatible_size, reduce_dim_size, 1):
-                indices[reduce_dim] = i
-                let load_value = input_0_fn[type, 1, rank](indices)
-                acc_scalar = reduce_function[type, 1](load_value, acc_scalar)
+            # Loop over remaining scalar values.
+            acc_scalar = reduce_helper_fn(
+                simd_compatible_size, reduce_dim_size, acc_scalar
+            )
 
             # Store the result back to the output.
             indices[reduce_dim] = 0
