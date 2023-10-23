@@ -140,12 +140,12 @@
       {
         "category": "Mojo",
         "command": "mojo.restart",
-        "title": "mojo: Restart the extension"
+        "title": "Restart the extension"
       },
       {
         "category": "Mojo",
         "command": "mojo.restart-suspended",
-        "title": "mojo: Restart the extension and launch the LSP server suspended (for debugging)"
+        "title": "Restart the extension and launch the LSP server suspended (for debugging)"
       },
       {
         "category": "Mojo",
