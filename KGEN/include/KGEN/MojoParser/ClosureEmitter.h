@@ -22,6 +22,14 @@ namespace M::KGEN::LIT {
 
 using ClosureHash = std::pair<SignatureType, StringAttr>;
 
+/// Top level types are the types of the Closure Wrapper function pointer
+/// fields.
+struct TopLevelTypes {
+  Type callFuncFieldType;
+  Type copyFuncFieldType;
+  Type delFuncFieldType;
+};
+
 /// A ClosureCache stores previously generated closures to prevent duplicate
 /// definitions from being generated.
 class ClosureCache {
@@ -88,6 +96,9 @@ private:
   /// type.
   Type makeClosureImplSelfType(StructDeclOp closureImpl,
                                SmallVector<ParamDeclAttr> paramValues);
+
+  /// Given a closure wrapper, collect the top level function types.
+  TopLevelTypes collectTopLevelFunctionTypes(StructDeclOp closureWrapper);
 };
 
 } // namespace M::KGEN::LIT

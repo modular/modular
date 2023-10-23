@@ -2431,28 +2431,27 @@ void DeclResolver::setLocationDebugScope(
       fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
   funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
 }
-// This function accepts a capture list and a signature and returns a self
-// contained signature by augmenting the original's  input parameter list for
-// each capture that appears in the original signature.
+
+// TODO: refactor the getSpecializedSignature method to support augmenting
+// parameter list when a capture is encountered in the signature. This function
+// accepts a capture list and a signature and returns a self contained signature
+// by augmenting the original's  input parameter list for each capture that
+// appears in the original signature.
 static LITSignatureType
 createSelfContainedSignature(SharedState &shared, LITSignatureType original,
                              CaptureTraversableMap capturedParams, SMLoc loc) {
   mlir::AttrTypeReplacer replacer;
   SmallDenseMap<StringAttr, ParamIndexRefAttr> newParameterReferences;
   unsigned inputParameterIndex = original.getNumInputParams();
-  SmallVector<Type, 16> newParamInputTypes;
-  SmallVector<StringAttr, 16> newParamInputNames;
-  SmallVector<PassingKind, 16> newParamPassingKinds;
-  SmallVector<StringAttr, 16> argNames;
-  SmallVector<PassingKind, 16> argPassingKind;
-  llvm::append_range(newParamInputTypes, original.getInputParamTypes());
-  if (auto fnMetadata =
-          dyn_cast_or_null<FnMetadataAttr>(original.getMetadata())) {
-    llvm::append_range(newParamInputNames, fnMetadata.getParamNames());
-    llvm::append_range(newParamPassingKinds, fnMetadata.getParamPassingKinds());
-    llvm::append_range(argNames, fnMetadata.getArgNames());
-    llvm::append_range(argPassingKind, fnMetadata.getArgPassingKinds());
-  }
+  SmallVector<Type> newParamInputTypes(
+      original.getInputParamTypes().getValue());
+  auto fnMetadata = cast<FnMetadataAttr>(original.getMetadata());
+  // The size 16 was an optimization for perf that was hand tuned.
+  SmallVector<StringAttr, 16> newParamInputNames(fnMetadata.getParamNames());
+  SmallVector<StringAttr, 16> argNames(fnMetadata.getArgNames());
+  SmallVector<PassingKind, 16> newParamPassingKinds(
+      fnMetadata.getParamPassingKinds());
+  SmallVector<PassingKind, 16> argPassingKind(fnMetadata.getArgPassingKinds());
 
   std::pair<unsigned, unsigned> lineCol =
       shared.getSourceMgr().getLineAndColumn(loc);
@@ -2490,8 +2489,8 @@ createSelfContainedSignature(SharedState &shared, LITSignatureType original,
     }
     return paramDeclRefAttr;
   });
-  LITSignatureType originalWithUpdatedParamRefs =
-      cast<SignatureType>(replacer.replace(original));
+  auto originalWithUpdatedParamRefs =
+      cast<LITSignatureType>(replacer.replace(original));
   return SignatureType::get(
       shared.getContext(),
       TypeArrayAttr::get(shared.getContext(), newParamInputTypes),
@@ -2502,7 +2501,8 @@ createSelfContainedSignature(SharedState &shared, LITSignatureType original,
       originalWithUpdatedParamRefs.getInputConventions(),
       originalWithUpdatedParamRefs.getFnEffects(),
       FnMetadataAttr::get(shared.getContext(), argNames, argPassingKind,
-                          newParamInputNames, newParamPassingKinds, {}, {}));
+                          newParamInputNames, newParamPassingKinds,
+                          /*defaultArguments=*/{}, /*defaultParameters=*/{}));
 }
 
 static Value emitClosureInstance(SignatureType closureSignature,
@@ -2586,10 +2586,10 @@ static Value emitClosureInstance(SignatureType closureSignature,
       if (!capturedParam.second.isInputOrResultParameter())
         continue;
       auto newParam = closureImpl.getInputParams()[capturedInputParamIndex++];
-      TypedAttr typedAttr = ParamDeclRefAttr::get(
-          capturedParam.first, capturedParam.second.getType());
-      bindingValues.push_back(
-          ParamBindAttr::get(newParam.getName(), typedAttr));
+      StringAttr captureName = capturedParam.second.getName();
+      Type captureType = capturedParam.second.getType();
+      bindingValues.push_back(ParamBindAttr::get(
+          newParam.getName(), ParamDeclRefAttr::get(captureName, captureType)));
     }
     closureImplType = DeclRefType::get(
         typeDecl.getSymbolRef(),
