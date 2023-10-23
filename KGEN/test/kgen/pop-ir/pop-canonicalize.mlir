@@ -992,3 +992,12 @@ kgen.func @offset_of_offset(%arg0: !kgen.pointer<index>) -> !kgen.pointer<index>
   // CHECK: return %0
   kgen.return %1 : !kgen.pointer<index>
 }
+
+// CHECK-LABEL: @large_int_memory_leak
+// COM: Ensure that memory is correctly freed from a SIMDAttr.
+kgen.func @large_int_memory_leak() -> !pop.scalar<si128> {
+  // CHECK: constant: scalar<si128> = <1234>
+  %0 = kgen.param.constant: si128 = <1234>
+  %1 = pop.cast_from_builtin %0 : si128 to !pop.scalar<si128>
+  kgen.return %1 : !pop.scalar<si128>
+}

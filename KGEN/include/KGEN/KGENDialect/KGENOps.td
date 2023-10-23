@@ -1282,7 +1282,7 @@ def KGEN_IntLiteralConvertOp : KGENOp<"int_literal.convert",
     [DeclareOpInterfaceMethods<InterpreterOpInterface>, Pure]> {
   let summary = "Convert integer literal to int type usable at runtime.";
   let description = [{
-    The `kgen.int_literal.cast` operator casts an infinite precision integer
+    The `kgen.int_literal.convert` operator casts an infinite precision integer
     literal to a fixed width integer type.
   }];
 
