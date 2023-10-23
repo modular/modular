@@ -69,12 +69,20 @@ public:
   int64_t getIndexVal() const;
 
 private:
+  /// Default constructor accessible only by the attribute storage class.
+  DTypeValue() {}
+  friend class llvm::OwningArrayRef<DTypeValue>;
+
   /// All values are stored as `APInt`s.
   APInt data;
 
   /// The dtype of the value. This indicates how to interpret `data`.
   KGENDType dtype;
 };
+
+namespace detail {
+struct SIMDAttrStorage;
+} // namespace detail
 } // namespace M::KGEN::POP
 
 //===----------------------------------------------------------------------===//

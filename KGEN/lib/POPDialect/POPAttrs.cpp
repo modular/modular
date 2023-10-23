@@ -65,13 +65,14 @@ const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
   }
 }
 
-DTypeValue::DTypeValue(APInt data, KGENDType dtype) : data(data), dtype(dtype) {
+DTypeValue::DTypeValue(APInt data, KGENDType dtype)
+    : data(std::move(data)), dtype(dtype) {
   assert(dtype.isAddress() || dtype.isIndex() ||
-         data.getBitWidth() == dtype.getWidthInBits());
+         this->data.getBitWidth() == dtype.getWidthInBits());
 }
 
 DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
-    : DTypeValue(APInt(value), dtype) {
+    : DTypeValue(APInt(std::move(value)), dtype) {
   assert(dtype.isInt());
 }
 
@@ -139,7 +140,7 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
       if (p.parseInteger(apInt))
         return failure();
     }
-    APSInt apsInt(apInt, /*isUnsigned=*/dtype.isUInt());
+    APSInt apsInt(std::move(apInt), /*isUnsigned=*/dtype.isUInt());
     APSInt fitted = apsInt.extOrTrunc(dtype.getIntegerWidthInBits());
     if (fitted.extOrTrunc(apsInt.getBitWidth()) != apsInt) {
       SmallVector<char, 256> strVal;
@@ -149,7 +150,7 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
           << " bits: " << StringRef(strVal.data(), strVal.size());
       return failure();
     }
-    return DTypeValue(fitted, dtype);
+    return DTypeValue(std::move(fitted), dtype);
   }
 
   // Handle floats.
@@ -210,6 +211,43 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
   }
   return DTypeValue(indexVal, dtype);
 }
+
+//===----------------------------------------------------------------------===//
+// SIMDAttrStorage / ODS Boilerplate
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN::POP::detail {
+/// Custom storage class that allocates and owns the `DTypeValue` instances in
+/// an `OwningArrayRef`, because they are not POD.
+struct SIMDAttrStorage : public mlir::AttributeStorage {
+  using KeyTy = std::tuple<ArrayRef<DTypeValue>, SIMDType>;
+  SIMDAttrStorage(llvm::OwningArrayRef<DTypeValue> values, SIMDType type)
+      : values(std::move(values)), type(type) {}
+
+  KeyTy getAsKey() const { return KeyTy(values, type); }
+  bool operator==(const KeyTy &key) const {
+    return std::tie(values, type) == key;
+  }
+  static llvm::hash_code hashKey(const KeyTy &key) {
+    return llvm::hash_combine(std::get<0>(key), std::get<1>(key));
+  }
+  static SIMDAttrStorage *construct(mlir::AttributeStorageAllocator &allocator,
+                                    KeyTy &&key) {
+    return new (allocator.allocate<SIMDAttrStorage>())
+        SIMDAttrStorage(std::get<0>(key), std::get<1>(key));
+  }
+
+  llvm::OwningArrayRef<DTypeValue> values;
+  SIMDType type;
+};
+} // namespace M::KGEN::POP::detail
+
+ArrayRef<DTypeValue> SIMDAttr::getValues() const { return getImpl()->values; }
+SIMDType SIMDAttr::getType() const { return getImpl()->type; }
+
+//===----------------------------------------------------------------------===//
+// SIMDAttr
+//===----------------------------------------------------------------------===//
 
 LogicalResult SIMDAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                ArrayRef<DTypeValue> values, SIMDType type) {

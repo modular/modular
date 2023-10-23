@@ -148,6 +148,10 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
   ];
 
   let genVerifyDecl = 1;
+
+  /// Note: DTypeValue is not POD since APInt will allocate if its data exceeds
+  /// 64 bits. Use a custom storage class to own the memory.
+  let genStorageClass = 0;
 }
 
 //===----------------------------------------------------------------------===//
