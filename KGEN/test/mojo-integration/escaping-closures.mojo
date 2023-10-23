@@ -40,11 +40,11 @@ fn legal_type_ref[a: Int](c: Int) -> fn (x: Int, y: Int) escaping -> Int:
     return p_capture
 
 
-fn parameter_capture[a: Int](c: Int) -> fn (x: Int) escaping -> Int:
+fn parameter_capture[a: Int, b: Int](c: Int) -> fn (x: Int) escaping -> Int:
     alias X = Foo[a](1)
 
     fn p_capture(x: Int) escaping -> Int:
-        return X.get() + c
+        return X.get() + c + b
 
     return p_capture
 
@@ -71,5 +71,5 @@ fn main():
     # CHECK: 53
     print(legal_type_ref[45](1)(3, 4))
 
-    # CHECK: 49
-    print(parameter_capture[43](5)(43))
+    # CHECK: 56
+    print(parameter_capture[43, 7](5)(43))
