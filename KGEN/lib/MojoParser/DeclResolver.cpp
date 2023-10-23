@@ -2460,10 +2460,11 @@ createSelfContainedSignature(SharedState &shared, LITSignatureType original,
 
   MLIRContext *ctx = shared.getContext();
   replacer.addReplacement([&](ParamDeclRefAttr paramDeclRefAttr) -> TypedAttr {
-    llvm::MapVector<StringAttr, Type>::const_iterator existingParamIter =
-        capturedParams.find(paramDeclRefAttr.getName());
-    if (existingParamIter != capturedParams.end()) {
-      assert(existingParamIter->second == paramDeclRefAttr.getType() &&
+    auto captureIt = capturedParams.find(paramDeclRefAttr.getName());
+    if (captureIt != capturedParams.end()) {
+      StringAttr captureName = captureIt->second.getName();
+      Type captureType = captureIt->second.getType();
+      assert(captureType == paramDeclRefAttr.getType() &&
              "expected parameter names to be unique but encountered common "
              "parameter names with unique types");
       auto existing = newParameterReferences.find(paramDeclRefAttr.getName());
@@ -2471,14 +2472,19 @@ createSelfContainedSignature(SharedState &shared, LITSignatureType original,
         return existing->second;
 
       // We have a reference to a capture with no input parameter. Create one.
-      newParamInputTypes.push_back(existingParamIter->second);
-      auto updatedRef = ParamIndexRefAttr::get(0, false, inputParameterIndex++,
-                                               existingParamIter->second);
-      newParameterReferences[existingParamIter->first] = updatedRef;
+      if (!captureIt->second.isInputOrResultParameter()) {
+        shared.emitError(loc,
+                         "cannot reference aliases in closure signatures yet");
+        return {};
+      }
+      newParamInputTypes.emplace_back(captureType);
+      auto updatedRef =
+          ParamIndexRefAttr::get(0, false, inputParameterIndex++, captureType);
+      newParameterReferences[captureName] = updatedRef;
 
       // Generate a unique parameter name.
       newParamInputNames.push_back(StringAttr::get(
-          ctx, mangleParameter(existingParamIter->first.str(), line, col)));
+          ctx, mangleParameter(captureIt->first.str(), line, col)));
       newParamPassingKinds.push_back(PassingKind::PosOnly);
       return updatedRef;
     }
@@ -2527,6 +2533,8 @@ static Value emitClosureInstance(SignatureType closureSignature,
   LITSignatureType closureWrapperSignature =
       createSelfContainedSignature(shared, nestedFunctionSignature,
                                    capturedParams, nestedFunctionDecl.getLoc());
+  if (!closureWrapperSignature)
+    return {};
   StructDeclOp closureWrapper = shared.getOrGenerateClosureWrapperStruct(
       location, closureWrapperSignature, moduleDecl);
   if (!closureWrapper)
@@ -2575,9 +2583,11 @@ static Value emitClosureInstance(SignatureType closureSignature,
     unsigned capturedInputParamIndex =
         closureWrapperSignature.getNumInputParams();
     for (auto capturedParam : capturedParams) {
+      if (!capturedParam.second.isInputOrResultParameter())
+        continue;
       auto newParam = closureImpl.getInputParams()[capturedInputParamIndex++];
-      TypedAttr typedAttr =
-          ParamDeclRefAttr::get(capturedParam.first, capturedParam.second);
+      TypedAttr typedAttr = ParamDeclRefAttr::get(
+          capturedParam.first, capturedParam.second.getType());
       bindingValues.push_back(
           ParamBindAttr::get(newParam.getName(), typedAttr));
     }

@@ -20,6 +20,7 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
@@ -442,6 +443,75 @@ static ASTDecl *nearestParentFuncOpDecl(ASTDecl &decl, bool includeMe = false) {
   return nullptr;
 }
 
+/// Given an attribute, visit all contained attributes until all parameter
+/// declaration references are visited.
+static void
+recursivelyCallback(Attribute attribute,
+                    std::function<void(StringAttr, Type)> callback) {
+  if (auto paramDeclRef = dyn_cast<ParamDeclRefAttr>(attribute)) {
+    callback(paramDeclRef.getName(), paramDeclRef.getType());
+    return;
+  }
+  attribute.walkImmediateSubElements(
+      [&callback](Attribute child) {
+        if (auto paramDeclRef = dyn_cast<ParamDeclRefAttr>(child)) {
+          callback(paramDeclRef.getName(), paramDeclRef.getType());
+        } else {
+          recursivelyCallback(child, callback);
+        }
+      },
+      [](Type type) {});
+}
+
+/// Given a function and a captured parameter name and type, populate the
+/// capturedParams data structure with all implicitly captured parameters. For
+/// example, if `alias A = myFunc[B,C]` is declared inside the parent function
+/// and the root is "A", then this function should populate capturedParams with
+/// {"A", "B", "C"}
+static void collectImplicitParameterCaptures(
+    LIT::FuncOp parentFunction,
+    SmallVectorImpl<std::pair<StringAttr, ParameterCapture>> &capturedParams,
+    StringAttr rootName, Type rootType) {
+  ParameterUseDefGraph parameterUseDefGraph(parentFunction.getBodyRegion());
+  KGEN::ParameterCollector::Analysis paramCache;
+  parameterUseDefGraph.calculate(paramCache);
+  SmallVector<StringAttr> worklist{rootName};
+  auto addParameterToWorklist = [&](StringAttr paramName, Type paramType) {
+    auto existingEntry = std::find_if(
+        capturedParams.begin(), capturedParams.end(),
+        [paramName](std::pair<StringAttr, ParameterCapture> entry) {
+          return entry.first == paramName;
+        });
+    if (existingEntry == capturedParams.end())
+      worklist.push_back(paramName);
+  };
+  while (!worklist.empty()) {
+    StringAttr current = worklist.back();
+    worklist.pop_back();
+    ParamDefinition definition = parameterUseDefGraph.defs.lookup(current);
+    // Collect parameter dependencies from definition.
+    if (!definition.defOp)
+      continue;
+    if (auto funcOp = dyn_cast<LIT::FuncOp>(*definition.defOp)) {
+      // Result parameters are not defined by the function.
+      ParamDeclAttr paramDecl = funcOp.getInputParams()[definition.index];
+      ParameterCapture capture(current, paramDecl.getType(), nullptr);
+      capturedParams.push_back({current, capture});
+    } else if (auto alias = dyn_cast<AliasDeclOp>(*definition.defOp)) {
+      capturedParams.push_back(
+          {alias.getParamDecl().getName(),
+           ParameterCapture(alias.getParamDecl().getName(),
+                            alias.getParamDecl().getType(), definition.defOp)});
+      // Add operands of the alias's expression to the worklist.
+      alias.getValue().walkImmediateSubElements(
+          [addParameterToWorklist](Attribute immediateChild) {
+            recursivelyCallback(immediateChild, addParameterToWorklist);
+          },
+          [](Type type) {});
+    }
+  }
+}
+
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
 AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -583,17 +653,29 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           ParameterRelation paramRelationToParent =
               parameterRelationshipToFunction(emitter.shared, parentDecl,
                                               paramDeclRef, srcSpelling);
-          if (paramRelationToParent == ParameterRelation::Input) {
-            // We have captured a parameter.
-            // TODO: Collect all the parameters that this parameter depends on.
-            emitter.shared.addCapturedParameterToScope(container, declRef,
-                                                       paramDeclRef.getName(),
-                                                       paramDeclRef.getType());
-          } else {
-            emitter.emitError(getLoc(),
-                              "TODO: Support result parameters, local capture, "
-                              "and escaping closures.");
-            return {};
+          switch (paramRelationToParent) {
+          case ParameterRelation::Result:
+            [[fallthrough]];
+          case ParameterRelation::Input:
+            emitter.shared.addCapturedParameterToScope(
+                container, declRef,
+                ParameterCapture(paramDeclRef.getName(),
+                                 paramDeclRef.getType()));
+            break;
+          case ParameterRelation::Local: {
+            // We have captured a parameter. Collect all the parameters that
+            // this parameter depends on.
+            SmallVector<std::pair<StringAttr, ParameterCapture>> capturedParams;
+            collectImplicitParameterCaptures(parentFunction, capturedParams,
+                                             paramDeclRef.getName(),
+                                             paramDeclRef.getType());
+            for (auto [name, paramCapture] : llvm::reverse(capturedParams))
+              emitter.shared.addCapturedParameterToScope(container, declRef,
+                                                         paramCapture);
+            break;
+          }
+          default:
+            break;
           }
         }
       }

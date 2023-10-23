@@ -59,6 +59,8 @@ using namespace M::KGEN::LIT;
 using llvm::SMLoc;
 using llvm::SourceMgr;
 
+typedef llvm::MapVector<StringAttr, ParameterCapture> ParameterCaptures;
+
 static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 
 /// Collect all of the default paths used for resolving imports.
@@ -170,8 +172,7 @@ struct SharedState::Impl : public ClosureCache {
 
   /// The parameter values and decls associated with their enclosing nested
   /// function.
-  llvm::DenseMap<ASTDecl *, llvm::MapVector<StringAttr, Type>>
-      capturedParametersInScope;
+  llvm::DenseMap<ASTDecl *, ParameterCaptures> capturedParametersInScope;
 };
 
 StructDeclOp SharedState::Impl::getExisting(ClosureHash key) {
@@ -1951,7 +1952,7 @@ LIT::StructDeclOp
 SharedState::replaceNestedFunctionWithGeneratedClosureImplStruct(
     SMLoc location, ASTDecl &nestedFunc, ASTDecl *moduleDecl) {
   ClosureEmitter emitter(*moduleDecl, *this);
-  llvm::MapVector<StringAttr, Type> &capturedParams =
+  ParameterCaptures &capturedParams =
       getImpl().capturedParametersInScope[&nestedFunc];
   return emitter.replaceNestedFunctionWithClosureImplStructDecl(
       location, nestedFunc, CaptureTraversableMap(capturedParams), *this->impl);
@@ -1969,25 +1970,21 @@ void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
   getImpl().capturesInScope[&scope].insert({captureDecl, capture});
 }
 
-void SharedState::addCapturedParameterToScope(ASTDecl &scope,
-                                              ASTDecl *captureDecl,
-                                              StringAttr parameterName,
-                                              Type parameterType) {
+void SharedState::addCapturedParameterToScope(
+    ASTDecl &scope, ASTDecl *captureDecl, ParameterCapture parameterCapture) {
   if (!getImpl().capturedParametersInScope.contains(&scope))
-    getImpl().capturedParametersInScope.insert(
-        {&scope, llvm::MapVector<StringAttr, Type>()});
-  llvm::MapVector<StringAttr, Type> &capturedParams =
+    getImpl().capturedParametersInScope.insert({&scope, ParameterCaptures()});
+  ParameterCaptures &capturedParams =
       getImpl().capturedParametersInScope[&scope];
-  if (!capturedParams.contains(parameterName))
-    capturedParams[parameterName] = parameterType;
+  if (!capturedParams.contains(parameterCapture.getName()))
+    capturedParams.insert({parameterCapture.getName(), parameterCapture});
 }
 
 CaptureTraversableMap
 SharedState::getParameterCaptureRangeInScope(ASTDecl &scope) {
   if (!getImpl().capturedParametersInScope.contains(&scope))
-    getImpl().capturedParametersInScope.insert(
-        {&scope, llvm::MapVector<StringAttr, Type>()});
-  llvm::MapVector<StringAttr, Type> &capturedParams =
+    getImpl().capturedParametersInScope.insert({&scope, ParameterCaptures()});
+  ParameterCaptures &capturedParams =
       getImpl().capturedParametersInScope[&scope];
   return CaptureTraversableMap(capturedParams);
 }
