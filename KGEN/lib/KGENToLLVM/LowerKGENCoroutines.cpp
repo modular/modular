@@ -361,9 +361,12 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   //      <context_base_size>
   b.createBlock(&afp.getBodyRegion());
   Value afpValue = b.create<UndefOp>(afpType);
-  Value afpEndPtr = b.create<GEPOp>(LLVMPointerType::get(cache.i32Type),
-                                    b.create<AddressOfOp>(afp),
-                                    ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true);
+  Value afpEndPtr = b.create<GEPOp>(
+      LLVMPointerType::get(cache.i32Type),
+      b.create<AddressOfOp>(
+          LLVMPointerType::get(afp.getType(), afp.getAddrSpace()),
+          afp.getSymName()),
+      ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true);
   Value afpOffset = b.create<TruncOp>(
       cache.i32Type,
       b.create<SubOp>(
