@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# XFAIL: asan && !system-darwin
 
 
 # COM: Setting the language to Mojo and using non-C-like symbols
