@@ -12,8 +12,8 @@ kgen.generator @return_one() -> index {
 // CHECK: a = #kgen.concretetype.constant
 // CHECK-SAME: b = #kgen.parameterizedtype.constant
 "some.op"() {
-  a = #kgen.parameterizedtype.constant<!pop.array<1, i1>>,
-  b = #kgen.parameterizedtype.constant<!pop.array<apply(:() -> index @return_one), i1>>
+  a = #kgen.parameterizedtype.constant<!pop.array<1, i1>> : !kgen.mlirtype,
+  b = #kgen.parameterizedtype.constant<!pop.array<apply(:() -> index @return_one), i1>> : !kgen.mlirtype
 } : () -> ()
 
 // CHECK: #kgen.param.index.ref<0, false, 0> : index

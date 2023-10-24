@@ -287,14 +287,21 @@ ParseResult KGEN::parseDTypeParamValue(AsmParser &p, TypedAttr &value) {
   return parseParamValue(p, value, DTypeType::get(p.getContext()));
 }
 
-/// Print a parameter value that is known to have `type` type.
-void KGEN::printTypeParamValue(AsmPrinter &p, Attribute value) {
-  printParamValue(p, cast<TypedAttr>(value));
+void KGEN::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
+  if (!isa<MLIRTypeType>(value.getType()))
+    printColonTypeOrIndexPrefix(p, value.getType());
+  printParamValue(p, value);
 }
 
-/// Parse a parameter value that is known to have `type` type.
 ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
-  return parseParamValue(p, value, MLIRTypeType::get(p.getContext()));
+  Type type;
+  if (succeeded(p.parseOptionalColon())) {
+    if (parseKGENType(p, type))
+      return failure();
+  } else {
+    type = MLIRTypeType::get(p.getContext());
+  }
+  return parseParamValue(p, value, type);
 }
 
 void KGEN::printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {

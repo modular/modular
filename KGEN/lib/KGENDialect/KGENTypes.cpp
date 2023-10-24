@@ -78,7 +78,7 @@ OptionalParseResult MLIRTypeType::parseValue(AsmParser &p,
     return {};
   if (failed(*result))
     return failure();
-  value = TypeConstantAttr::get(type);
+  value = TypeConstantAttr::get(type, *this);
   return mlir::success();
 }
 

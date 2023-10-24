@@ -63,7 +63,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType))
-    return matchParams(ParameterizedTypeConstantAttr::get(actualType),
+    return matchParams(TypeConstantAttr::get(actualType),
                        expectedParamRef.getParam());
 
   // If the types trivially match then there is no inference to do.
@@ -308,7 +308,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
         // Infer nonmaterializable types as their materialization target.
         if (ASTType nmTarget = toPush.getNonmaterializableTarget(state))
           toPush = nmTarget;
-        types.push_back(ParameterizedTypeConstantAttr::get(toPush));
+        types.push_back(TypeConstantAttr::get(toPush));
       }
 
       inferredValues.push_back(VariadicAttr::get(

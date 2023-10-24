@@ -458,15 +458,14 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // Compute the size of the type.
     Attribute sizeOfAttr = KGEN::ParamOperatorAttr::get(
         POC::GetSizeOf,
-        {KGEN::ParameterizedTypeConstantAttr::get(elementType),
-         cast<TypedAttr>(targetAttr)},
+        {KGEN::TypeConstantAttr::get(elementType), cast<TypedAttr>(targetAttr)},
         indexType);
     Value sizeOf = builder.create<KGEN::ParamConstantOp>(
         indexType, cast<TypedAttr>(sizeOfAttr));
     // Compute the alignment of the type.
     Attribute alignOfAttr = KGEN::ParamOperatorAttr::get(
         POC::GetAlignOf,
-        {cast<TypedAttr>(KGEN::ParameterizedTypeConstantAttr::get(elementType)),
+        {cast<TypedAttr>(KGEN::TypeConstantAttr::get(elementType)),
          cast<TypedAttr>(targetAttr)},
         indexType);
     Value alignOf = builder.create<KGEN::ParamConstantOp>(

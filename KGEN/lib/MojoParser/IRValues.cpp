@@ -164,8 +164,7 @@ ASTType BValue::getType() const { return getTypeFrom(storage); }
 ASTType LValue::getType() const { return getTypeFrom(storage); }
 
 PValue::PValue(Type value)
-    : storage(value ? ParameterizedTypeConstantAttr::get(value) : Attribute()) {
-}
+    : storage(value ? TypeConstantAttr::get(value) : Attribute()) {}
 
 /// If this value /is/ a type return it.
 ASTType PValue::getIfTypeValue() const {

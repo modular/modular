@@ -983,7 +983,7 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
   // Bind the correct element types for the tuple to the tuple type.
   SmallVector<TypedAttr> eltTypes;
   for (auto elt : elements)
-    eltTypes.push_back(ParameterizedTypeConstantAttr::get(elt));
+    eltTypes.push_back(TypeConstantAttr::get(elt));
 
   // Get the pack parameter from the Tuple type.
   ASTDecl &tupleLiteralDecl = *tupleType.getDecl(*this);
@@ -1018,8 +1018,8 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
   ParamDeclAttr varListParam = varListStruct.getInputParams()[0];
 
   SmallVector<ParamBindAttr> bindingValues;
-  bindingValues.push_back(ParamBindAttr::get(
-      varListParam.getName(), ParameterizedTypeConstantAttr::get(elemType)));
+  bindingValues.push_back(ParamBindAttr::get(varListParam.getName(),
+                                             TypeConstantAttr::get(elemType)));
 
   return DeclRefType::get(
       varListDecl.getSymbolRef(),
