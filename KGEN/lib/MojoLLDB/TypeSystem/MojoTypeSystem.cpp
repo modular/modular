@@ -41,6 +41,7 @@ using namespace M::KGEN::Mojo;
 using namespace lldb_private;
 using namespace lldb_private::dwarf;
 using namespace lldb_private::plugin::dwarf;
+using namespace mlir;
 
 //===----------------------------------------------------------------------===//
 // MojoTypeSystem::Impl
@@ -656,9 +657,28 @@ DWARFASTParser *MojoTypeSystem::GetDWARFParser() {
   return impl->dwarfParser.get();
 }
 
-CompilerType MojoTypeSystem::getBuiltinType(llvm::StringRef typeName,
-                                            uint32_t dwarfEncoding,
-                                            uint32_t byteSize) {
+CompilerType
+MojoTypeSystem::getBuiltinTypeFromMLIRTypeName(llvm::StringRef typeName) {
+  if (typeName.empty())
+    return {};
+  ScopedDiagnosticHandler diagHandler(getMLIRContext(), [&](Diagnostic &diag) {
+    // These logs can get extremely noisy when attempting to parse the DWARF
+    // of builtin types, so we only enable them if `verbose` is on.
+    if (Log *log = GetLog(LLDBLog::Types); log && log->GetVerbose()) {
+      LLDB_LOG(log,
+               "[MojoTypeSystem::getBuiltinTypeFromMLIRTypeName] MLIR "
+               "diagnostic: {0}",
+               diag.str());
+    }
+  });
+  if (auto type = mlir::parseType(typeName, getMLIRContext()))
+    return createCompilerType(type);
+  return {};
+}
+
+CompilerType MojoTypeSystem::getBuiltinScalarType(llvm::StringRef typeName,
+                                                  uint32_t dwarfEncoding,
+                                                  uint32_t byteSize) {
   if (dwarfEncoding == DW_ATE_unsigned)
     return createCompilerType(IntegerType::get(getMLIRContext(), byteSize * 8,
                                                IntegerType::Unsigned));

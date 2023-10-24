@@ -277,6 +277,15 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
 
   ParsedDWARFTypeAttributes attrs(die);
 
+  if (Log *log = GetLog(DWARFLog::TypeCompletion | DWARFLog::Lookups)) {
+    dwarf->GetObjectFile()->GetModule()->LogMessage(
+        log,
+        "[MojoDWARFParser::ParseTypeFromDWARF] Will parse type. Die = {0:x16}, "
+        "tag = '{1}' die_name = '{2}', linkage_name = '{3}', byte_size = {4}",
+        die.GetOffset(), die.GetTagAsCString(), die.GetName(),
+        attrs.mangledName.AsCString(), attrs.byteSize);
+  }
+
   if (typeIsNewPtr)
     *typeIsNewPtr = true;
 
@@ -306,12 +315,12 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
           die.GetOffset(), die.GetTagAsCString(), die.GetName());
       break;
     }
-    CompilerType mojoType = typeSystem.getBuiltinType(
+    CompilerType mojoType = typeSystem.getBuiltinScalarType(
         attrs.name.GetStringRef(), attrs.encoding, attrs.byteSize.value_or(0));
     if (!mojoType.IsValid()) {
       dwarf->GetObjectFile()->GetModule()->ReportError(
-          "[MojoDWARFParser::ParseTypeFromDWARF] Couldn't create built in type."
-          " Die = {0:x16}, tag = '{1}' die_name = '{2}'",
+          "[MojoDWARFParser::ParseTypeFromDWARF] Couldn't create builtin type. "
+          "Die = {0:x16}, tag = '{1}' die_name = '{2}'",
           die.GetOffset(), die.GetTagAsCString(), die.GetName());
       break;
     }
@@ -333,16 +342,54 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     break;
   }
   case DW_TAG_structure_type: {
-    MojoASTDeclRef decl = getDeclForDIE(die);
-    CompilerType mojoType = typeSystem.createCompilerType(decl.getType());
-    type = dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
-                           LLDB_INVALID_UID, lldb_private::Type::eEncodingIsUID,
-                           &attrs.decl, mojoType,
-                           lldb_private::Type::ResolveState::Full);
-    // We need to complete the struct right away here because the generic dwarf
-    // parser uses the clang typesystem to complete types, which obviously
-    // wouldn't work for us. We'll eventually fix this.
-    CompleteTypeFromDWARF(die, type.get(), mojoType);
+    // Several builtin types like !kgen.string are encoded as structs. We can
+    // just parse them as regular MLIR types instead of traversing their DWARF.
+    // At least in the specific case of primitive types like !kgen.string, it
+    // will allow us to format them correctly because the corresponding
+    // printers are type-based and not name-based.
+    CompilerType mojoType =
+        typeSystem.getBuiltinTypeFromMLIRTypeName(attrs.name);
+    // If we recover the type, we need to make sure that the encoded byte size
+    // matches the one from MLIR. If there's a mismatch, then either the debug
+    // info is wrong or the MLIR type in this version of the parser is different
+    // from the one that produced the debug info, in which case we discard the
+    // MLIR type and do regular DWARF parsing.
+    if (mojoType.IsValid()) {
+      std::optional<uint64_t> mlirByteSize =
+          mojoType.GetByteSize(/*exe_scope=*/nullptr);
+      if (!mlirByteSize) {
+        mojoType = {};
+        dwarf->GetObjectFile()->GetModule()->ReportError(
+            "The parsed MLIR structure type '{0}' has not byte size. The MLIR "
+            "type won't be used and regular MLIR-agnostic DWARF parsing will "
+            "be performed.",
+            attrs.name.AsCString());
+      } else if (attrs.byteSize && *attrs.byteSize != *mlirByteSize) {
+        mojoType = {};
+        dwarf->GetObjectFile()->GetModule()->ReportError(
+            "The parsed MLIR structure type '{0}' has a different size ({1}) "
+            "than the one in the debug info ({2}). The MLIR type won't be "
+            "used and regular MLIR-agnostic DWARF parsing will be performed.",
+            attrs.name.AsCString(), *mlirByteSize, *attrs.byteSize);
+      } else {
+        type = dwarf->MakeType(
+            die.GetID(), attrs.name, attrs.byteSize, nullptr, LLDB_INVALID_UID,
+            lldb_private::Type::eEncodingIsUID, &attrs.decl, mojoType,
+            lldb_private::Type::ResolveState::Full);
+      }
+    }
+    if (!mojoType.IsValid()) {
+      MojoASTDeclRef decl = getDeclForDIE(die);
+      CompilerType mojoType = typeSystem.createCompilerType(decl.getType());
+      type = dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
+                             LLDB_INVALID_UID,
+                             lldb_private::Type::eEncodingIsUID, &attrs.decl,
+                             mojoType, lldb_private::Type::ResolveState::Full);
+      // We need to complete the struct right away here because the generic
+      // dwarf parser uses the clang typesystem to complete types, which
+      // obviously wouldn't work for us. We'll eventually fix this.
+      CompleteTypeFromDWARF(die, type.get(), mojoType);
+    }
     break;
   }
   default:
