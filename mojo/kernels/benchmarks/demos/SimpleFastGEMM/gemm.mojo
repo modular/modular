@@ -6,12 +6,12 @@
 
 # Meant to be run on an AVX512 system
 
+import benchmark
 from memory.unsafe import DTypePointer
 from utils.list import Dim, DimList
 from memory.buffer import Buffer, NDBuffer
 from utils.index import Index
 from Matrix import Matrix
-from benchmark import Benchmark
 from sys.intrinsics import PrefetchOptions
 from algorithm import unroll
 
@@ -25,7 +25,7 @@ alias accum_type = DType.float32
 
 fn print_mat(a_ptr: DTypePointer[DType.float32], m: Int, n: Int):
     let a = Matrix[DimList.create_unknown[2](), DType.float32, False](
-        a_ptr, Index(m, n), DType.float32
+        a_ptr, Index(m, n)
     )
     for i in range(m):
         for j in range(n):
@@ -192,13 +192,13 @@ fn main():
     let c2 = Buffer[Dim(), DType.float32](c2_ptr, m * n)
 
     let am = Matrix[DimList.create_unknown[2](), DType.float32, False](
-        a_ptr, Index(m, k), DType.float32
+        a_ptr, Index(m, k)
     )
     let bm = Matrix[DimList.create_unknown[2](), DType.float32, False](
-        b_ptr, Index(k, n), DType.float32
+        b_ptr, Index(k, n)
     )
     let cm = Matrix[DimList.create_unknown[2](), DType.float32, False](
-        c_ptr, Index(m, n), DType.float32
+        c_ptr, Index(m, n)
     )
 
     for i in range(m * k):
@@ -227,11 +227,8 @@ fn main():
     fn bench_gemm():
         gemm(a.data, b2.data, c2.data, m, n, k, mc, nc, kc)
 
-    var time: Float32
-    let ns_per_second: Int = 1_000_000_000
     var num_warmup: Int = 1
-    time = Benchmark(num_warmup).run[bench_gemm]()
-    time = time / ns_per_second
+    let time = benchmark.run[bench_gemm](num_warmup).mean()
     let flops = 2.0 * m * n * k / time / 1e9
     print_no_newline(time)
     print(" seconds")

@@ -26,7 +26,7 @@ from algorithm import (
 )
 from math import iota
 from complex import ComplexSIMD
-from benchmark import Benchmark, keep
+from benchmark import run, keep
 from memory.unsafe import Pointer, DTypePointer
 from sys.info import simdwidthof
 from math import abs
@@ -164,13 +164,13 @@ fn main_blog_part1():
     print("pixel sum: ", pixel_sum)
 
     var num_warmup: Int = 1
-    time = Benchmark(num_warmup).run[bench_fn[0]]() / ns_per_second
+    time = run[bench_fn[0]](num_warmup).mean()
     print("blog post 1 with part=0 ", time)
 
-    time = Benchmark(num_warmup).run[bench_fn[1]]() / ns_per_second
+    time = run[bench_fn[1]](num_warmup).mean()
     print("blog post 1 with part=1 ", time)
 
-    time = Benchmark(num_warmup).run[bench_fn[2]]() / ns_per_second
+    time = run[bench_fn[2]](num_warmup).mean()
     print("blog post 1 with part=2 ", time)
 
     print(m[Index(0, 0)])
@@ -309,10 +309,7 @@ fn main_blog_part2():
 
     for i in range(experiment_iter_count):
         alias simd_width = simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_vector[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_vector[simd_width]](num_warmup).mean()
         print("Vectorize with simd_width=", simd_width, "::", time)
 
     # PART 2. Vectorize, fine grained
@@ -323,34 +320,22 @@ fn main_blog_part2():
 
     for i in range(experiment_iter_count):
         alias simd_width = 2 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_vector_2[simd_width]]().mean()
         print("Vectorize with simd_width=", simd_width, "::", time)
 
     for i in range(experiment_iter_count):
         alias simd_width = 4 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_vector_2[simd_width]]().mean()
         print("Vectorize with simd_width=", simd_width, "::", time)
 
     for i in range(experiment_iter_count):
         alias simd_width = 8 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_vector_2[simd_width]](num_warmup).mean()
         print("Vectorize with simd_width=", simd_width, "::", time)
 
     for i in range(experiment_iter_count):
         alias simd_width = 16 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_vector_2[simd_width]](num_warmup).mean()
         print("Vectorize with simd_width=", simd_width, "::", time)
 
     # Parallelize the code.
@@ -362,10 +347,7 @@ fn main_blog_part2():
         mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE](m)
 
     for i in range(experiment_iter_count):
-        time = (
-            Benchmark(num_warmup).run[bench_parallel[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_parallel[simd_width]]().mean()
         print("Parallel with simd_width=", simd_width, "::", time)
 
     # Fine grained parallelism.
@@ -379,10 +361,7 @@ fn main_blog_part2():
 
     for i in range(experiment_iter_count):
         alias simd_width = 2 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_parallel_2[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_parallel_2[simd_width]]().mean()
         print("Parallel(2) with simd_width=", simd_width, "::", time)
 
     @always_inline
@@ -394,10 +373,7 @@ fn main_blog_part2():
 
     for i in range(experiment_iter_count):
         alias simd_width = 4 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_parallel_4[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_parallel_4[simd_width]]().mean()
         print("Parallel(4) with simd_width=", simd_width, "::", time)
 
     @always_inline
@@ -409,10 +385,7 @@ fn main_blog_part2():
 
     for i in range(experiment_iter_count):
         alias simd_width = 8 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_parallel_8[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_parallel_8[simd_width]](num_warmup).mean()
         print("Parallel(8) with simd_width=", simd_width, "::", time)
 
     @always_inline
@@ -424,10 +397,7 @@ fn main_blog_part2():
 
     for i in range(experiment_iter_count):
         alias simd_width = 16 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_parallel_16[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_parallel_16[simd_width]]().mean()
         print("Parallel(16) with simd_width=", simd_width, "::", time)
 
     @always_inline
@@ -439,10 +409,7 @@ fn main_blog_part2():
 
     for i in range(experiment_iter_count):
         alias simd_width = 32 * simdwidthof[DType.float64]()
-        time = (
-            Benchmark(num_warmup).run[bench_parallel_32[simd_width]]()
-            / ns_per_second
-        )
+        time = run[bench_parallel_32[simd_width]]().mean()
         print("Parallel(32) with simd_width=", simd_width, "::", time)
 
     keep(m[Index(0, 0)])
