@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import div_ceil, max, min
-from sys.info import sizeof
+from sys.info import sizeof, has_neon
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import (
@@ -149,7 +149,13 @@ fn gather_reduce[
                 for j in range(indices.dim[1]()):
                     """Computes output[i,k] = reduction over j of (input[indices[i,j],k])
                     for j in range [0,indices.dim[1])"""
-                    let idx = normalize_index(indices[i, j], gather_axis_size)
+                    let idx: Int
+
+                    @parameter
+                    if has_neon():  # TODO(#24060): remove this branch
+                        idx = indices[i, j].value
+                    else:
+                        idx = normalize_index(indices[i, j], gather_axis_size)
 
                     # min so that we don't read beyond end of indices
                     @parameter
@@ -178,15 +184,15 @@ fn gather_reduce[
                 let out_idx = StaticIntTuple[2](i, k)
                 output.simd_store[simd_width](out_idx, accum)
 
+            # TODO(#24060): remove this branch
+            alias tile_sizes = VariadicList[Int](
+                2 * simd_width, 1
+            ) if has_neon() else VariadicList[Int](
+                8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
+            )
             tile[
                 _accum_in_place,
-                VariadicList[Int](
-                    8 * simd_width,
-                    4 * simd_width,
-                    2 * simd_width,
-                    simd_width,
-                    1,
-                ),
+                tile_sizes,
             ](0, row_size)
 
     async_parallelize[task_func](out_chain, num_tasks)
