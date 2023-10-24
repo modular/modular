@@ -145,7 +145,7 @@ Note that the min total time will take precedence over max iterations
 """
 
 from math import max, min
-from time import time_function, now
+from time import time_function
 
 from memory.unsafe import DTypePointer, Pointer
 
@@ -369,6 +369,8 @@ struct Report:
 # ===----------------------------------------------------------------------===#
 # benchmark
 # ===----------------------------------------------------------------------===#
+
+
 @always_inline
 fn run[
     func: fn () -> None
@@ -396,57 +398,17 @@ fn run[
     Returns:
         Average execution time of func in ns.
     """
-    var report = Report()
-    # run for specified number of warmup iterations
-    var tic = now()
-    for _ in range(num_warmup):
+
+    @parameter
+    @always_inline
+    fn benchmark_fn():
         func()
-    var toc = now()
 
-    var prev_iters = num_warmup
-    var prev_dur = toc - tic if num_warmup > 0 else 0
-    report.warmup_iters = prev_iters
-    report.warmup_duration = prev_dur
-    var total_iters: Int = 0
-    var time_elapsed: Int = 0
-    let min_time_ns = (min_time_secs * 1_000_000_000).to_int()
-    let max_time_ns = (max_time_secs * 1_000_000_000).to_int()
-
-    while time_elapsed < max_time_ns:
-        if total_iters > max_iters and time_elapsed > min_time_ns:
-            break
-        prev_dur = max(1, prev_dur)  # avoid dividing by 0
-        # Order of operations matters.
-        # For very fast benchmarks, prev_iterations ~= prev_duration.
-        # If you divide first, you get 0 or 1,
-        # which can hide an order of magnitude in execution time.
-        # So multiply first, then divide.
-        var n = min_time_ns * prev_iters // prev_dur
-        n += n // 5
-        # Don't grow too fast in case we had timing errors previously.
-        n = min(n, 10 * prev_iters)
-        # Be sure to run at least one more than last time.
-        n = max(n, prev_iters + 1)
-        # Don't run more than 1e9 times.
-        # (This also keeps n in int range on 32 bit platforms.)
-        n = min(n, 1_000_000_000)
-
-        tic = now()
-        for __ in range(n):
-            func()
-        toc = now()
-        prev_dur = toc - tic
-        prev_iters = n
-        report.runs.push_back(Batch(prev_dur, prev_iters))
-        total_iters += prev_iters
-        time_elapsed += prev_dur
-
-    return report
+    return _run_impl[benchmark_fn](
+        num_warmup, max_iters, min_time_secs, max_time_secs
+    )
 
 
-# ===----------------------------------------------------------------------===#
-# benchmark
-# ===----------------------------------------------------------------------===#
 @always_inline
 fn run[
     func: fn () capturing -> None
@@ -474,6 +436,18 @@ fn run[
     Returns:
         Average execution time of func in ns.
     """
+    return _run_impl[func](num_warmup, max_iters, min_time_secs, max_time_secs)
+
+
+@always_inline
+fn _run_impl[
+    func: fn () capturing -> None
+](
+    num_warmup: Int = 2,
+    max_iters: Int = 100_000,
+    min_time_secs: Float64 = 0.5,
+    max_time_secs: Float64 = 1,
+) -> Report:
     var report = Report()
 
     # run for specified number of warmup iterations
@@ -514,7 +488,7 @@ fn run[
         @parameter
         @always_inline
         fn benchmark_fn():
-            for __ in range(n):
+            for _ in range(n):
                 func()
 
         prev_dur = time_function[benchmark_fn]()
