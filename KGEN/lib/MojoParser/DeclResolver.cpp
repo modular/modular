@@ -884,9 +884,10 @@ LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {
 //===----------------------------------------------------------------------===//
 
 ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
-                                           ArrayRef<ParamBindAttr> paramValues)
-    : ParameterEvaluator(paramValues), InterpreterState(resolver.getContext()),
-      resolver(resolver) {}
+                                           ArrayRef<ParamDeclAttr> paramDecls,
+                                           ArrayRef<TypedAttr> paramValues)
+    : ParameterEvaluator(paramDecls, paramValues),
+      InterpreterState(resolver.getContext()), resolver(resolver) {}
 
 FailureOr<TypedAttr>
 ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
@@ -1442,7 +1443,7 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
     return type;
 
   unsigned nameCounter = 0;
-  SmallVector<ParamBindAttr> bindings;
+  SmallVector<TypedAttr> paramValues;
   for (ParamDeclAttr decl : inputParams) {
     auto funcDecl = ParamDeclAttr::get(
         shared.getMangledParameterName(
@@ -1455,11 +1456,9 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
         funcDecl.getContext(), Twine("__impl_") + funcDecl.getName().strref()));
     inputParamPassingKinds.push_back(PassingKind::PosOrKw);
     inputParamDecls.push_back(funcDecl);
-    bindings.push_back(
-        ParamBindAttr::get(decl.getName(), ParamDeclRefAttr::get(funcDecl)));
+    paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
   }
-  return DeclRefType::get(cast<DeclRefType>(type.mlirType).getSymbol(),
-                          bindings);
+  return DeclRefType::get(cast<DeclRefType>(type).getSymbol(), paramValues);
 }
 
 ASTType ParsedArgument::emitFunctionArgumentsAndResults(
@@ -2579,21 +2578,13 @@ static Value emitClosureInstance(SignatureType closureSignature,
   if (DeclRefType declRef = dyn_cast<DeclRefType>(closureImplType)) {
     ASTDecl &typeDecl =
         shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-    SmallVector<ParamBindAttr> bindingValues;
-    unsigned capturedInputParamIndex =
-        closureWrapperSignature.getNumInputParams();
-    for (auto capturedParam : capturedParams) {
-      if (!capturedParam.second.isInputOrResultParameter())
-        continue;
-      auto newParam = closureImpl.getInputParams()[capturedInputParamIndex++];
-      StringAttr captureName = capturedParam.second.getName();
-      Type captureType = capturedParam.second.getType();
-      bindingValues.push_back(ParamBindAttr::get(
-          newParam.getName(), ParamDeclRefAttr::get(captureName, captureType)));
+    SmallVector<TypedAttr> paramValues;
+    for (auto [name, capture] : capturedParams) {
+      if (capture.isInputOrResultParameter())
+        paramValues.push_back(
+            ParamDeclRefAttr::get(capture.getName(), capture.getType()));
     }
-    closureImplType = DeclRefType::get(
-        typeDecl.getSymbolRef(),
-        ParamBindArrayAttr::get(shared.getContext(), bindingValues));
+    closureImplType = DeclRefType::get(typeDecl.getSymbolRef(), paramValues);
   }
 
   CValue value = exprEmitter.emitConstructorCall(

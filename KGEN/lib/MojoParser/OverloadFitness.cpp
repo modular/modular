@@ -86,8 +86,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       // Match up the parameter bindings.
       for (auto [actual, expected] : llvm::zip(actualDRT.getParamValues(),
                                                expectedDRT.getParamValues())) {
-        assert(actual.getName() == expected.getName());
-        if (failed(matchParams(actual.getValue(), expected.getValue())))
+        if (failed(matchParams(actual, expected)))
           return failure();
       }
       return success();

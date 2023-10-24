@@ -149,12 +149,11 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
 
 /// Given an MLIR op for a struct declaration, return the self type.
 Type ASTDecl::computeSelfTypeForStruct(StructDeclOp structOp) {
-  SmallVector<ParamBindAttr> parameters;
+  SmallVector<TypedAttr> parameters;
   for (auto decl : structOp.getInputParams()) {
     // We're using the parameter from the type declaration scope in the
     // parameter binding list.
-    TypedAttr ref = ParamDeclRefAttr::get(decl);
-    parameters.push_back(ParamBindAttr::get(decl.getName(), ref));
+    parameters.push_back(ParamDeclRefAttr::get(decl));
   }
 
   // Methods on structs (but not classes) take the struct implicitly by

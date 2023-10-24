@@ -250,10 +250,7 @@ void VerifyingParameterCollector::verifyRefType(DeclRefType refType) {
     return;
 
   // We have to specialize the type's parameter decls.
-  ParameterEvaluator evaluator;
-  for (auto [value, decl] :
-       llvm::zip(refType.getParamValues(), decl.getInputParams()))
-    evaluator.setParameterValue(decl, value.getValue());
+  ParameterEvaluator evaluator(decl.getInputParams(), refType.getParamValues());
   SmallVector<ParamDeclAttr, 8> specializedDecls;
   for (ParamDeclAttr decl : decl.getInputParams())
     specializedDecls.push_back(

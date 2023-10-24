@@ -57,9 +57,10 @@ bool KGEN::isParameterizedType(Type type) {
 // ParameterEvaluator core implementation.
 //===----------------------------------------------------------------------===//
 
-ParameterEvaluator::ParameterEvaluator(ArrayRef<ParamBindAttr> paramValues) {
-  for (ParamBindAttr bind : paramValues)
-    setParameterValue(bind.getName(), bind.getValue());
+ParameterEvaluator::ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
+                                       ArrayRef<TypedAttr> paramValues) {
+  for (auto [decl, value] : llvm::zip(paramDecls, paramValues))
+    setParameterValue(decl, value);
 }
 
 // NOTE: This is out of line to provide a home for the ParameterEvaluator

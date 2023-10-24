@@ -37,7 +37,7 @@ lit.struct.decl @Foo<DT:dtype> {
 }
 
 lit.struct.decl @Bar {
-  lit.struct.field a : !kgen.declref<@Foo<DT:dtype=f32>>
+  lit.struct.field a : !kgen.declref<@Foo<:dtype f32>>
   lit.struct.field b : !pop.scalar<f64>
 }
 

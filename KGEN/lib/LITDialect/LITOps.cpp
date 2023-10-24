@@ -928,7 +928,8 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 Type StructFieldOp::getReboundType(DeclRefType structSelfType) {
   if (structSelfType.getParamValues().empty())
     return getType();
-  ParameterEvaluator evaluator(structSelfType.getParamValues());
+  ParameterEvaluator evaluator(getParentOp().getInputParams(),
+                               structSelfType.getParamValues());
   return evaluator.getReboundType(getType());
 }
 
@@ -949,10 +950,17 @@ void StructFieldOp::build(OpBuilder &odsBuilder, OperationState &odsState,
 /// Lookup the declaration for the struct. When checking field types, we can't
 /// directly compare operation types to the struct field types because they are
 /// parameterized under different domains. We have to rebind them.
-static StructDeclOp lookupStructDecl(SymbolTableCollection &symbolTable,
-                                     Operation *user, DeclRefType ref) {
+static std::pair<StructDeclOp, ParameterEvaluator>
+lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
+                 DeclRefType ref) {
   auto module = KGENModule::from(user, symbolTable);
-  return module.lookup<StructDeclOp>(ref.getSymbol());
+  auto decl = module.lookup<StructDeclOp>(ref.getSymbol());
+  if (!decl) {
+    user->emitOpError("expected to find a struct decl for ") << ref;
+    return {};
+  }
+  ParameterEvaluator evaluator(decl.getInputParams(), ref.getParamValues());
+  return {decl, std::move(evaluator)};
 }
 
 /// Verify the reference struct type.
@@ -960,8 +968,8 @@ LogicalResult
 LIT::StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Verify the types of the fields in the operands match those in the
   // struct declaration.
-  ParameterEvaluator evaluator(getType().getParamValues());
-  StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
+  auto [structDecl, evaluator] =
+      lookupStructDecl(symbolTable, *this, getType());
   if (!structDecl)
     return emitOpError("expected to find a struct decl for ") << getType();
   auto fields = structDecl.getFieldDecls();
@@ -1047,8 +1055,10 @@ OpFoldResult LIT::StructCreateOp::fold(FoldAdaptor adaptor) {
 
 LogicalResult
 StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  ParameterEvaluator evaluator(getType().getParamValues());
-  StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
+  auto [structDecl, evaluator] =
+      lookupStructDecl(symbolTable, *this, getType());
+  if (!structDecl)
+    return emitOpError("expected to find a struct decl for ") << getType();
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != getFieldAttr())
@@ -1087,8 +1097,7 @@ OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
                          DeclRefType ref, StringAttr fieldName, Type type) {
-  ParameterEvaluator evaluator(ref.getParamValues());
-  StructDeclOp structDecl = lookupStructDecl(symbolTable, op, ref);
+  auto [structDecl, evaluator] = lookupStructDecl(symbolTable, op, ref);
   if (!structDecl)
     return op->emitOpError("struct ") << ref.getSymbol() << " cannot be found";
 

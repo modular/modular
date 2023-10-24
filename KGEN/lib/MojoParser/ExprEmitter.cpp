@@ -1442,26 +1442,20 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
 
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
-  for (ParamBindAttr binding : type.getParamBindings())
-    paramBindings.addPrechecked(binding.getValue());
+  for (TypedAttr binding : type.getParamBindings())
+    paramBindings.addPrechecked(binding);
 
   // Check the bindings.
   ParameterExprArrayAttr bindingValuesAttr =
       paramBindings.verifyBindings(structDecl, *this, expr->getLoc());
   if (!bindingValuesAttr)
     return {};
-  SmallVector<ParamBindAttr> bindingValues;
-  for (auto [decl, value] :
-       llvm::zip(structDecl.getInputParams(), bindingValuesAttr))
-    bindingValues.push_back(ParamBindAttr::get(decl.getName(), value));
-  auto bindingAttr =
-      ParamBindArrayAttr::get(structDecl.getContext(), bindingValues);
 
   // If verifyBindings changed the bindings set, then we may have had an
   // empty varargs list or something.  Rebind the DeclRefType.
-  if (bindingAttr != type.getParamBindings()) {
-    auto symbol = cast<DeclRefType>(type.mlirType).getSymbol();
-    type = DeclRefType::get(symbol, bindingAttr);
+  if (bindingValuesAttr.getValue() != type.getParamBindings()) {
+    auto symbol = cast<DeclRefType>(type).getSymbol();
+    type = DeclRefType::get(symbol, bindingValuesAttr);
   }
   return type;
 }
@@ -1601,9 +1595,9 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 //===----------------------------------------------------------------------===//
 // Declaration reference emission helpers.
 
-PValue ExprEmitter::resolveAliasDeclareValue(AliasDeclOp param,
-                                             ParamBindArrayAttr bindings,
-                                             SMLoc errLoc) {
+PValue ExprEmitter::resolveAliasDeclareValue(
+    AliasDeclOp param, std::optional<ArrayRef<TypedAttr>> paramValues,
+    SMLoc errLoc) {
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
   while (true) {
@@ -1623,18 +1617,20 @@ PValue ExprEmitter::resolveAliasDeclareValue(AliasDeclOp param,
       // the a/b values into the body of `someAlias`.  If we have no bindings,
       // then we know we're in a context where the body of the alias is still
       // valid.
-      if (!bindings)
+      if (!paramValues)
         return param.getValue();
 
-      if (structDecl.getInputParams().size() != bindings.size()) {
+      ArrayRef<ParamDeclAttr> paramDecls = structDecl.getInputParams();
+      if (paramDecls.size() != paramValues->size()) {
         shared.emitError(errLoc,
                          "incorrect number of struct parameters, expected:")
-            << structDecl.getInputParams().size() << " got: " << bindings.size()
-            << ".";
+            << structDecl.getInputParams().size()
+            << " got: " << paramValues->size() << ".";
         return PValue();
       }
 
-      ParserParamEvaluator evaluator(*shared.declResolver, bindings);
+      ParserParamEvaluator evaluator(*shared.declResolver, paramDecls,
+                                     *paramValues);
       return PValue(evaluator.getReboundAttribute(param.getValue()));
     }
 
@@ -1867,8 +1863,8 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 
   assert(srcRValueType.getParamBindings().size() == 1 &&
          "Tuple has one pack parameter");
-  ParamBindAttr packAttr = srcRValueType.getParamBindings()[0];
-  auto packVariadic = dyn_cast<VariadicAttr>(packAttr.getValue());
+  TypedAttr packAttr = srcRValueType.getParamBindings()[0];
+  auto packVariadic = dyn_cast<VariadicAttr>(packAttr);
   if (!packVariadic) {
     emitError() << "cannot unpack value of parametric tuple type "
                 << srcRValueType << " into a fixed arity";

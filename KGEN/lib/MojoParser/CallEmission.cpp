@@ -943,8 +943,8 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 
   // Handle method references, which might be overloaded.
   InputParamBindings inputParamBindings;
-  for (ParamBindAttr binding : type.getParamBindings())
-    inputParamBindings.addPrechecked(binding.getValue());
+  for (TypedAttr binding : type.getParamBindings())
+    inputParamBindings.addPrechecked(binding);
   *this = OverloadSet(methodName, resultDecls, std::move(inputParamBindings),
                       expr, syntax);
 }

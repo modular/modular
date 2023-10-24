@@ -52,7 +52,8 @@ public:
   virtual ~ParameterEvaluator() = default;
 
   /// Instantiate a new parameter evaluator with the given parameter values.
-  ParameterEvaluator(ArrayRef<ParamBindAttr> paramValues);
+  ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
+                     ArrayRef<TypedAttr> paramValues);
 
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(DenseMap<StringAttr, Attribute> paramValues =

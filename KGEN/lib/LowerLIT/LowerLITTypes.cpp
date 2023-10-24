@@ -56,9 +56,20 @@ struct StructDeclarations {
   /// and `extract` ops.
   DenseMap<std::pair<StringAttr, StringAttr>, int64_t> fieldIndices;
 
-  /// A map from struct name to field names and types. Used for type
-  /// conversions.
-  DenseMap<StringAttr, SmallVector<std::pair<StringAttr, Type>>> fields;
+  /// A struct declaration representing its field names and types and input
+  /// parameters.
+  struct Decl {
+    /// The field names and types.
+    SmallVector<std::pair<StringAttr, Type>> fields;
+    /// The struct input parameters.
+    ParamDeclArrayAttr decls;
+  };
+
+  /// A map of all struct declarations by name.
+  DenseMap<StringAttr, Decl> decls;
+
+  /// Get the declaration for the type reference.
+  const Decl &getDecl(DeclRefType ref) { return decls.at(ref.getName()); }
 };
 
 /// Struct operations need to refer to the struct declaration symbol.
@@ -221,7 +232,8 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
         substituteStructRef(attr.getType());
     // Flatten single-element structs.
     if (auto type = dyn_cast<Type>(newType)) {
-      ParameterEvaluator evaluator(attr.getType().getParamValues());
+      auto &decl = structDecls.getDecl(attr.getType());
+      ParameterEvaluator evaluator(decl.decls, attr.getType().getParamValues());
       Attribute value =
           evaluator.getReboundAttribute(std::get<1>(attr.getValues()[0]));
 
@@ -434,15 +446,10 @@ Type StructOperationLowerer::replace(Type type) {
 
 PointerUnion<KGEN::StructType, Type>
 StructOperationLowerer::substituteStructRef(DeclRefType ref) {
-  auto it = structDecls.fields.find(ref.getName());
-  if (LLVM_UNLIKELY(it == structDecls.fields.end())) {
-    // This indicates that the type does not reference a struct.
-    errDeclRef = ref;
-    return Type(ref);
-  }
-  ParameterEvaluator evaluator(ref.getParamValues());
+  auto &decl = structDecls.getDecl(ref);
+  ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
   SmallVector<Type> elementTypes;
-  for (Type type : llvm::make_second_range(it->second)) {
+  for (Type type : llvm::make_second_range(decl.fields)) {
     Type reboundType = evaluator.getReboundType(type);
     Type substituteReboundType = replace(reboundType);
     elementTypes.push_back(substituteReboundType);
@@ -457,15 +464,12 @@ StructOperationLowerer::substituteStructRef(DeclRefType ref) {
 
 DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
     DeclRefType ref, DebugInfo::DebugInfoTypeConverter &converter) {
-  auto it = structDecls.fields.find(ref.getName());
-  if (it == structDecls.fields.end())
-    return {};
-
   // Substitute parameters into the field types.
-  ParameterEvaluator evaluator(ref.getParamValues());
+  auto &decl = structDecls.getDecl(ref);
+  ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
 
   SmallVector<DebugInfo::DIMemberType> elementTypes;
-  for (auto [name, type] : it->second) {
+  for (auto [name, type] : decl.fields) {
     elementTypes.push_back(DebugInfo::DIMemberType::get(
         name, converter.convertDebugType(evaluator.getReboundType(type))));
   }
@@ -476,10 +480,13 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
   printNestedSymbolReference(os, ref.getSymbol());
   if (!ref.getParamValues().empty()) {
     os << '[';
-    llvm::interleaveComma(ref.getParamValues(), os, [&os](ParamBindAttr param) {
-      os << demangleParameterName(param.getName()) << '='
-         << getParamAsString(param.getValue());
-    });
+    auto eachFn = [&os](auto bind) {
+      auto [name, value] = bind;
+      os << demangleParameterName(name.getName()) << '='
+         << getParamAsString(value);
+    };
+    llvm::interleaveComma(llvm::zip(decl.decls, ref.getParamValues()), os,
+                          eachFn);
     os << ']';
   }
 
@@ -762,7 +769,8 @@ void LowerLITTypesPass::runOnOperation() {
           {decl.getNameAttr(), field.getNameAttr()}, idx);
     }
 
-    structDecls.fields.try_emplace(decl.getNameAttr(), std::move(fields));
+    structDecls.decls.insert(
+        {decl.getNameAttr(), {std::move(fields), decl.getInputParamsAttr()}});
     analysis.getTopLevelSymbolTable().erase(decl);
   }
 

@@ -515,8 +515,10 @@ public:
   /// Given a AliasDeclOp, return the value that should be used in a reference
   /// to it.  This currently fully substitutes members unless they are in a
   /// function definition.
-  PValue resolveAliasDeclareValue(AliasDeclOp param,
-                                  ParamBindArrayAttr bindings, SMLoc errLoc);
+  PValue
+  resolveAliasDeclareValue(AliasDeclOp param,
+                           std::optional<ArrayRef<TypedAttr>> paramValues,
+                           SMLoc errLoc);
 
   /// Emit a reference to a declaration to an AnyValue. If the value is concrete
   /// and has a runtime value, `mlirValue` is populated with the corresponding

@@ -196,18 +196,6 @@ void OutlineClosuresPass::runOnOperation() {
       DebugInfo::updateSubprogram(liftedWrapper,
                                   liftedWrapper.getSymNameAttr());
 
-      // We need to set the parameter bindings for the call to the lifted
-      // region. This basically just means binding the wrapper's input params to
-      // a ref.
-      SmallVector<ParamBindAttr> symbolBindings;
-      for (ParamDeclAttr decl : liftedWrapper.getInputParams()) {
-        symbolBindings.push_back(
-            ParamBindAttr::get(decl.getName(), ParamDeclRefAttr::get(decl)));
-      }
-      LLVM_DEBUG(llvm::dbgs() << "Bindings: [\n\t";
-                 llvm::interleave(symbolBindings, llvm::dbgs(), ",\n\t");
-                 llvm::dbgs() << "\n]");
-
       LLVM_DEBUG(llvm::dbgs()
                  << "Created lifted region wrapper: " << liftedWrapper << "\n");
 

@@ -130,10 +130,7 @@ static SymbolConstantAttr getSpecialMemberForType(
   if (valueType.getParamValues().empty())
     return attr;
 
-  SmallVector<TypedAttr> paramValues;
-  for (ParamBindAttr bind : valueType.getParamValues())
-    paramValues.push_back(bind.getValue());
-
+  ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
   auto newSig = attr.getType().getSpecializedSignature(
       paramValues, []() -> InFlightDiagnostic {
         llvm_unreachable("incorrect parameters to dtor when inserting");

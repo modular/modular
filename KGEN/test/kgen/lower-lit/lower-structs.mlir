@@ -9,8 +9,8 @@ lit.struct.decl @SmallVector<N, T: type> {
   lit.struct.field data: !pop.array<N, T>
 }
 
-!size2 = !kgen.declref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
-!size4 = !kgen.declref<@SmallVector<N = 4, T:type = !pop.simd<1, f64>>>
+!size2 = !kgen.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
+!size4 = !kgen.declref<@SmallVector<4, :type !pop.simd<1, f64>>>
 
 // CHECK-LABEL: @two_vectors
 kgen.func @two_vectors(
@@ -36,13 +36,13 @@ lit.struct.decl @Pair<T1: type, T2: type> {
 }
 
 // CHECK-LABEL: @make_box
-kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<T:type = f32>> {
+kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<:type f32>> {
   // CHECK: kgen.return %arg0 : f32
-  %0 = lit.struct.create(value=%v) : (f32) -> !kgen.declref<@Box<T:type = f32>>
-  kgen.return %0 : !kgen.declref<@Box<T:type = f32>>
+  %0 = lit.struct.create(value=%v) : (f32) -> !kgen.declref<@Box<:type f32>>
+  kgen.return %0 : !kgen.declref<@Box<:type f32>>
 }
 
-!i8Pair = !kgen.declref<@Pair<T1:type = i8, T2:type = i8>>
+!i8Pair = !kgen.declref<@Pair<:type i8, :type i8>>
 
 // CHECK-LABEL: @make_pair
 // CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
@@ -78,10 +78,10 @@ lit.struct.decl @NestedA<T: type> {
   lit.struct.field v: !kgen.paramref<T>
 }
 lit.struct.decl @NestedB<t: dtype> {
-  lit.struct.field a: !kgen.declref<@NestedA<T:type = !pop.simd<1, t>>>
+  lit.struct.field a: !kgen.declref<@NestedA<:type !pop.simd<1, t>>>
 }
 lit.struct.decl @NestedC {
-  lit.struct.field b: !kgen.declref<@NestedB<t:dtype = f32>>
+  lit.struct.field b: !kgen.declref<@NestedB<:dtype f32>>
 }
 
 // CHECK-LABEL: @use_nested(%arg0: !pop.scalar<f32>)
@@ -90,7 +90,7 @@ kgen.func @use_nested(%a: !kgen.declref<@NestedC>) {
 }
 
 // CHECK-LABEL: @struct_element(%arg0: !kgen.pointer<simd<2, f32>>
-kgen.func @struct_element(%a: !kgen.pointer<!kgen.declref<@NestedA<T:type = !pop.simd<2, f32>>>>) {
+kgen.func @struct_element(%a: !kgen.pointer<!kgen.declref<@NestedA<:type !pop.simd<2, f32>>>>) {
   kgen.return
 }
 
@@ -125,9 +125,9 @@ kgen.generator @structExtract<p: !kgen.declref<@IndexField> -> res: index>() {
 }
 
 kgen.generator @structExtractInsideStruct<p: @IndexField>(
-    %arg0: !kgen.declref<@SmallVector<N = #lit.struct.extract<:@IndexField p, "second">, T: type = index>>) {
+    %arg0: !kgen.declref<@SmallVector<#lit.struct.extract<:@IndexField p, "second">, :type index>>) {
   %0 = lit.struct.extract %arg0[data] : !pop.array<#lit.struct.extract<:@IndexField p, "second">, index> from
-    !kgen.declref<@SmallVector<N = #lit.struct.extract<:@IndexField p, "second">, T: type = index>>
+    !kgen.declref<@SmallVector<#lit.struct.extract<:@IndexField p, "second">, :type index>>
   kgen.return
 }
 
@@ -144,9 +144,9 @@ kgen.generator @return_one(%arg0: !kgen.declref<@Struct>) -> index {
 
 // CHECK-LABEL: @use_struct_param
 // CHECK-SAME: !pop.array<apply(:(!kgen.struct<>) -> index @return_one, { }), index>
-kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<param: @Struct = #lit.struct<{}>>>) {
+kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<:@Struct #lit.struct<{}>>>) {
   lit.struct.extract %arg0[value] : !pop.array<apply(:(!kgen.declref<@Struct>) -> index @return_one, #lit.struct<{}>), index>
-    from !kgen.declref<@StructParam<param: @Struct = #lit.struct<{}>>>
+    from !kgen.declref<@StructParam<:@Struct #lit.struct<{}>>>
   kgen.return
 }
 
@@ -231,8 +231,8 @@ kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime>
 // CHECK-LABEL: kgen.generator @parameterized_declref_type
 kgen.generator @parameterized_declref_type() {
   // CHECK-NEXT: array<2, simd<apply(:(!kgen.struct<>) -> index @unbox, { }), f32>>
-  %3 = pop.stack_allocation 1 x @StaticTuple<size = 2,
-    ty: type = !kgen.declref<@SIMD<size: @Int = #lit.struct<{}>, type: dtype = f32>>>
+  %3 = pop.stack_allocation 1 x @StaticTuple<2,
+    :type !kgen.declref<@SIMD<:@Int #lit.struct<{}>, :dtype f32>>>
   kgen.return
 }
 
@@ -251,7 +251,7 @@ lit.struct.decl @StaticTuple<size, ty: type> {
 // CHECK-LABEL: kgen.generator @nested_declref_type
 // CHECK-SAME: !kgen.signature<(!pop.simd<apply(:(index) -> index @pass, 1), si32>
 kgen.generator @nested_declref_type(
-    %arg1: !kgen.declref<@UnaryClosure<input_type: type = !kgen.declref<@SIMD<size = 1>>>>) {
+    %arg1: !kgen.declref<@UnaryClosure<:type !kgen.declref<@SIMD<1>>>>) {
   kgen.return
 }
 
@@ -267,17 +267,6 @@ lit.struct.decl @UnaryClosure<input_type: type> {
   lit.struct.field value : !kgen.signature<(!kgen.paramref<input_type>) -> ()>
 }
 
-// -----
-
-kgen.generator @not_a_struct() {
-  kgen.return
-}
-
-// expected-error @below {{operation contains a declref type that does not refer to a struct}}
-kgen.generator @bad_declref(%arg0: !kgen.declref<@not_a_struct<a = 1>>) {
-  kgen.return
-}
-
 //===----------------------------------------------------------------------===//
 // Recursive Structs
 //===----------------------------------------------------------------------===//
@@ -285,7 +274,7 @@ kgen.generator @bad_declref(%arg0: !kgen.declref<@not_a_struct<a = 1>>) {
 // -----
 
 lit.struct.decl @Bar {
-  lit.struct.field x : !kgen.declref<@Pointer<ty: type = !kgen.declref<@Foo>>>
+  lit.struct.field x : !kgen.declref<@Pointer<:type !kgen.declref<@Foo>>>
   lit.struct.field y : ui32
 }
 
@@ -300,16 +289,16 @@ lit.struct.decl @Pointer<ty: type> {
 
 !bar_ref = !kgen.declref<@Bar>
 !foo_ref = !kgen.declref<@Foo>
-!foo_ptr_ref = !kgen.declref<@Pointer<ty: type = !foo_ref>>
+!foo_ptr_ref = !kgen.declref<@Pointer<:type !foo_ref>>
 !null_ptr = !kgen.pointer<scalar<invalid>>
 
 // CHECK-LABEL: @gepFooFromBar
 kgen.func @gepFooFromBar(%s: !kgen.pointer<@Bar>) ->
-!kgen.pointer<@Pointer<ty: type = !foo_ref>> {
+!kgen.pointer<@Pointer<:type !foo_ref>> {
   // CHECK: %0 = kgen.struct.gep %arg0[0] : <struct<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>, ui32>>
   // CHECK: kgen.return %0 : !kgen.pointer<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>>
-  %0 = lit.struct.gep %s[x] : <@Pointer<ty: type = !foo_ref>> from <@Bar>
-  kgen.return %0 : !kgen.pointer<@Pointer<ty: type = !foo_ref>>
+  %0 = lit.struct.gep %s[x] : <@Pointer<:type !foo_ref>> from <@Bar>
+  kgen.return %0 : !kgen.pointer<@Pointer<:type !foo_ref>>
 }
 
 // CHECK-LABEL: @makeFoo

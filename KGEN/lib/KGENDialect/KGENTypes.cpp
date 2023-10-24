@@ -709,19 +709,11 @@ KGEN::NoneType::getTypeAlign(TargetInfoAttr target) const {
 //===----------------------------------------------------------------------===//
 
 DeclRefType DeclRefType::get(SymbolRefAttr name,
-                             ParamBindArrayAttr paramValues) {
+                             ArrayRef<TypedAttr> paramValues) {
   return get(name.getContext(), name, paramValues);
 }
 
-DeclRefType DeclRefType::get(SymbolRefAttr name,
-                             ArrayRef<ParamBindAttr> paramValues) {
-  return get(name.getContext(), name,
-             ParamBindArrayAttr::get(name.getContext(), paramValues));
-}
-
-DeclRefType DeclRefType::get(SymbolRefAttr name) {
-  return get(name, ArrayRef<ParamBindAttr>());
-}
+DeclRefType DeclRefType::get(SymbolRefAttr name) { return get(name, {}); }
 
 std::optional<StringRef> DeclRefType::getAliasName() {
   // Don't alias types with parameter references.

@@ -48,11 +48,11 @@ kgen.generator @pass_index<t>(%arg0: index) -> !pop.array<t, i1> {
 }
 
 // CHECK-LABEL: kgen.generator @apply_result
-// CHECK-SAME: @TakeArrayStruct<t = t, a: array<t, i1> = apply(:(index) -> !pop.array<t, i1> @pass_index<t>, t)>
+// CHECK-SAME: @TakeArrayStruct<t, :array<t, i1> apply(:(index) -> !pop.array<t, i1> @pass_index<t>, t)>
 kgen.generator @apply_result<t>(
   %arg0: !kgen.declref<@TakeArrayStruct<
-    t = t,
-    a: array<t, i1> = apply(:(index) -> !pop.array<t, i1> @pass_index<t>, t)
+    t,
+    :array<t, i1> apply(:(index) -> !pop.array<t, i1> @pass_index<t>, t)
   >>
 ) {
   kgen.return
@@ -68,30 +68,30 @@ kgen.generator @make(%arg0: index) -> !kgen.declref<@Int> {
 
 lit.struct.decl @List<l: @Int> {}
 
-kgen.generator @create<l: @Int>() -> !kgen.declref<@List<l: @Int = l>> {
+kgen.generator @create<l: @Int>() -> !kgen.declref<@List<:@Int l>> {
   kgen.unreachable
 }
 
-lit.struct.decl @Buf<r: @Int, s: @List<l: @Int = r>> {}
+lit.struct.decl @Buf<r: @Int, s: @List<:@Int r>> {}
 
 // CHECK-LABEL: kgen.generator @buffer
 kgen.generator @buffer<rank>() ->
   !kgen.declref<@Buf<
-    r: @Int = apply(:(index) -> !kgen.declref<@Int> @make, rank),
-    s: @List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, rank)> =
-      apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, rank)>>
+    :@Int apply(:(index) -> !kgen.declref<@Int> @make, rank),
+    :@List<:@Int apply(:(index) -> !kgen.declref<@Int> @make, rank)>
+      apply(:() -> !kgen.declref<@List<:@Int apply(:(index) -> !kgen.declref<@Int> @make, rank)>>
               @create<:@Int apply(:(index) -> !kgen.declref<@Int> @make, rank)>)>> {
   kgen.unreachable
 }
 
 // CHECK-LABEL: kgen.generator @ref_it
 kgen.generator @ref_it() {
-  // CHECK-NEXT: = apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *(1,0))
+  // CHECK-NEXT: apply(:() -> !kgen.declref<@List<:@Int apply(:(index) -> !kgen.declref<@Int> @make, *(1,0))
   kgen.param.declare fn: <index>() ->
      !kgen.declref<@Buf<
-       r: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *(0,0)),
-       s: @List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *(0,0))> =
-         apply(:() -> !kgen.declref<@List<l: @Int = apply(:(index) -> !kgen.declref<@Int> @make, *(1,0))>>
+       :@Int apply(:(index) -> !kgen.declref<@Int> @make, *(0,0)),
+       :@List<:@Int apply(:(index) -> !kgen.declref<@Int> @make, *(0,0))>
+         apply(:() -> !kgen.declref<@List<:@Int apply(:(index) -> !kgen.declref<@Int> @make, *(1,0))>>
                  @create<:@Int apply(:(index) -> !kgen.declref<@Int> @make, *(0,0))>)>>
     = <@buffer>
   kgen.return

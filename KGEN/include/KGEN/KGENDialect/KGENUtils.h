@@ -331,18 +331,10 @@ LogicalResult verifyDeclSignaturesMatch(StringRef originatorName,
                                         SignatureType targetSignature,
                                         Location targetLoc);
 
-/// Check that the parameter declarations match.
-LogicalResult
-verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
-                      ArrayRef<ParamDeclAttr> originatorParamDecls,
-                      Location originatorLoc, StringRef targetName,
-                      ArrayRef<ParamDeclAttr> targetParamDecls,
-                      Location targetLoc);
-
 /// Check that the parameter bindings match the declarations.
 LogicalResult
 verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
-                      ArrayRef<ParamBindAttr> binds, Location originatorLoc,
+                      ArrayRef<TypedAttr> paramValues, Location originatorLoc,
                       StringRef targetName, ArrayRef<ParamDeclAttr> decls,
                       Location targetLoc);
 

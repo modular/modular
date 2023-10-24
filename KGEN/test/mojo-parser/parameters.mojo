@@ -35,8 +35,8 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"fancy_signature
 # CHECK-SAME: <[[DT:.*_dt]][dt]: !DType, [[SIZE:.*_size]][size]: !Int>
-# CHECK-SAME: (%x[x]: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: !Int = [[SIZE]], [[SIMDDT:.*]]: !DType = [[DT]]>> borrow,
-# CHECK-SAME: %exp[exp]: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE]]: !Int = [[SIZE]], [[SIMDDT]]: !DType = [[DT]]>> borrow) -> !Int
+# CHECK-SAME: (%x[x]: {{.*}}@OurSIMD<:!Int [[SIZE]], :!DType [[DT]]>> borrow,
+# CHECK-SAME: %exp[exp]: {{.*}}@OurSIMD<:!Int [[SIZE]], :!DType [[DT]]>> borrow) -> !Int
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
@@ -63,7 +63,7 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int #lit.struct<{value = 13}>, :type @"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: !Int = #lit.struct<{value = 4}>, {{.*}}dt: !DType = [[DT]]>>(%[[C57_2]])
+  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int #lit.struct<{value = 13}>, :type @"$parameters"::@OurSIMD<:!Int #lit.struct<{value = 4}>, :!DType [[DT]]>>(%[[C57_2]])
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -72,26 +72,26 @@ fn call_generic[dt: DType]():
 @register_passable
 struct TestParamStruct[A: Int]:
 
-  # CHECK: lit.func @"method{{.*}}<[[B:.*_B]][B]: !Int>(%self[self]: !kgen.declref<{{.*}}TestParamStruct<[[A]]: !Int = [[A]]>> borrow,
-  # CHECK-SAME: %other[other]: !kgen.declref<@"$parameters"::@TestParamStruct<[[A]]: !Int = apply({{.*}}__add__{{.*}}, [[A]], [[B]])>> borrow)
+  # CHECK: lit.func @"method{{.*}}<[[B:.*_B]][B]: !Int>(%self[self]: !kgen.declref<{{.*}}TestParamStruct<:!Int [[A]]>> borrow,
+  # CHECK-SAME: %other[other]: {{.*}}@TestParamStruct<:!Int apply({{.*}}__add__{{.*}}, [[A]], [[B]])>> borrow)
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
-  # CHECK-LABEL: lit.func @"aliases{{.*}}%x[x]: !kgen.declref<@"$parameters"::@TestParamStruct<
+  # CHECK-LABEL: lit.func @"aliases{{.*}}%x[x]: {{.*}}@TestParamStruct<
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__mul__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
     alias B = A*A+1
     # CHECK: lit.alias.decl [[C:.*]]: !Int = <apply({{.*}}__mul__{{.*}}, [[B]], [[A]])>
     alias C = B*A
-    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}> = <apply(:!lit.signature<() ownedresult -> {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
+    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> = <apply(:!lit.signature<() ownedresult -> {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
-    # CHECK: %temp = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = [[C]]>
+    # CHECK: %temp = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<:!Int [[C]]>
     var temp: TestParamStruct[C]
 
     # CHECK: lit.alias.decl {{.*}}intVal: !Int = <#lit.struct<{value = 42}>>
     alias intVal : Int = 42
 
-    # CHECK: %temp2 = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
+    # CHECK: %temp2 = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<:!Int apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
   # CHECK: lit.alias.decl {{.*}}TypeLevelAlias: !Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
@@ -99,9 +99,9 @@ struct TestParamStruct[A: Int]:
 
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
-  # CHECK: %arg11 = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
+  # CHECK: %arg11 = lit.varlet.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}11
   # CHECK: %0 = kgen.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>()
-  # CHECK: lit.ref.store %0, %arg11 : <mut {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
+  # CHECK: lit.ref.store %0, %arg11 : <mut {{.*}}@TestParamStruct<:!Int {{.*}}11
   var arg11 = TestParamStruct[11]()
 
   # CHECK: %1 = lit.ref.load %arg11
@@ -133,15 +133,15 @@ fn testSIMD(a: SIMD[DType.float64, 1],
 # CHECK-SAME: $int::Int,
 # CHECK-SAME: $parameters::StructWithIntParam[*(0,2)]
 # CHECK-SAME: ]()"<
-# CHECK-SAME: [[SIZE1:.*_size1]][size1]: !Int, {{.*}}[a]: @"$parameters"::@StructWithIntParam<[[S:.*]]: !Int = [[SIZE1]]>,
-# CHECK-SAME: [[SIZE2:.*_size2]][size2]: !Int, {{.*}}[b]: @"$parameters"::@StructWithIntParam<[[S]]: !Int = [[SIZE2]]>>()
+# CHECK-SAME: [[SIZE1:.*_size1]][size1]: !Int, {{.*}}[a]: @"$parameters"::@StructWithIntParam<:!Int [[SIZE1]]>,
+# CHECK-SAME: [[SIZE2:.*_size2]][size2]: !Int, {{.*}}[b]: @"$parameters"::@StructWithIntParam<:!Int [[SIZE2]]>>()
 fn paramResolution[size1: Int, a: StructWithIntParam[size1],
                    size2: Int, b: StructWithIntParam[size2]]():
   pass
 
 # Show that we can implicitly convert from 42's literal type to Int.
 # CHECK-LABEL: lit.func @"implConversion
-# CHECK: <{{.*}}[a]: @"$parameters"::@StructWithIntParam<{{.*}}size: !Int = #lit.struct<{{.*}}42}>>
+# CHECK: <{{.*}}[a]: @"$parameters"::@StructWithIntParam<:!Int #lit.struct<{{.*}}42}>>
 fn implConversion[a: StructWithIntParam[42]]():
   pass
 
@@ -149,16 +149,16 @@ fn implConversion[a: StructWithIntParam[42]]():
 # CHECK-SAME: [[DT:.*]][dt]: !DType>
 @register_passable
 struct Pair[dt: DType]:
- # CHECK: lit.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: !Int = {{.*}}42{{.*}}, [[SIMDDT:.*]]: !DType = [[DT]]>>
+ # CHECK: lit.struct.field a : {{.*}}@OurSIMD<:!Int {{.*}}42{{.*}}, :!DType [[DT]]>>
  # CHECK: lit.struct.field b : !Int
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"__init__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<[[DT]]: !DType = [[DT]]>> attributes {{.*}} isStatic
+  # CHECK: lit.func @"__init__{{.*}} -> {{.*}}@Pair<:!DType [[DT]]>> attributes {{.*}} isStatic
   fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
     # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: !Int {{.*}} 4
-    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE]]: !Int = #lit.struct<{value = 42}>, [[SIMDDT]]: !DType = [[DT]]>>, !Int) -> !kgen.declref<@"$parameters"::@Pair<[[DT]]: !DType = [[DT]]>>
+    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : ({{.*}}@OurSIMD<:!Int #lit.struct<{value = 42}>, :!DType [[DT]]>>, !Int) -> {{.*}}@Pair<:!DType [[DT]]>>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
@@ -195,7 +195,7 @@ struct ParamSubst[
 
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.varlet.decl {{.*}} : !lit.ref<mut @"$parameters"::@ParamSubst<[[TYPE]]: type = index, [[SH]]: variadic<index> = [1, 2]>
+  # CHECK: %xx = lit.varlet.decl {{.*}} : !lit.ref<mut @"$parameters"::@ParamSubst<:type index, :variadic<index> [1, 2]>
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
@@ -227,7 +227,7 @@ struct TwoParams[a: Int, b: Int]:
 
 # CHECK-LABEL: lit.func @"signature_capture
 # CHECK-SAME: {{.*}}[a]: {{.*}}Int, {{.*}}[f]: !lit.signature<<"b": !Int>() ownedresult ->
-# CHECK-SAME: {{.*}}TwoParams<{{.*}}a: {{.*}}Int = {{.*}}a, {{.*}}b: {{.*}}Int = *(0,0)>>
+# CHECK-SAME: {{.*}}TwoParams<:!Int {{.*}}a, :!Int *(0,0)>>
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
@@ -246,14 +246,14 @@ fn pass_str_param():
 
 # CHECK-LABEL: lit.func @"implicit_params
 # CHECK-SAME: <{{.*}}value0]: !Int, {{.*}}value1]: !Int>
-# CHECK-SAME: %value[value]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}value0, {{.*}}b: !Int = {{.*}}value1>
+# CHECK-SAME: %value[value]: {{.*}}@TwoParams<:!Int {{.*}}value0, :!Int {{.*}}value1>
 fn implicit_params(value: TwoParams):
     pass
 
 # CHECK-LABEL: lit.func @"implicit_params_with_others
 # CHECK-SAME: <{{.*}}a[a]: !Int, {{.*}}lhs0]: !Int, {{.*}}lhs1]: !Int, {{.*}}rhs0]: !Int, {{.*}}rhs1]: !Int>
-# CHECK-SAME: %lhs[lhs]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}lhs0, {{.*}}b: !Int = {{.*}}lhs1>
-# CHECK-SAME: %rhs[rhs]: {{.*}}@TwoParams<{{.*}}a: !Int = {{.*}}rhs0, {{.*}}b: !Int = {{.*}}rhs1>
+# CHECK-SAME: %lhs[lhs]: {{.*}}@TwoParams<:!Int {{.*}}lhs0, :!Int {{.*}}lhs1>
+# CHECK-SAME: %rhs[rhs]: {{.*}}@TwoParams<:!Int {{.*}}rhs0, :!Int {{.*}}rhs1>
 fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
     pass
 
@@ -560,11 +560,11 @@ fn useParamVariadics():
   # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<!lit.signature<() param_vararg -> !kgen.none>>
   let fnLet = fnWithVariadics
 
-  # CHECK-NEXT: %a = lit.varlet.decl {{.*}} : !lit.ref<mut @"{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = []>
+  # CHECK-NEXT: %a = lit.varlet.decl {{.*}} : !lit.ref<mut @"{{.*}}::@StructWithVariadics<:variadic<!Int> []>
   var a: StructWithVariadics
-  # CHECK-NEXT: %b = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = [#lit.struct<{value = 1}>]>
+  # CHECK-NEXT: %b = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<:variadic<!Int> [#lit.struct<{value = 1}>]>
   var b: StructWithVariadics[1]
-  # CHECK-NEXT: %c = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = [#lit.struct<{value = 1}>, #lit.struct<{value = 2}>]>
+  # CHECK-NEXT: %c = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@StructWithVariadics<:variadic<!Int> [#lit.struct<{value = 1}>, #lit.struct<{value = 2}>]>
   var c: StructWithVariadics[1, 2]
 
   # TODO(16040): fix symbol name mangling to erase parameter name 'b'
@@ -623,7 +623,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(b)
   # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<:!Int apply({{.*}}__mul__{{.*}}, [[SIZE]], {{.*}}2{{.*}})>(%b2)
   callee1(b2)
-  # CHECK-NEXT: kgen.call @{{.*}}callee2{{.*}}<:type @"$parameters"::@StaticVec<{{.*}}size: !Int = [[SIZE]]>>(%b)
+  # CHECK-NEXT: kgen.call @{{.*}}callee2{{.*}}<:type @"$parameters"::@StaticVec<:!Int [[SIZE]]>>(%b)
   callee2(b)
   # CHECK-NEXT: kgen.call @{{.*}}callee3{{.*}}<17, :dtype f32>(%c)
   callee3(c)
@@ -658,10 +658,10 @@ fn testParameterEvaluator():
   # CHECK-NEXT: lit.alias.decl {{.*}}x = <1>
   alias x = Abstraction[1].val
   # CHECK-NEXT: %0 = kgen.call @"$parameters"::@Abstraction::@"push{{.*}}"<:{{.*}} = 1{{.*}}, :{{.*}} = 2{{.*}}>()
-  # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}@Abstraction<[[A:.*]]: {{.*}} = 3}
+  # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}@Abstraction<:!Int {{.*}} = 3}
   # CHECK-NEXT: %y = lit.letreg.decl "y" = %1
   let y : Abstraction[3] = Abstraction[1].push[2]()
-  # CHECK-NEXT: %2 = kgen.rebind %y : {{.*}}@Abstraction<[[A]]: {{.*}} = 3}
+  # CHECK-NEXT: %2 = kgen.rebind %y : {{.*}}@Abstraction<:!Int {{.*}} = 3}
   # CHECK-NEXT: kgen.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>(%2)
   Abstraction[1].pull[2](y)
   # CHECK-NEXT: kgen.call {{.*}}@"testDependentType{{.*}}"<:{{.*}} = 1{{.*}}, :array<1, index>
@@ -686,11 +686,11 @@ fn testDependentField():
     var lvalue = AnotherAbstraction[1]()
     # CHECK: %[[VALUE_PTR:.*]] = lit.ref.struct.ger %lvalue[value]
     # CHECK-NEXT: kgen.rebind %[[VALUE_PTR]] {{.*}} to
-    # CHECK-SAME: !lit.ref<mut {{.*}}@Abstraction<[[A:.*]]: {{.*}} = {{.*}} 2}>>
+    # CHECK-SAME: !lit.ref<mut {{.*}}@Abstraction<:!Int {{.*}} 2}>>
     takeAbstraction2(lvalue.value)
     let rvalue = AnotherAbstraction[1]()
     # CHECK: %[[VALUE:.*]] = lit.struct.extract %rvalue[value]
-    # CHECK-NEXT: kgen.rebind %[[VALUE]] {{.*}} to {{.*}}@Abstraction<[[A]]: {{.*}} = {{.*}} 2}>>
+    # CHECK-NEXT: kgen.rebind %[[VALUE]] {{.*}} to {{.*}}@Abstraction<:!Int {{.*}} 2}>>
     takeAbstraction2(rvalue.value)
 
 
@@ -722,8 +722,8 @@ fn fn_with_param[x: Int](y: Abstraction[x]):
 # CHECK-LABEL: lit.func @"indirect_call_infer_params
 fn indirect_call_infer_params():
     alias callee = fn_with_param
-    # CHECK: call_param[!lit.signature<("y": {{.*}}Abstraction<{{.*}}a: !Int = #lit.struct<{value = 2}>>
-    # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction<{{.*}}a: !Int = *(0,0)>
+    # CHECK: call_param[!lit.signature<("y": {{.*}}Abstraction<:!Int #lit.struct<{value = 2}>>
+    # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction<:!Int *(0,0)>
     # CHECK-SAME: callee, #lit.struct<{value = 2}>
     callee(Abstraction[2]())
 
@@ -774,11 +774,11 @@ fn reference_params_through_struct():
 
 # CHECK-LABEL: lit.func @"ref_param_in_arg
 # CHECK-SAME: <{{.*}}x0[{{.*}}]: !Int>
-# CHECK-SAME: pointer<{{.*}}ParameterizedType<{{.*}}value: !Int = {{.*}}x0>> byref_result
+# CHECK-SAME: pointer<{{.*}}ParameterizedType<:!Int {{.*}}x0>> byref_result
 fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
     # CHECK: lit.alias.fwd_decl "{{.*}}fn_type"
     # CHECK-SAME: signature<<"{{.*}}x0": !Int>("x":
-    # CHECK-SAME: "y": !kgen.pointer<{{.*}}ParameterizedType<{{.*}}value: !Int = *(0,0)>>
+    # CHECK-SAME: "y": !kgen.pointer<{{.*}}ParameterizedType<:!Int *(0,0)>>
     alias fn_type: fn(x: ParameterizedType, y: ParameterizedType[x.value]) -> None
     return x
 
@@ -880,28 +880,28 @@ struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral = "woof"]: pass
 # CHECK-LABEL: lit.func @"test_default_param_struct()"
 fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
-    # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 1}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+    # CHECK-SAME: :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     alias T = DefaultParams[1]
     # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@DefaultParams<
-    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 1}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+    # CHECK-SAME:   :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK-NEXT: kgen.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     _ = DefaultParams[1]()
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
-    # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 2}>, {{.*}}: !Int = #lit.struct<{value = 3}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+    # CHECK-SAME: :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     alias U = DefaultParams[2, 3]
     # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@DefaultParams<
-    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 2}>, {{.*}}: !Int = #lit.struct<{value = 3}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "woof"}>
+    # CHECK-SAME:   :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK-NEXT: kgen.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     _ = DefaultParams[2, 3]()
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
-    # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 4}>, {{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "meow"}>
+    # CHECK-SAME: :!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     alias S = DefaultParams[4, 5, "meow"]
     # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@DefaultParams<
-    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 4}>, {{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !StringLiteral = #lit.struct<{value: string = "meow"}>
+    # CHECK-SAME:   :!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK-NEXT: kgen.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     _ = DefaultParams[4, 5, "meow"]()
@@ -914,12 +914,12 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 # CHECK-LABEL: lit.func @"test_default_param_struct_all_default()"
 fn test_default_param_struct_all_default():
     # CHECK: lit.alias.decl {{.*}}: type = <@{{.*}}::@AllDefaultParams<
-    # CHECK-SAME: {{.*}}: !Int = #lit.struct<{value = 0}>,
-    # CHECK-SAME: {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK-SAME: :!Int #lit.struct<{value = 0}>,
+    # CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
     alias T = AllDefaultParams[]
 
     # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@AllDefaultParams<
-    # CHECK-SAME:   {{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK: %1 = kgen.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
     _ = AllDefaultParams[]()
@@ -935,8 +935,8 @@ struct StructWithParametricDefaultValue[T: AnyType, N: Int = IntForType[T]()]:
 # CHECK-LABEL: lit.func @"test_struct_with_parametric_default_value()"
 fn test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl {{.*}}_a: type = <@{{.*}}::@StructWithParametricDefaultValue<
-    # CHECK-SAME: {{.*}}_T: type = !Int,
-    # CHECK-SAME: {{.*}}_N: !Int = apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyType]()"<:type !Int>)>>
+    # CHECK-SAME: :type !Int,
+    # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyType]()"<:type !Int>)>>
     alias a = StructWithParametricDefaultValue[Int]
 
 
@@ -1002,15 +1002,15 @@ struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3]: pass
 
 # CHECK-LABEL: lit.func @"test_struct_kw_params()"
 fn test_struct_kw_params():
-    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 3}>>,
+    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 3}>>,
     _ = KwParamStruct[5, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>,
     _ = KwParamStruct[5, b=7, c=9]()
-    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 2}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 9}>>,
     _ = KwParamStruct[5, c=9]()
-    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>,
     _ = KwParamStruct[5, c=9, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>,
     _ = KwParamStruct[a=5, c=9, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<{{.*}}: !Int = #lit.struct<{value = 5}>, {{.*}}: !Int = #lit.struct<{value = 7}>, {{.*}}: !Int = #lit.struct<{value = 9}>>,
+    # CHECK: lit.varlet.decl {{.*}} var synth anon : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>>,
     _ = KwParamStruct[c=9, b=7, a=5]()

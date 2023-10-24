@@ -90,16 +90,16 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
 // CHECK-LABEL: lit.struct.decl @A<N>
 lit.struct.decl @A<N> {
   // CHECK-NEXT: lit.func @foo<M>
-  lit.func @foo<M>(%self: !kgen.declref<@A<N = N>>) -> index {
+  lit.func @foo<M>(%self: !kgen.declref<@A<N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
     kgen.return %0 : index
   }
 }
 
 // CHECK-LABEL: lit.func @main
-lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
-  // CHECK-NEXT: call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<1, 2>]
-  %- = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<1, 2>](%a)
+lit.func @main(%a: !kgen.declref<@A<1>>) {
+  // CHECK-NEXT: call_param[(!kgen.declref<@A<1>>) -> index: @A::@foo<1, 2>]
+  %- = kgen.call_param[(!kgen.declref<@A<1>>) -> index: @A::@foo<1, 2>](%a)
   kgen.return
 }
 
@@ -337,16 +337,16 @@ lit.func @ref_it() {
 // CHECK-LABEL: lit.struct.decl @FuncParamStruct
 // CHECK-SAME: <c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()>>
 lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()>>  {
-  // CHECK: lit.func @foo(%x[x]: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>)
-  lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) {
+  // CHECK: lit.func @foo(%x[x]: !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>)
+  lit.func @foo(%x: !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
     lit.end_func
   }
   // CHECK-LABEL: lit.func @bar
-  lit.func @bar(%x: !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) {
+  lit.func @bar(%x: !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) {
     // CHECK: call @FuncParamStruct::@foo<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
     kgen.call @FuncParamStruct::@foo<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>(%x)
-    // CHECK-SAME: ("x": !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) -> ()
-      : !lit.signature<("x": !kgen.pointer<@FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> = c>>) -> ()>
+    // CHECK-SAME: ("x": !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) -> ()
+      : !lit.signature<("x": !kgen.pointer<@FuncParamStruct<:!lit.signature<<type>(!kgen.paramref<*(0,0)>) -> ()> c>>) -> ()>
     lit.end_func
   }
 }

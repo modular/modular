@@ -438,17 +438,6 @@ kgen.func @call_param_in_func(%arg0: si32) -> si32 {
 
 // -----
 
-// expected-note @below {{@ParamNamedA declared here}}
-lit.struct.decl @ParamNamedA<A> {}
-
-kgen.generator @give_it_B<C>() {
-  // expected-error @below {{!kgen.declref symbol use input parameter #0 has name "B" but @ParamNamedA expected name "A"}}
-  %0 = "a"() : () -> !kgen.declref<@ParamNamedA<B = C>>
-  kgen.return
-}
-
-// -----
-
 kgen.generator @bar<F>() {
   kgen.param.declare.region fn = () {
     // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "Q"}}
