@@ -272,13 +272,13 @@ struct Report:
 
     fn mean[unit: StringLiteral = Unit.s](self) -> Float64:
         """
-        The average duration of all benchmarks.
+        The average duration of all benchmark runs.
 
         Parameters:
             unit: The time unit to display for example: ns, ms, s (default `s`).
 
         Returns:
-            The average duration it took to run all benchmarks.
+            The average duration of all benchmark runs.
         """
 
         return self.duration[unit]() / self.iters()
