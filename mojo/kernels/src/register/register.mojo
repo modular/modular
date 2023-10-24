@@ -8,7 +8,7 @@
 fn mogg_register(name: StringLiteral):
     """
     This decorator registers a given mojo function as being an implementation
-    of a mo op.
+    of a mo op or a `mo.custom` op.
 
     For instance:
 
@@ -26,7 +26,7 @@ fn mogg_register(name: StringLiteral):
 fn mogg_register_override(name: StringLiteral, priority: Int):
     """
     This decorator registers a given mojo function as being an implementation
-    of a mo op with an override priority.
+    of a mo op or a `mo.custom` op with an override priority.
 
     @mogg_register("mo.add", 1)
     fn my_op[...](...):
@@ -34,6 +34,25 @@ fn mogg_register_override(name: StringLiteral, priority: Int):
     Args:
       name: The name of the op to register.
       priority: The priority of the op.
+    """
+    return
+
+
+fn mogg_register_shape_func(name: StringLiteral):
+    """
+    This decorator registers a given mojo function as being an implementation
+    of a shape function for a mo op or a `mo.custom` op.
+
+    @mogg_register_custom("tf.Something")
+    fn something_impl[...](...):
+        pass
+
+    @mogg_register_custom_shape("tf.Something")
+    fn something_shape_impl[...](...):
+        pass
+
+    Args:
+      name: The name of the op to register.
     """
     return
 
