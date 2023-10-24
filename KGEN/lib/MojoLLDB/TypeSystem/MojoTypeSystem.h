@@ -584,12 +584,18 @@ public:
   /// Get the DWARF Parser for Mojo.
   lldb_private::plugin::dwarf::DWARFASTParser *GetDWARFParser() override;
 
-  /// Get the MLIR type for the given DW_TAG_base_type entry.
+  /// Get the MLIR type for the given type name. If the type couldn't be
+  /// recovered, an invalid CompilerType is returned and it's assumed that the
+  /// type is not a regular MLIR type.
+  lldb_private::CompilerType
+  getBuiltinTypeFromMLIRTypeName(llvm::StringRef typeName);
+
+  /// Get the MLIR type for the given scalar DIE entry.
   ///
   /// Return an invalid CompilerType if the couldn't be recovered.
-  lldb_private::CompilerType getBuiltinType(llvm::StringRef typeName,
-                                            uint32_t dwarfEncoding,
-                                            uint32_t byteSize);
+  lldb_private::CompilerType getBuiltinScalarType(llvm::StringRef typeName,
+                                                  uint32_t dwarfEncoding,
+                                                  uint32_t byteSize);
 
   /// Create a module decl given its name under the given parentDecl. If the
   /// parent module already contains a module with that name, return it instead.

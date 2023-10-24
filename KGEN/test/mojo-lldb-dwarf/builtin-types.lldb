@@ -6,7 +6,7 @@
 
 # RUN: mojo build --debug-level full -O0 --debug-info-language Mojo --no-alnum-symbols '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %lldb %t -o 'b builtin-types.mojo:58' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v a_struct.float16.value' | FileCheck %s
+# RUN: %lldb %t -o 'b builtin-types.mojo:60' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v a_struct.float16.value' | FileCheck %s
 
 # CHECK: (pointer<si64>) a_var_index = 0x
 # CHECK: (AStruct) a_struct = {
@@ -34,6 +34,9 @@
 # CHECK: }
 # CHECK: (SIMD[type=#lit.struct<{value: dtype = f32}>, size=#lit.struct<{value = 1}>]) another_float = {
 # CHECK:   value = 4.125
+# CHECK: }
+# CHECK: (StringLiteral) a_string_literal = {
+# CHECK:   value = "fofofo"
 # CHECK: }
 # CHECK: (si64) a_let_index = 48
 # CHECK: (Int) an_int = {

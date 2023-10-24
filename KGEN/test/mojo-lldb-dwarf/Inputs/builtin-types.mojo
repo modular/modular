@@ -55,4 +55,6 @@ fn main():
 
     let `^ uncommon name` = 1123123
 
+    let a_string_literal = "fofofo"
+
     print("end")
