@@ -85,14 +85,6 @@ struct PointerLikeTypeTraits<M::KGEN::ParamDeclRefAttr>
     return M::KGEN::ParamDeclRefAttr::getFromOpaquePointer(p);
   }
 };
-
-template <>
-struct PointerLikeTypeTraits<M::KGEN::ParamBindAttr>
-    : public PointerLikeTypeTraits<mlir::Attribute> {
-  static inline M::KGEN::ParamBindAttr getFromVoidPointer(void *p) {
-    return M::KGEN::ParamBindAttr::getFromOpaquePointer(p);
-  }
-};
 } // namespace llvm
 
 //===----------------------------------------------------------------------===//

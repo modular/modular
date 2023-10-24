@@ -18,11 +18,7 @@
 namespace M {
 class InflightDiag;
 
-namespace KGEN {
-class ParamBindAttr;
-class ParamBindArrayAttr;
-
-namespace LIT {
+namespace KGEN::LIT {
 class ASTDecl;
 class CValue;
 class SharedState;
@@ -153,8 +149,7 @@ public:
 };
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
 
-} // namespace LIT
-} // namespace KGEN
+} // namespace KGEN::LIT
 
 void addToDiagnostic(KGEN::LIT::ASTType type, InflightDiag &diag);
 

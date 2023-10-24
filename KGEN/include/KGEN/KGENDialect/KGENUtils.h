@@ -261,15 +261,6 @@ ParseResult parseOptionalDecorators(AsmParser &p, DecoratorsAttr &decorators);
 void printOptionalDecorators(OpAsmPrinter &p, Operation *op,
                              ArrayRef<TypedAttr> decorators);
 
-/// Parse and print a parameter binding list if present.
-ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
-void printParamBinds(AsmPrinter &p, ArrayRef<ParamBindAttr> paramBinds);
-
-/// Parse a list of parameter bindings without result parameters in <>'s
-ParseResult parseOptionalParamBindSpec(AsmParser &p,
-                                       ParamBindArrayAttr &paramValues);
-void printOptionalParamBindSpec(AsmPrinter &p, ParamBindArrayAttr paramValues);
-
 /// Parse and print a list of parameter values.
 ParseResult parseParameterValues(AsmParser &p, ParameterExprArrayAttr &values);
 ParseResult parseParameterValues(AsmParser &p,

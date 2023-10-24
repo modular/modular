@@ -47,17 +47,6 @@ enum AttributeCode {
   ///   }
   kParamDeclArrayAttr = 2,
   ///
-  ///   ParamBindAttr {
-  ///     name: StringAttr
-  ///     value: TypedAttr
-  ///   }
-  kParamBindAttr = 3,
-  ///
-  ///   ParamBindArrayAttr {
-  ///     value: Attribute[]
-  ///   }
-  kParamBindArrayAttr = 4,
-  ///
   ///   ConstraintAttr {
   ///     expr: TypedAttr
   ///     message: StringAttr
@@ -239,7 +228,7 @@ enum TypeCode {
   ///
   ///   DeclRefType {
   ///     symbol: SymbolRefAttr
-  ///     paramValues: ParamBindArrayAttr
+  ///     paramValues: TypedAttr[]
   ///   }
   kDeclRefType = 6,
   ///
@@ -299,7 +288,6 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   IntLiteralAttr readIntLiteralAttr(BytecodeReader &reader) const;
   Attribute readMLIROpAttr(BytecodeReader &reader) const;
   PackageArchiveAttr readPackageArchiveAttr(BytecodeReader &reader) const;
-  ParamBindAttr readParamBindAttr(BytecodeReader &reader) const;
   ParamDeclAttr readParamDeclAttr(BytecodeReader &reader) const;
   Attribute readParamOperatorAttr(BytecodeReader &reader) const;
   Attribute readParameterizedTypeConstantAttr(BytecodeReader &reader) const;
@@ -331,7 +319,6 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(IntLiteralAttr attr, BytecodeWriter &writer) const;
   void write(MLIROpAttr attr, BytecodeWriter &writer) const;
   void write(PackageArchiveAttr attr, BytecodeWriter &writer) const;
-  void write(ParamBindAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclRefAttr attr, BytecodeWriter &writer) const;
   void write(ParamIndexRefAttr attr, BytecodeWriter &writer) const;
@@ -386,10 +373,6 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readParamDeclAttr(reader);
   case Encoding::kParamDeclArrayAttr:
     return readArrayOfAttrs<ParamDeclArrayAttr>(reader);
-  case Encoding::kParamBindAttr:
-    return readParamBindAttr(reader);
-  case Encoding::kParamBindArrayAttr:
-    return readArrayOfAttrs<ParamBindArrayAttr>(reader);
   case Encoding::kConstraintAttr:
     return readConstraintAttr(reader);
   case Encoding::kConstraintArrayAttr:
@@ -460,19 +443,16 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
   return TypeSwitch<Attribute, LogicalResult>(attr)
       .Case<BuildInfoParamAttr, ConcreteTypeConstantAttr, ConstraintAttr,
             DTypeConstantAttr, EnvAttr, ExportKindAttr, IntLiteralAttr,
-            MLIROpAttr, PackageArchiveAttr, ParamBindAttr, ParamDeclAttr,
-            ParamDeclRefAttr, ParamIndexRefAttr, ParamOperatorAttr,
-            ParameterizedTypeConstantAttr, SymbolConstantAttr, TargetParamAttr,
-            UnboundAttr, UnknownAttr, VariadicAttr, StructAttr,
-            StructExtractAttr, PackAttr>([&](auto attr) {
-        write(attr, writer);
-        return success();
-      })
+            MLIROpAttr, PackageArchiveAttr, ParamDeclAttr, ParamDeclRefAttr,
+            ParamIndexRefAttr, ParamOperatorAttr, ParameterizedTypeConstantAttr,
+            SymbolConstantAttr, TargetParamAttr, UnboundAttr, UnknownAttr,
+            VariadicAttr, StructAttr, StructExtractAttr, PackAttr>(
+          [&](auto attr) {
+            write(attr, writer);
+            return success();
+          })
       .Case([&](ConstraintArrayAttr attr) {
         return writeArrayOfAttrs(attr, Encoding::kConstraintArrayAttr, writer);
-      })
-      .Case([&](ParamBindArrayAttr attr) {
-        return writeArrayOfAttrs(attr, Encoding::kParamBindArrayAttr, writer);
       })
       .Case([&](ParamDeclArrayAttr attr) {
         return writeArrayOfAttrs(attr, Encoding::kParamDeclArrayAttr, writer);
@@ -684,25 +664,6 @@ void KGENBytecodeInterface::write(PackageArchiveAttr attr,
   writer.writeAttribute(attr.getTarget());
   writer.writeAttribute(attr.getElaboratedModule());
   writer.writeAttribute(attr.getArchive());
-}
-
-//===----------------------------------------------------------------------===//
-// ParamBindAttr
-
-ParamBindAttr
-KGENBytecodeInterface::readParamBindAttr(BytecodeReader &reader) const {
-  StringAttr name;
-  TypedAttr value;
-  if (failed(reader.readAttribute(name)) || failed(reader.readAttribute(value)))
-    return ParamBindAttr();
-  return ParamBindAttr::get(name, value);
-}
-
-void KGENBytecodeInterface::write(ParamBindAttr attr,
-                                  BytecodeWriter &writer) const {
-  writer.writeVarInt(Encoding::kParamBindAttr);
-  writer.writeAttribute(attr.getName());
-  writer.writeAttribute(attr.getValue());
 }
 
 //===----------------------------------------------------------------------===//

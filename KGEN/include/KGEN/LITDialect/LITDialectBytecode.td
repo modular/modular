@@ -19,7 +19,7 @@ def UnresolvedType : DialectType<(type)>;
 
 def MetaTypeType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
-  ConcreteAttribute<"ParamBindArrayAttr">:$paramValues
+  TypedAttrArray:$paramValues
 )>;
 
 def LifetimeType : DialectType<(type)>;

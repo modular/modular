@@ -14,7 +14,6 @@
 #include "KGEN/MojoParser/IRValues.h"
 
 namespace M::KGEN {
-class ParamBindAttr;
 class ParameterExprArrayAttr;
 class SignatureType;
 } // namespace M::KGEN
@@ -47,7 +46,7 @@ class InputParamBindings {
 public:
   struct Binding {
     /// This is the expression tree that produced the binding in the case of an
-    /// Attribute, or null in the case of ParamBindAttr.
+    /// Attribute, or null in the case of TypedAttr.
     const ExprNode *expr;
     /// This is the value of the binding.
     TypedAttr value;
@@ -161,7 +160,7 @@ private:
       function_ref<void(size_t, TypedAttr, ParserParamEvaluator &)>;
 
   /// Check that our set of parameter bindings work with the specified input
-  /// parameters. If so, return a checked ParamBindArrayAttr, along with
+  /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the input parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. This overload allows
@@ -175,7 +174,7 @@ private:
       const DiagEmitter &diagEmitter) const;
 
   /// Check that our set of parameter bindings work with the specified input
-  /// parameters. If so, return a checked ParamBindArrayAttr, along with
+  /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the input parameters, or why
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. If the parameters do not

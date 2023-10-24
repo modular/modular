@@ -104,54 +104,6 @@ def ParamDeclSize1ArrayAttr
     >]>;
 
 //===----------------------------------------------------------------------===//
-// ParamBindAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamBindAttr : KGENAttr<"ParamBind", "param.bind"> {
-  let summary = "Bind a value to a parameter declaration.";
-  let description = [{
-    The `#kgen.param.bind` attribute binds a concrete value to a named
-    parameter, for example a `kgen.return` uses it to bind returned parameters
-    to the enclosing generator's parameter declaration. Call operations use
-    it to bind values to the input parameters of the callee.
-
-    Example:
-
-    ```mlir
-    #kgen<param.bind foo: dtype = f32>
-    ```
-  }];
-
-  let parameters = (ins "StringAttr":$name, "TypedAttr":$value);
-
-  let assemblyFormat = "custom<ParamName>($name) `=` $value";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "TypedAttr":$value), [{
-      return get(name.getContext(), name, value);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "StringRef":$name, "TypedAttr":$value),
-    [{
-      return get(StringAttr::get(value.getContext(), name), value);
-    }]>,
-  ];
-
-  let extraClassDeclaration = [{
-    // Return the type of the value being bound.
-    Type getType() const { return getValue().getType(); }
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// ParamBindArrayAttr
-//===----------------------------------------------------------------------===//
-
-/// An array of ParamBindAttr's.
-def ParamBindArrayAttr : ArrayOfAttr<KGENDialect, "ParamBindArray",
-    "param.binds", "ParamBindAttr">;
-
-//===----------------------------------------------------------------------===//
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
 
