@@ -127,7 +127,7 @@ struct MemberAttributes {
 };
 
 MojoDWARFParser::MojoDWARFParser(MojoTypeSystem &typeSystem)
-    : typeSystem(typeSystem) {}
+    : DWARFASTParser(Kind::DWARFASTParserClang), typeSystem(typeSystem) {}
 
 MojoDWARFParser::~MojoDWARFParser() = default;
 
