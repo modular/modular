@@ -49,7 +49,12 @@ public:
   Type getValue() const;
 
   /// Get a type constant attribute.
-  static TypedAttr get(Type value);
+  static TypedAttr get(Type value, Type type);
+
+  /// TODO(metatypes): Delete this
+  static TypedAttr get(Type value) {
+    return get(value, MLIRTypeType::get(value.getContext()));
+  }
 
   /// Returns true if the given type is classified as a concrete type.
   static bool isConcreteType(Type type);

@@ -536,15 +536,17 @@ void KGENBytecodeInterface::write(BuildInfoParamAttr attr,
 Attribute KGENBytecodeInterface::readConcreteTypeConstantAttr(
     BytecodeReader &reader) const {
   Type value;
-  if (failed(reader.readType(value)))
+  MLIRTypeType type;
+  if (failed(reader.readType(value)) || failed(reader.readType(type)))
     return Attribute();
-  return ConcreteTypeConstantAttr::get(value);
+  return ConcreteTypeConstantAttr::get(value, type);
 }
 
 void KGENBytecodeInterface::write(ConcreteTypeConstantAttr attr,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kConcreteTypeConstantAttr);
   writer.writeType(attr.getValue());
+  writer.writeType(attr.getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -793,15 +795,17 @@ void KGENBytecodeInterface::write(ParamOperatorAttr attr,
 Attribute KGENBytecodeInterface::readParameterizedTypeConstantAttr(
     BytecodeReader &reader) const {
   Type value;
-  if (failed(reader.readType(value)))
+  MLIRTypeType type;
+  if (failed(reader.readType(value)) || failed(reader.readType(type)))
     return Attribute();
-  return ParameterizedTypeConstantAttr::get(value);
+  return ParameterizedTypeConstantAttr::get(value, type);
 }
 
 void KGENBytecodeInterface::write(ParameterizedTypeConstantAttr attr,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kParameterizedTypeConstantAttr);
   writer.writeType(attr.getValue());
+  writer.writeType(attr.getType());
 }
 
 //===----------------------------------------------------------------------===//

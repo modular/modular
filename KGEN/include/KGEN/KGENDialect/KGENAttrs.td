@@ -382,16 +382,15 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
 
   let parameters = (ins
     "Type":$value,
-    AttributeSelfTypeParameter<"", "mlir::Type",
-                               "MLIRTypeType::get($_ctxt)">:$type
+    AttributeSelfTypeParameter<"", "Type">:$type
   );
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "mlir::Type":$value), "", "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type),
+                                   "", "TypedAttr">,
   ];
 
   let assemblyFormat = "`<` $value `>`";
-  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -420,18 +419,18 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
 
   let parameters = (ins
     "Type":$value,
-    AttributeSelfTypeParameter<"", "mlir::Type",
-                               "MLIRTypeType::get($_ctxt)">:$type
+    AttributeSelfTypeParameter<"", "Type">:$type
   );
 
   let builders = [
-    AttrBuilder<(ins "mlir::Type":$value), "", "TypedAttr">,
-    AttrBuilder<(ins "mlir::Type":$value, "mlir::Type":$resultType), "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "mlir::Type":$value), "", "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$value,
+                                        "Type":$type),
+                                   "", "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type),
+                                   "", "TypedAttr">,
   ];
 
   let assemblyFormat = "`<` $value `>`";
-  let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 }
 

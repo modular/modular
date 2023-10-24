@@ -205,8 +205,8 @@ std::optional<bool> ParamIndexRefAttr::isLessThan(Attribute rhs) const {
 // TypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr TypeConstantAttr::get(Type value) {
-  return ParameterizedTypeConstantAttr::get(value);
+TypedAttr TypeConstantAttr::get(Type value, Type type) {
+  return ParameterizedTypeConstantAttr::get(value, type);
 }
 
 bool TypeConstantAttr::classof(Attribute attr) {
@@ -225,30 +225,17 @@ bool TypeConstantAttr::isConcreteType(Type type) {
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr ConcreteTypeConstantAttr::get(Type type) {
-  auto *ctx = type.getContext();
-  assert(!isParameterizedType(type) &&
+TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type) {
+  auto *ctx = value.getContext();
+  assert(!isParameterizedType(value) &&
          "Cannot create a ConcreteTypeConstantAttr with parameterized type");
 
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
-  if (auto refType = ::dyn_cast<ParamRefType>(type))
+  if (auto refType = ::dyn_cast<ParamRefType>(value))
     return refType.getParam();
 
-  return Base::get(ctx, type, MLIRTypeType::get(ctx));
-}
-
-LogicalResult
-ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 Type type, Type attrType) {
-  if (!attrType.isa<MLIRTypeType>())
-    return emitError() << "expected type to be !kgen.mlirtype";
-  if (LLVM_UNLIKELY(isParameterizedType(type))) {
-    return emitError()
-           << "concrete type constant created with parameterized type: "
-           << type;
-  }
-  return success();
+  return Base::get(ctx, value, type);
 }
 
 /// Always a constant by definition.
@@ -258,43 +245,20 @@ bool ConcreteTypeConstantAttr::isConstant() const { return true; }
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr ParameterizedTypeConstantAttr::getChecked(
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-    mlir::MLIRContext *ctx, mlir::Type argType, mlir::Type resultType) {
-  auto result = get(argType);
-  if (result.getType() == resultType)
-    return result;
-  emitError() << "expected type to be !kgen.mlirtype";
-  return {};
-}
-
-TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type type) {
-  return get(type);
-}
-
-TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type type,
-                                             Type resultType) {
-  return get(type);
-}
-
-TypedAttr ParameterizedTypeConstantAttr::get(Type type) {
+TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
+                                             Type type) {
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
-  if (auto refType = ::dyn_cast<ParamRefType>(type))
+  if (auto refType = ::dyn_cast<ParamRefType>(value))
     return refType.getParam();
 
-  auto *ctx = type.getContext();
-  auto typeType = MLIRTypeType::get(ctx);
-  if (isParameterizedType(type))
-    return Base::get(ctx, type, typeType);
-  return ConcreteTypeConstantAttr::Base::get(ctx, type, typeType);
+  if (isParameterizedType(value))
+    return Base::get(ctx, value, type);
+  return ConcreteTypeConstantAttr::Base::get(ctx, value, type);
 }
 
-LogicalResult ParameterizedTypeConstantAttr::verify(
-    function_ref<InFlightDiagnostic()> emitError, Type type, Type attrType) {
-  if (!attrType.isa<MLIRTypeType>())
-    return emitError() << "expected type to be !kgen.mlirtype";
-  return success();
+TypedAttr ParameterizedTypeConstantAttr::get(Type value, Type type) {
+  return get(type.getContext(), value, type);
 }
 
 /// Always not a constant by definition.

@@ -88,7 +88,7 @@ kgen.generator @dtype_params() {
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{'get_sizeof' should return an index}}
-"someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32>, #target> : !kgen.dtype} : () -> ()
+"someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32> : !kgen.mlirtype, #target> : !kgen.dtype} : () -> ()
 
 // -----
 
@@ -105,7 +105,7 @@ kgen.generator @dtype_params() {
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{'get_alignof' should return an index}}
-"someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32>, #target> : !kgen.dtype} : () -> ()
+"someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32> : !kgen.mlirtype, #target> : !kgen.dtype} : () -> ()
 
 // -----
 
@@ -334,16 +334,6 @@ kgen.func @test() {  // expected-note {{within 'kgen.func' @test}}
 
   kgen.return
 }
-
-// -----
-
-// expected-error @below {{expected type to be !kgen.mlirtype}}
-"someop" () {value = #kgen.concretetype.constant<i32> : i32} : () -> ()
-
-// -----
-
-// expected-error @below {{expected type to be !kgen.mlirtype}}
-"someop" () {value = #kgen.parameterizedtype.constant<i32> : i32} : () -> ()
 
 // -----
 
