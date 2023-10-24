@@ -172,8 +172,8 @@ OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &parser, Type &type) {
   if (result.has_value()) {
     if (failed(*result))
       return failure();
-    ParamBindArrayAttr values;
-    if (parseOptionalParamBindSpec(parser, values))
+    SmallVector<TypedAttr> values;
+    if (parseParameterValues(parser, values))
       return failure();
     type = DeclRefType::get(symbol, values);
     return LogicalResult::success();
@@ -220,7 +220,7 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
       p.printType(ref);
     } else {
       p << ref.getSymbol();
-      printOptionalParamBindSpec(p, ref.getParamValues());
+      printParameterValues(p, ref.getParamValues());
     }
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // Otherwise print it as "p1, p2 -> r3, () -> ())"
@@ -1838,43 +1838,14 @@ KGEN::verifyDeclSignaturesMatch(StringRef lhsName, SignatureType lhsSig,
 
 LogicalResult
 KGEN::verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
-                            ArrayRef<ParamDeclAttr> originatorParamDecls,
-                            Location originatorLoc, StringRef targetName,
-                            ArrayRef<ParamDeclAttr> targetParamDecls,
-                            Location targetLoc) {
-  using llvm::map_range;
-  auto getType = [](auto attr) -> Type { return attr.getType(); };
-  auto getName = [](auto attr) -> StringAttr { return attr.getName(); };
-
-  if (verifyMatchingLists(map_range(originatorParamDecls, getName),
-                          map_range(targetParamDecls, getName), originatorName,
-                          originatorLoc, targetName, targetLoc, paramKind,
-                          "name") ||
-      verifyMatchingLists(map_range(originatorParamDecls, getType),
-                          map_range(targetParamDecls, getType), originatorName,
-                          originatorLoc, targetName, targetLoc, paramKind,
-                          "type"))
-    return failure();
-  return success();
-}
-
-LogicalResult
-KGEN::verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
-                            ArrayRef<ParamBindAttr> binds,
+                            ArrayRef<TypedAttr> paramValues,
                             Location originatorLoc, StringRef targetName,
                             ArrayRef<ParamDeclAttr> decls, Location targetLoc) {
   using llvm::map_range;
   auto getType = [](auto attr) -> Type { return attr.getType(); };
-  auto getName = [](auto attr) -> StringAttr { return attr.getName(); };
-
-  if (verifyMatchingLists(map_range(binds, getName), map_range(decls, getName),
-                          originatorName, originatorLoc, targetName, targetLoc,
-                          paramKind, "name") ||
-      verifyMatchingLists(map_range(binds, getType), map_range(decls, getType),
-                          originatorName, originatorLoc, targetName, targetLoc,
-                          paramKind, "type"))
-    return failure();
-  return success();
+  return verifyMatchingLists(
+      map_range(paramValues, getType), map_range(decls, getType),
+      originatorName, originatorLoc, targetName, targetLoc, paramKind, "type");
 }
 
 LogicalResult KGEN::checkResultParameterTypes(Operation *op,

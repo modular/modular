@@ -268,7 +268,9 @@ LITStructAttr::verifySymbolUses(Operation *module,
     return emitError(loc) << "struct attribute type " << getType().getSymbol()
                           << " does not refer to a struct declaration";
 
-  ParameterEvaluator evaluator(getType().getParamValues());
+  ParameterEvaluator evaluator(structDecl.getInputParams(),
+                               getType().getParamValues());
+
   auto fields = structDecl.getFieldDecls();
   unsigned numFields = std::distance(fields.begin(), fields.end());
   if (numFields != getValues().size()) {
@@ -319,7 +321,8 @@ bool LITStructAttr::isConstant() const {
 TypedAttr LIT::StructExtractAttr::get(TypedAttr structValue,
                                       StructFieldOp fieldOp) {
   auto structType = ::cast<DeclRefType>(structValue.getType());
-  ParameterEvaluator evaluator(structType.getParamValues());
+  ParameterEvaluator evaluator(fieldOp.getParentOp().getInputParams(),
+                               structType.getParamValues());
   auto resultType = evaluator.getReboundType(fieldOp.getType());
   return get(structValue, fieldOp.getNameAttr(), resultType);
 }

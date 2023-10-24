@@ -1098,8 +1098,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
     // Get a symbol for the underlying function.
     InputParamBindings inputParamBindings;
-    for (ParamBindAttr binding : baseRVType.getParamBindings())
-      inputParamBindings.addPrechecked(binding.getValue());
+    for (TypedAttr binding : baseRVType.getParamBindings())
+      inputParamBindings.addPrechecked(binding);
     auto result =
         ORValue::create(spelling, memberDecls, std::move(inputParamBindings),
                         this, CallSyntax::kDirectCall);
@@ -1160,11 +1160,13 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (auto parameter = memberDecl.getIfPValue()) {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
     if (auto baseDecl = dyn_cast<DeclRefType>(baseRVType)) {
-      for (ParamBindAttr bind : baseDecl.getParamValues()) {
+      for (auto [name, value] :
+           llvm::zip(cast<StructDeclOp>(typeDecl).getInputParams(),
+                     baseDecl.getParamValues())) {
         // If this binding is for this parameter propagate the bound
         // parameter.
-        if (bind.getName() == paramRef.getName())
-          return emitter.emitResult(bind.getValue(), this, dest);
+        if (name.getName() == paramRef.getName())
+          return emitter.emitResult(value, this, dest);
       }
     }
   }
@@ -1528,15 +1530,8 @@ static PValue substituteParametersIntoUserDefinedType(
   if (!bindingValuesAttr)
     return {};
 
-  SmallVector<ParamBindAttr> bindingValues;
-  for (auto [decl, value] :
-       llvm::zip(structOp.getInputParams(), bindingValuesAttr))
-    bindingValues.push_back(ParamBindAttr::get(decl.getName(), value));
-
   // Ok, we succeeded at reparameterizing the type.
-  return PValue(DeclRefType::get(
-      typeDecl.getSymbolRef(),
-      ParamBindArrayAttr::get(structOp.getContext(), bindingValues)));
+  return PValue(DeclRefType::get(typeDecl.getSymbolRef(), bindingValuesAttr));
 }
 
 /// Returns the next expected parameter type for a function candidate given a
@@ -2018,6 +2013,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
 
   // Perform parameter substitution if there are input parameters.
   ParserParamEvaluator paramEvaluator(emitter.getDeclResolver(),
+                                      structOp.getInputParams(),
                                       initType.getParamBindings());
 
   // Build a mapping of field names to field decls for fast lookup.

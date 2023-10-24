@@ -992,10 +992,9 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
   ParamDeclAttr tupleParam = tupleLiteralStruct.getInputParams()[0];
 
   // Bind it to a VariadicAttr of the right elements.
-  auto packAttr =
+  TypedAttr packAttr =
       VariadicAttr::get(eltTypes, cast<VariadicType>(tupleParam.getType()));
-  auto packBind = ParamBindAttr::get(tupleParam.getName(), packAttr);
-  return DeclRefType::get(tupleLiteralDecl.getSymbolRef(), packBind);
+  return DeclRefType::get(tupleLiteralDecl.getSymbolRef(), packAttr);
 }
 
 ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
@@ -1010,20 +1009,9 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
   ASTType varListType = getBuiltinVariadicListType(context, loc, elemInMem);
   if (varListType.isTypeCheckErrorType())
     return varListType;
-
-  // Get the type parameter from the VariadicList type.
-  ASTDecl &varListDecl = *varListType.getDecl(*this);
-  auto varListStruct = cast<StructDeclOp>(varListDecl);
-  assert(varListStruct.getInputParams().size() == 1);
-  ParamDeclAttr varListParam = varListStruct.getInputParams()[0];
-
-  SmallVector<ParamBindAttr> bindingValues;
-  bindingValues.push_back(ParamBindAttr::get(varListParam.getName(),
-                                             TypeConstantAttr::get(elemType)));
-
-  return DeclRefType::get(
-      varListDecl.getSymbolRef(),
-      ParamBindArrayAttr::get(varListStruct.getContext(), bindingValues));
+  TypedAttr elemTypeValue = TypeConstantAttr::get(elemType);
+  return DeclRefType::get(cast<DeclRefType>(varListType).getSymbol(),
+                          elemTypeValue);
 }
 
 void SharedState::loadModulesFromCache(

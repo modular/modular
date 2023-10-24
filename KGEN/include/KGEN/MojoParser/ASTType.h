@@ -59,7 +59,7 @@ public:
   /// If this is a parametric user defined type, return all parameter bindings
   /// on this reference to the type.  Note that this is potentially a partial
   /// binding set - incomplete bindings (missing bindings) are valid.
-  ParamBindArrayAttr getParamBindings() const;
+  ArrayRef<TypedAttr> getParamBindings() const;
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.

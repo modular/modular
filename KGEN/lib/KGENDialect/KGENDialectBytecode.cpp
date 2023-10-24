@@ -1045,9 +1045,9 @@ LogicalResult KGENBytecodeInterface::writeType(Type type,
 
 Type KGENBytecodeInterface::readDeclRefType(BytecodeReader &reader) const {
   SymbolRefAttr symbol;
-  ParamBindArrayAttr paramValues;
+  SmallVector<TypedAttr> paramValues;
   if (failed(reader.readAttribute(symbol)) ||
-      failed(reader.readAttribute(paramValues)))
+      failed(reader.readAttributes(paramValues)))
     return Type();
   return DeclRefType::get(symbol, paramValues);
 }
@@ -1056,7 +1056,7 @@ void KGENBytecodeInterface::write(DeclRefType type,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kDeclRefType);
   writer.writeAttribute(type.getSymbol());
-  writer.writeAttribute(type.getParamValues());
+  writer.writeAttributes(type.getParamValues());
 }
 
 //===----------------------------------------------------------------------===//

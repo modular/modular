@@ -7,7 +7,7 @@
 lit.struct.decl @SmallVector<N, T: type> {
   lit.struct.field data: !pop.array<N, T>
 }
-!structTest = !kgen.declref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
+!structTest = !kgen.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
 
 // CHECK: "test.types"
 "test.types"() {

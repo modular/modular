@@ -203,13 +203,13 @@ struct M:
 # CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow, |)
 struct StructWithFuncParam[comparator: fn[T: AnyType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
-    # CHECK-SAME: %self[self]: !kgen.pointer<{{.*}}<[[PARAM]]: !lit.signature<<"T": type>(!kgen.paramref<*(0,0)>
+    # CHECK-SAME: %self[self]: !kgen.pointer<{{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)>
     fn f(self):
         pass
 
     # CHECK-LABEL: lit.func @"g
     fn g(self):
-        # CHECK: call {{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
+        # CHECK: call {{.*}}"<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
         # CHECK-SAME: !kgen.pointer<{{.*}}<"T": type>(!kgen.paramref<*(0,0)> borrow, |)
         self.f()
 
@@ -1343,9 +1343,9 @@ struct MemType: pass
 # CHECK-SAME: %{{.*}}[float5]: {{.*}}(!Int borrow, |) throws -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float6]: {{.*}}(!Int borrow, |) throws|async|capturing -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float7]: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float8]: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>> borrow, |) -> !kgen.none
+# CHECK-SAME: %{{.*}}[float8]: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<:!Int *(0,0)>> borrow, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float9]: {{.*}}<[] -> !Int>() -> !kgen.none
-# CHECK-SAME: %{{.*}}[float10]: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float10]: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>>() throws -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float11]: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float12]: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
 # CHECK-SAME: %{{.*}}[named]: {{.*}}<("x": !kgen.pointer<!MemType> borrow_in_mem) -> !Int>
@@ -1398,8 +1398,8 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 
 # CHECK-LABEL: lit.func @"variadic_memory_subscript
 # CHECK-SAME: variadic<pointer<{{.*}}TwoParamsStruct<
-# CHECK-SAME:   a{{.*}} = variadic_get{{.*}}a, 0
-# CHECK-SAME:   b{{.*}} = variadic_get{{.*}}a, 1
+# CHECK-SAME:   :!Int variadic_get({{.*}}a, 0)
+# CHECK-SAME:   :!Int variadic_get({{.*}}a, 1)
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %[[V0:.*]] = {{.*}}__getitem__{{.*}}%b
     # CHECK: lit.letreg.decl{{.*}} = %[[V0]]

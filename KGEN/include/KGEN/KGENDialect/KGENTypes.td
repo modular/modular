@@ -359,17 +359,15 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
   }];
 
   let parameters = (ins "SymbolRefAttr":$symbol,
-                        "ParamBindArrayAttr":$paramValues);
+                        OptionalArrayRefParameter<"TypedAttr">:$paramValues);
   let assemblyFormat = [{
-    `<` $symbol `` custom<OptionalParamBindSpec>($paramValues) `>`
+    `<` $symbol `` custom<ParameterValues>($paramValues) `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name)>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "ParamBindArrayAttr":$paramValues)>,
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "ArrayRef<ParamBindAttr>":$paramValues)>
+                                        "ArrayRef<TypedAttr>":$paramValues)>
   ];
 
   let extraClassDeclaration = [{

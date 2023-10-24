@@ -256,7 +256,7 @@ public:
   MojoASTDeclRef getDecl(MojoASTTypeRef type);
 
   /// Substitute parameters into a type and resolve them into a different type.
-  MojoASTTypeRef concretizeType(KGEN::ParamBindArrayAttr params,
+  MojoASTTypeRef concretizeType(MojoASTTypeRef base, ArrayRef<TypedAttr> params,
                                 MojoASTTypeRef type);
 
 protected:

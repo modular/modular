@@ -690,22 +690,13 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 }
 
 Type ClosureEmitter::makeClosureImplSelfType(
-    StructDeclOp closureImpl, SmallVector<ParamDeclAttr> paramValues) {
-  Type closureImplType = ASTDecl::computeSelfTypeForStruct(closureImpl);
-  DeclRefType declRef = dyn_cast<DeclRefType>(closureImplType);
-  if (!declRef)
-    return closureImplType;
-  ASTDecl &typeDecl =
-      shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-  SmallVector<ParamBindAttr> bindingValues;
-  for (auto [i, param] : llvm::enumerate(paramValues)) {
-    TypedAttr typedAttr =
-        ParamDeclRefAttr::get(param.getName(), param.getType());
-    bindingValues.push_back(ParamBindAttr::get(
-        closureImpl.getInputParams()[i].getName(), typedAttr));
-  }
-  return DeclRefType::get(typeDecl.getSymbolRef(),
-                          ParamBindArrayAttr::get(ctx, bindingValues));
+    StructDeclOp closureImpl, SmallVector<ParamDeclAttr> paramDecls) {
+  ASTDecl &typeDecl = shared.declResolver->getDeclForTypeSymbol(
+      getFullyResolvedSymbolRef(closureImpl));
+  SmallVector<TypedAttr> bindingValues;
+  for (ParamDeclAttr decl : paramDecls)
+    bindingValues.push_back(ParamDeclRefAttr::get(decl));
+  return DeclRefType::get(typeDecl.getSymbolRef(), bindingValues);
 }
 
 static SymbolConstantAttr

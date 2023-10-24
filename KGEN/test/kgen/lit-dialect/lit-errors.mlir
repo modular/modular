@@ -38,17 +38,7 @@ lit.struct.decl @StructDuplicate {
 lit.struct.decl @SomeType<v, b> {}
 
 // expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "c"}}
-kgen.generator @InvalidTypeParamValue<a>(%arg0: !kgen.declref<@SomeType<v = a, b = c>>) {
-  kgen.return
-}
-
-// -----
-
-// expected-note @below {{@SomeType declared here}}
-lit.struct.decl @SomeType<v, d> {}
-
-// expected-error @below {{!kgen.declref symbol use input parameter #1 has name "b" but @SomeType expected name "d"}}
-kgen.generator @InvalidTypeParamValue<a, c>(%arg0: !kgen.declref<@SomeType<v = a, b = c>>) {
+kgen.generator @InvalidTypeParamValue<a>(%arg0: !kgen.declref<@SomeType<a, c>>) {
   kgen.return
 }
 
@@ -60,7 +50,7 @@ lit.struct.decl @Bar<a: type> {
 
 kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
   // expected-error @below {{perand #0 has type '!kgen.paramref<c>' but corresponding struct field "x" expected '!pop.array<32, index>'}}
-  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<a: type = index>>
+  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<:type index>>
   kgen.return
 }
 
@@ -250,7 +240,7 @@ lit.struct.decl @ParamField<ty: type> {
 
 lit.func @struct_attr() {
   // expected-error @below {{struct attribute field #0 has type 'index' but corresponding struct field "a" expected 'i1'}}
-  kgen.param.constant: @ParamField<ty: type = i1> = <#lit.struct<{a = 5}>>
+  kgen.param.constant: @ParamField<:type i1> = <#lit.struct<{a = 5}>>
   kgen.return
 }
 
@@ -262,7 +252,7 @@ lit.struct.decl @ParamField<ty: type> {
 
 lit.func @struct_attr() {
   // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "A"}}
-  kgen.param.constant: @ParamField<ty: type = i1> = <#lit.struct<{a: i1 = A}>>
+  kgen.param.constant: @ParamField<:type i1> = <#lit.struct<{a: i1 = A}>>
   kgen.return
 }
 
@@ -288,8 +278,8 @@ lit.func @bad_param_results<() -> r0: dtype>() {
 // -----
 
 lit.func @no_struct_decl(%a: index) {
-  // expected-error @below {{expected to find a struct decl for '!kgen.declref<@Bar<a: type = index>>'}}
-  %0 = lit.struct.create(x=%a) : (index) -> !kgen.declref<@Bar<a: type = index>>
+  // expected-error @below {{expected to find a struct decl for '!kgen.declref<@Bar<:type index>>'}}
+  %0 = lit.struct.create(x=%a) : (index) -> !kgen.declref<@Bar<:type index>>
   lit.end_func
 }
 

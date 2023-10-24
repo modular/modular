@@ -152,14 +152,13 @@ MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
   return type.getDecl(impl->sharedState);
 }
 
-MojoASTTypeRef
-MojoParserContext::concretizeType(KGEN::ParamBindArrayAttr params,
-                                  MojoASTTypeRef type) {
-  KGEN::LIT::ParserParamEvaluator evaluator(*(impl->sharedState.declResolver));
-  for (KGEN::ParamBindAttr paramVal : params)
-    evaluator.setParameterValue(paramVal.getName(), paramVal.getValue());
+MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
+                                                 ArrayRef<TypedAttr> params,
+                                                 MojoASTTypeRef type) {
+  KGEN::LIT::ParserParamEvaluator evaluator(
+      *(impl->sharedState.declResolver),
+      cast<StructDeclOp>(base.getDecl(getSharedState()).decl).getInputParams(),
+      params);
 
-  MojoASTTypeRef concreteType = evaluator.getReboundType(type.getMLIRType());
-  concreteType = evaluator.refineType(concreteType.getMLIRType());
-  return concreteType;
+  return evaluator.refineType(evaluator.getReboundType(type.getMLIRType()));
 }

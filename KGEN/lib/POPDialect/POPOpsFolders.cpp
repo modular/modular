@@ -1068,12 +1068,14 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "non-constant inputs");
 
   auto arrayType = getArray().getType().getElementAs<POP::ArrayType>();
-  auto dl = cast<DataLayoutInterface>(arrayType.getElementAsType());
+  TypedAttr elementType = arrayType.getElementType();
+  auto dl = cast<DataLayoutInterface>(
+      cast<ConcreteTypeConstantAttr>(elementType).getValue());
   int64_t addr =
       ptr.getAddr() +
       index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                       *dl.getTypeAlign(state.getTarget())));
-  state.mapResults(PointerAttr::get(addr, PointerType::get(dl)));
+  state.mapResults(PointerAttr::get(addr, PointerType::get(elementType)));
   return success();
 }
 

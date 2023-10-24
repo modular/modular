@@ -49,8 +49,10 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
 
     // If the DeclRefType has parameters, try to evaluate and substitute them
     // into the type.
-    if (!refType.getParamValues().empty())
-      fieldType = context.concretizeType(refType.getParamValues(), fieldType);
+    if (!refType.getParamValues().empty()) {
+      fieldType =
+          context.concretizeType(typeRef, refType.getParamValues(), fieldType);
+    }
 
     auto &fieldLayout = getOrCalculate(fieldType);
     // If we cannot calculate the layout of a field, we bail because reporting

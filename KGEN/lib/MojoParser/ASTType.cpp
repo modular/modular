@@ -56,10 +56,10 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 /// If this is a parametric user defined type, return all parameter bindings
 /// on this reference to the type.  Note that this is potentially a partial
 /// binding set - incomplete bindings (missing bindings) are valid.
-ParamBindArrayAttr ASTType::getParamBindings() const {
+ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return declRef.getParamValues();
-  return ParamBindArrayAttr::get(mlirType.getContext(), {});
+  return {};
 }
 
 bool ASTType::isEqualCanon(ASTType other) const {
@@ -366,12 +366,12 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     // Only print the leaf reference when pretty printing types.
     printSymbol(os, symbol, forDiag);
 
-    ParamBindArrayAttr params = declRef.getParamValues();
+    ArrayRef<TypedAttr> params = declRef.getParamValues();
     if (!params.empty()) {
       os << '[';
-      llvm::interleaveComma(params, os, [&](ParamBindAttr bind) {
+      llvm::interleaveComma(params, os, [&](TypedAttr value) {
         // If the parameter is a type, print it nicely.
-        auto val = PValue(bind.getValue());
+        auto val = PValue(value);
 
         if (ASTType type = val.getIfTypeValue())
           if (!isa<ParamRefType>(type.mlirType))

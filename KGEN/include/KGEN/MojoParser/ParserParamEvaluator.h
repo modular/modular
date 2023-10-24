@@ -24,7 +24,8 @@ class ParserParamEvaluator : public ParameterEvaluator,
                              public InterpreterState {
 public:
   ParserParamEvaluator(DeclResolver &resolver,
-                       ArrayRef<ParamBindAttr> paramValues = {});
+                       ArrayRef<ParamDeclAttr> paramDecls = {},
+                       ArrayRef<TypedAttr> paramValues = {});
 
   /// Attempt to evaluate 'apply' expressions.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;

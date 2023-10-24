@@ -723,13 +723,13 @@ lit.struct.decl @IndexParams0<a, b: f32> {}
 lit.struct.decl @IndexParams1<a: i32, b: i64, c: f32, d: i8> {}
 
 // CHECK-LABEL: kgen.generator @indexParamRef
-// CHECK-SAME: @IndexParams1<a: i32 = *(0,0), b: i64 = *(0,1), c: f32 = *(1,1), d: i8 = *(1,0)*>
-// CHECK-SAME: @IndexParams0<a = *(0,0), b: f32 = *(0,1)>
+// CHECK-SAME: @IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1), :i8 *(1,0)*>
+// CHECK-SAME: @IndexParams0<*(0,0), :f32 *(0,1)>
 kgen.generator @indexParamRef<
   fn: <index, f32, <i32, i64>()
-      -> !kgen.declref<@IndexParams1<a: i32 = *(0,0), b: i64 = *(0,1), c: f32 = *(1,1), d: i8 = *(1,0)*>>
+      -> !kgen.declref<@IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1), :i8 *(1,0)*>>
       -> i8>()
-    -> !kgen.declref<@IndexParams0<a = *(0,0), b: f32 = *(0,1)>>
+    -> !kgen.declref<@IndexParams0<*(0,0), :f32 *(0,1)>>
 >() {
   kgen.return
 }

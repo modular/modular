@@ -124,11 +124,11 @@ lit.func @aliasDecls() {
 // -----
 
 lit.struct.decl @Adder<size> {
-  // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !kgen.declref<@Adder<size = size>>) {
+  // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !kgen.declref<@Adder<size>>) {
   // CHECK-NEXT:    kgen.param.declare life: lifetime
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
-  lit.func @__add__(%self: !kgen.declref<@Adder<size = size>>)  {
+  lit.func @__add__(%self: !kgen.declref<@Adder<size>>)  {
     %0 = lit.varlet.decl "a" var : !lit.ref<mut index, *"life">
     %one = index.constant 1
     lit.ref.store %one, %0 : !lit.ref<mut index, *"life">
@@ -173,16 +173,16 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
 
 // CHECK-LABEL: lit.struct.decl @A<N>
 lit.struct.decl @A<N> {
-  lit.func @foo<M>(%self: !kgen.declref<@A<N = N>>) -> index {
+  lit.func @foo<M>(%self: !kgen.declref<@A<N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
     kgen.return %0 : index
   }
 }
 
 // CHECK-LABEL: kgen.generator @main
-lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
-  // CHECK-NEXT: call_param[(!kgen.declref<@A<N = 1>>) -> index: @"A::foo"<1, 2>]
-  %0 = kgen.call_param[(!kgen.declref<@A<N = 1>>) -> index: @A::@foo<1, 2>](%a)
+lit.func @main(%a: !kgen.declref<@A<1>>) {
+  // CHECK-NEXT: call_param[(!kgen.declref<@A<1>>) -> index: @"A::foo"<1, 2>]
+  %0 = kgen.call_param[(!kgen.declref<@A<1>>) -> index: @A::@foo<1, 2>](%a)
   kgen.return
 }
 
@@ -201,8 +201,8 @@ lit.func @rhslitdeclref_no_params(%x: !kgen.declref<@A>) {
 lit.struct.decl @A<b, c> {
 }
 
-// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<b = 10, c = 11>>) {
-lit.func @rhslitdeclref_params(%x: !kgen.declref<@A<b = 10, c = 11>>) {
+// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<10, 11>>) {
+lit.func @rhslitdeclref_params(%x: !kgen.declref<@A<10, 11>>) {
   kgen.return
 }
 
@@ -427,9 +427,9 @@ lit.file_module @module {
   }
 
   lit.struct.decl @Adder<size> {
-    // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !kgen.declref<@"module::Adder"<size = size>>) {
+    // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !kgen.declref<@"module::Adder"<size>>) {
     // CHECK-NEXT:    kgen.call @"module::test"() : () -> ()
-    lit.func @__add__(%self: !kgen.declref<@module::@Adder<size = size>>)  {
+    lit.func @__add__(%self: !kgen.declref<@module::@Adder<size>>)  {
       kgen.call @module::@test() : () -> ()
       kgen.return
     }
@@ -438,10 +438,10 @@ lit.file_module @module {
   // CHECK-LABEL: lit.struct.decl @"module::Adder"<size> {
 }
 
-// CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.declref<@"module::Adder"<size = 10>>)
-lit.func @caller(%ref: !kgen.declref<@module::@Adder<size = 10>>)  {
+// CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.declref<@"module::Adder"<10>>)
+lit.func @caller(%ref: !kgen.declref<@module::@Adder<10>>)  {
   // CHECK: kgen.call @"module::Adder::__add__"
-  kgen.call @module::@Adder::@__add__<10>(%ref) : (!kgen.declref<@module::@Adder<size = 10>>) -> ()
+  kgen.call @module::@Adder::@__add__<10>(%ref) : (!kgen.declref<@module::@Adder<10>>) -> ()
   kgen.return
 }
 
