@@ -93,15 +93,14 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype"> {
   }];
 
   let parameters = (ins "SymbolRefAttr":$symbol,
-                        "ParamBindArrayAttr":$paramValues);
+                        OptionalArrayRefParameter<"TypedAttr">:$paramValues);
   let assemblyFormat = [{
-    `<` $symbol `` custom<OptionalParamBindSpec>($paramValues) `>`
+    `<` $symbol `` custom<ParameterValues>($paramValues) `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
-      return get(symbol.getContext(), symbol,
-                 ParamBindArrayAttr::get(symbol.getContext(), {}));
+      return get(symbol.getContext(), symbol, {});
     }]>
   ];
 }

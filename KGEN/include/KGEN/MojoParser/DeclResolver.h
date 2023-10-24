@@ -19,7 +19,6 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN {
-class ParamBindArrayAttr;
 class ParamDeclAttr;
 } // namespace M::KGEN
 
