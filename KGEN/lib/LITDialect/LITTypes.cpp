@@ -26,6 +26,33 @@ void LITDialect::registerTypes() {
 #define GET_TYPEDEF_LIST
 #include "KGEN/LITDialect/LITTypes.cpp.inc"
       >();
+
+  auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
+  dialect->registerMnemonicType<MetaTypeType>();
+}
+
+//===----------------------------------------------------------------------===//
+// MetaTypeType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
+                                             TypedAttr &value) const {
+  Type type;
+  OptionalParseResult result = parseOptionalKGENType(p, type);
+  if (!result.has_value())
+    return {};
+  if (failed(*result))
+    return failure();
+  value = TypeConstantAttr::get(type, *this);
+  return mlir::success();
+}
+
+LogicalResult MetaTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto type = ::dyn_cast<TypeConstantAttr>(value);
+  if (!type)
+    return failure();
+  printKGENType(p, type.getValue());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

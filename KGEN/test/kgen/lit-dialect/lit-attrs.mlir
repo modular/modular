@@ -42,3 +42,10 @@ kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Foo, p>,
                                            %b: !lit.ref<mut @Foo, p>) {
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @metatype
+kgen.generator @metatype() {
+  // CHECK: T: metatype<@Foo> = <@Foo>
+  kgen.param.declare T: metatype<@Foo> = <@Foo>
+  kgen.return
+}
