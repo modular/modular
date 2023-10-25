@@ -10,6 +10,7 @@
 
 using namespace M;
 using namespace Cache;
+using namespace std::chrono_literals;
 
 ErrorOrSuccess HTTPCacheBackend::insertImpl(StringRef keyHash, BufferRef obj) {
   return Error::getStaticString("HTTP backend does not support insert");
@@ -42,9 +43,6 @@ HTTPCacheBackend::findImpl(StringRef keyHash,
   // Base64 encode the key hash so it's URL-safe.
   std::string keyHashB64 = encodeURLSafeBase64(keyHash);
 
-  // 10min timeout for requests.
-  using namespace std::chrono_literals;
-  constexpr std::chrono::milliseconds timeout = 10min;
   // Maximum of 512M per request.
   constexpr size_t maxBytes = 1024 * 1024 * 512;
 
@@ -66,8 +64,8 @@ HTTPCacheBackend::findImpl(StringRef keyHash,
     HTTPClient client(ctx.copy());
 
     // Execute the request. This is a blocking request on this thread.
-    HTTPResponse response =
-        client.executeRequest(req, *writeBuf, timeout, maxBytes);
+    HTTPResponse response = client.executeRequest(
+        req, *writeBuf, std::chrono::milliseconds::zero(), maxBytes);
 
     // TODO: Will the result bytes be encoded or can we expect them to be raw
     //       binary?
