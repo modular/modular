@@ -77,4 +77,6 @@ static_assert(sizeof(void *) != 8 || sizeof(TensorSpec) == 16);
 
 } // namespace M
 
+LLVM_FWD_YAML_DECLARE_SCALAR_TRAITS(M::TensorSpec)
+
 #endif // SUPPORT_ML_TENSORSPEC_H

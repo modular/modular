@@ -6,6 +6,7 @@
 
 #include "Support/ML/TensorSpec.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
@@ -60,4 +61,34 @@ std::string TensorSpec::getAsString() const {
   llvm::raw_string_ostream os(str);
   print(os);
   return os.str();
+}
+
+//===----------------------------------------------------------------------===//
+// YAML ScalarTraits implementation
+//===----------------------------------------------------------------------===//
+
+void llvm::yaml::ScalarTraits<TensorSpec>::output(const M::TensorSpec &value,
+                                                  void *ctxt,
+                                                  llvm::raw_ostream &out) {
+  value.print(out);
+}
+
+StringRef llvm::yaml::ScalarTraits<TensorSpec>::input(StringRef scalar,
+                                                      void *ctxt,
+                                                      M::TensorSpec &value) {
+  M::ErrorOr<TensorSpec> specOr = TensorSpec::parseFromString(scalar);
+  if (specOr.isError())
+    // Can't return specOr.getError() because that has a lifetime coinciding
+    // with specOr, whose lifetime ends at the end of this function (can't
+    // safely return a StringRef to it, since it would be used after lifetime
+    // end).  Unfortunately this means we discard error details, but we don't
+    // have the mechanism to preserve them while being safe about lifetime.
+    return "Unable to parse tensor spec";
+  value = std::move(*specOr);
+  return StringRef();
+}
+
+llvm::yaml::QuotingType
+llvm::yaml::ScalarTraits<TensorSpec>::mustQuote(StringRef) {
+  return llvm::yaml::QuotingType::None;
 }
