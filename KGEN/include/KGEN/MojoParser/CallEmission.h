@@ -110,7 +110,8 @@ public:
   /// given expression location.
   ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
                                         ExprEmitter &emitter,
-                                        llvm::SMLoc exprLoc) const;
+                                        llvm::SMLoc exprLoc,
+                                        bool allowPartiallyBound) const;
 
   /// Helper class to customizing diagnostic emission for verification. The
   /// default implementation suppresses all diagnostics.
@@ -171,7 +172,7 @@ private:
       ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
       bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
       bool isPackVarArg, SetEvaluatorHookTy setEvaluator,
-      const DiagEmitter &diagEmitter) const;
+      const DiagEmitter &diagEmitter, bool allowPartiallyBound = false) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -179,12 +180,14 @@ private:
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. If the parameters do not
   /// work, this emits diagnostics using the locations and `baseName` provided.
-  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
-      ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
-      ArrayRef<PassingKind> paramPassingKinds,
-      ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-      bool hasParamVarArgs, StringRef baseName, Location opLoc,
-      llvm::SMLoc exprLoc, SetEvaluatorHookTy setEvaluator = {}) const;
+  std::pair<ParameterExprArrayAttr, Fitness>
+  verifyBindings(ArrayRef<Type> expectedParamTypes,
+                 ArrayRef<StringAttr> paramNames,
+                 ArrayRef<PassingKind> paramPassingKinds,
+                 ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+                 bool hasParamVarArgs, StringRef baseName, Location opLoc,
+                 llvm::SMLoc exprLoc, SetEvaluatorHookTy setEvaluator = {},
+                 bool allowPartiallyBound = false) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call

@@ -30,7 +30,7 @@ fn GoodUseOfThing(a: Thing[4, 5]):
 fn MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
-fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters, but 1 was specified}}
+fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{partial autoparameterization not supported yet}}
   pass
 
 # expected-error @+1 {{'Thing' parameter #1 has 'Int' type, but value has type 'FloatLiteral'}}
@@ -276,9 +276,6 @@ struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral]: pass
 struct DefaultParams2[a: Int, b: Int = 7]: pass  # expected-note {{declared here}}
 
 fn test_default_param_struct():
-    # expected-error @+1 {{expects at least 1 input parameter, but 0 were specified}}
-    alias T = DefaultParams2[]
-
     # expected-error @+1 {{expects at most 2 input parameters, but 3 were specified}}
     alias S = DefaultParams2[1, 3, 4]
 
@@ -389,6 +386,3 @@ fn test_pos_only_struct():
     _ = PosOnlyStruct[0, b=1, c=2]
     # expected-error @below {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
-
-    # expected-error @below {{expects at least 2 positional input parameters, but 1 was specified}}
-    _ = PosOnlyStruct[1, c=9]
