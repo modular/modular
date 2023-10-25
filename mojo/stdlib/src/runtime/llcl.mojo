@@ -15,6 +15,8 @@ from gpu.host.stream import _StreamImpl
 from memory.unsafe import DTypePointer, Pointer
 from runtime.tracing import TraceLevel, is_mojo_profiling_disabled
 
+from sys.ffi import _get_global
+
 # ===----------------------------------------------------------------------===#
 # num_cores
 # ===----------------------------------------------------------------------===#
@@ -147,9 +149,9 @@ fn _destroy_global_runtime(ptr: Pointer[NoneType]):
 @always_inline
 fn _get_global_runtime() -> Runtime:
     """Gets or creats the global runtime."""
-    return external_call["KGEN_CompilerRT_GetGlobalOr", Pointer[NoneType]](
-        StringRef("Runtime"), _init_global_runtime, _destroy_global_runtime
-    )
+    return _get_global[
+        "Runtime", _init_global_runtime, _destroy_global_runtime
+    ]()
 
 
 # ===----------------------------------------------------------------------===#
