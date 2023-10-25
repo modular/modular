@@ -11,6 +11,7 @@
 #include "mlir/Bytecode/BytecodeImplementation.h"
 
 namespace M {
+
 /// ODS helper for parsing an enum.
 template <typename T>
 LogicalResult readEnum(mlir::DialectBytecodeReader &reader, T &result) {

@@ -39,8 +39,8 @@ static void printTriple(MLIRContext *ctx, DialectBytecodeWriter &writer,
   writer.writeOwnedString(StringAttr::get(ctx, triple.str()));
 }
 
-static LogicalResult parseDataLayout(DialectBytecodeReader &reader,
-                                     DataLayout &dl) {
+static LogicalResult readDataLayout(DialectBytecodeReader &reader,
+                                    DataLayout &dl) {
   StringRef dlStr;
   if (failed(reader.readString(dlStr)))
     return failure();
@@ -51,7 +51,7 @@ static LogicalResult parseDataLayout(DialectBytecodeReader &reader,
   return success();
 }
 
-static void printDataLayout(MLIRContext *ctx, DialectBytecodeWriter &writer,
+static void writeDataLayout(DialectBytecodeWriter &writer,
                             const DataLayout &dl) {
   writer.writeOwnedString(dl.toString());
 }

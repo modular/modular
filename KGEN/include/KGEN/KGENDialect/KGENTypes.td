@@ -35,18 +35,17 @@ def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
     type disappears.
   }];
 
-  let parameters = (ins "mlir::TypedAttr":$param);
+  let parameters = (ins "TypedAttr":$param);
   let assemblyFormat = "`<` custom<TypeParamValue>($param) `>`";
 
   // Our builders create ParamRefType but fold to the base type if not
   // parameterized.
   let skipDefaultBuilders = 1;
   let builders = [
-    TypeBuilderWithInferredContext<(ins "mlir::TypedAttr":$param),
-                                   [{}], "Type">,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$param), [{}], "Type">,
      // This is needed for ODS generated uses.
-    TypeBuilderWithInferredContext<(ins "mlir::MLIRContext *":$context,
-                                        "mlir::TypedAttr":$param),
+    TypeBuilderWithInferredContext<(ins "MLIRContext *":$context,
+                                        "TypedAttr":$param),
                                    [{ return get(param); }], "Type">,
   ];
 }
