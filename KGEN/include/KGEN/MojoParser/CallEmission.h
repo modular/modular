@@ -69,6 +69,14 @@ public:
   /// This contains the bound input parameters given by a keyword.
   SmallDenseMap<StringAttr, Binding> kwBindings;
 
+  /// A list of all default parameter values declared for a type, if these are
+  /// bindings for an overload set on a method.
+  ArrayRef<TypedAttr> defaultTypeParams;
+
+  /// The number of parameters declared for a type, if these are bindings for an
+  /// overload set on a method.
+  size_t numCtadParams = 0;
+
   /// Return whether there are any bindings given.
   bool empty() const { return posBindings.empty() && kwBindings.empty(); }
 
@@ -87,9 +95,13 @@ public:
   /// responsible for ensuring the keyword is not already present.
   void add(const ExprNode *expr, TypedAttr value, StringAttr name);
 
+  /// The type of the function called when performing parameter inference. The
+  /// hook will be provided the index and type of the parameter to be inferred,
+  /// along with a list of existing bindings. A default parameter value is also
+  /// provided, which (if not null) can be used if the parameter cannot be
+  /// inferred otherwise.
   using ParameterInferenceHookTy =
-      function_ref<PValue(size_t index, Type type, ASTType expectedType,
-                          ArrayRef<TypedAttr> bindings)>;
+      function_ref<PValue(size_t, Type, ArrayRef<TypedAttr>, TypedAttr)>;
 
   /// Describe how closely the given parameter bindings match the specified
   /// input parameters and call operands.

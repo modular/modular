@@ -62,6 +62,24 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   return {};
 }
 
+/// Helper to return a struct decl for a user defined type.
+static StructDeclOp getStructDecl(ASTType type, SharedState &shared) {
+  return dyn_cast_or_null<StructDeclOp>(type.getDecl(shared));
+}
+
+size_t ASTType::getNumDeclaredParameters(SharedState &shared) const {
+  if (StructDeclOp structOp = getStructDecl(*this, shared))
+    return structOp.getInputParams().size();
+  return 0;
+}
+
+ArrayRef<TypedAttr> ASTType::getDefaultParameters(SharedState &shared) const {
+  // Only user defined structs can have default parameters.
+  if (StructDeclOp structOp = getStructDecl(*this, shared))
+    return structOp.getDefaultParameters();
+  return {};
+}
+
 bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
   return mlirType == other.mlirType;
