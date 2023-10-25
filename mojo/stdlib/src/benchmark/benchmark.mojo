@@ -367,7 +367,42 @@ struct Report:
 
 
 # ===----------------------------------------------------------------------===#
-# benchmark
+# RunOptions
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct _RunOptions[timing_fn: fn (num_iters: Int) capturing -> Int]:
+    var num_warmup: Int
+    var max_iters: Int
+    var min_time_secs: Float64
+    var max_time_secs: Float64
+
+    fn __init__() -> Self:
+        return Self {
+            num_warmup: 2,
+            max_iters: 100_000,
+            min_time_secs: 0.5,
+            max_time_secs: 1,
+        }
+
+    fn __init__(
+        num_warmup: Int,
+        max_iters: Int,
+        min_time_secs: Float64,
+        max_time_secs: Float64,
+    ) -> Self:
+        return Self {
+            num_warmup: num_warmup,
+            max_iters: max_iters,
+            min_time_secs: min_time_secs,
+            max_time_secs: max_time_secs,
+        }
+
+
+# ===----------------------------------------------------------------------===#
+# run
 # ===----------------------------------------------------------------------===#
 
 
@@ -401,11 +436,19 @@ fn run[
 
     @parameter
     @always_inline
-    fn benchmark_fn():
-        func()
+    fn benchmark_fn(num_iters: Int) -> Int:
+        @parameter
+        @always_inline
+        fn iter_fn():
+            for _ in range(num_iters):
+                func()
 
-    return _run_impl[benchmark_fn](
-        num_warmup, max_iters, min_time_secs, max_time_secs
+        return time_function[iter_fn]()
+
+    return _run_impl(
+        _RunOptions[benchmark_fn](
+            num_warmup, max_iters, min_time_secs, max_time_secs
+        )
     )
 
 
@@ -436,38 +479,40 @@ fn run[
     Returns:
         Average execution time of func in ns.
     """
-    return _run_impl[func](num_warmup, max_iters, min_time_secs, max_time_secs)
+
+    @parameter
+    @always_inline
+    fn benchmark_fn(num_iters: Int) -> Int:
+        @parameter
+        @always_inline
+        fn iter_fn():
+            for _ in range(num_iters):
+                func()
+
+        return time_function[iter_fn]()
+
+    return _run_impl(
+        _RunOptions[benchmark_fn](
+            num_warmup, max_iters, min_time_secs, max_time_secs
+        )
+    )
 
 
 @always_inline
-fn _run_impl[
-    func: fn () capturing -> None
-](
-    num_warmup: Int = 2,
-    max_iters: Int = 100_000,
-    min_time_secs: Float64 = 0.5,
-    max_time_secs: Float64 = 1,
-) -> Report:
+fn _run_impl(opts: _RunOptions) -> Report:
     var report = Report()
 
-    # run for specified number of warmup iterations
-    @parameter
-    @always_inline
-    fn warmup_fn():
-        for _ in range(num_warmup):
-            func()
-
-    var prev_iters = num_warmup
-    var prev_dur = time_function[warmup_fn]() if num_warmup > 0 else 0
+    var prev_iters = opts.num_warmup
+    var prev_dur = opts.timing_fn(opts.num_warmup) if opts.num_warmup > 0 else 0
     report.warmup_iters = prev_iters
     report.warmup_duration = prev_dur
     var total_iters: Int = 0
     var time_elapsed: Int = 0
-    let min_time_ns = (min_time_secs * 1_000_000_000).to_int()
-    let max_time_ns = (max_time_secs * 1_000_000_000).to_int()
+    let min_time_ns = (opts.min_time_secs * 1_000_000_000).to_int()
+    let max_time_ns = (opts.max_time_secs * 1_000_000_000).to_int()
 
     while time_elapsed < max_time_ns:
-        if total_iters > max_iters and time_elapsed > min_time_ns:
+        if total_iters > opts.max_iters and time_elapsed > min_time_ns:
             break
         prev_dur = max(1, prev_dur)  # avoid dividing by 0
         # Order of operations matters.
@@ -485,13 +530,7 @@ fn _run_impl[
         # (This also keeps n in int range on 32 bit platforms.)
         n = min(n, 1_000_000_000)
 
-        @parameter
-        @always_inline
-        fn benchmark_fn():
-            for _ in range(n):
-                func()
-
-        prev_dur = time_function[benchmark_fn]()
+        prev_dur = opts.timing_fn(n)
         prev_iters = n
         report.runs.push_back(Batch(prev_dur, prev_iters))
         total_iters += prev_iters
