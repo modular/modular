@@ -11,6 +11,7 @@
 #ifndef KGEN_LITDIALECT_LITTYPES_TD
 #define KGEN_LITDIALECT_LITTYPES_TD
 
+include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/LITDialect/LITDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 
@@ -63,7 +64,8 @@ def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
 // MetaTypeType
 //===----------------------------------------------------------------------===//
 
-def LIT_MetaTypeType : LITType<"MetaType", "metatype"> {
+def LIT_MetaTypeType : LITType<"MetaType", "metatype",
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Type of a type value.";
   let description = [{
     The `!lit.metatype` type represents the type of a type value (tongue
