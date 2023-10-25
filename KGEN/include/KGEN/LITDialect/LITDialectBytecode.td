@@ -94,6 +94,12 @@ def LITStructAttr : DialectAttribute<(attr
   ConcreteType<"DeclRefType">:$type
 )>;
 
+def StructExtractAttr : DialectAttribute<(attr
+  TypedAttr:$structValue,
+  ConcreteAttribute<"StringAttr">:$field,
+  Type:$type
+)>;
+
 def PassingKindArrayAttr : DialectAttribute<(attr
   EnumAttrArray<"PassingKind">:$value
 )>;
@@ -107,8 +113,8 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     LifetimeAttr,
     UnresolvedAliasValueAttr,
     LITStructAttr,
-    PassingKindArrayAttr,
-    /*StructExtractAttr*/
+    StructExtractAttr,
+    PassingKindArrayAttr
   ];
 }
 
