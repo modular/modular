@@ -660,7 +660,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (argType.isEqualCanon(expectedType))
       break;
     if (auto nonmaterializableTarget =
-            argType.getNonmaterializableTarget(emitter.shared))
+            argType.getNonmaterializableTarget(emitter.shared)) {
       if (nonmaterializableTarget.isEqualCanon(expectedType)) {
         // Implicit conversion for nonmaterializable types to their target
         // type is allowed even if !allowImplicitConversions.  Even though
@@ -673,6 +673,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         hasNonmaterializableConversion = true;
         break;
       }
+    }
 
     // Argument name mismatches don't count as implicit conversions.
     if (canZeroCostConvertSignature(emitter.shared, argType, expectedType))
@@ -680,9 +681,9 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 
     // If we lack an exact match and conversions are disabled, this
     // candidate fails.
-    if (!allowImplicitConversions || !emitter.canImplicitlyConvertToType(
-                                         {argVal, operand.expr}, expectedType,
-                                         /*allowArgNameCheck=*/false))
+    if (!allowImplicitConversions ||
+        !emitter.canImplicitlyConvertToType(
+            {argVal, operand.expr}, expectedType, /*allowArgNameCheck=*/false))
       return {kWrongType, expectedType};
 
     // If we had one, this bumps our # implicit conversions.
@@ -921,8 +922,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     /// Check and process a single positional operand and advance the operand
     /// index.
     auto processPositionalOperand =
-        [&, expectedConvention = expectedConvention,
-         newBindings = std::ref(newBindings)](
+        [&, expectedConvention = expectedConvention](
             ASTType expectedType) -> std::optional<InflightDiag> {
       ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx];
       auto [kind, ty] = checkOneOperand(

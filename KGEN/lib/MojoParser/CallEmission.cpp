@@ -99,7 +99,8 @@ InputParamBindings::verifyBindings(
     ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultParams,
     ExprEmitter &emitter, bool hasParamVarArgs,
     ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
-    SetEvaluatorHookTy setEvaluator, const DiagEmitter &diagEmitter) const {
+    SetEvaluatorHookTy setEvaluator, const DiagEmitter &diagEmitter,
+    bool allowPartiallyBound) const {
   size_t numParams = expectedParamTypes.size();
   assert(paramNames.size() == numParams);
   auto isVarArg = [&](size_t idx) {
@@ -220,8 +221,8 @@ InputParamBindings::verifyBindings(
         continue;
       }
 
-      // If we have a method to infer parameter values, invoke it to see if
-      // we can get an inferred value for the parameter.
+      // If we have a method to infer parameter values, invoke it to see if we
+      // can get an inferred value for the parameter.
       if (parameterInferenceHook) {
         if (PValue pValue =
                 parameterInferenceHook(idx, type, expectedType, newBindings)) {
@@ -260,9 +261,31 @@ InputParamBindings::verifyBindings(
 
       // Otherwise, we're simply missing bindings.
       fitness.lastExpectedType = expectedType;
+      if (allowPartiallyBound) {
+        setParamValue(UnboundAttr::get(expectedType));
+        continue;
+      }
       if (diagEmitter.emitParamCount)
         diagEmitter.emitParamCount(passingKind == PassingKind::PosOnly);
       return {{}, fitness};
+    }
+
+    // If we still have positional bindings left, first check if we are dealing
+    // with an UnboundAttr we might have to deduce.
+    const Binding &binding = posBindings[posBindingIdx];
+    if (isa<UnboundAttr>(binding.value)) {
+      if (parameterInferenceHook) {
+        Type requestedType = evaluator.getReboundType(type);
+        ASTType expectedType = requestedType;
+        if (PValue pValue =
+                parameterInferenceHook(idx, type, expectedType, newBindings)) {
+          assert(pValue.getType().mlirType == requestedType &&
+                 "inferred a parameter value of wrong type");
+          setParamValue(pValue);
+          ++posBindingIdx;
+          continue;
+        }
+      }
     }
 
     // Helper to check and emit diagnostics for redundant keyword parameters.
@@ -279,7 +302,6 @@ InputParamBindings::verifyBindings(
       return failure();
     };
 
-    const Binding &binding = posBindings[posBindingIdx];
     // If this value was already bound and checked, use it.
     if (binding.typeChecked) {
       if (failed(checkRedundantKwParam()))
@@ -345,14 +367,12 @@ InputParamBindings::verifyBindings(
 }
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
-InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
-                                   ArrayRef<StringAttr> paramNames,
-                                   ArrayRef<PassingKind> paramPassingKinds,
-                                   ArrayRef<TypedAttr> defaultParams,
-                                   ExprEmitter &emitter, bool hasParamVarArgs,
-                                   StringRef baseName, Location opLoc,
-                                   llvm::SMLoc exprLoc,
-                                   SetEvaluatorHookTy setEvaluator) const {
+InputParamBindings::verifyBindings(
+    ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
+    ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultParams,
+    ExprEmitter &emitter, bool hasParamVarArgs, StringRef baseName,
+    Location opLoc, llvm::SMLoc exprLoc, SetEvaluatorHookTy setEvaluator,
+    bool allowPartiallyBound) const {
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](bool posOnly) {
         size_t minRequired = expectedParamTypes.size() - defaultParams.size();
@@ -415,7 +435,8 @@ InputParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
                         defaultParams, emitter, hasParamVarArgs,
                         /*parameterInferenceHook=*/{},
-                        /*isPackVarArg=*/false, setEvaluator, diagEmitter);
+                        /*isPackVarArg=*/false, setEvaluator, diagEmitter,
+                        allowPartiallyBound);
 }
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
@@ -425,8 +446,8 @@ InputParamBindings::verifyBindings(
   return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultParameters(),
                         emitter, sig.hasParamVarArgs(), parameterInferenceHook,
-                        isPackVarArg,
-                        /*setEvaluator=*/{}, diagEmitter);
+                        isPackVarArg, /*setEvaluator=*/{}, diagEmitter,
+                        /*allowPartiallyBound=*/false);
 }
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
@@ -443,7 +464,8 @@ InputParamBindings::verifyBindings(LITSignatureType sig,
 
 ParameterExprArrayAttr
 InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
-                                   llvm::SMLoc exprLoc) const {
+                                   llvm::SMLoc exprLoc,
+                                   bool allowPartiallyBound) const {
   SmallVector<Type> paramTypes =
       llvm::map_to_vector(structOp.getInputParams(),
                           [](ParamDeclAttr decl) { return decl.getType(); });
@@ -456,7 +478,8 @@ InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
       paramTypes, structOp.getParamNames(),
       structOp.getParamPassingKinds().getValue(),
       structOp.getDefaultParameters(), emitter, structOp.getParamVarArgs(),
-      structOp.getName(), structOp.getLoc(), exprLoc, setParamValue);
+      structOp.getName(), structOp.getLoc(), exprLoc, setParamValue,
+      allowPartiallyBound);
   return bindingValuesAttr;
 }
 
@@ -793,7 +816,6 @@ static TypedAttr
 getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
                      const InputParamBindings &inputParamBindings,
                      const ExprNode *expr, ExprEmitter &emitter) {
-
   // If there are no input parameters specified and if we allow unbound
   // symbols, just return the unbound symbol.
   if (inputParamBindings.empty())
@@ -918,7 +940,6 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
                          const ExprNode *expr, CallSyntax syntax,
                          SharedState &shared, function_ref<void()> errorHandler)
     : expr(expr), syntax(syntax) {
-
   // If this is a previously-reported error, ignore and don't report an
   // additional error.
   if (type.isTypeCheckErrorType())

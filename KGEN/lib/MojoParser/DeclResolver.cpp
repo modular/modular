@@ -1439,8 +1439,20 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
 
   // Check if the type has unbound parameters.
   ArrayRef<ParamDeclAttr> inputParams = structDecl.getInputParams();
-  if (inputParams.empty() || !type.getParamBindings().empty())
+  if (inputParams.empty())
     return type;
+
+  if (ArrayRef<TypedAttr> bindings = type.getParamBindings();
+      !bindings.empty()) {
+    auto isUnbound = [](TypedAttr bindAttr) {
+      return isa<UnboundAttr>(bindAttr);
+    };
+    if (llvm::any_of(bindings, isUnbound)) {
+      shared.emitError(arg.loc,
+                       "partial autoparameterization not supported yet");
+    }
+    return type;
+  }
 
   unsigned nameCounter = 0;
   SmallVector<TypedAttr> paramValues;

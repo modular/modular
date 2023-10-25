@@ -1446,8 +1446,8 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
     paramBindings.addPrechecked(binding);
 
   // Check the bindings.
-  ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings.verifyBindings(structDecl, *this, expr->getLoc());
+  ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
+      structDecl, *this, expr->getLoc(), /*allowPartiallyBound=*/false);
   if (!bindingValuesAttr)
     return {};
 

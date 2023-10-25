@@ -1525,8 +1525,8 @@ static PValue substituteParametersIntoUserDefinedType(
   }
 
   // Check the bindings.
-  ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings.verifyBindings(structOp, emitter, subscript.getLoc());
+  ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
+      structOp, emitter, subscript.getLoc(), /*allowPartiallyBound=*/true);
   if (!bindingValuesAttr)
     return {};
 
