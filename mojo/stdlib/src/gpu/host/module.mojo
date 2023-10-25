@@ -10,11 +10,7 @@ from pathlib import Path
 from memory import memset_zero
 from memory.unsafe import DTypePointer, Pointer, bitcast
 
-from ._utils import (
-    _check_error,
-    _get_dylib,
-    _get_dylib_function,
-)
+from ._utils import _check_error, _get_dylib_function
 
 # ===----------------------------------------------------------------------===#
 # JitOptions

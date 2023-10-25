@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA sync operations."""
 
-from ._utils import _check_error, _get_dylib, _get_dylib_function
+from ._utils import _check_error, _get_dylib_function
 
 # ===----------------------------------------------------------------------===#
 # Synchronize

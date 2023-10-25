@@ -9,6 +9,7 @@ from sys.ffi import DLHandle
 
 from ._constants import CUDA_DRIVER_PATH
 from .result import Result
+from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 # ===----------------------------------------------------------------------===#
 # Utilities
@@ -57,20 +58,7 @@ fn _destroy_dylib(ptr: Pointer[NoneType]):
 
 
 @always_inline
-fn _get_dylib() -> DLHandle:
-    let ptr = external_call["KGEN_CompilerRT_GetGlobalOr", Pointer[DLHandle]](
-        StringRef("CUDA"), _init_dylib, _destroy_dylib
-    )
-    return __get_address_as_lvalue(ptr.address)
-
-
-@always_inline
 fn _get_dylib_function[result_type: AnyType](name: StringRef) -> result_type:
-    return _get_dylib_function[result_type](_get_dylib(), name)
-
-
-@always_inline
-fn _get_dylib_function[
-    result_type: AnyType
-](dylib: DLHandle, name: StringRef) -> result_type:
-    return dylib.get_function[result_type](name)
+    return _ffi_get_dylib_function[
+        "CUDA", _init_dylib, _destroy_dylib, result_type
+    ](name)

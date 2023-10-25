@@ -12,7 +12,7 @@ from utils._reflection import get_linkage_name
 
 from pathlib import Path
 from ._compile import _cleanup_asm, _compile_nvptx_asm
-from ._utils import _check_error, _get_dylib, _get_dylib_function
+from ._utils import _check_error, _get_dylib_function
 from .dim import Dim
 from .module import ModuleHandle
 from .stream import Stream, _StreamImpl

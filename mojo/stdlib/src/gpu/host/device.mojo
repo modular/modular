@@ -9,7 +9,7 @@ from sys.ffi import DLHandle
 
 from memory.unsafe import DTypePointer, Pointer
 
-from ._utils import _check_error, _get_dylib, _get_dylib_function, _human_memory
+from ._utils import _check_error, _get_dylib_function, _human_memory
 from .dim import Dim
 
 # ===----------------------------------------------------------------------===#
@@ -613,87 +613,82 @@ struct Device:
         return Self {id: id}
 
     fn __str__(self) raises -> String:
-        let dylib = _get_dylib()
-        var res = String("name: ") + self._name(dylib) + "\n"
-        res += (
-            String("memory: ") + _human_memory(self._total_memory(dylib)) + "\n"
-        )
+        var res = String("name: ") + self._name() + "\n"
+        res += String("memory: ") + _human_memory(self._total_memory()) + "\n"
         res += (
             String("compute_capability: ")
-            + self._query(dylib, DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
+            + self._query(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
             + "."
-            + self._query(dylib, DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
+            + self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
             + "\n"
         )
         res += (
             String("clock_rate: ")
-            + self._query(dylib, DeviceAttribute.CLOCK_RATE)
+            + self._query(DeviceAttribute.CLOCK_RATE)
             + "\n"
         )
         res += (
             String("warp_size: ")
-            + self._query(dylib, DeviceAttribute.WARP_SIZE)
+            + self._query(DeviceAttribute.WARP_SIZE)
             + "\n"
         )
         res += (
             String("max_threads_per_block: ")
-            + self._query(dylib, DeviceAttribute.MAX_THREADS_PER_BLOCK)
+            + self._query(DeviceAttribute.MAX_THREADS_PER_BLOCK)
             + "\n"
         )
         res += (
             String("max_shared_memory: ")
             + _human_memory(
-                self._query(dylib, DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
+                self._query(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
             )
             + "\n"
         )
         res += (
             String("max_block: ")
             + Dim(
-                self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_X),
-                self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Y),
-                self._query(dylib, DeviceAttribute.MAX_BLOCK_DIM_Z),
+                self._query(DeviceAttribute.MAX_BLOCK_DIM_X),
+                self._query(DeviceAttribute.MAX_BLOCK_DIM_Y),
+                self._query(DeviceAttribute.MAX_BLOCK_DIM_Z),
             ).__str__()
             + "\n"
         )
         res += (
             String("max_grid: ")
             + Dim(
-                self._query(dylib, DeviceAttribute.MAX_GRID_DIM_X),
-                self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Y),
-                self._query(dylib, DeviceAttribute.MAX_GRID_DIM_Z),
+                self._query(DeviceAttribute.MAX_GRID_DIM_X),
+                self._query(DeviceAttribute.MAX_GRID_DIM_Y),
+                self._query(DeviceAttribute.MAX_GRID_DIM_Z),
             ).__str__()
             + "\n"
         )
 
         return res
 
-    fn _name(self, dylib: DLHandle) -> String:
+    fn _name(self) -> String:
         alias buffer_size = 256
         let buffer = stack_allocation[buffer_size, DType.int8]()
 
         let ok = _get_dylib_function[
             fn (DTypePointer[DType.int8], Int32, Device) -> Result
-        ](dylib, "cuDeviceGetName")(buffer, Int32(buffer_size), self)
+        ]("cuDeviceGetName")(buffer, Int32(buffer_size), self)
 
         return StringRef(buffer.address)
 
-    fn _total_memory(self, dylib: DLHandle) raises -> Int:
+    fn _total_memory(self) raises -> Int:
         var res: Int = 0
         _check_error(
             _get_dylib_function[fn (Pointer[Int], Device) -> Result](
-                dylib, "cuDeviceTotalMem_v2"
+                "cuDeviceTotalMem_v2"
             )(Pointer.address_of(res), self)
         )
         return res
 
-    fn _query(self, dylib: DLHandle, attr: DeviceAttribute) raises -> Int:
+    fn _query(self, attr: DeviceAttribute) raises -> Int:
         var res: Int32 = 0
         _check_error(
             _get_dylib_function[
                 fn (Pointer[Int32], DeviceAttribute, Device) -> Result
-            ](dylib, "cuDeviceGetAttribute")(
-                Pointer.address_of(res), attr, self
-            )
+            ]("cuDeviceGetAttribute")(Pointer.address_of(res), attr, self)
         )
         return res.to_int()
