@@ -10,6 +10,11 @@ from memory.unsafe import DTypePointer, Pointer
 from ._utils import _check_error, _get_dylib_function
 
 
+# ===----------------------------------------------------------------------===#
+# Flag
+# ===----------------------------------------------------------------------===#
+
+
 @value
 @register_passable("trivial")
 struct Flag:
@@ -43,6 +48,11 @@ struct Flag:
             `self | rhs`.
         """
         return Self {_value: self._value | rhs._value}
+
+
+# ===----------------------------------------------------------------------===#
+# Event
+# ===----------------------------------------------------------------------===#
 
 
 @value
@@ -116,3 +126,28 @@ struct Event:
             )
         )
         return ms
+
+
+# ===----------------------------------------------------------------------===#
+# time_function
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+@parameter
+fn time_function[func: fn () capturing -> None]() -> Int:
+    try:
+        let start = Event()
+        let end = Event()
+
+        start.record()
+        func()
+        end.record()
+        end.sync()
+
+        let msec = start.elapsed(end)
+
+        return (msec * 1_000_000).to_int()
+    except e:
+        print("CUDA timing error:", e)
+        return -1
