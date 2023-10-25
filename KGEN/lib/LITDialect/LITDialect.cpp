@@ -70,6 +70,7 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 // LITDialectBytecodeInterface
 //===----------------------------------------------------------------------===//
 
+using LIT::StructExtractAttr;
 using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
 using mlir::get;
@@ -96,43 +97,16 @@ writeStructValues(DialectBytecodeWriter &writer,
 
 #include "KGEN/LITDialect/LITDialectBytecode.cpp.inc"
 
-static TypedAttr readStructExtractAttr(DialectBytecodeReader &reader) {
-  TypedAttr structValue;
-  StringAttr field;
-  Type type;
-  if (failed(reader.readAttribute(structValue)) ||
-      failed(reader.readAttribute(field)) || failed(reader.readType(type)))
-    return {};
-  return LIT::StructExtractAttr::get(structValue, field, type);
-}
-
-static LogicalResult writeStructExtractAttr(LIT::StructExtractAttr attr,
-                                            DialectBytecodeWriter &writer) {
-  writer.writeAttribute(attr.getStructValue());
-  writer.writeAttribute(attr.getField());
-  writer.writeType(attr.getType());
-  return success();
-}
-
 struct LITDialectBytecodeInterface : public mlir::BytecodeDialectInterface {
   LITDialectBytecodeInterface(Dialect *dialect)
       : BytecodeDialectInterface(dialect) {}
 
   Attribute readAttribute(DialectBytecodeReader &reader) const override {
-    FailureOr<APInt> isStructExtract = reader.readAPIntWithKnownWidth(1);
-    if (failed(isStructExtract))
-      return {};
-    if (isStructExtract->isOne())
-      return readStructExtractAttr(reader);
     return ::readAttribute(getContext(), reader);
   }
 
   LogicalResult writeAttribute(Attribute attr,
                                DialectBytecodeWriter &writer) const override {
-    auto structExtract = dyn_cast<LIT::StructExtractAttr>(attr);
-    writer.writeAPIntWithKnownWidth(APInt(1, static_cast<bool>(structExtract)));
-    if (structExtract)
-      return writeStructExtractAttr(structExtract, writer);
     return ::writeAttribute(attr, writer);
   }
 
@@ -145,7 +119,6 @@ struct LITDialectBytecodeInterface : public mlir::BytecodeDialectInterface {
     return ::writeType(type, writer);
   }
 };
-
 } // namespace
 
 //===----------------------------------------------------------------------===//

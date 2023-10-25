@@ -65,41 +65,16 @@ static void writeDTypeValues(DialectBytecodeWriter &writer,
 
 #include "KGEN/POPDialect/POPDialectBytecode.cpp.inc"
 
-static TypedAttr readStructExtractAttr(DialectBytecodeReader &reader) {
-  TypedAttr structValue;
-  int64_t fieldNo;
-  if (failed(reader.readAttribute(structValue)) ||
-      failed(reader.readSignedVarInt(fieldNo)))
-    return {};
-  return StructExtractAttr::get(structValue, fieldNo);
-}
-
-static LogicalResult writeStructExtractAttr(StructExtractAttr attr,
-                                            DialectBytecodeWriter &writer) {
-  writer.writeAttribute(attr.getStructValue());
-  writer.writeSignedVarInt(attr.getFieldNo());
-  return success();
-}
-
 struct POPDialectBytecodeInterface : public mlir::BytecodeDialectInterface {
   POPDialectBytecodeInterface(Dialect *dialect)
       : BytecodeDialectInterface(dialect) {}
 
   Attribute readAttribute(DialectBytecodeReader &reader) const override {
-    FailureOr<APInt> isStructExtract = reader.readAPIntWithKnownWidth(1);
-    if (failed(isStructExtract))
-      return {};
-    if (isStructExtract->isOne())
-      return readStructExtractAttr(reader);
     return ::readAttribute(getContext(), reader);
   }
 
   LogicalResult writeAttribute(Attribute attr,
                                DialectBytecodeWriter &writer) const override {
-    auto structExtract = dyn_cast<StructExtractAttr>(attr);
-    writer.writeAPIntWithKnownWidth(APInt(1, static_cast<bool>(structExtract)));
-    if (structExtract)
-      return writeStructExtractAttr(structExtract, writer);
     return ::writeAttribute(attr, writer);
   }
 
