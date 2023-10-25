@@ -2181,18 +2181,6 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
                               ValueDest &dest, const ExprNode *callExpr,
                               ExprEmitter &emitter) {
-
-  // FIXME: We currently hack in support for _mlir_type equality comparison
-  // until we have proper metatypes.
-  if (kind == ExprNode::Kind::kCmpEQ) {
-    PValue lhsParam = lhs.ir.getIfPValue(), rhsParam = rhs.ir.getIfPValue();
-    if (lhsParam && rhsParam &&
-        isa<MLIRTypeType>(lhsParam.getType().mlirType) &&
-        isa<MLIRTypeType>(rhsParam.getType().mlirType)) {
-      return ParamOperatorAttr::get(POC::EQ, {lhsParam.get(), rhsParam.get()});
-    }
-  }
-
   if (kind == ExprNode::Kind::kCmpIn || kind == ExprNode::Kind::kCmpNotIn)
     return emitCmpContain(lhs, rhs, kind, dest, callExpr, emitter);
 
