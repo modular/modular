@@ -1098,6 +1098,10 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
     // Get a symbol for the underlying function.
     InputParamBindings inputParamBindings;
+    inputParamBindings.numCtadParams =
+        baseRVType.getNumDeclaredParameters(emitter.shared);
+    inputParamBindings.defaultTypeParams =
+        baseRVType.getDefaultParameters(emitter.shared);
     for (TypedAttr binding : baseRVType.getParamBindings())
       inputParamBindings.addPrechecked(binding);
     auto result =

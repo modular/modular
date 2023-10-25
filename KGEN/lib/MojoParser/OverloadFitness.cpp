@@ -787,11 +787,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
   };
 
-  auto parameterInferenceHook =
-      [&](size_t index, Type type, ASTType /*unused*/,
-          ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
-    return ParameterInferenceState(emitter.shared, index, type)
-        .infer(signature, bindingsSoFar, callOperands);
+  auto parameterInferenceHook = [&](size_t index, Type type,
+                                    ArrayRef<TypedAttr> bindingsSoFar,
+                                    TypedAttr defaultParam) -> PValue {
+    if (PValue inferred = ParameterInferenceState(emitter.shared, index, type)
+                              .infer(signature, bindingsSoFar, callOperands))
+      return inferred;
+    return PValue(defaultParam);
   };
   auto [newBindings, bindingFitness] = inputParamBindings.verifyBindings(
       signature, emitter, bindingDiag, parameterInferenceHook,

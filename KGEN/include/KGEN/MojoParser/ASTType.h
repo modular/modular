@@ -57,6 +57,13 @@ public:
   /// binding set - incomplete bindings (missing bindings) are valid.
   ArrayRef<TypedAttr> getParamBindings() const;
 
+  /// If this is a user defined type, return the number of declared parameters.
+  size_t getNumDeclaredParameters(SharedState &shared) const;
+
+  /// If this is a parametric user defined type, return all the declared default
+  /// parameter values.
+  ArrayRef<TypedAttr> getDefaultParameters(SharedState &shared) const;
+
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;

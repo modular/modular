@@ -224,8 +224,8 @@ InputParamBindings::verifyBindings(
       // If we have a method to infer parameter values, invoke it to see if we
       // can get an inferred value for the parameter.
       if (parameterInferenceHook) {
-        if (PValue pValue =
-                parameterInferenceHook(idx, type, expectedType, newBindings)) {
+        if (PValue pValue = parameterInferenceHook(idx, type, newBindings,
+                                                   /*defaultParam=*/{})) {
           assert(pValue.getType().mlirType == requestedType &&
                  "inferred a parameter value of wrong type");
           setParamValue(pValue);
@@ -275,10 +275,15 @@ InputParamBindings::verifyBindings(
     const Binding &binding = posBindings[posBindingIdx];
     if (isa<UnboundAttr>(binding.value)) {
       if (parameterInferenceHook) {
+        // Determine if we can use a default parameter for CTAD.
+        TypedAttr defaultParam;
+        size_t defaultStartIdx = numCtadParams - defaultTypeParams.size();
+        if (idx < numCtadParams && idx >= defaultStartIdx)
+          defaultParam = defaultTypeParams[idx - defaultStartIdx];
+
         Type requestedType = evaluator.getReboundType(type);
-        ASTType expectedType = requestedType;
         if (PValue pValue =
-                parameterInferenceHook(idx, type, expectedType, newBindings)) {
+                parameterInferenceHook(idx, type, newBindings, defaultParam)) {
           assert(pValue.getType().mlirType == requestedType &&
                  "inferred a parameter value of wrong type");
           setParamValue(pValue);
@@ -964,6 +969,8 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 
   // Handle method references, which might be overloaded.
   InputParamBindings inputParamBindings;
+  inputParamBindings.numCtadParams = type.getNumDeclaredParameters(shared);
+  inputParamBindings.defaultTypeParams = type.getDefaultParameters(shared);
   for (TypedAttr binding : type.getParamBindings())
     inputParamBindings.addPrechecked(binding);
   *this = OverloadSet(methodName, resultDecls, std::move(inputParamBindings),
