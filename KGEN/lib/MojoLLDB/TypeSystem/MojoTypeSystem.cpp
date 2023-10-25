@@ -23,6 +23,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "MojoTypeDataLayout.h"
+#include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"
@@ -813,18 +814,33 @@ MojoTypeSystem::getOrCreateStructDecl(StringRef structName,
       newStruct, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
 }
 
-MojoASTDeclRef MojoTypeSystem::getOrCreateStructDecl(StringRef mangledName) {
+MojoASTDeclRef MojoTypeSystem::getOrCreateStructDecl(StringRef mangledName,
+                                                     const DWARFDIE &die) {
   FailureOr<LIT::MangledSymbol> mangledSymbol = LIT::MangledSymbol::demangle(
       StringAttr::get(getMLIRContext(), mangledName));
-  if (failed(mangledSymbol))
-    return {};
+  if (failed(mangledSymbol) || mangledSymbol->moduleNames.empty()) {
+    // Builtin structs might not have a parent module, so we can just put them
+    // in an anonymous one. Besides that, as multiple definitions of different
+    // structs with the same name might exist in the same compilation unit, we
+    // create a different anonymous module for each definition using the offset
+    // of the corresponding die. This happens with pack, for example, where
+    // different instances of !kgen.pack have different inner data, but they
+    // turn out to have the same name, therefore they cannot live under the same
+    // module.
+    // Another advantage of crating this anonymous module is that we don't need
+    // to modify the type name to have it in a unique scope.
+    return getOrCreateStructDecl(
+        mangledName, &*getOrCreateModuleDecl("anonymous_" +
+                                             std::to_string(die.GetOffset())));
+  }
 
+  // Note: if we ever have in the same DWARF file two structs with the exact
+  // same mangled name but different implementation, we might need to create a
+  // top level unique module for each one of them (see the solution for the case
+  // above), but that's not the case now.
   LIT::ASTDecl *parentDecl = nullptr;
   for (StringAttr moduleName : mangledSymbol->moduleNames)
     parentDecl = &*getOrCreateModuleDecl(moduleName, parentDecl);
-
-  assert(parentDecl != nullptr &&
-         "All structs must be defined within a module.");
 
   return getOrCreateStructDecl(mangledSymbol->symName, parentDecl);
 }

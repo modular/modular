@@ -6,10 +6,10 @@
 
 # RUN: mojo build --debug-level full -O0 --debug-info-language Mojo --no-alnum-symbols '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %lldb %t -o 'b builtin-types.mojo:60' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v a_struct.float16.value' | FileCheck %s
+# RUN: %lldb %t -o 'b builtin-types.mojo:73' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v a_register_passable_struct.float16.value' -o 'v *a_struct' | FileCheck %s
 
 # CHECK: (pointer<si64>) a_var_index = 0x
-# CHECK: (AStruct) a_struct = {
+# CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = {
 # CHECK:     value = -101
 # CHECK:   }
@@ -32,11 +32,19 @@
 # CHECK:     value = 485
 # CHECK:   }
 # CHECK: }
+# CHECK: (pointer<!kgen.declref<_"$anonymous_{{[0-9]+}}"::_struct>>) a_struct = 0x
 # CHECK: (SIMD[type=#lit.struct<{value: dtype = f32}>, size=#lit.struct<{value = 1}>]) another_float = {
 # CHECK:   value = 4.125
 # CHECK: }
 # CHECK: (StringLiteral) a_string_literal = {
 # CHECK:   value = "fofofo"
+# CHECK: }
+# CHECK: (ListLiteral[Ts=[!kgen.declref<_"$builtin::$int::Int">, !kgen.declref<_"$builtin::$float_literal::FloatLiteral">, !kgen.declref<_"$builtin::$int::Int">]]) a_list = {
+# CHECK:   storage = {
+# CHECK:     m0 = 1
+# CHECK:     m1 = 2.125
+# CHECK:     m2 = 3
+# CHECK:   }
 # CHECK: }
 # CHECK: (si64) a_let_index = 48
 # CHECK: (Int) an_int = {
@@ -54,4 +62,13 @@
 
 # CHECK: (si64) *a_var_index = 48
 
-# CHECK: (f16) a_struct.float16.value = 25.125
+# CHECK: (f16) a_register_passable_struct.float16.value = 25.125
+
+# CHECK: (struct) *a_struct = {
+# CHECK:   m0 = 12
+# CHECK:   m1 = {
+# CHECK:     m0 = 1
+# CHECK:     m1 = 87
+# CHECK:     m2 = 123.125
+# CHECK:   }
+# CHECK: }

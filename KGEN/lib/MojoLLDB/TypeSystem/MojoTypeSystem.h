@@ -626,7 +626,9 @@ public:
   ///
   /// Return the decl of the struct, or an invalid decl if the struct name
   /// couldn't be demangled.
-  MojoASTDeclRef getOrCreateStructDecl(StringRef mangledName);
+  MojoASTDeclRef
+  getOrCreateStructDecl(StringRef mangledName,
+                        const lldb_private::plugin::dwarf::DWARFDIE &die);
 
   /// Add a field at the end of the given struct decl and the given type.
   ///
