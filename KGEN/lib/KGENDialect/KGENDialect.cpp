@@ -10,7 +10,9 @@
 
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/Interpreter/InterpreterDialect.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "Support/Compiler/Bytecode.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -70,6 +72,83 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   }
 };
 
+//===----------------------------------------------------------------------===//
+// KGENDialectBytecodeInterface
+//===----------------------------------------------------------------------===//
+
+using KGEN::NoneType;
+using mlir::DialectBytecodeReader;
+using mlir::DialectBytecodeWriter;
+using mlir::get;
+
+static LogicalResult readFnEffects(DialectBytecodeReader &reader,
+                                   FnEffects &effects) {
+  impl::FnEffects impl;
+  if (failed(M::readEnum(reader, impl)))
+    return failure();
+  effects = impl;
+  return success();
+}
+
+static void writeFnEffects(DialectBytecodeWriter &writer, FnEffects effects) {
+  M::writeEnum(writer, effects.getImpl());
+}
+
+static LogicalResult readKGENDType(DialectBytecodeReader &reader,
+                                   KGENDType &dtype) {
+  FailureOr<APInt> result = reader.readAPIntWithKnownWidth(8);
+  if (failed(result))
+    return failure();
+  dtype = DType(static_cast<uint8_t>(result->getLimitedValue()));
+  return success();
+}
+
+static void writeKGENDType(DialectBytecodeWriter &writer, KGENDType dtype) {
+  writer.writeAPIntWithKnownWidth(APInt(8, dtype.getValue()));
+}
+
+static LogicalResult readIPInt(DialectBytecodeReader &reader, IPInt &value) {
+  uint64_t width;
+  if (failed(reader.readVarInt(width)))
+    return failure();
+  FailureOr<APInt> result = reader.readAPIntWithKnownWidth(width);
+  if (failed(result))
+    return failure();
+  value = IPInt(std::move(*result));
+  return success();
+}
+
+static void writeIPInt(DialectBytecodeWriter &writer, const IPInt &value) {
+  uint64_t width = value.getAPInt().getSignificantBits();
+  writer.writeVarInt(width);
+  writer.writeAPIntWithKnownWidth(value.getAPInt().trunc(width));
+}
+
+#include "KGEN/KGENDialect/KGENDialectBytecode.cpp.inc"
+
+struct KGENDialectBytecodeInterface : public mlir::BytecodeDialectInterface {
+  KGENDialectBytecodeInterface(Dialect *dialect)
+      : BytecodeDialectInterface(dialect) {}
+
+  Attribute readAttribute(DialectBytecodeReader &reader) const override {
+    return ::readAttribute(getContext(), reader);
+  }
+
+  LogicalResult writeAttribute(Attribute attr,
+                               DialectBytecodeWriter &writer) const override {
+    return ::writeAttribute(attr, writer);
+  }
+
+  Type readType(DialectBytecodeReader &reader) const override {
+    return ::readType(getContext(), reader);
+  }
+
+  LogicalResult writeType(Type type,
+                          DialectBytecodeWriter &writer) const override {
+    return ::writeType(type, writer);
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -79,8 +158,8 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 void KGENDialect::initialize() {
   registerAttributes();
   registerTypes();
-  addInterfaces<KGENDialectFoldInterface, KGENDialectOpAsmDialectInterface>();
-  registerBytecodeInterface();
+  addInterfaces<KGENDialectFoldInterface, KGENDialectOpAsmDialectInterface,
+                KGENDialectBytecodeInterface>();
   injectAttrInterfaces();
 
   // Register operations.

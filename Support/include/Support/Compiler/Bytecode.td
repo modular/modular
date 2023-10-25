@@ -15,12 +15,6 @@ def String :
   WithPrinter<"$_writer.writeOwnedString($_getter)",
   WithType<"StringRef">>>>;
 
-def TypedAttr :
-  WithParser<"succeeded($_reader.readAttribute($_var))",
-  WithBuilder<"$_args",
-  WithPrinter<"$_writer.writeAttribute($_getter)",
-  WithType<"TypedAttr">>>>;
-
 class ConcreteType<string type> :
   WithParser<"succeeded($_reader.readType($_var))",
   WithBuilder<"$_args",
@@ -33,6 +27,12 @@ class ConcreteAttribute<string type> :
   WithPrinter<"$_writer.writeAttribute($_getter)",
   WithType<type>>>>;
 
+class ConcreteOptionalAttribute<string type> :
+  WithParser<"succeeded($_reader.readOptionalAttribute($_var))",
+  WithBuilder<"$_args",
+  WithPrinter<"$_writer.writeOptionalAttribute($_getter)",
+  WithType<type>>>>;
+
 class OptionalAttribute<string type> :
   WithParser<"succeeded($_reader.readOptionalAttribute($_var))",
   WithPrinter<"$_writer.writeOptionalAttribute($_getter)",
@@ -43,21 +43,26 @@ class EnumAttr<string type> :
   WithPrinter<"M::writeEnum($_writer, $_getter)",
   WithType<type>>>;
 
-def StringAttrArray :
+class ConcreteAttrArray<string type> :
   WithParser<"succeeded($_reader.readAttributes($_var))",
   WithBuilder<"$_args",
   WithPrinter<"$_writer.writeAttributes($_getter)",
-  WithType<"SmallVector<StringAttr>">>>>;
+  WithType<"SmallVector<" # type # ">">>>>;
 
-def TypedAttrArray :
-  WithParser<"succeeded($_reader.readAttributes($_var))",
-  WithBuilder<"$_args",
-  WithPrinter<"$_writer.writeAttributes($_getter)",
-  WithType<"SmallVector<TypedAttr>">>>>;
+def TypedAttr : ConcreteAttribute<"TypedAttr">;
+
+def StringAttrArray : ConcreteAttrArray<"StringAttr">;
+
+def TypedAttrArray : ConcreteAttrArray<"TypedAttr">;
 
 class EnumAttrArray<string type> :
   WithParser<"succeeded(M::readEnumArray<" # type # ">($_reader, $_var))",
   WithPrinter<"M::writeEnumArray($_writer, $_getter)",
   WithType<"SmallVector<" # type # ">">>>;
+
+class Custom<string type> :
+  WithParser<"succeeded(read" # type # "($_reader, $_var))",
+  WithPrinter<"write" # type # "($_writer, $_getter)",
+  WithType<type>>>;
 
 #endif // SUPPORT_BYTECODE_TD

@@ -96,13 +96,6 @@ def KGEN_ParamDeclArrayAttr : ArrayOfAttr<KGENDialect, "ParamDeclArray",
   ];
 }
 
-/// An array of ParamDeclAttr of size 1.
-def ParamDeclSize1ArrayAttr
-  : ConfinedAttr<KGEN_ParamDeclArrayAttr, [AttrConstraint<
-      CPred<"$_self.cast<ParamDeclArrayAttr>().getValue().size() == 1">,
-      "single parameter declaration"
-    >]>;
-
 //===----------------------------------------------------------------------===//
 // ConstraintAttr
 //===----------------------------------------------------------------------===//

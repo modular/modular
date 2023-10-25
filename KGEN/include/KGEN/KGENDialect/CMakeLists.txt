@@ -16,6 +16,11 @@ mlir_tablegen(KGENAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=kgen)
 add_public_tablegen_target(MLIRKGENAttrsIncGen)
 add_dependencies(MLIRKGENIncGen MLIRKGENAttrsIncGen)
 
+set(LLVM_TARGET_DEFINITIONS KGENDialectBytecode.td)
+mlir_tablegen(KGENDialectBytecode.cpp.inc -gen-bytecode -bytecode-dialect="kgen")
+add_public_tablegen_target(MLIRKGENDialectBytecodeIncGen)
+add_definitions(MLIRKGENIncGen MLIRKGENDialectBytecodeIncGen)
+
 set(LLVM_TARGET_DEFINITIONS KGENEnums.td)
 mlir_tablegen(KGENEnums.h.inc -gen-enum-decls)
 mlir_tablegen(KGENEnums.cpp.inc -gen-enum-defs)
