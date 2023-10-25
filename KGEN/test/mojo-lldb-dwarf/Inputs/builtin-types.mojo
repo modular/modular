@@ -11,7 +11,7 @@ fn getFloat() -> Float32:
 
 @value
 @register_passable("trivial")
-struct AStruct:
+struct ARegisterPassableStruct:
     var int: Int
     var f32: Float32
     var another_int: Int
@@ -32,6 +32,15 @@ struct AStruct:
         }
 
 
+struct AStruct:
+    var int: UInt8
+    var tuple: Tuple[Int, Int8, Float32]
+
+    fn __init__(inout self):
+        self.int = 12
+        self.tuple = Tuple[Int, Int8, Float32](1, 87, 123.125)
+
+
 fn main():
     var a_var_index = __mlir_op.`index.constant`[
         value = __mlir_attr.`48:index`
@@ -42,6 +51,8 @@ fn main():
     let a_let_index = __mlir_op.`index.constant`[
         value = __mlir_attr.`48:index`
     ]()
+
+    let a_register_passable_struct = ARegisterPassableStruct()
 
     let a_struct = AStruct()
 
@@ -56,5 +67,7 @@ fn main():
     let `^ uncommon name` = 1123123
 
     let a_string_literal = "fofofo"
+
+    let a_list = [1, 2.125, 3]
 
     print("end")
