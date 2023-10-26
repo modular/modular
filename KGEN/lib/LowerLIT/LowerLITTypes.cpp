@@ -474,6 +474,11 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
         name, converter.convertDebugType(evaluator.getReboundType(type))));
   }
 
+  // Flatten single-element structs.
+  // TODO(#23914): Track this optimization with DWARF expressions.
+  if (elementTypes.size() == 1)
+    return elementTypes.front().getType();
+
   // Mangle the struct name.
   std::string name;
   llvm::raw_string_ostream os(name);
