@@ -232,6 +232,10 @@ struct Report:
         self.warmup_duration = 0
         self.runs = DynamicVector[Batch]()
 
+    fn __del__(owned self):
+        """Delets the Report object."""
+        self.runs._del_old()
+
     fn __copyinit__(inout self, existing: Self):
         """
         Creates a shallow copy (it doesn't copy the data).
@@ -241,7 +245,7 @@ struct Report:
         """
         self.warmup_iters = existing.warmup_iters
         self.warmup_duration = existing.warmup_duration
-        self.runs = existing.runs
+        self.runs = existing.runs.deepcopy()
 
     fn iters(self) -> Int:
         """
