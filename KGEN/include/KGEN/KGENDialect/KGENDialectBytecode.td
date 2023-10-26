@@ -41,7 +41,8 @@ def PointerType : DialectType<(type
 
 def DeclRefType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
-  TypedAttrArray:$paramValues
+  TypedAttrArray:$paramValues,
+  Type:$metaType
 )>;
 
 def VariadicType : DialectType<(type

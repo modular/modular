@@ -782,3 +782,10 @@ kgen.generator @get_likage_name() {
   kgen.param.constant: string = <get_linkage_name(:() -> () @kernel)>
   kgen.return
 }
+
+// CHECK-LABEL: @unification
+kgen.generator @unification() {
+  // CHECK: T0: type = <@unification : !metatype.type>
+  kgen.param.declare T0: type = <rebind(:!metatype.type #kgen.concretetype.constant<!kgen.declref<@unification, !metatype.type>>)>
+  kgen.return
+}

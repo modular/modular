@@ -568,8 +568,6 @@ IndexRefRemapper::prependParams(SignatureType sig,
 
 LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
                                   TypedAttr type, TypedAttr addressSpace) {
-  if (type && !::isa<MLIRTypeType>(type.getType()))
-    return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
   if (addressSpace && !addressSpace.getType().isIndex())
     return emitError() << "address space parameter `" << addressSpace
                        << "` must be an index type";
@@ -709,11 +707,18 @@ KGEN::NoneType::getTypeAlign(TargetInfoAttr target) const {
 //===----------------------------------------------------------------------===//
 
 DeclRefType DeclRefType::get(SymbolRefAttr name,
-                             ArrayRef<TypedAttr> paramValues) {
-  return get(name.getContext(), name, paramValues);
+                             ArrayRef<TypedAttr> paramValues, Type metatype) {
+  return get(name.getContext(), name, paramValues, metatype);
 }
 
-DeclRefType DeclRefType::get(SymbolRefAttr name) { return get(name, {}); }
+DeclRefType DeclRefType::get(SymbolRefAttr name, Type metatype) {
+  return get(name, {}, metatype);
+}
+
+DeclRefType DeclRefType::bindParams(ArrayRef<TypedAttr> paramValues) {
+  assert(getParamValues().empty() && "partial binding not supported yet");
+  return get(getSymbol(), paramValues, getMetaType());
+}
 
 std::optional<StringRef> DeclRefType::getAliasName() {
   // Don't alias types with parameter references.
