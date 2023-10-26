@@ -201,17 +201,32 @@ fn map_reduce[
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
-    var acc_simd = SIMD[acc_type, unrolled_simd_width].splat(init)
     let len = dst.__len__()
-    let vector_end = (len // unrolled_simd_width) * unrolled_simd_width
-    for i in range(0, vector_end, unrolled_simd_width):
+    let unrolled_vector_end = align_down(len, unrolled_simd_width)
+    let vector_end = align_down(len, simd_width)
+
+    var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width].splat(init)
+    for i in range(0, unrolled_vector_end, unrolled_simd_width):
         let val_simd = input_gen_fn[type, unrolled_simd_width](i)
         dst.simd_store(i, val_simd)
-        acc_simd = reduce_vec_to_vec_fn[acc_type, type, unrolled_simd_width](
+        acc_unrolled_simd = reduce_vec_to_vec_fn[
+            acc_type, type, unrolled_simd_width
+        ](acc_unrolled_simd, val_simd)
+
+    var acc_simd = SIMD[acc_type, simd_width].splat(init)
+    for i in range(unrolled_vector_end, vector_end, simd_width):
+        let val_simd = input_gen_fn[type, simd_width](i)
+        dst.simd_store(i, val_simd)
+        acc_simd = reduce_vec_to_vec_fn[acc_type, type, simd_width](
             acc_simd, val_simd
         )
 
-    var acc = reduce_vec_to_scalar_fn[acc_type, unrolled_simd_width](acc_simd)
+    var acc = reduce_vec_to_scalar_fn[acc_type, unrolled_simd_width](
+        acc_unrolled_simd
+    )
+    acc = reduce_vec_to_vec_fn[acc_type, acc_type, 1](
+        acc, reduce_vec_to_scalar_fn[acc_type, simd_width](acc_simd)
+    )
     for i in range(vector_end, len):
         let val = input_gen_fn[type, 1](i)
         dst[i] = val
@@ -319,18 +334,25 @@ fn reduce_boolean[
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
+
     let len = src.__len__()
-    let vector_end = (len // unrolled_simd_width) * unrolled_simd_width
+    let unrolled_vector_end = align_down(len, unrolled_simd_width)
+    let vector_end = align_down(len, simd_width)
     var curr = init
-    for i in range(0, vector_end, unrolled_simd_width):
+    for i in range(0, unrolled_vector_end, unrolled_simd_width):
         curr = reduce_fn[type, unrolled_simd_width](
             src.simd_load[unrolled_simd_width](i)
         )
         if not continue_fn(curr):
             return curr
 
-    for ii in range(vector_end, len):  # TODO(#8365) use `i`
-        curr = reduce_fn[type, 1](src[ii])
+    for i in range(unrolled_vector_end, vector_end, simd_width):
+        curr = reduce_fn[type, simd_width](src.simd_load[simd_width](i))
+        if not continue_fn(curr):
+            return curr
+
+    for i in range(vector_end, len):
+        curr = reduce_fn[type, 1](src[i])
         if not continue_fn(curr):
             return curr
     return curr
