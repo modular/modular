@@ -2,17 +2,28 @@
 
 // Test proper handling of debug types.
 
-// CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<data: !pop.array<2, simd<4, f32>>>
-// CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<"SmallVector[N=2, T=simd<4, f32>]"(![[MEMBER]])>
+// Single-field structs are flattened in debuginfo (until #23914).
+// CHECK-DAG: ![[FIELD:.*]] = !debuginfo.unresolved<!pop.array<2, simd<4, f32>>>
 lit.struct.decl @SmallVector<N, T: type> {
   lit.struct.field data: !pop.array<N, T>
 }
 !structTest = !kgen.declref<@SmallVector<2, :type !pop.simd<4, f32>>>
 
+// CHECK-DAG: ![[MEMBER_A:.*]] = !debuginfo.member<a: !kgen.paramref<Int>>
+// CHECK-DAG: ![[MEMBER_B:.*]] = !debuginfo.member<b: !pop.simd<4, f32>>
+// CHECK-DAG: ![[COMPLEX_STRUCT:.*]] = !debuginfo.struct<"ComplexStruct[A=Int, B=simd<4, f32>]"(![[MEMBER_A]], ![[MEMBER_B]])>
+lit.struct.decl @ComplexStruct<A: type, B: type> {
+  lit.struct.field a: !kgen.paramref<A>
+  lit.struct.field b: !kgen.paramref<B>
+}
+!structTestComplex = !kgen.declref<@ComplexStruct<Int, :type !pop.simd<4, f32>>>
+
 // CHECK: "test.types"
 "test.types"() {
-  // CHECK-SAME: structType = ![[STRUCT]]
-  structType = !debuginfo.unresolved<!structTest>
+  // CHECK-SAME: structType = ![[FIELD]]
+  structType = !debuginfo.unresolved<!structTest>,
+  // CHECK-SAME: structTypeComplex = ![[COMPLEX_STRUCT]]
+  structTypeComplex = !debuginfo.unresolved<!structTestComplex>
 } : () -> ()
 
 // -----
