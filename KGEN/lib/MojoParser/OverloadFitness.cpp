@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/OverloadFitness.h"
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
@@ -753,6 +754,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           };
           size_t numPosOnly =
               llvm::count_if(signature.getParamPassingKinds(), isPosOnly);
+
           diag = emitDiagFor.wrongPosOnlyCount(numPosOnly, posBindings.size(),
                                                "input parameter");
         } else {
@@ -784,6 +786,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       /*emitPosOnlyPassedByKw=*/
       [&](SmallVectorImpl<StringRef> &&names) {
         emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
+      },
+      /*emitCtadFailure=*/
+      [&](size_t paramIdx) {
+        ASTDecl &decl = *callable.baseDecl;
+        auto structOp = cast<StructDeclOp>(decl);
+        diag << "could not deduce parameter #" << paramIdx << " ("
+             << structOp.getParamNames()[paramIdx] << ") of parent struct "
+             << *decl.getNameIfOperation();
+        diag.attachNote(decl.getLoc()) << "struct declared here";
       },
   };
 

@@ -273,6 +273,7 @@ fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
 
+# expected-note @+1 {{struct declared here}}
 struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
     # expected-note @+1 {{function declared here}}
     def __init__(inout self, *args: T):
@@ -303,7 +304,7 @@ fn badCalls(arg: Int):
   # The user hasn't provided any arguments that could be used to infer `T`.
   # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}
   parameterizedVariadic()
-  # expected-error @+1 {{callee expects at least 1 positional input parameter, but 0 were specified}}
+  # expected-error @+1 {{could not deduce parameter #0 ('T') of parent struct ParameterizedStruct}}
   let z = ParameterizedStruct()
   # We can't infer `T` with two arguments of different types.
   # expected-error @+1 {{callee expects 1 input parameter, but 0 were specified}}

@@ -35,6 +35,33 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+InputParamBindings InputParamBindings::getForDeclaredType(ASTType type,
+                                                          SharedState &shared) {
+  InputParamBindings inputParamBindings;
+  ArrayRef<ParamDeclAttr> inputParams = type.getDeclaredParameters(shared);
+  inputParamBindings.numCtadParams = inputParams.size();
+  inputParamBindings.defaultTypeParams = type.getDefaultParameters(shared);
+
+  ArrayRef<TypedAttr> paramBindings = type.getParamBindings();
+  if (!paramBindings.empty()) {
+    assert(inputParamBindings.numCtadParams == paramBindings.size());
+    for (TypedAttr binding : paramBindings)
+      inputParamBindings.addPrechecked(binding);
+  } else {
+    for (ParamDeclAttr decl : inputParams) {
+      // Variadics should only appear on the trailing end of parameter
+      // declaration lists, and cannot have defaults values. We check for them,
+      // and decrement the count which is needed to allow the case when the
+      // variadic is empty.
+      if (isa<VariadicType>(decl.getType()))
+        --inputParamBindings.numCtadParams;
+      else
+        inputParamBindings.addPrechecked(UnboundAttr::get(decl.getType()));
+    }
+  }
+  return inputParamBindings;
+}
+
 void InputParamBindings::addPrechecked(TypedAttr precheckedBinding) {
   posBindings.push_back({nullptr, precheckedBinding, /*typeChecked=*/true});
 }
@@ -290,6 +317,11 @@ InputParamBindings::verifyBindings(
           ++posBindingIdx;
           continue;
         }
+
+        // We tried but couldn't infer an unbound parameter, we must error.
+        if (diagEmitter.emitCtadFailure)
+          diagEmitter.emitCtadFailure(idx);
+        return {{}, fitness};
       }
     }
 
@@ -380,18 +412,18 @@ InputParamBindings::verifyBindings(
     bool allowPartiallyBound) const {
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](bool posOnly) {
-        size_t minRequired = expectedParamTypes.size() - defaultParams.size();
         InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
         if (posOnly) {
           auto isPosOnly = [](PassingKind kind) {
             return kind == PassingKind::PosOnly;
           };
-          size_t numPosOnly = llvm::count_if(paramPassingKinds, isPosOnly);
-          emitWrongArgOrParamCount(diag, numPosOnly,
+          size_t minRequired = llvm::count_if(paramPassingKinds, isPosOnly);
+          emitWrongArgOrParamCount(diag, minRequired,
                                    /*maxAllowed=*/expectedParamTypes.size(),
                                    /*numActual=*/posBindings.size(),
                                    "positional input parameter");
         } else {
+          size_t minRequired = expectedParamTypes.size() - defaultParams.size();
           emitWrongArgOrParamCount(diag, minRequired,
                                    /*maxAllowed=*/expectedParamTypes.size(),
                                    /*numActual=*/size(), "input parameter");
@@ -435,6 +467,10 @@ InputParamBindings::verifyBindings(
         InflightDiag diag = emitter.emitError(exprLoc);
         emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+      },
+      /*emitCtadFailure=*/
+      [&](size_t paramIdx) {
+        llvm_unreachable("CTAD failure in a context that doesn't allow CTAD");
       }};
 
   return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
@@ -458,7 +494,8 @@ InputParamBindings::verifyBindings(
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(LITSignatureType sig,
                                    ExprEmitter &emitter) const {
-  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr,
+                          nullptr, nullptr, nullptr};
   return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultParameters(),
                         emitter, sig.hasParamVarArgs(),
@@ -967,14 +1004,10 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
   if (!isa<LIT::FuncOp>(*resultDecls[0]))
     return;
 
-  // Handle method references, which might be overloaded.
-  InputParamBindings inputParamBindings;
-  inputParamBindings.numCtadParams = type.getNumDeclaredParameters(shared);
-  inputParamBindings.defaultTypeParams = type.getDefaultParameters(shared);
-  for (TypedAttr binding : type.getParamBindings())
-    inputParamBindings.addPrechecked(binding);
-  *this = OverloadSet(methodName, resultDecls, std::move(inputParamBindings),
+  *this = OverloadSet(methodName, resultDecls,
+                      InputParamBindings::getForDeclaredType(type, shared),
                       expr, syntax);
+  this->baseDecl = type.getDecl(shared);
 }
 
 /// Lookup of a named named method on the specified type, filtered to match a
