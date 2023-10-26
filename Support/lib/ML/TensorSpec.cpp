@@ -17,11 +17,13 @@ using namespace M;
 
 /// Parses a string of the form dim0xdim1x...xDType into a TensorSpec.
 ErrorOr<TensorSpec> TensorSpec::parseFromString(StringRef str) {
-  // dtype is the portion after the last 'x'.  Shape is the portion before
-  // that.  If there is no 'x', the whole string is the dtype.  (rsplit almost
-  // does this, but the no-'x' case would put the string in shape instead of
-  // dtype.)
-  auto lastXIndex = str.rfind('x');
+  // dtype is the portion after the last 'x' (that precedes "complex", if any).
+  // Shape is the portion before that.  If there is no 'x', the whole string is
+  // the dtype.  (rsplit almost does this, but the no-'x' case would put the
+  // string in shape instead of dtype.)
+  auto lastComplexIndex = str.rfind("complex");
+  auto lastXIndex = str.rfind(
+      'x', lastComplexIndex == StringRef::npos ? str.size() : lastComplexIndex);
   StringRef shapeStr, dtypeStr;
   if (lastXIndex == StringRef::npos) {
     shapeStr = "";

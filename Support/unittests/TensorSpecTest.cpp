@@ -91,6 +91,8 @@ TEST(TensorSpec, stringizing) {
   EXPECT_EQ("5x?x20xui32", spec({5, kDynamic, 20}, DType::ui32).getAsString());
   EXPECT_EQ("5x10x?xui64", spec({5, 10, kDynamic}, DType::ui64).getAsString());
   EXPECT_EQ("?xbf16", spec({kDynamic}, DType::bf16).getAsString());
+  EXPECT_EQ("5xcomplex<f32>",
+            spec({5}, DType::getComplex(DType::f32)).getAsString());
 }
 
 TEST(TensorSpec, parsing) {
@@ -108,6 +110,8 @@ TEST(TensorSpec, parsing) {
             TensorSpec::parseFromString("5x10x?xf128"));
   EXPECT_EQ(ok(spec({kDynamic}, DType::si64)),
             TensorSpec::parseFromString("?xsi64"));
+  EXPECT_EQ(ok(spec({5}, DType::getComplex(DType::f32))),
+            TensorSpec::parseFromString("5xcomplex<f32>"));
   EXPECT_EQ(ErrorOr<TensorSpec>(
                 Error("could not parse shape from string: 2x3.5xf32: could not "
                       "parse dimension integer from string: 2x3.5 because 3.5 "
