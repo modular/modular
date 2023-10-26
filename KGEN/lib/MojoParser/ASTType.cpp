@@ -67,10 +67,11 @@ static StructDeclOp getStructDecl(ASTType type, SharedState &shared) {
   return dyn_cast_or_null<StructDeclOp>(type.getDecl(shared));
 }
 
-size_t ASTType::getNumDeclaredParameters(SharedState &shared) const {
+ArrayRef<ParamDeclAttr>
+ASTType::getDeclaredParameters(SharedState &shared) const {
   if (StructDeclOp structOp = getStructDecl(*this, shared))
-    return structOp.getInputParams().size();
-  return 0;
+    return structOp.getInputParams();
+  return {};
 }
 
 ArrayRef<TypedAttr> ASTType::getDefaultParameters(SharedState &shared) const {

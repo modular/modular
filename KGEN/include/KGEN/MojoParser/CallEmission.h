@@ -77,6 +77,12 @@ public:
   /// overload set on a method.
   size_t numCtadParams = 0;
 
+  /// Create a (possibly partially unbound) set of bindings for the given type.
+  /// This can be used to initialize the binding set for methods. If the given
+  /// type is not a parametric user defined type, this returns empty bindings.
+  static InputParamBindings getForDeclaredType(ASTType type,
+                                               SharedState &shared);
+
   /// Return whether there are any bindings given.
   bool empty() const { return posBindings.empty() && kwBindings.empty(); }
 
@@ -141,6 +147,8 @@ public:
     std::function<void(size_t, StringAttr)> emitRedundantKw;
     /// Emit diagnostics for positional-only parameters specified by keyword.
     std::function<void(SmallVectorImpl<StringRef> &&)> emitPosOnlyPassedByKw;
+    /// Emit diagnostics for failure to deduce a struct parameter.
+    std::function<void(size_t)> emitCtadFailure;
   };
 
   /// Verify the parameter bindings for the given signature. If the signature
@@ -276,6 +284,11 @@ public:
   /// In a method reference like `x.foo`, this is the base object being invoked,
   /// e.g. `x`.
   ASTExprAnd<AnyValue> baseValue;
+
+  /// In a method or static method reference, this is the declaration of the
+  /// user defined type. This is not load-bearing, and it's only used for
+  /// emitting better diagnostics.
+  ASTDecl *baseDecl = nullptr;
 
   /// This is the basename of the declaration set, used in diagnostics.
   StringRef baseName;

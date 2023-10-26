@@ -18,6 +18,10 @@
 namespace M {
 class InflightDiag;
 
+namespace KGEN {
+class ParamDeclAttr;
+} // namespace KGEN
+
 namespace KGEN::LIT {
 class ASTDecl;
 class CValue;
@@ -57,8 +61,8 @@ public:
   /// binding set - incomplete bindings (missing bindings) are valid.
   ArrayRef<TypedAttr> getParamBindings() const;
 
-  /// If this is a user defined type, return the number of declared parameters.
-  size_t getNumDeclaredParameters(SharedState &shared) const;
+  /// If this is a user defined type, return the the declared parameters.
+  ArrayRef<ParamDeclAttr> getDeclaredParameters(SharedState &shared) const;
 
   /// If this is a parametric user defined type, return all the declared default
   /// parameter values.

@@ -1059,7 +1059,11 @@ fn test_partial_binding_CTAD():
     _ = CtadStructWithDefault[b=7](Thing[6]())
     # CHECK: call @{{.*}}::@CtadStructWithDefault::@"__init__({{.*}})"<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 8}>>
     _ = CtadStructWithDefault[](y=Thing[1](), x=Thing[2]())
+    # CHECK: call @{{.*}}::@CtadStructWithDefault::@"__init__({{.*}})"<:!Int #lit.struct<{value = 6}>, :!Int #lit.struct<{value = 9}>, :!Int #lit.struct<{value = 8}>>
+    _ = CtadStructWithDefault(Thing[6](), Thing[9]())
     # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}})"<:!Int #lit.struct<{value = 6}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 8}>>
     CtadStructWithDefault[b=7].foo(Thing[6]())
     # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}})"<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 8}>>
     CtadStructWithDefault[].foo(y=Thing[1](), x=Thing[2]())
+    # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}})"<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 3}>, :!Int #lit.struct<{value = 8}>>
+    CtadStructWithDefault.foo(y=Thing[3](), x=Thing[4]())

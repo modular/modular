@@ -1097,16 +1097,15 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
     // Get a symbol for the underlying function.
-    InputParamBindings inputParamBindings;
-    inputParamBindings.numCtadParams =
-        baseRVType.getNumDeclaredParameters(emitter.shared);
-    inputParamBindings.defaultTypeParams =
-        baseRVType.getDefaultParameters(emitter.shared);
-    for (TypedAttr binding : baseRVType.getParamBindings())
-      inputParamBindings.addPrechecked(binding);
-    auto result =
-        ORValue::create(spelling, memberDecls, std::move(inputParamBindings),
-                        this, CallSyntax::kDirectCall);
+
+    auto result = ORValue::create(
+        spelling, memberDecls,
+        InputParamBindings::getForDeclaredType(baseRVType, emitter.shared),
+        this, CallSyntax::kDirectCall);
+    ASTType baseType = baseVal.getType();
+    if (isa<MLIRTypeType>(baseType.mlirType))
+      baseType = ASTType(baseVal.getIfPValue());
+    result->baseDecl = baseType.getDecl(emitter.shared);
 
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we
