@@ -11,6 +11,7 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from memory import stack_allocation as _generic_stack_allocation
 from memory.unsafe import DTypePointer
 
+
 # ===----------------------------------------------------------------------===#
 # Address Space
 # ===----------------------------------------------------------------------===#
@@ -338,7 +339,7 @@ struct DevicePointer[
     fn __as_index(self) -> Int:
         # Returns the pointer address as an index.
         let addr = llvm_intrinsic[
-            "addrspacecast", __mlir_type[`!kgen.pointer<`, type, `>`]
+            "llvm.addrspacecast", __mlir_type[`!kgen.pointer<`, type, `>`]
         ](self.address)
         return __mlir_op.`pop.pointer_to_index`[
             _type = __mlir_type.`!pop.scalar<index>`
@@ -837,7 +838,8 @@ struct DTypeDevicePointer[
     fn __as_index(self) -> Int:
         # Returns the pointer address as an index.
         let addr = llvm_intrinsic[
-            "addrspacecast", __mlir_type[`!kgen.pointer<`, SIMD[type, 1], `>`]
+            "llvm.addrspacecast",
+            __mlir_type[`!kgen.pointer<`, SIMD[type, 1], `>`],
         ](self.address)
         return __mlir_op.`pop.pointer_to_index`[
             _type = __mlir_type.`!pop.scalar<index>`
