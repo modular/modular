@@ -20,3 +20,15 @@ kgen.generator @sugaredScalar<scalar: type>(%arg0: !kgen.pointer<*"scalar">) {
 kgen.func @int_literal(%arg0: !kgen.int_literal) {
   kgen.return
 }
+
+// CHECK-LABEL: @metatype
+// CHECK-SAME: !kgen.pointer<@MyStruct : metatype<@MyStruct>>
+kgen.generator @metatype(%arg0: !kgen.pointer<@MyStruct : !lit.metatype<@MyStruct>>) {
+  kgen.return
+}
+
+// CHECK-LABEL: @declref_metatype
+// CHECK-SAME: !kgen.declref<@MyStruct, !lit.metatype<@MyStruct>>
+kgen.generator @declref_metatype(%arg0: !kgen.declref<@MyStruct, !lit.metatype<@MyStruct>>) {
+  kgen.return
+}

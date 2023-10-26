@@ -154,35 +154,42 @@ static OptionalParseResult parseOptionalKGENSignature(AsmParser &p,
 
 /// Parse a type in a KGEN context, handling sugar like "dtype" for
 /// "!kgen.dtype" etc.
-OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &parser, Type &type) {
+OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &p, Type &type) {
   // Check for sugared types before parsing standard ones. We need to check for
   // each keyword individually, since builtin types are also keywords.
-  auto *dialect = parser.getContext()->getLoadedDialect<KGENDialect>();
+  auto *dialect = p.getContext()->getLoadedDialect<KGENDialect>();
   assert(dialect && "cannot parse KGEN type without KGEN dialect");
   for (auto &[keyword, parseFn] : dialect->typeParseFns) {
-    if (parser.parseOptionalKeyword(keyword))
+    if (p.parseOptionalKeyword(keyword))
       continue;
-    type = parseFn(parser);
+    type = parseFn(p);
     return failure(!type);
   }
 
   // Parse symbol references as decl reference types.
   SymbolRefAttr symbol;
-  OptionalParseResult result = parser.parseOptionalAttribute(symbol);
+  OptionalParseResult result = p.parseOptionalAttribute(symbol);
   if (result.has_value()) {
     if (failed(*result))
       return failure();
     SmallVector<TypedAttr> values;
-    if (parseParameterValues(parser, values))
+    if (parseParameterValues(p, values))
       return failure();
-    type = DeclRefType::get(symbol, values);
+    Type metatype;
+    if (succeeded(p.parseOptionalColon())) {
+      if (parseKGENType(p, metatype))
+        return failure();
+    } else {
+      metatype = MLIRTypeType::get(p.getContext());
+    }
+    type = DeclRefType::get(symbol, values, metatype);
     return LogicalResult::success();
   }
 
   // Try to parse an optional signature. Signatures can begin with `<` or `(`.
   {
     SignatureType signature;
-    OptionalParseResult result = parseOptionalKGENSignature(parser, signature);
+    OptionalParseResult result = parseOptionalKGENSignature(p, signature);
     if (result.has_value()) {
       if (failed(*result))
         return failure();
@@ -191,7 +198,7 @@ OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &parser, Type &type) {
     }
   }
 
-  return parser.parseOptionalType(type);
+  return p.parseOptionalType(type);
 }
 
 ParseResult KGEN::parseKGENType(AsmParser &p, Type &type) {
@@ -221,6 +228,10 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
     } else {
       p << ref.getSymbol();
       printParameterValues(p, ref.getParamValues());
+      if (auto type = ref.getMetaType(); !isa<MLIRTypeType>(type)) {
+        p << " : ";
+        printKGENType(p, type);
+      }
     }
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // Otherwise print it as "p1, p2 -> r3, () -> ())"

@@ -357,16 +357,28 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
     ```
   }];
 
-  let parameters = (ins "SymbolRefAttr":$symbol,
-                        OptionalArrayRefParameter<"TypedAttr">:$paramValues);
+  let parameters = (ins
+    "SymbolRefAttr":$symbol,
+    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    DefaultValuedParameter<"Type", "MLIRTypeType::get($_ctxt)">:$metaType
+  );
   let assemblyFormat = [{
-    `<` $symbol `` custom<ParameterValues>($paramValues) `>`
+    `<` $symbol `` custom<ParameterValues>($paramValues) (`,` $metaType^)? `>`
   }];
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name)>,
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name), [{
+      return get(name, MLIRTypeType::get(name.getContext()));
+    }]>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "ArrayRef<TypedAttr>":$paramValues)>
+                                        "ArrayRef<TypedAttr>":$paramValues), [{
+      return get(name, paramValues, MLIRTypeType::get(name.getContext()));
+    }]>,
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
+                                        "Type":$metatype)>,
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
+                                        "ArrayRef<TypedAttr>":$paramValues,
+                                        "Type":$metatype)>
   ];
 
   let extraClassDeclaration = [{
@@ -375,6 +387,9 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
 
     /// Return an alias name if the DeclRefType should be printed with an alias.
     std::optional<StringRef> getAliasName();
+
+    /// Bind parameter values to the decl ref type.
+    DeclRefType bindParams(ArrayRef<TypedAttr> paramValues);
   }];
 }
 

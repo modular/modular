@@ -1625,7 +1625,24 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
 static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   assert(resultType && "rebind requires a result type");
   TypedAttr input = operands.front();
-  return input.getType() == resultType ? input : nullptr;
+  if (input.getType() == resultType)
+    return input;
+  // Fold rebinds of a DeclRefType. Unify metatypes so information is not lost.
+  if (auto typeCst = dyn_cast<TypeConstantAttr>(input)) {
+    if (auto declRef = dyn_cast<DeclRefType>(typeCst.getValue())) {
+      // TODO(traits): Add more sophisticated type unification. Right now, just
+      // pick anything that isn't a bare MLIR type.
+      // FIXME(metatypes): The layering is wrong here. Should MetaTypeType be
+      // moved to KGENDialect?
+      Type metatype =
+          isa<MLIRTypeType>(resultType) ? declRef.getMetaType() : resultType;
+      return TypeConstantAttr::get(DeclRefType::get(declRef.getSymbol(),
+                                                    declRef.getParamValues(),
+                                                    metatype),
+                                   resultType);
+    }
+  }
+  return {};
 }
 
 static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
