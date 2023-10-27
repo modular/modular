@@ -88,9 +88,7 @@ fn test_my_naive_matmul[
             c[StaticIntTuple[2](m, n)] = c_val
 
 
-fn fill_a[
-    size: Int
-](buf: NDBuffer[2, DimList(size, size), DType.float32,]):
+fn fill_a[size: Int](buf: NDBuffer[2, DimList(size, size), DType.float32]):
     """Fills the matrix with the values `row + 2*col`."""
 
     for i in range(size):
@@ -99,9 +97,7 @@ fn fill_a[
             buf[StaticIntTuple[2](i, j)] = val.value
 
 
-fn fill_b[
-    size: Int
-](buf: NDBuffer[2, DimList(size, size), DType.float32,]):
+fn fill_b[size: Int](buf: NDBuffer[2, DimList(size, size), DType.float32]):
     """Fills the matrix with the values `row/(col + 1) + col`."""
 
     for i in range(size):
