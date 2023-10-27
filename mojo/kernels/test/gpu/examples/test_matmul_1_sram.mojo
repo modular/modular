@@ -146,7 +146,7 @@ fn run_matmul() raises:
     alias N = 502
     alias K = 511
 
-    let stream = Stream[False]()
+    let stream = Stream()
 
     var a_host = Tensor[DType.float32](M, K)
     var b_host = Tensor[DType.float32](K, N)

@@ -98,7 +98,7 @@ fn run_reduce() raises:
     alias BLOCK_SIZE = 128
     alias n = 1024
 
-    let stream = Stream[False]()
+    let stream = Stream()
 
     var vec_host = Tensor[DType.float32](n)
 

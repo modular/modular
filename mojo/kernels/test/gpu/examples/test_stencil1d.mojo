@@ -103,7 +103,7 @@ fn run_stencil1d[smem: Bool]() raises:
     var a_host = Tensor[DType.float32](m)
     var b_host = Tensor[DType.float32](m)
 
-    let stream = Stream[False]()
+    let stream = Stream()
 
     for i in range(m):
         a_host[Index(i)] = i
