@@ -1939,31 +1939,6 @@ PackageArchiveAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
-// PackageArchiveArrayAttr
-//===----------------------------------------------------------------------===//
-
-std::optional<PackageArchiveAttr>
-PackageArchiveArrayAttr::getTargetArchive(TargetInfoAttr target) {
-  for (PackageArchiveAttr archive : getValue())
-    if (target == archive.getTarget())
-      return archive;
-
-  return std::nullopt;
-}
-
-std::string PackageArchiveArrayAttr::getTargetsAsString() {
-  if (getValue().empty())
-    return "none";
-
-  std::string str;
-  llvm::raw_string_ostream os(str);
-  llvm::interleaveComma(getValue(), os, [&](PackageArchiveAttr archive) {
-    os << archive.getTarget().getTripleStr();
-  });
-  return os.str();
-}
-
-//===----------------------------------------------------------------------===//
 // StructAttr
 //===----------------------------------------------------------------------===//
 
