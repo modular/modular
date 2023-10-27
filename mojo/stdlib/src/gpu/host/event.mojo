@@ -151,3 +151,19 @@ fn time_function[func: fn () capturing -> None]() -> Int:
     except e:
         print("CUDA timing error:", e)
         return -1
+
+
+@always_inline
+@parameter
+fn time_function[func: fn () raises capturing -> None]() raises -> Int:
+    let start = Event()
+    let end = Event()
+
+    start.record()
+    func()
+    end.record()
+    end.sync()
+
+    let msec = start.elapsed(end)
+
+    return (msec * 1_000_000).to_int()
