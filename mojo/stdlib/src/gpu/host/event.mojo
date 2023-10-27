@@ -121,7 +121,7 @@ struct Event:
         _check_error(
             _get_dylib_function[
                 fn (Pointer[Float32], _EventImpl, _EventImpl) -> Result
-            ]("cuEventRecord")(
+            ]("cuEventElapsedTime")(
                 Pointer.address_of(ms), self._event, other._event
             )
         )
