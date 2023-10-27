@@ -828,8 +828,43 @@ std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
 // StructType
 //===----------------------------------------------------------------------===//
 
+Type StructType::parse(AsmParser &p) {
+  if (p.parseLess())
+    return {};
+  if (succeeded(p.parseOptionalGreater()))
+    return StructType::get(p.getContext(), {});
+
+  SmallVector<TypedAttr> elementTypes;
+  bool isMemoryOnly = false;
+  if (succeeded(p.parseOptionalLParen())) {
+    if (p.parseOptionalRParen())
+      if (parseTypeParamValues(p, elementTypes) || p.parseRParen())
+        return {};
+    isMemoryOnly = succeeded(p.parseOptionalKeyword("memoryOnly"));
+  } else if (parseTypeParamValues(p, elementTypes)) {
+    return {};
+  }
+  if (p.parseGreater())
+    return {};
+
+  return StructType::get(p.getContext(), elementTypes, isMemoryOnly);
+}
+
+void StructType::print(AsmPrinter &p) const {
+  p << '<';
+  if (getIsMemoryOnly()) {
+    p << '(';
+    printTypeParamValues(p, getElementTypes());
+    p << ") memoryOnly";
+  } else {
+    printTypeParamValues(p, getElementTypes());
+  }
+  p << '>';
+}
+
 LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 ArrayRef<TypedAttr> elementTypes) {
+                                 ArrayRef<TypedAttr> elementTypes,
+                                 bool isMemoryOnly) {
   for (auto [index, elementType] : llvm::enumerate(elementTypes)) {
     if (!elementType.getType().isa<MLIRTypeType>())
       return emitError() << "struct element type at index " << index
@@ -868,16 +903,25 @@ Type StructType::getConcreteElementType(unsigned i) const {
 }
 
 StructType StructType::get(MLIRContext *context, ArrayRef<Type> elementTypes) {
+  return get(context, elementTypes, /*isMemoryOnly=*/false);
+}
+
+StructType StructType::get(ArrayRef<Type> elementTypes) {
+  return get(elementTypes, /*isMemoryOnly=*/false);
+}
+
+StructType StructType::get(MLIRContext *context, ArrayRef<Type> elementTypes,
+                           bool isMemoryOnly) {
   SmallVector<TypedAttr> elementTypeExprs;
   elementTypeExprs.reserve(elementTypes.size());
   for (Type elementType : elementTypes)
     elementTypeExprs.push_back(TypeConstantAttr::get(elementType));
-  return get(context, elementTypeExprs);
+  return get(context, elementTypeExprs, isMemoryOnly);
 }
 
-StructType StructType::get(ArrayRef<Type> elementTypes) {
+StructType StructType::get(ArrayRef<Type> elementTypes, bool isMemoryOnly) {
   assert(!elementTypes.empty() && "expected at least one element type");
-  return get(elementTypes.front().getContext(), elementTypes);
+  return get(elementTypes.front().getContext(), elementTypes, isMemoryOnly);
 }
 
 static std::optional<int64_t>

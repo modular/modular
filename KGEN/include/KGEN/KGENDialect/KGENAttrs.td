@@ -851,7 +851,7 @@ def KGEN_StructAttr : KGENAttr<"Struct", "struct", [
     Example:
 
     ```mlir
-    #kgen.struct<3, 3.5> : !kge.struct<index, f32>
+    #kgen.struct<3, 3.5> : !kgen.struct<index, f32>
     ```
   }];
 
