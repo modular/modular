@@ -56,7 +56,8 @@ def TargetType : DialectType<(type)>;
 def BuildInfoType : DialectType<(type)>;
 
 def StructType : DialectType<(type
-  TypedAttrArray:$elementTypes
+  TypedAttrArray:$elementTypes,
+  Bool:$isMemoryOnly
 )>;
 
 def PackType : DialectType<(type

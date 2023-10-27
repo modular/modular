@@ -507,13 +507,16 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
   let summary = "parameterized struct type";
   let description = [{
     This type represents a struct. A struct contains element types arranged in
-    their order of declaration.
+    their order of declaration and a flag indicating register-passability.
 
     Example:
 
     ```mlir
-    // A struct with primitive element types.
+    // A register passable struct with primitive element types.
     !kgen.struct<scalar<f32>, simd<4, ui64>>
+
+    // A memory-only struct with primitive element types.
+    !kgen.struct<(scalar<f32>, simd<4, ui64>) memoryOnly>
 
     // A struct with nested types.
     !kgen.struct<
@@ -530,15 +533,19 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     ```
   }];
 
-  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$elementTypes);
-  let assemblyFormat = [{
-    `<` (`>`) : (custom<TypeParamValues>($elementTypes)^ `>`)?
-  }];
+  let parameters = (ins
+    OptionalArrayRefParameter<"TypedAttr">:$elementTypes,
+    "bool":$isMemoryOnly
+  );
+  let hasCustomAssemblyFormat = 1;
   let genVerifyDecl = 1;
 
   let builders = [
     TypeBuilder<(ins "ArrayRef<Type>":$elementTypes)>,
-    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$elementTypes)>
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$elementTypes)>,
+    TypeBuilder<(ins "ArrayRef<Type>":$elementTypes, "bool":$isMemoryOnly)>,
+    TypeBuilderWithInferredContext<(ins
+      "ArrayRef<Type>":$elementTypes, "bool":$isMemoryOnly)>,
   ];
 
   let extraClassDeclaration = [{
