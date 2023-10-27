@@ -134,7 +134,7 @@ void M::TF::StatsReport::writeToFile() {
 
 void M::TF::StatsReport::emitTelemetry() {
   auto &telemetryContext = *runtime->getContext<Telemetry::TelemetryContext>();
-  auto logger = telemetryContext.getLogger("modular");
+  auto logger = telemetryContext.getLogger("engine");
   llvm::StringMap<Telemetry::Logs::AttributeValue> attributes = {};
   attributes["total_op_count"] = numTotalOps;
   attributes["fallback_op_count"] = numFallbackOps;
