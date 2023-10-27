@@ -13,8 +13,6 @@ from sys.param_env import env_get_string
 
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
-import gpu.host.benchmark
-from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -23,7 +21,9 @@ from gpu.host.memory import (
 )
 
 
-fn vec_func(
+fn vec_func[
+    op: fn (Float32, Float32) capturing -> Float32
+](
     in0: DTypePointer[DType.float32],
     in1: DTypePointer[DType.float32],
     out: DTypePointer[DType.float32],
@@ -32,16 +32,18 @@ fn vec_func(
     let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
     if tid >= len:
         return
-    out.store(tid, in0.load(tid) + in1.load(tid))
+    out.store(tid, op(in0.load(tid), in1.load(tid)))
 
 
-# CHECK-LABEL: run_vec_add
+# CHECK-LABEL: run_binary_add
 # COM: Force the capture to be captured instead of inlined away.
 @no_inline
-fn run_vec_add() raises:
-    print("== run_vec_add")
+fn run_binary_add(capture: Float32) raises:
+    print("== run_binary_add")
 
     alias length = 1024
+
+    let stream = Stream[is_borrowed=False]()
 
     let in0_host = Pointer[Float32].alloc(length)
     let in1_host = Pointer[Float32].alloc(length)
@@ -58,46 +60,45 @@ fn run_vec_add() raises:
     _copy_host_to_device(in0_device, in0_host, length)
     _copy_host_to_device(in1_device, in1_host, length)
 
+    @parameter
+    fn add(lhs: Float32, rhs: Float32) -> Float32:
+        return capture + lhs + rhs
+
     let func = Function[
         fn (
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             DTypePointer[DType.float32],
             Int,
-        ) -> None, vec_func
+        ) capturing -> None, vec_func[add]
     ]()
 
     let block_dim = 32
-
-    @always_inline
-    @parameter
-    fn run_func() raises:
-        func(
-            (length // block_dim),
-            (block_dim),
-            in0_device,
-            in1_device,
-            out_device,
-            length,
-            stream=Stream(),
-        )
-
-    let report = benchmark.run[run_func]()
-    # CHECK: Benchmark Report (s)
-    report.print()
+    func(
+        (length // block_dim),
+        (block_dim),
+        in0_device,
+        in1_device,
+        out_device,
+        length,
+        stream=stream,
+    )
+    # CHECK: number of captures: 1
+    print("number of captures:", func._impl.num_captures)
+    synchronize()
 
     _copy_device_to_host(out_host, out_device, length)
 
-    # CHECK: at index 0 the value is 2.0
-    # CHECK: at index 1 the value is 3.0
-    # CHECK: at index 2 the value is 4.0
-    # CHECK: at index 3 the value is 5.0
-    # CHECK: at index 4 the value is 6.0
-    # CHECK: at index 5 the value is 7.0
-    # CHECK: at index 6 the value is 8.0
-    # CHECK: at index 7 the value is 9.0
-    # CHECK: at index 8 the value is 10.0
-    # CHECK: at index 9 the value is 11.0
+    # CHECK: at index 0 the value is 4.5
+    # CHECK: at index 1 the value is 5.5
+    # CHECK: at index 2 the value is 6.5
+    # CHECK: at index 3 the value is 7.5
+    # CHECK: at index 4 the value is 8.5
+    # CHECK: at index 5 the value is 9.5
+    # CHECK: at index 6 the value is 10.5
+    # CHECK: at index 7 the value is 11.5
+    # CHECK: at index 8 the value is 12.5
+    # CHECK: at index 9 the value is 13.5
     for i in range(10):
         print("at index", i, "the value is", out_host.load(i))
 
@@ -110,12 +111,13 @@ fn run_vec_add() raises:
     out_host.free()
 
     _ = func ^
+    _ = stream ^
 
 
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
         with Context() as ctx:
-            run_vec_add()
+            run_binary_add(2.5)
     except e:
         print("CUDA_ERROR:", e)
