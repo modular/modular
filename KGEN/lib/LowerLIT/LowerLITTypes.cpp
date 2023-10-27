@@ -57,12 +57,14 @@ struct StructDeclarations {
   DenseMap<std::pair<StringAttr, StringAttr>, int64_t> fieldIndices;
 
   /// A struct declaration representing its field names and types and input
-  /// parameters.
+  /// parameters, as well as register passability.
   struct Decl {
     /// The field names and types.
     SmallVector<std::pair<StringAttr, Type>> fields;
     /// The struct input parameters.
     ParamDeclArrayAttr decls;
+    /// A flag indicating if the struct is register passable or not.
+    bool isRegisterPassable;
   };
 
   /// A map of all struct declarations by name.
@@ -82,11 +84,11 @@ struct StructOperationLowerer : public mlir::IRRewriter {
     return structDecls.fieldIndices.lookup({ref.getName(), name});
   }
 
-  /// Replace a LIT struct with a POP struct or an arbitrary type if it is was
+  /// Replace a LIT struct with a KGEN struct or an arbitrary type if it is was
   /// a single-element type that got flattened.
   /// This function returns PointerUnion<KGEN::StructType, Type> to
-  /// distinguish between a flatten single-element struct and a struct that has
-  /// multiple elements.
+  /// distinguish between a flattened single-element struct and a struct that
+  /// has multiple elements.
   /// Using PointerUnion<KGEN::StructType, Type> instead of Type because
   /// the single-element itself can also be a struct.
   /// PointerUnion doesn't know Type's RTTI.
@@ -230,7 +232,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   auto processStructAttr = [&](LITStructAttr attr) -> Attribute {
     PointerUnion<KGEN::StructType, Type> newType =
         substituteStructRef(attr.getType());
-    // Flatten single-element structs.
+    // Handle flattened single-element structs.
     if (auto type = dyn_cast<Type>(newType)) {
       auto &decl = structDecls.getDecl(attr.getType());
       ParameterEvaluator evaluator(decl.decls, attr.getType().getParamValues());
@@ -455,11 +457,12 @@ StructOperationLowerer::substituteStructRef(DeclRefType ref) {
     elementTypes.push_back(substituteReboundType);
   }
 
-  // Flatten single-element structs.
-  if (elementTypes.size() == 1)
+  // Flatten register-passable, single-element structs.
+  if (elementTypes.size() == 1 && decl.isRegisterPassable)
     return elementTypes[0];
 
-  return KGEN::StructType::get(ref.getContext(), elementTypes);
+  return KGEN::StructType::get(ref.getContext(), elementTypes,
+                               !decl.isRegisterPassable);
 }
 
 DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
@@ -468,16 +471,19 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
   auto &decl = structDecls.getDecl(ref);
   ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
 
-  SmallVector<DebugInfo::DIMemberType> elementTypes;
-  for (auto [name, type] : decl.fields) {
-    elementTypes.push_back(DebugInfo::DIMemberType::get(
-        name, converter.convertDebugType(evaluator.getReboundType(type))));
-  }
+  auto getDebugInfoType = [&](const std::pair<StringAttr, Type> &nameAndType) {
+    auto [name, type] = nameAndType;
+    return DebugInfo::DIMemberType::get(
+        name, converter.convertDebugType(evaluator.getReboundType(type)));
+  };
 
-  // Flatten single-element structs.
+  // Flatten register-passable, single-element structs.
   // TODO(#23914): Track this optimization with DWARF expressions.
-  if (elementTypes.size() == 1)
-    return elementTypes.front().getType();
+  if (decl.fields.size() == 1 && decl.isRegisterPassable)
+    return getDebugInfoType(decl.fields.front()).getType();
+
+  SmallVector<DebugInfo::DIMemberType> elementTypes =
+      llvm::map_to_vector(decl.fields, getDebugInfoType);
 
   // Mangle the struct name.
   std::string name;
@@ -765,18 +771,19 @@ void LowerLITTypesPass::runOnOperation() {
 
   StructDeclarations structDecls;
 
-  for (auto decl :
+  for (auto structOp :
        llvm::make_early_inc_range(getOperation().getOps<StructDeclOp>())) {
     SmallVector<std::pair<StringAttr, Type>> fields;
-    for (auto [idx, field] : llvm::enumerate(decl.getFieldDecls())) {
+    for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
       fields.emplace_back(field.getNameAttr(), field.getType());
       structDecls.fieldIndices.try_emplace(
-          {decl.getNameAttr(), field.getNameAttr()}, idx);
+          {structOp.getNameAttr(), field.getNameAttr()}, idx);
     }
 
-    structDecls.decls.insert(
-        {decl.getNameAttr(), {std::move(fields), decl.getInputParamsAttr()}});
-    analysis.getTopLevelSymbolTable().erase(decl);
+    structDecls.decls.insert({structOp.getNameAttr(),
+                              {std::move(fields), structOp.getInputParamsAttr(),
+                               structOp.isRegisterPassable()}});
+    analysis.getTopLevelSymbolTable().erase(structOp);
   }
 
   StructOperationLowerer structLowerer(&getContext(), structDecls);

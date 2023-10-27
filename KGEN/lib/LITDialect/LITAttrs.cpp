@@ -262,11 +262,12 @@ LogicalResult
 LITStructAttr::verifySymbolUses(Operation *module,
                                 mlir::LockedSymbolTableCollection &symtab,
                                 Location loc) const {
-  auto structDecl =
-      symtab.lookupSymbolIn<StructDeclOp>(module, getType().getSymbol());
-  if (!structDecl)
-    return emitError(loc) << "struct attribute type " << getType().getSymbol()
+  SymbolRefAttr symbolRef = getType().getSymbol();
+  auto structDecl = symtab.lookupSymbolIn<StructDeclOp>(module, symbolRef);
+  if (!structDecl) {
+    return emitError(loc) << "struct attribute type " << symbolRef
                           << " does not refer to a struct declaration";
+  }
 
   ParameterEvaluator evaluator(structDecl.getInputParams(),
                                getType().getParamValues());

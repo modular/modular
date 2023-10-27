@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -verify-parameters -lower-lit-types -verify-parameters | FileCheck %s
 
-lit.struct.decl @Coro<T: type>  {
+lit.struct.decl @Coro<T: type> attributes {registerPassable = 1 : i8} {
   lit.struct.field coro : !pop.coroutine<() -> !kgen.paramref<T>>
 }
 
