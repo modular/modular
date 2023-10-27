@@ -4,9 +4,4 @@ lit_config.load_config(
     config, "@MODULAR_BINARY_DIR@/utils/build/llvm-lit/lit.common.configured"
 )
 
-config.available_backend_targets = "@LLVM_TARGETS_TO_BUILD@".lower().split(";")
-
-if "nvptx" in config.available_backend_targets:
-    config.available_features.add("nvptx_backend")
-
 lit_config.load_config(config, "@MODULAR_SOURCE_DIR@/Kernels/test/gpu/lit.cfg.py")

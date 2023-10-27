@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: nvptx_backend
 # RUN: kgen -disable-prebuilt-packages -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_75 --target-features="" %s | FileCheck %s
 
 from sys.info import simdwidthof, triple_is_nvidia_cuda

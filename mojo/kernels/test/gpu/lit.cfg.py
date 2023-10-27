@@ -5,16 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-from lit.llvm import llvm_config
 import platform
 from pathlib import Path
+
+from lit.llvm import llvm_config
+
 from modular.utils.subprocess import get_command_output
 
 
 def has_gpu(modular_src_root, config=None):
-    if config and "nvptx" not in config.available_backend_targets:
-        return False
-
     if platform.system() != "Linux":
         return False
 

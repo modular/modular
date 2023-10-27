@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: nvptx_backend
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
@@ -25,6 +24,7 @@ from memory.buffer import NDBuffer
 from tensor import Tensor
 
 from utils.index import Index
+
 
 # CHECK-LABEL: run_elementwise
 fn run_elementwise() raises:
