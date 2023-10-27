@@ -198,10 +198,6 @@ def PackageArchiveAttr : DialectAttribute<(attr
   ConcreteAttribute<"DenseResourceElementsAttr">:$archive
 )>;
 
-def PackageArchiveArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"PackageArchiveAttr">:$value
-)>;
-
 def StructAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"StructType">:$type
@@ -244,7 +240,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     DecoratorsAttr,
     ExportKindAttr,
     PackageArchiveAttr,
-    PackageArchiveArrayAttr,
     StructAttr,
     StructExtractAttr,
     PackAttr

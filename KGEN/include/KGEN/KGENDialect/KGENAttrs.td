@@ -837,24 +837,6 @@ def KGEN_PackageArchiveAttr : KGENAttr<"PackageArchive", "package.archive"> {
 }
 
 //===----------------------------------------------------------------------===//
-// PackageArchiveArrayAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_PackageArchiveArrayAttr
-  : ArrayOfAttr<KGENDialect, "PackageArchiveArray", "package.archives",
-                "PackageArchiveAttr"> {
-  let extraClassDeclaration = [{
-    /// If an archive with the given target exists in the array, returns that
-    /// archive. Otherwise, returns null.
-    std::optional<PackageArchiveAttr> getTargetArchive(TargetInfoAttr target);
-
-    /// Returns a string containing a comma-delineated list of the archives'
-    /// targets, or "none" if there are no archives in this array.
-    std::string getTargetsAsString();
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // StructAttr
 //===----------------------------------------------------------------------===//
 
