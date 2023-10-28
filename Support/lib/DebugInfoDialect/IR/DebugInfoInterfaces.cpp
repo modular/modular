@@ -73,9 +73,11 @@ static LogicalResult verifyScope(ErrorOr<DIScopeAttr> scopeOr,
 
   if (funcScope == *scopeOr)
     return success();
-  return op->emitOpError(
-             "location scope does not match scope of parent func location: ")
-         << funcScope;
+  return (op->emitOpError(
+              "location scope does not match scope of parent func location: ")
+          << *scopeOr)
+             .attachNote()
+         << "function scope: " << funcScope;
 }
 
 /// Verify the location scope of ordinary op within a subprogram.

@@ -106,3 +106,26 @@ kgen.generator @foo() {
 #locFoo = loc(fused<#subprogram>["foo.mojo":25:1])
 #locClosure = loc(fused<#subprogram1>["foo.mojo":183:5])
 #locOther = loc(fused<#subprogram2>["foo.mlir":56:5])
+
+// -----
+
+// CHECK-LABEL: kgen.generator @func
+kgen.generator @func() {
+  kgen.param.declare rank = <2> loc(#loc3)
+  kgen.param.declare.region region = () {
+    hlcf.loop {
+      // CHECK: hlcf.break loc([[BREAK_LOC:#.*]])
+      hlcf.break loc(#loc4)
+    } loc(#loc4)
+    kgen.return loc(#loc4)
+  } loc(#loc4)
+  kgen.return loc(#loc3)
+} loc(#loc3)
+
+#subprogram = #debuginfo.subprogram<name = "test_stencil_avg_pool"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<name = "map_fn"> : !debuginfo.subroutine<(!pop.simd<rank, f32>) -> (): DW_CC_normal>
+// CHECK: [[SR_TYPE:!.*]] = !debuginfo.subroutine<(!pop.simd<2, f32>) -> (): DW_CC_normal>
+// CHECK: [[SP:#.*]] = #debuginfo.subprogram<{{.*}}> : [[SR_TYPE]]
+// CHECK: [[BREAK_LOC]] = loc(fused<[[SP]]>
+#loc3 = loc(fused<#subprogram>["a":0:0])
+#loc4 = loc(fused<#subprogram1>["a":0:0])

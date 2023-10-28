@@ -27,7 +27,7 @@ kgen.generator @foo() {
 #loc = loc("foo.mlir":7:8)
 
 kgen.func @foo() {
-  // CHECK: error: 'kgen.return' op location scope does not match scope of parent func location: #debuginfo.subprogram
+  // CHECK: error: 'kgen.return' op location scope does not match scope of parent func location
   kgen.return
 } loc(fused<#subprogram>[#loc])
 
@@ -39,7 +39,7 @@ kgen.func @foo() {
 #loc = loc("foo.mlir":7:8)
 
 kgen.func @foo() {
-  // CHECK: foo.mlir:7:8: error: 'kgen.return' op location scope does not match scope of parent func location: #debuginfo.subprogram
+  // CHECK: foo.mlir:7:8: error: 'kgen.return' op location scope does not match scope of parent func location
   kgen.return loc(fused<#file>[#loc])
 } loc(fused<#subprogram>[#loc])
 
@@ -53,7 +53,7 @@ kgen.func @foo() {
 #callsite = loc(callsite(#loc1 at #loc))
 
 kgen.func @foo() {
-  // CHECK: bar.mlir:5:6: error: 'kgen.param.constant' op location scope does not match scope of parent func location: #debuginfo.subprogram
+  // CHECK: bar.mlir:5:6: error: 'kgen.param.constant' op location scope does not match scope of parent func location
   %index1 = kgen.param.constant = <1> loc(callsite(#loc1 at #callsite))
   kgen.return loc(#funcLoc)
 } loc(#funcLoc)
@@ -71,7 +71,7 @@ kgen.func @foo() {
 #funcLoc = loc(fused<#subprogram>[#loc])
 
 kgen.func @foo() {
-  // CHECK: foo.mlir:10:13: error: 'kgen.param.constant' op location scope does not match scope of parent func location: #debuginfo.subprogram
+  // CHECK: foo.mlir:10:13: error: 'kgen.param.constant' op location scope does not match scope of parent func location
   %index1 = kgen.param.constant = <2> loc(fused<#lexical_block1>[#loc1])
   kgen.return loc(#funcLoc)
 } loc(#funcLoc)

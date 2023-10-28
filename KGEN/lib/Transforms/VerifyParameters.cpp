@@ -116,16 +116,18 @@ static void propagateTrivialParameters(Region *region,
   auto rebindLoc = [&](Location loc) {
     return cast<Location>(evaluator.getReboundAttribute(loc));
   };
-  for (Operation &op : region->getOps()) {
+  region->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
       if (mlir::LocationAttr loc = inlined.getCallLocAttr())
         inlined.setCallLocAttr(rebindLoc(loc));
     // DeclInterface's location might reference parameters declared by it (e.g.
     // in case of a parametric argument making it into a subprogram scope type),
     // so we will handle it when we recurse into it.
-    if (!isa<DeclInterface>(op))
-      op.setLoc(rebindLoc(op.getLoc()));
-  }
+    if (isa<DeclInterface>(op))
+      return WalkResult::skip();
+    op->setLoc(rebindLoc(op->getLoc()));
+    return WalkResult::advance();
+  });
   // Don't process the top-level decl operation. It cannot reference
   // declarations in its body and its location is shared across threads.
   if (region->getParentOp() != topLevel.scope->getParentOp())
