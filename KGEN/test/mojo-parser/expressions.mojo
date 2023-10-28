@@ -72,24 +72,24 @@ fn inferred_function_with_memory_result[
 
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
-  # CHECK-NEXT: %v1 = lit.varlet.decl {{.*}} : !lit.ref<mut !MemoryOnlyPair,
+  # CHECK-NEXT: %v1 = lit.varlet.decl {{.*}} var : !lit.ref<mut !MemoryOnlyPair,
   # CHECK-NEXT: %0 = lit.ref.to_pointer %v1
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%0, %a)
   var v1 = a
 
-  # CHECK-NEXT: %v2 = lit.varlet.decl "v2"
+  # CHECK-NEXT: %v2 = lit.varlet.decl "v2" let
   # CHECK-NEXT: %2 = lit.ref.to_pointer %v2
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%2, %a)
   let v2 : MemoryOnlyPair = a
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} synth
   # CHECK-NEXT: [[TMPPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[TMPPTR]], %a)
   _ = a
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
-  # CHECK-NEXT: %regX = lit.varlet.decl
+  # CHECK-NEXT: %regX = lit.varlet.decl {{.*}} let
   # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
   # CHECK-NEXT: %7 = lit.ref.to_pointer %regX
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%7, [[AX]])
@@ -672,9 +672,9 @@ fn mvalueStructField():
 
 # CHECK-LABEL: lit.func @"defTests({{.*}}, %{{.*}}[untyped]: !kgen.pointer<!object> owned_in_mem)
 def defTests(a: Int, b: Int, untyped) -> None:
-  # CHECK: %a_0 = lit.varlet.decl "a" var synth :
+  # CHECK: %a_0 = lit.varlet.decl "a" imp
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: %b_1 = lit.varlet.decl "b" var synth : !lit.ref<mut !Int, *"`b1">
+  # CHECK: %b_1 = lit.varlet.decl "b" imp : !lit.ref<mut !Int, *"`b1">
   # CHECK: lit.ref.store %b, %b_1
   # CHECK: [[B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: lit.ref.store [[B]], %a_0
@@ -686,8 +686,8 @@ def defTests(a: Int, b: Int, untyped) -> None:
 
 # CHECK-LABEL: lit.func @"basic_assignments
 def basic_assignments(a: Int, b: Int, c: M, d: M):
-  # CHECK:      %a_0 = lit.varlet.decl "a" var synth :
-  # CHECK:      %b_1 = lit.varlet.decl "b" var synth :
+  # CHECK:      %a_0 = lit.varlet.decl "a" imp
+  # CHECK:      %b_1 = lit.varlet.decl "b" imp
   # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__iadd__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
@@ -748,23 +748,23 @@ def basic_assignments(a: Int, b: Int, c: M, d: M):
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
 # CHECK-LABEL: lit.func @"walrus_implicit_decl
 def walrus_implicit_decl():
-  # CHECK:      %a = lit.varlet.decl "a" var synth :
+  # CHECK:      %a = lit.varlet.decl "a" imp
   # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: {{.*}}value = 3
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
   # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load %a
   # CHECK-NEXT: kgen.call {{.*}}([[THREE]], [[VAR_A]])
   simpleMath(a := 3, a)
 
-  # CHECK:      %b = lit.varlet.decl "b" var synth :
+  # CHECK:      %b = lit.varlet.decl "b" imp
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}value = 4
   # CHECK-NEXT: lit.ref.store [[FOUR]], %b
   if b := 4:
     print(b)
 
-  # CHECK:      %c = lit.varlet.decl "c" var synth :
+  # CHECK:      %c = lit.varlet.decl "c" imp
   # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant: {{.*}}value = 5
   # CHECK-NEXT: lit.ref.store [[FIVE]], %c
-  # CHECK:      %d = lit.varlet.decl "d" var synth :
+  # CHECK:      %d = lit.varlet.decl "d" imp
   # CHECK-NEXT: lit.ref.store [[FIVE]], %d
   d = c := 5
 
@@ -1108,7 +1108,7 @@ fn takeInOutInt(inout a: Int): pass
 
  # CHECK-LABEL: lit.func @"testWritebacks
 fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
-  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var
+  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" synth
   # CHECK-NEXT: %[[ANONPTR:.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: %[[V0:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V1:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])

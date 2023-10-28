@@ -11,6 +11,7 @@
 #ifndef KGEN_LITDIALECT_LITATTRS_TD
 #define KGEN_LITDIALECT_LITATTRS_TD
 
+include "KGEN/LITDialect/LITEnums.td"
 include "KGEN/LITDialect/LITDialect.td"
 include "Support/MDialect/MAttrs.td"
 include "mlir/IR/AttrTypeBase.td"
@@ -279,5 +280,11 @@ def LIT_PassingKindArrayAttr : LITAttr<"PassingKindArray", "passing.kinds"> {
   );
   let assemblyFormat = "`<` `[` (`]`) : ($value^ `]`)? `>`";
 }
+
+//===----------------------------------------------------------------------===//
+// VarLetDeclKindAttr
+//===----------------------------------------------------------------------===//
+def LIT_VarLetDeclKindAttr : EnumAttr<LITDialect, LIT_VarLetDeclKind,
+    "varlet.decl.kind">;
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD

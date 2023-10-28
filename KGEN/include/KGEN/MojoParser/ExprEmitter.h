@@ -7,6 +7,7 @@
 #ifndef KGEN_MOJOPARSER_EXPREMITTER_H
 #define KGEN_MOJOPARSER_EXPREMITTER_H
 
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
@@ -534,12 +535,12 @@ public:
   // Var/let emission helpers.
 
   /// Helper to emit a VarLetDeclOp with a uniquely generated lifetime name.
-  VarLetDeclOp emitVarLetDecl(const Twine &name, Type type, Location loc,
-                              bool isVar = true, bool isSynth = true,
-                              bool anonymous = true);
-  VarLetDeclOp emitVarLetDecl(StringAttr name, Type type, Location loc,
-                              bool isVar = true, bool isSynth = true,
-                              bool anonymous = true);
+  VarLetDeclOp
+  emitVarLetDecl(const Twine &name, Type type, Location loc,
+                 VarLetDeclKind kind = VarLetDeclKind::Synthesized);
+  VarLetDeclOp
+  emitVarLetDecl(StringAttr name, Type type, Location loc,
+                 VarLetDeclKind kind = VarLetDeclKind::Synthesized);
 };
 
 } // namespace M::KGEN::LIT

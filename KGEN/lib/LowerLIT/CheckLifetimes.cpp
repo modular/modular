@@ -395,7 +395,7 @@ struct ValueSet {
     bool isLet = false;
     if (val) {
       if (auto varLet = val.getDefiningOp<VarLetDeclOp>())
-        isLet = !varLet.getIsVar();
+        isLet = varLet.getKind() == VarLetDeclKind::Let;
     }
 
     valueInfoIndex[val] = valueInfos.size();
@@ -2346,7 +2346,7 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
         continue;
 
       auto checkVarLet = [&](auto varLet) {
-        if (varLet.getIsSynthesized() || !varLet.getIsVar())
+        if (varLet.getKind() != VarLetDeclKind::Var)
           return;
         mlir::emitWarning(varLet.getLoc())
             << "'" << varLet.getName()

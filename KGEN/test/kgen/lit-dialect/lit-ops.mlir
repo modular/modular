@@ -3,11 +3,11 @@
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
-  // CHECK-NEXT: %a = lit.varlet.decl "a" var synth : !lit.ref<mut scalar<ty>, life>
-  %a = lit.varlet.decl "a" var synth : !lit.ref<mut scalar<ty>, life>
+  // CHECK-NEXT: %a = lit.varlet.decl "a" imp : !lit.ref<mut scalar<ty>, life>
+  %a = lit.varlet.decl "a" imp : !lit.ref<mut scalar<ty>, life>
 
-  // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" : !lit.ref<mut index, lt>
-  %lifetime = lit.varlet.decl "lifetime" : !lit.ref<mut index, lt>
+  // CHECK-NEXT: %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<mut index, lt>
+  %lifetime = lit.varlet.decl "lifetime" let : !lit.ref<mut index, lt>
 
   // CHECK-NEXT: %y = lit.letreg.decl "y" = %x : i32
   %y = lit.letreg.decl "y" = %x: i32

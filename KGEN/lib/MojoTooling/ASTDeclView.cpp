@@ -340,7 +340,7 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_VariableDeclView, declRef.getName().value_or(StringRef{})) {
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
       .Case([&](VarLetDeclOp op) {
-        flagIsVar = op.getIsVar();
+        flagIsVar = op.getKind() != VarLetDeclKind::Let;
         type = declRef.getType().getReferenceElementType().getAsString();
       })
       .Case([&](LetRegDeclOp op) {
