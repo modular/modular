@@ -3,7 +3,7 @@
 kgen.func @bitcast() -> !pop.scalar<si64> {
   %0 = pop.global_constant: array<1, scalar<si64>> = <[2]>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<array<1, scalar<si64>>> to !kgen.pointer<scalar<si64>>
-  %2 = pop.load %1 align 1  : !kgen.pointer<scalar<si64>>
+  %2 = pop.load %1 align<1> : !kgen.pointer<scalar<si64>>
   kgen.return %2 : !pop.scalar<si64>
 }
 
@@ -56,7 +56,7 @@ kgen.func @array_gep() -> !pop.scalar<si64> {
   %two = kgen.param.constant = <2>
   %0 = pop.global_constant: array<3, scalar<si64>> = <[2, 3, -4]>
   %1 = pop.array.gep %0[%two] : <array<3, scalar<si64>>>
-  %2 = pop.load %1 align 1  : !kgen.pointer<scalar<si64>>
+  %2 = pop.load %1 align<1> : !kgen.pointer<scalar<si64>>
   kgen.return %2 : !pop.scalar<si64>
 }
 
@@ -69,7 +69,7 @@ kgen.func @array_neg_index() -> !pop.scalar<si64> {
   %two = kgen.param.constant = <-2>
   %0 = pop.global_constant: array<3, scalar<si64>> = <[2, 3, -4]>
   %1 = pop.array.gep %0[%two] : <array<3, scalar<si64>>>
-  %2 = pop.load %1 align 1  : !kgen.pointer<scalar<si64>>
+  %2 = pop.load %1 align<1> : !kgen.pointer<scalar<si64>>
   kgen.return %2 : !pop.scalar<si64>
 }
 

@@ -229,7 +229,7 @@ kgen.func @load(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32> {
 kgen.func @load_with_alignment(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK: llvm.load %[[PTR]]  {alignment = 128 : i64}
-  %0 = pop.load %p align 128 : !kgen.pointer<scalar<f32>>
+  %0 = pop.load %p align<128> : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !pop.scalar<f32>
 }
 
@@ -247,7 +247,7 @@ kgen.func @store_with_alignment(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64}
-  pop.store %v, %p align 128 : !kgen.pointer<scalar<si32>>
+  pop.store %v, %p align<128> : !kgen.pointer<scalar<si32>>
   kgen.return
 }
 
@@ -258,7 +258,7 @@ kgen.func @nontemporal_store_with_alignment(%p: !kgen.pointer<scalar<si32>>, %v:
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64, nontemporal}
-  pop.store %v, %p align 128 nontemporal: !kgen.pointer<scalar<si32>>
+  pop.store %v, %p align<128> nontemporal: !kgen.pointer<scalar<si32>>
   kgen.return
 }
 
