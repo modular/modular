@@ -352,15 +352,6 @@ fn unused_assignments():
 async fn async_function() -> Int:
     return 0
 
-fn call_async_fn_in_param():
-    # expected-error @below {{cannot call async function in alias initializer}}
-    alias result = async_function()
-    alias awaitable: Coroutine[Int]
-    # expected-error @below {{cannot await in alias initializer}}
-    alias await_it = await awaitable
-    # expected-error @below {{cannot await inside a non-async function}}
-    await async_function()
-
 # See Issue #15578
 def doIs(a: Int, b: Int):
   # expected-error @+1 {{'Int' does not implement the '__is__' method}}
