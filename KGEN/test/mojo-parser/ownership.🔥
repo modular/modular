@@ -34,7 +34,7 @@ struct RegExample:
     return RegExample{}
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
   # CHECK-NEXT: lit.ref.store %self, %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
@@ -559,7 +559,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):
-  # CHECK-NEXT: %x_0 = lit.varlet.decl "x" var synth
+  # CHECK-NEXT: %x_0 = lit.varlet.decl "x" imp
   # CHECK-NEXT: lit.ref.store %x, %x_0
   # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
   # CHECK-NEXT: kgen.call {{.*}}mutate{{.*}}([[XPTR]])
@@ -742,7 +742,7 @@ struct BigRegExample:
     return BigRegExample{a: self.a, b: self.b }
 
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
   # CHECK-NEXT: lit.ref.store %self, %self_0
 
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
@@ -796,7 +796,7 @@ struct ExoticDelExample:
 
  # CHECK-LABEL: lit.func @"__del__
   fn __del__(owned self):
-    # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
+    # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
     # CHECK-NEXT: lit.ref.store %self, %self_0
     # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
 
@@ -943,7 +943,7 @@ struct RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end_lifetime [[APTR]]
@@ -953,7 +953,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
   # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
   # CHECK-NEXT: kgen.return [[A]]
@@ -961,7 +961,7 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end_lifetime [[APTR]]
@@ -971,7 +971,7 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
 
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a

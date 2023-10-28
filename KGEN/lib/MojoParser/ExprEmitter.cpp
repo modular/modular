@@ -726,8 +726,7 @@ XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
   // We model this as an immutable let value with a separately stored
   // initializer.
   VarLetDeclOp var = emitVarLetDecl("anonymous*", pvalue.getType(),
-                                    translateLocation(value.expr->getLoc()),
-                                    /*isVar=*/false);
+                                    translateLocation(value.expr->getLoc()));
   if (!emitPValueToXLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
   return XRValue(var);
@@ -1772,8 +1771,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // store(tmp -> base)
   auto loc = expr->getLocation(emitter);
   ASTType rvalueType = baseVal.ir->elementType;
-  Value tmpDecl = emitter.emitVarLetDecl("__store_tmp__", rvalueType, loc,
-                                         /*isVar=*/false, /*isSynth=*/false);
+  Value tmpDecl = emitter.emitVarLetDecl("__store_tmp__", rvalueType, loc);
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(XLValue(tmpDecl), EC_AttributeRefBase);
@@ -1937,17 +1935,15 @@ void GlobalDLValue::emitStore(ASTExprAnd<CValue> value,
 // Var/let emission helpers.
 
 VarLetDeclOp ExprEmitter::emitVarLetDecl(const Twine &name, Type type,
-                                         Location loc, bool isVar, bool isSynth,
-                                         bool anonymous) {
+                                         Location loc, VarLetDeclKind kind) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name);
   return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       isVar, isSynth, anonymous);
+                                       kind);
 }
 
 VarLetDeclOp ExprEmitter::emitVarLetDecl(StringAttr name, Type type,
-                                         Location loc, bool isVar, bool isSynth,
-                                         bool anonymous) {
+                                         Location loc, VarLetDeclKind kind) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name.strref());
   return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       isVar, isSynth, anonymous);
+                                       kind);
 }

@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 include "KGEN/LITDialect/LITAttrs.td"
+include "KGEN/LITDialect/LITEnums.td"
 include "KGEN/LITDialect/LITDialect.td"
 include "KGEN/LITDialect/LITInterfaces.td"
 include "KGEN/LITDialect/LITTypes.td"
@@ -766,33 +767,30 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
   let summary = "Addressible local let or var declaration";
   let description = [{
     This declaration is used for var and let declarations with an exposed
-    address.  `isVar` indicates if this is mutable at the source level.
-    `isSynthesized` bit indicates whether this was created internally, which
-    supresses some warnings.  `anonymous` indicates if this variable does not
-    reflect any named declaration in the source code.  This type defines a
-    lifetime and returns a mutable reference to its result in that lifetime.
+    address.  `kind` encodes how this declaration was created, either via
+    explicit `let` or `var` expressions, implicitly declared, or internally
+    synthesized (which suppresses some warnings).  This type defines a lifetime
+    and returns a mutable reference to its result in that lifetime.
 
     Example:
 
     ```mlir
-    %foo = lit.varlet.decl "foo" var synth anon : !lit.ref<index, foo>
+    %foo = lit.varlet.decl "foo" var : !lit.ref<index, foo>
     ```
   }];
 
-  let arguments = (ins StrAttr:$name, UnitAttr:$isVar, UnitAttr:$isSynthesized,
-                       UnitAttr:$anonymous, KGEN_ParamDeclAttr:$paramDecl,
+  let arguments = (ins StrAttr:$name, LIT_VarLetDeclKindAttr:$kind,
+                       KGEN_ParamDeclAttr:$paramDecl,
                        OptionalAttr<LIT_DocStringAttr>:$docString);
   let results = (outs LIT_RefType:$result);
 
   let assemblyFormat = [{
-    $name (`var` $isVar^)? (`synth` $isSynthesized^)? (`anon` $anonymous^)?
-    `:` custom<VarLetDeclType>(type($result), $paramDecl) attr-dict
+    $name $kind `:` custom<VarLetDeclType>(type($result), $paramDecl) attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
-                   "StringRef":$lifetimeName, "bool":$isVar,
-                   "bool":$isSynth, "bool":$anonymous)>
+                   "StringRef":$lifetimeName, "VarLetDeclKind":$kind)>
   ];
 }
 

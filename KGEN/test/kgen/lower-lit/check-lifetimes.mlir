@@ -112,7 +112,7 @@ lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@"__del__"
 
 lit.func @verify_destructor_post_throw() -> !kgen.none {
   lit.try {
-    %x = lit.varlet.decl "x" : !lit.ref<mut @S, *"life">
+    %x = lit.varlet.decl "x" let : !lit.ref<mut @S, *"life">
     // CHECK: [[XPTR:%.*]] = lit.ref.to_pointer %x
     %xptr = lit.ref.to_pointer %x : !lit.ref<mut @S, *"life">
     // CHECK: [[V:%.*]] = kgen.call @foo([[XPTR]])
@@ -148,7 +148,7 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
 
 // CHECK-LABEL: lit.func @verify_callee_destroys
 lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
-  %s = lit.varlet.decl "s" : !lit.ref<mut @S, *"SLife">
+  %s = lit.varlet.decl "s" let : !lit.ref<mut @S, *"SLife">
   %sptr = lit.ref.to_pointer %s : !lit.ref<mut @S, *"SLife">
   // CHECK: [[PTR:%.*]] = lit.ref.to_pointer %s
   // CHECK: kgen.call @S::@__init__([[PTR]])
@@ -387,7 +387,7 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !kgen.non
     } else {
       hlcf.yield
     }
-    %anonymous2A = lit.varlet.decl "anonymous*" var synth : !lit.ref<mut @MyStruct, *"life">
+    %anonymous2A = lit.varlet.decl "anonymous*" synth : !lit.ref<mut @MyStruct, *"life">
     %ptr = lit.ref.to_pointer %anonymous2A : !lit.ref<mut @MyStruct, *"life">
     %3 = kgen.call @MyStruct::@__init__(%ptr) : (!kgen.pointer<@MyStruct> init_self) -> !kgen.none
     // CHECK: kgen.call @use(

@@ -947,11 +947,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
 
-  auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
-  VarLetDeclOp varDeclOp =
-      getEmitter().emitVarLetDecl(target, getUnresolvedType(), forLoc,
-                                  /*isVar=*/funcOp && funcOp.getIsDef(),
-                                  /*isSynth=*/true, /*anonymous=*/false);
+  VarLetDeclOp varDeclOp = getEmitter().emitVarLetDecl(
+      target, getUnresolvedType(), forLoc, VarLetDeclKind::Implicit);
 
   // If there is a failure before we parse the for loop body, we still
   // want to call the parser on it so that it builds an ASTDecl node
@@ -1097,8 +1094,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
         // If we are parsing inside a 'def', create a mutable LValue to allow
         // reassignment.
         VarLetDeclOp varDecl = getEmitter().emitVarLetDecl(
-            errName, errVal.getType(), errVal.getLoc(), /*isVar=*/true,
-            /*isSynth=*/true, /*anonymous=*/false);
+            errName, errVal.getType(), errVal.getLoc(),
+            VarLetDeclKind::Implicit);
         decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
         builder.create<RefStoreOp>(errVal.getLoc(), errVal, varDecl);
       } else {
@@ -1225,7 +1222,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     } else {
       targetDecl = getEmitter().emitVarLetDecl(
           name, getUnresolvedType(), shared.translateLocation(targetLoc),
-          /*isVar=*/!useLexicalScope, /*isSynth=*/true, /*anonymous=*/false);
+          VarLetDeclKind::Implicit);
       enterDest = ValueDest(targetDecl, EC_WithContextMgr);
       addDecl = true;
     }
@@ -1891,9 +1888,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
-    declOp =
-        getEmitter().emitVarLetDecl(name, unresolvedType, loc, isVar,
-                                    /*isSynth=*/false, /*anonymous=*/false);
+    VarLetDeclKind declKind = isVar ? VarLetDeclKind::Var : VarLetDeclKind::Let;
+    declOp = getEmitter().emitVarLetDecl(name, unresolvedType, loc, declKind);
     delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
@@ -1960,7 +1956,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // If we have a type, then emit directly into the LValue.  Otherwise emit
     // into the varOp to infer its type.
     ValueDest dest;
-    ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
+    ExprContext exprContext =
+        (varOp.getKind() == VarLetDeclKind::Let) ? EC_LetInit : EC_VarInit;
     if (parsedType) {
       varOp.getResult().setType(RefType::get(/*isMutable=*/true, parsedType,
                                              varOp.getType().getLifetime()));
@@ -1994,7 +1991,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // an initializer.  We don't care about the address being available and
   // this produces smaller IR.
   ASTType inferredRValueType = ASTType(varOp.getType().getElementAsType());
-  if (initExpr && !varOp.getIsVar() &&
+  if (initExpr && (varOp.getKind() != VarLetDeclKind::Var) &&
       // NOTE: This is assuming type parameters are valid register types.  We
       // will need to build out better support when we have traits, but this is
       // important for kernels in practice today.

@@ -307,7 +307,7 @@ lit.func @caller() -> !kgen.none attributes {isParametric} {
 // -----
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, none> attributes {isParametric} {
-    %y = lit.varlet.decl "y" : !lit.ref<mut @MyStruct, *"lifetime">
+    %y = lit.varlet.decl "y" let : !lit.ref<mut @MyStruct, *"lifetime">
     %yp = lit.ref.to_pointer %y : !lit.ref<mut @MyStruct, *"lifetime">
     %0 = kgen.call @throwing_callee(%yp) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, index, !kgen.none>
     // expected-error @below {{'lit.handle_variant' op expected the variant to have two types: a success type and an error type}}
