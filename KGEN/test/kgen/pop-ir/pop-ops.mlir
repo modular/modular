@@ -1,4 +1,4 @@
-// RUN: kgen-opt -verify-parameters %s | FileCheck %s
+// RUN: kgen-opt -verify-parameters %s -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @pointer_type<dt: dtype>(
 kgen.generator @pointer_type<dt: dtype>
@@ -569,21 +569,28 @@ kgen.generator @pop_load_store<type: dtype>(%p0: !kgen.pointer<scalar<f32>>, %p1
 
 // CHECK-LABEL: @pop_load_store_alignment
 kgen.generator @pop_load_store_alignment<type: dtype>(%p0: !kgen.pointer<scalar<f32>>, %p1: !kgen.pointer<scalar<type>>) {
-  // CHECK: pop.load %{{.*}} align 42 : !kgen.pointer<scalar<f32>>
-  %0 = pop.load %p0 align 42: !kgen.pointer<scalar<f32>>
-  // CHECK: pop.load %{{.*}} align 8 : !kgen.pointer<scalar<type>>
-  %1 = pop.load %p1 align 8: !kgen.pointer<scalar<type>>
-  // CHECK: pop.store %{{.*}}, %{{.*}} align 4 : !kgen.pointer<scalar<f32>>
-  pop.store %0, %p0 align 4: !kgen.pointer<scalar<f32>>
-  // CHECK: pop.store %{{.*}}, %{{.*}} align 89 : !kgen.pointer<scalar<type>>
-  pop.store %1, %p1 align 89: !kgen.pointer<scalar<type>>
+  // CHECK: pop.load %{{.*}} align<42> : !kgen.pointer<scalar<f32>>
+  %0 = pop.load %p0 align<42> : !kgen.pointer<scalar<f32>>
+  // CHECK: pop.load %{{.*}} align<8> : !kgen.pointer<scalar<type>>
+  %1 = pop.load %p1 align<8> : !kgen.pointer<scalar<type>>
+  // CHECK: pop.store %{{.*}}, %{{.*}} align<4> : !kgen.pointer<scalar<f32>>
+  pop.store %0, %p0 align<4> : !kgen.pointer<scalar<f32>>
+  // CHECK: pop.store %{{.*}}, %{{.*}} align<89> : !kgen.pointer<scalar<type>>
+  pop.store %1, %p1 align<89> : !kgen.pointer<scalar<type>>
+  kgen.return
+}
+
+// CHECK-LABEL: @alignment_syntax
+kgen.generator @alignment_syntax(%arg0: !kgen.pointer<index>) {
+  // CHECK: align<#some.int>
+  pop.load %arg0 align<#some.int> : !kgen.pointer<index>
   kgen.return
 }
 
 // CHECK-LABEL: @pop_load_alignment_generator
 kgen.generator @pop_load_alignment_generator<alignment>(%ptr: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32> {
-  // CHECK: pop.load %{{.*}} align alignment : !kgen.pointer<scalar<f32>>
-  %0 = pop.load %ptr align alignment : !kgen.pointer<scalar<f32>>
+  // CHECK: pop.load %{{.*}} align<alignment> : !kgen.pointer<scalar<f32>>
+  %0 = pop.load %ptr align<alignment> : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !pop.scalar<f32>
 }
 

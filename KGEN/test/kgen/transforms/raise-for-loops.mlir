@@ -241,7 +241,7 @@ kgen.func @reorder_args(%arg0: !kgen.struct<pointer<scalar<f32>>, index, dtype>)
   // CHECK-NEXT:  [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<f32>>, index, dtype>
   // CHECK-NEXT:  [[V1:%.*]] = hlcf.for [[[INDEX10]] to [[INDEX0]] step [[INDEX1]] sgt sub] (%arg1 = [[INDEX10]] : index, %arg2 = [[INDEX0]] : index, %arg3 = [[V0]] : !kgen.pointer<scalar<f32>>) -> index {
   // CHECK-NEXT:   [[V2:%.*]] = index.sub %arg1, [[INDEX1]]
-  // CHECK-NEXT:   [[V3:%.*]] = pop.load %arg3 align 1  : !kgen.pointer<scalar<f32>>
+  // CHECK-NEXT:   [[V3:%.*]] = pop.load %arg3 align<1> : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT:   [[V4:%.*]] = pop.cast [[V3]] : !pop.scalar<f32> to !pop.scalar<index>
   // CHECK-NEXT:   [[V5:%.*]] = pop.cast_to_builtin [[V4]] : !pop.scalar<index> to index
   // CHECK-NEXT:   [[V6:%.*]] = index.add %arg2, [[V5]]
@@ -257,7 +257,7 @@ kgen.func @reorder_args(%arg0: !kgen.struct<pointer<scalar<f32>>, index, dtype>)
       hlcf.break %arg2 : index
     }
     %3 = index.sub %arg3, %index1
-    %4 = pop.load %arg1 align 1  : !kgen.pointer<scalar<f32>>
+    %4 = pop.load %arg1 align<1> : !kgen.pointer<scalar<f32>>
     %5 = pop.cast %4 : !pop.scalar<f32> to !pop.scalar<index>
     %6 = pop.cast_to_builtin %5 : !pop.scalar<index> to index
     %7 = index.add %arg2, %6

@@ -160,7 +160,7 @@ kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !kgen.
   pop.store %val3, %offset3 : !kgen.pointer<index>
 
   %annoying_offset = pop.offset %alloc[%2] : !kgen.pointer<index>
-  %load = pop.load %annoying_offset align 8  : !kgen.pointer<index>
+  %load = pop.load %annoying_offset align<8> : !kgen.pointer<index>
   pop.store %load, %output : !kgen.pointer<index>
   kgen.return
 }
@@ -177,7 +177,7 @@ kgen.func @bigger_stack(%val1: index, %output : !kgen.pointer<index>) {
   %alloc = pop.stack_allocation 32 x index
   %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
   pop.store %val1, %offset : !kgen.pointer<index>
-  %load = pop.load %offset align 8  : !kgen.pointer<index>
+  %load = pop.load %offset align<8> : !kgen.pointer<index>
   pop.store %load, %output : !kgen.pointer<index>
   kgen.return
 }
@@ -190,7 +190,7 @@ kgen.func @bigger_stack(%val1: index, %output : !kgen.pointer<index>) {
 kgen.func @n_stack_store(%val1: index, %output : !kgen.pointer<index>) {
   %alloc = pop.stack_allocation 3 x index
   pop.store %val1, %alloc : !kgen.pointer<index>
-  %load = pop.load %alloc align 8  : !kgen.pointer<index>
+  %load = pop.load %alloc align<8> : !kgen.pointer<index>
   pop.store %load, %output : !kgen.pointer<index>
 
   // CHECK-NEXT: %[[MEM1:.*]] = pop.stack_allocation 1 x index
@@ -240,10 +240,10 @@ kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !kgen.pointer<in
   %gep1 = pop.array.gep %alloc[%0] : <array<3, index>>
   %gep2 = pop.array.gep %offset[%1] : <array<3, index>>
 
-  %load = pop.load %gep1 align 8  : !kgen.pointer<index>
+  %load = pop.load %gep1 align<8> : !kgen.pointer<index>
   pop.store %load, %output : !kgen.pointer<index>
 
-  %load2 = pop.load %gep2 align 8  : !kgen.pointer<index>
+  %load2 = pop.load %gep2 align<8> : !kgen.pointer<index>
   pop.store %load2, %output : !kgen.pointer<index>
 
   kgen.return
@@ -277,10 +277,10 @@ kgen.func @n_stack_structs(%val: !kgen.struct<index, index>, %output : !kgen.poi
   %gep1 = kgen.struct.gep %alloc[0] : <struct<index, index>>
   %gep2 = kgen.struct.gep %offset[1] : <struct<index, index>>
 
-  %load = pop.load %gep1 align 8  : !kgen.pointer<index>
+  %load = pop.load %gep1 align<8> : !kgen.pointer<index>
   pop.store %load, %output : !kgen.pointer<index>
 
-  %load2 = pop.load %gep2 align 8  : !kgen.pointer<index>
+  %load2 = pop.load %gep2 align<8> : !kgen.pointer<index>
   pop.store %load2, %output : !kgen.pointer<index>
 
   kgen.return

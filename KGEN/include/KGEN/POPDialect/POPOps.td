@@ -740,7 +740,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     ```mlir
     %0 = pop.load %ptr0 : !kgen.pointer<scalar<f32>>
     %1 = pop.load %ptr1 : !kgen.pointer<simd<4, type>>
-    %2 = pop.load %ptr0 align 8 : !kgen.pointer<scalar<f32>>
+    %2 = pop.load %ptr0 align<8> : !kgen.pointer<scalar<f32>>
     ```
   }];
 
@@ -748,7 +748,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
                        OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $ptr (`align` custom<IndexParamValue>($alignment)^)? attr-dict `:`
+    $ptr (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`
     qualified(type($ptr))
   }];
 
@@ -785,7 +785,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        UnitAttr:$nonTemporal);
   let assemblyFormat = [{
-    $arg `,` $ptr (`align` custom<IndexParamValue>($alignment)^)?
+    $arg `,` $ptr (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?
     (`nontemporal` $nonTemporal^)? attr-dict `:` qualified(type($ptr))
   }];
 
