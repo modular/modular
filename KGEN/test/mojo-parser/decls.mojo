@@ -1218,7 +1218,7 @@ struct Awaitable:
 
 
 # CHECK-LABEL: lit.func @"awaitable()"
-async fn awaitable() -> Int:
+fn awaitable() -> Int:
     # CHECK: %2 = lit.ref.to_pointer %aw
     # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable&)"(%2)
     var aw = Awaitable()

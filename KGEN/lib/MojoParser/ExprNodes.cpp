@@ -2701,20 +2701,6 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(
           TypeConstantAttr::get(PackType::get(pValue.get())), this, dest);
     }
-  } else if (kind == kAwait) {
-    // Diagnose errors with 'await'.
-    if (!emitter.builder) {
-      emitter.emitErrorForDynamicValueInParameter(this, "cannot await");
-      return {};
-    }
-    Operation *func = emitter.builder->getInsertionBlock()->getParentOp();
-    while (!isa<FuncOp>(func))
-      func = func->getParentOp();
-    if (!cast<FuncOp>(func).getSignature().isAsync()) {
-      emitter.emitError(getLoc(), "cannot await inside a non-async function")
-          << getRange();
-      return {};
-    }
   }
 
   // If this operator maps onto a special function, attempt to lower it.
