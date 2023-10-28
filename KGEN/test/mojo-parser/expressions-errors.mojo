@@ -489,3 +489,15 @@ def testInExpr(x, y):
   _ = x in y
   # expected-error @+1 {{'not in' operation is not yet supported}}
   _ = x not in y
+
+
+
+struct CopyAndInitMemType:
+  fn __init__(inout self): pass
+  fn __copyinit__(inout self, other: Self): pass
+
+fn getaddr_mem():
+  var x = CopyAndInitMemType()
+  # https://github.com/modularml/mojo/issues/912
+  # expected-error @+1 {{operand must have '!kgen.pointer<T>' type, not 'CopyAndInitMemType'}}
+  __get_address_as_lvalue(x)
