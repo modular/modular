@@ -3095,7 +3095,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
-  // __get_lvalue_as_address(someMLValue) returns a pop.pointer.
+  // __get_lvalue_as_address(someMLValue) returns a !kgen.pointer.
   if (kind == kGetLValueAsAddress) {
     LValue result = emitter.emitExprLValue(subExpr, dest.getContext());
     if (!result)
@@ -3120,20 +3120,27 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
 
-  SRValue exprVal = emitter.emitExprSRValue(subExpr, dest.getContext());
-  if (!exprVal)
+  // __get_address_as_lvalue and __get_address_as_uninit_lvalue and
+  // __get_address_as_owned_value all take a !kgen.pointer.
+  CRValue exprRVal = emitter.emitExprCRValue(subExpr, dest.getContext());
+  if (!exprRVal)
     return {};
-  auto pointerType = dyn_cast<PointerType>(exprVal.getType());
+
+  auto pointerType = dyn_cast<PointerType>(exprRVal.getRValueType());
   if (!pointerType) {
     emitter.emitError(getLoc(),
                       "operand must have '!kgen.pointer<T>' type, not ")
-        << exprVal.getType() << getRange();
+        << exprRVal.getRValueType() << getRange();
     return {};
   }
 
+  SRValue exprVal = emitter.emitSRValue({exprRVal, subExpr}, dest.getContext());
+  if (!exprVal)
+    return {};
+
   // If this is a user defined type with ownership, emit lifetime intrinsics
   // for it, if not, we don't need/want them.
-  auto pointeeType = ASTType(pointerType).getReferenceElementType();
+  auto pointeeType = ASTType(pointerType).getPointerElementType();
   bool needsLifetime = isa<DeclRefType>(pointeeType.mlirType);
 
   /// __get_address_as_owned_value(pop_pointer) # returns RValue
