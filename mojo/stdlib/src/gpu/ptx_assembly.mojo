@@ -18,6 +18,7 @@ fn ptx_assembly[
     asm: StringLiteral,
     result_type: AnyType,
     /,
+    constraints: StringLiteral = "r",
     has_side_effect: Bool = True,
 ]() -> result_type:
     @parameter
@@ -28,14 +29,14 @@ fn ptx_assembly[
             __mlir_op.`pop.inline_asm`[
                 _type=None,
                 assembly = asm.value,
-                constraints = "".value,
+                constraints = constraints.value,
                 hasSideEffects = __mlir_attr.unit,
             ]()
         else:
             __mlir_op.`pop.inline_asm`[
                 _type=None,
                 assembly = asm.value,
-                constraints = "".value,
+                constraints = constraints.value,
             ]()
         return rebind[result_type](None)
     else:
@@ -45,14 +46,14 @@ fn ptx_assembly[
             return __mlir_op.`pop.inline_asm`[
                 _type=result_type,
                 assembly = asm.value,
-                constraints = "".value,
+                constraints = constraints.value,
                 hasSideEffects = __mlir_attr.unit,
             ]()
         else:
             return __mlir_op.`pop.inline_asm`[
                 _type=result_type,
                 assembly = asm.value,
-                constraints = "".value,
+                constraints = constraints.value,
             ]()
 
 
