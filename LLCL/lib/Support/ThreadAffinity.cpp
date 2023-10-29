@@ -18,6 +18,7 @@
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <numeric>
 #include <vector>
 
 #ifdef _MSC_VER
@@ -42,11 +43,11 @@ M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
         LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: System info is "
                                 << *errOrSystemInfo << "\n");
         if (numThreads == 0) {
-          numThreads = errOrSystemInfo->sockets[0].physicalCores.size();
+          for (auto &socketInfo : errOrSystemInfo->sockets)
+            numThreads += socketInfo.physicalCores.size();
           LLVM_DEBUG(llvm::dbgs()
-                     << "getThreadAffinityCpuIds: Defaulting number "
-                        "of threads to number of physical "
-                        "cores on first socket "
+                     << "getThreadAffinityCpuIds: Defaulting number of threads "
+                        "to number of physical cores across all sockets "
                      << numThreads << "\n");
         }
         if (numThreads > maxWorkers) {
