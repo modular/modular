@@ -18,7 +18,6 @@
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <numeric>
 #include <vector>
 
 #ifdef _MSC_VER
