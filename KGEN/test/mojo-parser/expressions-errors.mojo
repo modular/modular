@@ -495,9 +495,17 @@ def testInExpr(x, y):
 struct CopyAndInitMemType:
   fn __init__(inout self): pass
   fn __copyinit__(inout self, other: Self): pass
+  fn __le__(self, other: Self) -> Self: return self
+  fn __mlir_i1__(self) -> __mlir_type.i1: pass
 
 fn getaddr_mem():
   var x = CopyAndInitMemType()
   # https://github.com/modularml/mojo/issues/912
   # expected-error @+1 {{operand must have '!kgen.pointer<T>' type, not 'CopyAndInitMemType'}}
   __get_address_as_lvalue(x)
+
+fn compare_mem_result():
+  var x = CopyAndInitMemType()
+  # https://github.com/modularml/mojo/issues/1115
+  # expected-error @+1 {{chained comparison operator does not currently support memory-only return types}}
+  x <= x <= x
