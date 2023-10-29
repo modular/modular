@@ -7,6 +7,7 @@
 
 from memory.unsafe import DTypePointer, Pointer
 
+from .device import Device
 from ._utils import _check_error, _get_dylib_function
 
 # ===----------------------------------------------------------------------===#
