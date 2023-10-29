@@ -19,7 +19,7 @@ fn barrier():
     """Performs a synchronization barrier on block (equivelent to `__syncthreads`
     in CUDA).
     """
-    llvm_intrinsic["llvm.nvvm.barrier0", NoneType]()
+    __mlir_op.`nvvm.barrier0`()
 
 
 # ===----------------------------------------------------------------------===#
@@ -35,7 +35,9 @@ fn syncwarp(mask: Int = -1):
     Args:
       mask: The mask of the warp lanes.
     """
-    llvm_intrinsic["llvm.nvvm.bar.warp.sync", NoneType](Int32(mask))
+    __mlir_op.`nvvm.bar.warp.sync`(
+        __mlir_op.`index.casts`[_type = __mlir_type.i32](mask.value)
+    )
 
 
 # ===----------------------------------------------------------------------===#
