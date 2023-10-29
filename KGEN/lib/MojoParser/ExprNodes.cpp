@@ -2881,8 +2881,8 @@ CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   CRValue prevCmpI1Value = emitter.emitI1({prevCmpVal, this}, EC_BoolCondition);
   if (!prevCmpI1Value)
     return {};
-  SRValue prevCmpI1SRValue = {};
-  HLCF::IfOp ifOp = {};
+  SRValue prevCmpI1SRValue;
+  HLCF::IfOp ifOp;
   if (emitter.builder) {
     prevCmpI1SRValue =
         emitter.emitSRValue({prevCmpI1Value, this}, EC_BoolCondition);
@@ -2903,10 +2903,9 @@ CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   AnyValue newCmp =
       emitBinOpCall({prevRHS, exprs[opIdx]}, {newRHS, exprs[opIdx + 1]},
                     ops[opIdx], newCmpDest, this, emitter);
-  CRValue newCmpCRV = newCmp.getIfCRValue();
+  CRValue newCmpCRV = emitter.emitCRValue({newCmp, exprs[opIdx]}, context);
   if (!newCmpCRV)
     return {};
-  CRValue newOrNextResult = newCmpCRV;
 
   if (prevCmpVal.getIfPValue() && prevCmpI1Value.getIfPValue() &&
       newCmpCRV.getIfPValue()) {
@@ -2936,38 +2935,6 @@ CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
     return ret;
   }
 
-  if (isLastOne)
-    emitter.builder->create<HLCF::YieldOp>(
-        ifLocation, emitter.emitSRValue({newCmpCRV, exprs[opIdx]}, context));
-  if (!isLastOne) {
-    AnyValue emitNextCmpResult = {};
-    emitNextCmpResult =
-        emitNextCmp(emitter, opIdx + 1, newCmpCRV, newRHS, true, dest);
-    if (!emitNextCmpResult)
-      return {};
-    emitNextCmpResult = emitter.emitRValue(
-        {emitNextCmpResult, exprs[opIdx + 1]}, EC_OperatorOperandValue);
-    if (!emitNextCmpResult)
-      return {};
-    CRValue emitNextCmpCRV = emitNextCmpResult.getIfCRValue();
-    if (!emitNextCmpCRV)
-      return {};
-    newOrNextResult = emitNextCmpCRV;
-  }
-
-  if (!newOrNextResult.getRValueType().isEqualCanon(prevCmpVal.getType())) {
-    emitter.emitError(
-        ifLocation, "comparison result types of chained comparison must match");
-  }
-  emitter.builder->createBlock(&ifOp.getElseRegion());
-  ifOp->getResult(0).setType(prevCmpVal.getType());
-  emitter.builder->create<HLCF::YieldOp>(
-      ifLocation, emitter.emitSRValue({prevCmpVal, exprs[opIdx - 1]}, context));
-  if (lastBuilder)
-    emitter.builder = lastBuilder;
-  auto r0 = ifOp->getResult(0);
-  if (hasPrevIfOp)
-    emitter.builder->create<HLCF::YieldOp>(ifLocation, r0);
   // We need to return the result of the IfOp as a CRValue.
   // More concretely, it will be an SRValue or, for exotic memory-only bool
   // equivalents, one of the pointer type CRValues.
@@ -2976,13 +2943,44 @@ CRValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   // TODO - make this more general.
   // To refuse memory types right now, check what (other) comparison results
   // are.
-  if (!newOrNextResult.getRValueType().isRegisterPassable(ifLoc,
-                                                          emitter.shared)) {
+  if (!newCmpCRV.getRValueType().isRegisterPassable(ifLoc, emitter.shared)) {
     emitError(ifLocation,
               "chained comparison operator does not currently support "
               "memory-only return types");
     return {};
   }
+
+  CRValue newOrNextResult;
+  if (isLastOne) {
+    newOrNextResult = newCmpCRV;
+    auto newCmpSRV = emitter.emitSRValue({newCmpCRV, exprs[opIdx]}, context);
+    if (!newCmpSRV)
+      return {};
+    emitter.builder->create<HLCF::YieldOp>(ifLocation, newCmpSRV);
+  } else {
+    newOrNextResult =
+        emitNextCmp(emitter, opIdx + 1, newCmpCRV, newRHS, true, dest);
+    if (!newOrNextResult)
+      return {};
+  }
+
+  if (!newOrNextResult.getRValueType().isEqualCanon(prevCmpVal.getType())) {
+    emitter.emitError(
+        ifLocation, "comparison result types of chained comparison must match");
+  }
+  emitter.builder->createBlock(&ifOp.getElseRegion());
+  ifOp->getResult(0).setType(prevCmpVal.getType());
+
+  auto newCmpSRV = emitter.emitSRValue({prevCmpVal, exprs[opIdx - 1]}, context);
+  if (!newCmpSRV)
+    return {};
+  emitter.builder->create<HLCF::YieldOp>(ifLocation, newCmpSRV);
+  if (lastBuilder)
+    emitter.builder = lastBuilder;
+  auto r0 = ifOp->getResult(0);
+  if (hasPrevIfOp)
+    emitter.builder->create<HLCF::YieldOp>(ifLocation, r0);
+
   return SRValue(r0);
 }
 
