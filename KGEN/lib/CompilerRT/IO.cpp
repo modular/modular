@@ -34,7 +34,16 @@ struct FileHandle {
     std::filesystem::path fsPath(path.str());
     llvm::sys::fs::FileAccess fileAccess = getFileAccess(mode);
     if (fileAccess & llvm::sys::fs::FileAccess::FA_Write) {
-      std::error_code err;
+
+      // TODO: When `append` mode is supported account for that.
+      std::error_code err = llvm::sys::fs::remove(fsPath.string());
+      if (err) {
+        *errMsg = copyString(
+            (llvm::Twine("unable to remove existing file ") + fsPath.string())
+                .str());
+        return nullptr;
+      }
+
       std::filesystem::create_directories(fsPath.parent_path(), err);
       if (err) {
         *errMsg = copyString((llvm::Twine("unable to create directories '") +
