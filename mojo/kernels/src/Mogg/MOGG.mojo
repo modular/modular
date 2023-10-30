@@ -1857,17 +1857,19 @@ fn matmul[
 @always_inline
 fn batched_matmul[
     rank: Int,
-    type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
     transpose_in_1: Bool,
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
     output_0_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
+        StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
 ](
-    a: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    b: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    c: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    a: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
+    b: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
+    c: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     out_chain: OutputChainPtr,
 ):
     alias adj_a = False
@@ -1878,7 +1880,7 @@ fn batched_matmul[
     fn epilogue_wrapper[
         _type: DType, width: Int, rank: Int
     ](coords: StaticIntTuple[rank], val: SIMD[_type, width]):
-        output_0_fn[width, rank](coords, rebind[SIMD[type, width]](val))
+        output_0_fn[width, rank](coords, rebind[SIMD[c_type, width]](val))
 
     @always_inline
     @parameter
@@ -1901,9 +1903,9 @@ fn batched_matmul[
 
     return _batched_matmul[
         rank,
-        type,
-        type,
-        type,
+        a_type,
+        b_type,
+        c_type,
         adj_a,
         adj_b,
         lambdas_have_fusion,
