@@ -817,6 +817,43 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
+static ParseResult
+parseStructParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
+                         StringArrayAttr &paramNames,
+                         PassingKindArrayAttr &paramPassingKinds,
+                         ParameterExprArrayAttr &defaultParameters) {
+  SmallVector<TypedAttr> defaultParams;
+  SmallVector<StringAttr> paramNamesArr;
+  SmallVector<PassingKind> paramPassingKindsArr;
+  ParamDeclArrayAttr resultParams;
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (parseOptionalParameterSpec(p, inputParamDecls, resultParams,
+                                 paramNamesArr, paramPassingKindsArr,
+                                 defaultParams))
+    return failure();
+  if (!resultParams.empty())
+    return p.emitError(loc, "expected no result parameters");
+
+  MLIRContext *ctx = p.getContext();
+  defaultParameters = ParameterExprArrayAttr::get(ctx, defaultParams);
+  paramNames = StringArrayAttr::get(ctx, paramNamesArr);
+  paramPassingKinds = PassingKindArrayAttr::get(ctx, paramPassingKindsArr);
+
+  return success();
+}
+
+static void printStructParameterSpec(AsmPrinter &p, Operation *op,
+                                     ArrayRef<ParamDeclAttr> inputParamDecls,
+                                     ArrayRef<StringAttr> paramNames,
+                                     PassingKindArrayAttr paramPassingKinds,
+                                     ParameterExprArrayAttr defaultParameters) {
+  ParameterEvaluator evaluator;
+  printOptionalParameterSpec(
+      p, inputParamDecls,
+      /*resultParamDecls=*/{}, paramNames, paramPassingKinds.getValue(),
+      defaultParameters ? defaultParameters : ArrayRef<TypedAttr>(), evaluator);
+}
+
 /// Verify the debuginfo scope of an op that must be a top-level declaration.
 static LogicalResult verifyTopLevelLocScope(Operation *op) {
   Location loc = op->getLoc();

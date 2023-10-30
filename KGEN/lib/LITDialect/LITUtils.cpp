@@ -269,43 +269,6 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
                                     printWithDefault);
 }
 
-ParseResult
-LIT::parseStructParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
-                              StringArrayAttr &paramNames,
-                              PassingKindArrayAttr &paramPassingKinds,
-                              ParameterExprArrayAttr &defaultParameters) {
-  SmallVector<TypedAttr> defaultParams;
-  SmallVector<StringAttr> paramNamesArr;
-  SmallVector<PassingKind> paramPassingKindsArr;
-  ParamDeclArrayAttr resultParams;
-  llvm::SMLoc loc = p.getCurrentLocation();
-  if (parseOptionalParameterSpec(p, inputParamDecls, resultParams,
-                                 paramNamesArr, paramPassingKindsArr,
-                                 defaultParams))
-    return failure();
-  if (!resultParams.empty())
-    return p.emitError(loc, "expected no result parameters");
-
-  MLIRContext *ctx = p.getContext();
-  defaultParameters = ParameterExprArrayAttr::get(ctx, defaultParams);
-  paramNames = StringArrayAttr::get(ctx, paramNamesArr);
-  paramPassingKinds = PassingKindArrayAttr::get(ctx, paramPassingKindsArr);
-
-  return success();
-}
-
-void LIT::printStructParameterSpec(AsmPrinter &p, Operation *op,
-                                   ArrayRef<ParamDeclAttr> inputParamDecls,
-                                   ArrayRef<StringAttr> paramNames,
-                                   PassingKindArrayAttr paramPassingKinds,
-                                   ParameterExprArrayAttr defaultParameters) {
-  ParameterEvaluator evaluator;
-  printOptionalParameterSpec(
-      p, inputParamDecls,
-      /*resultParamDecls=*/{}, paramNames, paramPassingKinds.getValue(),
-      defaultParameters ? defaultParameters : ArrayRef<TypedAttr>(), evaluator);
-}
-
 ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   std::string argName;
   if (succeeded(p.parseOptionalString(&argName)))
