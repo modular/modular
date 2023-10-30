@@ -121,7 +121,7 @@ fn _small_batched_matmul[
                 return v1 + v2
 
             _reduce_generator[
-                a_type,
+                c_type,
                 1,
                 simd_width,
                 # single_thread_blocking_override,
