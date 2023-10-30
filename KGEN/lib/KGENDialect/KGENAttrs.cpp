@@ -160,7 +160,7 @@ bool UnknownAttr::isConstant() const { return !isParameterizedType(getType()); }
 // UnboundAttr
 //===----------------------------------------------------------------------===//
 
-bool UnboundAttr::isConstant() const { return true; }
+bool UnboundAttr::isConstant() const { return !isParameterizedType(getType()); }
 
 //===----------------------------------------------------------------------===//
 // NoneAttr
@@ -374,7 +374,8 @@ bool IntLiteralAttr::isConstant() const { return true; }
 
 /// This symbol is a constant its bindings are constants.
 bool SymbolConstantAttr::isConstant() const {
-  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant);
+  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
+         !isParameterizedType(getType());
 }
 
 LogicalResult
