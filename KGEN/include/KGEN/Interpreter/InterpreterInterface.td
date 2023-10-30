@@ -44,7 +44,7 @@ def MemoryableTypeInterface : TypeInterface<"MemoryableTypeInterface"> {
     This interface allows types to provide an API with which to read and write
     the constant values of its type as raw data. This allows types to plug into
     the interpreter's memory model and enables, for example, writing
-    `struct<i32, i32>` to a piece of memory, then bitcasting that to read as an
+    `struct<(i32, i32)>` to a piece of memory, then bitcasting that to read as an
     `i64`.
   }];
 

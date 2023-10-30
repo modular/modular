@@ -828,38 +828,15 @@ std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
 // StructType
 //===----------------------------------------------------------------------===//
 
-Type StructType::parse(AsmParser &p) {
-  if (p.parseLess())
-    return {};
-  if (succeeded(p.parseOptionalGreater()))
-    return StructType::get(p.getContext(), {});
-
-  SmallVector<TypedAttr> elementTypes;
-  bool isMemoryOnly = false;
-  if (succeeded(p.parseOptionalLParen())) {
-    if (p.parseOptionalRParen())
-      if (parseTypeParamValues(p, elementTypes) || p.parseRParen())
-        return {};
-    isMemoryOnly = succeeded(p.parseOptionalKeyword("memoryOnly"));
-  } else if (parseTypeParamValues(p, elementTypes)) {
-    return {};
-  }
-  if (p.parseGreater())
-    return {};
-
-  return StructType::get(p.getContext(), elementTypes, isMemoryOnly);
+static void printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly) {
+  if (isMemoryOnly)
+    p << " memoryOnly";
 }
 
-void StructType::print(AsmPrinter &p) const {
-  p << '<';
-  if (getIsMemoryOnly()) {
-    p << '(';
-    printTypeParamValues(p, getElementTypes());
-    p << ") memoryOnly";
-  } else {
-    printTypeParamValues(p, getElementTypes());
-  }
-  p << '>';
+static ParseResult parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly) {
+  if (succeeded(p.parseOptionalKeyword("memoryOnly")))
+    isMemoryOnly = true;
+  return success();
 }
 
 LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,

@@ -353,10 +353,10 @@ kgen.generator @pop_xor_parametric<size, type: dtype>(
 }
 
 // CHECK-LABEL: @pop_select
-kgen.func @pop_select(%arg0: i1, %arg1: !kgen.struct<f32>, %arg2: !kgen.struct<f32>) -> !kgen.struct<f32> {
-  // CHECK: pop.select %arg0, %arg1, %arg2 : !kgen.struct<f32>
-  %0 = pop.select %arg0, %arg1, %arg2 : !kgen.struct<f32>
-  kgen.return %0 : !kgen.struct<f32>
+kgen.func @pop_select(%arg0: i1, %arg1: !kgen.struct<(f32)>, %arg2: !kgen.struct<(f32)>) -> !kgen.struct<(f32)> {
+  // CHECK: pop.select %arg0, %arg1, %arg2 : !kgen.struct<(f32)>
+  %0 = pop.select %arg0, %arg1, %arg2 : !kgen.struct<(f32)>
+  kgen.return %0 : !kgen.struct<(f32)>
 }
 
 // CHECK-LABEL: @pop_select_simd
@@ -769,31 +769,31 @@ kgen.generator @struct<ty: type, dt: dtype>(
   // CHECK-SAME: %[[B:.*]]: !pop.scalar<
   %b: !pop.scalar<dt>
 ) -> (!kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>) {
-  // CHECK: %[[S0:.*]] = kgen.struct.create(%[[A]], %[[B]]) : !kgen.struct<ty, scalar<dt>>
-  %0 = kgen.struct.create(%a, %b) : !kgen.struct<ty, scalar<dt>>
-  // CHECK: %[[V0:.*]] = kgen.struct.extract %[[S0]][0] : !kgen.struct<ty, scalar<dt>>
-  %1 = kgen.struct.extract %0[0] : !kgen.struct<ty, scalar<dt>>
-  // CHECK: %[[V1:.*]] = kgen.struct.extract %[[S0]][1] : !kgen.struct<ty, scalar<dt>>
-  %2 = kgen.struct.extract %0[1] : !kgen.struct<ty, scalar<dt>>
-  // CHECK: kgen.struct.replace %{{.*}}, %[[S0]][0] : !kgen.struct<ty, scalar<dt>>
-  %3 = kgen.struct.replace %1, %0[0] : !kgen.struct<ty, scalar<dt>>
-  // CHECK: kgen.struct.replace %{{.*}}, %{{.*}}[1] : !kgen.struct<ty, scalar<dt>>
-  %4 = kgen.struct.replace %2, %3[1] : !kgen.struct<ty, scalar<dt>>
+  // CHECK: %[[S0:.*]] = kgen.struct.create(%[[A]], %[[B]]) : !kgen.struct<(ty, scalar<dt>)>
+  %0 = kgen.struct.create(%a, %b) : !kgen.struct<(ty, scalar<dt>)>
+  // CHECK: %[[V0:.*]] = kgen.struct.extract %[[S0]][0] : !kgen.struct<(ty, scalar<dt>)>
+  %1 = kgen.struct.extract %0[0] : !kgen.struct<(ty, scalar<dt>)>
+  // CHECK: %[[V1:.*]] = kgen.struct.extract %[[S0]][1] : !kgen.struct<(ty, scalar<dt>)>
+  %2 = kgen.struct.extract %0[1] : !kgen.struct<(ty, scalar<dt>)>
+  // CHECK: kgen.struct.replace %{{.*}}, %[[S0]][0] : !kgen.struct<(ty, scalar<dt>)>
+  %3 = kgen.struct.replace %1, %0[0] : !kgen.struct<(ty, scalar<dt>)>
+  // CHECK: kgen.struct.replace %{{.*}}, %{{.*}}[1] : !kgen.struct<(ty, scalar<dt>)>
+  %4 = kgen.struct.replace %2, %3[1] : !kgen.struct<(ty, scalar<dt>)>
 
   // CHECK: %[[STRUCT_PTR:.*]] = pop.stack_allocation
-  %struct = pop.stack_allocation 1 x !kgen.struct<i32, ty>
-  // CHECK: %[[EL_PTR:.*]] = kgen.struct.gep %[[STRUCT_PTR]][1] : <struct<i32, ty>>
-  %el = kgen.struct.gep %struct[1] : <struct<i32, ty>>
+  %struct = pop.stack_allocation 1 x !kgen.struct<(i32, ty)>
+  // CHECK: %[[EL_PTR:.*]] = kgen.struct.gep %[[STRUCT_PTR]][1] : <struct<(i32, ty)>>
+  %el = kgen.struct.gep %struct[1] : <struct<(i32, ty)>>
 
   // CHECK: return %[[V0]], %[[V1]], %[[EL_PTR]] : !kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>
   kgen.return %1, %2, %el : !kgen.paramref<ty>, !pop.scalar<dt>, !kgen.pointer<ty>
 }
 
 // CHECK-LABEL: @empty_struct_syntax
-kgen.generator @empty_struct_syntax() -> !kgen.struct<> {
-  // CHECK-NEXT: kgen.struct.create() : !kgen.struct<>
-  %0 = kgen.struct.create() : !kgen.struct<>
-  kgen.return %0 : !kgen.struct<>
+kgen.generator @empty_struct_syntax() -> !kgen.struct<()> {
+  // CHECK-NEXT: kgen.struct.create() : !kgen.struct<()>
+  %0 = kgen.struct.create() : !kgen.struct<()>
+  kgen.return %0 : !kgen.struct<()>
 }
 
 // CHECK-LABEL: @pointer_types
@@ -936,9 +936,9 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
   %3 = pop.inline_asm stack_aligned "something", "anotherthing" %arg0, %arg1 :
     (!pop.scalar<si32>, !pop.scalar<index>) -> i8
   // CHECK: pop.inline_asm "foo", "=r,=r,r" %arg0 : (!pop.scalar<si32>) ->
-  // CHECK: !kgen.struct<ty, scalar<dt>>
+  // CHECK: !kgen.struct<(ty, scalar<dt>)>
   %4 = pop.inline_asm "foo", "=r,=r,r" %arg0 : (!pop.scalar<si32>) ->
-    !kgen.struct<ty, scalar<dt>>
+    !kgen.struct<(ty, scalar<dt>)>
   // CHECK: pop.inline_asm "bar $0", "=r,r" %arg2 : (!kgen.paramref<ty>) -> i8
   %5 = pop.inline_asm "bar $0", "=r,r" %arg2 : (!kgen.paramref<ty>) -> i8
   // CHECK: pop.inline_asm "bar $0", "=r,r" %arg3 : (!pop.scalar<dt>) -> i8
@@ -950,8 +950,8 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
 kgen.generator @variadics<ty: type>(
     %arg0: !pop.scalar<f32>,
     %arg1: !pop.scalar<f32>,
-    %arg2: !kgen.struct<>,
-    %arg3: !kgen.struct<>,
+    %arg2: !kgen.struct<()>,
+    %arg3: !kgen.struct<()>,
     %arg4: !kgen.paramref<ty>) {
   // CHECK: %[[V0:.*]] = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<scalar<f32>>
   %v0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<!pop.scalar<f32>>
@@ -966,10 +966,10 @@ kgen.generator @variadics<ty: type>(
   // CHECK: pop.variadic.size %[[V1]]
   %s1 = pop.variadic.size %v1 : !kgen.variadic<!pop.scalar<f32>>
 
-  // CHECK: %[[V2:.*]] = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<struct<>>
-  %v2 = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<!kgen.struct<>>
+  // CHECK: %[[V2:.*]] = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<struct<()>>
+  %v2 = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<!kgen.struct<()>>
   // CHECK: pop.variadic.size %[[V2]]
-  %s2 = pop.variadic.size %v2 : !kgen.variadic<!kgen.struct<>>
+  %s2 = pop.variadic.size %v2 : !kgen.variadic<!kgen.struct<()>>
 
   // CHECK: %[[V3:.*]] = pop.variadic.create [%arg4] : !kgen.variadic<ty>
   %v3 = pop.variadic.create [%arg4] : !kgen.variadic<ty>
@@ -995,8 +995,8 @@ kgen.func @slow_function(%arg0: i32) -> !pop.coroutine<() -> i32> {
   %hdl = pop.coroutine.handle : <() -> i32>
   // CHECK-NEXT: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]] : <() -> i32>
   %promise = pop.coroutine.promise %hdl : <() -> i32>
-  // CHECK-NEXT: kgen.struct.gep %[[PROMISE]][0] : <struct<i32>>
-  %res0 = kgen.struct.gep %promise[0] : <struct<i32>>
+  // CHECK-NEXT: kgen.struct.gep %[[PROMISE]][0] : <struct<(i32)>>
+  %res0 = kgen.struct.gep %promise[0] : <struct<(i32)>>
   kgen.return %hdl : !pop.coroutine<() -> i32>
 }
 

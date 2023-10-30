@@ -838,7 +838,7 @@ def POP_SelectOp : POPOp<"select", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.select %cond, %arg0, %arg1 : !kgen.struct<f32>
+    %0 = pop.select %cond, %arg0, %arg1 : !kgen.struct<(f32)>
     ```
   }];
 
@@ -871,7 +871,7 @@ def POP_ArrayCreateOp : POPOp<"array.create", [Pure,
     %0 = pop.array.create [%arg0, %arg1] : !pop.array<2, scalar<f32>>
 
     // Create an array of structs.
-    %1 = pop.array.create [%arg2, %arg3] : !pop.array<2, struct<>>
+    %1 = pop.array.create [%arg2, %arg3] : !pop.array<2, struct<()>>
 
     // Create an array of parametric types.
     %2 = pop.array.create [%arg4] : !pop.array<1, T>
@@ -1044,9 +1044,9 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
 
     ```mlir
     // Create an `std::optional<T>` variant.
-    %none = kgen.struct.create() : !kgen.struct<>
-    %0 = pop.variant.create %none, 0 : !kgen.struct<>
-        -> !pop.variant<struct<>, T>
+    %none = kgen.struct.create() : !kgen.struct<()>
+    %0 = pop.variant.create %none, 0 : !kgen.struct<()>
+        -> !pop.variant<struct<()>, T>
 
     // Create a variant of either a scalar float or integer.
     %1 = kgen.param.constant: scalar<f64> = <<"0.0">>
@@ -1081,7 +1081,7 @@ def VariantIsOp : POPOp<"variant.is", [Pure]> {
 
     ```mlir
     %optional = ...
-    %isNone = pop.variant.is %optional, 0 : !pop.variant<struct<>, T>
+    %isNone = pop.variant.is %optional, 0 : !pop.variant<struct<()>, T>
     ```
   }];
 
@@ -1110,7 +1110,7 @@ def VariantGetOp : POPOp<"variant.get", [Pure,
 
     ```mlir
     %optional = ...
-    %intVal = pop.variant.get %optional, 1 : !pop.variant<struct<>, i32>
+    %intVal = pop.variant.get %optional, 1 : !pop.variant<struct<()>, i32>
     ```
   }];
 
@@ -1236,7 +1236,7 @@ def POP_AlignedAllocOp : POPOp<"aligned_alloc",
     Example:
 
     ```mlir
-    %0 = pop.aligned_alloc %align, %size : <struct<f32, f64>>
+    %0 = pop.aligned_alloc %align, %size : <struct<(f32, f64)>>
     ```
   }];
 
@@ -1261,7 +1261,7 @@ def POP_AlignedFreeOp : POPOp<"aligned_free",
     Example:
 
     ```mlir
-    pop.aligned_free %ptr : <struct<f32, i64>>
+    pop.aligned_free %ptr : <struct<(f32, i64)>>
     ```
   }];
 
@@ -1689,7 +1689,7 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
     %1 = pop.variadic.create [] : !kgen.variadic<scalar<f32>>
 
     // Create a variadic sequence of structs.
-    %2 = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<struct<>>
+    %2 = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<struct<()>>
 
     // Create a variadic sequence of parametric types.
     %3 = pop.variadic.create [%arg4] : !kgen.variadic<T>

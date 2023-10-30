@@ -143,7 +143,7 @@ kgen.generator @return_one(%arg0: !kgen.declref<@Struct>) -> index {
 }
 
 // CHECK-LABEL: @use_struct_param
-// CHECK-SAME: !pop.array<apply(:(!kgen.struct<>) -> index @return_one, { }), index>
+// CHECK-SAME: !pop.array<apply(:(!kgen.struct<()>) -> index @return_one, { }), index>
 kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<:@Struct #lit.struct<{}>>>) {
   lit.struct.extract %arg0[value] : !pop.array<apply(:(!kgen.declref<@Struct>) -> index @return_one, #lit.struct<{}>), index>
     from !kgen.declref<@StructParam<:@Struct #lit.struct<{}>>>
@@ -151,30 +151,30 @@ kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<:@Struct #lit
 }
 
 // CHECK-LABEL: kgen.generator @lifetime_lower
-// CHECK-SAME: (%arg0: !kgen.struct<>) {
+// CHECK-SAME: (%arg0: !kgen.struct<()>) {
 kgen.generator @lifetime_lower<p: !lit.lifetime>(%a: !lit.lifetime) {
 
-  // CHECK: kgen.param.declare A: struct<> = <{ }>
+  // CHECK: kgen.param.declare A: struct<()> = <{ }>
   kgen.param.declare A : !lit.lifetime = <#lit.lifetime>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @call_lifetime_lower
 kgen.generator @call_lifetime_lower() {
-  // CHECK: %struct = kgen.param.constant: struct<> = <{ }>
+  // CHECK: %struct = kgen.param.constant: struct<()> = <{ }>
   %cst = kgen.param.constant: lifetime = <#lit.lifetime>
-  // CHECK: kgen.call @lifetime_lower(%struct) : (!kgen.struct<>) -> ()
+  // CHECK: kgen.call @lifetime_lower(%struct) : (!kgen.struct<()>) -> ()
   kgen.call @lifetime_lower<:lifetime #lit.lifetime>(%cst) : (!lit.lifetime) -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @ref_type(
-// CHECK-SAME: %arg0: !kgen.pointer<struct<>>
-// CHECK-SAME: %arg1: !kgen.pointer<struct<>>)
+// CHECK-SAME: %arg0: !kgen.pointer<struct<()>>
+// CHECK-SAME: %arg1: !kgen.pointer<struct<()>>)
 kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
                                            %b: !lit.ref<mut @Struct, p>) {
   // Random use of a parameter that goes away should be updated.
-  // CHECK: kgen.param.declare A: struct<> = <{ }>
+  // CHECK: kgen.param.declare A: struct<()> = <{ }>
   kgen.param.declare A : !lit.lifetime = <p>
   kgen.return
 }
@@ -182,13 +182,13 @@ kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
 // CHECK-LABEL: kgen.generator @call_ref_type
 kgen.generator @call_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
                                                 %b: !lit.ref<mut @Struct, p>) {
-  // CHECK-NEXT: kgen.call @ref_type(%arg0, %arg1) : (!kgen.pointer<struct<>>, !kgen.pointer<struct<>>)
+  // CHECK-NEXT: kgen.call @ref_type(%arg0, %arg1) : (!kgen.pointer<struct<()>>, !kgen.pointer<struct<()>>)
   kgen.call @ref_type<:lifetime q>(%a, %b): (!lit.ref<@Struct, p>, !lit.ref<mut @Struct, p>) -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @raw_pointer_from_ref_type
-// CHECK-SAME: (%arg0: !kgen.pointer<struct<>>) -> !kgen.pointer<struct<>>
+// CHECK-SAME: (%arg0: !kgen.pointer<struct<()>>) -> !kgen.pointer<struct<()>>
 kgen.generator @raw_pointer_from_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Struct, p>)
   -> !kgen.pointer<@Struct> {
   // CHECK-NEXT: kgen.return %a
@@ -230,7 +230,7 @@ kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime>
 
 // CHECK-LABEL: kgen.generator @parameterized_declref_type
 kgen.generator @parameterized_declref_type() {
-  // CHECK-NEXT: array<2, simd<apply(:(!kgen.struct<>) -> index @unbox, { }), f32>>
+  // CHECK-NEXT: array<2, simd<apply(:(!kgen.struct<()>) -> index @unbox, { }), f32>>
   %3 = pop.stack_allocation 1 x @StaticTuple<2,
     :type !kgen.declref<@SIMD<:@Int #lit.struct<{}>, :dtype f32>>>
   kgen.return

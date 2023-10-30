@@ -974,7 +974,7 @@ def KGEN_UndefOp : KGENOp<"undef", [ConstantLike, Pure]> {
 
     ```mlir
     %0 = kgen.undef : !kgen.declref<@Int>
-    %1 = kgen.undef : !kgen.struct<array<2, index>>
+    %1 = kgen.undef : !kgen.struct<(array<2, index>)>
     ```
   }];
 
@@ -1432,10 +1432,10 @@ def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
 
     ```mlir
     %0 = kgen.struct.create(%f32, %f64)
-      : !kgen.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
     %1 = kgen.struct.create(%arr, %ptr, %v)
-      : !kgen.struct<array<size, type>, pointer<type>, type>
+      : !kgen.struct<(array<size, type>, pointer<type>, type)>
     ```
   }];
 
@@ -1464,11 +1464,11 @@ def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
     ```mlir
     // Extract the !pop.scalar<f32> at index 0.
     %0 = kgen.struct.extract %struct[0]
-      : !kgen.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
     // Extract the !pop.scalar<f64> at index 1.
     %1 = kgen.struct.extract %struct[1]
-      : !kgen.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<(scalar<f32>, scalar<f64>)>
     ```
   }];
 
@@ -1498,11 +1498,11 @@ def KGEN_StructReplaceOp : KGENOp<"struct.replace", [Pure,
     ```mlir
     // Insert the !pop.scalar<f32> at index 0.
     %0 = kgen.struct.replace %f32, %struct[0]
-      : !kgen.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
     // Insert the !pop.scalar<f64> at index 1.
     %1 = kgen.struct.replace %f64, %struct[1]
-      : !kgen.struct<scalar<f32>, scalar<f64>>
+      : !kgen.struct<(scalar<f32>, scalar<f64>)>
     ```
   }];
 
@@ -1534,17 +1534,17 @@ def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
     Example:
 
     ```mlir
-    %struct = pop.stack_allocation 1 : !kgen.struct<i32, i64>
-    %i64Ptr = kgen.struct.gep %struct[1] : <struct<i32, i64>>
+    %struct = pop.stack_allocation 1 : !kgen.struct<(i32, i64)>
+    %i64Ptr = kgen.struct.gep %struct[1] : <struct<(i32, i64)>>
     ```
 
     To get a pointer to a struct from a value-semantic struct, the struct value
     must be stored into a block of allocated memory first.
 
     ```mlir
-    ^bb0(%struct: !kgen.struct<i32, i64>):
-      %mem = pop.stack_allocation 1 : !kgen.struct<i32, i64>
-      pop.store %struct, %mem : !kgen.pointer<struct<i32, i64>>
+    ^bb0(%struct: !kgen.struct<(i32, i64)>):
+      %mem = pop.stack_allocation 1 : !kgen.struct<(i32, i64)>
+      pop.store %struct, %mem : !kgen.pointer<struct<(i32, i64)>>
     ```
   }];
 

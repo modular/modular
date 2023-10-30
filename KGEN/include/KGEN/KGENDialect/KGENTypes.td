@@ -512,24 +512,24 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     Example:
 
     ```mlir
-    // A register passable struct with primitive element types.
-    !kgen.struct<scalar<f32>, simd<4, ui64>>
+    // A struct with primitive element types.
+    !kgen.struct<(scalar<f32>, simd<4, ui64>)>
 
     // A memory-only struct with primitive element types.
     !kgen.struct<(scalar<f32>, simd<4, ui64>) memoryOnly>
 
     // A struct with nested types.
-    !kgen.struct<
+    !kgen.struct<(
       !kgen.pointer<simd<4, si8>>,
       !kgen.array<24, scalar<si64>>,
-      !kgen.struct<
+      !kgen.struct<(
         !kgen.scalar<f32>,
         !kgen.scalar<f64>
-      >
-    >
+      )>
+    )>
 
     // A struct with parameterized element types.
-    !kgen.struct<type, array<size, scalar<dtype>>>
+    !kgen.struct<(type, array<size, scalar<dtype>>)>
     ```
   }];
 
@@ -537,7 +537,10 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     OptionalArrayRefParameter<"TypedAttr">:$elementTypes,
     "bool":$isMemoryOnly
   );
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{
+    `<` `(` (`)`) : (custom<TypeParamValues>($elementTypes)^ `)`)?
+    `` custom<IsMemoryOnly>($isMemoryOnly) `>`
+  }];
   let genVerifyDecl = 1;
 
   let builders = [

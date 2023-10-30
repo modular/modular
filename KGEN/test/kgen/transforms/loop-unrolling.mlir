@@ -149,9 +149,9 @@ kgen.func @loop_carried_dependency() {
 }
 
 // CHECK-LABEL: @loop_has_side_effect
-kgen.func @loop_has_side_effect(%arg0: !kgen.struct<pointer<scalar<f32>>, index, dtype>) -> index {
+kgen.func @loop_has_side_effect(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)>) -> index {
   // CHECK: [[IDX:%.*]] = index.constant 1
-  // CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<f32>>, index, dtype>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
   // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align<1> : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !pop.scalar<f32> to !pop.scalar<index>
   // CHECK-NEXT: [[V3:%.*]] = pop.cast_to_builtin [[V2]] : !pop.scalar<index> to index
@@ -165,7 +165,7 @@ kgen.func @loop_has_side_effect(%arg0: !kgen.struct<pointer<scalar<f32>>, index,
   %idx10 = index.constant 2
   %idx0 = index.constant 0
   %idx1 = index.constant 1
-  %0 = kgen.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<f32>>, index, dtype>
+  %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
   %1 = hlcf.for [%idx10 to %idx0 step %idx1 sgt sub] (%arg3 = %idx10 : index, %arg1 = %idx0 : index, %arg2 = %0 : !kgen.pointer<scalar<f32>>) -> index {
     %3 = index.sub %arg3, %idx1
     %4 = pop.load %arg2 align<1> : !kgen.pointer<scalar<f32>>
@@ -179,8 +179,8 @@ kgen.func @loop_has_side_effect(%arg0: !kgen.struct<pointer<scalar<f32>>, index,
 }
 
 // CHECK-LABEL: @single_iteration_no_decorator
-kgen.func @single_iteration_no_decorator(%arg0: !kgen.struct<pointer<scalar<f32>>, index, dtype>) -> index {
-  // CHECK:      [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<f32>>, index, dtype>
+kgen.func @single_iteration_no_decorator(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)>) -> index {
+  // CHECK:      [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
   // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align<1> : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !pop.scalar<f32> to !pop.scalar<index>
   // CHECK-NEXT: [[V3:%.*]] = pop.cast_to_builtin [[V2]] : !pop.scalar<index> to index
@@ -188,7 +188,7 @@ kgen.func @single_iteration_no_decorator(%arg0: !kgen.struct<pointer<scalar<f32>
 
   %idx0 = index.constant 0
   %idx1 = index.constant 1
-  %0 = kgen.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<f32>>, index, dtype>
+  %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
   %1 = hlcf.for [%idx1 to %idx0 step %idx1 sgt sub] (%arg3 = %idx1 : index, %arg1 = %idx0 : index, %arg2 = %0 : !kgen.pointer<scalar<f32>>) -> index {
     %3 = index.sub %arg3, %idx1
     %4 = pop.load %arg2 align<1> : !kgen.pointer<scalar<f32>>

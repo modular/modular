@@ -229,16 +229,16 @@ kgen.func @loop_carried_dependency() {
 }
 
 // CHECK-LABEL: @reorder_args
-kgen.func @reorder_args(%arg0: !kgen.struct<pointer<scalar<f32>>, index, dtype>) -> index {
+kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)>) -> index {
   %index10 = index.constant 10
   %index1 = index.constant 1
   %index0 = index.constant 0
-  %0 = kgen.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<f32>>, index, dtype>
+  %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
 
   // CHECK:       [[INDEX10:%.*]] = index.constant 10
   // CHECK-NEXT:  [[INDEX1:%.*]] = index.constant 1
   // CHECK-NEXT:  [[INDEX0:%.*]] = index.constant 0
-  // CHECK-NEXT:  [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<pointer<scalar<f32>>, index, dtype>
+  // CHECK-NEXT:  [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
   // CHECK-NEXT:  [[V1:%.*]] = hlcf.for [[[INDEX10]] to [[INDEX0]] step [[INDEX1]] sgt sub] (%arg1 = [[INDEX10]] : index, %arg2 = [[INDEX0]] : index, %arg3 = [[V0]] : !kgen.pointer<scalar<f32>>) -> index {
   // CHECK-NEXT:   [[V2:%.*]] = index.sub %arg1, [[INDEX1]]
   // CHECK-NEXT:   [[V3:%.*]] = pop.load %arg3 align<1> : !kgen.pointer<scalar<f32>>

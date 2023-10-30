@@ -24,8 +24,8 @@
 # RUN: mojo demangle '$aPackage::$aModule::AStruct::BStruct::main()' | FileCheck -check-prefix="NESTED" %s
 # NESTED: Mangled: "$aPackage::$aModule::AStruct::BStruct::main()" - Modules: ["aPackage", "aModule"], Structs: ["AStruct", "BStruct"], Symbol: "main", Identifier: "main", Signature: () -> ()
 
-# RUN: mojo demangle '$aModule::AStruct::BStruct::main(index,!kgen.struct<dtype>)' | FileCheck -check-prefix="NESTED2" %s
-# NESTED2: Mangled: "$aModule::AStruct::BStruct::main(index,!kgen.struct<dtype>)" - Modules: ["aModule"], Structs: ["AStruct", "BStruct"], Symbol: "main", Identifier: "main", Signature: (index, !kgen.struct<dtype>) -> ()
+# RUN: mojo demangle '$aModule::AStruct::BStruct::main(index,!kgen.struct<(dtype)>)' | FileCheck -check-prefix="NESTED2" %s
+# NESTED2: Mangled: "$aModule::AStruct::BStruct::main(index,!kgen.struct<(dtype)>)" - Modules: ["aModule"], Structs: ["AStruct", "BStruct"], Symbol: "main", Identifier: "main", Signature: (index, !kgen.struct<(dtype)>) -> ()
 
 # RUN: mojo demangle 'AStruct::main()' | FileCheck -check-prefix="NOMODULE" %s
 # NOMODULE: Mangled: "AStruct::main()" - Modules: [], Structs: ["AStruct"], Symbol: "main", Identifier: "main", Signature: () -> ()
@@ -33,11 +33,11 @@
 # RUN: mojo demangle 'main()' | FileCheck -check-prefix="NOMODULE2" %s
 # NOMODULE2: Mangled: "main()" - Modules: [], Structs: [], Symbol: "main", Identifier: "main", Signature: () -> ()
 
-# RUN: mojo demangle 'main(index,index)!kgen.struct<index,index>' | FileCheck -check-prefix="NOMODULE3" %s
-# NOMODULE3: Mangled: "main(index,index)!kgen.struct<index,index>" - Modules: [], Structs: [], Symbol: "main", Identifier: "main", Signature: (index, index) -> !kgen.struct<index, index>
+# RUN: mojo demangle 'main(index,index)!kgen.struct<(index,index)>' | FileCheck -check-prefix="NOMODULE3" %s
+# NOMODULE3: Mangled: "main(index,index)!kgen.struct<(index,index)>" - Modules: [], Structs: [], Symbol: "main", Identifier: "main", Signature: (index, index) -> !kgen.struct<(index, index)>
 
-# RUN: mojo demangle 'main()!kgen.struct<index,index>' | FileCheck -check-prefix="NOMODULE4" %s
-# NOMODULE4: Mangled: "main()!kgen.struct<index,index>" - Modules: [], Structs: [], Symbol: "main", Identifier: "main", Signature: () -> !kgen.struct<index, index>
+# RUN: mojo demangle 'main()!kgen.struct<(index,index)>' | FileCheck -check-prefix="NOMODULE4" %s
+# NOMODULE4: Mangled: "main()!kgen.struct<(index,index)>" - Modules: [], Structs: [], Symbol: "main", Identifier: "main", Signature: () -> !kgen.struct<(index, index)>
 
 # RUN: mojo demangle '$aModule::AStruct' | FileCheck -check-prefix="NOFUNC" %s
 # NOFUNC: Mangled: "$aModule::AStruct" - Modules: ["aModule"], Structs: [], Symbol: "AStruct", Identifier: "AStruct", Signature: (none)

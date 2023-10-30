@@ -45,7 +45,7 @@ kgen.func @variant_create_2(%arg0: f64) -> !pop.variant<f64> {
 }
 
 // CHECK-LABEL: @variant_create_3
-kgen.func @variant_create_3(%arg0: !kgen.struct<i32, i32>) -> !pop.variant<struct<i32, i32>> {
+kgen.func @variant_create_3(%arg0: !kgen.struct<(i32, i32)>) -> !pop.variant<struct<(i32, i32)>> {
   // CHECK: %[[P5:.*]] = llvm.extractvalue %{{.*}}[0] : !llvm.struct<(i32, i32)>
   // CHECK: %[[P6:.*]] = llvm.lshr %[[P5]], %{{.*}}  : i32
   // CHECK: %[[P7:.*]] = llvm.zext %[[P6]] : i32 to i64
@@ -57,12 +57,12 @@ kgen.func @variant_create_3(%arg0: !kgen.struct<i32, i32>) -> !pop.variant<struc
   // CHECK: %[[P13:.*]] = llvm.shl %[[P12]], %{{.*}} : i64
   // CHECK: %[[P14:.*]] = llvm.or %[[P9]], %[[P13]] : i64
   // CHECK: llvm.insertvalue %[[P14]], %{{.*}}[0] : !llvm.array<1 x i64>
-  %0 = pop.variant.create %arg0, 0 : <struct<i32, i32>>
-  kgen.return %0 : !pop.variant<struct<i32, i32>>
+  %0 = pop.variant.create %arg0, 0 : <struct<(i32, i32)>>
+  kgen.return %0 : !pop.variant<struct<(i32, i32)>>
 }
 
 // CHECK-LABEL: @variant_create_4
-kgen.func @variant_create_4(%arg0: !kgen.struct<i32, i64, i32>) -> !pop.variant<struct<i32, i64, i32>, array<4, i64>> {
+kgen.func @variant_create_4(%arg0: !kgen.struct<(i32, i64, i32)>) -> !pop.variant<struct<(i32, i64, i32)>, array<4, i64>> {
   // CHECK-DAG: %[[I64_32:.*]] = llvm.mlir.constant(32 : i64)
   // CHECK-DAG: %[[I32_0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK-DAG: %[[I64_0:.*]] = llvm.mlir.constant(0 : i64)
@@ -91,12 +91,12 @@ kgen.func @variant_create_4(%arg0: !kgen.struct<i32, i64, i32>) -> !pop.variant<
   // CHECK: %[[P26:.*]] = llvm.insertvalue %[[P23]], %[[P25]][1] : !llvm.array<4 x i64>
   // CHECK: %[[P27:.*]] = llvm.insertvalue %[[I64_0]], %[[P26]][2] : !llvm.array<4 x i64>
   // CHECK: %[[P28:.*]] = llvm.insertvalue %[[I64_0]], %[[P27]][3] : !llvm.array<4 x i64>
-  %0 = pop.variant.create %arg0, 0 : <struct<i32, i64, i32>, array<4, i64>>
-  kgen.return %0 : !pop.variant<struct<i32, i64, i32>, array<4, i64>>
+  %0 = pop.variant.create %arg0, 0 : <struct<(i32, i64, i32)>, array<4, i64>>
+  kgen.return %0 : !pop.variant<struct<(i32, i64, i32)>, array<4, i64>>
 }
 
 // CHECK-LABEL: @variant_create_5
-kgen.func @variant_create_5(%arg0: !kgen.struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>) -> !pop.variant<struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>> {
+kgen.func @variant_create_5(%arg0: !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>) -> !pop.variant<struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>> {
   // CHECK-DAG: %[[I32_1:.*]] = llvm.mlir.constant(1 : i32)
   // CHECK-DAG: %[[I32_0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK-DAG: %[[I64_32:.*]] = llvm.mlir.constant(32 : i64)
@@ -104,7 +104,7 @@ kgen.func @variant_create_5(%arg0: !kgen.struct<array<2, i16>, struct<struct<i8,
   // CHECK-DAG: %[[I64_16:.*]] = llvm.mlir.constant(16 : i64)
   // CHECK-DAG: %[[I16_0:.*]] = llvm.mlir.constant(0 : i16)
   // CHECK-DAG: %[[I64_0:.*]] = llvm.mlir.constant(0 : i64)
-  // CHECK: %[[P11:.*]] = builtin.unrealized_conversion_cast %arg0 : !kgen.struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>> to !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
+  // CHECK: %[[P11:.*]] = builtin.unrealized_conversion_cast %arg0 : !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)> to !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
   // CHECK: %[[P12:.*]] = llvm.extractvalue %[[P11]][0] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
   // CHECK: %[[P13:.*]] = llvm.extractvalue %[[P12]][0] : !llvm.array<2 x i16>
   // CHECK: %[[P14:.*]] = llvm.lshr %[[P13]], %[[I16_0]] : i16
@@ -147,8 +147,8 @@ kgen.func @variant_create_5(%arg0: !kgen.struct<array<2, i16>, struct<struct<i8,
   // CHECK: %[[S1:.*]] = llvm.insertvalue %[[P34]], %[[S0]][1] : !llvm.array<3 x i64>
   // CHECK: %[[S2:.*]] = llvm.insertvalue %[[P51]], %[[S1]][2] : !llvm.array<3 x i64>
   // CHECK: insertvalue %[[S2]], %{{.*}}[0]
-  %0 = pop.variant.create %arg0, 0 : <struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>>
-  kgen.return %0 : !pop.variant<struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>>
+  %0 = pop.variant.create %arg0, 0 : <struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>
+  kgen.return %0 : !pop.variant<struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>
 }
 
 // CHECK-LABEL: @variant_create_6
@@ -179,7 +179,7 @@ kgen.func @variant_get_1(%arg0: !pop.variant<f64>) -> f64 {
 }
 
 // CHECK-LABEL: @variant_get_2
-kgen.func @variant_get_2(%arg0: !pop.variant<struct<i32, i32>>) -> !kgen.struct<i32, i32>{
+kgen.func @variant_get_2(%arg0: !pop.variant<struct<(i32, i32)>>) -> !kgen.struct<(i32, i32)>{
   // CHECK-DAG: %[[C32_i64:.*]] = llvm.mlir.constant(32 : i64)
   // CHECK-DAG: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64)
   // CHECK-DAG: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32)
@@ -195,16 +195,16 @@ kgen.func @variant_get_2(%arg0: !pop.variant<struct<i32, i32>>) -> !kgen.struct<
   // CHECK: %[[P14:.*]] = llvm.trunc %[[P13]] : i64 to i32
   // CHECK: %[[P15:.*]] = llvm.or %[[C0_i32]], %[[P14]] : i32
   // CHECK: %[[P16:.*]] = llvm.insertvalue %[[P15]], %[[P11]][1] : !llvm.struct<(i32, i32)>
-  %0 = pop.variant.get %arg0, 0 : <struct<i32, i32>>
-  kgen.return %0 : !kgen.struct<i32, i32>
+  %0 = pop.variant.get %arg0, 0 : <struct<(i32, i32)>>
+  kgen.return %0 : !kgen.struct<(i32, i32)>
 }
 
 // CHECK-LABEL: @variant_get_3
-kgen.func @variant_get_3(%arg0: !pop.variant<struct<i32, i64, i32>, array<4, i64>>) -> !kgen.struct<i32, i64, i32> {
+kgen.func @variant_get_3(%arg0: !pop.variant<struct<(i32, i64, i32)>, array<4, i64>>) -> !kgen.struct<(i32, i64, i32)> {
   // CHECK: %[[C32_i64:.*]] = llvm.mlir.constant(32 : i64)
   // CHECK: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64)
   // CHECK: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32)
-  // CHECK: %[[P3:.*]] = builtin.unrealized_conversion_cast %arg0 : !pop.variant<struct<i32, i64, i32>, array<4, i64>> to !llvm.struct<(array<4 x i64>, i1)>
+  // CHECK: %[[P3:.*]] = builtin.unrealized_conversion_cast %arg0 : !pop.variant<struct<(i32, i64, i32)>, array<4, i64>> to !llvm.struct<(array<4 x i64>, i1)>
   // CHECK: %[[P4:.*]] = llvm.extractvalue %[[P3]][0] : !llvm.struct<(array<4 x i64>, i1)>
   // CHECK: %[[P5:.*]] = llvm.extractvalue %[[P4]][0] : !llvm.array<4 x i64>
   // CHECK: %[[P6:.*]] = llvm.extractvalue %[[P4]][1] : !llvm.array<4 x i64>
@@ -228,12 +228,12 @@ kgen.func @variant_get_3(%arg0: !pop.variant<struct<i32, i64, i32>, array<4, i64
   // CHECK: %[[P24:.*]] = llvm.trunc %[[P23]] : i64 to i32
   // CHECK: %[[P25:.*]] = llvm.or %[[C0_i32]], %[[P24]] : i32
   // CHECK: %[[P26:.*]] = llvm.insertvalue %[[P25]], %[[P21]][2] : !llvm.struct<(i32, i64, i32)>
-  %0 = pop.variant.get %arg0, 0 : <struct<i32, i64, i32>, array<4, i64>>
-  kgen.return %0 : !kgen.struct<i32, i64, i32>
+  %0 = pop.variant.get %arg0, 0 : <struct<(i32, i64, i32)>, array<4, i64>>
+  kgen.return %0 : !kgen.struct<(i32, i64, i32)>
 }
 
 // CHECK-LABEL: @variant_get_4
-kgen.func @variant_get_4(%arg0: !pop.variant<struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>>) -> !kgen.struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>> {
+kgen.func @variant_get_4(%arg0: !pop.variant<struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>) -> !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)> {
   // CHECK-DAG: %[[C1_i32:.*]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK-DAG: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK-DAG: %[[C32_i64:.*]] = llvm.mlir.constant(32 : i64) : i64
@@ -241,7 +241,7 @@ kgen.func @variant_get_4(%arg0: !pop.variant<struct<array<2, i16>, struct<struct
   // CHECK-DAG: %[[C16_i64:.*]] = llvm.mlir.constant(16 : i64) : i64
   // CHECK-DAG: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64) : i64
   // CHECK-DAG: %[[C0_i16:.*]] = llvm.mlir.constant(0 : i16) : i16
-  // CHECK: %[[P10:.*]] = builtin.unrealized_conversion_cast %arg0 : !pop.variant<struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>> to !llvm.struct<(array<3 x i64>, i1)>
+  // CHECK: %[[P10:.*]] = builtin.unrealized_conversion_cast %arg0 : !pop.variant<struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>> to !llvm.struct<(array<3 x i64>, i1)>
   // CHECK: %[[P11:.*]] = llvm.extractvalue %[[P10]][0] : !llvm.struct<(array<3 x i64>, i1)>
   // CHECK: %[[P12:.*]] = llvm.extractvalue %[[P11]][0] : !llvm.array<3 x i64>
   // CHECK: %[[P13:.*]] = llvm.extractvalue %[[P11]][1] : !llvm.array<3 x i64>
@@ -287,8 +287,8 @@ kgen.func @variant_get_4(%arg0: !pop.variant<struct<array<2, i16>, struct<struct
   // CHECK: %[[P61:.*]] = llvm.insertelement %[[P60]], %[[P51]][%[[C1_i32]] : i32] : vector<2xf32>
   // CHECK: %[[P62:.*]] = llvm.insertvalue %[[P61]], %[[P44]][1] : !llvm.struct<(struct<(i8, i32)>, vector<2xf32>)>
   // CHECK: %[[P63:.*]] = llvm.insertvalue %[[P62]], %[[P27]][1] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
-  %0 = pop.variant.get %arg0, 0 : <struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>>
-  kgen.return %0 : !kgen.struct<array<2, i16>, struct<struct<i8, i32>, simd<2, f32>>>
+  %0 = pop.variant.get %arg0, 0 : <struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>
+  kgen.return %0 : !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>
 }
 
 // CHECK-LABEL: @variant_get_5

@@ -38,8 +38,8 @@ kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.paramref<I>) -> !kgen.par
 kgen.generator @variant_bitcast_discr(%arg0: !pop.variant<i32, i64>) -> i8 {
   %0 = pop.stack_allocation 1 x !pop.variant<i32, i64>
   pop.store %arg0, %0 : !kgen.pointer<variant<i32, i64>>
-  %1 = pop.pointer.bitcast %0 : !kgen.pointer<variant<i32, i64>> to !kgen.pointer<struct<i64, i8>>
-  %2 = kgen.struct.gep %1[1] : <struct<i64, i8>>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<variant<i32, i64>> to !kgen.pointer<struct<(i64, i8)>>
+  %2 = kgen.struct.gep %1[1] : <struct<(i64, i8)>>
   %3 = pop.load %2 : !kgen.pointer<i8>
   kgen.return %3 : i8
 }
@@ -53,15 +53,15 @@ kgen.generator @array_gep_load<I>(%arg0: !pop.array<3, i24>) -> i24 {
   kgen.return %3 : i24
 }
 
-kgen.generator @struct_gep_load(%arg0: !kgen.struct<i8, i16, i32>) -> i32 {
-  %1 = pop.stack_allocation 1 x !kgen.struct<i8, i16, i32>
-  pop.store %arg0, %1 : !kgen.pointer<struct<i8, i16, i32>>
-  %2 = kgen.struct.gep %1[2] : <struct<i8, i16, i32>>
+kgen.generator @struct_gep_load(%arg0: !kgen.struct<(i8, i16, i32)>) -> i32 {
+  %1 = pop.stack_allocation 1 x !kgen.struct<(i8, i16, i32)>
+  pop.store %arg0, %1 : !kgen.pointer<struct<(i8, i16, i32)>>
+  %2 = kgen.struct.gep %1[2] : <struct<(i8, i16, i32)>>
   %3 = pop.load %2 : !kgen.pointer<i32>
   kgen.return %3 : i32
 }
 
-kgen.generator @bitcast_offset() -> !kgen.struct<scalar<ui8>, scalar<ui8>>{
+kgen.generator @bitcast_offset() -> !kgen.struct<(scalar<ui8>, scalar<ui8>)>{
   %x = pop.stack_allocation 1 x !pop.scalar<si64>
   %0 = kgen.param.constant: scalar<si64> = <5>
   pop.store %0, %x : !kgen.pointer<scalar<si64>>
@@ -70,11 +70,11 @@ kgen.generator @bitcast_offset() -> !kgen.struct<scalar<ui8>, scalar<ui8>>{
   %idx1 = index.constant 1
   %3 = pop.offset %1[%idx1] : !kgen.pointer<scalar<ui8>>
   %4 = pop.load %3 : !kgen.pointer<scalar<ui8>>
-  %5 = kgen.struct.create(%2, %4) : !kgen.struct<scalar<ui8>, scalar<ui8>>
-  kgen.return %5 : !kgen.struct<scalar<ui8>, scalar<ui8>>
+  %5 = kgen.struct.create(%2, %4) : !kgen.struct<(scalar<ui8>, scalar<ui8>)>
+  kgen.return %5 : !kgen.struct<(scalar<ui8>, scalar<ui8>)>
 }
 
-kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<pointer<i16>, pointer<i16>> {
+kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<(pointer<i16>, pointer<i16>)> {
   %idx4 = index.constant 4
   %idx1 = index.constant 1
   %idx32 = index.constant 0x2000
@@ -82,8 +82,8 @@ kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<pointer<i16>
   pop.store %arg0, %0 : !kgen.pointer<i16>
   %1 = pop.offset %0[%idx1] : !kgen.pointer<i16>
   pop.store %arg1, %1 : !kgen.pointer<i16>
-  %2 = kgen.struct.create(%0, %1) : !kgen.struct<pointer<i16>, pointer<i16>>
-  kgen.return %2 : !kgen.struct<pointer<i16>, pointer<i16>>
+  %2 = kgen.struct.create(%0, %1) : !kgen.struct<(pointer<i16>, pointer<i16>)>
+  kgen.return %2 : !kgen.struct<(pointer<i16>, pointer<i16>)>
 }
 
 // COM: Check that the pointers alias.
@@ -135,12 +135,12 @@ kgen.generator @freed_memory() -> !kgen.pointer<i16> {
   kgen.return %1 : !kgen.pointer<i16>
 }
 
-kgen.generator @const_string(%arg0: !kgen.pointer<i8>) -> !kgen.struct<i8, pointer<i8>> {
+kgen.generator @const_string(%arg0: !kgen.pointer<i8>) -> !kgen.struct<(i8, pointer<i8>)> {
   %0 = pop.load %arg0 : !kgen.pointer<i8>
   %idx2 = index.constant 2
   %1 = pop.offset %arg0[%idx2] : !kgen.pointer<i8>
-  %2 = kgen.struct.create(%0, %1) : !kgen.struct<i8, pointer<i8>>
-  kgen.return %2 : !kgen.struct<i8, pointer<i8>>
+  %2 = kgen.struct.create(%0, %1) : !kgen.struct<(i8, pointer<i8>)>
+  kgen.return %2 : !kgen.struct<(i8, pointer<i8>)>
 }
 
 kgen.generator @parameter_closure() -> index {
@@ -189,8 +189,8 @@ kgen.generator export @do_it() {
     :(!pop.scalar<index>) -> !pop.scalar<index> @store_load<:type !pop.scalar<index>>,
     <-5>)>
   // CHECK-NEXT: { 120, 32112, 1.125{{0+}}e+00 }
-  kgen.param.constant: struct<i8, i16, f64> = <apply(
-    :(!kgen.struct<i8, i16, f64>) -> !kgen.struct<i8, i16, f64> @store_load<:type !kgen.struct<i8, i16, f64>>,
+  kgen.param.constant: struct<(i8, i16, f64)> = <apply(
+    :(!kgen.struct<(i8, i16, f64)>) -> !kgen.struct<(i8, i16, f64)> @store_load<:type !kgen.struct<(i8, i16, f64)>>,
     { 120, 32112, 1.125 })>
   // CHECK-NEXT: #pop.variant<:i32 42, 0>
   kgen.param.constant: variant<i32, f64> = <apply(
@@ -203,7 +203,7 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <8590983192>
   kgen.param.constant: i64 = <apply(
-    :(!kgen.struct<i8, i16, i32>) -> i64 @bitcast<:type !kgen.struct<i8, i16, i32>, :type i64>,
+    :(!kgen.struct<(i8, i16, i32)>) -> i64 @bitcast<:type !kgen.struct<(i8, i16, i32)>, :type i64>,
     { 24, 16, 2 })>
   // CHECK-NEXT: <1026>
   kgen.param.constant: i16 = <apply(
@@ -233,20 +233,20 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <56>
   kgen.param.constant: i32 = <apply(
-    :(!kgen.struct<i8, i16, i32>) -> i32 @struct_gep_load, { 12, 34, 56 })>
+    :(!kgen.struct<(i8, i16, i32)>) -> i32 @struct_gep_load, { 12, 34, 56 })>
 
   // CHECK-NEXT: <128>
   kgen.param.constant: i32 = <apply(
-    :(!kgen.struct<i8, i16, i32>) -> i32 @struct_gep_load, { ?, ?, 128 })>
+    :(!kgen.struct<(i8, i16, i32)>) -> i32 @struct_gep_load, { ?, ?, 128 })>
 
   // CHECK-NEXT: <{ 5, 0 }>
-  kgen.param.constant: struct<scalar<ui8>, scalar<ui8>> = <apply(
-    :() -> !kgen.struct<scalar<ui8>, scalar<ui8>> @bitcast_offset)>
+  kgen.param.constant: struct<(scalar<ui8>, scalar<ui8>)> = <apply(
+    :() -> !kgen.struct<(scalar<ui8>, scalar<ui8>)> @bitcast_offset)>
 
   // CHECK-NEXT: <{ #interp.memref<[([[RETURN_HEAP:.*]], heap, [])], 0, 0>,
   // CHECK-SAME:    #interp.memref<[([[RETURN_HEAP]], heap, [])], 0, 2> }>
-  kgen.param.constant: struct<pointer<i16>, pointer<i16>> = <apply(
-    :(i16, i16) -> !kgen.struct<pointer<i16>, pointer<i16>> @return_heap, 0xDEAD, 0xBEEF)>
+  kgen.param.constant: struct<(pointer<i16>, pointer<i16>)> = <apply(
+    :(i16, i16) -> !kgen.struct<(pointer<i16>, pointer<i16>)> @return_heap, 0xDEAD, 0xBEEF)>
 
   // CHECK-NEXT: <-8531>
   kgen.param.constant: i16 = <apply(
@@ -278,8 +278,8 @@ kgen.generator export @do_it() {
 
   // COM: `ord("hello world"[2]) -> 108`.
   // CHECK-NEXT: <{ 108, #interp.memref<[(string, const_global, [])], 0, 4> }>
-  kgen.param.constant: struct<i8, pointer<i8>> = <apply(
-    :(!kgen.pointer<i8>) -> !kgen.struct<i8, pointer<i8>> @const_string,
+  kgen.param.constant: struct<(i8, pointer<i8>)> = <apply(
+    :(!kgen.pointer<i8>) -> !kgen.struct<(i8, pointer<i8>)> @const_string,
     #interp.memref<[(string, const_global, [])], 0, 2>)>
 
   // CHECK-NEXT: <1>

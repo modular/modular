@@ -14,15 +14,15 @@ kgen.func export C @someKernel(%arg1: f32, %arg2: index) -> f32 {
 }
 // SCALAR: extern float someKernel(float, ssize_t);
 
-kgen.func export C @someBufferKernel(%a: !kgen.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>) -> index {
-  %size = kgen.struct.extract %a[1] : !kgen.struct<pointer<simd<1, invalid>>, index, !kgen.dtype>
+kgen.func export C @someBufferKernel(%a: !kgen.struct<(pointer<simd<1, invalid>>, index, !kgen.dtype)>) -> index {
+  %size = kgen.struct.extract %a[1] : !kgen.struct<(pointer<simd<1, invalid>>, index, !kgen.dtype)>
   kgen.return %size : index
 }
 // BUFFER: extern ssize_t someBufferKernel(void *, ssize_t, uint8_t);
 
 
-kgen.func export C @someNDBufferKernel(%a: !kgen.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>) -> index {
-  %size = kgen.struct.extract %a[1] : !kgen.struct<pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype>
+kgen.func export C @someNDBufferKernel(%a: !kgen.struct<(pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype)>) -> index {
+  %size = kgen.struct.extract %a[1] : !kgen.struct<(pointer<simd<1, invalid>>, index, array<5, index>, !kgen.dtype)>
   kgen.return %size : index
 }
 // NDBUFFER: extern ssize_t someNDBufferKernel(void *, ssize_t, ssize_t[5], uint8_t);
@@ -54,31 +54,31 @@ kgen.func export C @litNoneKernel() -> !pop.array<0, i1> {
 
 // VOID: extern void litNoneKernel();
 
-kgen.func export C @oneElemStruct(%arg0: i32) -> !kgen.struct<i32> {
-  %0 = kgen.param.constant: struct<i32> = <{ 0 }>
-  kgen.return %0 : !kgen.struct<i32>
+kgen.func export C @oneElemStruct(%arg0: i32) -> !kgen.struct<(i32)> {
+  %0 = kgen.param.constant: struct<(i32)> = <{ 0 }>
+  kgen.return %0 : !kgen.struct<(i32)>
 }
 
 // ONESTRUCT: extern int32_t oneElemStruct(int32_t);
 
-kgen.func export C @twoElemStruct(%arg0: i32) -> !kgen.struct<i32, i32> {
-  %0 = kgen.param.constant: struct<i32, i32> = <{ 0, 0 }>
-  kgen.return %0 : !kgen.struct<i32, i32>
+kgen.func export C @twoElemStruct(%arg0: i32) -> !kgen.struct<(i32, i32)> {
+  %0 = kgen.param.constant: struct<(i32, i32)> = <{ 0, 0 }>
+  kgen.return %0 : !kgen.struct<(i32, i32)>
 }
 
 // TWOSTRUCT: extern void twoElemStruct(int32_t, int32_t *, int32_t *);
 
-kgen.func export C @oneVariadic(%arg0: !kgen.variadic<f32>) -> !kgen.struct<i32> {
-  %0 = kgen.param.constant: struct<i32> = <{ 0 }>
-  kgen.return %0 : !kgen.struct<i32>
+kgen.func export C @oneVariadic(%arg0: !kgen.variadic<f32>) -> !kgen.struct<(i32)> {
+  %0 = kgen.param.constant: struct<(i32)> = <{ 0 }>
+  kgen.return %0 : !kgen.struct<(i32)>
 }
 
 // ONEVARIADIC: extern int32_t oneVariadic(void *, ssize_t);
 
-kgen.func export C @twoVariadic(%arg0: !kgen.variadic<!kgen.struct<i32, i32>>,
-                                %arg1: !kgen.variadic<i32>) -> !kgen.struct<i32> {
-  %0 = kgen.param.constant: struct<i32> = <{ 0 }>
-  kgen.return %0 : !kgen.struct<i32>
+kgen.func export C @twoVariadic(%arg0: !kgen.variadic<!kgen.struct<(i32, i32)>>,
+                                %arg1: !kgen.variadic<i32>) -> !kgen.struct<(i32)> {
+  %0 = kgen.param.constant: struct<(i32)> = <{ 0 }>
+  kgen.return %0 : !kgen.struct<(i32)>
 }
 
 // TWOVARIADIC: extern int32_t twoVariadic(void *, ssize_t, void *, ssize_t);

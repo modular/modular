@@ -1,8 +1,8 @@
 // RUN: kgen-opt --hoist-trivial-invariants -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: @basic
-kgen.func @basic(%arg0: !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>) {
-  %struct = pop.load %arg0 : !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
+kgen.func @basic(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>>) {
+  %struct = pop.load %arg0 : !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>>
 
   // CHECK: %[[LOAD:.*]] = pop.load
   // CHECK-NEXT: kgen.struct.extract %[[LOAD]][2]
@@ -13,17 +13,17 @@ kgen.func @basic(%arg0: !kgen.pointer<struct<struct<scalar<index>>, struct<scala
   // CHECK-NOT: kgen.struct.extract
 
   hlcf.loop {
-    %0 = kgen.struct.extract %struct[0] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-    %1 = kgen.struct.extract %struct[1] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-    %2 = kgen.struct.extract %struct[2] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+    %0 = kgen.struct.extract %struct[0] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
+    %1 = kgen.struct.extract %struct[1] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
+    %2 = kgen.struct.extract %struct[2] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
     hlcf.break
   }
   kgen.return
 }
 
 // CHECK-LABEL: @many_nests
-kgen.func @many_nests(%arg0: !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>, %cond: i1) {
-  %struct = pop.load %arg0 : !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
+kgen.func @many_nests(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>>, %cond: i1) {
+  %struct = pop.load %arg0 : !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>>
 
   // CHECK: %[[LOAD:.*]] = pop.load
   // CHECK-NEXT: kgen.struct.extract %[[LOAD]][2]
@@ -35,14 +35,14 @@ kgen.func @many_nests(%arg0: !kgen.pointer<struct<struct<scalar<index>>, struct<
   // CHECK-NOT: kgen.struct.extract
 
   hlcf.loop {
-    %0 = kgen.struct.extract %struct[0] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+    %0 = kgen.struct.extract %struct[0] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
     hlcf.loop {
-      %1 = kgen.struct.extract %struct[1] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+      %1 = kgen.struct.extract %struct[1] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
       hlcf.if %cond {
-        %2 = kgen.struct.extract %struct[2] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+        %2 = kgen.struct.extract %struct[2] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
         hlcf.yield
       } else {
-        %2 = kgen.struct.extract %struct[2] : !kgen.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
+        %2 = kgen.struct.extract %struct[2] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
         hlcf.yield
       }
       hlcf.break

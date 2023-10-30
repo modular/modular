@@ -605,29 +605,29 @@ kgen.func @simd_splat() -> !pop.simd<2, si8> {
 }
 
 // CHECK-LABEL: @struct_construct
-kgen.func @struct_construct() -> !kgen.struct<si4, ui4> {
-  // CHECK-NEXT: constant: struct<si4, ui4> = <{ -3, 7 }>
+kgen.func @struct_construct() -> !kgen.struct<(si4, ui4)> {
+  // CHECK-NEXT: constant: struct<(si4, ui4)> = <{ -3, 7 }>
   %0 = kgen.param.constant: si4 = <-3>
   %1 = kgen.param.constant: ui4 = <7>
-  %2 = kgen.struct.create(%0, %1) : !kgen.struct<si4, ui4>
-  kgen.return %2 : !kgen.struct<si4, ui4>
+  %2 = kgen.struct.create(%0, %1) : !kgen.struct<(si4, ui4)>
+  kgen.return %2 : !kgen.struct<(si4, ui4)>
 }
 
 // CHECK-LABEL: @struct_get
 kgen.func @struct_get() -> si4 {
   // CHECK-NEXT: constant: si4 = <-3>
-  %0 = kgen.param.constant: struct<si4, ui4> = <{ -3, 7 }>
-  %1 = kgen.struct.extract %0[0] : !kgen.struct<si4, ui4>
+  %0 = kgen.param.constant: struct<(si4, ui4)> = <{ -3, 7 }>
+  %1 = kgen.struct.extract %0[0] : !kgen.struct<(si4, ui4)>
   kgen.return %1 : si4
 }
 
 // CHECK-LABEL: @struct_replace
-kgen.func @struct_replace() -> !kgen.struct<si4, ui4> {
-  // CHECK-NEXT: constant: struct<si4, ui4> = <{ -5, 7 }>
+kgen.func @struct_replace() -> !kgen.struct<(si4, ui4)> {
+  // CHECK-NEXT: constant: struct<(si4, ui4)> = <{ -5, 7 }>
   %0 = kgen.param.constant: si4 = <-5>
-  %1 = kgen.param.constant: struct<si4, ui4> = <{ -3, 7 }>
-  %2 = kgen.struct.replace %0, %1[0] : !kgen.struct<si4, ui4>
-  kgen.return %2 : !kgen.struct<si4, ui4>
+  %1 = kgen.param.constant: struct<(si4, ui4)> = <{ -3, 7 }>
+  %2 = kgen.struct.replace %0, %1[0] : !kgen.struct<(si4, ui4)>
+  kgen.return %2 : !kgen.struct<(si4, ui4)>
 }
 
 // CHECK-LABEL: @array_create
