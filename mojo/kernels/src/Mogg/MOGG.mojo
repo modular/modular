@@ -67,7 +67,7 @@ from BatchedMatmul import (
     get_trace_information as get_trace_information_batched_matmul,
 )
 from Concat import concat as _concat
-from Concat import concat_shape
+from Concat import concat_shape, variadic_list_to_vector
 from Conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
 from Conv import pack_conv_filter as _pack_conv_filter
 from Conv import pack_conv_filter_shape as _pack_conv_filter_shape
@@ -882,9 +882,11 @@ fn concat[
     if axis_int < 0:
         axis_int = axis_int + rank
 
+    let ins = variadic_list_to_vector(variadic_ins)
     _concat[rank, type, single_thread_blocking_override](
-        output, axis_int, variadic_ins, out_chain
+        output, axis_int, ins, out_chain
     )
+    ins._del_old()
 
 
 # ===----------------------------------------------------------------------===#
