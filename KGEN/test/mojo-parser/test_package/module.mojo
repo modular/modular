@@ -38,3 +38,13 @@ fn use_weird() -> `weird()struct[]`:
 @value
 struct ParameterizedType[value: Int]:
     pass
+
+
+@value
+struct Wrapper:
+    var data: Int
+
+    alias MyType = ParameterizedType[42]
+
+    fn unused_method(inout self) -> Self.MyType:
+        return Self.MyType()
