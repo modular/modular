@@ -85,9 +85,9 @@ private:
   /// constant parameter expressions.
   Analysis &cache;
 
-  /// An internal stack of signature types representing the current nested
-  /// signatures.
-  SmallVector<SignatureType> signatures;
+  /// An internal stack of scoped parameter types representing the current
+  /// nested signatures.
+  SmallVector<ParameterScopeTypeInterface> signatures;
 };
 
 //===----------------------------------------------------------------------===//

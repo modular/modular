@@ -120,7 +120,8 @@ def KGEN_IntLiteralType : KGENType<"IntLiteral", "int_literal",[
 
 def KGEN_SignatureType : KGENType<"Signature", "signature", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    ParameterScopeTypeInterface]> {
   let summary = "The signature for a parameterized declaration";
   let description = [{
     This type describes the signature for a parameterized declaration, which

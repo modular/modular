@@ -65,7 +65,7 @@ void ParameterCollector::collectUsesFromAttr(
                    << " exceeds depth of contextual signatures: "
                    << signatures.size();
           }
-          SignatureType sig =
+          ParameterScopeTypeInterface sig =
               signatures[signatures.size() - 1 - indexRef.getDepth()];
           TypeArrayAttr types = indexRef.getIsResult()
                                     ? sig.getResultParamTypes()
@@ -118,7 +118,7 @@ void ParameterCollector::collectUsesFromAttr(
 
 void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
-  if (auto sig = dyn_cast<SignatureType>(type)) {
+  if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
     signatures.push_back(sig);
     collectUsesFromTypesImpl(type, uses, hasConstExpr);
     return signatures.pop_back();

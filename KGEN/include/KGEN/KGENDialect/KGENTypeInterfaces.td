@@ -46,4 +46,27 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// ParameterScopeTypeInterface
+//===----------------------------------------------------------------------===//
+
+def ParameterScopeTypeInterface : TypeInterface<"ParameterScopeTypeInterface"> {
+  let description = [{
+    The `ParameterScopeTypeInterface` describes a type that declares a nested
+    parameter scope within a type expression. It enables `ParamIndexRefAttr`
+    values inside the type to reference parameters declared in a scope.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the types of the nested input parameter declarations.
+    }], "TypeArrayAttr", "getInputParamTypes">,
+    InterfaceMethod<[{
+      Return the types of the nested result parameter declarations.
+    }], "TypeArrayAttr", "getResultParamTypes">
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD
