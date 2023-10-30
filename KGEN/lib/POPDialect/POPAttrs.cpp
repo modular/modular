@@ -46,6 +46,8 @@ const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
   switch (dtype.getValue()) {
   case DType::f16:
     return APFloat::IEEEhalf();
+  case DType::tf32:
+    return APFloat::FloatTF32();
   case DType::f32:
     return APFloat::IEEEsingle();
   case DType::f64:
@@ -59,7 +61,6 @@ const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
 
   case DType::f8:
   case DType::f24:
-  case DType::tf32:
   default:
     llvm_unreachable("unknown float dtype");
   }
