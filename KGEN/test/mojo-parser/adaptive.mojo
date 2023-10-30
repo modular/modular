@@ -44,14 +44,14 @@ struct TrivialStuff[*size: Int]:
 
 @adaptive
 # CHECK: lit.func @"foobar{{.*}}"<[[WIDTH:.*_width]][width]: !Int>() ->
-# CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<:variadic<!Int> [[[WIDTH]]]>> attributes {isAdaptive,
+# CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<:variadic<!Int> [[[WIDTH]]]>{{.*}}> attributes {isAdaptive,
 fn foobar[width: Int]() -> TrivialStuff[width]:
     pass
 
 
 @adaptive
 # CHECK: lit.func @"foobar{{.*}}"<[[W:.*_w]][w]: !Int>() ->
-# CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<:variadic<!Int> [[[W]]]>> attributes {isAdaptive,
+# CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<:variadic<!Int> [[[W]]]>{{.*}}> attributes {isAdaptive,
 fn foobar[w: Int]() -> TrivialStuff[w]:
     pass
 
@@ -69,9 +69,9 @@ fn main_func[x: Int]():
     # CHECK-NEXT: call_param[!lit.signature<() -> !kgen.none>: *"(adaptive)bar{{.*}}"]()
     bar()
 
-    # CHECK: kgen.param.fork *"(adaptive)foobar{{.*}}": !lit.signature<() -> !kgen.declref<@{{.*}}::@TrivialStuff<:variadic<!Int> [[[X]]]>>>
+    # CHECK: kgen.param.fork *"(adaptive)foobar{{.*}}": !lit.signature<() -> !kgen.declref<@{{.*}}::@TrivialStuff<:variadic<!Int> [[[X]]]>
     # CHECK-SAME: = <[@{{.*}}::@"foobar[{{.*}}$int::Int]()"<:!Int [[X]]>, @{{.*}}::@"foobar[{{.*}}$int::Int]()_0"<:!Int [[X]]>]>
-    # CHECK-NEXT: call_param[!lit.signature<() -> !kgen.declref<@"{{.*}}"::@TrivialStuff<:variadic<!Int> [[[X]]]>>>: *"(adaptive)foobar{{.*}}]()
+    # CHECK-NEXT: call_param[!lit.signature<() -> !kgen.declref<@"{{.*}}"::@TrivialStuff<:variadic<!Int> [[[X]]]>{{.*}}>>: *"(adaptive)foobar{{.*}}]()
     _ = foobar[x]()
 
     return

@@ -1212,7 +1212,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       // We expect either a single type or `None`.
       if (isa<NoneAttr>(attr.getValue())) {
       } else if (auto value = dyn_cast<TypedAttr>(attr.getValue())) {
-        if (!isa<MLIRTypeType>(value.getType())) {
+        if (!isa<MLIRTypeType, MetaTypeType>(value.getType())) {
           emitter.emitError(call.getLoc(), "_type value is not a type");
           return {};
         }
@@ -1532,7 +1532,7 @@ static PValue substituteParametersIntoUserDefinedType(
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  return PValue(DeclRefType::get(typeDecl.getSymbolRef(), bindingValuesAttr));
+  return PValue(declRef.bindParams(bindingValuesAttr));
 }
 
 /// Returns the next expected parameter type for a function candidate given a
@@ -1956,7 +1956,8 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
   // The ASTType will carry around parameters bound, we want to unbind them so
   // they can be inferred from the elements.
-  type = DeclRefType::get(type.getDecl(emitter.shared)->getSymbolRef());
+  auto declRef = cast<DeclRefType>(type);
+  type = DeclRefType::get(declRef.getSymbol(), declRef.getMetaType());
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.

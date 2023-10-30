@@ -163,8 +163,21 @@ ASTType CValue::getType() const { return getTypeFrom(storage); }
 ASTType BValue::getType() const { return getTypeFrom(storage); }
 ASTType LValue::getType() const { return getTypeFrom(storage); }
 
+/// Given a type value, attempt to extract a metatype.
+static Type extractMetaType(Type type) {
+  // The metatype is stored on the type.
+  if (auto declRef = dyn_cast<DeclRefType>(type))
+    return declRef.getMetaType();
+  // The metatype is the type of the carried type expression.
+  if (auto paramRef = dyn_cast<ParamRefType>(type))
+    return paramRef.getParam().getType();
+  // Otherwise, this is a generic MLIR type.
+  return MLIRTypeType::get(type.getContext());
+}
+
 PValue::PValue(Type value)
-    : storage(value ? TypeConstantAttr::get(value) : Attribute()) {}
+    : storage(value ? TypeConstantAttr::get(value, extractMetaType(value))
+                    : Attribute()) {}
 
 /// If this value /is/ a type return it.
 ASTType PValue::getIfTypeValue() const {
@@ -174,7 +187,7 @@ ASTType PValue::getIfTypeValue() const {
 
   // If this is a parameter expression of type value, use ParamRefType to turn
   // it into a type.
-  if (isa<MLIRTypeType>(attr.getType()))
+  if (isa<MLIRTypeType, MetaTypeType>(attr.getType()))
     return ParamRefType::get(attr);
   return {};
 }

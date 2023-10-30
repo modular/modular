@@ -158,5 +158,6 @@ Type ASTDecl::computeSelfTypeForStruct(StructDeclOp structOp) {
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return DeclRefType::get(getFullyResolvedSymbolRef(structOp), parameters);
+  SymbolRefAttr symbol = getFullyResolvedSymbolRef(structOp);
+  return DeclRefType::get(symbol, parameters, MetaTypeType::get(symbol));
 }

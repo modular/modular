@@ -691,12 +691,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
 Type ClosureEmitter::makeClosureImplSelfType(
     StructDeclOp closureImpl, SmallVector<ParamDeclAttr> paramDecls) {
-  ASTDecl &typeDecl = shared.declResolver->getDeclForTypeSymbol(
-      getFullyResolvedSymbolRef(closureImpl));
+  SymbolRefAttr symbol = getFullyResolvedSymbolRef(closureImpl);
   SmallVector<TypedAttr> bindingValues;
   for (ParamDeclAttr decl : paramDecls)
     bindingValues.push_back(ParamDeclRefAttr::get(decl));
-  return DeclRefType::get(typeDecl.getSymbolRef(), bindingValues);
+  return DeclRefType::get(symbol, bindingValues, MetaTypeType::get(symbol));
 }
 
 static SymbolConstantAttr

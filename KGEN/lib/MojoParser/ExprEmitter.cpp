@@ -867,8 +867,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (rvType.isEqualCanon(requiredType))
     return true;
 
-  if (allowArgNameCheck &&
-      canZeroCostConvertSignature(shared, rvType, requiredType))
+  if (allowArgNameCheck && canZeroCostConvert(shared, rvType, requiredType))
     return true;
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
@@ -1002,7 +1001,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       return {};
 
     if (!requiredType.isEqualCanon(rvalueType)) {
-      if (canZeroCostConvertSignature(shared, rvalueType, requiredType)) {
+      if (canZeroCostConvert(shared, rvalueType, requiredType)) {
         // If we are dealing with signatures that differ only in argument names,
         // we insert a rebind.
         if (isa<MLValue, MRValue, MBValue>(cValue.getStorage())) {
@@ -1452,10 +1451,8 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
 
   // If verifyBindings changed the bindings set, then we may have had an
   // empty varargs list or something.  Rebind the DeclRefType.
-  if (bindingValuesAttr.getValue() != type.getParamBindings()) {
-    auto symbol = cast<DeclRefType>(type).getSymbol();
-    type = DeclRefType::get(symbol, bindingValuesAttr);
-  }
+  if (bindingValuesAttr.getValue() != type.getParamBindings())
+    type = cast<DeclRefType>(type).bindParams(bindingValuesAttr);
   return type;
 }
 
@@ -1672,7 +1669,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 
   // If this is a type declaration, return it as a type.
   if (isa<StructDeclOp>(decl)) {
-    PValue result(DeclRefType::get(decl.getSymbolRef()));
+    SymbolRefAttr ref = decl.getSymbolRef();
+    PValue result(DeclRefType::get(ref, MetaTypeType::get(ref)));
     return emitResult(result, expr, dest);
   }
 

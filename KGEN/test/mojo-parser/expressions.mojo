@@ -1343,9 +1343,9 @@ struct MemType: pass
 # CHECK-SAME: %{{.*}}[float5]: {{.*}}(!Int borrow, |) throws -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float6]: {{.*}}(!Int borrow, |) throws|async|capturing -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float7]: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float8]: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<:!Int *(0,0)>> borrow, |) -> !kgen.none
+# CHECK-SAME: %{{.*}}[float8]: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float9]: {{.*}}<[] -> !Int>() -> !kgen.none
-# CHECK-SAME: %{{.*}}[float10]: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>>() throws -> !pop.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float10]: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}>() throws -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float11]: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float12]: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
 # CHECK-SAME: %{{.*}}[named]: {{.*}}<("x": !kgen.pointer<!MemType> borrow_in_mem) -> !Int>
@@ -1644,13 +1644,14 @@ fn indirect_kw_args():
 # CHECK-SAME: (%a[a]: !Bool borrow) -> !kgen.mlirtype
 fn type_function(a: Bool) -> AnyType:
     # CHECK: [[TYPE:%.*]] = hlcf.if %{{.*}} -> !kgen.mlirtype
-    # CHECK-NEXT: %type = kgen.param.constant: type = <!Int>
-    # CHECK-NEXT: yield %type
+    # CHECK-NEXT: %metatype = kgen.param.constant: metatype<{{.*}}@Int> = <!Int>
+    # CHECK-NEXT: [[COERCED:%.*]] = kgen.call {{.*}}(%metatype)
+    # CHECK-NEXT: yield [[COERCED]]
     # CHECK-NEXT: else
     # CHECK-NEXT: %type = kgen.param.constant: type = <!Bool>
     # CHECK-NEXT: yield %type
     # CHECK: return [[TYPE]] : !kgen.mlirtype
-    return Int if a else Bool
+    return rebind[AnyType](Int) if a else Bool
 
 
 # CHECK-LABEL: lit.func @"static_type

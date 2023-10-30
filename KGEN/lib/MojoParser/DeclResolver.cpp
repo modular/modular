@@ -1470,7 +1470,7 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
     inputParamDecls.push_back(funcDecl);
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
   }
-  return DeclRefType::get(cast<DeclRefType>(type).getSymbol(), paramValues);
+  return cast<DeclRefType>(type).bindParams(paramValues);
 }
 
 ASTType ParsedArgument::emitFunctionArgumentsAndResults(
@@ -2586,18 +2586,15 @@ static Value emitClosureInstance(SignatureType closureSignature,
 
   // Create Closure Impl type by adding captured parameters to the ClosureImpl
   // DeclType.
-  Type closureImplType = ASTDecl::computeSelfTypeForStruct(closureImpl);
-  if (DeclRefType declRef = dyn_cast<DeclRefType>(closureImplType)) {
-    ASTDecl &typeDecl =
-        shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-    SmallVector<TypedAttr> paramValues;
-    for (auto [name, capture] : capturedParams) {
-      if (capture.isInputOrResultParameter())
-        paramValues.push_back(
-            ParamDeclRefAttr::get(capture.getName(), capture.getType()));
-    }
-    closureImplType = DeclRefType::get(typeDecl.getSymbolRef(), paramValues);
+  SymbolRefAttr closureImplRef = getFullyResolvedSymbolRef(closureImpl);
+  SmallVector<TypedAttr> paramValues;
+  for (auto [name, capture] : capturedParams) {
+    if (capture.isInputOrResultParameter())
+      paramValues.push_back(
+          ParamDeclRefAttr::get(capture.getName(), capture.getType()));
   }
+  ASTType closureImplType = DeclRefType::get(closureImplRef, paramValues,
+                                             MetaTypeType::get(closureImplRef));
 
   CValue value = exprEmitter.emitConstructorCall(
       ASTType(closureImplType), closureImplInitArgs, &node,

@@ -27,8 +27,22 @@ PackType LIT::getIfPackType(SignatureType sig, size_t index) {
                                  : nullptr;
 }
 
-bool LIT::canZeroCostConvertSignature(SharedState &shared, ASTType fromType,
-                                      ASTType toType) {
+bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
+                             ASTType toType) {
+  // Permit upcasting any `!lit.metatype` to `!kgen.mlirtype`.
+  // FIXME(traits): Binding a Mojo type to an MLIR type is a hack. We should
+  // forbid this when traits are fully operational.
+  if (isa<MetaTypeType>(fromType) && isa<MLIRTypeType>(toType))
+    return true;
+
+  auto fromRef = dyn_cast<DeclRefType>(fromType);
+  auto toRef = dyn_cast<DeclRefType>(toType);
+  // Permit casting between concrete `!kgen.declref` types with different
+  // metatypes. This arises when binding concrete types to generic types.
+  if (fromRef && toRef && fromRef.getSymbol() == toRef.getSymbol() &&
+      fromRef.getParamValues() == toRef.getParamValues())
+    return true;
+
   // Check for closure structs and dig out their underlying signature types to
   // check whether the conversion can occur.
   auto fromDecl = dyn_cast_or_null<StructDeclOp>(fromType.getDecl(shared));
@@ -37,8 +51,7 @@ bool LIT::canZeroCostConvertSignature(SharedState &shared, ASTType fromType,
     TypeAttr fromSig = fromDecl.getClosureSignatureAttr();
     TypeAttr toSig = toDecl.getClosureSignatureAttr();
     if (fromSig && toSig)
-      return canZeroCostConvertSignature(shared, fromSig.getValue(),
-                                         toSig.getValue());
+      return canZeroCostConvert(shared, fromSig.getValue(), toSig.getValue());
     return false;
   }
 
