@@ -234,7 +234,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
-    signature = IndexRefRemapper::prependParams(signature, parentInputParams);
+    signature = SignatureType::prependParams(signature, parentInputParams);
   }
 
   OpBuilder b(gen->getContext());

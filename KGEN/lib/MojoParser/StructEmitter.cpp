@@ -50,7 +50,7 @@ LIT::FuncOp StructEmitter::createFunction(
                           /*defaultArguments=*/{}, /*defaultParameters=*/{});
   FunctionType functionType = builder.getFunctionType(argTypes, {resultType});
   Location location = shared.translateLocation(loc);
-  LITSignatureType signature = IndexRefRemapper::remapToSignature(
+  LITSignatureType signature = SignatureType::remapToSignature(
       inputParameters, /*resultParams=*/{}, functionType, argConventions,
       fnEffects, metadata, [&] { return mlir::emitError(location); });
   StringAttr nameAttr =

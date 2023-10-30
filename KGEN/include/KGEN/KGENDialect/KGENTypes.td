@@ -246,6 +246,23 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Determine whether an argument with the given input convention expects to
     /// have a pointer or reference type.
     static bool hasAddress(ValueInputConvention conv);
+
+    /// Construct a signature from named parameter declarations, a function
+    /// type, and metadata. This helper is used to convert between a named
+    /// signature structure to a nameless `SignatureType` representation.
+    static SignatureType
+    remapToSignature(ArrayRef<ParamDeclAttr> inputParams,
+                     ArrayRef<ParamDeclAttr> resultParams,
+                     FunctionType functionType,
+                     ArrayRef<ValueInputConvention> inputConventions = {},
+                     FnEffects effects = {}, Attribute metadata = {},
+                     function_ref<InFlightDiagnostic()> emitError = {});
+
+    /// Reconstruct the signature using a list of named input parameters. These
+    /// parameters are prepended to the current signature and references are
+    /// remapped to index references.
+    static SignatureType prependParams(SignatureType sig,
+                                       ArrayRef<ParamDeclAttr> parentParams);
   }];
 
   let genVerifyDecl = 1;

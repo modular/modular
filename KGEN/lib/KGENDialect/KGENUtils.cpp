@@ -1149,7 +1149,7 @@ ParseResult KGEN::parseFunctionSignature(
                                   /*optionalResultList=*/true)))
     return failure();
 
-  signature = IndexRefRemapper::remapToSignature(
+  signature = SignatureType::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects, {},
       [&] { return p.emitError(loc); });
   return success(!!signature);
@@ -1309,14 +1309,14 @@ ParseResult KGEN::parseKGENSignature(AsmParser &p,
     if (!result.has_value())
       return p.emitError(loc, "expected a KGEN signature");
     functionType = signature.getValues();
-    signature = IndexRefRemapper::remapToSignature(
+    signature = SignatureType::remapToSignature(
         {}, resultParamDecls, functionType, signature.getInputConventions(),
         signature.getFnEffects(), signature.getMetadata(),
         [&] { return p.emitError(loc); });
     return success();
   }
 
-  signature = IndexRefRemapper::remapToSignature(
+  signature = SignatureType::remapToSignature(
       {}, resultParamDecls, functionType, inputConventions, effects, {},
       [&] { return p.emitError(loc); });
   return success(!!signature);

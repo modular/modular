@@ -2787,7 +2787,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Compute the signature of the function.
-  LITSignatureType signature = IndexRefRemapper::remapToSignature(
+  LITSignatureType signature = SignatureType::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
       FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,

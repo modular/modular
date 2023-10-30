@@ -3069,7 +3069,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       b.getFunctionType(argTypes, {resultType.mlirType});
 
   // Compute the signature of the function.
-  auto signature = IndexRefRemapper::remapToSignature(
+  auto signature = SignatureType::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
