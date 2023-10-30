@@ -270,10 +270,10 @@ kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: index) -> !kgen.pointer<sc
 }
 
 // CHECK-LABEL: @pop_select
-kgen.func @pop_select(%arg0: i1, %arg1: !kgen.struct<f32>, %arg2: !kgen.struct<f32>) -> !kgen.struct<f32> {
+kgen.func @pop_select(%arg0: i1, %arg1: !kgen.struct<(f32)>, %arg2: !kgen.struct<(f32)>) -> !kgen.struct<(f32)> {
   // CHECK: llvm.select %arg0, {{.*}}, {{.*}} {fastmathFlags = #llvm.fastmath<contract>} : i1, !llvm.struct<(f32)>
-  %0 = pop.select %arg0, %arg1, %arg2 : !kgen.struct<f32>
-  kgen.return %0 : !kgen.struct<f32>
+  %0 = pop.select %arg0, %arg1, %arg2 : !kgen.struct<(f32)>
+  kgen.return %0 : !kgen.struct<(f32)>
 }
 
 // CHECK-LABEL: @shifts
@@ -634,12 +634,12 @@ kgen.func @cast_from_builtin(%arg0: index) -> !pop.scalar<index> {
 
 
 // CHECK-LABEL: @test
-kgen.func @test(%a: !pop.variant<f32, i64, struct<i8, i8, f64>>) -> i1 {
+kgen.func @test(%a: !pop.variant<f32, i64, struct<(i8, i8, f64)>>) -> i1 {
   // CHECK: %[[VAR:.*]] = builtin.unrealized_conversion_cast
   // CHECK: %[[DISCR:.*]] = llvm.extractvalue %[[VAR]][1]
   // CHECK: %[[DISCR_VAL:.*]] = llvm.mlir.constant(0 : i2)
   // CHECK: %[[VAL:.*]] = llvm.icmp "eq" %[[DISCR]], %[[DISCR_VAL]]
-  %0 = pop.variant.is %a, 0 : <f32, i64, struct<i8, i8, f64>>
+  %0 = pop.variant.is %a, 0 : <f32, i64, struct<(i8, i8, f64)>>
   // CHECK: return %[[VAL]]
   kgen.return %0 : i1
 }

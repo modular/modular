@@ -206,7 +206,7 @@ kgen.func @try_region() {
     // CHECK-NEXT: yield %idx2
     lit.try.yield
   // CHECK: except
-  } except (%e: !kgen.struct<>) {
+  } except (%e: !kgen.struct<()>) {
     %2 = pop.load %1 : !kgen.pointer<index>
     // COM: This is dead code.
     // CHECK: "use"(%idx3)

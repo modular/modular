@@ -14,17 +14,19 @@ kgen.func @int_literal(%arg0: !kgen.int_literal) {
 }
 
 // CHECK-LABEL: @memory_only_struct
-// CHECK-SAME: %arg0: !kgen.struct<>
-// CHECK-SAME: %arg1: !kgen.struct<>
-// CHECK-SAME: %arg2: !kgen.struct<() memoryOnly>
-// CHECK-SAME: %arg3: !kgen.struct<index, index>
-// CHECK-SAME: %arg4: !kgen.struct<(index, index) memoryOnly>
+// CHECK-SAME: %arg0: !kgen.struct<()>,
+// CHECK-SAME: %arg1: !kgen.struct<() memoryOnly>,
+// CHECK-SAME: %arg2: !kgen.struct<(index, index)>,
+// CHECK-SAME: %arg3: !kgen.struct<(index, index) memoryOnly>,
+// CHECK-SAME: %arg4: !kgen.struct<((index, index) -> index)>,
+// CHECK-SAME: %arg5: !kgen.struct<((index, index) -> index) memoryOnly>
 kgen.func @memory_only_struct(
-  %arg0: !kgen.struct<>,
-  %arg1: !kgen.struct<()>,
-  %arg2: !kgen.struct<() memoryOnly>,
-  %arg3: !kgen.struct<(index, index)>,
-  %arg4: !kgen.struct<(index, index) memoryOnly>
+  %arg0: !kgen.struct<()>,
+  %arg1: !kgen.struct<() memoryOnly>,
+  %arg2: !kgen.struct<(index, index)>,
+  %arg3: !kgen.struct<(index, index) memoryOnly>,
+  %arg4: !kgen.struct<((index, index) -> index)>,
+  %arg5: !kgen.struct<((index, index) -> index) memoryOnly>
 ) {
   kgen.return
 }

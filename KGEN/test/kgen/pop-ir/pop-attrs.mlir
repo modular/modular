@@ -33,16 +33,16 @@ kgen.generator @simd_constants<N, value: !pop.simd<N, si32>>() {
 
 // CHECK-LABEL: @array_struct_constants
 kgen.generator @array_struct_constants<T: type, A: !kgen.paramref<T>, value: !pop.scalar<f32>>() {
-  // CHECK: struct<index, f32> = <{ 1, 2.5{{0+}}e+00 }>
-  kgen.param.constant: struct<index, f32> = <{ 1, 2.5 }>
+  // CHECK: struct<(index, f32)> = <{ 1, 2.5{{0+}}e+00 }>
+  kgen.param.constant: struct<(index, f32)> = <{ 1, 2.5 }>
   // CHECK: array<2, index> = <[1, 2]>
   kgen.param.constant: array<2, index> = <[1, 2]>
-  // CHECK: struct<scalar<f32>> = <{ value }>
-  kgen.param.constant: struct<scalar<f32>> = <{ value }>
+  // CHECK: struct<(scalar<f32>)> = <{ value }>
+  kgen.param.constant: struct<(scalar<f32>)> = <{ value }>
   // CHECK: array<2, dtype> = <[ui4, si4]>
   kgen.param.constant: array<2, dtype> = <[ui4, si4]>
-  // CHECK: struct<T> = <{ A }>
-  kgen.param.constant: struct<T> = <{ A }>
+  // CHECK: struct<(T)> = <{ A }>
+  kgen.param.constant: struct<(T)> = <{ A }>
   // CHECK: array<2, T> = <[A, A]>
   kgen.param.constant: array<2, T> = <[A, A]>
   kgen.return

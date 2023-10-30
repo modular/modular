@@ -31,19 +31,19 @@ kgen.generator @array<size, ty: type>(
 
 // CHECK-LABEL: @struct
 kgen.generator @struct<size, dtype: dtype, ty: type>(
-  // CHECK-SAME: !kgen.struct<scalar<f32>, simd<4, ui64>>
-  %arg0: !kgen.struct<scalar<f32>, simd<4, ui64>>,
-  // CHECK-SAME: !kgen.struct<pointer<simd<4, si8>>, array<24, scalar<si64>>, struct<scalar<f32>, scalar<f64>>>
-  %arg1: !kgen.struct<
+  // CHECK-SAME: !kgen.struct<(scalar<f32>, simd<4, ui64>)>
+  %arg0: !kgen.struct<(scalar<f32>, simd<4, ui64>)>,
+  // CHECK-SAME: !kgen.struct<(pointer<simd<4, si8>>, array<24, scalar<si64>>, struct<(scalar<f32>, scalar<f64>)>)>
+  %arg1: !kgen.struct<(
     !kgen.pointer<simd<4, si8>>,
     !pop.array<24, scalar<si64>>,
-    !kgen.struct<
+    !kgen.struct<(
       !pop.scalar<f32>,
       !pop.scalar<f64>
-    >
-  >,
-  // CHECK: !kgen.struct<ty, array<size, scalar<dtype>>>
-  %arg2: !kgen.struct<ty, array<size, scalar<dtype>>>
+    )>
+  )>,
+  // CHECK: !kgen.struct<(ty, array<size, scalar<dtype>>)>
+  %arg2: !kgen.struct<(ty, array<size, scalar<dtype>>)>
 ) {
   kgen.return
 }

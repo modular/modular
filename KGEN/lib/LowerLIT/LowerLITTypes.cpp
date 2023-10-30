@@ -425,7 +425,7 @@ Type StructOperationLowerer::replace(Type type) {
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     result = processSignatureType(signature);
   } else if (isa<LIT::LifetimeType>(type)) {
-    // !lit.lifetime => !kgen.struct<>
+    // !lit.lifetime => !kgen.struct<()>
     result = emptyStructAttr.getType();
   } else if (auto ref = dyn_cast<LIT::RefType>(type)) {
     // !lit.ref<@T, life> => !kgen.pointer<@T>
