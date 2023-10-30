@@ -103,18 +103,6 @@ void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
                                  ArrayRef<PassingKind> paramPassingKinds,
                                  ArrayRef<TypedAttr> defaultParams);
 
-/// StructDeclOp parameter printing/parsing.
-ParseResult parseStructParameterSpec(AsmParser &p,
-                                     ParamDeclArrayAttr &inputParamDecls,
-                                     StringArrayAttr &paramNames,
-                                     PassingKindArrayAttr &paramPassingKinds,
-                                     ParameterExprArrayAttr &defaultParameters);
-void printStructParameterSpec(AsmPrinter &p, Operation *op,
-                              ArrayRef<ParamDeclAttr> inputParamDecls,
-                              ArrayRef<StringAttr> paramNames,
-                              PassingKindArrayAttr paramPassingKinds,
-                              ParameterExprArrayAttr defaultParameters);
-
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
