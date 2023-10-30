@@ -144,6 +144,7 @@ static void lowerLITOps(LIT::FuncOp func) {
       mlir::IRRewriter b{OpBuilder(op)};
       StringAttr varName = varDecl.getNameAttr();
       auto varType = varDecl.getType().getAsPointerType();
+      bool isSynth = varDecl.getKind() == VarLetDeclKind::Synthesized;
 
       // Declare the lifetime used in the result type.
       b.create<ParamDeclareOp>(varDecl.getLoc(), varDecl.getParamDecl(),
@@ -157,7 +158,7 @@ static void lowerLITOps(LIT::FuncOp func) {
           varDecl, ArrayRef<Type>(varDecl.getType()), allocOp.getResult());
 
       // Build information for this variable if necessary.
-      if (buildingDebugVars) {
+      if (buildingDebugVars && !isSynth) {
         // TODO: Mark the value op as describing the "address" of the
         // variable, instead of claiming to describe the variable itself.
         b.setInsertionPointAfter(allocOp);
