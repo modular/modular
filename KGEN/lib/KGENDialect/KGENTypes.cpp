@@ -466,7 +466,7 @@ auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)
     }
   }
   if constexpr (std::is_base_of_v<Type, T>) {
-    if (isa<SignatureType>(value))
+    if (isa<ParameterScopeTypeInterface>(value))
       ++depth;
   }
   SmallVector<Attribute, 16> newAttrs;

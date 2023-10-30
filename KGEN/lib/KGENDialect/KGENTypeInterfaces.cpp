@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 
 using namespace M;
+using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
