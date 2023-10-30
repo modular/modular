@@ -25,6 +25,18 @@ from utils.list import Dim, DimList
 # ===----------------------------------------------------------------------===#
 
 
+# TODO: remove once we have traits. Then, concat can take an iterable container
+# which can be either a VariadicList or a FixedVector. For now, we use this to
+# manually convert to a FixedVector.
+fn variadic_list_to_vector[
+    type: AnyType
+](elems: VariadicList[type],) -> InlinedFixedVector[type]:
+    var vector = InlinedFixedVector[type](len(elems))
+    for i in range(len(elems)):
+        vector.append(elems[i])
+    return vector
+
+
 @value
 @register_passable("trivial")
 struct _Span:
@@ -69,7 +81,9 @@ fn _canonical_reshape_output[
 ](
     out_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
 ) -> _CanonicallyReshapedBuffer:
     let input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
@@ -88,7 +102,9 @@ fn _concat_parallel[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
     out_chain: OutputChainPtr,
 ):
     let output_canon = _canonical_reshape_output(output, axis, inputs)
@@ -208,7 +224,9 @@ fn _concat[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
 ):
     """Concatenate inputs along axis and store in output.
 
@@ -255,7 +273,9 @@ fn _concat_inner[
     rank: Int, type: DType, axis: Int
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
 ):
     constrained[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
@@ -272,7 +292,9 @@ fn _check_input_consistency[
     rank: Int, type: DType
 ](
     axis: Int,
-    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
 ):
     @parameter
     if not is_kernels_debug_build():
@@ -299,7 +321,9 @@ fn _concat_serial[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
 ):
     _check_input_consistency[rank, type](axis, inputs)
 
@@ -317,7 +341,9 @@ fn _concat_small[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
     out_chain: OutputChainPtr,
 ):
     alias single_thread_blocking_override = True
@@ -390,7 +416,9 @@ fn concat[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
     out_chain: OutputChainPtr,
 ):
     @parameter

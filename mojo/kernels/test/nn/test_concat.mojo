@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Concat import _concat_parallel, concat
+from Concat import _concat_parallel, concat, variadic_list_to_vector
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from memory.unsafe import DTypePointer
 from runtime.llcl import OwningOutputChainPtr, Runtime
@@ -53,11 +53,13 @@ fn test_concat():
     ](x1_dyn, x2_dyn, x3_dyn)
 
     with Runtime(4) as rt:
+        let input_vec = variadic_list_to_vector(input_list)
         let out_chain = OwningOutputChainPtr(rt)
         concat[rank, type, False](
-            output_dyn, concat_axis, input_list, out_chain.borrow()
+            output_dyn, concat_axis, input_vec, out_chain.borrow()
         )
         out_chain.wait()
+        input_vec._del_old()
 
     # CHECK: == test_concat
     # CHECK-COUNT-2: 0.0
@@ -113,10 +115,12 @@ fn test_concat_parallel():
 
     with Runtime(4) as rt:
         let out_chain = OwningOutputChainPtr(rt)
+        let input_vec = variadic_list_to_vector(input_list)
         _concat_parallel[rank, type](
-            output_dyn, concat_axis, input_list, out_chain.borrow()
+            output_dyn, concat_axis, input_vec, out_chain.borrow()
         )
         out_chain.wait()
+        input_vec._del_old()
 
     # CHECK: == test_concat_parallel
     # CHECK-COUNT-2: 0.0
