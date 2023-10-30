@@ -335,8 +335,12 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
     if (llvm::all_of(inferredValues, sameAsFirst)) {
       // Infer nonmaterializable types as their materialization target.
       if (ASTType typeVal = first.getIfTypeValue()) {
-        if (ASTType nmTarget = typeVal.getNonmaterializableTarget(state))
-          return PValue(nmTarget);
+        if (ASTType nmTarget = typeVal.getNonmaterializableTarget(state)) {
+          // The metatype of the non-materializable target type will not match,
+          // so emit a rebind to ensure they match.
+          return ParamOperatorAttr::get(POC::Rebind, {PValue(nmTarget)},
+                                        first.getType());
+        }
       }
       return first;
     }
@@ -677,7 +681,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     }
 
     // Argument name mismatches don't count as implicit conversions.
-    if (canZeroCostConvertSignature(emitter.shared, argType, expectedType))
+    if (canZeroCostConvert(emitter.shared, argType, expectedType))
       break;
 
     // If we lack an exact match and conversions are disabled, this

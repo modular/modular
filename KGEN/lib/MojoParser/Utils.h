@@ -42,8 +42,7 @@ PackType getIfPackType(SignatureType sig, size_t index);
 
 /// Returns whether the two signatures match, i.e. if they only differ in
 /// argument or parameter names.
-bool canZeroCostConvertSignature(SharedState &shared, ASTType fromType,
-                                 ASTType toType);
+bool canZeroCostConvert(SharedState &shared, ASTType fromType, ASTType toType);
 
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities

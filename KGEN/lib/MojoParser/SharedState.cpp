@@ -909,8 +909,10 @@ static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
   // from the contextual ASTDecl.
   LookupResult lookup = shared.lookupAndResolveDecl(
       typeName, loc, context, /*searchParentScopes=*/true);
-  if (!lookup.isFailure() && !lookup.getIfSuccess().empty())
-    return lookup.getIfSuccess()[0]->getSelfType();
+  if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
+    SymbolRefAttr ref = lookup.getIfSuccess()[0]->getSymbolRef();
+    return DeclRefType::get(ref, MetaTypeType::get(ref));
+  }
 
   shared.emitError(loc, "could not find builtin '") << typeName << "' type";
   return shared.getTypeCheckErrorType();
@@ -994,7 +996,7 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
   // Bind it to a VariadicAttr of the right elements.
   TypedAttr packAttr =
       VariadicAttr::get(eltTypes, cast<VariadicType>(tupleParam.getType()));
-  return DeclRefType::get(tupleLiteralDecl.getSymbolRef(), packAttr);
+  return cast<DeclRefType>(tupleType).bindParams(packAttr);
 }
 
 ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
@@ -1010,8 +1012,7 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
   if (varListType.isTypeCheckErrorType())
     return varListType;
   TypedAttr elemTypeValue = TypeConstantAttr::get(elemType);
-  return DeclRefType::get(cast<DeclRefType>(varListType).getSymbol(),
-                          elemTypeValue);
+  return cast<DeclRefType>(varListType).bindParams(elemTypeValue);
 }
 
 void SharedState::loadModulesFromCache(

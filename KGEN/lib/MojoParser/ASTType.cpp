@@ -46,10 +46,14 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 }
 
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
-  if (auto declRef = dyn_cast_or_null<DeclRefType>(mlirType))
+  if (!mlirType)
+    return nullptr;
+  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return &shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-  if (auto metaType = dyn_cast_or_null<MetaTypeType>(mlirType))
+  if (auto metaType = dyn_cast<MetaTypeType>(mlirType))
     return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
+  if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
+    return ASTType(paramRef.getParam().getType()).getDecl(shared);
   return nullptr;
 }
 
@@ -87,11 +91,11 @@ bool ASTType::isEqualCanon(ASTType other) const {
 }
 
 /// Return true if this is a None type.
-bool ASTType::isNoneType() const { return mlirType.isa<KGEN::NoneType>(); }
+bool ASTType::isNoneType() const { return isa<KGEN::NoneType>(mlirType); }
 
 /// Return true if this is a TypeCheckError type.
 bool ASTType::isTypeCheckErrorType() const {
-  return mlirType.isa<TypeCheckErrorType>();
+  return isa<TypeCheckErrorType>(mlirType);
 }
 
 /// Return the nonmaterializable decorator target for the type, or null if there

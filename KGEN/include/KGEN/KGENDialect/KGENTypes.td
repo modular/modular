@@ -367,13 +367,6 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
   }];
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name), [{
-      return get(name, MLIRTypeType::get(name.getContext()));
-    }]>,
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "ArrayRef<TypedAttr>":$paramValues), [{
-      return get(name, paramValues, MLIRTypeType::get(name.getContext()));
-    }]>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
                                         "Type":$metatype)>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
