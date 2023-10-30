@@ -592,3 +592,31 @@ lit.func @"mem_only_inout(,$test::MemOnly&*)"(%a: !kgen.variadic<pointer<!MemOnl
 lit.func @"mem_only_borrowed(,$test::MemOnly*)"(%a: !kgen.variadic<pointer<!MemOnly>> borrow_in_mem) vararg {
   lit.end_func
 }
+
+// -----
+
+// COM: Copy-del elision of register-passable value, where the argument is an
+// COM: owned register-passable letreg decl.
+
+!Reg = !kgen.declref<@Reg>
+lit.struct.decl @Reg attributes {
+    copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !kgen.signature<!lit.signature<(!Reg borrow) ownedresult -> !Reg>>,
+    destructor = #kgen.symbol.constant<@Reg::@__del__> : !kgen.signature<!lit.signature<(!Reg) -> !kgen.none>>,
+    registerPassable = 1 : i8
+}  {
+  lit.func @__del__(%self: !Reg, |) {
+    kgen.return
+  }
+  lit.func @__copyinit__(%other: !Reg borrow) ownedresult -> !Reg attributes {specialFnKind = 7 : i8} {
+    kgen.unreachable
+  }
+}
+
+// CHECK-LABEL: lit.func @copy_del_reg_value
+lit.func @copy_del_reg_value() {
+  %0 = kgen.param.materialize: !Reg = <#lit.struct<{}>>
+  %x = lit.letreg.decl "x" = %0 : !Reg
+  // CHECK: call @Reg::@__del__(%x)
+  %1 = kgen.call @Reg::@__copyinit__(%x) : !lit.signature<(!Reg borrow, |) ownedresult -> !Reg>
+  kgen.return
+}

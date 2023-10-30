@@ -1407,10 +1407,11 @@ void DestructorInsertion::checkOp(Operation &op) {
             if (!valueSet.typeDeclInfo.getDestructorForType(field.getType()))
               continue;
             if (fieldValueRef.isIndirect &&
-                original.test(fieldValueRef.startBit))
+                original.test(fieldValueRef.startBit)) {
               destroyValueIfNeeded(builder.create<LIT::StructGEPOp>(
                                        op.getLoc(), topLevelValue, field),
                                    fieldValueRef, builder, &op);
+            }
           }
         }
 
@@ -1829,9 +1830,9 @@ void DestructorInsertion::checkDef(Value value, Operation &op) {
 
 /// Recursive version of destroyValueIfNeeded invoked when we know that we are
 /// inserting destructors.
-void DestructorInsertion::destroyValueIfNeeded(
-    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder,
-    Operation *opWithUse) {
+void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
+                                               ImplicitLocOpBuilder &builder,
+                                               Operation *opWithUse) {
   assert(valueRef && "Only works on valid refs");
 
   // If we are just computing the consumedValue set, don't actually insert any
@@ -2072,9 +2073,12 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
             isOk = true;
           }
         }
-        if (!isOk)
-          return failure();
+      } else if (auto load = srcValue.getDefiningOp<LIT::RefLoadOp>()) {
+        if (load.getOperand() == value)
+          isOk = true;
       }
+      if (!isOk)
+        return failure();
     }
 
     // Transform into:
