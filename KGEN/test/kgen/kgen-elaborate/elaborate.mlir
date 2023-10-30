@@ -2043,3 +2043,20 @@ kgen.generator export @main() {
 // CHECK: [[PTR:%.*]] = pop.offset %arg0[%index0]
 // CHECK: [[RAW:%.*]] = pop.pointer.bitcast [[ARG]]
 // CHECK: pop.store [[RAW]], [[PTR]]
+
+// -----
+
+kgen.generator @impl(%arg0: !kgen.pointer<i8, apply(:(index) -> index @fwd, 0)>) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @variadic
+kgen.generator export @variadic() {
+  // CHECK: constant: variadic<(!kgen.pointer<i8>) -> ()> = <[@impl]>
+  kgen.param.constant: variadic<(!kgen.pointer<i8, apply(:(index) -> index @fwd, 0)>) -> ()> = <[@impl]>
+  kgen.return
+}
+
+kgen.generator @fwd(%arg0: index) -> index {
+  kgen.return %arg0 : index
+}
