@@ -406,8 +406,7 @@ Type StructOperationLowerer::replace(Type type) {
     }
     if (inputParamTypes.size() != signature.getNumInputParams())
       signature = SignatureType::get(
-          signature.getValues(),
-          TypeArrayAttr::get(signature.getContext(), inputParamTypes),
+          signature.getValues(), inputParamTypes,
           signature.getResultParamTypes(), signature.getInputConventions(),
           signature.getFnEffects(), signature.getMetadata());
 

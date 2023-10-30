@@ -142,10 +142,8 @@ static OptionalParseResult parseOptionalKGENSignature(AsmParser &p,
       p, parseArg, functionType, effects, /*optionalResultList=*/false);
   if (result.has_value() && succeeded(*result)) {
     signature = SignatureType::getChecked(
-        [&] { return p.emitError(loc); }, functionType,
-        TypeArrayAttr::get(p.getContext(), inputParamTypes),
-        TypeArrayAttr::get(p.getContext(), resultParamTypes), inputConventions,
-        effects, {});
+        [&] { return p.emitError(loc); }, functionType, inputParamTypes,
+        resultParamTypes, inputConventions, effects, {});
     if (!signature)
       return failure();
   }
@@ -1210,8 +1208,8 @@ ParseResult KGEN::parseOptionalParamSignature(
 }
 
 void KGEN::printOptionalParamSignature(AsmPrinter &p,
-                                       TypeArrayAttr inputParamTypes,
-                                       TypeArrayAttr resultParamTypes,
+                                       ArrayRef<Type> inputParamTypes,
+                                       ArrayRef<Type> resultParamTypes,
                                        function_ref<void(Type)> printInputTy) {
   if (inputParamTypes.empty() && resultParamTypes.empty())
     return;

@@ -36,38 +36,35 @@ void LITDialect::registerTypes() {
 //===----------------------------------------------------------------------===//
 
 static ParseResult
-parseTypeSignature(AsmParser &p, TypeArrayAttr &paramTypes,
+parseTypeSignature(AsmParser &p, SmallVectorImpl<Type> &paramTypes,
                    SmallVectorImpl<StringAttr> &paramNames,
                    SmallVectorImpl<PassingKind> &paramPassingKinds,
                    SmallVectorImpl<TypedAttr> &defaultParameters,
                    bool &paramVarArg) {
-  SmallVector<Type> paramTypeList, resultParamTypes;
-  if (parseOptionalParamSignature(p, paramTypeList, resultParamTypes,
-                                  paramNames, paramPassingKinds,
-                                  defaultParameters))
+  SmallVector<Type> resultParamTypes;
+  if (parseOptionalParamSignature(p, paramTypes, resultParamTypes, paramNames,
+                                  paramPassingKinds, defaultParameters))
     return failure();
   if (!resultParamTypes.empty())
     return p.emitError(p.getCurrentLocation(),
                        "unexpected result parameters for type signature");
-  paramTypes = TypeArrayAttr::get(p.getContext(), paramTypeList);
   paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
   return success();
 }
 
-static void printTypeSignature(AsmPrinter &p, TypeArrayAttr paramTypes,
+static void printTypeSignature(AsmPrinter &p, ArrayRef<Type> paramTypes,
                                ArrayRef<StringAttr> paramNames,
                                ArrayRef<PassingKind> paramPassingKinds,
                                ArrayRef<TypedAttr> defaultParameters,
                                bool paramVarArg) {
-  printOptionalParamSignature(p, paramTypes,
-                              TypeArrayAttr::get(paramTypes.getContext(), {}),
+  printOptionalParamSignature(p, paramTypes, /*resultParamTypes=*/{},
                               paramNames, paramPassingKinds, defaultParameters);
   if (paramVarArg)
     p << " param_vararg";
 }
 
 LogicalResult TypeSignatureType::verify(
-    function_ref<InFlightDiagnostic()> emitError, TypeArrayAttr paramTypes,
+    function_ref<InFlightDiagnostic()> emitError, ArrayRef<Type> paramTypes,
     ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> paramPassingKinds,
     ArrayRef<TypedAttr> defaultParameters, bool paramVarArg) {
   if (paramNames.size() != paramPassingKinds.size()) {
@@ -266,9 +263,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
   MLIRContext *ctx = p.getContext();
   signature = SignatureType::getChecked(
-      [&] { return p.emitError(startLoc); }, functionType,
-      TypeArrayAttr::get(ctx, inputParamTypes),
-      TypeArrayAttr::get(ctx, resultParamTypes), inputConventions, effects,
+      [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
+      resultParamTypes, inputConventions, effects,
       FnMetadataAttr::get(ctx, argNames, argPassingKinds, paramNames,
                           paramPassingKinds, argDefaults, defaultParamValues));
   return success(!!signature);
@@ -384,9 +380,8 @@ LITSignatureType LITSignatureType::dropParamValues() {
       FnMetadataAttr::get(getContext(), getArgNames(), getArgPassingKinds(),
                           /*paramNames=*/{}, /*paramPassingKinds=*/{},
                           getDefaultArguments(), /*defaultParameters=*/{});
-  return get(
-      getValues(), /*inputParamTypes=*/TypeArrayAttr::get(getContext(), {}),
-      getResultParamTypes(), getInputConventions(), getFnEffects(), metadata);
+  return get(getValues(), /*inputParamTypes=*/{}, getResultParamTypes(),
+             getInputConventions(), getFnEffects(), metadata);
 }
 
 bool LITSignatureType::classof(SignatureType type) {
@@ -413,8 +408,8 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
 }
 
 LITSignatureType LITSignatureType::get(FunctionType values,
-                                       TypeArrayAttr inputParamTypes,
-                                       TypeArrayAttr resultParamTypes,
+                                       ArrayRef<Type> inputParamTypes,
+                                       ArrayRef<Type> resultParamTypes,
                                        ArrayRef<ValueInputConvention> convs,
                                        FnEffects effects, Attribute metadata) {
   assert(metadata && "LITSignatureType must have non-null metadata");

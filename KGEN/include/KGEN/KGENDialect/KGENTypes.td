@@ -135,10 +135,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
   }];
 
   let parameters = (ins
-    "TypeArrayAttr":$inputParamTypes,
-    "TypeArrayAttr":$resultParamTypes,
+    ArrayRefParameter<"Type">:$inputParamTypes,
+    ArrayRefParameter<"Type">:$resultParamTypes,
     "FunctionType":$values,
-    OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
+    ArrayRefParameter<"ValueInputConvention">:$inputConventions,
     "FnEffects":$fnEffects,
     "FnMetadataAttrInterface":$metadata
   );
@@ -148,12 +148,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
         "FunctionType":$values,
-        CArg<"TypeArrayAttr", "{}">:$inputParamTypes,
-        CArg<"TypeArrayAttr", "{}">:$resultParamTypes,
+        CArg<"ArrayRef<Type>", "{}">:$inputParamTypes,
+        CArg<"ArrayRef<Type>", "{}">:$resultParamTypes,
         CArg<"ArrayRef<ValueInputConvention>", "{}">:$inputConvs,
         CArg<"FnEffects", "{}">:$effects,
         CArg<"Attribute", "{}">:$metadata), [{
-      getSignatureDefaults(inputParamTypes, resultParamTypes, values);
       SmallVector<ValueInputConvention> convs = llvm::to_vector(inputConvs);
       convs.resize(values.getNumInputs());
       return $_get(values.getContext(), inputParamTypes, resultParamTypes,
@@ -165,8 +164,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
         "ArrayRef<ValueInputConvention>":$inputConvs,
         CArg<"FnEffects", "{}">:$effects,
         CArg<"Attribute", "{}">:$metadata), [{
-      TypeArrayAttr inputParamTypes, resultParamTypes;
-      getSignatureDefaults(inputParamTypes, resultParamTypes, values);
+      SmallVector<Type> inputParamTypes, resultParamTypes;
       return $_get(values.getContext(), inputParamTypes, resultParamTypes,
                    values, inputConvs, effects,
                    ::cast_or_null<FnMetadataAttrInterface>(metadata));

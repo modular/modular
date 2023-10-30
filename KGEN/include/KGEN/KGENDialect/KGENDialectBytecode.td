@@ -26,8 +26,8 @@ def StringType : DialectType<(type)>;
 def IntLiteralType : DialectType<(type)>;
 
 def SignatureType : DialectType<(type
-  ConcreteAttribute<"TypeArrayAttr">:$inputParamTypes,
-  ConcreteAttribute<"TypeArrayAttr">:$resultParamTypes,
+  TypeArray:$inputParamTypes,
+  TypeArray:$resultParamTypes,
   ConcreteType<"FunctionType">:$values,
   EnumAttrArray<"ValueInputConvention">:$inputConventions,
   Custom<"FnEffects">:$fnEffects,

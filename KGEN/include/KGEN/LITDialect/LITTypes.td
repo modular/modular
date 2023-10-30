@@ -82,10 +82,10 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature"> {
   }];
 
   let parameters = (ins
-    "TypeArrayAttr":$paramTypes,
-    OptionalArrayRefParameter<"StringAttr">:$paramNames,
-    OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultParameters,
+    ArrayRefParameter<"Type">:$paramTypes,
+    ArrayRefParameter<"StringAttr">:$paramNames,
+    ArrayRefParameter<"PassingKind">:$paramPassingKinds,
+    ArrayRefParameter<"TypedAttr">:$defaultParameters,
     "bool":$paramVarArg
   );
 
@@ -93,19 +93,6 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature"> {
     `` custom<TypeSignature>($paramTypes, $paramNames, $paramPassingKinds,
                              $defaultParameters, $paramVarArg)
   }];
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins
-      "TypeArrayAttr":$paramTypes,
-      "ArrayRef<StringAttr>":$paramNames,
-      "ArrayRef<PassingKind>":$paramPassingKinds,
-      "ArrayRef<TypedAttr>":$defaultParameters,
-      "bool":$paramVarArg
-    ), [{
-      return $_get(paramTypes.getContext(), paramTypes, paramNames,
-                   paramPassingKinds, defaultParameters, paramVarArg);
-    }]>
-  ];
 
   let genVerifyDecl = 1;
 }

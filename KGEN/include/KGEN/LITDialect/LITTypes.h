@@ -60,8 +60,8 @@ public:
   static LITSignatureType get(MLIRContext *ctx, TypeRange inputs = {},
                               TypeRange results = {});
   static LITSignatureType get(FunctionType values,
-                              TypeArrayAttr inputParamTypes,
-                              TypeArrayAttr resultParamTypes,
+                              ArrayRef<Type> inputParamTypes,
+                              ArrayRef<Type> resultParamTypes,
                               ArrayRef<ValueInputConvention> convs,
                               FnEffects effects, Attribute metadata);
 };

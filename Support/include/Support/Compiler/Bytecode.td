@@ -49,6 +49,14 @@ class ConcreteAttrArray<string type> :
   WithPrinter<"$_writer.writeAttributes($_getter)",
   WithType<"SmallVector<" # type # ">">>>>;
 
+class ConcreteTypeArray<string type> :
+  WithParser<"succeeded($_reader.readTypes($_var))",
+  WithBuilder<"$_args",
+  WithPrinter<"$_writer.writeTypes($_getter)",
+  WithType<"SmallVector<" # type # ">">>>>;
+
+def TypeArray : ConcreteTypeArray<"Type">;
+
 def TypedAttr : ConcreteAttribute<"TypedAttr">;
 
 def StringAttrArray : ConcreteAttrArray<"StringAttr">;

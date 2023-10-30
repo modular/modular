@@ -50,6 +50,12 @@ public:
     return cast<T>(result);
   }
 
+  /// Remap a range of values.
+  template <typename T>
+  SmallVector<T> remap(ArrayRef<T> values) {
+    return llvm::map_to_vector(values, [&](T value) { return remap(value); });
+  }
+
 private:
   /// Remap an attribute.
   Attribute remapAttrImpl(Attribute attr);

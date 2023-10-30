@@ -142,9 +142,9 @@ void ParameterCollector::collectUsesFromAttr(
           }
           ParameterScopeTypeInterface sig =
               signatures[signatures.size() - 1 - indexRef.getDepth()];
-          TypeArrayAttr types = indexRef.getIsResult()
-                                    ? sig.getResultParamTypes()
-                                    : sig.getInputParamTypes();
+          ArrayRef<Type> types = indexRef.getIsResult()
+                                     ? sig.getResultParamTypes()
+                                     : sig.getInputParamTypes();
           if (indexRef.getIndex() >= types.size()) {
             return emitError() << "index reference " << indexRef.getIndex()
                                << " is out of bounds: referenced signature "

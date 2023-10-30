@@ -194,8 +194,8 @@ void printInputConvention(AsmPrinter &p, ValueInputConvention convention);
 /// If the input type printing hook is provided, it is called by the given
 /// parser for each element of the inputs, and is responsible for printing the
 /// type.
-void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
-                                 TypeArrayAttr resultParamTypes,
+void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
+                                 ArrayRef<Type> resultParamTypes,
                                  function_ref<void(Type)> printInputTy = {});
 
 /// Parse a parameter signature (input/result types) if present. If the input
