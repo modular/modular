@@ -61,6 +61,56 @@ def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TypeSignatureType
+//===----------------------------------------------------------------------===//
+
+def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature"> {
+  let summary = "type parameter signature";
+  let description = [{
+    The `!lit.type_signature` type describes the parameter signature of a type:
+    its input parameter types, names, default values, and parameter passing
+    kinds.
+
+    Example:
+
+    ```mlir
+    !lit.type_signature
+    !lit.type_signature<index, |>
+    !lit.type_signature<"dt": dtype = f32>
+    !lit<type_signature<"i": variadic<index>> param_vararg>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypeArrayAttr":$paramTypes,
+    OptionalArrayRefParameter<"StringAttr">:$paramNames,
+    OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultParameters,
+    "bool":$paramVarArg
+  );
+
+  let assemblyFormat = [{
+    `` custom<TypeSignature>($paramTypes, $paramNames, $paramPassingKinds,
+                             $defaultParameters, $paramVarArg)
+  }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+      "TypeArrayAttr":$paramTypes,
+      "ArrayRef<StringAttr>":$paramNames,
+      "ArrayRef<PassingKind>":$paramPassingKinds,
+      "ArrayRef<TypedAttr>":$defaultParameters,
+      "bool":$paramVarArg
+    ), [{
+      return $_get(paramTypes.getContext(), paramTypes, paramNames,
+                   paramPassingKinds, defaultParameters, paramVarArg);
+    }]>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // MetaTypeType
 //===----------------------------------------------------------------------===//
 

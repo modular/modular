@@ -32,6 +32,84 @@ void LITDialect::registerTypes() {
 }
 
 //===----------------------------------------------------------------------===//
+// TypeSignatureType
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseTypeSignature(AsmParser &p, TypeArrayAttr &paramTypes,
+                   SmallVectorImpl<StringAttr> &paramNames,
+                   SmallVectorImpl<PassingKind> &paramPassingKinds,
+                   SmallVectorImpl<TypedAttr> &defaultParameters,
+                   bool &paramVarArg) {
+  SmallVector<Type> paramTypeList, resultParamTypes;
+  if (parseOptionalParamSignature(p, paramTypeList, resultParamTypes,
+                                  paramNames, paramPassingKinds,
+                                  defaultParameters))
+    return failure();
+  if (!resultParamTypes.empty())
+    return p.emitError(p.getCurrentLocation(),
+                       "unexpected result parameters for type signature");
+  paramTypes = TypeArrayAttr::get(p.getContext(), paramTypeList);
+  paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
+  return success();
+}
+
+static void printTypeSignature(AsmPrinter &p, TypeArrayAttr paramTypes,
+                               ArrayRef<StringAttr> paramNames,
+                               ArrayRef<PassingKind> paramPassingKinds,
+                               ArrayRef<TypedAttr> defaultParameters,
+                               bool paramVarArg) {
+  printOptionalParamSignature(p, paramTypes,
+                              TypeArrayAttr::get(paramTypes.getContext(), {}),
+                              paramNames, paramPassingKinds, defaultParameters);
+  if (paramVarArg)
+    p << " param_vararg";
+}
+
+LogicalResult TypeSignatureType::verify(
+    function_ref<InFlightDiagnostic()> emitError, TypeArrayAttr paramTypes,
+    ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> paramPassingKinds,
+    ArrayRef<TypedAttr> defaultParameters, bool paramVarArg) {
+  if (paramNames.size() != paramPassingKinds.size()) {
+    return emitError()
+           << "number of parameter names and passing kinds must match";
+  }
+  for (StringAttr name : paramNames)
+    if (!name)
+      return emitError() << "parameter name cannot be null";
+  if (paramNames.size() != paramTypes.size()) {
+    return emitError() << "number of parameter names doesn't match number of "
+                          "input parameter types";
+  }
+  if (defaultParameters.size() > paramTypes.size()) {
+    return emitError() << "there are more default parameters than parameters: "
+                       << defaultParameters.size() << " vs. "
+                       << paramTypes.size();
+  }
+  for (auto [defaultsIndex, value] : llvm::enumerate(defaultParameters)) {
+    size_t index = paramTypes.size() - defaultParameters.size() + defaultsIndex;
+    Type expected = paramTypes[index];
+    if (value.getType() != expected &&
+        !llvm::isa<TypeCheckErrorType>(expected)) {
+      return emitError() << "parameter #" << index << " has type " << expected
+                         << " but default parameter has type "
+                         << value.getType();
+    }
+  }
+  if (paramVarArg) {
+    if (paramTypes.empty()) {
+      return emitError() << "type signature with 'param_vararg' must have at "
+                            "least one parameter";
+    }
+    if (!::isa<VariadicType>(paramTypes.back()))
+      return emitError() << "expected last parameter type to be a variadic "
+                            "type for 'param_vararg'";
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // MetaTypeType
 //===----------------------------------------------------------------------===//
 

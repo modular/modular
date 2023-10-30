@@ -1,5 +1,5 @@
-// RUN: kgen-opt %s | kgen-opt | FileCheck %s
-// RUN: kgen-opt -emit-bytecode %s | kgen-opt | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 lit.struct.decl @MyStruct<a, b: dtype, c: type> {}
 
@@ -20,3 +20,12 @@ kgen.generator @metatype(%arg0: !kgen.pointer<@MyStruct : !lit.metatype<@MyStruc
 kgen.generator @declref_metatype(%arg0: !kgen.declref<@MyStruct, !lit.metatype<@MyStruct>>) {
   kgen.return
 }
+
+// CHECK: !lit.type_signature
+"type.sig"() : () -> !lit.type_signature
+// CHECK: !lit.type_signature<index, |>
+"type.sig"() : () -> !lit.type_signature<index, |>
+// CHECK: !lit.type_signature<"dt": dtype = f32>
+"type.sig"() : () -> !lit.type_signature<"dt": dtype = f32>
+// CHECK: !lit<type_signature<"i": variadic<index>> param_vararg>
+"type.sig"() : () -> !lit<type_signature<"i": variadic<index>> param_vararg>
