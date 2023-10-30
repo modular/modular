@@ -2226,7 +2226,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
   SmallString<64> mangledName(baseName.getValue().begin(),
                               baseName.getValue().end());
   llvm::raw_svector_ostream os(mangledName);
-  TypeArrayAttr inputParams = signature.getInputParamTypes();
+  ArrayRef<Type> inputParams = signature.getInputParamTypes();
   if (!inputParams.empty()) {
     os << '[';
     llvm::interleave(
@@ -2454,8 +2454,7 @@ createSelfContainedSignature(SharedState &shared, LITSignatureType original,
   mlir::AttrTypeReplacer replacer;
   SmallDenseMap<StringAttr, ParamIndexRefAttr> newParameterReferences;
   unsigned inputParameterIndex = original.getNumInputParams();
-  SmallVector<Type> newParamInputTypes(
-      original.getInputParamTypes().getValue());
+  SmallVector<Type> newParamInputTypes(original.getInputParamTypes());
   auto fnMetadata = cast<FnMetadataAttr>(original.getMetadata());
   // The size 16 was an optimization for perf that was hand tuned.
   SmallVector<StringAttr, 16> newParamInputNames(fnMetadata.getParamNames());
@@ -2503,9 +2502,7 @@ createSelfContainedSignature(SharedState &shared, LITSignatureType original,
   auto originalWithUpdatedParamRefs =
       cast<LITSignatureType>(replacer.replace(original));
   return SignatureType::get(
-      shared.getContext(),
-      TypeArrayAttr::get(shared.getContext(), newParamInputTypes),
-      /*resultParamTypes=*/TypeArrayAttr::get(shared.getContext(), {}),
+      shared.getContext(), newParamInputTypes, /*resultParamTypes=*/{},
       FunctionType::get(shared.getContext(),
                         originalWithUpdatedParamRefs.getValueInputs(),
                         originalWithUpdatedParamRefs.getValueResults()),

@@ -24,9 +24,8 @@ TEST(Package, createElaboratedBytecodeAttr) {
   OwningOpRef<ModuleOp> module = ModuleOp::create(loc);
   OpBuilder b(module->getBody(), module->getBody()->begin());
 
-  auto noTypes = TypeArrayAttr::get(&ctx, {});
   auto func = b.create<FuncOp>(loc, b.getStringAttr("foo"),
-                               SignatureType::get(&ctx, noTypes, noTypes));
+                               SignatureType::get(&ctx, {}, {}));
 
   // Technically this function expects an elaborated module, but it doesn't
   // check.

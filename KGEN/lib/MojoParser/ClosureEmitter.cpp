@@ -419,7 +419,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Captured parameters should be a part of the closure's key. Incorporate it
   // into the signature.
   SmallVector<Type> closureImplInputParams(
-      closureWrapperSignature.getInputParamTypes().getValue());
+      closureWrapperSignature.getInputParamTypes());
   SmallVector<StringAttr> closureImplInputParamNames(
       closureWrapperSignature.getParamNames());
   SmallVector<PassingKind> closureImplInputParamPassingKinds(
@@ -449,7 +449,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   auto fnType = FunctionType::get(ctx, closureImplSigTypes,
                                   closureWrapperSignature.getValueResults());
   auto closureImplSignature = LITSignatureType::get(
-      fnType, TypeArrayAttr::get(ctx, closureImplInputParams),
+      fnType, closureImplInputParams,
       closureWrapperSignature.getResultParamTypes(), closureImplSigConventions,
       closureWrapperSignature.getFnEffects(), metadata);
 

@@ -35,12 +35,6 @@ def StringArrayAttr : DialectAttribute<(attr
   StringAttrArray:$value
 )>;
 
-def TypeArray :
-  WithParser<"succeeded($_reader.readTypes($_var))",
-  WithBuilder<"$_args",
-  WithPrinter<"$_writer.writeTypes($_getter)",
-  WithType<"SmallVector<Type>">>>>;
-
 def TypeArrayAttr : DialectAttribute<(attr
   TypeArray:$value
 )>;

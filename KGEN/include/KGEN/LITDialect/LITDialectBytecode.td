@@ -18,7 +18,7 @@ def TypeCheckErrorType : DialectType<(type)>;
 def UnresolvedType : DialectType<(type)>;
 
 def TypeSignatureType : DialectType<(type
-  ConcreteAttribute<"TypeArrayAttr">:$paramTypes,
+  TypeArray:$paramTypes,
   StringAttrArray:$paramNames,
   EnumAttrArray<"PassingKind">:$paramPassingKinds,
   TypedAttrArray:$defaultParameters,

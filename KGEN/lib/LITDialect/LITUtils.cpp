@@ -238,8 +238,8 @@ ParseResult LIT::parseOptionalParamSignature(
 }
 
 void LIT::printOptionalParamSignature(AsmPrinter &p,
-                                      TypeArrayAttr inputParamTypes,
-                                      TypeArrayAttr resultParamTypes,
+                                      ArrayRef<Type> inputParamTypes,
+                                      ArrayRef<Type> resultParamTypes,
                                       ArrayRef<StringAttr> paramNames,
                                       ArrayRef<PassingKind> paramPassingKinds,
                                       ArrayRef<TypedAttr> defaultParams) {

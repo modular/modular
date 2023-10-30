@@ -62,10 +62,10 @@ def ParameterScopeTypeInterface : TypeInterface<"ParameterScopeTypeInterface"> {
   let methods = [
     InterfaceMethod<[{
       Return the types of the nested input parameter declarations.
-    }], "TypeArrayAttr", "getInputParamTypes">,
+    }], "ArrayRef<Type>", "getInputParamTypes">,
     InterfaceMethod<[{
       Return the types of the nested result parameter declarations.
-    }], "TypeArrayAttr", "getResultParamTypes">
+    }], "ArrayRef<Type>", "getResultParamTypes">
   ];
 }
 

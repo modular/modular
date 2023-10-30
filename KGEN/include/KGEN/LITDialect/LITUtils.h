@@ -18,7 +18,6 @@
 
 namespace M {
 class StringArrayAttr;
-class TypeArrayAttr;
 template <typename T>
 class ErrorOr;
 
@@ -97,8 +96,8 @@ parseOptionalParamSignature(AsmParser &p,
 
 /// Print the parameter type signature if there are any input or result types,
 /// along with the default input parameter values.
-void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
-                                 TypeArrayAttr resultParamTypes,
+void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
+                                 ArrayRef<Type> resultParamTypes,
                                  ArrayRef<StringAttr> paramNames,
                                  ArrayRef<PassingKind> paramPassingKinds,
                                  ArrayRef<TypedAttr> defaultParams);

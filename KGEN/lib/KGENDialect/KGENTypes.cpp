@@ -146,16 +146,6 @@ LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
   return success();
 }
 
-static void getSignatureDefaults(TypeArrayAttr &inputParamTypes,
-                                 TypeArrayAttr &resultParamTypes,
-                                 FunctionType values) {
-  MLIRContext *ctx = values.getContext();
-  if (!inputParamTypes)
-    inputParamTypes = TypeArrayAttr::get(ctx, {});
-  if (!resultParamTypes)
-    resultParamTypes = TypeArrayAttr::get(ctx, {});
-}
-
 SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
                                  TypeRange results) {
   return get(FunctionType::get(ctx, inputs, results));
@@ -225,10 +215,8 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // If the signature isn't parameterized, then there are no substitutions to
   // perform.
-  MLIRContext *ctx = values.getContext();
   if (inputParamValues.empty()) {
-    return SignatureType::get(values, TypeArrayAttr::get(ctx, inputParamTypes),
-                              TypeArrayAttr::get(ctx, resultParamTypes),
+    return SignatureType::get(values, inputParamTypes, resultParamTypes,
                               inputConventions, effects, metadata);
   }
 
@@ -309,9 +297,8 @@ SignatureType SignatureType::getSpecializedSignature(
   }
   return SignatureType::get(
       FunctionType::get(values.getContext(), inputTypes, resultTypes),
-      TypeArrayAttr::get(values.getContext(), unboundParamTypes),
-      TypeArrayAttr::get(values.getContext(), newParamResultTypes),
-      inputConventions, effects, metadata);
+      unboundParamTypes, newParamResultTypes, inputConventions, effects,
+      metadata);
 }
 
 ArrayRef<Type> SignatureType::getValueInputs() const {
@@ -347,13 +334,10 @@ void SignatureType::print(AsmPrinter &p) const {
 
 LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
-                      TypeArrayAttr inputParams, TypeArrayAttr resultParams,
+                      ArrayRef<Type> inputParams, ArrayRef<Type> resultParams,
                       FunctionType values,
                       ArrayRef<ValueInputConvention> inputConventions,
                       FnEffects effects, FnMetadataAttrInterface metadata) {
-  if (!inputParams || !resultParams || !values)
-    return emitError() << "signature type parameters cannot be null";
-
   // Check we have the right number of conventions.
   if (inputConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
@@ -454,11 +438,9 @@ SignatureType SignatureType::remapToSignature(
     };
   }
 
-  MLIRContext *ctx = functionType.getContext();
   return SignatureType::getChecked(
-      emitError, remapper.remap(functionType),
-      TypeArrayAttr::get(ctx, inputParamTypes),
-      TypeArrayAttr::get(ctx, resultParamTypes), inputConventions, effects,
+      emitError, remapper.remap(functionType), inputParamTypes,
+      resultParamTypes, inputConventions, effects,
       metadata ? remapper.remap(metadata) : nullptr);
 }
 
@@ -479,11 +461,10 @@ SignatureType::prependParams(SignatureType sig,
         remapper.remap(sig.getMetadata().prependPosParams(parentParams.size()));
   }
 
-  return SignatureType::get(
-      remapper.remap(sig.getValues()),
-      TypeArrayAttr::get(sig.getContext(), inputParamTypes),
-      remapper.remap(sig.getResultParamTypes()), sig.getInputConventions(),
-      sig.getFnEffects(), metadata);
+  return SignatureType::get(remapper.remap(sig.getValues()), inputParamTypes,
+                            remapper.remap(sig.getResultParamTypes()),
+                            sig.getInputConventions(), sig.getFnEffects(),
+                            metadata);
 }
 
 //===----------------------------------------------------------------------===//
