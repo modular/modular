@@ -54,6 +54,12 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
   case DType::bf16:
     widthShift = 1;
     break;
+  case DType::f24: {
+    ssize_t result = numElements * 3;
+    if (result / 3 != ssize_t(numElements))
+      return -1;
+    return result;
+  }
   case DType::f32:
   case DType::tf32:
     widthShift = 2;
@@ -67,6 +73,9 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
       return -1;
     return result;
   }
+  case DType::f128:
+    widthShift = 4;
+    break;
   }
 
   // Check that the result doesn't overflow.
@@ -98,6 +107,8 @@ FailureOr<DType> DType::getFromString(StringRef str) {
       return DType(f16);
     if (str == "f80")
       return DType(f80);
+    if (str == "f24")
+      return DType(f24);
     if (str == "f8")
       return DType(f8);
     if (str == "f128")
@@ -126,6 +137,10 @@ FailureOr<DType> DType::getFromString(StringRef str) {
         return failure();
       return getComplexChecked(*elt);
     }
+    return failure();
+  case 't':
+    if (str == "tf32")
+      return DType(tf32);
     return failure();
   case 'i':
     if (str == "invalid")

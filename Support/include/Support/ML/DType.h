@@ -245,13 +245,17 @@ inline raw_ostream &operator<<(raw_ostream &os, DType value) {
 // Method implementation for constexpr methods.
 //===----------------------------------------------------------------------===//
 
-/// Return the width of this element in bits.  This returns 0 for unknown
+/// Return the width of this element in bits.  This returns -1 for unknown
 /// width values.
 inline constexpr ssize_t DType::getWidthInBits() const {
   // Handle complex separately from per-element types below.  We know that
   // complex element types are always at least a byte in size.
-  if (isComplex())
-    return stripComplex().getWidthInBits() * 2;
+  if (isComplex()) {
+    ssize_t strippedWidth = stripComplex().getWidthInBits();
+    if (strippedWidth == -1)
+      return -1;
+    return strippedWidth * 2;
+  }
 
   // This switch handles special cases inline, or determines the logarithmic
   // size of each element and breaks for the overflow check.
@@ -265,6 +269,8 @@ inline constexpr ssize_t DType::getWidthInBits() const {
   case DType::f16:
   case DType::bf16:
     return 16;
+  case DType::f24:
+    return 24;
   case DType::f32:
   case DType::tf32:
     return 32;
@@ -272,6 +278,8 @@ inline constexpr ssize_t DType::getWidthInBits() const {
     return 64;
   case DType::f80:
     return 80;
+  case DType::f128:
+    return 128;
   }
 }
 
