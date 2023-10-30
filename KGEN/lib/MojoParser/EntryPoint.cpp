@@ -174,6 +174,8 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
           markLive(func);
         if (op->hasTrait<OpTrait::SymbolTable>())
           return WalkResult::skip();
+        if (isa<AliasDeclOp>(op))
+          return WalkResult::skip();
       }
       refCollector.walk(op->getAttrDictionary());
       for (Region &region : op->getRegions()) {
