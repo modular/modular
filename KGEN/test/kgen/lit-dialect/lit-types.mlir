@@ -1,11 +1,12 @@
-// RUN: kgen-opt %s -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-lit.struct.decl @MyStruct<a, b: dtype, c: type> {}
+lit.struct.decl @MyStruct {}
+lit.struct.decl @MyStructParams<a, b: dtype, c: type> {}
 
 // CHECK-LABEL: @UseStruct
-// CHECK-SAME: !kgen.declref<@MyStruct<a, :dtype b, :type c>>
-kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !kgen.declref<@MyStruct<a, :dtype b, :type c>>) {
+// CHECK-SAME: !kgen.declref<@MyStructParams<a, :dtype b, :type c>>
+kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !kgen.declref<@MyStructParams<a, :dtype b, :type c>>) {
   kgen.return
 }
 
@@ -29,3 +30,9 @@ kgen.generator @declref_metatype(%arg0: !kgen.declref<@MyStruct, !lit.metatype<@
 "type.sig"() : () -> !lit.type_signature<"dt": dtype = f32>
 // CHECK: !lit<type_signature<"i": variadic<index>> param_vararg>
 "type.sig"() : () -> !lit<type_signature<"i": variadic<index>> param_vararg>
+
+// CHECK-LABEL: @type_sig
+// CHECK-SAME: !lit.type_signature<index, array<*(0,0), index>>
+kgen.generator @type_sig(%arg0: !lit.type_signature<index, array<*(0,0), index>>) {
+  kgen.return
+}

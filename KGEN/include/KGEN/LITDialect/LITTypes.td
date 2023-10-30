@@ -64,7 +64,8 @@ def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
 // TypeSignatureType
 //===----------------------------------------------------------------------===//
 
-def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature"> {
+def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
+    [ParameterScopeTypeInterface]> {
   let summary = "type parameter signature";
   let description = [{
     The `!lit.type_signature` type describes the parameter signature of a type:
@@ -95,6 +96,11 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature"> {
   }];
 
   let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    ArrayRef<Type> getInputParamTypes() const { return getParamTypes(); }
+    ArrayRef<Type> getResultParamTypes() const { return {}; }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
