@@ -151,7 +151,7 @@ void OutlineClosuresPass::runOnOperation() {
           capturedParamDecls.getArrayRef());
       llvm::append_range(inputParamDecls, regionDecl.getInputParams());
 
-      SignatureType wrapperSignature = IndexRefRemapper::prependParams(
+      SignatureType wrapperSignature = SignatureType::prependParams(
           regionDecl.getSignature(), capturedParamDecls.getArrayRef());
 
       b.setInsertionPoint(generator);

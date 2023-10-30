@@ -485,7 +485,7 @@ static ParseResult parseLITFunctionSignature(
   argPassingKinds.append(numPosOrKw, PassingKind::PosOrKw);
   argPassingKinds.append(numKwOnly, PassingKind::KwOnly);
 
-  signature = IndexRefRemapper::remapToSignature(
+  signature = SignatureType::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
       FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
                           paramPassingKinds, defaults, defaultParams),
@@ -743,7 +743,7 @@ LITSignatureType LIT::FuncOp::getFullSignature() {
   if (inputParams.empty())
     return signature;
 
-  return IndexRefRemapper::prependParams(signature, inputParams);
+  return SignatureType::prependParams(signature, inputParams);
 }
 
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {

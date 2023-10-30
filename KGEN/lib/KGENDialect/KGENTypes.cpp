@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/MDialect/MTypeInterfaces.h"
@@ -435,84 +436,7 @@ bool SignatureType::hasAddress(ValueInputConvention conv) {
   llvm_unreachable("invalid value input convention");
 }
 
-//===----------------------------------------------------------------------===//
-// IndexRefRemapper
-//===----------------------------------------------------------------------===//
-
-template <typename T>
-auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)
-    -> std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute> {
-  if (!value)
-    return nullptr;
-  if constexpr (std::is_base_of_v<Attribute, T>) {
-    if (!mapping.empty()) {
-      if (auto ref = dyn_cast<ParamDeclRefAttr>(value)) {
-        auto it = mapping.find(ref.getName());
-        if (it == mapping.end())
-          return ref;
-        auto [idx, isResult] = it->second;
-        return ParamIndexRefAttr::get(
-            depth, isResult, idx, normalizeSignatureWalk(ref.getType(), depth));
-      }
-    }
-    if (offset != 0) {
-      if (auto ref = dyn_cast<ParamIndexRefAttr>(value)) {
-        if (ref.getDepth() != depth)
-          return ref;
-        return ParamIndexRefAttr::get(
-            depth, ref.getIsResult(), ref.getIndex() + offset,
-            normalizeSignatureWalk(ref.getType(), depth));
-      }
-    }
-  }
-  if constexpr (std::is_base_of_v<Type, T>) {
-    if (isa<ParameterScopeTypeInterface>(value))
-      ++depth;
-  }
-  SmallVector<Attribute, 16> newAttrs;
-  SmallVector<Type, 16> newTypes;
-  bool changed = false;
-  value.walkImmediateSubElements(
-      [&](Attribute attr) {
-        Attribute newAttr = normalizeSignatureWalk(attr, depth);
-        changed |= newAttr != attr;
-        newAttrs.push_back(newAttr);
-      },
-      [&](Type type) {
-        Type newType = normalizeSignatureWalk(type, depth);
-        changed |= newType != type;
-        newTypes.push_back(newType);
-      });
-  if (!changed)
-    return value;
-  return value.replaceImmediateSubElements(newAttrs, newTypes);
-}
-
-void IndexRefRemapper::populate(ArrayRef<ParamDeclAttr> params, bool isResult,
-                                bool addOffset) {
-  if (addOffset)
-    offset += params.size();
-  for (auto [idx, param] : llvm::enumerate(params))
-    mapping.try_emplace(param.getName(), std::make_pair(idx, isResult));
-}
-
-IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
-                                   ArrayRef<ParamDeclAttr> resultParams,
-                                   size_t offset)
-    : offset(offset) {
-  populate(inputParams, /*isResult=*/false);
-  populate(resultParams, /*isResult=*/true);
-}
-
-Attribute IndexRefRemapper::remapAttrImpl(Attribute attr) {
-  return normalizeSignatureWalk(attr);
-}
-
-Type IndexRefRemapper::remapTypeImpl(Type type) {
-  return normalizeSignatureWalk(type);
-}
-
-SignatureType IndexRefRemapper::remapToSignature(
+SignatureType SignatureType::remapToSignature(
     ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
     FunctionType functionType, ArrayRef<ValueInputConvention> inputConventions,
     FnEffects effects, Attribute metadata,
@@ -539,8 +463,8 @@ SignatureType IndexRefRemapper::remapToSignature(
 }
 
 SignatureType
-IndexRefRemapper::prependParams(SignatureType sig,
-                                ArrayRef<ParamDeclAttr> parentParams) {
+SignatureType::prependParams(SignatureType sig,
+                             ArrayRef<ParamDeclAttr> parentParams) {
   IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
                             parentParams.size());
   SmallVector<Type> inputParamTypes;
