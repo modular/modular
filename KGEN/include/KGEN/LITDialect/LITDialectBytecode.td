@@ -17,6 +17,14 @@ def TypeCheckErrorType : DialectType<(type)>;
 
 def UnresolvedType : DialectType<(type)>;
 
+def TypeSignatureType : DialectType<(type
+  ConcreteAttribute<"TypeArrayAttr">:$paramTypes,
+  StringAttrArray:$paramNames,
+  EnumAttrArray<"PassingKind">:$paramPassingKinds,
+  TypedAttrArray:$defaultParameters,
+  Bool:$paramVarArg
+)>;
+
 def MetaTypeType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues
@@ -44,6 +52,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
   let elems = [
     TypeCheckErrorType,
     UnresolvedType,
+    TypeSignatureType,
     MetaTypeType,
     LifetimeType,
     RefType,
