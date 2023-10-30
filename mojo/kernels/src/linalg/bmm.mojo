@@ -196,7 +196,7 @@ fn batched_matmul[
     elementwise_epilogue_fn: fn[c_type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
-    satruated_vnni: Bool,
+    saturated_vnni: Bool,
     single_thread_blocking_override: Bool,
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
@@ -234,7 +234,8 @@ fn batched_matmul[
             adj_b,
             elementwise_epilogue_enabled,
             elementwise_epilogue_fn,
-            False,
+            rowwise_epilogue_enabled=False,
+            saturated_vnni=saturated_vnni,
         ](c_buf, a_buf, b_buf, null_rowwise_epilogue, new_chain.borrow())
         new_chain.wait()
     else:
@@ -247,7 +248,8 @@ fn batched_matmul[
             adj_b,
             elementwise_epilogue_enabled,
             elementwise_epilogue_fn,
-            False,
+            rowwise_epilogue_enabled=False,
+            saturated_vnni=saturated_vnni,
         ](c_buf, a_buf, b_buf, null_rowwise_epilogue, out_chain)
 
 
