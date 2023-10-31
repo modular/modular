@@ -37,6 +37,8 @@ FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
     return FloatType::getBF16(ctx);
   case DType::f32:
     return FloatType::getF32(ctx);
+  case DType::tf32:
+    return FloatType::getTF32(ctx);
   case DType::f64:
     return FloatType::getF64(ctx);
   case DType::f80:

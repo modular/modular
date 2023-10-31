@@ -17,6 +17,7 @@ struct ARegisterPassableStruct:
     var another_int: Int
     var float16: Float16
     var uint8: UInt8
+    var simd: SIMD[DType.float16, 4]
     var uint16: UInt16
     var int32: Int32
 
@@ -27,6 +28,7 @@ struct ARegisterPassableStruct:
             another_int: 101,
             float16: 25.125,
             uint8: 123,
+            simd: SIMD[DType.float16, 4](-0.125, -1.5, -1, 5.725),
             uint16: 123,
             int32: 485,
         }
@@ -69,5 +71,16 @@ fn main():
     let a_string_literal = "fofofo"
 
     let a_list = [1, 2.125, 3]
+
+    let a_simd = SIMD[DType.float16, 4](1.125, 2.5, 0, -3.725)
+
+    # fmt: off
+    let b_simd = SIMD[DType.int64, 32](
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+        -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15, -16,
+    )
+    # fmt: on
+
+    let c_simd = SIMD[DType.index, 2](5, 6)
 
     print("end")
