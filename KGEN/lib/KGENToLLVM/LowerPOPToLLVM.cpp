@@ -865,21 +865,6 @@ struct ConvertPOPVariadicSize : public ConvertPOPToLLVMPattern<VariadicSizeOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPVariadicAppend
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPVariadicAppend
-    : public ConvertPOPToLLVMPattern<VariadicAppendOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(VariadicAppendOp op, VariadicAppendOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    return op.emitError("pop.variadic.append lowering is not yet implemented!");
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPVariantCreate
 //===----------------------------------------------------------------------===//
 

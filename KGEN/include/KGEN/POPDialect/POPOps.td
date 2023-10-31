@@ -1777,37 +1777,6 @@ def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicAppendOp
-//===----------------------------------------------------------------------===//
-
-def POP_VariadicAppendOp : POPOp<"variadic.append", [Pure,
-    AllTypesMatch<["variadic", "result"]>,
-    VariadicElementType<"variadic", "value">]> {
-  let summary = "copy an existing variadic value and append an element to it";
-  let description = [{
-    The `pop.variadic.append` operation creates a `!kgen.variadic` populated
-    with values from the given variadic value appended by one more element.
-
-    Example:
-
-    ```mlir
-    // Create a variadic sequence of 2 scalar floats.
-    %0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<scalar<f32>>
-
-    // Create a new variadic value containing [%arg0, %arg1, %arg2]
-    %1 = pop.variadic.append %arg2 to %0 : !kgen.variadic<scalar<f32>>
-    ```
-  }];
-
-  let arguments = (ins KGEN_VariadicType:$variadic, AnyType:$value);
-  let results = (outs KGEN_VariadicType:$result);
-  let assemblyFormat = [{
-    $value `to` $variadic `:` qualified(type($variadic)) attr-dict
-  }];
-  let hasFolder = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // CoroutineHandleOp
 //===----------------------------------------------------------------------===//
 

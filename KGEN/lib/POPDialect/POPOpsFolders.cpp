@@ -1413,26 +1413,6 @@ OpFoldResult VariadicGetOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicAppendOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult VariadicAppendOp::fold(FoldAdaptor adaptor) {
-  auto value = llvm::cast_if_present<TypedAttr>(adaptor.getValue());
-  if (!value)
-    return {};
-  auto variadic = dyn_cast_or_null<VariadicAttr>(adaptor.getVariadic());
-  if (!variadic)
-    return {};
-
-  SmallVector<TypedAttr> values;
-  values.reserve(variadic.getValues().size() + 1);
-  for (Attribute varVal : variadic.getValues())
-    values.push_back(cast<TypedAttr>(varVal));
-  values.push_back(value);
-  return VariadicAttr::get(values, getType());
-}
-
-//===----------------------------------------------------------------------===//
 // VariadicSizeOp
 //===----------------------------------------------------------------------===//
 
