@@ -1167,6 +1167,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
     // TODO: Partial application isn't handling ownership right at all, we
     // should probably disable it.
     break;
+  case ValueInputConvention::None:
+    llvm_unreachable("none convention not permitted in lit");
   }
 
   assert(firstArgIRType == firstArgValue.getType() &&

@@ -1061,11 +1061,12 @@ void KGEN::printParamDeclaration(OpAsmPrinter &p, ParamDeclAttr paramDecl,
 //===----------------------------------------------------------------------===//
 
 ParseResult KGEN::parseInputConvention(AsmParser &p,
-                                       ValueInputConvention &convention) {
+                                       ValueInputConvention &convention,
+                                       ValueInputConvention defaultConvention) {
   StringRef effectStr;
   llvm::SMLoc loc = p.getCurrentLocation();
   // Parse an optional input convention specifier.
-  convention = ValueInputConvention::OwnedInReg;
+  convention = defaultConvention;
   if (succeeded(p.parseOptionalKeyword(&effectStr))) {
     if (std::optional<ValueInputConvention> conv =
             symbolizeValueInputConvention(effectStr)) {
@@ -1077,9 +1078,9 @@ ParseResult KGEN::parseInputConvention(AsmParser &p,
   return success();
 }
 
-void KGEN::printInputConvention(AsmPrinter &p,
-                                ValueInputConvention convention) {
-  if (convention != ValueInputConvention::OwnedInReg)
+void KGEN::printInputConvention(AsmPrinter &p, ValueInputConvention convention,
+                                ValueInputConvention defaultConvention) {
+  if (convention != defaultConvention)
     p << ' ' << stringifyValueInputConvention(convention);
 }
 

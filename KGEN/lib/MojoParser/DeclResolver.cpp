@@ -2276,6 +2276,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
       break;
     case ValueInputConvention::ByRefResult:
       llvm_unreachable("byref_result should be skipped");
+    case ValueInputConvention::None:
+      llvm_unreachable("none convention not permitted in lit");
     }
 
     if (signature.isVarArg(argNo))
@@ -3094,6 +3096,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     case ValueInputConvention::BorrowedInMem:
       argIRValue = MBValue(bbArg);
       break;
+    case ValueInputConvention::None:
+      llvm_unreachable("none convention not permitted in lit");
     }
 
     // Ok, now that we've figured out the IR representation of the ASTDecl,

@@ -194,6 +194,8 @@ LogicalResult ParameterInferenceState::checkOneOperand(
       if (PValue pValue = orValue->emitAsPValue())
         return matchTypes(pValue.getType(), expectedType);
     return success();
+  case ValueInputConvention::None:
+    llvm_unreachable("none convention not permitted in lit");
   }
   llvm_unreachable("invalid value input convention");
 };
@@ -645,7 +647,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     expectedType = expectedType.getReferenceElementType();
     [[fallthrough]];
   case ValueInputConvention::BorrowedInReg:
-  case ValueInputConvention::OwnedInReg:
+  case ValueInputConvention::OwnedInReg: {
     // If the argument is an overload set, see if it can be resolve to the
     // right type.
     CValue argVal;
@@ -694,6 +696,9 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If we had one, this bumps our # implicit conversions.
     ++numImplicitConversions;
     break;
+  }
+  case ValueInputConvention::None:
+    llvm_unreachable("none convention not permitted in lit");
   }
 
   return {kValidType, expectedType};
