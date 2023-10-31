@@ -18,6 +18,7 @@ struct ARegisterPassableStruct:
     var float16: Float16
     var uint8: UInt8
     var simd: SIMD[DType.float16, 4]
+    var none: None
     var uint16: UInt16
     var int32: Int32
 
@@ -29,6 +30,7 @@ struct ARegisterPassableStruct:
             float16: 25.125,
             uint8: 123,
             simd: SIMD[DType.float16, 4](-0.125, -1.5, -1, 5.725),
+            none: None,
             uint16: 123,
             int32: 485,
         }
@@ -82,5 +84,7 @@ fn main():
     # fmt: on
 
     let c_simd = SIMD[DType.index, 2](5, 6)
+
+    let none = None
 
     print("end")
