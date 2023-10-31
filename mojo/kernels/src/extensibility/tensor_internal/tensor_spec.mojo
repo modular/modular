@@ -193,3 +193,17 @@ struct TensorSpec:
           The string representation of the spec.
         """
         return self.shape.__str__() + "x" + self.dtype().__str__()
+
+    @staticmethod
+    fn from_bytes(data: DTypePointer[DType.int8]) -> TensorSpec:
+        """Create a TensorSpec object from serialized bytes.
+
+        Args:
+          data: DTypePointer to serialized bytes.
+
+        Returns:
+          Given bytes as TensorSpec.
+        """
+        let ptr = data._as_scalar_pointer()
+        let spec_ptr = bitcast[Self](ptr)
+        return __get_address_as_owned_value(spec_ptr.address)

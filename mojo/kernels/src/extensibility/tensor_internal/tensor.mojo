@@ -42,10 +42,17 @@ from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import bitcast
 
-from utils._serialize import _serialize
+from utils._serialize import (
+    _serialize,
+    _serialize_to_file,
+    _SERIALIZATION_HEADER,
+    _SERIALIZATION_MAJOR_FORMAT,
+    _SERIALIZATION_MINOR_FORMAT,
+)
 
 from .tensor_shape import TensorShape
 from .tensor_spec import TensorSpec
+from utils.static_tuple import StaticTuple
 
 # ===----------------------------------------------------------------------===#
 # Tensor
@@ -614,3 +621,68 @@ struct Tensor[dtype: DType]:
             bitcast[dtype](byte_tensor._steal_ptr()),
             num_elements // dtype.sizeof(),
         )
+
+    fn save(self, path: Path) raises:
+        """Save given tensor to file. This method preserves
+           shape and datatype information.
+
+        Args:
+          path: Path of file.
+        """
+        _serialize_to_file(self, path)
+
+    @staticmethod
+    fn load(path: Path) raises -> Tensor[dtype]:
+        """Read tensor from a file.
+           The path should be a file saved with Tensor.save method.
+
+        Args:
+          path: Path to the output file.
+
+        Returns:
+          The tensor read from file.
+        """
+        let bytes = path.read_bytes()
+        let minimum_size = _SERIALIZATION_HEADER.__len__() + (
+            3 * sizeof[UInt32]()
+        )
+
+        if bytes.num_elements() < minimum_size:
+            raise "given file is not a serialized mojo tensor."
+
+        for i in range(_SERIALIZATION_HEADER.__len__()):
+            if bytes[i] != _SERIALIZATION_HEADER[i]:
+                raise "given file is not a serialized mojo tensor."
+
+        fn _uint32_from_bytes(data: DTypePointer[DType.int8]) -> UInt32:
+            let ptr = data._as_scalar_pointer()
+            let spec_ptr = bitcast[UInt32](ptr)
+            return __get_address_as_owned_value(spec_ptr.address)
+
+        let major_format_ptr = bytes.data() + _SERIALIZATION_HEADER.__len__()
+        let major_format = _uint32_from_bytes(major_format_ptr)
+        let minor_format_ptr = major_format_ptr + sizeof[UInt32]()
+        let minor_format = _uint32_from_bytes(minor_format_ptr)
+        if (
+            major_format != _SERIALIZATION_MAJOR_FORMAT
+            or minor_format != _SERIALIZATION_MINOR_FORMAT
+        ):
+            raise "cannot load tensor of format: " + String(
+                major_format
+            ) + "." + String(minor_format)
+
+        let spec_size_ptr = minor_format_ptr + sizeof[UInt32]()
+        let spec_size = _uint32_from_bytes(spec_size_ptr)
+        if spec_size != sizeof[TensorSpec]():
+            raise "invalid tensor spec."
+        let spec_ptr = spec_size_ptr + sizeof[UInt32]()
+        let spec = TensorSpec.from_bytes(spec_ptr)
+        if dtype != spec.dtype():
+            raise "requested type doesn't match the dtype in serialized tensor."
+        let data = spec_ptr + sizeof[TensorSpec]()
+        let tensor = Tensor[dtype](spec)
+        if spec.num_elements() == 0:
+            return tensor
+        memcpy(tensor.data(), bitcast[dtype](data), spec.num_elements())
+        _ = bytes ^
+        return tensor
