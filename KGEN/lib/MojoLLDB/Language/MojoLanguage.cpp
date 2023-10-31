@@ -43,13 +43,22 @@ Language *MojoLanguage::CreateInstance(lldb::LanguageType language) {
   }
 }
 
+/// The None type is rendered nicely if its summary is the "None" string.
+static bool kgenNoneSummaryProvider(ValueObject &valobj, Stream &stream,
+                                    const TypeSummaryOptions &summaryOptions) {
+  stream << "None";
+  return true;
+}
+
 static void
 LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   if (!mojoCategorySP)
     return;
 
+  // These settings are the same as the C++ ones.
   SyntheticChildren::Flags synthFlags;
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
+
   // Formatters are matched in reverse order, so this one that uses .* should
   // be added first so that it's the last one to be matched against. In fact,
   // this formatter acts like a sink that will match everything that doesn't
@@ -68,6 +77,19 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
       "Mojo DynamicVector synthetic children",
       R"(^!kgen.declref<@"\$utils"::@"\$vector"::@DynamicVector<.*>>$)",
       synthFlags, /*regex=*/true);
+
+  // These settings are the same as the C++ ones.
+  TypeSummaryImpl::Flags summaryFlags;
+  summaryFlags.SetCascades(true)
+      .SetSkipPointers(false)
+      .SetSkipReferences(false)
+      .SetDontShowChildren(true)
+      .SetDontShowValue(true)
+      .SetShowMembersOneLiner(false)
+      .SetHideItemNames(false);
+  AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
+                "!kgen.none summary provider", "!kgen.none", summaryFlags,
+                /*regex=*/false);
 }
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {
