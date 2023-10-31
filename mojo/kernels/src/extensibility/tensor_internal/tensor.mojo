@@ -585,6 +585,19 @@ struct Tensor[dtype: DType]:
         """
         self._to_buffer().tofile(path)
 
+    @always_inline
+    fn _steal_ptr(inout self) -> DTypePointer[dtype]:
+        """Transfer ownership of pointer to the underlying memory.
+        The caller is responsible for freeing up the memory.
+
+        Returns:
+            The pointer to the underlying memory.
+        """
+        let ptr = self._ptr
+        self._ptr = DTypePointer[dtype]()
+        self._spec = TensorSpec()
+        return ptr
+
     @staticmethod
     fn fromfile(path: Path) raises -> Self:
         """Read tensor from a file.
@@ -597,10 +610,10 @@ struct Tensor[dtype: DType]:
         """
         var tensor = Tensor[dtype]()
         with open(path, "r") as f:
-            var str = f.read()
-            let byte_count = str.__len__()
+            var byte_tensor = f.read_bytes()
+            let size = byte_tensor.num_elements()
             tensor = Tensor(
-                bitcast[dtype](str._steal_ptr()),
-                byte_count // sizeof[dtype](),
+                bitcast[dtype](byte_tensor._steal_ptr()),
+                size // sizeof[dtype](),
             )
         return tensor
