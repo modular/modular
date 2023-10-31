@@ -13,6 +13,7 @@ from utils.list import Dim
 """
 
 from memory.unsafe import Pointer
+from utils.optional import Optional
 
 # ===----------------------------------------------------------------------===#
 # Dim
@@ -29,13 +30,8 @@ struct Dim:
     present, the dimension is dynamic.
     """
 
-    alias type = __mlir_type[`!pop.variant<i1, `, Int, `>`]
-    var value: Self.type
-    """Either a boolean indicating that the dimension is dynamic, or the static
-    value of the dimension."""
-
-    alias _missing = Int(0).value
-    alias _present = Int(1).value
+    var value: Optional[Int]
+    """An optional value for the dimension."""
 
     @always_inline
     fn __init__(value: Int) -> Dim:
@@ -47,9 +43,7 @@ struct Dim:
         Returns:
             A dimension with a static value.
         """
-        return __mlir_op.`pop.variant.create`[
-            _type = Self.type, index = Self._present
-        ](value)
+        return Self {value: value}
 
     @always_inline
     fn __init__(value: __mlir_type.index) -> Dim:
@@ -70,9 +64,7 @@ struct Dim:
         Returns:
             A dimension value with no static value.
         """
-        return __mlir_op.`pop.variant.create`[
-            _type = Self.type, index = Self._missing
-        ](__mlir_attr.`0 : i1`)
+        return Self {value: None}
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -81,7 +73,7 @@ struct Dim:
         Returns:
             Whether the dimension has a static value.
         """
-        return __mlir_op.`pop.variant.is`[index = Self._present](self.value)
+        return self.value.__bool__()
 
     @always_inline
     fn has_value(self) -> Bool:
@@ -108,7 +100,7 @@ struct Dim:
         Returns:
             The static dimension value.
         """
-        return __mlir_op.`pop.variant.get`[index = Self._present](self.value)
+        return self.value.value()
 
     @always_inline
     fn is_multiple[alignment: Int](self) -> Bool:
