@@ -91,7 +91,7 @@ from MatrixBandPart import matrix_band_part
 from MatrixSolve import matrix_solve
 from memory import memset_zero
 from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import bitcast, DTypePointer, Pointer
 from NonMaxSuppression import (
     non_max_suppression,
     non_max_suppression_shape_func,
@@ -139,6 +139,7 @@ fn MOGGExport():
     alias _dtype_ui8 = DTypeUInt8TypeDef
     alias _dtype_bool = DTypeBoolTypeDef
     alias _to_buffer = to_buffer
+    alias _to_buffer_list = to_buffer_list
     alias _to_shape = to_shape
     alias _arg_max = argmax_wrapped
     alias _arg_min = argmin_wrapped
@@ -150,6 +151,7 @@ fn MOGGExport():
     alias _cast = cast
     alias _ceil = ceil
     alias _concat = concat
+    alias _concat_from_list = concat_from_list
     alias _concat_shape = concat_shape
     alias _conv_shape = conv_shape
     alias _conv_transpose = conv_transpose
@@ -261,6 +263,23 @@ fn MOGGExport():
     alias _top_k_shape = top_k_shape
     alias _tile = tile
     alias _tile_shape = tile_shape
+
+
+# ===----------------------------------------------------------------------===#
+# Data structures used in MOGG/MGP ABI
+# ===----------------------------------------------------------------------===#
+
+
+# NOTE the layout must match `CompiledKernelABI::Tensor`
+struct ABI_Tensor:
+    var dims: __mlir_type.`!kgen.pointer<index>`
+    var data: __mlir_type[`!kgen.pointer<scalar<invalid>>`]
+
+
+# NOTE the layout must match `CompiledKernelABI::List`
+struct ABI_List:
+    var num_elems: Int
+    var elements: __mlir_type[`!kgen.pointer<scalar<invalid>>`]
 
 
 # ===----------------------------------------------------------------------===#
@@ -445,6 +464,40 @@ fn get_int_from_shape[
     param_index: Int, rank: Int
 ](shape: StaticIntTuple[rank]) -> Int:
     return shape[param_index]
+
+
+@always_inline
+fn to_buffer_list[
+    type: DType, rank: Int
+](
+    raw_list_ptr: __mlir_type[`!kgen.pointer<scalar<invalid>>`],
+) -> InlinedFixedVector[NDBuffer[rank, DimList.create_unknown[rank](), type]]:
+
+    # Cast input list pointer
+    let abi_list_ptr = bitcast[ABI_List](Pointer(raw_list_ptr))
+    let elems_ptr = Pointer(
+        __get_address_as_lvalue(abi_list_ptr.address).elements
+    )
+    let abi_tensors_ptr = bitcast[ABI_Tensor](elems_ptr)
+
+    # Create output list
+    let num_elements = __get_address_as_lvalue(abi_list_ptr.address).num_elems
+    var out_list = InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ](num_elements)
+
+    # Convert individual elements of the input list into NDBuffer, and
+    # accumulate the results to output list.
+    for i in range(num_elements):
+        let abi_tensor_ptr = abi_tensors_ptr.offset(i)
+        let dims = __get_address_as_lvalue(abi_tensor_ptr.address).dims
+        let data = __mlir_op.`pop.pointer.bitcast`[
+            _type = __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`]
+        ](__get_address_as_lvalue(abi_tensor_ptr.address).data)
+        let buffer = to_buffer[type, rank](data, dims)
+        out_list.append(buffer)
+
+    return out_list
 
 
 @always_inline
@@ -863,6 +916,30 @@ fn cast[
 # ===----------------------------------------------------------------------===#
 # Concat op
 # ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn concat_from_list[
+    type: DType,
+    rank: Int,
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+    axis_type: DType,
+](
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    var axis_int = axis[0].to_int()
+    if axis_int < 0:
+        axis_int = axis_int + rank
+
+    _concat[rank, type, single_thread_blocking_override](
+        output, axis_int, inputs, out_chain
+    )
 
 
 @always_inline
