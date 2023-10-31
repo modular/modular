@@ -2111,12 +2111,18 @@ fn matmul[
     num_threads: Int = -1,
 ):
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
+    # HACK HACK HACK https://github.com/modularml/modular/issues/22959
+    # single_thread_blocking_override should not be allowed, but the graph
+    # compiler has a special case that does not insert the out_chain.mark_ready()
+    # on the GPU
     # constrained[
-    #     single_thread_blocking_override == False,
-    #     "only valid with single_thread_blocking_override = False",
+    #     not single_thread_blocking_override,
+    #     "single_thread_blocking_override not applicable",
     # ]()
     constrained[transpose_a == False, "only NN matmul is supported"]()
     constrained[transpose_b == False, "only NN matmul is supported"]()
+    constrained[not b_packed, "pre-packing not yet supported"]()
+    constrained[not saturated_vnni, "saturated_vnni_flag not applicable"]()
 
     alias BLOCK_DIM = 16
 
