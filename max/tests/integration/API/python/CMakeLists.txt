@@ -4,12 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-# TODO(23590): Enable this back once issue with package and ASAN is figured out.
-if(LLVM_USE_SANITIZER)
-  message(STATUS "Disabling Modular Engine Python API integration tests with MO model in sanitizer build. Issue #23590.")
-  return()
-endif()
-
 # Set up ASAN only if enabled since otherwise errors occur in non-ASAN builds.
 if (LLVM_USE_SANITIZER)
   # Set environment variables to inject the ASAN runtime library since the
@@ -33,18 +27,15 @@ endif()
 # DYLD_INSERT_LIBRARIES is passed as a CMake cache variable so that pytest can
 # run when configured as ASAN.
 # Without this, on MacOS with ASAN, pytest fails with an error.
-add_test(NAME ModularEnginePythonApiTests
+add_custom_target(check-ModularEnginePythonApiTests
+  COMMAND $<TARGET_FILE:mojo> package --parsing-stdlib ${CMAKE_CURRENT_SOURCE_DIR}/../test_user_op -o ${CMAKE_CURRENT_BINARY_DIR}/user_op.mojopkg
   COMMAND ${CMAKE_COMMAND} -E env
     ${PYTHON_API_TESTS_ASAN_ENV}
     # The LLVM profile name has to be unique for ModularEnginePythonApiTests because
     # it links against shared libs that have been patched.
     # Otherwise, the call to llvm-profdata merge will fail.
     LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/profiles/ModularEnginePythonApiTests%4m.profraw
-    ${Python3_EXECUTABLE} -m pytest ${CMAKE_CURRENT_SOURCE_DIR}/pytests
-)
-
-add_custom_target(check-ModularEnginePythonApiTests
-  COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -R ModularEnginePythonApiTests
+    ${Python3_EXECUTABLE} -m pytest --custom-ops-path=${CMAKE_CURRENT_BINARY_DIR}/user_op.mojopkg ${CMAKE_CURRENT_SOURCE_DIR}/pytests
 
   DEPENDS
   mof

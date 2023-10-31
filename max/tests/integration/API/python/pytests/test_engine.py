@@ -6,8 +6,6 @@
 """Test the modular.engine Python bindings with MOF."""
 
 import os
-import subprocess
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -41,13 +39,8 @@ def mo_custom_ops_model_path(modular_path: Path) -> Path:
 
 
 @pytest.fixture
-def custom_ops_package_path(tmp_path: Path, modular_path: Path) -> Path:
-    package_src = modular_path / "All" / "test" / "API" / "test_user_op"
-    package_path = tmp_path / "user_op.mojopkg"
-    subprocess.check_output(
-        ["mojo", "package", "--parsing-stdlib", package_src, "-o", package_path]
-    )
-    return package_path
+def custom_ops_package_path(request) -> Path:
+    return Path(request.config.getoption("--custom-ops-path"))
 
 
 def test_execute_success(mo_model_path: Path):
