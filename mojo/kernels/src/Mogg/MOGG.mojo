@@ -67,7 +67,10 @@ from BatchedMatmul import (
     get_trace_information as get_trace_information_batched_matmul,
 )
 from Concat import concat as _concat
-from Concat import concat_shape, variadic_list_to_vector
+from Concat import (
+    concat_shape as concat_from_list_shape,
+    variadic_list_to_vector,
+)
 from Conv import ConvInfo, ConvInfoStatic, conv_2d_nhwc_direct, conv_shape
 from Conv import pack_conv_filter as _pack_conv_filter
 from Conv import pack_conv_filter_shape as _pack_conv_filter_shape
@@ -153,6 +156,7 @@ fn MOGGExport():
     alias _concat = concat
     alias _concat_from_list = concat_from_list
     alias _concat_shape = concat_shape
+    alias _concat_from_list_shape = concat_from_list_shape
     alias _conv_shape = conv_shape
     alias _conv_transpose = conv_transpose
     alias _conv_transpose_shape = conv_transpose_shape
@@ -964,6 +968,27 @@ fn concat[
         output, axis_int, ins, out_chain
     )
     ins._del_old()
+
+
+@always_inline
+fn concat_shape[
+    input_type: DType,
+    input_rank: Int,
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+    axis_type: DType,
+](
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    *variadic_ins: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+) -> StaticIntTuple[input_rank]:
+    let ins = variadic_list_to_vector(variadic_ins)
+    let out_shape = concat_from_list_shape[
+        input_rank, input_type, axis_type, single_thread_blocking_override
+    ](ins, axis)
+    ins._del_old()
+    return out_shape
 
 
 # ===----------------------------------------------------------------------===#
