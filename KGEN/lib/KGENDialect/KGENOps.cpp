@@ -698,15 +698,6 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return failure();
 }
 
-LogicalResult FuncOp::verify() {
-  if (!llvm::all_of(getSignature().getInputConventions(),
-                    [](ValueInputConvention inputConv) {
-                      return inputConv == ValueInputConvention::OwnedInReg;
-                    }))
-    return emitOpError("can only have default value input conventions");
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // ExternFuncOp
 //===----------------------------------------------------------------------===//

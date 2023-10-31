@@ -459,7 +459,8 @@ static ParseResult parseLITFunctionSignature(
     // input convention.
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
-        parseInputConvention(p, inputConventions.emplace_back()))
+        parseInputConvention(p, inputConventions.emplace_back(),
+                             ValueInputConvention::OwnedInReg))
       return failure();
 
     // Parse an optional default value.
@@ -525,7 +526,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
     // Then we print the optional location before and input convention.
     p.printOptionalLocationSpecifier(arg.getLoc());
-    printInputConvention(p, signature.getInputConvention(i));
+    printInputConvention(p, signature.getInputConvention(i),
+                         ValueInputConvention::OwnedInReg);
 
     if (i >= defaultStartIndex) {
       p << " = ";

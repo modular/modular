@@ -173,7 +173,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   case ValueInputConvention::OwnedInReg:
   case ValueInputConvention::OwnedInMem:
   case ValueInputConvention::BorrowedInReg:
-  case ValueInputConvention::BorrowedInMem:
+  case ValueInputConvention::BorrowedInMem: {
     // by-val arguments are converted to the expected r-value type.
     ASTType expectedArgType = expectedType;
     if (calleeSig.isVarArg(argIdx))
@@ -193,6 +193,9 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         convention == ValueInputConvention::OwnedInMem)
       return emitter.emitRValue(operand, EC_CallArgValue, expectedArgType);
     return emitter.emitBValue(operand, EC_CallArgValue, expectedArgType);
+  }
+  case ValueInputConvention::None:
+    llvm_unreachable("none convention not permitted in lit");
   }
   llvm_unreachable("unknown value input convention");
 }
@@ -601,6 +604,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
         {std::move(dlvBuffer), slvBuffer});
     return slvBuffer;
   }
+  case ValueInputConvention::None:
+    llvm_unreachable("none convention not permitted in lit");
   }
   if (!arg) {
     llvm::errs() << "CALL ARG MISMATCH: " << int(convention) << " ";

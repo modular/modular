@@ -105,7 +105,6 @@ def KGEN_FuncOp : KGENOp<"func", [
   ];
 
   let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

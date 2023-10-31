@@ -502,12 +502,12 @@ kgen.generator @callee(%owned: !kgen.pointer<i32> byref) {
   kgen.return
 }
 
-kgen.generator @caller(%arg: !kgen.pointer<i32>) {
+kgen.generator @caller(%arg: !kgen.pointer<i32> owned) {
   // Ok
   kgen.call @callee(%arg) : (!kgen.pointer<i32> byref) -> ()
 
   // expected-error @+1 {{symbol use argument #0 has convention owned but @callee expected convention byref}}
-  kgen.call @callee(%arg) : (!kgen.pointer<i32>) -> ()
+  kgen.call @callee(%arg) : (!kgen.pointer<i32> owned) -> ()
   kgen.return
 }
 
@@ -516,13 +516,6 @@ kgen.generator @caller(%arg: !kgen.pointer<i32>) {
 kgen.generator @target_params2<t0: target>()
  // expected-error @below {{expected '='}}
   constraints <[eq(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>), "must support target!!"]> {
-  kgen.return
-}
-
-// -----
-
-// expected-error @below {{'kgen.func' op can only have default value input conventions}}
-kgen.func @conventions(%arg0: !kgen.pointer<index> byref) {
   kgen.return
 }
 

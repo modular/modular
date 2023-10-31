@@ -108,12 +108,16 @@ def KGEN_ExportKind : I32EnumAttr<"ExportKind", "export kind", [
 /// in the metadata of a SignatureType.
 def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
     "Function value input convention", [
+  /// This is used to represent conventions that should no longer be relevant,
+  /// i.e. non-generic arguments before calling convention lowering.
+  I32EnumAttrCase<"None", 0, "none">,
+
   /// This is an owned register-passable value an SSA register.  The MLIR type
   /// may be anything that can be lowered to LLVM (notably not a memory-only
   /// type).
   ///
   /// The callee is responsible for destroying the value before returning.
-  I32EnumAttrCase<"OwnedInReg", 0, "owned">,
+  I32EnumAttrCase<"OwnedInReg", 1, "owned">,
 
   /// This is an owned memory-only value, which is passed indirectly.
   ///
@@ -122,14 +126,14 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   /// destroys it, returning with it uninitialized.
   ///
   /// The callee is responsible for destroying the value before returning.
-  I32EnumAttrCase<"OwnedInMem", 1, "owned_in_mem">,
+  I32EnumAttrCase<"OwnedInMem", 2, "owned_in_mem">,
 
   /// This is an immutable borrow of a register-passable value in an SSA
   /// register.  The MLIR type may be anything that can be lowered to LLVM
   /// (but notably not a memory-only type).
   ///
   /// The caller guarantees the value is live for the duration of the call.
-  I32EnumAttrCase<"BorrowedInReg", 2, "borrow">,
+  I32EnumAttrCase<"BorrowedInReg", 3, "borrow">,
 
   /// This is an immutably borrowed memory-only value, which is passed
   /// indirectly.
@@ -137,14 +141,14 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   /// The MLIR type is always a PointerType, and the underlying type is a
   /// memory-only type.  The caller passes a reference to an initialized memory
   /// slot that may be read but not mutated by the callee.
-  I32EnumAttrCase<"BorrowedInMem", 3, "borrow_in_mem">,
+  I32EnumAttrCase<"BorrowedInMem", 4, "borrow_in_mem">,
 
   /// This is used for by-ref arguments like `fn x(a&: Int)`.
   ///
   /// The MLIR type is always a PointerType, and the underlying type can be
   /// anything.  The value is initialized before entry to the function and must
   /// be initialized when the function returns.
-  I32EnumAttrCase<"ByRef", 4, "byref">,
+  I32EnumAttrCase<"ByRef", 5, "byref">,
 
   /// This is used on the first argument of a function that returns a
   /// memory-only value, requiring it to be returned through memory.
@@ -154,12 +158,12 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   /// on exit from the function if it returns.
   ///
   /// The caller is responsible for destroying the value.
-  I32EnumAttrCase<"ByRefResult", 5, "byref_result">,
+  I32EnumAttrCase<"ByRefResult", 6, "byref_result">,
 
   /// This is used on the 'self' argument to `__init__`.  It has identical
   /// semantics to ByRefResult on the callee side, but isn't a result on the
   /// caller side.
-  I32EnumAttrCase<"InitSelf", 6, "init_self">,
+  I32EnumAttrCase<"InitSelf", 7, "init_self">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

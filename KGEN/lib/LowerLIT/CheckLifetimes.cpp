@@ -1478,6 +1478,8 @@ void DestructorInsertion::checkOp(Operation &op) {
         // This defines the memory it writes to.
         checkDef(operand, op);
         break;
+      case ValueInputConvention::None:
+        llvm_unreachable("none convention not permitted in lit");
       }
     }
     return;

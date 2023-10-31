@@ -171,11 +171,11 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
       // CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %s
       // CHECK-NEXT: kgen.call @S::@__del__([[PTR]])
       %8 = lit.ref.load %7 : !lit.ref<mut index, *"SLife">
-      %9 = kgen.call @print(%8) : (index) -> !kgen.none
+      %9 = kgen.call @print(%8) : (index owned) -> !kgen.none
   	  hlcf.yield
     } else {
   	  hlcf.yield
-	}
+	  }
     lit.try.yield
   } except (%arg0: !kgen.declref<@Error>) {
     lit.try.yield

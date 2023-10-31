@@ -179,6 +179,8 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     startsUninit = false;
     endsUninit = false;
     break;
+  case ValueInputConvention::None:
+    llvm_unreachable("none convention not permitted in lit");
   }
 
   ArrayRef<StringAttr> argNames = signature.getArgNames();

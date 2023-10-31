@@ -164,7 +164,7 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   auto nonePtr = PointerType::get(noneType);
   auto sig = SignatureType::get(
       b.getFunctionType(PointerType::get(nonePtr), noneType),
-      ValueInputConvention::OwnedInReg, FnEffects().setCapturing());
+      ValueInputConvention::None, FnEffects().setCapturing());
   OwningOpRef<FuncOp> func =
       b.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),
                        sig, InlineLevel::Always);

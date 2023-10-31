@@ -407,6 +407,7 @@ SignatureType::getTypeAlign(TargetInfoAttr target) const {
 
 bool SignatureType::hasAddress(ValueInputConvention conv) {
   switch (conv) {
+  case ValueInputConvention::None:
   case ValueInputConvention::OwnedInReg:
   case ValueInputConvention::BorrowedInReg:
     return false;

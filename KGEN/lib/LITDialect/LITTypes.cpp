@@ -235,7 +235,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
     // Parse the argument type and its input convention.
     Type &type = argTypes.emplace_back();
     if (p.parseType(type) ||
-        parseInputConvention(p, inputConventions.emplace_back()))
+        parseInputConvention(p, inputConventions.emplace_back(),
+                             ValueInputConvention::OwnedInReg))
       return failure();
 
     // Parse an optional default value.
@@ -319,7 +320,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
 
     p << signature.getValueInputs()[i];
 
-    printInputConvention(p, signature.getInputConvention(i));
+    printInputConvention(p, signature.getInputConvention(i),
+                         ValueInputConvention::OwnedInReg);
     if (i >= defaultIndex) {
       p << " = ";
       printParamValue(p, defaultArgs[i - defaultIndex]);
