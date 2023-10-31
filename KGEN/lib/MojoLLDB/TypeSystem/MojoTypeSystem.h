@@ -597,6 +597,13 @@ public:
                                                   uint32_t dwarfEncoding,
                                                   uint32_t byteSize);
 
+  /// Get the MLIR type of a given dtype by name.
+  lldb_private::CompilerType createCompilerTypeFromDType(StringRef dtype);
+
+  /// Create a SIMD type given a dtype name and a number of elements.
+  lldb_private::CompilerType createSIMDType(StringRef dtype,
+                                            size_t numElements);
+
   /// Create a module decl given its name under the given parentDecl. If the
   /// parent module already contains a module with that name, return it instead.
   /// If the parent module is invalid, then the module becomes a top-level one.

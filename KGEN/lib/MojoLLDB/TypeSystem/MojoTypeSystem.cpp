@@ -32,6 +32,7 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/Process.h"
 #include <mlir/AsmParser/AsmParser.h>
@@ -43,6 +44,27 @@ using namespace lldb_private;
 using namespace lldb_private::dwarf;
 using namespace lldb_private::plugin::dwarf;
 using namespace mlir;
+
+/// Convert a KGENDType, which is an extension to the regular MLIR DType, into
+/// MLIR types that can be understood by the typesystem.
+static std::optional<mlir::Type>
+getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype, size_t indexBitwidth) {
+  // `address` and `index` are extensions to the regular dtype.
+  if (dtype.isAddress())
+    return LLVM::LLVMPointerType::get(ctx);
+
+  if (dtype.isIndex())
+    return IntegerType::get(ctx, indexBitwidth);
+
+  // This checks for `bool` and `int` types.
+  if (IntegerType intType = getEquivalentIntegerType(ctx, dtype))
+    return intType;
+
+  if (FloatType fpType = getEquivalentFloatType(ctx, dtype))
+    return fpType;
+
+  return {};
+}
 
 //===----------------------------------------------------------------------===//
 // MojoTypeSystem::Impl
@@ -545,15 +567,11 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   if (auto simdType = dyn_cast<POP::SIMDType>(astType)) {
     if (std::optional<KGENDType> kgenDTypeOpt = simdType.getResolvedDType()) {
       if (kgenDTypeOpt.has_value()) {
-        MojoASTTypeRef eltType;
-        if (auto intType = getEquivalentIntegerType(getMLIRContext(),
-                                                    kgenDTypeOpt.value()))
-          eltType = intType;
-        else if (auto floatType = getEquivalentFloatType(getMLIRContext(),
-                                                         kgenDTypeOpt.value()))
-          eltType = floatType;
-        else
+        std::optional<mlir::Type> eltMlirType = getMLIRTypeForDType(
+            getMLIRContext(), *kgenDTypeOpt, 8 * GetPointerByteSize());
+        if (!eltMlirType)
           return {};
+        MojoASTTypeRef eltType(*eltMlirType);
 
         if (const std::optional<MojoTypeDataLayout> &layout =
                 impl->dataLayoutContext->getOrCalculate(eltType)) {
@@ -688,22 +706,32 @@ CompilerType MojoTypeSystem::getBuiltinScalarType(llvm::StringRef typeName,
     return createCompilerType(
         IntegerType::get(getMLIRContext(), byteSize * 8, IntegerType::Signed));
 
-  if (dwarfEncoding == DW_ATE_float) {
-    if (byteSize == 2) {
-      if (typeName == "bf16")
-        return createCompilerType(FloatType::getBF16(getMLIRContext()));
-      return createCompilerType(FloatType::getF16(getMLIRContext()));
-    }
-    if (byteSize == 4)
-      return createCompilerType(FloatType::getF32(getMLIRContext()));
-    if (byteSize == 8)
-      return createCompilerType(FloatType::getF64(getMLIRContext()));
-    if (byteSize == 10)
-      return createCompilerType(FloatType::getF80(getMLIRContext()));
-    if (byteSize == 16)
-      return createCompilerType(FloatType::getF128(getMLIRContext()));
-  }
+  // Fortunately MLIR DTypes have the same name as KGEN DTypes, so we can use
+  // the common translator.
+  if (dwarfEncoding == DW_ATE_float)
+    return createCompilerTypeFromDType(typeName);
+
   return {};
+}
+
+lldb_private::CompilerType
+MojoTypeSystem::createCompilerTypeFromDType(StringRef dtype) {
+  auto dTypeOr = KGENDType::getFromString(dtype);
+  if (failed(dTypeOr))
+    return {};
+  return createCompilerType(*getMLIRTypeForDType(getMLIRContext(), *dTypeOr,
+                                                 8 * GetPointerByteSize()));
+}
+
+lldb_private::CompilerType MojoTypeSystem::createSIMDType(StringRef dtype,
+                                                          size_t numElements) {
+  if (llvm::popcount(numElements) != 1)
+    return {};
+  auto dTypeOr = KGENDType::getFromString(dtype);
+  if (failed(dTypeOr))
+    return {};
+  return createCompilerType(
+      KGEN::POP::SIMDType::get(getMLIRContext(), numElements, *dTypeOr));
 }
 
 MojoASTDeclRef

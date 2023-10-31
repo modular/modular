@@ -340,12 +340,53 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     }
     break;
   }
+  case DW_TAG_array_type: {
+    // The only array type we emit is simd, so we try to create one from the
+    // given data. A pack could also work, but its type would be extremely
+    // verbose.
+    DWARFDIE dtypeDie = attrs.type.Reference();
+    ParsedDWARFTypeAttributes dtypeAttrs(dtypeDie);
+
+    std::optional<SymbolFile::ArrayInfo> arrayInfo = ParseChildArrayInfo(die);
+    if (arrayInfo && !arrayInfo->element_orders.empty()) {
+      size_t numElements = arrayInfo->element_orders.front();
+      CompilerType elementType =
+          typeSystem.createCompilerTypeFromDType(dtypeAttrs.name);
+      if (elementType.IsValid()) {
+        // LLDB expects us to provide a lldb_private::Type for the element type
+        // of the SIMD.
+        TypeSP lldbDType = dwarf->MakeType(
+            dtypeDie.GetID(), dtypeAttrs.name, *dtypeAttrs.byteSize, nullptr,
+            dtypeDie.GetID(), lldb_private::Type::eEncodingIsUID,
+            &dtypeAttrs.decl, elementType,
+            lldb_private::Type::ResolveState::Full);
+        CompilerType mojoType =
+            typeSystem.createSIMDType(dtypeDie.GetName(), numElements);
+        if (mojoType.IsValid()) {
+          type = dwarf->MakeType(
+              die.GetID(), ConstString(),
+              attrs.byteSize.value_or(*dtypeAttrs.byteSize * numElements),
+              nullptr, die.GetID(), lldb_private::Type::eEncodingIsUID,
+              &attrs.decl, mojoType, lldb_private::Type::ResolveState::Full);
+          type->SetEncodingType(lldbDType.get());
+        }
+      }
+    }
+    if (!type) {
+      dwarf->GetObjectFile()->GetModule()->ReportError(
+          "The array type at offset {0} with element type '{1}' couldn't be "
+          "parsed as a SIMD type.",
+          die.GetOffset(), dtypeDie.GetName());
+    }
+
+    break;
+  }
   case DW_TAG_structure_type: {
     // Several builtin types like !kgen.string are encoded as structs. We can
     // just parse them as regular MLIR types instead of traversing their DWARF.
     // At least in the specific case of primitive types like !kgen.string, it
-    // will allow us to format them correctly because the corresponding
-    // printers are type-based and not name-based.
+    // will allow us to format them correctly because the corresponding printers
+    // are type-based and not name-based.
     CompilerType mojoType =
         typeSystem.getBuiltinTypeFromMLIRTypeName(attrs.name);
     // If we recover the type, we need to make sure that the encoded byte size
@@ -359,16 +400,16 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
       if (!mlirByteSize) {
         mojoType = {};
         dwarf->GetObjectFile()->GetModule()->ReportError(
-            "The parsed MLIR structure type '{0}' has not byte size. The MLIR "
-            "type won't be used and regular MLIR-agnostic DWARF parsing will "
-            "be performed.",
+            "The parsed MLIR structure type '{0}' has not byte size. The "
+            "MLIR type won't be used and regular MLIR-agnostic DWARF parsing "
+            "will be performed.",
             attrs.name.AsCString());
       } else if (attrs.byteSize && *attrs.byteSize != *mlirByteSize) {
         mojoType = {};
         dwarf->GetObjectFile()->GetModule()->ReportError(
             "The parsed MLIR structure type '{0}' has a different size ({1}) "
-            "than the one in the debug info ({2}). The MLIR type won't be "
-            "used and regular MLIR-agnostic DWARF parsing will be performed.",
+            "than the one in the debug info ({2}). The MLIR type won't be used "
+            "and regular MLIR-agnostic DWARF parsing will be performed.",
             attrs.name.AsCString(), *mlirByteSize, *attrs.byteSize);
       } else {
         type = dwarf->MakeType(

@@ -6,7 +6,7 @@
 
 # RUN: mojo build --debug-level full -O0 --debug-info-language Mojo --no-alnum-symbols '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %lldb %t -o 'b builtin-types.mojo:73' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v *a_struct' | FileCheck %s
+# RUN: %lldb %t -o 'b builtin-types.mojo:86' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v *a_struct' | FileCheck %s
 
 # CHECK: (pointer<si64>) a_var_index = 0x
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
@@ -15,6 +15,12 @@
 # CHECK:   another_int = 101
 # CHECK:   float16 = 25.125
 # CHECK:   uint8 = 123
+# CHECK:   simd = {
+# CHECK:     [0] = -0.125
+# CHECK:     [1] = -1.5
+# CHECK:     [2] = -1
+# CHECK:     [3] = 5.7266
+# CHECK:   }
 # CHECK:   uint16 = 123
 # CHECK:   int32 = 485
 # CHECK: }
@@ -25,6 +31,36 @@
 # CHECK:     m0 = 1
 # CHECK:     m1 = 2.125
 # CHECK:     m2 = 3
+# CHECK: }
+# CHECK: (simd<4, f16>) a_simd = {
+# CHECK:   [0] = 1.125
+# CHECK:   [1] = 2.5
+# CHECK:   [2] = 0
+# CHECK:   [3] = -3.7246
+# CHECK: }
+# CHECK: (simd<32, si64>) b_simd = {
+# CHECK:   [0] = 1
+# CHECK:   [1] = 2
+# CHECK:   [2] = 3
+# CHECK:   [7] = 8
+# CHECK:   [8] = 9
+# CHECK:   [9] = 10
+# CHECK:   [10] = 11
+# CHECK:   [15] = 16
+# CHECK:   [16] = -1
+# CHECK:   [17] = -2
+# CHECK:   [18] = -3
+# CHECK:   [19] = -4
+# CHECK:   [26] = -11
+# CHECK:   [27] = -12
+# CHECK:   [28] = -13
+# CHECK:   [29] = -14
+# CHECK:   [30] = -15
+# CHECK:   [31] = -16
+# CHECK: }
+# CHECK: (simd<2, index>) c_simd = {
+# CHECK:   [0] = 5
+# CHECK:   [1] = 6
 # CHECK: }
 # CHECK: (si64) a_let_index = 48
 # CHECK: (si64) an_int = 123
