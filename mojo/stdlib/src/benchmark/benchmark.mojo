@@ -8,17 +8,13 @@ Implements the benchmark module for runtime benchmarking.
 
 You can import these APIs from the `benchmark` package. For example:
 
-### Import
-
 ```mojo
 import benchmark
 from time import sleep
 ```
 
-### Usage
-
-You can pass any `fn` as a parameter into `benchmark.run[...]()`, it will return a
-`Report` where you can get the mean, duration, max, and more:
+You can pass any `fn` as a parameter into `benchmark.run[...]()`, it will return
+a `Report` where you can get the mean, duration, max, and more:
 
 ```mojo
 fn sleeper():
