@@ -18,6 +18,13 @@
 
 using namespace M;
 
+static llvm::StringRef copyBytes(llvm::ArrayRef<char> data,
+                                 size_t alignment = kPreferredMemoryAlignment) {
+  char *ptr = reinterpret_cast<char *>(alignedAlloc(alignment, data.size()));
+  llvm::copy(data, ptr);
+  return {ptr, data.size()};
+}
+
 static llvm::StringRef copyString(llvm::StringRef str) {
   char *ptr = reinterpret_cast<char *>(
       alignedAlloc(kPreferredMemoryAlignment, str.size() + 1));
@@ -91,6 +98,18 @@ struct FileHandle {
     }
 
     return copyString(llvm::StringRef(buf.data(), buf.size()));
+  }
+
+  llvm::StringRef readBytes(llvm::StringRef *errMsg) {
+    llvm::SmallVector<char> buf;
+    llvm::Error err = llvm::sys::fs::readNativeFileToEOF(
+        llvm::sys::fs::convertFDToNativeFile(handle), buf);
+    if (err) {
+      *errMsg = copyString(llvm::toString(std::move(err)));
+      return {nullptr, 0};
+    }
+
+    return copyBytes(buf);
   }
 
   uint64_t seek(uint64_t offset, llvm::StringRef *errMsg) {
@@ -183,6 +202,14 @@ KGEN_CompilerRT_IO_FileRead(FileHandleWrapper file, uint64_t *size,
   return str.data();
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
+KGEN_CompilerRT_IO_FileReadBytes(FileHandleWrapper file, uint64_t *size,
+                                 llvm::StringRef *errMsg) {
+  llvm::StringRef str = unwrap(file)->readBytes(errMsg);
+  *size = str.size();
+  return str.data();
+}
+
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_IO_FileWrite(FileHandleWrapper file, const char *data,
                              uint64_t size, llvm::StringRef *errMsg) {
@@ -203,4 +230,6 @@ void M::KGEN::registerIO(
       {"KGEN_CompilerRT_IO_FileRead", (void *)&KGEN_CompilerRT_IO_FileRead});
   funcs.push_back(
       {"KGEN_CompilerRT_IO_FileWrite", (void *)&KGEN_CompilerRT_IO_FileWrite});
+  funcs.push_back({"KGEN_CompilerRT_IO_FileReadBytes",
+                   (void *)&KGEN_CompilerRT_IO_FileReadBytes});
 }
