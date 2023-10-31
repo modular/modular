@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -23,10 +24,10 @@
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetSelect.h"
 
 using namespace M;
@@ -238,6 +239,25 @@ int main(int argc, char **argv) {
   mlir::registerPass(
       [&] { return KGEN::createResolveCompilerPromises(runtime); });
 
+  // Register cl options for the tracer.
+  static llvm::cl::opt<bool> timeTrace{
+      "time-trace",
+      llvm::cl::desc("Turn on time profiler. Generates JSON file "
+                     "called kgen.trace.json in the derived directory.")};
+
+  static llvm::cl::opt<int> timeTraceGranularity{
+      "time-trace-granularity",
+      llvm::cl::desc("Minimum time granularity (in microseconds) "
+                     "traced by time profiler."),
+      llvm::cl::init(0)};
+
+  // Register and parse command line options.
+  std::string inputFilename, outputFilename;
+  std::tie(inputFilename, outputFilename) =
+      registerAndParseCLIOptions(argc, argv, "kgen optimizer driver", registry);
+
+  KGEN::TraceProfiler tracer(timeTrace, timeTraceGranularity);
+
   return failed(
-      mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));
+      MlirOptMain(argc, argv, inputFilename, outputFilename, registry));
 }
