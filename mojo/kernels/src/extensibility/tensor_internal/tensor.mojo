@@ -608,12 +608,9 @@ struct Tensor[dtype: DType]:
         Returns:
           The tensor read from file.
         """
-        var tensor = Tensor[dtype]()
-        with open(path, "r") as f:
-            var byte_tensor = f.read_bytes()
-            let size = byte_tensor.num_elements()
-            tensor = Tensor(
-                bitcast[dtype](byte_tensor._steal_ptr()),
-                size // sizeof[dtype](),
-            )
-        return tensor
+        var byte_tensor = path.read_bytes()
+        let num_elements = byte_tensor.num_elements()
+        return Tensor(
+            bitcast[dtype](byte_tensor._steal_ptr()),
+            num_elements // dtype.sizeof(),
+        )
