@@ -58,9 +58,10 @@ public:
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.
-  LIT::FuncOp createWrapperInitWithImpl(StructDeclOp closureWrapper,
-                                        StructDeclOp closureImpl,
-                                        SMLoc location);
+  LIT::FuncOp createWrapperInitWithImpl(
+      StructDeclOp closureWrapper, StructDeclOp closureImpl,
+      DenseMap<unsigned, unsigned> fromImplToWrapperParameterMap,
+      SMLoc location);
 
   /// Generate a unique name for a closure class.
   static StringAttr getClosureNameFromType(StringRef prefix,
@@ -95,7 +96,7 @@ private:
   /// Given a Closure struct and parameter values, create the specialized self
   /// type.
   Type makeClosureImplSelfType(StructDeclOp closureImpl,
-                               SmallVector<ParamDeclAttr> paramValues);
+                               ArrayRef<ParamDeclRefAttr> paramRefs);
 
   /// Given a closure wrapper, collect the top level function types.
   TopLevelTypes collectTopLevelFunctionTypes(StructDeclOp closureWrapper);
