@@ -2556,7 +2556,11 @@ static Value emitClosureInstance(SignatureType closureSignature,
       shared.replaceNestedFunctionWithGeneratedClosureImplStruct(
           location, nestedFunctionDecl, moduleDecl);
   ClosureEmitter emitter(*moduleDecl, shared);
-  emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, location);
+
+  // Parameters in ClosureWrapper are not support yet
+  DenseMap<unsigned, unsigned> paramMap;
+  emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, paramMap,
+                                    location);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = parentFunction.getLocScope())
@@ -2603,6 +2607,27 @@ static Value emitClosureInstance(SignatureType closureSignature,
   SmallVector<ASTExprAnd<AnyValue>> closureWrapperInitArgs;
   closureWrapperInitArgs.push_back({value, &node});
   Type closureWrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
+  if (DeclRefType declRef = dyn_cast<DeclRefType>(closureWrapperType)) {
+    ASTDecl &typeDecl =
+        shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
+
+    // Identify the captures. Store index so we can order them in the order they
+    // are declared in the Closure Wrapper struct.
+    DenseSet<StringAttr> captures;
+    nestedFunctionSignature.walk([&](ParamDeclRefAttr potentialCapture) {
+      captures.insert(potentialCapture.getName());
+    });
+    // Create the type by populating the bindings.
+    SmallVector<TypedAttr> bindingValues;
+    for (ParamDeclAttr parameter : parentFunction.getInputParams()) {
+      if (captures.contains(parameter.getName()))
+        bindingValues.push_back(
+            ParamDeclRefAttr::get(parameter.getName(), parameter.getType()));
+    }
+    SymbolRefAttr symbol = typeDecl.getSymbolRef();
+    closureWrapperType =
+        DeclRefType::get(symbol, bindingValues, MetaTypeType::get(symbol));
+  }
   CValue closureWrapperInstance = exprEmitter.emitConstructorCall(
       ASTType(closureWrapperType), closureWrapperInitArgs, &node,
       CallSyntax::kTypeCall, closureWrapperDest,
