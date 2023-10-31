@@ -452,10 +452,10 @@ fn concat_shape[
     axis_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    *input_bufs: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
+    input_bufs: InlinedFixedVector[
+        NDBuffer[input_rank, DimList.create_unknown[input_rank](), input_type]
     ],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
 ) -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -468,8 +468,8 @@ fn concat_shape[
         single_thread_blocking_override: Whether this function can block.
 
     Args:
+        input_bufs: The input tensors list.
         axis_buf: The axis tensor.
-        input_bufs: The variadic input tensors.
 
     Returns:
         The output shape.
