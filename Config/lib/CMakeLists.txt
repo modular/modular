@@ -4,7 +4,13 @@
 #
 ##===----------------------------------------------------------------------===##
 
-find_first_existing_vc_file("${MODULAR_MAIN_SRC_DIR}" modular_vc)
+if(MODULAR_REDACT_VERSION_REVISION)
+  # Bogus -- if this file changes then we reconfigure anyway, so does not cause
+  # any unnecessary work.
+  set(modular_vc "${CMAKE_CURRENT_LIST_FILE}")
+else()
+  find_first_existing_vc_file("${MODULAR_MAIN_SRC_DIR}" modular_vc)
+endif()
 set(version_inc "${CMAKE_CURRENT_BINARY_DIR}/GeneratedVersion.h")
 set(generate_version_script "${CMAKE_CURRENT_SOURCE_DIR}/GenerateVersion.cmake")
 
@@ -20,6 +26,7 @@ add_custom_command(OUTPUT "${version_inc}"
                            "-DMODULAR_VERSION_LABEL=${MODULAR_VERSION_LABEL}"
                            "-DMODULAR_DERIVED_DIR=${MODULAR_DERIVED_DIR}"
                            "-DMODULAR_BUILD_TYPE_LOWER=${MODULAR_BUILD_TYPE_LOWER}"
+			   "-DMODULAR_REDACT_VERSION_REVISION=${MODULAR_REDACT_VERSION_REVISION}"
   -P "${generate_version_script}")
 
 # Mark the generated header as being generated.

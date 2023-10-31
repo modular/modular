@@ -10,12 +10,25 @@
 
 find_package(Git QUIET REQUIRED)
 
-execute_process (
-    COMMAND ${GIT_EXECUTABLE} rev-parse --short=8 HEAD
-    WORKING_DIRECTORY ${MODULAR_SOURCE_DIR}
-    OUTPUT_VARIABLE MODULAR_VERSION_REVISION
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+# MODULAR_REDACT_VERSION_REVISION can be set to avoid re-linking when switching
+# between different commits, saving some time when committing frequently, at
+# the expense of revision information being unavailable.  The safe default is
+# OFF -- turn it on only if needed, and turn it back off before reporting any
+# issues.
+if(MODULAR_REDACT_VERSION_REVISION)
+  set(MODULAR_VERSION_REVISION "<redacted>")
+  message(STATUS
+    "Redacting Modular version revision -- "
+    "Do not distribute the resulting binaries, "
+    "and turn off before reporting issues")
+else()
+  execute_process (
+      COMMAND ${GIT_EXECUTABLE} rev-parse --short=8 HEAD
+      WORKING_DIRECTORY ${MODULAR_SOURCE_DIR}
+      OUTPUT_VARIABLE MODULAR_VERSION_REVISION
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+endif()
 
 set(version_inc "${VERSION_OUTPUT_FILE}")
 
