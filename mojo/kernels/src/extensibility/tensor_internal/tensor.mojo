@@ -37,10 +37,13 @@ print(gray_scale_image.shape().__str__())
 ```
 """
 
+import math
+from algorithm.functional import elementwise
 from builtin.io import _Printable
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import bitcast
+from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils._serialize import (
     _serialize,
@@ -191,6 +194,55 @@ struct Tensor[dtype: DType]:
         """
 
         return not (self == other)
+
+    @always_inline
+    fn __ipow__(inout self, exponent: Int) -> None:
+        """In-place pow operator.
+
+        Raises each element of the tensor to the power of `exponent` in place.
+
+        Constraints:
+             For integral values the exponent cannot be negative.
+
+        Args:
+            exponent: Integer power to raise tensor to.
+        """
+        self = self**exponent
+
+    @always_inline
+    fn __pow__(self, exponent: Int) -> Self:
+        """Returns a copy of the tensor with each element raised to the power
+        of `exponent`.
+
+        Constraints:
+             For integral values the exponent cannot be negative.
+
+        Args:
+            exponent: Integer power to raise tensor to.
+
+        Returns:
+            An exponentiated copy of tensor.
+        """
+        let result = self
+        let buffer = result._to_buffer()
+
+        # Define an elementwise pow that captures and modifies `buffer`.
+        @parameter
+        fn _pow[width: Int, rank: Int](indices: StaticIntTuple[rank]) -> None:
+            let i = indices[0]
+            buffer[i] = math.pow(buffer[i], exponent)
+
+        # Use the `elementwise` generator to run `pow` in parallel.
+        with Runtime() as rt:
+            let out_chain = OwningOutputChainPtr(rt)
+            alias dtype_simd_width = simdwidthof[dtype]()
+
+            elementwise[rank=1, simd_width=dtype_simd_width, func=_pow](
+                StaticIntTuple[1](len(buffer)), out_chain.borrow()
+            )
+            out_chain.wait()
+
+        return result
 
     @always_inline
     fn data(self) -> DTypePointer[dtype]:
