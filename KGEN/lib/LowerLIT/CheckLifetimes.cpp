@@ -947,6 +947,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
       case ValueInputConvention::InitSelf:
         checkDef(operand, op); // This call defines the by-ref result.
         break;
+      case ValueInputConvention::None:
+        llvm_unreachable("none convention not permitted in lit");
       }
     }
 
