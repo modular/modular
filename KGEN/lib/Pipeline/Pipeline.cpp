@@ -76,6 +76,10 @@ void KGEN::buildElaborateModulePipeline(
   // that were already elaborated.
   pm.addPass(createMaterializePackages(packageLinkHandlerFn));
 
+  // Erase debuginfo from all sources if compiling with no debuginfo.
+  if (options.debugLevel == CompilationOptions::kNoDebug)
+    pm.addPass(DebugInfo::createDebugInfoStrip());
+
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
@@ -133,8 +137,6 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   if (options.debugLevel == CompilationOptions::DebugInfoLevel::kSynthetic)
     pm.addPass(createSynthesizeDebugInfo(
         {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
-  else if (options.debugLevel == CompilationOptions::kNoDebug)
-    pm.addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 
   // Guaranteed optimizations.
   pm.addNestedPass<FuncOp>(createSROA());

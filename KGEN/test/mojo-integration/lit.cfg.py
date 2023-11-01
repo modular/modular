@@ -9,7 +9,6 @@ import platform
 
 from lit.llvm import llvm_config
 
-
 # name: The name of this test suite.
 config.name = "mojo-integration"
 
@@ -21,6 +20,9 @@ config.test_source_root = os.path.dirname(__file__)
 
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
+
+# These files/directories are only used as part of other tests.
+config.excludes = ["inputs"]
 
 tool_dirs = [
     config.modular_tools_dir,
