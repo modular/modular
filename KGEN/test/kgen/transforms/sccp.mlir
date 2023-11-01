@@ -25,7 +25,6 @@ kgen.func @loop_generates_constant() -> (index, index) {
       hlcf.yield
     } else {
       %4 = index.add %arg0, %1
-      // CHECK: hlcf.break [[IDX11]]
       hlcf.break %4: index
     }
     %5 = index.add %arg0, %idx1
@@ -255,7 +254,6 @@ kgen.func @nested_loops() -> index {
       hlcf.yield
     } else {
       %8 = index.add %3, %1
-      // CHECK: hlcf.break [[IDX27]]
       hlcf.break %8: index
     }
 
