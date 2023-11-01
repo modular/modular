@@ -9,6 +9,7 @@ from memory import stack_allocation
 from memory.unsafe import DTypePointer, Pointer
 
 from utils._reflection import get_linkage_name
+from utils.optional import Optional
 
 from pathlib import Path
 from ._compile import _cleanup_asm, _compile_nvptx_asm
@@ -633,6 +634,8 @@ struct Function[func_type: AnyType, func: func_type]:
         debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: _PathOrBool = _PathOrBool(),
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
     ) raises -> Self:
         alias name = get_linkage_name[func_type, func]()
         let ptx = _cleanup_asm(Self._impl.asm)
@@ -645,7 +648,11 @@ struct Function[func_type: AnyType, func: func_type]:
                 print(ptx)
 
         let mod_handle = ModuleHandle(
-            ptx, debug=debug, verbose=verbose or debug
+            ptx,
+            debug=debug,
+            verbose=verbose or debug,
+            max_registers=max_registers,
+            threads_per_block=threads_per_block,
         )
         let func_handle = mod_handle.load(name)
 

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, Pointer, bitcast
+from utils.optional import Optional
 
 from ._utils import _check_error, _get_dylib_function
 
@@ -330,12 +331,16 @@ struct ModuleHandle:
         return Self {module: module}
 
     fn __init__(
-        content: String, debug: Bool = False, verbose: Bool = False
+        content: String,
+        debug: Bool = False,
+        verbose: Bool = False,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
     ) raises -> Self:
         var module = _ModuleImpl()
         if debug or verbose:
             alias buffer_size = 4096
-            alias max_num_options = 6
+            alias max_num_options = 10
             var num_options = 0
 
             let info_buffer = stack_allocation[buffer_size, Int8]()
@@ -368,6 +373,20 @@ struct ModuleHandle:
             if debug:
                 opts.store(num_options, JitOptions.GENERATE_DEBUG_INFO)
                 option_vals.store(num_options, bitcast[NoneType](1))
+                num_options += 1
+
+            if max_registers:
+                opts.store(num_options, JitOptions.MAX_REGISTERS)
+                option_vals.store(
+                    num_options, bitcast[NoneType](max_registers.value())
+                )
+                num_options += 1
+
+            if threads_per_block:
+                opts.store(num_options, JitOptions.THREADS_PER_BLOCK)
+                option_vals.store(
+                    num_options, bitcast[NoneType](threads_per_block.value())
+                )
                 num_options += 1
 
             # Note that content has already gone through _cleanup_asm and
