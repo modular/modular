@@ -96,15 +96,9 @@ fn test_strsv():
     print("== test_strsv")
 
     alias size: Int = 64
-    let L_data = DynamicVector[
-        __mlir_type[`!pop.scalar<`, DType.float32.value, `>`]
-    ](size * size)
-    let x0_data = DynamicVector[
-        __mlir_type[`!pop.scalar<`, DType.float32.value, `>`]
-    ](size)
-    let x1_data = DynamicVector[
-        __mlir_type[`!pop.scalar<`, DType.float32.value, `>`]
-    ](size)
+    let L_data = DynamicVector[Float32](size * size)
+    let x0_data = DynamicVector[Float32](size)
+    let x1_data = DynamicVector[Float32](size)
 
     let L = Buffer[size * size, DType.float32](L_data.data)
     let x0 = Buffer[size, DType.float32](x0_data.data)
