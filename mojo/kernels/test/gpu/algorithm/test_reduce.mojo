@@ -102,7 +102,7 @@ fn run_reduce() raises:
     var vec_host = Tensor[DType.float32](n)
 
     for i in range(n):
-        vec_host[i] = 1
+        vec_host[i] = i
 
     let vec_device = _malloc[Float32](n)
     let res_device = _malloc[Float32](1)
@@ -128,7 +128,7 @@ fn run_reduce() raises:
     var res = SIMD[DType.float32, 1](0)
     _copy_device_to_host(Pointer.address_of(res), res_device, 1)
 
-    # CHECK: res =  1024.0
+    # CHECK: res =  523776.0
     print("res = ", res)
 
     _free(vec_device)
