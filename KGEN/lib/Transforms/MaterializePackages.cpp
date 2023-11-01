@@ -132,26 +132,29 @@ void MaterializePackagesPass::runOnOperation() {
       funcs[0].emitOpError("unable to find the link for preCompiledModuleRef");
       return signalPassFailure();
     }
-    TargetInfoAttr compiledFor = packageLink.getArchive().getTarget();
-    // Currently all package link ops have a precompiled archive attribute --
-    // but the archive may not have been precompiled for the target we're
-    // currently building.
-    // TODO(#17326): Support 0 or multiple precompiled archives for a single
-    // package.
-    DenseResourceElementsAttr bytecode =
-        packageLink.getArchive().getElaboratedModule();
+
+    TargetInfoAttr target = lookupTargetInfo(theModule);
+    BuildInfoAttr build = lookupBuildInfo(theModule);
 
     // Get the target on the module. If we don't have a target or if the target
     // doesn't match, check for a pre-elaborated module that we can then compile
     // on-demand.
-    TargetInfoAttr target = lookupTargetInfo(theModule);
-    BuildInfoAttr build = lookupBuildInfo(theModule);
-    if (!target || target != compiledFor) {
+    std::optional<PackageArchiveAttr> archive =
+        packageLink.getArchivesAttr().getTargetArchive(target);
+
+    DenseResourceElementsAttr bytecode;
+    if (archive) {
+      bytecode = archive->getElaboratedModule();
+    } else {
       // If we don't have a precompiled archive for our target, then we can only
       // proceed if we have a pre-elaborated module.
       if (!packageLink.getPreElaborationModuleAttr()) {
-        auto diag = packageLink.emitError("package was compiled for ")
-                    << compiledFor << " but current target is " << target;
+        auto diag =
+            packageLink.emitError(
+                "no precompiled package archives match the current target '")
+            << target
+            << "', archives we precompiled for the following targets: "
+            << packageLink.getArchivesAttr().getTargetsAsString();
         diag.attachNote() << "no generic fallback was found to recompile "
                              "package for current target";
         return signalPassFailure();
@@ -167,6 +170,10 @@ void MaterializePackagesPass::runOnOperation() {
         return signalPassFailure();
       }
       bytecode = *bytecodeOr;
+
+      // If the callback function elaborated and compiled the package module
+      // bytecode, it'll have set it on the `kgen.package_link` op.
+      archive = packageLink.getArchivesAttr().getTargetArchive(target);
     }
 
     // Get the data for the imported module body.
@@ -243,12 +250,12 @@ void MaterializePackagesPass::runOnOperation() {
     // a library. Otherwise, erase the `kgen.package_link` op altogether -- the
     // imported functions now exist as part of the module they were imported
     // into.
-    if (bytecode == packageLink.getArchive().getElaboratedModule()) {
+    if (archive) {
       // Convert the package link to a kgen link directive.
       OpBuilder b(packageLink);
-      auto linkOp = b.create<KGEN::LinkOp>(
-          packageLink.getLoc(), packageLink.getSymNameAttr(), StringAttr(),
-          packageLink.getArchive().getArchive());
+      auto linkOp = b.create<KGEN::LinkOp>(packageLink.getLoc(),
+                                           packageLink.getSymNameAttr(),
+                                           StringAttr(), archive->getArchive());
       symtab.erase(packageLink);
       symtab.insert(linkOp);
     } else {

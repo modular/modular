@@ -185,16 +185,21 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
     return elaborateOr.takeError();
   auto [bytecodeResource, symtab, exportedSymbols] = elaborateOr.takeValue();
 
-  // Create the compiled archive of the package, and set the resulting archive
-  // bytes as an attribute on the package_link op.
+  // Create the compiled archive of the package, and add the resulting archive
+  // bytes to the package link op's archives attribute.
   auto archiveOr =
       createPackageArchive(symtab, exportedSymbols, compileOptions, runtime);
   if (archiveOr.isError())
     return archiveOr.takeError();
-  packageLink.setArchiveAttr(PackageArchiveAttr::get(
-      targetInfo, bytecodeResource, archiveOr.takeValue()));
 
-  return packageLink.getArchive().getElaboratedModule();
+  // Insert the new archive into the array of archives on the package link op.
+  SmallVector<PackageArchiveAttr> archives{PackageArchiveAttr::get(
+      targetInfo, bytecodeResource, archiveOr.takeValue())};
+  if (PackageArchiveArrayAttr existing = packageLink.getArchivesAttr())
+    llvm::append_range(archives, existing.getValue());
+  packageLink.setArchives(archives);
+
+  return bytecodeResource;
 }
 
 //===----------------------------------------------------------------------===//

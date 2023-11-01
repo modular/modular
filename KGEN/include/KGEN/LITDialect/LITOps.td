@@ -185,8 +185,7 @@ def PackageOp : LITOp<"package", [
     If the package was precompiled it may also contain:
     - The full pre-elaboration IR module, `preElaborationModule`.
     - The definitions used at compile time, `compiledEnv`.
-    - The precompiled, standalone archive of the package for a specific target,
-      `archive`.
+    - Any and all precompiled, standalone archives of the package, `archives`.
 
     Example:
 
@@ -205,10 +204,9 @@ def PackageOp : LITOp<"package", [
     // compiled.
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
 
-    // FIXME(#17326): This should be a map of precompiled targets, not one.
     OptionalAttr<KGEN_EnvAttr>:$compiledEnv,
-    // An optional precompiled archive for the package.
-    OptionalAttr<KGEN_PackageArchiveAttr>:$archive
+    // Zero or more precompiled archives for the package.
+    KGEN_PackageArchiveArrayAttr:$archives
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -220,7 +218,10 @@ def PackageOp : LITOp<"package", [
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>,
   ];
-  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let assemblyFormat = [{
+    $sym_name custom<PackageArchiveArray>($archives) attr-dict-with-keyword
+    $bodyRegion
+  }];
   let skipDefaultBuilders = 1;
   let hasVerifier = 1;
 }
