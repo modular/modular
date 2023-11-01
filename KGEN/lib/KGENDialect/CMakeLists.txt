@@ -10,6 +10,7 @@ add_modular_dialect_library(KGENDialect
   KGENDialect.cpp
   KGENInterfaces.cpp
   KGENOps.cpp
+  KGENOpsFolders.cpp
   KGENParameters.cpp
   KGENTypeInterfaces.cpp
   KGENTypes.cpp
