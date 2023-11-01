@@ -971,7 +971,7 @@ def AutomaticInline: Pass<"automatic-inline", "mlir::ModuleOp"> {
 // SCCP
 //===----------------------------------------------------------------------===//
 
-def SCCP: Pass<"sccp", "mlir::ModuleOp"> {
+def SCCP: Pass<"sccp"> {
   let summary = "KGEN sparse conditional constant propagation pass";
   let description = [{
     Sparse conditional constant propagation (SCCP).
