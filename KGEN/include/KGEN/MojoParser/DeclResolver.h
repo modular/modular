@@ -207,7 +207,7 @@ public:
                                ArrayRef<ParamDeclAttr> paramRefsToUnbind,
                                std::function<void(StringRef)> errorHandler);
 
-  /// Create a bounded type from a struct and a list of bindings.
+  /// Create a bound type from a struct and a list of bindings.
   static Type createTypeFromSubsetOfParentParameters(
       SharedState &shared, StructDeclOp baseStruct,
       ArrayRef<ParameterCapture> parentDeclRefSubset);
