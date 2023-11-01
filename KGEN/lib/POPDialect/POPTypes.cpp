@@ -273,13 +273,23 @@ ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
     }
   }
 
-  // Other dtypes are multiples of bytes.
+  // Other dtypes are multiples of bytes in memory.
+  int64_t bitWidth = dtype.getWidthInBits();
   int64_t byteSize = vecSize / *getResolvedSize();
+  int64_t shiftBits = byteSize * CHAR_BIT - bitWidth;
+
   SmallVector<DTypeValue> values;
   APInt value(byteSize * CHAR_BIT, 0);
   for (unsigned i = 0; i != count; ++i) {
     llvm::LoadIntFromMemory(value, data + i * byteSize, byteSize);
-    values.emplace_back(value, dtype);
+    if (bitWidth == -1) {
+      // dtype width unknown (e.g. address, index).
+      values.emplace_back(value, dtype);
+    } else {
+      // For FloatTF32, right Shift 32 bit data by 13 bits and trunc to 19 bits;
+      // other types, lshr and trunc are no ops.
+      values.emplace_back(value.lshr(shiftBits).trunc(bitWidth), dtype);
+    }
   }
   return SIMDAttr::get(values, *this);
 }

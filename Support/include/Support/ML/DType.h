@@ -151,6 +151,9 @@ public:
   constexpr bool isFloat() const {
     return !isInt() && ((value & mIsFloat) != 0);
   }
+
+  constexpr bool isTF32() const { return value == DType::tf32; }
+
   constexpr bool isArithmetic() const { return isInt() || isFloat(); }
   constexpr bool isOther() const { return !isArithmetic(); }
 
@@ -272,8 +275,9 @@ inline constexpr ssize_t DType::getWidthInBits() const {
   case DType::f24:
     return 24;
   case DType::f32:
-  case DType::tf32:
     return 32;
+  case DType::tf32:
+    return 19;
   case DType::f64:
     return 64;
   case DType::f80:

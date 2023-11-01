@@ -350,6 +350,7 @@ static std::vector<uint8_t> packIntegerValues(unsigned width,
   std::vector<uint8_t> data(values.size() * byteSize, 0);
   for (auto [index, value] : llvm::enumerate(values))
     llvm::StoreIntToMemory(value, data.data() + (index * byteSize), byteSize);
+
   return data;
 }
 
@@ -443,8 +444,24 @@ FloatArrayElementsAttr FloatArrayElementsAttr::get(ShapedType type,
                                                    ArrayRef<APFloat> values) {
   SmallVector<APInt> intVals;
   intVals.reserve(values.size());
-  for (const APFloat &value : values)
-    intVals.push_back(value.bitcastToAPInt());
+
+  unsigned bitWidth = type.getElementTypeBitWidth();
+  unsigned bitsToShift = 0;
+
+  auto floatType = llvm::cast<FloatType>(type.getElementType());
+  unsigned semBitWidth =
+      llvm::APFloat::getSizeInBits(floatType.getFloatSemantics());
+  if (bitWidth < semBitWidth)
+    bitWidth = semBitWidth;
+
+  bitsToShift = bitWidth - semBitWidth;
+
+  for (const APFloat &value : values) {
+    // Extend FloatTF32 bits to 32 and left shift 32 - 19 = 13 bits; Other
+    // types, this is no-op.
+    intVals.push_back(value.bitcastToAPInt().zext(bitWidth).shl(bitsToShift));
+  }
+
   std::vector<uint8_t> rawData =
       packIntegerValues(type.getElementTypeBitWidth(), ArrayRef(intVals));
   return ArrayElementsAttr::get(rawData, type).cast<FloatArrayElementsAttr>();

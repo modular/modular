@@ -61,7 +61,7 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
     return result;
   }
   case DType::f32:
-  case DType::tf32:
+  case DType::tf32: // tf32 has 19bits, store as 4 bytes.
     widthShift = 2;
     break;
   case DType::f64:
