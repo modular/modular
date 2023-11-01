@@ -36,4 +36,5 @@ add_modular_unittest(
   test_kernels
 )
 
+add_subdirectory(KGENDialect)
 add_subdirectory(Package)
