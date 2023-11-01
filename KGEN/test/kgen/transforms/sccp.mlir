@@ -202,17 +202,19 @@ kgen.func @test_for_loop(%arg0: index) -> (index) {
   %idx1 = index.constant 1
   %idx2 = index.constant 2
 
+  // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
   // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
   // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
   // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
 
-  %0 = hlcf.for [%idx0 to %idx2 step %idx1 slt add] (%arg1 = %idx0 : index, %arg2 = %idx0: index) -> index {
+  %0 = hlcf.for [%idx0 to %idx2 step %idx1 slt add] (%arg1 = %idx0 : index, %arg2 = %idx1: index) -> index {
     %1 = index.add %arg1, %idx1
+    %2 = index.add %arg2, %idx1
     kgen.call @foo(%1, %arg0) : (index, index) -> ()
-    hlcf.for.yield [induction_var (%1 : index)] [retvals (%1: index)] [iterargs ()]
+    hlcf.for.yield [induction_var (%1 : index)] [retvals (%2: index)] [iterargs ()]
   }
 
-  // CHECK: kgen.return [[IDX2]]
+  // CHECK: kgen.return [[IDX3]]
   kgen.return %0: index
 }
 

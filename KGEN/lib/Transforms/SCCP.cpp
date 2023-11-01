@@ -336,7 +336,10 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
 
     // Prepare for initial loop inputs.
     SmallVector<Attribute> constantOperands;
-    getValuesLattice(constantOperands, node->getOperands(), state);
+    if (auto forOp = dyn_cast<ForOp>(node.getOperation()))
+      getValuesLattice(constantOperands, forOp.getIterArgs(), state);
+    else
+      getValuesLattice(constantOperands, node->getOperands(), state);
 
     // Prepare the workList for analyzing the loop.
     ControlFlowOperationState *cfStates = getOrCreateCFState(node);
