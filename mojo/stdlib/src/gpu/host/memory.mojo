@@ -27,8 +27,7 @@ fn _malloc[type: AnyType](count: Int) raises -> Pointer[type]:
 
 
 fn _malloc[type: DType](count: Int) raises -> DTypePointer[type]:
-    let res = _malloc[SIMD[type, 1]](count)
-    return DTypePointer[type](res.address)
+    return _malloc[SIMD[type, 1]](count)
 
 
 fn _malloc_managed[type: AnyType](count: Int) raises -> Pointer[type]:
@@ -42,8 +41,7 @@ fn _malloc_managed[type: AnyType](count: Int) raises -> Pointer[type]:
 
 
 fn _malloc_managed[type: DType](count: Int) raises -> DTypePointer[type]:
-    let res = _malloc_managed[SIMD[type, 1]](count)
-    return DTypePointer[type](res.address)
+    return _malloc_managed[SIMD[type, 1]](count)
 
 
 fn _free[type: AnyType](ptr: Pointer[type]) raises:

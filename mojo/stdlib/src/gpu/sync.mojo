@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes intrinsics for NVIDIA GPUs sync instructions."""
 
-from memory.unsafe import Pointer, DTypePointer
-from .memory import DevicePointer, DTypeDevicePointer, AddressSpace
+from memory.unsafe import Pointer, DTypePointer, AddressSpace
+from .memory import AddressSpace as GPUAddressSpace
 from sys import llvm_intrinsic
 
 # ===----------------------------------------------------------------------===#
@@ -46,9 +46,9 @@ fn syncwarp(mask: Int = -1):
 
 
 @always_inline("nodebug")
-fn mbarrier[
+fn _mbarrier_impl[
     type: AnyType, address_space: AddressSpace
-](address: DevicePointer[type, address_space]):
+](address: Pointer[type, address_space]):
     """Makes the mbarrier object track all prior copy async operations initiated
     by the executing thread.
 
@@ -57,25 +57,25 @@ fn mbarrier[
     """
 
     @parameter
-    if address_space == AddressSpace.SHARED:
+    if address_space == GPUAddressSpace.SHARED:
         llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType](
             address
         )
     elif (
-        address_space == AddressSpace.GLOBAL
-        or address_space == AddressSpace.GENERIC
+        address_space == GPUAddressSpace.GLOBAL
+        or address_space == GPUAddressSpace.GENERIC
     ):
         llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
-            llvm_intrinsic[
-                "llvm.addrspacecast", __mlir_type[`!kgen.pointer<`, type, `>`]
-            ](address.address)
+            address.address_space_cast[GPUAddressSpace.GENERIC]().address
         )
     else:
         constrained[False, "invalid address space"]()
 
 
 @always_inline("nodebug")
-fn mbarrier[type: AnyType](address: Pointer[type]):
+fn mbarrier[
+    type: AnyType, address_space: AddressSpace
+](address: Pointer[type, address_space]):
     """Makes the mbarrier object track all prior copy async operations initiated
     by the executing thread.
 
@@ -83,13 +83,13 @@ fn mbarrier[type: AnyType](address: Pointer[type]):
       address: The mbarrier object is at the location.
     """
 
-    llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](address)
+    _mbarrier_impl(address)
 
 
 @always_inline("nodebug")
 fn mbarrier[
     type: DType, address_space: AddressSpace
-](address: DTypeDevicePointer[type, address_space]):
+](address: DTypePointer[type, address_space]):
     """Makes the mbarrier object track all prior copy async operations initiated
     by the executing thread.
 
@@ -97,16 +97,4 @@ fn mbarrier[
       address: The mbarrier object is at the location.
     """
 
-    return mbarrier(address._as_scalar_pointer())
-
-
-@always_inline("nodebug")
-fn mbarrier[type: DType](address: DTypePointer[type]):
-    """Makes the mbarrier object track all prior copy async operations initiated
-    by the executing thread.
-
-    Args:
-      address: The mbarrier object is at the location.
-    """
-
-    return mbarrier(address._as_scalar_pointer())
+    _mbarrier_impl(address.address)
