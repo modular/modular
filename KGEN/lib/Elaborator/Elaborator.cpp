@@ -2013,7 +2013,8 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
       SignatureType::get(generator.getFunctionType(),
                          generator.getSignature().getInputConventions(),
                          generator.getSignature().getFnEffects()),
-      generator.getInlineLevel(), generator.getExportKind());
+      generator.getInlineLevel(), generator.getExportKind(),
+      generator.getDecorators());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.

@@ -2060,3 +2060,22 @@ kgen.generator export @variadic() {
 kgen.generator @fwd(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @"decorators,a=1"
+// CHCEK-NEXT: decorators<1>
+
+// CHECK-LABEL: kgen.func @"decorators,a=2"
+// CHCEK-NEXT: decorators<1>
+
+kgen.generator @decorators<a>()
+    decorators<1> {
+  kgen.return
+}
+
+kgen.generator @elaborate() {
+  kgen.call @decorators<1>() : () -> ()
+  kgen.call @decorators<2>() : () -> ()
+  kgen.return
+}
