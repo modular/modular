@@ -9,6 +9,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "mlir/Analysis/DataFlow/ConstantPropagationAnalysis.h"
 #include "mlir/Transforms/FoldUtils.h"
@@ -506,7 +507,12 @@ SCCPAnalysis::processRegion(Region &region, AnalysisStateType &state,
       break;
     }
 
-    if (op.getNumRegions() > 0) {
+    if (isa<KGEN::StageClosureOp, LIT::AsyncExecuteOp>(op)) {
+      //  TODO: Skip inter-procedural analysis for now. Mark anyone of its
+      //  result as UnKnown.
+      for (Value result : op.getResults())
+        setToEntryState(getLatticeElement(result, state));
+    } else if (op.getNumRegions() > 0) {
       for (Region &region : op.getRegions()) {
         AnalysisStateType nestedState = state;
         bool shouldContinue = true;

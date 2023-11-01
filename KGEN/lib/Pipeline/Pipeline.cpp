@@ -60,6 +60,7 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   if (options.optimizationLevel >= 1) {
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
+    pm.addNestedPass<GeneratorOp>(createSCCP());
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
     pm.addNestedPass<GeneratorOp>(createConstraintReduction());
   }
@@ -145,6 +146,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   if (options.optimizationLevel >= 1) {
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
+    pm.addNestedPass<FuncOp>(createSCCP());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
     pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
