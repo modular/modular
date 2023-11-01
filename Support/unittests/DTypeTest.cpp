@@ -87,7 +87,7 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(16, DType(DType::bf16).getWidthInBits());
   EXPECT_EQ(24, DType(DType::f24).getWidthInBits());
   EXPECT_EQ(80, DType(DType::f80).getWidthInBits());
-  EXPECT_EQ(32, DType(DType::tf32).getWidthInBits());
+  EXPECT_EQ(19, DType(DType::tf32).getWidthInBits());
   EXPECT_EQ(8, DType(DType::kBool).getWidthInBits());
   EXPECT_EQ(-1, DType(DType::mIsComplex).getWidthInBits());
   EXPECT_EQ(16, DType::getComplex(DType::si8).getWidthInBits());
@@ -108,7 +108,7 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(32, DType::getComplex(DType::bf16).getWidthInBits());
   EXPECT_EQ(48, DType::getComplex(DType::f24).getWidthInBits());
   EXPECT_EQ(160, DType::getComplex(DType::f80).getWidthInBits());
-  EXPECT_EQ(64, DType::getComplex(DType::tf32).getWidthInBits());
+  EXPECT_EQ(38, DType::getComplex(DType::tf32).getWidthInBits());
   EXPECT_EQ(16, DType::getComplex(DType::kBool).getWidthInBits());
 }
 
