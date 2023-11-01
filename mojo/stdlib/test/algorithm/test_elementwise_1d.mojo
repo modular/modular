@@ -17,6 +17,7 @@ from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils.vector import UnsafeFixedVector
 
+
 # CHECK-LABEL: test_elementwise_1d
 fn test_elementwise_1d():
     print("== test_elementwise_1d")
@@ -25,9 +26,7 @@ fn test_elementwise_1d():
         let num_work_items = rt.parallelism_level()
 
         alias num_elements = 64
-        let buf = UnsafeFixedVector[
-            __mlir_type[`!pop.scalar<`, DType.float32.value, `>`]
-        ](num_elements)
+        let buf = UnsafeFixedVector[Float32](num_elements)
 
         let vector = Buffer[num_elements, DType.float32](buf.data)
 
