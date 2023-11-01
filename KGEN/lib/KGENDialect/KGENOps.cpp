@@ -1159,6 +1159,21 @@ LogicalResult GlobalOp::verifySymbolUses(SymbolTableCollection &symtab) {
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalAddressOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GlobalAddressOp::verifySymbolUses(SymbolTableCollection &symtab) {
+  auto global = symtab.lookupSymbolIn<GlobalOp>(
+      (*this)->getParentOfType<ModuleOp>(), getGlobal());
+  if (!global)
+    return emitOpError("does not reference a `pop.global` operation");
+  if (global.getType() != getResult().getType().getElementAsType())
+    return emitOpError("result type does not match global type ")
+           << global.getType();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // LinkOp
 //===----------------------------------------------------------------------===//
 
