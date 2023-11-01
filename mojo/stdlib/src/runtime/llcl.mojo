@@ -88,8 +88,8 @@ struct AsyncContext:
 
     @staticmethod
     fn complete(ch: Chain):
-        var chMem = ch
-        _async_complete(Pointer[Chain].address_of(chMem))
+        var tmp = ch
+        _async_complete(Pointer[Chain].address_of(tmp))
 
 
 # ===----------------------------------------------------------------------===#
