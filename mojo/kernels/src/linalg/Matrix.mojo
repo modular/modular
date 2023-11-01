@@ -7,7 +7,7 @@
 from sys.info import alignof
 
 from memory.buffer import NDBuffer
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer, Pointer, AddressSpace
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
@@ -18,14 +18,20 @@ struct Matrix[
     shape: DimList,
     type: DType,
     transposed: Bool,
+    /,
+    address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     """Utility to access matrix across layouts with
     unified indexing interface.
     """
 
-    var data: NDBuffer[2, shape, type]
+    var data: NDBuffer[2, shape, type, address_space=address_space]
 
-    fn __init__(inout self, dptr: DTypePointer[type]):
+    fn __init__(inout self):
+        """Default construct the matrix."""
+        self.data = NDBuffer[2, shape, type, address_space=address_space]()
+
+    fn __init__(inout self, dptr: DTypePointer[type, address_space]):
         """Constructor of a matrix from a DTypePointer.
 
         Args:
@@ -35,7 +41,7 @@ struct Matrix[
 
     fn __init__(
         inout self,
-        dptr: DTypePointer[type],
+        dptr: DTypePointer[type, address_space],
         dynamic_shape: StaticIntTuple[2],
     ):
         """Constructs of a matrix from a DTypePointer with dynamic shapes and type.
@@ -44,22 +50,21 @@ struct Matrix[
             dptr: Pointer to the data.
             dynamic_shape: A static tuple of size 2 representing shapes.
         """
-        self = Self(NDBuffer[2, shape, type](dptr, dynamic_shape))
+        self.data = NDBuffer[2, shape, type, address_space=address_space](
+            dptr, dynamic_shape
+        )
 
-    fn __init__(
-        inout self, ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
-    ):
+    fn __init__(inout self, ptr: Pointer[SIMD[type, 1], address_space]):
         """Constructor of a matrix from a Pointer.
 
         Args:
             ptr: The buffer containing the matrix data.
         """
-        let dptr = DTypePointer[type](ptr.address)
-        self = Self(NDBuffer[2, shape, type](dptr))
+        self.data = NDBuffer[2, shape, type, address_space=address_space](ptr)
 
     fn __init__(
         inout self,
-        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
+        ptr: Pointer[SIMD[type, 1], address_space],
         dynamic_shape: StaticIntTuple[2],
     ):
         """Constructs of a matrix from a DTypePointer with dynamic shapes and type.
@@ -68,14 +73,13 @@ struct Matrix[
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 2 representing shapes.
         """
-        let dptr = DTypePointer[type](ptr.address)
-        self = Self(NDBuffer[2, shape, type](dptr, dynamic_shape))
+        self.data = NDBuffer[2, shape, type, address_space=address_space](
+            ptr, dynamic_shape
+        )
 
     @staticmethod
     @always_inline
-    fn aligned_stack_allocation[
-        alignment: Int
-    ]() -> Matrix[shape, type, transposed]:
+    fn aligned_stack_allocation[alignment: Int]() -> Self:
         """Constructs a matrix instance backed by stack allocated memory space.
 
         Parameters:
@@ -84,21 +88,21 @@ struct Matrix[
         Returns:
             Constructed matrix with the allocated space.
         """
-        return Self(
-            NDBuffer[2, shape, type].aligned_stack_allocation[alignment]()
-        )
+        var res = Self()
+        res.data = NDBuffer[
+            2, shape, type, address_space=address_space
+        ].aligned_stack_allocation[alignment]()
+        return res
 
     @staticmethod
     @always_inline
-    fn stack_allocation[]() -> Matrix[shape, type, transposed]:
+    fn stack_allocation[]() -> Self:
         """Constructs a matrix instance backed by stack allocated memory space.
 
         Returns:
             Constructed matrix with the allocated space.
         """
-        return Matrix[shape, type, transposed].aligned_stack_allocation[
-            alignof[type]()
-        ]()
+        return Self.aligned_stack_allocation[alignof[type]()]()
 
     fn __getitem__(self, x: Int, y: Int) -> SIMD[type, 1]:
         """Returns the data stored at the given untransposed coordinate.

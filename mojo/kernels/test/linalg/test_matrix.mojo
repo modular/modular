@@ -61,9 +61,7 @@ fn test_matrix_static():
 
 fn test_matrix_dynamic():
     print("== test_matrix_dynamic")
-    let vec = DynamicVector[
-        __mlir_type[`!pop.scalar<`, DType.int32.value, `>`]
-    ](16)
+    let vec = DynamicVector[Int32](16)
     let a = Buffer[16, DType.int32](vec.data)
     let m = Matrix[DimList(4, 4), DType.int32, False](vec.data)
     for i in range(16):
@@ -74,9 +72,7 @@ fn test_matrix_dynamic():
 
 fn test_matrix_dynamic_shape():
     print("== test_matrix_dynamic_shape")
-    let vec = DynamicVector[
-        __mlir_type[`!pop.scalar<`, DType.int32.value, `>`]
-    ](16)
+    let vec = DynamicVector[Int32](16)
     let a = Buffer[16, DType.int32](vec.data)
     # let m = Matrix[DimList(4, 4), DType.int32, False](vec.data, Index(4,4), DType.int32)
     let m = Matrix[DimList.create_unknown[2](), DType.int32, False](
