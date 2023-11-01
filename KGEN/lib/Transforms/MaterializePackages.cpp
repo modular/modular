@@ -184,11 +184,15 @@ void MaterializePackagesPass::runOnOperation() {
     mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/true,
                                 sourceMgr);
     Block block;
-    if (failed(reader.readTopLevel(&block)))
+    if (failed(reader.readTopLevel(&block))) {
+      (void)reader.finalize();
       return signalPassFailure();
+    }
     ModuleOp bytecodeModule = cast<ModuleOp>(block.front());
-    if (failed(reader.materialize(bytecodeModule)))
+    if (failed(reader.materialize(bytecodeModule))) {
+      (void)reader.finalize();
       return signalPassFailure();
+    }
 
     // Collect the symbols within the bytecode.
     SymbolTable bytecodeSymtab(cast<ModuleOp>(block.front()));
