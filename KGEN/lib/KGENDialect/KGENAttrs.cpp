@@ -1943,6 +1943,33 @@ PackageArchiveAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // PackageArchiveArrayAttr
 //===----------------------------------------------------------------------===//
 
+ParseResult KGEN::parsePackageArchiveArray(OpAsmParser &p,
+                                           PackageArchiveArrayAttr &archives) {
+  if (failed(p.parseOptionalLSquare())) {
+    archives = PackageArchiveArrayAttr::get(p.getContext(), {});
+    return success();
+  }
+
+  SmallVector<PackageArchiveAttr> parsedArchives;
+  if (p.parseCommaSeparatedList(
+          [&] { return p.parseAttribute(parsedArchives.emplace_back()); }))
+    return failure();
+
+  archives = PackageArchiveArrayAttr::get(p.getContext(), parsedArchives);
+  return p.parseRSquare();
+}
+
+void KGEN::printPackageArchiveArray(OpAsmPrinter &p, Operation *,
+                                    PackageArchiveArrayAttr archives) {
+  if (!archives.getValue().empty()) {
+    p << '[';
+    llvm::interleaveComma(
+        archives.getValue(), p,
+        [&](PackageArchiveAttr archive) { archive.print(p); });
+    p << ']';
+  }
+}
+
 std::optional<PackageArchiveAttr>
 PackageArchiveArrayAttr::getTargetArchive(TargetInfoAttr target) {
   for (PackageArchiveAttr archive : getValue())
