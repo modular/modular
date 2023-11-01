@@ -11,7 +11,7 @@ from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
 from sys.param_env import env_get_string
 
-from gpu import *
+from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -19,7 +19,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from memory import memset_zero
+from memory import memset_zero, stack_allocation
 from memory.buffer import NDBuffer
 from tensor import Tensor
 
@@ -65,7 +65,9 @@ fn matmul(
 
     # Allocate B array into shared memory for tiling.
     let b_shared = stack_allocation[
-        TILE_SZ_RATIO * TILE_SZ_B, DType.index, AddressSpace.SHARED
+        TILE_SZ_RATIO * TILE_SZ_B,
+        DType.index,
+        address_space = AddressSpace.SHARED,
     ]()
 
     # Thread indexing offsets.

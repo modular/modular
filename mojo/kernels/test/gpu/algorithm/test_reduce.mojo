@@ -11,7 +11,17 @@ from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
 
 from builtin.io import _printf
-from gpu import *
+from gpu import (
+    ThreadIdx,
+    BlockIdx,
+    BlockDim,
+    barrier,
+    AddressSpace,
+    lane_id,
+    warp_id,
+    shuffle_down,
+    WARP_SIZE,
+)
 from gpu.host import Context, Dim, Function, Stream
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -21,6 +31,7 @@ from gpu.host.memory import (
     _memset,
 )
 from tensor import Tensor
+from memory import stack_allocation
 
 from utils.index import Index
 
@@ -50,7 +61,9 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 @always_inline
 fn block_reduce[BLOCK_SIZE: Int](val: Float32) -> Float32:
     let shared = stack_allocation[
-        BLOCK_SIZE // WARP_SIZE, DType.float32, AddressSpace.SHARED
+        BLOCK_SIZE // WARP_SIZE,
+        DType.float32,
+        address_space = AddressSpace.SHARED,
     ]()
 
     let lane = lane_id()

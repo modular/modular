@@ -13,7 +13,7 @@ from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
 from sys.param_env import env_get_string
 
-from gpu import *
+from gpu import ThreadIdx, BlockIdx, BlockDim, barrier, AddressSpace
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -22,7 +22,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from math import align_down
-from memory import memset_zero
+from memory import memset_zero, stack_allocation
 from memory.buffer import NDBuffer
 from tensor import Tensor
 
@@ -65,10 +65,14 @@ fn matmul_sram(
 
     # Allocate A, B tile in shared memory.
     let a_shared = stack_allocation[
-        tile_size * tile_size, DType.float32, AddressSpace.SHARED
+        tile_size * tile_size,
+        DType.float32,
+        address_space = AddressSpace.SHARED,
     ]()
     let b_shared = stack_allocation[
-        tile_size * tile_size, DType.float32, AddressSpace.SHARED
+        tile_size * tile_size,
+        DType.float32,
+        address_space = AddressSpace.SHARED,
     ]()
 
     # Global index in C.

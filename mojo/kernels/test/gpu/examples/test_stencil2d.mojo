@@ -7,7 +7,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math import div_ceil
-from gpu import *
+
+from gpu import ThreadIdx, BlockIdx, BlockDim, barrier, AddressSpace
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -15,7 +16,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from memory import memset_zero
+from memory import memset_zero, stack_allocation
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from tensor import Tensor
@@ -83,7 +84,9 @@ fn stencil2d_smem(
     )
 
     let a_shared = stack_allocation[
-        (BLOCK_DIM + 2) * (BLOCK_DIM + 2), DType.float32, AddressSpace.SHARED
+        (BLOCK_DIM + 2) * (BLOCK_DIM + 2),
+        DType.float32,
+        address_space = AddressSpace.SHARED,
     ]()
 
     # Each element is loaded in shared memory.

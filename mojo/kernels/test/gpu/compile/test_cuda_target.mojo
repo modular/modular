@@ -9,12 +9,24 @@ from sys.info import simdwidthof, triple_is_nvidia_cuda
 
 from Activations import gelu
 from algorithm import elementwise
-from gpu import *
-from memory import memset_zero
+from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple
+from gpu import (
+    ThreadIdx,
+    BlockIdx,
+    BlockDim,
+    barrier,
+    shuffle_xor,
+    shuffle_down,
+    shuffle_up,
+    WARP_SIZE,
+    lane_id,
+    warp_id,
+)
+from gpu.memory import AddressSpace
 
 # ===----------------------------------------------------------------------===#
 # Check parameterization
@@ -114,9 +126,11 @@ fn gelu_kernel(buf: DTypePointer[DType.float32], len: Int):
 # CHECK: .shared .align 8 .b8 [[SHM0:.*]][999];
 @export
 fn test_shared_stack_allocation() -> (
-    DTypeDevicePointer[DType.int8, AddressSpace.SHARED]
+    DTypePointer[DType.int8, AddressSpace.SHARED]
 ):
-    return stack_allocation[999, DType.int8, 8, AddressSpace.SHARED]()
+    return stack_allocation[
+        999, DType.int8, 8, address_space = AddressSpace.SHARED
+    ]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -177,7 +191,9 @@ fn gemm(
 
     # Allocate B array into shared memory for tiling.
     let b_shared = stack_allocation[
-        TILE_SZ_RATIO * TILE_SZ_B, DType.float32, AddressSpace.SHARED
+        TILE_SZ_RATIO * TILE_SZ_B,
+        DType.float32,
+        address_space = AddressSpace.SHARED,
     ]()
 
     # Thread indexing offsets.
@@ -294,7 +310,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 @export
 fn block_reduce(val: Float32) -> Float32:
     let shared = stack_allocation[
-        WARP_SIZE, DType.float32, AddressSpace.SHARED
+        WARP_SIZE, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
     alias warp_shift = _static_log2[WARP_SIZE]()
