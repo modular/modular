@@ -19,12 +19,6 @@ struct Foo[a : Int]:
    fn get(self) -> Int:
       return a + self.b
 
-fn illegal_type_ref[a : Int](c:Int) -> fn(x:Int,y:Foo[a]) escaping -> Foo[a]:
-  # expected-error @below {{declared parameters in escaping closures are not supported yet}}
-  fn p_capture(x: Int, y:Foo[a]) escaping -> Foo[a]:
-     return Foo[a](x+c)
-  return p_capture
-
 fn has_result_param[a: Int->b: Int](dummyCapture: Int) -> fn () escaping -> Int:
     fn foo() escaping -> Int:
         print(dummyCapture)
@@ -37,7 +31,7 @@ fn has_result_param[a: Int->b: Int](dummyCapture: Int) -> fn () escaping -> Int:
 
 fn illegal_alias_ref[a : Int](c:Int):
   alias Y = Foo[a](2)
-  fn p_capture(x: Int, y:Foo[Y.get()]) escaping -> Int: # expected-error {{declared parameters in escaping closures are not supported yet}}
+  fn p_capture(x: Int, y:Foo[Y.get()]) escaping -> Int: # expected-error {{Cannot capture local parameter in nested function signature. TODO: fix global references.}}
      return Foo[a](x+c).get()
   return p_capture
 

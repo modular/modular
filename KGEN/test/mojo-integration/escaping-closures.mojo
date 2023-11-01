@@ -58,6 +58,21 @@ fn makes_escaping_closure_position_only(
     return myclosure
 
 
+fn foo[Z: Int, W: Int]() -> Int:
+    return Z * W
+
+
+fn test_captures_are_ordered_correctly[
+    aa: Int, a: Int, b: Int, bb: Int
+](c: Int) -> fn (x: Int, y: Foo[b]) escaping -> Foo[a]:
+    alias Y = foo[aa, bb]()
+
+    fn p_capture(x: Int, y: Foo[b]) escaping -> Foo[a]:
+        return Foo[a](c + Y + b)
+
+    return p_capture
+
+
 fn main():
     let x = 2
     let c = makes_escaping_closure(x.value)
@@ -73,3 +88,8 @@ fn main():
 
     # CHECK: 56
     print(parameter_capture[43, 7](5)(43))
+
+    # CHECK: 37
+    let foo = Foo[7](2)
+    let closure2 = test_captures_are_ordered_correctly[1, 23, 7, 2](5)
+    print(closure2(3, foo).get())

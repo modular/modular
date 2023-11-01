@@ -70,10 +70,15 @@ private:
 /// the parent function.
 class ParameterCapture {
 public:
-  ParameterCapture(StringAttr name, Type type, Operation *definingOp = nullptr)
-      : name(name), type(type), definingOp(definingOp) {}
+  ParameterCapture(StringAttr name, Type type, unsigned index,
+                   Operation *definingOp = nullptr)
+      : name(name), type(type), index(index), definingOp(definingOp) {}
   StringAttr getName() const { return name; }
   Type getType() const { return type; }
+  int getIndex() const { return index; }
+  bool operator<(ParameterCapture const &rhs) const {
+    return index < rhs.index;
+  }
   Operation *getDefiningOp() const { return definingOp; }
   bool isInputOrResultParameter() const { return definingOp == nullptr; };
 
@@ -82,30 +87,34 @@ private:
   StringAttr name;
   /// The type of the captured parameter.
   Type type;
+  /// The index of the parameter in its declaration list. -1 if the parameter is
+  /// a locally declared parameter.
+  int index;
   /// DefiningOp is the operation that declares and defines the parameter. It is
   /// null if the parameter is defined in an Input or Result parameter list of a
   /// struct or function.
   Operation *definingOp;
 };
 
-/// The CaptureTraversableMap enables the owner of the map to return a map
-/// without copying the data. The interface allows callers to traverse entries
-/// of a map without mutating the map and to search by hash rather than
-/// traversing a list.
-struct CaptureTraversableMap {
-  CaptureTraversableMap(
-      llvm::MapVector<StringAttr, ParameterCapture> &capturedParams)
-      : capturedParams(capturedParams) {}
-  auto find(StringAttr key) const { return capturedParams.find(key); }
-  llvm::MapVector<StringAttr, ParameterCapture>::const_iterator begin() const {
-    return capturedParams.begin();
+/// The OrderedCaptures exposes the captures in the order in which they
+/// were declared in the parent without allowing write access to users.
+struct OrderedCaptures {
+  OrderedCaptures(SmallVector<ParameterCapture> &capturedParams)
+      : orderedCaptures(capturedParams) {}
+  auto find(StringAttr key) const {
+    return std::find_if(
+        orderedCaptures.begin(), orderedCaptures.end(),
+        [&](ParameterCapture const &other) { return other.getName() == key; });
   }
-  llvm::MapVector<StringAttr, ParameterCapture>::const_iterator end() const {
-    return capturedParams.end();
+  SmallVector<ParameterCapture>::const_iterator begin() const {
+    return orderedCaptures.begin();
+  }
+  SmallVector<ParameterCapture>::const_iterator end() const {
+    return orderedCaptures.end();
   }
 
 private:
-  llvm::MapVector<StringAttr, ParameterCapture> &capturedParams;
+  SmallVector<ParameterCapture> &orderedCaptures;
 };
 
 /// This enum indicates how much parsing and type checking has been done on
@@ -417,7 +426,8 @@ public:
 
   /// Emitters invoke this method to get a closure declaration.
   StructDeclOp replaceNestedFunctionWithGeneratedClosureImplStruct(
-      SMLoc location, ASTDecl &nestedFunction, ASTDecl *moduleDecl);
+      SMLoc location, ASTDecl &nestedFunction, ASTDecl *moduleDecl,
+      OrderedCaptures orderedCaptures);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values in the form of a range: the begin and end iterators of the capture
@@ -436,7 +446,7 @@ public:
 
   /// Given a nested function, return a list of captured parameters in the form
   /// of name-type pairs.
-  CaptureTraversableMap getParameterCaptureRangeInScope(ASTDecl &scope);
+  OrderedCaptures getParameterCaptureRangeInScope(ASTDecl &scope);
 
 private:
   /// The internal state of an imported module or package.

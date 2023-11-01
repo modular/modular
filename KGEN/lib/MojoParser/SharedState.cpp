@@ -60,7 +60,7 @@ using namespace M::KGEN::LIT;
 using llvm::SMLoc;
 using llvm::SourceMgr;
 
-typedef llvm::MapVector<StringAttr, ParameterCapture> ParameterCaptures;
+typedef SmallVector<ParameterCapture> ParameterCaptures;
 
 static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 
@@ -1940,12 +1940,11 @@ LIT::StructDeclOp SharedState::getOrGenerateClosureWrapperStruct(
 
 LIT::StructDeclOp
 SharedState::replaceNestedFunctionWithGeneratedClosureImplStruct(
-    SMLoc location, ASTDecl &nestedFunc, ASTDecl *moduleDecl) {
+    SMLoc location, ASTDecl &nestedFunc, ASTDecl *moduleDecl,
+    OrderedCaptures orderedCaptures) {
   ClosureEmitter emitter(*moduleDecl, *this);
-  ParameterCaptures &capturedParams =
-      getImpl().capturedParametersInScope[&nestedFunc];
   return emitter.replaceNestedFunctionWithClosureImplStructDecl(
-      location, nestedFunc, CaptureTraversableMap(capturedParams), *this->impl);
+      location, nestedFunc, orderedCaptures, *this->impl);
 }
 
 iterator_range<llvm::MapVector<ASTDecl *, Capture>::const_iterator>
@@ -1966,17 +1965,22 @@ void SharedState::addCapturedParameterToScope(
     getImpl().capturedParametersInScope.insert({&scope, ParameterCaptures()});
   ParameterCaptures &capturedParams =
       getImpl().capturedParametersInScope[&scope];
-  if (!capturedParams.contains(parameterCapture.getName()))
-    capturedParams.insert({parameterCapture.getName(), parameterCapture});
+  auto existingEntry =
+      std::find_if(capturedParams.begin(), capturedParams.end(),
+                   [&](ParameterCapture const &other) {
+                     return other.getName() == parameterCapture.getName();
+                   });
+  if (existingEntry == capturedParams.end())
+    capturedParams.push_back(parameterCapture);
 }
 
-CaptureTraversableMap
-SharedState::getParameterCaptureRangeInScope(ASTDecl &scope) {
+OrderedCaptures SharedState::getParameterCaptureRangeInScope(ASTDecl &scope) {
   if (!getImpl().capturedParametersInScope.contains(&scope))
     getImpl().capturedParametersInScope.insert({&scope, ParameterCaptures()});
   ParameterCaptures &capturedParams =
       getImpl().capturedParametersInScope[&scope];
-  return CaptureTraversableMap(capturedParams);
+  std::sort(capturedParams.begin(), capturedParams.end());
+  return OrderedCaptures(capturedParams);
 }
 
 //===----------------------------------------------------------------------===//

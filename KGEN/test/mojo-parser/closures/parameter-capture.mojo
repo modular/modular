@@ -74,3 +74,39 @@ fn parameter_capture_multiple_levels[
         return Y.b + c
 
     return p_capture
+
+# // -----
+
+# COM: Signature Capture
+
+@value
+@register_passable
+struct Foo[a: Int]:
+    var b: Int
+
+    fn get(self) -> Int:
+        return a + self.b
+
+fn foo[Z: Int, W: Int]() -> Int:
+    return Z * W
+
+# COM: Closure Impl has correct input parameters and copied aliases
+# CHECK: lit.struct.decl @"_CI_
+# CHECK-SAME: <p0[p0]: !Int, p1[p1]: !Int, p2[p2]: !Int, p3[p3]: !Int, |>
+# CHECK: lit.alias.decl *"[[#LINE:]]_[[#OLINE:]]x[[#OCOL:]]_Y": !Int = <apply(:!lit.signature<() -> !Int> @"${{.*}}"::@"foo[{{.*}}]()"<:!Int p0, :!Int p3>)>
+
+# COM: Closure Wrapper has correct input parameters and initializer parameters
+# CHECK: lit.struct.decl @"_CW_
+# CHECK-SAME: <p0[p0]: !Int, p1[p1]: !Int, |>
+# CHECK: lit.func @"__init__{{.*}}"<[[initP0:.*]][[[initP0]]]: !Int, [[initP3:.*]][[[initP3]]]: !Int, |>
+# CHECK-SAME: (%self[self]: !kgen.pointer<@"${{.*}}"::@"_CW_{{.*}}"<:!Int p0, :!Int p1>
+# CHECK-SAME: %impl[impl]: !kgen.pointer<@"${{.*}}"::@"_CI_{{.*}}"<:!Int [[initP0]], :!Int p0, :!Int p1, :!Int [[initP3]]>
+fn test_captures_are_ordered_correctly[
+    aa: Int, a: Int, b: Int, bb: Int
+](c: Int) -> fn (x: Int, y: Foo[b]) escaping -> Foo[a]:
+    alias Y = foo[aa, bb]()
+
+    fn p_capture(x: Int, y: Foo[b]) escaping -> Foo[a]:
+        return Foo[a](c + Y + b)
+
+    return p_capture

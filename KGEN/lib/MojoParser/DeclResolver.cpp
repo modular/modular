@@ -2447,56 +2447,56 @@ void DeclResolver::setLocationDebugScope(
 
 // TODO: refactor the getSpecializedSignature method to support augmenting
 // parameter list when a capture is encountered in the signature. This function
-// accepts a capture list and a signature and returns a self contained signature
-// by augmenting the original's  input parameter list for each capture that
-// appears in the original signature.
-static LITSignatureType
-createSelfContainedSignature(SharedState &shared, LITSignatureType original,
-                             CaptureTraversableMap capturedParams, SMLoc loc) {
-  mlir::AttrTypeReplacer replacer;
-  SmallDenseMap<StringAttr, ParamIndexRefAttr> newParameterReferences;
-  unsigned inputParameterIndex = original.getNumInputParams();
-  SmallVector<Type> newParamInputTypes(original.getInputParamTypes());
+// accepts a list of parameters and a signature and returns a self contained
+// signature by augmenting the original's input parameter list for each
+// parameter reference that appears in the paramRefsToUnbind list.
+LITSignatureType DeclResolver::createSelfContainedSignature(
+    LITSignatureType original, ArrayRef<ParamDeclAttr> paramRefsToUnbind,
+    std::function<void(StringRef)> errorHandler) {
   auto fnMetadata = cast<FnMetadataAttr>(original.getMetadata());
   // The size 16 was an optimization for perf that was hand tuned.
-  SmallVector<StringAttr, 16> newParamInputNames(fnMetadata.getParamNames());
   SmallVector<StringAttr, 16> argNames(fnMetadata.getArgNames());
-  SmallVector<PassingKind, 16> newParamPassingKinds(
-      fnMetadata.getParamPassingKinds());
   SmallVector<PassingKind, 16> argPassingKind(fnMetadata.getArgPassingKinds());
 
-  std::pair<unsigned, unsigned> lineCol =
-      shared.getSourceMgr().getLineAndColumn(loc);
-  unsigned line = lineCol.first, col = lineCol.second;
+  MLIRContext *ctx = original.getContext();
 
-  MLIRContext *ctx = shared.getContext();
-  replacer.addReplacement([&](ParamDeclRefAttr paramDeclRefAttr) -> TypedAttr {
-    auto captureIt = capturedParams.find(paramDeclRefAttr.getName());
-    if (captureIt != capturedParams.end()) {
-      StringAttr captureName = captureIt->second.getName();
-      Type captureType = captureIt->second.getType();
-      assert(captureType == paramDeclRefAttr.getType() &&
-             "expected parameter names to be unique but encountered common "
-             "parameter names with unique types");
-      auto existing = newParameterReferences.find(paramDeclRefAttr.getName());
-      if (existing != newParameterReferences.end())
-        return existing->second;
+  // Collect the subset of referenced parameters.
+  DenseSet<StringAttr> seen;
+  original.walk([&](ParamDeclRefAttr paramDeclRefAttr) {
+    seen.insert(paramDeclRefAttr.getName());
+  });
 
-      // We have a reference to a capture with no input parameter. Create one.
-      if (!captureIt->second.isInputOrResultParameter()) {
-        shared.emitError(loc,
-                         "cannot reference aliases in closure signatures yet");
-        return {};
-      }
-      newParamInputTypes.emplace_back(captureType);
-      auto updatedRef =
-          ParamIndexRefAttr::get(0, false, inputParameterIndex++, captureType);
-      newParameterReferences[captureName] = updatedRef;
-
-      // Generate a unique parameter name.
-      newParamInputNames.push_back(StringAttr::get(
-          ctx, mangleParameter(captureIt->first.str(), line, col)));
+  // Add the parameters in the order of declaration.
+  SmallDenseMap<StringAttr, std::pair<unsigned, Type>> parameterCaptures;
+  SmallVector<Type> paramInputTypes;
+  SmallVector<PassingKind, 16> newParamPassingKinds;
+  SmallVector<StringAttr, 16> newParamInputNames;
+  unsigned currentParamterIndex = 0;
+  for (auto [i, param] : llvm::enumerate(paramRefsToUnbind)) {
+    if (seen.contains(param.getName())) {
+      parameterCaptures[param.getName()] = {currentParamterIndex++,
+                                            param.getType()};
+      paramInputTypes.push_back(param.getType());
+      newParamInputNames.push_back(param.getName());
       newParamPassingKinds.push_back(PassingKind::PosOnly);
+    }
+  }
+
+  // Replace the illegal references with Index references.
+  // TODO: support existing parameters that are not captures.
+  SmallDenseMap<StringAttr, ParamIndexRefAttr> newParameterReferences;
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamDeclRefAttr paramDeclRefAttr) -> TypedAttr {
+    auto existing = newParameterReferences.find(paramDeclRefAttr.getName());
+    if (existing != newParameterReferences.end())
+      return existing->second;
+    if (auto it = parameterCaptures.find(paramDeclRefAttr.getName());
+        it != parameterCaptures.end()) {
+      StringAttr name = it->first;
+      Type type = it->second.second;
+      unsigned index = it->second.first;
+      auto updatedRef = ParamIndexRefAttr::get(0, false, index, type);
+      newParameterReferences[name] = updatedRef;
       return updatedRef;
     }
     return paramDeclRefAttr;
@@ -2504,15 +2504,34 @@ createSelfContainedSignature(SharedState &shared, LITSignatureType original,
   auto originalWithUpdatedParamRefs =
       cast<LITSignatureType>(replacer.replace(original));
   return SignatureType::get(
-      shared.getContext(), newParamInputTypes, /*resultParamTypes=*/{},
-      FunctionType::get(shared.getContext(),
-                        originalWithUpdatedParamRefs.getValueInputs(),
+      ctx, paramInputTypes,
+      /*resultParamTypes=*/{},
+      FunctionType::get(ctx, originalWithUpdatedParamRefs.getValueInputs(),
                         originalWithUpdatedParamRefs.getValueResults()),
       originalWithUpdatedParamRefs.getInputConventions(),
       originalWithUpdatedParamRefs.getFnEffects(),
-      FnMetadataAttr::get(shared.getContext(), argNames, argPassingKind,
-                          newParamInputNames, newParamPassingKinds,
+      FnMetadataAttr::get(ctx, argNames, argPassingKind, newParamInputNames,
+                          newParamPassingKinds,
                           /*defaultArguments=*/{}, /*defaultParameters=*/{}));
+}
+
+// Given an unordered list of captures and a base type, return a type of the
+// base type with the captured types ordered.
+Type DeclResolver::createTypeFromSubsetOfParentParameters(
+    SharedState &shared, StructDeclOp baseStruct,
+    ArrayRef<ParameterCapture> parentDeclRefSubset) {
+  Type type = ASTDecl::computeSelfTypeForStruct(baseStruct);
+  if (DeclRefType declRef = dyn_cast<DeclRefType>(type)) {
+    ASTDecl &typeDecl =
+        shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
+    SmallVector<TypedAttr> bindingValues(parentDeclRefSubset.size());
+    for (auto [index, signatureCapture] : llvm::enumerate(parentDeclRefSubset))
+      bindingValues[index] = ParamDeclRefAttr::get(signatureCapture.getName(),
+                                                   signatureCapture.getType());
+    SymbolRefAttr symbol = typeDecl.getSymbolRef();
+    type = DeclRefType::get(symbol, bindingValues, MetaTypeType::get(symbol));
+  }
+  return type;
 }
 
 static Value emitClosureInstance(SignatureType closureSignature,
@@ -2534,15 +2553,60 @@ static Value emitClosureInstance(SignatureType closureSignature,
   // the captures we need to resolve the body.
   if (failed(shared.declResolver->resolveFully(nestedFunctionDecl, location)))
     return {};
-  CaptureTraversableMap capturedParams =
+  OrderedCaptures orderedCaptures =
       shared.getParameterCaptureRangeInScope(nestedFunctionDecl);
 
   // Recreate the nested function signature so there are no references to the
   // parent captures. This may require adding unbound parameters to the
   // signature.
+
+  // Collect the ordered subset of the parent parameters in both signature
+  // (closure wrapper) and body+signature (closure impl).
+  DenseSet<StringAttr> signatureDecls;
+  // TODO: remove me.
+  DenseSet<StringAttr> signatureParamReferencesNotInCaptureList;
+  nestedFunctionSignature.walk([&](ParamDeclRefAttr potentialCapture) {
+    signatureDecls.insert(potentialCapture.getName());
+    signatureParamReferencesNotInCaptureList.insert(potentialCapture.getName());
+  });
+
+  SmallVector<ParameterCapture> closureImplCaptures;
+  SmallVector<ParameterCapture> closureWrapperCaptures;
+  for (ParameterCapture capture : orderedCaptures) {
+    bool isInSignature = signatureDecls.contains(capture.getName());
+    // Only include input parameter captures.
+    if (capture.getIndex() > -1) {
+      closureImplCaptures.emplace_back(capture);
+      if (isInSignature) {
+        signatureParamReferencesNotInCaptureList.erase(capture.getName());
+        closureWrapperCaptures.push_back(capture);
+      }
+    } else if (isInSignature) {
+      shared.emitError(
+          location,
+          "Cannot capture local parameter in nested function signature.");
+      return {};
+    }
+  }
+
+  // TODO: It is possible to capture a local reference without that reference
+  // getting recorded in the DeclRefNode::emitIR because when a parameter
+  // expression of a nested function signature is emitted in the context of the
+  // parent. As a result, it does not go through the capture pipeline. For now,
+  // handle this by disabling global references. Note we cannot lookup the
+  // capture in the parent scope because the parameter name is mangled.
+  if (!signatureParamReferencesNotInCaptureList.empty()) {
+    shared.emitError(location,
+                     "Cannot capture local parameter in nested function "
+                     "signature. TODO: fix global references.");
+    return {};
+  }
   LITSignatureType closureWrapperSignature =
-      createSelfContainedSignature(shared, nestedFunctionSignature,
-                                   capturedParams, nestedFunctionDecl.getLoc());
+      DeclResolver::createSelfContainedSignature(
+          nestedFunctionSignature, parentFunction.getInputParams(),
+          [&](StringRef error) {
+            shared.emitError(nestedFunctionDecl.getLoc(), error);
+          });
   if (!closureWrapperSignature)
     return {};
   StructDeclOp closureWrapper = shared.getOrGenerateClosureWrapperStruct(
@@ -2554,13 +2618,18 @@ static Value emitClosureInstance(SignatureType closureSignature,
   // right after the nested function definition.
   StructDeclOp closureImpl =
       shared.replaceNestedFunctionWithGeneratedClosureImplStruct(
-          location, nestedFunctionDecl, moduleDecl);
+          location, nestedFunctionDecl, moduleDecl, orderedCaptures);
   ClosureEmitter emitter(*moduleDecl, shared);
 
-  // Parameters in ClosureWrapper are not support yet
-  DenseMap<unsigned, unsigned> paramMap;
-  emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, paramMap,
-                                    location);
+  // Map the closure wrapper captures to the impl captures.
+  DenseMap<unsigned, unsigned> fromImplToWrapperParameterMap;
+  for (auto [i, wrapperCapture] : llvm::enumerate(closureWrapperCaptures))
+    for (auto [j, implCapture] : llvm::enumerate(closureImplCaptures))
+      if (implCapture.getName() == wrapperCapture.getName())
+        fromImplToWrapperParameterMap[j] = i;
+
+  emitter.createWrapperInitWithImpl(closureWrapper, closureImpl,
+                                    fromImplToWrapperParameterMap, location);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = parentFunction.getLocScope())
@@ -2589,16 +2658,8 @@ static Value emitClosureInstance(SignatureType closureSignature,
 
   // Create Closure Impl type by adding captured parameters to the ClosureImpl
   // DeclType.
-  SymbolRefAttr closureImplRef = getFullyResolvedSymbolRef(closureImpl);
-  SmallVector<TypedAttr> paramValues;
-  for (auto [name, capture] : capturedParams) {
-    if (capture.isInputOrResultParameter())
-      paramValues.push_back(
-          ParamDeclRefAttr::get(capture.getName(), capture.getType()));
-  }
-  ASTType closureImplType = DeclRefType::get(closureImplRef, paramValues,
-                                             MetaTypeType::get(closureImplRef));
-
+  Type closureImplType = DeclResolver::createTypeFromSubsetOfParentParameters(
+      shared, closureImpl, closureImplCaptures);
   CValue value = exprEmitter.emitConstructorCall(
       ASTType(closureImplType), closureImplInitArgs, &node,
       CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
@@ -2606,28 +2667,12 @@ static Value emitClosureInstance(SignatureType closureSignature,
   ValueDest closureWrapperDest;
   SmallVector<ASTExprAnd<AnyValue>> closureWrapperInitArgs;
   closureWrapperInitArgs.push_back({value, &node});
-  Type closureWrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
-  if (DeclRefType declRef = dyn_cast<DeclRefType>(closureWrapperType)) {
-    ASTDecl &typeDecl =
-        shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
 
-    // Identify the captures. Store index so we can order them in the order they
-    // are declared in the Closure Wrapper struct.
-    DenseSet<StringAttr> captures;
-    nestedFunctionSignature.walk([&](ParamDeclRefAttr potentialCapture) {
-      captures.insert(potentialCapture.getName());
-    });
-    // Create the type by populating the bindings.
-    SmallVector<TypedAttr> bindingValues;
-    for (ParamDeclAttr parameter : parentFunction.getInputParams()) {
-      if (captures.contains(parameter.getName()))
-        bindingValues.push_back(
-            ParamDeclRefAttr::get(parameter.getName(), parameter.getType()));
-    }
-    SymbolRefAttr symbol = typeDecl.getSymbolRef();
-    closureWrapperType =
-        DeclRefType::get(symbol, bindingValues, MetaTypeType::get(symbol));
-  }
+  // Create the ClosureWrapper type by binding parent parameters to the
+  // ClosureWrapper type.
+  Type closureWrapperType =
+      DeclResolver::createTypeFromSubsetOfParentParameters(
+          shared, closureWrapper, closureWrapperCaptures);
   CValue closureWrapperInstance = exprEmitter.emitConstructorCall(
       ASTType(closureWrapperType), closureWrapperInitArgs, &node,
       CallSyntax::kTypeCall, closureWrapperDest,
