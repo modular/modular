@@ -128,6 +128,10 @@ struct OperationState;
 
 template <typename SourceOp>
 class OpConversionPattern;
+template <typename SourceOp>
+class OpInterfaceConversionPattern;
+template <typename SourceOp>
+class OpInterfaceRewritePattern;
 template <typename T>
 class OperationPass;
 template <typename SourceOp>
@@ -214,6 +218,8 @@ using mlir::Operation;
 using mlir::OperationPass;
 using mlir::OperationState;
 using mlir::OpFoldResult;
+using mlir::OpInterfaceConversionPattern;
+using mlir::OpInterfaceRewritePattern;
 using mlir::OpOperand;
 using mlir::OpResult;
 using mlir::OpRewritePattern;
