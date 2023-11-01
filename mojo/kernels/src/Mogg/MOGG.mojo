@@ -122,6 +122,7 @@ from utils.index import Index, StaticIntTuple, product
 from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt
 
+
 # Prevent these functions from being DCE'd by explicitly exporting them.
 @export
 fn MOGGExport():
