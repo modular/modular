@@ -222,20 +222,19 @@ kgen.func @nested_loops() -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %idx2 = index.constant 2
-  %idx10 = index.constant 10
+  %idx4 = index.constant 4
 
   %0 = index.add %idx1, %idx2
-  %1 = index.mul %0, %0
+  %1 = index.mul %0, %idx1
 
-  // CHECK-DAG: [[IDX27:%.*]] = index.constant 27
   // CHECK-DAG: [[IDX10:%.*]] = index.constant 10
-  // CHECK-DAG: [[IDX9:%.*]] = index.constant 9
   // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
+  // CHECK-DAG: [[IDX4:%.*]] = index.constant 4
   // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
   // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
   // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
 
-  // COM: The result of this loop will be 2
+  // COM: The result of this loop will be 10
   %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
     %3 = hlcf.loop(%arg1 = %idx0: index) -> index {
       %4 = index.cmp slt(%arg1, %arg0)
@@ -245,11 +244,11 @@ kgen.func @nested_loops() -> index {
         %5 = index.add %arg1, %1
         hlcf.break %5: index
       }
-      %6 = index.add %arg1, %idx1
+      %6 = index.add %arg1, %idx2
       hlcf.continue %6: index
     }
 
-    %7 = index.cmp slt(%3, %idx10)
+    %7 = index.cmp slt(%3, %idx4)
     hlcf.if %7 {
       hlcf.yield
     } else {
@@ -260,7 +259,7 @@ kgen.func @nested_loops() -> index {
     hlcf.continue %3 : index
   }
 
-  // CHECK: kgen.return [[IDX27]]
+  // CHECK: kgen.return [[IDX10]]
   kgen.return %2: index
 }
 

@@ -58,6 +58,7 @@ public:
   /// Process a Region operation.
   LogicalResult processRegion(Region &region, AnalysisStateType &state,
                               bool &hasEarlyExits, bool &shouldContinue,
+                              int64_t loopLevel,
                               bool setBlockArgToEntryState = true);
 
   /// Helper function to rewrite the IR with SCCP analysis results.
@@ -84,11 +85,12 @@ private:
   /// happen, such as break, continue, return.
   LogicalResult processControlFlowNode(ControlFlowNode node,
                                        AnalysisStateType &state,
-                                       bool &shouldContinue);
+                                       bool &shouldContinue, int64_t loopLevel);
 
   /// Process a ControlFlowTerminator operation.
   void processControlFlowTerminator(ControlFlowTerminator term,
-                                    AnalysisStateType &state);
+                                    AnalysisStateType &state,
+                                    int64_t loopLevel);
 
   /// Visit a general operation to apply the transform function.
   static void visitOperation(Operation *op, AnalysisStateType &state);
@@ -112,15 +114,16 @@ private:
                                   AnalysisStateType &state);
 
   /// Update parentOp's exit states.
-  void updateParentOpOutputState(ValueRange termValues, Operation *parentOp,
-                                 AnalysisStateType &termState,
-                                 AnalysisStateType &parentOutputState);
+  static void updateParentOpOutputState(ValueRange termValues,
+                                        Operation *parentOp,
+                                        AnalysisStateType &termState,
+                                        AnalysisStateType &parentOutputState);
 
   /// Helper function to rewrite the IR with SCCP analysis results.
   LogicalResult replaceWithConstant(OpBuilder &builder,
                                     mlir::OperationFolder &folder, Value value);
 
-  static int64_t getLoopConvergeThreshold(Operation *op);
+  static int64_t getLoopConvergeThreshold(Operation *op, int64_t loopLevel);
 
   /// Map from a ControlFlowNode/Terminator to its states (entry/exit) and the
   /// allocator of the state.
@@ -263,20 +266,26 @@ void SCCPAnalysis::visitOperation(Operation *op, AnalysisStateType &state) {
   }
 }
 
-int64_t SCCPAnalysis::getLoopConvergeThreshold(Operation *op) {
+int64_t SCCPAnalysis::getLoopConvergeThreshold(Operation *op,
+                                               int64_t loopLevel) {
   if (auto forOp = dyn_cast<ForOp>(op); forOp && forOp.getTripCount()) {
     // Use trip count as threshold for a for-loop.
     return forOp.getTripCount().value();
   }
 
+  // Try to avoid explosion with deep nested loops.
   // TODO: use decorator or more sophisticated heuristics to set per loop
   // threshold.
-  return 100;
+  if (loopLevel > 2)
+    return 2;
+  else
+    return 5;
 }
 
 LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
                                                    AnalysisStateType &state,
-                                                   bool &shouldContinue) {
+                                                   bool &shouldContinue,
+                                                   int64_t loopLevel) {
   // TODO: Add support for other ControlFlowNode, e.g. kgen.try, etc.
   // TODO: issue #23376, this function should work more generally for
   // ControlFlowInterfaces.
@@ -294,7 +303,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
         // Analyze region with entry state.
         bool hasEarlyExits = false;
         if (failed(processRegion(node->getRegion(target.index.value()), state,
-                                 hasEarlyExits, shouldContinue)))
+                                 hasEarlyExits, shouldContinue, loopLevel)))
           return failure();
 
         if (hasEarlyExits)
@@ -330,7 +339,8 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
     workList.push(constantOperands);
 
     int64_t loopIter = 0;
-    int64_t threshold = getLoopConvergeThreshold(node.getOperation());
+    int64_t threshold =
+        getLoopConvergeThreshold(node.getOperation(), loopLevel);
     while (!workList.empty() && loopIter < threshold) {
       SmallVector<Attribute> inputValues = workList.front();
       workList.pop();
@@ -346,7 +356,8 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
       // Process loop body.
       bool hasEarlyExits = false;
       if (failed(processRegion(node->getRegions().front(), nestedState,
-                               hasEarlyExits, shouldContinue, false)))
+                               hasEarlyExits, shouldContinue, loopLevel + 1,
+                               /*setBlockArgToEntryState=*/false)))
         return failure();
 
       ++loopIter;
@@ -373,7 +384,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
       bool shouldContinue = true;
       bool hasEarlyExits = false;
       if (failed(processRegion(region, nestedState, hasEarlyExits,
-                               shouldContinue)))
+                               shouldContinue, loopLevel)))
         return failure();
       mergeStates(state, nestedState);
     }
@@ -397,7 +408,8 @@ void SCCPAnalysis::updateParentOpOutputState(
 }
 
 void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
-                                                AnalysisStateType &termState) {
+                                                AnalysisStateType &termState,
+                                                int64_t loopLevel) {
   // TODO: Add support for other ControlFlowTerminators, e.g. kgen.return, etc.
   if (auto breakOp = dyn_cast<BreakOp>(term.getOperation())) {
     Operation *parentLoop = getParentNode(term);
@@ -456,11 +468,10 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
     setToEntryState(getLatticeElement(result, termState));
 }
 
-LogicalResult SCCPAnalysis::processRegion(Region &region,
-                                          AnalysisStateType &state,
-                                          bool &hasEarlyExits,
-                                          bool &shouldContinue,
-                                          bool setBlockArgToEntryState) {
+LogicalResult
+SCCPAnalysis::processRegion(Region &region, AnalysisStateType &state,
+                            bool &hasEarlyExits, bool &shouldContinue,
+                            int64_t loopLevel, bool setBlockArgToEntryState) {
   if (!llvm::hasSingleElement(region)) {
     return region.getParentOp()->emitError(
         "'sccp' can only be run on operations with all single block "
@@ -477,7 +488,8 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
     if (!shouldContinue)
       break;
     if (auto node = dyn_cast<ControlFlowNode>(op)) {
-      if (failed(processControlFlowNode(node, state, shouldContinue)))
+      if (failed(
+              processControlFlowNode(node, state, shouldContinue, loopLevel)))
         return failure();
 
       if (!shouldContinue)
@@ -486,7 +498,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
     }
 
     if (auto term = dyn_cast<ControlFlowTerminator>(op)) {
-      processControlFlowTerminator(term, state);
+      processControlFlowTerminator(term, state, loopLevel);
       // Tell parent region that there is early exit (so that the parent region
       // can decide whether to continue traverse the rest of the operation or
       // not).
@@ -500,7 +512,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
         bool shouldContinue = true;
         bool hasEarlyExits = false;
         if (failed(processRegion(region, nestedState, hasEarlyExits,
-                                 shouldContinue)))
+                                 shouldContinue, loopLevel)))
           return failure();
         mergeStates(state, nestedState);
       }
@@ -599,7 +611,8 @@ LogicalResult SCCPAnalysis::run(Operation *op) {
   for (Region &region : op->getRegions()) {
     bool hasEarlyExits = false;
     bool shouldContinue = true;
-    if (failed(processRegion(region, topState, hasEarlyExits, shouldContinue)))
+    if (failed(
+            processRegion(region, topState, hasEarlyExits, shouldContinue, 0)))
       return failure();
   }
 
