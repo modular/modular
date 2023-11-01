@@ -104,8 +104,11 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   b.setLoc(op.getLoc());
   StringAttr name = b.getStringAttr(parent.getSymName() + "_async_closure_" +
                                     Twine(nameCounter++));
+  // TODO: What conventions do we use for captures.
+  SmallVector<ValueInputConvention> conventions(body.getArgumentTypes().size(),
+                                                ValueInputConvention::None);
   auto sig = SignatureType::get(
-      b.getFunctionType(body.getArgumentTypes(), op.getType()));
+      b.getFunctionType(body.getArgumentTypes(), op.getType()), conventions);
   auto lifted = b.create<FuncOp>(name, sig, InlineLevel::Never);
   lifted.getBodyRegion().takeBody(body);
 
@@ -147,14 +150,23 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   std::rotate(body.getArguments().begin(),
               body.getArguments().begin() + numArgs, body.getArguments().end());
 
+  // We need to ensure we have conventions for each argument.
+  // TODO: what convention do we use for the captures?
+  SignatureType oldSig = op.getType();
+  SmallVector<ValueInputConvention> newConventions(
+      body.getArguments().size() - numArgs, ValueInputConvention::None);
+  ArrayRef<ValueInputConvention> oldConventions = oldSig.getInputConventions();
+  assert(oldConventions.size() == numArgs);
+  newConventions.append(oldConventions.begin(), oldConventions.end());
+
   // Construct the signature of the lifted body.
   MLIRContext *ctx = op.getContext();
   ImplicitLocOpBuilder b(op.getLoc(), ctx);
-  SignatureType oldSig = op.getType();
   FunctionType functionType =
       b.getFunctionType(body.getArgumentTypes(), oldSig.getValueResults());
-  auto sig =
-      SignatureType::get(functionType, {}, {}, {}, oldSig.getFnEffects());
+  auto sig = SignatureType::get(functionType, /*inputParamTypes=*/{},
+                                /*resultParamTypes=*/{}, newConventions,
+                                oldSig.getFnEffects());
 
   // Create the lifted function. Make sure it doesn't get inlined back.
   StringAttr name;
@@ -209,7 +221,8 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     // Update the function result type.
     SignatureType origSig = func.getSignature();
     func.setSignature(SignatureType::get(
-        b.getFunctionType(origSig.getValueInputs(), coroType)));
+        b.getFunctionType(origSig.getValueInputs(), coroType),
+        origSig.getInputConventions()));
     // It is no longer valid to inline this function.
     func.setInlineLevel(InlineLevel::Never);
   }
@@ -225,11 +238,14 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
         return op->emitOpError("callee is not a symbol constant, did you "
                                "forget to run `elaborate-generators`?");
       }
+
       SignatureType origSig = callee.getType();
-      auto asyncSig = SignatureType::get(b.getFunctionType(
-          origSig.getValueInputs(),
-          CoroutineType::get(SignatureType::get(
-              b.getFunctionType({}, origSig.getValueResults())))));
+      auto coroType = CoroutineType::get(
+          SignatureType::get(b.getFunctionType({}, origSig.getValueResults())));
+
+      auto asyncSig = SignatureType::get(
+          b.getFunctionType(origSig.getValueInputs(), coroType),
+          origSig.getInputConventions());
       auto newCall = b.create<CallOp>(
           call.getType(), SymbolConstantAttr::get(callee.getSymbol(), asyncSig),
           ArrayRef<ParamDeclAttr>(), call.getOperands());
