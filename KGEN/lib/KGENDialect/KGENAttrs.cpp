@@ -600,6 +600,10 @@ static Type upbindApplyResult(Type resultType) {
     return ParamIndexRefAttr::get(ref.getDepth() - 1, ref.getIsResult(),
                                   ref.getIndex(), ref.getType());
   });
+  replacer.addReplacement(
+      [](ParameterScopeTypeInterface type) -> std::pair<Type, WalkResult> {
+        return {type, WalkResult::skip()};
+      });
   return replacer.replace(resultType);
 }
 

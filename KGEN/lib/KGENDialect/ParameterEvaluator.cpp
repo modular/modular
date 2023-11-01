@@ -105,7 +105,7 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
                                     ref.getType());
     });
     replacer.addReplacement(
-        [](SignatureType type) -> std::pair<Type, WalkResult> {
+        [](ParameterScopeTypeInterface type) -> std::pair<Type, WalkResult> {
           return {type, WalkResult::skip()};
         });
     return replacer.replace(value);
@@ -197,13 +197,13 @@ Type ParameterEvaluator::getReboundType(Type type) {
   Type result = type;
 
   // Rebind types in aggregates that implement SubElementTypeInterface.
-  bool isSignature = isa<SignatureType>(type);
+  bool isNestedScope = isa<ParameterScopeTypeInterface>(type);
   SmallVector<Attribute, 16> newAttrs;
   SmallVector<Type, 16> newTypes;
   bool changed = false;
   // Stop walking and propagate failures when they occur.
   bool failed = false;
-  rootDepth += isSignature;
+  rootDepth += isNestedScope;
   type.walkImmediateSubElements(
       [&](Attribute attr) {
         if (failed)
@@ -223,7 +223,7 @@ Type ParameterEvaluator::getReboundType(Type type) {
         changed |= newType != type;
         newTypes.push_back(newType);
       });
-  rootDepth -= isSignature;
+  rootDepth -= isNestedScope;
   if (failed)
     return nullptr;
   if (changed)
