@@ -54,7 +54,7 @@ public:
   /// capture list.
   StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
       SMLoc loc, ASTDecl &nestedFunctionDecl,
-      CaptureTraversableMap capturedParams, ClosureCache &cache);
+      OrderedCaptures orderedCapturedParams, ClosureCache &cache);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.

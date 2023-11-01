@@ -140,11 +140,10 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     SMLoc nestedFunctionOrTypeLocation) {
   SmallVector<Type> fieldTypes{opaquePtrType};
 
-  if (!dependentSignatureType.getResultParamTypes().empty() ||
-      !dependentSignatureType.getInputParamTypes().empty()) {
+  if (!dependentSignatureType.getResultParamTypes().empty()) {
     shared.emitError(
         nestedFunctionOrTypeLocation,
-        "declared parameters in escaping closures are not supported yet");
+        "result parameters in escaping closures are not supported yet");
     return {};
   }
   StructDeclOp declOp =
@@ -380,18 +379,17 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
 StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     SMLoc location, ASTDecl &nestedFunctionDecl,
-    CaptureTraversableMap capturedParams, ClosureCache &cache) {
+    OrderedCaptures orderedCapturedParams, ClosureCache &cache) {
   FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
   assert(nestedFunction && "a function must back the nestedFunctionDecl");
   FuncOp parentFunction = nestedFunction->getParentOfType<FuncOp>();
   assert(parentFunction && "a nested function must have a function parent");
 
   LITSignatureType closureWrapperSignature = nestedFunction.getSignature();
-  if (!closureWrapperSignature.getResultParamTypes().empty() ||
-      !closureWrapperSignature.getInputParamTypes().empty()) {
+  if (!closureWrapperSignature.getResultParamTypes().empty()) {
     shared.emitError(
         fileModuleOp.getLoc(),
-        "declared parameters in escaping closures are not supported yet");
+        "result parameters in escaping closures are not supported yet");
     return {};
   }
   size_t wrapperNumArgs = closureWrapperSignature.getNumInputs();
@@ -460,12 +458,12 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   auto [line, col] = shared.getSourceMgr().getLineAndColumn(location);
   SmallVector<ParameterCapture> parameterExpressions;
-  for (auto [capturedParamName, capturedParam] : capturedParams) {
+  for (ParameterCapture capturedParam : orderedCapturedParams) {
     if (!capturedParam.isInputOrResultParameter()) {
       parameterExpressions.push_back(capturedParam);
     } else {
       closureImplInputParams.push_back(capturedParam.getType());
-      closureImplInputParamNames.push_back(capturedParamName);
+      closureImplInputParamNames.push_back(capturedParam.getName());
       closureImplInputParamPassingKinds.push_back(PassingKind::PosOnly);
     }
   }
@@ -501,9 +499,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   DenseMap<StringAttr, unsigned> parentRefToClosureImplParamIndex;
   unsigned closureImplParameterIndex = 0;
-  for (auto capturedParam : capturedParams)
-    if (capturedParam.second.isInputOrResultParameter())
-      parentRefToClosureImplParamIndex[capturedParam.first] =
+  for (auto capturedParam : orderedCapturedParams)
+    if (capturedParam.isInputOrResultParameter())
+      parentRefToClosureImplParamIndex[capturedParam.getName()] =
           closureImplParameterIndex++;
 
   StructDeclOp declOp =
@@ -618,6 +616,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
                                                   &declOp.getFields().front());
   // Parameter captures should be replaced with references to the struct.
   mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamIndexRefAttr indexRef) {
+    assert(indexRef.getDepth() == 0 && "Only depth 0 references allowed.");
+    ParamDeclAttr decl = declOp.getInputParams()[indexRef.getIndex()];
+    return ParamDeclRefAttr::get(decl);
+  });
   replacer.addReplacement([&](ParamDeclRefAttr declRef) {
     if (auto it = parentRefToClosureImplParamIndex.find(declRef.getName());
         it != parentRefToClosureImplParamIndex.end())

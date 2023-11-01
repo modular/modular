@@ -400,35 +400,36 @@ enum class ParameterRelation {
 
 /// Given a parameter and a function, return the relationship of that parameter
 /// to that function.
-static ParameterRelation
+static std::pair<ParameterRelation, int>
 parameterRelationshipToFunction(SharedState &shared, ASTDecl *functionDecl,
                                 ParamDeclRefAttr declRef,
                                 StringRef srcSpelling) {
   if (!functionDecl)
-    return ParameterRelation::Undefined;
-  auto paramIsInArrayRef = [&](ArrayRef<ParamDeclAttr> arrayRef) {
-    for (auto entry : arrayRef)
+    return {ParameterRelation::Undefined, -1};
+  auto paramIsInArrayRef = [&](ArrayRef<ParamDeclAttr> arrayRef) -> int {
+    for (auto [i, entry] : llvm::enumerate(arrayRef))
       if (entry.getName() == declRef.getName())
-        return true;
-    return false;
+        return i;
+    return -1;
   };
 
   auto function = dyn_cast<LIT::FuncOp>(*functionDecl);
   if (!function)
-    return ParameterRelation::Undefined;
-
-  if (paramIsInArrayRef(function.getInputParams()))
-    return ParameterRelation::Input;
-  if (paramIsInArrayRef(function.getResultParams()))
-    return ParameterRelation::Result;
+    return {ParameterRelation::Undefined, -1};
+  int inputIndex = paramIsInArrayRef(function.getInputParams());
+  if (inputIndex > -1)
+    return {ParameterRelation::Input, inputIndex};
+  int resultIndex = paramIsInArrayRef(function.getResultParams());
+  if (resultIndex > -1)
+    return {ParameterRelation::Result, resultIndex};
 
   // Okay, we may have referenced a parameter defined in the body. If this is
   // the case we must search by spelling not the mangled parameter name.
   LookupResult lookup = shared.lookupAndResolveDecl(
       srcSpelling, functionDecl->getLoc(), *functionDecl, false);
   if (lookup.isSuccess())
-    return ParameterRelation::Local;
-  return ParameterRelation::Undefined;
+    return {ParameterRelation::Local, -1};
+  return {ParameterRelation::Undefined, -1};
 }
 
 /// Return the first ASTDecl ancestor that is a function or null if does not
@@ -495,13 +496,14 @@ static void collectImplicitParameterCaptures(
     if (auto funcOp = dyn_cast<LIT::FuncOp>(*definition.defOp)) {
       // Result parameters are not defined by the function.
       ParamDeclAttr paramDecl = funcOp.getInputParams()[definition.index];
-      ParameterCapture capture(current, paramDecl.getType(), nullptr);
+      ParameterCapture capture(current, paramDecl.getType(), definition.index,
+                               nullptr);
       capturedParams.push_back({current, capture});
     } else if (auto alias = dyn_cast<AliasDeclOp>(*definition.defOp)) {
-      capturedParams.push_back(
-          {alias.getParamDecl().getName(),
-           ParameterCapture(alias.getParamDecl().getName(),
-                            alias.getParamDecl().getType(), definition.defOp)});
+      capturedParams.push_back({alias.getParamDecl().getName(),
+                                ParameterCapture(alias.getParamDecl().getName(),
+                                                 alias.getParamDecl().getType(),
+                                                 -1, definition.defOp)});
       // Add operands of the alias's expression to the worklist.
       alias.getValue().walkImmediateSubElements(
           [addParameterToWorklist](Attribute immediateChild) {
@@ -635,7 +637,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (auto paramDeclRef =
             dyn_cast<ParamDeclRefAttr>(result.getIfPValue().get())) {
       StringRef srcSpelling = spelling;
-      ParameterRelation relationToContainerFuncion =
+      auto [relationToContainerFuncion, index] =
           parameterRelationshipToFunction(emitter.shared, &container,
                                           paramDeclRef, srcSpelling);
       if (relationToContainerFuncion == ParameterRelation::Undefined) {
@@ -648,17 +650,16 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                 "TODO: Support result parameters and escaping closures.");
             return {};
           }
-          ParameterRelation paramRelationToParent =
-              parameterRelationshipToFunction(emitter.shared, parentDecl,
-                                              paramDeclRef, srcSpelling);
+          auto [paramRelationToParent, index] = parameterRelationshipToFunction(
+              emitter.shared, parentDecl, paramDeclRef, srcSpelling);
           switch (paramRelationToParent) {
           case ParameterRelation::Result:
             [[fallthrough]];
           case ParameterRelation::Input:
             emitter.shared.addCapturedParameterToScope(
                 container, declRef,
-                ParameterCapture(paramDeclRef.getName(),
-                                 paramDeclRef.getType()));
+                ParameterCapture(paramDeclRef.getName(), paramDeclRef.getType(),
+                                 index));
             break;
           case ParameterRelation::Local: {
             // We have captured a parameter. Collect all the parameters that
@@ -3080,10 +3081,50 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
   if (effects.isEscaping()) {
+    // Collect parameter references in parent.
+    SmallVector<ParamDeclAttr> parameterDeclarationsInFunction;
+    for (auto [declName, declarations] : emitter.declScope.getDeclsInScope()) {
+      for (ASTDecl *declaration : declarations) {
+        PValue pValue = declaration->getIfPValue();
+        if (!pValue)
+          continue;
+        if (auto paramRef = dyn_cast<ParamDeclRefAttr>(pValue.get()))
+          parameterDeclarationsInFunction.push_back(
+              ParamDeclAttr::get(paramRef.getName(), paramRef.getType()));
+      }
+    }
+
+    // Create a self contained signature type that represents the closure.S
+    LITSignatureType closureWrapperSignature =
+        DeclResolver::createSelfContainedSignature(
+            signature, parameterDeclarationsInFunction,
+            [&](StringRef errorMessage) {
+              emitter.emitError(getLoc(), errorMessage);
+            });
     ASTDecl *astDecl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
     StructDeclOp declOp = emitter.shared.getOrGenerateClosureWrapperStruct(
-        getLoc(), signature, astDecl);
-    Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
+        getLoc(), closureWrapperSignature, astDecl);
+
+    // Closure creation failed. Error emitted in ClosureEmitter.
+    if (!declOp)
+      return {};
+
+    // Build the return type by binding the parent parameter values to the
+    // struct parameters.
+    DenseSet<StringAttr> signatureDecls;
+    signature.walk([&](ParamDeclRefAttr paramDeclRef) {
+      signatureDecls.insert(paramDeclRef.getName());
+    });
+    SmallVector<ParameterCapture> newParameterInfos;
+    for (auto [i, parameter] :
+         llvm::enumerate(parameterDeclarationsInFunction)) {
+      if (signatureDecls.contains(parameter.getName())) {
+        newParameterInfos.push_back(
+            ParameterCapture(parameter.getName(), parameter.getType(), i));
+      }
+    }
+    Type selfType = DeclResolver::createTypeFromSubsetOfParentParameters(
+        emitter.shared, declOp, newParameterInfos);
     return emitter.emitResult(ASTType(selfType), this, dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);

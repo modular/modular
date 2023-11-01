@@ -12,6 +12,7 @@
 #define KGEN_MOJOPARSER_DECLRESOLVER_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/Lexer.h"
@@ -197,6 +198,19 @@ public:
                              MutableArrayRef<ParsedArgument> args,
                              MutableArrayRef<Type> argTypes,
                              MutableArrayRef<TypedAttr> defaults);
+
+  /// Given a signature type that contains references to a parent function,
+  /// create a signature type that contains no references to the parent by
+  /// inserting an input parameter for every captured declaration.
+  static LITSignatureType
+  createSelfContainedSignature(LITSignatureType original,
+                               ArrayRef<ParamDeclAttr> paramRefsToUnbind,
+                               std::function<void(StringRef)> errorHandler);
+
+  /// Create a bounded type from a struct and a list of bindings.
+  static Type createTypeFromSubsetOfParentParameters(
+      SharedState &shared, StructDeclOp baseStruct,
+      ArrayRef<ParameterCapture> parentDeclRefSubset);
 
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
