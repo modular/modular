@@ -180,6 +180,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // Recreate the signature type with no parameters, with all parameter
   // references being substituted with the struct parameter references.
   mlir::AttrTypeReplacer replacer;
+  // TODO: This logic is wrong for IndexRefs #24544
   replacer.addReplacement([&](ParamIndexRefAttr indexRef) {
     assert(indexRef.getDepth() == 0 && "Only depth 0 references allowed.");
     assert(indexRef.getIndex() < declOp.getInputParams().size() &&
@@ -615,11 +616,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
                                                   &declOp.getFields().front());
   // Parameter captures should be replaced with references to the struct.
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamIndexRefAttr indexRef) {
-    assert(indexRef.getDepth() == 0 && "Only depth 0 references allowed.");
-    ParamDeclAttr decl = declOp.getInputParams()[indexRef.getIndex()];
-    return ParamDeclRefAttr::get(decl);
-  });
+  // TODO: This logic is wrong for IndexRefs: #24544
   replacer.addReplacement([&](ParamDeclRefAttr declRef) {
     if (auto it = parentRefToClosureImplParamIndex.find(declRef.getName());
         it != parentRefToClosureImplParamIndex.end())
@@ -996,6 +993,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   assert(closureSignature.getValueResults().size() == 1);
 
   mlir::AttrTypeReplacer replacer;
+  // TODO: This logic is wrong for IndexRefs #24544
   replacer.addReplacement([&](ParamIndexRefAttr indexRef) {
     assert(indexRef.getDepth() == 0 && "Only depth 0 references allowed.");
     ParamDeclAttr decl = topLevelInputParams[indexRef.getIndex()];

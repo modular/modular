@@ -73,6 +73,20 @@ fn test_captures_are_ordered_correctly[
     return p_capture
 
 
+fn bar[a: Int](x: Foo[a]) -> Int:
+    return x.get() * x.get() + a
+
+
+fn captureCallable[
+    callable: fn[A: Int] (p: Foo[A]) -> Int
+](a: Int) -> fn (x: Int) escaping -> Int:
+    fn foo(x: Int) escaping -> Int:
+        let w = callable[3](Foo[3](a))
+        return w + a
+
+    return foo
+
+
 fn main():
     let x = 2
     let c = makes_escaping_closure(x.value)
@@ -93,3 +107,6 @@ fn main():
     let foo = Foo[7](2)
     let closure2 = test_captures_are_ordered_correctly[1, 23, 7, 2](5)
     print(closure2(3, foo).get())
+
+    # CHECK: 30
+    print(captureCallable[bar](x)(x))
