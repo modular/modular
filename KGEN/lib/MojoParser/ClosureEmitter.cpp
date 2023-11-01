@@ -197,8 +197,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       [&](Type argType) -> Type { return replacer.replace(argType); });
   Type resultType =
       replacer.replace(dependentSignatureType.getValueResults().front());
-  FunctionType functionType =
-      b.getFunctionType(argTypes, {replacer.replace(resultType)});
+  FunctionType functionType = b.getFunctionType(argTypes, resultType);
   Location location = shared.translateLocation(nestedFunctionOrTypeLocation);
   LITSignatureType signatureType = KGEN::SignatureType::remapToSignature(
       /*inputParams=*/{}, /*resultParams=*/{}, functionType,
@@ -499,7 +498,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   DenseMap<StringAttr, unsigned> parentRefToClosureImplParamIndex;
   unsigned closureImplParameterIndex = 0;
-  for (auto capturedParam : orderedCapturedParams)
+  for (ParameterCapture capturedParam : orderedCapturedParams)
     if (capturedParam.isInputOrResultParameter())
       parentRefToClosureImplParamIndex[capturedParam.getName()] =
           closureImplParameterIndex++;
@@ -795,7 +794,7 @@ ClosureEmitter::collectTopLevelFunctionTypes(StructDeclOp closureWrapper) {
 
 LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     StructDeclOp closureWrapper, StructDeclOp closureImpl,
-    DenseMap<unsigned, unsigned> fromImplToWrapperParameterMap,
+    SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterIndexMap,
     SMLoc location) {
   // The __init__ will take self and the impl. We first build the types.
   SmallVector<ParamDeclRefAttr> totalInputParams;
@@ -805,8 +804,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   std::string prefix = mangleParameter("", line, col);
   for (auto [index, paramDeclAttr] :
        llvm::enumerate(closureImpl.getInputParams())) {
-    if (auto it = fromImplToWrapperParameterMap.find(index);
-        it != fromImplToWrapperParameterMap.end()) {
+    if (auto it = fromImplToWrapperParameterIndexMap.find(index);
+        it != fromImplToWrapperParameterIndexMap.end()) {
       auto p = ParamDeclRefAttr::get(
           closureWrapper.getInputParams()[it->getSecond()]);
       totalInputParams.push_back(p);
@@ -897,6 +896,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // The copy constructor takes the Wrapper instance and the impl of the other.
   SmallVector<ParamDeclAttr> topLevelInputParams;
   for (ParamDeclRefAttr declRefAttr : totalInputParams) {
+    // tlf := top level function.
     topLevelInputParams.push_back(ParamDeclAttr::get(
         StringAttr::get(ctx, declRefAttr.getName().str() + "tlf"),
         declRefAttr.getType()));

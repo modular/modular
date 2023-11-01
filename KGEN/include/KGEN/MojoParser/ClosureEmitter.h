@@ -57,10 +57,12 @@ public:
       OrderedCaptures orderedCapturedParams, ClosureCache &cache);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
-  /// instance.
+  /// instance. The 'fromImplToWrapperParameterIndexMap' allows the caller to
+  /// specify which parameters of the ClosureWrapper should be bound to the
+  /// ClosureImpl.
   LIT::FuncOp createWrapperInitWithImpl(
       StructDeclOp closureWrapper, StructDeclOp closureImpl,
-      DenseMap<unsigned, unsigned> fromImplToWrapperParameterMap,
+      SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterIndexMap,
       SMLoc location);
 
   /// Generate a unique name for a closure class.

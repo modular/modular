@@ -60,7 +60,7 @@ using namespace M::KGEN::LIT;
 using llvm::SMLoc;
 using llvm::SourceMgr;
 
-typedef SmallVector<ParameterCapture> ParameterCaptures;
+using ParameterCaptures = SmallVector<ParameterCapture>;
 
 static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 
@@ -1967,7 +1967,7 @@ void SharedState::addCapturedParameterToScope(
       getImpl().capturedParametersInScope[&scope];
   auto existingEntry =
       std::find_if(capturedParams.begin(), capturedParams.end(),
-                   [&](ParameterCapture const &other) {
+                   [&](const ParameterCapture &other) {
                      return other.getName() == parameterCapture.getName();
                    });
   if (existingEntry == capturedParams.end())

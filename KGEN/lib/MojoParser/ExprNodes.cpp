@@ -399,14 +399,15 @@ enum class ParameterRelation {
 };
 
 /// Given a parameter and a function, return the relationship of that parameter
-/// to that function.
+/// to that function along with its index in the declaration list, and -1 if the
+/// relationship is not input or result.
 static std::pair<ParameterRelation, int>
 parameterRelationshipToFunction(SharedState &shared, ASTDecl *functionDecl,
                                 ParamDeclRefAttr declRef,
                                 StringRef srcSpelling) {
   if (!functionDecl)
     return {ParameterRelation::Undefined, -1};
-  auto paramIsInArrayRef = [&](ArrayRef<ParamDeclAttr> arrayRef) -> int {
+  auto idxOfParam = [&](ArrayRef<ParamDeclAttr> arrayRef) -> int {
     for (auto [i, entry] : llvm::enumerate(arrayRef))
       if (entry.getName() == declRef.getName())
         return i;
@@ -416,10 +417,10 @@ parameterRelationshipToFunction(SharedState &shared, ASTDecl *functionDecl,
   auto function = dyn_cast<LIT::FuncOp>(*functionDecl);
   if (!function)
     return {ParameterRelation::Undefined, -1};
-  int inputIndex = paramIsInArrayRef(function.getInputParams());
+  int inputIndex = idxOfParam(function.getInputParams());
   if (inputIndex > -1)
     return {ParameterRelation::Input, inputIndex};
-  int resultIndex = paramIsInArrayRef(function.getResultParams());
+  int resultIndex = idxOfParam(function.getResultParams());
   if (resultIndex > -1)
     return {ParameterRelation::Result, resultIndex};
 
@@ -3094,7 +3095,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       }
     }
 
-    // Create a self contained signature type that represents the closure.S
+    // Create a self contained signature type that represents the closure.
     LITSignatureType closureWrapperSignature =
         DeclResolver::createSelfContainedSignature(
             signature, parameterDeclarationsInFunction,
@@ -3111,7 +3112,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // Build the return type by binding the parent parameter values to the
     // struct parameters.
-    DenseSet<StringAttr> signatureDecls;
+    SmallPtrSet<StringAttr, 4> signatureDecls;
     signature.walk([&](ParamDeclRefAttr paramDeclRef) {
       signatureDecls.insert(paramDeclRef.getName());
     });
