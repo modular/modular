@@ -189,14 +189,16 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
       load.erase();
     }
   }
+  SignatureType sig = func.getSignature();
+  // TODO: what conventions should we use here?
+  SmallVector<ValueInputConvention> convs(i, ValueInputConvention::None);
+  convs.append(sig.getInputConventions().begin(),
+               sig.getInputConventions().end());
+  assert(body->getNumArguments() == convs.size());
 
   // Update the function signature.
   auto fnType = FunctionType::get(func.getContext(), body->getArgumentTypes(),
                                   func.getResultTypes());
-  SignatureType sig = func.getSignature();
-  SmallVector<ValueInputConvention> convs =
-      llvm::to_vector(sig.getInputConventions());
-  convs.resize(body->getNumArguments());
   func.setSignature(SignatureType::get(fnType, convs, sig.getFnEffects()));
 
   // HACK HACK HACK https://github.com/modularml/modular/issues/22959

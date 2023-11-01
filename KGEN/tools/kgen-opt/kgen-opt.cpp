@@ -246,6 +246,12 @@ int main(int argc, char **argv) {
   // Register all KGEN dialects.
   registerAllKGENDialects(registry);
 
+  // Initialize all targets.
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
   // Initialize the host target.
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmParser();

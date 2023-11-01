@@ -8,8 +8,10 @@ add_modular_tool(kgen-opt
   kgen-opt.cpp
 
   LINK_COMPONENTS
-  native
-  nativecodegen
+  AllTargetsAsmParsers
+  AllTargetsCodeGens
+  AllTargetsDescs
+  AllTargetsInfos
 
   LINK_LIBS PRIVATE
   KGENToolCommon

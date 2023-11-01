@@ -234,7 +234,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
-    signature = SignatureType::prependParams(signature, parentInputParams);
+    signature = LITSignatureType::prependParams(signature, parentInputParams);
   }
 
   OpBuilder b(gen->getContext());
@@ -325,8 +325,8 @@ static void lowerAttributesAndTypes(
   // Remove signature metadata.
   replacer.addReplacement([](SignatureType sig) {
     return SignatureType::get(sig.getValues(), sig.getInputParamTypes(),
-                              sig.getResultParamTypes(), {},
-                              sig.getFnEffects());
+                              sig.getResultParamTypes(),
+                              sig.getInputConventions(), sig.getFnEffects());
   });
 
   replacer.recursivelyReplaceElementsIn(
