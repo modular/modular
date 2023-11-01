@@ -9,15 +9,16 @@ from sys import llvm_intrinsic
 
 from .globals import WARP_SIZE
 
+# TODO (#24457): support shuffles with width != 32
+alias _WIDTH_MASK = WARP_SIZE - 1
+
 # ===----------------------------------------------------------------------===#
 # shuffle_up
 # ===----------------------------------------------------------------------===#
 
 
 @always_inline("nodebug")
-fn shuffle_up[
-    type: DType
-](val: SIMD[type, 1], offset: Int, width: Int = WARP_SIZE) -> SIMD[type, 1]:
+fn shuffle_up[type: DType](val: SIMD[type, 1], offset: Int) -> SIMD[type, 1]:
     """Copies values from other lanes in the warp.
 
     Exchange a value between threads within a warp by copying from a thread with
@@ -29,20 +30,19 @@ fn shuffle_up[
     Args:
       val: The value to be shuffled.
       offset: The offset warp lane ID.
-      width: The warp width which must be a power of 2.
 
     Returns:
       The value at the specified offset.
     """
-    return shuffle_up(0xFFFFFFFF, val, offset, width)
+    return shuffle_up(0xFFFFFFFF, val, offset)
 
 
 @always_inline("nodebug")
 fn shuffle_up[
     type: DType
-](mask: Int, val: SIMD[type, 1], offset: Int, width: Int = WARP_SIZE) -> SIMD[
-    type, 1
-]:
+](
+    mask: Int, val: SIMD[type, 1], offset: Int, width: Int = WARP_SIZE - 1
+) -> SIMD[type, 1]:
     """Copies values from other lanes in the warp.
 
     Exchange a value between threads within a warp by copying from a thread with
@@ -64,11 +64,11 @@ fn shuffle_up[
     @parameter
     if type.is_float32():
         return llvm_intrinsic["llvm.nvvm.shfl.sync.up.f32", SIMD[type, 1]](
-            Int32(mask), val, UInt32(offset), Int32(width)
+            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
     else:
         return llvm_intrinsic["llvm.nvvm.shfl.sync.up.i32", SIMD[type, 1]](
-            Int32(mask), val, UInt32(offset), Int32(width)
+            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
 
 
@@ -78,9 +78,7 @@ fn shuffle_up[
 
 
 @always_inline("nodebug")
-fn shuffle_down[
-    type: DType
-](val: SIMD[type, 1], offset: Int, width: Int = WARP_SIZE) -> SIMD[type, 1]:
+fn shuffle_down[type: DType](val: SIMD[type, 1], offset: Int) -> SIMD[type, 1]:
     """Copies values from other lanes in the warp.
 
     Exchange a value between threads within a warp by copying from a thread with
@@ -92,20 +90,17 @@ fn shuffle_down[
     Args:
       val: The value to be shuffled.
       offset: The offset warp lane ID.
-      width: The warp width which must be a power of 2.
 
     Returns:
       The value at the specified offset.
     """
-    return shuffle_down(0xFFFFFFFF, val, offset, width)
+    return shuffle_down(0xFFFFFFFF, val, offset)
 
 
 @always_inline("nodebug")
 fn shuffle_down[
     type: DType
-](mask: Int, val: SIMD[type, 1], offset: Int, width: Int = WARP_SIZE) -> SIMD[
-    type, 1
-]:
+](mask: Int, val: SIMD[type, 1], offset: Int) -> SIMD[type, 1]:
     """Copies values from other lanes in the warp.
 
     Exchange a value between threads within a warp by copying from a thread with
@@ -118,7 +113,6 @@ fn shuffle_down[
       mask: The mask of the warp lanes.
       val: The value to be shuffled.
       offset: The offset warp lane ID.
-      width: The warp width which must be a power of 2.
 
     Returns:
       The value at the specified offset.
@@ -127,11 +121,11 @@ fn shuffle_down[
     @parameter
     if type.is_float32():
         return llvm_intrinsic["llvm.nvvm.shfl.sync.down.f32", SIMD[type, 1]](
-            Int32(mask), val, UInt32(offset), Int32(width)
+            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
     else:
         return llvm_intrinsic["llvm.nvvm.shfl.sync.down.i32", SIMD[type, 1]](
-            Int32(mask), val, UInt32(offset), Int32(width)
+            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
 
 
@@ -143,7 +137,7 @@ fn shuffle_down[
 @always_inline("nodebug")
 fn shuffle_xor[
     type: DType
-](val: SIMD[type, 1], offset: Int, width: Int = WARP_SIZE) -> SIMD[type, 1]:
+](val: SIMD[type, 1], offset: Int,) -> SIMD[type, 1]:
     """Copies values from between lanes (butterfly pattern).
 
     Exchange a value between threads within a warp by copying from a thread
@@ -155,20 +149,17 @@ fn shuffle_xor[
     Args:
       val: The value to be shuffled.
       offset: The offset warp lane ID.
-      width: The warp width which must be a power of 2.
 
     Returns:
       The value at the lane based on bitwise XOR of own lane id.
     """
-    return shuffle_xor(0xFFFFFFFF, val, offset, width)
+    return shuffle_xor(0xFFFFFFFF, val, offset)
 
 
 @always_inline("nodebug")
 fn shuffle_xor[
     type: DType
-](mask: Int, val: SIMD[type, 1], offset: Int, width: Int = WARP_SIZE) -> SIMD[
-    type, 1
-]:
+](mask: Int, val: SIMD[type, 1], offset: Int) -> SIMD[type, 1]:
     """Copies values from between lanes (butterfly pattern).
 
     Exchange a value between threads within a warp by copying from a thread
@@ -181,7 +172,6 @@ fn shuffle_xor[
       mask: The mask of the warp lanes.
       val: The value to be shuffled.
       offset: The offset warp lane ID.
-      width: The warp width which must be a power of 2.
 
     Returns:
       The value at the lane based on bitwise XOR of own lane id.
@@ -190,9 +180,9 @@ fn shuffle_xor[
     @parameter
     if type.is_float32():
         return llvm_intrinsic["llvm.nvvm.shfl.sync.bfly.f32", SIMD[type, 1]](
-            Int32(mask), val, UInt32(offset), Int32(width)
+            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
     else:
         return llvm_intrinsic["llvm.nvvm.shfl.sync.bfly.i32", SIMD[type, 1]](
-            Int32(mask), val, UInt32(offset), Int32(width)
+            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
