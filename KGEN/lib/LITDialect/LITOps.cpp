@@ -409,11 +409,11 @@ LIT::FuncOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "exportKind",     "isCExported",  "constraints",  "implements",
-    "signature",      "functionType", "sym_name",     "argNames",
-    "paramNames",     "evaluator",    "defaultImpl",  "inlineLevel",
-    "paramDecl",      "inputParams",  "resultParams", "decorators",
-    "argPassingKinds"};
+    "sym_name",    "exportKind",     "isCExported",  "constraints",
+    "implements",  "signature",      "functionType", "sym_name",
+    "argNames",    "paramNames",     "evaluator",    "defaultImpl",
+    "inlineLevel", "paramDecl",      "inputParams",  "resultParams",
+    "decorators",  "argPassingKinds"};
 
 static ParseResult parseLITFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
@@ -639,7 +639,8 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   // Don't print the following in lit.func.
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
-  ignoredAttrNames.emplace_back(mlir::SymbolTable::getSymbolAttrName());
+  if (getLLVMMetadata().empty())
+    ignoredAttrNames.push_back(getLLVMMetadataAttrName());
 
   p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs(),
                                      ignoredAttrNames);
@@ -750,7 +751,7 @@ LITSignatureType LIT::FuncOp::getFullSignature() {
 }
 
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
-  auto context = builder.getContext();
+  MLIRContext *ctx = builder.getContext();
 
   // Before resolution, we treat the function as having type ()->Error,
   // because parse or other errors forming the signature won't update the
@@ -758,10 +759,10 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   // invariants (that functions always have a single result).
   auto errorType = builder.getType<TypeCheckErrorType>();
   auto signatureType =
-      LITSignatureType::get(context, ArrayRef<Type>(), {errorType});
+      LITSignatureType::get(ctx, ArrayRef<Type>(), {errorType});
 
-  auto emptyParamNames = StringArrayAttr::get(context, {});
-  auto emptyParamDecls = ParamDeclArrayAttr::get(context, {});
+  auto emptyParamNames = StringArrayAttr::get(ctx, {});
+  auto emptyParamDecls = ParamDeclArrayAttr::get(ctx, {});
 
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
   // 'sym_name' because we don't /know/ the symbol name on construction and need
@@ -777,7 +778,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addAttribute("sym_namex", emptyParamNames);
 
   result.addAttribute(getExportKindAttrName(result.name),
-                      ExportKindAttr::get(context, ExportKind::NotExported));
+                      ExportKindAttr::get(ctx, ExportKind::NotExported));
   result.addAttribute(getSignatureAttrName(result.name),
                       TypeAttr::get(signatureType));
   result.addAttribute(getFunctionTypeAttrName(result.name),
@@ -785,13 +786,15 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addAttribute(getInputParamsAttrName(result.name), emptyParamDecls);
   result.addAttribute(getResultParamsAttrName(result.name), emptyParamDecls);
   result.addAttribute(getConstraintsAttrName(result.name),
-                      ConstraintArrayAttr::get(context, {}));
+                      ConstraintArrayAttr::get(ctx, {}));
   result.addAttribute(getDecoratorsAttrName(result.name),
-                      DecoratorsAttr::get(context, {}));
+                      DecoratorsAttr::get(ctx, {}));
   result.addAttribute(getSpecialFnKindAttrName(result.name),
                       builder.getI8IntegerAttr(0));
   result.addAttribute(getInlineLevelAttrName(result.name),
-                      InlineLevelAttr::get(context, InlineLevel::Automatic));
+                      InlineLevelAttr::get(ctx, InlineLevel::Automatic));
+  result.addAttribute(getLLVMMetadataAttrName(result.name),
+                      DictionaryAttr::get(ctx));
 
   result.addRegion()->push_back(new Block());
 }
@@ -811,7 +814,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
-        StringAttr(), StringAttr(), DocStringAttr());
+        StringAttr(), StringAttr(), DocStringAttr(), DictionaryAttr::get(ctx));
 
   result.regions[0]->push_back(new Block());
 }

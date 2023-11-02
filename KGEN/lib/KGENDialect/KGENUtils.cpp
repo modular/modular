@@ -1561,8 +1561,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
 
   // Print out function attributes, if present, skipping elided and
   // default-valued attributes.
-  SmallVector<StringRef, 8> ignoredAttrs;
-  llvm::append_range(ignoredAttrs, disallowedAttrNames);
+  SmallVector<StringRef, 8> ignoredAttrs(
+      (ArrayRef<StringRef>(disallowedAttrNames)));
   if (op->getAttr("LLVMMetadata") == DictionaryAttr::get(op->getContext()))
     ignoredAttrs.push_back("LLVMMetadata");
   p.printOptionalAttrDictWithKeyword(op->getAttrs(), ignoredAttrs);
