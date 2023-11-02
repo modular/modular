@@ -58,7 +58,14 @@ int State::reportError(Twine errorMessage) const {
   return EXIT_FAILURE;
 }
 
-int State::printHelp(Twine helpText) const {
+#if __cplusplus >= 202002
+int State::printHelp(std::u8string_view helpText) const {
+  return printHelp(std::string_view(
+      reinterpret_cast<const char *>(helpText.data()), helpText.size()));
+}
+#endif
+
+int State::printHelp(std::string_view helpText) const {
   llvm::outs() << helpText;
   return EXIT_SUCCESS;
 }
