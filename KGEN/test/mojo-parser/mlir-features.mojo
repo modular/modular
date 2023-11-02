@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate --allow-unregistered-dialect -import-mojo %s -verify-diagnostics | FileCheck %s
 
 
 # CHECK: lit.func @"mlirMagicTest{{.*}}(%x[x]: bf16 borrow, %y[y]: f8E5M2 borrow)
@@ -142,3 +142,14 @@ fn structured_for_loop() -> __mlir_type.index:
     return __mlir_op.`hlcf.loop`[
         _type = __mlir_type.index, _region = "loop_body".value
     ](Int(0).value)
+
+# Test multi-return __mlir_op
+# https://github.com/modularml/modular/issues/24227
+fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
+  # CHECK: [[MULTIRET:%.*]]:2 = "op_that_has_multiple_returns"() : () -> (!Int, !Int)
+  # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[MULTIRET]]#0, [[MULTIRET]]#1)
+  # CHECK-NEXT: [[TUPLE:%.*]] = kgen.call @"$builtin"::@"$tuple"::@Tuple::@"__init__{{.*}}[!Int, !Int]{{.*}}[[PACK]]
+  let r = __mlir_op.`op_that_has_multiple_returns`[
+    _type = [Int, Int],
+  ]()
+  return r

@@ -943,6 +943,8 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
   %5 = pop.inline_asm "bar $0", "=r,r" %arg2 : (!kgen.paramref<ty>) -> i8
   // CHECK: pop.inline_asm "bar $0", "=r,r" %arg3 : (!pop.scalar<dt>) -> i8
   %6 = pop.inline_asm "bar $0", "=r,r" %arg3 : (!pop.scalar<dt>) -> i8
+  // CHECK: [[RET:%.*]]:2 = pop.inline_asm "bar $0", "=r,=r,r" %arg0 : (!pop.scalar<si32>) -> (i8, i8)
+  %7:2 = pop.inline_asm "bar $0", "=r,=r,r" %arg0 : (!pop.scalar<si32>) -> (i8, i8)
   kgen.return
 }
 

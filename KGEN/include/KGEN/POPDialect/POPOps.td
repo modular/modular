@@ -1655,7 +1655,7 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     OptionalAttr<ArrayAttr>:$operandAttrs
   );
 
-  let results = (outs Optional<AnyType>:$res);
+  let results = (outs Variadic<AnyType>:$res);
 
   let assemblyFormat = [{
     (`side_effecting` $hasSideEffects^)?
