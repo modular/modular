@@ -15,6 +15,7 @@ fn _get_nvtx_target() -> __mlir_type.`!kgen.target`:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_75", `,
+        `features = "+ptx81", `,
         `data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128> : !kgen.target`,
     ]
@@ -74,8 +75,3 @@ fn _compile_nvptx_asm[
     alias closure: _CompiledClosure
     __compile_nvptx_asm_impl[func_type, func -> closure]()
     return closure
-
-
-@always_inline
-fn _cleanup_asm(asm: String) -> String:
-    return asm.replace(".version 6.3\n", ".version 8.1\n")

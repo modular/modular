@@ -12,7 +12,7 @@ from utils._reflection import get_linkage_name
 from utils.optional import Optional
 
 from pathlib import Path
-from ._compile import _cleanup_asm, _compile_nvptx_asm
+from ._compile import _compile_nvptx_asm
 from ._utils import _check_error, _get_dylib_function
 from .dim import Dim
 from .module import ModuleHandle
@@ -638,7 +638,7 @@ struct Function[func_type: AnyType, func: func_type]:
         threads_per_block: Optional[Int] = None,
     ) raises -> Self:
         alias name = get_linkage_name[func_type, func]()
-        let ptx = _cleanup_asm(Self._impl.asm)
+        let ptx = Self._impl.asm
 
         if dump_ptx:
             if dump_ptx._is_path():
