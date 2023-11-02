@@ -61,16 +61,17 @@ def KGEN_FuncOp : KGENOp<"func", [
 
     There are cases where we might have a `kgen.func` with a
     `precompiledBodyRef` attribute, like so:
+
     ```mlir
     kgen.func @someFn(%arg0: index) -> index attributes {
       precompiledBodyRef = @importedLib
     } {
       ...
     }
+    ```
 
     The presence of this attribute means that the function was already compiled
     all the way to an object file once, so we should avoid doing it again.
-    ```
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
