@@ -45,16 +45,22 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
   mlirType = ParamRefType::get(typeParamExpr);
 }
 
-ASTDecl *ASTType::getDecl(SharedState &shared) const {
+Type ASTType::getMetaType() const {
   if (!mlirType)
-    return nullptr;
-  // FIXME(metatypes): Remove this branch. It should not be needed.
+    return {};
+  if (isa<MetaTypeType>(mlirType))
+    return mlirType;
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
-    return &shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-  if (auto metaType = dyn_cast<MetaTypeType>(mlirType))
-    return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
+    return declRef.getMetaType();
   if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
-    return ASTType(paramRef.getParam().getType()).getDecl(shared);
+    return paramRef.getParam().getType();
+  // This is some generic MLIR type.
+  return {};
+}
+
+ASTDecl *ASTType::getDecl(SharedState &shared) const {
+  if (auto metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+    return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
   return nullptr;
 }
 
@@ -67,22 +73,17 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   return {};
 }
 
-/// Helper to return a struct decl for a user defined type.
-static StructDeclOp getStructDecl(ASTType type, SharedState &shared) {
-  return dyn_cast_or_null<StructDeclOp>(type.getDecl(shared));
-}
-
-ArrayRef<ParamDeclAttr>
-ASTType::getDeclaredParameters(SharedState &shared) const {
-  if (StructDeclOp structOp = getStructDecl(*this, shared))
-    return structOp.getInputParams();
+ArrayRef<Type> ASTType::getInputParameters(SharedState &shared) const {
+  // Query the metatype for the parameter signature.
+  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+    return metaType.getSignature().getInputParamTypes();
   return {};
 }
 
 ArrayRef<TypedAttr> ASTType::getDefaultParameters(SharedState &shared) const {
-  // Only user defined structs can have default parameters.
-  if (StructDeclOp structOp = getStructDecl(*this, shared))
-    return structOp.getSignature().getDefaultParameters();
+  // Query the metatype for the parameter signature.
+  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+    return metaType.getSignature().getDefaultParameters();
   return {};
 }
 
