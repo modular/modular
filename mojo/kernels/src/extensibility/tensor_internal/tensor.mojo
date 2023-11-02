@@ -229,8 +229,10 @@ struct Tensor[dtype: DType]:
         # Define an elementwise pow that captures and modifies `buffer`.
         @parameter
         fn _pow[width: Int, rank: Int](indices: StaticIntTuple[rank]) -> None:
-            let i = indices[0]
-            buffer[i] = math.pow(buffer[i], exponent)
+            let idx = indices[0]
+            let val = buffer.simd_load[width](idx)
+            let res = math.pow[dtype, width](val, exponent)
+            buffer.simd_store[width](idx, res)
 
         # Use the `elementwise` generator to run `pow` in parallel.
         with Runtime() as rt:
