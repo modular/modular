@@ -194,23 +194,23 @@ fn test_transpose_2d_identity():
     #  [4, 5, 6],
     #  [7, 8, 9]]
 
-    # check: 1
+    # CHECK: 1
     print(output[0, 0])
-    # check: 2
+    # CHECK: 2
     print(output[0, 1])
-    # check: 3
+    # CHECK: 3
     print(output[0, 2])
-    # check: 4
+    # CHECK: 4
     print(output[1, 0])
-    # check: 5
+    # CHECK: 5
     print(output[1, 1])
-    # check: 6
+    # CHECK: 6
     print(output[1, 2])
-    # check: 7
+    # CHECK: 7
     print(output[2, 0])
-    # check: 8
+    # CHECK: 8
     print(output[2, 1])
-    # check: 9
+    # CHECK: 9
     print(output[2, 2])
 
 
@@ -256,23 +256,23 @@ fn test_transpose_2d():
     #  [2, 5, 8],
     #  [3, 6, 9]]
 
-    # check: 1
+    # CHECK: 1
     print(output[0, 0])
-    # check: 4
+    # CHECK: 4
     print(output[0, 1])
-    # check: 7
+    # CHECK: 7
     print(output[0, 2])
-    # check: 2
+    # CHECK: 2
     print(output[1, 0])
-    # check: 5
+    # CHECK: 5
     print(output[1, 1])
-    # check: 8
+    # CHECK: 8
     print(output[1, 2])
-    # check: 3
+    # CHECK: 3
     print(output[2, 0])
-    # check: 6
+    # CHECK: 6
     print(output[2, 1])
-    # check: 9
+    # CHECK: 9
     print(output[2, 2])
 
 
@@ -325,29 +325,29 @@ fn test_transpose_3d_identity():
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
 
-    # check: 1
+    # CHECK: 1
     print(output[0, 0, 0])
-    # check: 2
+    # CHECK: 2
     print(output[0, 0, 1])
-    # check: 3
+    # CHECK: 3
     print(output[0, 0, 2])
-    # check: 4
+    # CHECK: 4
     print(output[0, 1, 0])
-    # check: 5
+    # CHECK: 5
     print(output[0, 1, 1])
-    # check: 6
+    # CHECK: 6
     print(output[0, 1, 2])
-    # check: 7
+    # CHECK: 7
     print(output[1, 0, 0])
-    # check: 8
+    # CHECK: 8
     print(output[1, 0, 1])
-    # check: 9
+    # CHECK: 9
     print(output[1, 0, 2])
-    # check: 10
+    # CHECK: 10
     print(output[1, 1, 0])
-    # check: 11
+    # CHECK: 11
     print(output[1, 1, 1])
-    # check: 12
+    # CHECK: 12
     print(output[1, 1, 2])
 
 
@@ -402,29 +402,29 @@ fn test_transpose_3d():
     #  [[3, 6],
     #   [9, 12]]]
 
-    # check: 1
+    # CHECK: 1
     print(output[0, 0, 0])
-    # check: 4
+    # CHECK: 4
     print(output[0, 0, 1])
-    # check: 7
+    # CHECK: 7
     print(output[0, 1, 0])
-    # check: 10
+    # CHECK: 10
     print(output[0, 1, 1])
-    # check: 2
+    # CHECK: 2
     print(output[1, 0, 0])
-    # check: 5
+    # CHECK: 5
     print(output[1, 0, 1])
-    # check: 8
+    # CHECK: 8
     print(output[1, 1, 0])
-    # check: 11
+    # CHECK: 11
     print(output[1, 1, 1])
-    # check: 3
+    # CHECK: 3
     print(output[2, 0, 0])
-    # check: 6
+    # CHECK: 6
     print(output[2, 0, 1])
-    # check: 9
+    # CHECK: 9
     print(output[2, 1, 0])
-    # check: 12
+    # CHECK: 12
     print(output[2, 1, 1])
 
 
@@ -472,36 +472,36 @@ fn test_transpose_si64():
     transpose(output, input, perm.data)
 
     # output should have form (easily verifiable via numpy)
-    # [[[1, 4],
-    #   [7, 10]],
-    #  [[2, 5],
-    #   [8, 11]]
-    #  [[3, 6],
-    #   [9, 12]]]
+    # [[[ 1,  7],
+    #   [ 4, 10]],
+    #  [[ 2,  8],
+    #   [ 5, 11]],
+    #  [[ 3,  9],
+    #   [ 6, 12]]]
 
-    # check: 1
+    # CHECK: 1
     print(output[0, 0, 0])
-    # check: 7
+    # CHECK: 7
     print(output[0, 0, 1])
-    # check: 4
+    # CHECK: 4
     print(output[0, 1, 0])
-    # check: 10
+    # CHECK: 10
     print(output[0, 1, 1])
-    # check: 2
+    # CHECK: 2
     print(output[1, 0, 0])
-    # check: 8
+    # CHECK: 8
     print(output[1, 0, 1])
-    # check: 5
+    # CHECK: 5
     print(output[1, 1, 0])
-    # check: 11
+    # CHECK: 11
     print(output[1, 1, 1])
-    # check: 3
+    # CHECK: 3
     print(output[2, 0, 0])
-    # check: 6
+    # CHECK: 9
     print(output[2, 0, 1])
-    # check: 9
+    # CHECK: 6
     print(output[2, 1, 0])
-    # check: 12
+    # CHECK: 12
     print(output[2, 1, 1])
 
 
