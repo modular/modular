@@ -42,7 +42,6 @@
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
 #include <deque>
 
@@ -1493,7 +1492,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     const ExprNode *resultTypeExpr, FnEffects &effects,
     SmallVectorImpl<ParsedArgument> &args, SmallVectorImpl<Type> &argTypes,
     SmallVectorImpl<TypedAttr> &defaults, bool isDef, SMLoc resultLoc,
-    ASTDecl *fnDecl, SpecialFunctionInfo fnInfo) {
+    ASTDecl *fnDecl, SpecialFunctionInfo fnInfo,
+    function_ref<void()> processSignature) {
   SharedState &shared = typeEmitter.shared;
   ASTDecl &sigDecl = typeEmitter.declScope;
   // If this definition is a struct/class member, compute the self type.
@@ -1662,6 +1662,9 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       effects.setOwnedRegisterResult();
     }
   }
+  // While the signature decls are still in scope, do additional signature
+  // processing.
+  processSignature();
   return resultType;
 }
 
@@ -2301,9 +2304,10 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
 
 namespace {
 struct FnDecorators : public SharedStateUser {
-  FnDecorators(ASTDecl &decl, SharedState &shared, StringRef baseName)
-      : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)),
-        baseName(baseName) {}
+  FnDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
+               StringRef baseName)
+      : SharedStateUser(shared), decl(decl), sigDecl(sigDecl),
+        funcOp(cast<LIT::FuncOp>(decl)), baseName(baseName) {}
 
   /// Apply a function signature decorator.
   LogicalResult apply(ExprNode *decorator, FnEffects &effects);
@@ -2311,8 +2315,10 @@ struct FnDecorators : public SharedStateUser {
 private:
   void applyAdaptive(const DeclRefNode &node);
   void applyMoveCapture(const CallNode &node);
+  void applyLLVMMetadata(const CallNode &node);
 
   ASTDecl &decl;
+  ASTDecl &sigDecl;
   LIT::FuncOp funcOp;
   StringRef baseName;
 };
@@ -2356,6 +2362,8 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
                     funcOp);
       else if (declRef->spelling == "__move_capture")
         applyMoveCapture(*callNode);
+      else if (declRef->spelling == "__llvm_metadata")
+        applyLLVMMetadata(*callNode);
       else
         return failure();
       return success();
@@ -2400,6 +2408,20 @@ void FnDecorators::applyMoveCapture(const CallNode &node) {
     emitError(declRef->getLoc(), "cannot capture '")
         << declRef->spelling << "'";
   }
+}
+
+void FnDecorators::applyLLVMMetadata(const CallNode &node) {
+  NamedAttrList attrs;
+  ExprEmitter emitter(shared, sigDecl, EC_Decorator);
+  for (Operand value : node.operands) {
+    if (!value.name) {
+      emitError(value.getLoc(), "LLVM metadata requires a name");
+      continue;
+    }
+    if (PValue attr = emitter.emitExprPValue(value.value, EC_Decorator))
+      attrs.append(value.name, attr);
+  }
+  funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
 }
 
 /// Given the lexical context of a function, return true if the default bit
@@ -2805,28 +2827,32 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return success();
   };
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
+
+  // Process signature decorators in the same scope as signature resolution.
+  auto processSignature = [&] {
+    if (isCapturingByDefault(funcOp, inputParamDecls, resultParamDecls) &&
+        !effects.isEscaping())
+      effects.setCapturing();
+
+    // Now that we have figured out the lexical structure, allow decorators to
+    // take a crack at the signature.
+    FnDecorators fnDecorators(decl, sigDecl, shared, baseName);
+    Decorators(decl, shared)
+        .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
+          return fnDecorators.apply(decorator, effects);
+        });
+  };
+
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       reportError, typeEmitter, paramNames, paramPassingKinds, inputParamDecls,
       resultTypeExpr, effects, args, argTypes, argDefaults, funcOp.getIsDef(),
-      resultLoc, &decl, fnInfo);
+      resultLoc, &decl, fnInfo, processSignature);
   if (!resultType)
     return failure();
 
   // Propagate errors and the parsed decls in the signature.
   moveDecls(decl, sigDecl);
-
-  if (isCapturingByDefault(funcOp, inputParamDecls, resultParamDecls) &&
-      !effects.isEscaping())
-    effects.setCapturing();
-
-  // Now that we have figured out the lexical structure, allow decorators to
-  // take a crack at the signature.
-  FnDecorators fnDecorators(decl, shared, baseName);
-  Decorators(decl, shared)
-      .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
-        return fnDecorators.apply(decorator, effects);
-      });
 
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after

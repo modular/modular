@@ -592,6 +592,13 @@ fn orvalueInferType():
     paramRefFunc(func)
 
 
+# CHECK-LABEL: lit.func @"kernel
+# CHECK-SAME: <[[X:.*]][x]: !Int>
+# CHECK-SAME: LLVMMetadata = {nvvm.maxntid = {{.*}}#kgen.pack<[[X]]> : !kgen.pack<[!Int]>
+@__llvm_metadata(`nvvm.maxntid`=[x])
+fn kernel[x: Int]():
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Conventions
 ##===----------------------------------------------------------------------===##
