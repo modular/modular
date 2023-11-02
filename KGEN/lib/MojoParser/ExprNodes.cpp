@@ -1211,7 +1211,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   bool hadTypeSpec = false;
   for (auto &attr : unboundOp.getAttrs()) {
     if (attr.getName() == "_type") {
-      // We expect either a single type or `None`.
+      // We expect either a single type, `None`, or a `ListLiteral` of types.
       if (isa<NoneAttr>(attr.getValue())) {
       } else if (auto value = dyn_cast<TypedAttr>(attr.getValue())) {
         auto pushTypeToState = [&](TypedAttr type,
@@ -1418,13 +1418,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         emitter.declScope, call.getLoc(), state.types);
     SmallVector<ASTExprAnd<AnyValue>> posOperands;
     for (OpResult opResult : resultOp->getResults()) {
-      SRValue v(opResult);
-      ASTExprAnd<AnyValue> ea = {v, &call};
-      posOperands.push_back(ea);
+      posOperands.push_back({SRValue(opResult), &call});
     }
-    CallOperands operands(posOperands, {});
     AnyValue tupleVal = emitter.emitConstructorCall(
-        tupleType, operands, &call, CallSyntax::kImplicitConvert, tupleDest,
+        tupleType, posOperands, &call, CallSyntax::kImplicitConvert, tupleDest,
         /*allowImplicitConversion=*/true);
     return tupleVal;
   }
