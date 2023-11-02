@@ -259,8 +259,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
         gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
         gen.getConstraintsAttr(), gen.getDecoratorsAttr(),
         gen.getInlineLevelAttr(), gen.getExportKindAttr(),
-        // FIXME: propagate from lit.func when it gets added.
-        DictionaryAttr::get(gen.getContext()));
+        gen.getLLVMMetadata());
     result = newGen;
 
     // Move over the body.

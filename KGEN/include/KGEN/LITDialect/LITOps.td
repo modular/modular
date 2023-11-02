@@ -80,7 +80,8 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<StrAttr>:$linkageName,
     // The name of this function in the pre-elaborated IR stage.
     OptionalAttr<StrAttr>:$preElaborationName,
-    OptionalAttr<LIT_DocStringAttr>:$docString
+    OptionalAttr<LIT_DocStringAttr>:$docString,
+    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
