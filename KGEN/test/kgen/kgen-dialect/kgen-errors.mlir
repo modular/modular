@@ -788,3 +788,10 @@ module attributes {kgen.env = #kgen.env<{fp = 2.0}>} {}
 
 // expected-error @below {{a function that throws should have 1 result}}
 !type = !kgen.signature<() throws -> ()>
+
+// -----
+
+kgen.generator @variant_constant<value: i32>() {
+  // expected-error @below {{variant attribute value type 'i32' does not match type at index 0 which is 'f32'}}
+  %0 = kgen.param.constant: variant<f32, f64> = <#kgen.variant<:i32 value, 0>>
+}

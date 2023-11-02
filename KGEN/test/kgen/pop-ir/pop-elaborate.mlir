@@ -35,8 +35,8 @@ kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.paramref<I>) -> !kgen.par
 }
 
 // COM: Store the variant and sneakily read its discriminator's raw value.
-kgen.generator @variant_bitcast_discr(%arg0: !pop.variant<i32, i64>) -> i8 {
-  %0 = pop.stack_allocation 1 x !pop.variant<i32, i64>
+kgen.generator @variant_bitcast_discr(%arg0: !kgen.variant<i32, i64>) -> i8 {
+  %0 = pop.stack_allocation 1 x !kgen.variant<i32, i64>
   pop.store %arg0, %0 : !kgen.pointer<variant<i32, i64>>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<variant<i32, i64>> to !kgen.pointer<struct<(i64, i8)>>
   %2 = kgen.struct.gep %1[1] : <struct<(i64, i8)>>
@@ -192,10 +192,10 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<(i8, i16, f64)> = <apply(
     :(!kgen.struct<(i8, i16, f64)>) -> !kgen.struct<(i8, i16, f64)> @store_load<:type !kgen.struct<(i8, i16, f64)>>,
     { 120, 32112, 1.125 })>
-  // CHECK-NEXT: #pop.variant<:i32 42, 0>
+  // CHECK-NEXT: #kgen.variant<:i32 42, 0>
   kgen.param.constant: variant<i32, f64> = <apply(
-    :(!pop.variant<i32, f64>) -> !pop.variant<i32, f64> @store_load<:type !pop.variant<i32, f64>>,
-    #pop.variant<:i32 42, 0>)>
+    :(!kgen.variant<i32, f64>) -> !kgen.variant<i32, f64> @store_load<:type !kgen.variant<i32, f64>>,
+    #kgen.variant<:i32 42, 0>)>
 
   // CHECK-NEXT: <1099511627792>
   kgen.param.constant: i64 = <apply(
@@ -216,10 +216,10 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <0>
   kgen.param.constant: i8 = <apply(
-    :(!pop.variant<i32, i64>) -> i8 @variant_bitcast_discr, #pop.variant<:i32 1, 0>)>
+    :(!kgen.variant<i32, i64>) -> i8 @variant_bitcast_discr, #kgen.variant<:i32 1, 0>)>
   // CHECK-NEXT: <1>
   kgen.param.constant: i8 = <apply(
-    :(!pop.variant<i32, i64>) -> i8 @variant_bitcast_discr, #pop.variant<:i64 1, 1>)>
+    :(!kgen.variant<i32, i64>) -> i8 @variant_bitcast_discr, #kgen.variant<:i64 1, 1>)>
 
   // CHECK-NEXT: <12>
   kgen.param.constant: i24 = <apply(

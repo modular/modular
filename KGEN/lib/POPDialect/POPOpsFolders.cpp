@@ -1133,48 +1133,6 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
 }
 
 //===----------------------------------------------------------------------===//
-// VariantCreateOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
-  auto value = llvm::cast_if_present<TypedAttr>(adaptor.getOperand());
-  if (!value)
-    return {};
-  return VariantAttr::get(value, getIndex(), getType());
-}
-
-//===----------------------------------------------------------------------===//
-// VariantIsOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult VariantIsOp::fold(FoldAdaptor adaptor) {
-  auto variant = dyn_cast_if_present<VariantAttr>(adaptor.getVariant());
-  if (!variant)
-    return {};
-  return BoolAttr::get(getContext(), variant.getIndex() == getIndex());
-}
-
-//===----------------------------------------------------------------------===//
-// VariantGetOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
-  if (auto variant = dyn_cast_if_present<VariantAttr>(adaptor.getVariant())) {
-    // If the variant value type is not equal to the result type, this is
-    // undefined behaviour.
-    if (variant.getValue().getType() != getType())
-      return {};
-    return variant.getValue();
-  }
-
-  // Canonicalize `pop.variant.get(pop.variant.create(x)) -> x`.
-  auto create = getVariant().getDefiningOp<VariantCreateOp>();
-  if (!create || create.getOperand().getType() != getType())
-    return {};
-  return create.getOperand();
-}
-
-//===----------------------------------------------------------------------===//
 // IndexToPointerOp
 //===----------------------------------------------------------------------===//
 

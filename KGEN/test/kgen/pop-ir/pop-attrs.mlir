@@ -31,38 +31,14 @@ kgen.generator @simd_constants<N, value: !pop.simd<N, si32>>() {
   kgen.return
 }
 
-// CHECK-LABEL: @array_struct_constants
-kgen.generator @array_struct_constants<T: type, A: !kgen.paramref<T>, value: !pop.scalar<f32>>() {
-  // CHECK: struct<(index, f32)> = <{ 1, 2.5{{0+}}e+00 }>
-  kgen.param.constant: struct<(index, f32)> = <{ 1, 2.5 }>
+// CHECK-LABEL: @array_constants
+kgen.generator @array_constants<T: type, A: !kgen.paramref<T>>() {
   // CHECK: array<2, index> = <[1, 2]>
   kgen.param.constant: array<2, index> = <[1, 2]>
-  // CHECK: struct<(scalar<f32>)> = <{ value }>
-  kgen.param.constant: struct<(scalar<f32>)> = <{ value }>
   // CHECK: array<2, dtype> = <[ui4, si4]>
   kgen.param.constant: array<2, dtype> = <[ui4, si4]>
-  // CHECK: struct<(T)> = <{ A }>
-  kgen.param.constant: struct<(T)> = <{ A }>
   // CHECK: array<2, T> = <[A, A]>
   kgen.param.constant: array<2, T> = <[A, A]>
-  kgen.return
-}
-
-// CHECK-LABEL: @pack_constants
-kgen.generator @pack_constants<Ts: variadic<i32>>() {
-  // CHECK: !kgen.pack<[i8, ui4, i32]> = <<3, 1, 4>>
-  %0 = kgen.param.constant: !kgen.pack<[i8, ui4, i32]> = <<3, 1, 4>>
-  // CHECK: !kgen.pack<[]> = <<>>
-  %1 = kgen.param.constant: !kgen.pack<[]> = <<>>
-  kgen.return
-}
-
-// CHECK-LABEL: @variant_constants
-kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() {
-  // CHECK: variant<f32, f64> = <#pop.variant<:f32 2.5{{0+}}e+00, 0>>
-  %0 = kgen.param.constant: variant<f32, f64> = <#pop.variant<:f32 2.5, 0>>
-  // CHECK: variant<T, U> = <#pop.variant<:!kgen.paramref<T> value, 0>>
-  %1 = kgen.param.constant: variant<T, U> = <#pop.variant<:!kgen.paramref<T> value, 0>>
   kgen.return
 }
 

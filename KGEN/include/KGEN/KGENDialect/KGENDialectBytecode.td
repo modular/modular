@@ -64,6 +64,10 @@ def PackType : DialectType<(type
   TypedAttr:$variadic
 )>;
 
+def VariantType : DialectType<(type
+  TypedAttrArray:$types
+)>;
+
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
     ParamRefType,
@@ -79,7 +83,8 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     TargetType,
     BuildInfoType,
     StructType,
-    PackType
+    PackType,
+    VariantType
   ];
 }
 
@@ -219,6 +224,12 @@ def PackAttr : DialectAttribute<(attr
   ConcreteType<"PackType">:$type
 )>;
 
+def VariantAttr : DialectAttribute<(attr
+  TypedAttr:$value,
+  VarInt:$index,
+  ConcreteType<"VariantType">:$type
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -248,7 +259,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     PackageArchiveArrayAttr,
     StructAttr,
     StructExtractAttr,
-    PackAttr
+    PackAttr,
+    VariantAttr
   ];
 }
 

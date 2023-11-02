@@ -451,7 +451,7 @@ fn testResultParamConversion[() -> b: Int](a: Int):
 fn testResultParamThrowing[() -> b: Int]() raises:
   # CHECK: lit.param_return<:!Int #lit.struct<{{.*}} 1}
   param_return[1]
-  # CHECK: lit.return %{{.*}} : !pop.variant<!Error, none>
+  # CHECK: lit.return %{{.*}} : !kgen.variant<!Error, none>
   raise Error()
 
 # CHECK-LABEL: lit.func @"testMultipleParamReturn[{{.*}}$bool::Bool]()"<{{.*}}[a]: {{.*}} -> {{.*}}b:

@@ -49,10 +49,3 @@ kgen.generator @array_constant<size>() {
 
 // expected-error @below {{array attribute type requires 2 elements but value has 1}}
 "some.op"() {a = #pop.array<1> : !pop.array<2, index>} : () -> ()
-
-// -----
-
-kgen.generator @variant_constant<value: i32>() {
-  // expected-error @below {{variant attribute value type 'i32' does not match type at index 0 which is 'f32'}}
-  %0 = kgen.param.constant: variant<f32, f64> = <#pop.variant<:i32 value, 0>>
-}

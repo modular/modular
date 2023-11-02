@@ -2172,6 +2172,30 @@ bool PackAttr::isConstant() const {
 }
 
 //===----------------------------------------------------------------------===//
+// VariantAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr value, unsigned index,
+                                  VariantType type) {
+  if (index >= type.getNumTypes())
+    return emitError() << "variant index " << index << " is out of bounds";
+  if (type.getType(index) == value.getType())
+    return success();
+  return emitError() << "variant attribute value type " << value.getType()
+                     << " does not match type at index " << index
+                     << " which is " << type.getType(index);
+}
+
+/// The variant attribute is a constant if the value type is a constant and its
+/// type is not parameterized. It is possible to materialize a constant value
+/// for a parametric variant type.
+bool VariantAttr::isConstant() const {
+  return ParameterAttr::isSimpleConstant(getValue()) &&
+         !isParameterizedType(getType());
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

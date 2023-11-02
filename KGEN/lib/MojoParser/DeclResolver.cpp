@@ -2850,7 +2850,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     if (errorType.isTypeCheckErrorType())
       decl.hasReferenceError = true;
 
-    resultType = POP::VariantType::get({errorType, resultType});
+    resultType = VariantType::get({errorType, resultType});
   }
 
   // Handle argument effects and build the ASTDecls for the arguments.
@@ -3059,8 +3059,7 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
 
     // Wrap the result value if necessary.
     if (func.isThrows())
-      retVal =
-          b.create<POP::VariantCreateOp>(func.getMLIRResultType(), retVal, 1);
+      retVal = b.create<VariantCreateOp>(func.getMLIRResultType(), retVal, 1);
     ExprEmitter::emitNormalReturn(b, retVal, funcDecl);
   };
 

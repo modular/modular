@@ -910,17 +910,6 @@ kgen.generator @parametric_pack<N, T: type>(%arg0: !pop.simd<N, bool>, %arg1: !k
   kgen.return
 }
 
-// CHECK-LABEL: @variant_type
-kgen.generator @variant_type<N, T: type>(%a: !pop.simd<N, f32>) -> !kgen.paramref<T> {
-  // CHECK: pop.variant.create %arg0, 1 : <T, simd<N, f32>>
-  %0 = pop.variant.create %a, 1 : <T, simd<N, f32>>
-  // CHECK: pop.variant.is %0, 0 : <T, simd<N, f32>>
-  %1 = pop.variant.is %0, 0 : <T, simd<N, f32>>
-  // CHECK: pop.variant.get %0, 0 : <T, simd<N, f32>>
-  %2 = pop.variant.get %0, 0 : <T, simd<N, f32>>
-  kgen.return %2 : !kgen.paramref<T>
-}
-
 // CHECK-LABEL: @call_intrinsic
 kgen.generator @call_intrinsic<intrin: string>(%arg0: !pop.scalar<f32>) {
   // CHECK-NEXT: %{{.*}} = pop.call_llvm_intrinsic "llvm.round", (%arg0) : (!pop.scalar<f32>) -> !pop.scalar<f32>

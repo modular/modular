@@ -1559,4 +1559,96 @@ def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
   let hasVerifier = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// VariantCreateOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_VariantCreateOp : KGENOp<"variant.create", [Pure]> {
+  let summary = "Create a parametric variant.";
+  let description = [{
+    The `kgen.variant.create` operation creates a variant of the referred type
+    with a value provided for one of its possible types.
+
+    Example:
+
+    ```mlir
+    // Create an `std::optional<T>` variant.
+    %none = kgen.struct.create() : !kgen.struct<()>
+    %0 = kgen.variant.create %none, 0 : !kgen.struct<()>
+        -> !kgen.variant<struct<()>, T>
+
+    // Create a variant of either a scalar float or integer.
+    %1 = kgen.param.constant: scalar<f64> = <<"0.0">>
+    %2 = kgen.variant.create %1, 1 : !pop.scalar<f64>
+        -> !kgen.variant<scalar<i64>, scalar<f64>>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$operand, UnsignedIndexAttr:$index);
+  let results = (outs KGEN_VariantType:$result);
+  let assemblyFormat = [{
+    $operand `,` $index attr-dict `:` type($result)
+    custom<VariantElementType>(type($operand), ref(type($result)), ref($index))
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariantIsOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_VariantIsOp : KGENOp<"variant.is", [Pure]> {
+  let summary = "Check the field contained by a variant.";
+  let description = [{
+    The `kgen.variant.is` operation checks whether the given variant contains
+    a particular type. Returns an `i1` that indicates whether the variant is the
+    particular type.
+
+    Example:
+
+    ```mlir
+    %optional = ...
+    %isNone = kgen.variant.is %optional, 0 : !kgen.variant<struct<()>, T>
+    ```
+  }];
+
+  let arguments = (ins KGEN_VariantType:$variant, UnsignedIndexAttr:$index);
+  let results = (outs I1:$result);
+  let assemblyFormat = "$variant `,` $index attr-dict `:` type($variant)";
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariantGetOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_VariantGetOp : KGENOp<"variant.get", [Pure,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "Get a variant as one of its possible types.";
+  let description = [{
+    The `kgen.variant.get` operation interprets the given variant as one of its
+    possible types and gets it as that type. This operation does NOT check
+    whether the variant is that type. If the result type does not match the
+    actual type of the variant, the operation's result is a poison value.
+
+    Example:
+
+    ```mlir
+    %optional = ...
+    %intVal = kgen.variant.get %optional, 1 : !kgen.variant<struct<()>, i32>
+    ```
+  }];
+
+  let arguments = (ins KGEN_VariantType:$variant, UnsignedIndexAttr:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$variant `,` $index attr-dict `:` type($variant)";
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

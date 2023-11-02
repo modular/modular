@@ -208,7 +208,7 @@ fn fn_with_params_and_return(arg: Int) -> Int:
 
 
 fn fn_with_variant(
-    arg: __mlir_type[`!pop.variant<`, Error, `, `, NoneType, `>`]
+    arg: __mlir_type[`!kgen.variant<`, Error, `, `, NoneType, `>`]
 ):
     """This is a function summary.
 
