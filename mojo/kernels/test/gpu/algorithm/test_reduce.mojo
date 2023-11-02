@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil
+from math import div_ceil, add
 from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
 
@@ -21,6 +21,7 @@ from gpu import (
     warp_id,
     shuffle_down,
     WARP_SIZE,
+    warp_reduce,
 )
 from gpu.host import Context, Dim, Function, Stream
 from gpu.host.memory import (
@@ -37,28 +38,6 @@ from utils.index import Index
 
 
 @always_inline
-fn _floorlog2[n: Int]() -> Int:
-    return 0 if n <= 1 else 1 + _floorlog2[n >> 1]()
-
-
-@always_inline
-fn _static_log2[n: Int]() -> Int:
-    return 0 if n <= 1 else _floorlog2[n - 1]() + 1
-
-
-@always_inline
-fn warp_sum_reduce(val: Float32) -> Float32:
-    var res = val
-
-    alias limit = _static_log2[WARP_SIZE]()
-
-    for mask in range(limit - 1, -1, -1):
-        res += shuffle_down[DType.float32](res, 1 << mask)
-
-    return res
-
-
-@always_inline
 fn block_reduce[BLOCK_SIZE: Int](val: Float32) -> Float32:
     let shared = stack_allocation[
         BLOCK_SIZE // WARP_SIZE,
@@ -69,7 +48,7 @@ fn block_reduce[BLOCK_SIZE: Int](val: Float32) -> Float32:
     let lane = lane_id()
     let warp = warp_id()
 
-    let warp_sum = warp_sum_reduce(val)
+    let warp_sum = warp_reduce[DType.float32, shuffle_down, add](val)
 
     if lane == 0:
         shared.store(warp, warp_sum)
