@@ -27,7 +27,8 @@ def TypeSignatureType : DialectType<(type
 
 def MetaTypeType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
-  TypedAttrArray:$paramValues
+  TypedAttrArray:$paramValues,
+  ConcreteType<"TypeSignatureType">:$signature
 )>;
 
 def LifetimeType : DialectType<(type)>;

@@ -48,6 +48,7 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
   if (!mlirType)
     return nullptr;
+  // FIXME(metatypes): Remove this branch. It should not be needed.
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return &shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
   if (auto metaType = dyn_cast<MetaTypeType>(mlirType))
@@ -81,7 +82,7 @@ ASTType::getDeclaredParameters(SharedState &shared) const {
 ArrayRef<TypedAttr> ASTType::getDefaultParameters(SharedState &shared) const {
   // Only user defined structs can have default parameters.
   if (StructDeclOp structOp = getStructDecl(*this, shared))
-    return structOp.getDefaultParameters();
+    return structOp.getSignature().getDefaultParameters();
   return {};
 }
 

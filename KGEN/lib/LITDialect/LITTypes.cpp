@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITDialect.h"
@@ -104,6 +105,20 @@ LogicalResult TypeSignatureType::verify(
   }
 
   return success();
+}
+
+TypeSignatureType TypeSignatureType::remapToSignature(
+    function_ref<InFlightDiagnostic()> emitError, ParamDeclArrayAttr paramDecls,
+    ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> passingKinds,
+    ArrayRef<TypedAttr> defaults, bool paramVarArg) {
+  IndexRefRemapper remapper(paramDecls, {});
+  SmallVector<Type> inputParamTypes =
+      llvm::map_to_vector(paramDecls, [&](ParamDeclAttr decl) {
+        return remapper.remap(decl.getType());
+      });
+  return TypeSignatureType::getChecked(
+      emitError, paramDecls.getContext(), inputParamTypes, paramNames,
+      passingKinds, remapper.remap(ArrayRef(defaults)), paramVarArg);
 }
 
 //===----------------------------------------------------------------------===//

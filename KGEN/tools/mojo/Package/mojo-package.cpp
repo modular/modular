@@ -139,8 +139,7 @@ static bool canExternalize(LIT::FuncOp func) {
   // Check if a parent has parameters.
   LIT::StructDeclOp parentStruct = func->getParentOfType<LIT::StructDeclOp>();
   while (parentStruct) {
-    if (!parentStruct.getInputParams().empty() ||
-        parentStruct.getParamVarArgs())
+    if (!parentStruct.getInputParams().empty())
       return false;
     parentStruct = parentStruct->getParentOfType<LIT::StructDeclOp>();
   }

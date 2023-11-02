@@ -37,7 +37,7 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
     Op<LITDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// LITFuncOp
+// FuncOp
 //===----------------------------------------------------------------------===//
 
 def LIT_FuncOp : LITOp<"func", [
@@ -279,12 +279,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$inputParams,
-    StringArrayAttr:$paramNames,
-    LIT_PassingKindArrayAttr:$paramPassingKinds,
     KGEN_DecoratorsAttr:$decorators,
-    UnitAttr:$paramVarArgs,
-    KGEN_ParameterExprArrayAttr:$defaultParameters,
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
     OptionalAttr<M_SymbolRefArrayAttr>:$traits,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
@@ -296,12 +293,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
-    $sym_name ``
-    custom<StructParameterSpec>(
-      $inputParams, $paramNames, $paramPassingKinds, $defaultParameters)
-    (`(`$traits^`)`)?
-    attr-dict-with-keyword custom<OptionalDecorators>($decorators)
-    $fields
+    $sym_name `` custom<StructParameterSpec>($inputParams, $signature)
+    (`(`$traits^`)`)?  attr-dict-with-keyword
+    custom<OptionalDecorators>($decorators) $fields
   }];
 
   let extraClassDeclaration = [{
@@ -326,6 +320,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
     /// Return the decl name of the struct.
     StringAttr getDeclName() { return getSymNameAttr(); }
+
+    /// Get a bound reference to the struct type.
+    DeclRefType bindReference(ArrayRef<TypedAttr> paramValues = {});
   }];
 
   let builders = [

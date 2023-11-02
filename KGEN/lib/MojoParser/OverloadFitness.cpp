@@ -801,8 +801,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         ASTDecl &decl = *callable.baseDecl;
         auto structOp = cast<StructDeclOp>(decl);
         diag << "could not deduce parameter #" << paramIdx << " ("
-             << structOp.getParamNames()[paramIdx] << ") of parent struct "
-             << *decl.getNameIfOperation();
+             << structOp.getSignature().getParamNames()[paramIdx]
+             << ") of parent struct " << *decl.getNameIfOperation();
         diag.attachNote(decl.getLoc()) << "struct declared here";
       },
   };

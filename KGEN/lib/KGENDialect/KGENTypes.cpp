@@ -426,7 +426,7 @@ SignatureType SignatureType::remapToSignature(
     FunctionType functionType, ArrayRef<ValueInputConvention> inputConventions,
     FnEffects effects, Attribute metadata,
     function_ref<InFlightDiagnostic()> emitError) {
-  IndexRefRemapper remapper(inputParams, resultParams, /*offset=*/0);
+  IndexRefRemapper remapper(inputParams, resultParams);
   SmallVector<Type> inputParamTypes, resultParamTypes;
   for (ParamDeclAttr param : inputParams)
     inputParamTypes.push_back(remapper.remap(param.getType()));
