@@ -125,9 +125,7 @@ public:
 
 private:
   /// Initializes the wrapper with the given `OptionGroup` record.
-  CommandOptionGroup(const llvm::Record *group) : group(group) {
-    assert(group->isSubClassOf("OptionGroup") && "unexpected record class");
-  }
+  CommandOptionGroup(const llvm::Record *group);
 
   const llvm::Record *group;
   std::vector<CommandOption> options;

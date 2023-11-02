@@ -194,6 +194,11 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
 // CommandOptionGroup
 //===----------------------------------------------------------------------===//
 
+CommandOptionGroup::CommandOptionGroup(const llvm::Record *group)
+    : group(group) {
+  assert(group->isSubClassOf("OptionGroup") && "unexpected record class");
+}
+
 ErrorOr<std::vector<CommandOptionGroup>>
 M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
   // Create a sorted list of groups.
