@@ -8,12 +8,12 @@ add_modular_library(KGENToLLVM
   DebugInfoTypeConverter.cpp
   KGENToLLVMPipeline.cpp
   LLVMLoweringUtils.cpp
-  LowerCallingConvention.cpp
   LowerControlFlow.cpp
+  LowerConventions.cpp
+  LowerKGENClosuresToLLVM.cpp
   LowerKGENCoroutines.cpp
   LowerKGENToLLVM.cpp
   LowerPOPToLLVM.cpp
-  LowerKGENClosuresToLLVM.cpp
 
   DEPENDS
   MLIRKGENPasses
