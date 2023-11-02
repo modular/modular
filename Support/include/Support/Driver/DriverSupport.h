@@ -14,6 +14,7 @@
 #include "llvm/ADT/StringMap.h"
 
 #include <memory>
+#include <string_view>
 
 namespace llvm {
 class MemoryBuffer;
@@ -51,7 +52,10 @@ struct State {
   int reportError(Twine errorMessage) const;
 
   /// Print the given `helpText` to stdout and return a successful exit code.
-  int printHelp(Twine helpText) const;
+#if __cplusplus >= 202002
+  int printHelp(std::u8string_view helpText) const;
+#endif
+  int printHelp(std::string_view helpText) const;
 
   /// If `args` has any unknown arguments (as indicated by the
   /// `unknownOptionID`, which is defined independently in each driver command),
