@@ -369,4 +369,28 @@ kgen.func @test_variant(%a: !kgen.variant<f32, i64, struct<(i8, i8, f64)>>) -> i
   // CHECK: return %[[VAL]]
   kgen.return %0 : i1
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
+
+// CHECK-LABEL: llvm.func @llvm_metadata
+// CHECK-SAME: nvvm.intval = 4 : i64
+// CHECK-SAME: nvvm.maxntid = [1 : index, 2 : index, 3 : index]
+// CHECK-SAME: nvvm.unitattr
+// CHECK-SAME: passthrough = [{{.*}}, ["intval", "2"], ["strval", "hello"], "unitattr"]
+kgen.func export @llvm_metadata() attributes {
+  LLVMMetadata = {
+    llvm.unitattr,
+    llvm.intval = 2,
+    llvm.strval = "hello",
+
+    nvvm.unitattr,
+    nvvm.intval = 4,
+    nvvm.maxntid = #kgen.pack<1, 2, 3> : !kgen.pack<[index, index, index]>
+  }
+} {
+  kgen.return
+}
+
 }
