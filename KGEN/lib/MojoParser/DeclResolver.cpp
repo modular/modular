@@ -2543,6 +2543,13 @@ static Value emitClosureInstance(SignatureType closureSignature,
                                  ASTDecl &nestedFunctionDecl, SMLoc location) {
   LIT::FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
   auto parentFunction = nestedFunction->getParentOfType<LIT::FuncOp>();
+  if (auto structOp = parentFunction->getParentOfType<StructDeclOp>())
+    if (!structOp.getInputParams().empty()) {
+      shared.emitError(nestedFunctionDecl.getLoc(),
+                       "TODO: methods of parameterized structs cannot contain "
+                       "escaping closures yet.");
+      return {};
+    }
   assert(parentFunction &&
          "Expected nestedFunctionDecl to have a parent FuncOp.");
   // Save the insertion point before closure creation since closure creation
