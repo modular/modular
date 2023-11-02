@@ -109,10 +109,12 @@ def KGEN_FuncOp : KGENOp<"func", [
                    CArg<"InlineLevel",
                         "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
-                   CArg<"ArrayRef<TypedAttr>", "{}">:$decorators), [{
+                   CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
+                   CArg<"DictionaryAttr", "{}">:$llvmMetadata), [{
+      if (!llvmMetadata)
+        llvmMetadata = DictionaryAttr::get(name.getContext());
       build($_builder, $_state, name, signature, decorators, inlineLevel,
-            exportKind, /*precompiledBodyRef=*/{},
-            DictionaryAttr::get(name.getContext()));
+            exportKind, /*precompiledBodyRef=*/{}, llvmMetadata);
     }]>,
   ];
 
@@ -187,17 +189,18 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     ```
   }];
 
-  /// If the `implements` attribute is present then this generator is an
-  /// implementation of the specified generator.interface.
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<KGEN_SignatureType>:$signature,
-                       TypeAttrOf<FunctionType>:$functionType,
-                       KGEN_ParamDeclArrayAttr:$inputParams,
-                       KGEN_ParamDeclArrayAttr:$resultParams,
-                       ConstraintArrayAttr:$constraints,
-                       KGEN_DecoratorsAttr:$decorators,
-                       KGEN_InlineLevelAttr:$inlineLevel,
-                       KGEN_ExportKindAttr:$exportKind);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    TypeAttrOf<KGEN_SignatureType>:$signature,
+    TypeAttrOf<FunctionType>:$functionType,
+    KGEN_ParamDeclArrayAttr:$inputParams,
+    KGEN_ParamDeclArrayAttr:$resultParams,
+    ConstraintArrayAttr:$constraints,
+    KGEN_DecoratorsAttr:$decorators,
+    KGEN_InlineLevelAttr:$inlineLevel,
+    KGEN_ExportKindAttr:$exportKind,
+    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
+  );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
@@ -212,7 +215,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "ArrayRef<ParamDeclAttr>":$resultParams), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
             resultParams, /*constraints=*/{}, /*decorators=*/{},
-            InlineLevel::Automatic, ExportKind::NotExported);
+            InlineLevel::Automatic, ExportKind::NotExported,
+            DictionaryAttr::get(name.getContext()));
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
       build($_builder, $_state, name, signature, signature.getValues(), {}, {});
