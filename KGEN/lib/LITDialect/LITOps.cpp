@@ -11,7 +11,6 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -821,41 +820,46 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseStructParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
-                         StringArrayAttr &paramNames,
-                         PassingKindArrayAttr &paramPassingKinds,
-                         ParameterExprArrayAttr &defaultParameters) {
+static ParseResult parseStructParameterSpec(AsmParser &p,
+                                            ParamDeclArrayAttr &inputParams,
+                                            TypeAttr &signature) {
   SmallVector<TypedAttr> defaultParams;
-  SmallVector<StringAttr> paramNamesArr;
-  SmallVector<PassingKind> paramPassingKindsArr;
+  SmallVector<StringAttr> paramNames;
+  SmallVector<PassingKind> paramPassingKinds;
   ParamDeclArrayAttr resultParams;
   llvm::SMLoc loc = p.getCurrentLocation();
-  if (parseOptionalParameterSpec(p, inputParamDecls, resultParams,
-                                 paramNamesArr, paramPassingKindsArr,
-                                 defaultParams))
+  if (parseOptionalParameterSpec(p, inputParams, resultParams, paramNames,
+                                 paramPassingKinds, defaultParams))
     return failure();
   if (!resultParams.empty())
     return p.emitError(loc, "expected no result parameters");
+  bool paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
 
-  MLIRContext *ctx = p.getContext();
-  defaultParameters = ParameterExprArrayAttr::get(ctx, defaultParams);
-  paramNames = StringArrayAttr::get(ctx, paramNamesArr);
-  paramPassingKinds = PassingKindArrayAttr::get(ctx, paramPassingKindsArr);
-
+  auto sig = TypeSignatureType::remapToSignature(
+      [&] { return p.emitError(loc); }, inputParams, paramNames,
+      paramPassingKinds, defaultParams, paramVarArg);
+  if (!sig)
+    return failure();
+  signature = TypeAttr::get(sig);
   return success();
 }
 
 static void printStructParameterSpec(AsmPrinter &p, Operation *op,
                                      ArrayRef<ParamDeclAttr> inputParamDecls,
-                                     ArrayRef<StringAttr> paramNames,
-                                     PassingKindArrayAttr paramPassingKinds,
-                                     ParameterExprArrayAttr defaultParameters) {
+                                     TypeAttr signature) {
+  auto sig = cast<TypeSignatureType>(signature.getValue());
   ParameterEvaluator evaluator;
-  printOptionalParameterSpec(
-      p, inputParamDecls,
-      /*resultParamDecls=*/{}, paramNames, paramPassingKinds.getValue(),
-      defaultParameters ? defaultParameters : ArrayRef<TypedAttr>(), evaluator);
+  printOptionalParameterSpec(p, inputParamDecls, {}, sig.getParamNames(),
+                             sig.getParamPassingKinds(),
+                             sig.getDefaultParameters(), evaluator);
+  if (sig.getParamVarArg())
+    p << " param_vararg";
+}
+
+DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
+  SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
+  return DeclRefType::get(symbol, paramValues,
+                          MetaTypeType::get(symbol, getSignature()));
 }
 
 /// Verify the debuginfo scope of an op that must be a top-level declaration.
@@ -883,10 +887,6 @@ static DebugInfo::DIFileAttr getTopLevelScope(Operation *op) {
 }
 
 LogicalResult StructDeclOp::verify() {
-  if (getParamNames().size() != getParamPassingKinds().getValue().size()) {
-    return emitError()
-           << "number of parameter names and passing kinds must match";
-  }
   if (getFields().getNumArguments())
     return emitOpError("expected declaration body to have no arguments");
   return verifyTopLevelLocScope(*this);
@@ -931,17 +931,12 @@ StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   MLIRContext *ctx = builder.getContext();
-  build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
-        StringArrayAttr::get(ctx, {}), PassingKindArrayAttr::get(ctx, {}),
-        DecoratorsAttr::get(ctx, {}),
-        /*paramVarArgs=*/false,
-        /*defaultParameters=*/ParameterExprArrayAttr::get(ctx, {}),
-        /*registerPassable=*/0,
-        /*traits=*/nullptr,
-        /*nonmaterializableTarget=*/nullptr,
-        /*destructor=*/nullptr, /*moveInit=*/nullptr,
-        /*copyInit=*/nullptr, /*closureSignature=*/nullptr,
-        /*docString=*/nullptr);
+  build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
+        ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
+        /*registerPassable=*/0, /*traits=*/nullptr,
+        /*nonmaterializableTarget=*/nullptr, /*destructor=*/nullptr,
+        /*moveInit=*/nullptr, /*copyInit=*/nullptr,
+        /*closureSignature=*/nullptr, /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
 }
 

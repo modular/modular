@@ -475,9 +475,8 @@ InputParamBindings::verifyBindings(
 
   return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
                         defaultParams, emitter, hasParamVarArgs,
-                        /*parameterInferenceHook=*/{},
-                        /*isPackVarArg=*/false, setEvaluator, diagEmitter,
-                        allowPartiallyBound);
+                        /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
+                        setEvaluator, diagEmitter, allowPartiallyBound);
 }
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
@@ -499,8 +498,7 @@ InputParamBindings::verifyBindings(LITSignatureType sig,
   return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultParameters(),
                         emitter, sig.hasParamVarArgs(),
-                        /*parameterInferenceHook=*/{},
-                        /*isPackVarArg=*/false,
+                        /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
                         /*setEvaluator=*/{}, diagEmitter);
 }
 
@@ -508,19 +506,11 @@ ParameterExprArrayAttr
 InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
                                    llvm::SMLoc exprLoc,
                                    bool allowPartiallyBound) const {
-  SmallVector<Type> paramTypes =
-      llvm::map_to_vector(structOp.getInputParams(),
-                          [](ParamDeclAttr decl) { return decl.getType(); });
-  auto setParamValue = [&](size_t declIdx, TypedAttr value,
-                           ParserParamEvaluator &evaluator) {
-    evaluator.setParameterValue(structOp.getInputParams()[declIdx], value);
-  };
-
+  TypeSignatureType sig = structOp.getSignature();
   auto [bindingValuesAttr, _] = verifyBindings(
-      paramTypes, structOp.getParamNames(),
-      structOp.getParamPassingKinds().getValue(),
-      structOp.getDefaultParameters(), emitter, structOp.getParamVarArgs(),
-      structOp.getName(), structOp.getLoc(), exprLoc, setParamValue,
+      sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
+      sig.getDefaultParameters(), emitter, sig.getParamVarArg(),
+      structOp.getName(), structOp.getLoc(), exprLoc, /*setEvaluator=*/{},
       allowPartiallyBound);
   return bindingValuesAttr;
 }

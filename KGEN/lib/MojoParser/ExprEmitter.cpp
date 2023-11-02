@@ -1668,15 +1668,15 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   }
 
   // If this is a type declaration, return it as a type.
-  if (isa<StructDeclOp>(decl)) {
-    SymbolRefAttr ref = decl.getSymbolRef();
-    PValue result(DeclRefType::get(ref, MetaTypeType::get(ref)));
+  if (auto structOp = dyn_cast<StructDeclOp>(decl)) {
+    PValue result(structOp.bindReference());
     return emitResult(result, expr, dest);
   }
 
   // If this is a module or package declaration, form a module reference.
   if (isa<FileModuleOp, PackageOp>(decl)) {
-    PValue result(ModuleAttr::get(MetaTypeType::get(decl.getSymbolRef())));
+    PValue result(ModuleAttr::get(MetaTypeType::get(
+        decl.getSymbolRef(), TypeSignatureType::get(getContext()))));
     return emitResult(result, expr, dest);
   }
 

@@ -2529,19 +2529,13 @@ LITSignatureType DeclResolver::createSelfContainedSignature(
 Type DeclResolver::createTypeFromSubsetOfParentParameters(
     SharedState &shared, StructDeclOp baseStruct,
     ArrayRef<ParameterCapture> parentDeclRefSubset) {
-  Type type = ASTDecl::computeSelfTypeForStruct(baseStruct);
-  auto declRef = dyn_cast<DeclRefType>(type);
-  if (!declRef)
-    return type;
-  ASTDecl &typeDecl =
-      shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-  SmallVector<TypedAttr> bindingValues = llvm::map_to_vector(
-      parentDeclRefSubset, [&](ParameterCapture parameterCapture) -> TypedAttr {
-        return ParamDeclRefAttr::get(parameterCapture.getName(),
-                                     parameterCapture.getType());
-      });
-  SymbolRefAttr symbol = typeDecl.getSymbolRef();
-  return DeclRefType::get(symbol, bindingValues, MetaTypeType::get(symbol));
+  // Given an unordered list of captures and a base type, return a type of the
+  // base type with the captured types ordered.
+  SmallVector<TypedAttr> bindingValues(parentDeclRefSubset.size());
+  for (auto [index, signatureCapture] : llvm::enumerate(parentDeclRefSubset))
+    bindingValues[index] = ParamDeclRefAttr::get(signatureCapture.getName(),
+                                                 signatureCapture.getType());
+  return baseStruct.bindReference(bindingValues);
 }
 
 static Value emitClosureInstance(SignatureType closureSignature,
@@ -2703,6 +2697,16 @@ PassingKind ParsedArgument::mapToPassingKind(KWArgHandling handling) {
   llvm_unreachable("unhandled ParsedArgument::KWArgHandling");
 }
 
+/// Silence internal verifier errors when constructing types from the parser. We
+/// don't want to show these to the user.
+static auto silenceErrors(MLIRContext *ctx) {
+  return [ctx] {
+    InFlightDiagnostic diag = mlir::emitError(UnknownLoc::get(ctx));
+    diag.abandon();
+    return diag;
+  };
+}
+
 /// funcdef   ::=  [decorators] def_or_fn identifier [param_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 /// def_or_fn ::= "def" | "fn"
@@ -2741,7 +2745,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       addFullyResolvedDecl(PValue(paramRef), param.getName(), decl.getLoc(),
                            &sigDecl);
     }
-    paramVarArg = structDecl.getParamVarArgs();
+    paramVarArg = structDecl.getSignature().getParamVarArg();
   }
 
   // Parse declared meta parameters and add them to the current scope.
@@ -2867,13 +2871,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Compute the signature of the function.
+  auto metadata = FnMetadataAttr::get(
+      builder.getContext(), argNames, argPassingKinds, paramNames,
+      paramPassingKinds, argDefaults, paramDefaults);
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
-      effects,
-      FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
-                          paramNames, paramPassingKinds, argDefaults,
-                          paramDefaults),
-      [&] { return mlir::emitError(funcOp.getLoc()); });
+      effects, metadata, silenceErrors(getContext()));
   if (!signature)
     return failure();
 
@@ -3704,14 +3707,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Propagate signature errors and decls.
   moveDecls(decl, sigDecl);
 
-  structOp.setInputParams(inputParamDecls);
-  structOp.setParamVarArgs(paramVarArgs);
-  structOp.setDefaultParametersAttr(
-      ParameterExprArrayAttr::get(structOp->getContext(), paramDefaults));
-  structOp.setParamNamesAttr(
-      StringArrayAttr::get(structOp->getContext(), paramNames));
-  structOp.setParamPassingKindsAttr(
-      PassingKindArrayAttr::get(structOp->getContext(), paramPassingKinds));
+  auto inputParams = ParamDeclArrayAttr::get(getContext(), inputParamDecls);
+  structOp.setInputParamsAttr(inputParams);
+  auto sig = TypeSignatureType::remapToSignature(
+      silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
+      paramDefaults, paramVarArgs);
+  if (!sig)
+    return failure();
+  structOp.setSignature(sig);
 
   if (!traits.empty())
     structOp.setTraitsAttr(

@@ -75,15 +75,13 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
     b.create<StructFieldOp>(location, "field" + Twine(i), type);
 
   // Set attributes in bulk.
-  NamedAttrList attributeDictionary = declOp->getAttrDictionary();
-  attributeDictionary.set(declOp.getInputParamsAttrName(),
-                          b.getAttr<ParamDeclArrayAttr>(inputParams));
-  attributeDictionary.set(declOp.getParamNamesAttrName(),
-                          b.getAttr<StringArrayAttr>(inputParamNames));
-  attributeDictionary.set(
-      declOp.getParamPassingKindsAttrName(),
-      b.getAttr<PassingKindArrayAttr>(parameterPassingKinds));
-  declOp->setAttrs(attributeDictionary.getDictionary(module.getContext()));
+  NamedAttrList attrs = declOp->getAttrDictionary();
+  attrs.set(declOp.getInputParamsAttrName(),
+            b.getAttr<ParamDeclArrayAttr>(inputParams));
+  auto sig = TypeSignatureType::get(module.getContext(), inputParameters,
+                                    inputParamNames, parameterPassingKinds);
+  attrs.set(declOp.getSignatureAttrName(), TypeAttr::get(sig));
+  declOp->setAttrs(attrs.getDictionary(module.getContext()));
   return declOp;
 }
 
@@ -729,11 +727,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
 Type ClosureEmitter::makeClosureImplSelfType(
     StructDeclOp closureImpl, ArrayRef<ParamDeclRefAttr> paramRefs) {
-  SymbolRefAttr symbol = getFullyResolvedSymbolRef(closureImpl);
-  SmallVector<TypedAttr> bindingValues;
-  for (ParamDeclRefAttr decl : paramRefs)
-    bindingValues.push_back(decl);
-  return DeclRefType::get(symbol, bindingValues, MetaTypeType::get(symbol));
+  return closureImpl.bindReference(llvm::map_to_vector(
+      paramRefs, [](ParamDeclRefAttr decl) -> TypedAttr { return decl; }));
 }
 
 static SymbolConstantAttr

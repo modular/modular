@@ -913,7 +913,7 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
 # CHECK-LABEL: lit.func @"test_default_param_struct_all_default()"
 fn test_default_param_struct_all_default():
-    # CHECK: lit.alias.decl {{.*}}T: metatype<{{.*}}@AllDefaultParams> = <@{{.*}}::@AllDefaultParams<
+    # CHECK: lit.alias.decl {{.*}}T: metatype<{{.*}}@AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 0}>,
     # CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
     alias T = AllDefaultParams[]

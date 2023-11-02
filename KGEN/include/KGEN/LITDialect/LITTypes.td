@@ -95,11 +95,33 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
                              $defaultParameters, $paramVarArg)
   }];
 
+  let builders = [
+    TypeBuilder<(ins), [{
+      using std::nullopt;
+      return $_get($_ctxt, nullopt, nullopt, nullopt, nullopt, false);
+    }]>,
+    TypeBuilder<(ins "ArrayRef<Type>":$inputParams,
+                     "ArrayRef<StringAttr>":$paramNames,
+                     "ArrayRef<PassingKind>":$passingKinds), [{
+      return $_get($_ctxt, inputParams, paramNames, passingKinds, std::nullopt,
+                   false);
+    }]>
+  ];
+
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
     ArrayRef<Type> getInputParamTypes() const { return getParamTypes(); }
     ArrayRef<Type> getResultParamTypes() const { return {}; }
+
+    /// Construct a type signature from named parameter declarations. This
+    /// helper is used to convert between a named signature structure to a
+    /// nameless representation.
+    static TypeSignatureType remapToSignature(
+        function_ref<InFlightDiagnostic()> emitError,
+        ParamDeclArrayAttr paramDecls, ArrayRef<StringAttr> paramNames,
+        ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaults,
+        bool paramVarArg);
   }];
 }
 
@@ -137,15 +159,20 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
     ```
   }];
 
-  let parameters = (ins "SymbolRefAttr":$symbol,
-                        OptionalArrayRefParameter<"TypedAttr">:$paramValues);
+  let parameters = (ins
+    "SymbolRefAttr":$symbol,
+    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    DefaultValuedParameter<"TypeSignatureType",
+                           "TypeSignatureType::get($_ctxt)">:$signature
+  );
   let assemblyFormat = [{
-    `<` $symbol `` custom<ParameterValues>($paramValues) `>`
+    `<` $symbol `` custom<ParameterValues>($paramValues) (`,` $signature^)? `>`
   }];
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
-      return get(symbol.getContext(), symbol, {});
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
+                                        "TypeSignatureType":$signature), [{
+      return get(symbol.getContext(), symbol, {}, signature);
     }]>
   ];
 }

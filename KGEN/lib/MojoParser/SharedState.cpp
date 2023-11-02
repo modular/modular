@@ -910,8 +910,8 @@ static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
   LookupResult lookup = shared.lookupAndResolveDecl(
       typeName, loc, context, /*searchParentScopes=*/true);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
-    SymbolRefAttr ref = lookup.getIfSuccess()[0]->getSymbolRef();
-    return DeclRefType::get(ref, MetaTypeType::get(ref));
+    ASTDecl *decl = lookup.getIfSuccess().front();
+    return cast<StructDeclOp>(decl).bindReference();
   }
 
   shared.emitError(loc, "could not find builtin '") << typeName << "' type";

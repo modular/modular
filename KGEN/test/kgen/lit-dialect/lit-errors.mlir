@@ -12,10 +12,8 @@ lit.struct.decl @SomeStruct {
 ^bb0(%arg0: i32):
 }) {sym_name = "StructArgs",
     decorators = #kgen<decorators[]>,
-    defaultParameters = #kgen<exprs[]>,
-    inputParams = #kgen<param.decls[]>,
-    paramNames = #M<strings[]>,
-    paramPassingKinds = #lit.passing.kinds<[]>
+    signature = !lit.type_signature,
+    inputParams = #kgen<param.decls[]>
     } : () -> ()
 
 // -----
