@@ -98,3 +98,84 @@ fn mbarrier[
     """
 
     _mbarrier_impl(address.address)
+
+
+@always_inline("nodebug")
+fn mbarrier_init[
+    type: DType
+](shared_mem: DTypePointer[type, GPUAddressSpace.SHARED], num_threads: Int32):
+    """Initialize shared memory barrier for N number of threads.
+
+    Args:
+        shared_mem: Shared memory barrier to initialize.
+        num_threads: Number of threads participating.
+    """
+    llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
+        shared_mem, num_threads
+    )
+
+
+@always_inline("nodebug")
+fn mbarrier_init[
+    type: AnyType
+](shared_mem: Pointer[type, GPUAddressSpace.SHARED], num_threads: Int32):
+    """Initialize shared memory barrier for N number of threads.
+
+    Args:
+        shared_mem: Shared memory barrier to initialize.
+        num_threads: Number of threads participating.
+    """
+    llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
+        shared_mem, Int32
+    )
+
+
+@always_inline("nodebug")
+fn mbarrier_arrive[
+    type: DType
+](shared_mem: DTypePointer[type, GPUAddressSpace.SHARED]) -> Int:
+    """Commits the arrival of thead to a shared memory barrier.
+
+    Args:
+        shared_mem: Shared memory barrier.
+
+    Returns:
+        An Int64 value representing the state of the memory barrier.
+    """
+    return llvm_intrinsic["llvm.nvvm.mbarrier.arrive.shared", Int](shared_mem)
+
+
+@always_inline("nodebug")
+fn mbarrier_test_wait[
+    type: AnyType
+](shared_mem: Pointer[type, GPUAddressSpace.SHARED], state: Int) -> Bool:
+    """Test waiting for the memory barrier.
+
+    Args:
+        shared_mem: Shared memory barrier.
+        state: Memory barrier arrival state.
+
+    Returns:
+        True if all particpating thread arrived to the barrier.
+    """
+    return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
+        shared_mem, state
+    )
+
+
+@always_inline("nodebug")
+fn mbarrier_test_wait[
+    type: DType
+](shared_mem: DTypePointer[type, GPUAddressSpace.SHARED], state: Int) -> Bool:
+    """Test waiting for the memory barrier.
+
+    Args:
+        shared_mem: Shared memory barrier.
+        state: Memory barrier arrival state.
+
+    Returns:
+        True if all particpating thread arrived to the barrier.
+    """
+    return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
+        shared_mem, state
+    )
