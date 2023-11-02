@@ -21,6 +21,8 @@ from Transpose import _fill_strides
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 
+from math import min
+
 
 fn _fill[
     type: DType
@@ -209,3 +211,171 @@ fn pad_shape[
         output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
 
     return output_shape
+
+
+fn pad_reflect[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+    paddings_type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    paddings: DTypePointer[paddings_type],
+):
+    """
+    Fill `output` with values from `input`, and edges padded with reflected
+    values from the unpadded region
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        paddings: Ordered (before, after) padding sizes for each axis.
+
+    Example:
+        let input = [[1, 2],
+                     [3, 4]]
+        let paddings = [2, 2, 1, 0]
+
+        Yields:
+        output = [[2, 1, 2],
+                  [4, 3, 4],
+                  [2, 1, 2],
+                  [4, 3, 4],
+                  [2, 1, 2],
+                  [4, 3, 4]]
+    """
+    # TODO this recursion can add up for larger tensors, optimize in #24565
+    let input_strides_buf = Buffer[rank, DType.index].stack_allocation()
+    let output_strides_buf = Buffer[rank, DType.index].stack_allocation()
+    _fill_strides(input, input_strides_buf)
+    _fill_strides(output, output_strides_buf)
+
+    alias init_axis = 0
+    _pad_reflect_impl(
+        init_axis,
+        output.data,
+        input.data,
+        paddings,
+        output.dynamic_shape,
+        output_strides_buf.data,
+        input_strides_buf.data,
+        0,  # output_offset
+        0,  # input_offset
+    )
+
+
+fn _pad_reflect_impl[
+    rank: Int,
+    type: DType,
+    paddings_type: DType,
+](
+    axis: Int,
+    output: DTypePointer[type],
+    input: DTypePointer[type],
+    paddings: DTypePointer[paddings_type],
+    output_shape: StaticIntTuple[rank],
+    output_strides: DTypePointer[DType.index],
+    input_strides: DTypePointer[DType.index],
+    output_offset: Int,
+    input_offset: Int,
+):
+    """
+    Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges
+    padded with reflected values from the unpadded region
+
+    Args:
+        axis: The axis to operate on.
+        output: The output buffer.
+        input: The input buffer.
+        paddings: The (before, after) padding sizes for each axis.
+        output_shape: the shape of the tensor passed to `output`
+        output_strides: the stride at each output axis.
+        input_strides: the stride at each input axis.
+        output_offset: The offset at which output data starts.
+        input_offset: The offset at which input data starts.
+    """
+    let axis_dim = output_shape[axis]
+    let pre_pad = paddings.load(2 * axis).to_int()
+    let post_pad = paddings.load(2 * axis + 1).to_int()
+    let non_pad = axis_dim - pre_pad - post_pad
+    let pre_pad_start_ptr = output.offset(output_offset)
+    let input_start_ptr = input.offset(input_offset)
+
+    let input_axis_stride = input_strides.load(axis)[0].value
+    let output_axis_stride = output_strides.load(axis)[0].value
+
+    let input_offsets = StaticIntTuple[2](input_offset, input_offset)
+    let output_offsets = StaticIntTuple[2](output_offset, output_offset)
+
+    # first fill the unpadded regions
+    if axis + 1 != rank:
+        # recurse down to lower dimensions
+        var next_input_offset: Int = input_offset.value
+        var next_output_offset: Int = output_offset.value + (
+            output_axis_stride * pre_pad
+        )
+        # DANGER this uses a lot of recursion. For a rank N tensor the number of calls
+        # will be dim(0) * dim(1) * ... dim(N-1)
+        for sub_axis in range(pre_pad, pre_pad + non_pad):
+            _pad_reflect_impl(
+                axis + 1,
+                output,
+                input,
+                paddings,
+                output_shape,
+                output_strides,
+                input_strides,
+                next_output_offset,
+                next_input_offset,
+            )
+            next_input_offset += input_axis_stride
+            next_output_offset += output_axis_stride
+    else:
+        # no more dimensions to recurse, copy from input to unpadded region
+        let non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
+        memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
+
+    # now memcpy the fully padded axes from the regions we just filled
+    var curr_pre_pad = 0
+    var curr_post_pad = 0
+    while curr_pre_pad < pre_pad or curr_post_pad < post_pad:
+        if curr_pre_pad < pre_pad:
+            let copy_to = pre_pad - curr_pre_pad - 1
+            let copy_to_ptr = pre_pad_start_ptr.offset(
+                (copy_to * output_axis_stride)
+            )
+
+            let copy_from: Int
+            if non_pad == 1:
+                # handle singleton case
+                copy_from = pre_pad
+            else:
+                copy_from = copy_to + ((curr_pre_pad % (non_pad - 1)) + 1) * 2
+
+            let copy_from_ptr = pre_pad_start_ptr.offset(
+                (copy_from * output_axis_stride)
+            )
+            memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
+            curr_pre_pad += 1
+
+        if curr_post_pad < post_pad:
+            let copy_to = pre_pad + non_pad + curr_post_pad
+            let copy_to_ptr = pre_pad_start_ptr.offset(
+                copy_to * output_axis_stride
+            )
+
+            let copy_from: Int
+            if non_pad == 1:
+                # handle singleton case
+                copy_from = pre_pad
+            else:
+                copy_from = copy_to - ((curr_post_pad % (non_pad - 1)) + 1) * 2
+
+            let copy_from_ptr = pre_pad_start_ptr.offset(
+                copy_from * output_axis_stride
+            )
+
+            memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
+            curr_post_pad += 1
