@@ -1955,8 +1955,10 @@ ParseResult KGEN::parsePackageArchiveArray(OpAsmParser &p,
   }
 
   SmallVector<PackageArchiveAttr> parsedArchives;
-  if (p.parseCommaSeparatedList(
-          [&] { return p.parseAttribute(parsedArchives.emplace_back()); }))
+  if (p.parseCommaSeparatedList([&] {
+        return p.parseCustomAttributeWithFallback(
+            parsedArchives.emplace_back());
+      }))
     return failure();
 
   archives = PackageArchiveArrayAttr::get(p.getContext(), parsedArchives);
