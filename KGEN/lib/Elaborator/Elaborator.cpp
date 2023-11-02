@@ -1934,21 +1934,21 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     break;
   }
 
-  GeneratorOp generator = genNode->gen;
+  GeneratorOp gen = genNode->gen;
 
   // Bind all parameter values in this scope.
   ArrayRef<TypedAttr> inputParamValues = genNode->inputParams.getValue();
-  ArrayRef<ParamDeclAttr> inputParamDecls = generator.getInputParams();
+  ArrayRef<ParamDeclAttr> inputParamDecls = gen.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
   IREvaluator evaluator(*this);
   for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
     evaluator.setOrOverwriteParameterValue(decl, val);
 
-  // If the generator's constraints don't satisfy, set an error and move on.
+  // If the gen's constraints don't satisfy, set an error and move on.
   genNode->inConstraint = true;
   std::optional<ErrorTreeOrSuccess> constraintResult =
-      KGEN::evaluateConstraints(inode, generator.getConstraints(), evaluator);
+      KGEN::evaluateConstraints(inode, gen.getConstraints(), evaluator);
   if (!constraintResult) {
     genNode->state.refresh();
     genNode->inConstraint = false;
@@ -1964,71 +1964,66 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     return ElaborationState::error();
   }
 
-  TimeTraceScope<> traceScope(
-      "specializeGenerator:" + tryGettingShortName(generator.getName()).str(),
-      generator.getName().str() /* + " Input params: " +
-          mlir::debugString(generator.getInputParamsAttr()) + " = " +
-          mlir::debugString(genNode->inputParams) */);
-  auto genScope =
-      logger.scope("Specializing Generator: @", generator.getName());
-  logger.logOp("Generator", generator);
+  TimeTraceScope<> traceScope("specializeGenerator:" +
+                                  tryGettingShortName(gen.getName()).str(),
+                              gen.getName().str());
+  auto genScope = logger.scope("Specializing Generator: @", gen.getName());
+  logger.logOp("Generator", gen);
 
   // Get a partial ordering of parameter definitions and uses that are listed
   // "top down" in our evaluation order, if we don't have one already. This
-  // should happen exactly once for each generator node. This will be tricky to
+  // should happen exactly once for each  node. This will be tricky to
   // parallelize as-is - we should change the approach a bit to have a
   // ParametricNode (or similar) that doesn't store the input parameters, in
   // which we could store the ParameterUseDefGraph.
   ParameterUseDefGraph *genNodeGraph =
-      knownGraphs.read([generator](const auto &map) -> ParameterUseDefGraph * {
-        if (auto it = map.find(generator); it != map.end())
+      knownGraphs.read([gen](const auto &map) -> ParameterUseDefGraph * {
+        if (auto it = map.find(gen); it != map.end())
           return it->second.get();
         return nullptr;
       });
   if (!genNodeGraph) {
     // Compute a new graph. The computed graph could end up getting discarded if
     // two threads end up here at the same time for the same generator.
-    auto newGraph =
-        std::make_unique<ParameterUseDefGraph>(generator.getBodyRegion());
+    auto newGraph = std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
     newGraph->calculate(paramCache.getThreadLocalCache());
     // Make sure to use whichever graph ended up in the map.
     genNodeGraph = knownGraphs.modify(
-        [generator, newGraph = std::move(newGraph)](auto &map) mutable {
-          return map.try_emplace(generator, std::move(newGraph))
-              .first->second.get();
+        [gen, newGraph = std::move(newGraph)](auto &map) mutable {
+          return map.try_emplace(gen, std::move(newGraph)).first->second.get();
         });
   }
 
-  std::string baseName = mangleParameterValues(generator, inputParamValues);
+  std::string baseName = mangleParameterValues(gen, inputParamValues);
 
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
-  OpBuilder b(generator.getContext());
+  OpBuilder b(gen.getContext());
   StringAttr mangledName = b.getStringAttr(
       baseName + Twine(inputParamValues.empty() ? "_concrete" : ""));
   if (config.sanitizeSymbolNames)
     mangledName = sanitizeSymbolToAlnum(mangledName);
   auto newFunc = b.create<FuncOp>(
-      generator.getLoc(), mangledName,
-      SignatureType::get(generator.getFunctionType(),
-                         generator.getSignature().getInputConventions(),
-                         generator.getSignature().getFnEffects()),
-      generator.getInlineLevel(), generator.getExportKind(),
-      generator.getDecorators());
+      gen.getLoc(), mangledName,
+      SignatureType::get(gen.getFunctionType(),
+                         gen.getSignature().getInputConventions(),
+                         gen.getSignature().getFnEffects()),
+      gen.getInlineLevel(), gen.getExportKind(), gen.getDecorators(),
+      gen.getLLVMMetadata());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  symtab.modify([newFunc, it = generator->getIterator()](SymbolTable &symtab) {
+  symtab.modify([newFunc, it = gen->getIterator()](SymbolTable &symtab) {
     symtab.insert(newFunc, it);
   });
 
   // Clone the body of the generator into the function.
   // TODO: is there a nice way for us to avoid cloning this?
   IRMapping map;
-  generator.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), map);
+  gen.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), map);
 
   // Map from the generator to the new function for the parameter graph copy.
-  map.map(generator.getOperation(), newFunc.getOperation());
+  map.map(gen.getOperation(), newFunc.getOperation());
   // Copy over the parameter use-def graph for this clone.
   ParameterUseDefGraph childGraph = genNodeGraph->copy(map);
 

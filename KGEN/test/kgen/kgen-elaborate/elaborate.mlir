@@ -2079,3 +2079,18 @@ kgen.generator @elaborate() {
   kgen.call @decorators<2>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @"metadata,x=16,y=16,z=8"
+// CHECK-SAME: LLVMMetadata = {nvvm.maxntid = #kgen.pack<16, 16, 8>
+kgen.generator @metadata<x, y, z>() attributes {LLVMMetadata = {
+  nvvm.maxntid = #kgen.pack<x, y, z> : !kgen.pack<[index, index, index]>
+}}{
+  kgen.return
+}
+
+kgen.generator @kernel() {
+  kgen.call @metadata<16, 16, 8>() : () -> ()
+  kgen.return
+}
