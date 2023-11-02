@@ -52,6 +52,9 @@ public:
   explicit operator bool() const { return !!mlirType; }
   bool operator!() const { return !mlirType; }
 
+  /// Get the metatype of the type.
+  Type getMetaType() const;
+
   /// If this is a user declared type, return the declaration that this came
   /// from.  If this is a raw MLIR type, return null.
   ASTDecl *getDecl(SharedState &shared) const;
@@ -61,11 +64,10 @@ public:
   /// binding set - incomplete bindings (missing bindings) are valid.
   ArrayRef<TypedAttr> getParamBindings() const;
 
-  /// If this is a user defined type, return the the declared parameters.
-  ArrayRef<ParamDeclAttr> getDeclaredParameters(SharedState &shared) const;
+  /// Get the types of any unbound input parameters of the type.
+  ArrayRef<Type> getInputParameters(SharedState &shared) const;
 
-  /// If this is a parametric user defined type, return all the declared default
-  /// parameter values.
+  /// Get the default values for the unbound input parameters of the type.
   ArrayRef<TypedAttr> getDefaultParameters(SharedState &shared) const;
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to

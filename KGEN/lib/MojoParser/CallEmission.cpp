@@ -38,7 +38,7 @@ using namespace M::KGEN::LIT;
 InputParamBindings InputParamBindings::getForDeclaredType(ASTType type,
                                                           SharedState &shared) {
   InputParamBindings inputParamBindings;
-  ArrayRef<ParamDeclAttr> inputParams = type.getDeclaredParameters(shared);
+  ArrayRef<Type> inputParams = type.getInputParameters(shared);
   inputParamBindings.numCtadParams = inputParams.size();
   inputParamBindings.defaultTypeParams = type.getDefaultParameters(shared);
 
@@ -48,15 +48,15 @@ InputParamBindings InputParamBindings::getForDeclaredType(ASTType type,
     for (TypedAttr binding : paramBindings)
       inputParamBindings.addPrechecked(binding);
   } else {
-    for (ParamDeclAttr decl : inputParams) {
+    for (Type type : inputParams) {
       // Variadics should only appear on the trailing end of parameter
       // declaration lists, and cannot have defaults values. We check for them,
       // and decrement the count which is needed to allow the case when the
       // variadic is empty.
-      if (isa<VariadicType>(decl.getType()))
+      if (isa<VariadicType>(type))
         --inputParamBindings.numCtadParams;
       else
-        inputParamBindings.addPrechecked(UnboundAttr::get(decl.getType()));
+        inputParamBindings.addPrechecked(UnboundAttr::get(type));
     }
   }
   return inputParamBindings;
