@@ -110,6 +110,10 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   // Then immediately resolve compiler promises.
   pm.addPass(createResolveCompilerPromises(runtime));
 
+  // We lower argument input conventions.
+  pm.addPass(createLowerInputConventions());
+  // TODO(#20700): should this be followed by mem-2-reg immediately?
+
   // Run the ForceInline pass with an inner function pass pipeline.
   auto buildForceInlineFuncPasses = [options](mlir::OpPassManager &pm) {
     if (options.optimizationLevel < 1)

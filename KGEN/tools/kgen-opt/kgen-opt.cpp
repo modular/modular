@@ -285,6 +285,7 @@ int main(int argc, char **argv) {
   KGEN::registerLowerClosures();
   KGEN::registerLowerControlFlow();
   KGEN::registerLowerGlobalPOPToLLVM();
+  KGEN::registerLowerInputConventions();
   KGEN::registerLowerLoops();
   KGEN::registerLowerKGENCoroutinesAsync();
   KGEN::registerLowerKGENToLLVM();
