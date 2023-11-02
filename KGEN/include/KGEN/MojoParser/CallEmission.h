@@ -174,12 +174,6 @@ public:
                                         llvm::SMLoc exprLoc) const;
 
 private:
-  /// Type of callback used to define how a value should be installed in the
-  /// parameter evaluator. Takes the index and value of the parameter, and a
-  /// reference to the evaluator.
-  using SetEvaluatorHookTy =
-      function_ref<void(size_t, TypedAttr, ParserParamEvaluator &)>;
-
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
   /// information on how closely the bindings fit the input parameters, or why
@@ -191,8 +185,8 @@ private:
       ArrayRef<PassingKind> paramPassingKinds,
       ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
       bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
-      bool isPackVarArg, SetEvaluatorHookTy setEvaluator,
-      const DiagEmitter &diagEmitter, bool allowPartiallyBound = false) const;
+      bool isPackVarArg, const DiagEmitter &diagEmitter,
+      bool allowPartiallyBound = false) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -206,8 +200,7 @@ private:
                  ArrayRef<PassingKind> paramPassingKinds,
                  ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
                  bool hasParamVarArgs, StringRef baseName, Location opLoc,
-                 llvm::SMLoc exprLoc, SetEvaluatorHookTy setEvaluator = {},
-                 bool allowPartiallyBound = false) const;
+                 llvm::SMLoc exprLoc, bool allowPartiallyBound = false) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call

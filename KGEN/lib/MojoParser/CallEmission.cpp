@@ -126,8 +126,7 @@ InputParamBindings::verifyBindings(
     ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultParams,
     ExprEmitter &emitter, bool hasParamVarArgs,
     ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
-    SetEvaluatorHookTy setEvaluator, const DiagEmitter &diagEmitter,
-    bool allowPartiallyBound) const {
+    const DiagEmitter &diagEmitter, bool allowPartiallyBound) const {
   size_t numParams = expectedParamTypes.size();
   assert(paramNames.size() == numParams);
   auto isVarArg = [&](size_t idx) {
@@ -203,10 +202,7 @@ InputParamBindings::verifyBindings(
   // This lambda installs the decl's value in the parameter evaluator and new
   // binding array.
   auto setParamValue = [&](TypedAttr value) {
-    if (setEvaluator)
-      setEvaluator(newBindings.size(), value, evaluator);
-    else
-      evaluator.addInputValue(value);
+    evaluator.addInputValue(value);
     newBindings.push_back(value);
   };
 
@@ -408,8 +404,7 @@ InputParamBindings::verifyBindings(
     ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
     ArrayRef<PassingKind> paramPassingKinds, ArrayRef<TypedAttr> defaultParams,
     ExprEmitter &emitter, bool hasParamVarArgs, StringRef baseName,
-    Location opLoc, llvm::SMLoc exprLoc, SetEvaluatorHookTy setEvaluator,
-    bool allowPartiallyBound) const {
+    Location opLoc, llvm::SMLoc exprLoc, bool allowPartiallyBound) const {
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](bool posOnly) {
         InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
@@ -476,7 +471,7 @@ InputParamBindings::verifyBindings(
   return verifyBindings(expectedParamTypes, paramNames, paramPassingKinds,
                         defaultParams, emitter, hasParamVarArgs,
                         /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
-                        setEvaluator, diagEmitter, allowPartiallyBound);
+                        diagEmitter, allowPartiallyBound);
 }
 
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
@@ -486,7 +481,7 @@ InputParamBindings::verifyBindings(
   return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
                         sig.getParamPassingKinds(), sig.getDefaultParameters(),
                         emitter, sig.hasParamVarArgs(), parameterInferenceHook,
-                        isPackVarArg, /*setEvaluator=*/{}, diagEmitter,
+                        isPackVarArg, diagEmitter,
                         /*allowPartiallyBound=*/false);
 }
 
@@ -495,11 +490,10 @@ InputParamBindings::verifyBindings(LITSignatureType sig,
                                    ExprEmitter &emitter) const {
   DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr,
                           nullptr, nullptr, nullptr};
-  return verifyBindings(sig.getInputParamTypes(), sig.getParamNames(),
-                        sig.getParamPassingKinds(), sig.getDefaultParameters(),
-                        emitter, sig.hasParamVarArgs(),
-                        /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false,
-                        /*setEvaluator=*/{}, diagEmitter);
+  return verifyBindings(
+      sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
+      sig.getDefaultParameters(), emitter, sig.hasParamVarArgs(),
+      /*parameterInferenceHook=*/{}, /*isPackVarArg=*/false, diagEmitter);
 }
 
 ParameterExprArrayAttr
@@ -510,8 +504,7 @@ InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
   auto [bindingValuesAttr, _] = verifyBindings(
       sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
       sig.getDefaultParameters(), emitter, sig.getParamVarArg(),
-      structOp.getName(), structOp.getLoc(), exprLoc, /*setEvaluator=*/{},
-      allowPartiallyBound);
+      structOp.getName(), structOp.getLoc(), exprLoc, allowPartiallyBound);
   return bindingValuesAttr;
 }
 
