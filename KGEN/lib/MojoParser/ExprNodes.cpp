@@ -1214,11 +1214,43 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       // We expect either a single type or `None`.
       if (isa<NoneAttr>(attr.getValue())) {
       } else if (auto value = dyn_cast<TypedAttr>(attr.getValue())) {
-        if (!isa<MLIRTypeType, MetaTypeType>(value.getType())) {
-          emitter.emitError(call.getLoc(), "_type value is not a type");
-          return {};
+        auto pushTypeToState = [&](TypedAttr type,
+                                   std::string message) -> LogicalResult {
+          if (!isa<MLIRTypeType, MetaTypeType>(type.getType())) {
+            emitter.emitError(call.getLoc(), message);
+            return failure();
+          }
+          state.types.push_back(ASTType(type));
+          return success();
+        };
+        if (auto drt = dyn_cast<DeclRefType>(value.getType())) {
+          ASTType listLiteralType = emitter.shared.getBuiltinListLiteralType(
+              emitter.declScope, call.getLoc());
+          // If the _type field is a ListLiteral of types, then the operation
+          // returns multiple results, with types specified in the list.  We
+          // need to take apart the ListLiteral parameter value to get the types
+          // from inside it.
+          if (drt.getSymbol() ==
+              dyn_cast<DeclRefType>(listLiteralType.mlirType).getSymbol()) {
+            ParamOperatorAttr paramOp = dyn_cast<ParamOperatorAttr>(value);
+            assert(paramOp && "ListLiteral of types creates ParamOperatorAttr");
+            ArrayRef<TypedAttr> operands = paramOp.getOperands();
+            assert(operands.size() == 2 &&
+                   "ParamOperatorAttr for ListLiteral of types has 2 operands");
+            auto packOperand = dyn_cast<PackAttr>(operands[1]);
+            assert(packOperand && "ListLiterall of types, packOperand valid");
+            ArrayRef<TypedAttr> types = packOperand.getValues();
+            for (TypedAttr type : types) {
+              if (pushTypeToState(type, "value in _type list is not a type")
+                      .failed())
+                return {};
+            }
+            hadTypeSpec = true;
+            continue;
+          }
         }
-        state.types.push_back(ASTType(value));
+        if (pushTypeToState(value, "_type value is not a type").failed())
+          return {};
       } else {
         emitter.emitError(call.getLoc(), "unknown _type value");
         return {};
@@ -1291,8 +1323,9 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       return {};
     }
     if (state.types.size() > 1) {
-      emitter.emitError(call.getLoc(),
-                        "cannot use operations with multiple results (yet) ")
+      emitter.emitError(
+          call.getLoc(),
+          "cannot use operations with multiple inferred results (yet) ")
           << unboundOp.getName() << call.getRange();
       return {};
     }
@@ -1338,48 +1371,63 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   // If we succeeded and have no types, then install a None type.
-  if (resultOp->getNumResults() == 0)
+  if (resultOp->getNumResults() == 0) {
     return PValue(emitter.shared.getNoneAttr());
-
-  assert(resultOp->getNumResults() == 1 &&
-         "Only support single result ops so far");
-
-  // Check to see if we can fold this operation.  This enables use of
-  // __mlir_op to produce meta-values without forcing them into the dynamic
-  // value domain.
-  SmallVector<Attribute, 4> constOperands(resultOp->getNumOperands());
-  for (unsigned i = 0, e = constOperands.size(); i != e; ++i)
-    matchPattern(resultOp->getOperand(i), mlir::m_Constant(&constOperands[i]));
-  SmallVector<OpFoldResult, 4> foldResults;
-  if (succeeded(resultOp->fold(constOperands, foldResults)) &&
-      foldResults.size() == 1) {
-    auto folded = PointerUnion<Attribute, Value>(foldResults[0]);
-    Type foldedType;
-    // If the result was some other value that already exists, use it.
-    if (auto val = dyn_cast<Value>(folded)) {
-      if (val.getType() == resultOp->getResult(0).getType()) {
-        resultOp->erase();
-        return SRValue(val);
+  } else if (resultOp->getNumResults() == 1) {
+    // Check to see if we can fold this operation.  This enables use of
+    // __mlir_op to produce meta-values without forcing them into the dynamic
+    // value domain.
+    SmallVector<Attribute, 4> constOperands(resultOp->getNumOperands());
+    for (unsigned i = 0, e = constOperands.size(); i != e; ++i)
+      matchPattern(resultOp->getOperand(i),
+                   mlir::m_Constant(&constOperands[i]));
+    SmallVector<OpFoldResult, 4> foldResults;
+    if (succeeded(resultOp->fold(constOperands, foldResults)) &&
+        foldResults.size() == 1) {
+      auto folded = PointerUnion<Attribute, Value>(foldResults[0]);
+      Type foldedType;
+      // If the result was some other value that already exists, use it.
+      if (auto val = dyn_cast<Value>(folded)) {
+        if (val.getType() == resultOp->getResult(0).getType()) {
+          resultOp->erase();
+          return SRValue(val);
+        }
+        foldedType = val.getType();
+      } else {
+        // If it is a constant, make an PValue result.
+        auto attr = cast<TypedAttr>(cast<Attribute>(folded));
+        if (attr.getType() == resultOp->getResult(0).getType()) {
+          resultOp->erase();
+          return PValue(attr);
+        }
+        foldedType = attr.getType();
       }
-      foldedType = val.getType();
-    } else {
-      // If it is a constant, make an PValue result.
-      auto attr = cast<TypedAttr>(cast<Attribute>(folded));
-      if (attr.getType() == resultOp->getResult(0).getType()) {
-        resultOp->erase();
-        return PValue(attr);
-      }
-      foldedType = attr.getType();
+      emitter.emitError(call.getLoc())
+          << unboundOp.getName() << " operation folded to result type "
+          << ASTType(foldedType) << " but we expected it to be "
+          << ASTType(resultOp->getResult(0).getType()) << call.getRange();
+      return {};
     }
-    emitter.emitError(call.getLoc())
-        << unboundOp.getName() << " operation folded to result type "
-        << ASTType(foldedType) << " but we expected it to be "
-        << ASTType(resultOp->getResult(0).getType()) << call.getRange();
-    return {};
-  }
 
-  // If folding failed, return the operation normally.
-  return SRValue(resultOp->getResult(0));
+    // If folding failed, return the operation normally.
+    return SRValue(resultOp->getResult(0));
+  } else {
+    // Pack results into a tuple and return it.
+    ValueDest tupleDest = ValueDest(EC_MLIRMagic);
+    ASTType tupleType = emitter.shared.getBuiltinTupleInstantion(
+        emitter.declScope, call.getLoc(), state.types);
+    SmallVector<ASTExprAnd<AnyValue>> posOperands;
+    for (OpResult opResult : resultOp->getResults()) {
+      SRValue v(opResult);
+      ASTExprAnd<AnyValue> ea = {v, &call};
+      posOperands.push_back(ea);
+    }
+    CallOperands operands(posOperands, {});
+    AnyValue tupleVal = emitter.emitConstructorCall(
+        tupleType, operands, &call, CallSyntax::kImplicitConvert, tupleDest,
+        /*allowImplicitConversion=*/true);
+    return tupleVal;
+  }
 }
 
 AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
