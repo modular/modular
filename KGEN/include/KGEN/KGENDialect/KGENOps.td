@@ -72,16 +72,26 @@ def KGEN_FuncOp : KGENOp<"func", [
 
     The presence of this attribute means that the function was already compiled
     all the way to an object file once, so we should avoid doing it again.
+
+    If the function has already been precompiled, `precompiledBodyRef` will
+    reference a `kgen.link` operation containing the static archive in which
+    the precompiled body lies.
+
+    The function can contain opaque metadata to pass onto LLVM in its
+    `llvmMetadata` dictionary attribute. Note that this is not the same as LLVM
+    function attributes, which is contained in the `llvmAttrs` dictionary
+    attribute.
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<KGEN_SignatureType>:$signature,
-                       KGEN_DecoratorsAttr:$decorators,
-                       KGEN_InlineLevelAttr:$inlineLevel,
-                       KGEN_ExportKindAttr:$exportKind,
-                       // If the body was precompiled, this will hold a
-                       // reference to the link directive.
-                       OptionalAttr<SymbolRefAttr>:$precompiledBodyRef);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    TypeAttrOf<KGEN_SignatureType>:$signature,
+    KGEN_DecoratorsAttr:$decorators,
+    KGEN_InlineLevelAttr:$inlineLevel,
+    KGEN_ExportKindAttr:$exportKind,
+    OptionalAttr<SymbolRefAttr>:$precompiledBodyRef,
+    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
+  );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
@@ -100,8 +110,9 @@ def KGEN_FuncOp : KGENOp<"func", [
                         "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators), [{
-      build($_builder, $_state, name, signature, decorators,
-            inlineLevel, exportKind, /*precompiledBodyRef=*/{});
+      build($_builder, $_state, name, signature, decorators, inlineLevel,
+            exportKind, /*precompiledBodyRef=*/{},
+            DictionaryAttr::get(name.getContext()));
     }]>,
   ];
 

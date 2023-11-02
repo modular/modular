@@ -1466,8 +1466,10 @@ void KGEN::printSymbolExport(AsmPrinter &p, Operation *op,
   }
 }
 
-/// Parse either a kgen.generator or kgen.func declaration, depending on what
-/// `isGenerator` is set to.
+static StringRef disallowedAttrNames[] = {
+    "constraints", "decorators",   "exportKind", "functionType", "inlineLevel",
+    "inputParams", "resultParams", "signature",  "sym_name"};
+
 ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
                                        OperationState &result,
                                        GeneratorOrFuncKind opKind) {
@@ -1527,7 +1529,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
   // Disallow attributes that are inferred from elsewhere in the attribute
   // dictionary.
-  for (StringRef disallowed : GeneratorOp::getAttributeNames()) {
+  for (StringRef disallowed : disallowedAttrNames) {
     if (parsedAttributes.get(disallowed))
       return parser.emitError(attributeDictLocation, "'")
              << disallowed
@@ -1557,13 +1559,12 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
 
   printOptionalInline(p, op.getInlineLevel());
 
-  SmallVector<StringRef> ignoredAttrNames(
-      GeneratorOp::getAttributeNames().begin(),
-      GeneratorOp::getAttributeNames().end());
-
-  // Print out function attributes, if present.
-  SmallVector<StringRef, 8> ignoredAttrs = {SymbolTable::getSymbolAttrName()};
-  ignoredAttrs.append(ignoredAttrNames.begin(), ignoredAttrNames.end());
+  // Print out function attributes, if present, skipping elided and
+  // default-valued attributes.
+  SmallVector<StringRef, 8> ignoredAttrs;
+  llvm::append_range(ignoredAttrs, disallowedAttrNames);
+  if (op->getAttr("LLVMMetadata") == DictionaryAttr::get(op->getContext()))
+    ignoredAttrs.push_back("LLVMMetadata");
   p.printOptionalAttrDictWithKeyword(op->getAttrs(), ignoredAttrs);
 
   printOptionalConstraints(p, op, cast<DeclInterface>(*op).getConstraints());

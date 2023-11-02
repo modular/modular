@@ -47,6 +47,70 @@ namespace {
 // ConvertKGENFunc
 //===----------------------------------------------------------------------===//
 
+/// Convert LLVM metadata expressed in KGEN attributes to an LLVM dialect
+/// compatible representation. Unsupport metadata values are rejected.
+static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func,
+                                         DictionaryAttr metadata) {
+  NamedAttrList attrs = func->getAttrDictionary();
+  SmallVector<Attribute> passthrough =
+      llvm::to_vector(func.getPassthroughAttr());
+  Builder b(func.getContext());
+
+  for (const NamedAttribute &attr : metadata) {
+    // Treat `llvm.*` metadata attributes as passthrough function attributes.
+    Attribute value = attr.getValue();
+    if (isa<LLVM::LLVMDialect>(attr.getNameDialect())) {
+      StringAttr name = b.getStringAttr(
+          attr.getName().strref().drop_front(StringRef("llvm.").size()));
+      if (isa<mlir::UnitAttr>(value)) {
+        // Add the metadata attribute name without the prefix.
+        passthrough.push_back(name);
+      } else if (auto intVal = dyn_cast<IntegerAttr>(value)) {
+        // The LLVM exporter apparently expects the integer to be encoded as a
+        // string. Push the pair as an array attribute.
+        SmallVector<char> str;
+        intVal.getValue().toString(str, /*Radix=*/10, /*Signed=*/true);
+        passthrough.push_back(b.getArrayAttr(
+            {name, b.getStringAttr(StringRef(str.data(), str.size()))}));
+      } else if (auto str = dyn_cast<StringAttr>(value)) {
+        // Strip the type from string attributes.
+        passthrough.push_back(
+            b.getArrayAttr({name, b.getStringAttr(str.getValue())}));
+      } else {
+        return mlir::emitError(func.getLoc(),
+                               "unsupported LLVM passthrough attribute kind: ")
+               << value;
+      }
+      continue;
+    }
+
+    // For anything else, forward them as function attributes.
+    if (isa<mlir::UnitAttr, IntegerAttr>(value)) {
+      // Propagate unit and integer attribute.
+      attrs.append(attr.getName(), value);
+    } else if (auto pack = dyn_cast<PackAttr>(value)) {
+      // Propagate pack attribute as array attributes, since they're also
+      // heterogenous lists.
+      attrs.append(attr.getName(),
+                   b.getArrayAttr(llvm::map_to_vector(
+                       pack.getValues(), [](Attribute attr) { return attr; })));
+    } else if (auto str = dyn_cast<StringAttr>(value)) {
+      // Strip the type from string attributes.
+      attrs.append(attr.getName(), b.getStringAttr(str.getValue()));
+    } else {
+      return mlir::emitError(func.getLoc(),
+                             "unsupported LLVM metadata attribute kind: ")
+             << value;
+    }
+    // TODO(amdgpu): DenseI32ArrayAttr for ROCDL work group size.
+  }
+
+  // Update the attributes.
+  func->setAttrs(attrs.getDictionary(func.getContext()));
+  func.setPassthroughAttr(b.getArrayAttr(passthrough));
+  return success();
+}
+
 struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
   using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
@@ -67,6 +131,8 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
     auto funcOp = createLLVMFunc(
         b, target, func.getLoc(), func.getNameAttr(), funcType,
         getLinkageKind(func.getExportKind(), /*isExternFunc=*/false));
+    if (failed(convertLLVMMetadata(funcOp, func.getLLVMMetadataAttr())))
+      return failure();
 
     if (func.isExported()) {
       funcOp.setDsoLocal(true);
