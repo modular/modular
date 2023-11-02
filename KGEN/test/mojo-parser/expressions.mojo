@@ -1340,13 +1340,13 @@ struct MemType: pass
 # CHECK-SAME: %{{.*}}[float2]: {{.*}}(!RegType, |) ownedresult -> !RegType
 # CHECK-SAME: %{{.*}}[float3]: {{.*}}(!kgen.pointer<!MemoryType> owned_in_mem, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float4]: {{.*}}(!kgen.pointer<!Int> byref, |) -> !kgen.none
-# CHECK-SAME: %{{.*}}[float5]: {{.*}}(!Int borrow, |) throws -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float6]: {{.*}}(!Int borrow, |) throws|async|capturing -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float7]: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !pop.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float5]: {{.*}}(!Int borrow, |) throws -> !kgen.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float6]: {{.*}}(!Int borrow, |) throws|async|capturing -> !kgen.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float7]: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !kgen.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float8]: {{.*}}<"a": !Int>(!kgen.declref<@"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float9]: {{.*}}<[] -> !Int>() -> !kgen.none
-# CHECK-SAME: %{{.*}}[float10]: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}>() throws -> !pop.variant<!Error, none>
-# CHECK-SAME: %{{.*}}[float11]: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float10]: {{.*}}<<"a": !Int, "b": @"$expressions"::@ParamType<:!Int *(0,0)>{{.*}}>() throws -> !kgen.variant<!Error, none>
+# CHECK-SAME: %{{.*}}[float11]: {{.*}}<<"Ts": variadic<type>>(!kgen.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !kgen.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float12]: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>, |) -> !kgen.none>
 # CHECK-SAME: %{{.*}}[named]: {{.*}}<("x": !kgen.pointer<!MemType> borrow_in_mem) -> !Int>
 fn function_types(

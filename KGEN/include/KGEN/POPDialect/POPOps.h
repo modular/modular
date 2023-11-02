@@ -33,6 +33,7 @@ class PointerType;
 class StringType;
 class StructType;
 class VariadicType;
+class VariantType;
 } // namespace M::KGEN
 
 namespace M::KGEN::POP {
@@ -46,7 +47,6 @@ class PrefetchLocalityAttr;
 class ArrayType;
 class CoroutineType;
 class SIMDType;
-class VariantType;
 } // namespace M::KGEN::POP
 
 //===----------------------------------------------------------------------===//

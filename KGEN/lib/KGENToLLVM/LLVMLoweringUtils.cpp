@@ -286,7 +286,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
   // Convert variant types to a struct with enough space to contain the largest
   // variant type plus a discriminator.
-  addConversion([=](POP::VariantType variant) -> std::optional<Type> {
+  addConversion([=](VariantType variant) -> std::optional<Type> {
     // TODO: The generated assembly is sensitive to the content type of the
     // variant type. This needs to be optimized. For now, use an array of
     // word-size integers.
@@ -977,7 +977,7 @@ Value KGEN::convertParameterToLLVM(
   }
 
   // Bitpack variant constants.
-  if (auto variant = dyn_cast<POP::VariantAttr>(attr)) {
+  if (auto variant = dyn_cast<VariantAttr>(attr)) {
     auto variantType = llvm::cast_if_present<LLVM::LLVMStructType>(
         tc.convertType(variant.getType()));
     if (!variantType)

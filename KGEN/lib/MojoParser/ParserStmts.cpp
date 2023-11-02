@@ -298,7 +298,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
     // Get the result type without any error handling in the way.
     Type resultType = sig.getValueResults()[0];
     if (sig.isThrows())
-      resultType = cast<POP::VariantType>(resultType).getType(1);
+      resultType = cast<VariantType>(resultType).getType(1);
 
     if (sig.getValueInputs().empty() && isImplicitlyIgnorableType(resultType)) {
       shared.emitWarning(expr->getLoc())
@@ -639,8 +639,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // variant type.
   ImplicitLocOpBuilder b(mlirLoc, builder);
   if (decl.isThrows())
-    resultValue = b.create<POP::VariantCreateOp>(decl.getMLIRResultType(),
-                                                 resultValue, 1);
+    resultValue =
+        b.create<VariantCreateOp>(decl.getMLIRResultType(), resultValue, 1);
 
   ExprEmitter::emitNormalReturn(b, resultValue, getParentDecl());
   return success();

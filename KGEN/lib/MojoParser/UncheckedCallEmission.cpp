@@ -724,7 +724,7 @@ static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
   // If the async function throws, extract the normal result type.
   if (sig.isThrows()) {
     resultType =
-        ParamRefType::get(cast<POP::VariantType>(resultType).getTypes().back());
+        ParamRefType::get(cast<VariantType>(resultType).getTypes().back());
   }
 
   // Bind the result type to the base coroutine type.
@@ -856,19 +856,19 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   if (calleeSig.isThrows() && !calleeSig.isAsync()) {
     // Put the insertion point back after we're done building the 'if'.
     OpBuilder::InsertionGuard builderGuard(*builder);
-    auto callResultTy = cast<POP::VariantType>(callResult.getType());
+    auto callResultTy = cast<VariantType>(callResult.getType());
     Type successType = callResultTy.getType(1);
     auto handleVariant = builder->create<LIT::HandleVariantOp>(
         loc, successType, callResult, ValueRange(byRefResults));
     Block *successBlock =
         builder->createBlock(&handleVariant.getSuccessRegion());
     builder->setInsertionPointToStart(successBlock);
-    Value value = builder->create<POP::VariantGetOp>(loc, callResult, 1);
+    Value value = builder->create<VariantGetOp>(loc, callResult, 1);
     builder->create<LIT::YieldOp>(loc, value);
 
     Block *errorBlock = builder->createBlock(&handleVariant.getErrorRegion());
     builder->setInsertionPointToStart(errorBlock);
-    Value error = builder->create<POP::VariantGetOp>(loc, callResult, 0);
+    Value error = builder->create<VariantGetOp>(loc, callResult, 0);
     if (failed(emitRaise(error, loc))) {
       InflightDiag diag =
           emitError(callExpr->getLoc(), "cannot call function that may raise "

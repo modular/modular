@@ -630,4 +630,48 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// VariantType
+//===----------------------------------------------------------------------===//
+
+def KGEN_VariantType : KGENType<"Variant", "variant", [
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>
+]> {
+  let summary = "A parametric variant type.";
+  let description = [{
+    A `!kgen.variant` type is a structural variant type that represents a value
+    that is one of a list of types (discriminated union).
+
+    The type is always canonicalized to remove duplicate possible variant types.
+    Variants of zero types or one type are allowed, e.g. `!kgen.variant<i32>`,
+    and all variant operations are defined on the even though they aren't
+    particularly useful types.
+
+    Example:
+
+    ```mlir
+    !kgen.variant<i32, scalar<dtype>, T>
+    ```
+  }];
+
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$types);
+  let assemblyFormat = "`<` custom<TypeParamValues>($types) `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Get the element types as parameterized types.
+    SmallVector<Type> getParameterizedElementTypes() const;
+
+    /// Get an element type as a parameterized type.
+    Type getType(unsigned index);
+
+    /// Return the number of types in the variant.
+    size_t getNumTypes();
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

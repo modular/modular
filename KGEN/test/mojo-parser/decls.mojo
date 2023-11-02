@@ -120,14 +120,14 @@ fn take_closure_raises(
     g: fn(borrowed __mlir_type.index) raises capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ) raises:
-    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow, |) throws|capturing -> !pop.variant<!Error, index>>
+    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow, |) throws|capturing -> !kgen.variant<!Error, index>>
     let result = g(x)
 
 
 fn throws_main() raises:
     let x = Int(4).value
 
-    # CHECK: lit.func *"g(__mlir_type.index)"(%y[y]: index borrow) throws|capturing -> !pop.variant<!Error, index>
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y[y]: index borrow) throws|capturing -> !kgen.variant<!Error, index>
     @parameter
     fn g(y: __mlir_type.index) raises -> __mlir_type.index:
         return x
@@ -904,17 +904,17 @@ def implicit_return_obj():
     # CHECK: if
     if False:
         # CHECK: kgen.call {{.*}}object::@"__init__{{.*}}%__result__
-        # CHECK: pop.variant.create
+        # CHECK: kgen.variant.create
         # CHECK: return
         return
     # CHECK: else
     else:
         # CHECK: kgen.call {{.*}}object::@"__init__{{.*}}%__result__
-        # CHECK: pop.variant.create
+        # CHECK: kgen.variant.create
         # CHECK: return
         return 5
     # CHECK: kgen.call {{.*}}object::@"__init__
-    # CHECK: pop.variant.create
+    # CHECK: kgen.variant.create
     # CHECK: lit.return
     _ = 5
 
@@ -923,45 +923,45 @@ def implicit_return_obj():
 # raises specifier.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<!Error, !Int> attributes {isDef
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.variant<!Error, !Int> attributes {isDef
 def defAlwaysRaises() -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value = 0}>
-    # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
+    # CHECK-NEXT: %1 = kgen.variant.create [[RESULT]]
     # CHECK-NEXT: lit.return %1
     return 0
 
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<!Error, !Int>
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.variant<!Error, !Int>
 fn fnThatRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value = 0}>
-    # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
+    # CHECK-NEXT: %1 = kgen.variant.create [[RESULT]]
     # CHECK-NEXT: lit.return %1
     return 0
 
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<!Error, none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !kgen.variant<!Error, none>
 fn raisesReturnsNone() raises:
     # CHECK-NEXT: %none = kgen.param.constant: none
-    # CHECK-NEXT: %0 = pop.variant.create %none
+    # CHECK-NEXT: %0 = kgen.variant.create %none
     # CHECK-NEXT: lit.return %0
     # CHECK-NEXT: lit.end_func
     pass
 
 
 # COM: We can return an variant of error and index in a non-throwing function.
-# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<!Error, index>
-fn raisesReturnsVariant() -> __mlir_type[`!pop.variant<`, Error, `, index>`]:
-    return __mlir_op.`pop.variant.create`[
-        _type=__mlir_type[`!pop.variant<`, Error, `, index>`],
+# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !kgen.variant<!Error, index>
+fn raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
+    return __mlir_op.`kgen.variant.create`[
+        _type=__mlir_type[`!kgen.variant<`, Error, `, index>`],
         index=Int(1).value
     ](Int(1).value)
 
 
 # CHECK-LABEL: lit.func @"raise_and_return
-# CHECK-SAME: -> !pop.variant<!Error, !Error>
+# CHECK-SAME: -> !kgen.variant<!Error, !Error>
 fn raise_and_return(a: Error) raises -> Error:
   # COM: Index 1 is the success index.
-  # CHECK: pop.variant.create %{{.*}}, 1 : <!Error, !Error>
+  # CHECK: kgen.variant.create %{{.*}}, 1 : <!Error, !Error>
   return a
 
 
@@ -1191,7 +1191,7 @@ struct StructWithAsync:
         let a = coroutine()
 
 
-# CHECK-LABEL: lit.func @"throwing_coroutine()"() throws|async -> !pop.variant<!Error, !Int>
+# CHECK-LABEL: lit.func @"throwing_coroutine()"() throws|async -> !kgen.variant<!Error, !Int>
 async fn throwing_coroutine() raises -> Int:
     raise Error("oh no!")
 
@@ -1513,11 +1513,11 @@ trait Trait:
     fn f2(inout self: Self):
         pass
 
-    # CHECK-DAG: lit.func @"f3({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !lit.typecheckerror) throws -> !pop.variant<!Error, none>
+    # CHECK-DAG: lit.func @"f3({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !lit.typecheckerror) throws -> !kgen.variant<!Error, none>
     # CHECK-NEXT:   lit.trait_func
     def f3(self: Self): ...
 
-    # CHECK-DAG: lit.func @"f4({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.pointer<!lit.typecheckerror> byref) throws -> !pop.variant<!Error, none>
+    # CHECK-DAG: lit.func @"f4({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.pointer<!lit.typecheckerror> byref) throws -> !kgen.variant<!Error, none>
     # CHECK-NEXT:   lit.trait_func
     def f4(inout self: Self):
         pass

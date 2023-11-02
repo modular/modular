@@ -632,25 +632,6 @@ kgen.func @cast_from_builtin(%arg0: index) -> !pop.scalar<index> {
   kgen.return %0 : !pop.scalar<index>
 }
 
-
-// CHECK-LABEL: @test
-kgen.func @test(%a: !pop.variant<f32, i64, struct<(i8, i8, f64)>>) -> i1 {
-  // CHECK: %[[VAR:.*]] = builtin.unrealized_conversion_cast
-  // CHECK: %[[DISCR:.*]] = llvm.extractvalue %[[VAR]][1]
-  // CHECK: %[[DISCR_VAL:.*]] = llvm.mlir.constant(0 : i2)
-  // CHECK: %[[VAL:.*]] = llvm.icmp "eq" %[[DISCR]], %[[DISCR_VAL]]
-  %0 = pop.variant.is %a, 0 : <f32, i64, struct<(i8, i8, f64)>>
-  // CHECK: return %[[VAL]]
-  kgen.return %0 : i1
-}
-
-// CHECK-LABEL: @one_variant_type
-// CHECK: !llvm.struct<(array<1 x i64>, i1)>
-kgen.func @one_variant_type(%a: !pop.variant<i32>) -> i1 {
-  %0 = pop.variant.is %a, 0 : <i32>
-  kgen.return %0 : i1
-}
-
 // CHECK-LABEL: @array_create
 kgen.func @array_create(%a: i32) -> !pop.array<2, i32> {
   // CHECK: %[[A0:.*]] = llvm.mlir.undef : !llvm.array<2 x i32>

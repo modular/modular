@@ -968,4 +968,39 @@ def KGEN_PackAttr : KGENAttr<"Pack", "pack", [
   let genVerifyDecl = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// VariantAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_VariantAttr : KGENAttr<"Variant", "variant", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "A variant constant value.";
+  let description = [{
+    The `#kgen.variant` attribute represents a constant `!kgen.variant` value.
+    It contains a single typed attribute where the typed of the value is
+    expected to equal one of the corresponding variant types.
+
+    Example:
+
+    ```mlir
+    #kgen.variant<3 : index> : !kgen.variant<index, i32, f32>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$value, "unsigned":$index,
+                        AttributeSelfTypeParameter<"", "VariantType">:$type);
+
+  let assemblyFormat = "`<` custom<ColonTypeParamValue>($value) `,` $index `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value, "unsigned":$index,
+                                        "VariantType":$type), [{
+      return get(type.getContext(), value, index, type);
+    }]>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

@@ -8,12 +8,12 @@
 # COM: Check that a nested function with an effect can form a closure.
 
 # CHECK: lit.struct.decl @"_CI_{{.*}} raises
-# CHECK: lit.func @"__call__{{.*}}) throws -> !pop.variant<!Error, !Int>
+# CHECK: lit.func @"__call__{{.*}}) throws -> !kgen.variant<!Error, !Int>
 
 # CHECK: lit.struct.decl @"_CW_{{.*}} raises
-# CHECK: lit.func @"__call__{{.*}}) throws -> !pop.variant<!Error, !Int>
+# CHECK: lit.func @"__call__{{.*}}) throws -> !kgen.variant<!Error, !Int>
 
-# CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}) throws -> !pop.variant<!Error, !Int>
+# CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}) throws -> !kgen.variant<!Error, !Int>
 
 fn makes_escaping_closure(m: Int):
    fn two_effects(n: Int) escaping raises -> Int:

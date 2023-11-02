@@ -304,12 +304,12 @@ lit.func @caller() -> !kgen.none attributes {isParametric} {
 
 // -----
 
-lit.func @throwing_caller() throws -> !pop.variant<@Error, none> attributes {isParametric} {
+lit.func @throwing_caller() throws -> !kgen.variant<@Error, none> attributes {isParametric} {
     %y = lit.varlet.decl "y" let : !lit.ref<mut @MyStruct, *"lifetime">
     %yp = lit.ref.to_pointer %y : !lit.ref<mut @MyStruct, *"lifetime">
-    %0 = kgen.call @throwing_callee(%yp) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, index, !kgen.none>
+    %0 = kgen.call @throwing_callee(%yp) : (!kgen.pointer<@MyStruct> byref_result) throws -> !kgen.variant<@Error, index, !kgen.none>
     // expected-error @below {{'lit.handle_variant' op expected the variant to have two types: a success type and an error type}}
-    %1 = lit.handle_variant %0, %yp : (!pop.variant<@Error, index, !kgen.none>, !kgen.pointer<@MyStruct>) -> !kgen.none
+    %1 = lit.handle_variant %0, %yp : (!kgen.variant<@Error, index, !kgen.none>, !kgen.pointer<@MyStruct>) -> !kgen.none
     {
       kgen.unreachable
     } else {
@@ -352,10 +352,10 @@ lit.func @declareWrongType() {
 // -----
 
 // expected-note @below {{see function here}}
-lit.func @wrong_error_return(%arg0: i32) -> !pop.variant<index> {
-  %var = pop.variant.create %arg0, 0 : <i32>
-  // expected-error @below {{'lit.error_return' op operand #0 type '!pop.variant<i32>' does not match expected result type '!pop.variant<index>'}}
-  lit.error_return %var : !pop.variant<i32>
+lit.func @wrong_error_return(%arg0: i32) -> !kgen.variant<index> {
+  %var = kgen.variant.create %arg0, 0 : <i32>
+  // expected-error @below {{'lit.error_return' op operand #0 type '!kgen.variant<i32>' does not match expected result type '!kgen.variant<index>'}}
+  lit.error_return %var : !kgen.variant<i32>
 }
 
 // -----

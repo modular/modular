@@ -112,19 +112,19 @@ lit.struct.decl @Error {}
 lit.struct.decl @Int {}
 
 // CHECK-LABEL: @raises_error
-lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.declref<@Int>) -> !pop.variant<@Error, @Int> {
+lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.declref<@Int>) -> !kgen.variant<@Error, @Int> {
   hlcf.if %raise {
-    // CHECK: %[[ERR:.*]] = pop.variant.create %err
-    %result = pop.variant.create %err, 0 : <@Error, @Int>
+    // CHECK: %[[ERR:.*]] = kgen.variant.create %err
+    %result = kgen.variant.create %err, 0 : <@Error, @Int>
     // CHECK: kgen.return %[[ERR]]
-    kgen.return %result : !pop.variant<@Error, @Int>
+    kgen.return %result : !kgen.variant<@Error, @Int>
   } else {
     hlcf.yield
   }
-  // CHECK: %[[VALUE:.*]] = pop.variant.create %value
-  %result = pop.variant.create %value, 1 : <@Error, @Int>
+  // CHECK: %[[VALUE:.*]] = kgen.variant.create %value
+  %result = kgen.variant.create %value, 1 : <@Error, @Int>
   // CHECK: kgen.return %[[VALUE]]
-  kgen.return %result : !pop.variant<@Error, @Int>
+  kgen.return %result : !kgen.variant<@Error, @Int>
 }
 
 // CHECK-LABEL: @try_op
@@ -216,7 +216,7 @@ lit.func @main(%a: !kgen.pointer<@module::@A>, %b: !kgen.declref<@module::@B>) {
 lit.struct.decl @Error {}
 
 // CHECK-LABEL: @lexical_terminators
-lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> !pop.variant<i32, i64> {
+lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> !kgen.variant<i32, i64> {
   // CHECK: lit.loop
   lit.loop cond {
     lit.loop.condition %cond : i1
@@ -353,33 +353,33 @@ lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>
 
 // -----
 
-lit.func @throwing_caller() throws -> !pop.variant<@Error, none> {
+lit.func @throwing_caller() throws -> !kgen.variant<@Error, none> {
   %y = lit.varlet.decl "y" var : !lit.ref<mut @MyStruct, *"life">
   %none = kgen.param.constant: none = <#kgen.none>
-  %ret = kgen.param.constant: !pop.variant<@Error, none> = <#pop.variant<:!kgen.none #kgen.none, 1>>
+  %ret = kgen.param.constant: !kgen.variant<@Error, none> = <#kgen.variant<:!kgen.none #kgen.none, 1>>
   // CHECK: [[YPTR:%.*]] = lit.ref.to_pointer
   %yptr = lit.ref.to_pointer %y: !lit.ref<mut @MyStruct, *"life">
-  // CHECK: lit.handle_variant %variant, [[YPTR]] : (!pop.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
-  %0 = lit.handle_variant %ret, %yptr : (!pop.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
+  // CHECK: lit.handle_variant %variant, [[YPTR]] : (!kgen.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
+  %0 = lit.handle_variant %ret, %yptr : (!kgen.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
     // CHECK-NEXT: lit.yield %{{.*}} : !kgen.none
     lit.yield %none : !kgen.none
   // CHECK-NEXT: else
   } else {
     // CHECK-NEXT: return %variant
-    kgen.return %ret : !pop.variant<@Error, none>
+    kgen.return %ret : !kgen.variant<@Error, none>
   }
-  kgen.return %ret : !pop.variant<@Error, none>
+  kgen.return %ret : !kgen.variant<@Error, none>
 }
 
 // -----
 
 lit.struct.decl @Error {}
 
-lit.func @throwing_func() throws -> !pop.variant<@Error, none> {
+lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
   %1 = lit.struct.create() : () -> !kgen.declref<@Error>
-  %2 = pop.variant.create %1, 0 : <@Error, none>
+  %2 = kgen.variant.create %1, 0 : <@Error, none>
   // CHECK: lit.error_return %{{.*}} : <@Error, none>
-  lit.error_return %2 : !pop.variant<@Error, none>
+  lit.error_return %2 : !kgen.variant<@Error, none>
 }
 
 // CHECK: lit.globalvar.decl @global_var : !kgen.declref<@Error> {

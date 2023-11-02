@@ -1426,7 +1426,7 @@ void DestructorInsertion::checkOp(Operation &op) {
 
     // Handle the operand of the return op.
     auto createVariant =
-        cast<POP::VariantCreateOp>(errorReturn.getVariant().getDefiningOp());
+        cast<VariantCreateOp>(errorReturn.getVariant().getDefiningOp());
     auto error = createVariant.getOperand();
     markConsumed(error, op);
     return;

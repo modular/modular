@@ -3106,7 +3106,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!errorType)
       return {};
 
-    resultType = POP::VariantType::get({errorType, resultType});
+    resultType = VariantType::get({errorType, resultType});
   }
 
   // Build the signature type.

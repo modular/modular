@@ -367,7 +367,7 @@ Type LIT::getSignatureUserResultType(SignatureType sigType,
 
   // Otherwise it is the normal result.
   if (sigType.isThrows())
-    return cast<POP::VariantType>(resultType).getType(1);
+    return cast<VariantType>(resultType).getType(1);
   return resultType;
 }
 
@@ -1635,7 +1635,7 @@ LogicalResult HandleVariantOp::verify() {
 void HandleVariantOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  // TODO: Check for POP::VariantAttr presence to prune targets.
+  // TODO: Check for VariantAttr presence to prune targets.
   targets.emplace_back(0);
   targets.emplace_back(1);
 }

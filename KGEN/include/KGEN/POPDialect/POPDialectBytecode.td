@@ -28,10 +28,6 @@ def SIMDType : DialectType<(type
   TypedAttr:$dType
 )>;
 
-def VariantType : DialectType<(type
-  TypedAttrArray:$types
-)>;
-
 def CoroutineType : DialectType<(type
   ConcreteType<"SignatureType">:$signature
 )>;
@@ -41,7 +37,6 @@ def POPDialectTypes : DialectTypes<"pop"> {
     ArrayType,
     PointerType,
     SIMDType,
-    VariantType,
     CoroutineType
   ];
 }
@@ -81,12 +76,6 @@ def ArrayAttr : DialectAttribute<(attr
   ConcreteType<"ArrayType">:$type
 )>;
 
-def VariantAttr : DialectAttribute<(attr
-  TypedAttr:$value,
-  VarInt:$index,
-  ConcreteType<"VariantType">:$type
-)>;
-
 def POPDialectAttributes : DialectAttributes<"pop"> {
   let elems = [
     CmpPredicateAttr,
@@ -94,8 +83,7 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     AtomicBinOpAttr,
     FastmathFlagsAttr,
     SIMDAttr,
-    ArrayAttr,
-    VariantAttr
+    ArrayAttr
   ];
 }
 
