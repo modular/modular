@@ -62,5 +62,5 @@ void M::KGEN::registerRandom(
   funcs.push_back(
       {"KGEN_CompilerRT_RandomUInt64", (void *)&KGEN_CompilerRT_RandomUInt64});
   funcs.push_back(
-      {"KGEN_CompilerRT_NormalDouble", (void *)&KGEN_CompilerRT_RandomUInt64});
+      {"KGEN_CompilerRT_NormalDouble", (void *)&KGEN_CompilerRT_NormalDouble});
 }
