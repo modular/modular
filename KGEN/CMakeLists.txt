@@ -109,9 +109,9 @@ macro(_setup_debug_flags)
   set(KGEN_DEBUG_LEVEL "none")
   if (build_type STREQUAL "debug")
     set(KGEN_OPTIMIZATION_LEVEL 0)
-    set(KGEN_DEBUG_LEVEL "synthetic")
+    set(KGEN_DEBUG_LEVEL "full")
   elseif (build_type STREQUAL "relwithdebinfo")
-    set(KGEN_DEBUG_LEVEL "synthetic")
+    set(KGEN_DEBUG_LEVEL "full")
   endif()
 
   # The caller specified no debug, so disable debugging.
