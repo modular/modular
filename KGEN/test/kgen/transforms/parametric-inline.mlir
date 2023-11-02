@@ -1188,3 +1188,23 @@ kgen.generator @has_debuginfo() {
 } loc(#loc)
 
 // CHECK: [[LOC]] = loc(fused<#subprogram>[#loc{{.*}}])
+
+// -----
+
+kgen.generator @recursive() always_inline_no_debug {
+  kgen.call @recursive() : () -> ()
+  kgen.return
+}
+
+kgen.generator @trivial() always_inline_no_debug {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @top
+kgen.generator @top() {
+  // CHECK-NEXT: call @recursive
+  kgen.call @recursive() : () -> ()
+  // CHECK-NOT: call @trivial
+  kgen.call @trivial() : () -> ()
+  kgen.return
+}

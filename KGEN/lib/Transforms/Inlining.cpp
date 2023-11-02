@@ -820,6 +820,30 @@ void AlwaysInlineParametricPass::runOnOperation() {
                                 *rt, paramCache);
   graph.build(getOperation(), symtab);
   graph.process();
+
+  // Do one quick pass to inline any call to a function that is ready to be
+  // inlined, in case cycles prevent us from inlining trivial functions.
+  //
+  // Note: we choose not to iterate because most nodebug inline functions should
+  // be trivial and not have calls to recursive functions.
+  auto inlineReadyFn = [&graph](ParametricInliningGraphNode &caller) {
+    // Skip nodes that are completely processed.
+    if (caller.numProcessedCalls == caller.callsites.size())
+      return;
+    ParameterUseDefGraph callerParams(caller.func.getBodyRegion());
+    callerParams.calculate(graph.paramCaches.getThreadLocalCache());
+    for (auto [call, callee] : caller.callsites) {
+      // Skip nodes that are not complete.
+      if (callee->numProcessedCalls != callee->callsites.size())
+        continue;
+      inlineGeneratorCall(caller.func, call, callee->func, callee->level,
+                          callerParams, callee->calleeParamGraph,
+                          callee->allDecls,
+                          graph.manglerCaches.getThreadLocalCache());
+    }
+  };
+  mlir::parallelForEach(&getContext(), llvm::make_second_range(graph.nodes),
+                        std::move(inlineReadyFn));
 }
 
 std::unique_ptr<mlir::Pass> KGEN::createAlwaysInlineParametric(
