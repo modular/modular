@@ -3,11 +3,3 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-# RUN: %repl <%s 2>&1 | FileCheck %s
-
-# Note: in REPL mode, expressions are delimited by empty lines.
-
-:script print(100 + 11)
-
-# CHECK: 111
