@@ -389,6 +389,11 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
                      caller, &updateAttrName = updateAttrName, threshold,
                      this](ArrayRef<AnyAsyncValueRef>) mutable {
     for (auto [callee, calls] : caller->callSites) {
+      // Make sure we don't call shouldInlineCallee on a callee that we are not
+      // waiting on.
+      if (!caller->canInlineCallee(callee))
+        continue;
+
       if (!caller->shouldInlineCallee(callee, threshold))
         continue;
 
