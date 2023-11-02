@@ -1208,3 +1208,16 @@ kgen.generator @top() {
   kgen.call @trivial() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @trivial<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
+  kgen.return %arg0 : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: kgen.generator @trivial_exprs
+kgen.generator @trivial_exprs() {
+  // CHECK-NEXT: constant = <2>
+  kgen.param.constant = <apply(:(index) -> index @trivial<:type index>, 2)>
+  kgen.return
+}

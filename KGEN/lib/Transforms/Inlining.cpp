@@ -806,6 +806,46 @@ struct AlwaysInlineParametricPass
 } // namespace
 
 void AlwaysInlineParametricPass::runOnOperation() {
+  // Inline "trivial" functions inside parameter expressions in the form of
+  //
+  // ```mlir
+  // kgen.generator @anything(%arg0: !SomeType) -> !SomeType {
+  //   kgen.return %arg0 : !SomeType
+  // }
+  // ```
+  DenseSet<StringAttr> trivialFuncs;
+  for (auto func : getOperation().getOps<GeneratorOp>()) {
+    auto term = dyn_cast<ReturnOp>(func.getBody()->getTerminator());
+    // The only op in the body is a return.
+    if (func.getNumArguments() == 1 && term == &func.getBody()->front() &&
+        term.getNumOperands() == 1 && term.getOperand(0) == func.getArgument(0))
+      trivialFuncs.insert(func.getSymNameAttr());
+  }
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&trivialFuncs](ParamOperatorAttr apply) -> TypedAttr {
+        // Peephole `apply(:... @fn, x)` -> `x` where `@fn` is trivial.
+        if (apply.getOpcode() != POC::Apply || apply.getNumOperands() != 2)
+          return apply;
+        auto cst = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+        if (!cst || !trivialFuncs.contains(cst.getSymbol().getRootReference()))
+          return apply;
+        // Rebind the type if necessary.
+        return apply.getOperand(1);
+      });
+  // The replacers have an internal cache, so make sure to share them correctly.
+  ThreadLocalCache<mlir::AttrTypeReplacer> replacers(
+      replacer, getContext().isMultithreadingEnabled()
+                    ? getContext().getNumThreads()
+                    : 1);
+  auto substTrivialFuncs = [&replacers](Operation &op) {
+    replacers.getThreadLocalCache().recursivelyReplaceElementsIn(
+        &op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
+        /*replaceTypes=*/true);
+  };
+  mlir::parallelForEach(&getContext(), getOperation().getOps(),
+                        std::move(substTrivialFuncs));
+
   // Create a runtime instance if needed.
   auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
       runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
