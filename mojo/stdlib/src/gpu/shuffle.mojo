@@ -186,3 +186,37 @@ fn shuffle_xor[
         return llvm_intrinsic["llvm.nvvm.shfl.sync.bfly.i32", SIMD[type, 1]](
             Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Warp Reduction
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _floorlog2[n: Int]() -> Int:
+    return 0 if n <= 1 else 1 + _floorlog2[n >> 1]()
+
+
+@always_inline
+fn _static_log2[n: Int]() -> Int:
+    return 0 if n <= 1 else _floorlog2[n - 1]() + 1
+
+
+@always_inline
+fn warp_reduce[
+    val_type: DType,
+    shuffle: fn[type: DType] (val: SIMD[type, 1], offset: Int) -> SIMD[type, 1],
+    func: fn[type: DType, width: Int] (
+        SIMD[type, width], SIMD[type, width]
+    ) -> SIMD[type, width],
+](val: SIMD[val_type, 1]) -> SIMD[val_type, 1]:
+    var res = val
+
+    alias limit = _static_log2[WARP_SIZE]()
+
+    @unroll
+    for mask in range(limit - 1, -1, -1):
+        res = func(res, shuffle(res, 1 << mask))
+
+    return res
