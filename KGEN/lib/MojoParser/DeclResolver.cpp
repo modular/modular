@@ -1020,7 +1020,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   }
 
   // When parsing a function type, the name is optional.
-  if (kind == ArgListKind::kFnTypeArgList) {
+  if (kind == ArgListKind::kFnTypeArgList ||
+      kind == ArgListKind::kFnTypeParamList) {
     StringAttr maybeArgName;
     SMLoc nextLocation;
     if (succeeded(p.parseOptionalIdentifier(maybeArgName, Token::colon,
@@ -1084,6 +1085,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
   SmallVector<Token::Kind, 2> stopTokens;
   switch (kind) {
   case ArgListKind::kParamList:
+  case ArgListKind::kFnTypeParamList:
     stopTokens.append({Token::r_square, Token::minus_greater});
     break;
   case ArgListKind::kFnTypeArgList:
@@ -1111,7 +1113,9 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 
   // This is invoked when we see a '/' marker.
   StringRef argOrParam =
-      kind == ArgListKind::kParamList ? "parameter" : "argument";
+      kind == ArgListKind::kParamList || kind == ArgListKind::kFnTypeParamList
+          ? "parameter"
+          : "argument";
   auto handleSlashMarker = [&](SMLoc loc) {
     if (hasSlashMarker) {
       p.emitError(loc, "cannot have two '/' markers in the same ")
@@ -1170,12 +1174,12 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 
     if (arg.name.empty()) {
       if (foundName) {
-        return p.emitError(arg.loc,
-                           "unnamed argument cannot follow named argument");
+        return p.emitError(arg.loc, "unnamed ")
+               << argOrParam << " cannot follow named " << argOrParam;
       }
       if (hasSlashMarker || hasStarMarker) {
-        return p.emitError(arg.loc,
-                           "unnamed argument cannot follow '/' or '*'");
+        return p.emitError(arg.loc, "unnamed ")
+               << argOrParam << " cannot follow '/' or '*'";
       }
     } else {
       foundName = true;
@@ -1207,9 +1211,16 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
   // We allow specifying signatures with only positional-only arguments if all
   // the argument names are omitted, i.e. `fn(Int, Int) -> Int` is the same as
   // `fn(Int, Int, /) -> Int`.
-  if (!foundName && !hasSlashMarker && !hasStarMarker)
-    for (ParsedArgument &arg : args)
-      arg.kwArgHandling = KWArgHandling::kPositionalOnly;
+  bool allUnnamedPosOnly = !foundName && !hasSlashMarker && !hasStarMarker;
+  for (ParsedArgument &arg : args) {
+    if (!arg.name.empty() ||
+        arg.kwArgHandling == KWArgHandling::kPositionalOnly || arg.vararg)
+      continue;
+    if (!allUnnamedPosOnly)
+      return p.emitError(arg.loc, "unnamed ")
+             << argOrParam << " must be positional-only";
+    arg.kwArgHandling = KWArgHandling::kPositionalOnly;
+  }
 
   // TODO(Keyword Args): now that we parsed a fully generic parameter list,
   // reject keyword-only arguments. Remove them from the signature since the

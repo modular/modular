@@ -1018,14 +1018,14 @@ parseOptionalFunctionParameters(ParserBase &p,
   } else {
     // Parse an actual parameter list.
     if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, inputParams, ParsedArgument::ArgListKind::kParamList))
+            p, inputParams, ParsedArgument::ArgListKind::kFnTypeParamList))
       return failure();
   }
 
   // Parse result parameters if present.
   if (p.consumeIf(Token::minus_greater)) {
     if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, resultParams, ParsedArgument::ArgListKind::kParamList))
+            p, resultParams, ParsedArgument::ArgListKind::kFnTypeParamList))
       return failure();
   }
   return p.parseToken(Token::r_square, "expected ']' for parameter list");

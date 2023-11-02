@@ -351,6 +351,7 @@ struct ParsedArgument {
     kParamList,         //< parameter list like `[x: Int, y: Int]`
     kArgList,           //< argument list like `(x: Int, y: Int)`
     kFnTypeArgList,     //< fn type, like `fn (Int, y: Float)`
+    kFnTypeParamList,   //< fn type, like `fn [Int, y: Float](x: Int)`
     kBareLambdaArgList, //< argument list like `lambda x, y: x+y`
   };
 
