@@ -54,12 +54,24 @@ fn test_func_type():
     alias float6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{fn[AnyType](inout *$0) capturing -> None}}
     alias float7: fn[T: AnyType](inout *T) capturing -> None = test_func_type
+
     # expected-error @below {{unnamed argument cannot follow named argument}}
-    alias float8: fn (a: Int, StringLiteral) -> Int = test_func_type
+    alias f1: fn (a: Int, StringLiteral) -> Int
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    alias float9: fn (Int, /, StringLiteral) -> Int = test_func_type
+    alias f2: fn (Int, /, StringLiteral) -> Int
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    alias float10: fn (*, StringLiteral) -> Int = test_func_type
+    alias f3: fn (*, StringLiteral) -> Int
+    # expected-error @below {{unnamed argument must be positional-only}}
+    alias f4 = fn (Int, b: Int) capturing -> Int
+
+    # expected-error @below {{unnamed parameter cannot follow named parameter}}
+    alias f5: fn [a: Int, StringLiteral]() -> Int
+    # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
+    alias f6: fn [Int, /, StringLiteral] -> Int
+    # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
+    alias f7: fn [*, StringLiteral] -> Int = test_func_type
+    # expected-error @below {{unnamed parameter must be positional-only}}
+    alias f8 = fn [Int, b: Int] capturing -> Int
 
     alias type = DType.float32
     # expected-error @below {{SIMD[__init__(type.value), 32]}}
