@@ -144,6 +144,7 @@ fn MOGGExport():
     alias _dtype_bool = DTypeBoolTypeDef
     alias _to_buffer = to_buffer
     alias _to_buffer_list = to_buffer_list
+    alias _destruct_buffer_list = destruct_buffer_list
     alias _to_shape = to_shape
     alias _arg_max = argmax_wrapped
     alias _arg_min = argmin_wrapped
@@ -503,6 +504,17 @@ fn to_buffer_list[
         out_list.append(buffer)
 
     return out_list
+
+
+@always_inline
+fn destruct_buffer_list[
+    type: DType, rank: Int
+](
+    owned list: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ]
+):
+    list._del_old()
 
 
 @always_inline
