@@ -113,6 +113,7 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
 uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
                                         SharedState &shared) const {
   ASTDecl *decl = getDecl(shared);
+
   if (!decl) // MLIR types are assumed to be register-passable + Trivial.
     return StructDeclOp::RP_RegisterPassableTrivial;
 
