@@ -6,7 +6,28 @@
 
 #include "KGEN/CompilerRT/Registration.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/Debug.h"
+
+#include <mutex>
+
+#define DEBUG_TYPE "mojo-globals"
+
+template <>
+struct llvm::DenseMapInfo<std::string> {
+  static inline std::string getEmptyKey() { return std::string(""); }
+  static inline std::string getTombstoneKey() { return std::string(); }
+  static unsigned getHashValue(const std::string &ref) {
+    return llvm::hash_value(ref);
+  }
+  static bool isEqual(const std::string &lhs, const std::string &rhs) {
+    return lhs == rhs;
+  }
+};
 
 namespace {
 struct GlobalEntry {
@@ -23,22 +44,51 @@ struct GlobalEntry {
 };
 } // namespace
 
-static llvm::SmallDenseMap<llvm::StringRef, GlobalEntry> &getGlobalTable() {
-  static llvm::SmallDenseMap<llvm::StringRef, GlobalEntry> table{};
-  return table;
+using GlobalTable = llvm::MapVector<std::string, GlobalEntry>;
+
+/// Note that we want this to be ordered because when destructuring we want to
+/// to destroy the first element that was inserted last.
+static GlobalTable &getGlobalTable() {
+  static GlobalTable globalTable;
+  return globalTable;
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetGlobalOr(llvm::StringRef name, void *(*initFn)(),
+KGEN_CompilerRT_GetGlobalOr(llvm::StringRef name, void *payload,
+                            void *(*initFn)(void *),
                             void (*destroyFn)(void *)) {
+  static std::mutex mu; // Serialize global table mutation.
   auto &globalTable = getGlobalTable();
 
-  auto it = globalTable.find(name);
-  if (it != globalTable.end())
-    return it->second.value;
+  {
+    std::lock_guard<std::mutex> l(mu);
+    auto it = globalTable.find(name.str());
+    if (it != globalTable.end()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << (llvm::Twine("GetGlobalOr(") + name + ") hit\n").str());
+      return it->second.value;
+    }
+  }
 
-  GlobalEntry entry(initFn(), destroyFn);
-  globalTable.insert({name, entry});
+  LLVM_DEBUG(
+      llvm::dbgs()
+      << (llvm::Twine("GetGlobalOr(") + name + ") initializing\n").str());
+  GlobalEntry entry(initFn(payload), destroyFn);
+
+  GlobalTable::iterator itr;
+  bool inserted;
+  {
+    std::lock_guard<std::mutex> l(mu);
+    std::tie(itr, inserted) = globalTable.insert({name.str(), entry});
+  }
+
+  if (!inserted) {
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << (llvm::Twine("GetGlobalOr(") + name + ") discarding\n").str());
+    entry.destroy();
+    return itr->second.value;
+  }
 
   return entry.value;
 }
@@ -46,7 +96,10 @@ KGEN_CompilerRT_GetGlobalOr(llvm::StringRef name, void *(*initFn)(),
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_DestroyGlobals() {
   auto &globalTable = getGlobalTable();
-  for (auto entry : globalTable)
+  // Loop in reverse. The reason is say you load a library (using dlopen) and
+  // then want to call a function in the library to destroy another global. Then
+  // you want to make sure that dlclose happens last.
+  for (auto entry : llvm::reverse(globalTable))
     entry.second.destroy();
   globalTable.clear();
 }
