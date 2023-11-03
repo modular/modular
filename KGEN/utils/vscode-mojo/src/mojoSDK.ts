@@ -80,9 +80,13 @@ export class MOJOSDK {
    */
   public async resolveConfig(context: vscode.WorkspaceFolder|string|
                              undefined): Promise<MOJOSDKConfig|undefined> {
-    let key = typeof (context) === "string" ? context
-              : context                     ? context.uri.fsPath
-                                            : "";
+    let key = "";
+    if (typeof context === "string") {
+      key = context;
+    } else if (context) {
+      key = context.uri.fsPath;
+    }
+
     let mojoConfig = this.workspaceConfigs.get(key);
     if (mojoConfig)
       return mojoConfig;
