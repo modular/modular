@@ -370,6 +370,8 @@ kgen.func @test_variant(%a: !kgen.variant<f32, i64, struct<(i8, i8, f64)>>) -> i
   kgen.return %0 : i1
 }
 
+}
+
 // -----
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
