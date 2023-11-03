@@ -1469,15 +1469,13 @@ struct NDBuffer[
 
     @staticmethod
     @always_inline
-    fn stack_allocation() -> NDBuffer[rank, shape, type]:
+    fn stack_allocation() -> Self:
         """Constructs an NDBuffer instance backed by stack allocated memory space.
 
         Returns:
             Constructed NDBuffer with the allocated space.
         """
-        return NDBuffer[rank, shape, type].aligned_stack_allocation[
-            alignof[type]()
-        ]()
+        return Self.aligned_stack_allocation[alignof[type]()]()
 
     @always_inline
     fn prefetch[params: PrefetchOptions](self, *idx: Int):
