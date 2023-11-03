@@ -96,3 +96,27 @@ fn warpgroup_reg_dealloc[count: Int]():
         ptx_assembly[
             "setmaxnreg.dec.sync.aligned.u32 $0", NoneType, constraints="i"
         ](UInt32(count))
+
+
+# ===----------------------------------------------------------------------===#
+# sleep
+# ===----------------------------------------------------------------------===#
+
+
+fn _sleep[nsec: Int]():
+    """Suspend the thread for an approximate delay given in nanoseconds.
+
+    Parameters:
+        nsec: The time to sleep in nanoseconds.
+    """
+    ptx_assembly["nanosleep.u32 $0", NoneType, constraints="i"](UInt32(nsec))
+
+
+fn sleep[sec: Float64]():
+    """Suspend the thread for an approximate delay given in seconds.
+
+    Parameters:
+        sec: The time to sleep in seconds.
+    """
+    alias nsec = (sec * 1e9).to_int()
+    _sleep[nsec]()
