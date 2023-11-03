@@ -270,18 +270,18 @@ void SCCPAnalysis::visitOperation(Operation *op, AnalysisStateType &state) {
 
 int64_t SCCPAnalysis::getLoopConvergeThreshold(Operation *op,
                                                int64_t loopLevel) {
-  if (auto forOp = dyn_cast<ForOp>(op); forOp && forOp.getTripCount()) {
-    // Use trip count as threshold for a for-loop.
-    return forOp.getTripCount().value();
-  }
-
   // Try to avoid explosion with deep nested loops.
   // TODO: use decorator or more sophisticated heuristics to set per loop
   // threshold.
+  int64_t result = 5;
   if (loopLevel > 2)
-    return 2;
-  else
-    return 5;
+    result = 2;
+
+  if (auto forOp = dyn_cast<ForOp>(op); forOp && forOp.getTripCount()) {
+    // Use trip count as threshold for a for-loop.
+    result = std::min<int64_t>(forOp.getTripCount().value(), result);
+  }
+  return result;
 }
 
 LogicalResult SCCPAnalysis::processControlFlowNode(ControlFlowNode node,
