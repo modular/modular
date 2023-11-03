@@ -432,17 +432,6 @@ struct ModuleHandle:
 
         return Self {module: module}
 
-    fn __init__(content: String) raises -> Self:
-        var module = _ModuleImpl()
-        # Note that content has already gone through _cleanup_asm and
-        # is null terminated.
-        _check_error(
-            _get_dylib_function[
-                fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result
-            ]("cuModuleLoadData")(Pointer.address_of(module), content._as_ptr())
-        )
-        return Self {module: module}
-
     fn __del__(owned self) raises:
         if self.module:
             _check_error(
@@ -450,6 +439,14 @@ struct ModuleHandle:
                     "cuModuleUnload"
                 )(self.module)
             )
+            self.module = _ModuleImpl()
+
+    @always_inline
+    fn _steal_handle(inout self) -> _ModuleImpl:
+        """Steal the underlying handle from the module."""
+        let res = self.module
+        self.module = _ModuleImpl()
+        return res
 
     fn load(self, name: String) raises -> FunctionHandle:
         var func = FunctionHandle()

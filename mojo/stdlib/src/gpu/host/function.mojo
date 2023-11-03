@@ -9,13 +9,14 @@ from memory import stack_allocation
 from memory.unsafe import DTypePointer, Pointer
 
 from utils._reflection import get_linkage_name
+from sys.ffi import _get_global
 from utils.optional import Optional
 
 from pathlib import Path
 from ._compile import _compile_nvptx_asm
 from ._utils import _check_error, _get_dylib_function
 from .dim import Dim
-from .module import ModuleHandle
+from .module import ModuleHandle, _ModuleImpl
 from .stream import Stream, _StreamImpl
 
 # ===----------------------------------------------------------------------===#
@@ -618,14 +619,130 @@ struct _PathOrBool:
 
 
 # ===----------------------------------------------------------------------===#
+# Cached Function Info
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable
+struct _CachedFunctionInfo:
+    var mod_handle: _ModuleImpl
+    var func_handle: FunctionHandle
+
+    fn __init__() -> Self:
+        return Self {mod_handle: _ModuleImpl(), func_handle: FunctionHandle()}
+
+    fn __init__(mod_handle: _ModuleImpl, func_handle: FunctionHandle) -> Self:
+        return Self {mod_handle: mod_handle, func_handle: func_handle}
+
+    fn __del__(owned self):
+        pass
+
+    fn __bool__(self) -> Bool:
+        return self.func_handle.__bool__()
+
+
+@value
+@register_passable
+struct _GlobalPayload:
+    var debug: Bool
+    var verbose: Bool
+    var max_registers: Int32
+    var threads_per_block: Int32
+
+    fn __init__(
+        debug: Bool,
+        verbose: Bool,
+        max_registers: Int32,
+        threads_per_block: Int32,
+    ) -> Self:
+        return Self {
+            debug: debug,
+            verbose: verbose,
+            max_registers: max_registers,
+            threads_per_block: threads_per_block,
+        }
+
+
+@parameter
+fn _init_fn[
+    func_type: AnyType, func: func_type
+](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
+    try:
+        let payload = payload_ptr.bitcast[_GlobalPayload]().load()
+
+        alias _impl = _compile_nvptx_asm[func_type, func]()
+        alias fn_name = get_linkage_name[func_type, func]()
+
+        var mod_handle = ModuleHandle(
+            _impl.asm,
+            debug=payload.debug,
+            verbose=payload.verbose or payload.debug,
+            max_registers=Optional[Int]() if payload.max_registers
+            <= 0 else Optional[Int](payload.max_registers.to_int()),
+            threads_per_block=Optional[Int]() if payload.threads_per_block
+            <= 0 else Optional[Int](payload.threads_per_block.to_int()),
+        )
+        let func_handle = mod_handle.load(fn_name)
+
+        let res = Pointer[_CachedFunctionInfo].alloc(1)
+        res.store(_CachedFunctionInfo(mod_handle._steal_handle(), func_handle))
+        return res.bitcast[NoneType]()
+    except e:
+        print("Error loading the PTX code:", e)
+        return Pointer[NoneType]()
+
+
+@parameter
+fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
+    if not cached_value_ptr:
+        return
+    let cached_value = cached_value_ptr.bitcast[_CachedFunctionInfo]().load()
+    try:
+        ModuleHandle(cached_value.mod_handle).__del__()
+    except:
+        pass
+    cached_value_ptr.free()
+
+
+@always_inline
+fn _get_global_cache_info[
+    func_type: AnyType, func: func_type
+](
+    debug: Bool = False,
+    verbose: Bool = False,
+    max_registers: Int = -1,
+    threads_per_block: Int = -1,
+) -> _CachedFunctionInfo:
+    alias fn_name = get_linkage_name[func_type, func]()
+
+    var payload = _GlobalPayload(
+        debug, verbose, max_registers, threads_per_block
+    )
+
+    let res = (
+        _get_global[
+            fn_name,
+            _init_fn[func_type, func],
+            _destroy_fn,
+        ](Pointer.address_of(payload).bitcast[NoneType]())
+        .bitcast[_CachedFunctionInfo]()
+        .load()
+    )
+
+    _ = payload
+
+    return res
+
+
+# ===----------------------------------------------------------------------===#
 # Function
 # ===----------------------------------------------------------------------===#
 
 
 @register_passable
 struct Function[func_type: AnyType, func: func_type]:
-    var mod_handle: ModuleHandle
-    var func_handle: FunctionHandle
+    var info: _CachedFunctionInfo
 
     alias _impl = _compile_nvptx_asm[func_type, func]()
 
@@ -637,34 +754,30 @@ struct Function[func_type: AnyType, func: func_type]:
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
     ) raises -> Self:
-        alias name = get_linkage_name[func_type, func]()
-        let ptx = Self._impl.asm
-
         if dump_ptx:
+            alias ptx = Self._impl.asm
             if dump_ptx._is_path():
                 with open(dump_ptx.path, "w") as f:
                     f.write(ptx)
             else:
                 print(ptx)
 
-        let mod_handle = ModuleHandle(
-            ptx,
-            debug=debug,
-            verbose=verbose or debug,
-            max_registers=max_registers,
-            threads_per_block=threads_per_block,
-        )
-        let func_handle = mod_handle.load(name)
-
-        return Self {mod_handle: mod_handle, func_handle: func_handle}
+        return Self {
+            info: _get_global_cache_info[func_type, func](
+                debug=debug,
+                verbose=verbose,
+                max_registers=max_registers.value() if max_registers else -1,
+                threads_per_block=threads_per_block.value() if threads_per_block else -1,
+            )
+        }
 
     @always_inline
-    fn __del__(owned self) raises:
+    fn __del__(owned self):
         pass
 
     @always_inline
     fn __bool__(self) -> Bool:
-        return self.func_handle.__bool__()
+        return self.info.__bool__()
 
     @closure
     @always_inline
@@ -675,7 +788,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](grid_dim, block_dim, stream=stream)
 
@@ -691,7 +804,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](grid_dim, block_dim, arg0, stream=stream)
 
@@ -708,7 +821,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](grid_dim, block_dim, arg0, arg1, stream=stream)
 
@@ -726,7 +839,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](grid_dim, block_dim, arg0, arg1, arg2, stream=stream)
 
@@ -745,7 +858,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](grid_dim, block_dim, arg0, arg1, arg2, arg3, stream=stream)
 
@@ -765,7 +878,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, stream=stream)
 
@@ -791,7 +904,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](
             grid_dim,
@@ -829,7 +942,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](
             grid_dim,
@@ -870,7 +983,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](
             grid_dim,
@@ -914,7 +1027,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](
             grid_dim,
@@ -961,7 +1074,7 @@ struct Function[func_type: AnyType, func: func_type]:
         /,
         stream: Stream = _StreamImpl(),
     ) raises:
-        self.func_handle._call_impl[
+        self.info.func_handle._call_impl[
             Self._impl.num_captures, Self._impl.populate
         ](
             grid_dim,

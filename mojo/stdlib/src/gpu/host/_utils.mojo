@@ -44,7 +44,7 @@ fn _human_memory(size: Int) -> String:
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_dylib() -> Pointer[NoneType]:
+fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
     let ptr = Pointer[DLHandle].alloc(1)
     let handle = DLHandle(CUDA_DRIVER_PATH)
     _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
@@ -60,5 +60,5 @@ fn _destroy_dylib(ptr: Pointer[NoneType]):
 @always_inline
 fn _get_dylib_function[result_type: AnyType](name: StringRef) -> result_type:
     return _ffi_get_dylib_function[
-        "CUDA", _init_dylib, _destroy_dylib, result_type
+        "CUDA_LIBRARY", _init_dylib, _destroy_dylib, result_type
     ](name)
