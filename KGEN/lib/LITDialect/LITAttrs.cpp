@@ -11,6 +11,7 @@
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/STLExtras.h"
@@ -220,7 +221,145 @@ Type UnboundMLIROperationAttr::getType() const {
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeType
+// BindTypeAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseBindTypeParams(AsmParser &p,
+                                       SmallVectorImpl<TypedAttr> &values,
+                                       TypedAttr typeValue) {
+  auto metatype = dyn_cast<MetaTypeType>(typeValue.getType());
+  if (!metatype) {
+    return p.emitError(p.getCurrentLocation(),
+                       "'bind_type' expected a metatyped type value");
+  }
+
+  auto eachFn = [&](Type type) {
+    return parseParamValue(p, values.emplace_back(), type);
+  };
+  auto betweenFn = [&] { return p.parseComma(); };
+  return failableInterleave(metatype.getSignature().getInputParamTypes(),
+                            std::move(eachFn), std::move(betweenFn));
+}
+
+static void printBindTypeParams(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                                TypedAttr typeValue) {
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+}
+
+LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                   TypedAttr typeValue,
+                                   ArrayRef<TypedAttr> values,
+                                   MetaTypeType type) {
+  auto metatype = ::dyn_cast<MetaTypeType>(typeValue.getType());
+  if (!metatype)
+    return emitError() << "'bind_type' expected a metatyped type value";
+
+  // Check the bound values against the input parameter signature. Allow partial
+  // binding.
+  ArrayRef<Type> inputTypes = metatype.getSignature().getInputParamTypes();
+  if (values.size() != inputTypes.size()) {
+    return emitError()
+           << "'bind_type' has wrong number of input parameters: have "
+           << values.size() << " but expected " << inputTypes.size();
+  }
+  for (auto [i, type, value] :
+       llvm::enumerate(inputTypes.take_front(values.size()), values)) {
+    if (type == value.getType())
+      continue;
+    return emitError() << "'bind_type' parameter #" << i << " has type "
+                       << value.getType() << " but type expected " << type;
+  }
+
+  // Ensure that the result type is as expected.
+  if (values != type.getParamValues()) {
+    return emitError() << "'bind_type' result metatype parameter values don't "
+                          "match input parameter values";
+  }
+  // Ignore unbound values.
+  SmallVector<Type> expected;
+  ArrayRef<Type> resultTypes = type.getSignature().getInputParamTypes();
+  for (auto [type, value] : llvm::zip(inputTypes, values))
+    if (::isa<UnboundAttr>(value))
+      expected.push_back(type);
+  if (resultTypes.size() != expected.size()) {
+    return emitError() << "'bind_type' result metatype signature should have "
+                       << expected.size() << " input parameters";
+  }
+  for (auto [i, unbound, type] : llvm::enumerate(expected, resultTypes)) {
+    if (unbound != type)
+      return emitError() << "result signature parameter #" << i
+                         << " expected to be " << unbound << " but got "
+                         << type;
+  }
+  return success();
+}
+
+/// Infer the result type for `BindTypeAttr`.
+static MetaTypeType getBindTypeResultType(TypedAttr typeValue,
+                                          ArrayRef<TypedAttr> values) {
+  // Assume the input is correct.
+  auto metatype = cast<MetaTypeType>(typeValue.getType());
+  SmallVector<TypedAttr> bound = llvm::to_vector(metatype.getParamValues());
+  llvm::append_range(bound, values);
+  TypeSignatureType sig = metatype.getSignature();
+
+  SmallVector<Type> newParamTypes;
+  SmallVector<StringAttr> newParamNames;
+  SmallVector<PassingKind> newPassingKinds;
+  SmallVector<TypedAttr> newDefaults;
+  size_t defaultIdx =
+      sig.getInputParamTypes().size() - sig.getDefaultParameters().size();
+  for (auto [i, type, name, kind, value] :
+       llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
+                       sig.getParamPassingKinds(), values)) {
+    if (!isa<UnboundAttr>(value))
+      continue;
+    if (i >= defaultIdx)
+      newDefaults.push_back(sig.getDefaultParameters()[i - defaultIdx]);
+    newParamTypes.push_back(type);
+    newParamNames.push_back(name);
+    newPassingKinds.push_back(kind);
+  }
+
+  auto newSig = TypeSignatureType::get(sig.getContext(), newParamTypes,
+                                       newParamNames, newPassingKinds,
+                                       newDefaults, sig.getParamVarArg());
+  return MetaTypeType::get(metatype.getSymbol(), bound, newSig);
+}
+
+/// Entry point for the constructor for `BindTypeAttr`, which folds on
+/// construction.
+static TypedAttr getOrFoldBindType(TypedAttr typeValue,
+                                   ArrayRef<TypedAttr> values,
+                                   MetaTypeType type) {
+  // Assume the inputs are verified. If the type value is a `DeclRefType` then
+  // bind it and return a type constant.
+  if (auto typeCst = dyn_cast<TypeConstantAttr>(typeValue)) {
+    if (auto decl = dyn_cast<DeclRefType>(typeCst.getValue())) {
+      auto bound = DeclRefType::get(decl.getSymbol(), values, type);
+      return TypeConstantAttr::get(bound, type);
+    }
+  }
+  return BindTypeAttr::Base::get(type.getContext(), typeValue, values, type);
+}
+
+TypedAttr BindTypeAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                   MLIRContext *ctx, TypedAttr typeValue,
+                                   ArrayRef<TypedAttr> values,
+                                   MetaTypeType type) {
+  if (failed(verify(emitError, typeValue, values, type)))
+    return {};
+  return getOrFoldBindType(typeValue, values, type);
+}
+
+TypedAttr BindTypeAttr::get(MLIRContext *ctx, TypedAttr typeValue,
+                            ArrayRef<TypedAttr> values, MetaTypeType type) {
+  return getOrFoldBindType(typeValue, values, type);
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeAttr
 //===----------------------------------------------------------------------===//
 
 Type LifetimeAttr::getType() const { return LifetimeType::get(getContext()); }

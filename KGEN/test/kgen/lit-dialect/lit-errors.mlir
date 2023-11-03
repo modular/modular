@@ -379,3 +379,23 @@ lit.struct.decl @StructCannotFileTrait([@Trait1]) {
 
 // expected-error @below {{argument #0 with convention 'borrow_in_mem' in signature type should be a `!kgen.pointer` or `!lit.ref` but got: 'index'}}
 !type = !lit.signature<(index borrow_in_mem) -> ()>
+
+// -----
+
+// expected-error @below {{'bind_type' expected a metatyped type value}}
+#bind = #lit.bind_type<:type index, []> : !lit.metatype<@Foo>
+
+// -----
+
+// expected-error @below {{'bind_type' result metatype parameter values don't match input parameter values}}
+#bind = #lit.bind_type<:metatype<@Foo<#kgen.unbound>, <index>> T, [#kgen.unbound]> : !lit.metatype<@Foo<1>>
+
+// -----
+
+// expected-error @below {{'bind_type' result metatype signature should have 0 input parameters}}
+#bind = #lit.bind_type<:metatype<@Foo<#kgen.unbound>, <index>> T, [1]> : !lit.metatype<@Foo<1>, <index>>
+
+// -----
+
+// expected-error @below {{result signature parameter #0 expected to be 'index' but got '!kgen.dtype'}}
+#bind = #lit.bind_type<:metatype<@Foo<#kgen.unbound>, <index>> T, [#kgen.unbound]> : !lit.metatype<@Foo<#kgen.unbound>, <dtype>>
