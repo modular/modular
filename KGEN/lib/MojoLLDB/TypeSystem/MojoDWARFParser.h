@@ -16,6 +16,11 @@ class SymbolFileDWARF;
 
 namespace M {
 class MojoASTDeclRef;
+
+namespace KGEN::LIT {
+class ASTDecl;
+} // namespace KGEN::LIT
+
 } // namespace M
 
 namespace M::KGEN::Mojo {
@@ -86,6 +91,10 @@ public:
   }
 
 private:
+  bool CompleteStructureTypeFromDWARF(
+      const lldb_private::plugin::dwarf::DWARFDIE &die,
+      lldb_private::Type *type, lldb_private::CompilerType &compilerType);
+
   /// Set the symbol context scope for the recently created type.
   void updateSymbolContextScopeForType(
       const lldb_private::SymbolContext &sc,
@@ -113,7 +122,12 @@ private:
   using DIEToDeclMap =
       llvm::DenseMap<const lldb_private::plugin::dwarf::DWARFDebugInfoEntry *,
                      MojoASTDeclRef>;
+  /// Mapping from DWARF DIE to the generated Mojo decl.
   DIEToDeclMap dieToDecl;
+
+  /// List of decls that have been completed by
+  /// `MojoDWARFParser::CompleteTypeFromDWARF`.
+  llvm::DenseSet<LIT::ASTDecl *> completedDecls;
 };
 } // namespace M::KGEN::Mojo
 

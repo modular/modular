@@ -147,8 +147,8 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
     // The DIE name is the file path
     if (attrs.name.IsEmpty()) {
       dwarf->GetObjectFile()->GetModule()->ReportError(
-          "[MojoDWARFParser::getDeclForDIE]: Compile unit name is empty. "
-          "Offset = {0:x16}.",
+          "[MojoDWARFParser::getDeclForDIE]: Compile unit name is empty. Die = "
+          "{0:x16}.",
           die.GetOffset());
       name = "anonymous";
     } else {
@@ -171,8 +171,8 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
     std::string name;
     if (attrs.name.IsEmpty()) {
       dwarf->GetObjectFile()->GetModule()->ReportError(
-          "[MojoDWARFParser::getDeclForDIE]: Structure name is empty. Offset "
-          "= {0:x16}.",
+          "[MojoDWARFParser::getDeclForDIE]: Structure name is empty. Die = "
+          "{0:x16}.",
           die.GetOffset());
       name = "anonymous";
     } else {
@@ -184,9 +184,9 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
   }
   default:
     dwarf->GetObjectFile()->GetModule()->ReportError(
-        "[MojoDWARFParser::getDeclForDIE][{0:x16}]: Unhandled type tag {1:x4} "
-        "({2}).",
-        die.GetOffset(), die.Tag(), DW_TAG_value_to_name(die.Tag()));
+        "[MojoDWARFParser::getDeclForDIE]: Unhandled type tag. Die = {0:x16}, "
+        "tag = {1}.",
+        die.GetOffset(), die.GetTagAsCString());
     break;
   }
 
@@ -279,7 +279,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     dwarf->GetObjectFile()->GetModule()->LogMessage(
         log,
         "[MojoDWARFParser::ParseTypeFromDWARF] Will parse type. Die = {0:x16}, "
-        "tag = '{1}' die_name = '{2}', linkage_name = '{3}', byte_size = {4}",
+        "tag = {1}, name = '{2}', linkage name = '{3}', byte size = {4}.",
         die.GetOffset(), die.GetTagAsCString(), die.GetName(),
         attrs.mangledName.AsCString(), attrs.byteSize);
   }
@@ -309,7 +309,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     if (attrs.byteSize.value_or(0) == 0) {
       dwarf->GetObjectFile()->GetModule()->ReportError(
           "[MojoDWARFParser::ParseTypeFromDWARF] Builtin type with 0 byte "
-          "size. Die = {0:x16}, tag = '{1}' die_name = '{2}'",
+          "size. Die = {0:x16}, tag = {1}, name = '{2}'.",
           die.GetOffset(), die.GetTagAsCString(), die.GetName());
       break;
     }
@@ -318,7 +318,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     if (!mojoType.IsValid()) {
       dwarf->GetObjectFile()->GetModule()->ReportError(
           "[MojoDWARFParser::ParseTypeFromDWARF] Couldn't create builtin type. "
-          "Die = {0:x16}, tag = '{1}' die_name = '{2}'",
+          "Die = {0:x16}, tag = {1}, name = '{2}'.",
           die.GetOffset(), die.GetTagAsCString(), die.GetName());
       break;
     }
@@ -425,9 +425,10 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
             die.GetID(), attrs.name, attrs.byteSize, nullptr, LLDB_INVALID_UID,
             lldb_private::Type::eEncodingIsUID, &attrs.decl, mojoType,
             lldb_private::Type::ResolveState::Full);
-        // We need to complete the struct right away here because the generic
-        // dwarf parser uses the clang typesystem to complete types, which
-        // obviously wouldn't work for us. We'll eventually fix this.
+        // FIXME(23821): We need to complete the struct right away here because
+        // the generic dwarf parser uses the clang typesystem to complete types,
+        // which obviously wouldn't work for us. We'll eventually fix this,
+        // which will make the dwarf parser lazy.
         CompleteTypeFromDWARF(die, type.get(), mojoType);
       }
     }
@@ -435,9 +436,9 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
   }
   default:
     dwarf->GetObjectFile()->GetModule()->ReportError(
-        "[MojoDWARFParser::ParseTypeFromDWARF][{0:x16}]: Unhandled type tag "
-        "{1:x4} ({2})",
-        die.GetOffset(), tag, DW_TAG_value_to_name(tag));
+        "[MojoDWARFParser::ParseTypeFromDWARF]: Unhandled type tag. "
+        "Die = {0:x16}, tag = {1}.",
+        die.GetOffset(), tag, die.GetTagAsCString());
     break;
   }
 
@@ -448,44 +449,71 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
   return type;
 }
 
+bool MojoDWARFParser::CompleteStructureTypeFromDWARF(
+    const DWARFDIE &die, lldb_private::Type *type, CompilerType &compilerType) {
+  MojoASTDeclRef structDecl = getDeclForDIE(die);
+  assert(structDecl && "All structs should have a decl.");
+
+  if (completedDecls.contains(&*structDecl))
+    return true;
+
+  SymbolFileDWARF *dwarf = die.GetDWARF();
+
+  for (DWARFDIE memberDie : die.children()) {
+    if (memberDie.Tag() == DW_TAG_member) {
+      MemberAttributes attrs(memberDie, die);
+      lldb_private::Type *memberType =
+          die.ResolveTypeUID(attrs.type.Reference());
+      if (!memberType) {
+        dwarf->GetObjectFile()->GetModule()->ReportError(
+            "[MojoDWARFParser::CompleteTypeFromDWARF]: Couldn't complete "
+            "the struct type '{0}' because one of its fields couldn't be "
+            "parsed. Die = {1:x16}, memberDie = {2:x16}.",
+            die.GetName(), die.GetOffset(), memberDie.GetOffset());
+        return false;
+      }
+
+      std::optional<uint64_t> typeSize = memberType->GetByteSize(nullptr);
+      if (!typeSize) {
+        dwarf->GetObjectFile()->GetModule()->ReportError(
+            "[MojoDWARFParser::CompleteTypeFromDWARF]: Couldn't complete "
+            "the struct type '{0}' because one of its fields has no size. Die "
+            "= {1:x16}, member die = {2:x16}.",
+            die.GetName(), die.GetOffset(), memberDie.GetOffset());
+        return false;
+      }
+      typeSystem.addFieldToStruct(
+          structDecl, attrs.name,
+          memberType->GetFullCompilerType().GetOpaqueQualType());
+    }
+  }
+  ParsedDWARFTypeAttributes attrs(die);
+  if (attrs.byteSize && attrs.byteSize != compilerType.GetByteSize(
+                                              /*exe_scope=*/nullptr)) {
+    dwarf->GetObjectFile()->GetModule()->ReportError(
+        "[MojoDWARFParser::CompleteTypeFromDWARF]: The struct type '{0}' "
+        "doesn't have the same size as reported in the DWARF after type "
+        "completion. Die = {1:x16}.",
+        die.GetName(), die.GetOffset());
+    return false;
+  }
+  completedDecls.insert(&*structDecl);
+  return true;
+}
+
 bool MojoDWARFParser::CompleteTypeFromDWARF(const DWARFDIE &die,
                                             lldb_private::Type *type,
                                             CompilerType &compilerType) {
   if (!die)
     return false;
+
+  if (die.Tag() == DW_TAG_structure_type)
+    return CompleteStructureTypeFromDWARF(die, type, compilerType);
+
   SymbolFileDWARF *dwarf = die.GetDWARF();
-
-  if (die.Tag() == DW_TAG_structure_type) {
-    if (MojoASTDeclRef structDecl = getDeclForDIE(die)) {
-      for (DWARFDIE memberDie : die.children()) {
-        if (memberDie.Tag() == DW_TAG_member) {
-          MemberAttributes attrs(memberDie, die);
-          lldb_private::Type *memberType =
-              die.ResolveTypeUID(attrs.type.Reference());
-          if (!memberType)
-            break;
-
-          std::optional<uint64_t> typeSize = memberType->GetByteSize(nullptr);
-          if (!typeSize) {
-            dwarf->GetObjectFile()->GetModule()->ReportError(
-                "[MojoDWARFParser::CompleteTypeFromDWARF]: Couldn't complete a "
-                "struct type because one of its fields has 0 size. Die = "
-                "{0:x16}, memberDie = {1:x16}",
-                die.GetOffset(), memberDie.GetOffset());
-            break;
-          }
-          typeSystem.addFieldToStruct(
-              structDecl, attrs.name,
-              memberType->GetFullCompilerType().GetOpaqueQualType());
-        }
-      }
-    }
-    return true;
-  }
   dwarf->GetObjectFile()->GetModule()->ReportError(
-      "[MojoDWARFParser::CompleteTypeFromDWARF]: Couldn't complete "
-      "die. "
-      "Offset = {0:x16}, tag = {1}",
+      "[MojoDWARFParser::CompleteTypeFromDWARF]: Couldn't complete die. Die = "
+      "{0:x16}, tag = {1}.",
       die.GetOffset(), die.GetTagAsCString());
   return false;
 }
@@ -500,8 +528,8 @@ MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
   if (log) {
     dwarf->GetObjectFile()->GetModule()->LogMessage(
         log,
-        "[MojoDWARFParser::ParseFunctionFromDWARF] "
-        "die = {0:x16} tag = '{1}' die_name = '{2}'",
+        "[MojoDWARFParser::ParseFunctionFromDWARF] Will parse function. Die = "
+        "{0:x16}, tag = {1}, name = '{2}'.",
         die.GetOffset(), die.GetTagAsCString(), die.GetName());
   }
 
@@ -566,7 +594,7 @@ MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
   if (!func) {
     dwarf->GetObjectFile()->GetModule()->ReportError(
         "[MojoDWARFParser::ParseFunctionFromDWARF] failed to create a "
-        "function. Offset = {0:x16} tag = '{1}' die_name = '{2}'",
+        "function. Die = {0:x16}, tag = {1}, name = '{2}'.",
         die.GetOffset(), die.GetTagAsCString(), die.GetName());
   }
   return func;
