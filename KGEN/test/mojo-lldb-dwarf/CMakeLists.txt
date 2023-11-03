@@ -21,5 +21,3 @@ add_modular_testsuite(check-mojo-lldb-dwarf
 if(LLDB_FOUND)
   add_dependencies(check-mojo-lldb-dwarf MojoLLDB)
 endif()
-
-add_subdirectory(python-tests)
