@@ -13,9 +13,8 @@
 using namespace M;
 using namespace KGEN;
 
-void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
-                                        LLCL::Runtime &runtime,
-                                        const CompilationOptions &options) {
+void KGEN::buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+                                 const CompilationOptions &options) {
   pm.addPass(createVerifyParameters());
 
   // These passes doesn't touch parameters, no need to re-verify them after it.
@@ -30,6 +29,12 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
 
   // Insert calls to destructors, reject use before free, and borrow check.
   pm.addPass(createCheckLifetimes());
+}
+
+void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
+                                        LLCL::Runtime &runtime,
+                                        const CompilationOptions &options) {
+  buildCheckLITPipeline(pm, runtime, options);
 
   pm.addPass(createLowerLIT(
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
