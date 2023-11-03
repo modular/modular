@@ -32,7 +32,12 @@ class MojoDebugAdapterDescriptorFactory implements
         session.configuration.modularHomePath || session.workspaceFolder);
     if (!config)
       return null;
-    return new vscode.DebugAdapterExecutable(config.mojoLLDBVSCodePath, []);
+    // The --repl-mode set to `auto` indicates LLDB to distinguish automatically
+    // if the text passed in the debug console is an expression or a command and
+    // handle it accordingly. In case of ambiguity, the user can use the `:`
+    // prefix to force it being a regular command, just like the REPL.
+    return new vscode.DebugAdapterExecutable(config.mojoLLDBVSCodePath,
+                                             [ "--repl-mode", "auto" ]);
   }
 }
 
@@ -60,6 +65,11 @@ class MojoDebugConfigurationProvider implements
     // non-primitive type that is displayed right away in the IDE.
     if (!("enableAutoVariableSummaries" in debugConfiguration))
       debugConfiguration["enableAutoVariableSummaries"] = true;
+
+    // This setting indicates LLDB to use the `:` prefix in the Debug Console to
+    // disambiguate variable printing from regular LLDB commands.
+    if (!("commandEscapePrefix" in debugConfiguration))
+      debugConfiguration["commandEscapePrefix"] = ':';
 
     // This timeout affects targets created with "attachCommands" or
     // "launchCommands".
