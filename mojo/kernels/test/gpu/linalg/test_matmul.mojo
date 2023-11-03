@@ -31,7 +31,6 @@ alias TILE_SZ_B = 16
 alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
-@export("matmul")
 fn matmul(
     a_ptr: DTypePointer[DType.float32],
     b_ptr: DTypePointer[DType.float32],
