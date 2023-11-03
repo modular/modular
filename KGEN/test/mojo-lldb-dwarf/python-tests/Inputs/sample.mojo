@@ -4,10 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %repl <%s 2>&1 | FileCheck %s
 
-# Note: in REPL mode, expressions are delimited by empty lines.
+fn foo() -> None:
+    let another_int = 420
+    print("foo")  # breakpoint
 
-:script print(100 + 11)
 
-# CHECK: 111
+fn main():
+    let an_int = -420
+    print("main")  # breakpoint
+    foo()
