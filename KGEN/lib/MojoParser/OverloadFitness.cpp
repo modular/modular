@@ -839,9 +839,27 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
-  for (Type outputType : signature.getValueResults())
+  for (Type outputType : signature.getValueResults()) {
     if (!ASTType(outputType).isRegisterPassable(callLoc, emitter.shared))
       return emitDiagFor.resultGenericMemType(outputType);
+    // `!kgen.variant` is a special case.  We use it to wrap the result
+    // type for functions that `raise`, and in the case of returning a
+    // parametric type we can't rule out a user trying to pass a memory-only
+    // type.  This came up in issue
+    // https://github.com/modularml/mojo/issues/910.  So we need a deep check
+    // to prevent memory-only types being used as parameters.
+    ASTDecl *decl = ASTType(outputType).getDecl(emitter.shared);
+    if (!decl) {
+      if (auto variant = dyn_cast<VariantType>(outputType)) {
+        auto isMemoryOnly = [&](TypedAttr variant) {
+          return ASTType(variant).getRegisterPassability(
+                     callLoc, emitter.shared) == StructDeclOp::RP_MemoryOnly;
+        };
+        if (llvm::any_of(variant.getTypes(), isMemoryOnly))
+          return emitDiagFor.resultGenericMemType(outputType);
+      }
+    }
+  }
 
   // Ok, the parameters all line up, check the argument list.  We generally want
   // to diagnose problems where too few or too many arguments are passed if that
