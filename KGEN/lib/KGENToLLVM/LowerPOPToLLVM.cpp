@@ -994,9 +994,19 @@ private:
     case AtomicBinOp::XOR:
       return LLVM::AtomicBinOp::_xor;
     case AtomicBinOp::MAX:
-      return dtype.isSInt() ? LLVM::AtomicBinOp::max : LLVM::AtomicBinOp::umax;
+      if (dtype.isSInt())
+        return LLVM::AtomicBinOp::max;
+      if (dtype.isUInt())
+        return LLVM::AtomicBinOp::umax;
+      if (dtype.isFloat())
+        return LLVM::AtomicBinOp::fmax;
     case AtomicBinOp::MIN:
-      return dtype.isSInt() ? LLVM::AtomicBinOp::min : LLVM::AtomicBinOp::umin;
+      if (dtype.isSInt())
+        return LLVM::AtomicBinOp::min;
+      if (dtype.isUInt())
+        return LLVM::AtomicBinOp::umin;
+      if (dtype.isFloat())
+        return LLVM::AtomicBinOp::fmin;
     }
     llvm_unreachable("unknown atomic ordering");
   }
