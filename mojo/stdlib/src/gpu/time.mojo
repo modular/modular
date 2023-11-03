@@ -81,3 +81,25 @@ fn time_function[func: fn () capturing -> None]() -> Int:
     func()
     let toc = now()
     return toc - tic
+
+
+# ===----------------------------------------------------------------------===#
+# sleep
+# ===----------------------------------------------------------------------===#
+
+
+fn sleep(sec: Float64):
+    """Suspend the thread for an approximate delay given in seconds.
+
+    Args:
+        sec: The time to sleep in seconds.
+    """
+
+    @parameter
+    if not triple_is_nvidia_cuda():
+        return
+
+    let nsec = sec * 1.0e9
+    ptx_assembly["nanosleep.u32 $0", NoneType, constraints="r"](
+        nsec.cast[DType.uint32]()
+    )
