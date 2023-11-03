@@ -279,8 +279,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   bool IsRuntimeGeneratedType(lldb::opaque_compiler_type_t type) override {
-    // Note: this method is dead and
-    // https://github.com/llvm/llvm-project/pull/68927 kills it.
+    // This method is only used by swift.
     return false;
   }
 
