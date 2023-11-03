@@ -47,10 +47,7 @@ HTTPCacheBackend::findImpl(StringRef keyHash,
   constexpr size_t maxBytes = 1024 * 1024 * 512;
 
   // We didn't have it locally, so create a request to go get it.
-  HTTPRequest req{
-      /*URL=*/url + "/" + keyHashB64,
-      /*verifyTLSPeer=*/true,
-  };
+  HTTPRequest req{/*URL=*/url + "/" + keyHashB64};
 
   // Either create a new WriteableBuffer or use the one that was passed in.
   auto writeBuf =

@@ -30,6 +30,9 @@ public:
   /// Initialize an HTTP context.
   static HTTPContextRef init();
 
+  void setUserAgent(std::string userAgent);
+  void setShouldVerifyTLSPeer(bool verifyTLSPeer);
+
 protected:
   /// Allow access to protected constructor.
   friend class RCRef<HTTPContext>;
@@ -40,16 +43,16 @@ private:
   friend class HTTPClient;
   /// User agent to use for all requests.
   std::string userAgent;
+
+  /// Used to disable HTTPS vertification. Typically used to test with self
+  /// signed certicates.
+  bool verifyTLSPeer = true;
 };
 
 /// Represents an HTTP Request.
 struct HTTPRequest {
   /// Request URL.
   std::string URL;
-
-  /// Used to disable HTTPS vertification. Typically used to test with self
-  /// signed certicates.
-  bool verifyTLSPeer = true;
 
   /// Headers to set on the request.
   llvm::StringMap<std::string> headers = {};
