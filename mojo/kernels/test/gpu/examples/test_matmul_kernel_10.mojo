@@ -16,7 +16,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu import BlockIdx, ThreadIdx, barrier
+from gpu import BlockIdx, ThreadIdx, barrier, WARP_SIZE
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
 from memory.buffer import NDBuffer
@@ -25,8 +25,6 @@ from tensor import Tensor
 
 from utils.index import Index
 from utils.list import DimList
-
-alias WARPSIZE = 32
 
 
 @always_inline
@@ -163,7 +161,7 @@ fn processFromSmem[
 # TN The per-thread tile size for N dimension.
 
 
-# TODO: Add __launch_bounds__(NUM_THREADS) when available.
+@__llvm_metadata(`nvvm.maxntid`=[NUM_THREADS])
 fn sgemmWarptiling[
     BM: Int,
     BN: Int,
@@ -184,25 +182,21 @@ fn sgemmWarptiling[
     alpha: Float32,
     beta: Float32,
 ):
-    @parameter
-    if not triple_is_nvidia_cuda():
-        return
-
     let cRow = BlockIdx.y()
     let cCol = BlockIdx.x()
 
     # Placement of the warp in the threadblock tile
-    let warpIdx = ThreadIdx.x() // WARPSIZE  # the warp this thread is in
+    let warpIdx = ThreadIdx.x() // WARP_SIZE  # the warp this thread is in
     let warpCol = warpIdx % (BN // WN)
     let warpRow = warpIdx // (BN // WN)
 
     # size of the warp subtile
-    alias WMITER = (WM * WN) // (WARPSIZE * TM * TN * WNITER)
+    alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
     alias WSUBM = WM // WMITER  # 64/2=32
     alias WSUBN = WN // WNITER  # 32/2=16
 
     # Placement of the thread in the warp subtile
-    let threadIdxInWarp = ThreadIdx.x() % WARPSIZE  # [0, 31]
+    let threadIdxInWarp = ThreadIdx.x() % WARP_SIZE  # [0, 31]
     let threadColInWarp = threadIdxInWarp % (WSUBN // TN)  # i%(16/4)
     let threadRowInWarp = threadIdxInWarp // (WSUBN // TN)  # i/4
 
@@ -214,16 +208,11 @@ fn sgemmWarptiling[
         BK * BN, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    # TODO: Needed, otherwise doesn't allow using a_ptr, etc., directly?
-    var aa_ptr: DTypePointer[DType.float32] = a_ptr
-    var bb_ptr: DTypePointer[DType.float32] = b_ptr
-    var cc_ptr: DTypePointer[DType.float32] = c_ptr
-
     # Move blocktile to beginning of A's row and B's column
-    aa_ptr = aa_ptr.offset(cRow * BM * K)
-    bb_ptr = bb_ptr.offset(cCol * BN)
+    var aa_ptr = a_ptr.offset(cRow * BM * K)
+    var bb_ptr = b_ptr.offset(cCol * BN)
     # Move C_ptr to warp's output tile
-    cc_ptr = cc_ptr.offset(
+    let cc_ptr = c_ptr.offset(
         (cRow * BM + warpRow * WM) * N + cCol * BN + warpCol * WN
     )
 
@@ -306,10 +295,11 @@ fn sgemmWarptiling[
                     let i = (wSubRowIdx * TM + resIdxM) * (
                         WNITER * TN
                     ) + wSubColIdx * TN + resIdxN
-                    tmp[0] = alpha * threadResults[i + 0] + beta * tmp[0]
-                    tmp[1] = alpha * threadResults[i + 1] + beta * tmp[1]
-                    tmp[2] = alpha * threadResults[i + 2] + beta * tmp[2]
-                    tmp[3] = alpha * threadResults[i + 3] + beta * tmp[3]
+
+                    @unroll
+                    for i in range(4):
+                        tmp[i] = alpha * threadResults[i + i] + beta * tmp[i]
+
                     # write back
                     # reinterpret_cast<float4 *>(
                     #    &C_interim[(threadRowInWarp * TM + resIdxM) * N +
@@ -366,7 +356,7 @@ fn run_matmul_kernel_10() raises:
 
     # threads in warpsubtile
     constrained[
-        (K10_WM * K10_WN) % (WARPSIZE * K10_TM * K10_TN * K10_WNITER) == 0
+        (K10_WM * K10_WN) % (WARP_SIZE * K10_TM * K10_TN * K10_WNITER) == 0
     ]()
 
     # warpsubtile in warptile
