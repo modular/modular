@@ -69,24 +69,10 @@ getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts) {
 /// options if the native LLVM helper fails.
 static ErrorOr<std::vector<std::string>> getHostFeatures(StringRef triple,
                                                          StringRef cpu) {
-  llvm::StringMap<bool> featureMap;
-  bool gotFeatures = llvm::sys::getHostCPUFeatures(featureMap);
-  if (!gotFeatures) {
-    // getHostCPUFeatures doesn't do anything for M1. So let's ask clang.
-    auto opts = std::make_shared<clang::TargetOptions>();
-    opts->Triple = triple;
-    opts->CPU = cpu;
-    return getFeaturesFromClang(opts);
-  }
-
-  std::vector<std::string> features;
-  for (const auto &[key, value] : featureMap) {
-    if (value)
-      features.push_back(key.str());
-  }
-  llvm::sort(features);
-
-  return features;
+  auto opts = std::make_shared<clang::TargetOptions>();
+  opts->Triple = triple;
+  opts->CPU = cpu;
+  return getFeaturesFromClang(opts);
 }
 
 ErrorOr<TargetInfo> M::getHostTargetInfo() {
