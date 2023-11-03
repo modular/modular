@@ -153,13 +153,13 @@ lit.func @call_default_param() {
   // CHECK: ref: !lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> = <@parametric_default_param>
   kgen.param.declare ref: !lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> = <@parametric_default_param>
   // CHECK: bound: !lit.signature<<index = 1>() -> ()> = <bind_signature(
-  // CHECK-SAME: :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, #kgen.unbound)>
+  // CHECK-SAME: :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
   kgen.param.declare bound: !lit.signature<<index = 1>() -> ()> = <bind_signature(
-    :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, #kgen.unbound)>
+    :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
   // CHECK: bound_new: !lit.signature<<"z": index = 1>() -> ()> = <bind_signature(
-  // CHECK-SAME: :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, #kgen.unbound)>
+  // CHECK-SAME: :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
   kgen.param.declare bound_new: !lit.signature<<"z": index = 1>() -> ()> = <bind_signature(
-    :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, #kgen.unbound)>
+    :!lit.signature<<"x": index, "y": index = *(0,0)>() -> ()> ref, 1, ?)>
   kgen.return
 }
 

@@ -71,7 +71,7 @@ kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, add
 // CHECK-LABEL: @unknown
 kgen.func @unknown() -> index {
   // CHECK-NEXT: llvm.mlir.undef : i64
-  %0 = kgen.param.constant = <?>
+  %0 = kgen.param.constant = <*?>
   kgen.return %0 : index
 }
 
@@ -352,12 +352,12 @@ kgen.func @pack_constant_1() -> !kgen.pack<[]> {
 }
 
 // CHECK-LABEL: @pointer_constant
-kgen.func @pointer_constant() -> !kgen.pointer<?> {
+kgen.func @pointer_constant() -> !kgen.pointer<*?> {
   // CHECK: %0 = llvm.mlir.constant(0 : i64) : i64
   // CHECK: %1 = llvm.inttoptr %0 : i64 to !llvm.ptr
   // CHECK: llvm.return %1 : !llvm.ptr
-  %null = kgen.param.constant: pointer<?> = <#interp.pointer<0>>
-  kgen.return %null : !kgen.pointer<?>
+  %null = kgen.param.constant: pointer<*?> = <#interp.pointer<0>>
+  kgen.return %null : !kgen.pointer<*?>
 }
 
 // CHECK-LABEL: @test_variant

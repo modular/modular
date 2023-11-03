@@ -39,8 +39,8 @@ kgen.generator @parameter_use_chain() {
 
 // CHECK-LABEL: @"unknown_attr,width=4"
 kgen.generator @unknown_attr<width>() {
-  // CHECK-NEXT: constant: simd<4, f32> = <?>
-  kgen.param.constant: simd<width, f32> = <?>
+  // CHECK-NEXT: constant: simd<4, f32> = <*?>
+  kgen.param.constant: simd<width, f32> = <*?>
   kgen.return
 }
 
@@ -520,7 +520,7 @@ kgen.generator @passTypeList() {
 }
 
 kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T> -> is_unknown: i1>() {
-  kgen.param.result_bind<:i1 eq(:!kgen.paramref<T> value, ?)>
+  kgen.param.result_bind<:i1 eq(:!kgen.paramref<T> value, *?)>
   kgen.return
 }
 
@@ -667,7 +667,7 @@ kgen.generator @param_add<A, B>() -> index {
 
 // CHECK-LABEL: kgen.func @partial_bind_signature_region
 kgen.generator @partial_bind_signature_region() -> index {
-  kgen.param.declare BoundFn: <index>() -> index = <bind_signature(:<index, index>() -> index @param_add, 1, #kgen.unbound)>
+  kgen.param.declare BoundFn: <index>() -> index = <bind_signature(:<index, index>() -> index @param_add, 1, ?)>
   // CHECK-NEXT: %0 = kgen.call @"param_add,A=1,B=2"() : () -> index
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn, 2)]()
   // CHECK-NEXT: kgen.return %0
@@ -684,8 +684,8 @@ kgen.generator @param_add2<A, B, C>() -> index {
 
 // CHECK-LABEL: kgen.func @partial_bind_signature_region_2
 kgen.generator @partial_bind_signature_region_2() -> index {
-  kgen.param.declare BoundFn: <index, index>() -> index = <bind_signature(:<index, index, index>() -> index @param_add2, 1, #kgen.unbound, #kgen.unbound)>
-  kgen.param.declare BoundFn2: <index>() -> index = <bind_signature(:<index, index>() -> index BoundFn, #kgen.unbound, 3)>
+  kgen.param.declare BoundFn: <index, index>() -> index = <bind_signature(:<index, index, index>() -> index @param_add2, 1, ?, ?)>
+  kgen.param.declare BoundFn2: <index>() -> index = <bind_signature(:<index, index>() -> index BoundFn, ?, 3)>
   // CHECK-NEXT: %0 = kgen.call @"param_add2,A=1,B=2,C=3"() : () -> index
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn2, 2)]()
   // CHECK-NEXT: kgen.return %0
@@ -1793,7 +1793,7 @@ kgen.generator @foo_k<N, M>() capturing -> !pop.scalar<index> {
 
 // CHECK-LABEL: kgen.func @"foo,N=5"(%arg0: !pop.scalar<index>) {
 kgen.generator @foo<N>(%arg0: !pop.scalar<index>) {
-  kgen.param.declare k: <index>() capturing -> !pop.scalar<index> = <@foo_k<N, #kgen.unbound>>
+  kgen.param.declare k: <index>() capturing -> !pop.scalar<index> = <@foo_k<N, ?>>
   // CHECK: kgen.create_closure [() capturing -> !pop.scalar<index>: @"foo_k,N=5,M=3"]()
   %1 = kgen.create_closure[() capturing -> !pop.scalar<index>: bind_signature(:<index>() capturing -> !pop.scalar<index> k, 3)]()
   kgen.return

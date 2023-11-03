@@ -376,14 +376,14 @@ fn idx_result_params[a: Int -> b: Int, c: Int]() -> Int:
   # CHECK: %1 = kgen.param.constant: !Int = {{.*}}2
   # CHECK: %2 = kgen.call {{.*}}__add__{{.*}}(%0, %1)
   # CHECK-NEXT: lit.return %2
-  # CHECK-NEXT: kgen.param.result_bind<{{.*}}?, {{.*}}?>
+  # CHECK-NEXT: kgen.param.result_bind<{{.*}}*?, {{.*}}*?>
   return a+2
 
 # CHECK-LABEL: lit.func @"parametric_result_params{{.*}}"
 # CHECK-SAME: <[[T:.*_T]][T]: type, [[INPUT:.*_input]][input]: !kgen.paramref<[[T]]> ->
 fn parametric_result_params[T: AnyType, input: T -> out: T]():
     # CHECK: lit.param_return<:!kgen.paramref<[[T]]> [[INPUT]]>
-    # CHECK: kgen.param.result_bind<:!kgen.paramref<[[T]]> ?>
+    # CHECK: kgen.param.result_bind<:!kgen.paramref<[[T]]> *?>
     param_return[input]
 
 # CHECK-LABEL: lit.func @"just_result_params{{.*}}"<() -> {{.*}}a>()

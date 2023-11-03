@@ -388,14 +388,14 @@ lit.struct.decl @StructCannotFileTrait([@Trait1]) {
 // -----
 
 // expected-error @below {{'bind_type' result metatype parameter values don't match input parameter values}}
-#bind = #lit.bind_type<:metatype<@Foo<#kgen.unbound>, <index>> T, [#kgen.unbound]> : !lit.metatype<@Foo<1>>
+#bind = #lit.bind_type<:metatype<@Foo<?>, <index>> T, [?]> : !lit.metatype<@Foo<1>>
 
 // -----
 
 // expected-error @below {{'bind_type' result metatype signature should have 0 input parameters}}
-#bind = #lit.bind_type<:metatype<@Foo<#kgen.unbound>, <index>> T, [1]> : !lit.metatype<@Foo<1>, <index>>
+#bind = #lit.bind_type<:metatype<@Foo<?>, <index>> T, [1]> : !lit.metatype<@Foo<1>, <index>>
 
 // -----
 
 // expected-error @below {{result signature parameter #0 expected to be 'index' but got '!kgen.dtype'}}
-#bind = #lit.bind_type<:metatype<@Foo<#kgen.unbound>, <index>> T, [#kgen.unbound]> : !lit.metatype<@Foo<#kgen.unbound>, <dtype>>
+#bind = #lit.bind_type<:metatype<@Foo<?>, <index>> T, [?]> : !lit.metatype<@Foo<?>, <dtype>>
