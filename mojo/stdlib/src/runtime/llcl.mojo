@@ -132,7 +132,7 @@ fn _async_complete(chain: Pointer[Chain]):
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_global_runtime() -> Pointer[NoneType]:
+fn _init_global_runtime(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
     """Intialize the global runtime. This is a singleton that handle the common
     case where the runtime has the same number of threads as the number of cores.
     """
