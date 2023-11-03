@@ -1000,6 +1000,7 @@ private:
         return LLVM::AtomicBinOp::umax;
       if (dtype.isFloat())
         return LLVM::AtomicBinOp::fmax;
+      break;
     case AtomicBinOp::MIN:
       if (dtype.isSInt())
         return LLVM::AtomicBinOp::min;
@@ -1007,6 +1008,7 @@ private:
         return LLVM::AtomicBinOp::umin;
       if (dtype.isFloat())
         return LLVM::AtomicBinOp::fmin;
+      break;
     }
     llvm_unreachable("unknown atomic ordering");
   }
