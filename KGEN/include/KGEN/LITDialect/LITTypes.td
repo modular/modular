@@ -171,8 +171,13 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
+                                        "ArrayRef<TypedAttr>":$values,
                                         "TypeSignatureType":$signature), [{
-      return get(symbol.getContext(), symbol, {}, signature);
+      return get(symbol.getContext(), symbol, values, signature);
+    }]>,
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
+                                        "TypeSignatureType":$signature), [{
+      return get(symbol, {}, signature);
     }]>
   ];
 }

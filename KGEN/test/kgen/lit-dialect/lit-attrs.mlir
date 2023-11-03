@@ -49,3 +49,46 @@ kgen.generator @metatype() {
   kgen.param.declare T: metatype<@Foo> = <@Foo>
   kgen.return
 }
+
+lit.struct.decl @Bar<a, b: dtype> {}
+lit.struct.decl @BarDefaults<a, b: dtype = f32> {}
+
+// CHECK-LABEL: kgen.generator @bind_type
+kgen.generator @bind_type<T: metatype<@Bar<#kgen.unbound, :dtype #kgen.unbound>, <index, dtype>>>() {
+  // CHECK: FullyBound: metatype<@Bar<16, :dtype f32>> =
+  // CHECK-SAME: #lit.bind_type<:metatype<@Bar<#kgen.unbound, :dtype #kgen.unbound>, <index, dtype>> T, [16, f32]>
+  kgen.param.declare FullyBound: metatype<@Bar<16, :dtype f32>> = <
+    #lit.bind_type<
+      :metatype<@Bar<#kgen.unbound, :dtype #kgen.unbound>, <index, dtype>> T,
+      [16, f32]
+    >
+  >
+
+  // CHECK: PartiallyBound: metatype<@Bar<#kgen.unbound, :dtype f32>, <index>> =
+  // CHECK-SAME: #lit.bind_type<:metatype<@Bar<#kgen.unbound, :dtype #kgen.unbound>, <index, dtype>> T, [#kgen.unbound, f32]>
+  kgen.param.declare PartiallyBound: metatype<@Bar<#kgen.unbound, :dtype f32>, <index>> = <
+    #lit.bind_type<
+      :metatype<@Bar<#kgen.unbound, :dtype #kgen.unbound>, <index, dtype>> T,
+      [#kgen.unbound, f32]
+    >
+  >
+
+  // CHECK: PartiallyBoundDefaults: metatype<@BarDefaults<16, :dtype #kgen.unbound>, <dtype = f32>> =
+  // CHECK-SAME: #lit.bind_type<:metatype<@BarDefaults<#kgen.unbound, :dtype #kgen.unbound>, <index, dtype = f32>> T, [16, #kgen.unbound]>
+  kgen.param.declare PartiallyBoundDefaults: metatype<@BarDefaults<16, :dtype #kgen.unbound>, <dtype = f32>> = <
+    #lit.bind_type<
+      :metatype<@BarDefaults<#kgen.unbound, :dtype #kgen.unbound>, <index, dtype = f32>> T,
+      [16, #kgen.unbound]
+    >
+  >
+
+  // CHECK: BoundDeclRef: metatype<@Bar<#kgen.unbound, :dtype f32>, <index>> =
+  // CHECK-SAME: <@Bar<#kgen.unbound, :dtype f32> : metatype<@Bar<#kgen.unbound, :dtype f32>, <index>>>
+  kgen.param.declare BoundDeclRef: metatype<@Bar<#kgen.unbound, :dtype f32>, <index>> = <
+    #lit.bind_type<
+      :metatype<@Bar<#kgen.unbound, :dtype #kgen.unbound>, <index, dtype>> @Bar<#kgen.unbound, :dtype #kgen.unbound>,
+      [#kgen.unbound, f32]
+    >
+  >
+  kgen.return
+}

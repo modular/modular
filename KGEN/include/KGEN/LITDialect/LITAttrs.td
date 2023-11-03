@@ -173,6 +173,72 @@ def ModuleAttr : LITTypedAttr<"Module", "module"> {
 }
 
 //===----------------------------------------------------------------------===//
+// BindTypeAttr
+//===----------------------------------------------------------------------===//
+
+def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
+  let summary = "bind parameter values to a type";
+  let description = [{
+    The `#lit.bind_type` attribute is a parameter operator attribute that
+    binds parameter values to a type instance.
+
+    Example:
+
+    ```mlir
+    // Fully unbound to fully bound.
+    #lit.bind_type<
+      :metatype<@SIMD<:dtype #kgen.unbound, #kgen.unbound>, <dtype, index>>
+                @SIMD<:dtype #kgen.unbound, #kgen.unbound>,
+      [f32, 16]>
+      : !lit.metatype<@SIMD<:dtype f32, 16>>
+
+    // Fully unbound to partially bound.
+    #lit.bind_type<
+      :metatype<@SIMD<:dtype #kgen.unbound, #kgen.unbound>, <dtype, index>>
+                @SIMD<:dtype #kgen.unbound, #kgen.unbound>,
+      [#kgen.unbound, 16]>
+      : !lit.metatype<@SIMD<:dtype #kgen.unbound, 16>, <dtype>>
+
+    // Partially unbound to fully bound with a default.
+    #lit.bind_type<
+      :metatype<@SIMD<:dtype #kgen.unbound, 16>, <dtype = f32>>
+                @SIMD<:dtype #kgen.unbound, 16>,
+      [si32, 16]>
+      : !lit.metatype<@SIMD<:dtype si32, 16>>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    ArrayRefParameter<"TypedAttr">:$values,
+    AttributeSelfTypeParameter<"", "MetaTypeType">:$type
+  );
+
+  let assemblyFormat = [{
+    `<` custom<ColonTypeParamValue>($typeValue) `,` `[`
+    custom<BindTypeParams>($values, ref($typeValue)) `]` `>`
+  }];
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
+                                        "ArrayRef<TypedAttr>":$values,
+                                        "MetaTypeType":$type), [{
+      return $_get(type.getContext(), typeValue, values, type);
+    }], "TypedAttr">,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
+                                        "ArrayRef<TypedAttr>":$values), [{
+      return $_get(typeValue.getContext(), typeValue, values,
+                   getBindTypeResultType(typeValue, values));
+    }], "TypedAttr">,
+    TypeBuilder<(ins "TypedAttr":$typeValue, "ArrayRef<TypedAttr>":$values,
+                     "MetaTypeType":$type), "", "TypedAttr">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // LifetimeAttr
 //===----------------------------------------------------------------------===//
 
