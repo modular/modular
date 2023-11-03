@@ -16,7 +16,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu import BlockIdx, ThreadIdx, barrier, WARP_SIZE
+from gpu import BlockIdx, BlockDim, ThreadIdx, barrier, WARP_SIZE
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
 from memory.buffer import NDBuffer
@@ -25,6 +25,8 @@ from tensor import Tensor
 
 from utils.index import Index
 from utils.list import DimList
+
+alias BLOCK_DIM = 8
 
 
 @always_inline
@@ -61,9 +63,7 @@ fn loadFromGmem[
     innerColB: Int,
 ):
     for offset in range(0, BM - rowStrideA + 1, rowStrideA):
-        # const float4 tmp = reinterpret_cast<const float4 *>(
-        #    &a_ptr[(innerRowA + offset) * K + innerColA * 4])[0];
-        # let tmp = a_ptr.aligned_simd_load[4, 16]((innerRowA + offset) * K + innerColA * 4)
+        # Load 4 elements at a time and store to shared memory.
         let tmp = __nvvm_ldg_f4[DType.float32](
             a_ptr.offset((innerRowA + offset) * K + innerColA * 4)
         )
@@ -73,11 +73,7 @@ fn loadFromGmem[
             As.store((innerColA * 4 + i) * BM + innerRowA + offset, tmp[i])
 
     for offset in range(0, BK - rowStrideB + 1, rowStrideB):
-        # reinterpret_cast<float4 *>(
-        #    &Bs[(innerRowB + offset) * BN + innerColB * 4])[0] =
-        #    reinterpret_cast<const float4 *>(
-        #        &b_ptr[(innerRowB + offset) * N + innerColB * 4])[0];
-        # let tmp = b_ptr.aligned_simd_load[4, 16]((innerRowB + offset) * N + innerColB * 4)
+        # Load 4 elements at a time and store to shared memory.
         let tmp = __nvvm_ldg_f4[DType.float32](
             b_ptr.offset((innerRowB + offset) * N + innerColB * 4)
         )
@@ -111,7 +107,7 @@ fn processFromSmem[
     threadColInWarp: Int,
 ):
     for dotIdx in range(BK):
-        # populate registers for whole warptile
+        # Populate registers for whole warptile.
         for wSubRowIdx in range(WMITER):
             for i in range(TM):
                 regM[wSubRowIdx * TM + i] = As.load(
@@ -132,10 +128,10 @@ fn processFromSmem[
                     + i
                 )
 
-        # execute warptile matmul
+        # Execute warptile matmul.
         for wSubRowIdx in range(WMITER):
             for wSubColIdx in range(WNITER):
-                # calculate per-thread results
+                # Calculate per-thread results.
                 for resIdxM in range(TM):
 
                     @unroll
@@ -150,15 +146,15 @@ fn processFromSmem[
                         )
 
 
-# BM The threadblock size for M dimension SMEM caching.
-# BN The threadblock size for N dimension SMEM caching.
-# BK The threadblock size for K dimension SMEM caching.
-# WM M dim of continuous tile computed by each warp
-# WN N dim of continuous tile computed by each warp
-# WMITER The number of subwarp tiling steps in M dimension.
-# WNITER The number of subwarp tiling steps in N dimension.
-# TM The per-thread tile size for M dimension.
-# TN The per-thread tile size for N dimension.
+# BM: The threadblock size for M dimension SMEM caching.
+# BN: The threadblock size for N dimension SMEM caching.
+# BK: The threadblock size for K dimension SMEM caching.
+# WM: M dim of continuous tile computed by each warp.
+# WN: N dim of continuous tile computed by each warp.
+# WMITER: The number of subwarp tiling steps in M dimension.
+# WNITER: The number of subwarp tiling steps in N dimension.
+# TM: The per-thread tile size for M dimension.
+# TN: The per-thread tile size for N dimension.
 
 
 @__llvm_metadata(`nvvm.maxntid`=[NUM_THREADS])
@@ -185,22 +181,22 @@ fn sgemmWarptiling[
     let cRow = BlockIdx.y()
     let cCol = BlockIdx.x()
 
-    # Placement of the warp in the threadblock tile
+    # Placement of the warp in the threadblock tile.
     let warpIdx = ThreadIdx.x() // WARP_SIZE  # the warp this thread is in
     let warpCol = warpIdx % (BN // WN)
     let warpRow = warpIdx // (BN // WN)
 
-    # size of the warp subtile
+    # Size of the warp subtile.
     alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
     alias WSUBM = WM // WMITER  # 64/2=32
     alias WSUBN = WN // WNITER  # 32/2=16
 
-    # Placement of the thread in the warp subtile
+    # Placement of the thread in the warp subtile.
     let threadIdxInWarp = ThreadIdx.x() % WARP_SIZE  # [0, 31]
     let threadColInWarp = threadIdxInWarp % (WSUBN // TN)  # i%(16/4)
     let threadRowInWarp = threadIdxInWarp // (WSUBN // TN)  # i/4
 
-    # allocate space for the current blocktile in SMEM
+    # Allocate space for the current blocktile in SMEM.
     let As = stack_allocation[
         BM * BK, DType.float32, address_space = AddressSpace.SHARED
     ]()
@@ -208,7 +204,7 @@ fn sgemmWarptiling[
         BK * BN, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    # Move blocktile to beginning of A's row and B's column
+    # Move blocktile to beginning of A's row and B's column.
     var aa_ptr = a_ptr.offset(cRow * BM * K)
     var bb_ptr = b_ptr.offset(cCol * BN)
     # Move C_ptr to warp's output tile
@@ -216,8 +212,8 @@ fn sgemmWarptiling[
         (cRow * BM + warpRow * WM) * N + cCol * BN + warpCol * WN
     )
 
-    # calculating the indices that this thread will load into SMEM
-    # we'll load 128bit / 32bit = 4 elements per thread at each step
+    # Calculate the indices that this thread will load into SMEM.
+    # We load 128bit / 32bit = 4 elements per thread at each step.
     let innerRowA = ThreadIdx.x() // (BK // 4)
     let innerColA = ThreadIdx.x() % (BK // 4)
     alias rowStrideA = (NUM_THREADS * 4) // BK
@@ -225,19 +221,19 @@ fn sgemmWarptiling[
     let innerColB = ThreadIdx.x() % (BN // 4)
     alias rowStrideB = NUM_THREADS // (BN // 4)
 
-    # TODO: Are these eventually register-allocated in Mojo?
-    # allocate thread-local cache for results in registerfile
+    # TODO: We want these to be register-allocated!
+    # Allocate thread-local cache for results in register file.
     let threadResults = Buffer[
         WMITER * TM * WNITER * TN, DType.float32
     ].stack_allocation()
     threadResults.zero()
-    # we cache into registers on the warptile level
+    # We cache into registers on the warptile level.
     let regM = Buffer[WMITER * TM, DType.float32].stack_allocation()
     regM.zero()
     let regN = Buffer[WNITER * TN, DType.float32].stack_allocation()
     regN.zero()
 
-    # outer-most loop over block tiles
+    # Outer-most loop over block tiles.
     for bkIdx in range(0, K, BK):
         loadFromGmem[BM, BN, BK, rowStrideA, rowStrideB](
             N,
@@ -269,21 +265,16 @@ fn sgemmWarptiling[
         bb_ptr = bb_ptr.offset(BK * N)  # move BK rows down
         barrier()
 
-    # write out the results
+    # Write out the results.
     for wSubRowIdx in range(WMITER):
         for wSubColIdx in range(WNITER):
-            # move C pointer to current warp subtile
+            # Move C pointer to current warp subtile.
             let C_interim: DTypePointer[DType.float32] = cc_ptr.offset(
                 (wSubRowIdx * WSUBM) * N + wSubColIdx * WSUBN
             )
             for resIdxM in range(TM):
                 for resIdxN in range(0, TN, 4):
-                    # load C vector into registers
-                    # float4 tmp = reinterpret_cast<float4 *>(
-                    #    &C_interim[(threadRowInWarp * TM + resIdxM) * N +
-                    #                threadColInWarp * TN + resIdxN])[0]
-                    # var tmp = C_interim.aligned_simd_load[4, 16]((threadRowInWarp * TM + resIdxM) * N +
-                    #                threadColInWarp * TN + resIdxN)
+                    # Load C vector into registers.
                     var tmp = __nvvm_ldg_f4[DType.float32](
                         C_interim.offset(
                             (threadRowInWarp * TM + resIdxM) * N
@@ -291,25 +282,51 @@ fn sgemmWarptiling[
                             + resIdxN
                         )
                     )
-                    # perform GEMM update in reg
+                    # Perform GEMM update in reg.
                     let i = (wSubRowIdx * TM + resIdxM) * (
                         WNITER * TN
                     ) + wSubColIdx * TN + resIdxN
 
                     @unroll
-                    for i in range(4):
-                        tmp[i] = alpha * threadResults[i + i] + beta * tmp[i]
-
-                    # write back
-                    # reinterpret_cast<float4 *>(
-                    #    &C_interim[(threadRowInWarp * TM + resIdxM) * N +
-                    #                threadColInWarp * TN + resIdxN])[0] = tmp
+                    for k in range(4):
+                        tmp[k] = alpha * threadResults[i + k] + beta * tmp[k]
+                    # Write back.
                     C_interim.aligned_simd_store[4, 16](
                         (threadRowInWarp * TM + resIdxM) * N
                         + threadColInWarp * TN
                         + resIdxN,
                         tmp,
                     )
+
+
+fn matmul_naive(
+    a_ptr: DTypePointer[DType.float32],
+    b_ptr: DTypePointer[DType.float32],
+    c_ptr: DTypePointer[DType.float32],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    let y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+
+    if x >= m or y >= n:
+        return
+
+    let a = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        a_ptr, Index(m, k)
+    )
+    let b = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        b_ptr, Index(k, n)
+    )
+    let c = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        c_ptr, Index(m, n)
+    )
+
+    var accum = Float32(0)
+    for i in range(k):
+        accum = a[x, i] * b[i, y] + accum
+    c[Index(x, y)] = accum
 
 
 # CHECK-LABEL: run_matmul_kernel_10
@@ -347,19 +364,18 @@ fn run_matmul_kernel_10() raises:
     alias K10_TM = 8
 
     alias NUM_WARPS = K10_NUM_THREADS / 32
-    # TODO: Add static asserts from siboehm code.
     alias K10_WMITER = (K10_WM * K10_WN) // (32 * K10_TM * K10_TN * K10_WNITER)
 
-    # warptile in threadblocktile
+    # Warptile in threadblocktile.
     constrained[(K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)]()
     constrained[(K10_BN / K10_WN) * (K10_BM / K10_WM) == NUM_WARPS]()
 
-    # threads in warpsubtile
+    # Threads in warpsubtile.
     constrained[
         (K10_WM * K10_WN) % (WARP_SIZE * K10_TM * K10_TN * K10_WNITER) == 0
     ]()
 
-    # warpsubtile in warptile
+    # Warpsubtile in warptile.
     constrained[(K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)]()
 
     constrained[
@@ -402,15 +418,19 @@ fn run_matmul_kernel_10() raises:
     var a_host = Pointer[Float32].alloc(M * K)
     var b_host = Pointer[Float32].alloc(K * N)
     var c_host = Pointer[Float32].alloc(M * N)
+    var c_host_naive = Pointer[Float32].alloc(M * N)
 
     for i in range(M * K):
-        a_host.store(i, 0.1)
+        a_host.store(i, i)
 
     for i in range(K * N):
-        b_host.store(i, 1)
+        b_host.store(i, i + 1)
 
     for i in range(M * N):
         c_host.store(i, 0)
+
+    for i in range(M * N):
+        c_host_naive.store(i, 0)
 
     let a_device = _malloc[Float32](M * K)
     let b_device = _malloc[Float32](K * N)
@@ -440,8 +460,7 @@ fn run_matmul_kernel_10() raises:
             TN=K10_TN,
             NUM_THREADS=K10_NUM_THREADS,
         ]
-    ]()
-    # verbose=True, dump_ptx=True
+    ](max_registers=192, threads_per_block=K10_NUM_THREADS)
 
     @always_inline
     @parameter
@@ -460,24 +479,67 @@ fn run_matmul_kernel_10() raises:
             stream=stream,
         )
 
-    let nstime = time_function[run_func]()
+    var nstime = time_function[run_func]()
     let flops = 2 * M * N * K
     let sectime = nstime / 1000000000
+    print("WARP-TILING MATMUL:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
+    print()
 
     _copy_device_to_host(c_host, c_device, M * N)
 
+    # Perform naive matmul to compare results & performance.
+
+    _copy_host_to_device(a_device, a_host, M * K)
+    _copy_host_to_device(b_device, b_host, K * N)
+
+    let func_naive = Function[
+        fn (
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            Int,
+            Int,
+            Int,
+        ) -> None, matmul_naive
+    ]()
+
+    @always_inline
+    @parameter
+    fn run_func_naive() raises:
+        func_naive(
+            (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            (BLOCK_DIM, BLOCK_DIM),
+            a_device,
+            b_device,
+            c_device,
+            M,
+            N,
+            K,
+            stream=stream,
+        )
+
+    nstime = time_function[run_func_naive]()
+    let sectime2 = nstime / 1000000000
+    print("NAIVE MATMUL:")
+    print(sectime2, "sec")
+    print(flops * 1e-9 / sectime2, " GFLOPS")
+    print()
+
+    _copy_device_to_host(c_host_naive, c_device, M * N)
+
     var failed = False
-    # For 128x128x128 : 12.800012588500977
-    # For 4096x4096x4096: 409.61578369140625
     for i in range(M * N):
-        if c_host.load(i) != Float32(409.61578369140625):
+        if c_host.load(i) != c_host_naive.load(i):
             failed = True
 
     # CHECK: success
     if not failed:
-        print("success")
+        print("success: results match")
+        print("Performance warp-tiling vs. naive: ", sectime2 / sectime, "x")
+    else:
+        print("failed: results mismatch")
 
     _free(a_device)
     _free(b_device)
@@ -486,6 +548,7 @@ fn run_matmul_kernel_10() raises:
     _ = a_host
     _ = b_host
     _ = c_host
+    _ = c_host_naive
 
     _ = func ^
     _ = stream ^
