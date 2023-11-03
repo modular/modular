@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from lib.LLDBTestBase import LLDBTestBase, load_lldb
+from lib.LLDBTestBase import LLDBTestBase, SourceFile, load_lldb
 
 lldb = load_lldb()
 

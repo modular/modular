@@ -66,3 +66,7 @@ object, you can start querying its value if it's a primitive via the
 `GetValue()` family of functions, its summary if it has a synthetic formatter
 via `GetSummary()`, or access its fields via `GetChildAtIndex`. Similarly, the
 type can be gotten via `GetType()`.
+
+As a final tip, don't hardcode line numbers in your tests. They break often, so
+it's better to add markers in the source code and do string search for them
+to use them in asserts. The class `SourceFile` should help with that.
