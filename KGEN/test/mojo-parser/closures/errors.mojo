@@ -3,9 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s
+# RUN: kgen-translate -import-mojo -verify-diagnostics %s --mojo-disable-builtins
 
 
+# expected-error @below {{value of type 'StringNoCopy' cannot be copied into its destination}}
 struct StringNoCopy:
     var size: __mlir_type.index
 
@@ -18,5 +19,5 @@ struct StringNoCopy:
 
 fn makes_escaping_closurenocopy(m: StringNoCopy):
     fn myclosure() escaping -> StringNoCopy:
-        # expected-error @+1 {{value of type 'StringNoCopy' cannot be copied into its destination}}
+        # expected-error @below {{value of type 'StringNoCopy' cannot be copied into its destination}}
         return m

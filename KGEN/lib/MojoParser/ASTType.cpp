@@ -504,7 +504,8 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << ')';
     for (auto [enabled, effect] :
          {std::make_pair(sig.isThrows(), "raises"),
-          std::make_pair(sig.isCapturing(), "capturing")})
+          std::make_pair(sig.isCapturing(), "capturing"),
+          std::make_pair(sig.isEscaping(), "escaping")})
       if (enabled)
         os << ' ' << effect;
     os << " -> ";
