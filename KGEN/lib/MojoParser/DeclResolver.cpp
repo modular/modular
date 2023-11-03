@@ -2985,7 +2985,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     bool hasCapture = false;
     mlir::visitUsedValuesDefinedAbove(funcOp.getBodyRegion(),
                                       [&](OpOperand *) { hasCapture = true; });
-    if (hasCapture) {
+    if (hasCapture || signature.isEscaping()) {
       if (funcOp.getIsAdaptive()) {
         decl.hasReferenceError = true;
         return emitError(
