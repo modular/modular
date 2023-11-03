@@ -727,6 +727,12 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       return success();
     }
 
+    // Try to parse '*?' as an undef value.
+    if (succeeded(p.parseOptionalQuestion())) {
+      value = UnknownAttr::get(type);
+      return success();
+    }
+
     std::string name;
     if (failed(p.parseString(&name)))
       return failure();
@@ -736,7 +742,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
 
   // A '?' represents an unknown parameter.
   if (succeeded(p.parseOptionalQuestion())) {
-    value = UnknownAttr::get(type);
+    value = UnboundAttr::get(type);
     return success();
   }
 
@@ -955,6 +961,11 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
       return;
 
   if (isa<UnknownAttr>(value)) {
+    p << "*?";
+    return;
+  }
+
+  if (isa<UnboundAttr>(value)) {
     p << '?';
     return;
   }
