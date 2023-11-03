@@ -282,8 +282,8 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag) {
     name = name.take_front(mangleStart);
   // For constructors, print the type name instead.
   // TODO: Handle other dunder methods.
-  if (name == "__init__" && symbol.getNestedReferences().size() == 2)
-    name = symbol.getNestedReferences().front().getValue();
+  if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
+    name = symbol.getNestedReferences().drop_back().back().getAttr();
   os << name;
 }
 
