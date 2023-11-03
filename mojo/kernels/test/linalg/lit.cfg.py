@@ -34,6 +34,7 @@ config.test_exec_root = os.path.join(
 # running on an Apple M1 machine.
 if is_apple_silicon():
     config.available_features.add("apple-m1")
+    config.available_features.add("neon_dotprod")
 
 if platform.system() == "Linux":
     cpu_info = Path("/proc/cpuinfo").read_text()
@@ -43,7 +44,11 @@ if platform.system() == "Linux":
         config.available_features.add("avx512_vnni")
     if "amx_tile" in cpu_info:
         config.available_features.add("intel_amx")
-
+    if platform.processor() == "arm":
+        if "asimddp" in cpu_info:
+            config.available_features.add("neon_dotprod")
+        if "i8mm" in cpu_info:
+            config.available_features.add("neon_matmul")
 
 tool_dirs = [config.modular_tools_dir]
 tools = ["mojo"]
