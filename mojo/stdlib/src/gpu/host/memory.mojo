@@ -7,9 +7,10 @@
 
 from sys.info import sizeof
 
-from memory.unsafe import DTypePointer, Pointer
+from memory.unsafe import DTypePointer, Pointer, bitcast
 
 from ._utils import _check_error, _get_dylib_function
+from .stream import Stream, _StreamImpl
 
 # ===----------------------------------------------------------------------===#
 # Memory
@@ -130,3 +131,59 @@ fn _memset[
         val,
         count,
     )
+
+
+fn _memset_async[
+    type: DType
+](
+    device_dest: DTypePointer[type],
+    val: SIMD[type, 1],
+    count: Int,
+    stream: Stream,
+) raises:
+    alias bitwidth = type.bitwidth()
+    constrained[
+        bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
+        "bitwidth of memset type must be one of [8,16,32]",
+    ]()
+
+    @parameter
+    if bitwidth == 8:
+        _check_error(
+            _get_dylib_function[
+                fn (
+                    DTypePointer[DType.uint8], UInt8, Int, _StreamImpl
+                ) -> Result
+            ]("cuMemsetD8Async")(
+                device_dest.bitcast[DType.uint8](),
+                bitcast[DType.uint8, 1](val),
+                count * sizeof[type](),
+                stream.stream,
+            )
+        )
+    elif bitwidth == 16:
+        _check_error(
+            _get_dylib_function[
+                fn (
+                    DTypePointer[DType.uint16], UInt16, Int, _StreamImpl
+                ) -> Result
+            ]("cuMemsetD16Async")(
+                device_dest.bitcast[DType.uint16](),
+                bitcast[DType.uint16, 1](val),
+                count,
+                stream.stream,
+            )
+        )
+    elif bitwidth == 32:
+        _check_error(
+            _get_dylib_function[
+                fn (
+                    DTypePointer[DType.uint32], UInt32, Int, _StreamImpl
+                ) -> Result
+            ]("cuMemsetD32Async")(
+                device_dest.bitcast[DType.uint32](),
+                bitcast[DType.uint32, 1](val),
+                count,
+                stream.stream,
+            )
+        )

@@ -69,3 +69,11 @@ struct Stream[is_borrowed: Bool = False]:
     fn __takeinit__(inout self, inout existing: Self):
         self.stream = existing.stream
         existing.stream = _StreamImpl()
+
+    fn synchronize(inout self) raises:
+        if self.stream:
+            _check_error(
+                _get_dylib_function[fn (_StreamImpl) -> Result](
+                    "cuStreamSynchronize"
+                )(self.stream)
+            )
