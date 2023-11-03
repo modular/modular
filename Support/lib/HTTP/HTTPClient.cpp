@@ -31,6 +31,14 @@ HTTPContext::HTTPContext() : userAgent("modular-installer/0.1") {
   curl_global_init(CURL_GLOBAL_ALL);
 }
 
+void HTTPContext::setShouldVerifyTLSPeer(bool verifyTLSPeer) {
+  this->verifyTLSPeer = verifyTLSPeer;
+}
+
+void HTTPContext::setUserAgent(std::string userAgent) {
+  this->userAgent = std::move(userAgent);
+}
+
 HTTPContext::~HTTPContext() {
   // Flush/free all caches and close persistant connections
   curl_global_cleanup();
@@ -146,7 +154,8 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   // Set our user data object for our callback.
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ret);
   // Verify SSL certificate against peers
-  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, request.verifyTLSPeer ? 1 : 0);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,
+                   context->verifyTLSPeer ? 1 : 0);
   // Let the server know who we are.
   curl_easy_setopt(curl, CURLOPT_USERAGENT, context->userAgent.c_str());
 
