@@ -213,6 +213,12 @@ struct Runtime:
         """
         self._destroy()
 
+    fn __exit__(self, err: Error) -> Bool:
+        """Destroys the LLCL Runtime within a raise-able env. Return True if
+        the error is empty."""
+        self._destroy()
+        return not err
+
     fn _destroy(self):
         """Destroys the LLCL Runtime. Note that this must be explicitly called
         when the Runtime goes out of the context.
