@@ -16,11 +16,14 @@
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/REPLPythonExprUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ReferenceCounted.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
@@ -513,6 +516,10 @@ void MojoDocument::parseDocument() {
   // Build a wrapper diagnostic handler for the source manager to capture
   // diagnostics emitted when parsing the mojo file.
   struct DiagHandlerContext {
+    DiagHandlerContext(MojoDocument &doc) : doc(doc) {}
+
+    /// A reference to the document.
+    MojoDocument &doc;
     /// A set of diagnostic groups, where the first diagnostic is the main
     /// diagnostic and the rest are notes.
     std::vector<std::vector<llvm::SMDiagnostic>> smDiagnostics;
@@ -526,9 +533,13 @@ void MojoDocument::parseDocument() {
         handlerCtx.smDiagnostics.back().push_back(diag);
       return;
     }
+    // Remember errors found during parsing.
+    if (diag.getKind() == llvm::SourceMgr::DK_Error)
+      handlerCtx.doc.hasParserErrors = true;
+
     handlerCtx.smDiagnostics.push_back({diag});
   };
-  DiagHandlerContext handlerCtx;
+  DiagHandlerContext handlerCtx(*this);
   sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
 
   llvm::CrashRecoveryContext::Enable();
@@ -618,6 +629,29 @@ void MojoDocument::markDocumentParsed() {
   std::lock_guard<std::mutex> lock(isDocumentParsedMutex);
   if (!isDocumentParsed.isReady())
     isDocumentParsed.copy().emplace();
+}
+
+void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
+  // Don't check the semantics of the module if there were parser errors.
+  if (hasParserErrors || !decl.getIfOperation())
+    return;
+
+  // Clone the module this decl is in so that we don't mess with the AST, as
+  // this is used for other LSP queries.
+  OwningOpRef<ModuleOp> tempModuleOp = cloneDeclModuleForCompilation(*decl);
+
+  // Build a wrapper diagnostic handler for the source manager to capture
+  // diagnostics emitted when processing the module.
+  mlir::SourceMgrDiagnosticHandler sourceMgrDiagHandler(
+      sourceMgr, tempModuleOp->getContext());
+
+  // Run the high level verification pipeline.
+  mlir::PassManager pm(tempModuleOp->getContext());
+  buildCheckLITPipeline(pm, getRuntime(), getCompilationOptions());
+  if (failed(pm.run(*tempModuleOp))) {
+    lsp::Logger::debug("The 'check' pipeline failed to run on the module {0}",
+                       decl.getName().value_or("<unnamed>"));
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -996,7 +1030,8 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
 }
 
 void MojoTextDocument::parseDocumentImpl() {
-  getParserContext().parseFile(getSourceMgr().getMainFileID());
+  checkModuleSemantics(
+      getParserContext().parseFile(getSourceMgr().getMainFileID()));
 }
 
 const mlir::lsp::URIForFile &
@@ -1088,6 +1123,7 @@ void MojoNotebookDocument::parseDocumentImpl() {
       cell.persistentVariables = persistentVariables;
       cell.decl = ctx.parseREPLExpression(
           listener, cell.bufferId, "__mojo_repl_lsp_main", persistentVariables);
+      checkModuleSemantics(cell.decl);
       continue;
     }
 

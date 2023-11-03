@@ -11,6 +11,7 @@ add_modular_tool(mojo-lsp-server
   Protocol.cpp
 
   LINK_LIBS PRIVATE
+  KGENPipeline
   KGENToolCommon
   LLCLRuntimeGlobals
   MArchTarget

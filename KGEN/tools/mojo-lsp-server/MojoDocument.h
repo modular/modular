@@ -140,6 +140,10 @@ protected:
   /// It also sets up a SourceMgr with the given MojoDocument as its main file.
   struct Context;
 
+  /// Check the given the parsed module decl for high-level semantic issues. Any
+  /// errors are reported to the source manager.
+  void checkModuleSemantics(MojoASTDeclRef decl);
+
   //===--------------------------------------------------------------------===//
   // Derived Document Hooks
   //===--------------------------------------------------------------------===//
@@ -257,6 +261,9 @@ private:
   std::map<std::pair<mlir::lsp::Range, std::string>,
            std::vector<mlir::lsp::CodeAction>>
       fixits;
+
+  /// Indicates if the document produced parser errors.
+  bool hasParserErrors = false;
 
   /// The overall parser context.
   std::unique_ptr<Context> context;

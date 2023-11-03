@@ -5,21 +5,21 @@
   "uri":"test:///foo.mojo",
   "languageId":"mojo",
   "version":1,
-  "text":"fn function(arg: whoknowswhattypethisis):\n  ..."
+  "text":"fn foo() -> Int:\n  let i = 10"
 }}}
 // CHECK: "method": "textDocument/publishDiagnostics",
 // CHECK-NEXT: "params": {
 // CHECK-NEXT:     "diagnostics": [
 // CHECK-NEXT:       {
 // CHECK-NEXT:         "category": "Parse Error",
-// CHECK-NEXT:         "message": "use of unknown declaration 'whoknowswhattypethisis'",
+// CHECK-NEXT:         "message": "return expected at end of function with results",
 // CHECK-NEXT:         "range": {
 // CHECK-NEXT:           "end": {
-// CHECK-NEXT:             "character": 39,
+// CHECK-NEXT:             "character": 2,
 // CHECK-NEXT:             "line": 0
 // CHECK-NEXT:           },
 // CHECK-NEXT:           "start": {
-// CHECK-NEXT:             "character": 17,
+// CHECK-NEXT:             "character": 0,
 // CHECK-NEXT:             "line": 0
 // CHECK-NEXT:           }
 // CHECK-NEXT:         },

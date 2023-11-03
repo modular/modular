@@ -12,6 +12,7 @@
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/Encoding.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/Support/SourceMgr.h"
@@ -104,13 +105,11 @@ static void sortValueUses(Operation *topLevelOp) {
 /// provides the compiler a canonical form of IR coming out of the parser. This,
 /// for instance, ensures the cache key computed on parser output does not
 /// depend on whether the parser has cache hits for lazy loading.
-static void eraseUnreachableDecls(ASTDecl &decl) {
+static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
   TimeTraceScope traceScope("eraseUnreachableDecls");
-  Operation *declOp = decl.getIfOperation();
-  auto module = cast<ModuleOp>(declOp->getParentOp());
 
-  // Start by erasing unresolved imports. This puts the module in a canonical
-  // form.
+  // Start by erasing unresolved imports. This puts the module in a
+  // canonical form.
   DenseMap<StringAttr, AliasDeclOp> aliasMap;
   module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Don't purge anything from the main package if we are parsing one.
@@ -255,7 +254,7 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
   if (!sharedState.diags.isDiagnosticEmitted())
     sharedState.cacheParsedModules();
 
-  eraseUnreachableDecls(moduleDecl);
+  eraseUnreachableDecls(moduleDecl.getIfOperation(), *module);
   sortValueUses(*module);
 
   // Set the included files if requested.
@@ -357,6 +356,23 @@ LIT::importMojoFile(llvm::SourceMgr &sourceMgr, ParserConfig &config,
   auto [module, topLevelDecl] =
       importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
+}
+
+OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl) {
+  Operation *declOp = decl.getIfOperation();
+  assert(declOp && "expected decl to be an operation");
+
+  // Clone the module containing the decl.
+  IRMapping mapping;
+  ModuleOp declModule = declOp->getParentOfType<ModuleOp>();
+  OwningOpRef<ModuleOp> newModule = cast<ModuleOp>(declModule->clone(mapping));
+  Operation *newDeclOp = mapping.lookup(declOp);
+
+  // Perform the necessary post-parse transformations to prepare the module for
+  // compilation.
+  eraseUnreachableDecls(newDeclOp, *newModule);
+  sortValueUses(*newModule);
+  return newModule;
 }
 
 //===----------------------------------------------------------------------===//

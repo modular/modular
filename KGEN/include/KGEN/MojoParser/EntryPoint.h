@@ -121,6 +121,11 @@ importMojoPackage(StringRef path, StringRef packageName,
                   mlir::TimingScope &ts,
                   SmallVectorImpl<std::string> *includedFiles = nullptr);
 
+/// Clone the module containing the given decl, and prepare it for compilation.
+/// This handles stripping out any unused decls, stabilizing value uses, and
+/// performing any other necessary transformations.
+OwningOpRef<ModuleOp> cloneDeclModuleForCompilation(ASTDecl &decl);
+
 //===----------------------------------------------------------------------===//
 // ParserListener
 //===----------------------------------------------------------------------===//

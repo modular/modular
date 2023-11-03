@@ -214,6 +214,15 @@ void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
 void registerLowerToLLVMPipeline();
 
 //===----------------------------------------------------------------------===//
+// CHECKLITPipeline
+//===----------------------------------------------------------------------===//
+
+/// This populates the post-parser pipeline that checks and lowers source-level
+/// LIT constructs.
+void buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+                           const CompilationOptions &options);
+
+//===----------------------------------------------------------------------===//
 // GenerateLibraryPipeline
 //===----------------------------------------------------------------------===//
 
