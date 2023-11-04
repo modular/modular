@@ -18,10 +18,10 @@ class TestIssueStepIntoInlinedNoDebugInfo(LLDBTestBase):
         debug info. There are some instructions at line 8 and others without
         line:
 
-        0x00000001000037e4: KGEN/test/mojo-lldb-dwarf/python-tests/Inputs/step_into_inlined.mojo:12:16
-        0x0000000100003818: KGEN/test/mojo-lldb-dwarf/python-tests/Inputs/step_into_inlined.mojo
-        0x000000010000381c: KGEN/test/mojo-lldb-dwarf/python-tests/Inputs/step_into_inlined.mojo:8:1
-        0x0000000100003820: KGEN/test/mojo-lldb-dwarf/python-tests/Inputs/step_into_inlined.mojo:13:10
+        0x00000001000037e4: KGEN/test/mojo-debug/python-tests/Inputs/step_into_inlined.mojo:12:16
+        0x0000000100003818: KGEN/test/mojo-debug/python-tests/Inputs/step_into_inlined.mojo
+        0x000000010000381c: KGEN/test/mojo-debug/python-tests/Inputs/step_into_inlined.mojo:8:1
+        0x0000000100003820: KGEN/test/mojo-debug/python-tests/Inputs/step_into_inlined.mojo:13:10
         """
 
         source = SourceFile("step_into_inlined_no_debug_info.mojo")

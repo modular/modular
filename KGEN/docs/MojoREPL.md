@@ -378,7 +378,7 @@ Current Mojo commands:
 ### Testing
 
 We support llvm-lit tests in our CI for both the REPL and the jupyter
-environments. They are located in `kgen/test/mojo-lldb-repl` and
+environments. They are located in `kgen/test/mojo-repl` and
 `Kernels/examples` respectively.
 
 As a trick, when debugging llvm-lit test issues, you can produce helpful logs

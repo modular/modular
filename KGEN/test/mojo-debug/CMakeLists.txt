@@ -11,7 +11,7 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.cfg.py
 )
 
-add_modular_testsuite(check-mojo-lldb-dwarf
+add_modular_testsuite(check-mojo-debug
   TOP_LEVEL_CHECK check-mojo
   TOOLS
   mojo-sdk
@@ -19,7 +19,7 @@ add_modular_testsuite(check-mojo-lldb-dwarf
 )
 
 if(LLDB_FOUND)
-  add_dependencies(check-mojo-lldb-dwarf MojoLLDB)
+  add_dependencies(check-mojo-debug MojoLLDB)
 endif()
 
 add_subdirectory(python-tests)

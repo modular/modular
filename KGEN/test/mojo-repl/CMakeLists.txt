@@ -11,7 +11,7 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.cfg.py
 )
 
-add_modular_testsuite(check-mojo-lldb-repl
+add_modular_testsuite(check-mojo-repl
   TOP_LEVEL_CHECK check-mojo
   TOOLS
   mojo-sdk
@@ -19,5 +19,5 @@ add_modular_testsuite(check-mojo-lldb-repl
 )
 
 if(LLDB_FOUND)
-  add_dependencies(check-mojo-lldb-repl MojoLLDB)
+  add_dependencies(check-mojo-repl MojoLLDB)
 endif()

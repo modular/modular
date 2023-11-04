@@ -14,7 +14,7 @@ if config.root.host_os == "Windows":
     config.unsupported = True
 
 # name: The name of this test suite.
-config.name = "mojo-lldb-dwarf"
+config.name = "mojo-debug"
 
 # suffixes: A list of file extensions to treat as test files.
 config.suffixes = [".lldb"]
@@ -24,7 +24,7 @@ config.test_source_root = os.path.dirname(__file__)
 
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(
-    config.modular_obj_root, "KGEN", "test", "mojo-lldb-dwarf"
+    config.modular_obj_root, "KGEN", "test", "mojo-debug"
 )
 
 config.substitutions.append(

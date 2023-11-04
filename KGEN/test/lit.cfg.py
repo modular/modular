@@ -28,12 +28,12 @@ config.excludes.add("pytests")
 
 # These directories have their own test targets.
 config.excludes.add("kgen")
+config.excludes.add("mojo-debug")
 config.excludes.add("mojo-integration")
 config.excludes.add("mojo-jupyter")
-config.excludes.add("mojo-lldb-dwarf")
-config.excludes.add("mojo-lldb-repl")
 config.excludes.add("mojo-lsp-server")
 config.excludes.add("mojo-parser")
+config.excludes.add("mojo-repl")
 
 tool_dirs = [
     config.modular_tools_dir,
