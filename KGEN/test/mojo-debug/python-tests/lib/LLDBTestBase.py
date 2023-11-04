@@ -10,7 +10,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generator, Optional, Union
-from .debugger import lldb, debugger
+
+from .debugger import debugger, lldb
 
 
 def handle_command_for_context(command: str, context: Any) -> bool:
@@ -72,9 +73,7 @@ class StopContext:
 
     def handle_command(self, command: str) -> bool:
         """Handle the given command using the current frame as context"""
-        return handle_command_for_context(
-            command, self.target.GetDebugger(), self.frame
-        )
+        return handle_command_for_context(command, self.frame)
 
 
 class SourceFile:
