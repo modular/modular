@@ -200,6 +200,7 @@ def PackageOp : LITOp<"package", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sourceName,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // The module containing the pre-elaboration IR of this package when it was
     // compiled.
@@ -217,10 +218,10 @@ def PackageOp : LITOp<"package", [
   }];
 
   let builders = [
-    OpBuilder<(ins "StringAttr":$name)>,
+    OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName)>,
   ];
   let assemblyFormat = [{
-    $sym_name custom<PackageArchiveArray>($archives) attr-dict-with-keyword
+    $sym_name `` custom<PackageArchiveArray>($archives) attr-dict-with-keyword
     $bodyRegion
   }];
   let skipDefaultBuilders = 1;

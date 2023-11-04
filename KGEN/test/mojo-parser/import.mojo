@@ -32,6 +32,7 @@ import builtin
 # CHECK:  kgen.call @"$test_package"::@"$__init__"::@"method_defined_in_init()"()
 
 # CHECK-LABEL: lit.package @"$test_package"
+# CHECK-SAME: sourceName = "test_package"
 # CHECK:  lit.file_module @"$module"
 # CHECK:    lit.func @"function()"
 # CHECK:      lit.func @"call_nested_function()"
