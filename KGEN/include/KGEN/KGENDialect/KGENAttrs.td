@@ -1003,4 +1003,34 @@ def KGEN_PackageArchiveArrayAttr
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// SourceNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_SourceNameAttr : KGENAttr<"SourceName", "source_name"> {
+  let summary = "full source name information about a symbol";
+  let description = [{
+    The `#kgen.source_name` attribute contains perserved source name information
+    about a symbol and its lineage, e.g. including parent symbols. It contains
+    all information that can be used to discriminate a function: its base name,
+    its argument type strings, its parameter type strings, the elaborated values
+    of the parameters, and a pointer to its parent.
+  }];
+
+  let parameters = (ins
+    "StringAttr":$name,
+    OptionalArrayRefParameter<"SourceNameAttr">:$paramTypes,
+    OptionalArrayRefParameter<"SourceNameAttr">:$argTypes,
+    OptionalArrayRefParameter<"StringAttr">:$paramValues,
+    OptionalParameter<"SourceNameAttr">:$parent
+  );
+  let assemblyFormat = [{
+    `<` $name
+    `[` (`]`) : ($paramTypes^ `]`)? ``
+    `(` (`)`) : ($argTypes^ `)`)? ``
+    `[` (`]`) : ($paramValues^ `]`)?
+    (`from` $parent^)? `>`
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

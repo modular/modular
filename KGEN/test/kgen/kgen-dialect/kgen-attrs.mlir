@@ -1,6 +1,21 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 // RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
+// CHECK-DAG: #builtin_name = #kgen.source_name<"builtin"[]()[]>
+// CHECK-DAG: #int_name = #kgen.source_name<"int"[]()[] from #builtin_name>
+// CHECK-DAG: #simd_name = #kgen.source_name<"simd"[]()[] from #builtin_name>
+// CHECK-DAG: #Int_name = #kgen.source_name<"Int"[]()[] from #int_name>
+// CHECK-DAG: #SIMD_name = #kgen.source_name<"SIMD"[#Int_name]()[] from #simd_name>
+// CHECK-DAG: #func_name = #kgen.source_name<"func"[](#SIMD_name)["1 : index"]>
+#builtin_name = #kgen.source_name<"builtin"[]()[]>
+#int_name = #kgen.source_name<"int"[]()[] from #builtin_name>
+#simd_name = #kgen.source_name<"simd"[]()[] from #builtin_name>
+#Int_name = #kgen.source_name<"Int"[]()[] from #int_name>
+#SIMD_name = #kgen.source_name<"SIMD"[#Int_name]()[] from #simd_name>
+#func_name = #kgen.source_name<"func"[](#SIMD_name)["1 : index"]>
+
+"some.op"() {sourceName = #func_name} : () -> ()
+
 // CHECK: *"mangled_fn{{.*}}$int
 "some.op"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!kgen.declref<_\22$int\22::_Int>])" : index>} : () -> ()
 
