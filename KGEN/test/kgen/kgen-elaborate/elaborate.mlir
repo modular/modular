@@ -2094,3 +2094,22 @@ kgen.generator @kernel() {
   kgen.call @metadata<16, 16, 8>() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @func<x>() -> !pop.simd<x, f32> {
+  kgen.unreachable
+}
+
+kgen.generator @create<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.variant<T, i1> {
+  %0 = kgen.variant.create %arg0, 0 : <T, i1>
+  kgen.return %0 : !kgen.variant<T, i1>
+}
+
+// CHECK-LABEL: kgen.func export @entry
+kgen.generator export @entry() {
+  // CHECK: constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <#kgen.variant<:<index>() -> !pop.simd<*(0,0), f32> @func, 0>>
+  kgen.param.apply value = [(!kgen.signature<<index>() -> !pop.simd<*(0,0), f32>>) -> !kgen.variant<<index>() -> !pop.simd<*(0,0), f32>, i1>: @create<:type <index>() -> !pop.simd<*(0,0), f32>>](@func)
+  kgen.param.constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <value>
+  kgen.return
+}
