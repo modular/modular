@@ -43,8 +43,6 @@
 
 #define DEBUG_TYPE "kgen-elaborator"
 
-static constexpr bool EnableTracing = false;
-
 using namespace M;
 using namespace KGEN;
 using namespace LLCL;
@@ -580,6 +578,12 @@ private:
   /// nodes.
   ElaborationState processParamForkOp(ImplNode *parent, ParamForkOp op);
 
+  /// Parameter constants are the only operation that can bridge the parameter
+  /// domain into the runtime domain. Use it to root concretization of nested
+  /// symbol references.
+  template <typename OpT>
+  ElaborationState processParamConstantOp(ImplNode *parent, OpT op);
+
   /// Spawn a clone for kgen.param.fork. This creates a new FuncOp that is a
   /// sibling to the parent of the kgen.param.fork op. It replaces the
   /// kgen.param.fork with a param.declare to allow specialization to succeed.
@@ -1000,7 +1004,6 @@ ErrorOrSuccess ElaboratorImpl::evaluateFunctions(ImplNode *inode,
 // ElaboratorImpl::processParamForkOp
 //===----------------------------------------------------------------------===//
 
-/// Process a kgen.param.fork op.
 ElaborationState ElaboratorImpl::processParamForkOp(ImplNode *parent,
                                                     ParamForkOp op) {
   auto _ = logger.scope("Processing ParamForkOp");
@@ -1035,6 +1038,52 @@ ElaborationState ElaboratorImpl::processParamForkOp(ImplNode *parent,
   parent->getEvaluator().setOrOverwriteParameterValue(
       op.getParamDecl(), forkValuesAttr.getValues().front());
   op.erase();
+  return ElaborationState::advance();
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::processParamConstantOp
+//===----------------------------------------------------------------------===//
+
+template <typename OpT>
+ElaborationState ElaboratorImpl::processParamConstantOp(ImplNode *parent,
+                                                        OpT op) {
+  Attribute attr;
+  HANDLE_EVALUATOR_CONC(attr, parent, op->getLoc(), op.getValue());
+  auto value = cast<TypedAttr>(attr);
+
+  // Root elaboration at the constant value and concretize any generator
+  // references inside it. Multi-versioning is disallowed.
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](SymbolConstantAttr cst) -> std::pair<Attribute, WalkResult> {
+        // Ignore parametric constants.
+        if (!cst.getType().getInputParamTypes().empty())
+          return {cst, WalkResult::advance()};
+        std::optional<ErrorTreeOr<FuncOp>> func = getConcreteFunction(
+            parent, op.getLoc(), cast<FlatSymbolRefAttr>(cst.getSymbol()),
+            cst.getParamValues());
+        if (!func) {
+          return {cst, WalkResult::interrupt()};
+        }
+        if (func->isError()) {
+          parent->setToError(func->takeError());
+          return {cst, WalkResult::interrupt()};
+        }
+
+        return {SymbolConstantAttr::get(
+                    FlatSymbolRefAttr::get(func->takeValue().getSymNameAttr()),
+                    cst.getType()),
+                WalkResult::advance()};
+      });
+  value = cast_or_null<TypedAttr>(replacer.replace(value));
+  if (parent->error)
+    return ElaborationState::error();
+  if (!value)
+    return ElaborationState::skipNode();
+
+  op.getResult().setType(value.getType());
+  op.setValueAttr(value);
   return ElaborationState::advance();
 }
 
@@ -1779,8 +1828,8 @@ ElaborationState ElaboratorImpl::processScope(ImplNode *node,
     for (Operation *op : item.ops)
       logger << *op << "\n";
   });
-  TimeTraceScope<EnableTracing> traceScope(
-      "processScope", std::to_string(item.ops.size()) + " ops");
+  TimeTraceScope<false> traceScope("processScope",
+                                   std::to_string(item.ops.size()) + " ops");
 
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
@@ -1803,31 +1852,26 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
   logger.logOp("Op", op);
 
   if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processParamDeclareOp");
     return processParamDeclareOp(node, declare);
   } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processParamResultBindOp");
     return processParamResultBindOp(node, bind);
   } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processParamForkOp");
     return processParamForkOp(node, fork);
+  } else if (auto constant = dyn_cast<ParamConstantOp>(op)) {
+    return processParamConstantOp(node, constant);
+  } else if (auto constant = dyn_cast<ParamMaterializeOp>(op)) {
+    return processParamConstantOp(node, constant);
   } else if (auto rebindOp = dyn_cast<RebindOp>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processRebindOp");
     return processRebindOp(node, rebindOp);
   } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processParamAssertOp");
     return processParamAssertOp(node, assertOp);
   } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processParamIfOp");
     return processParamIfOp(node, ifOp);
   } else if (auto call = dyn_cast<GeneratorUserOpInterface>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processCallOp");
     return processCallOp(node, call);
   } else if (auto evaluate = dyn_cast<ParamEvaluateOp>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processEvaluateOp");
     return processEvaluateOp(node, evaluate);
   } else {
-    TimeTraceScope<EnableTracing> traceScope("processGenericOp");
     // NOTE: We only need to elaborate locations manually for generic ops if we
     // don't do it globally.
     return processGenericOp(node, op);
@@ -2319,14 +2363,14 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
 LogicalResult ElaboratorImpl::run(ModuleOp theModule,
                                   ArrayRef<GeneratorOp> primaryGenerators) {
   LLVM_DEBUG(logger << "Starting Elaboration\n");
+  MLIRContext *ctx = theModule.getContext();
 
   // Find any kgen.func we have already - they're already elaborated, and we do
   // not want to re-process them. Add concrete ImplNodes for each one.
   for (auto func : theModule.getOps<FuncOp>())
     g.addConcreteFunc(func);
 
-  auto emptyInputParamKey =
-      ParameterExprArrayAttr::get(theModule.getContext(), {});
+  auto emptyInputParamKey = ParameterExprArrayAttr::get(ctx, {});
   std::vector<AnyAsyncValueRef> primaryChs;
   std::vector<std::unique_ptr<ImplNode>> rootNodes;
   std::vector<ParamNode *> primaryNodes;
@@ -2451,7 +2495,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
         symtab->insert(func);
       };
 
-      Builder b(theModule.getContext());
+      Builder b(ctx);
       if (node.inputParams.empty() && first) {
         // Rename the first successful function for concrete top-level
         // generators, if there is one. Sanitize the symbol name if requested.
@@ -2503,23 +2547,27 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   // unregistered operations.  It also doesn't support batch renaming.
   {
     TimeTraceScope traceScope("replaceCallSymbols");
+    mlir::AttrTypeReplacer renamer;
+    renamer.addReplacement([&](SymbolConstantAttr cst) {
+      auto it = funcsToRename.find(cst.getSymbol().getRootReference());
+      if (it == funcsToRename.end())
+        return cst;
+      return SymbolConstantAttr::get(FlatSymbolRefAttr::get(it->second),
+                                     cst.getType());
+    });
+    ThreadLocalCache<mlir::AttrTypeReplacer> renamers(
+        renamer, ctx->isMultithreadingEnabled() ? ctx->getNumThreads() : 1);
     mlir::parallelForEach(
-        theModule.getContext(), theModule.getOps<FuncOp>(),
-        [&funcsToRename, sanitize = config.sanitizeSymbolNames](FuncOp func) {
+        ctx, theModule.getOps<FuncOp>(),
+        [&, sanitize = config.sanitizeSymbolNames](FuncOp func) {
           TimeTraceScope traceScope("replaceSymbolsIn", [func]() mutable {
             return func.getSymName().str();
           });
           func.getBodyRegion().walk([&](Operation *op) {
-            // If this is a reference to a function that got renamed, update its
-            // target.
-            if (auto call = dyn_cast<GeneratorUserOpInterface>(op)) {
-              auto callee = cast<SymbolConstantAttr>(call.getCallee());
-              if (StringAttr newName = funcsToRename.lookup(
-                      cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr())) {
-                call.updateCallee(SymbolConstantAttr::get(
-                    FlatSymbolRefAttr::get(newName), callee.getType()));
-              }
-            } else if (auto addr = dyn_cast<GlobalAddressOp>(op)) {
+            renamers.getThreadLocalCache().replaceElementsIn(
+                op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
+                /*replaceTypes=*/true);
+            if (auto addr = dyn_cast<GlobalAddressOp>(op)) {
               if (sanitize)
                 addr.setGlobalAttr(FlatSymbolRefAttr::get(sanitizeSymbolToAlnum(
                     addr.getGlobalAttr().getRootReference())));

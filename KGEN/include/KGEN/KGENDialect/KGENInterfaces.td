@@ -174,10 +174,6 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
       Get the parameter expression of the operation's callee.
     }], "TypedAttr", "getCallee", (ins)>,
     InterfaceMethod<[{
-    }], "void", "updateCallee", (ins "SymbolConstantAttr":$callee), [{}], [{
-      $_op.setCalleeAttr(callee);
-    }]>,
-    InterfaceMethod<[{
       Returns whether this call flavour is allowed to exist post-elaboration as
       a child of a `kgen.func` operation.
     }], "bool", "isAllowedInFunc", (ins), [{}], [{ return true; }]>,

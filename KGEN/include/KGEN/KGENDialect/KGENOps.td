@@ -396,7 +396,9 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]>,
+    NoParamDecls {
   let summary = "create a constant value from a parameter value";
   let description = [{
     The `kgen.param.constant` operation materializes the value of a parameter
@@ -431,8 +433,10 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
 // ParamMaterializeOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamMaterializeOp : KGENOp<"param.materialize",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+def KGEN_ParamMaterializeOp : KGENOp<"param.materialize", [
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]>,
+    NoParamDecls {
   let summary = [{
     The `kgen.param.materialize` operation materializes the value of a parameter
     expression as an SSA value that may be used by other operations. It bridges
