@@ -1,7 +1,8 @@
-# Mojo LLDB DWARF Tests
+# Mojo Debug Tests
 
-There are two main ways to test LLDB's ability to parse DWARF and provide a
-nice debugging experience: llvm-lit tests and python SB tests.
+There are two main ways to test LLDB's ability to parse DWARF and other debug
+info sections and provide a nice debugging experience: llvm-lit tests and python
+SB tests.
 
 ## llvm-lit tests
 
