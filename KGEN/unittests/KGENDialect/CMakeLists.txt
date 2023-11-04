@@ -28,6 +28,7 @@ add_modular_unittest(
   MSupportGlobals
 
   MLIRIR
+  MLIRParser
   MLIRControlFlowInterfaces
   MLIRInferTypeOpInterface
 )
