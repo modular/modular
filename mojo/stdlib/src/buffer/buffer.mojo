@@ -444,11 +444,11 @@ fn _compute_nd_index[
 
     @unroll
     for idx in range(rank - 1):
-        result[rank - idx - 2] = result[rank - idx - 1] // buf.dim(
-            rank - idx - 1
+        result[rank - idx - 2] = result[rank - idx - 1]._positive_div(
+            buf.dim(rank - idx - 1)
         )
-        result[rank - idx - 1] = result[rank - idx - 1] % buf.dim(
-            rank - idx - 1
+        result[rank - idx - 1] = result[rank - idx - 1]._positive_rem(
+            buf.dim(rank - idx - 1)
         )
     return result
 
