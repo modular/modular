@@ -80,6 +80,7 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<StrAttr>:$linkageName,
     // The name of this function in the pre-elaborated IR stage.
     OptionalAttr<StrAttr>:$preElaborationName,
+    OptionalAttr<StrAttr>:$sourceName,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
   );
@@ -123,7 +124,8 @@ def LIT_FuncOp : LITOp<"func", [
   let builders = [
     // Create a func with a region and a body block.
     OpBuilder<(ins)>,
-    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
+    OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName,
+                   "SignatureType":$signature,
                    CArg<"SpecialFunctionKind", "{}">:$specialFnID)>,
   ];
 

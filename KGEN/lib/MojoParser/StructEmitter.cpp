@@ -53,9 +53,10 @@ LIT::FuncOp StructEmitter::createFunction(
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParameters, /*resultParams=*/{}, functionType, argConventions,
       fnEffects, metadata, [&] { return mlir::emitError(location); });
-  StringAttr nameAttr =
-      DeclResolver::getMangledName(builder.getStringAttr(name), signature);
-  auto funcOp = builder.create<LIT::FuncOp>(nameAttr, signature, specialFnID);
+  StringAttr sourceName = builder.getStringAttr(name);
+  StringAttr mangledName = DeclResolver::getMangledName(sourceName, signature);
+  auto funcOp = builder.create<LIT::FuncOp>(mangledName, sourceName, signature,
+                                            specialFnID);
 
   // Set the attributes on the FuncOp in bulk.
   NamedAttrList attrs = funcOp->getAttrDictionary();

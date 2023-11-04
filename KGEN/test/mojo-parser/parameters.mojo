@@ -200,13 +200,13 @@ fn testParamSubst():
 
 
 # Test parameter substitution.
-# CHECK-LABEL: lit.func @"fnToCall{{.*}}"
-# CHECK-SAME: <[[SIZE:.*_size]][size], {{.*}}[arr]: array<[[SIZE]], f32>>()
+# CHECK-LABEL: lit.func @"fnToCall{{.*}}"<
+# CHECK-SAME: [[SIZE:.*_size]][size], {{.*}}[arr]: array<[[SIZE]], f32>>()
 fn fnToCall[size: __mlir_type.index, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
   pass
 
-# CHECK: lit.func @"fnWithCall{{.*}}"
-# CHECK-SAME: <[[ARR:.*_array]][array]: array<10, f32>
+# CHECK: lit.func @"fnWithCall{{.*}}"<
+# CHECK-SAME: [[ARR:.*_array]][array]: array<10, f32>
 fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: kgen.call @"$parameters"::@"fnToCall{{.*}}"<10, :array<10, f32> [[ARR]]>()
    fnToCall[Int(10).value, array]()
@@ -325,8 +325,8 @@ fn memoryParam[value: MemoryType]():
 # First-class functions as parameters.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"takeCallable{{.*}}"
-# CHECK-SAME: <[[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow, |) -> index>>(%a[a]: index borrow) -> index
+# CHECK-LABEL: lit.func @"takeCallable{{.*}}"<
+# CHECK-SAME: [[CALLABLE:.*_callable]][callable]: !lit.signature<(index borrow, |) -> index>>(%a[a]: index borrow) -> index
 fn takeCallable[
      callable: fn(__mlir_type.index) -> __mlir_type.index
    ](a: __mlir_type.index) -> __mlir_type.index:
@@ -379,8 +379,8 @@ fn idx_result_params[a: Int -> b: Int, c: Int]() -> Int:
   # CHECK-NEXT: kgen.param.result_bind<{{.*}}*?, {{.*}}*?>
   return a+2
 
-# CHECK-LABEL: lit.func @"parametric_result_params{{.*}}"
-# CHECK-SAME: <[[T:.*_T]][T]: type, [[INPUT:.*_input]][input]: !kgen.paramref<[[T]]> ->
+# CHECK-LABEL: lit.func @"parametric_result_params{{.*}}"<
+# CHECK-SAME: [[T:.*_T]][T]: type, [[INPUT:.*_input]][input]: !kgen.paramref<[[T]]> ->
 fn parametric_result_params[T: AnyType, input: T -> out: T]():
     # CHECK: lit.param_return<:!kgen.paramref<[[T]]> [[INPUT]]>
     # CHECK: kgen.param.result_bind<:!kgen.paramref<[[T]]> *?>
@@ -582,8 +582,8 @@ fn dependent_variadic_parameter[
     type: __mlir_type.`!kgen.mlirtype`, *values: type
 ](): pass
 
-# CHECK-LABEL: lit.func @"pass_variadic{{.*}}"
-# CHECK-SAME: <[[ELEMS:.*_elems]][elems]: variadic<index>>
+# CHECK-LABEL: lit.func @"pass_variadic{{.*}}"<
+# CHECK-SAME: [[ELEMS:.*_elems]][elems]: variadic<index>>
 fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
     # CHECK-NEXT: kgen.call @"$parameters"::@"variadic_parameter{{.*}}"<:variadic<index> [[ELEMS]]>
     _ = variadic_parameter[elems]()
@@ -855,8 +855,8 @@ fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
 fn test_mem_only_default_param():
     mem_only_default_param()
 
-# CHECK-LABEL: lit.func @"param_default{{.*}}"
-# CHECK-SAME: <[[X:.*]][x]: !Int = #lit.struct<{value = 1}>>(%y[y]: !Int borrow = [[X]])
+# CHECK-LABEL: lit.func @"param_default{{.*}}"<
+# CHECK-SAME: [[X:.*]][x]: !Int = #lit.struct<{value = 1}>>(%y[y]: !Int borrow = [[X]])
 fn param_default[x: Int = 1](y: Int = x):
     pass
 

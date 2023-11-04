@@ -803,7 +803,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
 
 /// Build a function in a default configuration, used by member synthesization.
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
-                        StringAttr name, SignatureType signature,
+                        StringAttr name, StringAttr sourceName,
+                        SignatureType signature,
                         SpecialFunctionKind specialFnKind) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
@@ -816,7 +817,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
-        StringAttr(), StringAttr(), DocStringAttr(), DictionaryAttr::get(ctx));
+        StringAttr(), StringAttr(), sourceName, DocStringAttr(),
+        DictionaryAttr::get(ctx));
 
   result.regions[0]->push_back(new Block());
 }

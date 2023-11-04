@@ -553,7 +553,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
     auto sig = LITSignatureType::get(b.getContext());
     auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
       b.setInsertionPoint(op);
-      auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, sig);
+      auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, StringAttr(), sig);
       fn.getBodyRegion().takeBody(body);
 
       // If we have a debuginfo scope available, we update the ops in the body.

@@ -33,7 +33,7 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 # CHECK-NEXT: lit.func @"__copyinit__(
 # CHECK-SAME:   %self[self]: !kgen.pointer<{{.*}}> init_self,
 # CHECK-SAME:   %other[other]: !kgen.pointer<{{.*}}> borrow_in_mem
-# CHECK-SAME: ) -> !kgen.none attributes {specialFnKind = 3 : i8
+# CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT:   [[V0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
 # CHECK-NEXT:   [[V1:%.*]] = lit.struct.gep %other[field0] : <!MemType>
 # CHECK-NEXT:   [[V2:%.*]] = kgen.call @{{.*}}__copyinit__{{.*}}"([[V0]], [[V1]])
@@ -53,7 +53,7 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 # CHECK-NEXT: lit.func @"__moveinit__(
 # CHECK-SAME:   %self[self]: !kgen.pointer<{{.*}}> init_self,
 # CHECK-SAME:   %other[other]: !kgen.pointer<{{.*}}> owned_in_mem
-# CHECK-SAME: ) -> !kgen.none attributes {specialFnKind = 4 : i8
+# CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 4 : i8
 # CHECK-NEXT:   [[W0:%.*]] = lit.struct.gep %self[field0] : <!MemType>
 # CHECK-NEXT:   [[W1:%.*]] = lit.struct.gep %other[field0] : <!MemType>
 # CHECK-NEXT:   [[W2:%.*]] = kgen.call @{{.*}}__moveinit__{{.*}}"([[W0]], [[W1]])
