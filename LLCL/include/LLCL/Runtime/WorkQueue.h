@@ -259,7 +259,7 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 std::unique_ptr<WorkQueue>
 createThreadPoolWorkQueue(size_t numThreads = 0, bool mainWillDonate = true,
                           bool paranoid = false,
-                          std::string_view poolName = "LLCL Thread ");
+                          std::string_view poolName = "🔥 Thread");
 
 } // namespace M::LLCL
 
