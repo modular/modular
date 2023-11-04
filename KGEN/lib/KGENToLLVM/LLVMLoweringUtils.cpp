@@ -949,6 +949,12 @@ Value KGEN::convertParameterToLLVM(
     return lowerStringToGlobalConstant(strAttr, b, tc, *imc);
   }
 
+  if (auto cst = dyn_cast<SymbolConstantAttr>(attr)) {
+    return b.create<LLVM::AddressOfOp>(
+        tc.convertType(cst.getType()),
+        cast<FlatSymbolRefAttr>(cst.getSymbol()));
+  }
+
   //===--------------------------------------------------------------------===//
   // POP
 
