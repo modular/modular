@@ -32,8 +32,6 @@ using namespace KGEN;
 // Parameter Type and Value Printing and Parsing
 //===----------------------------------------------------------------------===//
 
-/// Return the string form for an attribute value that is printed in a <>
-/// context in the .mlir file.
 std::string KGEN::getParamAsString(Attribute value) {
   SmallVector<char, 128> result;
   {
@@ -46,6 +44,22 @@ std::string KGEN::getParamAsString(Attribute value) {
     }
   }
   return std::string(result.data(), result.size());
+}
+
+StringAttr KGEN::getParamTypeAsString(TypedAttr value) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  StreamAsmPrinter p(os);
+  printColonTypeParamValue(p, value);
+  return StringAttr::get(value.getContext(), str);
+}
+
+StringAttr KGEN::getTypeAsString(Type type) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  StreamAsmPrinter p(os);
+  printKGENType(p, type);
+  return StringAttr::get(type.getContext(), str);
 }
 
 /// Parse a parameter of type kgen.string.

@@ -43,6 +43,12 @@ ExportMap getExportedSymbols(ModuleOp module);
 /// context in the .mlir file.
 std::string getParamAsString(Attribute value);
 
+/// Print the value as colon type parameter value into a string.
+StringAttr getParamTypeAsString(TypedAttr value);
+
+/// Print the type as a KGEN type.
+StringAttr getTypeAsString(Type type);
+
 /// Parse a parameter of type kgen.string.
 ParseResult parseStringParam(AsmParser &p, TypedAttr &value);
 

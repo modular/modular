@@ -1024,6 +1024,7 @@ def KGEN_SourceNameAttr : KGENAttr<"SourceName", "source_name"> {
     OptionalArrayRefParameter<"StringAttr">:$paramValues,
     OptionalParameter<"SourceNameAttr">:$parent
   );
+
   let assemblyFormat = [{
     `<` $name
     `[` (`]`) : ($paramTypes^ `]`)? ``
@@ -1031,6 +1032,18 @@ def KGEN_SourceNameAttr : KGENAttr<"SourceName", "source_name"> {
     `[` (`]`) : ($paramValues^ `]`)?
     (`from` $parent^)? `>`
   }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "StringAttr":$name,
+        "ArrayRef<SourceNameAttr>":$paramTypes,
+        "ArrayRef<SourceNameAttr>":$argTypes,
+        "ArrayRef<StringAttr>":$paramValues,
+        "SourceNameAttr":$parent), [{
+      return $_get(name.getContext(), name, paramTypes, argTypes, paramValues,
+                   parent);
+    }]>
+  ];
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
