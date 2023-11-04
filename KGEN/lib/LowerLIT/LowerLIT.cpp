@@ -43,6 +43,10 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
+//===----------------------------------------------------------------------===//
+// Utilities
+//===----------------------------------------------------------------------===//
+
 static void buildDebugInfoValue(OpBuilder &b, Operation *op, StringRef varName,
                                 DebugInfo::DIFileAttr fileAttr, Value value,
                                 Type type) {
@@ -70,6 +74,18 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
   // Flatten the symbol name into a single string.
   return SymbolRefAttr::get(ref.getContext(), getFlattenedSymbolName(ref));
 }
+
+//===----------------------------------------------------------------------===//
+// Source information propagation
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct SourceNames {};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// Op Lowering
+//===----------------------------------------------------------------------===//
 
 static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
   TypedValue<VariantType> variantOperand = handleVariantOp.getVariant();
@@ -308,6 +324,108 @@ lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
   return success();
 }
 
+/// Add a kgen.link directive that shadows the package's name if the package was
+/// precompiled. If this package is a source package, do nothing.
+static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
+                                             SymbolTable &symtab) {
+  // If the package wasn't compiled for anything, we currently treat it as a
+  // "source package." This means that there are no link directives to insert.
+  // FIXME: Once "source packages" no longer exist, insert a link directive
+  // regardless, and compile for the build target on-demand.
+  PackageArchiveArrayAttr archives = package.getArchivesAttr();
+  if (archives.getValue().empty())
+    return success();
+
+  // We have one or more archives, so insert the link directive.
+  OpBuilder b(package.getContext());
+  auto linkOp =
+      b.create<PackageLinkOp>(package.getLoc(), package.getSymNameAttr(),
+                              package.getPreElaborationModuleAttr(),
+                              package.getCompiledEnvAttr(), archives);
+
+  // Insert the link op into the symbol table right where the package was. Don't
+  // erase the package op cause we need to do some cleanup still, but we do
+  // still want to remove it from the symbol table.
+  auto iter = package->getIterator();
+  symtab.remove(package);
+  symtab.insert(linkOp, iter);
+
+  return success();
+}
+
+/// Lower the constructs within the body of a module decl.
+static LogicalResult
+lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
+                DenseMap<StringAttr, StringAttr> &renamedSymbols,
+                Block::iterator symTableIt = {},
+                const Twine &parentPrefix = {}) {
+  bool isTopLevel = symTableIt == Block::iterator();
+  for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
+    // If we are already in the symbol table, use the the operations iterator.
+    auto opSymTableIt = isTopLevel ? op.getIterator() : symTableIt;
+
+    LogicalResult result =
+        TypeSwitch<Operation *, LogicalResult>(&op)
+            .Case([&](LIT::FuncOp op) {
+              return lowerLITFunc(op, symbolTable, renamedSymbols, opSymTableIt,
+                                  parentPrefix);
+            })
+            .Case([&](StructDeclOp op) {
+              return lowerStructDecl(op, symbolTable, renamedSymbols,
+                                     opSymTableIt);
+            })
+            .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
+              // Lower the constructs within the body.
+              Block *fileBody = op.getBody();
+              if (failed(lowerModuleDecl(fileBody, symbolTable, renamedSymbols,
+                                         opSymTableIt,
+                                         parentPrefix + op.getName() + "::")))
+                return failure();
+
+              // If the package has already been compiled, insert a kgen.link
+              // directive.
+              if constexpr (std::is_same_v<decltype(op), LIT::PackageOp>)
+                if (failed(addPackageLinkDirective(op, symbolTable)))
+                  return failure();
+
+              // Inline the remaining body of the file into the parent.
+              op->getBlock()->getOperations().splice(
+                  op->getIterator(), fileBody->getOperations(),
+                  fileBody->begin(), fileBody->end());
+              // Make sure to remove the op from the symbol table if needed.
+              if (op->getParentOp() == symbolTable.getOp())
+                symbolTable.erase(op);
+              else
+                op->erase();
+              return mlir::success();
+            })
+            .Case<AliasDeclOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
+                [&](auto op) {
+                  op->erase();
+                  return mlir::success();
+                })
+            .Case([&](GlobalOp op) {
+              flattenAndRenameSymbol(op, symbolTable, opSymTableIt);
+              if (StringAttr linkageName =
+                      renamedSymbols.lookup(op.getSymNameAttr()))
+                op.setSymNameAttr(linkageName);
+              return mlir::success();
+            })
+            .Case([&](mlir::SymbolOpInterface symbol) {
+              flattenAndRenameSymbol(symbol, symbolTable, opSymTableIt);
+              return mlir::success();
+            })
+            .Default(mlir::success());
+    if (failed(result))
+      return failure();
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Type lowering
+//===----------------------------------------------------------------------===//
+
 static void lowerAttributesAndTypes(
     Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols) {
   mlir::AttrTypeReplacer replacer;
@@ -333,6 +451,10 @@ static void lowerAttributesAndTypes(
   replacer.recursivelyReplaceElementsIn(
       op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
 }
+
+//===----------------------------------------------------------------------===//
+// Global Variables
+//===----------------------------------------------------------------------===//
 
 /// Global variables have initializers that can reference other global
 /// variables. This function will pass over all global variable declarations and
@@ -472,104 +594,6 @@ orderAndLowerGlobalVariables(ModuleOp module,
     return mlir::emitError(
         module.getLoc(),
         "cyclic dependencies between global variables in 'lower-lit' pass");
-  }
-  return success();
-}
-
-/// Add a kgen.link directive that shadows the package's name if the package was
-/// precompiled. If this package is a source package, do nothing.
-static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
-                                             SymbolTable &symtab) {
-  // If the package wasn't compiled for anything, we currently treat it as a
-  // "source package." This means that there are no link directives to insert.
-  // FIXME: Once "source packages" no longer exist, insert a link directive
-  // regardless, and compile for the build target on-demand.
-  PackageArchiveArrayAttr archives = package.getArchivesAttr();
-  if (archives.getValue().empty())
-    return success();
-
-  // We have one or more archives, so insert the link directive.
-  OpBuilder b(package.getContext());
-  auto linkOp =
-      b.create<PackageLinkOp>(package.getLoc(), package.getSymNameAttr(),
-                              package.getPreElaborationModuleAttr(),
-                              package.getCompiledEnvAttr(), archives);
-
-  // Insert the link op into the symbol table right where the package was. Don't
-  // erase the package op cause we need to do some cleanup still, but we do
-  // still want to remove it from the symbol table.
-  auto iter = package->getIterator();
-  symtab.remove(package);
-  symtab.insert(linkOp, iter);
-
-  return success();
-}
-
-/// Lower the constructs within the body of a module decl.
-static LogicalResult
-lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
-                DenseMap<StringAttr, StringAttr> &renamedSymbols,
-                Block::iterator symTableIt = {},
-                const Twine &parentPrefix = {}) {
-  bool isTopLevel = symTableIt == Block::iterator();
-  for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
-    // If we are already in the symbol table, use the the operations iterator.
-    auto opSymTableIt = isTopLevel ? op.getIterator() : symTableIt;
-
-    LogicalResult result =
-        TypeSwitch<Operation *, LogicalResult>(&op)
-            .Case([&](LIT::FuncOp op) {
-              return lowerLITFunc(op, symbolTable, renamedSymbols, opSymTableIt,
-                                  parentPrefix);
-            })
-            .Case([&](StructDeclOp op) {
-              return lowerStructDecl(op, symbolTable, renamedSymbols,
-                                     opSymTableIt);
-            })
-            .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
-              // Lower the constructs within the body.
-              Block *fileBody = op.getBody();
-              if (failed(lowerModuleDecl(fileBody, symbolTable, renamedSymbols,
-                                         opSymTableIt,
-                                         parentPrefix + op.getName() + "::")))
-                return failure();
-
-              // If the package has already been compiled, insert a kgen.link
-              // directive.
-              if constexpr (std::is_same_v<decltype(op), LIT::PackageOp>)
-                if (failed(addPackageLinkDirective(op, symbolTable)))
-                  return failure();
-
-              // Inline the remaining body of the file into the parent.
-              op->getBlock()->getOperations().splice(
-                  op->getIterator(), fileBody->getOperations(),
-                  fileBody->begin(), fileBody->end());
-              // Make sure to remove the op from the symbol table if needed.
-              if (op->getParentOp() == symbolTable.getOp())
-                symbolTable.erase(op);
-              else
-                op->erase();
-              return mlir::success();
-            })
-            .Case<AliasDeclOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
-                [&](auto op) {
-                  op->erase();
-                  return mlir::success();
-                })
-            .Case([&](GlobalOp op) {
-              flattenAndRenameSymbol(op, symbolTable, opSymTableIt);
-              if (StringAttr linkageName =
-                      renamedSymbols.lookup(op.getSymNameAttr()))
-                op.setSymNameAttr(linkageName);
-              return mlir::success();
-            })
-            .Case([&](mlir::SymbolOpInterface symbol) {
-              flattenAndRenameSymbol(symbol, symbolTable, opSymTableIt);
-              return mlir::success();
-            })
-            .Default(mlir::success());
-    if (failed(result))
-      return failure();
   }
   return success();
 }
