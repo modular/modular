@@ -2196,6 +2196,179 @@ std::string PackageArchiveArrayAttr::getTargetsAsString() {
 }
 
 //===----------------------------------------------------------------------===//
+// SourceNameAttr
+//===----------------------------------------------------------------------===//
+
+StringAttr SourceNameAttr::encode() const {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  encode(os);
+  return StringAttr::get(getContext(), str);
+}
+
+void SourceNameAttr::encode(llvm::raw_ostream &os) const {
+  // Aim to create a name like `builtin::int::Int`.
+  if (getParent()) {
+    getParent().encode(os);
+    os << "::";
+  }
+
+  // The only character not allowed in Mojo symbol names is backtick.
+  auto printString = [&](StringRef str) {
+    if (llvm::all_of(str, [](char c) { return std::isalnum(c) || c == '_'; }))
+      os << str;
+    else
+      os << '`' << str << '`';
+  };
+
+  // Base name.
+  printString(getName());
+
+  // Parameter types.
+  if (!getParamTypes().empty()) {
+    os << '[';
+    llvm::interleave(
+        getParamTypes(), os, [&](SourceNameAttr type) { type.encode(os); },
+        ",");
+    os << ']';
+  }
+
+  // Argument types.
+  if (!getArgTypes().empty()) {
+    os << '(';
+    llvm::interleave(
+        getArgTypes(), os, [&](SourceNameAttr type) { type.encode(os); }, ",");
+    os << ')';
+  }
+
+  // Parameter values.
+  if (!getParamValues().empty()) {
+    os << '<';
+    llvm::interleave(
+        getParamValues(), os, [&](StringAttr value) { printString(value); },
+        ",");
+    os << '>';
+  }
+}
+
+namespace {
+/// Source name parser, implementing the opposite of the encoding logic above.
+class SourceNameParser {
+public:
+  SourceNameParser(MLIRContext *ctx, StringRef buf)
+      : ctx(ctx), cur(buf.begin()), end(buf.end()) {}
+
+  /// Parse a string as a sequence of alnum characters or between backticks.
+  ErrorOr<StringRef> parseString();
+  /// Parse a whole source name.
+  ErrorOr<SourceNameAttr> parseSourceName();
+  /// Optionally parse a character if it's the next one.
+  bool parseOptional(char c) {
+    if (*cur != c)
+      return false;
+    ++cur;
+    return true;
+  }
+  /// Parse and consume a character.
+  ErrorOrSuccess parse(char c) {
+    if (*cur != c)
+      return Error("expected a '" + StringRef(&c, 1) + "'");
+    ++cur;
+    return success();
+  }
+
+private:
+  MLIRContext *ctx;
+  /// The current offset into the buffer.
+  const char *cur;
+  /// The buffer end marker.
+  const char *end;
+};
+} // namespace
+
+ErrorOr<StringRef> SourceNameParser::parseString() {
+  // If this is an escaped string, parse until the next backtick.
+  if (*cur == '`') {
+    const char *start = ++cur;
+    while (cur != end && *cur != '`')
+      ++cur;
+    // Error if we hit EOF.
+    if (cur == end)
+      return Error("unterminated `-escaped string");
+    return StringRef(start, std::distance(start, cur++));
+  }
+  // Parse the sequence of alnum characters.
+  const char *start = cur;
+  while (cur != end && (std::isalnum(*cur) || *cur == '_'))
+    ++cur;
+  return StringRef(start, std::distance(start, cur));
+}
+
+ErrorOr<SourceNameAttr> SourceNameParser::parseSourceName() {
+  SourceNameAttr next;
+  SmallVector<SourceNameAttr> paramTypes, argTypes;
+  SmallVector<StringAttr> paramValues;
+  do {
+    // Re-use state to save memory allocations.
+    paramTypes.clear();
+    argTypes.clear();
+    paramValues.clear();
+
+    // Base name.
+    ErrorOr<StringRef> baseName = parseString();
+    if (baseName.isError())
+      return baseName.takeError();
+
+    // Parameter types.
+    if (parseOptional('[')) {
+      do {
+        ErrorOr<SourceNameAttr> name = parseSourceName();
+        if (name.isError())
+          return name.takeError();
+        paramTypes.push_back(name.takeValue());
+      } while (parseOptional(','));
+      if (ErrorOrSuccess err = parse(']'))
+        return err.takeError();
+    }
+
+    // Argument types.
+    if (parseOptional('(')) {
+      do {
+        ErrorOr<SourceNameAttr> name = parseSourceName();
+        if (name.isError())
+          return name.takeError();
+        argTypes.push_back(name.takeValue());
+      } while (parseOptional(','));
+      if (ErrorOrSuccess err = parse(')'))
+        return err.takeError();
+    }
+
+    // Parameter values.
+    if (parseOptional('<')) {
+      do {
+        ErrorOr<StringRef> value = parseString();
+        if (value.isError())
+          return value.takeError();
+        paramValues.push_back(StringAttr::get(ctx, value.takeValue()));
+      } while (parseOptional(','));
+      if (ErrorOrSuccess err = parse('>'))
+        return err.takeError();
+    }
+
+    // Generate the source name with the current name as the parent.
+    next = SourceNameAttr::get(StringAttr::get(ctx, baseName.takeValue()),
+                               paramTypes, argTypes, paramValues, next);
+  } while (parseOptional(':') && parseOptional(':'));
+  return next;
+}
+
+ErrorOr<SourceNameAttr> SourceNameAttr::decode(MLIRContext *ctx,
+                                               StringRef str) {
+  SourceNameParser parser(ctx, str);
+  return parser.parseSourceName();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

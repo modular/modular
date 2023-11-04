@@ -1044,6 +1044,15 @@ def KGEN_SourceNameAttr : KGENAttr<"SourceName", "source_name"> {
                    parent);
     }]>
   ];
+
+  let extraClassDeclaration = [{
+    /// Encode the attribute into a string, producing a mangled name.
+    void encode(llvm::raw_ostream &os) const;
+    StringAttr encode() const;
+
+    /// Decode a source name from a mangled string.
+    static ErrorOr<SourceNameAttr> decode(MLIRContext *ctx, StringRef str);
+  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
