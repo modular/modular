@@ -54,7 +54,10 @@ public:
 
     AnalysisStateType() = default;
     AnalysisStateType(const AnalysisStateType &other);
-    AnalysisStateType &operator=(const AnalysisStateType &other);
+    AnalysisStateType &operator=(const AnalysisStateType &other) {
+      valueLattices = other.valueLattices;
+      return *this;
+    }
   };
 
   /// Process a Region operation.
@@ -155,12 +158,6 @@ static void printState(SCCPAnalysis::AnalysisStateType &state,
 SCCPAnalysis::AnalysisStateType::AnalysisStateType(
     const AnalysisStateType &other)
     : valueLattices(other.valueLattices) {}
-
-SCCPAnalysis::AnalysisStateType &
-SCCPAnalysis::AnalysisStateType::operator=(const AnalysisStateType &other) {
-  valueLattices = other.valueLattices;
-  return *this;
-}
 
 template <typename OT, typename... Args>
 static OT *bumpPtrAllocate(llvm::SpecificBumpPtrAllocator<OT> &allocator,
