@@ -767,7 +767,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
 
   // Resolve the path and decl name for this module.
   std::optional<std::string> modulePath;
-  StringAttr declName = mangledName;
+  auto declName = StringAttr::get(getContext(), name);
   if (parentState->decl != impl->topLevelDecl) {
     if (!parentState->sourcePath) {
       return createErrorModuleState(loc, mangledName, *parentState->decl,
@@ -775,11 +775,6 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     }
     modulePath = resolveModulePath(*this, loc, name, *parentState->sourcePath,
                                    parsingStandardLibrary);
-
-    // If the parent is a package, use the normal name for the decl. This allows
-    // lookup into the package decl to correctly resolve using the simplified
-    // name.
-    declName = StringAttr::get(getContext(), name);
   } else {
     modulePath = resolveModulePath(*this, name, loc, parsingStandardLibrary);
   }
@@ -1132,8 +1127,9 @@ ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   auto fileLoc =
       FileLineColLoc::get(getContext(), path, /*line=*/0, /*column=*/0);
   StringAttr mangledName = getMangledModuleName(getContext(), name);
-  ModuleState &state = createPackageState(mangledName, mangledName, path,
-                                          *impl->topLevelModuleState, fileLoc);
+  ModuleState &state =
+      createPackageState(StringAttr::get(getContext(), name), mangledName, path,
+                         *impl->topLevelModuleState, fileLoc);
   return *state.decl;
 }
 
@@ -1215,7 +1211,7 @@ SharedState::createPackageState(StringAttr declName, StringAttr mangledName,
                                 FileLineColLoc loc) {
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
-  PackageOp packageOp = moduleBuilder.create<PackageOp>(loc, mangledName);
+  auto packageOp = moduleBuilder.create<PackageOp>(loc, mangledName, declName);
   ASTDecl &decl =
       declResolver->addDecl(packageOp, SMLoc(), declName, parentState.decl,
                             parentState.decl->getCursor(),

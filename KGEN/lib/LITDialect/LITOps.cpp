@@ -288,9 +288,10 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getResultParams() { return {}; }
 // PackageOp
 //===----------------------------------------------------------------------===//
 
-void PackageOp::build(OpBuilder &odsBuilder, OperationState &state,
-                      StringAttr name) {
+void PackageOp::build(OpBuilder &builder, OperationState &state,
+                      StringAttr name, StringAttr sourceName) {
   state.addAttribute(getSymNameAttrName(state.name), name);
+  state.addAttribute(getSourceNameAttrName(state.name), sourceName);
   state.addAttribute(getArchivesAttrName(state.name),
                      PackageArchiveArrayAttr::get(name.getContext(), {}));
   state.addRegion()->push_back(new Block());
