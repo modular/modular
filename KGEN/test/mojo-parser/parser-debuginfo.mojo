@@ -92,9 +92,9 @@ fn caller():
 # CHECK-DAG: #[[SP_MOVE:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = "__moveinit__", linkageName = "__moveinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)",
 # CHECK-DAG: #[[FILE]] = #debuginfo.file<"within split at [[FILENAME:.*parser-debuginfo.mojo]]:{{[0-9]+}} offset " in "/">
 
-# CHECK-DAG: lit.func @"__init__($parser-debuginfo::MyValueStruct=&,__mlir_type.index)"
+# CHECK-DAG: lit.func @"__init__($parser-debuginfo::MyValueStruct=&,__mlir_type.index)"(%[[SELF:.*]][*""]:
 # CHECK-DAG:   pop.store %value, %[[VAL:.*]] : !kgen.pointer<index> loc(#[[INIT_LOC:loc[0-9]*]])
-# CHECK-DAG:   %[[VAL]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[INIT_LOC]])
+# CHECK-DAG:   %[[VAL]] = lit.struct.gep %[[SELF]][value] : <index> from <!MyValueStruct> loc(#[[INIT_LOC]])
 
 # CHECK-DAG: lit.func @"__copyinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)"
 # CHECK-DAG:   %[[VAL2:.*]] = pop.load %[[VAL1:.*]] : !kgen.pointer<index> loc(#[[COPY_LOC:loc[0-9]*]])

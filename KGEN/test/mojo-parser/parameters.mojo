@@ -845,13 +845,13 @@ struct MemoryOnlyType:
 
 
 # CHECK: lit.func @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<{{.*}}[x]: !MemoryOnlyType =
-# CHECK-SAME: apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK-SAME: apply_result_slot(:!lit.signature<(!kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
 fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.func @"test_mem_only_default_param()"
 # CHECK: kgen.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<
-# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<(!kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
 fn test_mem_only_default_param():
     mem_only_default_param()
 
@@ -907,7 +907,7 @@ fn test_default_param_struct():
     _ = DefaultParams[4, 5, "meow"]()
 
 
-# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = #lit.struct<{value = 0}>, {{.*}}: !MemoryOnlyType = apply_result_slot(:!lit.signature<(!kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
 @value
 struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
@@ -915,11 +915,11 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 fn test_default_param_struct_all_default():
     # CHECK: lit.alias.decl {{.*}}T: metatype<{{.*}}@AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 0}>,
-    # CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<(!kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
     alias T = AllDefaultParams[]
 
     # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@AllDefaultParams<
-    # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot(:!lit.signature<(!kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK: %1 = kgen.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
     _ = AllDefaultParams[]()
