@@ -448,14 +448,14 @@ lit.globalvar.decl @self : index {
 
 // CHECK-NOT: lit.file_module
 
-// CHECK-DAG: #index_name = #kgen.source_name<"index"[]()[]>
-// CHECK-DAG: #module_name = #kgen.source_name<"module"[]()[]>
-// CHECK-DAG: #[[ADDER_SIZE:.*]] = #kgen.source_name<"Adder"[#index_name]()["size"] from #module_name>
-// CHECK-DAG: #[[ADDER:.*]] = #kgen.source_name<"Adder"[#index_name]()[] from #module_name>
-// CHECK-DAG: #[[ADDER_10:.*]] = #kgen.source_name<"Adder"[#index_name]()["10"] from #module_name>
-// CHECK-DAG: #test_name = #kgen.source_name<"test"[]()[] from #module_name>
-// CHECK-DAG: #__add___name = #kgen.source_name<"__add__"[](#[[ADDER_SIZE]])[] from #[[ADDER]]>
-// CHECK-DAG: #caller_name = #kgen.source_name<"caller"[](#[[ADDER_10]])[]>
+// CHECK-DAG: #index_name = #kgen.source_name<"index">
+// CHECK-DAG: #module_name = #kgen.source_name<"module">
+// CHECK-DAG: #[[ADDER_SIZE:.*]] = #kgen.source_name<"Adder"[#index_name]<"size"> from #module_name>
+// CHECK-DAG: #[[ADDER:.*]] = #kgen.source_name<"Adder"[#index_name] from #module_name>
+// CHECK-DAG: #[[ADDER_10:.*]] = #kgen.source_name<"Adder"[#index_name]<"10"> from #module_name>
+// CHECK-DAG: #test_name = #kgen.source_name<"test" from #module_name>
+// CHECK-DAG: #__add___name = #kgen.source_name<"__add__"(#[[ADDER_SIZE]]) from #[[ADDER]]>
+// CHECK-DAG: #caller_name = #kgen.source_name<"caller"(#[[ADDER_10]])>
 
 lit.file_module @module {
   // CHECK: kgen.generator @"module::test"()

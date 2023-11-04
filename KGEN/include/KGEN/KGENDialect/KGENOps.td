@@ -158,8 +158,9 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
   }];
 
   let assemblyFormat = [{
-    custom<SymbolExport>($exportKind) $sym_name `` custom<Signature>($signature)
-    (`from` $importedFrom^)? attr-dict-with-keyword
+    `` custom<SymbolExport>($exportKind) $sym_name ``
+    custom<Signature>($signature) (`from` $importedFrom^)?
+    attr-dict-with-keyword
   }];
 }
 

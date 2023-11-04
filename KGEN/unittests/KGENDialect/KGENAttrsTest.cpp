@@ -112,16 +112,16 @@ protected:
 
 TEST_F(SourceNameAttrTest, TestEncodeDecode) {
   StringRef testStr = R"mlir(
-    #builtin_name = #kgen.source_name<"builtin"[]()[]>
-    #test_name = #kgen.source_name<"test"[]()[]>
-    #int_name = #kgen.source_name<"int"[]()[] from #builtin_name>
-    #simd_name = #kgen.source_name<"simd"[]()[] from #builtin_name>
-    #Int_name = #kgen.source_name<"Int"[]()[] from #int_name>
-    #SIMD_name = #kgen.source_name<"SIMD"[#Int_name]()[] from #simd_name>
-    #func_name = #kgen.source_name<"func"[](#SIMD_name)["1"] from #test_name>
+    #builtin_name = #kgen.source_name<"builtin">
+    #test_name = #kgen.source_name<"test">
+    #int_name = #kgen.source_name<"int" from #builtin_name>
+    #simd_name = #kgen.source_name<"simd" from #builtin_name>
+    #Int_name = #kgen.source_name<"Int" from #int_name>
+    #SIMD_name = #kgen.source_name<"SIMD"[#Int_name] from #simd_name>
+    #func_name = #kgen.source_name<"func"(#SIMD_name)<"1"> from #test_name>
 
-    #strange = #kgen.source_name<"strange*"[]()[]>
-    #weird = #kgen.source_name<"weird&name"[]()[":struct<index> { 1 }", "^&*"] from #strange>
+    #strange = #kgen.source_name<"strange*">
+    #weird = #kgen.source_name<"weird&name"<":struct<index> { 1 }", "^&*"> from #strange>
 
     module attributes {
       kgen.test0 = #func_name,

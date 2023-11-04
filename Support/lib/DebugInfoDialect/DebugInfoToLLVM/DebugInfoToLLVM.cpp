@@ -121,9 +121,9 @@ MetadataConverter::convertAttrImpl(DILocalVariableAttr attr) {
 LLVM::DISubprogramAttr
 MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
   return LLVM::DISubprogramAttr::get(
-      convertAttr(attr.getCompileUnit()), convertAttr(attr.getScope()),
-      attr.getName(), attr.getLinkageName(), convertAttr(attr.getFile()),
-      attr.getLine(), attr.getScopeLine(),
+      attr.getContext(), convertAttr(attr.getCompileUnit()),
+      convertAttr(attr.getScope()), attr.getName(), attr.getLinkageName(),
+      convertAttr(attr.getFile()), attr.getLine(), attr.getScopeLine(),
       static_cast<LLVM::DISubprogramFlags>(attr.getSubprogramFlags()),
       convertType(attr.getType()));
 }
@@ -132,6 +132,8 @@ MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
 // Types
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIType type) {
+  if (!type)
+    return {};
   if (LLVM::DITypeAttr converted = convertedTypes.lookup(type))
     return converted;
 

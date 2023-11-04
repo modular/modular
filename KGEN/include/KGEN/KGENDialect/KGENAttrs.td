@@ -1027,10 +1027,10 @@ def KGEN_SourceNameAttr : KGENAttr<"SourceName", "source_name"> {
 
   let assemblyFormat = [{
     `<` $name
-    `[` (`]`) : ($paramTypes^ `]`)? ``
-    `(` (`)`) : ($argTypes^ `)`)? ``
-    `[` (`]`) : ($paramValues^ `]`)?
-    (`from` $parent^)? `>`
+    (`[` $paramTypes^ `]`)? ``
+    (`(` $argTypes^ `)`)? ``
+    (`<` $paramValues^ `>`)?
+    (` ` `from` $parent^)? `>`
   }];
 
   let builders = [

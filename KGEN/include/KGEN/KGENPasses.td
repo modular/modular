@@ -266,7 +266,8 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
   let dependentDialects = [
     "mlir::LLVM::LLVMDialect",
     "mlir::NVVM::NVVMDialect",
-    "mlir::index::IndexDialect"
+    "mlir::index::IndexDialect",
+    "DebugInfo::DebugInfoDialect"
   ];
 
   let options = [
