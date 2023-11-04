@@ -17,4 +17,4 @@ fn main():
         123
     )  # we need this otherwise we don't stop at the breakpoint below
     let y = abs(x)  # breakpoint
-    print(y)
+    print(y)  # expected after step-into
