@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo | FileCheck %s
 
-# CHECK: lit.func @"__copyinit__{{.*}}(%self[self]: !kgen.pointer<!escaping1> init_self, %other[other]: !kgen.pointer<!escaping1> borrow_in_mem, |) -> !kgen.none attributes {specialFnKind = 3 : i8} {
+# CHECK: lit.func @"__copyinit__{{.*}}(%self[self]: !kgen.pointer<!escaping1> init_self, %other[other]: !kgen.pointer<!escaping1> borrow_in_mem, |) -> !kgen.none
 # CHECK-NEXT:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
@@ -36,7 +36,7 @@
 
 # CHECK-LABEL: lit.func @"materialize_escaping_closure
 
-# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow, %other[other]: !kgen.pointer<none> borrow_in_mem, |) -> !kgen.none attributes {specialFnKind = 0 : i8} {
+# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow, %other[other]: !kgen.pointer<none> borrow_in_mem, |) -> !kgen.none
 
 # Allocate memory on the heap for impl and copy existing contents into it.
 # CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(

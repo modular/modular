@@ -1117,7 +1117,7 @@ struct ValueMem:
 # CHECK-SAME:  %self[self]: !kgen.pointer<!ValueMem> init_self,
 # CHECK-SAME:  %a[a]: !Int borrow,
 # CHECK-SAME:  %b[b]: !StructExample
-# CHECK-SAME: ) -> !kgen.none attributes {specialFnKind = 2 : i8} {
+# CHECK-SAME: ) -> !kgen.none attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: pop.store %a, %0
 # CHECK-NEXT: %1 = lit.struct.gep %self[b]
@@ -1170,7 +1170,7 @@ struct ValueReg:
 # CHECK: lit.func @"__copyinit__
 # CHECK-SAME: (%other[other]: !ValueReg borrow, |)
 # CHECK-SAME:  -> !ValueReg
-# CHECK-SAME: attributes {specialFnKind = 7 : i8}
+# CHECK-SAME: attributes {{.*}}specialFnKind = 7 : i8
 # CHECK-NEXT: %0 = lit.struct.extract %other[a]
 # CHECK-NEXT: %1 = lit.struct.extract %other[b]
 # CHECK-NEXT: %2 = kgen.call {{.*}}__copyinit__{{.*}}(%1)
