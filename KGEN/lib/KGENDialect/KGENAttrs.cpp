@@ -509,6 +509,204 @@ Type BuildInfoParamAttr::getType() const {
 bool BuildInfoParamAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// StructAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseStructElements(AsmParser &p,
+                                       SmallVector<TypedAttr> &values,
+                                       StructType type) {
+  return failableInterleave(
+      type.getElementTypes(),
+      [&](TypedAttr type) {
+        return parseParamValue(p, values.emplace_back(),
+                               ParamRefType::get(type));
+      },
+      [&] { return p.parseComma(); });
+}
+
+static void printStructElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                                StructType type) {
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+}
+
+OptionalParseResult StructType::parseValue(AsmParser &p,
+                                           TypedAttr &value) const {
+  if (failed(p.parseOptionalLBrace()))
+    return std::nullopt;
+  SmallVector<TypedAttr> values;
+  if (failed(parseStructElements(p, values, *this)))
+    return failure();
+  value = StructAttr::get(values, *this);
+  return p.parseRBrace();
+}
+
+LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto structAttr = ::dyn_cast<StructAttr>(value);
+  if (!structAttr)
+    return failure();
+  p << "{ ";
+  llvm::interleaveComma(structAttr.getValues(), p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+  p << " }";
+  return mlir::success();
+}
+
+/// The struct attribute is a constant if all element values are constants.
+bool StructAttr::isConstant() const {
+  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
+}
+
+/// Compare a type between value domains.
+static bool compareTypeToTypeExpr(Type type, TypedAttr expr) {
+  if (auto refType = dyn_cast<ParamRefType>(type))
+    return refType.getParam() == expr;
+  if (auto typeCst = dyn_cast<TypeConstantAttr>(expr))
+    return typeCst.getValue() == type;
+  // `expr` is a parameter expression but `type` is not.
+  return false;
+}
+
+LogicalResult StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 ArrayRef<TypedAttr> values, StructType type) {
+  ArrayRef<TypedAttr> types = type.getElementTypes();
+  if (types.size() != values.size())
+    return emitError() << "struct attribute type requires " << types.size()
+                       << " elements but value has " << values.size();
+  for (auto [idx, value, type] :
+       llvm::zip(llvm::seq<unsigned>(0, types.size()), values, types))
+    if (!compareTypeToTypeExpr(value.getType(), type))
+      return emitError() << "struct element #" << idx << " has type "
+                         << value.getType() << " but expected " << type;
+  return success();
+}
+
+StructAttr StructAttr::get(ArrayRef<TypedAttr> values) {
+  assert(!values.empty() && "requires at least one value");
+  SmallVector<Type> types =
+      llvm::map_to_vector(values, [](TypedAttr v) { return v.getType(); });
+  return StructAttr::get(values, StructType::get(types));
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StructExtractAttr::get(TypedAttr structValue, unsigned fieldNo) {
+  auto structType = ::cast<StructType>(structValue.getType());
+  assert(fieldNo < structType.getElementTypes().size() &&
+         "struct extract index out of range");
+  return get(structValue.getContext(), structValue, fieldNo,
+             ParamRefType::get(structType.getElementTypes()[fieldNo]));
+}
+
+TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
+                                 unsigned fieldNo, Type resultType) {
+  if (auto value = dyn_cast_if_present<StructAttr>(structValue))
+    return value.getValues()[fieldNo];
+
+  return Base::get(context, structValue, fieldNo, resultType);
+}
+
+//===----------------------------------------------------------------------===//
+// PackAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parsePackElements(AsmParser &p, SmallVector<TypedAttr> &values, PackType type) {
+  auto variadic = type.getVariadicAttr();
+  if (!variadic)
+    return p.emitError(p.getCurrentLocation())
+           << "pack attribute expected a variadic constant type, but got "
+           << type.getVariadic();
+
+  return failableInterleave(
+      variadic.getValues(),
+      [&](TypedAttr type) {
+        return parseParamValue(p, values.emplace_back(),
+                               ParamRefType::get(type));
+      },
+      [&] { return p.parseComma(); });
+}
+
+static void printPackElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                              PackType type) {
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+}
+
+OptionalParseResult PackType::parseValue(AsmParser &p, TypedAttr &value) const {
+  if (failed(p.parseOptionalLess()))
+    return std::nullopt;
+  SmallVector<TypedAttr> values;
+  if (failed(parsePackElements(p, values, *this)))
+    return failure();
+
+  value = PackAttr::get(values, *this);
+  return p.parseGreater();
+}
+
+LogicalResult PackType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto packAttr = ::dyn_cast<PackAttr>(value);
+  if (!packAttr)
+    return failure();
+
+  p << "<";
+  printPackElements(p, packAttr.getValues(), *this);
+  p << ">";
+  return success();
+}
+
+LogicalResult PackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                               ArrayRef<TypedAttr> values, PackType type) {
+  auto variadic = type.getVariadicAttr();
+  if (!variadic)
+    return emitError()
+           << "pack attribute expected a variadic constant type, but got "
+           << type.getVariadic();
+
+  ArrayRef<TypedAttr> expected = variadic.getValues();
+  if (values.size() != expected.size())
+    return emitError() << "pack attribute type requires " << expected.size()
+                       << " elements, but got " << values.size();
+
+  for (auto [i, value, type] :
+       llvm::zip(llvm::seq<size_t>(0, expected.size()), values, expected))
+    if (!compareTypeToTypeExpr(value.getType(), type))
+      return emitError() << "pack attribute element #" << i << " has type "
+                         << value.getType() << " but expected " << type;
+  return success();
+}
+
+bool PackAttr::isConstant() const {
+  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
+}
+
+//===----------------------------------------------------------------------===//
+// VariantAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr value, unsigned index,
+                                  VariantType type) {
+  if (index >= type.getNumTypes())
+    return emitError() << "variant index " << index << " is out of bounds";
+  if (type.getType(index) == value.getType())
+    return success();
+  return emitError() << "variant attribute value type " << value.getType()
+                     << " does not match type at index " << index
+                     << " which is " << type.getType(index);
+}
+
+/// The variant attribute is a constant if the value type is a constant and its
+/// type is not parameterized. It is possible to materialize a constant value
+/// for a parametric variant type.
+bool VariantAttr::isConstant() const {
+  return ParameterAttr::isSimpleConstant(getValue()) &&
+         !isParameterizedType(getType());
+}
+
+//===----------------------------------------------------------------------===//
 // EnvAttr
 //===----------------------------------------------------------------------===//
 
@@ -1995,204 +2193,6 @@ std::string PackageArchiveArrayAttr::getTargetsAsString() {
     os << archive.getTarget().getTripleStr();
   });
   return os.str();
-}
-
-//===----------------------------------------------------------------------===//
-// StructAttr
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseStructElements(AsmParser &p,
-                                       SmallVector<TypedAttr> &values,
-                                       StructType type) {
-  return failableInterleave(
-      type.getElementTypes(),
-      [&](TypedAttr type) {
-        return parseParamValue(p, values.emplace_back(),
-                               ParamRefType::get(type));
-      },
-      [&] { return p.parseComma(); });
-}
-
-static void printStructElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
-                                StructType type) {
-  llvm::interleaveComma(values, p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
-}
-
-OptionalParseResult StructType::parseValue(AsmParser &p,
-                                           TypedAttr &value) const {
-  if (failed(p.parseOptionalLBrace()))
-    return std::nullopt;
-  SmallVector<TypedAttr> values;
-  if (failed(parseStructElements(p, values, *this)))
-    return failure();
-  value = StructAttr::get(values, *this);
-  return p.parseRBrace();
-}
-
-LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value) const {
-  auto structAttr = ::dyn_cast<StructAttr>(value);
-  if (!structAttr)
-    return failure();
-  p << "{ ";
-  llvm::interleaveComma(structAttr.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
-  p << " }";
-  return mlir::success();
-}
-
-/// The struct attribute is a constant if all element values are constants.
-bool StructAttr::isConstant() const {
-  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
-}
-
-/// Compare a type between value domains.
-static bool compareTypeToTypeExpr(Type type, TypedAttr expr) {
-  if (auto refType = dyn_cast<ParamRefType>(type))
-    return refType.getParam() == expr;
-  if (auto typeCst = dyn_cast<TypeConstantAttr>(expr))
-    return typeCst.getValue() == type;
-  // `expr` is a parameter expression but `type` is not.
-  return false;
-}
-
-LogicalResult StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 ArrayRef<TypedAttr> values, StructType type) {
-  ArrayRef<TypedAttr> types = type.getElementTypes();
-  if (types.size() != values.size())
-    return emitError() << "struct attribute type requires " << types.size()
-                       << " elements but value has " << values.size();
-  for (auto [idx, value, type] :
-       llvm::zip(llvm::seq<unsigned>(0, types.size()), values, types))
-    if (!compareTypeToTypeExpr(value.getType(), type))
-      return emitError() << "struct element #" << idx << " has type "
-                         << value.getType() << " but expected " << type;
-  return success();
-}
-
-StructAttr StructAttr::get(ArrayRef<TypedAttr> values) {
-  assert(!values.empty() && "requires at least one value");
-  SmallVector<Type> types =
-      llvm::map_to_vector(values, [](TypedAttr v) { return v.getType(); });
-  return StructAttr::get(values, StructType::get(types));
-}
-
-//===----------------------------------------------------------------------===//
-// StructExtractAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr StructExtractAttr::get(TypedAttr structValue, unsigned fieldNo) {
-  auto structType = ::cast<StructType>(structValue.getType());
-  assert(fieldNo < structType.getElementTypes().size() &&
-         "struct extract index out of range");
-  return get(structValue.getContext(), structValue, fieldNo,
-             ParamRefType::get(structType.getElementTypes()[fieldNo]));
-}
-
-TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
-                                 unsigned fieldNo, Type resultType) {
-  if (auto value = dyn_cast_if_present<StructAttr>(structValue))
-    return value.getValues()[fieldNo];
-
-  return Base::get(context, structValue, fieldNo, resultType);
-}
-
-//===----------------------------------------------------------------------===//
-// PackAttr
-//===----------------------------------------------------------------------===//
-
-static ParseResult
-parsePackElements(AsmParser &p, SmallVector<TypedAttr> &values, PackType type) {
-  auto variadic = type.getVariadicAttr();
-  if (!variadic)
-    return p.emitError(p.getCurrentLocation())
-           << "pack attribute expected a variadic constant type, but got "
-           << type.getVariadic();
-
-  return failableInterleave(
-      variadic.getValues(),
-      [&](TypedAttr type) {
-        return parseParamValue(p, values.emplace_back(),
-                               ParamRefType::get(type));
-      },
-      [&] { return p.parseComma(); });
-}
-
-static void printPackElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
-                              PackType type) {
-  llvm::interleaveComma(values, p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
-}
-
-OptionalParseResult PackType::parseValue(AsmParser &p, TypedAttr &value) const {
-  if (failed(p.parseOptionalLess()))
-    return std::nullopt;
-  SmallVector<TypedAttr> values;
-  if (failed(parsePackElements(p, values, *this)))
-    return failure();
-
-  value = PackAttr::get(values, *this);
-  return p.parseGreater();
-}
-
-LogicalResult PackType::printValue(AsmPrinter &p, TypedAttr value) const {
-  auto packAttr = ::dyn_cast<PackAttr>(value);
-  if (!packAttr)
-    return failure();
-
-  p << "<";
-  printPackElements(p, packAttr.getValues(), *this);
-  p << ">";
-  return success();
-}
-
-LogicalResult PackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                               ArrayRef<TypedAttr> values, PackType type) {
-  auto variadic = type.getVariadicAttr();
-  if (!variadic)
-    return emitError()
-           << "pack attribute expected a variadic constant type, but got "
-           << type.getVariadic();
-
-  ArrayRef<TypedAttr> expected = variadic.getValues();
-  if (values.size() != expected.size())
-    return emitError() << "pack attribute type requires " << expected.size()
-                       << " elements, but got " << values.size();
-
-  for (auto [i, value, type] :
-       llvm::zip(llvm::seq<size_t>(0, expected.size()), values, expected))
-    if (!compareTypeToTypeExpr(value.getType(), type))
-      return emitError() << "pack attribute element #" << i << " has type "
-                         << value.getType() << " but expected " << type;
-  return success();
-}
-
-bool PackAttr::isConstant() const {
-  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
-}
-
-//===----------------------------------------------------------------------===//
-// VariantAttr
-//===----------------------------------------------------------------------===//
-
-LogicalResult VariantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr value, unsigned index,
-                                  VariantType type) {
-  if (index >= type.getNumTypes())
-    return emitError() << "variant index " << index << " is out of bounds";
-  if (type.getType(index) == value.getType())
-    return success();
-  return emitError() << "variant attribute value type " << value.getType()
-                     << " does not match type at index " << index
-                     << " which is " << type.getType(index);
-}
-
-/// The variant attribute is a constant if the value type is a constant and its
-/// type is not parameterized. It is possible to materialize a constant value
-/// for a parametric variant type.
-bool VariantAttr::isConstant() const {
-  return ParameterAttr::isSimpleConstant(getValue()) &&
-         !isParameterizedType(getType());
 }
 
 //===----------------------------------------------------------------------===//
