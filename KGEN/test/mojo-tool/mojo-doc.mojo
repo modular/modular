@@ -52,7 +52,7 @@ fn empty_fn():
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_that_async",
 # CHECK:  "overloads":
-# CHECL:      "async": true
+# CHECK:      "async": true
 # CHECK:      "returns": "An Int."
 # CHECK:      "signature": "fn_that_async() -> Int"
 # CHECK:      "summary": "This is a function summary."
@@ -72,7 +72,7 @@ async fn fn_that_async() -> Int:
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_that_raises",
 # CHECK:  "overloads":
-# CHECL:      "raises": true
+# CHECK:      "raises": true
 # CHECK:      "returns": "An Int."
 # CHECK:      "signature": "fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
