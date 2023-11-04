@@ -1480,6 +1480,12 @@ def export_me() -> None:
 # CHECK: lit.func export @"not_c_exported()"
 fn not_c_exported(): pass
 
+struct Thing:
+    # CHECK: lit.func export @"member
+    @export
+    fn member(self):
+        pass
+
 ##===----------------------------------------------------------------------===##
 # Decorators
 ##===----------------------------------------------------------------------===##
