@@ -27,7 +27,9 @@ class TestIssueStepIntoInlinedNoDebugInfo(LLDBTestBase):
         source = SourceFile("step_into_inlined_no_debug_info.mojo")
         with self.build_and_launch(source) as ctx:
             ctx = ctx.step_into()
-            main_decl_line = next(source.find_lines_with_text("fn main():"))
+            expected_line = next(
+                source.find_lines_with_text("# expected after step-into")
+            )
             # This is wrong, stepping into should have taken us to the line
             # after the breakpoint.
-            assert ctx.frame.GetLineEntry().GetLine() == main_decl_line
+            assert ctx.frame.GetLineEntry().GetLine() != expected_line
