@@ -31,7 +31,7 @@ struct Foo[a: Int]:
 # CHECK-NEXT: [[VAR1:%.*]] = lit.struct.gep %0[field0]
 # CHECK-NEXT: [[VAR2:%.*]] = pop.load [[VAR1]] : !kgen.pointer<!Int>
 # CHECK-NEXT: lit.alias.decl *"[[XREF:.*X]]":
-# CHECK-SAME: <apply(:!lit.signature<("b": !Int borrow, |) ownedresult -> {{.*}}Foo<:!Int p0>{{.*}}>{{.*}}> {{.*}}Foo::@"__init__{{.*}}"<:!Int p0>, #lit.struct<{value = 1}>)>
+# CHECK-SAME: <apply(:!lit.signature<("b": !Int borrow) ownedresult -> {{.*}}Foo<:!Int p0>{{.*}}>{{.*}}> {{.*}}Foo::@"__init__{{.*}}"<:!Int p0>, #lit.struct<{value = 1}>)>
 # CHECK-NEXT: kgen.param.constant: !Int = <#lit.struct.extract<:@"${{.*}}"::@Foo<:!Int p0> {{.*}} *"[[XREF]]", "b">>
 fn parameter_capture[a: Int](c: Int) -> fn (x: Int) escaping -> Int:
     alias X = Foo[a](1)

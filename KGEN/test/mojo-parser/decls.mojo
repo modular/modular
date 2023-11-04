@@ -1114,14 +1114,14 @@ struct ValueMem:
 
 
 # CHECK: lit.func @"__init__(
-# CHECK-SAME:  %self[self]: !kgen.pointer<!ValueMem> init_self,
+# CHECK-SAME:  %[[SELF:.*]][*""]: !kgen.pointer<!ValueMem> init_self,
 # CHECK-SAME:  %a[a]: !Int borrow,
 # CHECK-SAME:  %b[b]: !StructExample
 # CHECK-SAME: ) -> !kgen.none attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
-# CHECK-NEXT: %0 = lit.struct.gep %self[a]
-# CHECK-NEXT: pop.store %a, %0
-# CHECK-NEXT: %1 = lit.struct.gep %self[b]
-# CHECK-NEXT: pop.store %b, %1
+# CHECK-NEXT: %[[PA:.*]] = lit.struct.gep %[[SELF]][a]
+# CHECK-NEXT: pop.store %a, %[[PA]]
+# CHECK-NEXT: %[[PB:.*]] = lit.struct.gep %[[SELF]][b]
+# CHECK-NEXT: pop.store %b, %[[PB]]
 # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK: lit.func @"__copyinit__(
@@ -1177,6 +1177,15 @@ struct ValueReg:
 # CHECK-NEXT: %3 = lit.struct.create(a=%0, b=%2)
 # CHECK-NEXT: lit.return %3
 
+# COM: Ensure that "self" is a valid field name.
+# CHECK-LABEL: lit.struct.decl @Foo attributes
+@value
+struct Foo:
+    var a: Int
+    var self: Int
+
+
+# CHECK: lit.func @"__init__({{.*}})"(%[[SELFARG:.*]][*""]: !kgen.pointer<!Foo> init_self, |, %a[a]: !Int borrow, %self[self]: !Int borrow)
 
 ##===----------------------------------------------------------------------===##
 # async/await

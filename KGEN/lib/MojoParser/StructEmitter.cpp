@@ -444,10 +444,12 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     SmallVector<Type> argTypes;
     SmallVector<ValueInputConvention> argConventions;
     SmallVector<StringAttr> argNames;
+    SmallVector<PassingKind> argPassingKinds;
     if (isMemoryOnly) {
       argTypes.push_back(PointerType::get(selfType));
       argConventions.push_back(ValueInputConvention::InitSelf);
-      argNames.push_back(StringAttr::get(shared.getContext(), "self"));
+      argNames.push_back(StringAttr::get(shared.getContext()));
+      argPassingKinds.push_back(PassingKind::PosOnly);
     }
     // We declare all of the operands to the init constructor as owned.  This
     // enables it to work with move-only fields, and, for copyable types, forces
@@ -473,9 +475,8 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       argTypes.push_back(fieldType);
       argConventions.push_back(conv);
       argNames.push_back(fieldOp.getNameAttr());
+      argPassingKinds.push_back(PassingKind::PosOrKw);
     }
-    SmallVector<PassingKind> argPassingKinds(argNames.size(),
-                                             PassingKind::PosOnly);
     init = synthesizeMemberwiseInit(structDecl, argTypes, argConventions,
                                     argNames, argPassingKinds);
   }
