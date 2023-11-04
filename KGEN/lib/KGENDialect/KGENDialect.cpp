@@ -55,6 +55,11 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   // Aliases
 
   AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
+    // Always alias source name attributes. They tend to be long.
+    if (auto sourceName = dyn_cast<SourceNameAttr>(attr)) {
+      os << sourceName.getName().getValue() << "_name";
+      return AliasResult::OverridableAlias;
+    }
     return AliasResult::NoAlias;
   }
 
