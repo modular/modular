@@ -1816,11 +1816,6 @@ rejectDecorators(ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
 static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
                         StringRef unmangledName, StringRef aliasName,
                         ExportInterface itf, bool isCExport = false) {
-  if (isa<StructDeclOp>(*decl.getParentDecl())) {
-    shared.emitError(loc, "methods cannot be exported");
-    return;
-  }
-
   // Handle the unique case of main. We implicitly export main, so this is
   // simply checking that the user didn't try to export it as something else.
   if (aliasName == kMainSymbolName) {
