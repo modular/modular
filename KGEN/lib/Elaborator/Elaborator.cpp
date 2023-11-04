@@ -767,6 +767,19 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
   if (config.sanitizeSymbolNames)
     forkName = sanitizeSymbolToAlnum(forkName);
   clone.setSymName(forkName);
+
+  // Derive a new source name.
+  if (SourceNameAttr name = cur->func.getSourceNameAttr()) {
+    SmallVector<StringAttr> values = llvm::to_vector(name.getParamValues());
+    if (!forkParam.empty())
+      values.push_back(getParamTypeAsString(cast<TypedAttr>(value)));
+    else
+      values.push_back(cast<StringAttr>(value));
+    clone.setSourceNameAttr(
+        SourceNameAttr::get(name.getName(), name.getParamTypes(),
+                            name.getArgTypes(), values, name.getParent()));
+  }
+
   // Insert the new function at a location relative to the current one. This
   // ensures all forks are inserted in a deterministic order, regardless of
   // which occur first.
@@ -2003,13 +2016,25 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
       baseName + Twine(inputParamValues.empty() ? "_concrete" : ""));
   if (config.sanitizeSymbolNames)
     mangledName = sanitizeSymbolToAlnum(mangledName);
+
+  // Encode the parameter values.
+  SourceNameAttr sourceName;
+  if (auto originName = gen.getSourceNameAttr()) {
+    SmallVector<StringAttr> paramValues;
+    for (TypedAttr value : inputParamValues)
+      paramValues.push_back(getParamTypeAsString(value));
+    sourceName = SourceNameAttr::get(
+        originName.getName(), originName.getParamTypes(),
+        originName.getArgTypes(), paramValues, originName.getParent());
+  }
+
   auto newFunc = b.create<FuncOp>(
       gen.getLoc(), mangledName,
       SignatureType::get(gen.getFunctionType(),
                          gen.getSignature().getInputConventions(),
                          gen.getSignature().getFnEffects()),
       gen.getInlineLevel(), gen.getExportKind(), gen.getDecorators(),
-      gen.getLLVMMetadata());
+      sourceName, gen.getLLVMMetadata());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.

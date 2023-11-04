@@ -13,6 +13,7 @@
 from test_package_debug.module import identity
 
 
-# CHECK-NOT: debuginfo
+# CHECK-NOT: #debuginfo.
+# CHECK-NOT: !debuginfo.
 fn main():
     print(identity(2))

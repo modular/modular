@@ -52,7 +52,7 @@ lit.file_module @module {
 // CHECK-NEXT:    kgen.global.address @foo : <index> loc(#[[LOC_CTOR_OP:.*]])
 // CHECK-NEXT:    kgen.return loc(#[[LOC_CTOR:.*]])
 // CHECK-NEXT:  } loc(#[[LOC_CTOR]])
-// CHECK-LABEL: kgen.generator @"(dtor_fn)foo"() {
+// CHECK-LABEL: kgen.generator @"(dtor_fn)foo"()
 // CHECK-NEXT:    kgen.global.address @foo : <index> loc(#[[LOC_DTOR_OP:.*]])
 // CHECK-NEXT:    kgen.return loc(#[[LOC_DTOR:.*]])
 // CHECK-NEXT:  } loc(#[[LOC_DTOR]])

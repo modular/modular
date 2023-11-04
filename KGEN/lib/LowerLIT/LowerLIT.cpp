@@ -80,12 +80,133 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct SourceNames {};
+struct SourceNames {
+  SourceNames(ModuleOp module, mlir::SymbolTableAnalysis &analysis)
+      : symtab(module, analysis.getSymbolTables()) {}
+
+  /// Get the source name of a symbol.
+  SourceNameAttr getSourceName(mlir::SymbolOpInterface op);
+  /// Get the source name of a type.
+  SourceNameAttr getSourceName(Type type);
+
+  /// The symbol table to use.
+  KGENModule symtab;
+  /// Computed source names.
+  DenseMap<mlir::SymbolOpInterface, SourceNameAttr> names;
+};
 } // namespace
+
+SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
+  // Try to find an already computed name.
+  if (auto it = names.find(op); it != names.end())
+    return it->second;
+
+  StringAttr name;
+  SmallVector<SourceNameAttr> paramTypes, argTypes;
+  SourceNameAttr parent;
+
+  if (auto package = dyn_cast<PackageOp>(*op)) {
+    // Query the source name. Fall back to the symbol name otherwise.
+    name = package.getSourceNameAttr();
+    if (!name)
+      name = package.getSymNameAttr();
+  } else if (auto fileModule = dyn_cast<FileModuleOp>(*op)) {
+    // Query the source name. Fall back to the symbol name otherwise.
+    name = fileModule.getSourceNameAttr();
+    if (!name)
+      name = fileModule.getSymNameAttr();
+  } else if (auto structOp = dyn_cast<StructDeclOp>(*op)) {
+    // The symbol name is the source name.
+    name = structOp.getSymNameAttr();
+    // Bundle the source names of the parameter types.
+    for (Type type : structOp.getSignature().getParamTypes())
+      paramTypes.push_back(getSourceName(type));
+  } else if (auto func = dyn_cast<LIT::FuncOp>(*op)) {
+    // Query the source name. Fall back to the symbol name otherwise.
+    name = func.getSourceNameAttr();
+    if (!name)
+      name = func.getSymNameAttr();
+    // Bundle the source names of the argument and parameter types. Don't
+    // include the memory-only result slot if it's there.
+    SignatureType sig = func.getSignature();
+    for (Type type : sig.getInputParamTypes())
+      paramTypes.push_back(getSourceName(type));
+    for (auto [i, t, conv] : llvm::drop_begin(
+             llvm::enumerate(sig.getValueInputs(), sig.getInputConventions()),
+             sig.hasMemoryOnlyResult())) {
+      Type type = t;
+      // Unwrap variadics pointers if necessary.
+      if (sig.isVarArg(i))
+        type = cast<VariadicType>(type).getElementAsType();
+      if (SignatureType::hasAddress(conv)) {
+        if (auto ref = dyn_cast<RefType>(type))
+          type = ref.getElementAsType();
+        else
+          type = cast<PointerType>(type).getElementAsType();
+      }
+      argTypes.push_back(getSourceName(type));
+    }
+    // The function will not have parameter values until elaboration.
+  } else {
+    // If we somehow end up here, just use the symbol name.
+    name = op.getNameAttr();
+  }
+
+  if (auto parentOp = op->getParentOfType<mlir::SymbolOpInterface>())
+    parent = getSourceName(parentOp);
+
+  auto sourceName = SourceNameAttr::get(name, paramTypes, argTypes,
+                                        /*paramValues=*/{}, parent);
+  names.try_emplace(op, sourceName);
+  return sourceName;
+}
+
+SourceNameAttr SourceNames::getSourceName(Type type) {
+  // If this is a reference to a source type, then we can use its full source
+  // name.
+  if (auto declRef = dyn_cast<DeclRefType>(type)) {
+    SourceNameAttr name =
+        getSourceName(symtab.lookup<StructDeclOp>(declRef.getSymbol()));
+    // Add the parameter values.
+    SmallVector<StringAttr> paramValues;
+    for (TypedAttr value : declRef.getParamValues())
+      paramValues.push_back(getParamTypeAsString(value));
+    return SourceNameAttr::get(name.getName(), name.getParamTypes(),
+                               name.getArgTypes(), paramValues,
+                               name.getParent());
+  }
+  // For anything else, use the full MLIR type.
+  return SourceNameAttr::get(getTypeAsString(type), {}, {}, {}, {});
+}
 
 //===----------------------------------------------------------------------===//
 // Op Lowering
 //===----------------------------------------------------------------------===//
+
+namespace {
+struct LITLowerer {
+  /// Given a function, check to see if it is a top-level function.  If not,
+  /// lower it to a ParamDeclareRegionOp.
+  void lowerNestedFunction(LIT::FuncOp func);
+  /// Lower LIT dialect operations in a function body.
+  void lowerLITOps(LIT::FuncOp func);
+  /// Lower a lit.func to kgen.generator.
+  LogicalResult lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
+                             const Twine &parentPrefix,
+                             ArrayRef<ParamDeclAttr> parentInputParams = {});
+  /// Lower nested structures in lit.struct.decl away.
+  LogicalResult lowerStructDecl(StructDeclOp structDecl,
+                                Block::iterator symTableIt);
+  /// Lower the constructs within the body of a module decl.
+  LogicalResult lowerModuleDecl(Block *moduleBody,
+                                Block::iterator symTableIt = {},
+                                const Twine &parentPrefix = {});
+
+  SymbolTable &symbolTable;
+  DenseMap<StringAttr, StringAttr> &renamedSymbols;
+  SourceNames &sourceNames;
+};
+} // namespace
 
 static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
   TypedValue<VariantType> variantOperand = handleVariantOp.getVariant();
@@ -106,9 +227,7 @@ static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
   handleVariantOp->erase();
 }
 
-/// Given a function, check to see if it is a top-level function.  If not, lower
-/// it to a ParamDeclareRegionOp.
-static void lowerNestedFunction(LIT::FuncOp func) {
+void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
   // Process a nested function by lowering it straight to a
   // `kgen.param.declare.region`. Nested functions are denoted with an
   // parameter declaration on the function declaration.
@@ -119,12 +238,13 @@ static void lowerNestedFunction(LIT::FuncOp func) {
   auto region = b.create<ParamDeclareRegionOp>(
       decl, func.getSignature(), func.getFunctionType(), func.getInputParams(),
       func.getResultParams(), ArrayRef<ConstraintAttr>(),
-      /*isolated=*/false, func.getInlineLevel());
+      /*isolated=*/false, func.getInlineLevel(),
+      sourceNames.getSourceName(func));
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }
 
-static void lowerLITOps(LIT::FuncOp func) {
+void LITLowerer::lowerLITOps(LIT::FuncOp func) {
   // Check if we are building debug info for source variables.
   DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
   bool buildingDebugVars =
@@ -220,12 +340,10 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
   return mangled.mangled;
 }
 
-/// Lower an lit.func to kgen.generator.
-static LogicalResult
-lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
-             DenseMap<StringAttr, StringAttr> &renamedSymbols,
-             Block::iterator symTableIt, const Twine &parentPrefix,
-             ArrayRef<ParamDeclAttr> parentInputParams = {}) {
+LogicalResult
+LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
+                         const Twine &parentPrefix,
+                         ArrayRef<ParamDeclAttr> parentInputParams) {
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
     StringAttr newName = flattenAndRenameSymbol(gen, symbolTable, symTableIt);
@@ -275,7 +393,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
         gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
         gen.getConstraintsAttr(), gen.getDecoratorsAttr(),
         gen.getInlineLevelAttr(), gen.getExportKindAttr(),
-        gen.getLLVMMetadata());
+        sourceNames.getSourceName(gen), gen.getLLVMMetadata());
     result = newGen;
 
     // Move over the body.
@@ -293,11 +411,8 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   return success();
 }
 
-/// Lower nested structures in lit.struct.decl away.
-static LogicalResult
-lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
-                DenseMap<StringAttr, StringAttr> &renamedSymbols,
-                Block::iterator symTableIt) {
+LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
+                                          Block::iterator symTableIt) {
   // Update the name of this struct, incorporating any parents.
   StringAttr structName =
       flattenAndRenameSymbol(structDecl, symbolTable, symTableIt);
@@ -317,7 +432,7 @@ lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
 
     // Lower renamed function as usual.
     if (failed(lowerLITFunc(
-            func, symbolTable, renamedSymbols, structDecl->getIterator(),
+            func, structDecl->getIterator(),
             structName.getValue() + "::", structDecl.getInputParams())))
       return failure();
   }
@@ -353,12 +468,9 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   return success();
 }
 
-/// Lower the constructs within the body of a module decl.
-static LogicalResult
-lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
-                DenseMap<StringAttr, StringAttr> &renamedSymbols,
-                Block::iterator symTableIt = {},
-                const Twine &parentPrefix = {}) {
+LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
+                                          Block::iterator symTableIt,
+                                          const Twine &parentPrefix) {
   bool isTopLevel = symTableIt == Block::iterator();
   for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
     // If we are already in the symbol table, use the the operations iterator.
@@ -367,18 +479,15 @@ lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
     LogicalResult result =
         TypeSwitch<Operation *, LogicalResult>(&op)
             .Case([&](LIT::FuncOp op) {
-              return lowerLITFunc(op, symbolTable, renamedSymbols, opSymTableIt,
-                                  parentPrefix);
+              return lowerLITFunc(op, opSymTableIt, parentPrefix);
             })
             .Case([&](StructDeclOp op) {
-              return lowerStructDecl(op, symbolTable, renamedSymbols,
-                                     opSymTableIt);
+              return lowerStructDecl(op, opSymTableIt);
             })
             .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
               // Lower the constructs within the body.
               Block *fileBody = op.getBody();
-              if (failed(lowerModuleDecl(fileBody, symbolTable, renamedSymbols,
-                                         opSymTableIt,
+              if (failed(lowerModuleDecl(fileBody, opSymTableIt,
                                          parentPrefix + op.getName() + "::")))
                 return failure();
 
@@ -610,15 +719,24 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     // TODO: This has to be a module pass because this mutates the body of
     // the module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
-    SymbolTable &symbolTable =
-        getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+
+    // Go build all the required source names before the structure of the IR
+    // changes.
+    SourceNames sourceNames(getOperation(), analysis);
+    getOperation().walk(
+        [&](LIT::FuncOp func) { sourceNames.getSourceName(func); });
+
     DenseMap<StringAttr, StringAttr> renamedSymbols;
     if (failed(orderAndLowerGlobalVariables(
             module, renamedSymbols,
             static_cast<llvm::dwarf::SourceLanguage>(
                 debugInfoLanguage.getValue()))))
       return signalPassFailure();
-    if (failed(lowerModuleDecl(module.getBody(), symbolTable, renamedSymbols)))
+
+    LITLowerer lowerer{analysis.getTopLevelSymbolTable(), renamedSymbols,
+                       sourceNames};
+    if (failed(lowerer.lowerModuleDecl(module.getBody())))
       return signalPassFailure();
     lowerAttributesAndTypes(module, renamedSymbols);
   }
