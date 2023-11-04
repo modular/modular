@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from lib.LLDBTestBase import LLDBTestBase, SourceFile
 from lib.debugger import lldb
+from lib.LLDBTestBase import LLDBTestBase
 
 
 class TestSample(LLDBTestBase):

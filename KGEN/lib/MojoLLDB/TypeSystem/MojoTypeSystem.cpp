@@ -549,6 +549,13 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
             impl->dataLayoutContext->getOrCalculate(eltType)) {
       childByteSize = layout->getByteSize();
       childByteOffset = 0;
+      childIsDerefOfParent = true;
+      const char *parentName =
+          valobj ? valobj->GetName().GetCString() : nullptr;
+      if (parentName) {
+        childName.assign(1, '*');
+        childName += parentName;
+      }
       return createCompilerType(astType.getPointerElementType());
     }
     return {};
