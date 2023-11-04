@@ -154,6 +154,7 @@ def FileModuleOp : LITOp<"file_module", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sourceName,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -164,7 +165,7 @@ def FileModuleOp : LITOp<"file_module", [
   }];
 
   let builders = [
-    OpBuilder<(ins "StringAttr":$name)>,
+    OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName)>,
   ];
   let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
   let skipDefaultBuilders = 1;

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo | FileCheck %s
 
-# CHECK: lit.file_module @"$[[F:.*]]"
+# CHECK: lit.file_module @"$[[F:.*]]" attributes
 
 # CHECK-COUNT-2: lit.struct.decl @"_CI_
 

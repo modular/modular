@@ -1117,9 +1117,10 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 
   // Create a new module state. This isn't an imported module, so we can only
   // cache if we're caching everything.
-  ModuleState &state = createModuleState(
-      mangledName, mangledName, moduleBuffer, *impl->topLevelModuleState, loc,
-      impl->moduleCachingLevel == ParserConfig::kCacheAll);
+  ModuleState &state =
+      createModuleState(StringAttr::get(getContext(), moduleName), mangledName,
+                        moduleBuffer, *impl->topLevelModuleState, loc,
+                        impl->moduleCachingLevel == ParserConfig::kCacheAll);
   return *state.decl;
 }
 
@@ -1157,7 +1158,8 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
 
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
-  Operation *fileOp = moduleBuilder.create<FileModuleOp>(loc, mangledName);
+  Operation *fileOp =
+      moduleBuilder.create<FileModuleOp>(loc, mangledName, declName);
   ASTDecl &moduleDecl = declResolver->addDecl(
       fileOp, lexer.getToken().getLoc(), declName, parentState.decl,
       lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);

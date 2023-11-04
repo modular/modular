@@ -273,8 +273,9 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os,
 //===----------------------------------------------------------------------===//
 
 void FileModuleOp::build(OpBuilder &odsBuilder, OperationState &state,
-                         StringAttr name) {
+                         StringAttr name, StringAttr sourceName) {
   state.addAttribute(getSymNameAttrName(state.name), name);
+  state.addAttribute(getSourceNameAttrName(state.name), sourceName);
   state.addRegion()->push_back(new Block());
 }
 

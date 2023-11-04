@@ -773,7 +773,8 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
   LIT::Lexer lexer(impl->parserContext->getSharedState().diags, sourceBuf);
 
   Operation *fileOp = parentDecl.getDeclEndBuilder().create<LIT::FileModuleOp>(
-      sharedState.translateLocation(parentDecl.getLoc()), mangledName);
+      sharedState.translateLocation(parentDecl.getLoc()), mangledName,
+      StringAttr::get(sharedState.getContext(), moduleName));
   return &sharedState.declResolver->addFullyResolvedDecl(
       fileOp, mangledName, lexer.getToken().getLoc(), &parentDecl);
 }
