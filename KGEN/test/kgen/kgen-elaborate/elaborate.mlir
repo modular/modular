@@ -2113,3 +2113,27 @@ kgen.generator export @entry() {
   kgen.param.constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <value>
   kgen.return
 }
+
+// -----
+
+// CHECK: kgen.func @func
+kgen.generator @func() {
+  kgen.unreachable
+}
+
+// CHECK: kgen.func @"param,a=2"
+// CHECK: kgen.func @"param,a=3"
+kgen.generator @param<a>() {
+  kgen.unreachable
+}
+
+// CHECK-LABEL: kgen.func export @entry
+kgen.generator export @entry() {
+  // CHECK: constant: () -> () = <@func>
+  kgen.param.constant: () -> () = <@func>
+  // CHECK: constant: () -> () = <@"param,a=2">
+  kgen.param.constant: () -> () = <@param<2>>
+  // CHECK: constant: struct<(() -> ())> = <{ @"param,a=3" }>
+  kgen.param.constant: struct<(() -> ())> = <{ @param<3> }>
+  kgen.return
+}

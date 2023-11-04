@@ -57,15 +57,20 @@ static LogicalResult verifyParamValueOp(OpT op) {
     if (sig.isCapturing())
       return op.emitOpError("cannot be used to materialize capturing closures; "
                             "use `kgen.create_closure` instead");
-    if (!sig.getResultParamTypes().empty() || !sig.getInputParamTypes().empty())
-      return op.emitOpError("cannot materialize parametric signatures; fully "
-                            "bind the signature first");
   }
 
   if (op.getValue().getType() == op.getType())
     return success();
   return op.emitOpError() << "parameter type " << op.getValue().getType()
                           << " does not match result type " << op.getType();
+}
+
+/// Return true if the parameter value contains symbol constants, making the
+/// operation implicit parametric.
+static bool containsSymbolConstants(TypedAttr value) {
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([](SymbolConstantAttr) { return WalkResult::interrupt(); });
+  return walker.walk(value).wasInterrupted();
 }
 
 LogicalResult ParamConstantOp::verify() { return verifyParamValueOp(*this); }
@@ -93,6 +98,13 @@ void ParamConstantOp::getAsmResultNames(
 OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
   return getValueAttr();
 }
+
+bool ParamConstantOp::isImplicitlyParametric() {
+  return containsSymbolConstants(getValue());
+}
+
+void ParamConstantOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
 
 //===----------------------------------------------------------------------===//
 // ParamMaterializeOp
@@ -129,6 +141,13 @@ ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
   state.mapResults(value);
   return success();
 }
+
+bool ParamMaterializeOp::isImplicitlyParametric() {
+  return containsSymbolConstants(getValue());
+}
+
+void ParamMaterializeOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
 
 //===----------------------------------------------------------------------===//
 // ParamDeclareOp
