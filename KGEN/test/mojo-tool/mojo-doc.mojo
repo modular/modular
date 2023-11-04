@@ -6,6 +6,10 @@
 
 # RUN: mojo doc %s | FileCheck %s
 
+# Check that no diagnostics are output:
+# RUN: mojo doc %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG
+# CHECK-DIAG-NOT: warning
+
 """
 This is a module summary, that
 spills over to the next line."""
@@ -49,7 +53,7 @@ fn empty_fn():
 # CHECK:  "name": "fn_that_async",
 # CHECK:  "overloads":
 # CHECL:      "async": true
-# CHECK:      "returns": "an Int."
+# CHECK:      "returns": "An Int."
 # CHECK:      "signature": "fn_that_async() -> Int"
 # CHECK:      "summary": "This is a function summary."
 
@@ -60,7 +64,7 @@ async fn fn_that_async() -> Int:
     The is some kind of description.
 
     Returns:
-        an Int.
+        An Int.
     """
     return 33
 
@@ -69,7 +73,7 @@ async fn fn_that_async() -> Int:
 # CHECK:  "name": "fn_that_raises",
 # CHECK:  "overloads":
 # CHECL:      "raises": true
-# CHECK:      "returns": "an Int."
+# CHECK:      "returns": "An Int."
 # CHECK:      "signature": "fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
 
@@ -80,7 +84,7 @@ def fn_that_raises() -> Int:
     The is some kind of description.
 
     Returns:
-        an Int.
+        An Int.
     """
     return 33
 
