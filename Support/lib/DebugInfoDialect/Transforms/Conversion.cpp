@@ -71,6 +71,8 @@ DebugInfoTypeConverter::DebugInfoTypeConverter() {
 }
 
 DIType DebugInfoTypeConverter::convertDebugType(Type type) {
+  if (!type)
+    return {};
   return dyn_cast_or_null<DIType>(replacer.replace(type));
 }
 

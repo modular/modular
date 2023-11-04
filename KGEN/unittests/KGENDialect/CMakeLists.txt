@@ -6,7 +6,7 @@
 
 add_modular_unittest(
   TOP_LEVEL_CHECK
-  check-mojo
+  check-kgen
 
   SUITE_NAME
   KGENDialectUnitTests
