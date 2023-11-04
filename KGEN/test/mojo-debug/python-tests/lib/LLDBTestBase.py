@@ -4,40 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import configparser
 import contextlib
-import importlib
-import importlib.util
-import os
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generator, Optional, Union
-
-_lldb: Any = None
-
-
-def load_lldb() -> Any:
-    """Loads the lldb python module and cache it."""
-    global _lldb
-    if _lldb is None:
-        # Fortunately the path to the module can be gotten from LLDB itself.
-        lldb_lib = subprocess.check_output(
-            ["mojo", "debug", "-P"], text=True
-        ).strip()
-        sys.path.insert(0, lldb_lib)
-        _lldb = importlib.import_module("lldb")
-    return _lldb
+from .debugger import lldb, debugger
 
 
-lldb = load_lldb()
-
-
-def handle_command_for_context(
-    command: str, debugger: Any, context: Any
-) -> bool:
+def handle_command_for_context(command: str, context: Any) -> bool:
     """Execute the provided command using the provided context (thread, process
     or frame) and print its output and error.
 
@@ -122,29 +98,7 @@ class LLDBTestBase:
     """Base class for all tests that interact with LLDB using the SB API."""
 
     def setup_class(self):
-        """Ensures that the lldb module is loaded and that a debugger is created
-        with Mojo support."""
-        load_lldb()
-
-        self.debugger = lldb.SBDebugger.Create(False)  # no load lldb init files
-
-        # This sets up the debugger for running in the test environment.
-        self.debugger.HandleCommand(
-            "command source " + os.environ["LLDB_TEST_INIT_FILE"]
-        )
-
-        # This is needed to ensure that we wait for the debugger to stop any
-        # time we issue stepping commands.
-        self.debugger.SetAsync(False)
-
-        cfg = configparser.ConfigParser()
-        cfg.read(
-            os.path.join(os.environ["MODULAR_DERIVED_PATH"], "modular.cfg")
-        )
-        plugin_path = cfg.get(section="mojo", option="lldb_plugin_path").strip(
-            ";"
-        )
-        self.debugger.HandleCommand(f"plugin load {plugin_path}")
+        pass
 
     def build(self, source: SourceFile, output_path: Path) -> None:
         subprocess.run(
@@ -192,14 +146,14 @@ class LLDBTestBase:
             bin_file = Path(out_dir) / (source.path.name + ".exe")
             self.build(source, bin_file)
 
-            target = self.debugger.CreateTarget(str(bin_file))
+            target = debugger.CreateTarget(str(bin_file))
             assert target.IsValid()
 
             self.set_breakpoints_from_comments(source, target)
 
             # We use this command because it nicely uses all the defaults from
             # the lldb init file, unlike debugger.Launch.
-            assert handle_command_for_context("run", self.debugger, target)
+            assert handle_command_for_context("run", target)
 
             process = target.GetProcess()
             assert process.IsValid()
