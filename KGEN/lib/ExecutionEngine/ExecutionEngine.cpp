@@ -267,8 +267,10 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
   if (!orcRTBuf)
     return success();
 
-  // The ELFNixPlatform has memory leaks, don't set it up.
-  if (tt.isOSBinFormatELF())
+  // Disable the runtime on Linux, since there are issues with multi-tenancy
+  // and memory leaks. Disable the runtime on MacOS due to issues with
+  // libunwind.
+  if (tt.isOSBinFormatELF() || tt.isOSBinFormatMachO())
     return success();
 
   auto orcRTMemBuf =
