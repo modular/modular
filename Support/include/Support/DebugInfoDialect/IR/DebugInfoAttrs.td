@@ -40,11 +40,12 @@ def ourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
     OptionalArrayRefParameter<"SourceNameAttr">:$paramTypes,
     OptionalArrayRefParameter<"SourceNameAttr">:$argTypes,
     OptionalArrayRefParameter<"StringAttr">:$paramValues,
-    OptionalParameter<"SourceNameAttr">:$parent
+    OptionalParameter<"SourceNameAttr">:$parent,
+    OptionalParameter<"StringAttr">:$kind
   );
 
   let assemblyFormat = [{
-    `<` $name
+    `<` (`(` $kind^ `)`)? `` $name
     (`[` $paramTypes^ `]`)? ``
     (`(` $argTypes^ `)`)? ``
     (`<` $paramValues^ `>`)?
@@ -57,18 +58,20 @@ def ourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
         "ArrayRef<SourceNameAttr>":$paramTypes,
         "ArrayRef<SourceNameAttr>":$argTypes,
         "ArrayRef<StringAttr>":$paramValues,
-        "SourceNameAttr":$parent), [{
+        "SourceNameAttr":$parent,
+        "StringAttr":$kind), [{
       return $_get(name.getContext(), name, paramTypes, argTypes, paramValues,
-                   parent);
+                   parent, kind);
     }]>,
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        CArg<"StringAttr", "{}">:$kind,
                                         CArg<"SourceNameAttr", "{}">:$parent), [{
-      return get(name, {}, {}, {}, parent);
+      return get(name, {}, {}, {}, parent, kind);
     }]>,
     AttrBuilderWithInferredContext<(ins "const Twine &":$name,
                                         "SourceNameAttr":$parent), [{
       return get(StringAttr::get(parent.getContext(), name), {}, {}, {},
-                                 parent);
+                                 parent, {});
     }]>
   ];
 
