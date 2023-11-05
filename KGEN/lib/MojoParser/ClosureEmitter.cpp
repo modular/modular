@@ -54,6 +54,14 @@ StringAttr ClosureEmitter::getClosureNameFromType(StringRef prefix,
                              "_escaping");
 }
 
+static void addFieldsToStruct(StructDeclOp structDeclOp, ArrayRef<Type> fields,
+                              Location location) {
+  OpBuilder b(structDeclOp.getRegion());
+  b.setInsertionPointToStart(&structDeclOp.getFields().front());
+  for (auto [i, type] : llvm::enumerate(fields))
+    b.create<StructFieldOp>(location, "field" + Twine(i), type);
+}
+
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
                                  ArrayRef<Type> fields, Location location,
                                  ArrayRef<Type> inputParameters) {
@@ -69,10 +77,9 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
     inputParams.push_back(paramDecl);
     inputParamNames.push_back(paramDecl.getName());
   }
+
   StructDeclOp declOp = b.create<StructDeclOp>(location, nameAttr);
-  b.setInsertionPointToStart(&declOp.getFields().front());
-  for (auto [i, type] : llvm::enumerate(fields))
-    b.create<StructFieldOp>(location, "field" + Twine(i), type);
+  addFieldsToStruct(declOp, fields, location);
 
   // Set attributes in bulk.
   NamedAttrList attrs = declOp->getAttrDictionary();
@@ -502,9 +509,24 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       parentRefToClosureImplParamIndex[capturedParam.getName()] =
           closureImplParameterIndex++;
 
-  StructDeclOp declOp =
-      createStruct(fileModuleOp, name, fieldTypes, fileModuleOp.getLoc(),
-                   closureImplSignature.getInputParamTypes());
+  StructDeclOp declOp = createStruct(fileModuleOp, name, SmallVector<Type>(),
+                                     fileModuleOp.getLoc(),
+                                     closureImplSignature.getInputParamTypes());
+  // Parameter captures should be replaced with references to the struct.
+  mlir::AttrTypeReplacer replacer;
+  // TODO: This logic is wrong for IndexRefs: #24544
+  replacer.addReplacement([&](ParamDeclRefAttr declRef) {
+    if (auto it = parentRefToClosureImplParamIndex.find(declRef.getName());
+        it != parentRefToClosureImplParamIndex.end())
+      return ParamDeclRefAttr::get(declOp.getInputParams()[it->getSecond()]);
+    return declRef;
+  });
+  SmallVector<Type> correctedFieldTypes;
+  correctedFieldTypes.reserve(fieldTypes.size());
+  for (Type field : fieldTypes)
+    correctedFieldTypes.push_back(replacer.replace(field));
+  addFieldsToStruct(declOp, correctedFieldTypes, fileModuleOp.getLoc());
+
   ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
       declOp.getOperation(), declOp.getDeclName(), moduleDecl.getLoc(),
       &moduleDecl);
@@ -520,6 +542,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   SmallVector<Type> initSigTypes{ptrToClosureImplType};
   llvm::append_range(initSigTypes,
                      llvm::drop_end(closureImplSigTypes, wrapperNumArgs));
+  for (auto [i, type] : llvm::enumerate(initSigTypes))
+    initSigTypes[i] = replacer.replace(type);
 
   SmallVector<ValueInputConvention> initSigConventions{
       ValueInputConvention::InitSelf};
@@ -612,15 +636,6 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   Type closureResultType = closureImplSignature.getValueResults().front();
   auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
                                                   &declOp.getFields().front());
-  // Parameter captures should be replaced with references to the struct.
-  mlir::AttrTypeReplacer replacer;
-  // TODO: This logic is wrong for IndexRefs: #24544
-  replacer.addReplacement([&](ParamDeclRefAttr declRef) {
-    if (auto it = parentRefToClosureImplParamIndex.find(declRef.getName());
-        it != parentRefToClosureImplParamIndex.end())
-      return ParamDeclRefAttr::get(declOp.getInputParams()[it->getSecond()]);
-    return declRef;
-  });
   SmallVector<Type> argumentTypes = llvm::map_to_vector(
       callInputTypes, [&](Type argType) { return replacer.replace(argType); });
   LIT::FuncOp callFunc = createFunction(
