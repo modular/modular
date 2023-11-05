@@ -17,7 +17,6 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Support/ForkJoin.h"
@@ -767,10 +766,7 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
     os << forkParam << '=' << getParamAsString(value);
   else
     os << '@' << cast<StringAttr>(value).getValue();
-  auto forkName = StringAttr::get(value.getContext(), name);
-  if (config.sanitizeSymbolNames)
-    forkName = sanitizeSymbolToAlnum(forkName);
-  clone.setSymName(forkName);
+  clone.setSymName(StringAttr::get(value.getContext(), name));
 
   // Update the subprogram information.
   if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
@@ -2061,8 +2057,6 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   OpBuilder b(gen.getContext());
   StringAttr mangledName = b.getStringAttr(
       baseName + Twine(inputParamValues.empty() ? "_concrete" : ""));
-  if (config.sanitizeSymbolNames)
-    mangledName = sanitizeSymbolToAlnum(mangledName);
 
   auto newFunc = b.create<FuncOp>(
       gen.getLoc(), mangledName,
@@ -2505,10 +2499,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       if (node.inputParams.empty() && first) {
         // Rename the first successful function for concrete top-level
         // generators, if there is one. Sanitize the symbol name if requested.
-        StringAttr newName = node.gen.getSymNameAttr();
-        if (config.sanitizeSymbolNames)
-          newName = sanitizeSymbolToAlnum(newName);
-        renameFunc(first, newName);
+        renameFunc(first, node.gen.getSymNameAttr());
       }
 
       // Sort the successful instantiations, if there are more than 1.
@@ -2563,37 +2554,16 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     });
     ThreadLocalCache<mlir::AttrTypeReplacer> renamers(
         renamer, ctx->isMultithreadingEnabled() ? ctx->getNumThreads() : 1);
-    mlir::parallelForEach(
-        ctx, theModule.getOps<FuncOp>(),
-        [&, sanitize = config.sanitizeSymbolNames](FuncOp func) {
-          TimeTraceScope traceScope("replaceSymbolsIn", [func]() mutable {
-            return func.getSymName().str();
-          });
-          func.getBodyRegion().walk([&](Operation *op) {
-            renamers.getThreadLocalCache().replaceElementsIn(
-                op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
-                /*replaceTypes=*/true);
-            if (auto addr = dyn_cast<GlobalAddressOp>(op)) {
-              if (sanitize)
-                addr.setGlobalAttr(FlatSymbolRefAttr::get(sanitizeSymbolToAlnum(
-                    addr.getGlobalAttr().getRootReference())));
-            }
-          });
-        });
-    if (config.sanitizeSymbolNames) {
-      TimeTraceScope traceScope("sanitizeGlobalNames");
-      for (auto global : theModule.getOps<GlobalOp>()) {
-        if (SymbolRefAttr name = global.getCtorAttr())
-          global.setCtorAttr(FlatSymbolRefAttr::get(
-              sanitizeSymbolToAlnum(name.getRootReference())));
-        if (SymbolRefAttr name = global.getDtorAttr())
-          global.setDtorAttr(FlatSymbolRefAttr::get(
-              sanitizeSymbolToAlnum(name.getRootReference())));
-        symtab.get().remove(global);
-        global.setSymNameAttr(sanitizeSymbolToAlnum(global.getSymNameAttr()));
-        symtab.get().insert(global);
-      }
-    }
+    mlir::parallelForEach(ctx, theModule.getOps<FuncOp>(), [&](FuncOp func) {
+      TimeTraceScope traceScope("replaceSymbolsIn", [func]() mutable {
+        return func.getSymName().str();
+      });
+      func.getBodyRegion().walk([&](Operation *op) {
+        renamers.getThreadLocalCache().replaceElementsIn(
+            op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
+            /*replaceTypes=*/true);
+      });
+    });
   }
 
   return success();
@@ -2742,7 +2712,7 @@ public:
             evaluatorExecutorFn, compileAsmFn,
             ElaborateGeneratorsOptions{enableSearch, allowMultiplePrimaryImpls,
                                        maxDepth, elaborateLocations,
-                                       sanitizeSymbolNames, diagAllFailures})))
+                                       diagAllFailures})))
       return signalPassFailure();
   }
 

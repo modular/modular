@@ -33,8 +33,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
     llvm::opt::OptSpecifier mtuneId, llvm::opt::OptSpecifier noOptimizationId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
-    llvm::opt::OptSpecifier debugInfoLanguageId,
-    llvm::opt::OptSpecifier noAlnumSymbolsId) {
+    llvm::opt::OptSpecifier debugInfoLanguageId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -101,9 +100,6 @@ ErrorOrSuccess M::parseCompilationOptions(
   // Disabled optimizations.
   if (args.hasArg(noOptimizationId))
     compilationOptions.optimizationLevel = 0;
-
-  if (args.hasArg(noAlnumSymbolsId))
-    compilationOptions.sanitizeMangledSymbols = false;
 
   // Setup the debug level.
   StringLiteral kDebugLevelNone = "none";

@@ -1973,7 +1973,7 @@ kgen.generator @func() {
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK: constant: string = <"func">
-  kgen.param.constant: string = <get_linkage_name(:() -> () @func)>
+  kgen.param.constant: string = <get_linkage_name(current_target(), :() -> () @func)>
   kgen.return
 }
 
@@ -2003,15 +2003,15 @@ kgen.generator export @main() {
   // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}no_params
   %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), :() -> () @no_params)>
   // CHECK-NEXT: constant: string = <"no_params">
-  %1 = kgen.param.constant: string = <get_linkage_name(:() -> () @no_params)>
+  %1 = kgen.param.constant: string = <get_linkage_name(current_target(), :() -> () @no_params)>
   // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}params,a=1,b=2
   %2 = kgen.param.constant: !capture = <compile_assembly(current_target(), :() -> (index, index) @params<1, 2>)>
   // CHECK-NEXT: constant: string = <"params,a=1,b=2">
-  %3 = kgen.param.constant: string = <get_linkage_name(:() -> (index, index) @params<1, 2>)>
+  %3 = kgen.param.constant: string = <get_linkage_name(current_target(), :() -> (index, index) @params<1, 2>)>
   // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}func_param,f=@params
   %4 = kgen.param.constant: !capture = <compile_assembly(current_target(), :() -> index @func_param<:<index, index>() -> (index, index) @params>)>
   // CHECK-NEXT: constant: string = <"func_param,f=@params">
-  %5 = kgen.param.constant: string = <get_linkage_name(:() -> index @func_param<:<index, index>() -> (index, index) @params>)>
+  %5 = kgen.param.constant: string = <get_linkage_name(current_target(), :() -> index @func_param<:<index, index>() -> (index, index) @params>)>
   kgen.return
 }
 

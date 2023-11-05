@@ -119,8 +119,4 @@ def debug_info_language : Separate<["--", "-"], "debug-info-language">,
     "that don't understand Mojo."
   >;
 
-def no_alnum_symbols: Flag<["--", "-"], "no-alnum-symbols">,
-  Group<ExperimentalCompilationOptionGroup>, Index<3>,
-  HelpText<"Don't emit mangled symbol names in alnum format.">;
-
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD

@@ -312,7 +312,6 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   elaboratorOptions.elaborateLocations =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
-  elaboratorOptions.sanitizeSymbolNames = options.sanitizeMangledSymbols;
   mlir::PassManager pm(target.getContext());
   pm.addPass(createElaborateGenerators(
       runtime, target, BuildInfoAttr::getForCurrentBuild(target.getContext()),
@@ -588,7 +587,6 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
 std::unique_ptr<Pass>
 KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
   CompilationOptions options;
-  options.sanitizeMangledSymbols = false;
   return createElaborateGenerators(
       runtime, /*target=*/{}, /*build=*/{}, /*options=*/{},
       [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,

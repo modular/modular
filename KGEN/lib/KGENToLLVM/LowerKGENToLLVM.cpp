@@ -13,15 +13,18 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Support/NameMangling.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
+#include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Threading.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1030,6 +1033,38 @@ void LowerKGENToLLVMPass::runOnOperation() {
                     "could not find an enclosing target specification");
     return signalPassFailure();
   }
+
+  // HACK HACK HACK: Our current name mangling scheme is not compatible with the
+  // NVPTX backend. Change the symbol names to be compatbile.
+  if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
+                         targetInfo.getTriple().getArch())) {
+    DenseMap<StringAttr, StringAttr> renamed;
+    for (auto symbol : getOperation().getOps<mlir::SymbolOpInterface>()) {
+      StringAttr name = symbol.getNameAttr();
+      StringAttr sanitized = sanitizeSymbolToAlnum(symbol.getNameAttr());
+      if (name != sanitized) {
+        renamed.try_emplace(name, sanitized);
+        symbol.setName(sanitized);
+      }
+    }
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&renamed](FlatSymbolRefAttr symbol) {
+      if (auto it = renamed.find(symbol.getAttr()); it != renamed.end())
+        return FlatSymbolRefAttr::get(it->second);
+      return symbol;
+    });
+    ThreadLocalCache<mlir::AttrTypeReplacer> replacers(
+        replacer, getContext().isMultithreadingEnabled()
+                      ? getContext().getNumThreads()
+                      : 1);
+    auto workFn = [&replacers](Operation &op) {
+      replacers.getThreadLocalCache().recursivelyReplaceElementsIn(
+          &op, /*replaceAttrs=*/true, /*replaceLocs*/ false,
+          /*replaceTypes=*/false);
+    };
+    mlir::parallelForEach(&getContext(), getOperation().getOps(), workFn);
+  }
+
   POPToLLVMTypeConverter typeConverter(targetInfo);
 
   // Attach the LLVM data layout and target triple strings to the module so they
