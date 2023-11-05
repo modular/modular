@@ -90,7 +90,6 @@ def KGEN_FuncOp : KGENOp<"func", [
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
     OptionalAttr<SymbolRefAttr>:$precompiledBodyRef,
-    OptionalAttr<KGEN_SourceNameAttr>:$sourceName,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
@@ -111,12 +110,11 @@ def KGEN_FuncOp : KGENOp<"func", [
                         "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
-                   CArg<"SourceNameAttr", "{}">:$sourceName,
                    CArg<"DictionaryAttr", "{}">:$llvmMetadata), [{
       if (!llvmMetadata)
         llvmMetadata = DictionaryAttr::get(name.getContext());
       build($_builder, $_state, name, signature, decorators, inlineLevel,
-            exportKind, /*precompiledBodyRef=*/{}, sourceName, llvmMetadata);
+            exportKind, /*precompiledBodyRef=*/{}, llvmMetadata);
     }]>,
   ];
 
@@ -202,7 +200,6 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
-    OptionalAttr<KGEN_SourceNameAttr>:$sourceName,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
@@ -219,7 +216,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "ArrayRef<ParamDeclAttr>":$resultParams), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
             resultParams, /*constraints=*/{}, /*decorators=*/{},
-            InlineLevel::Automatic, ExportKind::NotExported, SourceNameAttr(),
+            InlineLevel::Automatic, ExportKind::NotExported,
             DictionaryAttr::get(name.getContext()));
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
@@ -558,8 +555,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     KGEN_ParamDeclArrayAttr:$resultParams,
     ConstraintArrayAttr:$constraints,
     UnitAttr:$isolated,
-    KGEN_InlineLevelAttr:$inlineLevel,
-    OptionalAttr<KGEN_SourceNameAttr>:$sourceName
+    KGEN_InlineLevelAttr:$inlineLevel
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

@@ -230,14 +230,6 @@ def VariantAttr : DialectAttribute<(attr
   ConcreteType<"VariantType">:$type
 )>;
 
-def SourceNameAttr : DialectAttribute<(attr
-  ConcreteAttribute<"StringAttr">:$name,
-  ConcreteAttrArray<"SourceNameAttr">:$paramTypes,
-  ConcreteAttrArray<"SourceNameAttr">:$argTypes,
-  ConcreteAttrArray<"StringAttr">:$paramValues,
-  ConcreteOptionalAttribute<"SourceNameAttr">:$parent
-)>;
-
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -268,8 +260,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     StructAttr,
     StructExtractAttr,
     PackAttr,
-    VariantAttr,
-    SourceNameAttr
+    VariantAttr
   ];
 }
 

@@ -1,0 +1,16 @@
+// RUN: support-dialect-opt %s | support-dialect-opt | FileCheck %s
+
+// CHECK-DAG: #builtin_name = #debuginfo.source_name<"builtin">
+// CHECK-DAG: #int_name = #debuginfo.source_name<"int" from #builtin_name>
+// CHECK-DAG: #simd_name = #debuginfo.source_name<"simd" from #builtin_name>
+// CHECK-DAG: #Int_name = #debuginfo.source_name<"Int" from #int_name>
+// CHECK-DAG: #SIMD_name = #debuginfo.source_name<"SIMD"[#Int_name] from #simd_name>
+// CHECK-DAG: #func_name = #debuginfo.source_name<"func"(#SIMD_name)<"1 : index">>
+#builtin_name = #debuginfo.source_name<"builtin">
+#int_name = #debuginfo.source_name<"int" from #builtin_name>
+#simd_name = #debuginfo.source_name<"simd" from #builtin_name>
+#Int_name = #debuginfo.source_name<"Int" from #int_name>
+#SIMD_name = #debuginfo.source_name<"SIMD"[#Int_name] from #simd_name>
+#func_name = #debuginfo.source_name<"func"(#SIMD_name)<"1 : index">>
+
+module attributes {debuginfo.source_name = #func_name} {}

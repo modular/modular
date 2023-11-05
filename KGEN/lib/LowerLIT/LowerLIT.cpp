@@ -80,6 +80,7 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
 //===----------------------------------------------------------------------===//
 
 namespace {
+using DebugInfo::SourceNameAttr;
 struct SourceNames {
   SourceNames(ModuleOp module, mlir::SymbolTableAnalysis &analysis)
       : symtab(module, analysis.getSymbolTables()) {}
@@ -238,8 +239,7 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
   auto region = b.create<ParamDeclareRegionOp>(
       decl, func.getSignature(), func.getFunctionType(), func.getInputParams(),
       func.getResultParams(), ArrayRef<ConstraintAttr>(),
-      /*isolated=*/false, func.getInlineLevel(),
-      sourceNames.getSourceName(func));
+      /*isolated=*/false, func.getInlineLevel());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }
@@ -393,7 +393,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
         gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
         gen.getConstraintsAttr(), gen.getDecoratorsAttr(),
         gen.getInlineLevelAttr(), gen.getExportKindAttr(),
-        sourceNames.getSourceName(gen), gen.getLLVMMetadata());
+        gen.getLLVMMetadata());
     result = newGen;
 
     // Move over the body.
@@ -724,8 +724,6 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     // Go build all the required source names before the structure of the IR
     // changes.
     SourceNames sourceNames(getOperation(), analysis);
-    getOperation().walk(
-        [&](LIT::FuncOp func) { sourceNames.getSourceName(func); });
 
     DenseMap<StringAttr, StringAttr> renamedSymbols;
     if (failed(orderAndLowerGlobalVariables(
