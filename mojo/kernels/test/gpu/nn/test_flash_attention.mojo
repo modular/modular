@@ -25,7 +25,10 @@ from gpu.host.memory import (
     _malloc,
 )
 
-from MultiHeadAttention import flash_attention_kernel, _naive_attention
+from MultiHeadAttention import (
+    flash_attention_kernel,
+    _naive_attention_with_transpose,
+)
 
 alias type = DType.float32
 
@@ -78,7 +81,9 @@ fn test() raises:
     )
     let output = NDBuffer[4, BSHD, type](output_ptr)
 
-    _naive_attention[type, BSHD, BHSD, BHDS](output, q, k, v, mask, scale)
+    _naive_attention_with_transpose[type, BSHD, BHSD, BHDS](
+        output, q, k, v, mask, scale
+    )
 
     let stream = Stream()
 
