@@ -1951,7 +1951,7 @@ void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
 }
 
 void SharedState::addCapturedParameterToScope(
-    ASTDecl &scope, ASTDecl *captureDecl, ParameterCapture parameterCapture) {
+    ASTDecl &scope, ParameterCapture parameterCapture) {
   if (!getImpl().capturedParametersInScope.contains(&scope))
     getImpl().capturedParametersInScope.insert({&scope, ParameterCaptures()});
   ParameterCaptures &capturedParams =

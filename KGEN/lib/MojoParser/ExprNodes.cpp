@@ -521,10 +521,10 @@ enum class CaptureRecordResult { Fail, Success, Error };
 
 /// CaptureInfo contains all the information required to record a capture.
 struct CaptureInfo {
-  CaptureInfo(StringRef srcSpelling, ASTDecl *astDecl, unsigned depth,
+  CaptureInfo(StringRef srcSpelling, unsigned depth,
               ParamDeclRefAttr paramDeclRef, ASTDecl &container)
-      : srcSpelling(srcSpelling), astDecl(astDecl), depth(depth),
-        paramDeclRef(paramDeclRef), container(container) {}
+      : srcSpelling(srcSpelling), depth(depth), paramDeclRef(paramDeclRef),
+        container(container) {}
   CaptureRecordResult recordCaptureInFunction(ExprEmitter &emitter,
                                               ASTDecl *currentParent,
                                               Location location) const {
@@ -545,9 +545,8 @@ struct CaptureInfo {
       [[fallthrough]];
     case ParameterRelation::Input:
       emitter.shared.addCapturedParameterToScope(
-          container, astDecl,
-          ParameterCapture(paramDeclRef.getName(), paramDeclRef.getType(),
-                           index, depth));
+          container, ParameterCapture(paramDeclRef.getName(),
+                                      paramDeclRef.getType(), index, depth));
       break;
     case ParameterRelation::Local: {
       // We have captured a parameter. Collect all the parameters that
@@ -557,8 +556,7 @@ struct CaptureInfo {
                                        paramDeclRef.getName(),
                                        paramDeclRef.getType(), depth);
       for (auto [name, paramCapture] : llvm::reverse(capturedParams))
-        emitter.shared.addCapturedParameterToScope(container, astDecl,
-                                                   paramCapture);
+        emitter.shared.addCapturedParameterToScope(container, paramCapture);
       break;
     }
     default:
@@ -580,7 +578,7 @@ struct CaptureInfo {
       if (inputParam.getName() == paramDeclRef.getName()) {
         ParameterCapture capture(paramDeclRef.getName(), paramDeclRef.getType(),
                                  index, depth);
-        emitter.shared.addCapturedParameterToScope(container, astDecl, capture);
+        emitter.shared.addCapturedParameterToScope(container, capture);
         return CaptureRecordResult::Success;
       }
     }
@@ -590,8 +588,6 @@ struct CaptureInfo {
 private:
   /// The source spelling of the captured parameter.
   StringRef srcSpelling;
-  /// The ASTDecl of the capture.
-  ASTDecl *astDecl;
   /// The number of declarations between the parameter declaration and the
   /// capture reference.
   unsigned depth;
@@ -733,10 +729,10 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         // it is a method.
         ASTDecl *currentParent =
             nearestParentFuncOpDecl(*functionContainerDecl);
+        // Traverse up declarations until the capture is found.
         for (; currentParent; currentParent = currentParent->getParentDecl()) {
           depth++;
-          CaptureInfo captureInfo(srcSpelling, declRef, depth, paramDeclRef,
-                                  container);
+          CaptureInfo captureInfo(srcSpelling, depth, paramDeclRef, container);
           CaptureRecordResult outcomeOfRecordInFunction =
               captureInfo.recordCaptureInFunction(emitter, currentParent,
                                                   getLocation(emitter));
