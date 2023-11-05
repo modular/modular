@@ -58,8 +58,6 @@ export function defineCodeMirrorMode(codeMirror: ICodeMirror) {
                                                 MojoParserConfig): any => {
     var ERRORCLASS = "error";
 
-    console.log(conf);
-
     var delimiters = /^[\(\)\[\]\{\}@,:=;\.\\]/;
     var operators = [
       /^([-+*/%\/&|^]=?|[<>=]+|\/\/=?|\*\*=?|!=|[~!@]|\.\.\.|borrowed|inout|owned)/
