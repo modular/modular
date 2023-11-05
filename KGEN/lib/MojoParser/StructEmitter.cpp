@@ -68,7 +68,7 @@ LIT::FuncOp StructEmitter::createFunction(
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  DeclResolver::setLocationDebugScope(shared, diScopeGuard, funcOp, name);
+  shared.setLocationDebugScope(diScopeGuard, funcOp);
   if (!funcOp.getBody())
     funcOp.getBodyRegion().push_back(new Block);
   for (Type param : argTypes)

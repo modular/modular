@@ -380,8 +380,12 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // Move the body of the coroutine into the new async function.
   Region &asyncFnBody = asyncFn.getBody();
   asyncFnBody.takeBody(func.getBody());
-  DebugInfo::updateSubprogram(asyncFn, asyncFn.getSymNameAttr(),
-                              asyncFn.getSymNameAttr());
+  if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
+          asyncFn.getLoc())) {
+    DebugInfo::updateSubprogram(
+        asyncFn, asyncFn.getSymNameAttr(),
+        DebugInfo::SourceNameAttr::get("async_function", scope.getName()));
+  }
   BlockArgument asyncCtxArg =
       asyncFnBody.addArgument(cache.i8PtrType, asyncFn.getLoc());
 
@@ -517,7 +521,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 static LogicalResult
 lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
                          CoroutineInfo &coro, TypeAttrCache &cache,
-                         LLVMFuncOp coroProjFn, POP::CoroutineAwaitOp op) {
+                         LLVMFuncOp coroProjFn, POP::CoroutineAwaitOp op,
+                         unsigned index) {
   b.setLoc(op.getLoc());
 
   // Outline the body of the await into a function.
@@ -549,10 +554,10 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
 
   b.clearInsertionPoint();
   MLIRContext *ctx = b.getContext();
-  LLVMFuncOp suspendFn =
-      b.createFunc((coro.asyncFn.getSymName() + ".suspend").str(),
-                   LLVMFunctionType::get(LLVMVoidType::get(ctx), captureTypes),
-                   Linkage::Internal);
+  LLVMFuncOp suspendFn = b.createFunc(
+      (coro.asyncFn.getSymName() + "_suspend_" + Twine(index)).str(),
+      LLVMFunctionType::get(LLVMVoidType::get(ctx), captureTypes),
+      Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
   cast<POP::CoroutineAwaitEndOp>(awaitBody.front().getTerminator()).erase();
   suspendFn.getBody().takeBody(awaitBody);
@@ -571,10 +576,12 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
         ctx, llvm::map_to_vector(captureTypes, mapUnresolvedType), {});
 
     // The insertion into the symtab might change the name, so we extract it.
-    StringRef suspName = suspendFn.getSymName();
-    Location newLoc =
-        FusedLoc::get(op.getContext(), Location(fileLoc),
-                      scope.cloneWith(suspName, suspName, spType));
+    StringAttr suspName = suspendFn.getSymNameAttr();
+    Location newLoc = FusedLoc::get(
+        op.getContext(), Location(fileLoc),
+        scope.cloneWith(DebugInfo::SourceNameAttr::get(
+                            "suspend." + Twine(index), scope.getName()),
+                        suspName, spType));
 
     // Okay, we can now overwrite the location with a scoped one. We also set
     // the builder location so anything else we insert (e.g. return) is correct.
@@ -708,9 +715,9 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
         b.create<BitcastOp>(cache.i8PtrType, contextPtr).getResult());
     op.erase();
   }
-  for (POP::CoroutineAwaitOp op : awaits) {
+  for (auto [i, op] : llvm::enumerate(awaits)) {
     if (failed(lowerCoroutineAwaitAsync(symtab, b, *coro, cache,
-                                        getCoroProjFn(), op)))
+                                        getCoroProjFn(), op, i)))
       return failure();
   }
   return success();

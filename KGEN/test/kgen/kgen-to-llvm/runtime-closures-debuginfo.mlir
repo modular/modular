@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -lower-runtime-closures -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
 
-#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":46:8)
@@ -14,7 +14,7 @@
 // CHECK-DAG: #[[LOC0:.*]] = loc("foo.mlir":46:8)
 // CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":44:1)
 // CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":48:8)
-// CHECK-DAG: #[[SUB_PROG:.*]] = #debuginfo.subprogram<{{.*}}name = "foo"
+// CHECK-DAG: #[[SUB_PROG:.*]] = #debuginfo.subprogram<{{.*}}name = <"foo">
 // CHECK-DAG: #[[LOC3:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC0]]])
 // CHECK-DAG: #[[LOC4:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC1]]])
 // CHECK-DAG: #[[LOC5:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC2]]])
@@ -40,7 +40,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     llvm.return
   }
 
-  // CHECK-LABEL: llvm.func internal @closure_wrapper_fn(%arg0: !llvm.ptr
+  // CHECK-LABEL: llvm.func internal @closure_wrapper_fn_0(%arg0: !llvm.ptr
   // CHECK: %0 = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(i64)>> loc(#[[CLOSURE_WRAPPER_FN_LOC:.*]])
   // CHECK: %1 = llvm.getelementptr %0[0, 0] : (!llvm.ptr<struct<(i64)>>) -> !llvm.ptr<i64> loc(#[[CLOSURE_WRAPPER_FN_LOC]])
   // CHECK: %2 = llvm.load %1 : !llvm.ptr<i64> loc(#[[CLOSURE_WRAPPER_FN_LOC]])
@@ -48,7 +48,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK: llvm.return %3 : i64 loc(#[[CLOSURE_WRAPPER_FN_LOC]])
   // CHECK:} loc(#[[CLOSURE_WRAPPER_FN_LOC]])
 
-  // CHECK-LABEL: llvm.func internal @closure_wrapper_fn_0(%arg0: !llvm.ptr
+  // CHECK-LABEL: llvm.func internal @closure_wrapper_fn_1(%arg0: !llvm.ptr
   // CHECK: %0 = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(i64)>> loc(#[[CLOSURE_WRAPPER_FN_LOC0:.*]])
   // CHECK: %1 = llvm.getelementptr %0[0, 0] : (!llvm.ptr<struct<(i64)>>) -> !llvm.ptr<i64> loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
   // CHECK: %2 = llvm.load %1 : !llvm.ptr<i64> loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
@@ -57,7 +57,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK:} loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
 }
 
-// CHECK: #[[SUB_PROG1:.*]] = #debuginfo.subprogram<name = "closure_wrapper_fn", linkageName = "closure_wrapper_fn">
-// CHECK: #[[SUB_PROG2:.*]] = #debuginfo.subprogram<name = "closure_wrapper_fn_0", linkageName = "closure_wrapper_fn_0">
-// CHECK: #[[CLOSURE_WRAPPER_FN_LOC]] = loc(fused<#[[SUB_PROG1]]>[#[[LOC0]]])
-// CHECK: #[[CLOSURE_WRAPPER_FN_LOC0]] = loc(fused<#[[SUB_PROG2]]>[#[[LOC2]]])
+// CHECK-DAG: #[[SUB_PROG1:.*]] = #debuginfo.subprogram<name = <"closure_wrapper_fn.0" from <"foo">>, linkageName = "closure_wrapper_fn_0">
+// CHECK-DAG: #[[SUB_PROG2:.*]] = #debuginfo.subprogram<name = <"closure_wrapper_fn.1" from <"foo">>, linkageName = "closure_wrapper_fn_1">
+// CHECK-DAG: #[[CLOSURE_WRAPPER_FN_LOC]] = loc(fused<#[[SUB_PROG1]]>[#[[LOC0]]])
+// CHECK-DAG: #[[CLOSURE_WRAPPER_FN_LOC0]] = loc(fused<#[[SUB_PROG2]]>[#[[LOC2]]])

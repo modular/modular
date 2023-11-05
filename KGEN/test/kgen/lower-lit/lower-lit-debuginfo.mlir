@@ -2,7 +2,7 @@
 
 // CHECK: ![[DIVAR_TYPE:.*]] = !debuginfo.unresolved<!kgen.pointer<index>>
 // CHECK: ![[DILETVAR_TYPE:.*]] = !debuginfo.unresolved<index>
-// CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "varDecl", linkageName = "Int::varDecl", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
+// CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"varDecl">, linkageName = "Int::varDecl", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10> : ![[DIVAR_TYPE]]
 // CHECK-NOT: #debuginfo.local_variable<scope = #[[DISP]], name = "b", file = #{{.*}}, line = 12> : ![[DIVAR_TYPE]]
 // CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11> : ![[DILETVAR_TYPE]]
@@ -20,12 +20,12 @@
 
 // CHECK-LABEL: kgen.generator @"module::fn"()
 
-// CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "fn", linkageName = "module::fn", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
+// CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"fn">, linkageName = "module::fn", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 
 #file = #debuginfo.file<"test.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "LIT", isOptimized = true, emissionKind = Full>
-#sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "varDecl", linkageName = "varDecl", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#module_sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "fn", linkageName = "fn", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"varDecl">, linkageName = "varDecl", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#module_sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"fn">, linkageName = "fn", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #loc = loc("test.mlir":10:6)
 
 lit.struct.decl @Int {
@@ -66,8 +66,8 @@ lit.globalvar.decl @foo : index {
 // CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"foo.mlir" in "/">
 // CHECK-DAG: #[[COMPILE_UNIT:.*]] = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #[[FILE]], producer = "kgen", isOptimized = true, emissionKind = Full>
 // CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
-// CHECK-DAG: #[[SP_CTOR:.*]] = #debuginfo.subprogram<compileUnit = #[[COMPILE_UNIT]], scope = #[[FILE]], name = "(ctor_fn)foo", linkageName = "(ctor_fn)foo", file = #[[FILE]], line = 8, scopeLine = 8, subprogramFlags = Definition> : ![[SP_TYPE]]
-// CHECK-DAG: #[[SP_DTOR:.*]] = #debuginfo.subprogram<compileUnit = #[[COMPILE_UNIT]], scope = #[[FILE]], name = "(dtor_fn)foo", linkageName = "(dtor_fn)foo", file = #[[FILE]], line = 8, scopeLine = 8, subprogramFlags = Definition> : ![[SP_TYPE]]
+// CHECK-DAG: #[[SP_CTOR:.*]] = #debuginfo.subprogram<compileUnit = #[[COMPILE_UNIT]], scope = #[[FILE]], name = <"(ctor_fn)foo">, linkageName = "(ctor_fn)foo", file = #[[FILE]], line = 8, scopeLine = 8, subprogramFlags = Definition> : ![[SP_TYPE]]
+// CHECK-DAG: #[[SP_DTOR:.*]] = #debuginfo.subprogram<compileUnit = #[[COMPILE_UNIT]], scope = #[[FILE]], name = <"(dtor_fn)foo">, linkageName = "(dtor_fn)foo", file = #[[FILE]], line = 8, scopeLine = 8, subprogramFlags = Definition> : ![[SP_TYPE]]
 
 // CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":8:4)
 // CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":9:4)

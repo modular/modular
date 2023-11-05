@@ -30,7 +30,7 @@ lit.struct.decl @ComplexStruct<A: type, B: type> {
 
 // Test proper handling of debuginfo operations.
 
-#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!pop.array<3, i32>>
 #local_variable1 = #debuginfo.local_variable<scope = #subprogram, name = "bar"> : !debuginfo.unresolved<!pop.array<0, i32>>
 

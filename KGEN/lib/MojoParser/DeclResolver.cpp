@@ -2440,40 +2440,6 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp,
       });
 }
 
-void DeclResolver::setLocationDebugScope(
-    SharedState &shared, DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
-    LIT::FuncOp &funcOp, StringRef baseName) {
-  std::unique_ptr<DebugInfo::DIBuilder> &diBuilder = shared.diBuilder;
-  if (!diBuilder)
-    return;
-  FileLineColLoc fileLineCol =
-      funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
-
-  // Compute the subprogram flags.
-  /// If we have any optimizations, mark the subprogram as optimized.
-  DebugInfo::SubprogramFlags spFlags =
-      shared.options.optimizationLevel ? DebugInfo::SubprogramFlags::Optimized
-                                       : DebugInfo::SubprogramFlags::None;
-  /// If the function has a body, treat it as a definition.
-  if (!funcOp.isExternal())
-    spFlags = spFlags | DebugInfo::SubprogramFlags::Definition;
-
-  // Use unresolved types now for simplicity, these will get resolved during
-  // compilation.
-  auto mapUnresolvedType = [](Type type) -> DebugInfo::DIType {
-    return DebugInfo::DIUnresolvedMLIRType::get(type);
-  };
-
-  auto type = DebugInfo::DISubroutineType::get(
-      funcOp.getContext(),
-      llvm::map_to_vector(funcOp.getArgumentTypes(), mapUnresolvedType),
-      llvm::map_to_vector(funcOp.getResultTypes(), mapUnresolvedType));
-  diScopeGuard = diBuilder->pushSubprogram(
-      baseName, funcOp.getNameAttr(), diBuilder->createFile(fileLineCol),
-      fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
-  funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
-}
-
 // TODO: refactor the getSpecializedSignature method to support augmenting
 // parameter list when a capture is encountered in the signature. This function
 // accepts a list of parameters and a signature and returns a self contained
@@ -2953,7 +2919,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  setLocationDebugScope(shared, diScopeGuard, funcOp, baseName);
+  shared.setLocationDebugScope(diScopeGuard, funcOp);
 
   // If this is a nested function, set its parameter declaration. It will be
   // referenced via parameter references instead of symbol references.

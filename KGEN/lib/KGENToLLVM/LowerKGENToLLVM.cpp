@@ -885,7 +885,7 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
   // Update the subprogram scope of the wrapped function if it has one, but save
   // the location before it gets changed.
   Location loc = func.getLoc();
-  DebugInfo::updateSubprogram(func, newName, newName);
+  DebugInfo::updateSubprogram(func, newName);
 
   // Create the wrapper body. Ownership of the block is handed to the function.
   auto *body = new Block;

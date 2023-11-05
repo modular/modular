@@ -7,7 +7,7 @@
 // CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"{{.*}}" in "{{.*}}">
 // CHECK-DAG: #[[CU:.*]] = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #[[FILE]], producer = "MLIR", isOptimized = true, emissionKind = Full>
 
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #[[CU]], scope = #[[FILE]], name = "foo", linkageName = "foo", file = #[[FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SUBROUTINE]]
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #[[CU]], scope = #[[FILE]], name = <"foo">, linkageName = "foo", file = #[[FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SUBROUTINE]]
 
 // CHECK-DAG: #[[ARG1_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg0", file = #[[FILE]], line = {{.*}}, arg = 1> : ![[BASIC]]
 // CHECK-DAG: #[[ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg1", file = #[[FILE]], line = {{.*}}, arg = 2> : ![[BASIC1]]

@@ -63,14 +63,14 @@ kgen.generator @foo(%arg0: index) -> !pop.array<0, i1> {
 #loc4 = loc("foo.mojo":1473:5)
 #loc5 = loc("foo.mojo":1489:9)
 
-// CHECK-DAG: #[[SP_FOO:.*]] = #debuginfo.subprogram<name = "foo"
-// CHECK-DAG: #[[SP_CLOSURE:.*]] = #debuginfo.subprogram<name = "Closure"
-// CHECK-DAG: #[[SP_NESTED:.*]] = #debuginfo.subprogram<name = "NestedClosure"
-#sp = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#spClosure = #debuginfo.subprogram<name = "Closure"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#spNested = #debuginfo.subprogram<name = "NestedClosure"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#spCap = #debuginfo.subprogram<name = "Capturing"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#spNestedCap = #debuginfo.subprogram<name = "NestedCapturing"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+// CHECK-DAG: #[[SP_FOO:.*]] = #debuginfo.subprogram<name = <"foo">
+// CHECK-DAG: #[[SP_CLOSURE:.*]] = #debuginfo.subprogram<name = <"Closure">
+// CHECK-DAG: #[[SP_NESTED:.*]] = #debuginfo.subprogram<name = <"NestedClosure">
+#sp = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#spClosure = #debuginfo.subprogram<name = <"Closure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#spNested = #debuginfo.subprogram<name = <"NestedClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#spCap = #debuginfo.subprogram<name = <"Capturing">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#spNestedCap = #debuginfo.subprogram<name = <"NestedCapturing">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 // CHECK-DAG: #[[LOC_NESTED]] = loc(fused<#[[SP_NESTED]]>[#[[LOC3]]])
 // CHECK-DAG: #[[LOC_CLOSURE]] = loc(fused<#[[SP_CLOSURE]]>[#[[LOC2]]])

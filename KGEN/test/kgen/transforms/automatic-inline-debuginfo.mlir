@@ -1,15 +1,15 @@
 // RUN: kgen-opt -automatic-inline=update-debug-info=true -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
-// CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<name = "inline_me0"
-#callee0Sp = #debuginfo.subprogram<name = "inline_me0"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+// CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<name = <"inline_me0">
+#callee0Sp = #debuginfo.subprogram<name = <"inline_me0">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-// CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<name = "inline_me1"
-#callee1Sp = #debuginfo.subprogram<name = "inline_me1"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+// CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<name = <"inline_me1">
+#callee1Sp = #debuginfo.subprogram<name = <"inline_me1">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-#callerSp = #debuginfo.subprogram<name = "caller"> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+#callerSp = #debuginfo.subprogram<name = <"caller">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = "call_async"
-#asyncCallerSp = #debuginfo.subprogram<name = "call_async"> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
+// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = <"call_async">
+#asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
 #local_variable0 = #debuginfo.local_variable<scope = #callee0Sp, name = "foo"> : !debuginfo.unresolved<index>
 #local_variable1 = #debuginfo.local_variable<scope = #callee1Sp, name = "bar"> : !debuginfo.unresolved<index>
 
@@ -77,7 +77,7 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc(fused<#subprogram>["foo.mlir":0:0])
 

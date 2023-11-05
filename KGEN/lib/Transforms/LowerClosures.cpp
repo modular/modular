@@ -129,7 +129,13 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   op.replaceAllUsesWith(call);
   op.erase();
 
-  DebugInfo::updateSubprogram(lifted, name, name);
+  if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
+          lifted.getLoc())) {
+    DebugInfo::updateSubprogram(
+        lifted, lifted.getSymNameAttr(),
+        DebugInfo::SourceNameAttr::get(
+            "async_closure." + Twine(nameCounter - 1), scope.getName()));
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -194,7 +200,13 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   op.replaceAllUsesWith(create.getResult());
   op.erase();
 
-  DebugInfo::updateSubprogram(lifted, name, name);
+  if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
+          lifted.getLoc())) {
+    DebugInfo::updateSubprogram(
+        lifted, lifted.getSymNameAttr(),
+        DebugInfo::SourceNameAttr::get("closure." + Twine(nameCounter - 1),
+                                       scope.getName()));
+  }
 }
 
 //===----------------------------------------------------------------------===//

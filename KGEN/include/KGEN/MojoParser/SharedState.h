@@ -14,12 +14,9 @@
 
 #include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
-
-namespace M::DebugInfo {
-class DIBuilder;
-} // namespace M::DebugInfo
 
 namespace M::KGEN {
 class CompilationOptions;
@@ -297,8 +294,16 @@ public:
   traverseImportDirectories(unsigned importBufferFileId,
                             function_ref<WalkResult(StringRef)> callback) const;
 
+  //===--------------------------------------------------------------------===//
+  // Debug Info
+
   /// Builds the debug info for a block argument if needed.
   void buildArgDebugInfo(OpBuilder &builder, BlockArgument arg, StringRef name);
+  /// Generate a debug subprogram for this function and set it in its location.
+  void setLocationDebugScope(DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
+                             LIT::FuncOp funcOp);
+  /// Get the debug source name for a function.
+  DebugInfo::SourceNameAttr getSourceName(LIT::FuncOp func);
 
   //===--------------------------------------------------------------------===//
   // Listener Interface

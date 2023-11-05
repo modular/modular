@@ -10,7 +10,10 @@ from imported_module import imported_fn
 # Check that we properly generate functions that get resolved within other functions.
 # This is mostly checking that the scope of the nested function is not another function.
 
-# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "test", linkageName = "test($parser-debuginfo::CalledStruct[{{.*}}param])"
+# CHECK-DAG: #[[CALLED_STRUCT_BOUND:.*]] = #debuginfo.source_name<"CalledStruct{{.*}}param"
+# CHECK-DAG: #[[CALLED_STRUCT:.*]] = #debuginfo.source_name<"CalledStruct"[<"index">] from <"parser-debuginfo">>
+# CHECK-DAG: #test_name = #debuginfo.source_name<"test"(#[[CALLED_STRUCT_BOUND]]) from #[[CALLED_STRUCT]]>
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = #test_name, linkageName = "test($parser-debuginfo::CalledStruct[{{.*}}param])"
 
 
 struct CalledStruct[param: __mlir_type.index]:
@@ -26,7 +29,8 @@ fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
 
 # CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!Int>
 # CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(!Int, !Int) -> (!Int): DW_CC_normal>
-# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power({{.*}}$int::Int,{{.*}}$int::Int)", file = #{{.*}}, line = [[LN:[0-9]+]], scopeLine = [[LN]], subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK-DAG: #power_name = #debuginfo.source_name<"power"(#Int_name, #Int_name) from <"parser-debuginfo">>
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = #power_name, linkageName = "power({{.*}}$int::Int,{{.*}}$int::Int)", file = #{{.*}}, line = [[LN:[0-9]+]], scopeLine = [[LN]], subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
 # CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = [[LN]], arg = 1> : ![[INT_TYPE]]
 # CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = [[LN]], arg = 2> : ![[INT_TYPE]]
 
@@ -87,9 +91,11 @@ fn caller():
 # COM: of the indeterministic order in which attributes may be printed, we need
 # COM: to use CHECK-DAG and order the statements to ensure unique matchings.
 
-# CHECK-DAG: #[[SP_INIT:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE:file[0-9]*]], name = "__init__", linkageName = "__init__($parser-debuginfo::MyValueStruct=&,__mlir_type.index)",
-# CHECK-DAG: #[[SP_COPY:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = "__copyinit__", linkageName = "__copyinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)",
-# CHECK-DAG: #[[SP_MOVE:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = "__moveinit__", linkageName = "__moveinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)",
+# CHECK-DAG: #__init___name = #debuginfo.source_name<"__init__"(#MyValueStruct_name, <"index">) from #MyValueStruct_name>
+# CHECK-DAG: #__moveinit___name = #debuginfo.source_name<"__moveinit__"(#MyValueStruct_name, #MyValueStruct_name) from #MyValueStruct_name>
+# CHECK-DAG: #[[SP_INIT:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE:file[0-9]*]], name = #__init___name, linkageName = "__init__($parser-debuginfo::MyValueStruct=&,__mlir_type.index)",
+# CHECK-DAG: #[[SP_COPY:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = #__copyinit___name, linkageName = "__copyinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)",
+# CHECK-DAG: #[[SP_MOVE:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = #__moveinit___name, linkageName = "__moveinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)",
 # CHECK-DAG: #[[FILE]] = #debuginfo.file<"within split at [[FILENAME:.*parser-debuginfo.mojo]]:{{[0-9]+}} offset " in "/">
 
 # CHECK-DAG: lit.func @"__init__($parser-debuginfo::MyValueStruct=&,__mlir_type.index)"(%[[SELF:.*]][*""]:
@@ -123,7 +129,8 @@ struct MyValueStruct:
 
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.
 
-# CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "makes_escaping_closure", linkageName = "makes_escaping_closure{{.*}}", file = #file, line = [[#LN42:]],
+# CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<"makes_escaping_closure"(<"index">, <"index">) from <"parser-debuginfo">>
+# CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", file = #file, line = [[#LN42:]],
 
 # CHECK-DAG:    lit.func @"makes_escaping_closure
 # CHECK-DAG:    debuginfo.value #local_variable1 = %m : index loc(#[[LOC26:.*]])

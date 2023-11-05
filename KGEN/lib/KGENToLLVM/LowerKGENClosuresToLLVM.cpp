@@ -88,6 +88,7 @@ struct CreateRuntimeClosureOpConversion
 
 private:
   SymbolTable &symtab;
+  unsigned nameIndex = 0;
 
   LLVM::LLVMFuncOp
   generateWrapperFunction(CreateClosureOp op,
@@ -131,7 +132,11 @@ private:
 
     LLVM::LLVMFuncOp wrapperFn = createLLVMFunc(
         rewriter, getTypeConverter()->getTarget(), op.getLoc(),
-        "closure_wrapper_fn", wrapperFnType, LLVM::Linkage::Internal);
+        rewriter.getStringAttr(
+            "closure_wrapper_fn_" +
+            Twine(const_cast<CreateRuntimeClosureOpConversion *>(this)
+                      ->nameIndex++)),
+        wrapperFnType, LLVM::Linkage::Internal);
 
     // If possible, we need to add a subprogram scope to the new function.
     auto scope =
@@ -147,10 +152,11 @@ private:
           map_to_vector(wrapperFnType.getReturnTypes(), mapUnresolvedType));
 
       auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
-      StringRef wrapperName = wrapperFn.getSymName();
-      wrapperFn->setLoc(
-          FusedLoc::get(op.getContext(), Location(fileLoc),
-                        scope.cloneWith(wrapperName, wrapperName, spType)));
+      auto sourceName = DebugInfo::SourceNameAttr::get(
+          "closure_wrapper_fn." + Twine(nameIndex - 1), scope.getName());
+      wrapperFn->setLoc(FusedLoc::get(
+          op.getContext(), Location(fileLoc),
+          scope.cloneWith(sourceName, wrapperFn.getSymNameAttr(), spType)));
     }
 
     wrapperFn.getBody().push_back(wrapperFnBody);
@@ -282,7 +288,7 @@ public:
     Block::iterator oldInsertionPoint = rewriter.getInsertionPoint();
     rewriter.clearInsertionPoint();
     LLVM::LLVMFuncOp wrapperFn = this->generateWrapperFunction(op, rewriter);
-    StringAttr name = symtab.insert(wrapperFn);
+    symtab.insert(wrapperFn);
     CreateClosureTypes types;
     if (failed(CreateClosureTypes::createClosureTypes(types, op,
                                                       *getTypeConverter())))
@@ -297,9 +303,6 @@ public:
     rewriter.setInsertionPoint(oldInsertionBlock, oldInsertionPoint);
     if (failed(generateClosureStruct(rewriter, op, adaptor, wrapperFn, types)))
       return failure();
-
-    // Update the subprogram scopes within the wrapper function.
-    DebugInfo::updateSubprogram(wrapperFn, name, name);
 
     return success();
   }

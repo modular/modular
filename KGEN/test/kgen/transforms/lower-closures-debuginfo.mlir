@@ -1,8 +1,8 @@
 // RUN: kgen-opt -mlir-print-debuginfo -lower-closures %s | FileCheck %s
 
-#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<name = "SomeClosure">  : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
-#subprogram2 = #debuginfo.subprogram<name = "OtherClosure">  : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<name = <"SomeClosure">>  : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
+#subprogram2 = #debuginfo.subprogram<name = <"OtherClosure">>  : !debuginfo.subroutine<() -> (!pop.array<0, i1>): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":46:8)
@@ -46,9 +46,9 @@ kgen.func @foo() {
   kgen.return loc(#loc5)
 } loc(#loc5)
 
-// CHECK-DAG: #[[SP_ASYNC_CL:.*]] = #debuginfo.subprogram<name = "foo_async_closure_0", linkageName = "foo_async_closure_0"
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = "foo"
-// CHECK-DAG: #[[SP_CL:.*]] = #debuginfo.subprogram<name = "foo_closure_1", linkageName = "foo_closure_1"
+// CHECK-DAG: #[[SP_ASYNC_CL:.*]] = #debuginfo.subprogram<name = <"async_closure.0" from <"SomeClosure">>, linkageName = "foo_async_closure_0"
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = <"foo">
+// CHECK-DAG: #[[SP_CL:.*]] = #debuginfo.subprogram<name = <"closure.1" from <"OtherClosure">>, linkageName = "foo_closure_1"
 
 // CHECK-DAG: #[[SOME_CL_LOC:.*]] = loc("bar.mlir":327:17)
 // CHECK-DAG: #[[FOO_ASYNC_CL_LOC]] = loc(fused<#[[SP_ASYNC_CL]]>[#[[SOME_CL_LOC]]])

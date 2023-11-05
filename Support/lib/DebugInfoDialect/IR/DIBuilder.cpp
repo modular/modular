@@ -54,8 +54,8 @@ DILexicalBlockAttr DIBuilder::createLexicalBlock(DIFileAttr file, unsigned line,
   return DILexicalBlockAttr::get(scope, file, line, column);
 }
 
-DISubprogramAttr DIBuilder::createSubprogram(StringRef name,
-                                             StringRef linkageName,
+DISubprogramAttr DIBuilder::createSubprogram(SourceNameAttr name,
+                                             StringAttr linkageName,
                                              DIFileAttr file, unsigned int line,
                                              unsigned int scopeLine,
                                              SubprogramFlags subprogramFlags,

@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ConstraintSet.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -20,18 +19,10 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/Index/IR/IndexOps.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/DialectResourceBlobManager.h"
-#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "llvm/BinaryFormat/Dwarf.h"
-#include "llvm/Support/MemoryBufferRef.h"
 #include <deque>
 
 using namespace M;
@@ -76,111 +67,6 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
 }
 
 //===----------------------------------------------------------------------===//
-// Source information propagation
-//===----------------------------------------------------------------------===//
-
-namespace {
-using DebugInfo::SourceNameAttr;
-struct SourceNames {
-  SourceNames(ModuleOp module, mlir::SymbolTableAnalysis &analysis)
-      : symtab(module, analysis.getSymbolTables()) {}
-
-  /// Get the source name of a symbol.
-  SourceNameAttr getSourceName(mlir::SymbolOpInterface op);
-  /// Get the source name of a type.
-  SourceNameAttr getSourceName(Type type);
-
-  /// The symbol table to use.
-  KGENModule symtab;
-  /// Computed source names.
-  DenseMap<mlir::SymbolOpInterface, SourceNameAttr> names;
-};
-} // namespace
-
-SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
-  // Try to find an already computed name.
-  if (auto it = names.find(op); it != names.end())
-    return it->second;
-
-  StringAttr name;
-  SmallVector<SourceNameAttr> paramTypes, argTypes;
-  SourceNameAttr parent;
-
-  if (auto package = dyn_cast<PackageOp>(*op)) {
-    // Query the source name. Fall back to the symbol name otherwise.
-    name = package.getSourceNameAttr();
-    if (!name)
-      name = package.getSymNameAttr();
-  } else if (auto fileModule = dyn_cast<FileModuleOp>(*op)) {
-    // Query the source name. Fall back to the symbol name otherwise.
-    name = fileModule.getSourceNameAttr();
-    if (!name)
-      name = fileModule.getSymNameAttr();
-  } else if (auto structOp = dyn_cast<StructDeclOp>(*op)) {
-    // The symbol name is the source name.
-    name = structOp.getSymNameAttr();
-    // Bundle the source names of the parameter types.
-    for (Type type : structOp.getSignature().getParamTypes())
-      paramTypes.push_back(getSourceName(type));
-  } else if (auto func = dyn_cast<LIT::FuncOp>(*op)) {
-    // Query the source name. Fall back to the symbol name otherwise.
-    name = func.getSourceNameAttr();
-    if (!name)
-      name = func.getSymNameAttr();
-    // Bundle the source names of the argument and parameter types. Don't
-    // include the memory-only result slot if it's there.
-    SignatureType sig = func.getSignature();
-    for (Type type : sig.getInputParamTypes())
-      paramTypes.push_back(getSourceName(type));
-    for (auto [i, t, conv] : llvm::drop_begin(
-             llvm::enumerate(sig.getValueInputs(), sig.getInputConventions()),
-             sig.hasMemoryOnlyResult())) {
-      Type type = t;
-      // Unwrap variadics pointers if necessary.
-      if (sig.isVarArg(i))
-        type = cast<VariadicType>(type).getElementAsType();
-      if (SignatureType::hasAddress(conv)) {
-        if (auto ref = dyn_cast<RefType>(type))
-          type = ref.getElementAsType();
-        else
-          type = cast<PointerType>(type).getElementAsType();
-      }
-      argTypes.push_back(getSourceName(type));
-    }
-    // The function will not have parameter values until elaboration.
-  } else {
-    // If we somehow end up here, just use the symbol name.
-    name = op.getNameAttr();
-  }
-
-  if (auto parentOp = op->getParentOfType<mlir::SymbolOpInterface>())
-    parent = getSourceName(parentOp);
-
-  auto sourceName = SourceNameAttr::get(name, paramTypes, argTypes,
-                                        /*paramValues=*/{}, parent);
-  names.try_emplace(op, sourceName);
-  return sourceName;
-}
-
-SourceNameAttr SourceNames::getSourceName(Type type) {
-  // If this is a reference to a source type, then we can use its full source
-  // name.
-  if (auto declRef = dyn_cast<DeclRefType>(type)) {
-    SourceNameAttr name =
-        getSourceName(symtab.lookup<StructDeclOp>(declRef.getSymbol()));
-    // Add the parameter values.
-    SmallVector<StringAttr> paramValues;
-    for (TypedAttr value : declRef.getParamValues())
-      paramValues.push_back(getParamTypeAsString(value));
-    return SourceNameAttr::get(name.getName(), name.getParamTypes(),
-                               name.getArgTypes(), paramValues,
-                               name.getParent());
-  }
-  // For anything else, use the full MLIR type.
-  return SourceNameAttr::get(getTypeAsString(type), {}, {}, {}, {});
-}
-
-//===----------------------------------------------------------------------===//
 // Op Lowering
 //===----------------------------------------------------------------------===//
 
@@ -205,7 +91,6 @@ struct LITLowerer {
 
   SymbolTable &symbolTable;
   DenseMap<StringAttr, StringAttr> &renamedSymbols;
-  SourceNames &sourceNames;
 };
 } // namespace
 
@@ -650,7 +535,8 @@ orderAndLowerGlobalVariables(ModuleOp module,
       DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
       auto getXtorLoc = [&](StringAttr xtorName) {
         guard = dib.pushSubprogram(
-            xtorName, xtorName, fileAttr, fileLoc.getLine(), fileLoc.getLine(),
+            DebugInfo::SourceNameAttr::get(xtorName), xtorName, fileAttr,
+            fileLoc.getLine(), fileLoc.getLine(),
             DebugInfo::SubprogramFlags::Definition, spType);
         return dib.createScopedLoc(fileLoc);
       };
@@ -721,10 +607,6 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     ModuleOp module = getOperation();
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
 
-    // Go build all the required source names before the structure of the IR
-    // changes.
-    SourceNames sourceNames(getOperation(), analysis);
-
     DenseMap<StringAttr, StringAttr> renamedSymbols;
     if (failed(orderAndLowerGlobalVariables(
             module, renamedSymbols,
@@ -732,8 +614,7 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
                 debugInfoLanguage.getValue()))))
       return signalPassFailure();
 
-    LITLowerer lowerer{analysis.getTopLevelSymbolTable(), renamedSymbols,
-                       sourceNames};
+    LITLowerer lowerer{analysis.getTopLevelSymbolTable(), renamedSymbols};
     if (failed(lowerer.lowerModuleDecl(module.getBody())))
       return signalPassFailure();
     lowerAttributesAndTypes(module, renamedSymbols);

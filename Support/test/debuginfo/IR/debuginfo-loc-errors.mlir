@@ -13,7 +13,7 @@
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = "foo",
+  name = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,
@@ -50,7 +50,7 @@ func.func @foo(%arg: i32) {
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = "foo",
+  name = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,
@@ -89,7 +89,7 @@ func.func @bar(%arg: i32) {
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = "foo",
+  name = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,
@@ -129,7 +129,7 @@ func.func @bar(%arg: i32) {
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = "foo",
+  name = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,

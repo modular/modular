@@ -95,7 +95,7 @@ public:
 /// (and optionally the given name, if not null), as well as all references to
 /// the scope recursively within the body.
 void updateSubprogram(mlir::FunctionOpInterface op, StringAttr linkageName,
-                      StringAttr name = {});
+                      SourceNameAttr name = {});
 
 /// Return the scope from a location of an op within a function's body,
 /// recursively walking up through a chain of inlined locations if needed,

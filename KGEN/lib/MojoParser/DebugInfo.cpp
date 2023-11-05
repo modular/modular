@@ -1,0 +1,153 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "DebugInfo.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+
+using namespace M;
+using namespace KGEN;
+using namespace LIT;
+using DebugInfo::SourceNameAttr;
+
+SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
+  // Try to find an already computed name.
+  if (auto it = names.find(op); it != names.end())
+    return it->second;
+
+  StringAttr name;
+  SmallVector<SourceNameAttr> paramTypes, argTypes;
+  SourceNameAttr parent;
+
+  if (auto package = dyn_cast<PackageOp>(*op)) {
+    // Query the source name. Fall back to the symbol name otherwise.
+    name = package.getSourceNameAttr();
+    if (!name)
+      name = package.getSymNameAttr();
+  } else if (auto fileModule = dyn_cast<FileModuleOp>(*op)) {
+    // Query the source name. Fall back to the symbol name otherwise.
+    name = fileModule.getSourceNameAttr();
+    if (!name)
+      name = fileModule.getSymNameAttr();
+  } else if (auto structOp = dyn_cast<StructDeclOp>(*op)) {
+    // The symbol name is the source name.
+    name = structOp.getSymNameAttr();
+    // Bundle the source names of the parameter types.
+    for (Type type : structOp.getSignature().getParamTypes())
+      paramTypes.push_back(getSourceName(type));
+  } else if (auto func = dyn_cast<LIT::FuncOp>(*op)) {
+    // Query the source name. Fall back to the symbol name otherwise.
+    name = func.getSourceNameAttr();
+    if (!name)
+      name = func.getSymNameAttr();
+    // Bundle the source names of the argument and parameter types. Don't
+    // include the memory-only result slot if it's there.
+    SignatureType sig = func.getSignature();
+    for (Type type : sig.getInputParamTypes())
+      paramTypes.push_back(getSourceName(type));
+    for (auto [i, t, conv] : llvm::drop_begin(
+             llvm::enumerate(sig.getValueInputs(), sig.getInputConventions()),
+             sig.hasMemoryOnlyResult())) {
+      Type type = t;
+      // Unwrap variadics pointers if necessary.
+      if (sig.isVarArg(i))
+        type = cast<VariadicType>(type).getElementAsType();
+      if (SignatureType::hasAddress(conv)) {
+        if (auto ref = dyn_cast<RefType>(type))
+          type = ref.getElementAsType();
+        else
+          type = cast<PointerType>(type).getElementAsType();
+      }
+      argTypes.push_back(getSourceName(type));
+    }
+    // The function will not have parameter values until elaboration.
+  } else {
+    // If we somehow end up here, just use the symbol name.
+    name = op.getNameAttr();
+  }
+
+  if (auto parentOp = op->getParentOfType<mlir::SymbolOpInterface>())
+    parent = getSourceName(parentOp);
+
+  auto sourceName = SourceNameAttr::get(name, paramTypes, argTypes,
+                                        /*paramValues=*/{}, parent);
+  names.try_emplace(op, sourceName);
+  return sourceName;
+}
+
+SourceNameAttr SourceNames::getSourceName(Type type) {
+  // If this is a reference to a source type, then we can use its full source
+  // name.
+  if (auto declRef = dyn_cast<DeclRefType>(type)) {
+    ASTDecl &decl =
+        shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
+    SourceNameAttr name = getSourceName(cast<StructDeclOp>(decl));
+    // Add the parameter values.
+    SmallVector<StringAttr> paramValues;
+    for (TypedAttr value : declRef.getParamValues())
+      paramValues.push_back(getParamTypeAsString(value));
+    return SourceNameAttr::get(name.getName(), name.getParamTypes(),
+                               name.getArgTypes(), paramValues,
+                               name.getParent());
+  }
+  // For anything else, use the full MLIR type.
+  return SourceNameAttr::get(getTypeAsString(type), {}, {}, {}, {});
+}
+
+void SharedState::setLocationDebugScope(
+    DebugInfo::DIBuilder::ScopeGuard &diScopeGuard, LIT::FuncOp funcOp) {
+  if (!diBuilder)
+    return;
+  FileLineColLoc fileLineCol =
+      funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
+
+  // Compute the subprogram flags.
+  /// If we have any optimizations, mark the subprogram as optimized.
+  DebugInfo::SubprogramFlags spFlags =
+      options.optimizationLevel ? DebugInfo::SubprogramFlags::Optimized
+                                : DebugInfo::SubprogramFlags::None;
+  /// If the function has a body, treat it as a definition.
+  if (!funcOp.isExternal())
+    spFlags = spFlags | DebugInfo::SubprogramFlags::Definition;
+
+  // Use unresolved types now for simplicity, these will get resolved during
+  // compilation.
+  auto mapUnresolvedType = [](Type type) -> DebugInfo::DIType {
+    return DebugInfo::DIUnresolvedMLIRType::get(type);
+  };
+
+  auto type = DebugInfo::DISubroutineType::get(
+      funcOp.getContext(),
+      llvm::map_to_vector(funcOp.getArgumentTypes(), mapUnresolvedType),
+      llvm::map_to_vector(funcOp.getResultTypes(), mapUnresolvedType));
+  diScopeGuard = diBuilder->pushSubprogram(
+      getSourceName(funcOp), funcOp.getNameAttr(),
+      diBuilder->createFile(fileLineCol), fileLineCol.getLine(),
+      fileLineCol.getLine(), spFlags, type);
+  funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
+}
+
+void SharedState::buildArgDebugInfo(OpBuilder &builder, BlockArgument arg,
+                                    StringRef name) {
+  if (!diBuilder || options.debugLevel != CompilationOptions::kFullDebugInfo)
+    return;
+
+  auto argLoc = arg.getLoc()->findInstanceOf<FileLineColLoc>();
+  DebugInfo::DILocalVariableAttr varAttr = diBuilder->createLocalVariable(
+      name, diBuilder->createFile(argLoc), argLoc.getLine(),
+      arg.getArgNumber() + 1,
+      /*alignInBits=*/0, DebugInfo::DIUnresolvedMLIRType::get(arg.getType()));
+  auto scopedLoc =
+      FusedLoc::get(varAttr.getContext(), {argLoc}, varAttr.getScope());
+  builder.create<DebugInfo::ValueOp>(scopedLoc, arg, varAttr);
+}
