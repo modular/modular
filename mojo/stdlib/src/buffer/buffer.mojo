@@ -14,7 +14,7 @@ from memory.buffer import Buffer
 
 from math import fma, iota, max, min
 from pathlib import Path
-from sys.info import alignof, simdwidthof, sizeof
+from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import unroll, vectorize
@@ -26,6 +26,7 @@ from utils.index import StaticIntTuple
 from utils.index import product as tuple_product
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
+from gpu.memory import AddressSpace as GPUAddressSpace
 
 from .memory import stack_allocation
 from .unsafe import DTypePointer, Pointer, AddressSpace
@@ -480,13 +481,24 @@ fn _compute_ndbuffer_offset[
     if rank == 0:
         return 0
 
-    var result: Int = 0
+    @parameter
+    if triple_is_nvidia_cuda() and address_space == GPUAddressSpace.SHARED:
+        var result: Int32 = 0
 
-    @unroll
-    for i in range(rank):
-        result = fma(buf.stride(i), index[i], result)
+        @unroll
+        for i in range(rank):
+            result = fma(Int32(buf.stride(i)), Int32(index[i]), result)
 
-    return result
+        return result.to_int()
+
+    else:
+        var result: Int = 0
+
+        @unroll
+        for i in range(rank):
+            result = fma(buf.stride(i), index[i], result)
+
+        return result
 
 
 @always_inline
@@ -541,13 +553,24 @@ fn _compute_ndbuffer_offset[
     if rank == 0:
         return 0
 
-    var result: Int = 0
+    @parameter
+    if triple_is_nvidia_cuda() and address_space == GPUAddressSpace.SHARED:
+        var result: Int32 = 0
 
-    @unroll
-    for i in range(rank):
-        result = fma(buf.stride(i), index[i], result)
+        @unroll
+        for i in range(rank):
+            result = fma(Int32(buf.stride(i)), Int32(index[i]), result)
 
-    return result
+        return result.to_int()
+
+    else:
+        var result: Int = 0
+
+        @unroll
+        for i in range(rank):
+            result = fma(buf.stride(i), index[i], result)
+
+        return result
 
 
 @always_inline
