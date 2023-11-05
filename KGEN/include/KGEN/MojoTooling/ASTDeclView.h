@@ -95,6 +95,12 @@ public:
   /// Return true if this variable was declared with `var` instead of `let`.
   bool isVar() const { return flagIsVar; }
 
+  /// Return if this variable is global.
+  bool isGlobal() const { return isGlobalVariable; }
+
+  /// Return the type of this variable.
+  StringRef getType() const { return type; }
+
   std::string getDeclarationSnippet() const override;
 
   /// The output of the generation is defined in the following schema:
@@ -122,6 +128,7 @@ private:
 
   std::string type;
   bool flagIsVar;
+  bool isGlobalVariable;
 };
 
 /// View for parameters of structs or functions.
@@ -238,6 +245,9 @@ public:
 
   StringRef getValue() const { return value; }
 
+  /// Return if this alias is global.
+  bool isGlobal() const { return isGlobalAlias; }
+
   /// The output of the generation is defined in the following schema:
   ///
   ///  {
@@ -264,6 +274,7 @@ private:
   AliasDeclView(MojoASTDeclRef declRef);
 
   std::string value;
+  bool isGlobalAlias;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
@@ -402,6 +413,9 @@ public:
   std::string getDeclarationSnippet() const override;
 
   std::string getMarkdownDocString() const override;
+
+  /// Return the type of this field.
+  StringRef getType() const { return type; }
 
   /// The output of the generation is defined in the following schema:
   ///

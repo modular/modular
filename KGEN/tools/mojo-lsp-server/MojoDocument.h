@@ -100,6 +100,18 @@ public:
   std::optional<mlir::lsp::Location>
   getLocationFromDiag(const llvm::SMDiagnostic &diag);
 
+  /// Get a document symbol with the given ASTDecl, appending it to the given
+  /// vector.
+  void getDocumentSymbols(MojoASTDeclRef decl,
+                          std::vector<mlir::lsp::DocumentSymbol> &symbols);
+
+  /// Get a document symbol with the given ASTDecl, appending it to the given
+  /// vector. The provided functor defines whether a decl should be included in
+  /// the symbol list.
+  void getDocumentSymbols(MojoASTDeclRef decl,
+                          std::vector<mlir::lsp::DocumentSymbol> &symbols,
+                          function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl);
+
   //===--------------------------------------------------------------------===//
   // Asynchronous LSP Queries
   //===--------------------------------------------------------------------===//
@@ -122,6 +134,10 @@ public:
   void
   onDefinition(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn);
+
+  void onDocumentSymbol(
+      const mlir::lsp::URIForFile &uri,
+      OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn);
 
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
@@ -161,6 +177,10 @@ protected:
   /// Hook that is invoked to perform code completion at the given position.
   virtual std::vector<KGEN::Mojo::CodeCompletionResult>
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) = 0;
+
+  /// Hook that returns the symbols within the document.
+  virtual std::vector<mlir::lsp::DocumentSymbol>
+  onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) = 0;
 
   /// Hook that is invoked to perform signature help at the given position.
   virtual std::optional<KGEN::Mojo::SignatureHelpResult>
@@ -318,6 +338,9 @@ private:
   std::vector<KGEN::Mojo::CodeCompletionResult>
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) override;
 
+  std::vector<mlir::lsp::DocumentSymbol>
+  onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) override;
+
   std::optional<KGEN::Mojo::SignatureHelpResult>
   onSignatureHelpSyncImpl(llvm::SMLoc loc) override;
 
@@ -325,11 +348,11 @@ private:
   // Fields
   //===--------------------------------------------------------------------===//
 
-  /// The following fields are always available for access and don't require
-  /// additional synchronization.
-
   /// The full string contents of the file.
   std::string contents;
+
+  /// The AST decl for the module containing this document.
+  MojoASTDeclRef parsedDecl;
 };
 
 using MojoTextDocumentRef = RCRef<MojoTextDocument>;
@@ -346,6 +369,11 @@ public:
   struct Cell {
     Cell(mlir::lsp::URIForFile uri, StringRef contents)
         : uri(std::move(uri)), contents(contents.str()) {}
+
+    /// Return if this cell is a python cell.
+    bool isPythonCell() const {
+      return StringRef(contents).starts_with("%%python");
+    }
 
     /// The uri of the cell
     mlir::lsp::URIForFile uri;
@@ -407,6 +435,9 @@ private:
 
   std::vector<KGEN::Mojo::CodeCompletionResult>
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) override;
+
+  std::vector<mlir::lsp::DocumentSymbol>
+  onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) override;
 
   std::optional<KGEN::Mojo::SignatureHelpResult>
   onSignatureHelpSyncImpl(llvm::SMLoc loc) override;

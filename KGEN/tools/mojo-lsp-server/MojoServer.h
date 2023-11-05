@@ -96,6 +96,11 @@ public:
   onDefinition(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn);
 
+  /// Find all of the document symbols within the given file.
+  void onDocumentSymbol(
+      const mlir::lsp::URIForFile &uri,
+      OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn);
+
   /// Get a `Hover` element corresponding to the given document position.
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);

@@ -15,6 +15,8 @@ from lsprotocol.types import (
     DefinitionParams,
     DidOpenNotebookDocumentParams,
     DidOpenTextDocumentParams,
+    DocumentSymbol,
+    DocumentSymbolParams,
     HoverParams,
     InitializeParams,
 )
@@ -190,6 +192,11 @@ class Requests:
     async def definition(self, doc: Document, pos: Position):
         return await self.client.text_document_definition_async(
             params=DefinitionParams(position=pos, text_document=doc.identifier)
+        )
+
+    async def document_symbols(self, doc: Document):
+        return await self.client.text_document_document_symbol_async(
+            params=DocumentSymbolParams(text_document=doc.identifier)
         )
 
     async def completion(self, doc: Document, pos: Position):
