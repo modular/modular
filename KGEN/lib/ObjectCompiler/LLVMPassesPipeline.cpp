@@ -88,6 +88,12 @@ using namespace M::KGEN;
 
 static void addSanitizers(ModulePassManager &modulePassManager,
                           const CompilationOptions &options) {
+  // LLVM's sanitizer instrumentation is not supported for NVPTX.
+  llvm::Triple triple(options.targetTriple);
+  if (llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
+                         triple.getArch()))
+    return;
+
   if (options.sanitizers.has(M::Sanitizers::kThread)) {
     modulePassManager.addPass(ModuleThreadSanitizerPass());
     modulePassManager.addPass(
