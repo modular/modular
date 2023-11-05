@@ -89,7 +89,6 @@ public:
   std::string targetFeatures = getHostCPUFeatures();
   llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;
   std::vector<std::string> linkDirs = {};
-  bool sanitizeMangledSymbols = true;
   DebugInfoLanguage debugInfoLanguage = kLangC;
 
   std::string saveTempsPrefix = "";

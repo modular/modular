@@ -778,8 +778,8 @@ kgen.generator @compile_assembly() {
 
 // CHECK-LABEL: @get_likage_name
 kgen.generator @get_likage_name() {
-  // CHECK: constant: string = <get_linkage_name(:() -> () @kernel)>
-  kgen.param.constant: string = <get_linkage_name(:() -> () @kernel)>
+  // CHECK: constant: string = <get_linkage_name(current_target(), :() -> () @kernel)>
+  kgen.param.constant: string = <get_linkage_name(current_target(), :() -> () @kernel)>
   kgen.return
 }
 

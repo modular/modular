@@ -250,8 +250,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // the elaborator invocation will fail due to multiple implementations of a
   // primary generator, and the functor will return an error.
   StringAttr name =
-      getExpectedMangledName(func, symbol.getParamValues(),
-                             elaborator->getOptions().sanitizeSymbolNames);
+      getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
   ErrorOr<CrossDeviceFunction> closure =
       elaborator->getCompileAsmFn()(func, symbol, name, symtabCopy, target);
   if (closure.isError()) {
@@ -272,7 +271,8 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
 FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
   // This only supports generators with an empty set of parameters, otherwise we
   // need to resolve the symbol name after elaboration.
-  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
+  TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
+  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(1));
   if (!symbol || !symbol.getType().isConcrete()) {
     emitError({*errorLoc, "'get_linkage_name' function is not concrete"});
     return failure();
@@ -282,9 +282,12 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
           -> GeneratorOp { return symtab.lookup<GeneratorOp>(name); });
   assert(genOp && "expected a valid generator reference");
 
-  StringAttr name =
-      getExpectedMangledName(genOp, symbol.getParamValues(),
-                             elaborator->getOptions().sanitizeSymbolNames);
+  // HACK HACK HACK: Our current name mangling scheme is not compatible with the
+  // NVPTX backend.
+  StringAttr name = getExpectedMangledName(
+      genOp, symbol.getParamValues(),
+      llvm::is_contained({llvm::Triple::nvptx, llvm::Triple::nvptx64},
+                         target.getTriple().getArch()));
   return {StringAttr::get(name.getValue(), op.getType())};
 }
 

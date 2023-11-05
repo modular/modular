@@ -109,7 +109,6 @@ class LLDBTestBase:
                 "-O0",
                 "--debug-info-language",
                 "Mojo",
-                "--no-alnum-symbols",
                 source.path,
                 "-o",
                 output_path,

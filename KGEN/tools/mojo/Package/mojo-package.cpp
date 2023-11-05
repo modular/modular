@@ -17,7 +17,6 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Package/Package.h"
-#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -235,8 +234,6 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
           // If we are sanitizing symbols during elaboration, the
           // post-elaboration name will be different than the pre-elaboration
           // name.
-          if (options.sanitizeMangledSymbols)
-            postElaborationName = sanitizeSymbolToAlnum(postElaborationName);
           flattenedNameToFunc.insert(
               {postElaborationName, {clonedFunc, preElaborationName}});
         })
@@ -381,7 +378,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
       options::OPT_target_cpu, options::OPT_target_features, options::OPT_march,
       options::OPT_mcpu, options::OPT_mtune, options::OPT_no_optimization,
       options::OPT_debug_level, options::OPT_sanitize,
-      options::OPT_debug_info_language, options::OPT_no_alnum_symbols);
+      options::OPT_debug_info_language);
 }
 
 //===----------------------------------------------------------------------===//
