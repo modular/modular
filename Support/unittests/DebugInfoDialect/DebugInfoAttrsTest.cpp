@@ -37,7 +37,7 @@ TEST_F(SourceNameAttrTest, TestEncodeDecode) {
     #simd_name = #debuginfo.source_name<"simd" from #builtin_name>
     #Int_name = #debuginfo.source_name<"Int" from #int_name>
     #SIMD_name = #debuginfo.source_name<"SIMD"[#Int_name] from #simd_name>
-    #func_name = #debuginfo.source_name<"func"(#SIMD_name)<"1"> from #test_name>
+    #func_name = #debuginfo.source_name<("fn")"func"(#SIMD_name)<"1"> from #test_name>
 
     #strange = #debuginfo.source_name<"strange*">
     #weird = #debuginfo.source_name<"weird&name"<":struct<index> { 1 }", "^&*"> from #strange>
@@ -57,7 +57,7 @@ TEST_F(SourceNameAttrTest, TestEncodeDecode) {
     ASSERT_TRUE(sourceName);
 
     StringRef expected =
-        "test::func(builtin::simd::SIMD[builtin::int::Int])<1>";
+        "test::fn func(builtin::simd::SIMD[builtin::int::Int])<1>";
     EXPECT_EQ(sourceName.encode().getValue(), expected);
 
     ErrorOr<SourceNameAttr> decoded = SourceNameAttr::decode(&ctx, expected);

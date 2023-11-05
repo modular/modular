@@ -29,22 +29,26 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
   SmallVector<SourceNameAttr> paramTypes, argTypes;
   SourceNameAttr parent;
 
+  StringAttr kind;
   if (auto package = dyn_cast<PackageOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
     name = package.getSourceNameAttr();
     if (!name)
       name = package.getSymNameAttr();
+    kind = StringAttr::get(getContext(), "pkg");
   } else if (auto fileModule = dyn_cast<FileModuleOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
     name = fileModule.getSourceNameAttr();
     if (!name)
       name = fileModule.getSymNameAttr();
+    kind = StringAttr::get(getContext(), "module");
   } else if (auto structOp = dyn_cast<StructDeclOp>(*op)) {
     // The symbol name is the source name.
     name = structOp.getSymNameAttr();
     // Bundle the source names of the parameter types.
     for (Type type : structOp.getSignature().getParamTypes())
       paramTypes.push_back(getSourceName(type));
+    kind = StringAttr::get(getContext(), "struct");
   } else if (auto func = dyn_cast<LIT::FuncOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
     name = func.getSourceNameAttr();
@@ -70,6 +74,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
       }
       argTypes.push_back(getSourceName(type));
     }
+    kind = StringAttr::get(getContext(), "fn");
     // The function will not have parameter values until elaboration.
   } else {
     // If we somehow end up here, just use the symbol name.
@@ -80,7 +85,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
     parent = getSourceName(parentOp);
 
   auto sourceName = SourceNameAttr::get(name, paramTypes, argTypes,
-                                        /*paramValues=*/{}, parent);
+                                        /*paramValues=*/{}, parent, kind);
   names.try_emplace(op, sourceName);
   return sourceName;
 }
@@ -96,12 +101,12 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
     SmallVector<StringAttr> paramValues;
     for (TypedAttr value : declRef.getParamValues())
       paramValues.push_back(getParamTypeAsString(value));
-    return SourceNameAttr::get(name.getName(), name.getParamTypes(),
-                               name.getArgTypes(), paramValues,
-                               name.getParent());
+    return SourceNameAttr::get(
+        name.getName(), name.getParamTypes(), name.getArgTypes(), paramValues,
+        name.getParent(), StringAttr::get(getContext(), "struct"));
   }
   // For anything else, use the full MLIR type.
-  return SourceNameAttr::get(getTypeAsString(type), {}, {}, {}, {});
+  return SourceNameAttr::get(getTypeAsString(type));
 }
 
 void SharedState::setLocationDebugScope(

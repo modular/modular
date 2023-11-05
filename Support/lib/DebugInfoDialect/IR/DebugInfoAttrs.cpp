@@ -56,6 +56,10 @@ void SourceNameAttr::encode(llvm::raw_ostream &os) const {
   };
 
   // Base name.
+  if (getKind()) {
+    printString(getKind());
+    os << ' ';
+  }
   printString(getName());
 
   // Parameter types.
@@ -149,9 +153,22 @@ ErrorOr<SourceNameAttr> SourceNameParser::parseSourceName() {
     paramValues.clear();
 
     // Base name.
-    ErrorOr<StringRef> baseName = parseString();
-    if (baseName.isError())
-      return baseName.takeError();
+    StringAttr baseName;
+    {
+      ErrorOr<StringRef> name = parseString();
+      if (name.isError())
+        return name.takeError();
+      baseName = StringAttr::get(ctx, name.takeValue());
+    }
+
+    StringAttr kind;
+    if (parseOptional(' ')) {
+      kind = baseName;
+      ErrorOr<StringRef> name = parseString();
+      if (name.isError())
+        return name.takeError();
+      baseName = StringAttr::get(ctx, name.takeValue());
+    }
 
     // Parameter types.
     if (parseOptional('[')) {
@@ -190,8 +207,8 @@ ErrorOr<SourceNameAttr> SourceNameParser::parseSourceName() {
     }
 
     // Generate the source name with the current name as the parent.
-    next = SourceNameAttr::get(StringAttr::get(ctx, baseName.takeValue()),
-                               paramTypes, argTypes, paramValues, next);
+    next = SourceNameAttr::get(baseName, paramTypes, argTypes, paramValues,
+                               next, kind);
   } while (parseOptional(':') && parseOptional(':'));
   return next;
 }

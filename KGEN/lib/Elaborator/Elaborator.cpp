@@ -783,7 +783,7 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
       values.push_back(cast<StringAttr>(value));
     name = DebugInfo::SourceNameAttr::get(name.getName(), name.getParamTypes(),
                                           name.getArgTypes(), values,
-                                          name.getParent());
+                                          name.getParent(), name.getKind());
     DebugInfo::updateSubprogram(clone, clone.getSymNameAttr(), name);
   }
 
@@ -2120,7 +2120,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     DebugInfo::SourceNameAttr name = scope.getName();
     name = DebugInfo::SourceNameAttr::get(name.getName(), name.getParamTypes(),
                                           name.getArgTypes(), paramValues,
-                                          name.getParent());
+                                          name.getParent(), name.getKind());
     StringRef linkageName = newFunc.getSymName();
     if (inputParamValues.empty())
       linkageName.consume_back("_concrete");
