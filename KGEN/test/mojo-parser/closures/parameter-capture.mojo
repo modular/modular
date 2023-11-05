@@ -167,3 +167,28 @@ struct Bat[A : Int]:
       let w = B + self.b + y
       return Foo[B,A](w + A)
    return bar
+
+# // -----
+
+# COM: Capture inside a nested escaping closure.
+
+@value
+struct MemType:
+    var x:Int
+    fn __add__(self, rhs: MemType) -> MemType:
+        return MemType(rhs.x + self.x)
+    fn __add__(self, rhs: Int) -> MemType:
+        return MemType(self.x+rhs)
+
+# COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
+# CHECK: lit.struct.decl @"_CI_${{.*}}_fn[$builtin::$int::Int](fld0 = ${{.*}}::MemType, /, , n = ${{.*}}::MemType) escaping -> ${{.*}}::MemType_escaping"<p0[p0]: !Int, |>
+
+# COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
+# CHECK: lit.struct.decl @"_CI_${{.*}}_fn[$builtin::$int::Int](fld0 = ${{.*}}::MemType, /, , k = ${{.*}}::MemType, l = ${{.*}}::MemType) escaping -> ${{.*}}::MemType_escaping"<p0[p0]: !Int, |>
+fn makes_escaping_closure[A:Int](m: MemType) -> fn(n: MemType) escaping -> MemType:
+    fn myclosure(n: MemType) escaping -> MemType:
+        fn nested_nested(k: MemType, l: MemType) escaping -> MemType:
+            return n + k + A
+
+        return nested_nested(n,m)
+    return myclosure

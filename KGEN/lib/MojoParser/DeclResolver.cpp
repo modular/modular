@@ -2682,6 +2682,12 @@ static Value emitClosureInstance(SignatureType closureSignature,
       ASTType(closureWrapperType), closureWrapperInitArgs, &node,
       CallSyntax::kTypeCall, closureWrapperDest,
       /*allowImplicitConversion=*/false);
+
+  // We may have generated a capture. Record.
+  if (parentFunction.getSignature().isEscaping())
+    for (ParameterCapture param : orderedCaptures)
+      emitter.shared.addCapturedParameterToScope(
+          *nestedFunctionDecl.getParentDecl(), param);
   return closureWrapperInstance.getIfMRValue();
 }
 

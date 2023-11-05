@@ -453,7 +453,7 @@ public:
 
   /// Given a nested function, a captured parameter, and the corresponding
   /// parameter ASTDecl, store the capture associated with the nested function.
-  void addCapturedParameterToScope(ASTDecl &scope, ASTDecl *captureDecl,
+  void addCapturedParameterToScope(ASTDecl &scope,
                                    ParameterCapture parameterCapture);
 
   /// Given a nested function, return a list of captured parameters in the form
