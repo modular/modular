@@ -198,7 +198,6 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   mlir::PassManager pm(&context);
 
   ExecutionEngineOptions eeOptions;
-  eeOptions.sanitizers = options.sanitizers;
   if (options.debugLevel != CompilationOptions::kNoDebug)
     eeOptions.registerDebugPlugins = true;
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =

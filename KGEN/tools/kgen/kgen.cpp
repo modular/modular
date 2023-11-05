@@ -316,7 +316,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   ExecutionEngineOptions eeOptions;
-  eeOptions.sanitizers = options.sanitizers;
   if (options.debugLevel != CompilationOptions::kNoDebug)
     eeOptions.registerDebugPlugins = true;
   // Detect cross-compilation by checking whether the target CPU is the same as

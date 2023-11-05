@@ -50,7 +50,6 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 
   mlir::PassManager mgr(target.getContext());
   ExecutionEngineOptions eeOptions;
-  eeOptions.sanitizers = options.sanitizers;
   if (options.debugLevel != CompilationOptions::kNoDebug)
     eeOptions.registerDebugPlugins = true;
   auto engineOr =
@@ -617,10 +616,6 @@ KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
   auto tmOr = createTargetMachine(compilationOptions, isJIT);
   if (tmOr.isError())
     return tmOr.takeError();
-
-  // Forward the sanitizers into the execution engine if we are JITing.
-  if (isJIT)
-    executionEngineOptions.sanitizers = compilationOptions.sanitizers;
 
   auto engineOr = ExecutionEngine::createWithStandardLayers(
       std::move(executionEngineOptions), **tmOr);

@@ -35,9 +35,6 @@ struct ExecutionEngineOptions {
   /// Whether or not to register the GDB plugins.
   bool registerDebugPlugins = false;
 
-  /// Which sanitizers were enabled on the build.
-  Sanitizers sanitizers;
-
   /// Set to true if the executing engine is being used to cross-compile. This
   /// will forgo any JIT setup and capabilities.
   bool crossCompiling = false;
