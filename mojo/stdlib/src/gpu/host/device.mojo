@@ -662,6 +662,11 @@ struct Device:
             ).__str__()
             + "\n"
         )
+        res += (
+            String("SM count: ")
+            + self._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
+            + "\n"
+        )
 
         return res
 
