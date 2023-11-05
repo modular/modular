@@ -114,8 +114,25 @@ public:
     ++cur;
     return success();
   }
+  /// Parse an optional comma-separated list with a delimiter.
+  ErrorOrSuccess parseList(char open, char close,
+                           function_ref<ErrorOrSuccess()> parseFn) {
+    if (!parseOptional(open))
+      return success();
+    do {
+      if (auto err = parseFn())
+        return err.takeError();
+    } while (parseOptional(','));
+    return parse(close);
+  }
 
 private:
+  ErrorOrSuccess
+  parseSourceNameImpl(StringAttr &baseName, StringAttr &kind,
+                      SmallVectorImpl<SourceNameAttr> &paramTypes,
+                      SmallVectorImpl<SourceNameAttr> &argTypes,
+                      SmallVectorImpl<StringAttr> &paramValues);
+
   MLIRContext *ctx;
   /// The current offset into the buffer.
   const char *cur;
@@ -142,6 +159,60 @@ ErrorOr<StringRef> SourceNameParser::parseString() {
   return StringRef(start, std::distance(start, cur));
 }
 
+ErrorOrSuccess SourceNameParser::parseSourceNameImpl(
+    StringAttr &baseName, StringAttr &kind,
+    SmallVectorImpl<SourceNameAttr> &paramTypes,
+    SmallVectorImpl<SourceNameAttr> &argTypes,
+    SmallVectorImpl<StringAttr> &paramValues) {
+  // Base name.
+  ErrorOr<StringRef> name = parseString();
+  if (name.isError())
+    return name.takeError();
+  baseName = StringAttr::get(ctx, name.takeValue());
+
+  if (parseOptional(' ')) {
+    kind = baseName;
+    ErrorOr<StringRef> name = parseString();
+    if (name.isError())
+      return name.takeError();
+    baseName = StringAttr::get(ctx, name.takeValue());
+  }
+
+  // Parameter types.
+  auto parseParamType = [&]() -> ErrorOrSuccess {
+    ErrorOr<SourceNameAttr> name = parseSourceName();
+    if (name.isError())
+      return name.takeError();
+    paramTypes.push_back(name.takeValue());
+    return success();
+  };
+  if (auto err = parseList('[', ']', parseParamType))
+    return err.takeError();
+
+  // Argument types.
+  auto parseArgType = [&]() -> ErrorOrSuccess {
+    ErrorOr<SourceNameAttr> name = parseSourceName();
+    if (name.isError())
+      return name.takeError();
+    argTypes.push_back(name.takeValue());
+    return success();
+  };
+  if (auto err = parseList('(', ')', parseArgType))
+    return err.takeError();
+
+  // Parameter values.
+  auto parseParam = [&]() -> ErrorOrSuccess {
+    ErrorOr<StringRef> value = parseString();
+    if (value.isError())
+      return value.takeError();
+    paramValues.push_back(StringAttr::get(ctx, value.takeValue()));
+    return success();
+  };
+  if (auto err = parseList('<', '>', parseParam))
+    return err.takeError();
+  return success();
+}
+
 ErrorOr<SourceNameAttr> SourceNameParser::parseSourceName() {
   SourceNameAttr next;
   SmallVector<SourceNameAttr> paramTypes, argTypes;
@@ -151,60 +222,11 @@ ErrorOr<SourceNameAttr> SourceNameParser::parseSourceName() {
     paramTypes.clear();
     argTypes.clear();
     paramValues.clear();
-
-    // Base name.
     StringAttr baseName;
-    {
-      ErrorOr<StringRef> name = parseString();
-      if (name.isError())
-        return name.takeError();
-      baseName = StringAttr::get(ctx, name.takeValue());
-    }
-
     StringAttr kind;
-    if (parseOptional(' ')) {
-      kind = baseName;
-      ErrorOr<StringRef> name = parseString();
-      if (name.isError())
-        return name.takeError();
-      baseName = StringAttr::get(ctx, name.takeValue());
-    }
-
-    // Parameter types.
-    if (parseOptional('[')) {
-      do {
-        ErrorOr<SourceNameAttr> name = parseSourceName();
-        if (name.isError())
-          return name.takeError();
-        paramTypes.push_back(name.takeValue());
-      } while (parseOptional(','));
-      if (ErrorOrSuccess err = parse(']'))
-        return err.takeError();
-    }
-
-    // Argument types.
-    if (parseOptional('(')) {
-      do {
-        ErrorOr<SourceNameAttr> name = parseSourceName();
-        if (name.isError())
-          return name.takeError();
-        argTypes.push_back(name.takeValue());
-      } while (parseOptional(','));
-      if (ErrorOrSuccess err = parse(')'))
-        return err.takeError();
-    }
-
-    // Parameter values.
-    if (parseOptional('<')) {
-      do {
-        ErrorOr<StringRef> value = parseString();
-        if (value.isError())
-          return value.takeError();
-        paramValues.push_back(StringAttr::get(ctx, value.takeValue()));
-      } while (parseOptional(','));
-      if (ErrorOrSuccess err = parse('>'))
-        return err.takeError();
-    }
+    if (auto err = parseSourceNameImpl(baseName, kind, paramTypes, argTypes,
+                                       paramValues))
+      return err.takeError();
 
     // Generate the source name with the current name as the parent.
     next = SourceNameAttr::get(baseName, paramTypes, argTypes, paramValues,
