@@ -12,6 +12,68 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 //===----------------------------------------------------------------------===//
+// DebugInfoAttr
+//===----------------------------------------------------------------------===//
+
+// Base class for debug info dialect attributes.
+class DebugInfoAttr<string name, string attrMnemonic, list<Trait> traits = []>
+    : AttrDef<DebugInfoDialect, name, traits> {
+  let mnemonic = attrMnemonic;
+}
+
+//===----------------------------------------------------------------------===//
+// SourceNameAttr
+//===----------------------------------------------------------------------===//
+
+def ourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
+  let summary = "full source name information about a symbol";
+  let description = [{
+    The `#debuginfo.source_name` attribute contains perserved source name
+    information about a symbol and its lineage, e.g. including parent symbols.
+    It contains all information that can be used to discriminate a function: its
+    base name, its argument type strings, its parameter type strings, the
+    elaborated values of the parameters, and a pointer to its parent.
+  }];
+
+  let parameters = (ins
+    "StringAttr":$name,
+    OptionalArrayRefParameter<"SourceNameAttr">:$paramTypes,
+    OptionalArrayRefParameter<"SourceNameAttr">:$argTypes,
+    OptionalArrayRefParameter<"StringAttr">:$paramValues,
+    OptionalParameter<"SourceNameAttr">:$parent
+  );
+
+  let assemblyFormat = [{
+    `<` $name
+    (`[` $paramTypes^ `]`)? ``
+    (`(` $argTypes^ `)`)? ``
+    (`<` $paramValues^ `>`)?
+    (` ` `from` $parent^)? `>`
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "StringAttr":$name,
+        "ArrayRef<SourceNameAttr>":$paramTypes,
+        "ArrayRef<SourceNameAttr>":$argTypes,
+        "ArrayRef<StringAttr>":$paramValues,
+        "SourceNameAttr":$parent), [{
+      return $_get(name.getContext(), name, paramTypes, argTypes, paramValues,
+                   parent);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Encode the attribute into a string, producing a mangled name.
+    void encode(llvm::raw_ostream &os) const;
+    StringAttr encode() const;
+
+    /// Decode a source name from a mangled string.
+    static ErrorOr<SourceNameAttr> decode(MLIRContext *ctx, StringRef str);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // DIAttr
 //===----------------------------------------------------------------------===//
 

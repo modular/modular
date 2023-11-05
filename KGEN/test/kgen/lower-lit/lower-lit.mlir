@@ -448,15 +448,6 @@ lit.globalvar.decl @self : index {
 
 // CHECK-NOT: lit.file_module
 
-// CHECK-DAG: #index_name = #kgen.source_name<"index">
-// CHECK-DAG: #module_name = #kgen.source_name<"module">
-// CHECK-DAG: #[[ADDER_SIZE:.*]] = #kgen.source_name<"Adder"[#index_name]<"size"> from #module_name>
-// CHECK-DAG: #[[ADDER:.*]] = #kgen.source_name<"Adder"[#index_name] from #module_name>
-// CHECK-DAG: #[[ADDER_10:.*]] = #kgen.source_name<"Adder"[#index_name]<"10"> from #module_name>
-// CHECK-DAG: #test_name = #kgen.source_name<"test" from #module_name>
-// CHECK-DAG: #__add___name = #kgen.source_name<"__add__"(#[[ADDER_SIZE]]) from #[[ADDER]]>
-// CHECK-DAG: #caller_name = #kgen.source_name<"caller"(#[[ADDER_10]])>
-
 lit.file_module @module {
   // CHECK: kgen.generator @"module::test"()
   lit.func @test()  {
@@ -464,7 +455,7 @@ lit.file_module @module {
   }
 
   lit.struct.decl @Adder<size> {
-    // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !kgen.declref<@"module::Adder"<size>> owned) attributes {sourceName = #__add___name}
+    // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !kgen.declref<@"module::Adder"<size>> owned)
     // CHECK-NEXT:    kgen.call @"module::test"() : () -> ()
     lit.func @__add__(%self: !kgen.declref<@module::@Adder<size>>)  {
       kgen.call @module::@test() : () -> ()
@@ -475,7 +466,7 @@ lit.file_module @module {
   // CHECK-LABEL: lit.struct.decl @"module::Adder"<size> {
 }
 
-// CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.declref<@"module::Adder"<10>> owned) attributes {sourceName = #caller_name}
+// CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.declref<@"module::Adder"<10>> owned)
 lit.func @caller(%ref: !kgen.declref<@module::@Adder<10>>)  {
   // CHECK: kgen.call @"module::Adder::__add__"
   kgen.call @module::@Adder::@__add__<10>(%ref) : (!kgen.declref<@module::@Adder<10>>) -> ()
