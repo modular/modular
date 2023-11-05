@@ -337,7 +337,8 @@ llvm::json::Object VariableDeclView::toJSON() const {
 }
 
 VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_VariableDeclView, declRef.getName().value_or(StringRef{})) {
+    : DeclView(DK_VariableDeclView, declRef.getName().value_or(StringRef{})),
+      isGlobalVariable(false) {
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
       .Case([&](VarLetDeclOp op) {
         flagIsVar = op.getKind() != VarLetDeclKind::Let;
@@ -350,6 +351,7 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
       .Case([&](GlobalVarDeclOp op) {
         flagIsVar = op.getIsVar();
         type = declRef.getType().getAsString();
+        isGlobalVariable = true;
       });
 }
 
@@ -437,8 +439,15 @@ llvm::json::Object AliasDeclView::toJSON() const {
                             {"value", value}};
 }
 
+/// Return if the given alias decl is global, i.e. nested within a module,
+/// package, or struct.
+static bool isGlobalAliasDecl(MojoASTDeclRef declRef) {
+  return isa<FileModuleOp, PackageOp, StructDeclOp>(*declRef->getParentDecl());
+}
+
 AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_AliasDeclView, declRef.getName().value_or(StringRef())) {
+    : DeclView(DK_AliasDeclView, declRef.getName().value_or(StringRef())),
+      isGlobalAlias(isGlobalAliasDecl(declRef)) {
   auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
 
   llvm::raw_string_ostream valueOS(value);

@@ -65,6 +65,9 @@ struct LSPServer {
   void onDefinition(const TextDocumentPositionParams &params,
                     Callback<llvm::json::Value> reply);
 
+  void onDocumentSymbol(const DocumentSymbolParams &params,
+                        Callback<std::vector<DocumentSymbol>> reply);
+
   void onHover(const TextDocumentPositionParams &params,
                Callback<llvm::json::Value> reply);
 
@@ -123,6 +126,11 @@ void LSPServer::onInitialize(const InitializeParams &params,
               {"save", true},
           },
       },
+
+      // For now we only support documenting symbols when the client supports
+      // hierarchical symbols.
+      {"documentSymbolProvider",
+       params.capabilities.hierarchicalDocumentSymbol},
   };
 
   // Per LSP, codeActionProvider can be either boolean or CodeActionOptions.
@@ -241,6 +249,15 @@ void LSPServer::onDefinition(const TextDocumentPositionParams &params,
                       });
 }
 
+void LSPServer::onDocumentSymbol(const DocumentSymbolParams &params,
+                                 Callback<std::vector<DocumentSymbol>> reply) {
+  server.onDocumentSymbol(
+      params.textDocument.uri,
+      [reply = std::move(reply)](std::vector<DocumentSymbol> symbols) mutable {
+        reply(std::move(symbols));
+      });
+}
+
 void LSPServer::onHover(const TextDocumentPositionParams &params,
                         Callback<llvm::json::Value> reply) {
   server.onHover(
@@ -317,6 +334,8 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
                         &LSPServer::onCompletion);
   messageHandler.method("textDocument/definition", &lspServer,
                         &LSPServer::onDefinition);
+  messageHandler.method("textDocument/documentSymbol", &lspServer,
+                        &LSPServer::onDocumentSymbol);
   messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
   messageHandler.method("textDocument/signatureHelp", &lspServer,
                         &LSPServer::onSignatureHelp);

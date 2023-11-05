@@ -29,6 +29,7 @@
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include <optional>
 
@@ -940,6 +941,95 @@ std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) {
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDocument: Document Symbols
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::getDocumentSymbols(
+    MojoASTDeclRef decl, std::vector<mlir::lsp::DocumentSymbol> &symbols) {
+  const llvm::MemoryBuffer *declBuffer = sourceMgr.getMemoryBuffer(
+      getSourceMgr().FindBufferContainingLoc(decl.getLoc()));
+  StringRef declBufferRef = declBuffer->getBuffer();
+  getDocumentSymbols(decl, symbols, [declBufferRef](MojoASTDeclRef decl) {
+    // Imported decls may be in a different buffer, only consider decls in the
+    // same buffer as the main decl.
+    const char *declLoc = decl.getLoc().getPointer();
+    return declBufferRef.begin() <= declLoc && declLoc <= declBufferRef.end();
+  });
+}
+
+void MojoDocument::getDocumentSymbols(
+    MojoASTDeclRef decl, std::vector<mlir::lsp::DocumentSymbol> &symbols,
+    function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl) {
+  std::vector<mlir::lsp::DocumentSymbol> *nestedSymbols = &symbols;
+
+  // Utility functor to add a new document symbol.
+  auto addSymbol = [&](const Twine &name, mlir::lsp::SymbolKind kind,
+                       mlir::lsp::Range range, std::string detail = "") {
+    auto &docSym = symbols.emplace_back(name, kind, range, range);
+    docSym.detail = std::move(detail);
+    nestedSymbols = &docSym.children;
+  };
+
+  // Check for symbol information for this decl.
+  auto *symbol = context->symbolIndex.findSymbol(decl);
+  if (symbol && symbol->range.isValid()) {
+    if (std::unique_ptr<DeclView> declView = decl.getView()) {
+      mlir::lsp::Range range(getSourceMgr(), symbol->range);
+
+      TypeSwitch<DeclView *>(declView.get())
+          .Case([&](AliasDeclView *alias) {
+            // We only consider global aliases here, we don't want to show every
+            // conceivable decl.
+            if (!alias->isGlobal())
+              return;
+
+            addSymbol(alias->getName(), mlir::lsp::SymbolKind::Property, range,
+                      alias->getValue().str());
+          })
+          .Case([&](FunctionDeclView *fn) {
+            addSymbol(fn->getName(), mlir::lsp::SymbolKind::Function, range,
+                      fn->getSignature());
+          })
+          .Case([&](StructDeclView *structDecl) {
+            addSymbol(structDecl->getName(), mlir::lsp::SymbolKind::Struct,
+                      range);
+          })
+          .Case([&](StructFieldDeclView *field) {
+            addSymbol(field->getName(), mlir::lsp::SymbolKind::Field, range,
+                      field->getType().str());
+          })
+          .Case([&](VariableDeclView *var) {
+            // We only consider global variables here, we don't want to show
+            // every conceivable decl.
+            if (!var->isGlobal())
+              return;
+
+            addSymbol(var->getName(), mlir::lsp::SymbolKind::Variable, range,
+                      var->getType().str());
+          });
+    }
+  }
+
+  // Traverse the child decls.
+  for (const auto &childIt : decl.getChildren()) {
+    for (MojoASTDeclRef child : childIt.getDecls())
+      if (shouldIncludeDecl(child))
+        getDocumentSymbols(child, *nestedSymbols);
+  }
+}
+
+void MojoDocument::onDocumentSymbol(
+    const mlir::lsp::URIForFile &uri,
+    OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn) {
+  startTaskAfterParsing(
+      [uri, onSymbolsFn = std::move(onSymbolsFn)](MojoDocument &doc) mutable {
+        if (doc.isInvalidated)
+          return onSymbolsFn({});
+        onSymbolsFn(doc.onDocumentSymbolSync(uri));
+      });
+}
+
+//===----------------------------------------------------------------------===//
 // MojoDocument: Hover
 //===----------------------------------------------------------------------===//
 
@@ -1030,8 +1120,8 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
 }
 
 void MojoTextDocument::parseDocumentImpl() {
-  checkModuleSemantics(
-      getParserContext().parseFile(getSourceMgr().getMainFileID()));
+  parsedDecl = getParserContext().parseFile(getSourceMgr().getMainFileID());
+  checkModuleSemantics(parsedDecl);
 }
 
 const mlir::lsp::URIForFile &
@@ -1065,6 +1155,19 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
   return MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
                                          getRuntime(), getCompilationOptions());
+}
+
+//===----------------------------------------------------------------------===//
+// MojoTextDocument: Document Symbol
+//===----------------------------------------------------------------------===//
+
+std::vector<mlir::lsp::DocumentSymbol>
+MojoTextDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
+  if (!parsedDecl)
+    return {};
+  std::vector<mlir::lsp::DocumentSymbol> symbols;
+  getDocumentSymbols(parsedDecl, symbols);
+  return symbols;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1202,7 +1305,23 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
 }
 
 //===----------------------------------------------------------------------===//
-// MojoTextDocument: Signature Help
+// MojoNotebookDocument: Document Symbol
+//===----------------------------------------------------------------------===//
+
+std::vector<mlir::lsp::DocumentSymbol>
+MojoNotebookDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
+  auto cellIt = uriToCell.find(uri.file());
+  if (cellIt == uriToCell.end() || !cellIt->second->decl ||
+      cellIt->second->isPythonCell())
+    return {};
+
+  std::vector<mlir::lsp::DocumentSymbol> symbols;
+  getDocumentSymbols(cellIt->second->decl, symbols);
+  return symbols;
+}
+
+//===----------------------------------------------------------------------===//
+// MojoNotebookDocument: Signature Help
 //===----------------------------------------------------------------------===//
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
@@ -1513,6 +1632,15 @@ void MojoServer::onDefinition(
     doc->onDefinition(uri, pos, std::move(onDefinitionFn));
   else
     onDefinitionFn({});
+}
+
+void MojoServer::onDocumentSymbol(
+    const mlir::lsp::URIForFile &uri,
+    OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn) {
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
+    doc->onDocumentSymbol(uri, std::move(onSymbolsFn));
+  else
+    onSymbolsFn({});
 }
 
 void MojoServer::onHover(
