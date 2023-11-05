@@ -188,20 +188,6 @@ fn lane_id() -> Int:
 
 
 # ===----------------------------------------------------------------------===#
-# warp_id
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn warp_id() -> Int:
-    """Returns the warp ID of the current thread.
-
-    Returns: The warp ID of the the current thread.
-    """
-    return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.warpid", Int32]().to_int()
-
-
-# ===----------------------------------------------------------------------===#
 # sm_id
 # ===----------------------------------------------------------------------===#
 
