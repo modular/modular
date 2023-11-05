@@ -2121,7 +2121,11 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     name = DebugInfo::SourceNameAttr::get(name.getName(), name.getParamTypes(),
                                           name.getArgTypes(), paramValues,
                                           name.getParent());
-    DebugInfo::updateSubprogram(newFunc, newFunc.getSymNameAttr(), name);
+    StringRef linkageName = newFunc.getSymName();
+    if (inputParamValues.empty())
+      linkageName.consume_back("_concrete");
+    DebugInfo::updateSubprogram(
+        newFunc, StringAttr::get(name.getContext(), linkageName), name);
   }
 
   std::function<LogicalResult(ImplNode *)> onComplete;

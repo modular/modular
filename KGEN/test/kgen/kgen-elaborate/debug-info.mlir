@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators=elaborate-locations=true -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators=elaborate-locations=true -split-input-file -mlir-print-debuginfo | FileCheck %s
 
 // Check that debug info gets resolved during elaboration.
 
@@ -65,3 +65,13 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 #loc11 = loc(fused<#callerSp>["test.mlir":3:10])
 #paramRefLoc = loc(fused<#kgen.param.decl.ref<"a">>["test.mlir":4:3])
 #locFwParam = loc(fused<#callerSp>[#paramRefLoc])
+
+// -----
+
+// CHECK: linkageName = "entry"
+#sp = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#loc = loc(fused<#sp>["a.mlir":0:0])
+
+kgen.generator @entry() {
+  kgen.return loc(#loc)
+} loc(#loc)

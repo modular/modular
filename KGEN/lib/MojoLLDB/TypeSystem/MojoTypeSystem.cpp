@@ -781,9 +781,6 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
 
 MojoASTDeclRef
 MojoTypeSystem::getOrCreateFunctionDecl(llvm::StringRef mangledName) {
-  // FIXME(23550): delete this line when this suffix is not emitted anymore.
-  mangledName.consume_back("_concrete");
-
   auto mangled = StringAttr::get(getMLIRContext(), mangledName);
   FailureOr<LIT::MangledSymbol> mangledSymbol =
       LIT::MangledSymbol::demangle(mangled);
