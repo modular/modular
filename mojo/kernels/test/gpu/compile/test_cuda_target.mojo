@@ -24,7 +24,6 @@ from gpu import (
     shuffle_up,
     WARP_SIZE,
     lane_id,
-    warp_id,
 )
 from gpu.memory import AddressSpace
 
@@ -317,8 +316,7 @@ fn block_reduce(val: Float32) -> Float32:
 
     # CHECK-DAG: mov.u32         %r{{.*}}, %laneid;
     let lane = lane_id()
-    # CHECK-DAG: mov.u32         %r{{.*}}, %warpid;
-    let warp = warp_id()
+    let warp = ThreadIdx.x() // 32
 
     let warp_sum = warp_sum_reduce(val)
 

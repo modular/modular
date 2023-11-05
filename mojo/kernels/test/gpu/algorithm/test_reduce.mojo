@@ -23,7 +23,6 @@ from gpu import (
     barrier,
     AddressSpace,
     lane_id,
-    warp_id,
     shuffle_down,
     WARP_SIZE,
     warp_reduce,
