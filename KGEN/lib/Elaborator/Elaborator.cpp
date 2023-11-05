@@ -772,6 +772,21 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
     forkName = sanitizeSymbolToAlnum(forkName);
   clone.setSymName(forkName);
 
+  // Update the subprogram information.
+  if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
+          clone.getLoc())) {
+    DebugInfo::SourceNameAttr name = scope.getName();
+    SmallVector<StringAttr> values = llvm::to_vector(name.getParamValues());
+    if (!forkParam.empty())
+      values.push_back(getParamTypeAsString(cast<TypedAttr>(value)));
+    else
+      values.push_back(cast<StringAttr>(value));
+    name = DebugInfo::SourceNameAttr::get(name.getName(), name.getParamTypes(),
+                                          name.getArgTypes(), values,
+                                          name.getParent());
+    DebugInfo::updateSubprogram(clone, clone.getSymNameAttr(), name);
+  }
+
   // Insert the new function at a location relative to the current one. This
   // ensures all forks are inserted in a deterministic order, regardless of
   // which occur first.
@@ -2097,7 +2112,17 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 
   // Since the function will have a new name, we need to update the linkage name
   // in the subprogram information.
-  DebugInfo::updateSubprogram(newFunc, newFunc.getSymNameAttr());
+  if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
+          newFunc.getLoc())) {
+    SmallVector<StringAttr> paramValues;
+    for (TypedAttr value : inputParamValues)
+      paramValues.push_back(getParamTypeAsString(value));
+    DebugInfo::SourceNameAttr name = scope.getName();
+    name = DebugInfo::SourceNameAttr::get(name.getName(), name.getParamTypes(),
+                                          name.getArgTypes(), paramValues,
+                                          name.getParent());
+    DebugInfo::updateSubprogram(newFunc, newFunc.getSymNameAttr(), name);
+  }
 
   std::function<LogicalResult(ImplNode *)> onComplete;
   if (config.elaborateLocations) {

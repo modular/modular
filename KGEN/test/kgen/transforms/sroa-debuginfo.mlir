@@ -3,7 +3,7 @@
 
 !subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
 !unresolved = !debuginfo.unresolved<!kgen.pointer<struct<(index, index)>>>
-#subprogram = #debuginfo.subprogram<name = "__next__"> : !subroutine
+#subprogram = #debuginfo.subprogram<name = <"__next__">> : !subroutine
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "self"> : !unresolved
 
 #fileLoc = loc("foo.mlir":0:0)
@@ -27,7 +27,7 @@ kgen.func @sroa_valueop() {
 
 // -----
 
-#sp = #debuginfo.subprogram<name = "max"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#sp = #debuginfo.subprogram<name = <"max">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #sp, name = "x"> : !debuginfo.unresolved<!kgen.struct<(index, index)>>
 
 #loc = loc(fused<#sp>["foo.mojo":0:0])

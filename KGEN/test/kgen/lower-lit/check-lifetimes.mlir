@@ -458,7 +458,7 @@ lit.func @external_func(%arg: !kgen.pointer<@MyStruct> owned_in_mem) attributes 
 // COM: not cause an error in the pass.
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
-#subprogram = #debuginfo.subprogram<name = "foo"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!kgen.pointer<@MyStruct>>
 
 #fileLoc = loc("foo.mlir":0:0)

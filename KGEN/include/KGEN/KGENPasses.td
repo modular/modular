@@ -142,8 +142,7 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 
   let dependentDialects = [
     "KGENDialect",
-    "HLCF::HLCFDialect",
-    "mlir::index::IndexDialect",
+    "HLCF::HLCFDialect"
   ];
 
   let options = [

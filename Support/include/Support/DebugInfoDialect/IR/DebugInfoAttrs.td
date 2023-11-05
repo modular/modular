@@ -60,6 +60,15 @@ def ourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
         "SourceNameAttr":$parent), [{
       return $_get(name.getContext(), name, paramTypes, argTypes, paramValues,
                    parent);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        CArg<"SourceNameAttr", "{}">:$parent), [{
+      return get(name, {}, {}, {}, parent);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "const Twine &":$name,
+                                        "SourceNameAttr":$parent), [{
+      return get(StringAttr::get(parent.getContext(), name), {}, {}, {},
+                                 parent);
     }]>
   ];
 
@@ -291,7 +300,7 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
   let parameters = (ins
     OptionalParameter<"DICompileUnitAttr">:$compileUnit,
     OptionalParameter<"DIScopeAttr">:$scope,
-    "StringAttr":$name,
+    "SourceNameAttr":$name,
     OptionalParameter<"StringAttr">:$linkageName,
     OptionalParameter<"DIFileAttr">:$file,
     OptionalParameter<"unsigned">:$line,
@@ -301,31 +310,20 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
   );
   let builders = [
     AttrBuilderWithInferredContext<(ins
-      "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope, "StringAttr":$name,
-      "StringAttr":$linkageName, "DIFileAttr":$file, "unsigned":$line,
-      "unsigned":$scopeLine, "SubprogramFlags":$subprogramFlags,
-      "DISubroutineType":$type
+      "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope,
+      "SourceNameAttr":$name, "StringAttr":$linkageName, "DIFileAttr":$file,
+      "unsigned":$line, "unsigned":$scopeLine,
+      "SubprogramFlags":$subprogramFlags, "DISubroutineType":$type
     ), [{
       return $_get(type.getContext(), compileUnit, scope, name, linkageName,
                    file, line, scopeLine, subprogramFlags, type);
-    }]>,
-    AttrBuilderWithInferredContext<(ins
-      "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope, "StringRef":$name,
-      "StringRef":$linkageName, "DIFileAttr":$file, "unsigned":$line,
-      "unsigned":$scopeLine, "SubprogramFlags":$subprogramFlags,
-      "DISubroutineType":$type
-    ), [{
-      MLIRContext *ctx = type.getContext();
-      return $_get(ctx, compileUnit, scope, StringAttr::get(ctx, name),
-                   StringAttr::get(ctx, linkageName), file, line,
-                   scopeLine, subprogramFlags, type);
     }]>
   ];
   let assemblyFormat = "`<` struct(params) `>`";
 
   let extraClassDeclaration = [{
     /// Returns a clone with a new name and linkage name.
-    DISubprogramAttr cloneWith(StringRef name, StringRef linkageName,
+    DISubprogramAttr cloneWith(SourceNameAttr name, StringAttr linkageName,
                                DISubroutineType type = {}) const;
   }];
 }

@@ -18,7 +18,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   llvm.func internal @main_closure_arg() {
     // CHECK: [[ARG:%.*]] = builtin.unrealized_conversion_cast %idx98 : index to i64
     // CHECK: [[UNDEF:%.*]] = llvm.mlir.undef : !llvm.struct<(ptr, ptr)>
-    // CHECK: [[ADDR:%.*]] = llvm.mlir.addressof @closure_wrapper_fn : !llvm.ptr
+    // CHECK: [[ADDR:%.*]] = llvm.mlir.addressof @closure_wrapper_fn_0 : !llvm.ptr
     // CHECK: [[OPAQUE:%.*]] = llvm.bitcast [[ADDR]] : !llvm.ptr to !llvm.ptr
     // CHECK: [[S0:%.*]] = llvm.insertvalue [[OPAQUE]], [[UNDEF]][0] : !llvm.struct<(ptr, ptr)>
     // CHECK: [[C1:%.*]] = llvm.mlir.constant(1 : i8) : i8
@@ -34,7 +34,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     "use.closure"(%0) : (!kgen.signature<() capturing -> index>) -> ()
     llvm.return
   }
-  // CHECK-LABEL: llvm.func internal @closure_wrapper_fn(%arg0: !llvm.ptr) -> i64
+  // CHECK-LABEL: llvm.func internal @closure_wrapper_fn_0(%arg0: !llvm.ptr) -> i64
   // CHECK: %0 = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(i64)>>
   // CHECK: %1 = llvm.getelementptr %0[0, 0] : (!llvm.ptr<struct<(i64)>>) -> !llvm.ptr<i64>
   // CHECK: %2 = llvm.load %1 : !llvm.ptr<i64>

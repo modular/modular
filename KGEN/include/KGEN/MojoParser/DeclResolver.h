@@ -17,7 +17,6 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN {
 class ParamDeclAttr;
@@ -183,12 +182,6 @@ public:
   /// Create a name from a signature by appending argument types into the name.
   static StringAttr getMangledName(StringAttr baseName,
                                    SignatureType signature);
-
-  /// Generate a debug subprogram for this function and set it in its location.
-  static void
-  setLocationDebugScope(SharedState &shared,
-                        DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
-                        LIT::FuncOp &funcOp, StringRef baseName);
 
   /// Given a fully resolved signature, compute the final types and KGEN input
   /// conventions of the arguments. This function also ensures that self

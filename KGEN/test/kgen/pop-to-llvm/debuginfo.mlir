@@ -67,7 +67,7 @@
   emissionKind = Full
 >
 #subprogram = #debuginfo.subprogram<
-  name = "foo",
+  name = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,

@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/SharedState.h"
+#include "DebugInfo.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/CallEmission.h"
@@ -34,8 +35,6 @@
 #include "Support/Buffer.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Configuration.h"
-#include "Support/DebugInfoDialect/IR/DIBuilder.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeReader.h"
@@ -84,14 +83,19 @@ static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
 }
 
 struct SharedState::Impl : public ClosureCache {
-  Impl(MLIRContext *ctx, ParserConfig::CachingLevel moduleCachingLevel)
-      : moduleCachingLevel(moduleCachingLevel),
-        bytecodeParserContext(ctx, /*verifyAfterParse=*/false) {}
-  virtual ~Impl() {}
+  Impl(SharedState &shared, ParserConfig::CachingLevel moduleCachingLevel)
+      : sourceNames(shared), moduleCachingLevel(moduleCachingLevel),
+        bytecodeParserContext(shared.getContext(), /*verifyAfterParse=*/false) {
+  }
+  virtual ~Impl() = default;
+
   StructDeclOp getExisting(ClosureHash key) override;
   void storeClosure(ClosureHash key, StructDeclOp closure) override;
 
   SymbolTableCollection symbolTables;
+
+  /// Source name collector.
+  SourceNames sourceNames;
 
   /// A map of symbol tables to unique counters for names within those
   /// symbol tables.
@@ -191,7 +195,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       parserListener(config.parserListener), runtime(config.runtime),
       parsingStandardLibrary(config.parsingStandardLibrary),
       useBuiltinModule(config.useBuiltinModule),
-      impl(std::make_unique<Impl>(config.context, config.moduleCachingLevel)) {
+      impl(std::make_unique<Impl>(*this, config.moduleCachingLevel)) {
   collectDefaultImportPaths(impl->autoImportDirs);
   impl->warnMissingDocStrings = config.warnMissingDocStrings;
   impl->experimentalLifetimes = config.experimentalLifetimes;
@@ -1880,19 +1884,8 @@ void SharedState::traverseImportDirectories(
       return;
 }
 
-void SharedState::buildArgDebugInfo(OpBuilder &builder, BlockArgument arg,
-                                    StringRef name) {
-  if (!diBuilder || options.debugLevel != CompilationOptions::kFullDebugInfo)
-    return;
-
-  auto argLoc = arg.getLoc()->findInstanceOf<FileLineColLoc>();
-  DebugInfo::DILocalVariableAttr varAttr = diBuilder->createLocalVariable(
-      name, diBuilder->createFile(argLoc), argLoc.getLine(),
-      arg.getArgNumber() + 1,
-      /*alignInBits=*/0, DebugInfo::DIUnresolvedMLIRType::get(arg.getType()));
-  auto scopedLoc =
-      FusedLoc::get(varAttr.getContext(), {argLoc}, varAttr.getScope());
-  builder.create<DebugInfo::ValueOp>(scopedLoc, arg, varAttr);
+DebugInfo::SourceNameAttr SharedState::getSourceName(LIT::FuncOp func) {
+  return impl->sourceNames.getSourceName(func);
 }
 
 /// Given a valid pointer into a source buffer for some token, return the

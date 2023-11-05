@@ -288,7 +288,7 @@ kgen.generator @unknown_region_op() {
 
 // -----
 
-#callerSp = #debuginfo.subprogram<name = "mem2reg_valueop"> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
+#callerSp = #debuginfo.subprogram<name = <"mem2reg_valueop">> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
 
 #local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0"> : !debuginfo.unresolved<!kgen.pointer<index>>
 

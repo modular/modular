@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -mlir-print-debuginfo -check-lifetimes | FileCheck %s
 
-#subprogram = #debuginfo.subprogram<name = "__del__"> : !debuginfo.subroutine<(!kgen.pointer<@HasMemFields>) -> (!kgen.none): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<name = <"__del__">> : !debuginfo.subroutine<(!kgen.pointer<@HasMemFields>) -> (!kgen.none): DW_CC_normal>
 
 // CHECK-DAG: #[[FILE_LOC:.*]] = loc("foo.mlir":
 // CHECK-DAG: #[[LOC:.*]] = loc(fused<#subprogram>[#[[FILE_LOC]]])

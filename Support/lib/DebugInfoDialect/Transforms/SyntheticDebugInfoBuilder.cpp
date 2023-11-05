@@ -160,14 +160,15 @@ DebugInfoBuilder::buildDebugInfo(mlir::FunctionOpInterface op) {
 
   // Build the subprogram for this function.
   unsigned line = extractLine(op);
-  StringRef name = op.getName();
+  StringAttr name = op.getNameAttr();
   auto spFlags = SubprogramFlags::Optimized;
   if (!op.isExternal()) {
     // TODO: Add enum support for `|=`.
     spFlags = SubprogramFlags::Optimized | SubprogramFlags::Definition;
   }
-  auto spGuard = dibuilder.pushSubprogram(name, name, fileAttr, line, line,
-                                          spFlags, subroutineType);
+  auto spGuard =
+      dibuilder.pushSubprogram(SourceNameAttr::get(name), name, fileAttr, line,
+                               line, spFlags, subroutineType);
   op->setLoc(dibuilder.createScopedLoc(op->getLoc()));
   return spGuard;
 }

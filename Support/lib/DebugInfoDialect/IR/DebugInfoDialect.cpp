@@ -26,6 +26,10 @@ struct DebugInfoOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 
     // Always alias source name attributes. They tend to be long.
     if (auto sourceName = dyn_cast<SourceNameAttr>(attr)) {
+      if (sourceName.getParamTypes().empty() &&
+          sourceName.getArgTypes().empty() &&
+          sourceName.getParamValues().empty() && !sourceName.getParent())
+        return AliasResult::NoAlias;
       if (llvm::all_of(sourceName.getName(),
                        [](char c) { return std::isalnum(c) || c == '_'; })) {
         os << sourceName.getName().getValue() << "_name";

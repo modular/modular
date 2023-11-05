@@ -89,20 +89,19 @@ synthesizeDebugInfo(ModuleOp module,
     StringAttr name = func.getSymNameAttr();
     FailureOr<LIT::MangledSymbol> symbol =
         LIT::MangledSymbol::demangle(name, /*parseSignature=*/false);
-    std::string baseName;
-    llvm::raw_string_ostream os(baseName);
+    DebugInfo::SourceNameAttr sourceName;
     if (failed(symbol)) {
-      os << name.getValue();
+      sourceName = DebugInfo::SourceNameAttr::get(name);
     } else {
       // Mangle the namespaces back.
       for (StringAttr name :
            llvm::concat<StringAttr>(symbol->moduleNames, symbol->structNames))
-        os << name.getValue() << "::";
-      os << symbol->symName.getValue();
+        sourceName = DebugInfo::SourceNameAttr::get(name, sourceName);
+      sourceName = DebugInfo::SourceNameAttr::get(symbol->symName, sourceName);
     }
 
     DebugInfo::DIBuilder::ScopeGuard guard =
-        dib.pushSubprogram(baseName, name, dib.createFile(fileLoc),
+        dib.pushSubprogram(sourceName, name, dib.createFile(fileLoc),
                            fileLoc.getLine(), fileLoc.getLine(),
                            DebugInfo::SubprogramFlags::Definition |
                                DebugInfo::SubprogramFlags::Optimized,

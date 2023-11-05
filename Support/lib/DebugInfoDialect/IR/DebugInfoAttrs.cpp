@@ -239,8 +239,8 @@ bool DILocalScopeAttr::classof(Attribute attr) {
 // DISubprogramAttr
 //===----------------------------------------------------------------------===//
 
-DISubprogramAttr DISubprogramAttr::cloneWith(StringRef name,
-                                             StringRef linkageName,
+DISubprogramAttr DISubprogramAttr::cloneWith(SourceNameAttr name,
+                                             StringAttr linkageName,
                                              DISubroutineType type) const {
   return DebugInfo::DISubprogramAttr::get(
       getCompileUnit(), getScope(), name, linkageName, getFile(), getLine(),
@@ -280,7 +280,7 @@ void DIAttrTypeReplacer::recursivelyReplaceElementsIn(Operation *op) {
 }
 
 void DebugInfo::updateSubprogram(mlir::FunctionOpInterface funcOp,
-                                 StringAttr linkageName, StringAttr name) {
+                                 StringAttr linkageName, SourceNameAttr name) {
   DISubprogramAttr funcSp = extractScope(funcOp);
   if (!funcSp)
     return;

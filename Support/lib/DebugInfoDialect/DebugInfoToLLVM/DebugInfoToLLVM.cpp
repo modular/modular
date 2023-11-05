@@ -122,8 +122,9 @@ LLVM::DISubprogramAttr
 MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
   return LLVM::DISubprogramAttr::get(
       attr.getContext(), convertAttr(attr.getCompileUnit()),
-      convertAttr(attr.getScope()), attr.getName(), attr.getLinkageName(),
-      convertAttr(attr.getFile()), attr.getLine(), attr.getScopeLine(),
+      convertAttr(attr.getScope()), attr.getName().encode(),
+      attr.getLinkageName(), convertAttr(attr.getFile()), attr.getLine(),
+      attr.getScopeLine(),
       static_cast<LLVM::DISubprogramFlags>(attr.getSubprogramFlags()),
       convertType(attr.getType()));
 }
