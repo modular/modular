@@ -67,14 +67,18 @@ private:
 /// the parent function.
 class ParameterCapture {
 public:
-  ParameterCapture(StringAttr name, Type type, unsigned index,
+  ParameterCapture(StringAttr name, Type type, int index, unsigned depth,
                    Operation *definingOp = nullptr)
-      : name(name), type(type), index(index), definingOp(definingOp) {}
+      : name(name), type(type), index(index), depth(depth),
+        definingOp(definingOp) {}
   StringAttr getName() const { return name; }
   Type getType() const { return type; }
   int getIndex() const { return index; }
+  unsigned getDepth() const { return depth; }
   bool operator<(ParameterCapture const &rhs) const {
-    return index < rhs.index;
+    if (depth == rhs.depth)
+      return index < rhs.index;
+    return depth > rhs.depth;
   }
   Operation *getDefiningOp() const { return definingOp; }
   bool isInputOrResultParameter() const { return definingOp == nullptr; };
@@ -87,6 +91,9 @@ private:
   /// The index of the parameter in its declaration list. -1 if the parameter is
   /// a locally declared parameter.
   int index;
+  /// The number of struct or func declarations from the capture to the
+  /// parameter declaration.
+  unsigned depth;
   /// DefiningOp is the operation that declares and defines the parameter. It is
   /// null if the parameter is defined in an Input or Result parameter list of a
   /// struct or function.

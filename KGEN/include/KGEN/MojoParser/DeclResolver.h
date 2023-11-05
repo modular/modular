@@ -192,6 +192,9 @@ public:
                              MutableArrayRef<Type> argTypes,
                              MutableArrayRef<TypedAttr> defaults);
 
+  /// Given a scope, collect all parameters declared in that scope.
+  static SmallVector<ParamDeclAttr> parametersInScope(ASTDecl &scope);
+
   /// Given a signature type that contains references to a parent function,
   /// create a signature type that contains no references to the parent by
   /// inserting an input parameter for every captured declaration.

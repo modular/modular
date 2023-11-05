@@ -2509,6 +2509,21 @@ LITSignatureType DeclResolver::createSelfContainedSignature(
                           /*defaultParameters=*/{}));
 }
 
+SmallVector<ParamDeclAttr> DeclResolver::parametersInScope(ASTDecl &scope) {
+  SmallVector<ParamDeclAttr> paramsInScope;
+  for (auto [declName, declarations] : scope.getDeclsInScope()) {
+    for (ASTDecl *declaration : declarations) {
+      PValue pValue = declaration->getIfPValue();
+      if (!pValue)
+        continue;
+      if (auto paramRef = dyn_cast<ParamDeclRefAttr>(pValue.get()))
+        paramsInScope.push_back(
+            ParamDeclAttr::get(paramRef.getName(), paramRef.getType()));
+    }
+  }
+  return paramsInScope;
+}
+
 Type DeclResolver::createTypeFromSubsetOfParentParameters(
     SharedState &shared, StructDeclOp baseStruct,
     ArrayRef<ParameterCapture> parentDeclRefSubset) {
@@ -2526,13 +2541,6 @@ static Value emitClosureInstance(SignatureType closureSignature,
                                  ASTDecl &nestedFunctionDecl, SMLoc location) {
   LIT::FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
   auto parentFunction = nestedFunction->getParentOfType<LIT::FuncOp>();
-  if (auto structOp = parentFunction->getParentOfType<StructDeclOp>())
-    if (!structOp.getInputParams().empty()) {
-      shared.emitError(nestedFunctionDecl.getLoc(),
-                       "TODO: methods of parameterized structs cannot contain "
-                       "escaping closures yet.");
-      return {};
-    }
   assert(parentFunction &&
          "Expected nestedFunctionDecl to have a parent FuncOp.");
   // Save the insertion point before closure creation since closure creation
@@ -2596,9 +2604,11 @@ static Value emitClosureInstance(SignatureType closureSignature,
                      "signature. TODO: fix global references.");
     return {};
   }
+  SmallVector<ParamDeclAttr> parameterDeclarationsInScope =
+      DeclResolver::parametersInScope(*nestedFunctionDecl.getParentDecl());
   LITSignatureType closureWrapperSignature =
       DeclResolver::createSelfContainedSignature(
-          nestedFunctionSignature, parentFunction.getInputParams(),
+          nestedFunctionSignature, parameterDeclarationsInScope,
           [&](StringRef error) {
             shared.emitError(nestedFunctionDecl.getLoc(), error);
           });

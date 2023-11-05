@@ -49,6 +49,27 @@ fn parameter_capture[a: Int, b: Int](c: Int) -> fn (x: Int) escaping -> Int:
     return p_capture
 
 
+@value
+struct Bar[C: Int, D: Int]:
+    var x: Int
+
+    fn get(self) -> Int:
+        return self.x + C
+
+
+@value
+@register_passable
+struct Bat[A: Int]:
+    var b: Int
+
+    fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, A]:
+        fn bar(y: Int) escaping -> Bar[B, A]:
+            let w = B + self.b + y
+            return Bar[B, A](w + A)
+
+        return bar
+
+
 fn makes_escaping_closure_position_only(
     m: MemType,
 ) -> fn (n: MemType, /) escaping -> MemType:
@@ -110,3 +131,9 @@ fn main():
 
     # CHECK: 30
     print(captureCallable[bar](x)(x))
+
+    let bat = Bat[3](4)
+    let bat_closure = bat.get[5]()
+    let bar = bat_closure(3)
+    # CHECK: 20
+    print(bar.get())

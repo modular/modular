@@ -35,18 +35,6 @@ fn illegal_alias_ref[a : Int](c:Int):
      return Foo[a](x+c).get()
   return p_capture
 
-
-@value
-@register_passable
-struct Bar[a : Int]:
-  var b:Int
-  fn get(self) -> fn(y:Int) escaping -> Int:
-    # expected-error @below {{TODO: methods of parameterized structs cannot contain escaping closures yet.}}
-    fn bar(y:Int) escaping -> Int:
-       let A = a + self.b + y
-       return A
-    return bar
-
 ##===----------------------------------------------------------------------===##
 # Closures
 ##===----------------------------------------------------------------------===##

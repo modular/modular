@@ -473,7 +473,7 @@ recursivelyCallback(Attribute attribute,
 static void collectImplicitParameterCaptures(
     LIT::FuncOp parentFunction,
     SmallVectorImpl<std::pair<StringAttr, ParameterCapture>> &capturedParams,
-    StringAttr rootName, Type rootType) {
+    StringAttr rootName, Type rootType, unsigned depth) {
   ParameterUseDefGraph parameterUseDefGraph(parentFunction.getBodyRegion());
   KGEN::ParameterCollector::Analysis paramCache;
   parameterUseDefGraph.calculate(paramCache);
@@ -498,13 +498,13 @@ static void collectImplicitParameterCaptures(
       // Result parameters are not defined by the function.
       ParamDeclAttr paramDecl = funcOp.getInputParams()[definition.index];
       ParameterCapture capture(current, paramDecl.getType(), definition.index,
-                               nullptr);
+                               depth);
       capturedParams.push_back({current, capture});
     } else if (auto alias = dyn_cast<AliasDeclOp>(*definition.defOp)) {
       capturedParams.push_back({alias.getParamDecl().getName(),
                                 ParameterCapture(alias.getParamDecl().getName(),
                                                  alias.getParamDecl().getType(),
-                                                 -1, definition.defOp)});
+                                                 -1, depth, definition.defOp)});
       // Add operands of the alias's expression to the worklist.
       alias.getValue().walkImmediateSubElements(
           [addParameterToWorklist](Attribute immediateChild) {
@@ -514,6 +514,92 @@ static void collectImplicitParameterCaptures(
     }
   }
 }
+
+/// The CaptureRecordResult represents the potential outcomes of a capture
+/// search.
+enum class CaptureRecordResult { Fail, Success, Error };
+
+/// CaptureInfo contains all the information required to record a capture.
+struct CaptureInfo {
+  CaptureInfo(StringRef srcSpelling, ASTDecl *astDecl, unsigned depth,
+              ParamDeclRefAttr paramDeclRef, ASTDecl &container)
+      : srcSpelling(srcSpelling), astDecl(astDecl), depth(depth),
+        paramDeclRef(paramDeclRef), container(container) {}
+  CaptureRecordResult recordCaptureInFunction(ExprEmitter &emitter,
+                                              ASTDecl *currentParent,
+                                              Location location) const {
+    if (!currentParent)
+      return CaptureRecordResult::Fail;
+    auto parentFunction = dyn_cast<LIT::FuncOp>(*currentParent);
+    if (!parentFunction)
+      return CaptureRecordResult::Fail;
+    if (!parentFunction.getResultParams().empty()) {
+      emitter.emitError(
+          location, "TODO: Support result parameters and escaping closures.");
+      return CaptureRecordResult::Error;
+    }
+    auto [paramRelationToParent, index] = parameterRelationshipToFunction(
+        emitter.shared, currentParent, paramDeclRef, srcSpelling);
+    switch (paramRelationToParent) {
+    case ParameterRelation::Result:
+      [[fallthrough]];
+    case ParameterRelation::Input:
+      emitter.shared.addCapturedParameterToScope(
+          container, astDecl,
+          ParameterCapture(paramDeclRef.getName(), paramDeclRef.getType(),
+                           index, depth));
+      break;
+    case ParameterRelation::Local: {
+      // We have captured a parameter. Collect all the parameters that
+      // this parameter depends on.
+      SmallVector<std::pair<StringAttr, ParameterCapture>> capturedParams;
+      collectImplicitParameterCaptures(parentFunction, capturedParams,
+                                       paramDeclRef.getName(),
+                                       paramDeclRef.getType(), depth);
+      for (auto [name, paramCapture] : llvm::reverse(capturedParams))
+        emitter.shared.addCapturedParameterToScope(container, astDecl,
+                                                   paramCapture);
+      break;
+    }
+    default:
+      break;
+    }
+    if (paramRelationToParent == ParameterRelation::Undefined)
+      return CaptureRecordResult::Fail;
+    return CaptureRecordResult::Success;
+  }
+  CaptureRecordResult recordCaptureInStruct(ExprEmitter &emitter,
+                                            ASTDecl *currentParent) const {
+    if (!currentParent)
+      return CaptureRecordResult::Fail;
+    auto parentStruct = dyn_cast<StructDeclOp>(*currentParent);
+    if (!parentStruct)
+      return CaptureRecordResult::Fail;
+    for (auto [index, inputParam] :
+         llvm::enumerate(parentStruct.getInputParams())) {
+      if (inputParam.getName() == paramDeclRef.getName()) {
+        ParameterCapture capture(paramDeclRef.getName(), paramDeclRef.getType(),
+                                 index, depth);
+        emitter.shared.addCapturedParameterToScope(container, astDecl, capture);
+        return CaptureRecordResult::Success;
+      }
+    }
+    return CaptureRecordResult::Fail;
+  }
+
+private:
+  /// The source spelling of the captured parameter.
+  StringRef srcSpelling;
+  /// The ASTDecl of the capture.
+  ASTDecl *astDecl;
+  /// The number of declarations between the parameter declaration and the
+  /// capture reference.
+  unsigned depth;
+  /// The capture attribute.
+  ParamDeclRefAttr paramDeclRef;
+  /// The ASTDecl of the nested function.
+  ASTDecl &container;
+};
 
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
@@ -642,41 +728,28 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           parameterRelationshipToFunction(emitter.shared, &container,
                                           paramDeclRef, srcSpelling);
       if (relationToContainerFuncion == ParameterRelation::Undefined) {
-        ASTDecl *parentDecl = nearestParentFuncOpDecl(*functionContainerDecl);
-        if (parentDecl) {
-          auto parentFunction = dyn_cast<FuncOp>(*parentDecl);
-          if (!parentFunction.getResultParams().empty()) {
-            emitter.emitError(
-                getLocation(emitter),
-                "TODO: Support result parameters and escaping closures.");
+        unsigned depth = 0;
+        // First parent must be function. Otherwise, it's not a nested function,
+        // it is a method.
+        ASTDecl *currentParent =
+            nearestParentFuncOpDecl(*functionContainerDecl);
+        for (; currentParent; currentParent = currentParent->getParentDecl()) {
+          depth++;
+          CaptureInfo captureInfo(srcSpelling, declRef, depth, paramDeclRef,
+                                  container);
+          CaptureRecordResult outcomeOfRecordInFunction =
+              captureInfo.recordCaptureInFunction(emitter, currentParent,
+                                                  getLocation(emitter));
+          if (outcomeOfRecordInFunction == CaptureRecordResult::Error)
             return {};
-          }
-          auto [paramRelationToParent, index] = parameterRelationshipToFunction(
-              emitter.shared, parentDecl, paramDeclRef, srcSpelling);
-          switch (paramRelationToParent) {
-          case ParameterRelation::Result:
-            [[fallthrough]];
-          case ParameterRelation::Input:
-            emitter.shared.addCapturedParameterToScope(
-                container, declRef,
-                ParameterCapture(paramDeclRef.getName(), paramDeclRef.getType(),
-                                 index));
+          if (outcomeOfRecordInFunction == CaptureRecordResult::Success)
             break;
-          case ParameterRelation::Local: {
-            // We have captured a parameter. Collect all the parameters that
-            // this parameter depends on.
-            SmallVector<std::pair<StringAttr, ParameterCapture>> capturedParams;
-            collectImplicitParameterCaptures(parentFunction, capturedParams,
-                                             paramDeclRef.getName(),
-                                             paramDeclRef.getType());
-            for (auto [name, paramCapture] : llvm::reverse(capturedParams))
-              emitter.shared.addCapturedParameterToScope(container, declRef,
-                                                         paramCapture);
+          CaptureRecordResult outcomeOfRecordInStruct =
+              captureInfo.recordCaptureInStruct(emitter, currentParent);
+          if (outcomeOfRecordInStruct == CaptureRecordResult::Error)
+            return {};
+          if (outcomeOfRecordInStruct == CaptureRecordResult::Success)
             break;
-          }
-          default:
-            break;
-          }
         }
       }
     }
@@ -3128,22 +3201,13 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
   if (effects.isEscaping()) {
     // Collect parameter references in parent.
-    SmallVector<ParamDeclAttr> parameterDeclarationsInFunction;
-    for (auto [declName, declarations] : emitter.declScope.getDeclsInScope()) {
-      for (ASTDecl *declaration : declarations) {
-        PValue pValue = declaration->getIfPValue();
-        if (!pValue)
-          continue;
-        if (auto paramRef = dyn_cast<ParamDeclRefAttr>(pValue.get()))
-          parameterDeclarationsInFunction.push_back(
-              ParamDeclAttr::get(paramRef.getName(), paramRef.getType()));
-      }
-    }
+    SmallVector<ParamDeclAttr> parameterDeclarationsInScope =
+        DeclResolver::parametersInScope(emitter.declScope);
 
     // Create a self contained signature type that represents the closure.
     LITSignatureType closureWrapperSignature =
         DeclResolver::createSelfContainedSignature(
-            signature, parameterDeclarationsInFunction,
+            signature, parameterDeclarationsInScope,
             [&](StringRef errorMessage) {
               emitter.emitError(getLoc(), errorMessage);
             });
@@ -3162,12 +3226,12 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       signatureDecls.insert(paramDeclRef.getName());
     });
     SmallVector<ParameterCapture> newParameterInfos;
-    for (auto [i, parameter] :
-         llvm::enumerate(parameterDeclarationsInFunction)) {
-      if (signatureDecls.contains(parameter.getName())) {
+    // Parameters in the parameterDeclarationsInScope are already ordered
+    // according to declaration so no need to track depth.
+    for (auto [i, parameter] : llvm::enumerate(parameterDeclarationsInScope)) {
+      if (signatureDecls.contains(parameter.getName()))
         newParameterInfos.push_back(
-            ParameterCapture(parameter.getName(), parameter.getType(), i));
-      }
+            ParameterCapture(parameter.getName(), parameter.getType(), i, 0));
     }
     Type selfType = DeclResolver::createTypeFromSubsetOfParentParameters(
         emitter.shared, declOp, newParameterInfos);
