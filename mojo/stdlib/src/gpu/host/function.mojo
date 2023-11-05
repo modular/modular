@@ -8,12 +8,11 @@
 from memory import stack_allocation
 from memory.unsafe import DTypePointer, Pointer
 
-from utils._reflection import get_linkage_name
 from sys.ffi import _get_global
 from utils.optional import Optional
 
 from pathlib import Path
-from ._compile import _compile_nvptx_asm
+from ._compile import _compile_nvptx_asm, _get_nvptx_fn_name
 from ._utils import _check_error, _get_dylib_function
 from .dim import Dim
 from .module import ModuleHandle, _ModuleImpl
@@ -672,7 +671,7 @@ fn _init_fn[
         let payload = payload_ptr.bitcast[_GlobalPayload]().load()
 
         alias _impl = _compile_nvptx_asm[func_type, func]()
-        alias fn_name = get_linkage_name[func_type, func]()
+        alias fn_name = _get_nvptx_fn_name[func_type, func]()
 
         var mod_handle = ModuleHandle(
             _impl.asm,
@@ -714,7 +713,7 @@ fn _get_global_cache_info[
     max_registers: Int = -1,
     threads_per_block: Int = -1,
 ) -> _CachedFunctionInfo:
-    alias fn_name = get_linkage_name[func_type, func]()
+    alias fn_name = _get_nvptx_fn_name[func_type, func]()
 
     var payload = _GlobalPayload(
         debug, verbose, max_registers, threads_per_block

@@ -5,13 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
+from utils._reflection import get_linkage_name
+
 # ===----------------------------------------------------------------------===#
 # Compilation
 # ===----------------------------------------------------------------------===#
 
 
 @always_inline
-fn _get_nvtx_target() -> __mlir_type.`!kgen.target`:
+fn _get_nvptx_target() -> __mlir_type.`!kgen.target`:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_80", `,
@@ -51,7 +53,7 @@ fn __compile_nvptx_asm_impl[
 ]():
     alias impl = __mlir_attr[
         `#kgen.param.expr<compile_assembly,`,
-        _get_nvtx_target(),
+        _get_nvptx_target(),
         `, `,
         func,
         `> : `,
@@ -75,3 +77,7 @@ fn _compile_nvptx_asm[
     alias closure: _CompiledClosure
     __compile_nvptx_asm_impl[func_type, func -> closure]()
     return closure
+
+
+fn _get_nvptx_fn_name[func_type: AnyType, func: func_type]() -> StringLiteral:
+    return get_linkage_name[_get_nvptx_target(), func_type, func]()
