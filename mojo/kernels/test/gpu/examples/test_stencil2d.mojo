@@ -8,7 +8,8 @@
 
 from math import div_ceil
 
-from gpu import ThreadIdx, BlockIdx, BlockDim, barrier, AddressSpace
+from gpu.memory import AddressSpace
+from gpu import ThreadIdx, BlockIdx, BlockDim, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -83,47 +84,39 @@ fn stencil2d_smem(
         b_ptr, Index(arr_size)
     )
 
-    let a_shared = stack_allocation[
-        (BLOCK_DIM + 2) * (BLOCK_DIM + 2),
+    let a_shared = NDBuffer[
+        2,
+        DimList(BLOCK_DIM + 2, BLOCK_DIM + 2),
         DType.float32,
         address_space = AddressSpace.SHARED,
-    ]()
+    ].stack_allocation()
 
     # Each element is loaded in shared memory.
-    a_shared.store(
-        lindex_y * (BLOCK_DIM + 2) + lindex_x, a[tidy * num_cols + tidx]
-    )
+    a_shared[Index(lindex_y, lindex_x)] = a[tidy * num_cols + tidx]
 
     # First column also loads elements left and right to the block.
     if ThreadIdx.x() == 0:
-        a_shared.store(
-            lindex_y * (BLOCK_DIM + 2), a[tidy * num_cols + (tidx - 1)]
-        )
-        a_shared.store(
-            lindex_y * (BLOCK_DIM + 2) + BLOCK_DIM + 1,
-            a[tidy * num_cols + tidx + BLOCK_DIM],
-        )
+        a_shared[Index(lindex_y, 0)] = a[tidy * num_cols + (tidx - 1)]
+        a_shared[Index(lindex_y, BLOCK_DIM + 1)] = a[
+            tidy * num_cols + tidx + BLOCK_DIM
+        ]
 
     # First row also loads elements above and below the block.
     if ThreadIdx.y() == 0:
-        a_shared.store(lindex_x, a[(tidy - 1) * num_cols + tidx])
-        a_shared.store(
-            (BLOCK_DIM) * (BLOCK_DIM + 2) + (BLOCK_DIM + 2) + lindex_x,
-            a[(tidy + BLOCK_DIM) * num_cols + tidx],
-        )
+        a_shared[Index(0, lindex_x)] = a[(tidy - 1) * num_cols + tidx]
+        a_shared[Index(BLOCK_DIM + 1, lindex_x)] = a[
+            (tidy + BLOCK_DIM) * num_cols + tidx
+        ]
 
     barrier()
 
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
         b[tidy * num_cols + tidx] = (
-            coeff0 * a_shared.load(lindex_y * (BLOCK_DIM + 2) + (lindex_x - 1))
-            + coeff1 * a_shared.load(lindex_y * (BLOCK_DIM + 2) + lindex_x)
-            + coeff2
-            * a_shared.load(lindex_y * (BLOCK_DIM + 2) + (lindex_x + 1))
-            + coeff3
-            * a_shared.load((lindex_y - 1) * (BLOCK_DIM + 2) + lindex_x)
-            + coeff4
-            * a_shared.load((lindex_y + 1) * (BLOCK_DIM + 2) + lindex_x)
+            coeff0 * a_shared[Index(lindex_y, lindex_x - 1)]
+            + coeff1 * a_shared[Index(lindex_y, lindex_x)]
+            + coeff2 * a_shared[Index(lindex_y, lindex_x + 1)]
+            + coeff3 * a_shared[Index(lindex_y - 1, lindex_x)]
+            + coeff4 * a_shared[Index(lindex_y + 1, lindex_x)]
         )
 
 
@@ -171,7 +164,7 @@ fn run_stencil2d[smem: Bool]() raises:
             Int,
             Int,
         ) -> None, func_select
-    ](debug=True)
+    ]()
 
     for i in range(iterations):
         func(
