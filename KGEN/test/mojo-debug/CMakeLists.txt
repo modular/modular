@@ -20,8 +20,5 @@ add_modular_testsuite(check-mojo-debug
 
 if(LLDB_FOUND)
   add_dependencies(check-mojo-debug MojoLLDB)
-endif()
-
-if (LLDB_ENABLE_PYTHON)
   add_subdirectory(python-tests)
 endif()
