@@ -226,12 +226,12 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
     TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
                                         "ArrayRef<TypedAttr>":$values,
                                         "MetaTypeType":$type), [{
-      return $_get(type.getContext(), typeValue, values, type);
+      return get(type.getContext(), typeValue, values, type);
     }], "TypedAttr">,
     TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
                                         "ArrayRef<TypedAttr>":$values), [{
-      return $_get(typeValue.getContext(), typeValue, values,
-                   getBindTypeResultType(typeValue, values));
+      return get(typeValue.getContext(), typeValue, values,
+                 getBindTypeResultType(typeValue, values));
     }], "TypedAttr">,
     TypeBuilder<(ins "TypedAttr":$typeValue, "ArrayRef<TypedAttr>":$values,
                      "MetaTypeType":$type), "", "TypedAttr">

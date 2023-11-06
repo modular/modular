@@ -170,6 +170,47 @@ LogicalResult MetaTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   return success();
 }
 
+MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
+  assert(getParamValues().size() == values.size() && "expected full value set");
+
+  TypeSignatureType sig = getSignature();
+  size_t defaultIdx =
+      sig.getInputParamTypes().size() - sig.getDefaultParameters().size();
+
+  auto sigRange = llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
+                                  sig.getParamPassingKinds());
+  auto sigIt = sigRange.begin();
+
+  SmallVector<Type> newParamTypes;
+  SmallVector<StringAttr> newParamNames;
+  SmallVector<PassingKind> newPassingKinds;
+  SmallVector<TypedAttr> newDefaults;
+
+  for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
+    // Current value is unbound. This corresponds to a parameter in the
+    // signature.
+    if (::isa<UnboundAttr>(cur)) {
+      if (::isa<UnboundAttr>(val)) {
+        auto [i, type, name, kind] = *sigIt;
+        newParamTypes.push_back(type);
+        newParamNames.push_back(name);
+        newPassingKinds.push_back(kind);
+        if (i >= defaultIdx)
+          newDefaults.push_back(sig.getDefaultParameters()[i - defaultIdx]);
+      }
+      ++sigIt;
+      continue;
+    }
+    assert(cur == val && "cannot change bound parameter value");
+  }
+  assert(sigIt == sigRange.end() && "expected signature to get processed");
+
+  auto newSig = TypeSignatureType::get(getContext(), newParamTypes,
+                                       newParamNames, newPassingKinds,
+                                       newDefaults, sig.getParamVarArg());
+  return MetaTypeType::get(getSymbol(), values, newSig);
+}
+
 //===----------------------------------------------------------------------===//
 // RefType
 //===----------------------------------------------------------------------===//

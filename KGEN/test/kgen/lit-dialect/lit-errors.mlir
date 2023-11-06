@@ -387,8 +387,23 @@ lit.struct.decl @StructCannotFileTrait([@Trait1]) {
 
 // -----
 
-// expected-error @below {{'bind_type' result metatype parameter values don't match input parameter values}}
+// expected-error @below {{'bind_type' result metatype parameter #0 does not match corresponding input parameter}}
 #bind = #lit.bind_type<:metatype<@Foo<?>, <index>> T, [?]> : !lit.metatype<@Foo<1>>
+
+// -----
+
+// expected-error @below {{'bind_type' result metatype should have 1 parameter values, but got 0}}
+#bind = #lit.bind_type<:metatype<@Foo, <index>> T, [?]> : !lit.metatype<@Foo<1>>
+
+// -----
+
+// expected-error @below {{'bind_type' cannot change the value of parameter #0}}
+#bind = #lit.bind_type<:metatype<@Foo<2>> T, []> : !lit.metatype<@Foo<1>>
+
+// -----
+
+// expected-error @below {{'bind_type' result metatype parameter #0 does not match corresponding input parameter}}
+#bind = #lit.bind_type<:metatype<@Foo<?>, <index>> T, [2]> : !lit.metatype<@Foo<3>>
 
 // -----
 
