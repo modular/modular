@@ -172,9 +172,9 @@ kgen.func @bigger_stack(%val1: index, %output : !kgen.pointer<index>) {
   %0 = kgen.param.constant = <0>
 
   // Larger stacks should not be touched.
-  // CHECK: pop.stack_allocation 32 x index
+  // CHECK: pop.stack_allocation 512 x index
 
-  %alloc = pop.stack_allocation 32 x index
+  %alloc = pop.stack_allocation 512 x index
   %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
   pop.store %val1, %offset : !kgen.pointer<index>
   %load = pop.load %offset align<8> : !kgen.pointer<index>
@@ -393,4 +393,17 @@ kgen.func @offset_of_offset() -> !kgen.pointer<index> {
   %idx1 = index.constant 1
   %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
   kgen.return %1 : !kgen.pointer<index>
+}
+
+
+// CHECK-LABEL: @large_array
+kgen.func @large_array(%arg1: !pop.array<512, index>) -> index {
+  %0 = kgen.param.constant = <0>
+  %array = pop.stack_allocation 1 x !pop.array<512, index>
+  // Larger arrays should not be touched.
+  // CHECK: pop.stack_allocation 1 x array<512, index>
+  pop.store %arg1, %array : !kgen.pointer<array<512, index>>
+  %gep = pop.array.gep %array[%0] : <array<512, index>>
+  %load = pop.load %gep : !kgen.pointer<index>
+  kgen.return %load : index
 }

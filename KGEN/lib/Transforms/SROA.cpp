@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/ToolCommon/KGENPasses.h"
+
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -22,8 +24,9 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 namespace {
-class SROAPass : public M::KGEN::impl::SROABase<SROAPass> {
+class SROAPass : public impl::SROABase<SROAPass> {
 public:
+  using SROABase::SROABase;
   void runOnOperation() override;
 };
 
@@ -40,11 +43,16 @@ struct Replacer {
   /// StructType.
   ContainerType containerTy;
 
+  /// The maximum number of elements to decompose.
+  uint32_t maxNumElements;
+
   /// The new scalar stack allocations we have created.
   SmallVector<Value> newAllocas;
 
-  Replacer(OpBuilder &builder, StackAllocationOp alloc, ContainerType container)
-      : builder(builder), alloc(alloc), containerTy(container) {}
+  Replacer(OpBuilder &builder, StackAllocationOp alloc, ContainerType container,
+           uint32_t maxNumElements)
+      : builder(builder), alloc(alloc), containerTy(container),
+        maxNumElements(maxNumElements) {}
 
   Derived *getDerived() { return static_cast<Derived *>(this); }
 
@@ -117,8 +125,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
   using ContainerType = StructType;
 
   ReplaceStructs(OpBuilder &builder, StackAllocationOp alloc,
-                 ContainerType container)
-      : Replacer(builder, alloc, container) {}
+                 ContainerType container, uint32_t maxNumElements)
+      : Replacer(builder, alloc, container, maxNumElements) {}
 
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
@@ -226,12 +234,16 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
   using ContainerType = POP::ArrayType;
 
   ReplaceArray(OpBuilder &builder, StackAllocationOp alloc,
-               ContainerType container)
-      : Replacer(builder, alloc, container) {}
+               ContainerType container, uint32_t maxNumElements)
+      : Replacer(builder, alloc, container, maxNumElements) {}
 
   bool canRun() {
     // If we don't know the size of the array there's nothing to do.
     if (!containerTy.getResolvedSize())
+      return false;
+
+    // Don't decompose big arrays.
+    if (containerTy.getResolvedSize() > maxNumElements)
       return false;
 
     for (Operation *user : alloc->getUsers()) {
@@ -360,8 +372,9 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
 struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
   using ContainerType = POP::StackAllocationOp;
 
-  ReplaceStack(OpBuilder &builder, StackAllocationOp alloc)
-      : Replacer(builder, alloc, alloc) {}
+  ReplaceStack(OpBuilder &builder, StackAllocationOp alloc,
+               uint32_t maxNumElements)
+      : Replacer(builder, alloc, alloc, maxNumElements) {}
 
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
@@ -483,7 +496,7 @@ void SROAPass::runOnOperation() {
       size_t numElems = count.getInt();
 
       // We won't try to decompose large stack allocations.
-      if (numElems > 16)
+      if (numElems > maxNumElements)
         return;
 
       // Stack allocation is always a pointer to something.
@@ -493,15 +506,15 @@ void SROAPass::runOnOperation() {
       // stack itself.
       if (numElems != 1) {
         // Replace stack of N with N stacks of 1.
-        ReplaceStack replacer{builder, alloc};
+        ReplaceStack replacer{builder, alloc, maxNumElements};
         changed |= replacer.run(toDelete);
       } else if (auto structTy =
                      dyn_cast<StructType>(ptrType.getElementAsType())) {
-        ReplaceStructs replacer{builder, alloc, structTy};
+        ReplaceStructs replacer{builder, alloc, structTy, maxNumElements};
         changed |= replacer.run(toDelete);
       } else if (auto arrayTy =
                      dyn_cast<POP::ArrayType>(ptrType.getElementAsType())) {
-        ReplaceArray replacer{builder, alloc, arrayTy};
+        ReplaceArray replacer{builder, alloc, arrayTy, maxNumElements};
         changed |= replacer.run(toDelete);
       }
     });

@@ -825,6 +825,11 @@ def SROA : Pass<"sroa"> {
     Statistic<"numReplacedAllocs", "num-replaced-allocas",
               "the number of aggregate allocations replaced with scalars">,
   ];
+
+  let options = [
+    Option<"maxNumElements", "max-num-elements", "unsigned", "256",
+           "The maximum number of elements to decompose">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
