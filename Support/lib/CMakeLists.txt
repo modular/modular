@@ -9,7 +9,7 @@ add_modular_library(MSupport
 
   AlignedAlloc.cpp
   Base64.cpp
-    Buffer.cpp
+  Buffer.cpp
   BuildInfo.cpp
   CPUCache.cpp
   CommonCLOptions.cpp
@@ -24,7 +24,7 @@ add_modular_library(MSupport
   MicroBenchmark.cpp
   Process.cpp
   Random.cpp
-    ReferenceCounted.cpp
+  ReferenceCounted.cpp
   Stats.cpp
   URI.cpp
   Version.cpp
