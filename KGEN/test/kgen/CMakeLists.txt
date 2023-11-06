@@ -18,6 +18,7 @@ add_modular_testsuite(check-kgen
   kgen-opt
   kgen-translate
   kgen
+  KGENCompilerRT
   llvm-objdump
   hash-mlir
 )
