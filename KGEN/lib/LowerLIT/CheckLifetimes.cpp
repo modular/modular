@@ -88,6 +88,10 @@ struct TypeDeclInfo {
     return it->second;
   }
 
+  /// Return true if the specified type is RegisterPassableTrivial - no copy,
+  /// move, or destructor members.
+  bool isRegisterPassableTrivial(Type type) const;
+
   /// Given the RValue type for a value that needs to be destroyed, return the
   /// destructor the invoke, or null if there is none.
   SymbolConstantAttr getDestructorForType(Type type) const;
@@ -112,6 +116,15 @@ private:
   /// fields until the start of the field.
   DenseMap<std::pair<SymbolRefAttr, StringAttr>, unsigned> fieldIndices;
 };
+
+/// Return true if the specified type is RegisterPassableTrivial - no copy,
+/// move, or destructor members.
+bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
+  DeclRefType valueType = dyn_cast<DeclRefType>(type);
+  if (!valueType) // Values of raw MLIR type are always trivial.
+    return true;
+  return getStructDeclForType(valueType).isRegisterPassableTrivial();
+}
 
 static SymbolConstantAttr getSpecialMemberForType(
     Type type, const TypeDeclInfo *typeDecls,
@@ -554,9 +567,9 @@ ValueRef ValueSet::getValueRef(Value value) const {
   if (auto load = value.getDefiningOp<POP::LoadOp>())
     if (auto valueRef = getValueRef(load.getPtr())) {
       if (valueRef.isIndirect) {
-        // We don't track trivial types, so make sure there is a destructor for
-        // the type loaded out.
-        if (!typeDeclInfo.getDestructorForType(load.getType()))
+        // The parser doesn't emit all the lifetime stuff for trivial types,
+        // so don't track them either.
+        if (typeDeclInfo.isRegisterPassableTrivial(load.getType()))
           return {};
 
         valueRef.isIndirect = false;
@@ -567,9 +580,9 @@ ValueRef ValueSet::getValueRef(Value value) const {
   if (auto load = value.getDefiningOp<RefLoadOp>())
     if (auto valueRef = getValueRef(load.getRef())) {
       if (valueRef.isIndirect) {
-        // We don't track trivial types, so make sure there is a destructor for
-        // the type loaded out.
-        if (!typeDeclInfo.getDestructorForType(load.getType()))
+        // The parser doesn't emit all the lifetime stuff for trivial types,
+        // so don't track them either.
+        if (typeDeclInfo.isRegisterPassableTrivial(load.getType()))
           return {};
 
         valueRef.isIndirect = false;
@@ -1410,7 +1423,8 @@ void DestructorInsertion::checkOp(Operation &op) {
                 topLevelValueRef.getSubfield(offset, numBits);
             offset += numBits;
             // Trivial types do not need to be destroyed.
-            if (!valueSet.typeDeclInfo.getDestructorForType(field.getType()))
+            if (valueSet.typeDeclInfo.isRegisterPassableTrivial(
+                    field.getType()))
               continue;
             if (fieldValueRef.isIndirect &&
                 original.test(fieldValueRef.startBit)) {
@@ -1734,7 +1748,7 @@ void DestructorInsertion::markConsumed(Value value, Operation &op) {
   if (!valueRef.isAllMissing(consumedValues)) {
     // Trivial types don't have __copyinit__ methods, and therefore cannot have
     // ownership tracked for them.
-    if (!valueSet.typeDeclInfo.getDestructorForType(
+    if (valueSet.typeDeclInfo.isRegisterPassableTrivial(
             valueRef.getValueType(value)))
       return;
 
@@ -1866,7 +1880,7 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   // whole value.
   if (!consumedValues.test(valueRef.endBit - 1)) {
     // Trivial types don't have __del__ methods.
-    if (!valueSet.typeDeclInfo.getDestructorForType(valueType)) {
+    if (valueSet.typeDeclInfo.isRegisterPassableTrivial(valueType)) {
       valueRef.markBits(consumedValues, true);
       return;
     }
@@ -1888,7 +1902,7 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
         // check to work and make the error diagnostic more accurate.
         ValueRef subFieldBits = valueRef.getSubfield(nextBit, numBits);
         if (!subFieldBits.isAllMissing(consumedValues) &&
-            !valueSet.typeDeclInfo.getDestructorForType(
+            valueSet.typeDeclInfo.isRegisterPassableTrivial(
                 field.getReboundType(valueType)))
           subFieldBits.markBits(consumedValues, false);
         nextBit += numBits;

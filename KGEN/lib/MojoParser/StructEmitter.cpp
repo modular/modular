@@ -511,8 +511,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     }
   }
   LIT::FuncOp copyFunc;
-  if (!valueInfo.hasCopy() && declOp.getRegisterPassable() !=
-                                  StructDeclOp::RP_RegisterPassableTrivial) {
+  if (!valueInfo.hasCopy() && !declOp.isRegisterPassableTrivial()) {
     if (isMemoryOnly) {
       copyFunc = addVoidMethod(
           structDecl, "__copyinit__", /*inputParameters=*/{},

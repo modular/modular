@@ -322,6 +322,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     bool isRegisterPassable() {
       return getRegisterPassable() != RP_MemoryOnly;
     }
+    bool isRegisterPassableTrivial() {
+      return getRegisterPassable() == RP_RegisterPassableTrivial;
+    }
 
     /// Return the decl name of the struct.
     StringAttr getDeclName() { return getSymNameAttr(); }
