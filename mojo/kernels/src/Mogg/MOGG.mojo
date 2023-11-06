@@ -476,7 +476,6 @@ fn to_buffer_list[
 ](
     raw_list_ptr: __mlir_type[`!kgen.pointer<scalar<invalid>>`],
 ) -> InlinedFixedVector[NDBuffer[rank, DimList.create_unknown[rank](), type]]:
-
     # Cast input list pointer
     let abi_list_ptr = bitcast[ABI_List](Pointer(raw_list_ptr))
     let elems_ptr = Pointer(
@@ -1884,8 +1883,11 @@ fn gather[
 @always_inline
 fn matmul[
     a_type: DType,
+    input_0_static_shape: DimList,
     b_type: DType,
+    input_1_static_shape: DimList,
     c_type: DType,
+    input_2_static_shape: DimList,
     transpose_in_1: Bool,  # matches name of MO attribute
     packed_in_1: Bool,
     single_thread_blocking_override: Bool,
@@ -1896,9 +1898,9 @@ fn matmul[
     /,
     target: StringLiteral = "cpu",
 ](
-    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
-    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
-    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
+    a: NDBuffer[2, input_0_static_shape, a_type],
+    b: NDBuffer[2, input_1_static_shape, b_type],
+    c: NDBuffer[2, input_2_static_shape, c_type],
     out_chain: OutputChainPtr,
 ):
     alias transpose_a = False
@@ -1946,8 +1948,11 @@ fn matmul[
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     _matmul[
         a_type,
+        input_0_static_shape,
         b_type,
+        input_1_static_shape,
         c_type,
+        input_2_static_shape,
         transpose_a,
         transpose_b,
         b_packed,
