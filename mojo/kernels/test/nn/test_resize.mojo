@@ -43,7 +43,7 @@ fn test_case_linear[
     coord_transform: CoordinateTransformationMode,
     antialias: Bool,
     type: DType,
-](input: Tensor[type], output: Tensor[type], reference: Tensor[type]):
+](input: Tensor[type], output: Tensor[type], reference: Tensor[type]) raises:
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         resize_linear[coord_transform, antialias](
@@ -53,19 +53,13 @@ fn test_case_linear[
         )
         out_chain.wait()
 
-    var passed = True
     for i in range(output.num_elements()):
-        passed = passed & assert_almost_equal(
-            output._to_buffer()[i],
-            reference._to_buffer()[i],
-            1e-5,
-            1e-4,
+        assert_almost_equal(
+            output._to_buffer()[i], reference._to_buffer()[i], 1e-5, 1e-4
         )
-    if passed:
-        print("PASSED")
 
 
-fn main():
+def main():
     fn test_upsample_sizes_nearest_1():
         print("== test_upsample_sizes_nearest_1")
         alias type = DType.float32
@@ -172,7 +166,7 @@ fn main():
     # CHECK: 1.0,2.0,2.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,
     test_upsample_sizes_nearest_ceil_half_pixel()
 
-    fn test_upsample_sizes_linear():
+    fn test_upsample_sizes_linear() raises:
         print("== test_upsample_sizes_linear")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 2)
@@ -215,11 +209,10 @@ fn main():
         )
 
     # CHECK-LABEL: test_upsample_sizes_linear
-    # CHECK: PASSED
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_linear()
 
-    fn test_upsample_sizes_linear_align_corners():
+    fn test_upsample_sizes_linear_align_corners() raises:
         print("== test_upsample_sizes_linear_align_corners")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 2)
@@ -262,11 +255,10 @@ fn main():
         )
 
     # CHECK-LABEL: test_upsample_sizes_linear_align_corners
-    # CHECK: PASSED
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_linear_align_corners()
 
-    fn test_downsample_sizes_linear():
+    fn test_downsample_sizes_linear() raises:
         print("== test_downsample_sizes_linear")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 4)
@@ -289,11 +281,10 @@ fn main():
         )
 
     # CHECK-LABEL: test_downsample_sizes_linear
-    # CHECK: PASSED
     # CHECK-NOT: ASSERT ERROR
     test_downsample_sizes_linear()
 
-    fn test_downsample_sizes_linear_align_corners():
+    fn test_downsample_sizes_linear_align_corners() raises:
         print("== test_downsample_sizes_linear_align_corners")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 2, 4)
@@ -316,11 +307,10 @@ fn main():
         )
 
     # CHECK-LABEL: test_downsample_sizes_linear_align_corners
-    # CHECK: PASSED
     # CHECK-NOT: ASSERT ERROR
     test_downsample_sizes_linear_align_corners()
 
-    fn test_upsample_sizes_trilinear():
+    fn test_upsample_sizes_trilinear() raises:
         print("== test_upsample_sizes_trilinear")
         alias type = DType.float32
         var input = Tensor[type](1, 4, 2, 2)
@@ -363,11 +353,10 @@ fn main():
         )
 
     # CHECK-LABEL: test_upsample_sizes_trilinear
-    # CHECK: PASSED
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_trilinear()
 
-    fn test_downsample_sizes_linear_antialias():
+    fn test_downsample_sizes_linear_antialias() raises:
         print("== test_downsample_sizes_linear_antialias")
         alias type = DType.float32
         var input = Tensor[type](1, 1, 4, 4)
@@ -395,6 +384,5 @@ fn main():
         )
 
     # CHECK-LABEL: test_downsample_sizes_linear_antialias
-    # CHECK: PASSED
     # CHECK-NOT: ASSERT ERROR
     test_downsample_sizes_linear_antialias()
