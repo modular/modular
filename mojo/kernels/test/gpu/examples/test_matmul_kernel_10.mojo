@@ -82,70 +82,6 @@ fn loadFromGmem[
         )
 
 
-@always_inline
-fn processFromSmem[
-    BM: Int,
-    BN: Int,
-    BK: Int,
-    WM: Int,
-    WN: Int,
-    WMITER: Int,
-    WNITER: Int,
-    WSUBM: Int,
-    WSUBN: Int,
-    TM: Int,
-    TN: Int,
-](
-    regM: Buffer[WMITER * TM, DType.float32],
-    regN: Buffer[WNITER * TN, DType.float32],
-    threadResults: Buffer[WMITER * TM * WNITER * TN, DType.float32],
-    As: DTypePointer[DType.float32, AddressSpace.SHARED],
-    Bs: DTypePointer[DType.float32, AddressSpace.SHARED],
-    warpRow: Int,
-    warpCol: Int,
-    threadRowInWarp: Int,
-    threadColInWarp: Int,
-):
-    for dotIdx in range(BK):
-        # Populate registers for whole warptile.
-        for wSubRowIdx in range(WMITER):
-            for i in range(TM):
-                regM[wSubRowIdx * TM + i] = As.load(
-                    (dotIdx * BM)
-                    + warpRow * WM
-                    + wSubRowIdx * WSUBM
-                    + threadRowInWarp * TM
-                    + i
-                )
-
-        for wSubColIdx in range(WNITER):
-            for i in range(TN):
-                regN[wSubColIdx * TN + i] = Bs.load(
-                    (dotIdx * BN)
-                    + warpCol * WN
-                    + wSubColIdx * WSUBN
-                    + threadColInWarp * TN
-                    + i
-                )
-
-        # Execute warptile matmul.
-        for wSubRowIdx in range(WMITER):
-            for wSubColIdx in range(WNITER):
-                # Calculate per-thread results.
-                for resIdxM in range(TM):
-
-                    @unroll
-                    for resIdxN in range(TN):
-                        threadResults[
-                            (wSubRowIdx * TM + resIdxM) * (WNITER * TN)
-                            + (wSubColIdx * TN)
-                            + resIdxN
-                        ] += (
-                            regM[wSubRowIdx * TM + resIdxM]
-                            * regN[wSubColIdx * TN + resIdxN]
-                        )
-
-
 # BM: The threadblock size for M dimension SMEM caching.
 # BN: The threadblock size for N dimension SMEM caching.
 # BK: The threadblock size for K dimension SMEM caching.
@@ -164,6 +100,7 @@ fn sgemmWarptiling[
     BK: Int,
     WM: Int,
     WN: Int,
+    WMITER: Int,
     WNITER: Int,
     TM: Int,
     TN: Int,
@@ -187,7 +124,6 @@ fn sgemmWarptiling[
     let warpRow = warpIdx // (BN // WN)
 
     # Size of the warp subtile.
-    alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
     alias WSUBM = WM // WMITER  # 64/2=32
     alias WSUBN = WN // WNITER  # 32/2=16
 
@@ -223,15 +159,12 @@ fn sgemmWarptiling[
 
     # TODO: We want these to be register-allocated!
     # Allocate thread-local cache for results in register file.
-    let threadResults = Buffer[
-        WMITER * TM * WNITER * TN, DType.float32
-    ].stack_allocation()
-    threadResults.zero()
+    var threadResults = StaticTuple[WMITER * TM * WNITER * TN, Float32](0.0)
+
     # We cache into registers on the warptile level.
-    let regM = Buffer[WMITER * TM, DType.float32].stack_allocation()
-    regM.zero()
-    let regN = Buffer[WNITER * TN, DType.float32].stack_allocation()
-    regN.zero()
+    var regM = StaticTuple[WMITER * TM, Float32](0.0)
+
+    var regN = StaticTuple[WNITER * TN, Float32](0.0)
 
     # Outer-most loop over block tiles.
     for bkIdx in range(0, K, BK):
@@ -248,31 +181,73 @@ fn sgemmWarptiling[
             innerColB,
         )
         barrier()
-        processFromSmem[
-            BM, BN, BK, WM, WN, WMITER, WNITER, WSUBM, WSUBN, TM, TN
-        ](
-            regM,
-            regN,
-            threadResults,
-            As,
-            Bs,
-            warpRow,
-            warpCol,
-            threadRowInWarp,
-            threadColInWarp,
-        )
+        for dotIdx in range(BK):
+            # Populate registers for whole warptile.
+            @unroll
+            for wSubRowIdx in range(WMITER):
+
+                @unroll
+                for i in range(TM):
+                    regM[wSubRowIdx * TM + i] = As.load(
+                        (dotIdx * BM)
+                        + warpRow * WM
+                        + wSubRowIdx * WSUBM
+                        + threadRowInWarp * TM
+                        + i
+                    )
+
+            @unroll
+            for wSubColIdx in range(WNITER):
+
+                @unroll
+                for i in range(TN):
+                    regN[wSubColIdx * TN + i] = Bs.load(
+                        (dotIdx * BN)
+                        + warpCol * WN
+                        + wSubColIdx * WSUBN
+                        + threadColInWarp * TN
+                        + i
+                    )
+
+            # Execute warptile matmul.
+            @unroll
+            for wSubRowIdx in range(WMITER):
+
+                @unroll
+                for wSubColIdx in range(WNITER):
+                    # Calculate per-thread results.
+                    @unroll
+                    for resIdxM in range(TM):
+
+                        @unroll
+                        for resIdxN in range(TN):
+                            threadResults[
+                                (wSubRowIdx * TM + resIdxM) * (WNITER * TN)
+                                + (wSubColIdx * TN)
+                                + resIdxN
+                            ] += (
+                                regM[wSubRowIdx * TM + resIdxM]
+                                * regN[wSubColIdx * TN + resIdxN]
+                            )
         aa_ptr = aa_ptr.offset(BK)  # move BK columns to right
         bb_ptr = bb_ptr.offset(BK * N)  # move BK rows down
         barrier()
 
     # Write out the results.
+    @unroll
     for wSubRowIdx in range(WMITER):
+
+        @unroll
         for wSubColIdx in range(WNITER):
             # Move C pointer to current warp subtile.
             let C_interim: DTypePointer[DType.float32] = cc_ptr.offset(
                 (wSubRowIdx * WSUBM) * N + wSubColIdx * WSUBN
             )
+
+            @unroll
             for resIdxM in range(TM):
+
+                @unroll
                 for resIdxN in range(0, TN, 4):
                     # Load C vector into registers.
                     var tmp = __nvvm_ldg_f4[DType.float32](
@@ -290,7 +265,6 @@ fn sgemmWarptiling[
                     @unroll
                     for k in range(4):
                         tmp[k] = alpha * threadResults[i + k] + beta * tmp[k]
-                    # Write back.
                     C_interim.aligned_simd_store[4, 16](
                         (threadRowInWarp * TM + resIdxM) * N
                         + threadColInWarp * TN
@@ -455,12 +429,13 @@ fn run_matmul_kernel_10() raises:
             BK=K10_BK,
             WM=K10_WM,
             WN=K10_WN,
+            WMITER=K10_WMITER,
             WNITER=K10_WNITER,
             TM=K10_TM,
             TN=K10_TN,
             NUM_THREADS=K10_NUM_THREADS,
         ]
-    ](max_registers=192, threads_per_block=K10_NUM_THREADS)
+    ](threads_per_block=K10_NUM_THREADS)
 
     @always_inline
     @parameter
@@ -534,12 +509,12 @@ fn run_matmul_kernel_10() raises:
         if c_host.load(i) != c_host_naive.load(i):
             failed = True
 
-    # CHECK: success
+    # CHECK: Success
     if not failed:
-        print("success: results match")
+        print("Success 🎉: results match")
         print("Performance warp-tiling vs. naive: ", sectime2 / sectime, "x")
     else:
-        print("failed: results mismatch")
+        print("Failed ❌: results mismatch")
 
     _free(a_device)
     _free(b_device)
