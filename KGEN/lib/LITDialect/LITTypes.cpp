@@ -127,8 +127,21 @@ TypeSignatureType TypeSignatureType::remapToSignature(
 
 OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
                                              TypedAttr &value) const {
+  SymbolRefAttr symbol;
+  OptionalParseResult result = p.parseOptionalAttribute(symbol);
+  if (result.has_value()) {
+    if (failed(*result))
+      return failure();
+    SmallVector<TypedAttr> values;
+    if (parseParameterValues(p, values))
+      return failure();
+    value =
+        TypeConstantAttr::get(DeclRefType::get(symbol, values, *this), *this);
+    return LogicalResult::success();
+  }
+
   Type type;
-  OptionalParseResult result = parseOptionalKGENType(p, type);
+  result = parseOptionalKGENType(p, type);
   if (!result.has_value())
     return {};
   if (failed(*result))
@@ -141,6 +154,18 @@ LogicalResult MetaTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto type = ::dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
+
+  if (auto ref = ::dyn_cast<DeclRefType>(type.getValue())) {
+    // Use the alias printer if suitable.
+    if (ref.getAliasName()) {
+      p.printType(ref);
+    } else {
+      p << ref.getSymbol();
+      printParameterValues(p, ref.getParamValues());
+    }
+    return success();
+  }
+
   printKGENType(p, type.getValue());
   return success();
 }

@@ -83,7 +83,7 @@ kgen.generator @bind_type<T: metatype<@Bar<?, :dtype ?>, <index, dtype>>>() {
   >
 
   // CHECK: BoundDeclRef: metatype<@Bar<?, :dtype f32>, <index>> =
-  // CHECK-SAME: <@Bar<?, :dtype f32> : metatype<@Bar<?, :dtype f32>, <index>>>
+  // CHECK-SAME: <@Bar<?, :dtype f32>>
   kgen.param.declare BoundDeclRef: metatype<@Bar<?, :dtype f32>, <index>> = <
     #lit.bind_type<
       :metatype<@Bar<?, :dtype ?>, <index, dtype>> @Bar<?, :dtype ?>,
