@@ -782,28 +782,28 @@ ValueRef UninitializedValueScan::checkUse(Value value, Operation &op) {
 
   // Specialize diagnostics for returns because it can be confusing why they are
   // "using" argument values otherwise.
+  auto diag = mlir::emitError(op.getLoc());
   if (isa<KGEN::ReturnOp>(op)) {
-    auto diag = mlir::emitError(op.getLoc());
     addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
     diag << " is uninitialized at ";
 
     // Diagnostics with implicit function returns can be confusing because the
-    // Location of the return op is set to the function entry.  Make it explicit
-    // when we're complaining about this.
+    // Location of the return op is set to the function entry.  Make it
+    // explicit when we're complaining about this.
     if (op.getLoc() == valueSet.getFuncLocation())
       diag << "the implicit ";
 
     diag << "return from this function";
   } else {
-    auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value ");
+    diag << "use of uninitialized value ";
 
     // If some fields are present and others are missing, complain about the
     // first whole field that is missing.
     addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
-
-    diag.attachNote(valueEntry.value.getLoc())
-        << "'" << valueEntry.getName().str() << "' declared here";
   }
+  diag.attachNote(valueEntry.value.getLoc())
+      << "'" << valueEntry.getName().str() << "' declared here";
+
   return valueRef;
 }
 
