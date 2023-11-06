@@ -1187,6 +1187,14 @@ struct Foo:
 
 # CHECK: lit.func @"__init__({{.*}})"(%[[SELFARG:.*]][*""]: !kgen.pointer<!Foo> init_self, |, %a[a]: !Int borrow, %self[self]: !Int borrow)
 
+# CHECK-LABEL: lit.struct.decl @ParamVarArg
+@value
+@register_passable("trivial")
+struct ParamVarArg[*I: Int]:
+    # CHECK: lit.func @"__init__
+    # CHECK-SAME: param_vararg
+    pass
+
 ##===----------------------------------------------------------------------===##
 # async/await
 ##===----------------------------------------------------------------------===##
