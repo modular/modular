@@ -276,6 +276,15 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
     return replaceImpl<Attribute, Attribute>(attr);
   };
 
+  // Partially bound types never have uses in KGEN.
+  // TODO: Need to codegen here when parametric traits are a thing.
+  auto processBindType = [this](BindTypeAttr bind) {
+    MetaTypeType metatype = bind.getType();
+    return TypeConstantAttr::get(replace(
+        DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
+                         MLIRTypeType::get(bind.getContext()))));
+  };
+
   auto processParamOperatorAttr = [&](ParamOperatorAttr attr) -> Attribute {
     Attribute result = attr;
     if (attr.getOpcode() == POC::BindSignature) {
@@ -299,6 +308,8 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
     result = processStructExtractAttr(sattr);
   } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(attr)) {
     result = processSymbolConstantAttr(symbolConstant);
+  } else if (auto bind = dyn_cast<BindTypeAttr>(attr)) {
+    result = processBindType(bind);
   } else if (auto paramOperator = dyn_cast<ParamOperatorAttr>(attr)) {
     result = processParamOperatorAttr(paramOperator);
   } else if (isa<LIT::LifetimeAttr>(attr)) {
@@ -395,6 +406,11 @@ Type StructOperationLowerer::replace(Type type) {
     return cast<KGEN::StructType>(result);
   };
 
+  // Erase metatypes.
+  auto processMetaType = [](MetaTypeType type) {
+    return MLIRTypeType::get(type.getContext());
+  };
+
   // Signature processing checks to see if there are any lifetime parameters;
   // if so, they are dropped.
   auto processSignatureType = [&](SignatureType signature) -> Type {
@@ -421,6 +437,8 @@ Type StructOperationLowerer::replace(Type type) {
     result = processPointer(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     result = processDeclRefType(ref);
+  } else if (auto metatype = dyn_cast<MetaTypeType>(type)) {
+    result = processMetaType(metatype);
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     result = processSignatureType(signature);
   } else if (isa<LIT::LifetimeType>(type)) {

@@ -16,3 +16,18 @@ kgen.generator @get_coro<T: type>(%arg0: !kgen.declref<@Coro<:type T>>) {
   kgen.call @get_promise<:type T>(%arg0) : (!kgen.declref<@Coro<:type T>>) -> ()
   kgen.unreachable
 }
+
+lit.struct.decl @Bar<size, dt: dtype> attributes {registerPassable = 1 : i8} {
+  lit.struct.field value: !pop.simd<size, dt>
+}
+
+// CHECK-LABEL: kgen.generator @metatypes
+kgen.generator @metatypes() {
+  // COM: Partially bound types will not have uses at the KGEN level.
+  // CHECK-NEXT: declare Partial: type = <simd<?, f32>>
+  kgen.param.declare Partial: metatype<@Bar<?, :dtype f32>, <index>> = <#lit.bind_type<:metatype<@Bar<?, :dtype ?>, <index, dtype>> ?, [?, f32]>>
+
+  // CHECK-NEXT: declare BoundFromPartial: type = <simd<16, f32>>
+  kgen.param.declare BoundFromPartial: metatype<@Bar<16, :dtype f32>> = <#lit.bind_type<:metatype<@Bar<?, :dtype f32>, <index>> Partial, [16]>>
+  kgen.return
+}
