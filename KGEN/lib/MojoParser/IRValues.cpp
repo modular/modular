@@ -182,9 +182,6 @@ PValue::PValue(Type value)
 /// If this value /is/ a type return it.
 ASTType PValue::getIfTypeValue() const {
   auto attr = get();
-  if (auto type = dyn_cast<TypeConstantAttr>(attr))
-    return type.getValue();
-
   // If this is a parameter expression of type value, use ParamRefType to turn
   // it into a type.
   if (isa<MLIRTypeType, MetaTypeType>(attr.getType()))
