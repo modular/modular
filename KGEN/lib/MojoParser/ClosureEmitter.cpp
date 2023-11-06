@@ -93,7 +93,8 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
 }
 
 LITSignatureType ClosureEmitter::addClosureSelfArgToFunctionSignature(
-    Type closureType, LITSignatureType sig) const {
+    Type closureType, ValueInputConvention convention,
+    LITSignatureType sig) const {
   unsigned callArgCount = sig.getNumInputs() + 1;
   SmallVector<Type> callMemberSignatureInputs;
   callMemberSignatureInputs.reserve(callArgCount);
@@ -114,7 +115,7 @@ LITSignatureType ClosureEmitter::addClosureSelfArgToFunctionSignature(
   }
   // Add self.
   callMemberSignatureInputs.push_back(closureType);
-  callMemberInputConventions.push_back(ValueInputConvention::BorrowedInMem);
+  callMemberInputConventions.push_back(convention);
   callMemberArgNames.push_back(StringAttr::get(ctx));
   callMemberArgPassingKinds.push_back(PassingKind::PosOnly);
   // Add the rest of the arguments.
@@ -177,7 +178,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto cpySignatureType =
       SignatureType::get(fnType,
                          {ValueInputConvention::BorrowedInReg,
-                          ValueInputConvention::BorrowedInMem},
+                          ValueInputConvention::BorrowedInReg},
                          /*effects=*/{}, metadata);
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
@@ -214,7 +215,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // Add the call member
   bool hasResultSlot = dependentSignatureType.hasMemoryOnlyResult();
   LITSignatureType callMemberSignatureType =
-      addClosureSelfArgToFunctionSignature(opaquePtrType, signatureType);
+      addClosureSelfArgToFunctionSignature(
+          opaquePtrType, ValueInputConvention::BorrowedInReg, signatureType);
   auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
                                             callMemberSignatureType);
 
@@ -340,7 +342,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
   auto ptrToSelfType = PointerType::get(selfType);
   LITSignatureType closureMethodSignatureType =
-      addClosureSelfArgToFunctionSignature(ptrToSelfType, signatureType);
+      addClosureSelfArgToFunctionSignature(
+          ptrToSelfType, ValueInputConvention::BorrowedInMem, signatureType);
   auto [callMethod, callDecl] = synthesizeMethodInStruct(
       "__call__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
       closureMethodSignatureType.getValueInputs(),
@@ -611,7 +614,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     callPassingKinds.push_back(PassingKind::PosOnly);
   }
 
-  // Currently Closure Impls are not register passable, so use BorrowInMem
+  // Currently Closure Impls are not register passable, so use BorrowedInMem
   // convention.
   callInputTypes.push_back(ptrToClosureImplType);
   callConventions.push_back(ValueInputConvention::BorrowedInMem);
@@ -915,7 +918,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       generateName("_copyinit_"), topLevelInputParams, paramPassingKinds,
       {PointerType::get(opaquePtrType), opaquePtrType},
       {ValueInputConvention::BorrowedInReg,
-       ValueInputConvention::BorrowedInMem},
+       ValueInputConvention::BorrowedInReg},
       {ptrToImplName, otherName}, {PassingKind::PosOnly, PassingKind::PosOnly},
       noneType, SpecialFunctionKind::kNormal, location, builder);
 
@@ -998,8 +1001,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   assert(closureWrapper.getClosureSignature().has_value() &&
          "The closure signature should have been set at creation time");
   SignatureType functionSignature = *closureWrapper.getClosureSignature();
-  LITSignatureType closureSignature =
-      addClosureSelfArgToFunctionSignature(opaquePtrType, functionSignature);
+  LITSignatureType closureSignature = addClosureSelfArgToFunctionSignature(
+      opaquePtrType, ValueInputConvention::BorrowedInReg, functionSignature);
   assert(closureSignature.getValueResults().size() == 1);
 
   mlir::AttrTypeReplacer replacer;

@@ -91,9 +91,11 @@ private:
   PointerType opaquePtrType;
 
   /// Given a signature of a function, create a new signature by inserting a
-  /// closure argument at index 0 or 1 depending on the result type.
+  /// closure argument at index 0 or 1 (depending on the result type) with the
+  /// given convention.
   LITSignatureType
   addClosureSelfArgToFunctionSignature(Type closureType,
+                                       ValueInputConvention convention,
                                        LITSignatureType sig) const;
   /// Given a Closure struct and parameter values, create the specialized self
   /// type.

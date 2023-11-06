@@ -14,13 +14,13 @@ struct MemType:
     pass
 
 
-# CHECK:       lit.struct.decl @"_CW_
+# CHECK-LABEL: lit.struct.decl @"_CW_
 # CHECK-NEXT:    lit.struct.field field0 : !kgen.pointer<none>
 # CHECK-NEXT:    lit.struct.field dtor : {{.*}}<("self": !kgen.pointer<none>, |) -> !kgen.none>
-# CHECK-NEXT:    lit.struct.field copy : {{.*}}<("ptrToImpl": !kgen.pointer<pointer<none>> borrow, "other": !kgen.pointer<none> borrow_in_mem, |) -> !kgen.none>
-# CHECK-NEXT:    lit.struct.field call : {{.*}}<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<none> borrow_in_mem, |) -> !kgen.none>
+# CHECK-NEXT:    lit.struct.field copy : {{.*}}<("ptrToImpl": !kgen.pointer<pointer<none>> borrow, "other": !kgen.pointer<none> borrow, |) -> !kgen.none>
+# CHECK-NEXT:    lit.struct.field call : {{.*}}<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<none> borrow, |) -> !kgen.none>
 
-# CHECK-NEXT:    lit.func @"__del__
+# CHECK-LABEL:   lit.func @"__del__
 # CHECK-NEXT:      [[PTR_TO_IMPL:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
 # CHECK-NEXT:      [[OPAQUE_IMPL:%.*]] = pop.load [[PTR_TO_IMPL]] : !kgen.pointer<pointer<none>>
 # CHECK-NEXT:      %index0 = kgen.param.constant = <0>
@@ -43,7 +43,7 @@ struct MemType:
 # CHECK-NEXT:      lit.return %none : !kgen.none
 # CHECK-NEXT:      lit.end_func
 
-# CHECK:         lit.func @"__copyinit__
+# CHECK-LABEL:   lit.func @"__copyinit__
 # CHECK-NEXT:      [[P0:%.*]] = lit.struct.gep %self[field0]
 # CHECK-NEXT:      [[existing_impl:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:      [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
@@ -68,7 +68,7 @@ struct MemType:
 # CHECK-NEXT:      [[COPY:%.*]] = pop.load [[COPY_PTR]]
 # CHECK-NEXT:      kgen.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
 
-# CHECK:        lit.func @"__moveinit__
+# CHECK-LABEL:  lit.func @"__moveinit__
 # CHECK-NEXT:     [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
 # CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.struct.gep %other[field0] : <pointer<none>>
 # CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]] : !kgen.pointer<pointer<none>>
