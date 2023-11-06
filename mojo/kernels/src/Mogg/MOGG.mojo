@@ -235,8 +235,6 @@ fn MOGGExport():
     alias _scatter_min = scatter_min
     alias _scatter_mul = scatter_mul
     alias _slice = slice
-    alias _simd_load = simd_load
-    alias _simd_store = simd_store
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
     alias _softmax = softmax
@@ -595,6 +593,7 @@ fn _simd_load_internal[
 
 
 @mogg_register("simd_load")
+@export
 @always_inline
 fn simd_load[
     type: DType, simd_width: Int, rank: Int, input_0_static_shape: DimList
@@ -627,6 +626,7 @@ fn simd_load[
 
 
 @mogg_register("simd_store")
+@export
 @always_inline
 fn simd_store[
     type: DType, simd_width: Int, rank: Int
