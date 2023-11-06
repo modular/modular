@@ -2005,14 +2005,17 @@ struct BTileGenerator[
 @always_inline
 fn _small_matmul[
     type: DType,
+    a_shape: DimList,
+    b_shape: DimList,
+    c_shape: DimList,
     transpose_b: Bool,
     epilogue_wrapper: fn[type: DType, width: Int] (
         StaticIntTuple[2], SIMD[type, width]
     ) capturing -> None,
 ](
-    a: NDBuffer[2, DimList.create_unknown[2](), type],
-    b: NDBuffer[2, DimList.create_unknown[2](), type],
-    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    a: NDBuffer[2, a_shape, type],
+    b: NDBuffer[2, b_shape, type],
+    c: NDBuffer[2, c_shape, type],
 ):
     alias simd_width = simdwidthof[type]()
     alias unroll_factor = 2  # don't unroll too much since this is for tiny shapes
@@ -2093,8 +2096,11 @@ fn _small_matmul[
 @adaptive
 fn matmul[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
@@ -2104,9 +2110,9 @@ fn matmul[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
-    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
     out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
@@ -2199,8 +2205,11 @@ fn matmul[
 @adaptive
 fn matmul[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
@@ -2210,9 +2219,9 @@ fn matmul[
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
-    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
     out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
@@ -2226,10 +2235,17 @@ fn matmul[
         and a_type == b_type
         and b_type == c_type
     ):
-        return _small_matmul[a_type, transpose_b, elementwise_lambda_fn](
+        return _small_matmul[
+            a_type,
+            a_shape,
+            b_shape,
+            c_shape,
+            transpose_b,
+            elementwise_lambda_fn,
+        ](
             a,
-            rebind[NDBuffer[2, DimList.create_unknown[2](), a_type]](b),
-            rebind[NDBuffer[2, DimList.create_unknown[2](), a_type]](c),
+            rebind[NDBuffer[2, b_shape, a_type]](b),
+            rebind[NDBuffer[2, c_shape, a_type]](c),
         )
 
     @parameter
@@ -2239,8 +2255,11 @@ fn matmul[
         let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
         matmul[
             a_type,
+            a_shape,
             b_type,
+            b_shape,
             c_type,
+            c_shape,
             transpose_a,
             transpose_b,
             b_packed,
@@ -2252,8 +2271,11 @@ fn matmul[
     else:
         matmul[
             a_type,
+            a_shape,
             b_type,
+            b_shape,
             c_type,
+            c_shape,
             transpose_a,
             transpose_b,
             b_packed,
@@ -2267,15 +2289,18 @@ fn matmul[
 @adaptive
 fn matmul[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
 ](
-    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
-    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
     out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
@@ -2287,8 +2312,11 @@ fn matmul[
 
     matmul[
         a_type,
+        a_shape,
         b_type,
+        b_shape,
         c_type,
+        c_shape,
         transpose_a,
         transpose_b,
         b_packed,
@@ -2302,16 +2330,19 @@ fn matmul[
 @adaptive
 fn matmul[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
     saturated_vnni: Bool,
 ](
-    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
-    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
     out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
@@ -2323,8 +2354,11 @@ fn matmul[
 
     matmul[
         a_type,
+        a_shape,
         b_type,
+        b_shape,
         c_type,
+        c_shape,
         transpose_a,
         transpose_b,
         b_packed,
@@ -2336,8 +2370,11 @@ fn matmul[
 
 fn matmul[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
@@ -2345,9 +2382,9 @@ fn matmul[
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
     saturated_vnni: Bool,
 ](
-    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
-    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
-    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
     out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
@@ -2377,8 +2414,11 @@ fn matmul[
 
         _submatmul_sequential_sync[
             a_type,
+            a_shape,
             b_type,
+            b_shape,
             c_type,
+            c_shape,
             transpose_a,
             transpose_b,
             b_packed,
@@ -2394,8 +2434,11 @@ fn matmul[
 
 fn _submatmul_sequential_sync[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
@@ -2404,21 +2447,9 @@ fn _submatmul_sequential_sync[
     rowwise_epilogue_enabled: Bool,
     saturated_vnni: Bool,
 ](
-    c: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        c_type,
-    ],
-    a: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        a_type,
-    ],
-    b: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        b_type,
-    ],
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
     rowwise_epilogue_fn: fn (Int, Int) capturing -> None,
@@ -2472,27 +2503,18 @@ fn _submatmul_sequential_sync[
 
 fn _submatmul_sequential_sync[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
 ](
-    c: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        c_type,
-    ],
-    a: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        a_type,
-    ],
-    b: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        b_type,
-    ],
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
@@ -2504,8 +2526,11 @@ fn _submatmul_sequential_sync[
 
     _submatmul_sequential_sync[
         a_type,
+        a_shape,
         b_type,
+        b_shape,
         c_type,
+        c_shape,
         transpose_a,
         transpose_b,
         b_packed,
@@ -2518,8 +2543,11 @@ fn _submatmul_sequential_sync[
 
 fn _submatmul_sequential_sync[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_a: Bool,
     transpose_b: Bool,
     b_packed: Bool,
@@ -2527,28 +2555,19 @@ fn _submatmul_sequential_sync[
     elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
     saturated_vnni: Bool,
 ](
-    c: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        c_type,
-    ],
-    a: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        a_type,
-    ],
-    b: NDBuffer[
-        2,
-        DimList.create_unknown[2](),
-        b_type,
-    ],
+    c: NDBuffer[2, c_shape, c_type],
+    a: NDBuffer[2, a_shape, a_type],
+    b: NDBuffer[2, b_shape, b_type],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
     _submatmul_sequential_sync[
         a_type,
+        a_shape,
         b_type,
+        b_shape,
         c_type,
+        c_shape,
         transpose_a,
         transpose_b,
         b_packed,

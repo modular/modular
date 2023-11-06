@@ -463,8 +463,11 @@ fn batched_matmul[
 
             _submatmul_sequential_sync[
                 a_type,
+                DimList.create_unknown[2](),
                 b_type,
+                DimList.create_unknown[2](),
                 c_type,
+                DimList.create_unknown[2](),
                 False,
                 adj_b,
                 False,  # b_packed

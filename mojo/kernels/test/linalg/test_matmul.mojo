@@ -120,9 +120,18 @@ fn test_matmul[
             pack_b_ndbuffer[a_type, b_type, c_type](b, bp, out_chain.borrow())
             out_chain.wait()
         let out_chain = OwningOutputChainPtr(runtime)
-        matmul[a_type, b_type, c_type, False, transpose_b, b_packed, saturated](
-            c, a, bp, out_chain.borrow()
-        )
+        matmul[
+            a_type,
+            DimList.create_unknown[2](),
+            b_type,
+            DimList.create_unknown[2](),
+            c_type,
+            DimList.create_unknown[2](),
+            False,
+            transpose_b,
+            b_packed,
+            saturated,
+        ](c, a, bp, out_chain.borrow())
         out_chain.wait()
 
     gemm_naive[a_type, b_type, c_type](am, bm, cm1, m, n, k)
