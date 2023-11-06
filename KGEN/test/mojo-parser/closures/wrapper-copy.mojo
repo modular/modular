@@ -36,7 +36,7 @@
 
 # CHECK-LABEL: lit.func @"materialize_escaping_closure
 
-# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow, %other[other]: !kgen.pointer<none> borrow_in_mem, |) -> !kgen.none
+# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow, %other[other]: !kgen.pointer<none> borrow, |) -> !kgen.none
 
 # Allocate memory on the heap for impl and copy existing contents into it.
 # CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(
