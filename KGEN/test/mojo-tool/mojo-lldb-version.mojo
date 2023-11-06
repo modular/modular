@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# LLDB fails with asan, see https://github.com/modularml/modular/actions/runs/6748079891/job/18345656726
+# LLDB fails with asan because it's built by default with python support in the
+# CI, and python fails asan.
 # UNSUPPORTED: asan
 
 # Invoking the subcommand with `--help` prints its help text.
