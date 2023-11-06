@@ -1131,3 +1131,23 @@ fn optimizeCopyToMove():
 def def_borrowed(borrowed a: MemExample) -> None:
   # CHECK-NEXT: kgen.param.constant: none
   pass
+
+
+# https://github.com/modularml/modular/issues/24161
+@register_passable("trivial")
+struct AddrSpace:
+    var _value: __mlir_type.index
+    fn __init__(value: __mlir_type.index) -> Self:
+        return Self{_value:value}
+    fn value(self) -> __mlir_type.index:
+        return self._value
+@value
+@register_passable("trivial")
+struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`]:
+    var value: __mlir_type[
+        `!kgen.pointer<`, MemExample, `, `, addrspace.value(), `>`
+    ]
+
+fn sadge(ptr: MemExamplePtr[]):
+    __get_address_as_uninit_lvalue(ptr.value) = MemExample()
+    return

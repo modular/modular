@@ -581,6 +581,10 @@ ValueRef ValueSet::getValueRef(Value value) const {
   if (auto refToPointer = value.getDefiningOp<RefToPointerOp>())
     return getValueRef(refToPointer.getRef());
 
+  // If this is a RebindOp get the underlying ref.
+  if (auto rebind = value.getDefiningOp<RebindOp>())
+    return getValueRef(rebind.getOperand());
+
   // Otherwise, we don't know what this is.
   return ValueRef();
 }
@@ -890,7 +894,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<LIT::StructGEPOp, RefStructGEROp,
+  if (isa<LIT::StructGEPOp, RefStructGEROp, RebindOp,
           // TODO(references): remove these.
           RefToPointerOp, mlir::UnrealizedConversionCastOp>(op))
     return;
@@ -1433,7 +1437,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // This op is handled when used.
-  if (isa<LIT::StructGEPOp, RefStructGEROp,
+  if (isa<LIT::StructGEPOp, RefStructGEROp, RebindOp,
           // TODO(references): remove these.
           RefToPointerOp, mlir::UnrealizedConversionCastOp>(op))
     return;
