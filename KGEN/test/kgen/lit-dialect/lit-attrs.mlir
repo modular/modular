@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK: #lit.fn_metadata<["someRef", "v"], [pos, kw], ["someParam", "paramWithDefault"], [pos, pos_or_kw], [13 : index, 17 : i64], [3.140000e+00 : f32]>
@@ -74,10 +74,10 @@ kgen.generator @bind_type<T: metatype<@Bar<?, :dtype ?>, <index, dtype>>>() {
   >
 
   // CHECK: PartiallyBoundDefaults: metatype<@BarDefaults<16, :dtype ?>, <dtype = f32>> =
-  // CHECK-SAME: #lit.bind_type<:metatype<@BarDefaults<?, :dtype ?>, <index, dtype = f32>> T, [16, ?]>
+  // CHECK-SAME: #lit.bind_type<:metatype<@BarDefaults<?, :dtype ?>, <index, dtype = f32>> ?, [16, ?]>
   kgen.param.declare PartiallyBoundDefaults: metatype<@BarDefaults<16, :dtype ?>, <dtype = f32>> = <
     #lit.bind_type<
-      :metatype<@BarDefaults<?, :dtype ?>, <index, dtype = f32>> T,
+      :metatype<@BarDefaults<?, :dtype ?>, <index, dtype = f32>> ?,
       [16, ?]
     >
   >
@@ -90,5 +90,15 @@ kgen.generator @bind_type<T: metatype<@Bar<?, :dtype ?>, <index, dtype>>>() {
       [?, f32]
     >
   >
+
+  // CHECK: BoundFromPartial: metatype<@Bar<16, :dtype f32>> =
+  // CHECK-SAME: #lit.bind_type<:metatype<@Bar<?, :dtype f32>, <index>> ?, [16]>
+  kgen.param.declare BoundFromPartial: metatype<@Bar<16, :dtype f32>> = <
+    #lit.bind_type<
+      :metatype<@Bar<?, :dtype f32>, <index>> ?,
+      [16]
+    >
+  >
+
   kgen.return
 }

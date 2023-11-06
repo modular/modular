@@ -180,6 +180,11 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
       return get(symbol, {}, signature);
     }]>
   ];
+
+  let extraClassDeclaration = [{
+    /// Bind parameter values to the metatype.
+    MetaTypeType bind(ArrayRef<TypedAttr> values) const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//

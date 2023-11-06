@@ -271,11 +271,26 @@ LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        << value.getType() << " but type expected " << type;
   }
 
-  // Ensure that the result type is as expected.
-  if (values != type.getParamValues()) {
-    return emitError() << "'bind_type' result metatype parameter values don't "
-                          "match input parameter values";
+  if (metatype.getParamValues().size() != type.getParamValues().size()) {
+    return emitError() << "'bind_type' result metatype should have "
+                       << type.getParamValues().size()
+                       << " parameter values, but got "
+                       << metatype.getParamValues().size();
   }
+  auto it = values.begin();
+  for (auto [i, old, next] :
+       llvm::enumerate(metatype.getParamValues(), type.getParamValues())) {
+    if (::isa<UnboundAttr>(old)) {
+      if (*it++ != next) {
+        return emitError() << "'bind_type' result metatype parameter #" << i
+                           << " does not match corresponding input parameter";
+      }
+    } else if (old != next) {
+      return emitError() << "'bind_type' cannot change the value of parameter #"
+                         << i;
+    }
+  }
+
   // Ignore unbound values.
   SmallVector<Type> expected;
   ArrayRef<Type> resultTypes = type.getSignature().getInputParamTypes();
@@ -298,34 +313,17 @@ LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 /// Infer the result type for `BindTypeAttr`.
 static MetaTypeType getBindTypeResultType(TypedAttr typeValue,
                                           ArrayRef<TypedAttr> values) {
-  // Assume the input is correct.
   auto metatype = cast<MetaTypeType>(typeValue.getType());
-  SmallVector<TypedAttr> bound = llvm::to_vector(metatype.getParamValues());
-  llvm::append_range(bound, values);
-  TypeSignatureType sig = metatype.getSignature();
-
-  SmallVector<Type> newParamTypes;
-  SmallVector<StringAttr> newParamNames;
-  SmallVector<PassingKind> newPassingKinds;
-  SmallVector<TypedAttr> newDefaults;
-  size_t defaultIdx =
-      sig.getInputParamTypes().size() - sig.getDefaultParameters().size();
-  for (auto [i, type, name, kind, value] :
-       llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
-                       sig.getParamPassingKinds(), values)) {
-    if (!isa<UnboundAttr>(value))
-      continue;
-    if (i >= defaultIdx)
-      newDefaults.push_back(sig.getDefaultParameters()[i - defaultIdx]);
-    newParamTypes.push_back(type);
-    newParamNames.push_back(name);
-    newPassingKinds.push_back(kind);
+  SmallVector<TypedAttr> bindings;
+  auto it = values.begin();
+  for (TypedAttr value : metatype.getParamValues()) {
+    if (isa<UnboundAttr>(value))
+      bindings.push_back(*it++);
+    else
+      bindings.push_back(value);
   }
-
-  auto newSig = TypeSignatureType::get(sig.getContext(), newParamTypes,
-                                       newParamNames, newPassingKinds,
-                                       newDefaults, sig.getParamVarArg());
-  return MetaTypeType::get(metatype.getSymbol(), bound, newSig);
+  assert(it == values.end() && "expected all bindings to be consumed");
+  return metatype.bind(bindings);
 }
 
 /// Entry point for the constructor for `BindTypeAttr`, which folds on
@@ -337,7 +335,8 @@ static TypedAttr getOrFoldBindType(TypedAttr typeValue,
   // bind it and return a type constant.
   if (auto typeCst = dyn_cast<TypeConstantAttr>(typeValue)) {
     if (auto decl = dyn_cast<DeclRefType>(typeCst.getValue())) {
-      auto bound = DeclRefType::get(decl.getSymbol(), values, type);
+      auto bound =
+          DeclRefType::get(decl.getSymbol(), type.getParamValues(), type);
       return TypeConstantAttr::get(bound, type);
     }
   }
