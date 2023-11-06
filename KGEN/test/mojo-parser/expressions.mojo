@@ -1703,3 +1703,13 @@ fn setitemParamToDLValue():
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <apply{{.*}}__neg__
   # CHECK: kgen.call {{.*}}StaticIntTuple{{.*}}__setitem__{{.*}}[[VAR]]
   coords[1] = -x
+
+# https://github.com/modularml/mojo/issues/734
+fn reg_passable_trivial():
+  var x : Int = 100
+  x = 42
+  _ = x^  # Consume LValue ok
+
+  let y : Int = 100
+  # expected-warning @+1 {{transfer from a trivial register value has no effect and can be removed}}
+  _ = y^  # Consume RValue / BValue is not, this isn't tracked.

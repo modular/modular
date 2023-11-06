@@ -2463,6 +2463,14 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
       emitter.emitWarning(getLoc())
           << "transfer from an owned value has no effect and can be removed"
           << FixIt::remove(getLoc());
+    else if (argValue.getIfSBValue() &&
+             ASTType(v.getType()).isTrivial(getLoc(), emitter.shared)) {
+      // We don't support transfering from register-passable trivial BValues,
+      // since this won't end the lifetime CheckLifetimes doesn't
+      emitter.emitWarning(getLoc()) << "transfer from a trivial register "
+                                       "value has no effect and can be removed"
+                                    << FixIt::remove(getLoc());
+    }
 
     // TODO(references) swap OwnershipEndLifetimeOp to reference.
     if (isa<RefType>(v.getType()))
