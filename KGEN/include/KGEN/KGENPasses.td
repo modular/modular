@@ -582,8 +582,8 @@ def LowerInputConventions : Pass<"lower-input-conventions", "ModuleOp"> {
     functions. This pass must run before inlining, but after elaboration. This
     pass will:
 
-    1. TODO(#20700): Move register passable types passed as
-       `{owned,borrowed}_in_mem` to be passed in register.
+    1. Move register passable types passed as `{owned,borrowed}_in_mem` to be
+       passed in register.
     2. TODO(#20700): Promote register passable `byref_result` and `init_self`
        arguments to function results.
        - TODO(#20700): This also handles functions that throw.
