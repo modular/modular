@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# LLDB fails with asan because it's built by default with python support in the
+# CI, and python fails asan.
+# UNSUPPORTED: asan
+
 
 # COM: Setting the language to Mojo and using non-C-like symbols
 # RUN: mojo build --debug-level full -O0 --debug-info-language Mojo %s -o %t
