@@ -114,6 +114,12 @@ def PassingKindArrayAttr : DialectAttribute<(attr
   EnumAttrArray<"PassingKind">:$value
 )>;
 
+def BindTypeAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttrArray:$values,
+  ConcreteType<"MetaTypeType">:$type
+)>;
+
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
     FnMetadataAttr,
@@ -124,7 +130,8 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnresolvedAliasValueAttr,
     LITStructAttr,
     StructExtractAttr,
-    PassingKindArrayAttr
+    PassingKindArrayAttr,
+    BindTypeAttr
   ];
 }
 
