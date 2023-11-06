@@ -87,10 +87,12 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  LIT::FuncOp funcOp =
-      createFunction(name, inputParameters, paramPassingKinds, argTypes,
-                     argConventions, argNames, argPassingKinds, resultType,
-                     specialFnID, structDecl.getLoc(), builder, effects);
+  LIT::FuncOp funcOp = createFunction(
+      name, inputParameters, paramPassingKinds, argTypes, argConventions,
+      argNames, argPassingKinds, resultType, specialFnID, structDecl.getLoc(),
+      builder,
+      effects.setParamVarArgs(effects.hasParamVarArgs() ||
+                              structOp.getSignature().getParamVarArg()));
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").
