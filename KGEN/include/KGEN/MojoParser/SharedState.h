@@ -34,6 +34,7 @@ class ASTDecl;
 class ASTType;
 class DeclResolver;
 class ExprNode;
+struct OrderedCaptures;
 struct Operand;
 class FileModuleOp;
 class FuncOp;
@@ -43,6 +44,7 @@ class ParserListener;
 class StructDeclOp;
 struct CallOperands;
 struct ParserConfig;
+class ParameterCapture;
 enum class CallSyntax : uint8_t;
 
 /// Capture represents a nested function value whose declaration is in the
@@ -61,64 +63,6 @@ private:
   CValue value;
   /// True if the capture is by move, otherwise it is by copy.
   bool isMove;
-};
-
-/// ParameterCapture represents a nested function value whose declaration is in
-/// the parent function.
-class ParameterCapture {
-public:
-  ParameterCapture(StringAttr name, Type type, int index, unsigned depth,
-                   Operation *definingOp = nullptr)
-      : name(name), type(type), index(index), depth(depth),
-        definingOp(definingOp) {}
-  StringAttr getName() const { return name; }
-  Type getType() const { return type; }
-  int getIndex() const { return index; }
-  unsigned getDepth() const { return depth; }
-  bool operator<(ParameterCapture const &rhs) const {
-    if (depth == rhs.depth)
-      return index < rhs.index;
-    return depth > rhs.depth;
-  }
-  Operation *getDefiningOp() const { return definingOp; }
-  bool isInputOrResultParameter() const { return definingOp == nullptr; };
-
-private:
-  /// The name of the captured parameter.
-  StringAttr name;
-  /// The type of the captured parameter.
-  Type type;
-  /// The index of the parameter in its declaration list. -1 if the parameter is
-  /// a locally declared parameter.
-  int index;
-  /// The number of struct or func declarations from the capture to the
-  /// parameter declaration.
-  unsigned depth;
-  /// DefiningOp is the operation that declares and defines the parameter. It is
-  /// null if the parameter is defined in an Input or Result parameter list of a
-  /// struct or function.
-  Operation *definingOp;
-};
-
-/// The OrderedCaptures exposes the captures in the order in which they
-/// were declared in the parent without allowing write access to users.
-struct OrderedCaptures {
-  OrderedCaptures(SmallVector<ParameterCapture> &capturedParams)
-      : orderedCaptures(capturedParams) {}
-  auto find(StringAttr key) const {
-    return std::find_if(
-        orderedCaptures.begin(), orderedCaptures.end(),
-        [&](ParameterCapture const &other) { return other.getName() == key; });
-  }
-  SmallVector<ParameterCapture>::const_iterator begin() const {
-    return orderedCaptures.begin();
-  }
-  SmallVector<ParameterCapture>::const_iterator end() const {
-    return orderedCaptures.end();
-  }
-
-private:
-  SmallVector<ParameterCapture> &orderedCaptures;
 };
 
 /// This enum indicates how much parsing and type checking has been done on

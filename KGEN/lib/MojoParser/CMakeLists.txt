@@ -7,6 +7,7 @@
 add_modular_library(MojoParser
   ASTDecl.cpp
   ASTType.cpp
+  CaptureParameter.cpp
   CallEmission.cpp
   ClosureEmitter.cpp
   DebugInfo.cpp

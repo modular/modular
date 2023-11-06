@@ -11,6 +11,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/CaptureParameter.h"
 #include "KGEN/MojoParser/ClosureEmitter.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
