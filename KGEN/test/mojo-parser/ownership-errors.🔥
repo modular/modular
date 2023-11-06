@@ -14,11 +14,11 @@ struct MemExample:
     var y: Int
 
     # expected-error @+1 {{'self.x' is uninitialized at the implicit return from this function}}
-    fn __init__(inout self):
+    fn __init__(inout self): # expected-note {{'self' declared here}}
         pass
 
     # expected-error @+1 {{'self.y' is uninitialized at the implicit return from this function}}
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(inout self, existing: Self): # expected-note {{'self' declared here}}
         self.x = existing.x
 
     fn __del__(owned self):
@@ -106,13 +106,13 @@ fn uninit_lvalue_int():
 
 
 # Return-specific errors.
-fn return_error1(inout a: MemExample):
+fn return_error1(inout a: MemExample): # expected-note {{'a' declared here}}
     _ = a ^
     return  # expected-error {{'a' is uninitialized at return from this function}}
 
 
 # expected-error @+1 {{'a' is uninitialized at the implicit return from this function}}
-fn return_error2(inout a: RegExample):
+fn return_error2(inout a: RegExample): # expected-note {{'a' declared here}}
     _ = a ^
 
 
