@@ -78,6 +78,49 @@ struct HTTPRequest {
   std::optional<size_t> bodyLen = std::nullopt;
 };
 
+/// This struct provides a libcurl-compatible read adaptor for a container that
+/// has random access iterators. The container must be a container of single
+/// bytes (uint8_t, char, etc).
+template <typename T>
+struct ContainerReadCallbackAdaptor {
+  explicit ContainerReadCallbackAdaptor(T &container)
+      : iter(container.begin()), end(container.end()) {}
+
+  /// Store the beginning and end of the container. We don't need the actual
+  /// container itself.
+  typename T::iterator iter;
+  typename T::iterator end;
+
+  /// This is the actual callback - if there's nothing to read, it returns 0. If
+  /// there's something to read, then it will read as much as possible into
+  /// `buffer`, up to `bytes` bytes.
+  ErrorOr<size_t> operator()(char *buffer, size_t bytes) {
+    // Nothing left to copy in, so just return zero.
+    if (iter == end)
+      return 0;
+    // Error case, iter > end. Unclear how it happened, but this *is* an error.
+    if (iter > end)
+      return Error("iter was incremented past the end");
+
+    // The end pointer is the minimum of `bodyIter + bytes` and `body.end()`; we
+    // don't want to walk off the end, but we also don't want to copy too much
+    // into `buffer`.
+    auto endPtr = std::min(iter + bytes, end);
+    // std::copy returns one past the end of the copy.
+    auto bufferEnd = std::copy(iter, (decltype(iter))endPtr, buffer);
+    // The number of bytes copied is exactly the distance from `buffer` to
+    // `bufferEnd`.
+    size_t numBytesCopied = std::distance(buffer, bufferEnd);
+    // Increment bodyIter by the number of bytes copied.
+    iter += numBytesCopied;
+    return numBytesCopied;
+  }
+};
+
+/// Class template argument deduction guide to suppress warnings.
+template <typename T>
+ContainerReadCallbackAdaptor(T &) -> ContainerReadCallbackAdaptor<T>;
+
 /// Typical HTTP response code errors.
 enum HTTPResponseCode : long {
   // Client Errors
