@@ -1810,22 +1810,20 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!baseValue)
     return {};
 
-  // Check for attribute bindings to an MLIR operation.
   if (auto value = baseValue.getIfPValue()) {
+    // Check for attribute bindings to an MLIR operation.
     if (auto unboundOperator =
             dyn_cast<UnboundMLIROperationAttr>(value.get())) {
       PValue result =
           bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter);
       return emitter.emitResult(result, this, dest);
     }
-  }
 
-  // If this is a signature-type PValue callable, this is binding parameter
-  // values to a call.
-  if (PValue callable = baseValue.getIfPValue()) {
-    if (auto sig = dyn_cast<LITSignatureType>(callable.getType())) {
+    // If this is a signature-type PValue callable, this is binding parameter
+    // values to a call.
+    if (auto sig = dyn_cast<LITSignatureType>(value.getType())) {
       PValue result =
-          bindToIndirectCall(callable, sig, operands, emitter, getIndexRange());
+          bindToIndirectCall(value, sig, operands, emitter, getIndexRange());
       if (!result)
         return {};
       return emitter.emitResult(result, this, dest);
