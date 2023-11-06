@@ -7,10 +7,10 @@
 """Module that holds singleton instances for the lldb module and the debugger."""
 
 import configparser
-import subprocess
 import importlib
-import sys
 import os
+import subprocess
+import sys
 from typing import Any
 
 lldb: Any = None
@@ -25,15 +25,16 @@ def load_lldb() -> Any:
         lldb_lib = subprocess.check_output(
             ["mojo", "debug", "-P"], text=True
         ).strip()
-        sys.path.insert(0, lldb_lib)
-        lldb = importlib.import_module("lldb")
+        if lldb_lib != "<COULD NOT FIND PATH>":
+            sys.path.insert(0, lldb_lib)
+            lldb = importlib.import_module("lldb")
     return lldb
 
 
 def setup_debugger() -> Any:
     """Creates a global debugger instance and cache it."""
     global debugger
-    if debugger is None:
+    if debugger is None and lldb is not None:
         debugger = lldb.SBDebugger.Create(False)  # no load lldb init files
 
         # This sets up the debugger for running in the test environment.

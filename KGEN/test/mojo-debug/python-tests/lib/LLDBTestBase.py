@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generator, Optional, Union
 
+import pytest
+
 from .debugger import debugger, lldb
 
 
@@ -97,6 +99,8 @@ class LLDBTestBase:
     """Base class for all tests that interact with LLDB using the SB API."""
 
     def setup_class(self):
+        if lldb is None:
+            pytest.skip("The scripting bridge for LLDB is not available.")
         pass
 
     def build(self, source: SourceFile, output_path: Path) -> None:
