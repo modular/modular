@@ -350,3 +350,15 @@ fn invalid_let():
     twoRegs.reg1 = (
         RegExample()  # expected-error {{invalid mutation of immutable value 'twoRegs.reg1'}}
     )
+
+# Consumption of struct works only on definition of __del__
+# https://github.com/modularml/mojo/issues/734
+struct StructWithNoDel:
+    var x: Int
+    fn __init__(inout self, a: Int):
+        self.x = a
+fn take(owned x: StructWithNoDel): pass
+fn testStructWithNoDel():
+    var l = StructWithNoDel(100)
+    take(l^)  # expected-error {{value 'l' cannot be consumed, because 'l.x' is used later}}
+    l.x = 10
