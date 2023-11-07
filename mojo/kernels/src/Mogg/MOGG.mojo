@@ -1130,7 +1130,6 @@ fn mean[
     type: DType,
     index_type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -1212,7 +1211,6 @@ fn reduce_add[
     type: DType,
     index_type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -1253,7 +1251,6 @@ fn reduce_add[
     _reduce_generator[
         type,
         rank,
-        simdwidthof[type](),
         single_thread_blocking_override,
         input_0_fn_wrapper,
         output_0_fn_wrapper,
@@ -1266,7 +1263,6 @@ fn reduce_max[
     type: DType,
     index_type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -1307,7 +1303,6 @@ fn reduce_max[
     _reduce_generator[
         type,
         rank,
-        simdwidthof[type](),
         single_thread_blocking_override,
         input_0_fn_wrapper,
         output_0_fn_wrapper,
@@ -1320,7 +1315,6 @@ fn reduce_min[
     type: DType,
     index_type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -1361,7 +1355,6 @@ fn reduce_min[
     _reduce_generator[
         type,
         rank,
-        simdwidthof[type](),
         single_thread_blocking_override,
         input_0_fn_wrapper,
         output_0_fn_wrapper,
@@ -1374,7 +1367,6 @@ fn reduce_mul[
     type: DType,
     index_type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -1415,7 +1407,6 @@ fn reduce_mul[
     _reduce_generator[
         type,
         rank,
-        simdwidthof[type](),
         single_thread_blocking_override,
         input_0_fn_wrapper,
         output_0_fn_wrapper,
