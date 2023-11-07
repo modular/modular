@@ -110,32 +110,32 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
 }
 
 /// Return the StructDeclOp::RegisterPassable enum for this type.
-uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
-                                        SharedState &shared) const {
+TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
+                                               SharedState &shared) const {
   ASTDecl *decl = getDecl(shared);
 
   if (!decl) // MLIR types are assumed to be register-passable + Trivial.
-    return StructDeclOp::RP_RegisterPassableTrivial;
+    return TypeConvention::RegisterPassableTrivial;
 
   // Make sure we know about the signature of the type.
   if (failed(shared.declResolver->resolveSignature(*decl, loc)))
-    return StructDeclOp::RP_MemoryOnly;
+    return TypeConvention::MemoryOnly;
 
   // We don't yet have a runtime representation for packages or modules, but
   // when we do, it will not be register-passable.
   if (isa<FileModuleOp, PackageOp>(*decl))
-    return StructDeclOp::RP_MemoryOnly;
+    return TypeConvention::MemoryOnly;
 
   auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");
-  return structOp.getRegisterPassable();
+  return structOp.getConvention();
 }
 
 /// Return true if this type is a 'trivial' type, that is one that can be
 /// passed around by copying the bits, and whose destructor is a noop.
 bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
   return getRegisterPassability(loc, shared) ==
-         StructDeclOp::RP_RegisterPassableTrivial;
+         TypeConvention::RegisterPassableTrivial;
 }
 
 /// Return true if this type is a register-passable type that can be passed
@@ -144,7 +144,7 @@ bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
 /// The location specifies the location of the reference in case the use is
 /// invalid in this location.
 bool ASTType::isRegisterPassable(llvm::SMLoc loc, SharedState &shared) const {
-  return getRegisterPassability(loc, shared) != StructDeclOp::RP_MemoryOnly;
+  return getRegisterPassability(loc, shared) != TypeConvention::MemoryOnly;
 }
 
 /// Return true if this type needs to be destroyed.  This is false for trivial
@@ -192,8 +192,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
     return true;
 
   // If the type is a register type, it is trivially movable.
-  if (cast<StructDeclOp>(*typeDecl).getRegisterPassable() !=
-      StructDeclOp::RP_MemoryOnly)
+  if (cast<StructDeclOp>(*typeDecl).isRegisterPassable())
     return true;
 
   return !typeDecl->lookupInCurrentScope("__moveinit__").empty() ||

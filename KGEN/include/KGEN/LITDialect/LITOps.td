@@ -22,6 +22,7 @@ include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MAttrs.td"
+include "Support/Compiler/Properties.td"
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/RegionKindInterface.td"
@@ -287,30 +288,23 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_DecoratorsAttr:$decorators,
-    DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
     OptionalAttr<M_SymbolRefArrayAttr>:$traits,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
     OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
     OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$closureSignature,
-    OptionalAttr<LIT_DocStringAttr>:$docString
+    OptionalAttr<LIT_DocStringAttr>:$docString,
+    EnumProperty<"TypeConvention">:$convention
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name `` custom<StructParameterSpec>($inputParams, $signature)
-    (`(`$traits^`)`)?  attr-dict-with-keyword
-    custom<OptionalDecorators>($decorators) $fields
+    (`(`$traits^`)`)? custom<TypeConvention>($convention)
+    attr-dict-with-keyword custom<OptionalDecorators>($decorators) $fields
   }];
 
   let extraClassDeclaration = [{
-    // This is the value of the 'registerPassable' field.
-    enum RegisterPassable : uint8_t {
-      RP_MemoryOnly = 0,
-      RP_RegisterPassable,
-      RP_RegisterPassableTrivial,
-    };
-
     /// Get the field declarations.
     auto getFieldDecls() { return getFields().getOps<StructFieldOp>(); }
     auto field_begin() { return getFieldDecls().begin(); }
@@ -319,11 +313,15 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     /// Struct declarations have no result parameters.
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
+    TypeConvention getConvention() { return getProperties().convention; }
+    void setConvention(TypeConvention value) {
+      getProperties().convention = value;
+    }
     bool isRegisterPassable() {
-      return getRegisterPassable() != RP_MemoryOnly;
+      return getConvention() != TypeConvention::MemoryOnly;
     }
     bool isRegisterPassableTrivial() {
-      return getRegisterPassable() == RP_RegisterPassableTrivial;
+      return getConvention() == TypeConvention::RegisterPassableTrivial;
     }
 
     /// Return the decl name of the struct.

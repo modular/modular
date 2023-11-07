@@ -853,7 +853,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       if (auto variant = dyn_cast<VariantType>(outputType)) {
         auto isMemoryOnly = [&](TypedAttr variant) {
           return ASTType(variant).getRegisterPassability(
-                     callLoc, emitter.shared) == StructDeclOp::RP_MemoryOnly;
+                     callLoc, emitter.shared) == TypeConvention::MemoryOnly;
         };
         if (llvm::any_of(variant.getTypes(), isMemoryOnly))
           return emitDiagFor.resultGenericMemType(outputType);

@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 // CHECK-NOT: lit.struct.decl
-lit.struct.decl @SmallVector<N, T: type> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @SmallVector<N, T: type> register_passable {
   lit.struct.field data: !pop.array<N, T>
 }
 
@@ -25,7 +25,7 @@ kgen.func @two_vectors(
 }
 
 // CHECK-NOT: lit.struct.decl
-lit.struct.decl @Box<T: type> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @Box<T: type> register_passable {
   lit.struct.field value: !kgen.paramref<T>
 }
 
@@ -74,13 +74,13 @@ kgen.func @struct_gep(%pair: !kgen.pointer<!i8Pair>) -> !kgen.pointer<i8> {
   kgen.return %0 : !kgen.pointer<i8>
 }
 
-lit.struct.decl @NestedA<T: type> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @NestedA<T: type> register_passable {
   lit.struct.field v: !kgen.paramref<T>
 }
-lit.struct.decl @NestedB<t: dtype> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @NestedB<t: dtype> register_passable {
   lit.struct.field a: !kgen.declref<@NestedA<:type !pop.simd<1, t>>>
 }
-lit.struct.decl @NestedC attributes {registerPassable = 1 : i8} {
+lit.struct.decl @NestedC register_passable {
   lit.struct.field b: !kgen.declref<@NestedB<:dtype f32>>
 }
 
@@ -95,11 +95,11 @@ kgen.func @struct_element(%a: !kgen.pointer<!kgen.declref<@NestedA<:type !pop.si
 }
 
 
-lit.struct.decl @IndexStruct attributes {registerPassable = 1 : i8} {
+lit.struct.decl @IndexStruct register_passable {
   lit.struct.field value : index
 }
 
-lit.struct.decl @StructInsideStruct attributes {registerPassable = 1 : i8} {
+lit.struct.decl @StructInsideStruct register_passable {
   lit.struct.field x : !kgen.declref<@IndexStruct>
 }
 
@@ -131,9 +131,9 @@ kgen.generator @structExtractInsideStruct<p: @IndexField>(
   kgen.return
 }
 
-lit.struct.decl @Struct attributes {registerPassable = 1 : i8} {}
+lit.struct.decl @Struct register_passable {}
 
-lit.struct.decl @StructParam<param: @Struct> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @StructParam<param: @Struct> register_passable {
   lit.struct.field value : !pop.array<apply(:(!kgen.declref<@Struct>) -> index @return_one, param), index>
 }
 
@@ -236,13 +236,13 @@ kgen.generator @parameterized_declref_type() {
   kgen.return
 }
 
-lit.struct.decl @SIMD<size: @Int, type: dtype> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @SIMD<size: @Int, type: dtype> register_passable {
   lit.struct.field value : !pop.simd<apply(:(!kgen.declref<@Int>) -> index @unbox, size), type>
 }
 
-lit.struct.decl @Int attributes {registerPassable = 1 : i8} {}
+lit.struct.decl @Int register_passable {}
 
-lit.struct.decl @StaticTuple<size, ty: type> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @StaticTuple<size, ty: type> register_passable {
   lit.struct.field array : !pop.array<size, ty>
 }
 
@@ -259,11 +259,11 @@ kgen.generator @pass(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
 
-lit.struct.decl @SIMD<size> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @SIMD<size> register_passable {
   lit.struct.field value : !pop.simd<apply(:(index) -> index @pass, size), si32>
 }
 
-lit.struct.decl @UnaryClosure<input_type: type> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @UnaryClosure<input_type: type> register_passable {
   lit.struct.field value : !kgen.signature<(!kgen.paramref<input_type>) -> ()>
 }
 
@@ -283,7 +283,7 @@ lit.struct.decl @Foo {
   lit.struct.field y : f32
 }
 
-lit.struct.decl @Pointer<ty: type> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @Pointer<ty: type> register_passable {
   lit.struct.field address : !kgen.pointer<ty>
 }
 
@@ -361,7 +361,7 @@ kgen.func @structExtractBarFromFoo(%arg0: !foo_ref) -> !bar_ref {
   kgen.return %0 : !bar_ref
 }
 
-lit.struct.decl @Recursive attributes {registerPassable = 1 : i8} {
+lit.struct.decl @Recursive register_passable {
   lit.struct.field x : !kgen.pointer<@Recursive>
 }
 

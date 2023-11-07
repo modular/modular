@@ -15,7 +15,7 @@ from test_package.module import ParameterizedType
 
 # CHECK-LABEL: lit.struct.decl @OurSIMD
 # CHECK-SAMEL <[[SIMDSIZE:.*]]: !Int, [[SIMDDT:.*]]: !DType>
-# CHECK-SAME: attributes {registerPassable = 1 : i8} {
+# CHECK-SAME: register_passable {
 @register_passable
 struct OurSIMD[size: Int, dt: DType]:
   fn __copyinit__(self) -> Self: pass

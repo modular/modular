@@ -14,6 +14,21 @@
 include "mlir/IR/EnumAttr.td"
 
 //===----------------------------------------------------------------------===//
+// TypeConvention
+//===----------------------------------------------------------------------===//
+
+def LIT_TypeConvention : I32EnumAttr<"TypeConvention",
+    "Whether a type is register passable or memory-only", [
+  I32EnumAttrCase<"MemoryOnly", 0, "memory_only">,
+  I32EnumAttrCase<"RegisterPassable", 1, "register_passable">,
+  // TODO(#14086): Trivial should be a separate thing.
+  I32EnumAttrCase<"RegisterPassableTrivial", 2, "register_passable_trivial">
+]> {
+  let cppNamespace = "M::KGEN::LIT";
+  let genSpecializedAttr = 0;
+}
+
+//===----------------------------------------------------------------------===//
 // PassingKind
 //===----------------------------------------------------------------------===//
 
