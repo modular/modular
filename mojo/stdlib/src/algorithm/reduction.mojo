@@ -289,7 +289,6 @@ fn reduce[
     _reduce_generator[
         type,
         1,
-        simdwidthof[type](),
         True,
         input_fn,
         output_fn,
@@ -529,7 +528,6 @@ fn reduce[
 fn _reduce_generator[
     type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -552,7 +550,6 @@ fn _reduce_generator[
     Parameters:
         type: The element type we are reducing.
         rank: The rank of the tensor.
-        simd_width: The SIMD vector width to use.
         single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
@@ -573,7 +570,6 @@ fn _reduce_generator[
         _reduce_along_inner_dimension[
             type,
             rank,
-            simd_width,
             single_thread_blocking_override,
             input_0_fn,
             output_0_fn,
@@ -584,7 +580,6 @@ fn _reduce_generator[
             _reduce_along_inner_dimension[
                 type,
                 rank,
-                simd_width,
                 single_thread_blocking_override,
                 input_0_fn,
                 output_0_fn,
@@ -594,7 +589,6 @@ fn _reduce_generator[
             _reduce_along_outer_dimension[
                 type,
                 rank,
-                simd_width,
                 single_thread_blocking_override,
                 input_0_fn,
                 output_0_fn,
@@ -606,7 +600,6 @@ fn _reduce_generator[
 fn _reduce_along_inner_dimension[
     type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -629,7 +622,6 @@ fn _reduce_along_inner_dimension[
     Parameters:
         type: The element type we are reducing.
         rank: The rank of the tensor.
-        simd_width: The SIMD vector width to use.
         single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
@@ -665,6 +657,7 @@ fn _reduce_along_inner_dimension[
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
     alias unroll_factor = 8
+    alias simd_width = simdwidthof[type]()
     alias unrolled_simd_width = simd_width * unroll_factor
 
     @always_inline
@@ -749,7 +742,6 @@ fn _reduce_along_inner_dimension[
 fn _reduce_along_outer_dimension[
     type: DType,
     rank: Int,
-    simd_width: Int,
     single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
@@ -772,7 +764,6 @@ fn _reduce_along_outer_dimension[
     Parameters:
         type: The element type we are reducing.
         rank: The rank of the tensor.
-        simd_width: The SIMD vector width to use.
         single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
@@ -785,6 +776,9 @@ fn _reduce_along_outer_dimension[
     """
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
+
+    alias simd_width = simdwidthof[type]()
+
     let total_size: Int = shape.flattened_length()
     if total_size == 0:
 
@@ -1346,7 +1340,6 @@ fn mean[
         _reduce_generator[
             type,
             rank,
-            simdwidthof[type](),
             single_thread_blocking_override,
             input_fn_wrapper,
             wrapped_output_mul,
@@ -1368,7 +1361,6 @@ fn mean[
         _reduce_generator[
             type,
             rank,
-            simdwidthof[type](),
             single_thread_blocking_override,
             input_fn_wrapper,
             wrapped_output_div,
@@ -1441,7 +1433,6 @@ fn variance[
     _reduce_generator[
         type,
         1,
-        simdwidthof[type](),
         True,
         input_fn,
         output_fn,
