@@ -223,12 +223,27 @@ ParseResult StmtParser::parseSuite(ssize_t curIndent) {
     return success();
   }
 
+  // The first statement sets the expected indentation level for the whole body.
+  auto bodyIndent = ssize_t(*indent);
+  SMLoc bodyIndentLoc = getToken().getLoc();
   while (getToken().isNot(Token::eof)) {
     auto indent = getToken().getIndentation();
     if (!indent.has_value())
       return emitTokenError("statements must start at the beginning of a line");
-    if (ssize_t(*indent) <= curIndent)
+
+    // If the indentation is less than we expect, then the suite is done.
+    if (ssize_t(*indent) < bodyIndent)
       break;
+
+    // Diagnose cases where the indentation is too great.
+    if (ssize_t(*indent) > bodyIndent) {
+      auto diag = emitError(getToken().getLoc())
+                  << "statement has excess indentation";
+      diag.attachNote(bodyIndentLoc)
+          << "indentation should match previous statement";
+    } else {
+      bodyIndentLoc = getToken().getLoc();
+    }
 
     if (parseStmtListOrCompound(/*stmtListOnly=*/false, *indent))
       return failure();

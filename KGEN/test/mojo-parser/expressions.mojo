@@ -964,7 +964,7 @@ struct WeirdArray:
   fn __getitem__(self, x: Float32, *ints: Int) -> Float32:
     return x
 
- fn __setitem__(self, x: Int, y: Int, value: Int): pass
+  fn __setitem__(self, x: Int, y: Int, value: Int): pass
 
 # CHECK-LABEL: lit.func @"testWeirdArray
 fn testWeirdArray(a: WeirdArray, idx: Int, f: Float32):

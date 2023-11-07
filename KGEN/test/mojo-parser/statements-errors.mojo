@@ -38,6 +38,21 @@ fn bracketError1():
 fn bracketError2():
   _ = [[1, 2], }# expected-error {{unexpected token in expression}}
 
+
+# Indentation errors
+fn nothing(): pass
+
+fn test_indentation1():
+  nothing()   # expected-note {{indentation should match previous statement}}
+    nothing() # expected-error {{statement has excess indentation}}
+
+fn test_indentation2():
+  nothing()
+  if True:   # expected-note {{indentation should match previous statement}}
+      nothing()
+   nothing() # expected-error {{statement has excess indentation}}
+
+
 ##===----------------------------------------------------------------------===##
 # Return
 ##===----------------------------------------------------------------------===##
@@ -55,9 +70,9 @@ return 32 # expected-error {{cannot return from this context}}
 def elif_parse_error(a: Bool):
   if a:
     pass
- elif a: # expected-error {{unexpected token in expression}}
+ elif a: # expected-error {{unknown tokens at the end of a declaration}}
     pass
-  else:
+ else:
     pass
 
 struct NotBoolConvertible:
