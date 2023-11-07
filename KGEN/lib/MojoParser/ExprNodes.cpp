@@ -868,7 +868,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Notify the listener of a member lookup.
-  emitter.shared.notifyListenerOnMemberLookup(*typeDecl, getAttributeNameLoc());
+  emitter.shared.notifyListenerOnMemberLookup(*typeDecl, getIdentifierLoc());
 
   // If the attribute spelling is empty, we couldn't find a name to look up.
   // This was already diagnosed during initial parsing, so we can just bail

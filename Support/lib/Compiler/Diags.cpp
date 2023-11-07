@@ -213,6 +213,17 @@ SMLoc Diags::convertLocToSMLoc(mlir::LocationAttr loc) const {
   return SMLoc();
 }
 
+llvm::SMRange Diags::convertToSMRange(SourceRange range) const {
+  SMRange byteLevelRange{range.getStart(), range.getEnd()};
+
+  // SourceRange typically represents the end of range in terms of the start
+  // of the end location.  Convert to a SMRange with a byte-level end position
+  // if needed.
+  if (!range.isByteLevel() && tokenEndPointAdjustmentFn)
+    tokenEndPointAdjustmentFn(byteLevelRange.End);
+  return byteLevelRange;
+}
+
 //===----------------------------------------------------------------------===//
 // InflightDiag Implementation
 //===----------------------------------------------------------------------===//
@@ -348,15 +359,9 @@ void InflightDiag::addText(const Twine &text) {
 }
 
 static SMRange translateToSMRange(SourceRange range, Diags *diags) {
-  SMRange byteLevelRange{range.getStart(), range.getEnd()};
-
-  // SourceRange typically represents the end of range in terms of the start
-  // of the end location.  Convert to a SMRange with a byte-level end position
-  // if needed.
-  if (diags && !range.isByteLevel() && diags && !diags->useMLIRDiagnostics &&
-      diags->tokenEndPointAdjustmentFn)
-    diags->tokenEndPointAdjustmentFn(byteLevelRange.End);
-  return byteLevelRange;
+  if (!diags || diags->useMLIRDiagnostics)
+    return {range.getStart(), range.getEnd()};
+  return diags->convertToSMRange(range);
 }
 
 void InflightDiag::addSourceRange(SourceRange range) {

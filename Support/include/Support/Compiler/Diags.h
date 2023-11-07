@@ -68,6 +68,9 @@ public:
   /// understood.
   SMLoc convertLocToSMLoc(mlir::LocationAttr loc) const;
 
+  /// Convert the given source range to an SMRange.
+  llvm::SMRange convertToSMRange(SourceRange range) const;
+
   /// This is a helper object that allows turning Location objects into SMLoc's.
   class SourceMgrLocationMapper;
   std::unique_ptr<SourceMgrLocationMapper> sourceMgrMapper;
@@ -215,6 +218,9 @@ public:
   SMLoc getEnd() const;
   bool isValid() const { return start != nullptr; }
   bool isByteLevel() const { return byteLevel; }
+
+  /// Return an SMRange that corresponds to this source range.
+  llvm::SMRange getSMRange() const;
 
 private:
   const char *start = nullptr, *end = nullptr;

@@ -91,6 +91,13 @@ public:
   /// Translate the given parser location into one usable by the language
   /// server.
   virtual llvm::SMLoc translateParserLoc(llvm::SMLoc loc) { return loc; }
+  llvm::SMRange translateParserLoc(llvm::SMRange range) {
+    llvm::SMLoc newStart = translateParserLoc(range.Start);
+    auto newEnd = llvm::SMLoc::getFromPointer(
+        newStart.getPointer() +
+        (range.End.getPointer() - range.Start.getPointer()));
+    return {newStart, newEnd};
+  }
 
   /// Returns a language server uri for the given source location. `mainFileURI`
   /// corresponds to the uri for the main file of the source manager.

@@ -397,7 +397,7 @@ void ParserListener::onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onTraitDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
-                           SMLoc loc) {}
+                           llvm::SMRange range) {}
 void ParserListener::onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
                             const CallOperands &operands) {}
 void ParserListener::onParameterBinding(ArrayRef<ASTDecl *> decls,
