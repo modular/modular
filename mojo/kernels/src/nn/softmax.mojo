@@ -336,9 +336,9 @@ fn _softmax_3_pass_base[
         max_buff[0] = val.reduce_max().cast[type]()
 
     # Generate fused input-reduction
-    _reduce_generator[
-        type, 1, simd_width, True, input_fn, output_fn, reduce_impl
-    ](StaticIntTuple[1](output.__len__()), min_or_neginf[type](), 0, out_chain)
+    _reduce_generator[type, 1, True, input_fn, output_fn, reduce_impl](
+        StaticIntTuple[1](output.__len__()), min_or_neginf[type](), 0, out_chain
+    )
 
     let max_val = max_buff[0]
 
