@@ -123,7 +123,6 @@ fn _small_batched_matmul[
             _reduce_generator[
                 c_type,
                 1,
-                simd_width,
                 # single_thread_blocking_override,
                 True,
                 input_fn,
