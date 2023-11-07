@@ -73,7 +73,7 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   // argument or parameter names.
   if (from.getArgNames().size() != to.getInputConventions().size())
     return false;
-  if (from.getParamNames().size() != to.getInputParamTypes().size())
+  if (from.getParamNames().size() != to.getNumInputParams())
     return false;
 
   // Pos-or-kw arguments can be passed positionally.

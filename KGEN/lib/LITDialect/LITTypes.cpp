@@ -175,7 +175,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
 
   TypeSignatureType sig = getSignature();
   size_t defaultIdx =
-      sig.getInputParamTypes().size() - sig.getDefaultParameters().size();
+      sig.getNumInputParams() - sig.getDefaultParameters().size();
 
   auto sigRange = llvm::enumerate(sig.getInputParamTypes(), sig.getParamNames(),
                                   sig.getParamPassingKinds());
@@ -185,6 +185,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newPassingKinds;
   SmallVector<TypedAttr> newDefaults;
+  bool paramVarArg = false;
 
   for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
     // Current value is unbound. This corresponds to a parameter in the
@@ -197,6 +198,8 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
         newPassingKinds.push_back(kind);
         if (i >= defaultIdx)
           newDefaults.push_back(sig.getDefaultParameters()[i - defaultIdx]);
+        if (sig.isVarArg(i))
+          paramVarArg = true;
       }
       ++sigIt;
       continue;
@@ -205,9 +208,9 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   }
   assert(sigIt == sigRange.end() && "expected signature to get processed");
 
-  auto newSig = TypeSignatureType::get(getContext(), newParamTypes,
-                                       newParamNames, newPassingKinds,
-                                       newDefaults, sig.getParamVarArg());
+  auto newSig =
+      TypeSignatureType::get(getContext(), newParamTypes, newParamNames,
+                             newPassingKinds, newDefaults, paramVarArg);
   return MetaTypeType::get(getSymbol(), values, newSig);
 }
 
@@ -229,7 +232,7 @@ Type RefType::getElementAsType() {
   TypedAttr elemType = getElementType();
   if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(elemType))
     return typeCst.getValue();
-  assert(::isa<MLIRTypeType>(elemType.getType()) &&
+  assert((::isa<MLIRTypeType, MetaTypeType>(elemType.getType())) &&
          "parameter expr must have metatype type");
   return ParamRefType::get(elemType);
 }

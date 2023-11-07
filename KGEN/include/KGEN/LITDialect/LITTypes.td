@@ -114,6 +114,13 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     ArrayRef<Type> getInputParamTypes() const { return getParamTypes(); }
     ArrayRef<Type> getResultParamTypes() const { return {}; }
 
+    /// Get the number of input parameters.
+    size_t getNumInputParams() { return getInputParamTypes().size(); }
+    /// Return true if the parameter at the given index is a vararg.
+    bool isVarArg(size_t index) {
+      return index + 1 == getNumInputParams() && getParamVarArg();
+    }
+
     /// Construct a type signature from named parameter declarations. This
     /// helper is used to convert between a named signature structure to a
     /// nameless representation.

@@ -1433,46 +1433,27 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
 
 /// Given a type that potentially has all of its parameters unbound, implicitly
 /// add the parameter declarations to the function input parameters.
-/// TODO(#22627): When metatypes and partial binding are in, this logic needs
-/// to be updated to work with partially bound types.
 static ASTType
 addImplicitTypeParams(SharedState &shared, ASTType type,
                       const ParsedArgument &arg,
                       SmallVectorImpl<StringAttr> &inputParamNames,
                       SmallVectorImpl<PassingKind> &inputParamPassingKinds,
                       SmallVectorImpl<ParamDeclAttr> &inputParamDecls) {
-  // Look for a struct type.
-  ASTDecl *decl = type.getDecl(shared);
-  if (!decl)
-    return type;
-  auto structDecl = dyn_cast<StructDeclOp>(decl);
-  if (!structDecl)
-    return type;
-
   // Check if the type has unbound parameters.
-  ArrayRef<ParamDeclAttr> inputParams = structDecl.getInputParams();
+  auto metatype = dyn_cast_or_null<MetaTypeType>(type.getMetaType());
+  if (!metatype)
+    return type;
+  ArrayRef<Type> inputParams = metatype.getSignature().getInputParamTypes();
   if (inputParams.empty())
     return type;
 
-  if (ArrayRef<TypedAttr> bindings = type.getParamBindings();
-      !bindings.empty()) {
-    auto isUnbound = [](TypedAttr bindAttr) {
-      return isa<UnboundAttr>(bindAttr);
-    };
-    if (llvm::any_of(bindings, isUnbound)) {
-      shared.emitError(arg.loc,
-                       "partial autoparameterization not supported yet");
-    }
-    return type;
-  }
-
   unsigned nameCounter = 0;
   SmallVector<TypedAttr> paramValues;
-  for (ParamDeclAttr decl : inputParams) {
+  for (Type type : inputParams) {
     auto funcDecl = ParamDeclAttr::get(
         shared.getMangledParameterName(
             arg.name.getValue() + Twine(nameCounter++), arg.loc),
-        decl.getType());
+        type);
     // TODO(#22786): Pass these with a dedicated implicit passing kind instead
     // of hacking it into positional-only parameters? This logic is also
     // problematic if the function has default arguments.
@@ -1482,7 +1463,7 @@ addImplicitTypeParams(SharedState &shared, ASTType type,
     inputParamDecls.push_back(funcDecl);
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
   }
-  return cast<DeclRefType>(type).bindParams(paramValues);
+  return BindTypeAttr::get(PValue(type), paramValues);
 }
 
 ASTType ParsedArgument::emitFunctionArgumentsAndResults(

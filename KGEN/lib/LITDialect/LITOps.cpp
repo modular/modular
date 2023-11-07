@@ -865,8 +865,43 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
 
 DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
+  TypeSignatureType sig = getSignature();
+
+  if (paramValues.empty()) {
+    // Create a fully unbound reference to the type.
+    SmallVector<TypedAttr> unbound;
+    for (Type type : sig.getInputParamTypes())
+      unbound.push_back(UnboundAttr::get(type));
+    return DeclRefType::get(symbol, unbound,
+                            MetaTypeType::get(symbol, unbound, sig));
+  }
+
+  // Compute the resultant signature.
+  size_t defaultIdx =
+      sig.getNumInputParams() - sig.getDefaultParameters().size();
+  SmallVector<Type> newParamTypes;
+  SmallVector<StringAttr> newParamNames;
+  SmallVector<PassingKind> newPassingKinds;
+  SmallVector<TypedAttr> newDefaults;
+  bool paramVarArg = false;
+  for (auto [i, value, type, name, kind] :
+       llvm::enumerate(paramValues, sig.getInputParamTypes(),
+                       sig.getParamNames(), sig.getParamPassingKinds())) {
+    if (::isa<UnboundAttr>(value)) {
+      newParamTypes.push_back(type);
+      newParamNames.push_back(name);
+      newPassingKinds.push_back(kind);
+      if (i >= defaultIdx)
+        newDefaults.push_back(sig.getDefaultParameters()[i - defaultIdx]);
+      if (sig.isVarArg(i))
+        paramVarArg = true;
+    }
+  }
+  auto newSig =
+      TypeSignatureType::get(getContext(), newParamTypes, newParamNames,
+                             newPassingKinds, newDefaults, paramVarArg);
   return DeclRefType::get(symbol, paramValues,
-                          MetaTypeType::get(symbol, getSignature()));
+                          MetaTypeType::get(symbol, paramValues, newSig));
 }
 
 /// Verify the debuginfo scope of an op that must be a top-level declaration.

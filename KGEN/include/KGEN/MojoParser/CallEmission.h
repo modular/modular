@@ -23,6 +23,7 @@ class FuncOp;
 class LITSignatureType;
 class ParserParamEvaluator;
 class StructDeclOp;
+class TypeSignatureType;
 enum class PassingKind : uint32_t;
 
 //===----------------------------------------------------------------------===//
@@ -127,6 +128,7 @@ public:
   /// match, diagnostics will be emitted using the struct's location and the
   /// given expression location.
   ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
+                                        TypeSignatureType sig,
                                         ExprEmitter &emitter,
                                         llvm::SMLoc exprLoc,
                                         bool allowPartiallyBound) const;

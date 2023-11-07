@@ -996,7 +996,7 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
   // Bind it to a VariadicAttr of the right elements.
   TypedAttr packAttr =
       VariadicAttr::get(eltTypes, cast<VariadicType>(tupleParam.getType()));
-  return cast<DeclRefType>(tupleType).bindParams(packAttr);
+  return BindTypeAttr::get(PValue(tupleType), packAttr);
 }
 
 ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
@@ -1012,7 +1012,7 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
   if (varListType.isTypeCheckErrorType())
     return varListType;
   TypedAttr elemTypeValue = TypeConstantAttr::get(elemType);
-  return cast<DeclRefType>(varListType).bindParams(elemTypeValue);
+  return BindTypeAttr::get(PValue(varListType), elemTypeValue);
 }
 
 void SharedState::loadModulesFromCache(

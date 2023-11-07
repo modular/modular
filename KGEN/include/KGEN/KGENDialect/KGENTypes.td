@@ -396,9 +396,6 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
 
     /// Return an alias name if the DeclRefType should be printed with an alias.
     std::optional<StringRef> getAliasName();
-
-    /// Bind parameter values to the decl ref type.
-    DeclRefType bindParams(ArrayRef<TypedAttr> paramValues);
   }];
 }
 

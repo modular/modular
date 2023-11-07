@@ -1058,16 +1058,15 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
           state.types.push_back(ASTType(type));
           return success();
         };
-        if (isa<MetaTypeType>(value.getType())) {
-          ASTType valueMetatype(value.getType());
+        if (auto valueMetaType = dyn_cast<MetaTypeType>(value.getType())) {
           ASTType tupleType = emitter.shared.getBuiltinTupleType(
               emitter.declScope, call.getLoc());
-          ASTType tupleMetatype(tupleType.getMetaType());
           // If the _type field is a Tuple of types, then the operation
           // returns multiple results, with types specified in the list.  We
           // need to take apart the ListLiteral parameter value to get the types
           // from inside it.
-          if (valueMetatype.isEqualCanon(ASTType(tupleType.getMetaType()))) {
+          if (valueMetaType.getSymbol() ==
+              cast<MetaTypeType>(tupleType.getMetaType()).getSymbol()) {
             // Dig out the types from the tuple.  Tuple literals must always
             // have this particular shape.
             auto tca = cast<TypeConstantAttr>(value);
@@ -1371,29 +1370,19 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static PValue substituteParametersIntoUserDefinedType(
-    DeclRefType declRef, const SubscriptNode &subscript, ExprEmitter &emitter) {
-  // If already parameterized, give up.
-  // TODO: Why not allow multiple partial type applications?
-  if (!declRef.getParamValues().empty()) {
-    emitter.emitError(
-        subscript.getLoc(),
-        "cannot apply more parameters to an already parameterized type ")
-        << ASTType(declRef) << subscript.getIndexRange();
-    return {};
-  }
-
-  ASTDecl &typeDecl =
-      emitter.shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-  auto structOp = dyn_cast<StructDeclOp>(typeDecl);
+    PValue typeValue, const SubscriptNode &subscript, ExprEmitter &emitter) {
+  auto metaType = cast<MetaTypeType>(typeValue.getType());
+  ASTDecl *typeDecl = ASTType(metaType).getDecl(emitter.shared);
+  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
   if (!structOp) {
     emitter.emitError(subscript.getLoc(), "unknown parameterized type ")
-        << ASTType(declRef) << subscript.base->getRange();
+        << ASTType(typeValue) << subscript.base->getRange();
     return {};
   }
 
   // Notify the listener on the parameter binding.
   emitter.shared.notifyListenerOnParameterBinding(
-      &typeDecl, subscript.rsquareLoc, subscript.operands);
+      typeDecl, subscript.rsquareLoc, subscript.operands);
 
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
@@ -1409,13 +1398,16 @@ static PValue substituteParametersIntoUserDefinedType(
   }
 
   // Check the bindings.
+  // FIXME: The error messages are bad for partial binding, because the
+  // diagnostic emitter points to the original struct definition.
   ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
-      structOp, emitter, subscript.getLoc(), /*allowPartiallyBound=*/true);
+      structOp, metaType.getSignature(), emitter, subscript.getLoc(),
+      /*allowPartiallyBound=*/true);
   if (!bindingValuesAttr)
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  return PValue(declRef.bindParams(bindingValuesAttr));
+  return PValue(BindTypeAttr::get(typeValue, bindingValuesAttr));
 }
 
 /// Returns the next expected parameter type for a function candidate given a
@@ -1600,9 +1592,9 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the sub-value is an unbound Type, try binding things to it!
   if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types.
-    if (auto declRef = dyn_cast<DeclRefType>(typeValue)) {
-      PValue result =
-          substituteParametersIntoUserDefinedType(declRef, *this, emitter);
+    if (isa<MetaTypeType>(baseValue.getType())) {
+      PValue result = substituteParametersIntoUserDefinedType(
+          baseValue.getIfPValue(), *this, emitter);
       return emitter.emitResult(result, this, dest);
     }
 
