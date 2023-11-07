@@ -18,13 +18,6 @@ let x = 12
 # CHECK: }
 let x = 4.2
 
-# CHECK: (Bool) x = {
-# CHECK:   (scalar<bool>) value = {
-# CHECK:     (i1) [0] = 1
-# CHECK:   }
-# CHECK: }
-let x = True
-
 # CHECK:  (SIMD[si32, 8]) x = {
 # CHECK:    (simd<8, si32>) value = {
 # CHECK:      (si32) [0] = 5
@@ -79,7 +72,7 @@ z.push_back(3)
 # CHECK:       (si8) [1] = 31
 # CHECK:     }
 # CHECK:   }
-# CHECK:   (Int) x = 101
+# CHECK:   (Bool) x = True
 # CHECK:   (StringLiteral) y = "fofofo"
 # CHECK:   (SIMD[f32, 4]) z = {
 # CHECK:     (simd<4, f32>) value = {
@@ -95,14 +88,14 @@ z.push_back(3)
 struct Foo:
   var v: Int
   var w: SIMD[DType.int8, 2]
-  var x: Int
+  var x: Bool
   var y: StringLiteral
   var z: SIMD[DType.float32, 4]
   fn __init__() -> Self:
     return Self {
       v: -101,
       w: SIMD[DType.int8, 2](-50, 31),
-      x: 101,
+      x: True,
       y: "fofofo",
       z:  SIMD[DType.float32, 4](1, 2, 3, 4)
     }
@@ -114,3 +107,9 @@ let f = Foo()
 let empty = ""
 let long = "abcdefghijklmnopqrstuvwxyz1234567890"
 let short = "123"
+
+
+# CHECK: (Bool) a_bool = True
+# CHECK-NEXT: (Bool) another_bool = False
+let a_bool = True
+let another_bool = False

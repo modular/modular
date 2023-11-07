@@ -33,18 +33,18 @@ public:
 };
 } // namespace
 
-SyntheticChildrenFrontEnd *
-M::KGEN::Mojo::MojoDecoratorBasedTypeSyntheticFrontEndCreator(
-    CXXSyntheticChildren *x, const ValueObjectSP &valobjSP) {
+/// Check if the type of the given value is using the decorator
+/// @lldb_formatter_wrapping_type.
+static bool isUsingLLDBFormatterWrappingType(const ValueObjectSP &valobjSP) {
   if (!valobjSP)
-    return nullptr;
+    return false;
   CompilerType type = valobjSP->GetCompilerType();
   if (!type.IsValid())
-    return nullptr;
+    return false;
   std::shared_ptr<MojoTypeSystem> mojoTypeSystem =
       type.GetTypeSystem().dyn_cast_or_null<MojoTypeSystem>();
   if (!mojoTypeSystem)
-    return nullptr;
+    return false;
 
   for (TypedAttr decorator :
        mojoTypeSystem->getStructDecorators(type.GetOpaqueQualType())) {
@@ -55,9 +55,32 @@ M::KGEN::Mojo::MojoDecoratorBasedTypeSyntheticFrontEndCreator(
           symbol.getRootReference() == "$debug" &&
           nestedReferences[0].getValue() == "$lldb" &&
           nestedReferences[1].getValue() == "lldb_formatter_wrapping_type()") {
-        return new MojoWrappingTypeSyntheticFrontEnd(*valobjSP);
+        return true;
       }
     }
   }
+  return false;
+}
+
+SyntheticChildrenFrontEnd *
+M::KGEN::Mojo::mojoDecoratorBasedTypeSyntheticFrontEndCreator(
+    CXXSyntheticChildren *x, const ValueObjectSP &valobjSP) {
+  if (isUsingLLDBFormatterWrappingType(valobjSP))
+    return new MojoWrappingTypeSyntheticFrontEnd(*valobjSP);
   return nullptr;
+}
+
+bool M::KGEN::Mojo::mojoDecoratorBasedSummaryProvider(
+    ValueObject &valobj, Stream &stream,
+    const TypeSummaryOptions &summaryOptions) {
+  ValueObjectSP nonSyntheticValobj = valobj.GetNonSyntheticValue();
+  if (!isUsingLLDBFormatterWrappingType(nonSyntheticValobj))
+    return false;
+  ValueObjectSP impl = nonSyntheticValobj->GetChildAtIndex(0);
+  std::string dest;
+  impl->GetSummaryAsCString(dest, summaryOptions);
+  if (dest.empty())
+    return false;
+  stream << dest;
+  return true;
 }
