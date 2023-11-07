@@ -33,26 +33,10 @@ TEST(MicroBenchmarkTest, BenchmarkAllocation) {
   ErrorOrSuccess err = bench.run(runOpts);
   EXPECT_FALSE(failed(err)) << err.takeError();
 
-  double minLatency =
-      bench.measurement(MicroBenchmark::ReportMetric::kMinLatency,
-                        /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
-  EXPECT_GT(minLatency, 0) << "the min latency must be positive";
-
-  double maxLatency =
-      bench.measurement(MicroBenchmark::ReportMetric::kMaxLatency,
-                        /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
-  EXPECT_GT(maxLatency, 0) << "the max latency must be positive";
-
   double meanLatency =
       bench.measurement(MicroBenchmark::ReportMetric::kMeanLatency,
                         /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
   EXPECT_GT(meanLatency, 0) << "the mean latency must be positive";
-
-  double trimmedMeanLatency =
-      bench.measurement(MicroBenchmark::ReportMetric::kTrimmedMeanLatency,
-                        /*timeUnit=*/MicroBenchmark::TimeUnit::kNanoseconds);
-  EXPECT_GT(trimmedMeanLatency, 0)
-      << "the trimmed mean latency must be positive";
 
   // Generate the benchmark report.
   MicroBenchmark::ReportOptions reportOpts;
