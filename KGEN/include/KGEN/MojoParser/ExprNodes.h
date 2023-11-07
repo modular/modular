@@ -137,6 +137,15 @@ struct Identifier {
   SMLoc getIdentifierLoc() const {
     return getSMLocFromStringRef(spelling, /*startOffset=*/isEscaped);
   }
+
+  /// Return the identifier's range with the offset taken into account.
+  SourceRange getIdentifierRange() const {
+    SMLoc start = getIdentifierLoc();
+    if (!isEscaped)
+      return {start, start};
+    auto end = SMLoc::getFromPointer(start.getPointer() + spelling.size() + 2);
+    return SourceRange::getByteLevel(start, end);
+  }
 };
 
 struct DeclRefNode final : public ExprNode, Identifier {
@@ -145,7 +154,7 @@ struct DeclRefNode final : public ExprNode, Identifier {
 
   static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
   SMLoc getLoc() const override { return getIdentifierLoc(); }
-  SourceRange getRange() const override { return {getLoc(), getLoc()}; }
+  SourceRange getRange() const override { return getIdentifierRange(); }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
@@ -178,9 +187,9 @@ struct AttributeRefNode final : public ExprNode, Identifier {
     return node->kind == kAttributeRef;
   }
   SMLoc getLoc() const override { return dotLoc; }
-  SMLoc getAttributeNameLoc() const { return getIdentifierLoc(); }
+  SourceRange getAttributeNameRange() const { return getIdentifierRange(); }
   SourceRange getRange() const override {
-    return {base->getRangeStart(), getAttributeNameLoc()};
+    return {base->getRangeStart(), getIdentifierLoc()};
   }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 

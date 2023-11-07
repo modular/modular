@@ -31,7 +31,7 @@ async def test_hover_letvar(client: LanguageClient):
         """
 fn function():
   let foo: Int = 420
-  var bar = 1 + foo
+  var bar = 1 + `foo`
   print(bar)
 """,
     )
@@ -49,7 +49,7 @@ fn function():
 ```"""
     )
     assert result.range == Range(
-        start=Position(line=3, character=16), end=Position(line=3, character=19)
+        start=Position(line=3, character=16), end=Position(line=3, character=21)
     )
 
     result = await client.text_document_hover_async(

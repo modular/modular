@@ -205,7 +205,7 @@ public:
   /// Notify the listener that a new reference has been resolved by the parser,
   /// i.e. its declarations are known.
   virtual void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
-                     llvm::SMLoc loc);
+                     llvm::SMRange range);
 
   /// Notify the listener that a call is being resolved with the given operands.
   virtual void onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,

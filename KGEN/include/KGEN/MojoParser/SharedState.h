@@ -325,6 +325,8 @@ public:
   /// resolved by the parser, i.e. its declarations are known.
   void notifyListenerOnRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                            SMLoc loc);
+  void notifyListenerOnRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
+                           SourceRange range);
 
   /// Notify the parser listener, if present, that a new reference from an
   /// expression has been resolved.

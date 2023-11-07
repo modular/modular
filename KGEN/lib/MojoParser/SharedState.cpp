@@ -2141,14 +2141,22 @@ void SharedState::notifyListenerOnVariableDecl(ASTDecl &decl,
 
 void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
                                       StringRef spelling, SMLoc loc) {
-  if (isListenerInterestedInLoc(parserListener, loc))
-    parserListener->onRef(decls, spelling, loc);
+  if (!loc.isValid())
+    return;
+  SMLoc endLoc = SMLoc::getFromPointer(loc.getPointer() + spelling.size());
+  notifyListenerOnRef(decls, spelling, {loc, endLoc});
+}
+
+void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
+                                      StringRef spelling, SourceRange range) {
+  if (isListenerInterestedInLoc(parserListener, range.getStart()))
+    parserListener->onRef(decls, spelling, diags.convertToSMRange(range));
 }
 
 /// Return the location of the identifier in the given expression.
-static SMLoc getIdentifierLocFromExpr(const ExprNode *expr) {
+static SourceRange getIdentifierLocFromExpr(const ExprNode *expr) {
   if (auto attribute = dyn_cast<AttributeRefNode>(expr))
-    return attribute->getAttributeNameLoc();
+    return attribute->getAttributeNameRange();
 
   // For post-fix expression, ensure we get the location from the base, not the
   // operator.
@@ -2156,7 +2164,7 @@ static SMLoc getIdentifierLocFromExpr(const ExprNode *expr) {
     return getIdentifierLocFromExpr(subscript->base);
   if (auto call = dyn_cast<CallNode>(expr))
     return getIdentifierLocFromExpr(call->callee);
-  return expr->getLoc();
+  return expr->getRange();
 }
 
 void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,

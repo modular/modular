@@ -200,7 +200,7 @@ public:
 
   /// Store a new reference to a given set of symbols. No error is thrown if the
   /// expected symbol doesn't exist in the index.
-  void registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMLoc loc,
+  void registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
                    StringRef spelling);
 
   /// Look for the symbols whose declaration or references contain the given
@@ -275,11 +275,11 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
   return &symbol;
 }
 
-void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMLoc loc,
+void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
                               StringRef spelling) {
   // We don't index empty spellings nor references in files other than the main
   // one.
-  if (spelling.empty() || !mainDoc.containsLocation(loc))
+  if (spelling.empty() || !mainDoc.containsLocation(range.Start))
     return;
 
   SmallVector<Symbol *> symbols;
@@ -294,7 +294,7 @@ void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMLoc loc,
   }
 
   if (!symbols.empty())
-    insertRangeInMainDoc({symbols, getRangeForText(loc, spelling)});
+    insertRangeInMainDoc({symbols, range});
 }
 
 SymbolRef *SymbolIndex::getSymbolAt(SMLoc loc) const {
@@ -340,7 +340,8 @@ public:
 
   void onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling, SMLoc loc) override;
+  void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
+             llvm::SMRange range) override;
 
 private:
   /// The main doc for which parsing was initiated.
@@ -375,7 +376,8 @@ void LSPParserListener::onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) {
 
 void LSPParserListener::onModuleImport(ASTDecl *decl, StringRef spelling,
                                        SMLoc loc) {
-  symbolIndex.registerRef(MojoASTDeclRef(decl), mainDoc.translateParserLoc(loc),
+  loc = mainDoc.translateParserLoc(loc);
+  symbolIndex.registerRef(MojoASTDeclRef(decl), getRangeForText(loc, spelling),
                           spelling);
 }
 
@@ -396,11 +398,11 @@ void LSPParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {
 }
 
 void LSPParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
-                              SMLoc loc) {
+                              llvm::SMRange range) {
   symbolIndex.registerRef(
       llvm::map_to_vector(decls,
                           [](ASTDecl *decl) -> MojoASTDeclRef { return decl; }),
-      mainDoc.translateParserLoc(loc), spelling);
+      mainDoc.translateParserLoc(range), spelling);
 }
 
 //===----------------------------------------------------------------------===//
