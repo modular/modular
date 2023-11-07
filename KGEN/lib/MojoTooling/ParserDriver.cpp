@@ -96,58 +96,6 @@ const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
   return impl->sharedState.options;
 }
 
-//===----------------------------------------------------------------------===//
-// Driver
-//===----------------------------------------------------------------------===//
-
-MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
-  llvm::SourceMgr &sourceMgr = getSourceMgr();
-
-  const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(fileId);
-  StringRef filepathStr = sourceBuf->getBufferIdentifier();
-  std::filesystem::path filepath(filepathStr.str());
-
-  // If the file is within a package, we create a decl for the outermost package
-  // and import this decl from there. This ensures we process relative imports
-  // and other package-level constructs correctly.
-  ASTDecl *moduleDecl = nullptr;
-  if (isMojoSourcePackagePath(filepath.parent_path())) {
-    // Collect all of the sub-package names and find the outer most package.
-    SmallVector<std::string, 4> packageNames;
-    while (isMojoSourcePackagePath(filepath.parent_path())) {
-      packageNames.emplace_back(filepath.stem().string());
-      filepath = filepath.parent_path();
-    }
-
-    // Create the package using the outermost name.
-    ASTDecl &packageDecl = impl->sharedState.createPackage(
-        filepath.string(), filepath.stem().string());
-
-    // Import the file from within the package.
-    std::reverse(packageNames.begin(), packageNames.end());
-    moduleDecl = &impl->sharedState.importModule(
-        "." + llvm::join(packageNames, "."), cast<PackageOp>(packageDecl),
-        SMLoc::getFromPointer(sourceBuf->getBufferStart()));
-
-    // Otherwise, create a decl specifically for the module.
-  } else {
-    auto fileLoc =
-        FileLineColLoc::get(impl->sharedState.getContext(), filepathStr,
-                            /*line=*/0, /*column=*/0);
-    moduleDecl = &impl->sharedState.createModule(filepath.stem().string(),
-                                                 sourceBuf, fileLoc);
-  }
-  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
-
-  // Now that resolution is finished, cache the state of modules we have parsed.
-  // TODO: We should be able to cache even in the presence of warnings and
-  // errors. We can store the diagnostics and replay on cache load.
-  if (!impl->sharedState.diags.isDiagnosticEmitted())
-    impl->sharedState.cacheParsedModules();
-
-  return MojoASTDeclRef(moduleDecl);
-}
-
 MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
   return type.getDecl(impl->sharedState);
 }
@@ -161,4 +109,143 @@ MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
       params);
 
   return evaluator.refineType(evaluator.getReboundType(type.getMLIRType()));
+}
+
+//===----------------------------------------------------------------------===//
+// Driver
+//===----------------------------------------------------------------------===//
+
+/// Import a module or package that is nested within a source package.
+static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
+                                      SharedState &sharedState) {
+  // Collect all of the sub-package names and find the outer most package.
+  SmallVector<std::string, 4> packageNames;
+  while (isMojoSourcePackagePath(filepath.parent_path())) {
+    packageNames.emplace_back(filepath.stem().string());
+    filepath = filepath.parent_path();
+  }
+
+  // Create the package using the outermost name.
+  ASTDecl &packageDecl =
+      sharedState.createPackage(filepath.string(), filepath.stem().string());
+
+  // Import the file from within the package.
+  std::reverse(packageNames.begin(), packageNames.end());
+  return &sharedState.importModule("." + llvm::join(packageNames, "."),
+                                   cast<PackageOp>(packageDecl), SMLoc());
+}
+
+/// Create an ASTDecl for the given file module.
+static ASTDecl *buildModuleDecl(const std::filesystem::path &filepath,
+                                const llvm::MemoryBuffer *sourceBuf,
+                                SharedState &sharedState) {
+  // If the file is within a package, we create a decl for the outermost package
+  // and import this decl from there. This ensures we process relative imports
+  // and other package-level constructs correctly.
+  if (isMojoSourcePackagePath(filepath.parent_path()))
+    return buildNestedModuleDecl(filepath, sharedState);
+
+  // Otherwise, create a decl specifically for the module.
+  auto fileLoc =
+      FileLineColLoc::get(sharedState.getContext(), filepath.string(),
+                          /*line=*/0, /*column=*/0);
+  return &sharedState.createModule(filepath.stem().string(), sourceBuf,
+                                   fileLoc);
+}
+
+/// Create an ASTDecl for the given package.
+static ASTDecl *buildPackageDecl(const std::filesystem::path &filepath,
+                                 SharedState &sharedState) {
+  // If the file is a binary package, just import it.
+  if (filepath.extension() == ".mojopkg" || filepath.extension() == ".📦") {
+    return &sharedState.createBinaryPackage(filepath.string(),
+                                            filepath.stem().string());
+  }
+  // If this isn't a source package, bail out.
+  if (!isMojoSourcePackagePath(filepath))
+    return nullptr;
+
+  // If the file is within a package, we create a decl for the outermost package
+  // and import this decl from there. This ensures we process relative imports
+  // and other package-level constructs correctly.
+  if (isMojoSourcePackagePath(filepath.parent_path()))
+    return buildNestedModuleDecl(filepath, sharedState);
+
+  // Otherwise, create a new package.
+  return &sharedState.createPackage(filepath.string(),
+                                    filepath.stem().string());
+}
+
+/// Create an ASTDecl for the given module or package.
+static ASTDecl *buildModuleOrPackageDecl(const std::filesystem::path &path,
+
+                                         SharedState &sharedState) {
+  // Handle the case of a file.
+  if (path.extension() == ".mojo" || path.extension() == ".🔥") {
+    SourceMgr &sourceMgr = sharedState.getSourceMgr();
+    std::string fullPath;
+    int fileId = sourceMgr.AddIncludeFile(path.string(), SMLoc(), fullPath);
+    if (!fileId)
+      return nullptr;
+    return buildModuleDecl(path, sourceMgr.getMemoryBuffer(fileId),
+                           sharedState);
+  }
+  return buildPackageDecl(path, sharedState);
+}
+
+MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
+
+  const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(fileId);
+  StringRef filepathStr = sourceBuf->getBufferIdentifier();
+  std::filesystem::path filepath(filepathStr.str());
+
+  ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
+  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
+
+  // Now that resolution is finished, cache the state of modules we have
+  // parsed.
+  // TODO: We should be able to cache even in the presence of warnings and
+  // errors. We can store the diagnostics and replay on cache load.
+  if (!impl->sharedState.diags.isDiagnosticEmitted())
+    impl->sharedState.cacheParsedModules();
+
+  return MojoASTDeclRef(moduleDecl);
+}
+
+MojoASTDeclRef
+MojoParserContext::parsePackage(const std::filesystem::path &path) {
+  // Check that the path is actually a package.
+  if (!(isMojoSourcePackagePath(path) || path.extension() == ".mojopkg" ||
+        path.extension() == ".📦"))
+    return nullptr;
+  return parseFileOrPackage(path);
+}
+
+MojoASTDeclRef
+MojoParserContext::parseFileOrPackage(const std::filesystem::path &path) {
+  ASTDecl *moduleDecl = buildModuleOrPackageDecl(path, impl->sharedState);
+  if (!moduleDecl)
+    return nullptr;
+  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
+
+  // Now that resolution is finished, cache the state of modules we have
+  // parsed.
+  // TODO: We should be able to cache even in the presence of warnings and
+  // errors. We can store the diagnostics and replay on cache load.
+  if (!impl->sharedState.diags.isDiagnosticEmitted())
+    impl->sharedState.cacheParsedModules();
+
+  return MojoASTDeclRef(moduleDecl);
+}
+
+MojoASTDeclRef MojoParserContext::parseFileOrPackageNonRecursive(
+    const std::filesystem::path &path) {
+  ASTDecl *moduleDecl = buildModuleOrPackageDecl(path, impl->sharedState);
+  if (!moduleDecl)
+    return nullptr;
+
+  // Resolve just the top-level decl.
+  (void)impl->sharedState.declResolver->resolveFully(*moduleDecl, SMLoc());
+  return MojoASTDeclRef(moduleDecl);
 }

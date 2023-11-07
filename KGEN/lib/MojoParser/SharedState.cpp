@@ -1139,6 +1139,13 @@ ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   return *state.decl;
 }
 
+ASTDecl &SharedState::createBinaryPackage(StringRef path, StringRef name) {
+  StringAttr mangledName = getMangledModuleName(getContext(), name);
+  ModuleState &state = createBinaryPackageState(
+      SMLoc(), mangledName, mangledName, path, *impl->topLevelModuleState);
+  return *state.decl;
+}
+
 std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
   auto it = impl->moduleStates.find(&module);
   if (it == impl->moduleStates.end())

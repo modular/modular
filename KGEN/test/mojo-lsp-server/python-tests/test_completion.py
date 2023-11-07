@@ -43,7 +43,9 @@ import b
     )
 
     assert any(
-        item.label == "builtin" and item.kind == CompletionItemKind.Folder
+        item.label == "builtin"
+        and item.kind == CompletionItemKind.Folder
+        and "Implements the builtin package" in item.documentation.value
         for item in items
     )
 
