@@ -460,7 +460,7 @@ fn gather[
 
 
 # ===----------------------------------------------------------------------===#
-# scatter_nd op (general -- TODO: test perf. vs. existing before removing old)
+# scatter_nd op
 # ===----------------------------------------------------------------------===#
 
 
@@ -469,7 +469,7 @@ fn scatter_nd_generator[
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
-    type: DType,
+    output_type: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
@@ -478,14 +478,16 @@ fn scatter_nd_generator[
     /,
     has_reduction_operation: Bool = True,
 ](
-    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), output_type],
     indices: NDBuffer[
         indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), type
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
     ],
-    output: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    output: NDBuffer[
+        data_rank, DimList.create_unknown[data_rank](), output_type
+    ],
     out_chain: OutputChainPtr,
 ):
     """
@@ -494,7 +496,7 @@ fn scatter_nd_generator[
     Parameters:
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
                    min.
-        type: Type of data, updates, and output tensors.
+        output_type: Type of data, updates, and output tensors.
         indices_type: Type of the indices tensor.
         data_rank: Rank of input (data) tensor (data_rank >= 1).
         indices_rank: Rank of input (data) tensor (indices_rank >= 1).
@@ -617,7 +619,7 @@ fn scatter_nd_generator[
         @parameter
         if has_reduction_operation:
             for i in range(count_copy):
-                output_flat[output_offset + i] = reduce_fn[type, 1](
+                output_flat[output_offset + i] = reduce_fn[output_type, 1](
                     output_flat[output_offset + i],
                     updates_flat[updates_offset + i],
                 )
@@ -648,21 +650,23 @@ fn scatter_nd_generator[
 
 @always_inline
 fn scatter_nd[
-    type: DType,
+    output_type: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
     updates_rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), output_type],
     indices: NDBuffer[
         indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), type
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
     ],
-    output: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    output: NDBuffer[
+        data_rank, DimList.create_unknown[data_rank](), output_type
+    ],
     out_chain: OutputChainPtr,
 ):
     """Scatter_nd operation without any reduction."""
@@ -678,7 +682,7 @@ fn scatter_nd[
 
     scatter_nd_generator[
         use_update,
-        type,
+        output_type,
         indices_type,
         data_rank,
         indices_rank,
@@ -689,162 +693,8 @@ fn scatter_nd[
 
 
 # ===----------------------------------------------------------------------===#
-# ScatterNd
+# Gather Shape
 # ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn scatter_nd_generator[
-    output_type: DType,
-    indices_type: DType,
-    updates_rank: Int,
-    indices_rank: Int,
-    output_rank: Int,
-    single_thread_blocking_override: Bool,
-    reduce_func: fn (
-        SIMD[output_type, 1], SIMD[output_type, 1]
-    ) capturing -> SIMD[output_type, 1],
-    /,
-    has_reduction_operation: Bool = True,
-](
-    input: NDBuffer[
-        output_rank,
-        DimList.create_unknown[output_rank](),
-        output_type,
-    ],
-    updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
-    ],
-    indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
-    ],
-    output: NDBuffer[
-        output_rank, DimList.create_unknown[output_rank](), output_type
-    ],
-    out_chain: OutputChainPtr,
-):
-    """A specialized scatter for updates[i0][i1][i2][i3], indices[i0][i1][1],
-    output[o0][i2][i3]. TODO(#15445): Make this general."""
-
-    constrained[
-        updates_rank == 4, "scatter_nd updates rank must be 4 currently"
-    ]()
-    constrained[
-        indices_rank == 3, "scatter_nd indices rank must be 3 currently"
-    ]()
-    constrained[
-        output_rank == 3, "scatter_nd output rank must be 3 currently"
-    ]()
-
-    let output_shape = output.get_shape()
-    let updates_shape = updates.get_shape()
-    let indices_shape = indices.get_shape()
-
-    @parameter
-    if not single_thread_blocking_override:
-        if indices_shape[indices_rank - 1] != 1:
-            return out_chain.mark_error("unsupported indices shape")
-
-        if (
-            updates_shape[0] != indices_shape[0]
-            or updates_shape[1] != indices_shape[1]
-        ):
-            return out_chain.mark_error(
-                "updates and index shape prefix mismatch"
-            )
-
-    let N = updates_shape[0] * updates_shape[1]
-    let D = updates_shape[2] * updates_shape[3]
-
-    # Lambda for copying elements from input buffer into output buffer.
-    @always_inline
-    @parameter
-    fn copy[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        let index = rebind[StaticIntTuple[output_rank]](idx)
-        output.simd_store[simd_width](index, input.simd_load[simd_width](index))
-
-    # Invoke copy lambda TODO simd_width
-    alias simd_width = simdwidthof[output_type]().value
-    let elemwise_chain = OwningOutputChainPtr(out_chain.get_runtime())
-    elementwise[output_rank, simd_width, copy](
-        output.dynamic_shape, elemwise_chain.borrow()
-    )
-    elemwise_chain.wait()
-
-    let output_1d = Buffer[Dim(), output_type](
-        output.data, output.num_elements()
-    )
-    let indices_1d = Buffer[Dim(), indices_type](
-        indices.data, indices.num_elements()
-    )
-    let updates_1d = Buffer[Dim(), output_type](
-        updates.data, updates.num_elements()
-    )
-
-    @parameter
-    if has_reduction_operation:
-        for n in range(N):
-            let index = indices_1d[n].to_int()
-            for d in range(D):
-                let output_offset = index * D + d
-                output_1d[output_offset] = reduce_func(
-                    output_1d[output_offset], updates_1d[n * D + d]
-                )
-    else:
-        for n in range(N):
-            let index = indices_1d[n].to_int()
-            for d in range(D):
-                let output_offset = index * D + d
-                output_1d[output_offset] = updates_1d[n * D + d]
-
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
-
-
-@always_inline
-fn scatter_nd[
-    output_type: DType,
-    indices_type: DType,
-    updates_rank: Int,
-    indices_rank: Int,
-    output_rank: Int,
-    single_thread_blocking_override: Bool,
-](
-    input: NDBuffer[
-        output_rank,
-        DimList.create_unknown[output_rank](),
-        output_type,
-    ],
-    updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), output_type
-    ],
-    indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
-    ],
-    output: NDBuffer[
-        output_rank, DimList.create_unknown[output_rank](), output_type
-    ],
-    out_chain: OutputChainPtr,
-):
-    """ScatterND operation without any reduction."""
-
-    @always_inline
-    fn identity_reduction(
-        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
-    ) -> SIMD[output_type, 1]:
-        return rhs  # always return the latest update element
-
-    scatter_nd_generator[
-        output_type,
-        indices_type,
-        updates_rank,
-        indices_rank,
-        output_rank,
-        single_thread_blocking_override,
-        identity_reduction,
-        has_reduction_operation=False,
-    ](input, updates, indices, output, out_chain)
 
 
 @always_inline
@@ -921,6 +771,11 @@ fn gather_shape[
         next_out_dim += 1
 
     return output_shape
+
+
+# ===----------------------------------------------------------------------===#
+# Scatter Elements
+# ===----------------------------------------------------------------------===#
 
 
 @always_inline
@@ -1048,6 +903,11 @@ fn scatter_elements_shape[
     return input.get_shape()
 
 
+# ===----------------------------------------------------------------------===#
+# Gather Elements
+# ===----------------------------------------------------------------------===#
+
+
 @always_inline
 fn gather_elements[
     rank: Int,
@@ -1097,7 +957,7 @@ fn gather_elements[
 
 
 # ===----------------------------------------------------------------------===#
-# gather_nd op
+# gather_nd shape
 # ===----------------------------------------------------------------------===#
 
 
@@ -1170,6 +1030,11 @@ fn gather_nd_shape[
         next_out_dim += 1
 
     return output_shape
+
+
+# ===----------------------------------------------------------------------===#
+# GatherND
+# ===----------------------------------------------------------------------===#
 
 
 fn gather_nd[
