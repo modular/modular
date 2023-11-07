@@ -35,7 +35,7 @@ public:
 
   /// Generate a new keypair using the system CSPRNG. This will initialize a
   /// keypair that has a private key. If a directory is provided, the keys will
-  /// be written in DER form as <dir>/priv.der and <dir>/pub.der.
+  /// be written in DER form as <dir>/client_priv.der and <dir>/client_pub.der.
   static ErrorOr<Keypair>
   generate(std::optional<std::filesystem::path> dir = std::nullopt);
 
