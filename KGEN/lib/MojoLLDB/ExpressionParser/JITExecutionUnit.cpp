@@ -149,13 +149,14 @@ getSectionTypeFromSectionName(const StringRef &name, AllocationKind allocKind) {
 
 struct JITExecutionUnit::Impl {
   Impl(SymbolTable symbolTable, ExportMap exportedSymbols,
-       llvm::object::OwningBinary<llvm::object::Archive> archive,
-       ConstString &name, const SymbolContext &symCtx,
-       std::vector<std::string> &cpuFeatures)
+       OwningBinary<llvm::object::Archive> newArchive, ConstString &name,
+       const SymbolContext &symCtx, std::vector<std::string> &cpuFeatures)
       : context(std::make_unique<llvm::LLVMContext>()),
-        symbolTable(symbolTable), exportedSymbols(exportedSymbols),
-        archive(std::move(archive)), cpuFeatures(cpuFeatures), name(name),
-        symCtx(symCtx) {}
+        symbolTable(std::move(symbolTable)),
+        exportedSymbols(std::move(exportedSymbols)), cpuFeatures(cpuFeatures),
+        name(name), symCtx(symCtx) {
+    std::tie(archive, archiveBuffer) = newArchive.takeBinary();
+  }
 
   std::vector<AllocationRecord> records;
 
@@ -164,7 +165,8 @@ struct JITExecutionUnit::Impl {
   std::unique_ptr<llvm::ObjectCache> objectCache;
   SymbolTable symbolTable;
   ExportMap exportedSymbols;
-  llvm::object::OwningBinary<llvm::object::Archive> archive;
+  std::unique_ptr<llvm::object::Archive> archive;
+  BufferRef archiveBuffer;
   std::vector<std::string> cpuFeatures;
 
   /// The jitted functions and global variables.
@@ -196,15 +198,17 @@ struct JITExecutionUnit::Impl {
 // JITExecutionUnit
 //===----------------------------------------------------------------------===//
 
-JITExecutionUnit::JITExecutionUnit(
-    SymbolTable symbolTable, ExportMap exportedSymbols,
-    llvm::object::OwningBinary<llvm::object::Archive> archive,
-    ConstString &name, const lldb::TargetSP &target,
-    const SymbolContext &symCtx, std::vector<std::string> &cpuFeatures)
+JITExecutionUnit::JITExecutionUnit(SymbolTable symbolTable,
+                                   ExportMap exportedSymbols,
+                                   OwningBinary<llvm::object::Archive> archive,
+                                   ConstString &name,
+                                   const lldb::TargetSP &target,
+                                   const SymbolContext &symCtx,
+                                   std::vector<std::string> &cpuFeatures)
     : IRMemoryMap(target),
-      impl(std::make_unique<Impl>(symbolTable, exportedSymbols,
-                                  std::move(archive), name, symCtx,
-                                  cpuFeatures)) {}
+      impl(std::make_unique<Impl>(
+          std::move(symbolTable), std::move(exportedSymbols),
+          std::move(archive), name, symCtx, cpuFeatures)) {}
 JITExecutionUnit::~JITExecutionUnit() = default;
 
 lldb_private::ConstString JITExecutionUnit::getFunctionName() {
@@ -802,9 +806,8 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   std::string errorString;
   builder.setEngineKind(llvm::EngineKind::JIT)
       .setErrorStr(&errorString)
-      .setRelocationModel(impl->archive.getBinary()->isMachO()
-                              ? llvm::Reloc::PIC_
-                              : llvm::Reloc::Static)
+      .setRelocationModel(impl->archive->isMachO() ? llvm::Reloc::PIC_
+                                                   : llvm::Reloc::Static)
       .setMCJITMemoryManager(std::make_unique<MemoryManager>(*this))
       .setOptLevel(llvm::CodeGenOptLevel::Less);
 
@@ -842,7 +845,12 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   impl->executionEngine->setProcessAllSections(true);
   impl->executionEngine->DisableLazyCompilation();
 
-  impl->executionEngine->addArchive(std::move(impl->archive));
+  std::unique_ptr<llvm::MemoryBuffer> buffer =
+      llvm::MemoryBuffer::getMemBuffer(impl->archiveBuffer->getMemBufferRef(),
+                                       /*RequiresNullTerminator=*/false);
+  impl->executionEngine->addArchive(
+      llvm::object::OwningBinary<llvm::object::Archive>(
+          std::move(impl->archive), std::move(buffer)));
 
   // Register each function in the module.
   for (auto &[sym, exportVal] : impl->exportedSymbols) {

@@ -20,6 +20,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "Support/Binary.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Expression/Materializer.h"
@@ -51,7 +52,7 @@ struct MojoExpressionParser::Impl {
 
   /// Compile the list of functions to a standalone archive and return that
   /// archive.
-  ErrorOr<llvm::object::OwningBinary<llvm::object::Archive>>
+  ErrorOr<OwningBinary<llvm::object::Archive>>
   compileFuncsToStandaloneArchive(const SymbolTable &symtab, ExportMap exports,
                                   ArrayRef<KGEN::FuncOp> funcsToCompile);
 
@@ -96,7 +97,7 @@ struct MojoExpressionParser::Impl {
   OwningOpRef<ModuleOp> mlirModule;
 
   /// The compiled archive.
-  llvm::object::OwningBinary<llvm::object::Archive> archive;
+  OwningBinary<llvm::object::Archive> archive;
 
   /// The options to use when evaluating the expression.
   EvaluateExpressionOptions options;
@@ -182,7 +183,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
 }
 
-ErrorOr<llvm::object::OwningBinary<llvm::object::Archive>>
+ErrorOr<OwningBinary<llvm::object::Archive>>
 MojoExpressionParser::Impl::compileFuncsToStandaloneArchive(
     const SymbolTable &symtab, ExportMap exports,
     ArrayRef<KGEN::FuncOp> funcsToCompile) {
@@ -218,10 +219,8 @@ MojoExpressionParser::Impl::compileFuncsToStandaloneArchive(
     return archiveOr.takeError();
   }
 
-  return llvm::object::OwningBinary<llvm::object::Archive>(
-      std::move(*archiveOr),
-      llvm::MemoryBuffer::getMemBuffer((*bufferOr)->getMemBufferRef(),
-                                       /*RequiresNullTerminator=*/false));
+  return OwningBinary<llvm::object::Archive>(std::move(*archiveOr),
+                                             std::move(*bufferOr));
 }
 
 ErrorOr<std::shared_ptr<JITExecutionUnit>>
@@ -247,8 +246,7 @@ MojoExpressionParser::Impl::produceExecutionUnit(
       compileFuncsToStandaloneArchive(symtab, exportedSymbols, funcsToCompile);
   if (archiveOr.isError())
     return archiveOr.takeError();
-  llvm::object::OwningBinary<llvm::object::Archive> archive =
-      std::move(*archiveOr);
+  OwningBinary<llvm::object::Archive> archive = std::move(*archiveOr);
 
   // Extract the target features.
   SmallVector<StringRef> splitFeatures;
@@ -780,19 +778,16 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
         "Failed to produce standalone archive: {0}", bufferOr.getError());
     return returnErrorCleanup();
   }
-  std::unique_ptr<llvm::MemoryBuffer> buffer = llvm::MemoryBuffer::getMemBuffer(
-      bufferOr->getPointer()->getMemBufferRef(),
-      /*RequiresNullTerminator=*/false);
   auto archiveOr = toModularErrorOr(
-      llvm::object::Archive::create(bufferOr->getPointer()->getMemBufferRef()));
+      llvm::object::Archive::create((*bufferOr)->getMemBufferRef()));
   if (archiveOr.isError()) {
     impl->expressionLogger->errorLog("Failed to create the archive: {0}",
                                      archiveOr.getError());
     return returnErrorCleanup();
   }
   impl->mlirModule = std::move(module);
-  impl->archive = llvm::object::OwningBinary<llvm::object::Archive>(
-      std::move(*archiveOr), std::move(buffer));
+  impl->archive = OwningBinary<llvm::object::Archive>(std::move(*archiveOr),
+                                                      std::move(*bufferOr));
 
   return success();
 }
@@ -811,8 +806,7 @@ Status MojoExpressionParser::prepareForExecution(
     err.SetErrorString("Can't prepare a NULL module for execution");
     return err;
   }
-  llvm::object::OwningBinary<llvm::object::Archive> archive =
-      std::move(impl->archive);
+  OwningBinary<llvm::object::Archive> archive = std::move(impl->archive);
   if (!archive.getBinary()) {
     Status err;
     err.SetErrorString("Can't prepare a NULL archive for execution");
