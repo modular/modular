@@ -227,8 +227,11 @@ bool TypeConstantAttr::isConcreteType(Type type) {
 
 TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type) {
   auto *ctx = value.getContext();
-  assert(!isParameterizedType(value) &&
-         "Cannot create a ConcreteTypeConstantAttr with parameterized type");
+  // FIXME: Because types with index references not considered parametric, if
+  // the index reference is subistituted with a parameter reference, it becomes
+  // parametric. This is kind of a gross hack.
+  if (isParameterizedType(value))
+    return ParameterizedTypeConstantAttr::Base::get(ctx, value, type);
 
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
@@ -1722,7 +1725,8 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
   return Builder(typeCst.getContext()).getIndexAttr(*size);
 }
 
-static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
+static Attribute simplifyBindSignature(MLIRContext *ctx,
+                                       ArrayRef<TypedAttr> operands,
                                        Type &resultType) {
   // If there is only a single operand, then nothing is bound.
   if (operands.size() == 1)
@@ -1732,8 +1736,8 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
   // just abort.
   if (!resultType) {
     auto resultSigOr =
-        verifyBindSignature(operands, [&]() -> mlir::InFlightDiagnostic {
-          return mlir::emitError(UnknownLoc::get(resultType.getContext()));
+        verifyBindSignature(operands, [ctx]() -> mlir::InFlightDiagnostic {
+          return mlir::emitError(UnknownLoc::get(ctx));
         });
     if (failed(resultSigOr))
       llvm::report_fatal_error("invalid bind_signature operator");
@@ -1882,7 +1886,7 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
 }
 
 /// Construct a parameter operator attribute, folding it if possible.
-static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
+static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
                                   Type resultType) {
   SmallVector<TypedAttr, 4> operands(operandsIn.begin(), operandsIn.end());
@@ -1927,19 +1931,19 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     break;
   case POC::EQ:
     result = simplifyEQ(operands);
-    resultType = IntegerType::get(context, 1);
+    resultType = IntegerType::get(ctx, 1);
     break;
   case POC::LT:
   case POC::LE:
     result = simplifyRelationalCompare(opcode, operands);
-    resultType = IntegerType::get(context, 1);
+    resultType = IntegerType::get(ctx, 1);
     break;
   case POC::CurrentTarget:
-    resultType = TargetType::get(context);
+    resultType = TargetType::get(ctx);
     break;
   case POC::TargetHasFeature:
     result = simplifyHasFeature(operands);
-    resultType = IntegerType::get(context, 1);
+    resultType = IntegerType::get(ctx, 1);
     break;
   case POC::TargetGetField:
     result = simplifyTargetGetField(operands, resultType);
@@ -1949,18 +1953,18 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     break;
   case POC::In:
     result = simplifyIn(operands);
-    resultType = IntegerType::get(context, 1);
+    resultType = IntegerType::get(ctx, 1);
     break;
   case POC::GetSizeOf:
     result = simplifyGetSizeOf(operands);
-    resultType = IndexType::get(context);
+    resultType = IndexType::get(ctx);
     break;
   case POC::GetAlignOf:
     result = simplifyGetAlignOf(operands);
-    resultType = IndexType::get(context);
+    resultType = IndexType::get(ctx);
     break;
   case POC::BindSignature:
-    result = simplifyBindSignature(operands, resultType);
+    result = simplifyBindSignature(ctx, operands, resultType);
     break;
   case POC::Apply:
     result = simplifyApply(operands, resultType);
@@ -1995,7 +1999,7 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
   if (result)
     return cast<TypedAttr>(result);
 
-  return ParamOperatorAttr::Base::get(context, opcode, operands, resultType);
+  return ParamOperatorAttr::Base::get(ctx, opcode, operands, resultType);
 }
 
 TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,

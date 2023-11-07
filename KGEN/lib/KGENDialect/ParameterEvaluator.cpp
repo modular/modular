@@ -83,7 +83,10 @@ static IntegerAttr narrowCondOp(Attribute attr, ParameterEvaluator &eval) {
 /// Get the specified attribute with any nested parameter expressions rewritten.
 Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
-  if (ParameterAttr::isSimpleConstant(attr))
+  // Note: we should not use `ParameterAttr::isSimpleConstant` because it
+  // re-walks types, but also because we have to substitute index references.
+  if (isa<NoneAttr, IntegerAttr, FloatAttr, DTypeConstantAttr, IntLiteralAttr,
+          TargetParamAttr, BuildInfoParamAttr, MLIROpAttr>(attr))
     return attr;
 
   // If we've already processed this attribute, just reuse the memoized result.
@@ -189,6 +192,11 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
 
 /// Get the specified type with any nested parameter expressions rewritten.
 Type ParameterEvaluator::getReboundType(Type type) {
+  // These are common leaf types that we know are never parameterized.
+  if (isa<MLIRTypeType, DTypeType, StringType, IntLiteralType, KGEN::NoneType,
+          TargetType, BuildInfoType, IntegerType, FloatType>(type))
+    return type;
+
   // If we've already processed this type, just reuse the memoized result.
   auto iter = rewritten.find({rootDepth, type.getAsOpaquePointer()});
   if (iter != rewritten.end())
