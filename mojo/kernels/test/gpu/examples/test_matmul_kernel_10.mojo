@@ -181,33 +181,41 @@ fn sgemmWarptiling[
             innerColB,
         )
         barrier()
+
         for dotIdx in range(BK):
             # Populate registers for whole warptile.
             @unroll
             for wSubRowIdx in range(WMITER):
 
                 @unroll
-                for i in range(TM):
-                    regM[wSubRowIdx * TM + i] = As.load(
+                for i in range(TM // 4):
+                    let tmp = As.aligned_simd_load[4, 16](
                         (dotIdx * BM)
                         + warpRow * WM
                         + wSubRowIdx * WSUBM
                         + threadRowInWarp * TM
-                        + i
+                        + i * 4
                     )
+                    regM[wSubRowIdx * TM + 0 + i * 4] = tmp[0]
+                    regM[wSubRowIdx * TM + 1 + i * 4] = tmp[1]
+                    regM[wSubRowIdx * TM + 2 + i * 4] = tmp[2]
+                    regM[wSubRowIdx * TM + 3 + i * 4] = tmp[3]
 
             @unroll
             for wSubColIdx in range(WNITER):
 
                 @unroll
-                for i in range(TN):
-                    regN[wSubColIdx * TN + i] = Bs.load(
+                for i in range(TN // 4):
+                    let tmp = Bs.aligned_simd_load[4, 16](
                         (dotIdx * BN)
                         + warpCol * WN
                         + wSubColIdx * WSUBN
                         + threadColInWarp * TN
-                        + i
                     )
+                    regN[wSubColIdx * TN + 0 + i * 4] = tmp[0]
+                    regN[wSubColIdx * TN + 1 + i * 4] = tmp[1]
+                    regN[wSubColIdx * TN + 2 + i * 4] = tmp[2]
+                    regN[wSubColIdx * TN + 3 + i * 4] = tmp[3]
 
             # Execute warptile matmul.
             @unroll
@@ -385,6 +393,16 @@ fn run_matmul_kernel_10() raises:
     constrained[
         (K10_BN * K10_BK) % (4 * K10_NUM_THREADS) == 0,
         "BN*BK must be a multiple of 4*256 to vectorize loads",
+    ]()
+
+    constrained[
+        K10_TM % 4 == 0,
+        "TM must be a multiple of 4",
+    ]()
+
+    constrained[
+        K10_TN % 4 == 0,
+        "TN must be a multiple of 4",
     ]()
 
     let stream = Stream()
