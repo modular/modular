@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -import-mojo --mojo-disable-builtins %s | FileCheck %s
+# RUN: kgen-translate -import-mojo --mojo-disable-builtins %s | kgen-opt -verify-parameters | FileCheck %s
 
 # COM: Alias `!kgen.mlirtype` to isolate the test.
 alias AnyType = __mlir_type.`!kgen.mlirtype`

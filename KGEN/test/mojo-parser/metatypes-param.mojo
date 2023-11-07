@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -import-mojo --mojo-disable-builtins %s | FileCheck %s
+# RUN: kgen-translate -import-mojo --mojo-disable-builtins %s | kgen-opt -verify-parameters | FileCheck %s
 
 alias int = __mlir_type.index
 alias one = __mlir_attr.`1:index`
