@@ -80,3 +80,10 @@ fn mogg_takes_indices():
     argument.
     """
     return
+
+
+fn mogg_kgen_experiment_kernel():
+    """
+    Marks this kernel as using the new experimental path of including the KGEN directly inside of MOGG.
+    """
+    return
