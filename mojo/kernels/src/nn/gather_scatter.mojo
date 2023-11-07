@@ -475,6 +475,8 @@ fn scatter_nd_generator[
     indices_rank: Int,
     updates_rank: Int,
     single_thread_blocking_override: Bool,
+    /,
+    has_reduction_operation: Bool = True,
 ](
     data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
     indices: NDBuffer[
@@ -499,6 +501,8 @@ fn scatter_nd_generator[
         updates_rank: Rank of updates tensor (updates_rank = data_rank +
                       indices_rank - indices_shape[-1] - 1).
         single_thread_blocking_override: Whether this function can block.
+        has_reduction_operation: If True, then the reduction operation is
+                                 applied.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -610,10 +614,18 @@ fn scatter_nd_generator[
 
         # Perform the actual copy of element/slice/sheet/cuboid/etc.
         # Also handling any reduction operation reduce_fn.
-        for i in range(count_copy):
-            output_flat[output_offset + i] = reduce_fn[type, 1](
-                output_flat[output_offset + i], updates_flat[updates_offset + i]
-            )
+        @parameter
+        if has_reduction_operation:
+            for i in range(count_copy):
+                output_flat[output_offset + i] = reduce_fn[type, 1](
+                    output_flat[output_offset + i],
+                    updates_flat[updates_offset + i],
+                )
+        else:
+            for i in range(count_copy):
+                output_flat[output_offset + i] = updates_flat[
+                    updates_offset + i
+                ]
 
     # TODO: SEE: simd_width > 1
     var iter_shape = StaticIntTuple[indices_rank - 1]()
@@ -672,6 +684,7 @@ fn scatter_nd[
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        has_reduction_operation=False,
     ](data, indices, updates, output, out_chain)
 
 
@@ -691,6 +704,8 @@ fn scatter_nd_generator[
     reduce_func: fn (
         SIMD[output_type, 1], SIMD[output_type, 1]
     ) capturing -> SIMD[output_type, 1],
+    /,
+    has_reduction_operation: Bool = True,
 ](
     input: NDBuffer[
         output_rank,
@@ -766,13 +781,21 @@ fn scatter_nd_generator[
         updates.data, updates.num_elements()
     )
 
-    for n in range(N):
-        let index = indices_1d[n].to_int()
-        for d in range(D):
-            let output_offset = index * D + d
-            output_1d[output_offset] = reduce_func(
-                output_1d[output_offset], updates_1d[n * D + d]
-            )
+    @parameter
+    if has_reduction_operation:
+        for n in range(N):
+            let index = indices_1d[n].to_int()
+            for d in range(D):
+                let output_offset = index * D + d
+                output_1d[output_offset] = reduce_func(
+                    output_1d[output_offset], updates_1d[n * D + d]
+                )
+    else:
+        for n in range(N):
+            let index = indices_1d[n].to_int()
+            for d in range(D):
+                let output_offset = index * D + d
+                output_1d[output_offset] = updates_1d[n * D + d]
 
     @parameter
     if not single_thread_blocking_override:
@@ -820,6 +843,7 @@ fn scatter_nd[
         output_rank,
         single_thread_blocking_override,
         identity_reduction,
+        has_reduction_operation=False,
     ](input, updates, indices, output, out_chain)
 
 
