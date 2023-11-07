@@ -726,6 +726,26 @@ fn testWithRaising(a: ExampleCM) raises:
   # CHECK-NEXT: hlcf.if %[[EXC]]
   # CHECK-NEXT:   call {{.*}}__exit__{{.*}}(%a)
 
+# CHECK-LABEL: lit.func @"testWithInTry
+fn testWithInTry(a: ExampleCM):
+  # CHECK: lit.try {
+  try:
+     # CHECK: %cm = lit.varlet.decl "cm"
+     # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
+     # CHECK-NEXT: lit.ref.store [[TARGET]], %cm
+     # CHECK: lit.ref.store %true, %__with_exc__
+     # CHECK: lit.try {
+     with a as cm:
+        # CHECK: lit.try {
+        # CHECK-NEXT: [[RESULT:%.*]] = kgen.call {{.*}}raise_string()
+        # CHECK-NEXT: lit.handle_variant [[RESULT]]
+        # CHECK-NEXT:   [[OK:%.*]] = kgen.variant.get [[RESULT]]
+        # CHECK-NEXT:   lit.yield [[OK]]
+        raise_string()
+  except e:
+    _ = e
+
+
 # CHECK-LABEL: lit.func @"testWithScoping
 fn testWithScoping(a: ExampleCM):
   # This is a test that issue #18811 is fixed, in which a `with`
@@ -784,9 +804,18 @@ fn testCMWithoutExit():
   # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
-  # CHECK-NEXT: [[APTR1:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
-  # CHECK-NEXT: lit.ownership.use [[APTR]]
+  # CHECK-NEXT: lit.try {
+  # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT:   kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: } except (%arg0: i1) {
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: } finally {
+  # CHECK-NEXT:   lit.ownership.use [[APTR]]
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: }
   with CMWithoutExit() as a:
     a.method()
 
@@ -796,15 +825,54 @@ fn testCMWithoutExit():
   # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
-  # CHECK-NEXT: [[APTR1:%.*]] = lit.ref.to_pointer %a_0
-  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
-  # CHECK-NEXT: lit.ownership.use [[APTR]]
+  # CHECK-NEXT: lit.try {
+  # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK-NEXT:   kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: } except (%arg0: i1) {
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: } finally {
+  # CHECK-NEXT:   lit.ownership.use [[APTR]]
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: }
 
   # Test that we don't have a name collision between two 'a's.
   with CMWithoutExit() as a:
     a.method()
 
-  # CHECK-NEXT: kgen.param.constant: none
+  # Test that we can nest these.
+  with CMWithoutExit() as a:
+    with CMWithoutExit() as b:
+      b.method()
+
+# CHECK-LABEL: lit.func @"testCMWithoutExitEarlyReturn
+# https://github.com/modularml/modular/issues/23693
+fn testCMWithoutExitEarlyReturn():
+  # CHECK-NEXT: %a = lit.varlet.decl "a"
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
+  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: kgen.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
+  # CHECK-NEXT: lit.try {
+  # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT:   kgen.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
+  # CHECK-NEXT:   %none_0 = kgen.param.constant: none = <#kgen.none>
+  # CHECK-NEXT:   lit.return %none_0 : !kgen.none
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: } except (%arg0: i1) {
+  # CHECK-NEXT:   kgen.unreachable
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: } finally {
+  # CHECK-NEXT:   lit.ownership.use [[APTR]]
+  # CHECK-NEXT:   lit.try.yield
+  # CHECK-NEXT: }
+  with CMWithoutExit() as a:
+    a.method()
+    return
 
 ##===----------------------------------------------------------------------===##
 
