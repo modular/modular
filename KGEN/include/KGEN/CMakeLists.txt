@@ -4,6 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
+add_subdirectory(MOGGPreElab)
 add_subdirectory(KGENVersion)
 add_subdirectory(Interpreter)
 add_subdirectory(HLCFDialect)
