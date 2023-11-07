@@ -4,18 +4,16 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_mlir_library(KGENPipeline
-  Pipeline.cpp
+add_modular_library(MOGGPreElabPasses
+  SliceMOGGFuncs.cpp
 
   DEPENDS
-  MLIRKGENPasses
   MLIRKGENMOGGPreElabPasses
 
   LINK_LIBS PUBLIC
-  DebugInfoToLLVM
-  DebugInfoTransforms
-  KGENElaborator
-  KGENTransforms
-  MOGGPreElabPasses
-  LowerLIT
+  HLCFAnalysis
+  KGENDialect
+  POPDialect
+  LITDialect
+  MLIRTransformUtils
 )

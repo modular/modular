@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "mlir/Pass/PassManager.h"
@@ -69,6 +70,8 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
     pm.addNestedPass<GeneratorOp>(createConstraintReduction());
   }
+
+  pm.addPass(MOGGPreElab::createSliceMOGGFuncs());
 }
 
 void KGEN::buildElaborateModulePipeline(

@@ -32,6 +32,9 @@ add_subdirectory(lib/KGENToLLVM)
 add_subdirectory(lib/Transforms)
 add_subdirectory(lib/Elaborator)
 
+# KGEN->KGEN MOGG specific transforms.
+add_subdirectory(lib/MOGGPreElab)
+
 # KGEN compiler and JIT.
 add_subdirectory(lib/Pipeline)
 add_subdirectory(lib/ToolCommon)
