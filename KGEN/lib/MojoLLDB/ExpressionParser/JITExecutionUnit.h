@@ -8,6 +8,7 @@
 #define KGEN_LIB_MOJOLLDB_EXPRESSIONPARSER_JITEXECUTIONUNIT_H
 
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "Support/Binary.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "lldb/Expression/IRMemoryMap.h"
@@ -45,7 +46,7 @@ class JITExecutionUnit : public std::enable_shared_from_this<JITExecutionUnit>,
                          public lldb_private::ObjectFileJITDelegate {
 public:
   JITExecutionUnit(SymbolTable symbolTable, ExportMap exportedSymbols,
-                   llvm::object::OwningBinary<llvm::object::Archive> archive,
+                   OwningBinary<llvm::object::Archive> archive,
                    lldb_private::ConstString &name,
                    const lldb::TargetSP &target,
                    const lldb_private::SymbolContext &symCtx,
