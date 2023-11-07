@@ -501,7 +501,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT: kgen.return
 
- # CHECK: lit.func @"__init__
+  # CHECK: lit.func @"__init__
   fn __init__(inout self, a: MemExample, b: MemExample):
     self.f1 = a
     self.f2 = b
@@ -509,8 +509,8 @@ struct FieldSensitiveMemExample:
   fn __copyinit__(inout self, existing: Self):
     self = Self(existing.f1, existing.f2)
 
- # CHECK-LABEL: lit.func @"mutate
- fn mutate(inout self):
+  # CHECK-LABEL: lit.func @"mutate
+  fn mutate(inout self):
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
     # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%0)
 
@@ -520,7 +520,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
  # CHECK-LABEL: lit.func @"mutate2
- fn mutate2(inout self):
+  fn mutate2(inout self):
     # Disable the dtor of 'f1' before we overwrite it to show we can do this.
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
     # CHECK-NEXT: lit.ownership.def_lvalue %0

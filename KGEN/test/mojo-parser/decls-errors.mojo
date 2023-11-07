@@ -540,7 +540,7 @@ fn someFn():
 fn someFn2():
     # expected-error @below {{orphaned decorator not associated with a declaration or statement}}
     @parameter
-  if True:
+  if True: # expected-error {{unknown tokens at the end of a declaration}}
     pass
 
 ##===----------------------------------------------------------------------===##
@@ -747,12 +747,9 @@ trait EverythingIsWrongTrait:
 trait TraitWithParams[T: AnyType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
     ...
 
-# // -----
 # struct with traits that do not exist
 struct StructWithTrait(T1):  # expected-error {{expected to find a trait decl of 'T1' for struct}}
     pass
-
-# // -----
 
 ##===----------------------------------------------------------------------===##
 # Class
