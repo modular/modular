@@ -45,6 +45,8 @@ struct Pool2d[
     init_fn: fn () -> SIMD[type, width],
     update_fn: fn (SIMD[type, width], SIMD[type, width]) -> SIMD[type, width],
     reduce_fn: fn (SIMD[type, width], Int) -> SIMD[type, width],
+    /,
+    count_boundary: Bool = True,
 ]:
     """Struct wrapper for pool implementation."""
 
@@ -109,50 +111,28 @@ struct Pool2d[
             sim_width: Int, rank: Int
         ](point: StaticIntTuple[rank]):
             # Create an instance of the pooling op.
-            let pool2d = Pool2d[
-                static_output_shape,
-                static_input_shape,
-                width,
-                type,
-                static_data_layout,
-                init_fn,
-                update_fn,
-                reduce_fn,
-            ](
-                output,
-                input,
-                pad_h,
-                pad_w,
-                filter_shape,
-                stride,
-                dilation,
+            let pool2d = Self(
+                output, input, pad_h, pad_w, filter_shape, stride, dilation
             )
+
+            let idx = Index(point[0], point[1], point[2], point[3])
 
             let load_size = min(C - point[3], width)
             if load_size != width:
-                let values = pool2d._compute_point_nhwc[True](
-                    StaticIntTuple[4](point[0], point[1], point[2], point[3]),
-                    load_size,
+                let values = pool2d._compute_point_nhwc[sub_vector=True](
+                    idx, load_size
                 )
                 partial_simd_store[type, width](
-                    pool2d.output._offset(
-                        StaticIntTuple[4](
-                            point[0], point[1], point[2], point[3]
-                        )
-                    ),
+                    pool2d.output._offset(idx),
                     0,
                     load_size,
                     values,
                 )
             else:
-                let values = pool2d._compute_point_nhwc[True](
-                    StaticIntTuple[4](point[0], point[1], point[2], point[3]),
-                    load_size,
+                let values = pool2d._compute_point_nhwc[sub_vector=False](
+                    idx, load_size
                 )
-                pool2d.output.simd_store(
-                    StaticIntTuple[4](point[0], point[1], point[2], point[3]),
-                    values,
-                )
+                pool2d.output.simd_store(idx, values)
 
         debug_assert(
             static_data_layout == Image2DLayout.NHWC,
@@ -160,7 +140,7 @@ struct Pool2d[
         )
 
         elementwise[4, width, task_func_nhwc](
-            StaticIntTuple[4](N, H, W, C),
+            Index(N, H, W, C),
             out_chain,
         )
 
@@ -172,16 +152,7 @@ struct Pool2d[
         filter_shape: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
-    ) -> Pool2d[
-        static_output_shape,
-        static_input_shape,
-        width,
-        type,
-        static_data_layout,
-        init_fn,
-        update_fn,
-        reduce_fn,
-    ]:
+    ) -> Self:
         """Constructor of a pooling op instance on the given input tensor and
         stores the result in the give output tensor.
 
@@ -245,40 +216,50 @@ struct Pool2d[
             self.input_shape.H, self.input_shape.W
         )
 
+        @always_inline
+        fn get_input_image_idx(
+            filter_idx: StaticIntTuple[2],
+        ) -> StaticIntTuple[2]:
+            return (
+                # Output HxW with striding.
+                (
+                    Index(
+                        idx[1],  # H
+                        idx[2],  # W
+                    )
+                    * self.stride
+                )
+                +
+                # filter RxS with dilation.
+                (filter_idx * self.dilation)
+                -
+                # Padding offset, using the left padding only here.
+                Index(self.pad_h[0], self.pad_w[0])
+            )
+
+        @always_inline
+        fn index_in_bounds(idx: StaticIntTuple[2]) -> Bool:
+            """Check that the current image index is within valid range on the
+            input image data tensor."""
+            return Index(0, 0) <= idx < image_bound
+
         # Iterate on filter height dimension.
+        var num_in_bounds = 0
         for r_idx in range(self.filter_shape[0]):
             # Iterate on filter width dimension.
             for s_idx in range(self.filter_shape[1]):
                 # Compute input access index, on the H and W dimension.
-                let input_image_index = (
-                    # Output HxW with striding.
-                    (
-                        Index(
-                            idx[1],  # H
-                            idx[2],  # W
-                        )
-                        * self.stride
-                    )
-                    +
-                    # filter RxS with dilation.
-                    (Index(r_idx, s_idx) * self.dilation)
-                    -
-                    # Padding offset, using the left padding only here.
-                    Index(self.pad_h[0], self.pad_w[0])
-                )
+                let input_image_index = get_input_image_idx(Index(r_idx, s_idx))
 
-                if (
-                    # Check that the current image index is within valid range
-                    # on the input image data tensor.
-                    Index(0, 0)
-                    <= input_image_index
-                    < image_bound
-                ):
+                if index_in_bounds(input_image_index):
+                    num_in_bounds += 1
+
                     # Compute function on input data.
+                    @parameter
                     if sub_vector:
                         let elem = partial_simd_load[type, width](
                             self.input._offset(
-                                StaticIntTuple[4](
+                                Index(
                                     n_idx,
                                     input_image_index[0],  # H
                                     input_image_index[1],  # W
@@ -292,7 +273,7 @@ struct Pool2d[
                         value = update_fn(value, elem)
                     else:
                         let elem = self.input.simd_load[width](
-                            StaticIntTuple[4](
+                            Index(
                                 n_idx,
                                 input_image_index[0],  # H
                                 input_image_index[1],  # W
@@ -300,8 +281,12 @@ struct Pool2d[
                             )
                         )
                         value = update_fn(value, elem)
-        let res = reduce_fn(value, self.filter_shape[0] * self.filter_shape[1])
-        return res
+
+        @parameter
+        if count_boundary and not sub_vector:
+            return reduce_fn(value, self.filter_shape[0] * self.filter_shape[1])
+        else:
+            return reduce_fn(value, num_in_bounds)
 
 
 @always_inline
@@ -437,6 +422,8 @@ fn _pool_dispatcher[
     init_fn: fn () -> SIMD[type, width],
     update_fn: fn (SIMD[type, width], SIMD[type, width]) -> SIMD[type, width],
     reduce_fn: fn (SIMD[type, width], Int) -> SIMD[type, width],
+    /,
+    count_boundary: Bool = False,
 ](
     input: NDBuffer[4, DimList.create_unknown[4](), type],
     filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
@@ -473,6 +460,7 @@ fn _pool_dispatcher[
         init_fn,
         update_fn,
         reduce_fn,
+        count_boundary=count_boundary,
     ].run(
         output,
         input,
@@ -540,9 +528,10 @@ fn avg_pool[
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
     paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
     output: NDBuffer[4, DimList.create_unknown[4](), type],
+    count_boundary: Bool,
     out_chain: OutputChainPtr,
 ):
-    """Computes fp32 pooling.
+    """Computes the average pool.
 
     Args:
         input: Batched image input to the pool2d operator.
@@ -555,6 +544,7 @@ fn avg_pool[
         paddings: Paddings on height and width dimensions with assumed
             tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
+        count_boundary: Whether to count the boundary in the average computation.
         out_chain: OutputChain.
     """
 
@@ -565,11 +555,22 @@ fn avg_pool[
             )
     alias simd_width = simdwidthof[type]()
 
-    _pool_dispatcher[
-        simd_width,
-        type,
-        int_type,
-        avg_pool_init_fn[simd_width, type],
-        avg_pool_update_fn[simd_width, type],
-        avg_pool_reduce_fn[simd_width, type],
-    ](input, filter, strides, dilations, output, out_chain)
+    if count_boundary:
+        _pool_dispatcher[
+            simd_width,
+            type,
+            int_type,
+            avg_pool_init_fn[simd_width, type],
+            avg_pool_update_fn[simd_width, type],
+            avg_pool_reduce_fn[simd_width, type],
+            count_boundary=True,
+        ](input, filter, strides, dilations, output, out_chain)
+    else:
+        _pool_dispatcher[
+            simd_width,
+            type,
+            int_type,
+            avg_pool_init_fn[simd_width, type],
+            avg_pool_update_fn[simd_width, type],
+            avg_pool_reduce_fn[simd_width, type],
+        ](input, filter, strides, dilations, output, out_chain)

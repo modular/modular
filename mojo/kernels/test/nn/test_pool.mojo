@@ -45,7 +45,7 @@ struct PoolMethod:
     alias AVG = 1
 
 
-fn pool(pool_method: Int):
+fn pool[count_boundary: Bool = False](pool_method: Int):
     alias in_shape = DimList(2, 5, 7, 2)
     alias out_shape = DimList(2, 2, 2, 2)
     # Create an input buffer.
@@ -75,6 +75,7 @@ fn pool(pool_method: Int):
                 max_pool_init_fn[simd_width, DType.float32],
                 max_pool_update_fn[simd_width, DType.float32],
                 max_pool_reduce_fn[simd_width, DType.float32],
+                count_boundary=count_boundary,
             ].run(
                 output_buffer,
                 input_buffer,
@@ -95,6 +96,7 @@ fn pool(pool_method: Int):
                 avg_pool_init_fn[simd_width, DType.float32],
                 avg_pool_update_fn[simd_width, DType.float32],
                 avg_pool_reduce_fn[simd_width, DType.float32],
+                count_boundary=count_boundary,
             ].run(
                 output_buffer,
                 input_buffer,
