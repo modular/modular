@@ -1622,9 +1622,9 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 
     // Memory-only types get passed as the first argument to the function
     // by-reference.
-    uint8_t rp =
+    TypeConvention rp =
         resultType.getRegisterPassability(resultTypeExpr->getLoc(), shared);
-    if (rp == StructDeclOp::RP_MemoryOnly) {
+    if (rp == TypeConvention::MemoryOnly) {
       // Synthesize a result argument for this, and use None as the actual
       // function result.
       ParsedArgument resultArg;
@@ -1636,7 +1636,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       args.insert(args.begin(), resultArg);
       argTypes.insert(argTypes.begin(), resultType);
       resultType = shared.getNoneType();
-    } else if (rp != StructDeclOp::RP_RegisterPassableTrivial) {
+    } else if (rp != TypeConvention::RegisterPassableTrivial) {
       // We know the result type of the function is register passable (because
       // otherwise it would be promoted to an argument).  If the result of the
       // function is a non-trivial type, mark the function effect as having an
@@ -3598,7 +3598,7 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
                                                      ASTDecl &structDecl) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
-      structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassable);
+      structOp.setConvention(TypeConvention::RegisterPassable);
       return success();
     }
   }
@@ -3610,7 +3610,7 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
       if (declRef->spelling == "register_passable" &&
           callNode->operands.size() == 1 &&
           callNode->operands[0].isPositionalStringLiteral("trivial")) {
-        structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassableTrivial);
+        structOp.setConvention(TypeConvention::RegisterPassableTrivial);
         return success();
       }
 
@@ -3722,7 +3722,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   decl.setSelfType(ASTDecl::computeSelfTypeForStruct(structOp));
 
   // Structs are memory-only unless they opt-in to being passed in registers.
-  structOp.setRegisterPassable(StructDeclOp::RP_MemoryOnly);
+  structOp.setConvention(TypeConvention::MemoryOnly);
 
   // Now that we have the basic struct set up, process signature decorators.
   Decorators(decl, shared)
@@ -3957,10 +3957,9 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator) {
 static void processRegisterPassableDecorator(
     StructDeclOp structOp, ASTDecl &structDecl,
     ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields,
-    DeclResolver &resolver, StructDeclOp::RegisterPassable structPassability) {
+    DeclResolver &resolver, TypeConvention structPassability) {
 
-  bool isTrivial =
-      structPassability == StructDeclOp::RP_RegisterPassableTrivial;
+  bool isTrivial = structPassability == TypeConvention::RegisterPassableTrivial;
   for (auto [fieldOp, fieldDecl] : structFields) {
     ASTType fieldType = fieldOp.getType();
 
@@ -4048,11 +4047,10 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // If the struct is @register_passable, check invariants imposed by it before
   // checking other decorators.  This ensures that we reject invalid
   // register_passable types before processing them.
-  if (auto passability = structOp.getRegisterPassable()) {
+  if (structOp.isRegisterPassable()) {
     // TODO: Split trivial and register_passable apart.
-    processRegisterPassableDecorator(
-        structOp, structDecl, structFields, *this,
-        (StructDeclOp::RegisterPassable)passability);
+    processRegisterPassableDecorator(structOp, structDecl, structFields, *this,
+                                     structOp.getConvention());
   }
 
   // If there are any body decorators, resolve them now.

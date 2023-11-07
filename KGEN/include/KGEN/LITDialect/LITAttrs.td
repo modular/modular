@@ -337,6 +337,13 @@ def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
 }
 
 //===----------------------------------------------------------------------===//
+// TypeConventionAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_TypeConventionAttr : EnumAttr<LITDialect, LIT_TypeConvention,
+    "type_convention">;
+
+//===----------------------------------------------------------------------===//
 // PassingKindArrayAttr
 //===----------------------------------------------------------------------===//
 

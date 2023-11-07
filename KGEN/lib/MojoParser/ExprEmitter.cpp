@@ -1169,14 +1169,14 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return dlValue->emitLoad(dest, *this);
 
   switch (valueType.getRegisterPassability(exprLoc, shared)) {
-  case StructDeclOp::RP_RegisterPassableTrivial:
+  case TypeConvention::RegisterPassableTrivial:
     if (auto pValue = value.ir.getIfPValue()) {
       value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
       if (!value.ir)
         return {};
     }
     break;
-  case StructDeclOp::RP_RegisterPassable:
+  case TypeConvention::RegisterPassable:
     if (auto pValue = value.ir.getIfPValue()) {
       value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
       if (!value.ir)
@@ -1188,7 +1188,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
                                CallSyntax::kImplicitConvert, value.expr);
 
-  case StructDeclOp::RP_MemoryOnly:
+  case TypeConvention::MemoryOnly:
     // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
     MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)

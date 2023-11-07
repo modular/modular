@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -verify-parameters -lower-lit-types -verify-parameters | FileCheck %s
 
-lit.struct.decl @Coro<T: type> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @Coro<T: type> register_passable {
   lit.struct.field coro : !pop.coroutine<() -> !kgen.paramref<T>>
 }
 
@@ -17,7 +17,7 @@ kgen.generator @get_coro<T: type>(%arg0: !kgen.declref<@Coro<:type T>>) {
   kgen.unreachable
 }
 
-lit.struct.decl @Bar<size, dt: dtype> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @Bar<size, dt: dtype> register_passable {
   lit.struct.field value: !pop.simd<size, dt>
 }
 

@@ -4,7 +4,7 @@
 
 // Single-field structs are flattened in debuginfo (until #23914).
 // CHECK-DAG: ![[FIELD:.*]] = !debuginfo.unresolved<!pop.array<2, simd<4, f32>>>
-lit.struct.decl @SmallVector<N, T: type> attributes {registerPassable = 1 : i8} {
+lit.struct.decl @SmallVector<N, T: type> register_passable {
   lit.struct.field data: !pop.array<N, T>
 }
 !structTest = !kgen.declref<@SmallVector<2, :type !pop.simd<4, f32>>>

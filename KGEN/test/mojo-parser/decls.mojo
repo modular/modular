@@ -990,7 +990,7 @@ fn test_raising_computed_getter() raises:
 # Structs
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct attributes {registerPassable = 1 : i8} {
+# CHECK-LABEL: lit.struct.decl @EmptyStruct register_passable {
 @register_passable
 struct EmptyStruct:
     pass

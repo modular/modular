@@ -37,7 +37,7 @@ LIT::FuncOp StructEmitter::createFunction(
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
-      StructDeclOp::RP_RegisterPassableTrivial)
+      TypeConvention::RegisterPassableTrivial)
     fnEffects.setOwnedRegisterResult();
 
   SmallVector<StringAttr> parameterNames;
@@ -96,8 +96,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").
-  if (structOp.getRegisterPassable() ==
-      StructDeclOp::RP_RegisterPassableTrivial)
+  if (structOp.getConvention() == TypeConvention::RegisterPassableTrivial)
     funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   // Register the method in the struct.
@@ -120,8 +119,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds) {
   auto structOp = cast<StructDeclOp>(structDecl);
   ASTType selfType = structDecl.getSelfType();
-  bool isMemoryOnly =
-      structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
+  bool isMemoryOnly = !structOp.isRegisterPassable();
 
   // Figure out the type of the 'self' argument/result.
   Type resultType = isMemoryOnly ? shared.getNoneType() : selfType;
@@ -353,8 +351,7 @@ struct ValueInfo {
 
       return success();
     };
-    bool isMemoryOnly =
-        structDeclOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
+    bool isMemoryOnly = !structDeclOp.isRegisterPassable();
     if (failed(
             setBit("__del__", SpecialFunctionKind::kDel, FuncIndex::Destruct)))
       return {};
@@ -461,16 +458,14 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       ASTType fieldType = fieldOp.getType();
       ValueInputConvention conv;
       switch (fieldType.getRegisterPassability(structDecl.getLoc(), shared)) {
-      default:
-        llvm_unreachable("unknown case");
-      case StructDeclOp::RP_MemoryOnly:
+      case TypeConvention::MemoryOnly:
         fieldType = PointerType::get(fieldType);
         conv = ValueInputConvention::OwnedInMem;
         break;
-      case StructDeclOp::RP_RegisterPassable:
+      case TypeConvention::RegisterPassable:
         conv = ValueInputConvention::OwnedInReg;
         break;
-      case StructDeclOp::RP_RegisterPassableTrivial:
+      case TypeConvention::RegisterPassableTrivial:
         conv = ValueInputConvention::BorrowedInReg;
         break;
       }

@@ -487,7 +487,7 @@ lit.func @init(%self: !kgen.pointer<@MyStruct> init_self) {
 !Error = !kgen.declref<@Error>
 
 // CHECK-LABEL: lit.struct.decl @Error
-lit.struct.decl @Error attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !kgen.signature<(!Error) -> !kgen.none>, registerPassable = 1 : i8}  {
+lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !kgen.signature<(!Error) -> !kgen.none>} {
   lit.struct.field a : index
   lit.func @__init__() -> !Error {
      %idx0 = index.constant 0
@@ -558,7 +558,7 @@ lit.func @eatErrorRef() {
 // COM: Check variadic arguments.
 
 !RegPassable = !kgen.declref<@RegPassable>
-lit.struct.decl @RegPassable attributes {registerPassable = 1 : i8}  {}
+lit.struct.decl @RegPassable register_passable {}
 
 lit.func @reg_passable_owned(%a: !kgen.variadic<!RegPassable>) vararg {
   lit.end_func
@@ -599,11 +599,10 @@ lit.func @"mem_only_borrowed(,$test::MemOnly*)"(%a: !kgen.variadic<pointer<!MemO
 // COM: owned register-passable letreg decl.
 
 !Reg = !kgen.declref<@Reg>
-lit.struct.decl @Reg attributes {
+lit.struct.decl @Reg register_passable attributes {
     copyInit = #kgen.symbol.constant<@Reg::@__copyinit__> : !kgen.signature<!lit.signature<(!Reg borrow) ownedresult -> !Reg>>,
-    destructor = #kgen.symbol.constant<@Reg::@__del__> : !kgen.signature<!lit.signature<(!Reg) -> !kgen.none>>,
-    registerPassable = 1 : i8
-}  {
+    destructor = #kgen.symbol.constant<@Reg::@__del__> : !kgen.signature<!lit.signature<(!Reg) -> !kgen.none>>
+} {
   lit.func @__del__(%self: !Reg, |) {
     kgen.return
   }

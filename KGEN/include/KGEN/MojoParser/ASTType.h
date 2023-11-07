@@ -28,6 +28,7 @@ class CValue;
 class SharedState;
 template <typename ValueType>
 struct ASTExprAnd;
+enum class TypeConvention : uint32_t;
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
@@ -87,7 +88,8 @@ public:
   bool isRegisterPassable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return the StructDeclOp::RegisterPassable enum for this type.
-  uint8_t getRegisterPassability(llvm::SMLoc loc, SharedState &shared) const;
+  TypeConvention getRegisterPassability(llvm::SMLoc loc,
+                                        SharedState &shared) const;
 
   /// Return the nonmaterializable decorator target for the type, or null if
   /// there is none.

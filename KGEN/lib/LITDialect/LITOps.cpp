@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/Compiler/Properties.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -827,6 +828,23 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseTypeConvention(AsmParser &p, TypeConvention &value) {
+  StringRef str;
+  value = TypeConvention::MemoryOnly;
+  if (succeeded(p.parseOptionalKeyword(
+          &str, {stringifyEnum(TypeConvention::MemoryOnly),
+                 stringifyEnum(TypeConvention::RegisterPassable),
+                 stringifyEnum(TypeConvention::RegisterPassableTrivial)})))
+    value = *symbolizeTypeConvention(str);
+  return success();
+}
+
+static void printTypeConvention(AsmPrinter &p, Operation *op,
+                                TypeConvention value) {
+  if (value != TypeConvention::MemoryOnly)
+    p << stringifyTypeConvention(value);
+}
+
 static ParseResult parseStructParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &inputParams,
                                             TypeAttr &signature) {
@@ -975,9 +993,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
-        /*registerPassable=*/0, /*traits=*/nullptr,
-        /*nonmaterializableTarget=*/nullptr, /*destructor=*/nullptr,
-        /*moveInit=*/nullptr, /*copyInit=*/nullptr,
+        /*traits=*/nullptr, /*nonmaterializableTarget=*/nullptr,
+        /*destructor=*/nullptr, /*moveInit=*/nullptr, /*copyInit=*/nullptr,
         /*closureSignature=*/nullptr, /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
 }
