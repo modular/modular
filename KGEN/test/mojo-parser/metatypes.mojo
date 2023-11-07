@@ -66,10 +66,6 @@ fn metatypes():
     # CHECK: call {{.*}}@"anytype_arg[AnyType]($0)"<:type !Thing>
     anytype_arg(v)
 
-    # COM: Test that metatypes are accepted as MLIR op result types.
-    # CHECK: kgen.rebind %index2 : index to !Thing
-    _ = __mlir_op.`kgen.rebind`[_type=Thing](__mlir_attr.`2 : index`)
-
     # COM: Test inferring from a non-materializable type.
     alias nm_alias = NMType()
     # CHECK: [[MVAL:%.*]] = kgen.param.constant: !Thing = <apply({{.*}}@Thing::@"__init__

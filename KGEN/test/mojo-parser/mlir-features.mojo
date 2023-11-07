@@ -150,6 +150,6 @@ fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
   # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[MULTIRET]]#0, [[MULTIRET]]#1)
   # CHECK-NEXT: [[TUPLE:%.*]] = kgen.call @"$builtin"::@"$tuple"::@Tuple::@"__init__{{.*}}[!Int, !Int]{{.*}}[[PACK]]
   let r = __mlir_op.`op_that_has_multiple_returns`[
-    _type = [Int, Int],
+    _type = (Int, Int),
   ]()
   return r

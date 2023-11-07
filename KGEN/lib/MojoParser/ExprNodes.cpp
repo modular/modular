@@ -1058,25 +1058,26 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
           state.types.push_back(ASTType(type));
           return success();
         };
-        if (auto drt = dyn_cast<DeclRefType>(value.getType())) {
-          ASTType listLiteralType = emitter.shared.getBuiltinListLiteralType(
+        if (isa<MetaTypeType>(value.getType())) {
+          ASTType valueMetatype(value.getType());
+          ASTType tupleType = emitter.shared.getBuiltinTupleType(
               emitter.declScope, call.getLoc());
-          // If the _type field is a ListLiteral of types, then the operation
+          ASTType tupleMetatype(tupleType.getMetaType());
+          // If the _type field is a Tuple of types, then the operation
           // returns multiple results, with types specified in the list.  We
           // need to take apart the ListLiteral parameter value to get the types
           // from inside it.
-          if (drt.getSymbol() ==
-              dyn_cast<DeclRefType>(listLiteralType.mlirType).getSymbol()) {
-            ParamOperatorAttr paramOp = dyn_cast<ParamOperatorAttr>(value);
-            assert(paramOp && "ListLiteral of types creates ParamOperatorAttr");
-            ArrayRef<TypedAttr> operands = paramOp.getOperands();
-            assert(operands.size() == 2 &&
-                   "ParamOperatorAttr for ListLiteral of types has 2 operands");
-            auto packOperand = dyn_cast<PackAttr>(operands[1]);
-            assert(packOperand && "ListLiterall of types, packOperand valid");
-            ArrayRef<TypedAttr> types = packOperand.getValues();
-            for (TypedAttr type : types) {
-              if (pushTypeToState(type, "value in _type list is not a type")
+          if (valueMetatype.isEqualCanon(ASTType(tupleType.getMetaType()))) {
+            // Dig out the types from the tuple.  Tuple literals must always
+            // have this particular shape.
+            auto tca = cast<TypeConstantAttr>(value);
+            auto drt = cast<DeclRefType>(tca.getValue());
+            ArrayRef<TypedAttr> paramValues = drt.getParamValues();
+            assert(paramValues.size() == 1 &&
+                   "_types tuple ParamValues must be size 1");
+            auto variadic = cast<VariadicAttr>(paramValues[0]);
+            for (TypedAttr type : variadic.getValues()) {
+              if (pushTypeToState(type, "value in _type tuple is not a type")
                       .failed())
                 return {};
             }
