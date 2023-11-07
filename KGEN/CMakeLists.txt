@@ -310,10 +310,10 @@ function(add_kgen_library target)
       -debug-level=${KGEN_DEBUG_LEVEL}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS kgen ${KGEN_LIB_DEPENDS} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LINK_LIBS}
-            mojo-sdk
+            mojo-stdlib
   )
 
-  add_custom_target(${target} DEPENDS ${KGEN_OUTPUT} ${KGEN_UNPARSED_ARGUMENTS} kgen mojo-sdk ${KGEN_LIB_DEPENDS})
+  add_custom_target(${target} DEPENDS ${KGEN_OUTPUT} ${KGEN_UNPARSED_ARGUMENTS} kgen mojo-stdlib ${KGEN_LIB_DEPENDS})
   set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 endfunction()
 
