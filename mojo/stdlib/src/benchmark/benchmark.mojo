@@ -91,7 +91,7 @@ it in as a parameter:
 ```mojo
 from benchmark import Unit
 
-report.print[Unit.ms]()
+report.print(Unit.ms)
 ```
 
 ```output
@@ -163,17 +163,17 @@ struct Batch:
     var iterations: Int
     """Total iterations in the batch."""
 
-    fn mean[unit: StringLiteral = "s"](self) -> Float64:
+    fn mean(self, unit: StringLiteral = "s") -> Float64:
         """
         Returns the average duration of the batch.
 
-        Parameters:
+        Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
 
         Returns:
             The average duration of the batch.
         """
-        return self.duration / self.iterations / _divisor[unit]()
+        return self.duration / self.iterations / _divisor(unit)
 
 
 # ===----------------------------------------------------------------------===#
@@ -190,11 +190,7 @@ struct Unit:
     """Seconds"""
 
 
-fn _divisor[unit: StringLiteral = "s"]() -> Int:
-    constrained[
-        unit == "s" or unit == "ms" or unit == "ns",
-        "Unit must be `s`, `ns`, or `ms`",
-    ]()
+fn _divisor(unit: StringLiteral = "s") -> Int:
     if unit == Unit.ns:
         return 1
     elif unit == Unit.ms:
@@ -255,11 +251,11 @@ struct Report:
             iters += self.runs[i].iterations
         return iters
 
-    fn duration[unit: StringLiteral = Unit.s](self) -> Float64:
+    fn duration(self, unit: StringLiteral = Unit.s) -> Float64:
         """
         The total duration it took to run all benchmarks.
 
-        Parameters:
+        Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
 
         Returns:
@@ -268,26 +264,26 @@ struct Report:
         var duration = 0
         for i in range(len(self.runs)):
             duration += self.runs[i].duration
-        return duration / _divisor[unit]()
+        return duration / _divisor(unit)
 
-    fn mean[unit: StringLiteral = Unit.s](self) -> Float64:
+    fn mean(self, unit: StringLiteral = Unit.s) -> Float64:
         """
         The average duration of all benchmark runs.
 
-        Parameters:
+        Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
 
         Returns:
             The average duration of all benchmark runs.
         """
 
-        return self.duration[unit]() / self.iters()
+        return self.duration(unit) / self.iters()
 
-    fn min[unit: StringLiteral = Unit.s](self) -> Float64:
+    fn min(self, unit: StringLiteral = Unit.s) -> Float64:
         """
         The batch of benchmarks that was the fastest to run.
 
-        Parameters:
+        Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
 
         Returns:
@@ -295,17 +291,17 @@ struct Report:
         """
         if len(self.runs) == 0:
             return 0
-        var min = self.runs[0].mean[unit]()
+        var min = self.runs[0].mean(unit)
         for i in range(1, len(self.runs)):
-            if self.runs[i].mean[unit]() < min:
-                min = self.runs[i].mean[unit]()
+            if self.runs[i].mean(unit) < min:
+                min = self.runs[i].mean(unit)
         return min
 
-    fn max[unit: StringLiteral = Unit.s](self) -> Float64:
+    fn max(self, unit: StringLiteral = Unit.s) -> Float64:
         """
         The batch of benchmarks that was the slowest to run.
 
-        Parameters:
+        Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
 
         Returns:
@@ -313,25 +309,25 @@ struct Report:
         """
         var result: Float64 = 0.0
         for i in range(len(self.runs)):
-            if self.runs[i].mean[unit]() > result:
-                result = self.runs[i].mean[unit]()
+            if self.runs[i].mean(unit) > result:
+                result = self.runs[i].mean(unit)
         return result
 
-    fn print[unit: StringLiteral = "s"](self):
+    fn print(self, unit: StringLiteral = Unit.s):
         """
         Prints out the shortened version of the report.
 
-        Parameters:
+        Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
-        alias divisor = _divisor[unit]()
+        let divisor = _divisor(unit)
         print("---------------------")
         print_no_newline("Benchmark Report (")
         print_no_newline(unit)
         print(")")
         print("---------------------")
-        print("Mean:", self.mean[unit]())
-        print("Total:", self.duration[unit]())
+        print("Mean:", self.mean(unit))
+        print("Total:", self.duration(unit))
         print("Iters:", self.iters())
         print(
             "Warmup Mean:",
@@ -339,28 +335,28 @@ struct Report:
         )
         print("Warmup Total:", self.warmup_duration / divisor)
         print("Warmup Iters:", self.warmup_iters)
-        print("Fastest Mean:", self.min[unit]())
-        print("Slowest Mean:", self.max[unit]())
+        print("Fastest Mean:", self.min(unit))
+        print("Slowest Mean:", self.max(unit))
         print()
 
-    fn print_full[unit: StringLiteral = "ms"](self):
+    fn print_full(self, unit: StringLiteral = Unit.s):
         """
         Prints out the full version of the report with each batch of benchmark
         runs.
 
-        Parameters:
+        Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
 
-        alias divisor = _divisor[unit]()
-        self.print[unit]()
+        let divisor = _divisor(unit)
+        self.print(unit)
 
         for i in range(len(self.runs)):
             print("Batch:", i + 1)
             print("Iterations:", self.runs[i].iterations)
             print(
                 "Mean:",
-                self.runs[i].mean[unit](),
+                self.runs[i].mean(unit),
             )
             print("Duration:", self.runs[i].duration / divisor)
             print()
