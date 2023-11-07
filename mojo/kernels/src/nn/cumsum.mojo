@@ -11,8 +11,8 @@ from memory.buffer import NDBuffer
 fn cumsum[
     rank: Int,
     type: DType,
-    exclusive: Int,
-    reverse: Int,
+    exclusive: Bool,
+    reverse: Bool,
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -28,8 +28,8 @@ fn cumsum[
     Parameters:
         rank: Rank of the input and output tensors.
         type: Type of the input and output tensors.
-        exclusive: If set to 1, return exclusive sum (top element not included).
-        reverse: If set to 1, perform cumsum operation in reverse direction.
+        exclusive: If set to True, return exclusive sum (top element not included).
+        reverse: If set to True, perform cumsum operation in reverse direction.
 
     Args:
         output: The output tensor.
@@ -90,6 +90,7 @@ fn cumsum[
 
                 let index = outer_index_adj + inner_index_adj * depth * outer + depth_index_adj * outer
 
+                @parameter
                 if exclusive:
                     output_data[index] = accumulator
                     accumulator = accumulator + input_data[index]

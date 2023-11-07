@@ -10,12 +10,13 @@ from math import iota
 from Cumsum import cumsum
 from memory.buffer import NDBuffer
 
+
 # CHECK-LABEL: test_cumsum_1d
 # CHECK: 1.0 ,3.0 ,6.0 ,10.0 ,15.0 ,
 fn test_cumsum_1d():
     print("== test_cumsum_1d")
-    alias exclusive = 0
-    alias reverse = 0
+    alias exclusive = False
+    alias reverse = False
     let axis = 0
 
     var matrix_data = DTypePointer[DType.float64].alloc(5)
@@ -42,8 +43,8 @@ fn test_cumsum_1d():
 # CHECK: 0.0 ,1.0 ,3.0 ,6.0 ,10.0 ,
 fn test_cumsum_1d_exclusive():
     print("== test_cumsum_1d_exclusive")
-    alias exclusive = 1
-    alias reverse = 0
+    alias exclusive = True
+    alias reverse = False
     let axis = 0
 
     var matrix_data = DTypePointer[DType.float64].alloc(5)
@@ -70,8 +71,8 @@ fn test_cumsum_1d_exclusive():
 # CHECK: 15.0 ,14.0 ,12.0 ,9.0 ,5.0 ,
 fn test_cumsum_1d_reverse():
     print("== test_cumsum_1d_reverse")
-    alias exclusive = 0
-    alias reverse = 1
+    alias exclusive = False
+    alias reverse = True
     let axis = 0
 
     var matrix_data = DTypePointer[DType.float64].alloc(5)
@@ -98,8 +99,8 @@ fn test_cumsum_1d_reverse():
 # CHECK: 14.0 ,12.0 ,9.0 ,5.0 ,0.0 ,
 fn test_cumsum_1d_reverse_exclusive():
     print("== test_cumsum_1d_reverse_exclusive")
-    alias exclusive = 1
-    alias reverse = 1
+    alias exclusive = True
+    alias reverse = True
     alias axis = 0
 
     var matrix_data = DTypePointer[DType.float64].alloc(5)
@@ -126,8 +127,8 @@ fn test_cumsum_1d_reverse_exclusive():
 # CHECK: 1.0 ,2.0 ,3.0 ,5.0 ,7.0 ,9.0 ,
 fn test_cumsum_2d_axis_0():
     print("== test_cumsum_2d_axis_0")
-    alias exclusive = 0
-    alias reverse = 0
+    alias exclusive = False
+    alias reverse = False
     let axis = 0
 
     var matrix_data = DTypePointer[DType.float64].alloc(6)
@@ -161,8 +162,8 @@ fn test_cumsum_2d_axis_0():
 # CHECK: 1.0 ,3.0 ,6.0 ,4.0 ,9.0 ,15.0 ,
 fn test_cumsum_2d_axis_1():
     print("== test_cumsum_2d_axis_1")
-    alias exclusive = 0
-    alias reverse = 0
+    alias exclusive = False
+    alias reverse = False
     let axis = 1
 
     var matrix_data = DTypePointer[DType.float64].alloc(6)
@@ -196,8 +197,8 @@ fn test_cumsum_2d_axis_1():
 # CHECK: 1.0 ,3.0 ,6.0 ,4.0 ,9.0 ,15.0 ,
 fn test_cumsum_2d_negative_axis():
     print("== test_cumsum_2d_negative_axis")
-    alias exclusive = 0
-    alias reverse = 0
+    alias exclusive = False
+    alias reverse = False
     let axis = -1
 
     var matrix_data = DTypePointer[DType.float64].alloc(6)
