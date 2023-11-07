@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"

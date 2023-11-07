@@ -10,14 +10,24 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "mlir/AsmParser/AsmParser.h"
+#include "mlir/IR/SymbolTable.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+//===----------------------------------------------------------------------===//
+// Parameter Mangling
+//===----------------------------------------------------------------------===//
 
 std::string LIT::mangleParameter(const Twine &baseName, unsigned line,
                                  unsigned col) {
@@ -55,6 +65,10 @@ Attribute LIT::impl::demangleIfNeeded(Attribute arg) {
 }
 
 Type LIT::impl::demangleIfNeeded(Type arg) { return demangleIfNeededImpl(arg); }
+
+//===----------------------------------------------------------------------===//
+// Parsing and Printing
+//===----------------------------------------------------------------------===//
 
 void LIT::printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol) {
   os << symbol.getRootReference().strref();
@@ -278,6 +292,10 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// StarSlashParser / StarSlashPrinter
+//===----------------------------------------------------------------------===//
+
 OptionalParseResult StarSlashParser::parseOptionalStarSlash(llvm::SMLoc loc) {
   if (succeeded(parser.parseOptionalVerticalBar())) {
     if (foundSlash)
@@ -349,4 +367,181 @@ void StarSlashPrinter::printOptionalTrailingSlash(size_t idx) const {
   if (idx == numInputs - 1)
     if (prevPassingKind == PassingKind::PosOnly)
       os << ", " << slash;
+}
+
+//===----------------------------------------------------------------------===//
+// MangledSymbol
+//===----------------------------------------------------------------------===//
+
+MangledSymbol MangledSymbol::mangle(mlir::SymbolOpInterface op) {
+  MangledSymbol out;
+  // The parser mangles the argument types into the symbol name.
+  size_t firstParen = op.getName().find('(');
+  if (firstParen == std::string::npos)
+    firstParen = op.getName().size();
+  // Get the name of the func.
+  out.symName =
+      StringAttr::get(op.getContext(), op.getName().take_front(firstParen));
+  out.identifier = StringAttr::get(
+      op->getContext(),
+      op.getName().take_front(op.getName().find_first_of("[(")));
+
+  auto signatureStr =
+      StringAttr::get(op.getContext(), op.getName().drop_front(firstParen));
+  // If the operation is function-like, we can get its signature. However, using
+  // it for name mangling breaks a lot of things right now.
+  // TODO(10920): We have to re-evaluate if we want to have the parser doing
+  //   some of this, or if we want to mangle it here.
+  if (auto funcLike = dyn_cast<FuncInterface>(op.getOperation()))
+    out.signature = funcLike.getFunctionType();
+  else
+    out.signature = nullptr;
+
+  // Grab parent structs/modules/etc., add them in order from in -> out (they'll
+  // be added to the name from out->in).
+  Operation *parentOp = op;
+  while ((parentOp = parentOp->getParentOp())) {
+    TypeSwitch<Operation *>(parentOp)
+        .Case([&](StructDeclOp op) {
+          out.structNames.push_back(op.getNameAttr());
+        })
+        .Case<FileModuleOp, PackageOp>(
+            [&](auto op) { out.moduleNames.push_back(op.getNameAttr()); });
+  }
+  std::reverse(out.structNames.begin(), out.structNames.end());
+  std::reverse(out.moduleNames.begin(), out.moduleNames.end());
+
+  std::string mangledName;
+  llvm::raw_string_ostream nameStream(mangledName);
+  // Emit the parent module and struct names. Module names are prefixed with `$`
+  // - which provides a signal for what's a module vs struct when demangling.
+  for (auto name : llvm::concat<StringAttr>(out.moduleNames, out.structNames))
+    nameStream << name.getValue() << "::";
+  // Finally, function name and argument types. Use the string coming out of the
+  // parser rather than the actual function type.
+  nameStream << out.symName.getValue() << signatureStr.getValue();
+
+  out.mangled = StringAttr::get(op.getContext(), mangledName);
+  return out;
+}
+
+/// Parse a mangled signature from `typeStr`. Expects a signature that looks
+/// like `(type1,type2)rtype1,rtype2`.
+static FailureOr<FunctionType> parseMangledSignature(MLIRContext *ctx,
+                                                     StringRef typeStr) {
+  SmallVector<Type> inputTypes, resultTypes;
+  SmallVector<Type> *typeVec = &inputTypes;
+  if (typeStr.empty())
+    return FunctionType{};
+
+  // Drop the first '(' if there is one.
+  if (typeStr.starts_with("("))
+    typeStr = typeStr.drop_front();
+
+  // If the first thing in the string is the closing paren, move straight to
+  // result types.
+  if (typeStr.starts_with(")")) {
+    typeStr = typeStr.drop_front();
+    typeVec = &resultTypes;
+  }
+
+  // Now, parse the type string.
+  while (!typeStr.empty()) {
+    size_t numBytes = 0;
+    Type t = mlir::parseType(typeStr, ctx, &numBytes);
+    if (!t)
+      return failure();
+
+    typeVec->push_back(t);
+    typeStr = typeStr.drop_front(numBytes);
+    // Drop the comma.
+    if (typeStr.starts_with(","))
+      typeStr = typeStr.drop_front();
+
+    // If we have reached the closing paren, then skip it and parse any
+    // leftovers into the result types.
+    if (typeStr.starts_with(")")) {
+      typeStr = typeStr.drop_front();
+      typeVec = &resultTypes;
+    }
+  }
+
+  return FunctionType::get(ctx, inputTypes, resultTypes);
+}
+
+FailureOr<MangledSymbol> MangledSymbol::demangle(StringAttr mangled,
+                                                 bool parseSignature) {
+  MangledSymbol out;
+  out.mangled = mangled;
+  StringRef m = mangled.getValue();
+  // We'll first tokenize the owning module and structs.
+  size_t separator = m.find("::");
+  size_t firstOpen = m.find_first_of("([");
+  for (; separator != std::string::npos && separator < firstOpen;
+       separator = m.find("::"), firstOpen = m.find_first_of("([")) {
+    StringRef current = m.take_front(separator);
+    // Drop until the separator.
+    m = m.drop_front(separator);
+    // Skip past the separator as well (if it exists).
+    m.consume_front("::");
+    // It's a module name if it starts with a leading `$`.
+    if (current.starts_with("$"))
+      out.moduleNames.push_back(
+          StringAttr::get(mangled.getContext(), current.drop_front()));
+    else
+      out.structNames.push_back(StringAttr::get(mangled.getContext(), current));
+  }
+  // Get the name of the func and the types of its arguments.
+  StringRef nameWithParameters = m.take_front(m.find('('));
+  StringRef nameWithoutParameters = m.take_front(firstOpen);
+
+  out.symName = StringAttr::get(mangled.getContext(), nameWithParameters);
+  out.identifier = StringAttr::get(mangled.getContext(), nameWithoutParameters);
+
+  size_t firstParen = m.find('(');
+  if (firstParen == std::string::npos)
+    firstParen = m.size();
+
+  // If there's no parenthesis here, don't even parse out the signature.
+  if (firstParen == m.size()) {
+    out.signature = nullptr;
+    return out;
+  }
+
+  // If there are more mangled symbols, then there are Mojo types we cannot
+  // parse in general.
+  if (separator != std::string::npos)
+    return out;
+
+  if (!parseSignature)
+    return out;
+
+  // If we *have* a signature, parse it out.
+  FailureOr<FunctionType> sigOr =
+      parseMangledSignature(mangled.getContext(), m.drop_front(firstParen));
+  if (failed(sigOr))
+    return failure();
+
+  out.signature = *sigOr;
+  return out;
+}
+
+llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
+  os << "Mangled: \"";
+  // Need to escape the mangled string, it might have some characters that
+  // terminals don't like.
+  llvm::printEscapedString(ms.mangled.getValue(), os);
+  os << "\" - ";
+  os << "Modules: [";
+  llvm::interleaveComma(ms.moduleNames, os);
+  os << "], Structs: [";
+  llvm::interleaveComma(ms.structNames, os);
+  os << "], Symbol: " << ms.symName;
+  os << ", Identifier: " << ms.identifier;
+  os << ", Signature: ";
+  if (ms.signature)
+    os << ms.signature;
+  else
+    os << "(none)";
+  return os;
 }
