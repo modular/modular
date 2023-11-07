@@ -209,7 +209,7 @@ fn warp_reduce[
     shuffle: fn[type: DType] (val: SIMD[type, 1], offset: Int) -> SIMD[type, 1],
     func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
-    ) -> SIMD[type, width],
+    ) capturing -> SIMD[type, width],
 ](val: SIMD[val_type, 1]) -> SIMD[val_type, 1]:
     var res = val
 
