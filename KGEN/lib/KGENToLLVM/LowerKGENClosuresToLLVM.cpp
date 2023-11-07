@@ -50,7 +50,7 @@ public:
   /// Two element struct where first element is void* to function
   /// and second member is struct of captured elements.
   Type liftedFunctionCaptureType;
-  Type liftedFunctionCaptureTypePtrType;
+
   /// The opaque closure struct type is a struct of two opaque pointers
   /// The first element points to a function interface method.
   /// The second points to captured state + lifted function.
@@ -71,8 +71,6 @@ LogicalResult CreateClosureTypes::createClosureTypes(
   }
   types.liftedFunctionCaptureType =
       LLVM::LLVMStructType::getLiteral(context, types.boundArgTypes);
-  types.liftedFunctionCaptureTypePtrType =
-      LLVM::LLVMPointerType::get(types.liftedFunctionCaptureType);
   types.unpackingFunctionAndCapturesType = LLVM::LLVMStructType::getLiteral(
       context, {types.opaquePtrType, types.opaquePtrType});
   return success();
@@ -172,9 +170,6 @@ private:
       SymbolTable &symbolTable, CreateClosureTypes const &types) const {
     Block &wrapperFnBody = wrapperFn.getBody().front();
     rewriter.setInsertionPointToStart(&wrapperFnBody);
-    Value envStructPtr = rewriter.create<LLVM::BitcastOp>(
-        wrapperFn.getLoc(), types.liftedFunctionCaptureTypePtrType,
-        wrapperFnBody.getArgument(0));
 
     Type envCalleeType = adaptor.getCallee().getType();
     if (auto sigType = dyn_cast<SignatureType>(envCalleeType))
@@ -194,11 +189,11 @@ private:
 
     for (size_t i = 0; i < op.getCaptures().size(); i++) {
       Type capturedArgType = types.boundArgTypes[i];
-      LLVM::LLVMPointerType boundArgPtrType =
-          LLVM::LLVMPointerType::get(capturedArgType);
-      Value boundArgPtr = rewriter.create<LLVM::GEPOp>(
-          wrapperFn.getLoc(), boundArgPtrType, envStructPtr,
+      LLVM::GEPOp boundArgPtr = rewriter.create<LLVM::GEPOp>(
+          wrapperFn.getLoc(), types.opaquePtrType, types.opaquePtrType,
+          wrapperFnBody.getArgument(0),
           ArrayRef<LLVM::GEPArg>({0, static_cast<int32_t>(i)}));
+      boundArgPtr.setElemType(types.liftedFunctionCaptureType);
       Value boundArg = rewriter.create<LLVM::LoadOp>(
           wrapperFn.getLoc(), capturedArgType, boundArgPtr);
       liftedNestedFunctionCallArgs[i] = boundArg;
@@ -229,15 +224,13 @@ private:
         op.getLoc(), types.unpackingFunctionAndCapturesType);
     Value addressOfWrapperFunction =
         rewriter.create<LLVM::AddressOfOp>(op.getLoc(), wrapperFn);
-
-    LLVM::BitcastOp erasedEnvStructPtr = rewriter.create<LLVM::BitcastOp>(
-        op.getLoc(), types.opaquePtrType, addressOfWrapperFunction);
     closureStruct = rewriter.create<LLVM::InsertValueOp>(
-        op.getLoc(), closureStruct, erasedEnvStructPtr, 0);
+        op.getLoc(), closureStruct, addressOfWrapperFunction, 0);
     Value one = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), IntegerType::get(context, 8), 1);
-    Value envStruct = rewriter.create<LLVM::AllocaOp>(
-        op.getLoc(), types.liftedFunctionCaptureTypePtrType, one);
+    LLVM::AllocaOp envStruct =
+        rewriter.create<LLVM::AllocaOp>(op.getLoc(), types.opaquePtrType, one);
+    envStruct.setElemType(types.liftedFunctionCaptureType);
     // TODO: When data layouts are propagated properly, extract the data
     //  layout from TargetInfoAttr
     size_t envSize =
@@ -246,18 +239,18 @@ private:
     rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), envSize, envStruct);
     for (auto [argIdx, boundArgValue] :
          llvm::enumerate(adaptor.getCaptures())) {
-      Type boundArgTy = types.boundArgTypes[argIdx];
-      Value boundArgPtr = rewriter.create<LLVM::GEPOp>(
-          op.getLoc(), LLVM::LLVMPointerType::get(boundArgTy), envStruct,
+      LLVM::GEPOp getBoundArgPtr = rewriter.create<LLVM::GEPOp>(
+          op.getLoc(), /*resultType=*/types.opaquePtrType,
+          /*basePtrType=*/types.opaquePtrType, /*basePtr=*/envStruct,
           ArrayRef<LLVM::GEPArg>({0, static_cast<int32_t>(argIdx)}));
-      rewriter.create<LLVM::StoreOp>(op.getLoc(), boundArgValue, boundArgPtr);
+      getBoundArgPtr.setElemType(types.liftedFunctionCaptureType);
+      rewriter.create<LLVM::StoreOp>(op.getLoc(), boundArgValue,
+                                     getBoundArgPtr.getResult());
     }
 
     // Add the environment struct to the closure struct
-    LLVM::BitcastOp erasedEnvStructPtr2 = rewriter.create<LLVM::BitcastOp>(
-        op.getLoc(), types.opaquePtrType, envStruct);
     closureStruct = rewriter.create<LLVM::InsertValueOp>(
-        op.getLoc(), closureStruct, erasedEnvStructPtr2, 1);
+        op.getLoc(), closureStruct, envStruct, 1);
 
     // Insert lifetime marker at the end of the struct
     auto oldInsertionBlock = rewriter.getInsertionBlock();
@@ -357,16 +350,15 @@ struct CallSignatureOpConversion
 
       auto wrapperFnType = LLVM::LLVMFunctionType::get(getContext(), resultType,
                                                        wrapperFnArgTypes, 0);
-      Value castWrapperFn = rewriter.create<LLVM::BitcastOp>(
-          op.getLoc(), LLVM::LLVMPointerType::get(wrapperFnType), wrapperFnPtr);
 
       // Create the call to the wrapper function.
       SmallVector<Value> llvmCallArgs;
+      llvmCallArgs.push_back(wrapperFnPtr);
       llvmCallArgs.push_back(envStruct);
       llvm::append_range(llvmCallArgs, adaptor.getArguments());
 
       llvmCall =
-          createLLVMCall(rewriter, op.getLoc(), castWrapperFn, llvmCallArgs);
+          createLLVMCall(rewriter, op.getLoc(), wrapperFnType, llvmCallArgs);
     } else {
       // Create the LLVM call operation.
       // Note: adaptor.getOperands() is a list of callee followed by inputs.
