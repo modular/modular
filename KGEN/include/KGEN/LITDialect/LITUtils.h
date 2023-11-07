@@ -14,7 +14,13 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/AttrTypeSubElements.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "llvm/Support/SMLoc.h"
+
+namespace mlir {
+class SymbolOpInterface;
+} // namespace mlir
 
 namespace M {
 class StringArrayAttr;
@@ -30,6 +36,10 @@ class ParameterExprArrayAttr;
 namespace LIT {
 class PassingKindArrayAttr;
 enum class PassingKind : uint32_t;
+
+//===----------------------------------------------------------------------===//
+// Parameter Mangling
+//===----------------------------------------------------------------------===//
 
 /// Mangle a parameter name with the line and column index where it's declared.
 std::string mangleParameter(const Twine &baseName, unsigned line, unsigned col);
@@ -48,6 +58,10 @@ template <typename AttrOrType>
 AttrOrType demangleIfNeeded(AttrOrType arg) {
   return cast<AttrOrType>(impl::demangleIfNeeded(arg));
 }
+
+//===----------------------------------------------------------------------===//
+// Parsing and Printing
+//===----------------------------------------------------------------------===//
 
 /// Pretty print a nested symbol reference to a name.
 void printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol);
@@ -105,6 +119,10 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
+//===----------------------------------------------------------------------===//
+// StarSlashParser / StarSlashPrinter
+//===----------------------------------------------------------------------===//
+
 /// Handles parsing '|' and '*' in lit IR and counts the number of arguments of
 /// different passing kinds.
 /// TODO(#23387): fix this when AsmParser can handle '/'.
@@ -154,6 +172,42 @@ private:
   char slash; // TODO: remove this when AsmParser can handle '/'.
 };
 
+//===----------------------------------------------------------------------===//
+// MangledSymbol
+//===----------------------------------------------------------------------===//
+
+/// This class provides a wrapper around a mojo FuncOp that mangles its name (in
+/// `mangled`) but also provides all the components of the mangled name. If the
+/// func is already mangled, this will pull everything apart.
+struct MangledSymbol {
+  /// Mangle the symbol for this op by walking upwards and adding struct/module
+  /// names.
+  static MangledSymbol mangle(mlir::SymbolOpInterface op);
+  /// Demangle this mangled name by parsing it into its component parts.
+  static FailureOr<MangledSymbol> demangle(StringAttr mangled,
+                                           bool parseSignature = true);
+
+  /// The format for a mangled name is roughly:
+  ///  $<module name>::<struct name>[::<struct name>]
+  ///    ::<function name>[<comma separated params>]
+  ///      (<comma-separated args>)<comma-separated results>
+
+  /// The fully mangled name.
+  StringAttr mangled;
+  /// The various strings that make up the mangled name.
+  SmallVector<StringAttr, 1> moduleNames;
+  /// We support nested structs, so there may be more than one struct name.
+  SmallVector<StringAttr, 1> structNames;
+  /// The bare name of the symbol, which may include parameters.
+  StringAttr symName;
+  /// The bare name of the symbol without parameters.
+  StringAttr identifier;
+  /// If the symbol has a signature mangled into the name, then it will be here.
+  FunctionType signature;
+};
+
+/// Print a mangled symbol.
+llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
 } // namespace LIT
 } // namespace KGEN
 } // namespace M

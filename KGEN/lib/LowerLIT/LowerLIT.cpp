@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -598,7 +599,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
+struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
   using LowerLITBase::LowerLITBase;
 
   void runOnOperation() override {
