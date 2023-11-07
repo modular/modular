@@ -697,10 +697,8 @@ fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
     if not cached_value_ptr:
         return
     let cached_value = cached_value_ptr.bitcast[_CachedFunctionInfo]().load()
-    try:
-        ModuleHandle(cached_value.mod_handle).__del__()
-    except:
-        pass
+    # We do not need to destroy the module, since it will be destroyed once the
+    # CUDA context is destroyed.
     cached_value_ptr.free()
 
 
