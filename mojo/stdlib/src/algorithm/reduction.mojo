@@ -25,6 +25,7 @@ from runtime.tracing import TraceLevel
 
 from algorithm import async_parallelize, unroll, vectorize
 from algorithm.functional import _get_num_workers
+from algorithm.gpu.reduction import reduce_launch
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from memory.unsafe import Pointer
 from runtime.llcl import OutputChainPtr
@@ -525,6 +526,7 @@ fn reduce[
 
 
 @always_inline
+@adaptive
 fn _reduce_generator[
     type: DType,
     rank: Int,
@@ -538,6 +540,50 @@ fn _reduce_generator[
     reduce_function: fn[ty: DType, width: Int] (
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
+    target: StringLiteral,
+](
+    shape: StaticIntTuple[rank],
+    init_value: SIMD[type, 1],
+    reduce_dim: Int,
+    out_chain: OutputChainPtr,
+):
+    constrained[target == "cuda", "only valid on GPUs"]()
+
+    let reduce_dim_normalized = (
+        rank + reduce_dim
+    ) if reduce_dim < 0 else reduce_dim
+
+    if reduce_dim_normalized != rank - 1:
+        return out_chain.mark_error(
+            "GPU reduction currently limited to inner axis."
+        )
+
+    try:
+        reduce_launch[
+            input_0_fn,
+            output_0_fn,
+            reduce_function,
+        ](shape, reduce_dim_normalized, init_value, out_chain.get_cuda_stream())
+    except e:
+        out_chain.mark_error(e)
+
+
+@always_inline
+@adaptive
+fn _reduce_generator[
+    type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    reduce_function: fn[ty: DType, width: Int] (
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing -> SIMD[ty, width],
+    target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
     init_value: SIMD[type, 1],
@@ -554,6 +600,7 @@ fn _reduce_generator[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
+        target: The target to run on.
 
     Args:
         shape: The shape of the tensor we are reducing.
@@ -561,6 +608,7 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         out_chain: The our chain to attach results to.
     """
+    constrained[target == "cpu", "only valid on CPUs"]()
     let reduce_dim_normalized = (
         rank + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
@@ -1344,6 +1392,7 @@ fn mean[
             input_fn_wrapper,
             wrapped_output_mul,
             reduce_impl,
+            target,
         ](input_shape, 0, reduce_dim, out_chain)
 
     else:
