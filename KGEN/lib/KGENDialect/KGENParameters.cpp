@@ -127,10 +127,6 @@ void ParameterCollector::collectUsesFromAttr(
   // Verify index parameter references.
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
     collectUsesFromType(indexRef.getType(), uses, hasConstExpr);
-    // Index references are not a named parameter use, but types and attributes
-    // that contain index references should be considered parametric, if it
-    // exceeds the depth of the current contextual signatures.
-    hasConstExpr = indexRef.getDepth() >= signatures.size();
     maybeVerify(
         [&](function_ref<InFlightDiagnostic()> emitError) -> LogicalResult {
           if (signatures.empty())
