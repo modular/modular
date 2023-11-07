@@ -27,6 +27,8 @@ struct LowerCallingConventionPass
 };
 } // namespace
 
+/// Filters out none types from the given range, and returns a flag indicating
+/// if there were any in the input.
 static std::pair<bool, SmallVector<Type>> removeNoneTypes(TypeRange types) {
   SmallVector<Type> newTypes;
   for (Type type : types)
