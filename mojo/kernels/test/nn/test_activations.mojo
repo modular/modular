@@ -12,7 +12,6 @@ from Activations import (
     gelu,
     gelu_approximate,
     gelu_approximate_sigmoid,
-    prelu,
     relu,
     relu_n1,
 )
@@ -63,22 +62,6 @@ fn test_relu_n1():
 
     # CHECK: [0.0, 0.5, 1.0, 1.0]
     print(relu_n1(0.5 * simd_val))
-
-
-# CHECK-LABEL: test_prelu
-fn test_prelu():
-    print("== test_prelu")
-
-    let simd_val = iota[DType.float32, 4]()
-
-    # CHECK: [0.0, 1.0, 2.0, 3.0]
-    print(prelu(simd_val, 2))
-
-    # CHECK: [-0.2{{[0-9]+}}, -0.1{{[0-9]+}}, 0.0, 1.0]
-    print(prelu(simd_val - 2, 0.1))
-
-    # CHECK: [0.0, 0.5, 1.0, 1.5]
-    print(prelu(0.5 * simd_val, 0.5))
 
 
 # CHECK-LABEL: test_gelu_float32
@@ -151,6 +134,5 @@ fn main():
     test_elu()
     test_relu()
     test_relu_n1()
-    test_prelu()
     test_gelu_float32()
     test_gelu_float64()

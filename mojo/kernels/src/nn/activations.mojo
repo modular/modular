@@ -158,55 +158,6 @@ fn relu[
 
 
 # ===----------------------------------------------------------------------===#
-# relu6
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn relu6[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    """Compute the Relu6 Op using the equation $min(max(0,x),6)$.
-
-    Parameters:
-        type: DType used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x: The value to compute the RELU6 operation on.
-
-    Returns:
-        SIMD[type, simd_width]: The result of the RELU6 operation.
-    """
-    return clamp(x, 0, 6)
-
-
-# ===----------------------------------------------------------------------===#
-# prelu
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn prelu[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width], alpha: SIMD[type, 1]) -> SIMD[type, simd_width]:
-    """Compute the Prelu Op using the equation $max(x,0) + alpha * min(x,0)$.
-
-    Parameters:
-        type: DType used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x: The value to compute the PRELU operation on.
-        alpha: The alpha value.
-
-    Returns:
-        SIMD[type, simd_width]: The result of the PRELU operation.
-    """
-    return max(x, 0) + alpha * min(x, 0)
-
-
-# ===----------------------------------------------------------------------===#
 # relu-n1
 # ===----------------------------------------------------------------------===#
 
