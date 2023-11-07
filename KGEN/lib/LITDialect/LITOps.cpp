@@ -41,9 +41,19 @@ bool LIT::findTryBlock(Block *currentBlock) {
     if (isa<LIT::FuncOp>(parentOp))
       break;
     TryOp tryOp = dyn_cast<TryOp>(parentOp);
-    if (tryOp)
-      if (&tryOp.getTryRegion().front() == currentBlock)
+    if (tryOp) {
+      Region &body = tryOp.getTryRegion();
+      if (!body.empty() && &body.front() == currentBlock) {
+        // If the except region has an UnreachableOp in it, then this is not
+        // allowed to raise.
+        auto &exceptRegion = tryOp.getExceptRegion();
+        if (!exceptRegion.empty() &&
+            isa<UnreachableOp>(exceptRegion.front().front()))
+          return false;
+
         return true;
+      }
+    }
     currentBlock = parentOp->getBlock();
   }
   return false;

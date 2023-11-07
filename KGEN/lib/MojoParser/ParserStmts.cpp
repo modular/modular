@@ -1233,12 +1233,12 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     return failure();
   }
 
-  CValue contextRV = getEmitter().emitExprCValue(contextExp, EC_WithContextMgr);
+  CValue contextCV = getEmitter().emitExprCValue(contextExp, EC_WithContextMgr);
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
   CValue enterResult = getEmitter().emitNamedMethodCall(
-      "__enter__", CallOperands({{contextRV, contextExp}}), enterDest,
+      "__enter__", CallOperands({{contextCV, contextExp}}), enterDest,
       CallSyntax::kMethodCall, contextExp);
   if (!enterResult)
     enterDest.resetForError();
@@ -1276,57 +1276,31 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // In erroneous code, ASTDecl may be missing, e.g. a 'with' on an MLIR type.
   // This will already have been diagnosed when the __enter__ was emitted.
-  ASTDecl *contextDecl = contextRV.getRValueType().getDecl(shared);
+  ASTDecl *contextDecl = contextCV.getRValueType().getDecl(shared);
   bool hasExitMethod =
       contextDecl && !contextDecl->lookupInCurrentScope("__exit__").empty();
 
-  // If the context manager has no __exit__ method, then we emit this pattern
-  // with no try operation at all:
-  //   contextMgr = EXPRESSION
-  //   TARGET = contextMgr.__enter__()
-  //   SUITE
-  //   lit.ownership.use(TARGET)
-  // This is useful for compatibility, and does scope "TARGET" (when
-  // useLexicalScope is true) and the context manager expression.
-  if (!hasExitMethod) {
-    // Parse the body suite.
-    if (parseLocalScopeSuite(curIndent))
-      return failure();
-
-    // The target value may not have a __exit__ method, but we need it to be
-    // live all the way across the suite, so add an extra use so it isn't
-    // destroyed early.
-    if (enterResult) {
-      if (auto targetBV = getEmitter().emitBValue(
-              {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
-        Value ptrOrScalar;
-        // We don't care about extending PValues if one ever happened.
-        if (auto scalar = targetBV.getIfSBValue())
-          ptrOrScalar = scalar;
-        if (auto scalar = targetBV.getIfXBValue())
-          ptrOrScalar = scalar;
-        if (auto scalar = targetBV.getIfMBValue())
-          ptrOrScalar = scalar;
-        if (ptrOrScalar)
-          builder.create<OwnershipUseOp>(loc, ptrOrScalar);
-      }
-    }
-    return success();
-  }
-
-  // If we're in a non-raising region, then we have a simple pattern to emit:
-  //   contextMgr = EXPRESSION
-  //   TARGET = contextMgr.__enter__()
-  //   try:
-  //     SUITE
-  //   finally:
-  //     contextMgr.__exit__()
-  auto [_, inExceptRegion] = findParentTry(builder.getInsertionBlock());
-
+  // Determine whether we're in a region that is allowed to raise.  If so,
+  // generate logic to deal with it.
+  // TODO: Generalize findTryBlock to handle the throwing function thing.
+  bool inExceptRegion = findTryBlock(builder.getInsertionBlock());
   if (!inExceptRegion) {
     auto funcOp =
         getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
     inExceptRegion = funcOp.isThrows();
+  }
+
+  // Lookup the error type since we're in an exception region.
+  ASTType errorType;
+  if (inExceptRegion) {
+    errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
+    if (!errorType.isRegisterPassable(smLoc, shared)) {
+      emitError(loc) << errorType << " is not a @register_passable type";
+      return failure();
+    }
+  } else {
+    // Pick any old type.
+    errorType = builder.getI1Type();
   }
 
   // Restore the builder to its current insertion point after parsing.
@@ -1334,21 +1308,65 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   auto tryOp = builder.create<TryOp>(loc, /*suppressWarnings=*/true);
   // Stub the 'except' and 'else' regions.
   Block *parentExceptBlock = builder.createBlock(&tryOp.getExceptRegion());
-  builder.create<TryYieldOp>(loc);
+  Value exceptArg = parentExceptBlock->addArgument(errorType, loc);
+
+  // If the body of this try can throw, then the "except" block in it needs to
+  // catch the current exception and then re-raise it.
+  if (inExceptRegion) {
+    [[maybe_unused]] LogicalResult result =
+        getEmitter().emitRaise(SRValue(exceptArg), loc);
+    assert(succeeded(result) && "expected to be in except context");
+    builder.create<TryYieldOp>(loc);
+  } else {
+    // Otherwise it will be unreachable.
+    builder.create<UnreachableOp>(loc);
+  }
   builder.createBlock(&tryOp.getElseRegion());
   builder.create<TryYieldOp>(loc);
   builder.createBlock(&tryOp.getTryRegion());
 
   // This emits the call to the 'contextMgr.__exit__()' methods on the
-  // context managers in the normal path.
+  // context managers in the normal path.  If the type has no __exit__ method,
+  // then we extend the result of the __enter__ method with this pattern:
+  //
+  //   TARGET = contextMgr.__enter__()
+  //   try:
+  //     SUITE
+  //   finally:
+  //     lit.ownership.use(TARGET)
   auto emitNormalExitLogic = [&]() {
-    ValueDest exitDest(EC_WithExitResult);
-    (void)getEmitter().emitNamedMethodCall(
-        "__exit__", CallOperands({{contextRV, contextExp}}), exitDest,
-        CallSyntax::kMethodCall, contextExp);
+    if (hasExitMethod) {
+      ValueDest exitDest(EC_WithExitResult);
+      (void)getEmitter().emitNamedMethodCall(
+          "__exit__", CallOperands({{contextCV, contextExp}}), exitDest,
+          CallSyntax::kMethodCall, contextExp);
+    } else if (auto targetBV = getEmitter().emitBValue(
+                   {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
+      // If the target value has no __exit__ method, we need it to be
+      // live all the way across the suite, so add an extra use so it isn't
+      // destroyed early.
+      Value ptrOrScalar;
+      // We don't care about extending PValues if one ever happened.
+      if (auto scalar = enterResult.getIfSBValue())
+        ptrOrScalar = scalar;
+      if (auto scalar = enterResult.getIfXBValue())
+        ptrOrScalar = scalar;
+      if (auto scalar = enterResult.getIfMBValue())
+        ptrOrScalar = scalar;
+      if (ptrOrScalar)
+        builder.create<OwnershipUseOp>(loc, ptrOrScalar);
+    }
   };
 
-  if (!inExceptRegion) {
+  // If we're in a non-raising region (or have no __exit__ method), then we have
+  // a simple pattern to emit:
+  //   contextMgr = EXPRESSION
+  //   TARGET = contextMgr.__enter__()
+  //   try:
+  //     SUITE
+  //   finally:
+  //     contextMgr.__exit__()
+  if (!inExceptRegion || !hasExitMethod) {
     // Parse the body suite.
     if (parseLocalScopeSuite(curIndent))
       return failure();
@@ -1357,8 +1375,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     builder.createBlock(&tryOp.getFinallyRegion());
     emitNormalExitLogic();
     builder.create<TryYieldOp>(loc);
-    // Stub out the except argument.
-    parentExceptBlock->addArgument(builder.getI1Type(), loc);
     return success();
   }
 
@@ -1376,8 +1392,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   //         raise e
   //   finally:
   //     if exc:
-  //       contextMGr.__exit__()
-
+  //       contextMgr.__exit__()
   Value excVar;
   {
     // Insert the flag and initialize it to 'True'.
@@ -1388,23 +1403,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         getEmitter().emitVarLetDecl("__with_exc__", builder.getI1Type(), loc);
     builder.create<RefStoreOp>(
         loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
-  }
-
-  // Lookup the error type.
-  ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
-  if (!errorType.isRegisterPassable(smLoc, shared)) {
-    emitError(loc) << errorType << " is not a @register_passable type";
-    return failure();
-  }
-
-  // Re-raise any exceptions thrown in the nested try.
-  {
-    OpBuilder::InsertionGuard g(builder);
-    builder.setInsertionPointToStart(parentExceptBlock);
-    Value errVal = parentExceptBlock->addArgument(errorType, loc);
-    [[maybe_unused]] LogicalResult result =
-        getEmitter().emitRaise(SRValue(errVal), loc);
-    assert(succeeded(result) && "expected to be in except context");
   }
 
   // Generate the nested try. Stub the 'else' and 'finally' regions.
@@ -1439,7 +1437,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   ValueDest exitResultDest(EC_WithExitResult);
   CValue exitResult = getEmitter().emitNamedMethodCall(
       "__exit__",
-      CallOperands({{contextRV, contextExp}, {errorVal, contextExp}}),
+      CallOperands({{contextCV, contextExp}, {errorVal, contextExp}}),
       exitResultDest, CallSyntax::kMethodCall, contextExp);
   RValue exitI1RVal =
       getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
@@ -1464,6 +1462,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Emit the conditional call to __exit__.
   builder.createBlock(&tryOp.getFinallyRegion());
+
   auto excIf =
       builder.create<HLCF::IfOp>(loc, builder.create<RefLoadOp>(loc, excVar));
   builder.create<TryYieldOp>(loc);
