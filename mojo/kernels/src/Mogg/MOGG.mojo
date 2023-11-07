@@ -102,7 +102,7 @@ from NonMaxSuppression import (
 from Normalization import layer_norm
 from Pad import pad as _pad
 from Pad import pad_shape
-from Pool import avg_pool, max_pool, pool_shape
+from Pool import avg_pool as _avg_pool, max_pool, pool_shape
 from Resize import CoordinateTransformationMode, RoundMode
 from Resize import resize_linear as resize_linear_kernel
 from Resize import resize_nearest_neighbor
@@ -1001,6 +1001,28 @@ fn concat_shape[
     ](ins, axis)
     ins._del_old()
     return out_shape
+
+
+# ===----------------------------------------------------------------------===#
+# avg_pool
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn avg_pool[
+    type: DType, int_type: DType
+](
+    input: NDBuffer[4, DimList.create_unknown[4](), type],
+    filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    out_chain: OutputChainPtr,
+):
+    return _avg_pool(
+        input, filter, strides, dilations, paddings, output, False, out_chain
+    )
 
 
 # ===----------------------------------------------------------------------===#
