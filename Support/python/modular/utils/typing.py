@@ -14,6 +14,7 @@ with version checking. Modular developers should use this module over the
 built-in typing module.
 """
 
+from enum import Enum
 from sys import version_info
 from typing import *  # noqa: F403
 
