@@ -83,6 +83,7 @@ from GatherScatter import gather_reduce, gather_shape, scatter_elements
 from GatherScatter import scatter_elements_shape as scatter_shape
 from GatherScatter import scatter_nd as _scatter_nd
 from GatherScatter import scatter_nd_generator
+from gpu.host.memory import _copy_device_to_host_async
 from Matmul import matmul as _matmul
 from Matmul import (
     pack_b_ndbuffer,
@@ -646,6 +647,47 @@ fn simd_store[
 
 
 # ===----------------------------------------------------------------------===#
+# GPU helper functions
+# ===----------------------------------------------------------------------===#
+
+
+# TODO (#24946): remove this, kernel should be passed scalars directly, not
+# through NDBuffer
+fn buffer_to_scalar[
+    target: StringLiteral, type: DType
+](
+    buf: NDBuffer[1, DimList.create_unknown[1](), type],
+    out_chain: OutputChainPtr,
+) -> SIMD[type, 1]:
+    """If an op runs on the GPU, all inputs are allocated on the device.
+    When the target is cuda, this function copies single element pointers
+    from the device to host, because they are sometimes needed to launch
+    the kernel (e.g. reduction axis).
+    """
+
+    var val: SIMD[type, 1] = 0
+
+    @parameter
+    if target != "cuda":  # else in below if not working for some reason
+        val = buf[0]
+
+    @parameter
+    if target == "cuda":
+        try:
+            _copy_device_to_host_async(
+                DTypePointer[type].address_of(val),
+                buf.data,
+                1,
+                out_chain.get_cuda_stream(),
+            )
+            var stream = out_chain.get_cuda_stream()
+            stream.synchronize()
+        except e:
+            out_chain.mark_error(e)
+    return val
+
+
+# ===----------------------------------------------------------------------===#
 # Broadcast
 # ===----------------------------------------------------------------------===#
 
@@ -1167,8 +1209,19 @@ fn mean[
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
-    _mean[type, rank, single_thread_blocking_override, input_0_fn, output_0_fn](
-        input_shape, axis_buffer[0].to_int(), output_shape, out_chain
+    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
+    _mean[
+        type,
+        rank,
+        single_thread_blocking_override,
+        input_0_fn,
+        output_0_fn,
+        target,
+    ](
+        input_shape,
+        axis.to_int(),
+        output_shape,
+        out_chain,
     )
 
 
@@ -1240,17 +1293,14 @@ fn reduce_add[
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
+    target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.reduce_add")
-
-    # Only one reduce dimension supported currently, it must be deduced from
-    # the attached input lambda rather than read directly.
-    let reduce_dim = axis_buffer[0].to_int()
 
     @always_inline
     fn input_0_fn_wrapper[
@@ -1270,6 +1320,7 @@ fn reduce_add[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
+    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
     _reduce_generator[
         type,
         rank,
@@ -1277,7 +1328,7 @@ fn reduce_add[
         input_0_fn_wrapper,
         output_0_fn_wrapper,
         reduce_impl,
-    ](input_shape, 0, reduce_dim, out_chain)
+    ](input_shape, 0, axis.to_int(), out_chain)
 
 
 @always_inline
@@ -1292,17 +1343,14 @@ fn reduce_max[
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
+    target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.reduce_max")
-
-    # Only one reduce dimension supported currently, it must be deduced from
-    # the attached input lambda rather than read directly.
-    let reduce_dim = axis_buffer[0].to_int()
 
     @always_inline
     fn input_0_fn_wrapper[
@@ -1322,6 +1370,7 @@ fn reduce_max[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
+    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
     _reduce_generator[
         type,
         rank,
@@ -1329,7 +1378,7 @@ fn reduce_max[
         input_0_fn_wrapper,
         output_0_fn_wrapper,
         reduce_impl,
-    ](input_shape, min_or_neginf[type](), reduce_dim, out_chain)
+    ](input_shape, min_or_neginf[type](), axis.to_int(), out_chain)
 
 
 @always_inline
@@ -1344,17 +1393,14 @@ fn reduce_min[
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
+    target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.reduce_min")
-
-    # Only one reduce dimension supported currently, it must be deduced from
-    # the attached input lambda rather than read directly.
-    let reduce_dim = axis_buffer[0].to_int()
 
     @always_inline
     fn input_0_fn_wrapper[
@@ -1374,6 +1420,7 @@ fn reduce_min[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return min(v1, v2)
 
+    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
     _reduce_generator[
         type,
         rank,
@@ -1381,7 +1428,7 @@ fn reduce_min[
         input_0_fn_wrapper,
         output_0_fn_wrapper,
         reduce_impl,
-    ](input_shape, max_or_inf[type](), reduce_dim, out_chain)
+    ](input_shape, max_or_inf[type](), axis.to_int(), out_chain)
 
 
 @always_inline
@@ -1396,17 +1443,14 @@ fn reduce_mul[
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
+    target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
-    axis: NDBuffer[1, DimList.create_unknown[rank](), index_type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
     out_chain.trace[TraceLevel.OP]("mogg.reduce_mul")
-
-    # Only one reduce dimension supported currently, it must be deduced from
-    # the attached input lambda rather than read directly.
-    let reduce_dim = axis[0].to_int()
 
     @always_inline
     fn input_0_fn_wrapper[
@@ -1426,6 +1470,7 @@ fn reduce_mul[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
 
+    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
     _reduce_generator[
         type,
         rank,
@@ -1433,7 +1478,7 @@ fn reduce_mul[
         input_0_fn_wrapper,
         output_0_fn_wrapper,
         reduce_impl,
-    ](input_shape, 1, reduce_dim, out_chain)
+    ](input_shape, 1, axis.to_int(), out_chain)
 
 
 # ===----------------------------------------------------------------------===#
