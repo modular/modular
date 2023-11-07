@@ -78,8 +78,8 @@ namespace {
 /// This class implements a listener that collects code completion results.
 struct CodeCompletionListener : public BaseCompletionListener {
   CodeCompletionListener(std::vector<CodeCompletionResult> &results,
-                         llvm::SourceMgr &sourceMgr)
-      : BaseCompletionListener(sourceMgr), results(results) {}
+                         LLCL::Runtime &runtime, llvm::SourceMgr &sourceMgr)
+      : BaseCompletionListener(sourceMgr), runtime(runtime), results(results) {}
   ~CodeCompletionListener() override = default;
 
   /// Returns true if the listener is interested in being notified for the given
@@ -92,10 +92,24 @@ struct CodeCompletionListener : public BaseCompletionListener {
   void onImport(SMLoc importLoc) override {
     // Simple helper for adding completion results and dropping duplicates.
     StringSet<> addedImports;
-    auto addImportCompletion = [&](StringRef name, bool isPackage) {
-      if (addedImports.insert(name).second)
-        results.emplace_back(name, isPackage ? CodeCompletionResult::kPackage
-                                             : CodeCompletionResult::kModule);
+    auto addImportCompletion = [&](const std::filesystem::path &path,
+                                   bool isPackage) {
+      std::string name = path.stem().string();
+      if (!addedImports.insert(name).second)
+        return;
+      results.emplace_back(name, isPackage ? CodeCompletionResult::kPackage
+                                           : CodeCompletionResult::kModule);
+
+      // Grab the documentation for the import. Do this out of the current
+      // context to avoid pulling in a bunch of unwanted state.
+      MLIRContext ctx;
+      ParserConfig config(&ctx, runtime,
+                          parserContext->getCompilationOptions());
+      MojoParserContext importContext(sourceMgr, config);
+      if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
+        if (auto view = module.getView())
+          results.back().documentation = view->getFullMarkdownString();
+      }
     };
 
     // Compute the viable imports for the given location.
@@ -107,10 +121,10 @@ struct CodeCompletionListener : public BaseCompletionListener {
           continue;
         std::string extension = it.path().extension().string();
         if (extension == ".mojo" || extension == ".🔥")
-          addImportCompletion(it.path().stem().string(), /*isPackage=*/false);
+          addImportCompletion(it.path(), /*isPackage=*/false);
         else if (extension == ".mojopkg" || extension == ".📦" ||
                  isMojoSourcePackagePath(it.path()))
-          addImportCompletion(it.path().stem().string(), /*isPackage=*/true);
+          addImportCompletion(it.path(), /*isPackage=*/true);
       }
     }
   }
@@ -189,6 +203,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
 
   /// The results that have been collected so far.
   DenseSet<ASTDecl *> addedResults;
+  LLCL::Runtime &runtime;
   std::vector<CodeCompletionResult> &results;
 };
 } // namespace
@@ -400,7 +415,7 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
     bool disableModuleCaching) {
   llvm::SourceMgr sourceMgr;
   std::vector<CodeCompletionResult> results;
-  CodeCompletionListener listener(results, sourceMgr);
+  CodeCompletionListener listener(results, runtime, sourceMgr);
   parseCompletionImpl(buffer, completionPosition, context, runtime, options,
                       parserCallback, listener, disableModuleCaching);
   return results;

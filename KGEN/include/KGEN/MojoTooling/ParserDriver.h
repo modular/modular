@@ -34,6 +34,7 @@ namespace LLCL {
 class Runtime;
 } // namespace LLCL
 
+class DeclView;
 class MojoASTDeclRef;
 class MojoASTTypeRef;
 
@@ -115,6 +116,27 @@ public:
   /// In the case of success, the decl corresponding to the module is returned.
   /// In the case of an error, a null decl is returned.
   MojoASTDeclRef parseFile(unsigned int fileId);
+
+  /// Parse a package with the given path.
+  ///
+  /// In the case of success, the decl corresponding to the package is returned.
+  /// In the case of an error, a null decl is returned.
+  MojoASTDeclRef parsePackage(const std::filesystem::path &path);
+
+  /// Parse a module or package with the given path.
+  ///
+  /// In the case of success, the corresponding decl is returned.
+  /// In the case of an error, a null decl is returned.
+  MojoASTDeclRef parseFileOrPackage(const std::filesystem::path &path);
+
+  /// Parse a module or package with the given path, without resolving any of
+  /// the nested decls. The returned decl provides only a partial view of the
+  /// module or package, and does not contain information for nested decls.
+  ///
+  /// In the case of success, the corresponding decl is returned.
+  /// In the case of an error, a null decl is returned.
+  MojoASTDeclRef
+  parseFileOrPackageNonRecursive(const std::filesystem::path &path);
 
   //===--------------------------------------------------------------------===//
   // Code Completion
@@ -251,6 +273,9 @@ public:
   /// erroneous expression when it is only detected as invalid after it has been
   /// parsed.
   void removeLastREPLExpression();
+
+  //===--------------------------------------------------------------------===//
+  // Types
 
   /// Get the declaration that defined an AST type.
   MojoASTDeclRef getDecl(MojoASTTypeRef type);

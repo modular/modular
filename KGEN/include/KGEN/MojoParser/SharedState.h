@@ -215,6 +215,9 @@ public:
   /// Create a new package with the given path and desired name.
   ASTDecl &createPackage(StringRef path, StringRef name);
 
+  /// Create a new package from the path to the given binary package.
+  ASTDecl &createBinaryPackage(StringRef path, StringRef name);
+
   /// Return the source path for the given module decl, or nullopt if the decl
   /// doesn't have a source path.
   std::optional<std::string> getModuleSourcePath(ASTDecl &module);
