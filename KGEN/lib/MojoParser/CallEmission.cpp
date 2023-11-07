@@ -287,8 +287,10 @@ InputParamBindings::verifyBindings(
         // Determine if we can use a default parameter for CTAD.
         TypedAttr defaultParam;
         size_t defaultStartIdx = numCtadParams - defaultTypeParams.size();
-        if (idx < numCtadParams && idx >= defaultStartIdx)
-          defaultParam = defaultTypeParams[idx - defaultStartIdx];
+        if (idx < numCtadParams && idx >= defaultStartIdx) {
+          defaultParam = cast<TypedAttr>(evaluator.getReboundAttribute(
+              defaultTypeParams[idx - defaultStartIdx]));
+        }
 
         Type requestedType = evaluator.getReboundType(type);
         if (PValue pValue =

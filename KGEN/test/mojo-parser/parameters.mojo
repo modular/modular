@@ -1067,3 +1067,17 @@ fn test_partial_binding_CTAD():
     CtadStructWithDefault[].foo(y=Thing[1](), x=Thing[2]())
     # CHECK: call @{{.*}}::@CtadStructWithDefault::@"foo({{.*}})"<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 3}>, :!Int #lit.struct<{value = 8}>>
     CtadStructWithDefault.foo(y=Thing[3](), x=Thing[4]())
+
+
+# COM: https://github.com/modularml/mojo/issues/1227
+# COM: Ensure default parameters are rebound during CTAD.
+@value
+@register_passable("trivial")
+struct DependentDefault[x: Int = 1, y: Int = x]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"dependent_default_ctad
+fn dependent_default_ctad():
+    # CHECK-NEXT: value: {{.*}}@DependentDefault<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 1}>>
+    alias value = DependentDefault()
