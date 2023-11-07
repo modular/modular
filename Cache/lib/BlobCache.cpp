@@ -491,6 +491,149 @@ M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
   return RCRef<FilesystemBackend>::create(runtime, basePath, readOnly);
 }
 
+/// Returns a filesystem-based implementation of the BlobCacheBackend. The
+/// `cacheDir` is used to derive a path for use by the filesystem backend. The
+/// `version` specifies the version string of the cache, defaults to
+/// MODULAR_VERSION_STRING if the provided version is empty.
+static ErrorOr<RCRef<FilesystemBackend>>
+getVersionedFilesystemBackend(LLCL::Runtime &runtime,
+                              const std::filesystem::path &cacheDir,
+                              std::string version) {
+  // If no version is specified, use the default version.
+  if (version.empty())
+    version = getModularVersionString();
+
+  std::error_code ec;
+  std::filesystem::path base = cacheDir;
+  if (!base.is_absolute()) {
+    std::filesystem::path homePath = Config::getModularHomeDirPath();
+
+    // Default to the .derived directory.
+    if (auto path = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
+      base = std::filesystem::absolute(*path, ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to derived dir: " +
+                     ec.message());
+    } else if (auto path = llvm::sys::Process::GetEnv("MODULAR_INSTALL_DIR")) {
+      base = std::filesystem::absolute(*path, ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to installed dir: " +
+                     ec.message());
+    } else if (std::filesystem::exists(homePath, ec) && !ec) {
+      base = std::filesystem::absolute(homePath, ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to modular home dir: " +
+                     ec.message());
+#ifdef _WIN32
+    } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ';')) {
+#else
+    } else if (auto path = findDirInEnvPath(cacheDir.string())) {
+#endif
+      base = std::filesystem::absolute(*path, ec);
+      if (ec)
+        return Error("failed to get absolute path to directory specified by " +
+                     *path + ec.message());
+    } else {
+      auto derivedPath = std::filesystem::path(MODULAR_DERIVED_DIR);
+      if (std::filesystem::exists(derivedPath, ec) && !ec)
+        base = std::filesystem::absolute(derivedPath, ec) / cacheDir;
+      else
+        base = std::filesystem::temp_directory_path(ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to derived dir: " +
+                     ec.message());
+    }
+  }
+
+  assert(base.is_absolute() && "must default to non-empty absolute path");
+  bool readOnly = !checkOrCreateWriteableDirectory(base);
+
+  // If we have write access, do a little cache pruning on the host system in
+  // order to keep disk usage down: iterate the base path and remove directories
+  // that don't match the current version.
+  if (!readOnly) {
+    for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
+      // The directory entry must exist, be a directory, the parent must be
+      // `base` and the directory 'filename' must not match
+      // MODULAR_VERSION_STRING in order for it to be deleted.
+
+      [[maybe_unused]] std::error_code ec0, ec1;
+      if (std::filesystem::is_directory(dirEntry.path(), ec) &&
+          (std::filesystem::canonical(dirEntry.path().parent_path(), ec0) ==
+           std::filesystem::canonical(base, ec1)) &&
+          (dirEntry.path().filename() != version)) {
+        std::filesystem::remove_all(dirEntry, ec);
+      }
+    }
+  }
+
+  base = base / version;
+  return RCRef<FilesystemBackend>::create(runtime, base, readOnly);
+}
+
+//===----------------------------------------------------------------------===//
+// FileSystemBackedInMemoryBackend
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Provides a wrapper around in-memory and filesystem-backed backends that only
+/// stores mmap'd buffers in-memory. This is useful for caching large objects
+/// or large numbers of objects that would otherwise consume too much memory.
+struct FileSystemBackedInMemoryBackend : public BlobCacheBackend {
+  explicit FileSystemBackedInMemoryBackend(
+      LLCL::Runtime &runtime, RCRef<InMemoryBackend> inmemoryBackend,
+      RCRef<FilesystemBackend> filesystemBackend)
+      : BlobCacheBackend(runtime), inmemoryBackend(std::move(inmemoryBackend)),
+        filesystemBackend(std::move(filesystemBackend)) {}
+
+  ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
+    // We only need to insert into the filesystem backend. When looking up a
+    // result, that's when we'll populate the in-memory backend.
+    return filesystemBackend->insertImpl(keyHash, std::move(obj));
+  }
+
+  ErrorOr<bool> containsImpl(StringRef keyHash) const override {
+    auto containsOr = inmemoryBackend->containsImpl(keyHash);
+    if (containsOr.isError() || *containsOr)
+      return containsOr;
+    return filesystemBackend->containsImpl(keyHash);
+  }
+
+  ErrorOr<std::optional<BufferRef>>
+  findImpl(StringRef keyHash,
+           std::optional<WriteableBufferRef> buf) const override {
+    auto bufCopy = buf ? buf->copy() : std::optional<WriteableBufferRef>();
+    auto result = inmemoryBackend->findImpl(keyHash, std::move(bufCopy));
+    if (result.isError() || *result)
+      return result;
+
+    // If we didn't find it in the in-memory backend, try the filesystem
+    // backend.
+    result = filesystemBackend->findImpl(keyHash, std::move(buf));
+    if (result.isError() || !*result)
+      return result;
+
+    // If we found it in the filesystem backend, insert it into the in-memory
+    // backend.
+    if (auto err = inmemoryBackend->insertImpl(keyHash, (*result)->copy()))
+      return err.takeError();
+    return result;
+  }
+
+  ErrorOrSuccess clearImpl() override {
+    if (auto err = inmemoryBackend->clearImpl())
+      return err;
+    return filesystemBackend->clearImpl();
+  }
+
+  /// The in-memory backend used to store filesystem references.
+  RCRef<InMemoryBackend> inmemoryBackend;
+
+  /// The filsystem backend.
+  RCRef<FilesystemBackend> filesystemBackend;
+};
+} // namespace
+
 //===----------------------------------------------------------------------===//
 // DylibBlobCacheBackend
 //===----------------------------------------------------------------------===//
@@ -586,80 +729,17 @@ ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
                                       const std::filesystem::path &cacheDir,
                                       std::string version) {
-  auto backend = getInMemoryBackend(runtime);
+  auto backend = RCRef<InMemoryBackend>::create(runtime);
 
-  // If no version is specified, use the default version.
-  if (version.empty())
-    version = getModularVersionString();
+  auto filesystemBackend =
+      getVersionedFilesystemBackend(runtime, cacheDir, std::move(version));
+  if (failed(filesystemBackend))
+    return filesystemBackend.takeError();
 
-  std::error_code ec;
-  std::filesystem::path base = cacheDir;
-  if (!base.is_absolute()) {
-    std::filesystem::path homePath = Config::getModularHomeDirPath();
-
-    // Default to the .derived directory.
-    if (auto path = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
-      base = std::filesystem::absolute(*path, ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to derived dir: " +
-                     ec.message());
-    } else if (auto path = llvm::sys::Process::GetEnv("MODULAR_INSTALL_DIR")) {
-      base = std::filesystem::absolute(*path, ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to installed dir: " +
-                     ec.message());
-    } else if (std::filesystem::exists(homePath, ec) && !ec) {
-      base = std::filesystem::absolute(homePath, ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to modular home dir: " +
-                     ec.message());
-#ifdef _WIN32
-    } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ';')) {
-#else
-    } else if (auto path = findDirInEnvPath(cacheDir.string())) {
-#endif
-      base = std::filesystem::absolute(*path, ec);
-      if (ec)
-        return Error("failed to get absolute path to directory specified by " +
-                     *path + ec.message());
-    } else {
-      auto derivedPath = std::filesystem::path(MODULAR_DERIVED_DIR);
-      if (std::filesystem::exists(derivedPath, ec) && !ec)
-        base = std::filesystem::absolute(derivedPath, ec) / cacheDir;
-      else
-        base = std::filesystem::temp_directory_path(ec) / cacheDir;
-      if (ec)
-        return Error("failed to get absolute path to derived dir: " +
-                     ec.message());
-    }
-  }
-
-  assert(base.is_absolute() && "must default to non-empty absolute path");
-  bool readOnly = !checkOrCreateWriteableDirectory(base);
-
-  // If we have write access, do a little cache pruning on the host system in
-  // order to keep disk usage down: iterate the base path and remove directories
-  // that don't match the current version.
-  if (!readOnly) {
-    for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
-      // The directory entry must exist, be a directory, the parent must be
-      // `base` and the directory 'filename' must not match
-      // MODULAR_VERSION_STRING in order for it to be deleted.
-
-      [[maybe_unused]] std::error_code ec0, ec1;
-      if (std::filesystem::is_directory(dirEntry.path(), ec) &&
-          (std::filesystem::canonical(dirEntry.path().parent_path(), ec0) ==
-           std::filesystem::canonical(base, ec1)) &&
-          (dirEntry.path().filename() != version)) {
-        std::filesystem::remove_all(dirEntry, ec);
-      }
-    }
-  }
-
-  base = base / version;
-
-  backend->appendDelegate(getFilesystemBackend(runtime, base, readOnly));
-  return backend;
+  // Wrap the filesystem backend in an in-memory caching backend. This ensures
+  // we only store mmap'd data in memory.
+  return RCRef<FileSystemBackedInMemoryBackend>::create(
+      runtime, backend.copy(), filesystemBackend->copy());
 }
 
 ErrorOr<RCRef<BlobCacheBackend>>
