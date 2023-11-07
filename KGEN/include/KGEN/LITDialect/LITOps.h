@@ -40,8 +40,10 @@ enum class SpecialFunctionKind : uint8_t;
 class SpecialFunctionInfo;
 
 /// Given an insertion point in a block, scan up the parent hierarchy to see if
-/// this block is nested under the try region of a try op.
-bool findTryBlock(Block *currentBlock);
+/// this block is nested under the TryOp region that will handle a 'raise'd
+/// error, or if this is in a function that is allowed to raise.  This returns
+/// the TryOp or FuncOp if found, or null if raise is not valid.
+Operation *findOpProcessingRaise(Block *currentBlock);
 
 /// Return the fully resolved symbol reference for the given declaration,
 /// including all scoping that may be needed, making it unique for every

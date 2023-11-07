@@ -1522,9 +1522,7 @@ LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
     return failure();
   // If the raise is not in a try and the parent doesn't throw, it is not valid
   // syntax.
-  auto funcOp = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
-  if (!findTryBlock(builder->getInsertionBlock()) &&
-      (!funcOp || !funcOp.isThrows()))
+  if (!findOpProcessingRaise(builder->getInsertionBlock()))
     return failure();
 
   builder->create<LIT::RaiseOp>(raiseLoc, errorValue);

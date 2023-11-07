@@ -35,28 +35,32 @@ using namespace LIT;
 // Utilities
 //===----------------------------------------------------------------------===//
 
-bool LIT::findTryBlock(Block *currentBlock) {
+/// Given an insertion point in a block, scan up the parent hierarchy to see if
+/// this block is nested under the TryOp region that will handle a 'raise'd
+/// error, or if this is in a function that is allowed to raise.  This returns
+/// the TryOp or FuncOp if found, or null if raise is not valid.
+Operation *LIT::findOpProcessingRaise(Block *currentBlock) {
   Operation *parentOp;
   while (currentBlock && (parentOp = currentBlock->getParentOp())) {
-    if (isa<LIT::FuncOp>(parentOp))
-      break;
-    TryOp tryOp = dyn_cast<TryOp>(parentOp);
-    if (tryOp) {
-      Region &body = tryOp.getTryRegion();
-      if (!body.empty() && &body.front() == currentBlock) {
-        // If the except region has an UnreachableOp in it, then this is not
-        // allowed to raise.
-        auto &exceptRegion = tryOp.getExceptRegion();
-        if (!exceptRegion.empty() &&
-            isa<UnreachableOp>(exceptRegion.front().front()))
-          return false;
+    // If we find a throwing function, return it.
+    if (auto funcOp = dyn_cast<LIT::FuncOp>(parentOp))
+      return funcOp.isThrows() ? funcOp : nullptr;
 
-        return true;
+    if (auto tryOp = dyn_cast<TryOp>(parentOp)) {
+      Region &tryBody = tryOp.getTryRegion();
+      if (!tryBody.empty() && &tryBody.front() == currentBlock) {
+        // If the except region has an UnreachableOp in it, then this is not
+        // allowed to raise.  This must be for a 'with' or something else that
+        // needs a finally but isn't itself in a throwing region.
+        auto &exceptRegion = tryOp.getExceptRegion();
+        if (exceptRegion.empty() ||
+            !isa<UnreachableOp>(exceptRegion.front().front()))
+          return tryOp;
       }
     }
     currentBlock = parentOp->getBlock();
   }
-  return false;
+  return nullptr;
 }
 
 SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
