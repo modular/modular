@@ -600,6 +600,8 @@ fn scatter_nd_generator[
 
         # Calculate the updates_offset from where to copy the updates.
         var updates_offset = 0
+
+        @unroll
         for i in range(updates_rank):
             updates_offset = (
                 updates_offset
@@ -608,6 +610,8 @@ fn scatter_nd_generator[
 
         # Calculate the output_offset to where to copy the updates.
         var output_offset = 0
+
+        @unroll
         for i in range(data_rank):
             output_offset = (
                 output_offset
@@ -618,16 +622,32 @@ fn scatter_nd_generator[
         # Also handling any reduction operation reduce_fn.
         @parameter
         if has_reduction_operation:
-            for i in range(count_copy):
-                output_flat[output_offset + i] = reduce_fn[output_type, 1](
-                    output_flat[output_offset + i],
-                    updates_flat[updates_offset + i],
+
+            @parameter
+            @always_inline
+            fn reduce_updates[simd_width: Int](idx: Int):
+                output_flat.simd_store[simd_width](
+                    output_offset + idx,
+                    reduce_fn(
+                        output_flat.simd_load[simd_width](output_offset + idx),
+                        updates_flat.simd_load[simd_width](
+                            updates_offset + idx
+                        ),
+                    ),
                 )
+
+            vectorize[simdwidthof[output_type](), reduce_updates](count_copy)
         else:
-            for i in range(count_copy):
-                output_flat[output_offset + i] = updates_flat[
-                    updates_offset + i
-                ]
+
+            @parameter
+            @always_inline
+            fn copy_updates[simd_width: Int](idx: Int):
+                output_flat.simd_store[simd_width](
+                    output_offset + idx,
+                    updates_flat.simd_load[simd_width](updates_offset + idx),
+                )
+
+            vectorize[simdwidthof[output_type](), copy_updates](count_copy)
 
     # TODO: SEE: simd_width > 1
     var iter_shape = StaticIntTuple[indices_rank - 1]()
