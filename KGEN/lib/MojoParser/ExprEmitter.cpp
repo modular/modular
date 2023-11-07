@@ -1429,30 +1429,31 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
 
   // If the caller accepts a fully unbound type and the type is unbound, return
   // it now without verifying the bindings.
-  // TODO(#22627): When metatypes and partial binding are in, this logic needs
-  // to be updated to allow partial binding.
-  if (allowUnbound && type.getParamBindings().empty())
+  if (allowUnbound)
     return type;
 
   auto structDecl = dyn_cast<StructDeclOp>(decl);
   if (!structDecl)
     return type;
 
-  // Build up a InputParamBindings set to validate and check the bindings.
+  // Build up a InputParamBindings set to validate and check the bindings. Skip
+  // unbound values.
   InputParamBindings paramBindings;
   for (TypedAttr binding : type.getParamBindings())
-    paramBindings.addPrechecked(binding);
+    if (!isa<UnboundAttr>(binding))
+      paramBindings.addPrechecked(binding);
 
-  // Check the bindings.
+  // Check the existing bindings against the full signature of the type.
   ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
-      structDecl, *this, expr->getLoc(), /*allowPartiallyBound=*/false);
+      structDecl, structDecl.getSignature(), *this, expr->getLoc(),
+      /*allowPartiallyBound=*/false);
   if (!bindingValuesAttr)
     return {};
 
   // If verifyBindings changed the bindings set, then we may have had an
   // empty varargs list or something.  Rebind the DeclRefType.
   if (bindingValuesAttr.getValue() != type.getParamBindings())
-    type = cast<DeclRefType>(type).bindParams(bindingValuesAttr);
+    type = structDecl.bindReference(bindingValuesAttr);
   return type;
 }
 
@@ -1616,12 +1617,16 @@ PValue ExprEmitter::resolveAliasDeclareValue(
       if (!paramValues)
         return param.getValue();
 
+      // Disallow accessing alias members of an unbound type.
+      // TODO: This should return a parametric alias instead.
       ArrayRef<ParamDeclAttr> paramDecls = structDecl.getInputParams();
-      if (paramDecls.size() != paramValues->size()) {
+      size_t numParams = llvm::count_if(*paramValues, [](TypedAttr value) {
+        return !isa<UnboundAttr>(value);
+      });
+      if (paramDecls.size() != numParams) {
         shared.emitError(errLoc,
-                         "incorrect number of struct parameters, expected:")
-            << structDecl.getInputParams().size()
-            << " got: " << paramValues->size() << ".";
+                         "incorrect number of type parameters: expected ")
+            << structDecl.getInputParams().size() << " but got " << numParams;
         return PValue();
       }
 
@@ -1668,10 +1673,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   }
 
   // If this is a type declaration, return it as a type.
-  if (auto structOp = dyn_cast<StructDeclOp>(decl)) {
-    PValue result(structOp.bindReference());
-    return emitResult(result, expr, dest);
-  }
+  if (auto structOp = dyn_cast<StructDeclOp>(decl))
+    return emitResult(PValue(structOp.bindReference()), expr, dest);
 
   // If this is a module or package declaration, form a module reference.
   if (isa<FileModuleOp, PackageOp>(decl)) {

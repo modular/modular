@@ -43,22 +43,8 @@ InputParamBindings InputParamBindings::getForDeclaredType(ASTType type,
   inputParamBindings.defaultTypeParams = type.getDefaultParameters(shared);
 
   ArrayRef<TypedAttr> paramBindings = type.getParamBindings();
-  if (!paramBindings.empty()) {
-    assert(inputParamBindings.numCtadParams == paramBindings.size());
-    for (TypedAttr binding : paramBindings)
-      inputParamBindings.addPrechecked(binding);
-  } else {
-    for (Type type : inputParams) {
-      // Variadics should only appear on the trailing end of parameter
-      // declaration lists, and cannot have defaults values. We check for them,
-      // and decrement the count which is needed to allow the case when the
-      // variadic is empty.
-      if (isa<VariadicType>(type))
-        --inputParamBindings.numCtadParams;
-      else
-        inputParamBindings.addPrechecked(UnboundAttr::get(type));
-    }
-  }
+  for (TypedAttr binding : paramBindings)
+    inputParamBindings.addPrechecked(binding);
   return inputParamBindings;
 }
 
@@ -314,6 +300,17 @@ InputParamBindings::verifyBindings(
           continue;
         }
 
+        // If this parameter is a variadic, allow binding an empty list if a
+        // value is not provided and it will not be inferred from a pack vararg.
+        if (isVarArg(idx) && !isPackVarArg) {
+          if (auto varType = dyn_cast<VariadicType>(type)) {
+            setParamValue(VariadicAttr::get({}, varType));
+            ++posBindingIdx;
+            fitness.lastExpectedType = varType.getElementAsType();
+            continue;
+          }
+        }
+
         // We tried but couldn't infer an unbound parameter, we must error.
         if (diagEmitter.emitCtadFailure)
           diagEmitter.emitCtadFailure(idx);
@@ -497,10 +494,9 @@ InputParamBindings::verifyBindings(LITSignatureType sig,
 }
 
 ParameterExprArrayAttr
-InputParamBindings::verifyBindings(StructDeclOp structOp, ExprEmitter &emitter,
-                                   llvm::SMLoc exprLoc,
+InputParamBindings::verifyBindings(StructDeclOp structOp, TypeSignatureType sig,
+                                   ExprEmitter &emitter, llvm::SMLoc exprLoc,
                                    bool allowPartiallyBound) const {
-  TypeSignatureType sig = structOp.getSignature();
   auto [bindingValuesAttr, _] = verifyBindings(
       sig.getInputParamTypes(), sig.getParamNames(), sig.getParamPassingKinds(),
       sig.getDefaultParameters(), emitter, sig.getParamVarArg(),

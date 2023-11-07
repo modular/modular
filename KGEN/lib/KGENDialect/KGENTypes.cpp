@@ -623,11 +623,6 @@ DeclRefType DeclRefType::get(SymbolRefAttr name, Type metatype) {
   return get(name, {}, metatype);
 }
 
-DeclRefType DeclRefType::bindParams(ArrayRef<TypedAttr> paramValues) {
-  assert(getParamValues().empty() && "partial binding not supported yet");
-  return get(getSymbol(), paramValues, getMetaType());
-}
-
 std::optional<StringRef> DeclRefType::getAliasName() {
   // Don't alias types with parameter references.
   if (!getParamValues().empty())

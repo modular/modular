@@ -26,11 +26,8 @@ struct Thing[a: Int, b: Int]:
 fn GoodUseOfThing(a: Thing[4, 5]):
   pass
 
-# expected-error-re @below {{cannot apply more parameters to an already parameterized type 'Thing[{{.*}}1{{.*}}, {{.*}}2{{.*}}]'}}
+# expected-error @below {{Thing' expects 0 input parameters, but 1 was specified}}
 fn MultipleThingMetaparams(a: Thing[1,2][1]):
-  pass
-
-fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{partial autoparameterization not supported yet}}
   pass
 
 # expected-error @+1 {{'Thing' parameter #1 has 'Int' type, but value has type 'FloatLiteral'}}
@@ -60,6 +57,8 @@ fn testTestParamStruct(a: Parameterized[4]):
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
   a.method[2, 7] # expected-error {{'method' expects 2 input parameters, but 3 were specified}}
+
+  var partial_var_type: Thing[1] # expected-error {{'Thing' expects 2 input parameters, but 1 was specified}}
 
 
 struct MySIMD[size: Int, type: __mlir_type.`!kgen.dtype`]:
@@ -261,7 +260,7 @@ fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
 struct StructWithParam[n: Int]:
     alias Alias = StructWithParam[1]()
 
-alias accessStructWithParam = StructWithParam.Alias # expected-error {{incorrect number of struct parameters}}
+alias accessStructWithParam = StructWithParam.Alias # expected-error {{incorrect number of type parameters: expected 1 but got 0}}
 
 
 ##===----------------------------------------------------------------------===##

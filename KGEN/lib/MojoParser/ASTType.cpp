@@ -68,8 +68,8 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 /// on this reference to the type.  Note that this is potentially a partial
 /// binding set - incomplete bindings (missing bindings) are valid.
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
-  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
-    return declRef.getParamValues();
+  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+    return metaType.getParamValues();
   return {};
 }
 
