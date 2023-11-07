@@ -32,6 +32,10 @@ endif()
 
 set(version_inc "${VERSION_OUTPUT_FILE}")
 
+# TODO(#17186): We need MODULAR_CREATE_TUF_REPO here because
+# MODULAR_RELEASE_PACKAGE_BUILD cannot be set for Mojo SDK builds.
+# This is because when it is set, mblack does not get built.
+# Read more here https://github.com/modularml/modular/issues/17186
 if(MODULAR_RELEASE_PACKAGE_BUILD OR MODULAR_CREATE_TUF_REPO)
   set(MODULAR_VERSION_STRING "\"${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}${MODULAR_VERSION_LABEL}\"")
 else()
