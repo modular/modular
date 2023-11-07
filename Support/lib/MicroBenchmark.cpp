@@ -164,7 +164,32 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
     batchSize = std::lround(nextBatchSize);
   }
 
+  // Revisit all the measurement entries and determine if they are statistically
+  // significant.
+  size_t idx = 0;
+  for (Measurement &measurement : measurements)
+    measurement.isStatisticallySignificant =
+        isSignificantMeasurement(measurement, idx++);
+
   return success();
+}
+
+bool MicroBenchmark::isSignificantMeasurement(const Measurement &measurement,
+                                              size_t idx) {
+  // The measurement number of iteration is the same as the requested
+  // maxBatchSize and the measurement duration execeeded the requested min
+  // runtime.
+  if (runOptions.maxBatchSize &&
+      measurement.iterations >= runOptions.maxBatchSize &&
+      measurement.duration >= runOptions.minRuntime)
+    return true;
+
+  // This measument occured in the last 10% of the run.
+  if ((idx + 1) >= 0.9 * measurements.size())
+    return true;
+
+  // Otherwise the result is not statically significant.
+  return false;
 }
 
 /// Clear the cache if requested.
@@ -232,20 +257,10 @@ static StringRef toString(MicroBenchmark::ReportMetric metric) {
     return "time_unit";
   case MicroBenchmark::ReportMetric::kRaw:
     return "raw";
-  case MicroBenchmark::ReportMetric::kMinLatency:
-    return "min_latency";
-  case MicroBenchmark::ReportMetric::kMaxLatency:
-    return "max_latency";
   case MicroBenchmark::ReportMetric::kMeanLatency:
     return "mean_latency";
-  case MicroBenchmark::ReportMetric::kTrimmedMeanLatency:
-    return "trimmed_mean_latency";
   case MicroBenchmark::ReportMetric::kMedianLatency:
     return "median_latency";
-  case MicroBenchmark::ReportMetric::kPercentileLatency95:
-    return "percentile_latency_95";
-  case MicroBenchmark::ReportMetric::kPercentileLatency99:
-    return "percentile_latency_99";
   case MicroBenchmark::ReportMetric::kWarmupCount:
     return "warmup_count";
   case MicroBenchmark::ReportMetric::kIterationCount:
@@ -276,27 +291,13 @@ static void printCSVHeader(raw_ostream &os,
 static SmallVector<std::chrono::nanoseconds>
 getTimings(ArrayRef<MicroBenchmark::Measurement> measurements) {
   return llvm::map_to_vector(
-      measurements, [](auto &measurement) -> std::chrono::nanoseconds {
+      llvm::make_filter_range(measurements,
+                              [](auto &measurement) {
+                                return measurement.isStatisticallySignificant;
+                              }),
+      [](auto &measurement) -> std::chrono::nanoseconds {
         return measurement.duration / measurement.iterations;
       });
-}
-
-/// Computes the min latency and returns the value as a double in the
-/// specified time unit.
-static double getMinLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
-                            MicroBenchmark::TimeUnit timeUnit) {
-  auto timings = getTimings(measurements);
-  auto minLatency = *std::min_element(timings.begin(), timings.end());
-  return formatTime(timeUnit, minLatency);
-}
-
-/// Computes the max latency and returns the value as a double in the
-/// specified time unit.
-static double getMaxLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
-                            MicroBenchmark::TimeUnit timeUnit) {
-  auto timings = getTimings(measurements);
-  auto minLatency = *std::max_element(timings.begin(), timings.end());
-  return formatTime(timeUnit, minLatency);
 }
 
 /// Computes the mean latency and returns the value as a double in the
@@ -304,16 +305,6 @@ static double getMaxLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
 static double getMeanLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
                              MicroBenchmark::TimeUnit timeUnit) {
   return formatTime(timeUnit, mean(getTimings(measurements)));
-}
-
-/// Computes the trimmed mean latency and returns the value as a double in the
-/// specified time unit.
-static double
-getTrimmedMeanLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
-                      MicroBenchmark::TimeUnit timeUnit) {
-  auto timings = getTimings(measurements);
-  llvm::sort(timings);
-  return formatTime(timeUnit, trimmedMean(timings));
 }
 
 /// Computes the median latency and returns the value as a double in the
@@ -324,26 +315,6 @@ getMedianLatency(ArrayRef<MicroBenchmark::Measurement> measurements,
   auto timings = getTimings(measurements);
   llvm::sort(timings);
   return formatTime(timeUnit, median(timings));
-}
-
-/// Computes the 95th percentile latency and returns the value as a double in
-/// the specified time unit.
-static double
-getPercentileLatency95(ArrayRef<MicroBenchmark::Measurement> measurements,
-                       MicroBenchmark::TimeUnit timeUnit) {
-  auto timings = getTimings(measurements);
-  llvm::sort(timings);
-  return formatTime(timeUnit, percentile(timings, 0.95));
-}
-
-/// Computes the 99th percentile latency and returns the value as a double in
-/// the specified time unit.
-static double
-getPercentileLatency99(ArrayRef<MicroBenchmark::Measurement> measurements,
-                       MicroBenchmark::TimeUnit timeUnit) {
-  auto timings = getTimings(measurements);
-  llvm::sort(timings);
-  return formatTime(timeUnit, percentile(timings, 0.99));
 }
 
 /// Gets the measurements for the given metric as a double value in the
@@ -358,20 +329,10 @@ double MicroBenchmark::measurement(MicroBenchmark::ReportMetric metric,
     llvm_unreachable("invalid report metric. Only metrics which have a value "
                      "coercible to a double are supported.");
     return 0;
-  case ReportMetric::kMinLatency:
-    return getMinLatency(measurements, timeUnit);
-  case ReportMetric::kMaxLatency:
-    return getMaxLatency(measurements, timeUnit);
   case ReportMetric::kMeanLatency:
     return getMeanLatency(measurements, timeUnit);
-  case ReportMetric::kTrimmedMeanLatency:
-    return getTrimmedMeanLatency(measurements, timeUnit);
   case ReportMetric::kMedianLatency:
     return getMedianLatency(measurements, timeUnit);
-  case ReportMetric::kPercentileLatency95:
-    return getPercentileLatency95(measurements, timeUnit);
-  case ReportMetric::kPercentileLatency99:
-    return getPercentileLatency99(measurements, timeUnit);
   case ReportMetric::kWarmupCount:
     return runOptions.warmupIterations;
   case ReportMetric::kIterationCount:

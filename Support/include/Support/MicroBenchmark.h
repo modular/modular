@@ -123,13 +123,8 @@ struct MicroBenchmark {
     kName,
     kRaw,
     kTimeUnit,
-    kMinLatency,
-    kMaxLatency,
     kMeanLatency,
-    kTrimmedMeanLatency,
     kMedianLatency,
-    kPercentileLatency95,
-    kPercentileLatency99,
     kWarmupCount,
     kIterationCount,
     kBatchCount
@@ -190,16 +185,10 @@ struct MicroBenchmark {
     /// The time unit to use for the report.
     TimeUnit timeUnit = TimeUnit::kMicroseconds;
     /// The metrics to be reported.
-    SmallVector<ReportMetric, 15> metrics{ReportMetric::kName,
-                                          ReportMetric::kTimeUnit,
-                                          ReportMetric::kWarmupCount,
-                                          ReportMetric::kMinLatency,
-                                          ReportMetric::kMeanLatency,
-                                          ReportMetric::kMedianLatency,
-                                          ReportMetric::kPercentileLatency95,
-                                          ReportMetric::kPercentileLatency99,
-                                          ReportMetric::kIterationCount,
-                                          ReportMetric::kBatchCount};
+    SmallVector<ReportMetric, 15> metrics{
+        ReportMetric::kName,           ReportMetric::kTimeUnit,
+        ReportMetric::kWarmupCount,    ReportMetric::kMedianLatency,
+        ReportMetric::kIterationCount, ReportMetric::kBatchCount};
   };
 
   /// Measurements currently include the number of iterations (i.e. batch size)
@@ -207,6 +196,7 @@ struct MicroBenchmark {
   struct Measurement {
     size_t iterations;
     std::chrono::nanoseconds duration;
+    bool isStatisticallySignificant = false;
   };
 
   /// The clock type used for the benchmark. We ue the high_resolution_clock to
@@ -279,6 +269,8 @@ private:
   std::function<void(State &)> benchmarkFunction;
   std::vector<Measurement> measurements;
   RunOptions runOptions;
+
+  bool isSignificantMeasurement(const Measurement &measurement, size_t idx);
 };
 } // namespace M
 
