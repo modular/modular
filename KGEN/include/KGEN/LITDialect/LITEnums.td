@@ -13,6 +13,10 @@
 
 include "mlir/IR/EnumAttr.td"
 
+//===----------------------------------------------------------------------===//
+// PassingKind
+//===----------------------------------------------------------------------===//
+
 /// Defines how an argument/parameter is allowed (by declaratopm) to be passed.
 def LIT_PassingKind : I32EnumAttr<"PassingKind",
     "How an argument or parameter is allowed to be passed", [
@@ -21,10 +25,11 @@ def LIT_PassingKind : I32EnumAttr<"PassingKind",
   I32EnumAttrCase<"KwOnly", 2, "kw">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
+  let genSpecializedAttr = 0;
 }
 
 //===----------------------------------------------------------------------===//
-// VarLetDecl support
+// VarLetDeclKind
 //===----------------------------------------------------------------------===//
 
 def LIT_VarLetDeclKind : I32EnumAttr<"VarLetDeclKind",

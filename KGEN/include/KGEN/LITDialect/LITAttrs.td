@@ -341,15 +341,14 @@ def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
 //===----------------------------------------------------------------------===//
 
 def LIT_PassingKindArrayAttr : LITAttr<"PassingKindArray", "passing.kinds"> {
-  let parameters = (ins
-    OptionalArrayRefParameter<"PassingKind">:$value
-  );
+  let parameters = (ins OptionalArrayRefParameter<"PassingKind">:$value);
   let assemblyFormat = "`<` `[` (`]`) : ($value^ `]`)? `>`";
 }
 
 //===----------------------------------------------------------------------===//
 // VarLetDeclKindAttr
 //===----------------------------------------------------------------------===//
+
 def LIT_VarLetDeclKindAttr : EnumAttr<LITDialect, LIT_VarLetDeclKind,
     "varlet.decl.kind">;
 
