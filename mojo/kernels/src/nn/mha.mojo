@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import add, div_ceil, iota, max, min, sqrt, neginf, exp
+from math import div_ceil, iota, max, min, sqrt, neginf, exp
 from algorithm import (
     elementwise,
     unroll,
@@ -397,6 +397,26 @@ fn flash_attention[
         out_chain.mark_error(e)
 
 
+@parameter
+@closure
+@always_inline
+fn _add_capturing[
+    type: DType,
+    width: Int,
+](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+    return x + y
+
+
+@parameter
+@closure
+@always_inline
+fn _max_capturing[
+    type: DType,
+    width: Int,
+](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+    return max(x, y)
+
+
 fn flash_attention_kernel(
     q_ptr: DTypePointer[DType.float32],
     k_ptr: DTypePointer[DType.float32],
@@ -532,14 +552,17 @@ fn flash_attention_kernel(
         # Online Softmax for P
         let pre_rowmax = rowmax.load(p_tile_row)
         let curr_rowmax = max(
-            warp_reduce[DType.float32, shuffle_xor, max](acc), pre_rowmax
+            warp_reduce[DType.float32, shuffle_xor, _max_capturing](acc),
+            pre_rowmax,
         )
         let correction = exp(pre_rowmax - curr_rowmax)
         # Apply the softmax nominator to score (p_tile).
         acc = exp(acc - curr_rowmax)
         p_tile.store(tid, acc)
         # Keep record of running sum and max.
-        let curr_rowsum = warp_reduce[DType.float32, shuffle_down, add](acc)
+        let curr_rowsum = warp_reduce[
+            DType.float32, shuffle_down, _add_capturing
+        ](acc)
         if p_tile_col == 0:
             rowmax.store(p_tile_row, curr_rowmax)
             rowsum.store(
