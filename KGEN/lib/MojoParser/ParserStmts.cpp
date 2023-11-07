@@ -1282,15 +1282,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Determine whether we're in a region that is allowed to raise.  If so,
   // generate logic to deal with it.
-  // TODO: Generalize findTryBlock to handle the throwing function thing.
-  bool inExceptRegion = findTryBlock(builder.getInsertionBlock());
-  if (!inExceptRegion) {
-    auto funcOp =
-        getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
-    inExceptRegion = funcOp.isThrows();
-  }
+  bool inExceptRegion = findOpProcessingRaise(builder.getInsertionBlock());
 
-  // Lookup the error type since we're in an exception region.
+  // Lookup the error type if we're in an exception region.
   ASTType errorType;
   if (inExceptRegion) {
     errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
