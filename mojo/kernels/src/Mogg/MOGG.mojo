@@ -1027,7 +1027,7 @@ fn cumsum[
     debug_assert(
         axis_int >= 0 and axis_int < rank, "axis must be between 0 and rank - 1"
     )
-    _cumsum[rank, type, exclusive, reverse](output, input, axis_int)
+    _cumsum[rank, type, exclusive == 1, reverse == 1](output, input, axis_int)
     out_chain.mark_ready()
 
 
