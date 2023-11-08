@@ -6,3 +6,5 @@
   LLDB command or an expression and resolve it accordingly. The user can prepend
   the input with a colon (`:`) to force handling it as an LLDB command, which is
   similar to the behavior of the Mojo REPL.
+
+- Fixed the "Debug Mojo File" action in the editor's top menu.

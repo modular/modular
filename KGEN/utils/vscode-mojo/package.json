@@ -2,7 +2,7 @@
   "name": "vscode-mojo",
   "displayName": "Mojo 🔥",
   "description": "Mojo language support",
-  "version": "5.0.1-dev",
+  "version": "5.0.2-dev",
   "publisher": "modular-mojotools",
   "icon": "icon.png",
   "engines": {
@@ -171,7 +171,7 @@
         "category": "Mojo",
         "command": "mojo.debugInTerminal",
         "icon": "$(debug-alt)",
-        "title": "Debug Mojo File (Experimental)",
+        "title": "Debug Mojo File",
         "when": "!virtualWorkspace && shellExecutionSupported && editorLangId == mojo"
       }
     ],
@@ -192,7 +192,7 @@
         {
           "command": "mojo.debugInTerminal",
           "group": "navigation@1",
-          "title": "Debug Mojo File (Experimental)",
+          "title": "Debug Mojo File",
           "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
         }
       ]
@@ -278,6 +278,10 @@
                 "type": "array",
                 "description": "Additional environment variables to set when launching the program. This is an array of strings that contains the variable name followed by an optional '=' character and the environment variable's value. Example:  [\"FOO=BAR\", \"BAZ\"]",
                 "default": []
+              },
+              "modularHomePath": {
+                "type": "string",
+                "description": "Optional path to the MODULAR_HOME containing the Mojo SDK installation."
               },
               "stopOnEntry": {
                 "type": "boolean",
@@ -393,6 +397,10 @@
                   "string"
                 ],
                 "description": "System process ID to attach to."
+              },
+              "modularHomePath": {
+                "type": "string",
+                "description": "Optional path to the MODULAR_HOME containing the Mojo SDK installation."
               },
               "waitFor": {
                 "type": "boolean",

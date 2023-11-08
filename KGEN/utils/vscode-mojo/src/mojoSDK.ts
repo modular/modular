@@ -67,16 +67,22 @@ export class MOJOSDK {
   }
 
   /**
-   * Resolve the Modular config for the given context. It'll look for the
-   * corresponding SDK in the given context if it's a string, in the environment
-   * of the VS Code process or in the VS Code settings at workspace and user
-   * level, depending on whether the context is a WorkspaceFolder.
+   * Resolve the Modular config for the given context.
+   *
+   * - If `context` is a string, then the resolver will use it as the SDK path.
+   * - If `context` is a WorkspaceFolder, then the resolver will look for the
+   * mojo.modularHomePath the WorkspaceFolder's settings and use it as the SDK
+   * path. In case of failures, it'll resort to the global settings for the IDE.
+   * - If `context` is undefined, then the resolver will look at the global
+   * settings of the IDE.
+   * - If the SDK was not found in the previous checks, then the resolver will
+   * look for MODULAR_HOME in the environment of the IDE process.
    *
    * @param context The current workspace folder if its type is
    *     vscode.WorkspaceFolder, or the Mojo SDK path if its type is string, or
    *     undefined.
-   * @param promptSDKInstall Whether to prompt the user to install the SDK
-   *                            if it is missing.
+   * @param promptSDKInstall Whether to prompt the user to install the SDK if it
+   *     is missing.
    */
   public async resolveConfig(context: vscode.WorkspaceFolder|string|
                              undefined): Promise<MOJOSDKConfig|undefined> {

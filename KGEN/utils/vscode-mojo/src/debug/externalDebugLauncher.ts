@@ -11,7 +11,6 @@
 import * as net from 'net';
 import * as querystring from 'querystring';
 import stringArgv from 'string-argv';
-import * as vscode from 'vscode';
 import {
   debug,
   DebugConfiguration,

@@ -95,11 +95,9 @@ class ExecutionManager extends DisposableContext {
       name : "Mojo",
       request : "launch",
       program : config.mojoDriverPath,
+      modularHomePath : config.modularHomePath,
       args :
           [ "run", "--no-optimization", "--debug-level", "full", doc.fileName ],
-      env : {
-        "MODULAR_HOME" : config.modularHomePath,
-      },
       initCommands : visualizerCommands,
     };
     await vscode.debug.startDebugging(
