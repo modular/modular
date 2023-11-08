@@ -64,17 +64,17 @@ class MojoDebugConfigurationProvider implements
     // This setting indicates LLDB to generate a useful summary for each
     // non-primitive type that is displayed right away in the IDE.
     if (!("enableAutoVariableSummaries" in debugConfiguration))
-      debugConfiguration["enableAutoVariableSummaries"] = true;
+      debugConfiguration.enableAutoVariableSummaries = true;
 
     // This setting indicates LLDB to use the `:` prefix in the Debug Console to
     // disambiguate variable printing from regular LLDB commands.
     if (!("commandEscapePrefix" in debugConfiguration))
-      debugConfiguration["commandEscapePrefix"] = ':';
+      debugConfiguration.commandEscapePrefix = ':';
 
     // This timeout affects targets created with "attachCommands" or
     // "launchCommands".
     if (!("timeout" in debugConfiguration))
-      debugConfiguration["timeout"] = initializationTimeoutSec;
+      debugConfiguration.timeout = initializationTimeoutSec;
 
     // This setting shortens the length of address strings.
     const initCommands = [
@@ -82,16 +82,17 @@ class MojoDebugConfigurationProvider implements
     ];
 
     // Load the MojoLLDB plugin.
-    let config = await this.context?.getSDK().resolveConfig(folder);
+    let config = await this.context?.getSDK().resolveConfig(
+        debugConfiguration.modularHomePath || folder);
     if (config && config.mojoLLDBPluginPath &&
         config.mojoLLDBPluginPath.length > 0) {
       initCommands.push(`plugin load '${config.mojoLLDBPluginPath}'`);
     }
 
     // We give preference to the init commands specified by the user.
-    debugConfiguration["initCommands"] = [
+    debugConfiguration.initCommands = [
       ...initCommands,
-      ...(debugConfiguration["initCommands"] || []),
+      ...(debugConfiguration.initCommands || []),
     ];
 
     const env = [
@@ -105,7 +106,7 @@ class MojoDebugConfigurationProvider implements
     if (config)
       env.push(`MODULAR_HOME=${config.modularHomePath}`);
 
-    debugConfiguration["env"] = [...env, ...(debugConfiguration["env"] || []) ];
+    debugConfiguration.env = [...env, ...(debugConfiguration.env || []) ];
     return debugConfiguration;
   }
 }
