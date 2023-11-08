@@ -305,8 +305,7 @@ IREvaluator::IREvaluator(Elaborator &elaborator,
 /// the expression cannot be folded for one reason or another.
 ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(ImplNode *parent,
                                                             Location loc,
-                                                            Attribute expr,
-                                                            bool allowUnknown) {
+                                                            Attribute expr) {
   // FIXME: Refactor ParameterEvaluator for better error propagation.
   this->parent = parent;
   errorLoc = loc;
@@ -329,17 +328,12 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(ImplNode *parent,
   if (auto oper = dyn_cast<ParamOperatorAttr>(result))
     return ErrorTree(loc,
                      "could not simplify operator " + getParamAsString(result));
-  if (allowUnknown)
-    return result;
-
-  // Otherwise, we don't know how to simplify this attribute, it's an error.
-  return ErrorTree(loc,
-                   "unknown expression to fold: " + getParamAsString(result));
+  return result;
 }
 
 ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(ImplNode *parent,
-                                                       Location loc, Type expr,
-                                                       bool allowUnknown) {
+                                                       Location loc,
+                                                       Type expr) {
   // FIXME: Refactor ParameterEvaluator for better error propagation.
   this->parent = parent;
   errorLoc = loc;
@@ -349,15 +343,7 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(ImplNode *parent,
   Type result = getReboundType(expr);
   if (error)
     return std::move(*error);
-
-  if (!result)
-    return Type();
-
-  if (TypeConstantAttr::isConcreteType(result))
-    return result;
-
-  return ErrorTree(loc, Error("could not simplify type: " +
-                              getParamAsString(TypeConstantAttr::get(result))));
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -374,8 +360,8 @@ KGEN::evaluateConstraints(ImplNode *parent,
   // Each constraint must be foldable, and must fold to true.
   for (ConstraintAttr constraint : constraints) {
     Location loc = constraint.getLoc();
-    ErrorTreeOr<Attribute> result = evaluator.concretizeParameterExpr(
-        parent, loc, constraint.getExpr(), /*allowUnknown=*/false);
+    ErrorTreeOr<Attribute> result =
+        evaluator.concretizeParameterExpr(parent, loc, constraint.getExpr());
     if (result.isError())
       return ErrorTree(loc, "constraint evaluation failure",
                        result.takeError());

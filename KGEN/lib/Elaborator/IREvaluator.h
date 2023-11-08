@@ -47,13 +47,11 @@ public:
   /// Given a generic parameter expression, substitute known values for
   /// parameters into it and fold it down to a simple constant. This returns an
   /// error if a simple constant cannot be produced (e.g. because there is some
-  /// dependence on target information that isn't available). If `allowUnknown`
-  /// is set, only unevaluated parameter operators are rejected.
+  /// dependence on target information that isn't available).
   ErrorTreeOr<Attribute> concretizeParameterExpr(ImplNode *parent, Location loc,
-                                                 Attribute expr,
-                                                 bool allowUnknown);
+                                                 Attribute expr);
   ErrorTreeOr<Type> concretizeParameterExpr(ImplNode *parent, Location loc,
-                                            Type expr, bool allowUnknown);
+                                            Type expr);
 
   /// Lookup the body of the referenced function. Ensure the function is
   /// inflated as well.
