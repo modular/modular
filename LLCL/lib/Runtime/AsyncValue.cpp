@@ -20,13 +20,16 @@ using namespace M::LLCL;
 Detail::SomeConcreteAsyncValue::~SomeConcreteAsyncValue() {
   auto s = getState();
   // Destroy the error or value if constructed.
-  if (s == State::kError)
+  if (s == State::kError) {
     getDiagnosticPointer()->~EncodedDiagnostic();
-  else if (s == State::kAvailable)
+  } else if (s == State::kAvailable) {
     getTypeID().getValueDestructor()(getPayloadPointer());
-  else {
+  } else {
     // TODO: If unconstructed this will leak the waiters list.  We should signal
     // this as an error (checking for resurrection) etc.
+    AsyncProfilerEntry::create("AsyncValue::destroy unavailable", [this]() {
+      return Detail::addrToHex(this);
+    }).record();
     llvm::report_fatal_error(
         "destroying a non-available AsyncValue isn't implemented");
   }
