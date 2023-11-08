@@ -84,8 +84,8 @@ ErrorOrSuccess M::parseCompilationOptions(
       return Error("invalid debug info language '" + debugInfoLanguage +
                    "', expected one of: `C` or `Mojo`");
     }
-    if (debugInfoLanguage == "Mojo")
-      compilationOptions.debugInfoLanguage = CompilationOptions::kLangMojo;
+    if (debugInfoLanguage == "C")
+      compilationOptions.debugInfoLanguage = CompilationOptions::kLangC;
   }
 
   // If the user specified the triple, the target CPU, or the target feature

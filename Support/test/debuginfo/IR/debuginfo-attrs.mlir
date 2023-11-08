@@ -6,14 +6,14 @@
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 
 // CHECK: #[[CU:.*]] = #debuginfo.compile_unit<
-// CHECK-SAME:   sourceLanguage = DW_LANG_C,
+// CHECK-SAME:   sourceLanguage = DW_LANG_Mojo,
 // CHECK-SAME:   file = #[[FILE]],
 // CHECK-SAME:   producer = "MLIR",
 // CHECK-SAME:   isOptimized = true,
 // CHECK-SAME:   emissionKind = Full
 // CHECK-SAME: >
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,

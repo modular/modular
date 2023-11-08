@@ -1159,7 +1159,7 @@ kgen.generator @bar() always_inline {
 
 !struct = !debuginfo.struct<"$builtin::$simd::SIMD"(!debuginfo.member<value: !pop.simd<N, DT>>)>
 #file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 #subprogram2 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!struct) -> (!struct): DW_CC_normal>
 
 // CHECK-DAG: #[[LOC_ORI:.*]] = loc("foo.mlir":1317:13)
@@ -1170,7 +1170,7 @@ kgen.generator @bar() always_inline {
 // -----
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
 #subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"foo">, linkageName = "foo", file = #file, line = 10, scopeLine = 10, subprogramFlags = Definition> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc(fused<#subprogram>["foo.mlir":0:0])

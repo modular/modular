@@ -148,7 +148,7 @@ struct LowerToLLVMOptions
   LowerToLLVMOptions(
       DebugInfo::EmissionKind diLevel = DebugInfo::EmissionKind::None,
       std::optional<CompilationOptions::DebugAtLevel> diAtLevel = std::nullopt,
-      llvm::dwarf::SourceLanguage diLanguage = llvm::dwarf::DW_LANG_C) {
+      llvm::dwarf::SourceLanguage diLanguage = llvm::dwarf::DW_LANG_Mojo) {
     debugInfoLevel = diLevel;
     if (diAtLevel)
       debugAtLevel = *diAtLevel;
@@ -177,11 +177,11 @@ struct LowerToLLVMOptions
   Option<llvm::dwarf::SourceLanguage> debugInfoLanguage{
       *this, "debug-info-language",
       llvm::cl::desc("The DWARF language to specify in the debug info. "
-                     "Either `C` or `Mojo`. Defaults to `C`."),
+                     "Either `C` or `Mojo`. Defaults to `Mojo`."),
       llvm::cl::values(
           clEnumValN(llvm::dwarf::DW_LANG_C, "C", "C language."),
           clEnumValN(llvm::dwarf::DW_LANG_Mojo, "Mojo", "Mojo language")),
-      llvm::cl::init(llvm::dwarf::DW_LANG_C)};
+      llvm::cl::init(llvm::dwarf::DW_LANG_Mojo)};
 
   Option<std::string> alignedAllocFnName{
       *this, "aligned-alloc-fn-name",

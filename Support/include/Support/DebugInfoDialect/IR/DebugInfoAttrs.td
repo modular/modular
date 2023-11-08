@@ -121,7 +121,7 @@ def DebugInfo_DICompileUnitAttr : DIScopeAttr<"DICompileUnit", "compile_unit"> {
 
     ```mlir
     #compile_unit = #debuginfo.compile_unit<
-      sourceLanguage = DW_LANG_C,
+      sourceLanguage = DW_LANG_Mojo,
       file = #file,
       producer = "MLIR",
       isOptimized = true,

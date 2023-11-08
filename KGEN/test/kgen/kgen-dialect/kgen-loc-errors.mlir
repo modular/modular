@@ -80,7 +80,7 @@ kgen.func @foo() {
 
 #file = #debuginfo.file<"foo.mlir" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,
@@ -139,7 +139,7 @@ kgen.func @foo() {
 // -----
 
 #file = #debuginfo.file<"foo.mlir" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,

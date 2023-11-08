@@ -29,9 +29,9 @@ def DebugInfoSnapshot : Pass<"debuginfo-snapshot"> {
     Option<"filename", "filename", "std::string", /*default=*/"",
            "The filename to print the generated IR">,
     Option<"debugInfoLanguage", "debug-info-language",
-           "llvm::dwarf::SourceLanguage", "llvm::dwarf::DW_LANG_C",
+           "llvm::dwarf::SourceLanguage", "llvm::dwarf::DW_LANG_Mojo",
            "The DWARF language to specify in the debug info, either `C` or "
-           "`Mojo`. Defaults to `C`.",
+           "`Mojo`. Defaults to `Mojo`.",
            "llvm::cl::values(clEnumValN(llvm::dwarf::DW_LANG_C, \"C\", \"C language.\"),"
            "clEnumValN(llvm::dwarf::DW_LANG_Mojo, \"Mojo\", \"Mojo language\"))">,
   ];

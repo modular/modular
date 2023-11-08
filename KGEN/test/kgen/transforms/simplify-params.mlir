@@ -86,7 +86,7 @@ kgen.generator @foo() {
 } loc(#locFoo)
 
 #file = #debuginfo.file<"foo.mojo" in "/">
-#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 
 // CHECK-DAG: ![[CL_SP_TYPE:.*]] = !debuginfo.subroutine<(!kgen.pointer<scalar<#kgen.struct.extract<2, 1>>>) -> (): DW_CC_normal>
 // CHECK-DAG: ![[OTHER_SP_TYPE:.*]] = !debuginfo.subroutine<(!pop.array<K, index>) -> (): DW_CC_normal>

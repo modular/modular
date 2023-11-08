@@ -6,7 +6,7 @@
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 
 // CHECK: #[[CU:.*]] = #llvm.di_compile_unit<
-// CHECK-SAME:   sourceLanguage = DW_LANG_C,
+// CHECK-SAME:   sourceLanguage = DW_LANG_Mojo,
 // CHECK-SAME:   file = #[[FILE]],
 // CHECK-SAME:   producer = "MLIR",
 // CHECK-SAME:   isOptimized = true,
@@ -15,7 +15,7 @@
 
 // CHECK: #[[SP_TYPE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #di_null_type>
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,

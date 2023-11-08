@@ -112,8 +112,6 @@ class LLDBTestBase(unittest.TestCase):
                 "--debug-level",
                 "full",
                 "-O0",
-                "--debug-info-language",
-                "Mojo",
                 source.path,
                 "-o",
                 output_path,
