@@ -151,7 +151,7 @@ struct TensorSpec:
 
     @always_inline
     fn dtype(self) -> DType:
-        """Gets the rank of the DType of the spec.
+        """Gets the DType of the spec.
 
         Returns:
           The DType of the spec.
