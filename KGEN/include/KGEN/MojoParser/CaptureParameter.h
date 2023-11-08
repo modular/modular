@@ -81,9 +81,14 @@ class CaptureUtility {
 public:
   static ASTDecl *nearestParentFuncOpDecl(ASTDecl &decl,
                                           bool includeMe = false);
+
   static CaptureRecordResult
   recordParameterCapture(SharedState &shared, ASTDecl *nestedFunctionDecl,
                          StringRef srcSpelling, ParamDeclRefAttr paramDeclRef,
+                         Location parameterRefLocation);
+  static CaptureRecordResult
+  recordParameterCapture(SharedState &shared, ASTDecl *nestedFunctionDecl,
+                         ParamDeclRefAttr paramDeclRef,
                          Location parameterRefLocation);
 };
 } // namespace M::KGEN::LIT
