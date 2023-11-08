@@ -31,7 +31,6 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Threading.h"
-#include "mlir/IR/Verifier.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -570,7 +569,7 @@ private:
 
   /// Once a concrete function has finished specializing, finish processing the
   /// function and call the verifier.
-  void finalizeAndVerifyFunction(ImplNode *node);
+  void finalizeFunction(ImplNode *node);
 
   /// Process a kgen.param.fork op. This will create a clone for each value of
   /// the parameter search, and will mark the parent as an error. This results
@@ -838,11 +837,11 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::finalizeAndVerifyFunction
+// ElaboratorImpl::finalizeFunction
 //===----------------------------------------------------------------------===//
 
-void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
-  TimeTraceScope<> traceScope("finalizeAndVerifyFunction");
+void ElaboratorImpl::finalizeFunction(ImplNode *node) {
+  TimeTraceScope<> traceScope("finalizeFunction");
   // Erase everything but the entry blocks of each region.
   FuncOp func = node->func;
   func.walk<mlir::WalkOrder::PreOrder>([](Operation *op) {
@@ -850,49 +849,6 @@ void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
       for (Block &block : llvm::make_early_inc_range(llvm::drop_begin(region)))
         block.erase();
   });
-
-  // Check that the thing we just built is correct IR!  We want to catch any
-  // errors produced by the verify pass, we don't want them to actually get
-  // emitted.
-  std::string verificationErrorStr;
-  llvm::raw_string_ostream verificationError(verificationErrorStr);
-  std::optional<Location> verificationLoc;
-  auto diagHandler = [&](Diagnostic &diag) -> LogicalResult {
-    // Combine multiple verification errors.
-    if (verificationLoc) {
-      verificationError << "; " << diag.str();
-      verificationLoc = FusedLoc::get(verificationLoc->getContext(),
-                                      {*verificationLoc, diag.getLocation()});
-    } else {
-      verificationError << diag.str();
-      verificationLoc = diag.getLocation();
-    }
-    return success();
-  };
-
-  // C-exported functions are required to have valid C identifiers. During
-  // elaboration, mangled function names may trigger a verifier error. Names are
-  // updated after elaboration but reset them here temporarily.
-  StringAttr mangledName = func.getSymNameAttr();
-  func.setSymNameAttr(node->parent->gen.getSymNameAttr());
-  auto reset = llvm::make_scope_exit([&] { func.setSymNameAttr(mangledName); });
-  // Verify the function. Acquire a lock around the verifier because other
-  // threads could be verifying functions at the same time.
-  LogicalResult result = success();
-  {
-    TimeTraceScope<> traceScope("verifyFunction");
-    llvm::sys::SmartScopedWriter<true> lock(verifyMutex);
-    mlir::ScopedDiagnosticHandler handler(func.getContext(),
-                                          std::move(diagHandler));
-    result = verify(func);
-  }
-  if (failed(result)) {
-    assert(verificationLoc && "was the diagnostic lost?");
-    node->setToError(ErrorTree(*verificationLoc, Twine("verification error: ") +
-                                                     verificationError.str()));
-    LLVM_DEBUG(logger.scope("Result: Failure")
-               << verificationError.str() << "\n");
-  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1736,7 +1692,7 @@ void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
              "expected all dependencies to be ready");
     }
     if (!inode->error)
-      finalizeAndVerifyFunction(inode);
+      finalizeFunction(inode);
   }
 
   // If this is the last implementation node for its parent parameter node to
@@ -2550,7 +2506,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       TimeTraceScope traceScope("replaceSymbolsIn", [func]() mutable {
         return func.getSymName().str();
       });
-      func.getBodyRegion().walk([&](Operation *op) {
+      func.walk([&](Operation *op) {
         renamers.getThreadLocalCache().replaceElementsIn(
             op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
             /*replaceTypes=*/true);

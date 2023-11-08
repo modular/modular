@@ -2171,3 +2171,30 @@ kgen.generator export @top() {
   kgen.param.constant: struct<()> = <lifted>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @"pass_paramref
+// CHECK-SAME: () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
+kgen.generator @pass_paramref<T: type>() -> !kgen.paramref<T> {
+  %0 = kgen.undef : !kgen.paramref<T>
+  // CHECK: return %0 : !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
+  kgen.return %0 : !kgen.paramref<T>
+}
+
+kgen.generator @some_func(%arg0: index) -> index {
+  kgen.return %arg0: index
+}
+
+kgen.generator @give_func() -> !kgen.signature<(index) -> index>{
+  %0 = kgen.param.constant: (index) -> index = <@some_func>
+  kgen.return %0 : !kgen.signature<(index) -> index>
+}
+
+// CHECK-LABEL: kgen.func @top
+kgen.generator @top() {
+  kgen.param.apply func = [() -> !kgen.signature<(index) -> index>: @give_func]()
+  // CHECK: () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
+  kgen.call @pass_paramref<:type <index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>() : () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>
+  kgen.return
+}

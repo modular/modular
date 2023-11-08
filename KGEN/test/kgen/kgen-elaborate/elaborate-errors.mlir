@@ -1,20 +1,5 @@
 // RUN: kgen-opt %s -elaborate-generators="enable-search=true max-depth=128" -verify-diagnostics -split-input-file -allow-unregistered-dialect
 
-// This yields a verification error when elaborated.
-// expected-error @below {{no viable expansions found}}
-kgen.generator @local_verif_error() {
-
-  kgen.param.declare ty : dtype = <f32>
-  %one = kgen.param.constant: scalar<si64> = <<1>>
-  %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<ty>
-
-  // expected-note @+1 {{verification error: 'pop.cast_to_builtin' op cannot convert from scalar dtype f32 to 'i8'}}
-  %1 = pop.cast_to_builtin %0: !pop.scalar<ty> to i8
-  kgen.return
-}
-
-// -----
-
 // Recursive expansions.
 
 // expected-note @below {{no viable expansions found}}
