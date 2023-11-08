@@ -2810,6 +2810,17 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (!resultType)
     return failure();
 
+  // Check the types emitted for captures if the signature is escaping.
+  if (effects.isEscaping()) {
+    for (Type argType : argTypes) {
+      argType.walk([&](ParamDeclRefAttr paramDeclAttr) {
+        CaptureUtility::recordParameterCapture(
+            shared, &decl, paramDeclAttr,
+            shared.translateLocation(decl.getLoc()));
+      });
+    }
+  }
+
   // Propagate errors and the parsed decls in the signature.
   moveDecls(decl, sigDecl);
 

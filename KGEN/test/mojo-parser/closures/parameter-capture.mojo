@@ -192,3 +192,22 @@ fn makes_escaping_closure[A:Int](m: MemType) -> fn(n: MemType) escaping -> MemTy
 
         return nested_nested(n,m)
     return myclosure
+
+# // -----
+
+@value
+@register_passable
+struct Foo[A: Int, B: DType]:
+    fn get(self) -> Int:
+        return A
+
+# COM: Ensure the captured parameter is added to the Closure Impl
+# CHECK: lit.struct.decl @"_CI_{{.*}}"<p0[p0]: !DType, |>
+
+# COM: Ensure the captured parameter is added to the Closure Wrapper
+# CHECK: lit.struct.decl @"_CW_{{.*}}"<p0[p0]: !DType, |>
+
+fn make_closure[c_type:DType](w:Int) -> fn (z:Foo[2, c_type]) escaping -> None:
+   fn foo(z:Foo[2,c_type]) escaping -> None:
+      print(z.get())
+   return foo
