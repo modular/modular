@@ -529,6 +529,12 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   CValue value = result.getIfCValue();
   Value mlirValue = capture->getMlirValue();
 
+  // If we are emitting an attribute (for example, type or decorator context),
+  // then capture is delegated to the caller since we do not have enough
+  // information about the context to handle the capture.
+  if (!emitter.builder)
+    return emitter.emitResult(result, this, dest);
+
   // If this is a capture inside a nonparametric function, emit a copy.
   if (livesInsideNestedFunc && !functionContainer.getSignature().isEscaping()) {
     assert(mlirValue && "unexpected PValue");
