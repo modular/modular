@@ -2090,6 +2090,8 @@ void SharedState::notifyListenerOnModuleImport(ASTDecl &decl,
                                                StringRef spelling, SMLoc loc) {
   if (!isListenerInterestedInLoc(parserListener, loc))
     return;
+  if (!decl.getIfOperation())
+    return;
   // Grab the names of each of the referenced modules.
   SmallVector<StringRef> moduleNames;
   spelling.split(moduleNames, '.', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
