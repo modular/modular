@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo build --debug-level full -O0 --debug-info-language Mojo '%S/Inputs/builtin-types.mojo' -o %t
+# RUN: mojo build --debug-level full -O0 '%S/Inputs/builtin-types.mojo' -o %t
 
 # RUN: %lldb %t -o 'b builtin-types.mojo:88' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v *a_struct' | FileCheck %s
 

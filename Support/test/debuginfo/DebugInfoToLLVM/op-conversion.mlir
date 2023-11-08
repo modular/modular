@@ -2,7 +2,7 @@
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,

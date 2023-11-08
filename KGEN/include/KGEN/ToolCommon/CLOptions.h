@@ -93,11 +93,11 @@ public:
   cl::opt<CompilationOptions::DebugInfoLanguage> debugInfoLanguage{
       "debug-info-language",
       llvm::cl::desc("The DWARF language to specify in the debug info. "
-                     "Either `C` or `Mojo`. Defaults to `C`."),
+                     "Either `C` or `Mojo`. Defaults to `Mojo`."),
       llvm::cl::values(
           clEnumValN(CompilationOptions::kLangC, "C", "C language."),
           clEnumValN(CompilationOptions::kLangMojo, "Mojo", "Mojo language")),
-      llvm::cl::init(CompilationOptions::kLangC)};
+      llvm::cl::init(CompilationOptions::kLangMojo)};
 
   cl::opt<bool> enableXRayInstrumentation{
       "xray-instrument",

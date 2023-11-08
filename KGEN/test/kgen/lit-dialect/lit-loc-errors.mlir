@@ -14,7 +14,7 @@ lit.func @foo() {
 
 #file = #debuginfo.file<"bar.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,
@@ -31,7 +31,7 @@ lit.struct.decl @Foo {
 
 #file = #debuginfo.file<"bar.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,

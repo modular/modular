@@ -4,7 +4,7 @@
 
 #file = #debuginfo.file<"foo.mlir" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,
@@ -41,7 +41,7 @@ func.func @foo(%arg: i32) {
 
 #file = #debuginfo.file<"foo.c" in "">
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,
@@ -80,7 +80,7 @@ func.func @bar(%arg: i32) {
 
 #file = #debuginfo.file<"foo.c" in "">
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,
@@ -120,7 +120,7 @@ func.func @bar(%arg: i32) {
 
 #file = #debuginfo.file<"foo.c" in "">
 #compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
+  sourceLanguage = DW_LANG_Mojo,
   file = #file,
   producer = "MLIR",
   isOptimized = true,

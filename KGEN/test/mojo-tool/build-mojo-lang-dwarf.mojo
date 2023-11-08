@@ -9,15 +9,10 @@
 # UNSUPPORTED: asan
 
 
-# COM: Setting the language to Mojo and using non-C-like symbols
-# RUN: mojo build --debug-level full -O0 --debug-info-language Mojo %s -o %t
-# RUN: mojo debug %t -o 'image lookup -vs $build-mojo-lang-dwarf::main()' -b | FileCheck %s --check-prefix CHECK-MOJO
-# CHECK-MOJO: language = "mojo"
-
-
-# COM: Using the default language C
+# COM: Using the default language Mojo
 # RUN: mojo build --debug-level full -O0 %s -o %t
-# RUN: mojo debug %t -o 'image lookup -vs $build-mojo-lang-dwarf::foo()' -b | FileCheck %s --check-prefix CHECK-C
+# RUN: mojo debug %t -o 'image lookup -vs $build-mojo-lang-dwarf::foo()' -b | FileCheck %s --check-prefix CHECK-MOJO
+# CHECK-MOJO: language = "mojo"
 
 # COM: Setting explicitly the language C
 # RUN: mojo build --debug-level full -O0 --debug-info-language C %s -o %t
