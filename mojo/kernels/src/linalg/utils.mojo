@@ -467,6 +467,68 @@ fn get_partitioned_matmul_mojo[
     micro_kernel_m: Int,
     micro_kernel_n: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
+    if num_tasks >= 32:
+        return get_partitioned_matmul_mojo_v2[micro_kernel_m, micro_kernel_n](
+            m, n, k, task_id, num_tasks
+        )
+    else:
+        return get_partitioned_matmul_mojo_v1[micro_kernel_m, micro_kernel_n](
+            m, n, k, task_id, num_tasks
+        )
+
+
+# New partition scheme being developed. Currently only used for 32 or more threads
+fn get_partitioned_matmul_mojo_v2[
+    micro_kernel_m: Int,
+    micro_kernel_n: Int,
+](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
+    let h = align_up(m, micro_kernel_m) // micro_kernel_m
+    let w = align_up(n, micro_kernel_n) // micro_kernel_n
+
+    let max_threads = min(num_tasks, w * h)
+    var threadsm = 1
+    var threadsn = 1
+
+    if m > n and h >= max_threads:
+        threadsm = max_threads
+    # 2D partitioning does not seem to help when m * k per core is too small.
+    # 4096 is an empirical value from looking at several shapes.
+    # TODO: find a less arbritary solution for small m*k
+    elif w >= max_threads or ((m * k / num_tasks) < 4096):
+        threadsn = max_threads
+    else:
+        # Find the largest threadsm*threadsn value which is <= max_threads.
+        # If threadsn1*threadsm1 = threadsn2*threadsm2 and threadsn2>threadsn1
+        # then select threadsn2*threadsm2 e.g. 32*2 is prefered to 8*8.
+        let jmax = min(max_threads, h) + 1
+        let imax = min(max_threads, w) + 1
+        let jmin = max_threads // imax
+        let imin = max_threads // jmax
+        for j in range(jmin, jmax):
+            for i in range(imin, imax):
+                if i * j <= max_threads:
+                    if i * j > threadsn * threadsm:
+                        threadsm = j
+                        threadsn = i
+                    elif i * j == threadsn * threadsm and i > threadsn:
+                        threadsm = j
+                        threadsn = i
+
+    let row_task_id = task_id // threadsn
+    let col_task_id = task_id % threadsn
+
+    let row_range = partition_work(row_task_id, threadsm, m, micro_kernel_m)
+    let col_range = partition_work(col_task_id, threadsn, n, micro_kernel_n)
+    return SubMatmulConfig(
+        Index(row_range[0], col_range[0], 0),
+        Index(row_range[1], col_range[1], k),
+    )
+
+
+fn get_partitioned_matmul_mojo_v1[
+    micro_kernel_m: Int,
+    micro_kernel_n: Int,
+](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     # Based on current performance measurement of DLRM. Row-wise Partition
     # leads to better performance for (m == n and k < m). The reason is not
     # in the shape but how we set cache size (hardcoded for now) and
