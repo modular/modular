@@ -207,6 +207,7 @@ fn gather[
     indices_type: DType,
     axis: Int,
     simd_width: Int,
+    target: StringLiteral = "cpu",
 ](
     output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
     input: NDBuffer[input_rank, DimList.create_unknown[input_rank](), type],
@@ -297,6 +298,7 @@ fn gather[
         output_fn,
         prefetch_fn,
         Dim(axis),
+        target,
     ](
         OptionalParamInt[axis](axis),
         input.dynamic_shape,
@@ -328,6 +330,7 @@ fn gather[
         StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
     ) capturing -> None,
     axis_static: Dim,
+    target: StringLiteral = "cpu",
 ](
     axis: OptionalParamInt[axis_static],
     input_shape: StaticIntTuple[input_rank],
@@ -444,6 +447,7 @@ fn gather[
             1,
             single_thread_blocking_override,
             gather_lambda,
+            target,
         ](
             output_shape,
             out_chain,
@@ -454,6 +458,7 @@ fn gather[
             simd_width,
             single_thread_blocking_override,
             gather_lambda,
+            target,
         ](
             output_shape,
             out_chain,

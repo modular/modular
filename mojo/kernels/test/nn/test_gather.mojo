@@ -19,6 +19,7 @@ from runtime.llcl import OwningOutputChainPtr, Runtime
 from utils.index import StaticIntTuple
 from utils.list import DimList
 
+
 # CHECK-LABEL: test_gather
 fn test_gather():
     print("== test_gather")
@@ -51,9 +52,7 @@ fn test_gather():
         for i in range(num_indices):
             indices[StaticIntTuple[1](i)] = i // 2
         indices[0] = -1
-        # TODO (#23233)
-        alias tmp_xx_neg = -num_rows  # parser crashes doing indices[1] = -num_rows
-        indices[1] = tmp_xx_neg
+        indices[1] = -num_rows
 
         # create output
         var output = NDBuffer[
