@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MArchTarget/Host.h"
+#include "Support/Threading/HWInfo.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 #include "gtest/gtest.h"
@@ -116,4 +117,40 @@ TEST(Host, GetLinuxX86CPUSystemInfoImpl) {
   std::vector<size_t> expectedCpuIds = {0, 1, 2, 6, 7, 4, 5, 0, 1};
   EXPECT_EQ(actualCpuIDs, expectedCpuIds);
 }
+
+constexpr static std::string_view kCgroup = R"(
+13:pids:/user.slice/user-1000.slice/session-1.scope
+12:rdma:/
+11:blkio:/user.slice
+10:freezer:/
+9:devices:/user.slice
+8:perf_event:/
+7:memory:/user.slice/user-1000.slice/session-1.scope
+6:cpuset:/
+5:misc:/
+4:hugetlb:/
+3:net_cls,net_prio:/
+2:cpu,cpuacct:/user.slice
+1:name=systemd:/user.slice/user-1000.slice/session-1.scope
+0::/user.slice/user-1000.slice/session-1.scope
+)";
+constexpr static std::string_view kCgroupQuota = "-1\n";
+constexpr static std::string_view kCgroupPeriod = "100000\n";
+
+TEST(Host, ParseV1CpuCgroup) {
+  auto buf = llvm::MemoryBuffer::getMemBuffer(kCgroup);
+  auto errOrCgroup = Detail::parseV1CpuCgroup(*buf);
+  EXPECT_FALSE(errOrCgroup.isError());
+  EXPECT_EQ(errOrCgroup.get(), "/user.slice");
+}
+
+TEST(Host, ParseV1CpuLimits) {
+  auto quotaBuf = llvm::MemoryBuffer::getMemBuffer(kCgroupQuota);
+  auto periodBuf = llvm::MemoryBuffer::getMemBuffer(kCgroupPeriod);
+  auto errOrLimits = Detail::parseV1CpuLimits(*quotaBuf, *periodBuf);
+  EXPECT_FALSE(errOrLimits.isError());
+  EXPECT_EQ(errOrLimits.get().quota_us, -1);
+  EXPECT_EQ(errOrLimits.get().period_us, 100000);
+}
+
 #endif

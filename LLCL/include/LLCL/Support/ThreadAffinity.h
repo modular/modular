@@ -8,6 +8,8 @@
 #define LLCL_SUPPORT_THREADAFFINITY_H
 
 #include "Support/ErrorOr.h"
+#include "Support/Threading/HWInfo.h"
+
 #include "llvm/ADT/FunctionExtras.h"
 
 #include <cstddef>
@@ -38,6 +40,15 @@ void runWithThreadAffinity(size_t cpuID, llvm::function_ref<void()> workFn);
 /// Gracefully and silently continue if errors.
 void setThreadAffinity(size_t cpuID);
 
+//===----------------------------------------------------------------------===//
+// OS and architecture-specific utilities, visible for testing only
+//===----------------------------------------------------------------------===//
+namespace Detail {
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+void adjustForLinuxCpuLimits(const M::Detail::CPULimits &limits,
+                             std::vector<size_t> &cpuIDs);
+#endif // defined(HAVE_LINUX_X86_SYSTEM_INFO)
+} // namespace Detail
 } // namespace M::LLCL
 
 #endif // LLCL_SUPPORT_THREADAFFINITY_H
