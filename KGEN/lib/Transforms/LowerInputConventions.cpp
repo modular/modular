@@ -78,8 +78,6 @@ lowerSignature(SignatureType sig) {
         continue;
       changedRes = true;
 
-      // TODO(#24996): remove this when we have a verifier that checks this.
-      assert(oldResTypes.size() == 1);
       Type oldResType = oldResTypes[0];
       if (sig.isThrows()) {
         // If the function is throwing, replace the success type in the variant.
@@ -87,15 +85,10 @@ lowerSignature(SignatureType sig) {
         assert(resVariant.getNumTypes() == 2);
         SmallVector<TypedAttr> variantTypes(resVariant.getTypes());
         TypedAttr &successTypeAttr = variantTypes[1];
-        // TODO(#24996): remove this when we have a verifier that checks this.
-        assert(isa<KGEN::NoneType>(
-            cast<ConcreteTypeConstantAttr>(successTypeAttr).getValue()));
         successTypeAttr = ConcreteTypeConstantAttr::get(
             loweredByrefResTy, successTypeAttr.getType());
         newResTypes[0] = VariantType::get(sig.getContext(), variantTypes);
       } else {
-        // TODO(#24996): remove this when we have a verifier that checks this.
-        assert(isa<KGEN::NoneType>(oldResType));
         // If the function doesn't throw, we will return the lowered type.
         newResTypes[0] = loweredByrefResTy;
       }
@@ -165,8 +158,6 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
       b.create<HLCF::YieldOp>(elseRes);
     } else {
       // If the callee doesn't throw, we simply make every use take a new none.
-      // TODO(#24996): remove this when we have a verifier that checks this.
-      assert(isa<KGEN::NoneType>(res.getType()));
       if (!res.use_empty()) {
         auto none = b.create<ParamConstantOp>(b.getAttr<NoneAttr>());
         res.replaceAllUsesWith(none);

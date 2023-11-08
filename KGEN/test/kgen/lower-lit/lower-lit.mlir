@@ -265,6 +265,8 @@ lit.struct.decl @foo {
   }
 }
 
+// -----
+
 //===----------------------------------------------------------------------===//
 // HandleVariant
 //===----------------------------------------------------------------------===//
@@ -325,10 +327,11 @@ lit.func @caller_reg() -> !kgen.none {
   kgen.return %6 : !kgen.none
 }
 
+// -----
+
 //===----------------------------------------------------------------------===//
 // Error
 //===----------------------------------------------------------------------===//
-
 lit.struct.decl @Error {}
 
 lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
@@ -359,16 +362,17 @@ lit.func @return_raise_or(%cond: i1, %err: !kgen.declref<@Error>) -> !kgen.varia
 
 // CHECK-LABEL: kgen.generator @removeMetadata
 // CHECK-SAME: (%arg0: !kgen.pointer<index> byref) throws ->
-lit.func @removeMetadata(%arg0: !kgen.pointer<index> byref) throws -> index {
+lit.func @removeMetadata(%arg0: !kgen.pointer<index> byref) throws -> !kgen.variant<@Error, index> {
   %0 = index.constant 0
-  kgen.return %0 : index
+  %1 = kgen.variant.create %0, 1 : <@Error, index>
+  kgen.return %1 : !kgen.variant<@Error, index>
 }
+
+// -----
 
 //===----------------------------------------------------------------------===//
 // Globals
 //===----------------------------------------------------------------------===//
-
-// -----
 
 // CHECK: kgen.generator{{.*}}(ctor_fn)foo
 // CHECK-NEXT: kgen.return
@@ -440,11 +444,11 @@ lit.globalvar.decl @self : index {
   lit.globalvar.ref @self : <index>
 }
 
+// -----
+
 //===----------------------------------------------------------------------===//
 // Modules
 //===----------------------------------------------------------------------===//
-
-// -----
 
 // CHECK-NOT: lit.file_module
 

@@ -37,16 +37,26 @@ static std::pair<bool, SmallVector<Type>> removeNoneTypes(TypeRange types) {
   return {newTypes.size() != types.size(), std::move(newTypes)};
 }
 
-/// Replace all the `!kgen.none` results in a signature.
-static SignatureType removeNoneResults(SignatureType signature) {
+/// Lower the signature results by replacing all the `!kgen.none` results in a
+/// signature. This will also set the signature to non-throwing, and erase
+/// `byref_result` argument conventions.
+static SignatureType lowerResult(SignatureType signature) {
   auto [anyNone, newResults] = removeNoneTypes(signature.getValueResults());
   // Micro-optimization: don't hash a new type if it won't change.
   if (!anyNone)
     return signature;
+  SmallVector<ValueInputConvention> maybeNewConventions;
+  ArrayRef<ValueInputConvention> conventions = signature.getInputConventions();
+  if (!conventions.empty() &&
+      conventions[0] == ValueInputConvention::ByRefResult) {
+    llvm::append_range(maybeNewConventions, conventions);
+    maybeNewConventions[0] = ValueInputConvention::None;
+    conventions = maybeNewConventions;
+  }
   return SignatureType::get(
       FunctionType::get(signature.getContext(), signature.getValueInputs(),
                         newResults),
-      signature.getInputConventions(), signature.getFnEffects());
+      conventions, signature.getFnEffects().setThrows(false));
 }
 
 /// Remove none types from the results of debuginfo subroutine types as well.
@@ -67,7 +77,7 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
 
 static void rewriteCallingConventions(Operation &op) {
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(removeNoneResults);
+  replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);
 
   auto walkFn = [&](Operation *op) {

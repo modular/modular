@@ -521,7 +521,7 @@ kgen.generator @target_params2<t0: target>()
 
 // -----
 
-// expected-error @below {{custom op 'kgen.generator' a function that throws should have 1 result}}
+// expected-error @below {{a throwing function should have 1 variant result}}
 kgen.generator @throws() throws {
   kgen.return
 }
@@ -786,8 +786,43 @@ module attributes {kgen.env = #kgen.env<{fp = 2.0}>} {}
 
 // -----
 
-// expected-error @below {{a function that throws should have 1 result}}
+// expected-error @below {{a throwing function should have 1 variant result}}
 !type = !kgen.signature<() throws -> ()>
+
+// -----
+
+// expected-error @below {{a throwing function should have 1 variant result}}
+!type = !kgen.signature<() throws -> index>
+
+// -----
+
+// expected-error @below {{a throwing function should have 1 variant result}}
+!type = !kgen.signature<() throws -> (index, index)>
+
+// -----
+
+// expected-error @below {{a non-throwing function with byref_result must have 1 none result}}
+!type = !kgen.signature<(!kgen.pointer<index> byref_result) -> ()>
+
+// -----
+
+// expected-error @below {{a non-throwing function with byref_result must have 1 none result}}
+!type = !kgen.signature<(!kgen.pointer<index> byref_result) -> index>
+
+// -----
+
+// expected-error @below {{a non-throwing function with byref_result must have 1 none result}}
+!type = !kgen.signature<(!kgen.pointer<index> byref_result) -> (index, index)>
+
+// -----
+
+// expected-error @below {{a throwing function with byref_result must have a variant result of 2 types}}
+!type = !kgen.signature<(!kgen.pointer<index> byref_result) throws -> !kgen.variant<index>>
+
+// -----
+
+// expected-error @below {{a throwing function with byref_result must have a variant result with none as the second type}}
+!type = !kgen.signature<(!kgen.pointer<index> byref_result) throws -> !kgen.variant<index, index>>
 
 // -----
 

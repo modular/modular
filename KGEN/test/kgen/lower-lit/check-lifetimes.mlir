@@ -68,19 +68,19 @@ lit.file_module @check_lifetimes {
         %x: !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) {
       kgen.call @check_lifetimes::@Struct::@__copyinit__(%result, %x)
           : (!kgen.pointer<@check_lifetimes::@Struct> byref_result,
-             !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> ()
+             !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none
       kgen.return
     }
 
     // var c = byrefResultFn(x)
     %callee = kgen.create_closure[(
         !kgen.pointer<@check_lifetimes::@Struct> byref_result,
-        !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> (): byrefResultFn]()
+        !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none: byrefResultFn]()
     %c = lit.varlet.decl "c" var : !lit.ref<mut @check_lifetimes::@Struct, *"life">
     %1 = lit.ref.to_pointer %c : !lit.ref<mut @check_lifetimes::@Struct, *"life">
     kgen.call_signature %callee(%1, %a) :
         (!kgen.pointer<@check_lifetimes::@Struct> byref_result,
-         !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> ()
+         !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none
 
     %0 = lit.ref.struct.ger %c[a] : !lit.ref<mut index, *"life"> from !lit.ref<mut @check_lifetimes::@Struct, *"life">
     lit.ref.load %0 : !lit.ref<mut index, *"life">

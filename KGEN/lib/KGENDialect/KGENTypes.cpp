@@ -390,8 +390,32 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   }
 
   // If the function throws an error, make sure it has one variant result.
-  if (effects.isThrows() && values.getNumResults() != 1)
-    return emitError() << "a function that throws should have 1 result";
+  size_t numResults = values.getNumResults();
+  if (effects.isThrows())
+    if (numResults != 1 || !::isa<VariantType>(values.getResult(0)))
+      return emitError() << "a throwing function should have 1 variant result";
+
+  if (!inputConventions.empty() &&
+      inputConventions[0] == ValueInputConvention::ByRefResult) {
+    if (effects.isThrows()) {
+      // We already checked this above
+      auto variantTy = ::cast<VariantType>(values.getResult(0));
+      if (variantTy.getNumTypes() != 2) {
+        return emitError() << "a throwing function with byref_result must have "
+                              "a variant result of 2 types";
+      }
+      auto typeConst = ::dyn_cast<TypeConstantAttr>(variantTy.getTypes()[1]);
+      if (!typeConst || !::isa<KGEN::NoneType>(typeConst.getValue())) {
+        return emitError() << "a throwing function with byref_result must have "
+                              "a variant result with none as the second type";
+      }
+    } else {
+      if (numResults != 1 || !::isa<KGEN::NoneType>(values.getResult(0))) {
+        return emitError() << "a non-throwing function with byref_result must "
+                              "have 1 none result";
+      }
+    }
+  }
 
   return success();
 }

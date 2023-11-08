@@ -746,14 +746,15 @@ kgen.generator @partial_bind_index<c>() {
   kgen.return
 }
 
-kgen.generator @result_slot(%arg0: !kgen.pointer<index> byref_result, %arg1: index) {
-  kgen.return
+kgen.generator @result_slot(%arg0: !kgen.pointer<index> byref_result, %arg1: index) -> !kgen.none {
+  %0 = kgen.param.constant: none = <#kgen.none>
+  kgen.return %0 : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @apply_result_slot
 kgen.generator @apply_result_slot() {
-  // CHECK-NEXT: constant: pointer<index> = <apply_result_slot(:(!kgen.pointer<index> byref_result, index) -> () @result_slot, 2)>
-  kgen.param.constant: pointer<index> = <apply_result_slot(:(!kgen.pointer<index> byref_result, index) -> () @result_slot, 2)>
+  // CHECK-NEXT: constant: pointer<index> = <apply_result_slot(:(!kgen.pointer<index> byref_result, index) -> !kgen.none @result_slot, 2)>
+  kgen.param.constant: pointer<index> = <apply_result_slot(:(!kgen.pointer<index> byref_result, index) -> !kgen.none @result_slot, 2)>
   kgen.return
 }
 
