@@ -83,6 +83,7 @@ from GatherScatter import gather_reduce, gather_shape, scatter_elements
 from GatherScatter import scatter_elements_shape as scatter_shape
 from GatherScatter import scatter_nd as _scatter_nd
 from GatherScatter import scatter_nd_generator
+from GatherScatter import normalize_index
 from gpu.host.memory import _copy_device_to_host_async
 from Matmul import matmul as _matmul
 from Matmul import (
@@ -1871,6 +1872,7 @@ fn gather[
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
+    target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[in_rank],
     indices: NDBuffer[
@@ -1882,12 +1884,8 @@ fn gather[
     output_shape: StaticIntTuple[output_rank],
     out_chain: OutputChainPtr,
 ):
-    # Look through the lambda to pull the index out.
-    alias axis_static = Dim()
-    let axis = axis_buffer[0].to_int()
-
-    let axis_normalized = OptionalParamInt[axis_static](
-        axis + in_rank if axis < 0 else axis
+    let axis = normalize_index(
+        buffer_to_scalar[target](axis_buffer, out_chain), in_rank
     )
 
     @parameter
@@ -1923,9 +1921,10 @@ fn gather[
         load_indices,
         output_0_fn,
         no_prefetch,
-        axis_static,
+        Dim(),
+        target,
     ](
-        axis_normalized,
+        OptionalParamInt[Dim()](axis),
         input_shape,
         indices.dynamic_shape,
         output_shape,
