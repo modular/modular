@@ -189,8 +189,7 @@ public:
   void
   computeArgumentConventions(SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
                              MutableArrayRef<ParsedArgument> args,
-                             MutableArrayRef<Type> argTypes,
-                             MutableArrayRef<TypedAttr> defaults);
+                             MutableArrayRef<Type> argTypes);
 
   /// Given a scope, collect all parameters declared in that scope.
   static SmallVector<ParamDeclAttr> parametersInScope(ASTDecl &scope);

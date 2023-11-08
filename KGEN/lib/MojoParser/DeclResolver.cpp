@@ -1652,8 +1652,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 
 void DeclResolver::computeArgumentConventions(
     SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
-    MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes,
-    MutableArrayRef<TypedAttr> defaults) {
+    MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes) {
   for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
@@ -2834,7 +2833,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types and KGEN conventions.  This also introduces
   // implicit lifetime parameters for borrows/inout/owned arguments.
-  computeArgumentConventions(inputParamDecls, args, argTypes, argDefaults);
+  computeArgumentConventions(inputParamDecls, args, argTypes);
 
   // Finally now that the full signature has been resolved, build our IR.
 
