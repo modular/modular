@@ -86,6 +86,16 @@ ErrorOr<size_t> getNumPhysicalCores();
 
 namespace Detail {
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+/// Specifies CPU quota per period of CPU time allotted by the Linux CFS.
+struct CPULimits {
+  int quota_us = -1;
+  int period_us = 100000;
+};
+ErrorOr<std::string> parseV1CpuCgroup(const llvm::MemoryBuffer &buf);
+ErrorOr<CPULimits> parseV1CpuLimits(const llvm::MemoryBuffer &quotaBuf,
+                                    const llvm::MemoryBuffer &periodBuf);
+CPULimits getLinuxCPULimits();
+
 ErrorOr<CPUSystemInfo>
 getLinuxX86CPUSystemInfoImpl(const cpu_set_t &availableCpus,
                              std::unique_ptr<llvm::MemoryBuffer> buf);

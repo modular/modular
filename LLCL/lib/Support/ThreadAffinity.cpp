@@ -10,7 +10,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLCL/Support/ThreadAffinity.h"
-#include "Support/Threading/HWInfo.h"
 #include "Support/Threading/ThreadAffinity.h"
 
 #include "Support/MArchTarget/Host.h"
@@ -26,6 +25,16 @@
 #endif
 
 #define DEBUG_TYPE "llcl"
+
+namespace {
+
+void adjustForCpuLimits(std::vector<size_t> &cpuIDs) {
+#if defined(HAVE_LINUX_x86_SYSTEM_INFO)
+  Detail::adjustForLinuxCpuLimits(M::Detail::getLinuxCPULimits(), cpuIDs);
+#endif
+}
+
+} // namespace
 
 M::ErrorOr<std::vector<size_t>>
 M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
@@ -62,6 +71,7 @@ M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
                                    "affinity for CPUs {";
                    llvm::interleave(cpuIDs, llvm::dbgs(), ", ");
                    llvm::dbgs() << "}\n";);
+        adjustForCpuLimits(cpuIDs);
         return cpuIDs;
       }
     }
@@ -83,7 +93,9 @@ M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
                << numThreads << " to " << maxWorkers << ".\n");
     numThreads = maxWorkers;
   }
-  return std::vector<size_t>(numThreads, kNoAffinity);
+  auto cpuIDs = std::vector<size_t>(numThreads, kNoAffinity);
+  adjustForCpuLimits(cpuIDs);
+  return cpuIDs;
 }
 
 void M::LLCL::runWithThreadAffinity(size_t cpuID,
@@ -115,3 +127,34 @@ void M::LLCL::setThreadAffinity(size_t cpuID) {
     }
   }
 }
+
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+
+void M::LLCL::Detail::adjustForLinuxCpuLimits(
+    const M::Detail::CPULimits &limits, std::vector<size_t> &cpuIDs) {
+  // The bounds and explanations for these values can be found at:
+  // https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.rst
+  if (limits.quota_us != -1 && limits.quota_us < 1000) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "adjustForLinuxCpuLimits: Expected cpu quota above 1ms\n");
+    return;
+  }
+  if (limits.period_us < 1000 || limits.period_us > 1000000) {
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << "adjustForLinuxCpuLimits: Expected cpu period between 1ms and 1s\n");
+    return;
+  }
+  if (limits.quota_us != -1) {
+    // Limit thread count to the below to prevent inadvertent CFS scheduler
+    // throttling when CPU limits are in use. Also disables thread affinity.
+    size_t maxProcessors =
+        (limits.quota_us + limits.period_us - 1) / limits.period_us;
+    if (maxProcessors < cpuIDs.size()) {
+      cpuIDs.resize(maxProcessors);
+      cpuIDs.assign(maxProcessors, kNoAffinity);
+    }
+  }
+}
+
+#endif // defined(HAVE_LINUX_X86_SYSTEM_INFO)

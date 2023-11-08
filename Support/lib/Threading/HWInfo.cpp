@@ -24,6 +24,95 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+
+namespace {
+
+std::unique_ptr<llvm::MemoryBuffer> fileBuffer(StringRef path) {
+  auto errOrBuf = llvm::MemoryBuffer::getFileAsStream(path);
+  if (std::error_code ec = errOrBuf.getError()) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "getLinuxCPULimits: Could not open " << path << "\n");
+    return nullptr;
+  }
+  return std::move(errOrBuf.get());
+}
+
+} // namespace
+
+ErrorOr<std::string> Detail::parseV1CpuCgroup(const llvm::MemoryBuffer &buf) {
+  std::string cgroup;
+  SmallVector<StringRef> strs;
+  buf.getBuffer().split(strs, "\n", /*MaxSplit=*/-1,
+                        /*KeepEmpty=*/false);
+  for (StringRef line : strs) {
+    SmallVector<StringRef> frags;
+    line.split(frags, ":");
+    StringRef sys = frags[1].trim();
+    StringRef grp = frags[2].trim();
+    // Cpuset settings are already reflected in the CPU affinity mask, but
+    // further changes must be monitored to trigger CPUSystemInfo regeneration.
+    if (sys == "cpu,cpuacct") {
+      cgroup = grp;
+      break;
+    }
+  }
+  if (cgroup.empty())
+    return Error("could not parse CPU cgroup");
+  return cgroup;
+}
+
+ErrorOr<Detail::CPULimits>
+Detail::parseV1CpuLimits(const llvm::MemoryBuffer &quotaBuf,
+                         const llvm::MemoryBuffer &periodBuf) {
+  Detail::CPULimits limits;
+  if (quotaBuf.getBuffer().trim().getAsInteger(10, limits.quota_us))
+    return Error("can't parse CPU quota as an int");
+  if (periodBuf.getBuffer().trim().getAsInteger(10, limits.period_us))
+    return Error("can't parse CPU period as an int");
+  return limits;
+}
+
+/// Looks up various cgroup CPU limits for the current process.
+Detail::CPULimits Detail::getLinuxCPULimits() {
+  // Detect cgroup version.
+  auto errOrControllers =
+      llvm::MemoryBuffer::getFileAsStream("/sys/fs/cgroup/cgroup.controllers");
+  const bool isV1 = errOrControllers.getError().value() != 0;
+  if (isV1) {
+    // Read and parse /proc/self/cgroup
+    auto cgroupBuf = fileBuffer("/proc/self/cgroup");
+    if (!cgroupBuf)
+      return {};
+
+    const auto errOrCgroup = parseV1CpuCgroup(*cgroupBuf);
+    if (errOrCgroup.isError()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "getLinuxCPULimits: Could not parse CPU cgroup\n");
+      return {};
+    }
+    const auto &cgroup = errOrCgroup.get();
+
+    const auto quotaBuf =
+        fileBuffer("/sys/fs/cgroup/cpu/" + cgroup + "/cpu.cfs_quota_us");
+    if (!quotaBuf)
+      return {};
+    const auto periodBuf =
+        fileBuffer("/sys/fs/cgroup/cpu/" + cgroup + "/cpu.cfs_period_us");
+    if (!periodBuf)
+      return {};
+    const auto errOrLimits = parseV1CpuLimits(*quotaBuf, *periodBuf);
+    if (errOrLimits.isError()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "getLinuxCPULimits: Could not parse CPU limits for "
+                 << cgroup << "\n");
+      return {};
+    }
+    return errOrLimits.get();
+  }
+  // TODO(yihualou): Update with v2 cpu.max reading.
+  return {};
+}
+
 /// Given contents of /proc/cpuinfo and the thread affinity mask describing
 /// which CPUs should be considered available, returns CPUSystemInfo.
 ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfoImpl(
