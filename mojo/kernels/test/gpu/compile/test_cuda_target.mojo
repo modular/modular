@@ -151,8 +151,8 @@ fn test_barrier():
 
 # CHECK-LABEL: .visible .entry	gemm
 # CHECK: .shared .align 1 .b8 [[SHM1:.*]][512];
-# CHECK: st.shared.u8
-# CHECK: ld.shared.u8
+# CHECK: st.shared.f32
+# CHECK: ld.shared.f32
 @export
 fn gemm(
     c: DTypePointer[DType.float32],
