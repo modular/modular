@@ -2427,7 +2427,7 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp,
 // signature by augmenting the original's input parameter list for each
 // parameter reference that appears in the paramRefsToUnbind list.
 LITSignatureType DeclResolver::createSelfContainedSignature(
-    LITSignatureType original, ArrayRef<ParamDeclAttr> paramRefsToUnbind,
+    LITSignatureType original, ArrayRef<NamedParameter> paramRefsToUnbind,
     std::function<void(StringRef)> errorHandler) {
   auto fnMetadata = cast<FnMetadataAttr>(original.getMetadata());
   // The size 16 was an optimization for perf that was hand tuned.
@@ -2449,11 +2449,11 @@ LITSignatureType DeclResolver::createSelfContainedSignature(
   SmallVector<StringAttr, 16> newParamInputNames;
   unsigned currentParamterIndex = 0;
   for (auto [i, param] : llvm::enumerate(paramRefsToUnbind)) {
-    if (seen.contains(param.getName())) {
-      parameterCaptures[param.getName()] = {currentParamterIndex++,
-                                            param.getType()};
+    if (seen.contains(param.getMangledName())) {
+      parameterCaptures[param.getMangledName()] = {currentParamterIndex++,
+                                                   param.getType()};
       paramInputTypes.push_back(param.getType());
-      newParamInputNames.push_back(param.getName());
+      newParamInputNames.push_back(StringAttr::get(ctx, param.getSrcName()));
       newParamPassingKinds.push_back(PassingKind::PosOnly);
     }
   }
@@ -2490,8 +2490,8 @@ LITSignatureType DeclResolver::createSelfContainedSignature(
                           /*defaultParameters=*/{}));
 }
 
-SmallVector<ParamDeclAttr> DeclResolver::parametersInScope(ASTDecl &scope) {
-  SmallVector<ParamDeclAttr> paramsInScope;
+SmallVector<NamedParameter> DeclResolver::parametersInScope(ASTDecl &scope) {
+  SmallVector<NamedParameter> paramsInScope;
   for (auto [declName, declarations] : scope.getDeclsInScope()) {
     for (ASTDecl *declaration : declarations) {
       PValue pValue = declaration->getIfPValue();
@@ -2499,7 +2499,8 @@ SmallVector<ParamDeclAttr> DeclResolver::parametersInScope(ASTDecl &scope) {
         continue;
       if (auto paramRef = dyn_cast<ParamDeclRefAttr>(pValue.get()))
         paramsInScope.push_back(
-            ParamDeclAttr::get(paramRef.getName(), paramRef.getType()));
+            NamedParameter(declName, ParamDeclAttr::get(paramRef.getName(),
+                                                        paramRef.getType())));
     }
   }
   return paramsInScope;
@@ -2585,7 +2586,7 @@ static Value emitClosureInstance(SignatureType closureSignature,
                      "signature. TODO: fix global references.");
     return {};
   }
-  SmallVector<ParamDeclAttr> parameterDeclarationsInScope =
+  SmallVector<NamedParameter> parameterDeclarationsInScope =
       DeclResolver::parametersInScope(*nestedFunctionDecl.getParentDecl());
   LITSignatureType closureWrapperSignature =
       DeclResolver::createSelfContainedSignature(

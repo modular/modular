@@ -2968,7 +2968,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
   if (effects.isEscaping()) {
     // Collect parameter references in parent.
-    SmallVector<ParamDeclAttr> parameterDeclarationsInScope =
+    SmallVector<NamedParameter> parameterDeclarationsInScope =
         DeclResolver::parametersInScope(emitter.declScope);
 
     // Create a self contained signature type that represents the closure.
@@ -2996,9 +2996,9 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Parameters in the parameterDeclarationsInScope are already ordered
     // according to declaration so no need to track depth.
     for (auto [i, parameter] : llvm::enumerate(parameterDeclarationsInScope)) {
-      if (signatureDecls.contains(parameter.getName()))
-        newParameterInfos.push_back(
-            ParameterCapture(parameter.getName(), parameter.getType(), i, 0));
+      if (signatureDecls.contains(parameter.getMangledName()))
+        newParameterInfos.push_back(ParameterCapture(
+            parameter.getMangledName(), parameter.getType(), i, 0));
     }
     Type selfType = DeclResolver::createTypeFromSubsetOfParentParameters(
         emitter.shared, declOp, newParameterInfos);
