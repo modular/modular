@@ -130,3 +130,77 @@ kgen.func @test_lower_res(%arg0: !byref_res_sig, %arg1: !byref_res_reg_passable_
 
   kgen.return
 }
+
+!Error = !kgen.struct<(f32)>
+
+// CHECK-LABEL: kgen.func @byref_throws(%arg0: !kgen.variant<struct<(f32)>, none>
+// CHECK-SAME: ) throws -> !kgen.variant<struct<(f32)>, index>
+kgen.func @byref_throws(
+  %__result__: !kgen.pointer<index> byref_result,
+  %arg1: !kgen.variant<!Error, !kgen.none>
+) throws -> !kgen.variant<!Error, !kgen.none> {
+  // CHECK-NEXT: %[[P0:.*]] = pop.stack_allocation 1 x index
+  // CHECK-NEXT: "somehow.populate"(%[[P0]]) : (!kgen.pointer<index>) -> ()
+  "somehow.populate"(%__result__) : (!kgen.pointer<index>) -> ()
+
+  // CHECK: %[[VAL0:.*]] = pop.load %[[P0]] : !kgen.pointer<index>
+  // CHECK: %[[COND:.*]] = kgen.variant.is %arg0, 1
+  // CHECK-NEXT: %[[RES:.*]] = hlcf.if %[[COND]]
+  // CHECK-NEXT:   %[[THEN:.*]] = kgen.variant.create %[[VAL0]], 1
+  // CHECK-NEXT:   hlcf.yield %[[THEN]]
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.get %arg0, 0
+  // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
+  // CHECK-NEXT:   hlcf.yield %[[ELSE]]
+
+  // CHECK: kgen.return %[[RES]]
+  kgen.return %arg1 : !kgen.variant<!Error, !kgen.none>
+}
+
+!byref_throws_sig = !kgen.signature<(
+  !kgen.pointer<index> byref_result, !kgen.variant<!Error, !kgen.none>
+) throws -> !kgen.variant<!Error, !kgen.none>>
+
+// CHECK-LABEL: kgen.func @test_byref_throws(
+kgen.func @test_byref_throws(
+  %arg0: !byref_throws_sig,
+  %arg1: !kgen.variant<!Error, !kgen.none>
+) {
+  // CHECK: %[[P0:.*]] = pop.stack_allocation 1 x index
+  %__result__ = pop.stack_allocation 1 x index
+
+  // CHECK: %[[RES:.*]] = kgen.call @byref_throws(%arg1)
+  // CHECK-NEXT: %[[COND:.*]] = kgen.variant.is %[[RES]], 1
+  // CHECK-NEXT: %[[NEWRES:.*]] = hlcf.if %[[COND]]
+  // CHECK-NEXT:   %[[VAL:.*]] = kgen.variant.get %[[RES]], 1
+  // CHECK-NEXT:   pop.store %[[VAL]], %[[P0]] : !kgen.pointer<index>
+  // CHECK-NEXT:   %none = kgen.param.constant
+  // CHECK-NEXT:   %[[THEN:.*]] = kgen.variant.create %none, 1
+  // CHECK-NEXT:   hlcf.yield %[[THEN]]
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.get %[[RES]], 0
+  // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
+  // CHECK-NEXT:   hlcf.yield %[[ELSE]]
+  %res1 = kgen.call @byref_throws(%__result__, %arg1) : (
+    !kgen.pointer<index> byref_result, !kgen.variant<!Error, !kgen.none>
+  ) throws -> !kgen.variant<!Error, !kgen.none>
+  "handle.error"(%res1) : (!kgen.variant<!Error, !kgen.none>) -> ()
+  "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
+
+
+  // CHECK: %[[RES:.*]] = kgen.call_signature %arg0(%arg1)
+  // CHECK-NEXT: %[[COND:.*]] = kgen.variant.is %[[RES]], 1
+  // CHECK-NEXT: %[[NEWRES:.*]] = hlcf.if %[[COND]]
+  // CHECK-NEXT:   %[[VAL:.*]] = kgen.variant.get %[[RES]], 1
+  // CHECK-NEXT:   pop.store %[[VAL]], %[[P0]] : !kgen.pointer<index>
+  // CHECK-NEXT:   %none = kgen.param.constant
+  // CHECK-NEXT:   %[[THEN:.*]] = kgen.variant.create %none, 1
+  // CHECK-NEXT:   hlcf.yield %[[THEN]]
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.get %[[RES]], 0
+  // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
+  // CHECK-NEXT:   hlcf.yield %[[ELSE]]
+  %res2 = kgen.call_signature %arg0(%__result__, %arg1) : !byref_throws_sig
+  "handle.error"(%res2) : (!kgen.variant<!Error, !kgen.none>) -> ()
+  "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
+}

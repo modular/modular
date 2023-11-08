@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -72,14 +73,31 @@ lowerSignature(SignatureType sig) {
         changedIndices.push_back(idx);
       }
     } else if (convention == ValueInputConvention::ByRefResult) {
-      assert(oldResTypes.size() == 1);
-
-      if (!isa<KGEN::NoneType>(oldResTypes[0]))
+      Type loweredByrefResTy = lowerPointerType(argTy);
+      if (!loweredByrefResTy)
         continue;
+      changedRes = true;
 
-      if (Type newArgTy = lowerPointerType(argTy)) {
-        newResTypes[0] = newArgTy;
-        changedRes = true;
+      // TODO(#24996): remove this when we have a verifier that checks this.
+      assert(oldResTypes.size() == 1);
+      Type oldResType = oldResTypes[0];
+      if (sig.isThrows()) {
+        // If the function is throwing, replace the success type in the variant.
+        auto resVariant = cast<VariantType>(oldResType);
+        assert(resVariant.getNumTypes() == 2);
+        SmallVector<TypedAttr> variantTypes(resVariant.getTypes());
+        TypedAttr &successTypeAttr = variantTypes[1];
+        // TODO(#24996): remove this when we have a verifier that checks this.
+        assert(isa<KGEN::NoneType>(
+            cast<ConcreteTypeConstantAttr>(successTypeAttr).getValue()));
+        successTypeAttr = ConcreteTypeConstantAttr::get(
+            loweredByrefResTy, successTypeAttr.getType());
+        newResTypes[0] = VariantType::get(sig.getContext(), variantTypes);
+      } else {
+        // TODO(#24996): remove this when we have a verifier that checks this.
+        assert(isa<KGEN::NoneType>(oldResType));
+        // If the function doesn't throw, we will return the lowered type.
+        newResTypes[0] = loweredByrefResTy;
       }
     }
   }
@@ -117,18 +135,47 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
   if (changedRes) {
     b.setInsertionPointAfter(op);
 
-    // First, we need to deal with anyone who might rely on the old result.
     OpResult res = op->getResult(0);
-    // TODO(#24996): remove this when we have a verifier that checks this.
-    assert(isa<KGEN::NoneType>(res.getType()));
-    if (!res.use_empty()) {
-      auto none = b.create<ParamConstantOp>(b.getAttr<NoneAttr>());
-      res.replaceAllUsesWith(none);
-    }
+    if (newSig.isThrows()) {
+      Type oldVariantTy = cast<KGEN::VariantType>(res.getType());
 
-    // Then we store the new function result into the old byref result.
-    res.setType(newSig.getValueResults()[0]);
-    b.create<POP::StoreOp>(res, oldOperands[0]);
+      // We create an HCLF::IfOp, with a condition checking if there is no error
+      // (i.e. the then branch will handle normal return). Users of the old
+      // result (e.g. error handling) will now take the result of this IfOp.
+      auto cond = b.create<VariantIsOp>(res, 1);
+      auto ifOp = b.create<HLCF::IfOp>(oldVariantTy, cond);
+      res.replaceAllUsesExcept(ifOp.getResult(0), cond);
+      res.setType(newSig.getValueResults()[0]);
+
+      // Populate the then branch (normal return).
+      Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
+      b.setInsertionPointToStart(thenBlock);
+      auto resVal = b.create<VariantGetOp>(res, 1);
+      b.create<POP::StoreOp>(resVal, oldOperands[0]);
+
+      auto none = b.create<ParamConstantOp>(b.getAttr<NoneAttr>());
+      Value thenRes = b.create<VariantCreateOp>(oldVariantTy, none, 1);
+      b.create<HLCF::YieldOp>(thenRes);
+
+      // Populate the else branch (error return).
+      Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
+      b.setInsertionPointToStart(elseBlock);
+      auto err = b.create<VariantGetOp>(res, 0);
+      Value elseRes = b.create<VariantCreateOp>(oldVariantTy, err, 0);
+      b.create<HLCF::YieldOp>(elseRes);
+    } else {
+      // If the callee doesn't throw, we simply make every use take a new none.
+      // TODO(#24996): remove this when we have a verifier that checks this.
+      assert(isa<KGEN::NoneType>(res.getType()));
+      if (!res.use_empty()) {
+        auto none = b.create<ParamConstantOp>(b.getAttr<NoneAttr>());
+        res.replaceAllUsesWith(none);
+      }
+
+      // Then just store the new callee result into the old byref result.
+      res.setType(newSig.getValueResults()[0]);
+      b.create<POP::StoreOp>(res, oldOperands[0]);
+    }
   }
 
   return {newSig, std::move(newOperands)};
@@ -186,7 +233,39 @@ static void lowerFuncOp(FuncOp funcOp) {
     Operation *returnOp = body.front().getTerminator();
     b.setInsertionPoint(returnOp);
     auto newRes = b.create<POP::LoadOp>(returnOp->getLoc(), newResPtr);
-    returnOp->setOperand(0, newRes);
+
+    if (newSig.isThrows()) {
+      // If the function throws, we need to potentially unpack and repack the
+      // result/error variant.
+      auto newVariantTy = cast<VariantType>(newSig.getValueResults()[0]);
+
+      // TODO: Implement peephole optimization when this result is none.
+      Value oldRetVal = returnOp->getOperand(0);
+
+      // We create an HCLF::IfOp, with a condition checking if there is no error
+      // (i.e. the then branch will handle normal return). The result of this is
+      // what we will return.
+      Location loc = oldRetVal.getLoc();
+      auto cond = b.create<VariantIsOp>(loc, oldRetVal, 1);
+      auto ifOp = b.create<HLCF::IfOp>(loc, newVariantTy, cond);
+      returnOp->setOperands(ifOp.getResults());
+
+      // Populate the then branch (normal return).
+      Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
+      b.setInsertionPointToStart(thenBlock);
+      Value thenRes = b.create<VariantCreateOp>(loc, newVariantTy, newRes, 1);
+      b.create<HLCF::YieldOp>(loc, thenRes);
+
+      // Populate the else branch (error return).
+      Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
+      b.setInsertionPointToStart(elseBlock);
+      auto err = b.create<VariantGetOp>(loc, oldRetVal, 0);
+      Value elseRes = b.create<VariantCreateOp>(loc, newVariantTy, err, 0);
+      b.create<HLCF::YieldOp>(loc, elseRes);
+    } else {
+      // If the function doesn't throw, we simply return the new result.
+      returnOp->setOperand(0, newRes);
+    }
   }
   funcOp.setSignature(newSig);
 }

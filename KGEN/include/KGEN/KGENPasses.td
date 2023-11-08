@@ -590,6 +590,10 @@ def LowerInputConventions : Pass<"lower-input-conventions", "ModuleOp"> {
     3. TODO(#20700):Sets all value input conventions to `none`, i.e. only `none`
        conventions are legal after this in the pipeline.
   }];
+
+  let dependentDialects = [
+    "HLCF::HLCFDialect"
+  ];
 }
 
 //===----------------------------------------------------------------------===//
