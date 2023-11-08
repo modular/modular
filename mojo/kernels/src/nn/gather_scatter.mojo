@@ -25,6 +25,7 @@ from runtime.tracing import TraceLevel
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt
+from utils.optional import Optional
 
 
 @always_inline
@@ -466,9 +467,6 @@ fn gather[
 
 @always_inline
 fn scatter_nd_generator[
-    reduce_fn: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
     output_type: DType,
     indices_type: DType,
     data_rank: Int,
@@ -476,7 +474,11 @@ fn scatter_nd_generator[
     updates_rank: Int,
     single_thread_blocking_override: Bool,
     /,
-    has_reduction_operation: Bool = True,
+    reduce_fn: Optional[
+        fn[
+            type: DType, width: Int
+        ] (SIMD[type, width], SIMD[type, width]) capturing -> SIMD[type, width]
+    ] = None,
 ](
     data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), output_type],
     indices: NDBuffer[
@@ -494,8 +496,6 @@ fn scatter_nd_generator[
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
 
     Parameters:
-        reduce_fn: Reduction function to apply: none (default), add, mul, max,
-                   min.
         output_type: Type of data, updates, and output tensors.
         indices_type: Type of the indices tensor.
         data_rank: Rank of input (data) tensor (data_rank >= 1).
@@ -503,8 +503,8 @@ fn scatter_nd_generator[
         updates_rank: Rank of updates tensor (updates_rank = data_rank +
                       indices_rank - indices_shape[-1] - 1).
         single_thread_blocking_override: Whether this function can block.
-        has_reduction_operation: If True, then the reduction operation is
-                                 applied.
+        reduce_fn: Reduction function to apply: none (default), add, mul, max,
+                   min.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -621,14 +621,15 @@ fn scatter_nd_generator[
         # Perform the actual copy of element/slice/sheet/cuboid/etc.
         # Also handling any reduction operation reduce_fn.
         @parameter
-        if has_reduction_operation:
+        if reduce_fn:
+            alias reduction_fn = reduce_fn.value()
 
             @parameter
             @always_inline
             fn reduce_updates[simd_width: Int](idx: Int):
                 output_flat.simd_store[simd_width](
                     output_offset + idx,
-                    reduce_fn(
+                    reduction_fn(
                         output_flat.simd_load[simd_width](output_offset + idx),
                         updates_flat.simd_load[simd_width](
                             updates_offset + idx
@@ -691,24 +692,14 @@ fn scatter_nd[
 ):
     """Scatter_nd operation without any reduction."""
 
-    @always_inline
-    @parameter
-    fn use_update[
-        _type: DType, width: Int
-    ](input_val: SIMD[_type, width], update_val: SIMD[_type, width]) -> SIMD[
-        _type, width
-    ]:
-        return update_val
-
     scatter_nd_generator[
-        use_update,
         output_type,
         indices_type,
         data_rank,
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
-        has_reduction_operation=False,
+        reduce_fn=None,
     ](data, indices, updates, output, out_chain)
 
 
