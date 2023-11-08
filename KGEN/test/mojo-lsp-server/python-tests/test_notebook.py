@@ -60,7 +60,7 @@ function()
 
     async def wait_for_diags():
         """Wait for diagnostics to be published for all cells."""
-        for i in range(len(doc.cells) + 1):
+        while len(requests.client.diagnostics) <= len(doc.cells):
             await requests.client.wait_for_notification(
                 "textDocument/publishDiagnostics"
             )
@@ -95,6 +95,7 @@ function()
         )
 
     # Send an update to replace the first cell.
+    requests.client.diagnostics.clear()
     requests.client.notebook_document_did_change(
         build_change_params(
             NotebookCellArrayChange(
@@ -120,6 +121,7 @@ function()
 
     # Add back in the first cell, and change the function called in the second
     # cell.
+    requests.client.diagnostics.clear()
     requests.client.notebook_document_did_change(
         build_change_params(
             NotebookCellArrayChange(start=0, delete_count=0, cells=[]),
