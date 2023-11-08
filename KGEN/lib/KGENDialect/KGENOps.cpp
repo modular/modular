@@ -1193,18 +1193,6 @@ LogicalResult GlobalAddressOp::verifySymbolUses(SymbolTableCollection &symtab) {
 }
 
 //===----------------------------------------------------------------------===//
-// LinkOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult LinkOp::verify() {
-  if (getLinkPath().has_value() == getLinkBytes().has_value()) {
-    return emitError(
-        "expected either a path or the bytes of an object or archive");
-  }
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // IntLiteralCmp
 //===----------------------------------------------------------------------===//
 

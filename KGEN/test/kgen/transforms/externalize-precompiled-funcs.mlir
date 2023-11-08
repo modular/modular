@@ -1,7 +1,7 @@
 // RUN: kgen-opt -externalize-precompiled-functions %s | FileCheck %s
 
-// CHECK: kgen.link "somelib.a" as @aLib
-kgen.link "somelib.a" as @aLib
+// CHECK: kgen.link dense_resource<somelib> : tensor<1xui8> as @aLib
+kgen.link dense_resource<somelib> : tensor<1xui8> as @aLib
 
 // CHECK: kgen.extern.func @precompiled() -> index from @aLib
 kgen.func @precompiled() -> index attributes {precompiledBodyRef = @aLib} {
