@@ -103,7 +103,9 @@ enum class ParameterRelation {
 
 /// Given a parameter and a function, return the relationship of that parameter
 /// to that function along with its index in the declaration list, and -1 if the
-/// relationship is not input or result.
+/// relationship is not input or result. If the srcSpelling is an empty string,
+/// the local scope is not searched. Otherwise, we search for local parameter
+/// declarations with the name of the source spelling.
 static std::pair<ParameterRelation, int>
 parameterRelationshipToFunction(SharedState &shared, ASTDecl *functionDecl,
                                 ParamDeclRefAttr declRef,
@@ -129,6 +131,8 @@ parameterRelationshipToFunction(SharedState &shared, ASTDecl *functionDecl,
 
   // Okay, we may have referenced a parameter defined in the body. If this is
   // the case we must search by spelling not the mangled parameter name.
+  if (srcSpelling.empty())
+    return {ParameterRelation::Undefined, -1};
   LookupResult lookup = shared.lookupAndResolveDecl(
       srcSpelling, functionDecl->getLoc(), *functionDecl, false);
   if (lookup.isSuccess())
@@ -227,7 +231,7 @@ ASTDecl *CaptureUtility::nearestParentFuncOpDecl(ASTDecl &decl,
   return nullptr;
 }
 
-CaptureRecordResult CaptureUtility::recordParameterCapture(
+static CaptureRecordResult recordParameterCaptureWithScopedLookup(
     SharedState &shared, ASTDecl *nestedFunctionDecl, StringRef srcSpelling,
     ParamDeclRefAttr paramDeclRef, Location parameterRefLocation) {
   auto [relationToContainerFuncion, index] = parameterRelationshipToFunction(
@@ -236,7 +240,8 @@ CaptureRecordResult CaptureUtility::recordParameterCapture(
     unsigned depth = 0;
     // First parent must be function. Otherwise, it's not a nested function,
     // it is a method.
-    ASTDecl *currentParent = nearestParentFuncOpDecl(*nestedFunctionDecl);
+    ASTDecl *currentParent =
+        CaptureUtility::nearestParentFuncOpDecl(*nestedFunctionDecl);
     // Traverse up declarations until the capture is found.
     for (; currentParent; currentParent = currentParent->getParentDecl()) {
       depth++;
@@ -256,4 +261,18 @@ CaptureRecordResult CaptureUtility::recordParameterCapture(
     }
   }
   return CaptureRecordResult::Fail;
+}
+
+CaptureRecordResult CaptureUtility::recordParameterCapture(
+    SharedState &shared, ASTDecl *nestedFunctionDecl,
+    ParamDeclRefAttr paramDeclRef, Location location) {
+  return recordParameterCaptureWithScopedLookup(shared, nestedFunctionDecl, "",
+                                                paramDeclRef, location);
+}
+
+CaptureRecordResult CaptureUtility::recordParameterCapture(
+    SharedState &shared, ASTDecl *nestedFunctionDecl, StringRef srcSpelling,
+    ParamDeclRefAttr paramDeclRef, Location location) {
+  return recordParameterCaptureWithScopedLookup(
+      shared, nestedFunctionDecl, srcSpelling, paramDeclRef, location);
 }
