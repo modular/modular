@@ -1630,7 +1630,7 @@ def KGEN_VariantIsOp : KGENOp<"variant.is", [Pure]> {
 
     ```mlir
     %optional = ...
-    %isNone = kgen.variant.is %optional, 0 : !kgen.variant<struct<()>, T>
+    %isNone = kgen.variant.is %optional, 0 : !kgen.variant<none, T>
     ```
   }];
 
