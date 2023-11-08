@@ -113,10 +113,23 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
                                     StringAttr name, IRMapping &mapping) {
   GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
-  ImplicitLocOpBuilder b(sliced.getLoc(), OpBuilder(sliced));
+  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
+  StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
+
+  // Build debuginfo for the stub if requested.
+  bool hasDebugInfo = false;
+  if (auto scope = func.getSubprogramScope()) {
+    hasDebugInfo = true;
+    scope = scope.cloneWith(
+        DebugInfo::SourceNameAttr::get("asm_stub", scope.getName()), stubName);
+    DebugInfo::DIAttrTypeReplacer replacer;
+    replacer.addReplacement(
+        [scope](DebugInfo::DISubprogramAttr) { return scope; });
+    b.setLoc(cast<mlir::LocationAttr>(replacer.replace(b.getLoc())));
+  }
+
   sliced.setNotExported();
   sliced.setInlineLevel(InlineLevel::Always);
-  StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
   sliced.setSymNameAttr(stubName);
   SignatureType sig = symbol.getType();
   auto wrapper = b.create<GeneratorOp>(name, sig);
@@ -125,7 +138,14 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
       b.createBlock(&wrapper.getBodyRegion(), {}, sig.getValueInputs(),
                     llvm::map_to_vector(sliced.getArguments(),
                                         [](Value v) { return v.getLoc(); }));
-  b.setInsertionPointToStart(wrapper.getBody());
+
+  // Re-declare the captured parameter values.
+  if (hasDebugInfo) {
+    for (auto [decl, value] :
+         llvm::zip(sliced.getInputParams(), symbol.getParamValues()))
+      b.create<ParamDeclareOp>(decl, value);
+  }
+
   auto call =
       b.create<CallOp>(sig.getValueResults(),
                        SymbolConstantAttr::get(FlatSymbolRefAttr::get(stubName),
@@ -154,9 +174,17 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
           sliced->getAttrOfType<StringArrayAttr>("kgen.cross_device_captures"))
     captures = capturesAttr;
 
+  // The location to use for generated code. Remove all debuginfo from it.
+  Location loc = sliced.getLoc();
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([](mlir::FusedLocWith<DebugInfo::DIAttr> loc) {
+    return FusedLoc::get(loc.getContext(), loc.getLocations());
+  });
+  loc = cast<mlir::LocationAttr>(replacer.replace(loc));
+
   // Generate a function on the host side that opaquely populates a piece of
   // memory with the capture values.
-  ImplicitLocOpBuilder b(sliced.getLoc(), OpBuilder(name.getContext()));
+  ImplicitLocOpBuilder b(loc, OpBuilder(name.getContext()));
 
   // The expected signature is `fn(Pointer[None]) capturing -> None`.
   auto noneType = b.getType<KGEN::NoneType>();

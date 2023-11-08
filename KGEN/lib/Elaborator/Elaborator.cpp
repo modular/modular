@@ -771,8 +771,7 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
   clone.setSymName(StringAttr::get(value.getContext(), name));
 
   // Update the subprogram information.
-  if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
-          clone.getLoc())) {
+  if (auto scope = clone.getSubprogramScope()) {
     DebugInfo::SourceNameAttr name = scope.getName();
     SmallVector<StringAttr> values = llvm::to_vector(name.getParamValues());
     if (!forkParam.empty())
@@ -2101,8 +2100,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 
   // Since the function will have a new name, we need to update the linkage name
   // in the subprogram information.
-  if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
-          newFunc.getLoc())) {
+  if (auto scope = newFunc.getSubprogramScope()) {
     SmallVector<StringAttr> paramValues;
     for (TypedAttr value : inputParamValues)
       paramValues.push_back(getParamTypeAsString(value));
