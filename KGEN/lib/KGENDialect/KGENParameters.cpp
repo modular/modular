@@ -53,6 +53,15 @@ auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)
             depth, ref.getIsResult(), ref.getIndex() + offset,
             normalizeSignatureWalk(ref.getType(), depth));
       }
+    } else if (adjustDepth != 0) {
+      if (auto ref = dyn_cast<ParamIndexRefAttr>(value)) {
+        if (ref.getDepth() < depth)
+          return ref;
+        return ParamIndexRefAttr::get(
+            ref.getDepth() + adjustDepth, ref.getIsResult(),
+            ref.getIndex() + offset,
+            normalizeSignatureWalk(ref.getType(), depth));
+      }
     }
   }
   if constexpr (std::is_base_of_v<Type, T>) {
@@ -86,8 +95,8 @@ void IndexRefRemapper::populate(ArrayRef<ParamDeclAttr> params, bool isResult,
 
 IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
                                    ArrayRef<ParamDeclAttr> resultParams,
-                                   size_t offset)
-    : offset(offset) {
+                                   size_t offset, int64_t adjustDepth)
+    : offset(offset), adjustDepth(adjustDepth) {
   populate(inputParams, /*isResult=*/false);
   populate(resultParams, /*isResult=*/true);
 }

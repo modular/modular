@@ -795,17 +795,8 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
 /// decrement any index references in the result type of the signature because
 /// we are pulling it out of the signature.
 static Type upbindApplyResult(Type resultType) {
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamIndexRefAttr ref) {
-    assert(ref.getDepth() != 0 && "unexpected enclosing signature reference");
-    return ParamIndexRefAttr::get(ref.getDepth() - 1, ref.getIsResult(),
-                                  ref.getIndex(), ref.getType());
-  });
-  replacer.addReplacement(
-      [](ParameterScopeTypeInterface type) -> std::pair<Type, WalkResult> {
-        return {type, WalkResult::skip()};
-      });
-  return replacer.replace(resultType);
+  IndexRefRemapper remapper({}, {}, /*offset=*/0, /*adjustDepth=*/-1);
+  return remapper.remap(resultType);
 }
 
 static LogicalResult

@@ -101,17 +101,9 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   auto upbindValue = [&](Attribute value) {
     if (rootDepth + inputDepth == 0)
       return value;
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&](ParamIndexRefAttr ref) {
-      return ParamIndexRefAttr::get(ref.getDepth() + rootDepth + inputDepth,
-                                    ref.getIsResult(), ref.getIndex(),
-                                    ref.getType());
-    });
-    replacer.addReplacement(
-        [](ParameterScopeTypeInterface type) -> std::pair<Type, WalkResult> {
-          return {type, WalkResult::skip()};
-        });
-    return replacer.replace(value);
+    IndexRefRemapper remapper({}, {}, /*offset=*/0,
+                              /*adjustDepth=*/rootDepth + inputDepth);
+    return remapper.remap(value);
   };
 
   // If this is a foldable parameter expression, do it.
