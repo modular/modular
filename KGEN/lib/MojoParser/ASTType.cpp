@@ -440,7 +440,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     }
     os << '(';
     Type inMemResult;
-    StarSlashPrinter ssPrinter(os, sig.getNumInputs());
+    PassingKindPrinter ssPrinter(os, sig.getNumInputs());
     for (auto [i, type, convention, name, passingKind] :
          llvm::enumerate(sig.getValueInputs(), sig.getInputConventions(),
                          sig.getArgNames(), sig.getArgPassingKinds())) {

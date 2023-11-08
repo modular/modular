@@ -414,3 +414,18 @@ lit.struct.decl @StructCannotFileTrait([@Trait1]) {
 
 // expected-error @below {{result signature parameter #0 expected to be 'index' but got '!kgen.dtype'}}
 #bind = #lit.bind_type<:metatype<@Foo<?>, <index>> T, [?]> : !lit.metatype<@Foo<?>, <dtype>>
+
+// -----
+
+// expected-error @below {{'?' cannot precede '|' in signature}}
+!sig = !lit.signature<<?, |>() -> ()>
+
+// -----
+
+// expected-error @below {{'?' cannot precede '*' in signature}}
+!sig = !lit.signature<<?, *>() -> ()>
+
+// -----
+
+// expected-error @below {{only one '?' allowed in signature}}
+!sig = !lit.signature<<?, ?> -> ()>

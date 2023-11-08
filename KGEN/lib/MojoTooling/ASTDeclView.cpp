@@ -562,8 +562,8 @@ std::string FunctionDeclView::getSignature(
   }
 
   // Emit the arguments of the function.
-  StarSlashPrinter ssPrinter(signatureOS, args.size(),
-                             /*suppressSlashAfterSelf=*/isMethod());
+  PassingKindPrinter ssPrinter(signatureOS, args.size(),
+                               /*suppressSlashAfterSelf=*/isMethod());
   size_t idx = 0;
   auto printArg = [&](const M::ArgumentDeclView &arg) {
     ssPrinter.printOptionalStarSlash(arg.getPassingKind(), idx);

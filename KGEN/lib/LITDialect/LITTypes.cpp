@@ -305,7 +305,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<TypedAttr> argDefaults;
   SmallVector<ValueInputConvention> inputConventions;
 
-  StarSlashParser ssParser(p);
+  PassingKindParser ssParser(p);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     if (OptionalParseResult res =
             ssParser.parseOptionalStarSlash(p.getCurrentLocation());
@@ -341,10 +341,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
                            /*optionalResultList=*/false))
     return failure();
 
-  auto [numPosOnly, numPosOrKw, numKwOnly] = ssParser.getNumPassingKinds();
-  SmallVector<PassingKind> argPassingKinds(numPosOnly, PassingKind::PosOnly);
-  argPassingKinds.append(numPosOrKw, PassingKind::PosOrKw);
-  argPassingKinds.append(numKwOnly, PassingKind::KwOnly);
+  SmallVector<PassingKind> argPassingKinds;
+  ssParser.populatePassingKinds(argPassingKinds);
 
   MLIRContext *ctx = p.getContext();
   signature = SignatureType::getChecked(
@@ -392,7 +390,7 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   size_t numInputs = signature.getNumInputs();
   size_t defaultIndex = numInputs - defaultArgs.size();
 
-  StarSlashPrinter ssPrinter(p, numInputs, '|');
+  PassingKindPrinter ssPrinter(p, numInputs, '|');
   auto printElt = [&](unsigned i) {
     ssPrinter.printOptionalStarSlash(signature.getArgPassingKinds()[i], i);
 
