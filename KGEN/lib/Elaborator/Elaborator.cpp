@@ -129,7 +129,8 @@ private:
 //===----------------------------------------------------------------------===//
 
 ImplNode::ImplNode(ParamNode *parent)
-    : parent(parent), paramGraph(parent->gen.getBodyRegion()) {}
+    : parent(parent), paramGraph(parent->gen.getBodyRegion()),
+      evaluator(parent->gen.getContext()) {}
 
 void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   os << "ImplNode <" << func.getSymName() << ">";
@@ -213,17 +214,6 @@ struct ExpansionGraph {
       if (!n)
         n = std::make_unique<ParamNode>(runtime, gen, values, depth);
       return n.get();
-    });
-  }
-
-  /// Insert an ImplNode for a function that is already concrete.
-  void addConcreteFunc(FuncOp func) {
-    concreteNodes.modify([this, func](auto &map) mutable {
-      auto node = std::make_unique<ImplNode>(func, /*parent=*/nullptr,
-                                             func.getBodyRegion(),
-                                             func.getSymName().str());
-      map.try_emplace(func, node.get());
-      elaboratedNodes.push_back(std::move(node));
     });
   }
 };
@@ -559,6 +549,18 @@ private:
   /// Fork the expansion of a concrete node.
   ImplNode *fork(ImplNode *cur, IRMapping &map, StringRef forkParam,
                  Attribute value);
+
+  /// Insert an ImplNode for a function that is already concrete.
+  void addConcreteFunc(FuncOp func) {
+    g.concreteNodes.modify([this, func](auto &map) mutable {
+      auto node = std::make_unique<ImplNode>(
+          func, /*parent=*/nullptr, func.getBodyRegion(),
+          func.getSymName().str(), IREvaluator(*this));
+      map.try_emplace(func, node.get());
+      g.elaboratedNodes.push_back(std::move(node));
+    });
+  }
+
   /// Implement the evaluator hook. This function ensures that all active work
   /// items on the workqueue are completed or suspended before running the
   /// evaluator, to ensure that, at least with respect to this compiler
@@ -791,8 +793,9 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
   });
 
   // Fork the node and its bindings.
-  auto n = std::make_unique<ImplNode>(
-      clone, cur->parent, cur->paramGraph.copy(map), std::move(name));
+  auto n =
+      std::make_unique<ImplNode>(clone, cur->parent, cur->paramGraph.copy(map),
+                                 std::move(name), cur->evaluator);
   n->bindings.get() = cur->bindings.read([](auto &map) { return map; });
 
   // Copy over the current work stack.
@@ -800,8 +803,8 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
     std::vector<Operation *> clonedOps;
     for (Operation *op : item.ops)
       clonedOps.push_back(map.lookup(op));
-    n->stack.push_back(ImplNode::WorkItem{std::move(clonedOps), item.evaluator,
-                                          item.onComplete});
+    n->stack.push_back(
+        ImplNode::WorkItem{std::move(clonedOps), item.onComplete});
   }
 
   // Track the new node as a new child and concrete node.
@@ -959,7 +962,7 @@ std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
 
 void ElaboratorImpl::addDeferredFunction(OwningOpRef<FuncOp> func) {
   FuncOp op = func.release();
-  g.addConcreteFunc(op);
+  addConcreteFunc(op);
   symtab.modify([this, op](SymbolTable &symtab) {
     symtab.insert(op);
     deferredFunctions.push_back(op);
@@ -1603,25 +1606,16 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
   collectOpsToProcess(&toProcess, uses, opsToRewrite);
 
   // Push a new node and skip over the current frame until it completes.
-  ImplNode::WorkItem item{std::move(opsToRewrite), parent->getEvaluator(),
-                          nullptr};
-  item.evaluator.clearCache();
+  ImplNode::WorkItem item{std::move(opsToRewrite), nullptr};
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
   item.onComplete = [this, resultBool](ImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
-    ImplNode::WorkItem &curFrame = node->stack.back();
     ImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
     auto op = cast<ParamIfOp>(parentFrame.ops.back());
     LLVM_DEBUG(logger << "Parameter if completion callback: " << op);
-
-    // Bind the result parameters from the nested scope.
-    for (ParamDeclAttr decl : op.getResultParams()) {
-      parentFrame.evaluator.setOrOverwriteParameterValue(
-          decl, curFrame.evaluator.getParameterValues().at(decl.getName()));
-    }
 
     // Splice the ops into the parent. Grab the terminator before the iterators
     // invalidate.
@@ -2084,8 +2078,9 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 
   // The node for this new func is simply the child of the node for the
   // generator.
-  auto childNode = std::make_unique<ImplNode>(
-      newFunc, genNode, std::move(childGraph), std::move(baseName));
+  auto childNode =
+      std::make_unique<ImplNode>(newFunc, genNode, std::move(childGraph),
+                                 std::move(baseName), std::move(evaluator));
   g.concreteNodes.modify(
       [newFunc, node = childNode.get()](DenseMap<FuncOp, ImplNode *> &map) {
         map.try_emplace(newFunc, node);
@@ -2159,8 +2154,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     onComplete = [](ImplNode *) { return success(); };
   }
 
-  ImplNode::WorkItem item{std::move(opsToRewrite), std::move(evaluator),
-                          std::move(onComplete)};
+  ImplNode::WorkItem item{std::move(opsToRewrite), std::move(onComplete)};
   newFuncNode->stack.push_back(std::move(item));
 
   if (addWaiter) {
@@ -2368,7 +2362,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   // Find any kgen.func we have already - they're already elaborated, and we do
   // not want to re-process them. Add concrete ImplNodes for each one.
   for (auto func : theModule.getOps<FuncOp>())
-    g.addConcreteFunc(func);
+    addConcreteFunc(func);
 
   auto emptyInputParamKey = ParameterExprArrayAttr::get(ctx, {});
   std::vector<AnyAsyncValueRef> primaryChs;

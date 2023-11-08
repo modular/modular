@@ -37,6 +37,7 @@ public:
   IREvaluator(Elaborator &elaborator,
               DenseMap<StringAttr, Attribute> paramValues =
                   DenseMap<StringAttr, Attribute>());
+  IREvaluator(MLIRContext *ctx) : InterpreterState(ctx) {}
   IREvaluator(const IREvaluator &other)
       : ParameterEvaluator(other), InterpreterState(other.getTarget()),
         elaborator(other.elaborator) {}
@@ -118,9 +119,9 @@ evaluateConstraints(ImplNode *parent, ArrayRef<ConstraintAttr> constraints,
 struct ImplNode {
   /// Create a new generator implementation node.
   ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph,
-           std::string &&baseName)
+           std::string &&baseName, IREvaluator evaluator)
       : func(func), parent(parent), paramGraph(std::move(graph)),
-        baseName(std::move(baseName)) {}
+        baseName(std::move(baseName)), evaluator(std::move(evaluator)) {}
 
   /// Create a special root node. Root nodes can be identified with a null
   /// function.
@@ -140,10 +141,7 @@ struct ImplNode {
   void print(mlir::raw_indented_ostream &os, bool printBindings = true);
 
   /// Get the current active evaluator instance.
-  IREvaluator &getEvaluator() {
-    assert(!stack.empty() && "empty work stack");
-    return stack.back().evaluator;
-  }
+  IREvaluator &getEvaluator() { return evaluator; }
 
   /// This function represents a concrete instantiation of a generator.
   FuncOp func;
@@ -182,8 +180,6 @@ struct ImplNode {
   struct WorkItem {
     /// The operations to process.
     std::vector<Operation *> ops;
-    /// The evaluator to use.
-    IREvaluator evaluator;
     /// The completion callback. This function is invoked when the processing of
     /// a scope completes. The callback should perform any necessary cleanup and
     /// additional work scheduling if necessary. The callback is passed the
@@ -197,6 +193,9 @@ struct ImplNode {
 
   /// The current stack of worklists and scopes.
   std::vector<WorkItem> stack;
+
+  /// The evaluator to use.
+  IREvaluator evaluator;
 
   /// The elaborator will asynchronously dispatch elaboration of generator
   /// instantiations with no result parameters in separate tasks, deferring
