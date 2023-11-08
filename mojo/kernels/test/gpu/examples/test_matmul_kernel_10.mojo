@@ -167,6 +167,7 @@ fn sgemmWarptiling[
             let tmp = __nvvm_ldg_f4[DType.float32](
                 bb_ptr.offset((innerRowB + offset) * N + innerColB * 4)
             )
+
             b_sram.aligned_simd_store[4, 16](
                 Index((innerRowB + offset) * BN + innerColB * 4), tmp
             )
@@ -241,13 +242,12 @@ fn sgemmWarptiling[
                 @unroll
                 for resIdxN in range(0, TN, 4):
                     # Load C vector into registers.
-                    var vec = __nvvm_ldg_f4[DType.float32](
-                        C_interim.offset(
-                            (threadRowInWarp * TM + resIdxM) * N
-                            + threadColInWarp * TN
-                            + resIdxN
-                        )
+                    var vec = C_interim.aligned_simd_load[4, 16](
+                        (threadRowInWarp * TM + resIdxM) * N
+                        + threadColInWarp * TN
+                        + resIdxN
                     )
+
                     # Perform GEMM update in reg.
                     vec = (
                         alpha
@@ -256,6 +256,8 @@ fn sgemmWarptiling[
                         )
                         + beta * vec
                     )
+
+                    # Store result.
                     C_interim.aligned_simd_store[4, 16](
                         (threadRowInWarp * TM + resIdxM) * N
                         + threadColInWarp * TN
