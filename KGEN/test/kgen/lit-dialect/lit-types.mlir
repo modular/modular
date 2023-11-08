@@ -65,3 +65,17 @@ kgen.generator @bind_nested() {
   kgen.param.declare result1: !lit.signature<<index, index = *(0,0)>() -> ()> = <apply(:() -> !lit.signature<<index, index = *(0,0)>() -> ()> @return_sig)>
   kgen.return
 }
+
+// CHECK-LABEL: @passing_kinds
+kgen.generator @passing_kinds(
+    // CHECK-SAME: !lit.signature<<i8, |, i8, *, i8, ?, i8>() -> ()>
+    %arg0: !lit.signature<<i8, |, i8, *, i8, ?, i8>() -> ()>,
+    // CHECK-SAME: !lit.signature<<i8, i8, *, i8, ?, i8>() -> ()>
+    %arg1: !lit.signature<<i8, i8, *, i8, ?, i8>() -> ()>,
+    // CHECK-SAME: !lit.signature<<i8, |, i8, i8, ?, i8>() -> ()>
+    %arg2: !lit.signature<<i8, |, i8, i8, ?, i8>() -> ()>,
+    // CHECK-SAME: !lit.signature<<i8, i8, i8, ?, i8>() -> ()>
+    %arg3: !lit.signature<<i8, i8, i8, ?, i8>() -> ()>
+) {
+  kgen.return
+}

@@ -135,7 +135,7 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
                                 SmallVectorImpl<TypedAttr> &defaultParams) {
   bool foundDefault = false;
 
-  StarSlashParser ssParser(p);
+  PassingKindParser ssParser(p);
   auto parseWithDefault =
       [&](SmallVectorImpl<ParamDeclAttr> &decls) -> ParseResult {
     llvm::SMLoc loc = p.getCurrentLocation();
@@ -167,11 +167,7 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
           p, inputParamDecls, resultParamDecls, parseWithDefault)))
     return failure();
 
-  auto [numPosOnly, numPosOrKw, numKwOnly] = ssParser.getNumPassingKinds();
-  paramPassingKinds.append(numPosOnly, PassingKind::PosOnly);
-  paramPassingKinds.append(numPosOrKw, PassingKind::PosOrKw);
-  paramPassingKinds.append(numKwOnly, PassingKind::KwOnly);
-
+  ssParser.populatePassingKinds(paramPassingKinds);
   return success();
 }
 
@@ -192,7 +188,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   size_t defaultIdxStart = numParams - defaultParams.size();
   size_t idx = 0;
 
-  StarSlashPrinter ssPrinter(p, numParams, '|');
+  PassingKindPrinter ssPrinter(p, numParams, '|');
   auto printWithDefault = [&](ParamDeclAttr decl) {
     ssPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
 
@@ -217,7 +213,7 @@ ParseResult LIT::parseOptionalParamSignature(
     SmallVectorImpl<PassingKind> &paramPassingKinds,
     SmallVectorImpl<TypedAttr> &defaultParams) {
   // Parse the input parameter types and optional default values.
-  StarSlashParser ssParser(p);
+  PassingKindParser ssParser(p);
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
     if (OptionalParseResult res =
             ssParser.parseOptionalStarSlash(p.getCurrentLocation());
@@ -243,11 +239,7 @@ ParseResult LIT::parseOptionalParamSignature(
           p, inputParamTypes, resultParamTypes, parseInputParam)))
     return failure();
 
-  auto [numPosOnly, numPosOrKw, numKwOnly] = ssParser.getNumPassingKinds();
-  paramPassingKinds.append(numPosOnly, PassingKind::PosOnly);
-  paramPassingKinds.append(numPosOrKw, PassingKind::PosOrKw);
-  paramPassingKinds.append(numKwOnly, PassingKind::KwOnly);
-
+  ssParser.populatePassingKinds(paramPassingKinds);
   return success();
 }
 
@@ -261,7 +253,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
   size_t defaultIdxStart = numParams - defaultParams.size();
   size_t idx = 0;
 
-  StarSlashPrinter ssPrinter(p, numParams, '|');
+  PassingKindPrinter ssPrinter(p, numParams, '|');
   auto printWithDefault = [&](Type type) {
     ssPrinter.printOptionalStarSlash(paramPassingKinds[idx], idx);
 
@@ -293,15 +285,17 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
 }
 
 //===----------------------------------------------------------------------===//
-// StarSlashParser / StarSlashPrinter
+// PassingKindParser / PassingKindPrinter
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult StarSlashParser::parseOptionalStarSlash(llvm::SMLoc loc) {
+OptionalParseResult PassingKindParser::parseOptionalStarSlash(llvm::SMLoc loc) {
   if (succeeded(parser.parseOptionalVerticalBar())) {
     if (foundSlash)
       return parser.emitError(loc, "only one '|' allowed in signature");
     if (foundStar)
       return parser.emitError(loc, "'*' cannot precede '|' in signature");
+    if (foundImplicit)
+      return parser.emitError(loc, "'?' cannot precede '|' in signature");
     numPosOnly = idx;
     foundSlash = true;
     return mlir::success();
@@ -309,8 +303,21 @@ OptionalParseResult StarSlashParser::parseOptionalStarSlash(llvm::SMLoc loc) {
   if (succeeded(parser.parseOptionalStar())) {
     if (foundStar)
       return parser.emitError(loc, "only one '*' allowed in signature");
+    if (foundImplicit) {
+      return parser.emitError(loc, "'?' cannot precede '*' in signature");
+    }
     foundStar = true;
     numPosOrKw = idx - numPosOnly;
+    return mlir::success();
+  }
+  if (succeeded(parser.parseOptionalQuestion())) {
+    if (foundImplicit)
+      return parser.emitError(loc, "only one '?' allowed in signature");
+    foundImplicit = true;
+    if (foundStar)
+      numKwOnly = idx - numPosOrKw - numPosOnly;
+    else
+      numPosOrKw = idx - numPosOnly;
     return mlir::success();
   }
 
@@ -318,25 +325,39 @@ OptionalParseResult StarSlashParser::parseOptionalStarSlash(llvm::SMLoc loc) {
   return std::nullopt;
 }
 
-std::tuple<size_t, size_t, size_t> StarSlashParser::getNumPassingKinds() const {
-  size_t numPosOrKwSoFar = numPosOrKw;
-  if (!foundStar)
-    numPosOrKwSoFar = idx - numPosOnly;
-  return {numPosOnly, numPosOrKwSoFar, idx - numPosOnly - numPosOrKwSoFar};
+void PassingKindParser::populatePassingKinds(
+    SmallVectorImpl<PassingKind> &kinds) const {
+  auto [numPosOnly, numPosOrKw, numKwOnly, numImplicit] = getNumPassingKinds();
+  kinds.append(numPosOnly, PassingKind::PosOnly);
+  kinds.append(numPosOrKw, PassingKind::PosOrKw);
+  kinds.append(numKwOnly, PassingKind::KwOnly);
+  kinds.append(numImplicit, PassingKind::Implicit);
 }
 
-StarSlashPrinter::StarSlashPrinter(raw_ostream &os, size_t numInputs,
-                                   bool suppressSlashAfterSelf, char slash)
+std::tuple<size_t, size_t, size_t, size_t>
+PassingKindParser::getNumPassingKinds() const {
+  size_t numPosOrKwSoFar = numPosOrKw;
+  if (!foundStar && !foundImplicit)
+    numPosOrKwSoFar = idx - numPosOnly;
+  size_t numKwOnlySoFar = numKwOnly;
+  if (!foundImplicit)
+    numKwOnlySoFar = idx - numPosOnly - numPosOrKwSoFar;
+  return {numPosOnly, numPosOrKwSoFar, numKwOnlySoFar,
+          idx - numKwOnlySoFar - numPosOrKwSoFar - numPosOnly};
+}
+
+PassingKindPrinter::PassingKindPrinter(raw_ostream &os, size_t numInputs,
+                                       bool suppressSlashAfterSelf, char slash)
     : os(os), numInputs(numInputs), prevPassingKind(PassingKind::PosOnly),
       suppressSlashAfterSelf(suppressSlashAfterSelf), slash(slash) {}
 
-StarSlashPrinter::StarSlashPrinter(AsmPrinter &printer, size_t numInputs,
-                                   char slash)
-    : StarSlashPrinter(printer.getStream(), numInputs,
-                       /*suppressSlashAfterSelf=*/false, slash) {}
+PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer, size_t numInputs,
+                                       char slash)
+    : PassingKindPrinter(printer.getStream(), numInputs,
+                         /*suppressSlashAfterSelf=*/false, slash) {}
 
-void StarSlashPrinter::printOptionalStarSlash(PassingKind passingKind,
-                                              size_t idx) {
+void PassingKindPrinter::printOptionalStarSlash(PassingKind passingKind,
+                                                size_t idx) {
   if (prevPassingKind == passingKind)
     return;
 
@@ -349,19 +370,28 @@ void StarSlashPrinter::printOptionalStarSlash(PassingKind passingKind,
       os << slash << ", ";
     if (passingKind == PassingKind::KwOnly)
       os << "*, ";
+    else if (passingKind == PassingKind::Implicit)
+      os << "?, ";
     break;
   case PassingKind::PosOrKw:
     assert(passingKind != PassingKind::PosOnly &&
            "positional-only argument cannot follow positional-or-keyword");
-    os << "*, ";
+    if (passingKind == PassingKind::KwOnly)
+      os << "*, ";
+    else if (passingKind == PassingKind::Implicit)
+      os << "?, ";
     break;
   case PassingKind::KwOnly:
-    llvm_unreachable("keyword-only argument must follow all other arguments");
+    assert(passingKind == PassingKind::Implicit);
+    os << "?, ";
+    break;
+  case PassingKind::Implicit:
+    llvm_unreachable("implicit must be the last passing kind");
   }
   prevPassingKind = passingKind;
 }
 
-void StarSlashPrinter::printOptionalTrailingSlash(size_t idx) const {
+void PassingKindPrinter::printOptionalTrailingSlash(size_t idx) const {
   if (suppressSlashAfterSelf && idx == 0)
     return;
   if (idx == numInputs - 1)

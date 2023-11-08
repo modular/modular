@@ -120,42 +120,47 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
 //===----------------------------------------------------------------------===//
-// StarSlashParser / StarSlashPrinter
+// PassingKindParser / PassingKindPrinter
 //===----------------------------------------------------------------------===//
 
 /// Handles parsing '|' and '*' in lit IR and counts the number of arguments of
 /// different passing kinds.
 /// TODO(#23387): fix this when AsmParser can handle '/'.
-class StarSlashParser {
+class PassingKindParser {
 public:
-  StarSlashParser(AsmParser &parser) : parser(parser) {}
+  PassingKindParser(AsmParser &parser) : parser(parser) {}
 
   /// Try to parse a single optional '*' or '|', and emit an error if a
   /// duplicate is found or a '|' comes after a '*'.
   OptionalParseResult parseOptionalStarSlash(llvm::SMLoc loc);
 
-  /// Return the number of positional-only, positional-or-keyword, and
-  /// keyword-only arguments seen so far, respectively.
-  std::tuple<size_t, size_t, size_t> getNumPassingKinds() const;
+  /// Populate the parameter passing kinds.
+  void populatePassingKinds(SmallVectorImpl<PassingKind> &kinds) const;
 
 private:
+  /// Return the number of positional-only, positional-or-keyword, keyword-only
+  /// and implicit arguments seen so far, respectively.
+  std::tuple<size_t, size_t, size_t, size_t> getNumPassingKinds() const;
+
   AsmParser &parser;
   size_t idx = 0;
   size_t numPosOnly = 0;
   size_t numPosOrKw = 0;
+  size_t numKwOnly = 0;
   bool foundSlash = false;
   bool foundStar = false;
+  bool foundImplicit = false;
 };
 
 /// Handles printing '/' and '*' in lit IR. Optionally, it allows specifying a
 /// character to be used instead of '/'. It also allows specifying a flag to
 /// suppress the '/' if it immediately follows the first argument (useful if
 /// printing methods with mojo syntax).
-class StarSlashPrinter {
+class PassingKindPrinter {
 public:
-  StarSlashPrinter(raw_ostream &os, size_t numInputs,
-                   bool suppressSlashAfterSelf = false, char slash = '/');
-  StarSlashPrinter(AsmPrinter &printer, size_t numInputs, char slash = '/');
+  PassingKindPrinter(raw_ostream &os, size_t numInputs,
+                     bool suppressSlashAfterSelf = false, char slash = '/');
+  PassingKindPrinter(AsmPrinter &printer, size_t numInputs, char slash = '/');
 
   /// Print a single '*' or '/' if needed, given the passing kind, and the index
   /// of the argument.
