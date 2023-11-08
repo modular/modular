@@ -1223,7 +1223,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   }
 
   // Otherwise we can emit a direct use/load for trivial types.
-  // Is is ok to upgrade SBValue to SRValue for trivial types.
+  // It is ok to upgrade SBValue to SRValue for trivial types.
   if (auto sbVal = value.ir.getIfSBValue())
     value.ir = SRValue(sbVal);
   if (auto srVal = value.ir.getIfSRValue())
