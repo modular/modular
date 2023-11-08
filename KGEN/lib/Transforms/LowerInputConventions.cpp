@@ -206,6 +206,57 @@ static void lowerCallSignatureOp(CallSignatureOp callOp) {
   callee.setType(newSig);
 }
 
+/// Emit IR for repacking the returned variant in the body of a throwing
+/// function that we are currently lowering. This returns the new variant result
+/// of the give type `newVariantTy`.
+static Value repackFuncVariantResult(ReturnOp returnOp,
+                                     VariantType newVariantTy,
+                                     POP::StackAllocationOp newResPtr) {
+  Value oldRetVal = returnOp.getOperand(0);
+  ImplicitLocOpBuilder b(returnOp.getLoc(), returnOp);
+
+  // We check the result is coming from. If we can guarantee that it's either an
+  // error or not, we can just repack the error or the valid result.
+  if (auto variantCreateOp =
+          dyn_cast_or_null<VariantCreateOp>(oldRetVal.getDefiningOp())) {
+    size_t idx = variantCreateOp.getIndex();
+    if (idx == 1) {
+      // This is guaranteed to be a normal return.
+      auto loadedRes = b.create<POP::LoadOp>(newResPtr);
+      return b.create<VariantCreateOp>(newVariantTy, loadedRes, 1);
+    }
+
+    // This is guaranteed to be an error return.
+    assert(idx == 0 && "unexpected variant type creation");
+    Value err = variantCreateOp.getOperand();
+    return b.create<VariantCreateOp>(newVariantTy, err, 0);
+  }
+
+  // We can't guarantee what the result is, so we emit conditional variant
+  // repacking. We create an HCLF::IfOp, with a condition checking if there is
+  // no error (i.e. the then branch will handle normal return). The result of
+  // this IfOp is what we will return.
+  auto cond = b.create<VariantIsOp>(oldRetVal, 1);
+  auto ifOp = b.create<HLCF::IfOp>(newVariantTy, cond);
+  Value newRetVal = ifOp.getResult(0);
+
+  // Populate the then branch (normal return).
+  Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
+  b.setInsertionPointToStart(thenBlock);
+  auto loadedRes = b.create<POP::LoadOp>(newResPtr);
+  Value thenRes = b.create<VariantCreateOp>(newVariantTy, loadedRes, 1);
+  b.create<HLCF::YieldOp>(thenRes);
+
+  // Populate the else branch (error return).
+  Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
+  b.setInsertionPointToStart(elseBlock);
+  auto err = b.create<VariantGetOp>(oldRetVal, 0);
+  Value elseRes = b.create<VariantCreateOp>(newVariantTy, err, 0);
+  b.create<HLCF::YieldOp>(elseRes);
+
+  return newRetVal;
+}
+
 /// Lower the input conventions for a KGEN::FuncOp if needed.
 static void lowerFuncOp(FuncOp funcOp) {
   SignatureType oldSig = funcOp.getSignature();
@@ -230,41 +281,20 @@ static void lowerFuncOp(FuncOp funcOp) {
     byrefResArg.replaceAllUsesWith(newResPtr);
     body.eraseArgument(0);
 
-    Operation *returnOp = body.front().getTerminator();
+    auto returnOp = cast<ReturnOp>(body.front().getTerminator());
     b.setInsertionPoint(returnOp);
-    auto newRes = b.create<POP::LoadOp>(returnOp->getLoc(), newResPtr);
 
     if (newSig.isThrows()) {
       // If the function throws, we need to potentially unpack and repack the
       // result/error variant.
       auto newVariantTy = cast<VariantType>(newSig.getValueResults()[0]);
-
-      // TODO: Implement peephole optimization when this result is none.
-      Value oldRetVal = returnOp->getOperand(0);
-
-      // We create an HCLF::IfOp, with a condition checking if there is no error
-      // (i.e. the then branch will handle normal return). The result of this is
-      // what we will return.
-      Location loc = oldRetVal.getLoc();
-      auto cond = b.create<VariantIsOp>(loc, oldRetVal, 1);
-      auto ifOp = b.create<HLCF::IfOp>(loc, newVariantTy, cond);
-      returnOp->setOperands(ifOp.getResults());
-
-      // Populate the then branch (normal return).
-      Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
-      b.setInsertionPointToStart(thenBlock);
-      Value thenRes = b.create<VariantCreateOp>(loc, newVariantTy, newRes, 1);
-      b.create<HLCF::YieldOp>(loc, thenRes);
-
-      // Populate the else branch (error return).
-      Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
-      b.setInsertionPointToStart(elseBlock);
-      auto err = b.create<VariantGetOp>(loc, oldRetVal, 0);
-      Value elseRes = b.create<VariantCreateOp>(loc, newVariantTy, err, 0);
-      b.create<HLCF::YieldOp>(loc, elseRes);
+      Value newRetVal =
+          repackFuncVariantResult(returnOp, newVariantTy, newResPtr);
+      returnOp.setOperand(0, newRetVal);
     } else {
-      // If the function doesn't throw, we simply return the new result.
-      returnOp->setOperand(0, newRes);
+      // If the function doesn't throw, we just load and return the new result.
+      auto newRes = b.create<POP::LoadOp>(returnOp.getLoc(), newResPtr);
+      returnOp.setOperand(0, newRes);
     }
   }
   funcOp.setSignature(newSig);
