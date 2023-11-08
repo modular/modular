@@ -165,14 +165,16 @@ endif()
 # This will generate a target, `MojoBuiltin`, and also generate
 # documentation for the provided source files. Source files are added with
 # either PUBLIC or PRIVATE to denote whether the documentation should be
-# public or internal.
+# public or internal. By default this will generate docs inside
+# <build-dir>/docs/Kernels/docs. If DOCS_DIR s given the docs will instead
+# be generated in <build-dir>/docs/${DOCS_DIR}.
 #
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_mojo_package target)
   cmake_parse_arguments(KGEN
                         "STDLIB"
-                        "PACKAGE_DIR;OUTPUT_NAME"
+                        "PACKAGE_DIR;OUTPUT_NAME;DOCS_DIR"
                         "PRIVATE;PUBLIC;LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
@@ -187,21 +189,26 @@ function(add_mojo_package target)
   if (NOT KGEN_OUTPUT_NAME)
     get_filename_component(KGEN_OUTPUT_NAME ${KGEN_PACKAGE_DIR} NAME_WE)
   endif ()
+  if(NOT KGEN_DOCS_DIR)
+    set(KGEN_DOCS_DIR "Kernels/docs")
+  endif()
 
   # CMake emits build targets as relative paths but Ninja doesn't identify
   # absolute paths (in *.d) as relative paths (in build.ninja).
   set(package_file_name "${KGEN_OUTPUT_NAME}.mojopkg")
   file(RELATIVE_PATH package_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${package_file_name})
 
+  add_custom_target(${target}-doc)
+
   # Process the sources to generate documentation as necessary.
   set(KGEN_SOURCE_FILES "")
   foreach(file ${KGEN_PRIVATE})
     if (KGEN_STDLIB)
       add_mojo_doc("${target}${file}" PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} Kernels/docs/${target}/ STDLIB)
+        ${file} ${KGEN_DOCS_DIR}/${target}/ STDLIB PACKAGE_DOC_TARGET ${target}-doc)
     else()
       add_mojo_doc("${target}${file}" PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} Kernels/docs/${target}/)
+        ${file} ${KGEN_DOCS_DIR}/${target}/ PACKAGE_DOC_TARGET ${target}-doc)
     endif()
 
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
@@ -210,10 +217,10 @@ function(add_mojo_package target)
     string(REGEX REPLACE ".*/([^/]*)$" "\\1" PACKAGE_NAME "${KGEN_PACKAGE_DIR}")
     if (KGEN_STDLIB)
       add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} Kernels/docs/stdlib/${PACKAGE_NAME}/ STDLIB)
+        ${file} ${KGEN_DOCS_DIR}/stdlib/${PACKAGE_NAME}/ STDLIB PACKAGE_DOC_TARGET ${target}-doc)
     else()
       add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} Kernels/docs/${target}/)
+        ${file} ${KGEN_DOCS_DIR}/${target}/ PACKAGE_DOC_TARGET ${target}-doc)
     endif()
 
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
@@ -435,7 +442,7 @@ function(add_kgen_kernel target)
 endfunction()
 
 function(add_mojo_doc target visibility doc_filename output_file output_directory)
-  cmake_parse_arguments(KGEN "STDLIB" "" "LINK_LIBS;LINK_DIRS" ${ARGN})
+  cmake_parse_arguments(KGEN "STDLIB" "PACKAGE_DOC_TARGET" "LINK_LIBS;LINK_DIRS" ${ARGN})
 
   # Sanitize the target so it does not contain slashes.
   string(REPLACE "/" "_" target "${target}")
@@ -489,6 +496,10 @@ function(add_mojo_doc target visibility doc_filename output_file output_director
     add_dependencies(modular-doc ${target}DocGen)
   else()
     add_dependencies(modular-internal-doc ${target}DocGen)
+  endif()
+
+  if(KGEN_PACKAGE_DOC_TARGET)
+    add_dependencies(${KGEN_PACKAGE_DOC_TARGET} ${target}DocGen)
   endif()
 
   # Invoke `mojo --warn-missing-doc-strings` on the given file and pipe any
