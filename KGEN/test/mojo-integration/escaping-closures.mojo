@@ -108,6 +108,28 @@ fn captureCallable[
     return foo
 
 
+@value
+@register_passable
+struct C[B: DType]:
+    var b: Int
+
+    fn get(self) -> Int:
+        return self.b
+
+
+fn take_closure[
+    c_type: DType
+](x: C[c_type], closure: fn (z: C[c_type]) escaping -> None):
+    closure(x)
+
+
+fn make_closure[c_type: DType]() -> fn (z: C[c_type]) escaping -> None:
+    fn foo(z: C[c_type]) escaping -> None:
+        print(z.get())
+
+    return foo
+
+
 fn main():
     let x = 2
     let c = makes_escaping_closure(x.value)
@@ -137,3 +159,7 @@ fn main():
     let bar = bat_closure(3)
     # CHECK: 20
     print(bar.get())
+
+    alias a = DType.int8
+    # CHECK: 3
+    take_closure[a](C[a](3), make_closure[a]())

@@ -40,6 +40,22 @@ class TraitDeclOp;
 struct ParsedArgument;
 enum class PassingKind : uint32_t;
 
+/// This is a convenience class for pairing the parameter declaration, which has
+/// a mangled name, with its source name.
+struct NamedParameter {
+  NamedParameter(StringRef name, ParamDeclAttr paramDecl)
+      : srcName(name), parameterDecl(paramDecl) {}
+  StringAttr getMangledName() const { return parameterDecl.getName(); }
+  StringRef getSrcName() const { return srcName; }
+  Type getType() const { return parameterDecl.getType(); }
+
+private:
+  /// Name as it appears in the source.
+  StringRef srcName;
+  /// Parameter declaration as it appears in the owning declaration.
+  ParamDeclAttr parameterDecl;
+};
+
 //===----------------------------------------------------------------------===//
 // DeclResolver
 //===----------------------------------------------------------------------===//
@@ -192,14 +208,14 @@ public:
                              MutableArrayRef<Type> argTypes);
 
   /// Given a scope, collect all parameters declared in that scope.
-  static SmallVector<ParamDeclAttr> parametersInScope(ASTDecl &scope);
+  static SmallVector<NamedParameter> parametersInScope(ASTDecl &scope);
 
   /// Given a signature type that contains references to a parent function,
   /// create a signature type that contains no references to the parent by
   /// inserting an input parameter for every captured declaration.
   static LITSignatureType
   createSelfContainedSignature(LITSignatureType original,
-                               ArrayRef<ParamDeclAttr> paramRefsToUnbind,
+                               ArrayRef<NamedParameter> paramRefsToUnbind,
                                std::function<void(StringRef)> errorHandler);
 
   /// Create a bound type from a struct and a list of bindings.
