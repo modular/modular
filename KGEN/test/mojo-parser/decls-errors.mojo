@@ -216,6 +216,18 @@ def test_use_non_copyable_type(owned b: ThingWithStaticMethod):
 fn issue14191() -> Int:
     return 1
 
+fn issue1242():
+    try:
+        fn decorator(function: fn(abc:Int) capturing -> None) escaping:
+           print("calling a func")
+
+        @decorator # expected-error {{cannot use a dynamic value in decorator}}
+        fn on_message(abc:Int) -> None:
+            print(abc)
+    except e:
+        print(e)
+
+
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
