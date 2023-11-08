@@ -143,9 +143,9 @@ kgen.func @byref_throws(
   // CHECK-NEXT: "somehow.populate"(%[[P0]]) : (!kgen.pointer<index>) -> ()
   "somehow.populate"(%__result__) : (!kgen.pointer<index>) -> ()
 
-  // CHECK: %[[VAL0:.*]] = pop.load %[[P0]] : !kgen.pointer<index>
   // CHECK: %[[COND:.*]] = kgen.variant.is %arg0, 1
   // CHECK-NEXT: %[[RES:.*]] = hlcf.if %[[COND]]
+  // CHECK-NEXT:   %[[VAL0:.*]] = pop.load %[[P0]] : !kgen.pointer<index>
   // CHECK-NEXT:   %[[THEN:.*]] = kgen.variant.create %[[VAL0]], 1
   // CHECK-NEXT:   hlcf.yield %[[THEN]]
   // CHECK-NEXT: } else {
@@ -203,4 +203,29 @@ kgen.func @test_byref_throws(
   %res2 = kgen.call_signature %arg0(%__result__, %arg1) : !byref_throws_sig
   "handle.error"(%res2) : (!kgen.variant<!Error, !kgen.none>) -> ()
   "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
+}
+
+// CHECK-LABEL: kgen.func @byref_throws_optimized_normal() throws -> !kgen.variant<struct<(f32)>, index>
+kgen.func @byref_throws_optimized_normal(
+  %__result__: !kgen.pointer<index> byref_result
+) throws -> !kgen.variant<!Error, !kgen.none> {
+  %none = kgen.param.constant: !kgen.none = <#kgen.none>
+  %res = kgen.variant.create %none, 1 : <!Error, !kgen.none>
+
+  // CHECK: %[[P0:.*]] = pop.stack_allocation 1 x index
+  // CHECK: %[[VAL:.*]] = pop.load %[[P0]]
+  // CHECK-NEXT: %[[RES:.*]] = kgen.variant.create %[[VAL]], 1
+  // CHECK-NEXT: kgen.return %[[RES]]
+  kgen.return %res : !kgen.variant<!Error, !kgen.none>
+}
+
+// CHECK-LABEL: kgen.func @byref_throws_optimized_error(%arg0: !kgen.struct<(f32)>) throws -> !kgen.variant<struct<(f32)>, index>
+kgen.func @byref_throws_optimized_error(
+  %__result__: !kgen.pointer<index> byref_result, %arg1: !Error
+) throws -> !kgen.variant<!Error, !kgen.none> {
+  %res = kgen.variant.create %arg1, 0 : <!Error, !kgen.none>
+
+  // CHECK: %[[RES:.*]] = kgen.variant.create %arg0, 0 : <struct<(f32)>, index>
+  // CHECK-NEXT: kgen.return %[[RES]]
+  kgen.return %res : !kgen.variant<!Error, !kgen.none>
 }
