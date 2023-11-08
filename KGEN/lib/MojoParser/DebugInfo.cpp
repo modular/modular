@@ -29,26 +29,26 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
   SmallVector<SourceNameAttr> paramTypes, argTypes;
   SourceNameAttr parent;
 
-  StringAttr kind;
+  DebugInfo::SourceNameKind kind = {};
   if (auto package = dyn_cast<PackageOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
     name = package.getSourceNameAttr();
     if (!name)
       name = package.getSymNameAttr();
-    kind = StringAttr::get(getContext(), "pkg");
+    kind = DebugInfo::SourceNameKind::Package;
   } else if (auto fileModule = dyn_cast<FileModuleOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
     name = fileModule.getSourceNameAttr();
     if (!name)
       name = fileModule.getSymNameAttr();
-    kind = StringAttr::get(getContext(), "module");
+    kind = DebugInfo::SourceNameKind::Module;
   } else if (auto structOp = dyn_cast<StructDeclOp>(*op)) {
     // The symbol name is the source name.
     name = structOp.getSymNameAttr();
     // Bundle the source names of the parameter types.
     for (Type type : structOp.getSignature().getParamTypes())
       paramTypes.push_back(getSourceName(type));
-    kind = StringAttr::get(getContext(), "struct");
+    kind = DebugInfo::SourceNameKind::Struct;
   } else if (auto func = dyn_cast<LIT::FuncOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
     name = func.getSourceNameAttr();
@@ -74,7 +74,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
       }
       argTypes.push_back(getSourceName(type));
     }
-    kind = StringAttr::get(getContext(), "fn");
+    kind = DebugInfo::SourceNameKind::Fn;
     // The function will not have parameter values until elaboration.
   } else {
     // If we somehow end up here, just use the symbol name.
@@ -103,7 +103,7 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
       paramValues.push_back(getParamTypeAsString(value));
     return SourceNameAttr::get(
         name.getName(), name.getParamTypes(), name.getArgTypes(), paramValues,
-        name.getParent(), StringAttr::get(getContext(), "struct"));
+        name.getParent(), DebugInfo::SourceNameKind::Struct);
   }
   // For anything else, use the full MLIR type.
   return SourceNameAttr::get(getTypeAsString(type));
