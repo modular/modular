@@ -2334,19 +2334,19 @@ fn scatter_nd_add[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn reduce_func[
+    fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs + rhs
 
     scatter_nd_generator[
-        reduce_func,
         output_type,
         indices_type,
         output_rank,
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        reduce_fn=reduce_fn,
     ](input, indices, updates, output, out_chain)
 
 
@@ -2376,19 +2376,19 @@ fn scatter_nd_max[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn reduce_func[
+    fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.max(rhs)
 
     scatter_nd_generator[
-        reduce_func,
         output_type,
         indices_type,
         output_rank,
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        reduce_fn=reduce_fn,
     ](input, indices, updates, output, out_chain)
 
 
@@ -2418,19 +2418,19 @@ fn scatter_nd_min[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn reduce_func[
+    fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.min(rhs)
 
     scatter_nd_generator[
-        reduce_func,
         output_type,
         indices_type,
         output_rank,
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        reduce_fn=reduce_fn,
     ](input, indices, updates, output, out_chain)
 
 
@@ -2460,19 +2460,19 @@ fn scatter_nd_mul[
     out_chain: OutputChainPtr,
 ):
     @always_inline
-    fn reduce_func[
+    fn reduce_fn[
         type: DType, width: Int
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs * rhs
 
     scatter_nd_generator[
-        reduce_func,
         output_type,
         indices_type,
         output_rank,
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        reduce_fn=reduce_fn,
     ](input, indices, updates, output, out_chain)
 
 
