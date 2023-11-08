@@ -231,8 +231,8 @@ kgen.func @used_func() {
 }
 
 // CHECK: llvm.func extern_weak @external_func()
-kgen.link "/path/to/libc.a" as @libc
-kgen.extern.func @external_func() -> () from @libc
+kgen.link dense_resource<imaginary_ffmpeg> : tensor<1xui8> as @ffmpeg
+kgen.extern.func @external_func() -> () from @ffmpeg
 
 // CHECK: llvm.mlir.global internal constant @[[STATIC_STRING]]("AB\00") {addr_space = 0 : i32, alignment = 16 : i64}
 

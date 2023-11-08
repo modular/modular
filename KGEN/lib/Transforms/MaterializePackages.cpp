@@ -255,7 +255,7 @@ void MaterializePackagesPass::runOnOperation() {
       OpBuilder b(packageLink);
       auto linkOp = b.create<KGEN::LinkOp>(packageLink.getLoc(),
                                            packageLink.getSymNameAttr(),
-                                           StringAttr(), archive->getArchive());
+                                           archive->getArchive());
       symtab.erase(packageLink);
       symtab.insert(linkOp);
     } else {

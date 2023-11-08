@@ -1237,18 +1237,19 @@ def KGEN_LinkOp : KGENOp<"link", [Symbol]> {
     by their symbol name - it is illegal to attempt to link more than one
     library as a given symbol name.
 
-    For example:
+    Example:
+
     ```mlir
-    kgen.link "/path/to/musl.libc.a" as @libc
+    kgen.link dense_resource<musl_libc> : tensor<422xui8> as @libc
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name,
-    OptionalAttr<StrAttr>:$linkPath,
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$linkBytes);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    Builtin_DenseResourceElementsAttr:$linkBytes
+  );
 
-  let assemblyFormat = "($linkPath^)? ($linkBytes^)? `as` $sym_name attr-dict";
-  let hasVerifier = 1;
+  let assemblyFormat = "$linkBytes `as` $sym_name attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

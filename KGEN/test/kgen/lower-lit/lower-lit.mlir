@@ -482,8 +482,8 @@ lit.func @caller(%ref: !kgen.declref<@module::@Adder<10>>)  {
 // CHECK-NOT: lit.
 lit.package @package {
   lit.file_module @module {
-    // CHECK: kgen.link "lib.a" as @"package::module::lib"
-    kgen.link "lib.a" as @lib
+    // CHECK: kgen.link dense_resource<lib> : tensor<1xui8> as @"package::module::lib"
+    kgen.link dense_resource<lib> : tensor<1xui8> as @lib
 
     // CHECK: kgen.generator export @"package::module::foo"()
     lit.func export @foo() {
