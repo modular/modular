@@ -108,8 +108,15 @@ fn sgemmWarptiling[
     let threadRowInWarp = threadIdxInWarp // (WSUBN // TN)  # i/4
 
     # Allocate space for the current blocktile in SMEM.
+    # Pad the A tile in share memory to avoid bank conflicts.
+    # Use 4 to comply with f4 alignment used in accumulation.
+    alias sram_bank_padding_size = 4
+    alias BM_padded = BM + sram_bank_padding_size
     let a_sram = NDBuffer[
-        1, DimList(BK * BM), DType.float32, address_space = AddressSpace.SHARED
+        1,
+        DimList(BK * BM_padded),
+        DType.float32,
+        address_space = AddressSpace.SHARED,
     ].stack_allocation()
     let b_sram = NDBuffer[
         1, DimList(BK * BN), DType.float32, address_space = AddressSpace.SHARED
@@ -160,7 +167,9 @@ fn sgemmWarptiling[
 
             @unroll
             for i in range(4):
-                a_sram[(innerColA * 4 + i) * BM + innerRowA + offset] = tmp[i]
+                a_sram[
+                    (innerColA * 4 + i) * BM_padded + innerRowA + offset
+                ] = tmp[i]
 
         for offset in range(0, BK - rowStrideB + 1, rowStrideB):
             # Load 4 elements at a time and store to shared memory.
@@ -182,7 +191,7 @@ fn sgemmWarptiling[
                 @unroll
                 for i in range(0, TM, 4):
                     let vec = a_sram.aligned_simd_load[4, 16](
-                        (dotIdx * BM)
+                        dotIdx * BM_padded
                         + warpRow * WM
                         + wSubRowIdx * WSUBM
                         + threadRowInWarp * TM
