@@ -13,6 +13,7 @@ from algorithm.functional import _elementwise_impl
 from builtin.io import _printf
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream
+from gpu.host.sync import synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -62,6 +63,7 @@ fn run_elementwise() raises:
         StaticIntTuple[3](2, 3, 2),
         OutputChainPtr(),
     )
+    synchronize()
 
     _copy_device_to_host(out_host.data(), out_device, flattened_length)
 
