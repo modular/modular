@@ -2137,3 +2137,37 @@ kgen.generator export @entry() {
   kgen.param.constant: struct<(() -> ())> = <{ @param<3> }>
   kgen.return
 }
+
+// -----
+
+// During elaboration of this example, the type:
+//
+// <index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()
+//
+// appears in the IR. This type is actually concrete from the perspective of the
+// current frame, because it has no parameter expressions. It contains parameter
+// operators, but they are part of the signature.
+//
+// Ensure that this type is valid.
+
+kgen.generator @init<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.struct<()> {
+  %struct = kgen.param.constant: struct<()> = <{  }>
+  kgen.return %struct : !kgen.struct<()>
+}
+
+kgen.generator @eq(%arg0: index, %arg1: index) -> i1 {
+  %0 = index.cmp eq(%arg0, %arg1)
+  kgen.return %0 : i1
+}
+
+kgen.generator @make<x>(%arg0: !pop.array<cond(apply(:(index, index) -> i1 @eq, x, 0), 1, x), index>) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @top
+kgen.generator export @top() {
+  // CHECK-NEXT: constant: struct<()> = <{ }>
+  kgen.param.apply lifted = [(!kgen.signature<<index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:type <index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make)
+  kgen.param.constant: struct<()> = <lifted>
+  kgen.return
+}

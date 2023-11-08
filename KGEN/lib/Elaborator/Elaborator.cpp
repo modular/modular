@@ -316,8 +316,8 @@ private:
 } // namespace
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
-  if (auto exprResult = (INODE)->getEvaluator().concretizeParameterExpr(       \
-          INODE, LOC, EXPR, true);                                             \
+  if (auto exprResult =                                                        \
+          (INODE)->getEvaluator().concretizeParameterExpr(INODE, LOC, EXPR);   \
       exprResult.isError()) {                                                  \
     (INODE)->setToError(exprResult.takeError());                               \
     return ElaborationState::error();                                          \
@@ -1886,7 +1886,7 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
 static mlir::LocationAttr concretizeLoc(mlir::LocationAttr loc,
                                         ImplNode *inode) {
   auto exprResult =
-      inode->getEvaluator().concretizeParameterExpr(inode, loc, loc, true);
+      inode->getEvaluator().concretizeParameterExpr(inode, loc, loc);
   if (exprResult.isError()) {
     inode->setToError(exprResult.takeError());
     return {};
