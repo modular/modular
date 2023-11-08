@@ -7,6 +7,8 @@
 #include "MojoDWARFParser.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "MojoTypeSystem.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/ErrorOr.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Utility/StreamString.h"
@@ -22,8 +24,68 @@ using namespace lldb_private;
 using namespace lldb_private::dwarf;
 using namespace lldb_private::plugin::dwarf;
 
-// FIXME(23768): Remove this after the next LLVM integrate.
-#define DIE_IS_BEING_PARSED ((lldb_private::Type *)1)
+/// Implementation of `generateFunctionDisplayName` that recursively traverses
+/// the scopes in the source name, generating a human readable version of the
+/// function.
+static void doGenerateFunctionDisplayName(DebugInfo::SourceNameAttr attr,
+                                          ArrayRef<StringAttr> &paramValues,
+                                          llvm::raw_ostream &os) {
+  if (DebugInfo::SourceNameAttr parent = attr.getParent()) {
+    doGenerateFunctionDisplayName(parent, paramValues, os);
+    os << ".";
+  }
+
+  os << attr.getName().getValue();
+  if (!attr.getParamTypes().empty()) {
+    os << "[";
+    ArrayRef<DebugInfo::SourceNameAttr> paramTypes = attr.getParamTypes();
+    size_t paramDisplayCount = std::min(paramTypes.size(), paramValues.size());
+    llvm::interleaveComma(paramTypes.take_front(paramDisplayCount), os,
+                          [&](DebugInfo::SourceNameAttr paramType) {
+                            StringRef paramValue =
+                                paramValues.front().getValue();
+                            paramValue.consume_front(":type ");
+                            os << paramValue;
+                            paramValues = paramValues.drop_front(1);
+                          });
+    // FIXME(25047): if we don't have all required parameters available, we
+    // just show `...`
+    if (paramDisplayCount < paramTypes.size()) {
+      if (paramDisplayCount > 0)
+        os << ", ";
+      os << "...";
+    }
+    os << "]";
+  }
+}
+
+/// Generate a human readable version of a function given its SourceName.
+static std::string generateFunctionDisplayName(DebugInfo::SourceNameAttr attr) {
+  ArrayRef<StringAttr> paramValues = attr.getParamValues();
+  // FIXME(25047): If we are in a nested function, we don't show parameters.
+  if (attr.getParent() && attr.getParent().getKind() == "fn")
+    paramValues = {};
+
+  std::string displayName;
+  llvm::raw_string_ostream os(displayName);
+  doGenerateFunctionDisplayName(attr, paramValues, os);
+
+  if (attr.getKind() == "fn") {
+    // TODO(25048): we need to figure out a nice way to include the arguments
+    // of functions. For now we just show `...` for the leaf function. This is
+    // fine for dumping stack traces because LLDB will replace the `...` of the
+    // leaf function with the actual arguments from DWARF as part of the
+    // `SBFrame.GetDescription()` invocation.
+    // However, we can't show the arguments of parent functions, because then
+    // LLDB would place the DWARF variables there instead of in the leaf
+    // function.
+    os << "(";
+    if (!attr.getArgTypes().empty())
+      os << "...";
+    os << ")";
+  }
+  return displayName;
+}
 
 /// Bag of data for all the attributes parsed from a DWARF entry.
 struct ParsedDWARFTypeAttributes {
@@ -560,7 +622,17 @@ MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
         funcName.SetMangledName(ConstString(mangled));
       else
         funcName.SetMangledName(ConstString(name));
-      funcName.SetDemangledName(ConstString(name));
+
+      // If the name is a SourceName, then generate a human readable version of
+      // it, otherwise we keep the name unchanged as its display version.
+      ErrorOr<DebugInfo::SourceNameAttr> attrOr =
+          DebugInfo::SourceNameAttr::decode(typeSystem.getMLIRContext(), name);
+      if (succeeded(attrOr)) {
+        funcName.SetDemangledName(
+            ConstString(generateFunctionDisplayName(*attrOr)));
+      } else {
+        funcName.SetDemangledName(ConstString(name));
+      }
 
       FunctionSP func;
       std::unique_ptr<Declaration> decl;

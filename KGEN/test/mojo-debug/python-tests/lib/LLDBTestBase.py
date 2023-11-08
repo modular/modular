@@ -7,6 +7,7 @@
 import contextlib
 import subprocess
 import tempfile
+import unittest
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generator, Optional, Union
@@ -95,7 +96,7 @@ class SourceFile:
                 i += 1
 
 
-class LLDBTestBase:
+class LLDBTestBase(unittest.TestCase):
     """Base class for all tests that interact with LLDB using the SB API."""
 
     def setup_class(self):
