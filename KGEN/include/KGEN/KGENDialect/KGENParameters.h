@@ -30,7 +30,8 @@ class IndexRefRemapper {
 public:
   /// Populate the remapper with named input and result parameters.
   IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
-                   ArrayRef<ParamDeclAttr> resultParams, size_t offset = 0);
+                   ArrayRef<ParamDeclAttr> resultParams, size_t offset = 0,
+                   int64_t adjustDepth = 0);
 
   /// Populate the remapper with the given named input parameters. If
   /// 'addOffset' is true, the underlying offset of references to root
@@ -71,6 +72,8 @@ private:
   DenseMap<StringAttr, std::pair<size_t, bool>> mapping;
   /// The index offset of references to root input parameters.
   size_t offset;
+  /// Adjust the depth of index references when remapping.
+  int64_t adjustDepth;
 };
 
 //===----------------------------------------------------------------------===//
