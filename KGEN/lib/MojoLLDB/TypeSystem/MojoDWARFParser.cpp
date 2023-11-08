@@ -63,14 +63,15 @@ static void doGenerateFunctionDisplayName(DebugInfo::SourceNameAttr attr,
 static std::string generateFunctionDisplayName(DebugInfo::SourceNameAttr attr) {
   ArrayRef<StringAttr> paramValues = attr.getParamValues();
   // FIXME(25047): If we are in a nested function, we don't show parameters.
-  if (attr.getParent() && attr.getParent().getKind() == "fn")
+  if (attr.getParent() &&
+      attr.getParent().getKind() == DebugInfo::SourceNameKind::Fn)
     paramValues = {};
 
   std::string displayName;
   llvm::raw_string_ostream os(displayName);
   doGenerateFunctionDisplayName(attr, paramValues, os);
 
-  if (attr.getKind() == "fn") {
+  if (attr.getKind() == DebugInfo::SourceNameKind::Fn) {
     // TODO(25048): we need to figure out a nice way to include the arguments
     // of functions. For now we just show `...` for the leaf function. This is
     // fine for dumping stack traces because LLDB will replace the `...` of the

@@ -10,6 +10,7 @@
 include "Support/DebugInfoDialect/IR/DebugInfoDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/EnumAttr.td"
 
 //===----------------------------------------------------------------------===//
 // DebugInfoAttr
@@ -22,10 +23,32 @@ class DebugInfoAttr<string name, string attrMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
+// SourceNameKind
+//===----------------------------------------------------------------------===//
+
+def SourceNameKindUnknown : I64EnumAttrCase<"Unknown", 0, "unknown">;
+def SourceNameKindPackage : I64EnumAttrCase<"Package", 1, "pkg">;
+def SourceNameKindModule  : I64EnumAttrCase<"Module", 2, "module">;
+def SourceNameKindStruct  : I64EnumAttrCase<"Struct", 3, "struct">;
+def SourceNameKindFn      : I64EnumAttrCase<"Fn", 4, "fn">;
+
+def SourceNameKind : I64EnumAttr<
+    "SourceNameKind",
+    "SourceName kind", [
+      SourceNameKindUnknown,
+      SourceNameKindPackage,
+      SourceNameKindModule,
+      SourceNameKindStruct,
+      SourceNameKindFn,
+    ]> {
+  let cppNamespace = "::M::DebugInfo";
+}
+
+//===----------------------------------------------------------------------===//
 // SourceNameAttr
 //===----------------------------------------------------------------------===//
 
-def ourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
+def SourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
   let summary = "full source name information about a symbol";
   let description = [{
     The `#debuginfo.source_name` attribute contains perserved source name
@@ -41,7 +64,7 @@ def ourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
     OptionalArrayRefParameter<"SourceNameAttr">:$argTypes,
     OptionalArrayRefParameter<"StringAttr">:$paramValues,
     OptionalParameter<"SourceNameAttr">:$parent,
-    OptionalParameter<"StringAttr">:$kind
+    OptionalParameter<"SourceNameKind">:$kind
   );
 
   let assemblyFormat = [{
@@ -59,12 +82,12 @@ def ourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
         "ArrayRef<SourceNameAttr>":$argTypes,
         "ArrayRef<StringAttr>":$paramValues,
         "SourceNameAttr":$parent,
-        "StringAttr":$kind), [{
+        "SourceNameKind":$kind), [{
       return $_get(name.getContext(), name, paramTypes, argTypes, paramValues,
                    parent, kind);
     }]>,
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        CArg<"StringAttr", "{}">:$kind,
+                                        CArg<"SourceNameKind", "{}">:$kind,
                                         CArg<"SourceNameAttr", "{}">:$parent), [{
       return get(name, {}, {}, {}, parent, kind);
     }]>,

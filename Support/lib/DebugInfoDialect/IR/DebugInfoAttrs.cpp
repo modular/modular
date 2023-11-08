@@ -56,10 +56,9 @@ void SourceNameAttr::encode(llvm::raw_ostream &os) const {
   };
 
   // Base name.
-  if (getKind()) {
-    printString(getKind());
-    os << ' ';
-  }
+  if (getKind() != SourceNameKind::Unknown)
+    os << stringifySourceNameKind(getKind()) << ' ';
+
   printString(getName());
 
   // Parameter types.
@@ -128,7 +127,7 @@ public:
 
 private:
   ErrorOrSuccess
-  parseSourceNameImpl(StringAttr &baseName, StringAttr &kind,
+  parseSourceNameImpl(StringAttr &baseName, SourceNameKind &kind,
                       SmallVectorImpl<SourceNameAttr> &paramTypes,
                       SmallVectorImpl<SourceNameAttr> &argTypes,
                       SmallVectorImpl<StringAttr> &paramValues);
@@ -160,7 +159,7 @@ ErrorOr<StringRef> SourceNameParser::parseString() {
 }
 
 ErrorOrSuccess SourceNameParser::parseSourceNameImpl(
-    StringAttr &baseName, StringAttr &kind,
+    StringAttr &baseName, SourceNameKind &kind,
     SmallVectorImpl<SourceNameAttr> &paramTypes,
     SmallVectorImpl<SourceNameAttr> &argTypes,
     SmallVectorImpl<StringAttr> &paramValues) {
@@ -171,7 +170,12 @@ ErrorOrSuccess SourceNameParser::parseSourceNameImpl(
   baseName = StringAttr::get(ctx, name.takeValue());
 
   if (parseOptional(' ')) {
-    kind = baseName;
+    if (std::optional<SourceNameKind> kindOr =
+            symbolizeSourceNameKind(baseName)) {
+      kind = *kindOr;
+    } else {
+      return Error("Unexpected kind '" + baseName.str() + "'");
+    }
     ErrorOr<StringRef> name = parseString();
     if (name.isError())
       return name.takeError();
@@ -223,7 +227,7 @@ ErrorOr<SourceNameAttr> SourceNameParser::parseSourceName() {
     argTypes.clear();
     paramValues.clear();
     StringAttr baseName;
-    StringAttr kind;
+    SourceNameKind kind = {};
     if (auto err = parseSourceNameImpl(baseName, kind, paramTypes, argTypes,
                                        paramValues))
       return err.takeError();

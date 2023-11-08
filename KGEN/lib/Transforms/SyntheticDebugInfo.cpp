@@ -96,14 +96,14 @@ synthesizeDebugInfo(ModuleOp module,
       // Mangle the namespaces back.
       for (StringAttr name : symbol->moduleNames) {
         sourceName = DebugInfo::SourceNameAttr::get(
-            name, StringAttr::get(ctx, "module"), sourceName);
+            name, DebugInfo::SourceNameKind::Module, sourceName);
       }
       for (StringAttr name : symbol->structNames) {
         sourceName = DebugInfo::SourceNameAttr::get(
-            name, StringAttr::get(ctx, "struct"), sourceName);
+            name, DebugInfo::SourceNameKind::Struct, sourceName);
       }
       sourceName = DebugInfo::SourceNameAttr::get(
-          symbol->symName, StringAttr::get(ctx, "fn"), sourceName);
+          symbol->symName, DebugInfo::SourceNameKind::Fn, sourceName);
     }
 
     DebugInfo::DIBuilder::ScopeGuard guard =
