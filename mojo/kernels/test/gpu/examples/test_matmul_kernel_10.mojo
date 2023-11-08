@@ -47,41 +47,6 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
         return 0
 
 
-@always_inline
-fn loadFromGmem[
-    BM: Int, BN: Int, BK: Int, rowStrideA: Int, rowStrideB: Int
-](
-    N: Int,
-    K: Int,
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    As: DTypePointer[DType.float32, AddressSpace.SHARED],
-    Bs: DTypePointer[DType.float32, AddressSpace.SHARED],
-    innerRowA: Int,
-    innerColA: Int,
-    innerRowB: Int,
-    innerColB: Int,
-):
-    for offset in range(0, BM - rowStrideA + 1, rowStrideA):
-        # Load 4 elements at a time and store to shared memory.
-        let tmp = __nvvm_ldg_f4[DType.float32](
-            a_ptr.offset((innerRowA + offset) * K + innerColA * 4)
-        )
-
-        @unroll
-        for i in range(4):
-            As.store((innerColA * 4 + i) * BM + innerRowA + offset, tmp[i])
-
-    for offset in range(0, BK - rowStrideB + 1, rowStrideB):
-        # Load 4 elements at a time and store to shared memory.
-        let tmp = __nvvm_ldg_f4[DType.float32](
-            b_ptr.offset((innerRowB + offset) * N + innerColB * 4)
-        )
-        Bs.aligned_simd_store[4, 16](
-            (innerRowB + offset) * BN + innerColB * 4, tmp
-        )
-
-
 # BM: The threadblock size for M dimension SMEM caching.
 # BN: The threadblock size for N dimension SMEM caching.
 # BK: The threadblock size for K dimension SMEM caching.
@@ -106,15 +71,25 @@ fn sgemmWarptiling[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    c_ptr: DTypePointer[DType.float32],
+    mat_a_ptr: DTypePointer[DType.float32],
+    mat_b_ptr: DTypePointer[DType.float32],
+    mat_c_ptr: DTypePointer[DType.float32],
     M: Int,
     N: Int,
     K: Int,
     alpha: Float32,
     beta: Float32,
 ):
+    let mat_a = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        mat_a_ptr, Index(M, K)
+    )
+    let mat_b = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        mat_b_ptr, Index(K, N)
+    )
+    let mat_c = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        mat_c_ptr, Index(M, N)
+    )
+
     let cRow = BlockIdx.y()
     let cCol = BlockIdx.x()
 
@@ -133,19 +108,19 @@ fn sgemmWarptiling[
     let threadRowInWarp = threadIdxInWarp // (WSUBN // TN)  # i/4
 
     # Allocate space for the current blocktile in SMEM.
-    let As = stack_allocation[
-        BM * BK, DType.float32, address_space = AddressSpace.SHARED
-    ]()
-    let Bs = stack_allocation[
-        BK * BN, DType.float32, address_space = AddressSpace.SHARED
-    ]()
+    let a_sram = NDBuffer[
+        1, DimList(BK * BM), DType.float32, address_space = AddressSpace.SHARED
+    ].stack_allocation()
+    let b_sram = NDBuffer[
+        1, DimList(BK * BN), DType.float32, address_space = AddressSpace.SHARED
+    ].stack_allocation()
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = a_ptr.offset(cRow * BM * K)
-    var bb_ptr = b_ptr.offset(cCol * BN)
+    var aa_ptr = mat_a._offset(Index(cRow * BM, 0))
+    var bb_ptr = mat_b._offset(Index(0, cCol * BN))
     # Move C_ptr to warp's output tile
-    let cc_ptr = c_ptr.offset(
-        (cRow * BM + warpRow * WM) * N + cCol * BN + warpCol * WN
+    let cc_ptr = mat_c._offset(
+        Index(cRow * BM + warpRow * WM, cCol * BN + warpCol * WN)
     )
 
     # Calculate the indices that this thread will load into SMEM.
@@ -159,27 +134,43 @@ fn sgemmWarptiling[
 
     # TODO: We want these to be register-allocated!
     # Allocate thread-local cache for results in register file.
-    var threadResults = StaticTuple[WMITER * TM * WNITER * TN, Float32](0.0)
+    let threadResults = NDBuffer[
+        4, DimList(WMITER, WNITER, TM, TN), DType.float32
+    ]().stack_allocation()
+    threadResults.zero()
 
     # We cache into registers on the warptile level.
-    var regM = StaticTuple[WMITER * TM, Float32](0.0)
+    let regM = NDBuffer[
+        2, DimList(WMITER, TM), DType.float32
+    ]().stack_allocation()
+    regM.zero()
 
-    var regN = StaticTuple[WNITER * TN, Float32](0.0)
+    let regN = NDBuffer[
+        2, DimList(WNITER, TN), DType.float32
+    ]().stack_allocation()
+    regN.zero()
 
     # Outer-most loop over block tiles.
     for bkIdx in range(0, K, BK):
-        loadFromGmem[BM, BN, BK, rowStrideA, rowStrideB](
-            N,
-            K,
-            aa_ptr,
-            bb_ptr,
-            As,
-            Bs,
-            innerRowA,
-            innerColA,
-            innerRowB,
-            innerColB,
-        )
+        for offset in range(0, BM - rowStrideA + 1, rowStrideA):
+            # Load 4 elements at a time and store to shared memory.
+            let tmp = __nvvm_ldg_f4[DType.float32](
+                aa_ptr.offset((innerRowA + offset) * K + innerColA * 4)
+            )
+
+            @unroll
+            for i in range(4):
+                a_sram[(innerColA * 4 + i) * BM + innerRowA + offset] = tmp[i]
+
+        for offset in range(0, BK - rowStrideB + 1, rowStrideB):
+            # Load 4 elements at a time and store to shared memory.
+            let tmp = __nvvm_ldg_f4[DType.float32](
+                bb_ptr.offset((innerRowB + offset) * N + innerColB * 4)
+            )
+            b_sram.aligned_simd_store[4, 16](
+                Index((innerRowB + offset) * BN + innerColB * 4), tmp
+            )
+
         barrier()
 
         for dotIdx in range(BK):
@@ -188,34 +179,28 @@ fn sgemmWarptiling[
             for wSubRowIdx in range(WMITER):
 
                 @unroll
-                for i in range(TM // 4):
-                    let tmp = As.aligned_simd_load[4, 16](
+                for i in range(0, TM, 4):
+                    let vec = a_sram.aligned_simd_load[4, 16](
                         (dotIdx * BM)
                         + warpRow * WM
                         + wSubRowIdx * WSUBM
                         + threadRowInWarp * TM
-                        + i * 4
+                        + i
                     )
-                    regM[wSubRowIdx * TM + 0 + i * 4] = tmp[0]
-                    regM[wSubRowIdx * TM + 1 + i * 4] = tmp[1]
-                    regM[wSubRowIdx * TM + 2 + i * 4] = tmp[2]
-                    regM[wSubRowIdx * TM + 3 + i * 4] = tmp[3]
+                    regM.simd_store(Index(wSubRowIdx, i), vec)
 
             @unroll
             for wSubColIdx in range(WNITER):
 
                 @unroll
-                for i in range(TN // 4):
-                    let tmp = Bs.aligned_simd_load[4, 16](
+                for i in range(0, TN, 4):
+                    let vec = b_sram.aligned_simd_load[4, 16](
                         (dotIdx * BN)
                         + warpCol * WN
                         + wSubColIdx * WSUBN
                         + threadColInWarp * TN
                     )
-                    regN[wSubColIdx * TN + 0 + i * 4] = tmp[0]
-                    regN[wSubColIdx * TN + 1 + i * 4] = tmp[1]
-                    regN[wSubColIdx * TN + 2 + i * 4] = tmp[2]
-                    regN[wSubColIdx * TN + 3 + i * 4] = tmp[3]
+                    regN.simd_store(Index(wSubColIdx, i), vec)
 
             # Execute warptile matmul.
             @unroll
@@ -230,12 +215,10 @@ fn sgemmWarptiling[
                         @unroll
                         for resIdxN in range(TN):
                             threadResults[
-                                (wSubRowIdx * TM + resIdxM) * (WNITER * TN)
-                                + (wSubColIdx * TN)
-                                + resIdxN
+                                Index(wSubRowIdx, wSubColIdx, resIdxM, resIdxN)
                             ] += (
-                                regM[wSubRowIdx * TM + resIdxM]
-                                * regN[wSubColIdx * TN + resIdxN]
+                                regM[wSubRowIdx, resIdxM]
+                                * regN[wSubColIdx, resIdxN]
                             )
         aa_ptr = aa_ptr.offset(BK)  # move BK columns to right
         bb_ptr = bb_ptr.offset(BK * N)  # move BK rows down
@@ -258,7 +241,7 @@ fn sgemmWarptiling[
                 @unroll
                 for resIdxN in range(0, TN, 4):
                     # Load C vector into registers.
-                    var tmp = __nvvm_ldg_f4[DType.float32](
+                    var vec = __nvvm_ldg_f4[DType.float32](
                         C_interim.offset(
                             (threadRowInWarp * TM + resIdxM) * N
                             + threadColInWarp * TN
@@ -266,18 +249,18 @@ fn sgemmWarptiling[
                         )
                     )
                     # Perform GEMM update in reg.
-                    let i = (wSubRowIdx * TM + resIdxM) * (
-                        WNITER * TN
-                    ) + wSubColIdx * TN + resIdxN
-
-                    @unroll
-                    for k in range(4):
-                        tmp[k] = alpha * threadResults[i + k] + beta * tmp[k]
+                    vec = (
+                        alpha
+                        * threadResults.simd_load[4](
+                            Index(wSubRowIdx, wSubColIdx, resIdxM, resIdxN)
+                        )
+                        + beta * vec
+                    )
                     C_interim.aligned_simd_store[4, 16](
                         (threadRowInWarp * TM + resIdxM) * N
                         + threadColInWarp * TN
                         + resIdxN,
-                        tmp,
+                        vec,
                     )
 
 
@@ -524,7 +507,11 @@ fn run_matmul_kernel_10() raises:
 
     var failed = False
     for i in range(M * N):
-        if c_host.load(i) != c_host_naive.load(i):
+        if (
+            c_host.load(i) != c_host_naive.load(i)
+            or math.isnan(c_host_naive.load(i))
+            or math.isnan(c_host.load(i))
+        ):
             failed = True
 
     # CHECK: Success
