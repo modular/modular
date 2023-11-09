@@ -530,9 +530,9 @@ def LIT_StructGEPOp : LITOp<"struct.gep", [Pure,
 //===----------------------------------------------------------------------===//
 
 def LIT_TraitDeclOp : LITOp<"trait.decl", [
-    IsolatedFromAbove, Symbol, SymbolTable, SingleBlock,
+    IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
-    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
+    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>
   ]> {
   let summary = "Trait declaration.";
   let description = [{
@@ -544,24 +544,33 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     Example:
 
     ```mlir
-    lit.trait.decl @Trait {
+    lit.trait.decl @Trait<MT: type, T: !kgen.paramref<MT>> {
       lit.func @f() -> !kgen.none {
         lit.trait_func
       }
     }
     ```
 
-    TODO: Add parameter declarations support.
     TODO: Add decorators support.
   }];
-
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    TypeAttrOf<LIT_TypeSignatureType>:$signature,
+    KGEN_ParamDeclArrayAttr:$inputParams,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
 
   let regions = (region SizedRegion<1>:$fields);
-  let assemblyFormat = "$sym_name attr-dict-with-keyword $fields";
+
+  let assemblyFormat = [{
+    $sym_name `` custom<StructParameterSpec>($inputParams, $signature)
+    attr-dict-with-keyword $fields
+  }];
+
+  let extraClassDeclaration = [{
+    /// Struct declarations have no result parameters.
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+  }];
 
   let builders = [
     // Create a trait with a region but no body block. The caller must create

@@ -22,6 +22,14 @@ kgen.generator @declref_metatype(%arg0: !kgen.declref<@MyStruct, !lit.metatype<@
   kgen.return
 }
 
+// CHECK-LABEL: lit.trait.decl @TParam<MT: type, T: !kgen.paramref<MT>>
+lit.trait.decl @TParam<MT: type, T: !kgen.paramref<MT>> {
+  // CHECK-NEXT: lit.func @f(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T>) -> !kgen.none
+  lit.func @f(%self: !kgen.paramref<:!kgen.paramref<MT> T>) -> !kgen.none {
+    lit.trait_func
+  }
+}
+
 // CHECK: !lit.type_signature
 "type.sig"() : () -> !lit.type_signature
 // CHECK: !lit.type_signature<index, |>

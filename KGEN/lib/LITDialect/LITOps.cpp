@@ -1137,7 +1137,9 @@ DebugInfo::DIScopeAttr TraitDeclOp::getLocScope() {
 
 void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
-  build(builder, result, name, /*docString=*/nullptr);
+  MLIRContext *ctx = builder.getContext();
+  build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
+        ParamDeclArrayAttr::get(ctx, {}), /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
 }
 
