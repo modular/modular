@@ -46,10 +46,10 @@ recursivelyCallback(Attribute attribute,
 /// example, if `alias A = myFunc[B,C]` is declared inside the parent function
 /// and the root is "A", then this function should populate capturedParams with
 /// {"A", "B", "C"}
-static void collectImplicitParameterCaptures(
-    LIT::FuncOp parentFunction,
-    SmallVectorImpl<std::pair<StringAttr, ParameterCapture>> &capturedParams,
-    StringAttr rootName, Type rootType, unsigned depth) {
+static SmallVector<std::pair<StringAttr, ParameterCapture>>
+collectImplicitParameterCaptures(LIT::FuncOp parentFunction,
+                                 StringAttr rootName, unsigned depth) {
+  SmallVector<std::pair<StringAttr, ParameterCapture>> capturedParams;
   ParameterUseDefGraph parameterUseDefGraph(parentFunction.getBodyRegion());
   KGEN::ParameterCollector::Analysis paramCache;
   parameterUseDefGraph.calculate(paramCache);
@@ -73,14 +73,12 @@ static void collectImplicitParameterCaptures(
     if (auto funcOp = dyn_cast<LIT::FuncOp>(*definition.defOp)) {
       // Result parameters are not defined by the function.
       ParamDeclAttr paramDecl = funcOp.getInputParams()[definition.index];
-      ParameterCapture capture(current, paramDecl.getType(), definition.index,
-                               depth);
+      ParameterCapture capture(paramDecl, definition.index, depth);
       capturedParams.push_back({current, capture});
     } else if (auto alias = dyn_cast<AliasDeclOp>(*definition.defOp)) {
       capturedParams.push_back({alias.getParamDecl().getName(),
-                                ParameterCapture(alias.getParamDecl().getName(),
-                                                 alias.getParamDecl().getType(),
-                                                 -1, depth, definition.defOp)});
+                                ParameterCapture(alias.getParamDecl(), -1,
+                                                 depth, definition.defOp)});
       // Add operands of the alias's expression to the worklist.
       alias.getValue().walkImmediateSubElements(
           [addParameterToWorklist](Attribute immediateChild) {
@@ -89,6 +87,7 @@ static void collectImplicitParameterCaptures(
           [](Type type) {});
     }
   }
+  return capturedParams;
 }
 
 /// A value that represents where a parameter is defined with respect to a
@@ -146,18 +145,19 @@ struct CaptureInfo {
               ParamDeclRefAttr paramDeclRef, ASTDecl &container)
       : srcSpelling(srcSpelling), depth(depth), paramDeclRef(paramDeclRef),
         container(container) {}
-  CaptureRecordResult recordCaptureInFunction(SharedState &shared,
-                                              ASTDecl *currentParent,
-                                              Location location) const {
+  LogicalResult recordCaptureInFunction(SharedState &shared,
+                                        ASTDecl *currentParent,
+                                        Location location) const {
     if (!currentParent)
-      return CaptureRecordResult::Fail;
+      return LogicalResult::failure();
     auto parentFunction = dyn_cast<LIT::FuncOp>(*currentParent);
     if (!parentFunction)
-      return CaptureRecordResult::Fail;
+      return LogicalResult::failure();
     if (!parentFunction.getResultParams().empty()) {
       shared.emitError(
           location, "TODO: Support result parameters and escaping closures.");
-      return CaptureRecordResult::Error;
+      return LogicalResult::failure();
+      ;
     }
     auto [paramRelationToParent, index] = parameterRelationshipToFunction(
         shared, currentParent, paramDeclRef, srcSpelling);
@@ -172,10 +172,9 @@ struct CaptureInfo {
     case ParameterRelation::Local: {
       // We have captured a parameter. Collect all the parameters that
       // this parameter depends on.
-      SmallVector<std::pair<StringAttr, ParameterCapture>> capturedParams;
-      collectImplicitParameterCaptures(parentFunction, capturedParams,
-                                       paramDeclRef.getName(),
-                                       paramDeclRef.getType(), depth);
+      SmallVector<std::pair<StringAttr, ParameterCapture>> capturedParams =
+          collectImplicitParameterCaptures(parentFunction,
+                                           paramDeclRef.getName(), depth);
       for (auto [name, paramCapture] : llvm::reverse(capturedParams))
         shared.addCapturedParameterToScope(container, paramCapture);
       break;
@@ -184,26 +183,25 @@ struct CaptureInfo {
       break;
     }
     if (paramRelationToParent == ParameterRelation::Undefined)
-      return CaptureRecordResult::Fail;
-    return CaptureRecordResult::Success;
+      return LogicalResult::failure();
+    return LogicalResult::success();
   }
-  CaptureRecordResult recordCaptureInStruct(SharedState &shared,
-                                            ASTDecl *currentParent) const {
+  LogicalResult recordCaptureInStruct(SharedState &shared,
+                                      ASTDecl *currentParent) const {
     if (!currentParent)
-      return CaptureRecordResult::Fail;
+      return LogicalResult::failure();
     auto parentStruct = dyn_cast<StructDeclOp>(*currentParent);
     if (!parentStruct)
-      return CaptureRecordResult::Fail;
+      return LogicalResult::failure();
     for (auto [index, inputParam] :
          llvm::enumerate(parentStruct.getInputParams())) {
       if (inputParam.getName() == paramDeclRef.getName()) {
-        ParameterCapture capture(paramDeclRef.getName(), paramDeclRef.getType(),
-                                 index, depth);
+        ParameterCapture capture(inputParam, index, depth);
         shared.addCapturedParameterToScope(container, capture);
-        return CaptureRecordResult::Success;
+        return LogicalResult::success();
       }
     }
-    return CaptureRecordResult::Fail;
+    return LogicalResult::failure();
   }
 
 private:
@@ -231,7 +229,7 @@ ASTDecl *CaptureUtility::nearestParentFuncOpDecl(ASTDecl &decl,
   return nullptr;
 }
 
-static CaptureRecordResult recordParameterCaptureWithScopedLookup(
+static LogicalResult recordParameterCaptureWithScopedLookup(
     SharedState &shared, ASTDecl *nestedFunctionDecl, StringRef srcSpelling,
     ParamDeclRefAttr paramDeclRef, Location parameterRefLocation) {
   auto [relationToContainerFuncion, index] = parameterRelationshipToFunction(
@@ -247,30 +245,28 @@ static CaptureRecordResult recordParameterCaptureWithScopedLookup(
       depth++;
       CaptureInfo captureInfo(srcSpelling, depth, paramDeclRef,
                               *nestedFunctionDecl);
-      CaptureRecordResult outcomeOfRecordInFunction =
+      LogicalResult outcomeOfRecordInFunction =
           captureInfo.recordCaptureInFunction(shared, currentParent,
                                               parameterRefLocation);
-      if (outcomeOfRecordInFunction == CaptureRecordResult::Error ||
-          outcomeOfRecordInFunction == CaptureRecordResult::Success)
+      if (outcomeOfRecordInFunction.succeeded())
         return outcomeOfRecordInFunction;
-      CaptureRecordResult outcomeOfRecordInStruct =
+      LogicalResult outcomeOfRecordInStruct =
           captureInfo.recordCaptureInStruct(shared, currentParent);
-      if (outcomeOfRecordInStruct == CaptureRecordResult::Error ||
-          outcomeOfRecordInStruct == CaptureRecordResult::Success)
+      if (outcomeOfRecordInStruct.succeeded())
         return outcomeOfRecordInStruct;
     }
   }
-  return CaptureRecordResult::Fail;
+  return LogicalResult::failure();
 }
 
-CaptureRecordResult CaptureUtility::recordParameterCapture(
+LogicalResult CaptureUtility::recordParameterCapture(
     SharedState &shared, ASTDecl *nestedFunctionDecl,
     ParamDeclRefAttr paramDeclRef, Location location) {
   return recordParameterCaptureWithScopedLookup(shared, nestedFunctionDecl, "",
                                                 paramDeclRef, location);
 }
 
-CaptureRecordResult CaptureUtility::recordParameterCapture(
+LogicalResult CaptureUtility::recordParameterCapture(
     SharedState &shared, ASTDecl *nestedFunctionDecl, StringRef srcSpelling,
     ParamDeclRefAttr paramDeclRef, Location location) {
   return recordParameterCaptureWithScopedLookup(

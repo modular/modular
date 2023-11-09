@@ -48,6 +48,7 @@ struct NamedParameter {
   StringAttr getMangledName() const { return parameterDecl.getName(); }
   StringRef getSrcName() const { return srcName; }
   Type getType() const { return parameterDecl.getType(); }
+  ParamDeclAttr getDecl() const { return parameterDecl; }
 
 private:
   /// Name as it appears in the source.
