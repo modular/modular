@@ -98,3 +98,39 @@ fn async_copy[
         llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.16", NoneType](
             dst, src
         )
+
+
+@always_inline
+fn async_copy[
+    size: Int, type: AnyType
+](
+    src: Pointer[type, AddressSpace.GLOBAL],
+    dst: Pointer[type, AddressSpace.SHARED],
+):
+    """Asynchronously copy `size` amount of bytes from src global memory address
+    to shared memory `dst` address.
+
+    Parameters:
+        size: Number of bytes to copy.
+        type: The pointer type.
+
+    Args:
+        src: Global memory pointer.
+        dst: Shared memory pointer.
+    """
+    # TODO: Constrained on device capability.
+    constrained[size == 4 or size == 8 or size == 16]()
+
+    @parameter
+    if size == 4:
+        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.4", NoneType](
+            dst, src
+        )
+    elif size == 8:
+        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.8", NoneType](
+            dst, src
+        )
+    else:
+        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.16", NoneType](
+            dst, src
+        )
