@@ -99,7 +99,7 @@ void KGEN::buildElaborateModulePipeline(
   // After elaboration, we have no use for the parameter verifier anymore.
   ElaborateGeneratorsOptions elaboratorOptions;
   elaboratorOptions.enableSearch = options.enableSearch;
-  elaboratorOptions.elaborateLocations =
+  elaboratorOptions.elaborateDebugInfo =
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   elaboratorOptions.diagAllFailures = options.emitAllElaboratorDiags;

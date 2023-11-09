@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="elaborate-locations=true allow-multiple-primary-impls=true" -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="elaborate-debuginfo=true allow-multiple-primary-impls=true" -mlir-print-debuginfo | FileCheck %s
 
 // CHECK-LABEL: kgen.func @loc_ref
 kgen.generator @loc_ref() {
