@@ -8,7 +8,10 @@
 
 struct Crash1[XXX: __mlir_type.index]:
   fn __init__(a: __mlir_type.float32)
-  # expected-error @-1 {{expected ':' in function definition}}
+  # expected-error @above {{invalid MLIR type: float32}}
+  # expected-error @above {{'self' argument must have type 'Crash1[XXX]' but actually has type '!lit.typecheckerror'}}
+  # expected-note @above {{expected non-function type}}
+  # expected-error @above {{expected ':' in function definition}}
     pass
 
   fn f(self): pass

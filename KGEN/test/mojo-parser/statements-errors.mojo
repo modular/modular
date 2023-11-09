@@ -188,7 +188,7 @@ def withUsingImmutableVariable(a: ExampleCM):
     pass
 
 # External Issue #529 https://github.com/modularml/mojo/issues/529
-def withWithNoColon():
+def withWithNoColon(a: __mlir_type.index):
   # expected-error @below {{expected ':' after 'with' expression}}
   with a as b
 
