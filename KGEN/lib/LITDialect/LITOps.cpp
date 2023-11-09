@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -259,6 +260,19 @@ static ParseResult parseLITFunctionSignature(
     FunctionType &functionType, LITSignatureType &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
+  SmallVector<ParamDeclAttr> lifetimeDecls;
+  auto lifetimeType = LifetimeType::get(p.getContext());
+  auto parseLifetimeDecl = [&]() -> ParseResult {
+    StringAttr name;
+    if (parseParamName(p, name))
+      return failure();
+    lifetimeDecls.push_back(ParamDeclAttr::get(name, lifetimeType));
+    return success();
+  };
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare,
+                                parseLifetimeDecl))
+    return failure();
+
   SmallVector<StringAttr> paramNames;
   SmallVector<TypedAttr> defaultParams;
   SmallVector<PassingKind> paramPassingKinds;
@@ -326,9 +340,35 @@ static ParseResult parseLITFunctionSignature(
   signature = SignatureType::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
       FnMetadataAttr::get(p.getContext(), argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, defaults, defaultParams),
+                          paramPassingKinds, defaults, defaultParams,
+                          lifetimeDecls.size()),
       [&] { return p.emitError(startLoc); });
-  return success(!!signature);
+  if (!signature)
+    return failure();
+
+  // Replace named lifetime parameter references with index references.
+  struct LifetimeDeclRemapper : IndexParameterReplacer<LifetimeDeclRemapper> {
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
+        if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
+          // Subtract 1 because we're replacing the signature directly.
+          return LifetimeRefAttr::get(attr.getContext(), depth - 1, it->second);
+        }
+      }
+      return nullptr;
+    }
+
+    DenseMap<StringAttr, size_t> mapping;
+  } remapper;
+  for (auto [i, decl] : llvm::enumerate(lifetimeDecls))
+    remapper.mapping.try_emplace(decl.getName(), i);
+  signature = remapper.replace(signature);
+
+  // Prepend the lifetime declarations.
+  llvm::append_range(lifetimeDecls, inputParams);
+  inputParams = ParamDeclArrayAttr::get(p.getContext(), lifetimeDecls);
+  return success();
 }
 
 static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
@@ -337,9 +377,19 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       ArrayRef<ParamDeclAttr> resultParams,
                                       FunctionType functionType,
                                       LITSignatureType signature) {
+  ArrayRef<ParamDeclAttr> lifetimeDecls =
+      inputParams.drop_back(signature.getNumInputParams());
+  if (!lifetimeDecls.empty()) {
+    p << '[';
+    llvm::interleaveComma(lifetimeDecls, p, [&](ParamDeclAttr decl) {
+      printParamName(p, decl.getName());
+    });
+    p << ']';
+  }
+
   ParameterEvaluator evaluator;
-  printOptionalParameterSpec(p, inputParams, resultParams,
-                             signature.getParamNames(),
+  printOptionalParameterSpec(p, inputParams.drop_front(lifetimeDecls.size()),
+                             resultParams, signature.getParamNames(),
                              signature.getParamPassingKinds(),
                              signature.getDefaultParameters(), evaluator);
 

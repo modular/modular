@@ -30,11 +30,8 @@ using namespace M::KGEN;
 //===----------------------------------------------------------------------===//
 
 Attribute IndexRefRemapper::tryReplace(Attribute attr, size_t depth) {
-  if (!mapping.empty()) {
-    if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
-      auto it = mapping.find(ref.getName());
-      if (it == mapping.end())
-        return ref;
+  if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
+    if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
       auto [idx, isResult] = it->second;
       return ParamIndexRefAttr::get(depth, isResult, idx,
                                     replaceImpl(ref.getType(), depth));
@@ -42,11 +39,11 @@ Attribute IndexRefRemapper::tryReplace(Attribute attr, size_t depth) {
   }
   if (offset != 0) {
     if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
-      if (ref.getDepth() != depth)
-        return ref;
-      return ParamIndexRefAttr::get(depth, ref.getIsResult(),
-                                    ref.getIndex() + offset,
-                                    replaceImpl(ref.getType(), depth));
+      if (ref.getDepth() == depth) {
+        return ParamIndexRefAttr::get(depth, ref.getIsResult(),
+                                      ref.getIndex() + offset,
+                                      replaceImpl(ref.getType(), depth));
+      }
     }
   }
   return nullptr;

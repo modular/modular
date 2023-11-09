@@ -62,7 +62,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     OptionalArrayRefParameter<"StringAttr">:$paramNames,
     OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
     OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultParameters
+    OptionalArrayRefParameter<"TypedAttr">:$defaultParameters,
+    "unsigned":$numLifetimeDecls
   );
   let assemblyFormat = [{
     `<` `[` (`]`) : ($argNames^          `]`)? `,`
@@ -70,13 +71,25 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
         `[` (`]`) : ($paramNames^        `]`)? `,`
         `[` (`]`) : ($paramPassingKinds^ `]`)? `,`
         `[` (`]`) : ($defaultArguments^  `]`)? `,`
-        `[` (`]`) : ($defaultParameters^ `]`)?
+        `[` (`]`) : ($defaultParameters^ `]`)? `,`
+        $numLifetimeDecls
     `>`
   }];
 
   let builders = [
     AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames,
                      "ArrayRef<PassingKind>":$argPassingKinds)>,
+    AttrBuilder<(ins
+        "ArrayRef<StringAttr>":$argNames,
+        "ArrayRef<PassingKind>":$argPassingKinds,
+        "ArrayRef<StringAttr>":$paramNames,
+        "ArrayRef<PassingKind>":$paramPassingKinds,
+        "ArrayRef<TypedAttr>":$defaultArguments,
+        "ArrayRef<TypedAttr>":$defaultParameters), [{
+      return $_get($_ctxt, argNames, argPassingKinds, paramNames,
+                   paramPassingKinds, defaultArguments, defaultParameters,
+                   /*numLifetimeDecls=*/0);
+    }]>
   ];
 
   let extraClassDeclaration = [{
@@ -252,6 +265,29 @@ def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
   }];
 
   let assemblyFormat = "";
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeRefAttr
+//===----------------------------------------------------------------------===//
+
+def LifetimeRefAttr : LITTypedAttr<"LifetimeRef", "lifetime_ref"> {
+  let summary = "Reference to an unbound lifetime parameter.";
+  let description = [{
+    The `#lit.lifetime_ref` attribute is a reference to an unbound lifetime
+    parameter.
+
+    Example:
+
+    ```mlir
+    #lit.lifetime_ref<0, 1>
+    ```
+  }];
+
+  let parameters = (ins "size_t":$depth, "size_t":$index);
+  let assemblyFormat = "`<` $depth `,` $index `>`";
+
   let extraClassDeclaration = [{ Type getType() const; }];
 }
 
