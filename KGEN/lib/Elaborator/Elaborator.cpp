@@ -1819,6 +1819,10 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
     return processCallOp(node, call);
   } else if (auto evaluate = dyn_cast<ParamEvaluateOp>(op)) {
     return processEvaluateOp(node, evaluate);
+  } else if (isa<DebugInfo::ValueOp>(op)) {
+    // Delay elaboration of the DILocalVariableAttr until when locations are
+    // elaborated.
+    return ElaborationState::advance();
   } else {
     // NOTE: We only need to elaborate locations manually for generic ops if we
     // don't do it globally.
@@ -1830,28 +1834,31 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
 // ElaboratorImpl::specializeGenerator
 //===----------------------------------------------------------------------===//
 
-/// Concretizes the location that may contains parameters. If unsuccessful, sets
-/// the ImplNode to the error state and returns null.
-static mlir::LocationAttr concretizeLoc(mlir::LocationAttr loc,
-                                        ImplNode *inode) {
+/// Concretizes the attribute that may contains parameters. If unsuccessful,
+/// sets the ImplNode to the error state and returns null.
+template <typename AttrType>
+static AttrType concretizeAttr(AttrType attr, mlir::Location loc,
+                               ImplNode *inode) {
   auto exprResult =
-      inode->getEvaluator().concretizeParameterExpr(inode, loc, loc);
+      inode->getEvaluator().concretizeParameterExpr(inode, loc, attr);
   if (exprResult.isError()) {
     inode->setToError(exprResult.takeError());
     return {};
   }
   if (LLVM_UNLIKELY(!*exprResult)) {
     inode->setToError(
-        ErrorTree(loc, "conretized parameter expression in location is null"));
+        ErrorTree(loc, "conretized parameter expression in attribute is null"));
     return {};
   }
-  return cast<mlir::LocationAttr>(*exprResult);
+  return cast<AttrType>(*exprResult);
 }
 
 /// Concretizes the location of an op or a block argument.
 template <typename ArgOrOp>
 static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
-  if (mlir::LocationAttr newLocAttr = concretizeLoc(argOrOp.getLoc(), inode)) {
+  mlir::LocationAttr loc = argOrOp.getLoc();
+  if (mlir::LocationAttr newLocAttr =
+          concretizeAttr<mlir::LocationAttr>(loc, loc, inode)) {
     argOrOp.setLoc(newLocAttr);
     return success();
   }
@@ -2082,11 +2089,25 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
         if (failed(concretizeLocOf(*op, inode)))
           return WalkResult::interrupt();
 
+        // Update the ValueInfo attr since they contain types.
+        if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
+          auto concretizedAttr = concretizeAttr<DebugInfo::DILocalVariableAttr>(
+              value.getValueInfoAttr(), op->getLoc(), inode);
+          if (!concretizedAttr)
+            return WalkResult::interrupt();
+
+          value.setValueInfoAttr(
+              cast<DebugInfo::DILocalVariableAttr>(concretizedAttr));
+        }
+
         // To be defensive, we only concretize location attributes if we know
         // what we are dealing with.
-        if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
-          if (mlir::LocationAttr callLoc = inlined.getCallLocAttr())
-            inlined.setCallLocAttr(concretizeLoc(callLoc, inode));
+        if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
+          if (mlir::LocationAttr callLoc = inlined.getCallLocAttr()) {
+            inlined.setCallLocAttr(concretizeAttr<mlir::LocationAttr>(
+                callLoc, op->getLoc(), inode));
+          }
+        }
 
         // When elaboration is complete, only the first block in any region is
         // valid (any other block may be illegal, e.g. due to how kgen.param.if
