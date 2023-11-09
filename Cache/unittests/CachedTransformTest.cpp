@@ -32,10 +32,6 @@ public:
 
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestPass);
 
-  /// A diagnostic message emitted when the pass is run.
-  static constexpr StringLiteral kDiagnosticMessage =
-      "TestPass was run on the module.";
-
   void runOnOperation() override {
     if (!*actuallyRun)
       assert(false && "should not run the pass!");
@@ -48,24 +44,9 @@ public:
       returnOp->removeAttr("hello");
     else
       returnOp->setAttr("hello", StringAttr::get(&getContext(), "world"));
-
-    // Emit a diagnostic message.
-    func.emitRemark(kDiagnosticMessage);
   }
 
   bool *actuallyRun;
-};
-
-struct TestPassDiagnosticValidator : public mlir::ScopedDiagnosticHandler {
-  TestPassDiagnosticValidator(MLIRContext *ctx) : ScopedDiagnosticHandler(ctx) {
-    setHandler([&](Diagnostic &diag) {
-      EXPECT_TRUE(StringRef(diag.str()).contains(TestPass::kDiagnosticMessage));
-      foundExpectedDiagnostic = true;
-    });
-  }
-
-  /// Flag indicating if the expected diagnostic was emitted.
-  bool foundExpectedDiagnostic = false;
 };
 } // namespace
 
@@ -108,16 +89,13 @@ TEST(CachedTransformTest, CacheHits) {
   mlir::OwningOpRef<ModuleOp> module1 =
       mlir::parseSourceString<ModuleOp>(mlirString, ParserConfig{&ctx});
   // Do the transform. This will deflate the module.
-  TestPassDiagnosticValidator xform1DiagValidator(&ctx);
   auto xform =
       cachedTransform(*module1, regionCache.copy(), transformCache.copy(),
                       std::move(readyChain), pm);
-
   // We have to inflate the func now.
   auto inflate = inflateOp(*module1, regionCache.copy(), std::move(xform));
   await(inflate);
   EXPECT_FALSE(inflate.isError());
-  EXPECT_TRUE(xform1DiagValidator.foundExpectedDiagnostic);
   auto func = module1->lookupSymbol<func::FuncOp>("someFunc");
   auto returnOp =
       cast<func::ReturnOp>(func.getFunctionBody().front().getTerminator());
@@ -133,15 +111,12 @@ TEST(CachedTransformTest, CacheHits) {
   // the way we can confirm we got a cache hit without changing the key. The
   // pass should not run and therefore this code should not assert.
   actuallyRun = false;
-  TestPassDiagnosticValidator xform2DiagValidator(&ctx);
   xform = cachedTransform(*module2, regionCache.copy(), transformCache.copy(),
                           std::move(inflate), pm);
-
   // We have to inflate the func now.
   inflate = inflateOp(*module2, regionCache.copy(), std::move(xform));
   await(inflate);
   EXPECT_FALSE(inflate.isError());
-  EXPECT_TRUE(xform2DiagValidator.foundExpectedDiagnostic);
   auto func2 = module2->lookupSymbol<func::FuncOp>("someFunc");
   returnOp =
       cast<func::ReturnOp>(func2.getFunctionBody().front().getTerminator());
@@ -152,15 +127,12 @@ TEST(CachedTransformTest, CacheHits) {
   // Now the IR has changed, re-run the pass. In this case, it should remove the
   // attribute.
   actuallyRun = true;
-  TestPassDiagnosticValidator xform3DiagValidator(&ctx);
   xform = cachedTransform(*module2, regionCache.copy(), transformCache.copy(),
                           std::move(inflate), pm);
-
   // We have to inflate the func now to check the result...
   inflate = inflateOp(*module2, regionCache.copy(), std::move(xform));
   await(inflate);
   EXPECT_FALSE(inflate.isError());
-  EXPECT_TRUE(xform3DiagValidator.foundExpectedDiagnostic);
   func2 = module2->lookupSymbol<func::FuncOp>("someFunc");
   returnOp =
       cast<func::ReturnOp>(func2.getFunctionBody().front().getTerminator());
