@@ -80,11 +80,14 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   ];
 
   let extraClassDeclaration = [{
-    // Create a new metadata attribute with the given argument names. Only use
-    // this helper if certain that the default arguments do not need to be
-    // modified (e.g. because prepending a positional-only argument).
+    /// Create a new metadata attribute with the given argument names. Only use
+    /// this helper if certain that the default arguments do not need to be
+    /// modified (e.g. because prepending a positional-only argument).
     FnMetadataAttr cloneWith(ArrayRef<StringAttr> argNames,
                              ArrayRef<PassingKind> argPassingKinds) const;
+
+    /// Return the number of parameters that are implicitly declared.
+    size_t getNumImplicitParams() const;
   }];
 
   let genVerifyDecl = 1;

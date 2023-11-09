@@ -8,6 +8,10 @@
 
 from test_package.module import ParameterizedType
 
+alias index = __mlir_type.index
+alias index_one = __mlir_attr.`1 : index`
+alias index_two = __mlir_attr.`2 : index`
+alias index_three = __mlir_attr.`3 : index`
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -245,15 +249,15 @@ fn pass_str_param():
     my_constrained[1==1, "foo"]()
 
 # CHECK-LABEL: lit.func @"implicit_params
-# CHECK-SAME: <{{.*}}value0]: !Int, {{.*}}value1]: !Int>
-# CHECK-SAME: %value[value]: {{.*}}@TwoParams<:!Int {{.*}}value0, :!Int {{.*}}value1>
+# CHECK-SAME: <?, [[VALUE0:.*]]: !Int, [[VALUE1:.*]]: !Int>
+# CHECK-SAME: %value[value]: {{.*}}@TwoParams<:!Int [[VALUE0]], :!Int [[VALUE1]]>
 fn implicit_params(value: TwoParams):
     pass
 
 # CHECK-LABEL: lit.func @"implicit_params_with_others
-# CHECK-SAME: <{{.*}}a[a]: !Int, {{.*}}lhs0]: !Int, {{.*}}lhs1]: !Int, {{.*}}rhs0]: !Int, {{.*}}rhs1]: !Int>
-# CHECK-SAME: %lhs[lhs]: {{.*}}@TwoParams<:!Int {{.*}}lhs0, :!Int {{.*}}lhs1>
-# CHECK-SAME: %rhs[rhs]: {{.*}}@TwoParams<:!Int {{.*}}rhs0, :!Int {{.*}}rhs1>
+# CHECK-SAME: <{{.*}}a[a]: !Int, ?, [[LHS0:.*]]: !Int, [[LHS1:.*]]: !Int, [[RHS0:.*]]: !Int, [[RHS1:.*]]: !Int>
+# CHECK-SAME: %lhs[lhs]: {{.*}}@TwoParams<:!Int [[LHS0]], :!Int [[LHS1]]>
+# CHECK-SAME: %rhs[rhs]: {{.*}}@TwoParams<:!Int [[RHS0]], :!Int [[RHS1]]>
 fn implicit_params_with_others[a: Int](lhs: TwoParams, rhs: TwoParams):
     pass
 
@@ -266,6 +270,31 @@ fn infer_implicit_params():
     # CHECK: call {{.*}}implicit_params_with_others{{.*}}<:!Int #lit.struct<{value = 42}>,
     # CHECK-SAME: :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!Int #lit.struct<{value = 4}>>
     implicit_params_with_others[42](one, two)
+
+
+@register_passable("trivial")
+struct IndexParam[x: index]:
+  pass
+
+
+# CHECK-LABEL: lit.func @"auto_kw_default
+# CHECK-SAME: <[[U:.*]][u] = 3, |, [[V:.*]][v] = 3, ?, [[A:.*]], [[B:.*]]>(%a
+fn auto_kw_default[u: index = index_three, /, v: index = index_three](a: IndexParam, b: IndexParam):
+  pass
+
+
+# CHECK-LABEL: lit.func @"test_auto_kw_default
+# CHECK-SAME: <?, [[A:.*]], [[B:.*]]>(%a
+fn test_auto_kw_default(a: IndexParam, b: IndexParam):
+  # CHECK-NEXT: <3, 3, [[A]], [[B]]>
+  auto_kw_default(a, b)
+  # CHECK-NEXT: <1, 3, [[A]], [[B]]>
+  auto_kw_default[index_one](a, b)
+  # CHECK-NEXT: <3, 2, [[A]], [[B]]>
+  auto_kw_default[v=index_two](a, b)
+  # CHECK-NEXT: <1, 2, [[A]], [[B]]>
+  auto_kw_default[index_one, v=index_two](a, b)
+
 
 ##===----------------------------------------------------------------------===##
 # Memory-only parameters
@@ -773,11 +802,11 @@ fn reference_params_through_struct():
     let value = cached_type.value
 
 # CHECK-LABEL: lit.func @"ref_param_in_arg
-# CHECK-SAME: <{{.*}}x0[{{.*}}]: !Int>
-# CHECK-SAME: pointer<{{.*}}ParameterizedType<:!Int {{.*}}x0>{{.*}}> byref_result
+# CHECK-SAME: <?, [[X:.*]]: !Int>
+# CHECK-SAME: pointer<{{.*}}ParameterizedType<:!Int [[X]]>{{.*}}> byref_result
 fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
     # CHECK: lit.alias.fwd_decl "{{.*}}fn_type"
-    # CHECK-SAME: signature<<"{{.*}}x0": !Int>("x":
+    # CHECK-SAME: signature<<?, !Int>("x":
     # CHECK-SAME: "y": !kgen.pointer<{{.*}}ParameterizedType<:!Int *(0,0)>
     alias fn_type: fn(x: ParameterizedType, y: ParameterizedType[x.value]) -> None
     return x

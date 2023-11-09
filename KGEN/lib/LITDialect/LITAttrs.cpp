@@ -11,6 +11,7 @@
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -53,6 +54,10 @@ FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames,
   assert(argNames.size() >= defaultArgs.size());
   return get(getContext(), argNames, argPassingKinds, getParamNames(),
              getParamPassingKinds(), defaultArgs, getDefaultParameters());
+}
+
+size_t FnMetadataAttr::getNumImplicitParams() const {
+  return countNumImplicitKinds(getParamPassingKinds());
 }
 
 LogicalResult FnMetadataAttr::verify(
@@ -170,17 +175,18 @@ LogicalResult FnMetadataAttr::verifySignature(
   }
 
   // Verify default arguments and parameters.
-  auto verifyDefaults = [emitError](ArrayRef<TypedAttr> defaults,
-                                    ArrayRef<Type> types,
-                                    ArrayRef<ValueInputConvention> convs,
-                                    StringRef kind) -> LogicalResult {
+  auto verifyDefaults =
+      [emitError](ArrayRef<TypedAttr> defaults, ArrayRef<Type> types,
+                  ArrayRef<ValueInputConvention> convs, StringRef kind,
+                  size_t numImplicit) -> LogicalResult {
     if (defaults.size() > types.size()) {
       return emitError() << "there are more default " << kind
                          << "s than inputs : " << defaults.size() << " > "
                          << types.size();
     }
     for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
-      size_t index = types.size() - defaults.size() + defaultsIndex;
+      size_t index =
+          types.size() - defaults.size() + defaultsIndex - numImplicit;
       Type expected = types[index];
 
       // Memory-only arguments store their default values as pure values.
@@ -204,9 +210,9 @@ LogicalResult FnMetadataAttr::verifySignature(
   };
 
   if (failed(verifyDefaults(getDefaultArguments(), values.getInputs(),
-                            inputConventions, "argument")) ||
+                            inputConventions, "argument", /*numImplicit=*/0)) ||
       failed(verifyDefaults(getDefaultParameters(), inputParamTypes, {},
-                            "parameter")))
+                            "parameter", getNumImplicitParams())))
     return failure();
 
   return success();

@@ -109,7 +109,7 @@ fn partially_bound_kw():
 
 
 # CHECK-LABEL: lit.func @"partial_autoparam
-# CHECK-SAME: <[[X:.*]][{{.*}}]>(%value[value]: !kgen.declref<{{.*}}@TwoParam<[[X]], 1>
+# CHECK-SAME: <?, [[X:.*]]>(%value[value]: !kgen.declref<{{.*}}@TwoParam<[[X]], 1>
 fn partial_autoparam(value: TwoParam[y=one]):
     alias first = value.x
     alias second = value.y
