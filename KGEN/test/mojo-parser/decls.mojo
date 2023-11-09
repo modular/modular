@@ -190,6 +190,16 @@ fn capture_by_copy():
     alias f = doesnt_capture
 
 
+struct Param[T: AnyType]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"capturing_in_struct
+# CHECK-SAME: capturing -> !kgen.none attributes {isParametric
+fn capturing_in_struct[x: Param[fn () capturing -> Int]]():
+    pass
+
+
 ##===----------------------------------------------------------------------===##
 # let
 ##===----------------------------------------------------------------------===##
