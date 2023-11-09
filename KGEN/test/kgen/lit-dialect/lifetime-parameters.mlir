@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -verify-parameters | FileCheck %s
+// RUN: kgen-opt %s -verify-parameters | kgen-opt | FileCheck %s
+// RUN: kgen-opt %s -emit-bytecode | kgen-opt | FileCheck %s
 
 // CHECK-LABEL: @lifetimes
 lit.func @lifetimes() {
