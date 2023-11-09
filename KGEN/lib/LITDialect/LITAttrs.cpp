@@ -64,8 +64,8 @@ LogicalResult FnMetadataAttr::verify(
     function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> argNames,
     ArrayRef<PassingKind> argPassingKinds, ArrayRef<StringAttr> paramNames,
     ArrayRef<PassingKind> paramPassingKinds,
-    ArrayRef<TypedAttr> defaultArguments,
-    ArrayRef<TypedAttr> defaultParameters) {
+    ArrayRef<TypedAttr> defaultArguments, ArrayRef<TypedAttr> defaultParameters,
+    unsigned numLifetimeDecls) {
   if (argNames.size() != argPassingKinds.size()) {
     return emitError()
            << "number of argument names and passing kinds must match";
@@ -368,6 +368,14 @@ TypedAttr BindTypeAttr::get(MLIRContext *ctx, TypedAttr typeValue,
 //===----------------------------------------------------------------------===//
 
 Type LifetimeAttr::getType() const { return LifetimeType::get(getContext()); }
+
+//===----------------------------------------------------------------------===//
+// LifetimeRefAttr
+//===----------------------------------------------------------------------===//
+
+Type LifetimeRefAttr::getType() const {
+  return LifetimeType::get(getContext());
+}
 
 //===----------------------------------------------------------------------===//
 // LITStructAttr

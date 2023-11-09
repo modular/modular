@@ -215,6 +215,38 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
 }
 
 //===----------------------------------------------------------------------===//
+// LifetimeType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult LifetimeType::parseValue(AsmParser &p,
+                                             TypedAttr &result) const {
+  if (succeeded(p.parseOptionalStar())) {
+    std::string str;
+    // Resolve ambiguity with *"...".
+    if (succeeded(p.parseOptionalString(&str))) {
+      result = ParamDeclRefAttr::get(str, *this);
+      return mlir::success();
+    }
+
+    size_t depth, index;
+    if (p.parseLSquare() || p.parseInteger(depth) || p.parseComma() ||
+        p.parseInteger(index) || p.parseRSquare())
+      return failure();
+    result = LifetimeRefAttr::get(p.getContext(), depth, index);
+    return mlir::success();
+  }
+  return std::nullopt;
+}
+
+LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
+  if (auto ref = ::dyn_cast<LifetimeRefAttr>(value)) {
+    p << "*[" << ref.getDepth() << ',' << ref.getIndex() << ']';
+    return success();
+  }
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
 // RefType
 //===----------------------------------------------------------------------===//
 
@@ -292,6 +324,12 @@ REPLResultRefType REPLResultRefType::get(Type elementType) {
 
 static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
+
+  unsigned numLifetimeDecls = 0;
+  if (succeeded(p.parseOptionalLSquare()))
+    if (p.parseInteger(numLifetimeDecls) || p.parseRSquare())
+      return failure();
+
   SmallVector<Type> inputParamTypes, resultParamTypes;
   SmallVector<TypedAttr> defaultParamValues;
   SmallVector<StringAttr> paramNames;
@@ -349,7 +387,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
       resultParamTypes, inputConventions, effects,
       FnMetadataAttr::get(ctx, argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, argDefaults, defaultParamValues));
+                          paramPassingKinds, argDefaults, defaultParamValues,
+                          numLifetimeDecls));
   return success(!!signature);
 }
 
@@ -381,6 +420,10 @@ void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
 void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   p << "!lit.signature<";
   auto signature = ::cast<LITSignatureType>(sig);
+
+  if (unsigned numLifetimeDecls = getNumLifetimeDecls())
+    p << '[' << numLifetimeDecls << ']';
+
   printOptionalParamSignature(
       p, signature.getInputParamTypes(), signature.getResultParamTypes(),
       signature.getParamNames(), signature.getParamPassingKinds(),

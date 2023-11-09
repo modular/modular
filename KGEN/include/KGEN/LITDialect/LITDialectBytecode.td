@@ -74,7 +74,8 @@ def FnMetadataAttr : DialectAttribute<(attr
   StringAttrArray:$paramNames,
   EnumAttrArray<"PassingKind">:$paramPassingKinds,
   TypedAttrArray:$defaultArguments,
-  TypedAttrArray:$defaultParameters
+  TypedAttrArray:$defaultParameters,
+  VarInt:$numLifetimeDecls
 )>;
 
 def DocStringAttr : DialectAttribute<(attr

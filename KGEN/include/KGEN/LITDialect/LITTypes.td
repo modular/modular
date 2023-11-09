@@ -198,7 +198,8 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
 // LifetimeType
 //===----------------------------------------------------------------------===//
 
-def LIT_LifetimeType : LITType<"Lifetime", "lifetime"> {
+def LIT_LifetimeType : LITType<"Lifetime", "lifetime",
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Lifetime type";
   let description = [{
     This type is used for lifetime parameters when tracking ownership and
