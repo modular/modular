@@ -14,7 +14,7 @@ easily separate what's logged by our tools from the often substantial debug logs
 of third-party libraries (e.g. TensorFlow).
 """
 
-from logging import *  # noqa: F403
+from logging import *  # type: ignore # noqa: F403
 from logging import getLogger as _getLogger
 from types import TracebackType
 
@@ -26,23 +26,23 @@ def getLogger(name: Optional[str] = None) -> Logger:
     return _getLogger(name)
 
 
-def info(message: Any, *args: Any, **kwargs: Any) -> None:
+def info(message: Any, *args: Any, **kwargs: Any) -> None:  # type: ignore
     getLogger().info(f"{message}", *args, **kwargs)
 
 
-def error(message: Any, *args: Any, **kwargs: Any) -> None:
+def error(message: Any, *args: Any, **kwargs: Any) -> None:  # type: ignore
     getLogger().error(f"{message}", *args, **kwargs)
 
 
-def critical(message: Any, *args: Any, **kwargs: Any) -> None:
+def critical(message: Any, *args: Any, **kwargs: Any) -> None:  # type: ignore
     getLogger().critical(f"{message}", *args, **kwargs)
 
 
-def debug(message: Any, *args: Any, **kwargs: Any) -> None:
+def debug(message: Any, *args: Any, **kwargs: Any) -> None:  # type: ignore
     getLogger().debug(f"{message}", *args, **kwargs)
 
 
-def warning(message: Any, *args: Any, **kwargs: Any) -> None:
+def warning(message: Any, *args: Any, **kwargs: Any) -> None:  # type: ignore
     getLogger().warning(f"{message}", *args, **kwargs)
 
 
