@@ -190,6 +190,7 @@ def MaterializePackages : Pass<"materialize-packages", "ModuleOp"> {
   // FIXME(#15949): Should not require all these dialects to be loaded.
   let dependentDialects = [
     "KGENDialect",
+    "LIT::LITDialect",
     "DebugInfo::DebugInfoDialect",
     "HLCF::HLCFDialect",
     "MDialect",
