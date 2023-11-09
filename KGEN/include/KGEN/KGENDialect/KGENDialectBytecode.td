@@ -142,6 +142,16 @@ def ParamIndexRefAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def VTableAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"VTableEntryAttr">:$entries
+)>;
+
+def VTableEntryAttr : DialectAttribute<(attr
+  ConcreteAttribute<"StringAttr">:$name,
+  ConcreteType<"SignatureType">:$signature,
+  ConcreteAttribute<"SymbolRefAttr">:$method
+)>;
+
 def ConcreteTypeConstantAttr : DialectAttribute<(attr
   Type:$value,
   Type:$type,
@@ -245,6 +255,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     NoneAttr,
     ParamDeclRefAttr,
     ParamIndexRefAttr,
+    VTableAttr,
+    VTableEntryAttr,
     ConcreteTypeConstantAttr,
     ParameterizedTypeConstantAttr,
     DTypeConstantAttr,

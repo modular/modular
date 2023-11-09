@@ -94,6 +94,11 @@ def ModuleAttr : DialectAttribute<(attr
 
 def LifetimeAttr : DialectAttribute<(attr)>;
 
+def LifetimeRefAttr : DialectAttribute<(attr
+  VarInt:$depth,
+  VarInt:$index
+)>;
+
 def UnresolvedAliasValueAttr : DialectAttribute<(attr
   Type:$type
 )>;
@@ -128,6 +133,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnboundMLIROperationAttr,
     ModuleAttr,
     LifetimeAttr,
+    LifetimeRefAttr,
     UnresolvedAliasValueAttr,
     LITStructAttr,
     StructExtractAttr,
