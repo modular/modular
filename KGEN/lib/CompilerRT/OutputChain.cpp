@@ -67,7 +67,14 @@ void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
 void OutputChain::markReady() {
   complete();
   // CAUTION: Must copy so chain remains valid.
-  chain.copy().emplace<Chain>();
+  // HACK HACK HACK https://github.com/modularml/modular/issues/22959
+  // There's currently no 'regular' chain to emplace for kernels launched via
+  // cuda.kernel.execute.via_cpu, and the CPU portion is expected to be
+  // synchronous. However, there are various mark_ready calls scattered about
+  // as part of the single_thread_blocking_override handling. So just silently
+  // ignore those.
+  if (chain.isType<Chain>())
+    chain.copy().emplace<Chain>();
 }
 
 void OutputChain::markError(StringRef message) {
