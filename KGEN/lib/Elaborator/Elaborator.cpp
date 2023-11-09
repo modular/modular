@@ -2079,7 +2079,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   }
 
   std::function<LogicalResult(ImplNode *)> onComplete;
-  if (config.elaborateLocations) {
+  if (config.elaborateDebugInfo) {
     // We need to recursively elaborate locations within nested regions, both on
     // ops and block arguments. We do this after the worklist is processed, to
     // ensure that all parameter computation is completed, e.g. we have
@@ -2680,7 +2680,7 @@ public:
             analysis, paramCache, *rt, target, primaryGenerators,
             evaluatorExecutorFn, compileAsmFn,
             ElaborateGeneratorsOptions{enableSearch, allowMultiplePrimaryImpls,
-                                       maxDepth, elaborateLocations,
+                                       maxDepth, elaborateDebugInfo,
                                        diagAllFailures})))
       return signalPassFailure();
   }
