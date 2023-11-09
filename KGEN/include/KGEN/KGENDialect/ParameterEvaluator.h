@@ -8,6 +8,7 @@
 #define KGEN_KGENDIALECT_PARAMETEREVALUATOR_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "Support/ForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
 
@@ -47,7 +48,7 @@ bool isParameterizedType(Type type);
 
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify parameter expressions based on those values.
-class ParameterEvaluator {
+class ParameterEvaluator : public ParameterReplacer<ParameterEvaluator> {
 public:
   virtual ~ParameterEvaluator() = default;
 
@@ -59,14 +60,6 @@ public:
   ParameterEvaluator(DenseMap<StringAttr, Attribute> paramValues =
                          DenseMap<StringAttr, Attribute>())
       : paramValues(std::move(paramValues)) {}
-
-  /// Return true if there are no remappings installed.
-  bool empty() const { return paramValues.empty(); }
-
-  /// Clear out the cache of rewritten attrs and types. This is needed because
-  /// parameters can be redefined, and the rewritten attr/type may no longer be
-  /// valid.
-  void clearCache() { rewritten.clear(); }
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
@@ -92,12 +85,11 @@ public:
   }
 
   /// Get the specified type with any nested parameter expressions rewritten.
-  Type getReboundType(Type type);
+  Type getReboundType(Type type) { return replace(type); }
 
   /// Get the specified attribute with any nested parameter expressions
-  /// rewritten.  The substituted attributes are not necessarily fully folded:
-  /// for that use concretizeParameterExpr.
-  Attribute getReboundAttribute(Attribute attr);
+  /// rewritten.
+  Attribute getReboundAttribute(Attribute attr) { return replace(attr); }
 
   /// Evaluate a potentially symbolic expression. This hook should be overridden
   /// to process symbol expressions using some global state, including a symbol
@@ -115,6 +107,16 @@ public:
   void setInputDepth(size_t depth) { inputDepth = depth; }
 
 private:
+  // CRTP methods.
+  bool isKnownLeaf(Type type);
+  bool isKnownLeaf(Attribute attr);
+  Type doReplace(Type type, size_t rootDepth);
+  Attribute doReplace(Attribute attr, size_t rootDepth);
+  friend class ParameterReplacer<ParameterEvaluator>;
+
+  /// Handle the `cond` operator.
+  IntegerAttr narrowCondOp(Attribute attr, size_t rootDepth);
+
   /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;
 
@@ -124,17 +126,10 @@ private:
   /// These are the top-level result parameters to use when rebinding a
   /// signature.
   SmallVector<Attribute> resultParamValues;
-  /// The current depth from the root signature, if there is one.
-  size_t rootDepth = 0;
   /// The relative depth from the signature where the input parameters are from.
   /// This is zero for most applications, but should be set accordingly when
   /// substituting attributes or types inside a signature.
   size_t inputDepth = 0;
-
-  /// This caches attributes and Types with parameter references rebound, and
-  /// remembers complex attributes that don't have parameter subexprs (noted as
-  /// being rebound to themselves).
-  DenseMap<std::pair<size_t, const void *>, const void *> rewritten;
 };
 } // namespace M::KGEN
 

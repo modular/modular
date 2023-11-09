@@ -70,30 +70,28 @@ ParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
   return failure();
 }
 
-/// Return true if this is a `cond` operator.
-static IntegerAttr narrowCondOp(Attribute attr, ParameterEvaluator &eval) {
+IntegerAttr ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
   if (auto op = dyn_cast<ParamOperatorAttr>(attr);
       op && op.getOpcode() == POC::Cond) {
     return dyn_cast_or_null<IntegerAttr>(
-        eval.getReboundAttribute(op.getOperands().front()));
+        replaceImpl(op.getOperands().front(), rootDepth));
   }
   return nullptr;
 }
 
-/// Get the specified attribute with any nested parameter expressions rewritten.
-Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
-  // These are common leaf attributes that we know are never parameterized.
-  // Note: we should not use `ParameterAttr::isSimpleConstant` because it
-  // re-walks types, but also because we have to substitute index references.
-  if (isa<NoneAttr, IntegerAttr, FloatAttr, DTypeConstantAttr, IntLiteralAttr,
-          TargetParamAttr, BuildInfoParamAttr, MLIROpAttr>(attr))
-    return attr;
+bool ParameterEvaluator::isKnownLeaf(Type type) {
+  return isa<MLIRTypeType, DTypeType, StringType, IntLiteralType,
+             KGEN::NoneType, TargetType, BuildInfoType, IntegerType, FloatType>(
+      type);
+}
 
-  // If we've already processed this attribute, just reuse the memoized result.
-  auto iter = rewritten.find({rootDepth, attr.getAsOpaquePointer()});
-  if (iter != rewritten.end())
-    return Attribute::getFromOpaquePointer(iter->second);
+bool ParameterEvaluator::isKnownLeaf(Attribute attr) {
+  return isa<NoneAttr, IntegerAttr, FloatAttr, DTypeConstantAttr,
+             IntLiteralAttr, TargetParamAttr, BuildInfoParamAttr, MLIROpAttr>(
+      attr);
+}
 
+Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   // If a parameter got rebound to an index reference, we need to increase its
   // depth based on the current signature.
   // FIXME: Is there a better way around this? This previously manifested as
@@ -130,13 +128,13 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
-  } else if (IntegerAttr condVal = narrowCondOp(attr, *this)) {
+  } else if (IntegerAttr condVal = narrowCondOp(attr, rootDepth)) {
     // If condition is a constant rebind only one of the clauses.
     auto op = cast<ParamOperatorAttr>(attr);
     if (condVal.getValue().isZero())
-      result = getReboundAttribute(op.getOperands()[2]);
+      result = replaceImpl(op.getOperands()[2], rootDepth);
     else
-      result = getReboundAttribute(op.getOperands()[1]);
+      result = replaceImpl(op.getOperands()[1], rootDepth);
     if (!result)
       return nullptr;
   } else {
@@ -149,7 +147,7 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
         [&](Attribute attr) {
           if (failed)
             return;
-          Attribute newAttr = getReboundAttribute(attr);
+          Attribute newAttr = replaceImpl(attr, rootDepth);
           if (!newAttr)
             failed = true;
           changed |= newAttr != attr;
@@ -158,7 +156,7 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
         [&](Type type) {
           if (failed)
             return;
-          Type newType = getReboundType(type);
+          Type newType = replaceImpl(type, rootDepth);
           if (!newType)
             failed = true;
           changed |= newType != type;
@@ -174,41 +172,27 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   if (auto op = dyn_cast<ParamOperatorAttr>(result))
     if (FailureOr<TypedAttr> expr = evaluateExpression(op); succeeded(expr))
       result = *expr;
-  if (!result)
-    return nullptr;
 
-  rewritten.try_emplace({rootDepth, attr.getAsOpaquePointer()},
-                        result.getAsOpaquePointer());
   return result;
 }
 
-/// Get the specified type with any nested parameter expressions rewritten.
-Type ParameterEvaluator::getReboundType(Type type) {
-  // These are common leaf types that we know are never parameterized.
-  if (isa<MLIRTypeType, DTypeType, StringType, IntLiteralType, KGEN::NoneType,
-          TargetType, BuildInfoType, IntegerType, FloatType>(type))
-    return type;
-
-  // If we've already processed this type, just reuse the memoized result.
-  auto iter = rewritten.find({rootDepth, type.getAsOpaquePointer()});
-  if (iter != rewritten.end())
-    return Type::getFromOpaquePointer(iter->second);
-
+Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
   Type result = type;
 
+  if (isa<ParameterScopeTypeInterface>(type))
+    ++rootDepth;
+
   // Rebind types in aggregates that implement SubElementTypeInterface.
-  bool isNestedScope = isa<ParameterScopeTypeInterface>(type);
   SmallVector<Attribute, 16> newAttrs;
   SmallVector<Type, 16> newTypes;
   bool changed = false;
   // Stop walking and propagate failures when they occur.
   bool failed = false;
-  rootDepth += isNestedScope;
   type.walkImmediateSubElements(
       [&](Attribute attr) {
         if (failed)
           return;
-        Attribute newAttr = getReboundAttribute(attr);
+        Attribute newAttr = replaceImpl(attr, rootDepth);
         if (!newAttr)
           failed = true;
         changed |= newAttr != attr;
@@ -217,20 +201,16 @@ Type ParameterEvaluator::getReboundType(Type type) {
       [&](Type type) {
         if (failed)
           return;
-        Type newType = getReboundType(type);
+        Type newType = replaceImpl(type, rootDepth);
         if (!newType)
           failed = true;
         changed |= newType != type;
         newTypes.push_back(newType);
       });
-  rootDepth -= isNestedScope;
   if (failed)
     return nullptr;
   if (changed)
     result = type.replaceImmediateSubElements(newAttrs, newTypes);
-
-  rewritten.try_emplace({rootDepth, type.getAsOpaquePointer()},
-                        result.getAsOpaquePointer());
   return result;
 }
 
@@ -246,7 +226,7 @@ void ParameterEvaluator::dump() const {
   for (auto [name, value] : paramValues)
     os << "  " << name << " = " << value << "\n";
   for (auto [idx, value] : llvm::enumerate(inputParamValues))
-    os << "  *0|" << idx << " = " << value << "\n";
+    os << "  *(0," << idx << ") = " << value << "\n";
   for (auto [idx, value] : llvm::enumerate(resultParamValues))
-    os << "  *0|" << idx << "* = " << value << "\n";
+    os << "  *(0," << idx << ")* = " << value << "\n";
 }
