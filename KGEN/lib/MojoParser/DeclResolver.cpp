@@ -2411,14 +2411,15 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp,
     return true;
   // Any function that contains a capturing closure as a parameter is itself
   // capturing.
-  // TODO: Check struct elements too.
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([](SignatureType sig) {
+    if (sig.isCapturing())
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
   return llvm::any_of(
       llvm::concat<const ParamDeclAttr>(inputParamDecls, resultParamDecls),
-      [](ParamDeclAttr decl) {
-        if (auto signature = dyn_cast<SignatureType>(decl.getType()))
-          return signature.isCapturing();
-        return false;
-      });
+      [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
 }
 
 // TODO: refactor the getSpecializedSignature method to support augmenting
