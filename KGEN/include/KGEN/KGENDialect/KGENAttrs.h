@@ -34,6 +34,7 @@ class SignatureType;
 class TargetType;
 class VariadicType;
 class VariadicAttr;
+class VTableAttr;
 
 //===----------------------------------------------------------------------===//
 // TypeConstantAttr
@@ -47,6 +48,9 @@ public:
 
   /// Returns the constant type value.
   Type getValue() const;
+
+  /// Returns the constant type vtable.
+  VTableAttr getVtable() const;
 
   /// Get a type constant attribute.
   static TypedAttr get(Type value, Type type);
@@ -110,6 +114,7 @@ ParseResult parsePackageArchiveArray(OpAsmParser &p,
 /// The custom format is approximately "(`[` $archives^ `]`)?".
 void printPackageArchiveArray(OpAsmPrinter &p, Operation *,
                               PackageArchiveArrayAttr archives);
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_H

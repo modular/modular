@@ -865,6 +865,27 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
   return verifyApplyLike(operands, type, "'apply_result_slot' ", emitError);
 }
 
+static LogicalResult
+verifyGetTypeMethod(ArrayRef<TypedAttr> operands,
+                    function_ref<InFlightDiagnostic()> emitError) {
+  auto error = [&](std::string message) -> LogicalResult {
+    if (emitError)
+      return emitError() << message;
+    else
+      return failure();
+  };
+  if (operands.size() != 3)
+    return error("'get_type_method' requires 3 operands");
+  if (!::isa<MLIRTypeType>(operands[0].getType()))
+    return error("'get_type_method' first operand should be a type");
+  if (!::isa<StringType>(operands[1].getType()))
+    return error("'get_type_method' second operand should be a string");
+  TypeConstantAttr signatureTCA = ::dyn_cast<TypeConstantAttr>(operands[2]);
+  if (!signatureTCA || !::isa<SignatureType>(signatureTCA.getValue()))
+    return error("'get_type_method' third operand should be a type signature");
+  return success();
+}
+
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
@@ -884,6 +905,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::VariadicGet:
   case POC::CompileAssembly:
   case POC::GetLinkageName:
+  case POC::GetTypeMethod:
     break;
   default:
     if (!llvm::all_of(operands, [&](auto operand) {
@@ -1070,6 +1092,10 @@ LogicalResult ParamOperatorAttr::verify(
     if (!::isa<TargetType>(operands.front().getType()))
       return emitError()
              << "'get_linkage_name' first operand should be a target type";
+    break;
+  case POC::GetTypeMethod:
+    if (failed(verifyGetTypeMethod(operands, emitError)))
+      return failure();
     break;
   }
   return success();
@@ -1891,6 +1917,32 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   return {};
 }
 
+static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands) {
+  if (failed(verifyGetTypeMethod(operands, {})))
+    return {};
+  auto typeConstant = dyn_cast<TypeConstantAttr>(operands[0]);
+  // typeConstant may actually be a parameter if this is called before
+  // elaboration.  But after elaboration it should always be a TypeConstantAttr.
+  if (!typeConstant)
+    return {};
+  VTableAttr vtable = typeConstant.getVtable();
+  StringAttr targetName = cast<StringAttr>(operands[1]);
+  TypeConstantAttr targetSignatureTCA = cast<TypeConstantAttr>(operands[2]);
+  SignatureType targetSignature =
+      cast<SignatureType>(targetSignatureTCA.getValue());
+  // Scan the vtable for a name + signature match, then the method is the
+  // payload.
+  for (VTableEntryAttr entry : vtable.getEntries()) {
+    if (entry.getName().getValue() == targetName.getValue() &&
+        entry.getSignature() == targetSignature) {
+      TypedAttr method =
+          SymbolConstantAttr::get(entry.getMethod(), targetSignature);
+      return method;
+    }
+  }
+  return {};
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -1998,6 +2050,9 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::GetLinkageName:
     result = {};
+    break;
+  case POC::GetTypeMethod:
+    result = evaluateGetTypeMethod(operands);
     break;
   }
 
@@ -2223,6 +2278,10 @@ std::string PackageArchiveArrayAttr::getTargetsAsString() {
 
 Type TypeConstantAttr::getValue() const {
   return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->value;
+}
+
+VTableAttr TypeConstantAttr::getVtable() const {
+  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->vtable;
 }
 
 Type ParameterizedTypeConstantAttr::getType() const { return getImpl()->type; }

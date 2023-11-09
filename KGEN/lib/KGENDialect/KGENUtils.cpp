@@ -687,6 +687,20 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
       return failure();
     return success();
+  case (uint32_t)POC::GetTypeMethod:
+    if (parseParamValue(p, operands.emplace_back(),
+                        MLIRTypeType::get(p.getContext())) ||
+        p.parseComma() ||
+        parseParamValue(p, operands.emplace_back(),
+                        StringType::get(p.getContext())) ||
+        p.parseComma())
+      return failure();
+    Type sig;
+    if (parseSignature(p, sig))
+      return failure();
+    TypedAttr sigAttr = TypeConstantAttr::get(sig);
+    operands.push_back(sigAttr);
+    return success();
   }
   llvm_unreachable("unknown operator");
 }
@@ -959,6 +973,14 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     printParamValue(p, operands[0]);
     p << ", ";
     printColonTypeParamValue(p, operands[1]);
+    break;
+
+  case POC::GetTypeMethod:
+    printParamValue(p, operands[0]);
+    p << ", ";
+    printParamValue(p, operands[1]);
+    p << ", ";
+    printParamValue(p, operands[2]);
     break;
   }
 }
