@@ -7,9 +7,11 @@
 #ifndef KGEN_PARAMETERREPLACER_H
 #define KGEN_PARAMETERREPLACER_H
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/Types.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/DenseMap.h"
 
 namespace M::KGEN {
@@ -44,8 +46,17 @@ protected:
       return nullptr;
 
     // These are common leaf attributes that we know are never parameterized.
-    if (getDerived()->isKnownLeaf(value))
-      return value;
+    if constexpr (std::is_base_of_v<Type, T>) {
+      if (isa<MLIRTypeType, DTypeType, StringType, IntLiteralType,
+              KGEN::NoneType, TargetType, BuildInfoType, IntegerType,
+              FloatType>(value))
+        return value;
+    } else {
+      if (isa<NoneAttr, IntegerAttr, FloatAttr, DTypeConstantAttr,
+              IntLiteralAttr, TargetParamAttr, BuildInfoParamAttr, MLIROpAttr>(
+              value))
+        return value;
+    }
 
     // If we've already processed this value, just reuse the memoized result.
     auto it = rewritten.find({depth, value.getAsOpaquePointer()});
@@ -70,6 +81,44 @@ private:
   /// or type and remembers complex values that haven't been rewritten (noted as
   /// being mapped to themselves).
   DenseMap<std::pair<size_t, const void *>, const void *> rewritten;
+};
+
+//===----------------------------------------------------------------------===//
+// IndexParameterReplacer
+//===----------------------------------------------------------------------===//
+
+/// A subclass of parameter replacer that contains even more common logic for
+/// working with index references.
+template <typename DerivedT>
+class IndexParameterReplacer
+    : public ParameterReplacer<IndexParameterReplacer<DerivedT>> {
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  doReplace(T value, size_t depth) {
+    if (auto result = static_cast<DerivedT *>(this)->tryReplace(value, depth))
+      return result;
+
+    if constexpr (std::is_base_of_v<Type, T>)
+      if (isa<ParameterScopeTypeInterface>(value))
+        ++depth;
+
+    SmallVector<Attribute, 16> newAttrs;
+    SmallVector<Type, 16> newTypes;
+    bool changed = false;
+    auto walkFn = [&](auto value, SmallVectorImpl<decltype(value)> &values) {
+      auto newValue = this->replaceImpl(value, depth);
+      changed |= newValue != value;
+      values.push_back(newValue);
+    };
+    value.walkImmediateSubElements(
+        [&](Attribute attr) { walkFn(attr, newAttrs); },
+        [&](Type type) { walkFn(type, newTypes); });
+    if (!changed)
+      return value;
+    return value.replaceImmediateSubElements(newAttrs, newTypes);
+  }
+
+  friend class ParameterReplacer<IndexParameterReplacer<DerivedT>>;
 };
 
 } // namespace M::KGEN

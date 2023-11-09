@@ -442,20 +442,20 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     SignatureType baseSig = func.getSignature();
     SmallVector<Type> inputParamTypes;
     for (ParamDeclAttr param : paramDecls)
-      inputParamTypes.push_back(remapper.remap(param.getType()));
+      inputParamTypes.push_back(remapper.replace(param.getType()));
     for (Type type : baseSig.getInputParamTypes())
-      inputParamTypes.push_back(remapper.remap(type));
+      inputParamTypes.push_back(remapper.replace(type));
 
     FnMetadataAttrInterface metadata = baseSig.getMetadata();
     if (metadata) {
-      metadata = remapper.remap(
+      metadata = remapper.replace(
           baseSig.getMetadata().prependPosParams(paramDecls.size()));
     }
 
     declSignature = SignatureType::getSpecializedSignature(
         getParamValues(), [&] { return emitError(loc); }, inputParamTypes,
-        remapper.remap(baseSig.getResultParamTypes()),
-        remapper.remap(baseSig.getValues()), baseSig.getInputConventions(),
+        remapper.replace(baseSig.getResultParamTypes()),
+        remapper.replace(baseSig.getValues()), baseSig.getInputConventions(),
         baseSig.getFnEffects(), metadata);
   }
   if (!declSignature)
@@ -810,8 +810,8 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
 /// decrement any index references in the result type of the signature because
 /// we are pulling it out of the signature.
 static Type upbindApplyResult(Type resultType) {
-  IndexRefRemapper remapper({}, {}, /*offset=*/0, /*adjustDepth=*/-1);
-  return remapper.remap(resultType);
+  IndexDepthAdjuster adjuster(/*adjustDepth=*/-1);
+  return adjuster.replace(resultType);
 }
 
 static LogicalResult

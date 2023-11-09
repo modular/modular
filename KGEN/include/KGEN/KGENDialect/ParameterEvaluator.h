@@ -108,8 +108,6 @@ public:
 
 private:
   // CRTP methods.
-  bool isKnownLeaf(Type type);
-  bool isKnownLeaf(Attribute attr);
   Type doReplace(Type type, size_t rootDepth);
   Attribute doReplace(Attribute attr, size_t rootDepth);
   friend class ParameterReplacer<ParameterEvaluator>;

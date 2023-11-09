@@ -455,9 +455,9 @@ SignatureType SignatureType::remapToSignature(
   IndexRefRemapper remapper(inputParams, resultParams);
   SmallVector<Type> inputParamTypes, resultParamTypes;
   for (ParamDeclAttr param : inputParams)
-    inputParamTypes.push_back(remapper.remap(param.getType()));
+    inputParamTypes.push_back(remapper.replace(param.getType()));
   for (ParamDeclAttr param : resultParams)
-    resultParamTypes.push_back(remapper.remap(param.getType()));
+    resultParamTypes.push_back(remapper.replace(param.getType()));
 
   if (!emitError) {
     emitError = []() -> InFlightDiagnostic {
@@ -466,9 +466,9 @@ SignatureType SignatureType::remapToSignature(
   }
 
   return SignatureType::getChecked(
-      emitError, remapper.remap(functionType), inputParamTypes,
+      emitError, remapper.replace(functionType), inputParamTypes,
       resultParamTypes, inputConventions, effects,
-      metadata ? remapper.remap(metadata) : nullptr);
+      metadata ? remapper.replace(metadata) : nullptr);
 }
 
 SignatureType
@@ -478,18 +478,18 @@ SignatureType::prependParams(SignatureType sig,
                             parentParams.size());
   SmallVector<Type> inputParamTypes;
   for (ParamDeclAttr param : parentParams)
-    inputParamTypes.push_back(remapper.remap(param.getType()));
+    inputParamTypes.push_back(remapper.replace(param.getType()));
   for (Type type : sig.getInputParamTypes())
-    inputParamTypes.push_back(remapper.remap(type));
+    inputParamTypes.push_back(remapper.replace(type));
 
   FnMetadataAttrInterface metadata = sig.getMetadata();
   if (metadata) {
-    metadata =
-        remapper.remap(sig.getMetadata().prependPosParams(parentParams.size()));
+    metadata = remapper.replace(
+        sig.getMetadata().prependPosParams(parentParams.size()));
   }
 
-  return SignatureType::get(remapper.remap(sig.getValues()), inputParamTypes,
-                            remapper.remap(sig.getResultParamTypes()),
+  return SignatureType::get(remapper.replace(sig.getValues()), inputParamTypes,
+                            remapper.replace(sig.getResultParamTypes()),
                             sig.getInputConventions(), sig.getFnEffects(),
                             metadata);
 }
