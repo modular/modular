@@ -79,18 +79,6 @@ IntegerAttr ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
   return nullptr;
 }
 
-bool ParameterEvaluator::isKnownLeaf(Type type) {
-  return isa<MLIRTypeType, DTypeType, StringType, IntLiteralType,
-             KGEN::NoneType, TargetType, BuildInfoType, IntegerType, FloatType>(
-      type);
-}
-
-bool ParameterEvaluator::isKnownLeaf(Attribute attr) {
-  return isa<NoneAttr, IntegerAttr, FloatAttr, DTypeConstantAttr,
-             IntLiteralAttr, TargetParamAttr, BuildInfoParamAttr, MLIROpAttr>(
-      attr);
-}
-
 Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   // If a parameter got rebound to an index reference, we need to increase its
   // depth based on the current signature.
@@ -99,9 +87,8 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   auto upbindValue = [&](Attribute value) {
     if (rootDepth + inputDepth == 0)
       return value;
-    IndexRefRemapper remapper({}, {}, /*offset=*/0,
-                              /*adjustDepth=*/rootDepth + inputDepth);
-    return remapper.remap(value);
+    IndexDepthAdjuster adjuster(/*adjustDepth=*/rootDepth + inputDepth);
+    return adjuster.replace(value);
   };
 
   // If this is a foldable parameter expression, do it.

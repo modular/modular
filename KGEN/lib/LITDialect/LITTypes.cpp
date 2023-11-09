@@ -114,11 +114,11 @@ TypeSignatureType TypeSignatureType::remapToSignature(
   IndexRefRemapper remapper(paramDecls, {});
   SmallVector<Type> inputParamTypes =
       llvm::map_to_vector(paramDecls, [&](ParamDeclAttr decl) {
-        return remapper.remap(decl.getType());
+        return remapper.replace(decl.getType());
       });
   return TypeSignatureType::getChecked(
       emitError, paramDecls.getContext(), inputParamTypes, paramNames,
-      passingKinds, remapper.remap(ArrayRef(defaults)), paramVarArg);
+      passingKinds, remapper.replace(ArrayRef(defaults)), paramVarArg);
 }
 
 //===----------------------------------------------------------------------===//

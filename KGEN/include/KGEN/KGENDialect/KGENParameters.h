@@ -14,6 +14,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "mlir/Pass/AnalysisManager.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
@@ -26,12 +27,11 @@ namespace M::KGEN {
 //===----------------------------------------------------------------------===//
 
 /// Utility class for remapping named parameter references to index references.
-class IndexRefRemapper {
+class IndexRefRemapper : public IndexParameterReplacer<IndexRefRemapper> {
 public:
   /// Populate the remapper with named input and result parameters.
   IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
-                   ArrayRef<ParamDeclAttr> resultParams, size_t offset = 0,
-                   int64_t adjustDepth = 0);
+                   ArrayRef<ParamDeclAttr> resultParams, size_t offset = 0);
 
   /// Populate the remapper with the given named input parameters. If
   /// 'addOffset' is true, the underlying offset of references to root
@@ -39,39 +39,34 @@ public:
   void populate(ArrayRef<ParamDeclAttr> params, bool isResult,
                 bool addOffset = false);
 
-  /// Remap a value.
-  template <typename T>
-  T remap(T value) {
-    constexpr bool isType = std::is_base_of_v<Type, T>;
-    std::conditional_t<isType, Type, Attribute> result;
-    if constexpr (isType)
-      result = remapTypeImpl(value);
-    else
-      result = remapAttrImpl(value);
-    return cast<T>(result);
-  }
-
-  /// Remap a range of values.
-  template <typename T>
-  SmallVector<T> remap(ArrayRef<T> values) {
-    return llvm::map_to_vector(values, [&](T value) { return remap(value); });
-  }
-
 private:
-  /// Remap an attribute.
-  Attribute remapAttrImpl(Attribute attr);
-  /// Remap a type.
-  Type remapTypeImpl(Type type);
-
-  /// Walk and remap values.
-  template <typename T>
-  auto normalizeSignatureWalk(T value, size_t depth = 0)
-      -> std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
+  // CRTP methods.
+  Attribute tryReplace(Attribute attr, size_t depth);
+  Type tryReplace(Type, size_t) { return {}; }
+  friend class IndexParameterReplacer<IndexRefRemapper>;
 
   /// Mapping from parameter reference to an index and `isResult` flag.
   DenseMap<StringAttr, std::pair<size_t, bool>> mapping;
   /// The index offset of references to root input parameters.
   size_t offset;
+};
+
+//===----------------------------------------------------------------------===//
+// IndexDepthAdjuster
+//===----------------------------------------------------------------------===//
+
+/// This class is used exclusively to adjust the depths of index references that
+/// reference signatures outside the current scope.
+class IndexDepthAdjuster : public IndexParameterReplacer<IndexDepthAdjuster> {
+public:
+  explicit IndexDepthAdjuster(int64_t adjustDepth) : adjustDepth(adjustDepth) {}
+
+private:
+  // CRTP methods.
+  Attribute tryReplace(Attribute attr, size_t depth);
+  Type tryReplace(Type, size_t) { return {}; }
+  friend class IndexParameterReplacer<IndexDepthAdjuster>;
+
   /// Adjust the depth of index references when remapping.
   int64_t adjustDepth;
 };
