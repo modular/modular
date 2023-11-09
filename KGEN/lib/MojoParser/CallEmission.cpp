@@ -19,6 +19,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 
 #include "Support/Compiler/OperationUtils.h"
@@ -113,11 +114,17 @@ InputParamBindings::verifyBindings(
     ExprEmitter &emitter, bool hasParamVarArgs,
     ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
     const DiagEmitter &diagEmitter, bool allowPartiallyBound) const {
+
   size_t numParams = expectedParamTypes.size();
-  assert(paramNames.size() == numParams);
+  size_t numImplicit = countNumImplicitKinds(paramPassingKinds);
+  size_t defaultEnd = numParams - numImplicit;
+  size_t defaultStart = defaultEnd - defaultParams.size();
+
   auto isVarArg = [&](size_t idx) {
     return idx + 1 == numParams && hasParamVarArgs;
   };
+
+  assert(paramNames.size() == numParams);
 
   // First, we separate the expected parameter names into positional-only and
   // keyword-passable (pos-or-keyword or kw-only), and ignore variadic names.
@@ -133,6 +140,9 @@ InputParamBindings::verifyBindings(
         auto [_, addedNew] = posOnlyNames.insert(paramName);
         assert(addedNew && "duplicate pos-only parameter name in declaration");
       }
+      continue;
+    } else if (passingKind == PassingKind::Implicit) {
+      assert(paramName.empty());
       continue;
     }
     assert(!paramName.empty());
@@ -256,12 +266,12 @@ InputParamBindings::verifyBindings(
       }
 
       // If available, we use a default parameter value.
-      if (idx >= numParams - defaultParams.size()) {
+      if (idx >= defaultStart && idx < defaultEnd) {
         // Default parameter values may reference other parameter values, so we
         // need to evaluate these.
         expectedType = evaluator.getReboundType(expectedType);
-        auto reboundAttr = cast<TypedAttr>(evaluator.getReboundAttribute(
-            defaultParams[idx + defaultParams.size() - numParams]));
+        auto reboundAttr = cast<TypedAttr>(
+            evaluator.getReboundAttribute(defaultParams[idx - defaultStart]));
         assert(expectedType.isEqualCanon(reboundAttr.getType()));
 
         setParamValue(reboundAttr);
@@ -324,7 +334,8 @@ InputParamBindings::verifyBindings(
     auto checkRedundantKwParam = [&, paramName = paramName,
                                   passingKind =
                                       passingKind]() -> LogicalResult {
-      if (passingKind == PassingKind::PosOnly)
+      if (passingKind == PassingKind::PosOnly ||
+          passingKind == PassingKind::Implicit)
         return success();
       assert(!paramName.empty());
       if (auto it = kwBindings.find(paramName); it == kwBindings.end())

@@ -119,6 +119,9 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
+/// Count the number of implicit passing kinds.
+size_t countNumImplicitKinds(ArrayRef<PassingKind> kinds);
+
 //===----------------------------------------------------------------------===//
 // PassingKindParser / PassingKindPrinter
 //===----------------------------------------------------------------------===//
@@ -136,6 +139,10 @@ public:
 
   /// Populate the parameter passing kinds.
   void populatePassingKinds(SmallVectorImpl<PassingKind> &kinds) const;
+
+  /// Return true if an implicit parameter was seen. I.e., the parser is
+  /// currently parsing an implicit parameter.
+  bool isCurrentImplicit() const { return foundImplicit; }
 
 private:
   /// Return the number of positional-only, positional-or-keyword, keyword-only
