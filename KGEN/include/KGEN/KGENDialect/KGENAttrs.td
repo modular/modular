@@ -356,15 +356,19 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
 
   let parameters = (ins
     "Type":$value,
-    AttributeSelfTypeParameter<"", "Type">:$type
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    OptionalParameter<"VTableAttr">:$vtable
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type),
                                    "", "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type,
+                                        "VTableAttr":$vtable),
+                                   "", "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $value `>`";
+  let assemblyFormat = "`<` $value (`*` $vtable^)? `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -393,18 +397,25 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
 
   let parameters = (ins
     "Type":$value,
-    AttributeSelfTypeParameter<"", "Type">:$type
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    OptionalParameter<"VTableAttr">:$vtable
   );
 
   let builders = [
+    AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$value,
+                                        "Type":$type, "VTableAttr":$vtable),
+                                   "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$value,
                                         "Type":$type),
                                    "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type),
                                    "", "TypedAttr">,
+    AttrBuilderWithInferredContext<(ins "Type":$value, "Type":$type,
+                                        "VTableAttr":$vtable),
+                                   "", "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $value `>`";
+  let assemblyFormat = "`<` $value (`*` $vtable^)? `>`";
   let skipDefaultBuilders = 1;
 }
 

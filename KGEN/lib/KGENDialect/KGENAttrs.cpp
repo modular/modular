@@ -225,20 +225,25 @@ bool TypeConstantAttr::isConcreteType(Type type) {
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type) {
+TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type,
+                                        VTableAttr vtable) {
   auto *ctx = value.getContext();
   // FIXME: Because types with index references not considered parametric, if
   // the index reference is subistituted with a parameter reference, it becomes
   // parametric. This is kind of a gross hack.
   if (isParameterizedType(value))
-    return ParameterizedTypeConstantAttr::Base::get(ctx, value, type);
+    return ParameterizedTypeConstantAttr::Base::get(ctx, value, type, vtable);
 
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
   if (auto refType = ::dyn_cast<ParamRefType>(value))
     return refType.getParam();
 
-  return Base::get(ctx, value, type);
+  return Base::get(ctx, value, type, vtable);
+}
+
+TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type) {
+  return get(value, type, {});
 }
 
 /// Always a constant by definition.
@@ -249,15 +254,25 @@ bool ConcreteTypeConstantAttr::isConstant() const { return true; }
 //===----------------------------------------------------------------------===//
 
 TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
-                                             Type type) {
+                                             Type type, VTableAttr vtable) {
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
   if (auto refType = ::dyn_cast<ParamRefType>(value))
     return refType.getParam();
 
   if (isParameterizedType(value))
-    return Base::get(ctx, value, type);
-  return ConcreteTypeConstantAttr::Base::get(ctx, value, type);
+    return Base::get(ctx, value, type, vtable);
+  return ConcreteTypeConstantAttr::Base::get(ctx, value, type, vtable);
+}
+
+TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
+                                             Type type) {
+  return get(ctx, value, type, {});
+}
+
+TypedAttr ParameterizedTypeConstantAttr::get(Type value, Type type,
+                                             VTableAttr vtable) {
+  return get(type.getContext(), value, type, vtable);
 }
 
 TypedAttr ParameterizedTypeConstantAttr::get(Type value, Type type) {
@@ -2214,4 +2229,8 @@ Type ParameterizedTypeConstantAttr::getType() const { return getImpl()->type; }
 
 Type ParameterizedTypeConstantAttr::getValue() const {
   return getImpl()->value;
+}
+
+VTableAttr ParameterizedTypeConstantAttr::getVtable() const {
+  return getImpl()->vtable;
 }

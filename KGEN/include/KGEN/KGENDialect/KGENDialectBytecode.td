@@ -144,12 +144,14 @@ def ParamIndexRefAttr : DialectAttribute<(attr
 
 def ConcreteTypeConstantAttr : DialectAttribute<(attr
   Type:$value,
-  Type:$type
+  Type:$type,
+  ConcreteOptionalAttribute<"VTableAttr">:$vtable
 )>;
 
 def ParameterizedTypeConstantAttr : DialectAttribute<(attr
   Type:$value,
-  Type:$type
+  Type:$type,
+  ConcreteOptionalAttribute<"VTableAttr">:$vtable
 )>;
 
 def DTypeConstantAttr : DialectAttribute<(attr
