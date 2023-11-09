@@ -11,7 +11,7 @@ Benchmarking Utility Library
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from modular.utils.typing import Dict, List, Optional
+from modular.utils.typing import Dict, Iterable, Optional
 
 
 @dataclass
@@ -43,7 +43,7 @@ class BenchmarkResult:
             return BenchmarkResult.from_lines(summary)
 
     @classmethod
-    def from_lines(cls, lines: List[str]):
+    def from_lines(cls, lines: Iterable[str]):
         """
         Parses the given MLPerf benchmarking log and returns results.
 
