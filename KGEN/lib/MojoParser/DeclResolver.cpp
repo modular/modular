@@ -2403,14 +2403,14 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
 /// Given the lexical context of a function, return true if the default bit
 /// for the function is capturing.
 /// FIXME: The language modeling here is a mess. It needs more thought.
-static bool isCapturingByDefault(LIT::FuncOp funcOp,
+static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
                                  ArrayRef<ParamDeclAttr> inputParamDecls,
                                  ArrayRef<ParamDeclAttr> resultParamDecls) {
   // Nested functions are capturing by default.
   if (funcOp->getParentOfType<LIT::FuncOp>())
     return true;
   // Any function that contains a capturing closure as a parameter is itself
-  // capturing.
+  // capturing, include parent struct parameters.
   mlir::AttrTypeWalker walker;
   walker.addWalk([](SignatureType sig) {
     if (sig.isCapturing())
@@ -2418,7 +2418,9 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp,
     return WalkResult::advance();
   });
   return llvm::any_of(
-      llvm::concat<const ParamDeclAttr>(inputParamDecls, resultParamDecls),
+      llvm::concat<const ParamDeclAttr>(inputParamDecls, resultParamDecls,
+                                        parent ? parent.getInputParams()
+                                               : std::nullopt),
       [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
 }
 
@@ -2794,7 +2796,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Process signature decorators in the same scope as signature resolution.
   auto processSignature = [&] {
-    if (isCapturingByDefault(funcOp, inputParamDecls, resultParamDecls) &&
+    if (isCapturingByDefault(funcOp, structDecl, inputParamDecls,
+                             resultParamDecls) &&
         !effects.isEscaping())
       effects.setCapturing();
 

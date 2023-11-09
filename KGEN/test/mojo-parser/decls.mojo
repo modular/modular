@@ -200,6 +200,20 @@ fn capturing_in_struct[x: Param[fn () capturing -> Int]]():
     pass
 
 
+# CHECK-LABEL: lit.struct.decl @CapturingMember
+struct CapturingMember[f: fn() capturing -> None]:
+    # CHECK-LABEL: lit.func @"member
+    # CHECK-SAME: capturing -> !kgen.none attributes
+    fn member(self):
+        pass
+
+    # CHECK-LABEL: lit.func @"static_method
+    # CHECK-SAME: capturing -> !kgen.none attributes
+    @staticmethod
+    fn static_method():
+        pass
+
+
 ##===----------------------------------------------------------------------===##
 # let
 ##===----------------------------------------------------------------------===##
