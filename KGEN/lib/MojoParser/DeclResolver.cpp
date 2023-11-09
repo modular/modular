@@ -2775,8 +2775,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     if (p.parseExpression(resultTypeExpr))
       return failure();
   }
-  if (p.parseToken(Token::colon, "expected ':' in function definition"))
-    return failure();
+
+  // Check for a missing colon now, but don't yet bail out. We want to be able
+  // to diagnose errors in the signature before we bail out, users often haven't
+  // finished writing the signature when they hit the missing colon.
+  ParseResult missingColon =
+      p.parseToken(Token::colon, "expected ':' in function definition");
 
   // Emit the argument and result types.
   SmallVector<Type> argTypes;
@@ -2835,6 +2839,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // compute the final MLIR types and KGEN conventions.  This also introduces
   // implicit lifetime parameters for borrows/inout/owned arguments.
   computeArgumentConventions(inputParamDecls, args, argTypes);
+
+  // Now that we've processed the signature, bail if we had a missing colon.
+  if (missingColon)
+    return failure();
 
   // Finally now that the full signature has been resolved, build our IR.
 

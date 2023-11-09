@@ -158,3 +158,81 @@ fn function() -> Int:
         item.label == "value" and item.kind == CompletionItemKind.Variable
         for item in items
     )
+
+
+# This following test checks that we can perform code completions within
+# compound statements like `if` and `for`, in partially parsed states.
+
+
+async def check_partial_compound_statement(
+    requests: Requests, doc_name: str, code: str, complete_at: str
+):
+    doc = Document(doc_name, code)
+    requests.open_document(doc)
+
+    # Check that we have completion results.
+    items = fail_if_none(
+        await requests.completion(doc, doc.find_first_pos(complete_at))
+    )
+    assert len(items) != 0
+
+
+async def test_completion_partial_fn(client: LanguageClient):
+    await check_partial_compound_statement(
+        Requests(client),
+        "fn_no_colon.mojo",
+        """
+fn function(arg: Int)
+        """,
+        complete_at="nt",
+    )
+
+
+async def test_completion_partial_if(client: LanguageClient):
+    await check_partial_compound_statement(
+        Requests(client),
+        "if_no_colon.mojo",
+        """
+fn function(arg: Int):
+    if arg.value
+        """,
+        complete_at="value",
+    )
+
+
+async def test_completion_partial_elif(client: LanguageClient):
+    await check_partial_compound_statement(
+        Requests(client),
+        "elif_no_colon.mojo",
+        """
+fn function(arg: Int):
+    if False:
+        return
+    elif arg.value
+        """,
+        complete_at="value",
+    )
+
+
+async def test_completion_partial_while(client: LanguageClient):
+    await check_partial_compound_statement(
+        Requests(client),
+        "while_no_colon.mojo",
+        """
+fn function(arg: Int):
+    while arg.value
+        """,
+        complete_at="value",
+    )
+
+
+async def test_completion_partial_with(client: LanguageClient):
+    await check_partial_compound_statement(
+        Requests(client),
+        "with_no_colon.mojo",
+        """
+fn function(arg: Int):
+    with arg.value
+        """,
+        complete_at="value",
+    )

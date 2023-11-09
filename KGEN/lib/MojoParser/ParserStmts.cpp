@@ -881,8 +881,7 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
-  if (parseAssignExpression(condExp, curIndent) ||
-      parseToken(Token::colon, "expected ':' after expression"))
+  if (parseAssignExpression(condExp, curIndent))
     return failure();
 
   // We will be moving the builder into sub-regions that are created, make sure
@@ -900,6 +899,10 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   RValue condRVal = getEmitter().emitExprI1(condExp, EC_BoolCondition);
   Value condVal =
       getEmitter().emitSRValue({AnyValue(condRVal), condExp}, EC_BoolCondition);
+
+  // After the condition is evaluated, validate the end of the statement.
+  if (parseToken(Token::colon, "expected ':' after expression"))
+    return failure();
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
   builder.create<LIT::LoopConditionOp>(whileLoc, condVal);
@@ -954,8 +957,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return failure();
 
   ExprNode *seqExpr = nullptr;
-  if (parseExpression(seqExpr) ||
-      parseToken(Token::colon, "expected ':' after expression"))
+  if (parseExpression(seqExpr))
     return failure();
 
   // We will be moving the builder into sub-regions that are created, make sure
@@ -984,6 +986,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
                                     seqExpr};
   if (!loadedSeq.ir)
     return {};
+  if (parseToken(Token::colon, "expected ':' after expression"))
+    return failure();
 
   // Emit a call to __iter__ into a var with an inferred type.
   VarLetDeclOp rangeRef =
@@ -1242,13 +1246,12 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       addDecl = true;
     }
   }
+  CValue contextCV = getEmitter().emitExprCValue(contextExp, EC_WithContextMgr);
 
   if (parseToken(Token::colon, "expected ':' after 'with' expression")) {
     enterDest.resetForError();
     return failure();
   }
-
-  CValue contextCV = getEmitter().emitExprCValue(contextExp, EC_WithContextMgr);
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
@@ -1516,8 +1519,7 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   llvm::SaveAndRestore builderSaver(builder);
 
   ExprNode *condExp = nullptr;
-  if (parseAssignExpression(condExp, curIndent) ||
-      parseToken(Token::colon, "expected ':' after 'if' expression"))
+  if (parseAssignExpression(condExp, curIndent))
     return failure();
 
   // Each if/elif conditions could be dynamic or static, use some helpers to
@@ -1574,7 +1576,8 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
       builder.create<ParamYieldOp>(loc);
   };
 
-  if (parseCondAndCreateIf(ifLoc))
+  if (parseCondAndCreateIf(ifLoc) ||
+      parseToken(Token::colon, "expected ':' after 'if' expression"))
     return failure();
   createThenBlock();
   if (failed(parseLocalScopeSuite(curIndent)))
@@ -1584,12 +1587,12 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   while (getToken().is(Token::kw_elif) &&
          isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
     Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
-    if (parseAssignExpression(condExp, std::nullopt) ||
-        parseToken(Token::colon, "expected ':' after 'elif' expression"))
+    if (parseAssignExpression(condExp, std::nullopt))
       return failure();
 
     createElseBlock();
-    if (parseCondAndCreateIf(elifLoc))
+    if (parseCondAndCreateIf(elifLoc) ||
+        parseToken(Token::colon, "expected ':' after 'elif' expression"))
       return failure();
     createYield(elifLoc);
 
