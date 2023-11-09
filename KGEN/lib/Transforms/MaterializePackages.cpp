@@ -6,6 +6,7 @@
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
