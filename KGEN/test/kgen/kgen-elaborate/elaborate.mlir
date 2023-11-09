@@ -2198,3 +2198,30 @@ kgen.generator @top() {
   kgen.call @pass_paramref<:type <index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>() : () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>
   kgen.return
 }
+
+// -----
+
+// test get_type_method
+
+kgen.generator @indexTraitMethod(%arg0: index borrow) -> index {
+  kgen.return %arg0 : index
+}
+
+// COM: Check that this gets elaborated to use the concrete function from the vtable below.
+// CHECK-LABEL: kgen.func @"generic_call,T=index"
+kgen.generator @generic_call<T: type>(%arg0: !kgen.paramref<T> borrow) -> index{
+  kgen.param.declare traitMethod: (index borrow) -> index  = <get_type_method(T, "traitMethod",
+    (index borrow) -> index
+  )>
+  %anInt = kgen.param.constant = <1>
+  // CHECK: kgen.call @indexTraitMethod
+  %result = kgen.call_param[(index borrow) -> index : traitMethod](%anInt)
+  kgen.return %result : index
+}
+
+kgen.generator @make_generic_call() -> index {
+  %anInt = kgen.param.constant = <1>
+  // CHECK: kgen.call @"generic_call,T=index"
+  %result = kgen.call @generic_call<:type #kgen.concretetype.constant<index * #kgen<vtable <"traitMethod" * <(index borrow) -> index> = @indexTraitMethod>>>>(%anInt) : (index borrow) -> index
+  kgen.return %result : index
+}
