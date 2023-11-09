@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -309,6 +310,8 @@ int main(int argc, char **argv) {
   KGEN::registerStripParserMetadata();
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();
+
+  KGEN::MOGGPreElab::registerSliceMOGGFuncs();
 
   // Register passes that require a runtime.
   LLCL::Runtime runtime(
