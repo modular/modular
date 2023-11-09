@@ -20,12 +20,16 @@ namespace M::KGEN::LIT {
 /// the parent function.
 class ParameterCapture {
 public:
+  ParameterCapture(ParamDeclAttr declAttr, int index, unsigned depth,
+                   Operation *definingOp = nullptr)
+      : paramDeclAttr(declAttr), index(index), depth(depth),
+        definingOp(definingOp) {}
   ParameterCapture(StringAttr name, Type type, int index, unsigned depth,
                    Operation *definingOp = nullptr)
-      : name(name), type(type), index(index), depth(depth),
-        definingOp(definingOp) {}
-  StringAttr getName() const { return name; }
-  Type getType() const { return type; }
+      : paramDeclAttr(ParamDeclAttr::get(name, type)), index(index),
+        depth(depth), definingOp(definingOp) {}
+  StringAttr getName() const { return paramDeclAttr.getName(); }
+  Type getType() const { return paramDeclAttr.getType(); }
   int getIndex() const { return index; }
   unsigned getDepth() const { return depth; }
   bool operator<(ParameterCapture const &rhs) const {
@@ -37,10 +41,8 @@ public:
   bool isInputOrResultParameter() const { return definingOp == nullptr; };
 
 private:
-  /// The name of the captured parameter.
-  StringAttr name;
-  /// The type of the captured parameter.
-  Type type;
+  /// The declaration of the captured parameter.
+  ParamDeclAttr paramDeclAttr;
   /// The index of the parameter in its declaration list. -1 if the parameter is
   /// a locally declared parameter.
   int index;
@@ -74,22 +76,25 @@ private:
   SmallVector<ParameterCapture> &orderedCaptures;
 };
 
-/// The CaptureRecordResult represents the potential outcomes of a capture
-/// search.
-enum class CaptureRecordResult { Fail, Success, Error };
+/// Interface for requesting that a parameter reference be recorded as a capture
+/// if the reference and the declaration live in different declaration scopes.
 class CaptureUtility {
 public:
   static ASTDecl *nearestParentFuncOpDecl(ASTDecl &decl,
                                           bool includeMe = false);
 
-  static CaptureRecordResult
-  recordParameterCapture(SharedState &shared, ASTDecl *nestedFunctionDecl,
-                         StringRef srcSpelling, ParamDeclRefAttr paramDeclRef,
-                         Location parameterRefLocation);
-  static CaptureRecordResult
-  recordParameterCapture(SharedState &shared, ASTDecl *nestedFunctionDecl,
-                         ParamDeclRefAttr paramDeclRef,
-                         Location parameterRefLocation);
+  /// Record a parameter capture, include searching local scope.
+  static LogicalResult recordParameterCapture(SharedState &shared,
+                                              ASTDecl *nestedFunctionDecl,
+                                              StringRef srcSpelling,
+                                              ParamDeclRefAttr paramDeclRef,
+                                              Location parameterRefLocation);
+
+  /// Record a parameter capture, do not search local scope.
+  static LogicalResult recordParameterCapture(SharedState &shared,
+                                              ASTDecl *nestedFunctionDecl,
+                                              ParamDeclRefAttr paramDeclRef,
+                                              Location parameterRefLocation);
 };
 } // namespace M::KGEN::LIT
 #endif // KGEN_MOJOPARSER_CAPTUREPARAMETER_H

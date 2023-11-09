@@ -12,7 +12,6 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/CaptureParameter.h"
-#include "KGEN/MojoParser/ClosureEmitter.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
@@ -2997,8 +2996,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // according to declaration so no need to track depth.
     for (auto [i, parameter] : llvm::enumerate(parameterDeclarationsInScope)) {
       if (signatureDecls.contains(parameter.getMangledName()))
-        newParameterInfos.push_back(ParameterCapture(
-            parameter.getMangledName(), parameter.getType(), i, 0));
+        newParameterInfos.push_back(
+            ParameterCapture(parameter.getDecl(), i, 0));
     }
     Type selfType = DeclResolver::createTypeFromSubsetOfParentParameters(
         emitter.shared, declOp, newParameterInfos);
