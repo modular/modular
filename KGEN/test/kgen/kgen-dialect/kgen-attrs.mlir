@@ -61,3 +61,16 @@ kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() 
   %1 = kgen.param.constant: variant<T, U> = <#kgen.variant<:!kgen.paramref<T> value, 0>>
   kgen.return
 }
+
+
+kgen.generator @entry1() -> index {
+  %0 = index.constant 1
+  kgen.return %0 : index
+}
+kgen.generator @entry2() -> index {
+  %0 = index.constant 1
+  kgen.return %0 : index
+}
+
+// CHECK: vtable = #kgen<vtable <"entry1" * <() -> index> = @entry1>, <"entry2" * <() -> index> = @entry2>>
+"some.op"() {vtable = #kgen<vtable <"entry1" * <() -> index> = @entry1>, <"entry2" * <() -> index> = @entry2>>} : () -> ()

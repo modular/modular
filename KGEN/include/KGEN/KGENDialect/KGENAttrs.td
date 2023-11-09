@@ -307,6 +307,35 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
 }
 
 //===----------------------------------------------------------------------===//
+// VTableAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_VTableAttr : KGENAttr<"VTable", "vtable"> {
+  let summary = "Static vtable for structs";
+  let description = [{
+    Static vtable for structs.  Used to implement traits.
+  }];
+
+  let parameters = (ins ArrayRefParameter<"VTableEntryAttr">:$entries);
+
+  let assemblyFormat = "$entries";
+}
+
+def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
+  let summary = "Entry for VTable attr";
+  let description = [{
+    Entry for a VTableAttr.  The name and signature are keys in the
+    table, while the method is the lookup value.
+  }];
+
+  let parameters = (ins "StringAttr":$name,
+                        "SignatureType":$signature,
+                        "SymbolRefAttr":$method
+                        );
+  let assemblyFormat = "`<` $name `*` $signature `=` $method `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
