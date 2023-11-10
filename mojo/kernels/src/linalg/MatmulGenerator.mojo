@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import div_ceil, max, min
-from sys.info import simd_byte_width, simdwidthof
+from sys.info import simdbytewidth, simdwidthof
 
 from algorithm import tile, tile_and_unswitch, vectorize_unroll
 from Matmul import (
@@ -325,7 +325,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         self.packed_b = stack_allocation[
             get_pack_data_size[data_type.value_type](),  # Count.
             data_type.value_type,  # Data type.
-            simd_byte_width(),  # Alignment.
+            simdbytewidth(),  # Alignment.
         ]()
 
     # TODO:
