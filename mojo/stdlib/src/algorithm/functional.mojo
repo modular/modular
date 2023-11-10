@@ -962,8 +962,8 @@ fn _get_start_indices_of_nth_subvolume[
     @parameter
     fn compute_shape[idx: Int]():
         alias i = rank - 1 - idx - subvolume_rank
-        out[i] = curr_index % shape[i]
-        curr_index //= shape[i]
+        out[i] = curr_index._positive_rem(shape[i])
+        curr_index = curr_index._positive_div(shape[i])
 
     unroll[rank - subvolume_rank, compute_shape]()
 
