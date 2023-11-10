@@ -278,6 +278,20 @@ void printParameterValues(OpAsmPrinter &p, Operation *op,
                           ParameterExprArrayAttr values);
 void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
 
+/// Parse and print the parameter spec for a call op.
+/// parameter-decl   ::= identifier (`:` type)?
+/// parameter-bind   ::= identifier (`:` type)? `=` attribute-value
+/// param-decl-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
+/// param-bind-list  ::= parameter-bind (`,` parameter-bind)* | `(` `)`
+/// parameter-spec   ::= `<` param-bind-list (`->` param-decl-list)? `>`
+ParseResult parseCallOpParams(OpAsmParser &p,
+                              ParameterExprArrayAttr &paramValues,
+                              ParamDeclArrayAttr &resultDecls);
+void printCallOpParams(OpAsmPrinter &p, Operation *op,
+                       ArrayRef<TypedAttr> paramValues,
+                       ArrayRef<ParamDeclAttr> resultDecls,
+                       ArrayRef<Type> resultParamTypes);
+
 /// Parse and print a parametric callee and result parameter declarations.
 ParseResult parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
                                   ParamDeclArrayAttr &paramDecls);

@@ -1087,7 +1087,7 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
 
     ```mlir
     %idx0 = index.constant 0
-    %0 = kgen.create_closure [(index) -> index: @h](%idx0)
+    %0 = kgen.create_closure[(index) -> index: @h](%idx0)
     ```
   }];
 
@@ -1096,7 +1096,7 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
                        KGEN_ParamDeclArrayAttr:$paramDecls);
   let results = (outs KGEN_SignatureType:$result);
   let assemblyFormat = [{
-    custom<ParametricCallee>($callee, $paramDecls) `(` $captures `)`
+    `` custom<ParametricCallee>($callee, $paramDecls) `(` $captures `)`
     custom<ClosureCaptureTypes>(ref($callee), ref($captures), type($captures))
     attr-dict
   }];

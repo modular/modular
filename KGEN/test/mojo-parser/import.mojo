@@ -27,9 +27,9 @@ from test_package import *
 import builtin
 
 # CHECK-LABEL: lit.func @"test_function_calls($builtin::$int::Int)"
-# CHECK:  kgen.call @"$test_package"::@"$module"::@"function()"
-# CHECK:  kgen.call @"$test_package"::@"$test_nested_package"::@"$module"::@"nested_function()"
-# CHECK:  kgen.call @"$test_package"::@"$__init__"::@"method_defined_in_init()"()
+# CHECK:  lit.call @"$test_package"::@"$module"::@"function()"
+# CHECK:  lit.call @"$test_package"::@"$test_nested_package"::@"$module"::@"nested_function()"
+# CHECK:  lit.call @"$test_package"::@"$__init__"::@"method_defined_in_init()"()
 
 # CHECK-LABEL: lit.package @"$test_package"
 # CHECK-SAME: sourceName = "test_package"
@@ -37,7 +37,7 @@ import builtin
 # CHECK-SAME: sourceName = "module"
 # CHECK:    lit.func @"function()"
 # CHECK:      lit.func @"call_nested_function()"
-# CHECK:        kgen.call @"$test_package"::@"$test_nested_package"::@"$module"::@"nested_function()"
+# CHECK:        lit.call @"$test_package"::@"$test_nested_package"::@"$module"::@"nested_function()"
 # CHECK:  lit.package @"$test_nested_package"
 # CHECK:    lit.file_module @"$module"
 # CHECK:      lit.func @"nested_function()"

@@ -21,17 +21,17 @@ struct MemType:
 # CHECK-NEXT: lit.ref.store %q, %q_0
 # CHECK-NEXT: %[[V2:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V3:.*]] = lit.ref.load %[[V0REF]]
-# CHECK-NEXT: %[[V4:.*]] = kgen.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : !lit.signature<("self": !Int borrow, "rhs": !Int borrow) -> !Int>
+# CHECK-NEXT: %[[V4:.*]] = lit.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : !lit.signature<("self": !Int borrow, "rhs": !Int borrow) -> !Int>
 # CHECK-NEXT: lit.ref.store %[[V4]], %[[V0REF]]
 # CHECK-NEXT: %[[V5:.*]] = lit.ref.load %[[V1REF]]
-# CHECK-NEXT: %[[V6:.*]] = kgen.call @{{.*}}@"use{{.*}}"(%[[V5]])
+# CHECK-NEXT: %[[V6:.*]] = lit.call @{{.*}}@"use{{.*}}"(%[[V5]])
 # CHECK-NEXT: %[[V7:.*]] = kgen.param.constant: none
 # CHECK-NEXT: lit.return %[[V7]] : !kgen.none
 # CHECK-NEXT: lit.end_func
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, |, %p[p]: !Int borrow) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %[[SELF]][field0] : <!MemType>
-# CHECK-NEXT: %[[W1:.*]] = kgen.call @{{.*}}::@"use{{.*}}"(%[[W0]])
+# CHECK-NEXT: %[[W1:.*]] = lit.call @{{.*}}::@"use{{.*}}"(%[[W0]])
 # CHECK-NEXT: %[[W2:.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %[[W2]] : !kgen.none
 # CHECK-NEXT: lit.end_func
@@ -49,7 +49,7 @@ struct MemType:
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, |, %y[y]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %[[SELF]][field0] : <!MemType>
-# CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%[[RES]], %[[W0]], %y)
+# CHECK-NEXT: %[[W2:.*]] = lit.call @{{.*}}__add__{{.*}}(%[[RES]], %[[W0]], %y)
 # CHECK-NEXT: %[[W4:.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %[[W4]] : !kgen.none
 # CHECK-NEXT: lit.end_func

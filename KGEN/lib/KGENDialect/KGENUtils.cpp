@@ -1662,6 +1662,74 @@ void KGEN::printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
   p << '>';
 }
 
+ParseResult KGEN::parseCallOpParams(OpAsmParser &p,
+                                    ParameterExprArrayAttr &paramValues,
+                                    ParamDeclArrayAttr &resultDecls) {
+
+  if (p.parseOptionalLess()) {
+    // If there is no <, then the params of the call op are empty, so set
+    // paramValues and paramDecls to empty and return.
+    paramValues = ParameterExprArrayAttr::get(p.getContext(), {});
+    resultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
+    return success();
+  }
+
+  // Parse the input list
+  SmallVector<TypedAttr> values;
+  if (p.parseOptionalLSquare()) {
+    if (p.parseCommaSeparatedList([&] {
+          return parseParamValueDefaultingToIndex(p, values.emplace_back());
+        }))
+      return failure();
+  } else if (p.parseRSquare()) {
+    return failure();
+  }
+  paramValues = ParameterExprArrayAttr::get(p.getContext(), values);
+
+  // Check to see if we have results and parse them if so.
+  if (p.parseOptionalArrow()) {
+    resultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
+    return p.parseGreater();
+  }
+
+  SmallVector<ParamDeclAttr> decls;
+  auto parseElt = [&]() -> ParseResult {
+    StringAttr declName;
+    Type type;
+    if (parseParamName(p, declName) || parseColonTypeOrIndex(p, type))
+      return failure();
+    decls.push_back(ParamDeclAttr::get(declName, type));
+    return success();
+  };
+  if (p.parseCommaSeparatedList(parseElt))
+    return failure();
+  resultDecls = ParamDeclArrayAttr::get(p.getContext(), decls);
+  return p.parseGreater();
+}
+
+void KGEN::printCallOpParams(OpAsmPrinter &p, Operation *op,
+                             ArrayRef<TypedAttr> paramValues,
+                             ArrayRef<ParamDeclAttr> resultDecls,
+                             ArrayRef<Type> resultParamTypes) {
+  if (paramValues.empty() && resultDecls.empty())
+    return;
+  p << "<";
+  if (paramValues.empty())
+    p << "[]";
+  else
+    llvm::interleaveComma(paramValues, p, [&](TypedAttr value) {
+      printColonTypeParamValue(p, value);
+    });
+  if (!resultDecls.empty()) {
+    p << " -> ";
+    llvm::interleaveComma(resultDecls, p, [&](ParamDeclAttr decl) {
+      printParamName(p, decl.getName());
+      printColonTypeOrIndex(p, decl.getType());
+    });
+  }
+  p << ">";
+}
+
 ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
                                         ParamDeclArrayAttr &paramDecls) {
   Type type;

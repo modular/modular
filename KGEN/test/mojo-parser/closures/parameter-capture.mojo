@@ -116,6 +116,7 @@ fn test_captures_are_ordered_correctly[
 
     return p_capture
 
+
 # // -----
 
 # COM: Check that the parameter is properly added to the ClosureImpl despite being defined two levels up.
@@ -124,17 +125,21 @@ fn test_captures_are_ordered_correctly[
 # CHECK-SAME: <p0[p0]: !Int, |>
 
 # COM: Check that the closure impl parameter is bound to the struct parameter:
-# CHECK: kgen.call @"${{.*}}"::@"_CI_{{.*}}"::@"__init__{{.*}}"<:!Int [[ALoc:.*]]_A>(%0, %self) : !lit.signature<("self": !kgen.pointer<@"${{.*}}"::@"_CI_{{.*}}"<:!Int [[ALoc]]_A>
+# CHECK: lit.call @"${{.*}}"::@"_CI_{{.*}}"::@"__init__{{.*}}"<:!Int [[ALoc:.*]]_A>(%0, %self) : !lit.signature<("self": !kgen.pointer<@"${{.*}}"::@"_CI_{{.*}}"<:!Int [[ALoc]]_A>
+
 
 @value
 @register_passable
-struct Foo[A : Int]:
-  var b:Int
-  fn get[C:Int](self) -> fn(y:Int) escaping -> Int:
-    fn bar(y:Int) escaping -> Int:
-       let w = A + self.b + y
-       return w
-    return bar
+struct Foo[A: Int]:
+    var b: Int
+
+    fn get[C: Int](self) -> fn (y: Int) escaping -> Int:
+        fn bar(y: Int) escaping -> Int:
+            let w = A + self.b + y
+            return w
+
+        return bar
+
 
 # // -----
 
@@ -147,53 +152,69 @@ struct Foo[A : Int]:
 # CHECK-SAME: <p0[p0]: !Int, p1[p1]: !Int, |>
 
 # COM: Check that the closure impl parameter is bound to the struct parameter:
-# CHECK: kgen.call @"${{.*}}"::@"_CI_{{.*}}"::@"__init__{{.*}}"<:!Int [[ALoc:.*]]_A, :!Int [[BLoc:.*]]_B>(%0, %self) : !lit.signature<("self": !kgen.pointer<@"${{.*}}"::@"_CI_{{.*}}"<:!Int [[ALoc]]_A, :!Int [[BLoc]]_B>
+# CHECK: lit.call @"${{.*}}"::@"_CI_{{.*}}"::@"__init__{{.*}}"<:!Int [[ALoc:.*]]_A, :!Int [[BLoc:.*]]_B>(%0, %self) : !lit.signature<("self": !kgen.pointer<@"${{.*}}"::@"_CI_{{.*}}"<:!Int [[ALoc]]_A, :!Int [[BLoc]]_B>
 
 # COM: Check that the closure wrapper parameter is bound to the struct parameter:
-# CHECK: kgen.call @"${{.*}}"::@"_CW_{{.*}}"::@"__init__{{.*}}"<:!Int [[ALoc:.*]]_A, :!Int [[BLoc:.*]]_B>(%{{.*}}, %0) : !lit.signature<("self": !kgen.pointer<@"${{.*}}"::@"_CW_{{.*}}"<:!Int [[ALoc]]_A, :!Int [[BLoc]]_B>
+# CHECK: lit.call @"${{.*}}"::@"_CW_{{.*}}"::@"__init__{{.*}}"<:!Int [[ALoc:.*]]_A, :!Int [[BLoc:.*]]_B>(%{{.*}}, %0) : !lit.signature<("self": !kgen.pointer<@"${{.*}}"::@"_CW_{{.*}}"<:!Int [[ALoc]]_A, :!Int [[BLoc]]_B>
+
 
 @value
-struct Foo[C:Int, D:Int]:
-   var x:Int
-   fn get(self) -> Int:
-      return self.x + C
+struct Foo[C: Int, D: Int]:
+    var x: Int
+
+    fn get(self) -> Int:
+        return self.x + C
+
 
 @value
 @register_passable
-struct Bat[A : Int]:
- var b:Int
- fn get[B:Int](self) -> fn(y:Int) escaping -> Foo[B,A]:
-   fn bar(y:Int) escaping -> Foo[B,A]:
-      let w = B + self.b + y
-      return Foo[B,A](w + A)
-   return bar
+struct Bat[A: Int]:
+    var b: Int
+
+    fn get[B: Int](self) -> fn (y: Int) escaping -> Foo[B, A]:
+        fn bar(y: Int) escaping -> Foo[B, A]:
+            let w = B + self.b + y
+            return Foo[B, A](w + A)
+
+        return bar
+
 
 # // -----
 
 # COM: Capture inside a nested escaping closure.
 
+
 @value
 struct MemType:
-    var x:Int
+    var x: Int
+
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType(rhs.x + self.x)
+
     fn __add__(self, rhs: Int) -> MemType:
-        return MemType(self.x+rhs)
+        return MemType(self.x + rhs)
+
 
 # COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
 # CHECK: lit.struct.decl @"_CI_${{.*}}_fn[$builtin::$int::Int](fld0 = ${{.*}}::MemType, /, , n = ${{.*}}::MemType) escaping -> ${{.*}}::MemType_escaping"<p0[p0]: !Int, |>
 
+
 # COM: Check that the parameter capture "A" is forwarded to the outer escaping closure
 # CHECK: lit.struct.decl @"_CI_${{.*}}_fn[$builtin::$int::Int](fld0 = ${{.*}}::MemType, /, , k = ${{.*}}::MemType, l = ${{.*}}::MemType) escaping -> ${{.*}}::MemType_escaping"<p0[p0]: !Int, |>
-fn makes_escaping_closure[A:Int](m: MemType) -> fn(n: MemType) escaping -> MemType:
+fn makes_escaping_closure[
+    A: Int
+](m: MemType) -> fn (n: MemType) escaping -> MemType:
     fn myclosure(n: MemType) escaping -> MemType:
         fn nested_nested(k: MemType, l: MemType) escaping -> MemType:
             return n + k + A
 
-        return nested_nested(n,m)
+        return nested_nested(n, m)
+
     return myclosure
 
+
 # // -----
+
 
 @value
 @register_passable
@@ -201,13 +222,18 @@ struct Foo[A: Int, B: DType]:
     fn get(self) -> Int:
         return A
 
+
 # COM: Ensure the captured parameter is added to the Closure Impl
 # CHECK: lit.struct.decl @"_CI_{{.*}}"<p0[p0]: !DType, |>
 
 # COM: Ensure the captured parameter is added to the Closure Wrapper
 # CHECK: lit.struct.decl @"_CW_{{.*}}"<p0[p0]: !DType, |>
 
-fn make_closure[c_type:DType](w:Int) -> fn (z:Foo[2, c_type]) escaping -> None:
-   fn foo(z:Foo[2,c_type]) escaping -> None:
-      print(z.get())
-   return foo
+
+fn make_closure[
+    c_type: DType
+](w: Int) -> fn (z: Foo[2, c_type]) escaping -> None:
+    fn foo(z: Foo[2, c_type]) escaping -> None:
+        print(z.get())
+
+    return foo

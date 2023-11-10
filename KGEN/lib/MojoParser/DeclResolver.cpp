@@ -714,7 +714,8 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   auto shimBodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
       shimMainFn->getLoc(), shimMainFn.getBody());
   auto wrappedCall = shimBodyBuilder.create<CallOp>(
-      shimMainFn.getArgumentTypes()[0], wrapperFnRef, ArrayRef<ParamDeclAttr>(),
+      shimMainFn.getArgumentTypes()[0], wrapperFnRef,
+      /*lifetimeParams=*/std::nullopt, /*paramDecls=*/ArrayRef<ParamDeclAttr>(),
       shimMainFn.getArguments());
   shimBodyBuilder.create<LIT::ReturnOp>(wrappedCall.getResults());
   shimBodyBuilder.create<EndFuncOp>();

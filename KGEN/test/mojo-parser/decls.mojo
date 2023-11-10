@@ -65,7 +65,7 @@ fn take_closure(
     g: fn(borrowed __mlir_type.index) capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ):
-    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow, |) capturing -> index>
+    # CHECK: %0 = lit.call_signature %g(%x) : !lit.signature<(index borrow, |) capturing -> index>
     let result = g(x)
 
 
@@ -76,12 +76,12 @@ fn take_closure_no_param_main():
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: %0 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: *"g(__mlir_type.index)"]()
+    # CHECK: %0 = kgen.create_closure[!lit.signature<("y": index borrow) capturing -> index>: *"g(__mlir_type.index)"]()
     # CHECK: %W = lit.letreg.decl "W" = %0
     # CHECK: %1 = kgen.rebind %W : !kgen.signature<!lit.signature<("y": index borrow) capturing -> index>>
     # CHECK-SAME: to !kgen.signature<!lit.signature<(index borrow, |) capturing -> index>>
     let W = g
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %index3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow, |) capturing -> index>> borrow, "x": index borrow) -> !kgen.none>
+    # CHECK: lit.call @"$decls"::@"take_closure{{.*}}"(%1, %index3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow, |) capturing -> index>> borrow, "x": index borrow) -> !kgen.none>
     take_closure(W, Int(3).value)
 
 
@@ -101,16 +101,16 @@ fn take_closure_with_param_main():
 
     # CHECK: lit.alias.decl [[BOUND:.*]]: !lit.signature<("y": index borrow) capturing -> index> =
     # CHECK-SAME: <bind_signature(:!lit.signature<<"N": index>("y": index borrow) capturing -> index> *"g[__mlir_type.index](__mlir_type.index)", 3)>
-    # CHECK: %0 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: [[BOUND]]]()
+    # CHECK: %0 = kgen.create_closure[!lit.signature<("y": index borrow) capturing -> index>: [[BOUND]]]()
     alias Bound = g[Int(3).value]
 
     # CHECK: %value = lit.letreg.decl "value" = %0
     let value = Bound
     # CHECK: %1 = kgen.rebind %value
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %x)
+    # CHECK: lit.call @"$decls"::@"take_closure{{.*}}"(%1, %x)
     take_closure(value, x)
 
-    # CHECK: %3 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: bind_signature(:!lit.signature<<"N": index, "M": index>("y": index borrow) capturing -> index> *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
+    # CHECK: %3 = kgen.create_closure[!lit.signature<("y": index borrow) capturing -> index>: bind_signature(:!lit.signature<<"N": index, "M": index>("y": index borrow) capturing -> index> *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
     # CHECK: %Q = lit.letreg.decl "Q" = %3
     let Q = h[Int(1).value, Int(8).value]
     take_closure(Q, x)
@@ -120,7 +120,7 @@ fn take_closure_raises(
     g: fn(borrowed __mlir_type.index) raises capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ) raises:
-    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow, |) throws|capturing -> !kgen.variant<!Error, index>>
+    # CHECK: %0 = lit.call_signature %g(%x) : !lit.signature<(index borrow, |) throws|capturing -> !kgen.variant<!Error, index>>
     let result = g(x)
 
 
@@ -152,8 +152,8 @@ struct BoxedInt:
 
 fn member_method_reference():
     let x = BoxedInt(3)
-    # CHECK: %[[SELF:.*]] = kgen.call {{.*}}__copyinit__
-    # CHECK: %[[C:.*]] = kgen.create_closure [{{.*}}boxedAdd{{.*}}](%[[SELF]])
+    # CHECK: %[[SELF:.*]] = lit.call {{.*}}__copyinit__
+    # CHECK: %[[C:.*]] = kgen.create_closure[{{.*}}boxedAdd{{.*}}](%[[SELF]])
     # CHECK: lit.letreg.decl "closure" = %[[C]]
     let closure = x.boxedAdd
     # CHECK: %[[CST:.*]] = kgen.param.constant
@@ -167,7 +167,7 @@ fn capture_by_copy():
 
     # CHECK: %[[TMP:.*]] = pop.stack_allocation
     # CHECK-NEXT: %[[VAL:.*]] = lit.ref.load %c
-    # CHECK-NEXT: %[[COPY:.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%[[VAL]])
+    # CHECK-NEXT: %[[COPY:.*]] = lit.call {{.*}}__copyinit__{{.*}}(%[[VAL]])
     # CHECK-NEXT: pop.store %[[COPY]], %[[TMP]]
     # CHECK-NEXT: %[[RAW:.*]] = pop.load %[[TMP]]
     # CHECK-NEXT: lit.func *"value_closure
@@ -226,7 +226,7 @@ def let_decls() -> None:
     # CHECK: %y = lit.letreg.decl "y" = %0 : {{.*}}FloatLiteral
     let y = 1.0
 
-    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}Int::@"__init__{{.*}}(%x)
+    # CHECK: [[TMP:%.*]] = lit.call {{.*}}Int::@"__init__{{.*}}(%x)
     # CHECK: %z = lit.letreg.decl "z" = [[TMP]]
     let z = Int(x)
 
@@ -251,7 +251,7 @@ def var_decls() -> None:
 
     # CHECK: [[Y:%.*]] = lit.ref.load %y
     # CHECK: [[ONE:%.*]] = kgen.param.constant: !Int {{.*}} 1
-    # CHECK: [[ADD:%.*]] = kgen.call {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)"([[Y]], [[ONE]])
+    # CHECK: [[ADD:%.*]] = lit.call {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)"([[Y]], [[ONE]])
     # CHECK: lit.ref.store [[ADD]], %y
     y = y + 1
 
@@ -335,41 +335,41 @@ fn packOverload():
 
 # CHECK-LABEL: lit.func @"callOverload
 fn callOverload(a: Int):
-    # CHECK: kgen.call @"$decls"::@"testThing({{.*}}$int::Int)"(%a)
+    # CHECK: lit.call @"$decls"::@"testThing({{.*}}$int::Int)"(%a)
     _ = testThing(a)
-    # CHECK: kgen.call @"$decls"::@"testThing({{.*}}$int::Int,{{.*}}$int::Int)"(%a, %a)
+    # CHECK: lit.call @"$decls"::@"testThing({{.*}}$int::Int,{{.*}}$int::Int)"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: kgen.create_closure [!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
+    # CHECK: kgen.create_closure[!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
     # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: kgen.create_closure [!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
+    # CHECK: kgen.create_closure[!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
     # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.create_closure [!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
+    # CHECK: %4 = kgen.create_closure[!lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}>>:
     # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     let float2: IntToFloat32Type = testThing
 
-    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}::Int, /) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:
+    # CHECK: lit.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}::Int, /) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:
     # CHECK-SAME: !lit.signature<(!Int borrow, |) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}>> rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing{{.*}}")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
     # less specific.
-    # CHECK: kgen.call @"$decls"::@"varargOverload({{.*}}$int::Int)"(%{{.*}})
+    # CHECK: lit.call @"$decls"::@"varargOverload({{.*}}$int::Int)"(%{{.*}})
     varargOverload(2)
 
-    # CHECK:  kgen.call @"$decls"::@"varargOverload()"()
+    # CHECK:  lit.call @"$decls"::@"varargOverload()"()
     varargOverload()
 
     # Expect packs to behave similarly to varargs.
     # CHECK: %[[IDX3:.*]] = {{.*}}constant{{.*}} 3
-    # CHECK: kgen.call @"$decls"::@"packOverload({{.*}}$int::Int)"(%[[IDX3]])
+    # CHECK: lit.call @"$decls"::@"packOverload({{.*}}$int::Int)"(%[[IDX3]])
     packOverload(3)
-    # CHECK:  kgen.call @"$decls"::@"packOverload()"()
+    # CHECK:  lit.call @"$decls"::@"packOverload()"()
     packOverload()
 
 
@@ -424,37 +424,37 @@ fn paramOverload2[*x: MyInt]():
 
 # CHECK-LABEL: lit.func @"callParametricOverload
 fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
-    # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}$int::Int]()"
+    # CHECK: lit.call @"$decls"::@"paramOverload[{{.*}}$int::Int]()"
     paramOverload[a]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}$int::Int,{{.*}}$int::Int]()"
+    # CHECK: lit.call @"$decls"::@"paramOverload[{{.*}}$int::Int,{{.*}}$int::Int]()"
     paramOverload[a, b]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
+    # CHECK: lit.call @"$decls"::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
     paramOverload[a, b, c]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload({{.*}}$int::Int)"
+    # CHECK: lit.call @"$decls"::@"paramOverload({{.*}}$int::Int)"
     paramOverload(x)
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}$int::Int,AnyType]($1)"
+    # CHECK: lit.call @"$decls"::@"paramOverload[{{.*}}$int::Int,AnyType]($1)"
     paramOverload[a](x)
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]({{.*}}$int::Int)"
+    # CHECK: lit.call @"$decls"::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]({{.*}}$int::Int)"
     paramOverload[a, b](x)
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
+    # CHECK: lit.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
     paramOverload2[a]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
+    # CHECK: lit.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
     paramOverload2[a, b]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[$decls::MyInt]()"
+    # CHECK: lit.call @"$decls"::@"paramOverload2[$decls::MyInt]()"
     paramOverload2[MyInt(a)]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[$decls::MyInt,$decls::MyInt]()"
+    # CHECK: lit.call @"$decls"::@"paramOverload2[$decls::MyInt,$decls::MyInt]()"
     paramOverload2[MyInt(a), b]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}MyInt{{.*}}>]()"
+    # CHECK: lit.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}MyInt{{.*}}>]()"
     paramOverload2[MyInt(a), b, c]()
 
 
@@ -471,7 +471,7 @@ struct MyStruct:
 fn test_static_overload():
     var a = MyStruct()
     # CHECK: %2 = lit.ref.to_pointer %a
-    # CHECK: kgen.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%2) : !lit.signature<("self": !kgen.pointer<!MyStruct> byref) -> !kgen.none>
+    # CHECK: lit.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%2) : !lit.signature<("self": !kgen.pointer<!MyStruct> byref) -> !kgen.none>
     a.foo()
 
 
@@ -532,7 +532,7 @@ fn math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
 # CHECK-LABEL: lit.func @"useIt
 fn useIt(a: __mlir_type.index) -> __mlir_type.index:
     # CHECK: %index3 = kgen.param.constant = <3>
-    # CHECK: %0 = kgen.call @"$decls"::@"math(
+    # CHECK: %0 = lit.call @"$decls"::@"math(
     # CHECK: lit.return %0 : index
     return math(a, math(Int(1).value, Int(2).value))
 
@@ -544,7 +544,7 @@ fn returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"callReturnParam
 fn callReturnParam() -> __mlir_type.index:
-    # CHECK-NEXT: %0 = kgen.call @"$decls"::@"returnParameter[__mlir_type.index]()"<3>()
+    # CHECK-NEXT: %0 = lit.call @"$decls"::@"returnParameter[__mlir_type.index]()"<3>()
     # CHECK-NEXT: return %0
     return returnParameter[Int(3).value]()
 
@@ -589,7 +589,7 @@ fn adaptiveNestedFns(a: Int, b: Int):
 fn nestedFnInLoop():
     # CHECK: lit.loop
     for i in range(10):
-        # CHECK: kgen.call @{{.*}}__next__
+        # CHECK: lit.call @{{.*}}__next__
         # CHECK: lit.func *"foo()"
         @always_inline
         @noncapturing
@@ -598,7 +598,7 @@ fn nestedFnInLoop():
             # CHECK-NEXT: return %[[I]]
             return i
 
-        # CHECK: kgen.call_param[!lit.signature<() -> !Int>: *"foo()"]()
+        # CHECK: lit.call_param[!lit.signature<() -> !Int>: *"foo()"]()
         let result = foo()
 
 
@@ -695,11 +695,11 @@ struct BorrowStruct:
 # CHECK-LABEL: callerFn
 # CHECK-SAME: (%arg0[arg0]: !kgen.pointer<{{.*}}> borrow_in_mem)
 fn callerFn(borrowed arg0: BorrowStruct):
-    # CHECK-NEXT: kgen.call {{.*}}testMethod{{.*}}(%arg0)
+    # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
 
     # CHECK: %1 = pop.variadic.create [%arg0, %arg0]
-    # CHECK: kgen.call {{.*}}borrowedVarArgs{{.*}}(%arg0, %1)
+    # CHECK: lit.call {{.*}}borrowedVarArgs{{.*}}(%arg0, %1)
     arg0.borrowedVarArgs(arg0, arg0)
 
 
@@ -717,11 +717,11 @@ fn defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
 fn callDefaultArgument(x: Int) -> Int:
     # CHECK-NEXT: %[[ARG1:.*]] = kgen.param.constant{{.*}} = 3
     # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5
-    # CHECK-NEXT: kgen.call {{.*}}defaultArgument{{.*}}(%x, %[[ARG1]], %[[ARG2]])
+    # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, %[[ARG1]], %[[ARG2]])
     # CHECK-NEXT: lit.letreg.decl "a"
     let a = defaultArgument(x)
     # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5
-    # CHECK-NEXT: kgen.call {{.*}}defaultArgument{{.*}}(%x, %x, %[[ARG2]])
+    # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, %x, %[[ARG2]])
     let b = defaultArgument(x, x)
     return a + b
 
@@ -774,20 +774,20 @@ fn test_byref_default():
     # CHECK-DAG: %[[DEF_VAL_0:.*]] = kgen.param.constant: !Int
     # CHECK: lit.ref.store %[[DEF_VAL_0]], %[[DEF_ARG_0]]
     # CHECK: %[[ARG0:.*]] = lit.ref.to_pointer %[[DEF_ARG_0]]
-    # CHECK: kgen.call @{{.*}}::@"byref_default({{.*}}::Int&)"(%[[ARG0]])
+    # CHECK: lit.call @{{.*}}::@"byref_default({{.*}}::Int&)"(%[[ARG0]])
     byref_default()
 
     # CHECK-DAG: %[[DEF_ARG_1:.*]] = lit.varlet.decl "__default_arg_0__" synth : !lit.ref<mut !MemoryType,
     # CHECK-DAG: %[[DEF_VAL_1:.*]] = kgen.param.materialize: !MemoryType
     # CHECK: lit.ref.store %[[DEF_VAL_1]], %[[DEF_ARG_1]] : <mut !MemoryType, *"`__default_arg_0__1">
     # CHECK: %[[ARG1:.*]] = lit.ref.to_pointer %[[DEF_ARG_1]] : <mut !MemoryType, *"`__default_arg_0__1">
-    # CHECK: kgen.call @{{.*}}::@"byref_default_mem_only({{.*}}::MemoryType&)"(%[[ARG1]])
+    # CHECK: lit.call @{{.*}}::@"byref_default_mem_only({{.*}}::MemoryType&)"(%[[ARG1]])
     byref_default_mem_only()
 
 
 # CHECK-LABEL: lit.func @"variadics({{.*}}$int::Int*)"(%a[a]: !kgen.variadic<!Int> borrow) vararg
 fn variadics(*a: Int):
-    # CHECK-NEXT: %[[LIST:.*]] = kgen.call {{.*}}VariadicList{{.*}}__init__
+    # CHECK-NEXT: %[[LIST:.*]] = lit.call {{.*}}VariadicList{{.*}}__init__
     # CHECK-NEXT: lit.letreg.decl "a" {{.*}}%[[LIST]]
     let size = len(a)
     let elt0 = a[0]
@@ -832,11 +832,11 @@ fn callVariadic[p: Int](x: Int):
 
     # CHECK: @"parameterizedVariadic{{.*}}"<:type !Int>
     parameterizedVariadic(1, 2)
-    # CHECK: kgen.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"<:type !Int>
+    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"<:type !Int>
     _ = ParameterizedStruct(3)
-    # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS:.*]]]=&)"<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS:.*]]]=&)"<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
     _ = VarArgsParameterizedStruct[4, 5]()
-    # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS]]]=&)"<:variadic<!Int> []>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS]]]=&)"<:variadic<!Int> []>
     _ = VarArgsParameterizedStruct()
 
 
@@ -884,31 +884,31 @@ fn usePacks(x: Float32, y: Int):
     let e = MyTuple()
 
     # CHECK: %[[PACK1:.*]] = kgen.param.constant: !kgen.pack<[index]> = <<1>>
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}}(%[[PACK1]])
+    # CHECK: lit.call @"$decls"::@"pack{{.*}}(%[[PACK1]])
     pack(Int(1).value)
     # CHECK: %[[PACK2:.*]] = kgen.param.constant: !kgen.pack<[index, {{.*}}FloatLiteral, index]> = <<1, {{.*}}3.14{{.*}}, 2>>
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, {{.*}}FloatLiteral, index]>(%[[PACK2]])
+    # CHECK: lit.call @"$decls"::@"pack{{.*}} [index, {{.*}}FloatLiteral, index]>(%[[PACK2]])
     pack(Int(1).value, 3.14, Int(2).value)
     # CHECK: %[[PACK3:.*]] = kgen.param.constant: !kgen.pack<[]> = <<>>
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} []>(%[[PACK3]])
+    # CHECK: lit.call @"$decls"::@"pack{{.*}} []>(%[[PACK3]])
     pack()
 
     # CHECK: %[[PACK4:.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK4]])
+    # CHECK: lit.call @"$decls"::@"pack{{.*}} [index, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK4]])
     pack(Int(1).value, x, y)
     # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK: %[[PACK5:.*]] = kgen.pack.create(%[[INTCTOR]], %x, %y)
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK5]])
+    # CHECK: lit.call @"$decls"::@"pack{{.*}} [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK5]])
     pack[Int, Float32, Int](Int(1).value, x, y)
 
     # CHECK: kgen.param.constant = <1>
     # CHECK-NEXT: [[PACK6:%.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
+    # CHECK-NEXT: lit.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed(Int(1).value, x, y)
 
-    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}]>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}]>
     variadicParameter[Int, Float32](1)
-    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
     variadicParameter(Int(2).value)
 
 
@@ -934,17 +934,17 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 def implicit_return_obj():
     # CHECK: if
     if False:
-        # CHECK: kgen.call {{.*}}object::@"__init__{{.*}}%__result__
+        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
         # CHECK: kgen.variant.create
         # CHECK: return
         return
     # CHECK: else
     else:
-        # CHECK: kgen.call {{.*}}object::@"__init__{{.*}}%__result__
+        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
         # CHECK: kgen.variant.create
         # CHECK: return
         return 5
-    # CHECK: kgen.call {{.*}}object::@"__init__
+    # CHECK: lit.call {{.*}}object::@"__init__
     # CHECK: kgen.variant.create
     # CHECK: lit.return
     _ = 5
@@ -1056,7 +1056,7 @@ struct StructWithInit:
     fn __init__(inout self, a: Int, b: Int):
         # CHECK: hlcf.if
         if a == b:
-            # CHECK:  kgen.call {{.*}}__init__{{.*}}(%self, %a)
+            # CHECK:  lit.call {{.*}}__init__{{.*}}(%self, %a)
             self = StructWithInit(a)
         else:
 
@@ -1084,7 +1084,7 @@ struct StructExample:
     @staticmethod
     fn static(x: Int):
         # CHECK: %0 = {{.*}}#lit.struct<{value = 4}>
-        # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%0)
+        # CHECK: lit.call @"$decls"::@StructExample::@"static{{.*}}"(%0)
         StructExample.static(4)
         pass
 
@@ -1095,11 +1095,11 @@ struct StructExample:
 
 # CHECK: lit.func @"callStatic{{.*}}(%a[a]: !Int borrow)
 fn callStatic(a: Int):
-    # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a)
+    # CHECK: lit.call @"$decls"::@StructExample::@"static{{.*}}(%a)
     StructExample.static(a)
 
-    # CHECK: kgen.call @"$decls"::@StructExample::@"__init__{{.*}}()
-    # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a)
+    # CHECK: lit.call @"$decls"::@StructExample::@"__init__{{.*}}()
+    # CHECK: lit.call @"$decls"::@StructExample::@"static{{.*}}(%a)
     StructExample().static(a)
 
 
@@ -1110,7 +1110,7 @@ struct DelegatingInitMem:
 
     # CHECK: lit.func @"__init__{{.*}}(%self
     fn __init__(inout self, value: Bool):
-        # CHECK: kgen.call @{{.*}}__init__{{.*}}(%self, %0)
+        # CHECK: lit.call @{{.*}}__init__{{.*}}(%self, %0)
         self.__init__(42)
 
     fn __init__(inout self, value: Int):
@@ -1158,7 +1158,7 @@ struct ValueMem:
 # CHECK-NEXT: %3 = lit.struct.gep %self[b]
 # CHECK-NEXT: %4 = lit.struct.gep %other[b]
 # CHECK-NEXT: %5 = pop.load %4
-# CHECK-NEXT: %6 = kgen.call {{.*}}__copyinit__{{.*}}(%5)
+# CHECK-NEXT: %6 = lit.call {{.*}}__copyinit__{{.*}}(%5)
 # CHECK-NEXT: pop.store %6, %3
 # CHECK-NEXT: kgen.param.constant: none
 
@@ -1197,7 +1197,7 @@ struct ValueReg:
 # CHECK-SAME: attributes {{.*}}specialFnKind = 7 : i8
 # CHECK-NEXT: %0 = lit.struct.extract %other[a]
 # CHECK-NEXT: %1 = lit.struct.extract %other[b]
-# CHECK-NEXT: %2 = kgen.call {{.*}}__copyinit__{{.*}}(%1)
+# CHECK-NEXT: %2 = lit.call {{.*}}__copyinit__{{.*}}(%1)
 # CHECK-NEXT: %3 = lit.struct.create(a=%0, b=%2)
 # CHECK-NEXT: lit.return %3
 
@@ -1234,7 +1234,7 @@ struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !kgen.none
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<() async -> !Int>: @"$decls"::@"coroutine()"]()
-        # CHECK-NEXT: %[[COROUTINE:.*]] = kgen.call {{.*}}@Coroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
+        # CHECK-NEXT: %[[COROUTINE:.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
         # CHECK-NEXT: lit.letreg.decl "a" = %[[COROUTINE]]
         let a = coroutine()
 
@@ -1364,7 +1364,7 @@ struct SomeParamStruct[c_param: Int]:
 fn returnTup0() -> Tuple:
   # FIXME: Why isn't this a kgen.param.constant for the whole call?
   # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[]> = <<>>
-  # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
+  # CHECK-NEXT: %1 = lit.call{{.*}}__init__
   # CHECK-NEXT: lit.return
   return ()
 
@@ -1373,7 +1373,7 @@ fn returnTup0() -> Tuple:
 fn returnTup0a() -> ():
   # FIXME: Why isn't this a kgen.param.constant for the whole call?
   # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[]> = <<>>
-  # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
+  # CHECK-NEXT: %1 = lit.call{{.*}}__init__
   # CHECK-NEXT: lit.return
   return ()
 
@@ -1381,7 +1381,7 @@ fn returnTup0a() -> ():
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<type> [!Int]>
 fn returnTup1() -> Tuple[Int]:
   # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[!Int]>
-  # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
+  # CHECK-NEXT: %1 = lit.call{{.*}}__init__
   # CHECK-NEXT: lit.return
   return (Int(4),)
 
@@ -1429,12 +1429,12 @@ var trivial_global_implicit = 1
 struct RegType: pass
 
 # CHECK-LABEL: lit.globalvar.decl @reg_global : !RegType
-# CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
+# CHECK-NEXT: %0 = lit.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref @{{.*}}::@reg_global
 # CHECK-NEXT: pop.store %0, %1
 let reg_global: RegType = RegType()
 # CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType isVar
-# CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
+# CHECK-NEXT: %0 = lit.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref
 # CHECK-NEXT: pop.store %0, %1
 var reg_global_implicit = RegType()
@@ -1445,13 +1445,13 @@ struct MemType: pass
 # CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}}
 # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
 # CHECK-NEXT: %0 = lit.ref.to_pointer %anonymous2A
-# CHECK-NEXT: %1 = kgen.call {{.*}}__init__{{.*}}(%0)
+# CHECK-NEXT: %1 = lit.call {{.*}}__init__{{.*}}(%0)
 # CHECK-NEXT: [[GLOBAL:%.*]] = lit.globalvar.ref
-# CHECK-NEXT: = kgen.call {{.*}}__moveinit__{{.*}}([[GLOBAL]], %0) :
+# CHECK-NEXT: = lit.call {{.*}}__moveinit__{{.*}}([[GLOBAL]], %0) :
 let mem_global: MemType = MemType()
 # CHECK-LABEL: lit.globalvar.decl @mem_global_implicit {{.*}} isVar
 # CHECK-NEXT: %0 = lit.globalvar.ref
-# CHECK-NEXT: %1 = kgen.call {{.*}}__init__{{.*}}(%0)
+# CHECK-NEXT: %1 = lit.call {{.*}}__init__{{.*}}(%0)
 var mem_global_implicit = MemType()
 
 @value
@@ -1463,7 +1463,7 @@ struct DtorRegType:
 # CHECK: }, {
 # CHECK-NEXT: %0 = lit.globalvar.ref {{.*}}@reg_dtor
 # CHECK-NEXT: %1 = lit.load.consume %0
-# CHECK-NEXT: %2 = kgen.call {{.*}}__del__{{.*}}(%1)
+# CHECK-NEXT: %2 = lit.call {{.*}}__del__{{.*}}(%1)
 var reg_dtor = DtorRegType()
 
 @value
@@ -1473,7 +1473,7 @@ struct DtorMemType:
 # CHECK-label: lit.globalvar.decl @mem_dtor : !kgen.declref<@"$decls"::@DtorMemType> {
 # CHECK: }, {
 # CHECK-NEXT: %0 = lit.globalvar.ref
-# CHECK-NEXT: %1 = kgen.call {{.*}}__del__{{.*}}(%0)
+# CHECK-NEXT: %1 = lit.call {{.*}}__del__{{.*}}(%0)
 var mem_dtor = DtorMemType()
 
 fn borrowGlobalInt(x: Int): pass

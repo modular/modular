@@ -30,7 +30,7 @@
 # CHECK-NEXT:   [[W4:%.*]] = pop.load [[W2]]
 
 # Call the copy constructor member with the uninitialized self and the untyped existing impl.
-# CHECK-NEXT:  [[W5:%.*]] = kgen.call_signature [[W4]]([[W3]], [[W1]])
+# CHECK-NEXT:  [[W5:%.*]] = lit.call_signature [[W4]]([[W3]], [[W1]])
 # CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_func
 
@@ -43,7 +43,7 @@
 # CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(
 # CHECK-NEXT:  [[V0:%.*]] = pop.aligned_alloc %index_0, %index
 # CHECK-NEXT:  [[V1:%.*]] = pop.pointer.bitcast %other
-# CHECK-NEXT:  [[V2:%.*]] = kgen.call {{.*}}__copyinit__(${{.*}}::_CI_${{.*}}"([[V0]], [[V1]])
+# CHECK-NEXT:  [[V2:%.*]] = lit.call {{.*}}__copyinit__(${{.*}}::_CI_${{.*}}"([[V0]], [[V1]])
 
 # Store the address of the heap allocated memory into the self.
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]

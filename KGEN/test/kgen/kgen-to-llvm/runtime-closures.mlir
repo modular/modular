@@ -27,7 +27,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: [[CLOSURE:%.*]] = llvm.insertvalue [[STATE]], [[S0]][1] : !llvm.struct<(ptr, ptr)>
     // CHECK-NEXT: unrealized_conversion_cast [[CLOSURE]]
     %idx98 = index.constant 98
-    %0 = kgen.create_closure [(index) -> index: @h](%idx98)
+    %0 = kgen.create_closure[(index) -> index: @h](%idx98)
     "use.closure"(%0) : (!kgen.signature<() capturing -> index>) -> ()
     llvm.return
   }

@@ -44,8 +44,8 @@ fn erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
 
 # CHECK-LABEL: lit.func @"fma_float32
 fn fma_float32(x: Float32, y: Float32, z: Float32) -> Float32:
-    # CHECK: %0 = kgen.call {{.*}}__mul__{{.*}}(%x, %y)
-    # CHECK: %1 = kgen.call {{.*}}__add__{{.*}}(%0, %z)
+    # CHECK: %0 = lit.call {{.*}}__mul__{{.*}}(%x, %y)
+    # CHECK: %1 = lit.call {{.*}}__add__{{.*}}(%0, %z)
     # CHECK: lit.return %1
     return x * y + z
 
@@ -53,13 +53,14 @@ fn fma_float32(x: Float32, y: Float32, z: Float32) -> Float32:
 # CHECK-LABEL: lit.func @"erf_scalar_taylor_float32
 fn erf_scalar_taylor_float32(x: Float32) -> Float32:
     # CHECK: %[[CST:.*]] = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"-0.3761{{.*}}>
-    # CHECK: kgen.call {{.*}}__init__({{.*}}$float_literal::FloatLiteral){{.*}}(%[[CST]])
+    # CHECK: lit.call {{.*}}__init__({{.*}}$float_literal::FloatLiteral){{.*}}(%[[CST]])
     return x * fma_float32(
         x * x, -0.37612638903183752463, 1.1283791670955125739
     )
 
 
 ##===----------------------------------------------------------------------===##
+
 
 # CHECK-LABEL: lit.func @"erf_taylor_vector
 fn erf_taylor_vector[

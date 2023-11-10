@@ -162,7 +162,7 @@ kgen.func @caller() {
   %idx0 = index.constant 0
   // CHECK: %0 = kgen.stage_closure = (%arg0: index) capturing
   // CHECK-NEXT: "use"(%idx0, %arg0)
-  %0 = kgen.create_closure [(index, index) capturing -> (): @callee](%idx0)
+  %0 = kgen.create_closure[(index, index) capturing -> (): @callee](%idx0)
 
   // CHECK: call_signature %0(%idx0)
   kgen.call_signature %0(%idx0) : (index) capturing -> ()
@@ -196,7 +196,7 @@ kgen.func @two_callers(%arg0: index, %arg1: index) always_inline {
 kgen.func @caller0() {
   %idx0 = index.constant 0
   // CHECK: stage_closure = (%arg0: index) capturing
-  kgen.create_closure [(index, index) -> (): @two_callers](%idx0)
+  kgen.create_closure[(index, index) -> (): @two_callers](%idx0)
   kgen.return
 }
 
@@ -204,7 +204,7 @@ kgen.func @caller0() {
 kgen.func @caller1() {
   %idx0 = index.constant 0
   // CHECK: stage_closure = (%arg0: index) capturing
-  kgen.create_closure [(index, index) -> (): @two_callers](%idx0)
+  kgen.create_closure[(index, index) -> (): @two_callers](%idx0)
   kgen.return
 }
 

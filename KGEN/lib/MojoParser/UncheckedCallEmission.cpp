@@ -819,6 +819,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       // If the callee is an async function, emit an async call. Then wrap the
       // `!pop.coroutine<() -> T>` result in a `Coroutine[T]` object.
       auto call = builder->create<AsyncCallOp>(loc, target.get(), resultParams,
+                                               /*lifetimeParams=*/std::nullopt,
                                                callArgs);
       ASTType coroType = getBoundCoroutineType(
           shared, declScope, callExpr->getLoc(), sig, resultTypes.front());
@@ -833,11 +834,13 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
       auto call = builder->create<CallOp>(loc, resultTypes, symbol,
+                                          /*lifetimeParams=*/std::nullopt,
                                           resultParams, callArgs);
       callResult = call.getResult(0);
     } else {
-      auto call = builder->create<CallParamOp>(loc, resultTypes, target.get(),
-                                               resultParams, callArgs);
+      auto call = builder->create<CallParamOp>(
+          loc, resultTypes, target.get(), resultParams,
+          /*lifetimeParams=*/std::nullopt, callArgs);
       callResult = call.getResult(0);
     }
   } else {

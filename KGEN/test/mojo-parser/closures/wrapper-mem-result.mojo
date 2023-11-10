@@ -37,7 +37,7 @@ struct MemType:
 # CHECK-NEXT:      }
 # CHECK-NEXT:      [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
 # CHECK-NEXT:      [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
-# CHECK-NEXT:      kgen.call_signature [[DTOR]]([[OPAQUE_IMPL]])
+# CHECK-NEXT:      lit.call_signature [[DTOR]]([[OPAQUE_IMPL]])
 # CHECK-NEXT:      kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:      lit.ownership.mark_destroyed %self
 # CHECK-NEXT:      lit.return %none : !kgen.none
@@ -66,7 +66,7 @@ struct MemType:
 # CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT:      [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
 # CHECK-NEXT:      [[COPY:%.*]] = pop.load [[COPY_PTR]]
-# CHECK-NEXT:      kgen.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
+# CHECK-NEXT:      lit.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
 
 # CHECK-LABEL:  lit.func @"__moveinit__
 # CHECK-NEXT:     [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
