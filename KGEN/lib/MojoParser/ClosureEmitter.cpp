@@ -312,9 +312,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     auto funcPtrPtr = builder.create<StructGEPOp>(copySelf, copy);
     auto ptrToImpl = builder.create<StructGEPOp>(copySelf, impl);
     auto loadedFuncPtr = builder.create<POP::LoadOp>(funcPtrPtr);
-    builder.create<CallSignatureOp>(
-        noneType, loadedFuncPtr,
-        ArrayRef<Value>{ptrToImpl, loadedExistingImpl});
+    builder.create<CallSignatureOp>(noneType, loadedFuncPtr,
+                                    ValueRange{ptrToImpl, loadedExistingImpl});
   }
   if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     return {};
@@ -1068,11 +1067,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     SymbolConstantAttr typedSymbol =
         createTypedSymbol(symbol, topLevelInputParams);
     Value result =
-        builder
-            .create<CallOp>(
-                resultType, typedSymbol,
-                /*resultParamTypes=*/ParamDeclArrayAttr::get(ctx, {}), args)
-            .getResult(0);
+        builder.create<CallOp>(resultType, typedSymbol, args).getResult(0);
     ExprEmitter::emitNormalReturn(builder, result, topLevelCall);
     builder.create<LIT::EndFuncOp>();
   }

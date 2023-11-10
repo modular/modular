@@ -47,8 +47,8 @@ kgen.func @inner() capturing {
 // CHECK-LABEL: kgen.func @make_a_closure(%arg0: index)
 kgen.func @make_a_closure(%arg0: index) {
   pop.compiler.global_store "foobar", %arg0 : index
-  // CHECK: create_closure [(index) capturing -> (): @capturing](%arg0)
-  kgen.create_closure [() capturing -> (): @capturing]()
+  // CHECK: create_closure[(index) capturing -> (): @capturing](%arg0)
+  kgen.create_closure[() capturing -> (): @capturing]()
   kgen.return
 }
 

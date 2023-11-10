@@ -12,15 +12,15 @@
 
 # CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!escaping1> init_self, %impl[impl]: !kgen.pointer<!escaping> owned_in_mem, |)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
-# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [!lit.signature<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
 
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
-# CHECK-NEXT: %[[V6:.*]] = kgen.create_closure [{{.*}}]()
+# CHECK-NEXT: %[[V6:.*]] = kgen.create_closure[{{.*}}]()
 # CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !kgen.pointer<!lit.signature<("self": !kgen.pointer<none>, |) -> !kgen.none>
 
 # CHECK-NEXT: %[[V9:.*]] = lit.struct.gep %self[copy]
-# CHECK-NEXT: %[[V10:.*]] = kgen.create_closure [{{.*}}]()
+# CHECK-NEXT: %[[V10:.*]] = kgen.create_closure[{{.*}}]()
 # CHECK-NEXT: pop.store %[[V10]], %[[V9]]
 
 # Allocate memory on heap
@@ -29,7 +29,7 @@
 # CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index : <!escaping>
 
 # Copy source (stack) into target (heap)
-# CHECK-NEXT:  %[[V1:.*]] = kgen.call {{.*}}__moveinit__{{.*}}(%[[V0]], %impl)
+# CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%[[V0]], %impl)
 
 # Store heap pointer in ClosureWrapper field
 # CHECK-NEXT:  %[[V2:.*]] = lit.struct.gep %self[field0]
@@ -50,7 +50,7 @@
 
 # CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
-# CHECK-NEXT: %[[A1:.*]] = kgen.call @{{.*}}@"__call__{{.*}}"(%[[RES]], %[[A0]], %n)
+# CHECK-NEXT: %[[A1:.*]] = lit.call @{{.*}}@"__call__{{.*}}"(%[[RES]], %[[A0]], %n)
 # CHECK-NEXT: lit.return %[[A1]] : !kgen.none
 # CHECK-NEXT: lit.end_func
 

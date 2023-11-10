@@ -54,7 +54,7 @@ lit.file_module @check_lifetimes {
     // expected-warning @+1 {{'c' was declared as a 'var' but never mutated, consider switching to a 'let'}}
     %c = lit.varlet.decl "c" var : !lit.ref<mut @check_lifetimes::@Struct, *"life">
     %1 = lit.ref.to_pointer %c : !lit.ref<mut @check_lifetimes::@Struct, *"life">
-    %0 = kgen.call @check_lifetimes::@Struct::@"__init__check_lifetimes:Struct=&)"(%1) : (!kgen.pointer<@check_lifetimes::@Struct> byref_result) -> !kgen.none
+    %0 = lit.call @check_lifetimes::@Struct::@"__init__check_lifetimes:Struct=&)"(%1) : (!kgen.pointer<@check_lifetimes::@Struct> byref_result) -> !kgen.none
 
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
@@ -66,21 +66,21 @@ lit.file_module @check_lifetimes {
     lit.func byrefResultFn(
         %result: !kgen.pointer<@check_lifetimes::@Struct> byref_result,
         %x: !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) {
-      kgen.call @check_lifetimes::@Struct::@__copyinit__(%result, %x)
+      lit.call @check_lifetimes::@Struct::@__copyinit__(%result, %x)
           : (!kgen.pointer<@check_lifetimes::@Struct> byref_result,
              !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none
       kgen.return
     }
 
     // var c = byrefResultFn(x)
-    %callee = kgen.create_closure[(
+    %callee = kgen.create_closure[!lit.signature<(
         !kgen.pointer<@check_lifetimes::@Struct> byref_result,
-        !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none: byrefResultFn]()
+        !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none>: byrefResultFn]()
     %c = lit.varlet.decl "c" var : !lit.ref<mut @check_lifetimes::@Struct, *"life">
     %1 = lit.ref.to_pointer %c : !lit.ref<mut @check_lifetimes::@Struct, *"life">
-    kgen.call_signature %callee(%1, %a) :
-        (!kgen.pointer<@check_lifetimes::@Struct> byref_result,
-         !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none
+    lit.call_signature %callee(%1, %a) :
+        !lit.signature<(!kgen.pointer<@check_lifetimes::@Struct> byref_result,
+         !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none>
 
     %0 = lit.ref.struct.ger %c[a] : !lit.ref<mut index, *"life"> from !lit.ref<mut @check_lifetimes::@Struct, *"life">
     lit.ref.load %0 : !lit.ref<mut index, *"life">
@@ -115,8 +115,8 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
     %x = lit.varlet.decl "x" let : !lit.ref<mut @S, *"life">
     // CHECK: [[XPTR:%.*]] = lit.ref.to_pointer %x
     %xptr = lit.ref.to_pointer %x : !lit.ref<mut @S, *"life">
-    // CHECK: [[V:%.*]] = kgen.call @foo([[XPTR]])
-    %1 = kgen.call @foo(%xptr) : (!kgen.pointer<@S> byref_result) throws -> !kgen.variant<@Error, none>
+    // CHECK: [[V:%.*]] = lit.call @foo([[XPTR]])
+    %1 = lit.call @foo(%xptr) : (!kgen.pointer<@S> byref_result) throws -> !kgen.variant<@Error, none>
     // CHECK: [[VAR0:%.*]] = lit.handle_variant [[V]], [[XPTR]] : (!kgen.variant<@Error, none>, !kgen.pointer<@S>) -> !kgen.none {
     // CHECK: [[VAR1:%.*]] = kgen.variant.get [[V]], 1 : <@Error, none>
     // CHECK: lit.yield [[VAR1]]
@@ -131,7 +131,7 @@ lit.func @verify_destructor_post_throw() -> !kgen.none {
       %4 = kgen.variant.get %1, 0 : <@Error, none>
       lit.try.raise %4 : !kgen.declref<@Error>
     }
-    // CHECK: kgen.call @S::@__del__({{.*}}) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    // CHECK: lit.call @S::@__del__({{.*}}) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
     // CHECK-NEXT: lit.try.yield
     lit.try.yield
   } except (%arg0: !kgen.declref<@Error>) {
@@ -151,17 +151,17 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
   %s = lit.varlet.decl "s" let : !lit.ref<mut @S, *"SLife">
   %sptr = lit.ref.to_pointer %s : !lit.ref<mut @S, *"SLife">
   // CHECK: [[PTR:%.*]] = lit.ref.to_pointer %s
-  // CHECK: kgen.call @S::@__init__([[PTR]])
-  %2 = kgen.call @S::@__init__(%sptr) : (!kgen.pointer<@S> init_self) -> !kgen.none
+  // CHECK: lit.call @S::@__init__([[PTR]])
+  %2 = lit.call @S::@__init__(%sptr) : (!kgen.pointer<@S> init_self) -> !kgen.none
   lit.try {
     hlcf.if %c {
-      %5 = kgen.call @mightThrow() : () throws -> !kgen.variant<@Error, none>
+      %5 = lit.call @mightThrow() : () throws -> !kgen.variant<@Error, none>
   	  %6 = lit.handle_variant %5 : (!kgen.variant<@Error, none>) -> !kgen.none {
         %10 = kgen.variant.get %5, 1 : <@Error, none>
         lit.yield %10 : !kgen.none
   	  } else {
         // CHECK: [[PTR:%.*]] = lit.ref.to_pointer %s
-  	    // CHECK-NEXT: [[VAR0:%.*]] = kgen.call @S::@__del__([[PTR]])
+  	    // CHECK-NEXT: [[VAR0:%.*]] = lit.call @S::@__del__([[PTR]])
   	    // CHECK-NEXT: [[VAR1:%.*]] = kgen.variant.get
         %10 = kgen.variant.get %5, 0 : <@Error, none>
         lit.try.raise %10 : !kgen.declref<@Error>
@@ -169,9 +169,9 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
       %7 = lit.ref.struct.ger %s[a] : !lit.ref<mut index, *"SLife"> from !lit.ref<mut @S, *"SLife">
       // CHECK:  = lit.ref.load
       // CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %s
-      // CHECK-NEXT: kgen.call @S::@__del__([[PTR]])
+      // CHECK-NEXT: lit.call @S::@__del__([[PTR]])
       %8 = lit.ref.load %7 : !lit.ref<mut index, *"SLife">
-      %9 = kgen.call @print(%8) : (index owned) -> !kgen.none
+      %9 = lit.call @print(%8) : (index owned) -> !kgen.none
   	  hlcf.yield
     } else {
   	  hlcf.yield
@@ -215,38 +215,38 @@ lit.struct.decl @DestructSome attributes {destructor = #kgen.symbol.constant<@De
                      %reg: index
                      ) throws -> !kgen.variant<@Error, none> {
     %0 = lit.struct.gep %self[a] : <@S> from <@DestructSome>
-    %1 = kgen.call @S::@__copyinit__(%0, %x) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
+    %1 = lit.call @S::@__copyinit__(%0, %x) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
 
     %100 = lit.struct.gep %self[register] : <index> from <@DestructSome>
     pop.store %reg, %100 : !kgen.pointer<index>
 
     %103 = lit.struct.gep %self[stole] : <@S> from <@DestructSome>
-    %104 = kgen.call @S::@__moveinit__(%103, %takeMe) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    %104 = lit.call @S::@__moveinit__(%103, %takeMe) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> owned_in_mem) -> !kgen.none
 
     %105 = lit.struct.gep %self[byinit] : <@S> from <@DestructSome>
-    %106 = kgen.call @S::@__init__(%105) : (!kgen.pointer<@S> init_self) -> !kgen.none
+    %106 = lit.call @S::@__init__(%105) : (!kgen.pointer<@S> init_self) -> !kgen.none
     // CHECK: hlcf.if %cond {
-    // CHECK-NEXT: [[VAR0:%.*]] = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+    // CHECK-NEXT: [[VAR0:%.*]] = lit.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
     // CHECK-NEXT: [[VAR1:%.*]] = kgen.variant.create [[VAR0]], 0 : <@Error, none>
     // CHECK-NEXT: [[VAR2:%.*]] = lit.struct.gep %self[a] : <@S> from <@DestructSome>
-    // CHECK-NEXT: [[VAR3:%.*]] = kgen.call @S::@__del__([[VAR2]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    // CHECK-NEXT: [[VAR3:%.*]] = lit.call @S::@__del__([[VAR2]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
     // CHECK-NEXT: [[VAR4:%.*]] = lit.struct.gep %self[stole] : <@S> from <@DestructSome>
-    // CHECK-NEXT: [[VAR5:%.*]] = kgen.call @S::@__del__([[VAR4]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    // CHECK-NEXT: [[VAR5:%.*]] = lit.call @S::@__del__([[VAR4]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
     // CHECK-NEXT: [[VAR6:%.*]] = lit.struct.gep %self[byinit] : <@S> from <@DestructSome>
-    // CHECK-NEXT: [[VAR7:%.*]] = kgen.call @S::@__del__([[VAR6]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    // CHECK-NEXT: [[VAR7:%.*]] = lit.call @S::@__del__([[VAR6]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
     // CHECK-NEXT: lit.error_return [[VAR1]] : <@Error, none>
     // CHECK-NEXT: } else {
     // CHECK-NEXT: hlcf.yield
     // CHECK-NEXT: }
     hlcf.if %cond {
-      %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+      %12 = lit.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
       %13 = kgen.variant.create %12, 0 : <@Error, none>
       lit.error_return %13 : !kgen.variant<@Error, none>
     } else {
       hlcf.yield
     }
     %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructSome>
-    %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
+    %3 = lit.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     %14 = kgen.variant.create %none, 1 : <@Error, none>
     kgen.return %14 : !kgen.variant<@Error, none>
@@ -266,30 +266,30 @@ lit.struct.decl @DestructNone attributes {destructor = #kgen.symbol.constant<@De
                      %reg: index
                      ) throws -> !kgen.variant<@Error, none> {
     // CHECK: hlcf.if %cond {
-    // CHECK-NEXT: %[[VAR0:.*]] = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+    // CHECK-NEXT: %[[VAR0:.*]] = lit.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
     // CHECK-NEXT: %[[VAR1:.*]] = kgen.variant.create %[[VAR0]], 0 : <@Error, none>
     // CHECK-NEXT: lit.error_return %[[VAR1]] : <@Error, none>
     // CHECK-NEXT: } else {
     // CHECK-NEXT: hlcf.yield
     // CHECK-NEXT: }
     hlcf.if %cond {
-      %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+      %12 = lit.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
       %13 = kgen.variant.create %12, 0 : <@Error, none>
       lit.error_return %13 : !kgen.variant<@Error, none>
     } else {
         hlcf.yield
     }
     %0 = lit.struct.gep %self[a] : <@S> from <@DestructNone>
-    %1 = kgen.call @S::@__copyinit__(%0, %x) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
+    %1 = lit.call @S::@__copyinit__(%0, %x) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
 
     %100 = lit.struct.gep %self[register] : <index> from <@DestructNone>
     pop.store %reg, %100 : !kgen.pointer<index>
 
     %103 = lit.struct.gep %self[stole] : <@S> from <@DestructNone>
-    %104 = kgen.call @S::@__moveinit__(%103, %takeMe) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    %104 = lit.call @S::@__moveinit__(%103, %takeMe) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> owned_in_mem) -> !kgen.none
 
     %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructNone>
-    %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
+    %3 = lit.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     %14 = kgen.variant.create %none, 1 : <@Error, none>
     kgen.return %14 : !kgen.variant<@Error, none>
@@ -310,20 +310,20 @@ lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@De
                      ) throws -> !kgen.variant<@Error, none> {
 
     %0 = lit.struct.gep %self[a] : <@S> from <@DestructFull>
-    %1 = kgen.call @S::@__copyinit__(%0, %x) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
+    %1 = lit.call @S::@__copyinit__(%0, %x) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
 
     %100 = lit.struct.gep %self[register] : <index> from <@DestructFull>
     pop.store %reg, %100 : !kgen.pointer<index>
 
     %103 = lit.struct.gep %self[stole] : <@S> from <@DestructFull>
-    %104 = kgen.call @S::@__moveinit__(%103, %takeMe) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    %104 = lit.call @S::@__moveinit__(%103, %takeMe) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> owned_in_mem) -> !kgen.none
 
     %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructFull>
-    %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
+    %3 = lit.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none
     hlcf.if %cond {
-      %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+      %12 = lit.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
       %13 = kgen.variant.create %12, 0 : <@Error, none>
-      // CHECK: %[[VAR0:.*]] = kgen.call @DestructFull::@__del__(%self) : (!kgen.pointer<@DestructFull> owned_in_mem) -> !kgen.none
+      // CHECK: %[[VAR0:.*]] = lit.call @DestructFull::@__del__(%self) : (!kgen.pointer<@DestructFull> owned_in_mem) -> !kgen.none
       lit.error_return %13 : !kgen.variant<@Error, none>
     } else {
         hlcf.yield
@@ -351,12 +351,12 @@ lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@Ha
 
   lit.func @__del__(%self: !kgen.pointer<@HasMemFields> owned_in_mem) -> !kgen.none {
     // CHECK: %[[VAR0:.*]] = lit.struct.gep %self[a] : <@S> from <@HasMemFields>
-    // CHECK: %[[VAR1:.*]] = kgen.call @S::@__del__(%[[VAR0]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    // CHECK: %[[VAR1:.*]] = lit.call @S::@__del__(%[[VAR0]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
     // CHECK: %[[VAR2:.*]] = lit.struct.gep %self[stole] : <@S> from <@HasMemFields>
-    // CHECK: %[[VAR3:.*]] = kgen.call @S::@__del__(%[[VAR2]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    // CHECK: %[[VAR3:.*]] = lit.call @S::@__del__(%[[VAR2]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
     // CHECK: %[[VAR4:.*]] = lit.struct.gep %self[uninitialized] : <@S> from <@HasMemFields>
-    // CHECK: %[[VAR5:.*]] = kgen.call @S::@__del__(%[[VAR4]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
-    // CHECK-NOT: kgen.call @HasMemFields::@__del__(%self) : (!kgen.pointer<@HasMemFields> owned_in_mem) -> !kgen.none
+    // CHECK: %[[VAR5:.*]] = lit.call @S::@__del__(%[[VAR4]]) : (!kgen.pointer<@S> owned_in_mem) -> !kgen.none
+    // CHECK-NOT: lit.call @HasMemFields::@__del__(%self) : (!kgen.pointer<@HasMemFields> owned_in_mem) -> !kgen.none
     lit.ownership.mark_destroyed %self : !kgen.pointer<@HasMemFields>
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
@@ -389,11 +389,11 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !kgen.non
     }
     %anonymous2A = lit.varlet.decl "anonymous*" synth : !lit.ref<mut @MyStruct, *"life">
     %ptr = lit.ref.to_pointer %anonymous2A : !lit.ref<mut @MyStruct, *"life">
-    %3 = kgen.call @MyStruct::@__init__(%ptr) : (!kgen.pointer<@MyStruct> init_self) -> !kgen.none
-    // CHECK: kgen.call @use(
-    %6 = kgen.call @use(%ptr) : (!kgen.pointer<@MyStruct> borrow_in_mem) -> !kgen.none
+    %3 = lit.call @MyStruct::@__init__(%ptr) : (!kgen.pointer<@MyStruct> init_self) -> !kgen.none
+    // CHECK: lit.call @use(
+    %6 = lit.call @use(%ptr) : (!kgen.pointer<@MyStruct> borrow_in_mem) -> !kgen.none
     // CHECK: [[PTR:%.*]] = lit.ref.to_pointer %anonymous2A
-    // CHECK: kgen.call @MyStruct::@__del__([[PTR]])
+    // CHECK: lit.call @MyStruct::@__del__([[PTR]])
     hlcf.yield
   }
   kgen.return %1 : !kgen.none
@@ -407,7 +407,7 @@ lit.func @byref_result_global_ref() {
   %0 = lit.globalvar.ref @x : <@MyStruct>
   // CHECK-NEXT: call @MyStruct::@__del__
   // CHECK-NEXT: call @memory_result
-  kgen.call @memory_result(%0) : !lit.signature<(!kgen.pointer<@MyStruct> byref_result) -> ()>
+  lit.call @memory_result(%0) : !lit.signature<(!kgen.pointer<@MyStruct> byref_result) -> ()>
   kgen.return
 }
 
@@ -476,7 +476,7 @@ lit.func @init(%self: !kgen.pointer<@MyStruct> init_self) {
   // CHECK-NEXT: debuginfo.value #local_variable
   debuginfo.value #local_variable = %self : !kgen.pointer<@MyStruct> loc(#loc)
   // CHECK-NOT: __del__
-  %2 = kgen.call @bar(%self) : (!kgen.pointer<@MyStruct> init_self) -> !kgen.none loc(#loc)
+  %2 = lit.call @bar(%self) : (!kgen.pointer<@MyStruct> init_self) -> !kgen.none loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
 
@@ -501,7 +501,7 @@ lit.func @doSomething(%e: !Error borrow) {
 }
 
 lit.func @i_raise() throws -> !kgen.variant<!Error, index> {
-  %0 = kgen.call @Error::@__init__() : () ownedresult -> !Error
+  %0 = lit.call @Error::@__init__() : () ownedresult -> !Error
   %1 = kgen.variant.create %0, 0 : <!Error, index>
   lit.error_return %1 : <!Error, index>
 }
@@ -509,7 +509,7 @@ lit.func @i_raise() throws -> !kgen.variant<!Error, index> {
 // CHECK-LABEL: lit.func @eatErrorNoRef
 lit.func @eatErrorNoRef() {
   lit.try {
-    %3 = kgen.call @i_raise() : !lit.signature<() throws -> !kgen.variant<!Error, index>>
+    %3 = lit.call @i_raise() : !lit.signature<() throws -> !kgen.variant<!Error, index>>
     %4 = lit.handle_variant %3 : (!kgen.variant<!Error, index>) -> index {
       %6 = kgen.variant.get %3, 1 : <!Error, index>
       lit.yield %6 : index
@@ -520,7 +520,7 @@ lit.func @eatErrorNoRef() {
     lit.try.yield
   } except (%arg0: !Error) {
     // CHECK: except
-    // CHECK-NEXT: %0 = kgen.call @Error::@__del__(%arg0) : (!kgen.declref<@Error>) -> !kgen.none
+    // CHECK-NEXT: %0 = lit.call @Error::@__del__(%arg0) : (!kgen.declref<@Error>) -> !kgen.none
     // CHECK-NEXT: lit.try.yield
     lit.try.yield
   } else {
@@ -532,7 +532,7 @@ lit.func @eatErrorNoRef() {
 // CHECK-LABEL: lit.func @eatErrorRef
 lit.func @eatErrorRef() {
   lit.try {
-    %3 = kgen.call @i_raise() : !lit.signature<() throws -> !kgen.variant<!Error, index>>
+    %3 = lit.call @i_raise() : !lit.signature<() throws -> !kgen.variant<!Error, index>>
     %4 = lit.handle_variant %3 : (!kgen.variant<!Error, index>) -> index {
       %6 = kgen.variant.get %3, 1 : <!Error, index>
       lit.yield %6 : index
@@ -543,9 +543,9 @@ lit.func @eatErrorRef() {
     lit.try.yield
   } except (%arg0: !Error) {
     // CHECK: except
-    // CHECK-NEXT: kgen.call @doSomething(%arg0)
-    // CHECK-NEXT: kgen.call @Error::@__del__(%arg0) : (!kgen.declref<@Error>) -> !kgen.none
-    kgen.call @doSomething(%arg0) : !lit.signature<("e": !Error borrow) -> !kgen.none>
+    // CHECK-NEXT: lit.call @doSomething(%arg0)
+    // CHECK-NEXT: lit.call @Error::@__del__(%arg0) : (!kgen.declref<@Error>) -> !kgen.none
+    lit.call @doSomething(%arg0) : !lit.signature<("e": !Error borrow) -> !kgen.none>
     lit.try.yield
   } else {
     lit.try.yield
@@ -616,7 +616,7 @@ lit.func @copy_del_reg_value() {
   %0 = kgen.param.materialize: !Reg = <#lit.struct<{}>>
   %x = lit.letreg.decl "x" = %0 : !Reg
   // CHECK: call @Reg::@__del__(%x)
-  %1 = kgen.call @Reg::@__copyinit__(%x) : !lit.signature<(!Reg borrow, |) ownedresult -> !Reg>
+  %1 = lit.call @Reg::@__copyinit__(%x) : !lit.signature<(!Reg borrow, |) ownedresult -> !Reg>
   kgen.return
 }
 

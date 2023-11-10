@@ -16,17 +16,17 @@ struct MemType:
 fn makes_escaping_closure(m: MemType, w: Int):
     # CHECK: %[[IMPL:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !escaping2,
     # CHECK-NEXT: [[IMPL_PTR:%.*]] = lit.ref.to_pointer %[[IMPL]]
-    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[IMPL_PTR]], %m)
+    # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}"([[IMPL_PTR]], %m)
     fn myclosure_with_mem_types(n: MemType) escaping -> MemType:
         return n + m
 
     # CHECK: %[[IMPL:.*]] = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !escaping,
     # CHECK-NEXT: [[IMPL_PTR:%.*]] = lit.ref.to_pointer %[[IMPL]]
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
-    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[IMPL_PTR]], [[A]], %w)
+    # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}"([[IMPL_PTR]], [[A]], %w)
     # CHECK-NEXT: %[[WRAPPER:.*]] = lit.varlet.decl "anonymous*" synth
     # CHECK-NEXT: [[WRAPPER_PTR:%.*]] = lit.ref.to_pointer %[[WRAPPER]]
-    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"([[WRAPPER_PTR]], [[IMPL_PTR]])
+    # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}"([[WRAPPER_PTR]], [[IMPL_PTR]])
     var a = w
 
     fn myclosure_with_reg_types(x: Int) escaping -> Int:

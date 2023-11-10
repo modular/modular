@@ -138,8 +138,8 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
                         DebugInfo::EmissionKind::Full;
   func.getBodyRegion().walk([&](Operation *op) {
     // Lower any aliases within the function body to param declare.
+    mlir::IRRewriter b{OpBuilder(op)};
     if (AliasDeclOp alias = dyn_cast<AliasDeclOp>(op)) {
-      mlir::IRRewriter b{OpBuilder(op)};
       b.replaceOpWithNewOp<ParamDeclareOp>(
           alias, TypeRange(), alias.getParamDecl(), alias.getValue());
     } else if (isa<AliasForwardDeclOp, OwnershipUseOp, OwnershipMarkDestroyedOp,
@@ -151,10 +151,21 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       op->getResult(0).replaceAllUsesWith(op->getOperand(0));
       op->erase();
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
-      mlir::IRRewriter b{OpBuilder(op)};
       b.replaceOpWithNewOp<POP::LoadOp>(loadConsume, loadConsume.getPtr());
+    } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
+      b.replaceOpWithNewOp<KGEN::CallOp>(
+          call, call.getResultTypes(), call.getCallee(),
+          call.getParamDeclsAttr(), call.getOperands());
+    } else if (auto call = dyn_cast<LIT::CallParamOp>(op)) {
+      b.replaceOpWithNewOp<KGEN::CallParamOp>(
+          call, call.getResultTypes(), call.getCallee(),
+          call.getParamDeclsAttr(), call.getOperands());
+    } else if (auto call = dyn_cast<LIT::CallSignatureOp>(op)) {
+      b.replaceOpWithNewOp<KGEN::CallSignatureOp>(
+          call, call.getResultTypes(), call.getCallee(), call.getArguments());
+    } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
+      call.setLifetimeParams({});
     } else if (auto letDecl = dyn_cast<LetRegDeclOp>(op)) {
-      mlir::IRRewriter b{OpBuilder(op)};
       // Build information for this decl if necessary.
       if (buildingDebugVars) {
         buildDebugInfoValue(b, letDecl, letDecl.getName(), funcSpAttr.getFile(),
@@ -163,7 +174,6 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
 
       b.replaceOp(letDecl, letDecl.getOperand());
     } else if (auto varDecl = dyn_cast<VarLetDeclOp>(op)) {
-      mlir::IRRewriter b{OpBuilder(op)};
       StringAttr varName = varDecl.getNameAttr();
       auto varType = varDecl.getType().getAsPointerType();
       bool isSynth = varDecl.getKind() == VarLetDeclKind::Synthesized;
@@ -190,10 +200,8 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
     } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
       lowerHandleVariant(handleVariant);
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
-      mlir::IRRewriter b{OpBuilder(op)};
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getVariant());
     } else if (auto globalRefOp = dyn_cast<GlobalVarRefOp>(op)) {
-      mlir::IRRewriter b{OpBuilder(op)};
       b.replaceOpWithNewOp<GlobalAddressOp>(globalRefOp, globalRefOp.getType(),
                                             globalRefOp.getGlobal());
     } else if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
@@ -241,21 +249,22 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
 
   lowerLITOps(gen);
 
-  ParamDeclArrayAttr inputParams = gen.getInputParamsAttr();
   LITSignatureType signature = gen.getSignature();
+  SmallVector<ParamDeclAttr> inputParams;
+  ArrayRef<ParamDeclAttr> genParams = gen.getInputParams();
+  // Drop the implicit lifetime decls and append the rest.
+  genParams =
+      genParams.drop_front(genParams.size() - signature.getNumInputParams());
+
   // Prepend the parameters from the parent decl if present.
   if (!parentInputParams.empty()) {
     // Concat the parent and generator input parameter decls.
-    SmallVector<ParamDeclAttr> paramDecls;
-    paramDecls.reserve(parentInputParams.size() + inputParams.size());
-    llvm::append_range(paramDecls, parentInputParams);
-    llvm::append_range(paramDecls, inputParams);
-    inputParams = ParamDeclArrayAttr::get(gen.getContext(), paramDecls);
-
+    llvm::append_range(inputParams, parentInputParams);
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
     signature = LITSignatureType::prependParams(signature, parentInputParams);
   }
+  llvm::append_range(inputParams, genParams);
 
   OpBuilder b(gen->getContext());
   Operation *result;
@@ -263,9 +272,10 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
     // Replace external functions with `kgen.extern.generator` ops.
     result = b.create<ExternGeneratorOp>(
         gen.getLoc(), gen.getPreElaborationNameAttr(), TypeAttr::get(signature),
-        gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
-        gen.getExportKindAttr(), gen.getPreCompiledModuleRefAttr(),
-        gen.getLinkageNameAttr());
+        gen.getFunctionTypeAttr(),
+        ParamDeclArrayAttr::get(b.getContext(), inputParams),
+        gen.getResultParamsAttr(), gen.getExportKindAttr(),
+        gen.getPreCompiledModuleRefAttr(), gen.getLinkageNameAttr());
   } else {
     // If the function has an alias name, rename it.
     if (StringAttr newName = gen.getLinkageNameAttr()) {
@@ -276,10 +286,11 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
     // Directly lower since these operations are exactly identical right now.
     auto newGen = b.create<GeneratorOp>(
         gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
-        gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
-        gen.getConstraintsAttr(), gen.getDecoratorsAttr(),
-        gen.getInlineLevelAttr(), gen.getExportKindAttr(),
-        gen.getLLVMMetadata());
+        gen.getFunctionTypeAttr(),
+        ParamDeclArrayAttr::get(b.getContext(), inputParams),
+        gen.getResultParamsAttr(), gen.getConstraintsAttr(),
+        gen.getDecoratorsAttr(), gen.getInlineLevelAttr(),
+        gen.getExportKindAttr(), gen.getLLVMMetadata());
     result = newGen;
 
     // Move over the body.

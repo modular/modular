@@ -125,7 +125,7 @@ fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
         __get_lvalue_as_address(arg)
     )
     # CHECK-NEXT: lit.ownership.def_lvalue %arg
-    # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:type [[T]]>(%arg)
+    # CHECK-NEXT: %0 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:type [[T]]>(%arg)
     # CHECK-NEXT: lit.return %0
 
 
@@ -143,13 +143,12 @@ fn structured_for_loop() -> __mlir_type.index:
         _type = __mlir_type.index, _region = "loop_body".value
     ](Int(0).value)
 
+
 # Test multi-return __mlir_op
 # https://github.com/modularml/modular/issues/24227
 fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
-  # CHECK: [[MULTIRET:%.*]]:2 = "op_that_has_multiple_returns"() : () -> (!Int, !Int)
-  # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[MULTIRET]]#0, [[MULTIRET]]#1)
-  # CHECK-NEXT: [[TUPLE:%.*]] = kgen.call @"$builtin"::@"$tuple"::@Tuple::@"__init__{{.*}}[!Int, !Int]{{.*}}[[PACK]]
-  let r = __mlir_op.`op_that_has_multiple_returns`[
-    _type = (Int, Int),
-  ]()
-  return r
+    # CHECK: [[MULTIRET:%.*]]:2 = "op_that_has_multiple_returns"() : () -> (!Int, !Int)
+    # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[MULTIRET]]#0, [[MULTIRET]]#1)
+    # CHECK-NEXT: [[TUPLE:%.*]] = lit.call @"$builtin"::@"$tuple"::@Tuple::@"__init__{{.*}}[!Int, !Int]{{.*}}[[PACK]]
+    let r = __mlir_op.`op_that_has_multiple_returns`[_type= (Int, Int),]()
+    return r

@@ -930,14 +930,14 @@ void UninitializedValueScan::checkOp(Operation &op) {
 
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
-  if (isa<CallSignatureOp, KGENCallOpInterface>(op)) {
+  if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
     SignatureType signature;
     ValueRange operands;
     if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
       signature = directCall.getCalleeType();
       operands = directCall.getArguments();
     } else {
-      auto callSig = cast<CallSignatureOp>(op);
+      auto callSig = cast<LIT::CallSignatureOp>(op);
       signature = callSig.getCallee().getType();
       operands = callSig.getArguments();
     }
@@ -1460,21 +1460,17 @@ void DestructorInsertion::checkOp(Operation &op) {
 
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
-  if (isa<CallSignatureOp, KGENCallOpInterface>(op)) {
+  if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
     SignatureType signature;
     if (auto directCall = dyn_cast<KGENCallOpInterface>(op))
       signature = directCall.getCalleeType();
     else
-      signature = cast<CallSignatureOp>(op).getCallee().getType();
+      signature = cast<LIT::CallSignatureOp>(op).getCallee().getType();
     ValueRange operands;
-    if (isa<CallOp, CallParamOp, AsyncCallOp, CreateClosureOp>(op)) {
+    if (isa<LIT::CallSignatureOp>(op))
+      operands = cast<LIT::CallSignatureOp>(op).getArguments();
+    else
       operands = op.getOperands();
-    } else if (isa<CallSignatureOp>(op)) {
-      operands = cast<CallSignatureOp>(op).getArguments();
-    } else {
-      llvm::report_fatal_error("unknown call operation: " +
-                               op.getName().getStringRef());
-    }
 
     // If the result is defining an owned register value, treat it as a def.
     if (signature.hasOwnedRegisterResult())
@@ -2005,7 +2001,7 @@ static bool mightPointTo(Value p1, Value p2) {
 // itself be part of a standalone SSA pass post-inlining.  For now we'll
 // just catch the most obvious local cases to clean up the IR and provide a
 // "guaranteed" optimization.
-static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
+static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
                                             VarLetDeclOp tmpDecl) {
   Block *tmpBlock = tmpDecl->getBlock();
   if (copyInitCall->getBlock() != tmpBlock)
@@ -2015,7 +2011,7 @@ static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
 
   size_t numUses = 0;
   for (OpOperand &operand : copyInitCall.getOperand(0).getUses()) {
-    CallOp user = dyn_cast<CallOp>(operand.getOwner());
+    auto user = dyn_cast<LIT::CallOp>(operand.getOwner());
 
     // Don't handle control flow or other weird cases that are not calls.
     if (!user || user->getBlock() != tmpBlock)
@@ -2066,13 +2062,13 @@ static bool canEntirelyElideMemoryTemporary(CallOp copyInitCall,
 LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
                                                         Type destroyedType,
                                                         Operation *opWithUse) {
-  CallOp copyInitCall = dyn_cast_if_present<CallOp>(opWithUse);
+  auto copyInitCall = dyn_cast_if_present<LIT::CallOp>(opWithUse);
   if (!copyInitCall)
     return failure();
 
   // See if we can resolve the callee.
-  LIT::FuncOp callee =
-      valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getCalleeSymbol());
+  LIT::FuncOp callee = valueSet.typeDeclInfo.getFuncForSymbol(
+      copyInitCall.getCallee().getSymbol());
   if (!callee)
     return failure();
 
@@ -2230,10 +2226,8 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   assert(signature.getValueInputs()[0] == valueToDestroy.getType());
 
   // Emit the call to the destructor.
-  builder.create<CallOp>(
-      signature.getValueResults()[0], dtor,
-      builder.getAttr<ParamDeclArrayAttr>(ArrayRef<ParamDeclAttr>()),
-      ValueRange(valueToDestroy));
+  builder.create<LIT::CallOp>(signature.getValueResults()[0], dtor,
+                              valueToDestroy);
 }
 
 /// Destroy any values whose bits are indicated in the specified set.  Insert

@@ -33,8 +33,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK-LABEL: @main_closure
   llvm.func internal @main_closure() {
     %idx98 = index.constant 98
-    %0 = kgen.create_closure [(index) -> index: @h](%idx98) loc(#loc7)
-    %1 = kgen.create_closure [(index) -> index: @g](%idx98) loc(#loc8)
+    %0 = kgen.create_closure[(index) -> index: @h](%idx98) loc(#loc7)
+    %1 = kgen.create_closure[(index) -> index: @g](%idx98) loc(#loc8)
     "use.closure"(%0) : (!kgen.signature<() capturing -> index>) -> ()
     "use.closure"(%1) : (!kgen.signature<() capturing -> index>) -> ()
     llvm.return

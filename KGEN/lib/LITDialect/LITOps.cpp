@@ -168,6 +168,92 @@ LogicalResult PackageOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// CallOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseLifetimeParams(AsmParser &p,
+                                       ParameterExprArrayAttr &lifetimeParams) {
+  SmallVector<TypedAttr> values;
+  auto lifetimeType = LifetimeType::get(p.getContext());
+  if (p.parseCommaSeparatedList(
+          AsmParser::Delimiter::OptionalSquare, [&]() -> ParseResult {
+            return parseParamValue(p, values.emplace_back(), lifetimeType);
+          }))
+    return failure();
+  lifetimeParams = ParameterExprArrayAttr::get(p.getContext(), values);
+  return success();
+}
+
+static void printLifetimeParams(AsmPrinter &p, Operation *op,
+                                ParameterExprArrayAttr lifetimeParams) {
+  if (lifetimeParams.empty())
+    return;
+  p << '[';
+  llvm::interleaveComma(lifetimeParams, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+  p << ']';
+}
+
+static ParseResult parseCallOp(
+    OpAsmParser &p, SymbolConstantAttr &calleeCst,
+    ParameterExprArrayAttr &lifetimeParams, ParamDeclArrayAttr &paramDecls,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+    SmallVectorImpl<Type> &operandTypes, SmallVectorImpl<Type> &resultTypes) {
+  SymbolRefAttr callee;
+  ParameterExprArrayAttr paramValues;
+  if (p.parseAttribute(callee) || parseLifetimeParams(p, lifetimeParams),
+      parseCallOpParams(p, paramValues, paramDecls) ||
+          p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
+          p.parseColon())
+    return failure();
+
+  SignatureType signature;
+  FunctionType functionType;
+  if (parseKGENSignature(p, paramDecls, functionType, signature))
+    return failure();
+  calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
+  llvm::append_range(operandTypes, functionType.getInputs());
+  llvm::append_range(resultTypes, functionType.getResults());
+  return success();
+}
+
+static void printCallOp(OpAsmPrinter &p, Operation *op,
+                        SymbolConstantAttr calleeCst,
+                        ParameterExprArrayAttr lifetimeParams,
+                        ParamDeclArrayAttr paramDecls, ValueRange operands,
+                        TypeRange operandTypes, TypeRange resultTypes) {
+  p << calleeCst.getSymbol();
+  printLifetimeParams(p, op, lifetimeParams);
+  printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls,
+                    calleeCst.getType().getResultParamTypes());
+  p << '(';
+  p.printOperands(operands);
+  p << ") : ";
+  printSignatureValues(
+      p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
+      calleeCst.getType());
+}
+
+void LIT::CallOp::setCalleeAttr(TypedAttr callee) {
+  setCalleeAttr(cast<SymbolConstantAttr>(callee));
+}
+
+OperandRange LIT::CallOp::getArgOperands() { return getOperands(); }
+
+MutableOperandRange LIT::CallOp::getArgOperandsMutable() {
+  return getOperandsMutable();
+}
+
+mlir::CallInterfaceCallable LIT::CallOp::getCallableForCallee() {
+  return getCallee().getSymbol();
+}
+
+void LIT::CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
+  auto symbol = callee.get<SymbolRefAttr>();
+  setCalleeAttr(SymbolConstantAttr::get(symbol, getCallee().getType()));
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 
