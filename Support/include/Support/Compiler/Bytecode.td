@@ -59,6 +59,8 @@ def TypeArray : ConcreteTypeArray<"Type">;
 
 def TypedAttr : ConcreteAttribute<"TypedAttr">;
 
+def StringAttr : ConcreteAttribute<"StringAttr">;
+
 def StringAttrArray : ConcreteAttrArray<"StringAttr">;
 
 def TypedAttrArray : ConcreteAttrArray<"TypedAttr">;

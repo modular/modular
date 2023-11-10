@@ -1,4 +1,5 @@
 // RUN: support-dialect-opt %s | support-dialect-opt | FileCheck %s
+// RUN: support-dialect-opt -emit-bytecode %s | support-dialect-opt | FileCheck %s
 
 // CHECK-DAG: ![[BASIC:.*]] = !debuginfo.basic<f32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_float}>
 !f32Type = !debuginfo.basic<f32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_float }>

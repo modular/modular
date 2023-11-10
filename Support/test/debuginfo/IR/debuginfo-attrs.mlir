@@ -1,4 +1,5 @@
 // RUN: support-dialect-opt %s | support-dialect-opt | FileCheck %s
+// RUN: support-dialect-opt -emit-bytecode %s | support-dialect-opt | FileCheck %s
 
 // CHECK: ![[SUBROUTINE:.*]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
 // CHECK: ![[UNRESOLVED:.*]] = !debuginfo.unresolved<index>
