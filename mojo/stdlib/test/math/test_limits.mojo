@@ -7,6 +7,7 @@
 
 from math.limit import max_finite, min_finite
 
+
 # CHECK-LABEL: test_numeric_limits
 fn test_numeric_limits():
     print("== test_numeric_limits")

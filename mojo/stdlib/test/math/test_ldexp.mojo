@@ -7,6 +7,7 @@
 
 from math import ldexp
 
+
 # CHECK-LABEL: test_ldexp
 fn test_ldexp():
     print("== test_ldexp")

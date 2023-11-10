@@ -7,6 +7,7 @@
 
 from math import all_true, any_true, none_true
 
+
 # CHECK-LABEL: test_boolean_reductions
 fn test_boolean_reductions():
     print("== test_boolean_reductions")

@@ -7,6 +7,7 @@
 
 from math import iota, rsqrt, sqrt
 
+
 # CHECK-LABEL: test_int
 fn test_int():
     print("== test_int")

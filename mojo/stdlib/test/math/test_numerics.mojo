@@ -9,6 +9,7 @@ from math._numerics import FPUtils
 
 alias FPU64 = FPUtils[DType.float64]
 
+
 # CHECK-LABEL: test_numerics
 fn test_numerics():
     print("== test_numerics")

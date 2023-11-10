@@ -7,6 +7,7 @@
 
 from math import gcd, lcm
 
+
 # CHECK-LABEL: test_gcd
 fn test_gcd():
     print("== test_gcd")

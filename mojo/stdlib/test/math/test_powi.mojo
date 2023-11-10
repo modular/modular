@@ -7,6 +7,7 @@
 
 from math import iota, pow
 
+
 # CHECK-LABEL: test_powi
 fn test_powi():
     print("== test_powi")
