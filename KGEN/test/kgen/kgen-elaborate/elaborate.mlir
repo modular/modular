@@ -2225,3 +2225,25 @@ kgen.generator @make_generic_call() -> index {
   %result = kgen.call @generic_call<:type #kgen.concretetype.constant<index, vtable={"traitMethod" : <(index borrow) -> index> = @indexTraitMethod}>>(%anInt) : (index borrow) -> index
   kgen.return %result : index
 }
+
+// -----
+
+kgen.generator @sizeof<T: type>() -> index {
+  %0 = kgen.param.constant = <get_sizeof(T, current_target())>
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @"self_ref_apply,param=2"
+// CHECK-SAME: %arg0: !pop.array<16, i8>
+kgen.generator @self_ref_apply<param>(%arg0: !pop.array<apply(:()->index @sizeof<:type array<param, index>>), i8>) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @param_alias
+// CHECK-SAME: %arg0: !pop.array<16, i8>
+kgen.generator export @param_alias(%arg0: !pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) {
+  kgen.param.declare fn: <index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () = <@self_ref_apply>
+  // CHECK: call @"self_ref_apply,param=2"(%arg0)
+  kgen.call_param[(!pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) -> (): bind_signature(:<index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () fn, 2)](%arg0)
+  kgen.return
+}
