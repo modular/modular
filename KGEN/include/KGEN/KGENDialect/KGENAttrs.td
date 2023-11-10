@@ -314,11 +314,18 @@ def KGEN_VTableAttr : KGENAttr<"VTable", "vtable"> {
   let summary = "Static vtable for structs";
   let description = [{
     Static vtable for structs.  Used to implement traits.
+
+    Example:
+
+    ```mlir
+    #kgen<vtable "entry1" : <() -> index> = @entry1,
+                 "entry2" : <() -> index> = @entry2>
+    ```
   }];
 
   let parameters = (ins ArrayRefParameter<"VTableEntryAttr">:$entries);
 
-  let assemblyFormat = "$entries";
+  let assemblyFormat = "`` $entries";
 }
 
 def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
@@ -326,13 +333,19 @@ def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
   let description = [{
     Entry for a VTableAttr.  The name and signature are keys in the
     table, while the method is the lookup value.
+
+    Example:
+
+    ```mlir
+    #kgen<vtable.entry "methodName" : <() -> index> = @methodImpl>
+    ```
   }];
 
   let parameters = (ins "StringAttr":$name,
                         "SignatureType":$signature,
                         "SymbolRefAttr":$method
                         );
-  let assemblyFormat = "`<` $name `*` $signature `=` $method `>`";
+  let assemblyFormat = "`` custom<VTableEntryName>($name) `:` $signature `=` $method";
 }
 
 //===----------------------------------------------------------------------===//
@@ -349,6 +362,15 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
     'kgen.type' itself.
 
     The bound type must not have type parameters.
+
+    Example:
+
+    ```mlir
+    #kgen.concretetype.constant<!myType, vtable={
+      "method1" : <() -> index> = @method1,
+      "method2" : <() -> index> = @method2
+    }> : !kgen.mlirtype
+    ```
   }];
 
   // Inherit from a base class.
@@ -368,7 +390,7 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
                                    "", "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $value (`*` $vtable^)? `>`";
+  let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vtable^ `}` )? `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -415,7 +437,7 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
                                    "", "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $value (`*` $vtable^)? `>`";
+  let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vtable^ `}` )? `>`";
   let skipDefaultBuilders = 1;
 }
 
