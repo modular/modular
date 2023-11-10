@@ -59,6 +59,7 @@ fn block_reduce[
     )
 
 
+@__llvm_metadata(`nvvm.maxntid`=[BLOCK_SIZE])
 fn reduce_kernel[
     rank: Int,
     BLOCK_SIZE: Int,
