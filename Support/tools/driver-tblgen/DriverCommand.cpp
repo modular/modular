@@ -260,7 +260,9 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
                         group.getGroupName()));
     }
 
-    if (group.getOptions().empty())
+    if (llvm::none_of(group.getOptions(), [](const CommandOption &option) {
+          return !CommandOption::isHidden(option.getOption());
+        }))
       invalid |= printError(
           group.getGroup()->getLoc(),
           llvm::formatv("publicly documented group '{0}' has no publicly "
@@ -339,6 +341,12 @@ M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
 
 std::optional<int64_t> CommandOption::getIndex() const {
   return getValueAsOptionalIndex(option);
+}
+
+bool CommandOption::isHidden(const llvm::Record *option) {
+  return llvm::any_of(
+      option->getValueAsListOfDefs("Flags"),
+      [](llvm::Record *flag) { return flag->getName() == "HelpHidden"; });
 }
 
 LogicalResult CommandOption::addAlias(const llvm::Record *alias) {

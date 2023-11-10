@@ -54,10 +54,9 @@ def FirstOptionGroup : OptionGroup<"First Options">, Index<0>;
 // CHECK-NEXT: Takes a foo and does something with it.
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
-def foo : JoinedOrSeparate<["--", "-"], "foo">, Group<FirstOptionGroup>,
-  Index<1>, MetaVarName<"FOO">,
-  HelpText<"Takes a foo and does something with it.">;
-def : Joined<["-"], "F">, Group<FirstOptionGroup>, Index<0>,
+defm foo : CommandOption<["--", "-"], "foo", FirstOptionGroup, Index<1>,
+  MetaVarName<"FOO">, HelpText<"Takes a foo and does something with it.">>;
+def : Joined<["-"], "F">, Group<FirstOptionGroup>, Index<1>,
   MetaVarName<"ALSO-FOO">, Alias<foo>;
 
 def bar : Flag<["-"], "bar">, Group<FirstOptionGroup>, Index<0>,

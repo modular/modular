@@ -23,8 +23,8 @@ def chute : Separate<["-"], "chute">, Group<FunOptionGroup>, Index<0>;
 // CHECK: error: help text for option 'ladder' should begin with a capital letter
 // CHECK: error: help text for option 'ladder' should end with a period or quotation mark
 // CHECK: error: option 'ladder' metavar name should not be empty
-def ladder : Joined<["--"], "ladder">, Group<FunOptionGroup>, Index<1>,
-  HelpText<"the ladder to use">, MetaVarName<"">;
+defm ladder : CommandOption<["--"], "ladder", FunOptionGroup, Index<1>,
+  MetaVarName<"">, HelpText<"the ladder to use">>;
 def stool : Flag<["--"], "stool">, Group<FunOptionGroup>, Index<2>,
   HelpText<"Whether to use a stool.">;
 // CHECK: error: alias 's' has no index
@@ -35,4 +35,10 @@ def s : Joined<["-"], "s">, Group<FunOptionGroup>, Alias<stool>;
 def slide : JoinedOrSeparate<["--", "-"], "slide">, Group<FunOptionGroup>,
   HelpText<"The slide to use.">, MetaVarName<"path">;
 
+def SecretOptionGroup : OptionGroup<"Secret Options">;
+
+def whisper : Flag<["-"], "whisper">, Group<SecretOptionGroup>, Index<0>,
+  Flags<[HelpHidden]>, HelpText<"Use an inside voice.">;
+
 // CHECK: error: group 'Fun Options' has no index
+// CHECK: error: publicly documented group 'Secret Options' has no publicly documented options

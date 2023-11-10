@@ -129,9 +129,17 @@ static void genOptionsSection(raw_ostream &os,
     // Populate the option group subsection with each of the options that belong
     // to that group.
     for (const CommandOption &option : group.getOptions()) {
+      // Skip any hidden options.
+      if (CommandOption::isHidden(option.getOption()))
+        continue;
+
       // Print the option's name, and then the names of its aliases.
       genOptionName(os, option.getOption());
       for (const llvm::Record *option : option.getAliases()) {
+        // Skip any hidden aliases.
+        if (CommandOption::isHidden(option))
+          continue;
+
         os << ", ";
         genOptionName(os, option);
       }
