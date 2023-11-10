@@ -24,6 +24,7 @@ from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 from utils.optional_param import OptionalParamInt, OptionalParamInts
 
+
 # conv uses a different kernel than matmul
 fn get_conv_a_row_size() -> Int:
     @parameter
@@ -68,32 +69,38 @@ struct ConvShape:
 
     @always_inline
     fn c_per_group(self) -> Int:
-        """Returns the number of channels per group. Channel count must be divisible by group size."""
+        """Returns the number of channels per group. Channel count must be divisible by group size.
+        """
         return self.c // self.num_groups
 
     @always_inline
     fn f_per_group(self) -> Int:
-        """Returns the number of filters per group. Filter count must be divisible by group size."""
+        """Returns the number of filters per group. Filter count must be divisible by group size.
+        """
         return self.f // self.num_groups
 
     @always_inline
     fn f_to_group(self, f_idx: Int) -> Int:
-        """Given a global filter idx, returns the group idx of the group the filter belongs to."""
+        """Given a global filter idx, returns the group idx of the group the filter belongs to.
+        """
         return f_idx // self.f_per_group()
 
     @always_inline
     fn c_to_group(self, c_idx: Int) -> Int:
-        """Given a global channel idx, returns the group idx of the group the channel belongs to."""
+        """Given a global channel idx, returns the group idx of the group the channel belongs to.
+        """
         return c_idx // self.c_per_group()
 
     @always_inline
     fn f_in_group(self, f_idx: Int) -> Int:
-        """Given a global filter idx, returns the offset of the filter in its group."""
+        """Given a global filter idx, returns the offset of the filter in its group.
+        """
         return f_idx % self.f_per_group()
 
     @always_inline
     fn c_in_group(self, c_idx: Int) -> Int:
-        """Given a global channel idx, returns the offset of the channel in its group."""
+        """Given a global channel idx, returns the offset of the channel in its group.
+        """
         return c_idx % self.c_per_group()
 
 
@@ -437,7 +444,6 @@ fn get_micro_kernel_shape[
 
     @parameter
     if optimize_static_shapes:
-
         alias WO_val = WO.get()
         alias F_val = F.get()
         alias pad_h_val = Index(

@@ -8,6 +8,7 @@
 from memory.buffer import NDBuffer
 from ROIAlign import roi_align_nhwc
 
+
 # CHECK-LABEL: test_roi_align_avg
 fn test_roi_align_avg():
     print("=== test_roi_align_avg")

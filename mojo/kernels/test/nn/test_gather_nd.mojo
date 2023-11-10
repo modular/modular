@@ -9,6 +9,7 @@ from GatherScatter import gather_nd, gather_nd_shape
 from memory import stack_allocation
 from memory.buffer import NDBuffer
 
+
 # CHECK-LABEL: test_gather_nd
 fn main():
     print("test_gather_nd")

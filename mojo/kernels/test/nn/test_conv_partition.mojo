@@ -12,6 +12,7 @@ from MatmulUtils import partition_work
 
 from utils.index import Index, StaticIntTuple
 
+
 # CHECK-LABEL: test_conv_partition
 fn test_partition():
     print("== test_conv_partition")
