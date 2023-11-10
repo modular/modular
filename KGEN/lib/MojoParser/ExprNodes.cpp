@@ -511,9 +511,9 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (result.getIfPValue() && declRefIsRecordableCapture) {
     if (auto paramDeclRef =
             dyn_cast<ParamDeclRefAttr>(result.getIfPValue().get()))
-      CaptureUtility::recordParameterCapture(emitter.shared, &container,
-                                             spelling, paramDeclRef,
-                                             getLocation(emitter));
+      (void)CaptureUtility::recordParameterCapture(emitter.shared, &container,
+                                                   spelling, paramDeclRef,
+                                                   getLocation(emitter));
   }
 
   if (!capture)

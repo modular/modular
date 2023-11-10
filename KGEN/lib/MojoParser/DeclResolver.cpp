@@ -2818,7 +2818,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (effects.isEscaping()) {
     for (Type argType : argTypes) {
       argType.walk([&](ParamDeclRefAttr paramDeclAttr) {
-        CaptureUtility::recordParameterCapture(
+        (void)CaptureUtility::recordParameterCapture(
             shared, &decl, paramDeclAttr,
             shared.translateLocation(decl.getLoc()));
       });
