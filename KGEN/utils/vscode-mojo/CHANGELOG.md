@@ -8,3 +8,5 @@
   similar to the behavior of the Mojo REPL.
 
 - Fixed the "Debug Mojo File" action in the editor's top menu.
+
+- Mojo code blocks within documentation strings are now syntax highlighted.

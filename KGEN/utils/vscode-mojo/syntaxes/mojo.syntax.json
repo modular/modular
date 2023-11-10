@@ -613,6 +613,9 @@
     "string-unicode-guts": {
       "patterns": [
         {
+          "include": "#string-mojo-code-block"
+        },
+        {
           "include": "#escape-sequence-unicode"
         },
         {
@@ -3632,6 +3635,30 @@
         },
         {
           "include": "#string-unicode-guts"
+        }
+      ]
+    },
+    "string-mojo-code-block": {
+      "name": "meta.embedded.block.mojo",
+      "begin": "^(\\s*\\`{3,})(mojo)?$",
+      "end": "^(\\1)$",
+      "contentName": "source.mojo",
+      "beginCaptures": {
+        "1": {
+          "name": "string.quoted.single.python"
+        },
+        "2": {
+          "name": "string.quoted.single.python"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "string.quoted.single.python"
+        }
+      },
+      "patterns": [
+        {
+          "include": "source.mojo"
         }
       ]
     },
