@@ -25,6 +25,7 @@ using namespace M;
 static void genFrontMatter(raw_ostream &os, const CommandDescription &cmd) {
   os << "---\n"
      << "title: " << cmd.getName(/*join=*/" ") << "\n"
+     << "description: " << cmd.getSummary() << "\n"
      << "---\n\n";
 }
 
