@@ -193,6 +193,7 @@ fn run_matmul_kernel_10() raises:
             DimList(M, K),
             DType.float32,
             DimList(K, N),
+            indexing_integral_dtype = DType.uint32,
             BM=K10_BM,
             BN=K10_BN,
             BK=K10_BK,
