@@ -19,7 +19,8 @@ from sys.info import alignof
 
 @always_inline
 fn ldg[type: DType](x: DTypePointer[type]) -> SIMD[type, 1]:
-    """Load a register variable from global state space via non-coherent cache."""
+    """Load a register variable from global state space via non-coherent cache.
+    """
 
     alias alignment = Int32(alignof[SIMD[type, 1]]())
 

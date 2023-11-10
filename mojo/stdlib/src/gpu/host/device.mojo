@@ -703,7 +703,8 @@ struct Device:
         return self._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
     fn max_registers_per_block(self) raises -> Int:
-        """Returns the maximum number of 32-bit registers available per block."""
+        """Returns the maximum number of 32-bit registers available per block.
+        """
         return self._query(DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
 
     fn max_threads_per_sm(self) raises -> Int:
