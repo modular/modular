@@ -129,6 +129,11 @@ DIType KGEN::DebugInfoTypeConverter::buildPointerType(DIType type) {
                             tc.getPointerBitwidth());
 }
 
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(
+    DITargetIndependentPointerType type) {
+  return buildPointerType(convertDebugType(type.getElementType()));
+}
+
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(IndexType type) {
   // We treat index types as signed.
   return DIBasicSIntType::get(type.getContext(), "index",
@@ -193,6 +198,11 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
     : tc(tc) {
   // Let the LLVM conversion handle a majority of the debug info generation.
   addUnresolvedConverter(tc);
+
+  // Add conversions for partially resolved debug info types.
+  addConversion([&](DITargetIndependentPointerType type) {
+    return buildDebugType(type);
+  });
 
   // Add direct debug info conversions.
   addConversion([&](IndexType type) { return buildDebugType(type); });

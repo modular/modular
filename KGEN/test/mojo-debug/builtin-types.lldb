@@ -25,7 +25,7 @@
 # CHECK:   uint16 = 123
 # CHECK:   int32 = 485
 # CHECK: }
-# CHECK: (pointer<!kgen.declref<_"$anonymous_{{[0-9]+}}"::_struct{{.*}}>>) a_struct = 0x
+# CHECK: (pointer<!kgen.declref<_"$builtin-types"::_AStruct, !lit.metatype<_"$builtin-types"::_AStruct>>>) a_struct = 0x
 # CHECK: (f32) another_float = 4.125
 # CHECK: (string) a_string_literal = "fofofo"
 # CHECK: (pack) a_list = {
@@ -72,9 +72,9 @@
 
 # CHECK: (si64) *a_var_index = 48
 
-# CHECK: (struct) *a_struct = {
-# CHECK:   m0 = 12
-# CHECK:   m1 = {
+# CHECK: (AStruct) *a_struct = {
+# CHECK:   int = 12
+# CHECK:   tuple = {
 # CHECK:     m0 = 1
 # CHECK:     m1 = 87
 # CHECK:     m2 = 123.125
