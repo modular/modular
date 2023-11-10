@@ -2222,6 +2222,6 @@ kgen.generator @generic_call<T: type>(%arg0: !kgen.paramref<T> borrow) -> index{
 kgen.generator @make_generic_call() -> index {
   %anInt = kgen.param.constant = <1>
   // CHECK: kgen.call @"generic_call,T=index"
-  %result = kgen.call @generic_call<:type #kgen.concretetype.constant<index * #kgen<vtable <"traitMethod" * <(index borrow) -> index> = @indexTraitMethod>>>>(%anInt) : (index borrow) -> index
+  %result = kgen.call @generic_call<:type #kgen.concretetype.constant<index, vtable={"traitMethod" : <(index borrow) -> index> = @indexTraitMethod}>>(%anInt) : (index borrow) -> index
   kgen.return %result : index
 }
