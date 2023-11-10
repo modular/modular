@@ -320,7 +320,8 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
 
     @always_inline
     fn _allocate_buffers(inout self):
-        """Allocate space for packing and maybe other intermediate data space."""
+        """Allocate space for packing and maybe other intermediate data space.
+        """
         # TODO: read these data out from matmul config.
         self.packed_b = stack_allocation[
             get_pack_data_size[data_type.value_type](),  # Count.

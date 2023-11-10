@@ -13,6 +13,7 @@
 from Neon import _neon_dotprod, _neon_dotprod_lane
 from sys.info import has_neon_int8_dotprod
 
+
 # CHECK-LABEL: test_has_neon_int8_dotprod
 fn test_has_neon_int8_dotprod():
     print("== test_has_neon_int8_dotprod")

@@ -7,6 +7,7 @@
 
 from MatmulUtils import SubMatmulConfig, get_partitioned_matmul_mojo
 
+
 # CHECK-LABEL: test_partition
 fn test_partition():
     print("== test_partition")

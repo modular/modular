@@ -466,7 +466,8 @@ struct PackMatrixCols[
 
     @adaptive
     fn _pack(self):
-        """Copy the B tile from the original matrix to the packed buffer for VNNI."""
+        """Copy the B tile from the original matrix to the packed buffer for VNNI.
+        """
         constrained[use_vnni]()
         let kc = self.valid_data_dim[0]
         let nc = self.valid_data_dim[1]
