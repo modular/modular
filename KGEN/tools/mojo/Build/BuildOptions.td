@@ -14,7 +14,9 @@ include "../Common/CompilationOptions.td"
 
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
-def o : JoinedOrSeparate<["-"], "o">, Group<OutputOptionGroup>, Index<0>,
-  MetaVarName<"PATH">, HelpText<"Sets the path and filename for the executable "
-  "output. By default, it outputs the executable to the same location as the "
-  "Mojo file, with the same name and no extension.">;
+defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
+  MetaVarName<"PATH">, HelpText<
+    "Sets the path and filename for the executable output. By default, it "
+    "outputs the executable to the same location as the Mojo file, with the "
+    "same name and no extension."
+  >>;

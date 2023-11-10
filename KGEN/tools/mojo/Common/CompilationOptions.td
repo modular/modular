@@ -29,30 +29,29 @@ def no_optimization : Flag<["--", "-"], "no-optimization">,
 def : Flag<["-"], "O0">, Group<CompilationOptionGroup>, Index<0>,
   Alias<no_optimization>;
 
-def target_triple : Separate<["--", "-"], "target-triple">,
-  Group<CompilationOptionGroup>, Index<1>, MetaVarName<"TRIPLE">,
-  HelpText<"Sets the compilation target triple. Defaults to the host target.">;
+defm target_triple : CommandOption<["--", "-"], "target-triple",
+  CompilationOptionGroup, Index<1>, MetaVarName<"TRIPLE">,
+  HelpText<"Sets the compilation target triple. Defaults to the host target.">>;
 
-def target_cpu : Separate<["--", "-"], "target-cpu">,
-  Group<CompilationOptionGroup>, Index<2>, MetaVarName<"CPU">,
-  HelpText<"Sets the compilation target CPU. Defaults to the host CPU.">;
+defm target_cpu : CommandOption<["--", "-"], "target-cpu",
+  CompilationOptionGroup, Index<2>, MetaVarName<"CPU">,
+  HelpText<"Sets the compilation target CPU. Defaults to the host CPU.">>;
 
-def target_features : Separate<["--", "-"], "target-features">,
-  Group<CompilationOptionGroup>, Index<3>, MetaVarName<"FEATURES">,
+defm target_features : CommandOption<["--", "-"], "target-features",
+  CompilationOptionGroup, Index<3>, MetaVarName<"FEATURES">,
   HelpText<"Sets the compilation target CPU features. Defaults to the host "
-           "features.">;
+           "features.">>;
 
-def march : Separate<["-", "--"], "march">, Group<CompilationOptionGroup>,
+defm march : CommandOption<["--", "-"], "march", CompilationOptionGroup,
   Index<4>, MetaVarName<"ARCHITECTURE">,
-  HelpText<"Sets the architecture to generate code for.">;
+  HelpText<"Sets the architecture for which to generate code.">>;
 
-def mcpu : Separate<["-", "--"], "mcpu">, Group<CompilationOptionGroup>,
-  Index<5>, MetaVarName<"CPU">,
-  HelpText<"Sets the CPU to generate code for.">;
+defm mcpu : CommandOption<["--", "-"], "mcpu", CompilationOptionGroup, Index<5>,
+  MetaVarName<"CPU">, HelpText<"Sets the CPU for which to generate code.">>;
 
-def mtune : Separate<["-", "--"], "mtune">, Group<CompilationOptionGroup>,
+defm mtune : CommandOption<["--", "-"], "mtune", CompilationOptionGroup,
   Index<6>, MetaVarName<"TUNE">,
-  HelpText<"Sets the CPU to tune code for.">;
+  HelpText<"Sets the CPU for which to tune code.">>;
 
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<7>,
   MetaVarName<"PATH">,
@@ -80,12 +79,12 @@ def warn_missing_dog_strings : Flag<["--", "-"], "warn-missing-doc-strings">,
   Group<DiagnosticOptionGroup>, Index<0>,
   HelpText<"Emits warnings for missing or partial docstrings.">;
 
-def max_notes : Separate<["--", "-"], "max-notes-per-diagnostic">,
-  Group<DiagnosticOptionGroup>, Index<1>, MetaVarName<"INTEGER">,
+defm max_notes : CommandOption<["--", "-"], "max-notes-per-diagnostic",
+  DiagnosticOptionGroup, Index<1>, MetaVarName<"INTEGER">,
   HelpText<"When the Mojo compiler emits diagnostics, it sometimes also prints "
            "notes with additional information. This option sets an upper "
            "threshold on the number of notes that can be printed with a "
-           "diagnostic. If not specified, the default maximum is 10.">;
+           "diagnostic. If not specified, the default maximum is 10.">>;
 
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
@@ -94,29 +93,31 @@ def max_notes : Separate<["--", "-"], "max-notes-per-diagnostic">,
 def ExperimentalCompilationOptionGroup :
   OptionGroup<"Experimental compilation options">, Index<3>;
 
-def debug_level : Separate<["--", "-"], "debug-level">,
-  Group<ExperimentalCompilationOptionGroup>, Index<0>, MetaVarName<"LEVEL">,
-  HelpText<"Sets the level of debug info to use at compilation. The value must "
-           "be one of: `none` (the default value), `line-tables`, or `full`. "
-           "Please note that there are issues when generating debug info for "
-           "some Mojo programs that have yet to be addressed.">;
+defm debug_level : CommandOption<["--", "-"], "debug-level",
+  ExperimentalCompilationOptionGroup, Index<0>, MetaVarName<"LEVEL">,
+  HelpText<
+    "Sets the level of debug info to use at compilation. The value must be one "
+    "of: `none` (the default value), `line-tables`, or `full`. Please note "
+    "that there are issues when generating debug info for some Mojo programs "
+    "that have yet to be addressed."
+  >>;
 
-def sanitize : Separate<["--", "-"], "sanitize">,
-  Group<ExperimentalCompilationOptionGroup>, Index<1>, MetaVarName<"CHECK">,
+defm sanitize : CommandOption<["--", "-"], "sanitize",
+  ExperimentalCompilationOptionGroup, Index<1>, MetaVarName<"CHECK">,
   HelpText<
     "Turns on runtime checks. The following values are supported: `address` "
     "(detects memory issues), and `thread` (detects multi-threading issues). "
     "Please note that these checks are not currently supported when executing "
     "Mojo programs."
-  >;
+  >>;
 
-def debug_info_language : Separate<["--", "-"], "debug-info-language">,
-  Group<ExperimentalCompilationOptionGroup>, Index<2>, MetaVarName<"LANGUAGE">,
+defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
+  ExperimentalCompilationOptionGroup, Index<2>, MetaVarName<"LANGUAGE">,
   HelpText<
     "Sets the language to emit as part of the debug info. The supported "
     "languages are: `Mojo`, and `C`. `C` is the default, and is useful to "
     "enable rudimentary debugging and binary introspection in tools "
     "that don't understand Mojo."
-  >;
+  >>;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD

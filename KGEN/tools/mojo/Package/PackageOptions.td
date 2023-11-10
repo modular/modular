@@ -14,9 +14,10 @@ include "../Common/CompilationOptions.td"
 
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
-def o : JoinedOrSeparate<["-"], "o">, Group<OutputOptionGroup>, Index<0>,
-  MetaVarName<"PATH">, HelpText<"Sets the path and filename for the output "
-  "package. The filename must end with either `.mojopkg` or `.📦`. The "
-  "filename given here defines the package name you can then use to import "
-  "the code (minus the file extension). If you don't specify this option, "
-  "output is written to stdout.">;
+defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
+  MetaVarName<"PATH">, HelpText<
+    "Sets the path and filename for the output package. The filename must end "
+    "with either `.mojopkg` or `.📦`. The filename given here defines the "
+    "package name you can then use to import the code (minus the file "
+    "extension). If you don't specify this option, output is written to stdout."
+  >>;
