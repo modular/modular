@@ -10,7 +10,7 @@
 
 
 # COM: Using the default language Mojo
-# RUN: mojo build --debug-level full -O0 %s -o %t
+# RUN: mojo build --debug-level=full -O0 %s -o %t
 # RUN: mojo debug %t -o 'image lookup -vs $build-mojo-lang-dwarf::foo()' -b | FileCheck %s --check-prefix CHECK-MOJO
 # CHECK-MOJO: language = "mojo"
 

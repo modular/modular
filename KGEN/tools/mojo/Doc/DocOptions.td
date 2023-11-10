@@ -13,9 +13,10 @@ include "Support/Driver/CommonOptions.td"
 
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
-def o : JoinedOrSeparate<["-"], "o">, Group<OutputOptionGroup>, Index<0>,
-  MetaVarName<"PATH">, HelpText<"Sets the path and filename for the JSON "
-  "output. If not provided, output is written to stdout.">;
+defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
+  MetaVarName<"PATH">,
+  HelpText<"Sets the path and filename for the JSON output. If not provided, "
+           "output is written to stdout.">>;
 
 //===----------------------------------------------------------------------===//
 // Compilation Options

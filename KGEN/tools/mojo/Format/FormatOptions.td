@@ -13,10 +13,10 @@ include "Support/Driver/CommonOptions.td"
 
 def FormatOptionGroup : OptionGroup<"Format options">, Index<0>;
 
-def line_length : Separate<["--"], "line-length">,
-  Group<FormatOptionGroup>, Index<0>, MetaVarName<"INTEGER">,
-  HelpText<"Sets the max character line length. Default is 80.">;
-def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<0>,
+defm line_length : CommandOption<["--", "-"], "line-length",
+  FormatOptionGroup, Index<0>, MetaVarName<"INTEGER">,
+  HelpText<"Sets the max character line length. Default is 80.">>;
+def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<1>,
   MetaVarName<"INTEGER">, Alias<line_length>;
 
 //===----------------------------------------------------------------------===//

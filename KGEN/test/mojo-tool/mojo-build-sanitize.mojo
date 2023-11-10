@@ -21,7 +21,7 @@
 
 # Check that we have the expected sanitizer symbols in our built executables.
 
-# RUN: mojo build %mojo_cpu_build_arch %s --sanitize address -o %t
+# RUN: mojo build %mojo_cpu_build_arch %s --sanitize=address -o %t
 # RUN: llvm-objdump %t -t | FileCheck %s --check-prefix=ASAN
 
 # RUN: mojo build %mojo_cpu_build_arch %s --sanitize thread -o %t
