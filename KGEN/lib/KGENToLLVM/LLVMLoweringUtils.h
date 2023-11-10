@@ -299,6 +299,11 @@ private:
   /// Build a pointer type.
   DebugInfo::DIType buildPointerType(DebugInfo::DIType type);
 
+  /// Build fully resolved debug type from partially resolved ones.
+  DebugInfo::DIType
+  buildDebugType(DebugInfo::DITargetIndependentPointerType type);
+
+  /// Build fully resolved debug type from kgen/pop types.
   DebugInfo::DIType buildDebugType(IndexType type);
   DebugInfo::DIType buildDebugType(StringType type);
   DebugInfo::DIType buildDebugType(KGEN::NoneType type);

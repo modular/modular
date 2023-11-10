@@ -239,6 +239,40 @@ def DebugInfo_DISubroutineType : DIType<"DISubroutine", "subroutine"> {
 }
 
 //===----------------------------------------------------------------------===//
+// DITargetIndependentPointerType
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_TargetIndependentPointerType : DIType<
+    "DITargetIndependentPointer", "ti.ptr"
+  > {
+  let summary = "Target-Independent Pointer type debug info description";
+  let description = [{
+    The `debuginfo.ti.ptr` type represents the debug information for a partially
+    resolved pointer type, where we have the element type resolved, but not any
+    target-specific information resolved yet.
+
+    This will eventually resolve into a DIPointerType.
+
+    Example:
+
+    ```mlir
+    !debuginfo.ti.ptr<!elementType>
+    ```
+
+    TODO: We will eventually find a better way to represent all the partially
+    resolved types that we want to keep track of during lowering, and that may
+    be dialect-specific. Putting this here until more types are needed.
+  }];
+  let parameters = (ins "DIType":$elementType);
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "DIType":$elementType), [{
+      return $_get(elementType.getContext(), elementType);
+    }]>
+  ];
+  let assemblyFormat = "`<` custom<DIType>($elementType) `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // DIUnresolvedMLIRType
 //===----------------------------------------------------------------------===//
 

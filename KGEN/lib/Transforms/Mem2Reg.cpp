@@ -72,6 +72,8 @@ unwrapPointer(DebugInfo::DILocalVariableAttr diVarAttr) {
   // Unwrap the DIPointerType if there is one and use the new type.
   if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(type))
     newType = ptr.getElementType();
+  else if (auto ptr = dyn_cast<DebugInfo::DITargetIndependentPointerType>(type))
+    newType = ptr.getElementType();
 
   return DebugInfo::DILocalVariableAttr::get(
       diVarAttr.getScope(), diVarAttr.getName(), diVarAttr.getFile(),
