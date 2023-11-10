@@ -5,18 +5,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/Compiler/Bytecode.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace M::DebugInfo;
 
+namespace {
+
 //===----------------------------------------------------------------------===//
-// OpAsmDialectInterface
+// DebugInfoOpAsmDialectInterface
 //===----------------------------------------------------------------------===//
 
-namespace {
 struct DebugInfoOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   using mlir::OpAsmDialectInterface::OpAsmDialectInterface;
 
@@ -65,6 +68,41 @@ struct DebugInfoOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
         .Default([](Type) { return AliasResult::NoAlias; });
   }
 };
+
+//===----------------------------------------------------------------------===//
+// DebugInfoDialectBytecodeInterface
+//===----------------------------------------------------------------------===//
+
+using mlir::DialectBytecodeReader;
+using mlir::DialectBytecodeWriter;
+using mlir::get;
+
+#include "Support/DebugInfoDialect/IR/DebugInfoDialectBytecode.cpp.inc"
+
+struct DebugInfoDialectBytecodeInterface
+    : public mlir::BytecodeDialectInterface {
+  DebugInfoDialectBytecodeInterface(Dialect *dialect)
+      : BytecodeDialectInterface(dialect) {}
+
+  Attribute readAttribute(DialectBytecodeReader &reader) const override {
+    return ::readAttribute(getContext(), reader);
+  }
+
+  LogicalResult writeAttribute(Attribute attr,
+                               DialectBytecodeWriter &writer) const override {
+    return ::writeAttribute(attr, writer);
+  }
+
+  Type readType(DialectBytecodeReader &reader) const override {
+    return ::readType(getContext(), reader);
+  }
+
+  LogicalResult writeType(Type type,
+                          DialectBytecodeWriter &writer) const override {
+    return ::writeType(type, writer);
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -75,7 +113,8 @@ void DebugInfoDialect::initialize() {
   registerAttributes();
   registerOperations();
   registerTypes();
-  addInterfaces<DebugInfoOpAsmDialectInterface>();
+  addInterfaces<DebugInfoOpAsmDialectInterface,
+                DebugInfoDialectBytecodeInterface>();
 }
 
 //===----------------------------------------------------------------------===//

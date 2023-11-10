@@ -79,12 +79,12 @@ def FnMetadataAttr : DialectAttribute<(attr
 )>;
 
 def DocStringAttr : DialectAttribute<(attr
-  ConcreteAttribute<"StringAttr">:$string,
+  StringAttr:$string,
   OptionalAttribute<"FileLineColLoc">:$location
 )>;
 
 def UnboundMLIROperationAttr : DialectAttribute<(attr
-  ConcreteAttribute<"StringAttr">:$name,
+  StringAttr:$name,
   ConcreteAttribute<"DictionaryAttr">:$attrs
 )>;
 
@@ -112,7 +112,7 @@ def LITStructAttr : DialectAttribute<(attr
 
 def StructExtractAttr : DialectAttribute<(attr
   TypedAttr:$structValue,
-  ConcreteAttribute<"StringAttr">:$field,
+  StringAttr:$field,
   Type:$type
 )>;
 

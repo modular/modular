@@ -97,7 +97,7 @@ def ParameterExprArrayAttr : DialectAttribute<(attr
 )>;
 
 def ParamDeclAttr : DialectAttribute<(attr
-  ConcreteAttribute<"StringAttr">:$name,
+  StringAttr:$name,
   Type:$type
 )>;
 
@@ -107,7 +107,7 @@ def ParamDeclArrayAttr : DialectAttribute<(attr
 
 def ConstraintAttr : DialectAttribute<(attr
   TypedAttr:$expr,
-  ConcreteAttribute<"StringAttr">:$message,
+  StringAttr:$message,
   ConcreteAttribute<"mlir::LocationAttr">:$loc
 )>;
 
@@ -131,7 +131,7 @@ def UnboundAttr : DialectAttribute<(attr
 def NoneAttr : DialectAttribute<(attr)>;
 
 def ParamDeclRefAttr : DialectAttribute<(attr
-  ConcreteAttribute<"StringAttr">:$name,
+  StringAttr:$name,
   Type:$type
 )>;
 
@@ -147,7 +147,7 @@ def VTableAttr : DialectAttribute<(attr
 )>;
 
 def VTableEntryAttr : DialectAttribute<(attr
-  ConcreteAttribute<"StringAttr">:$name,
+  StringAttr:$name,
   ConcreteType<"SignatureType">:$signature,
   ConcreteAttribute<"SymbolRefAttr">:$method
 )>;
@@ -197,7 +197,7 @@ def ParamOperatorAttr : DialectAttribute<(attr
 )>;
 
 def MLIROpAttr : DialectAttribute<(attr
-  ConcreteAttribute<"StringAttr">:$name,
+  StringAttr:$name,
   ConcreteAttribute<"DictionaryAttr">:$attrs,
   ConcreteType<"SignatureType">:$type
 )>;
