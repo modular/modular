@@ -14,6 +14,18 @@
 using namespace M::LLCL;
 
 //===----------------------------------------------------------------------===//
+// Detail
+//===----------------------------------------------------------------------===//
+
+/// Returns ptr in hex form. Only needed for profiling entries.
+std::string Detail::addrToHex(void *p) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  os << llvm::format("%x", reinterpret_cast<intptr_t>(p));
+  return str;
+}
+
+//===----------------------------------------------------------------------===//
 // Destruction logic
 //===----------------------------------------------------------------------===//
 

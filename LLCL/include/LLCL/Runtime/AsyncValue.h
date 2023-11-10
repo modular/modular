@@ -21,7 +21,6 @@
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/Format.h"
 #include "llvm/Support/TypeName.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -36,12 +35,7 @@ template <typename T>
 class ConcreteAsyncValue;
 
 /// Returns ptr in hex form. Only needed for profiling entries.
-inline std::string addrToHex(void *p) {
-  std::string str;
-  llvm::raw_string_ostream os(str);
-  os << llvm::format("%x", reinterpret_cast<intptr_t>(p));
-  return str;
-}
+std::string addrToHex(void *p);
 
 } // namespace Detail
 
