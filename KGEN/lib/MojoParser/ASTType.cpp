@@ -50,6 +50,8 @@ Type ASTType::getMetaType() const {
     return {};
   if (isa<MetaTypeType>(mlirType))
     return mlirType;
+  if (isa<TraitType>(mlirType))
+    return mlirType;
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return declRef.getMetaType();
   if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
@@ -61,6 +63,8 @@ Type ASTType::getMetaType() const {
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
   if (auto metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
     return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
+  if (auto traitType = dyn_cast_or_null<TraitType>(getMetaType()))
+    return &shared.declResolver->getDeclForTypeSymbol(traitType.getSymbol());
   return nullptr;
 }
 
