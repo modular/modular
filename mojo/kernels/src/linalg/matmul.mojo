@@ -16,7 +16,8 @@ from algorithm import (
     vectorize,
     vectorize_unroll,
 )
-from gpu import BlockDim, BlockIdx, ThreadIdx
+from gpu import BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE
+from gpu.memory import AddressSpace
 from gpu.host import Function, Stream
 from MatmulUtils import (
     GemmShape,
@@ -2093,6 +2094,289 @@ fn _small_matmul[
 
 
 @always_inline
+fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
+    # Load a register variable from global state space via non-coherent cache.
+
+    alias alignment = Int32(alignof[SIMD[type, 4]]())
+
+    @parameter
+    if type == DType.float32:
+        return bitcast[type, 4](
+            llvm_intrinsic[
+                "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
+            ](x.bitcast[DType.float32](), alignment)
+        )
+    else:
+        constrained[False, "Unhandled DType"]()
+        return 0
+
+
+# BM: The threadblock size for M dimension SMEM caching.
+# BN: The threadblock size for N dimension SMEM caching.
+# BK: The threadblock size for K dimension SMEM caching.
+# WM: M dim of continuous tile computed by each warp.
+# WN: N dim of continuous tile computed by each warp.
+# WMITER: The number of subwarp tiling steps in M dimension.
+# WNITER: The number of subwarp tiling steps in N dimension.
+# TM: The per-thread tile size for M dimension.
+# TN: The per-thread tile size for N dimension.
+@__llvm_metadata(`nvvm.maxntid`=[NUM_THREADS])
+fn sgemm_warp_tiling_kernel[
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    WMITER: Int,
+    WNITER: Int,
+    TM: Int,
+    TN: Int,
+    NUM_THREADS: Int,
+](
+    mat_a_ptr: DTypePointer[DType.float32],
+    mat_b_ptr: DTypePointer[DType.float32],
+    mat_c_ptr: DTypePointer[DType.float32],
+    M: Int,
+    N: Int,
+    K: Int,
+    alpha: Float32,
+    beta: Float32,
+):
+    let mat_a = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        mat_a_ptr, Index(M, K)
+    )
+    let mat_b = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        mat_b_ptr, Index(K, N)
+    )
+    let mat_c = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        mat_c_ptr, Index(M, N)
+    )
+
+    let c_row = BlockIdx.y()
+    let c_col = BlockIdx.x()
+
+    # Placement of the warp in the threadblock tile.
+    let warp_idx = ThreadIdx.x() // WARP_SIZE  # the warp this thread is in
+    let warp_col = warp_idx % (BN // WN)
+    let warp_row = warp_idx // (BN // WN)
+
+    # Size of the warp subtile.
+    alias w_sub_m = WM // WMITER  # 64/2=32
+    alias w_sub_n = WN // WNITER  # 32/2=16
+
+    # Placement of the thread in the warp subtile.
+    let thread_Idx_In_warp = ThreadIdx.x() % WARP_SIZE  # [0, 31]
+    let thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
+    let thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
+
+    # Allocate space for the current blocktile in SMEM.
+    # Pad the A tile in share memory to avoid bank conflicts.
+    # Use 4 to comply with f4 alignment used in accumulation.
+    alias sram_bank_padding_size = 4
+    alias BM_padded = BM + sram_bank_padding_size
+    let a_sram = NDBuffer[
+        1,
+        DimList(BK * BM_padded),
+        DType.float32,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    let b_sram = NDBuffer[
+        1, DimList(BK * BN), DType.float32, address_space = AddressSpace.SHARED
+    ].stack_allocation()
+
+    # Move blocktile to beginning of A's row and B's column.
+    var aa_ptr = mat_a._offset(Index(c_row * BM, 0))
+    var bb_ptr = mat_b._offset(Index(0, c_col * BN))
+    # Move C_ptr to warp's output tile
+    let cc_ptr = mat_c._offset(
+        Index(c_row * BM + warp_row * WM, c_col * BN + warp_col * WN)
+    )
+
+    # Calculate the indices that this thread will load into SMEM.
+    # We load 128bit / 32bit = 4 elements per thread at each step.
+    let inner_row_a = ThreadIdx.x() // (BK // 4)
+    let inner_col_a = ThreadIdx.x() % (BK // 4)
+    alias row_stride_a = (NUM_THREADS * 4) // BK
+    let inner_row_b = ThreadIdx.x() // (BN // 4)
+    let inner_co_ib = ThreadIdx.x() % (BN // 4)
+    alias row_stride_b = NUM_THREADS // (BN // 4)
+
+    # TODO: We want these to be register-allocated!
+    # Allocate thread-local cache for results in register file.
+    let thread_results = NDBuffer[
+        4, DimList(WMITER, WNITER, TM, TN), DType.float32
+    ]().stack_allocation()
+    thread_results.zero()
+
+    # We cache into registers on the warptile level.
+    let reg_m = NDBuffer[
+        2, DimList(WMITER, TM), DType.float32
+    ]().stack_allocation()
+    reg_m.zero()
+
+    let reg_n = NDBuffer[
+        2, DimList(WNITER, TN), DType.float32
+    ]().stack_allocation()
+    reg_n.zero()
+
+    # Outer-most loop over block tiles.
+    for bk_idx in range(0, K, BK):
+        for offset in range(0, BM - row_stride_a + 1, row_stride_a):
+            # Load 4 elements at a time and store to shared memory.
+            let tmp = __nvvm_ldg_f4[DType.float32](
+                aa_ptr.offset((inner_row_a + offset) * K + inner_col_a * 4)
+            )
+
+            @unroll
+            for i in range(4):
+                a_sram[
+                    (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
+                ] = tmp[i]
+
+        for offset in range(0, BK - row_stride_b + 1, row_stride_b):
+            # Load 4 elements at a time and store to shared memory.
+            let tmp = __nvvm_ldg_f4[DType.float32](
+                bb_ptr.offset((inner_row_b + offset) * N + inner_co_ib * 4)
+            )
+            b_sram.aligned_simd_store[4, 16](
+                Index((inner_row_b + offset) * BN + inner_co_ib * 4), tmp
+            )
+
+        barrier()
+
+        for dot_idx in range(BK):
+            # Populate registers for whole warptile.
+            @unroll
+            for w_sub_row_Idx in range(WMITER):
+
+                @unroll
+                for i in range(0, TM, 4):
+                    let vec = a_sram.aligned_simd_load[4, 16](
+                        (dot_idx * BM_padded)
+                        + warp_row * WM
+                        + w_sub_row_Idx * w_sub_m
+                        + thread_row_in_warp * TM
+                        + i
+                    )
+                    reg_m.simd_store(Index(w_sub_row_Idx, i), vec)
+
+            @unroll
+            for w_sub_col_idx in range(WNITER):
+
+                @unroll
+                for i in range(0, TN, 4):
+                    let vec = b_sram.aligned_simd_load[4, 16](
+                        (dot_idx * BN)
+                        + warp_col * WN
+                        + w_sub_col_idx * w_sub_n
+                        + thread_col_in_warp * TN
+                    )
+                    reg_n.simd_store(Index(w_sub_col_idx, i), vec)
+
+            # Execute warptile matmul.
+            @unroll
+            for w_sub_row_Idx in range(WMITER):
+
+                @unroll
+                for w_sub_col_idx in range(WNITER):
+                    # Calculate per-thread results.
+                    @unroll
+                    for res_idx_m in range(TM):
+
+                        @unroll
+                        for res_idx_n in range(TN):
+                            thread_results[
+                                Index(
+                                    w_sub_row_Idx,
+                                    w_sub_col_idx,
+                                    res_idx_m,
+                                    res_idx_n,
+                                )
+                            ] += (
+                                reg_m[w_sub_row_Idx, res_idx_m]
+                                * reg_n[w_sub_col_idx, res_idx_n]
+                            )
+        aa_ptr = aa_ptr.offset(BK)  # move BK columns to right
+        bb_ptr = bb_ptr.offset(BK * N)  # move BK rows down
+        barrier()
+
+    # Write out the results.
+    @unroll
+    for w_sub_row_Idx in range(WMITER):
+
+        @unroll
+        for w_sub_col_idx in range(WNITER):
+            # Move C pointer to current warp subtile.
+            let C_interim: DTypePointer[DType.float32] = cc_ptr.offset(
+                (w_sub_row_Idx * w_sub_m) * N + w_sub_col_idx * w_sub_n
+            )
+
+            @unroll
+            for res_idx_m in range(TM):
+
+                @unroll
+                for res_idx_n in range(0, TN, 4):
+                    let c_idx = (
+                        thread_row_in_warp * TM + res_idx_m
+                    ) * N + thread_col_in_warp * TN + res_idx_n
+                    let result_vec = thread_results.simd_load[4](
+                        Index(
+                            w_sub_row_Idx,
+                            w_sub_col_idx,
+                            res_idx_m,
+                            res_idx_n,
+                        )
+                    )
+                    var vec = C_interim.aligned_simd_load[4, 16](c_idx)
+                    # Perform GEMM update in reg.
+                    vec = alpha * result_vec + beta * vec
+                    C_interim.aligned_simd_store[4, 16](
+                        c_idx,
+                        vec,
+                    )
+
+
+fn matmul_kernel[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    BLOCK_DIM: Int,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+](
+    a_ptr: DTypePointer[a_type],
+    b_ptr: DTypePointer[b_type],
+    c_ptr: DTypePointer[c_type],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    @parameter
+    if not triple_is_nvidia_cuda():
+        return
+
+    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    let y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+
+    if x >= m or y >= n:
+        return
+
+    let a = NDBuffer[2, DimList.create_unknown[2](), a_type](a_ptr, Index(m, k))
+    let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
+    let c = NDBuffer[2, DimList.create_unknown[2](), c_type](c_ptr, Index(m, n))
+
+    var accum = SIMD[c_type, 1]()
+    for i in range(k):
+        accum = a[x, i].cast[c_type]() * b[i, y].cast[c_type]() + accum
+
+    @parameter
+    if elementwise_epilogue_enabled:
+        elementwise_lambda_fn[c_type, 1](Index(x, y), accum)
+    else:
+        c[Index(x, y)] = accum
+
+
+@always_inline
 @adaptive
 fn matmul[
     a_type: DType,
@@ -2130,73 +2414,108 @@ fn matmul[
     constrained[not b_packed, "pre-packing not yet supported"]()
     constrained[not saturated_vnni, "saturated_vnni_flag not applicable"]()
 
-    alias BLOCK_DIM = 16
-
     let shape = GemmShape.get[False, transpose_b](c, a, b)
     let m = shape.M
     let n = shape.N
     let k = shape.K
 
-    @export
-    fn matmul_kernel(
-        a_ptr: DTypePointer[a_type],
-        b_ptr: DTypePointer[b_type],
-        c_ptr: DTypePointer[c_type],
-        m: Int,
-        n: Int,
-        k: Int,
-    ):
-        @parameter
-        if not triple_is_nvidia_cuda():
-            return
-
-        let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-        let y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-
-        if x >= m or y >= n:
-            return
-
-        let a = NDBuffer[2, DimList.create_unknown[2](), a_type](
-            a_ptr, Index(m, k)
-        )
-        let b = NDBuffer[2, DimList.create_unknown[2](), b_type](
-            b_ptr, Index(k, n)
-        )
-        let c = NDBuffer[2, DimList.create_unknown[2](), c_type](
-            c_ptr, Index(m, n)
-        )
-
-        var accum = SIMD[c_type, 1]()
-        for i in range(k):
-            accum = a[x, i].cast[c_type]() * b[i, y].cast[c_type]() + accum
-
-        @parameter
-        if elementwise_epilogue_enabled:
-            elementwise_lambda_fn[c_type, 1](Index(x, y), accum)
-        else:
-            c[Index(x, y)] = accum
-
     try:
-        alias func_type = fn (
-            DTypePointer[a_type],
-            DTypePointer[b_type],
-            DTypePointer[c_type],
-            Int,
-            Int,
-            Int,
-        ) capturing -> None
-        let gpu_func = Function[func_type, rebind[func_type](matmul_kernel)]()
-        gpu_func(
-            (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
-            (BLOCK_DIM, BLOCK_DIM),
-            a.data,
-            b.data,
-            c.data,
-            m,
-            n,
-            k,
-            stream=out_chain.get_cuda_stream(),
+        # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
+        # no elementwise_epilogue, fallback to generic matmul_kernel.
+        let warp_tiled_matmul_suppoered_shape = (
+            m % 128 == 0 and n % 128 == 0 and k % 128 == 0
         )
+        let warp_tiled_matmul_supported_format = (
+            a_type == DType.float32
+            and b_type == DType.float32
+            and c_type == DType.float32
+        )
+        if (
+            warp_tiled_matmul_suppoered_shape
+            and warp_tiled_matmul_supported_format
+            and not elementwise_epilogue_enabled
+        ):
+            # TODO: Auto tune these for A100.
+            # TODO: NUM_THREADS need to vary as M, N varies.
+            alias NUM_THREADS = 128
+            alias BN = 128
+            alias BM = 128
+            alias BK = 16
+            alias WN = 64
+            alias WM = 64
+            alias WNITER = 4
+            alias TN = 4
+            alias TM = 8
+            alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
+            alias NUM_WARPS = NUM_THREADS / WARP_SIZE
+            let gpu_func = Function[
+                fn (
+                    DTypePointer[DType.float32],
+                    DTypePointer[DType.float32],
+                    DTypePointer[DType.float32],
+                    Int,
+                    Int,
+                    Int,
+                    Float32,
+                    Float32,
+                ) -> None, sgemm_warp_tiling_kernel[
+                    BM,
+                    BN,
+                    BK,
+                    WM,
+                    WN,
+                    WMITER,
+                    WNITER,
+                    TM,
+                    TN,
+                    NUM_THREADS,
+                ]
+            ](threads_per_block=NUM_THREADS)
+            alias alpha = 1.0
+            alias beta = 0.0
+            gpu_func(
+                (div_ceil(m, BM), div_ceil(n, BN)),
+                (NUM_THREADS),
+                a.data,
+                b.data,
+                c.data,
+                m,
+                n,
+                k,
+                alpha,
+                beta,
+                stream=out_chain.get_cuda_stream(),
+            )
+        else:
+            alias BLOCK_DIM = 16
+            let gpu_func = Function[
+                fn (
+                    DTypePointer[a_type],
+                    DTypePointer[b_type],
+                    DTypePointer[c_type],
+                    Int,
+                    Int,
+                    Int,
+                ) capturing -> None, matmul_kernel[
+                    a_type,
+                    b_type,
+                    c_type,
+                    BLOCK_DIM,
+                    elementwise_epilogue_enabled,
+                    elementwise_lambda_fn,
+                ]
+            ]()
+            gpu_func(
+                (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+                (BLOCK_DIM, BLOCK_DIM),
+                a.data,
+                b.data,
+                c.data,
+                m,
+                n,
+                k,
+                stream=out_chain.get_cuda_stream(),
+            )
     except e:
         out_chain.mark_error(e)
 
