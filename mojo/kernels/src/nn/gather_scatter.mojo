@@ -19,7 +19,7 @@ from algorithm.functional import _elementwise_impl, tile
 from memory import memset_zero, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from MOGG import reshape
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import OutputChainPtr
 from runtime.tracing import TraceLevel
 
 from utils.index import StaticIntTuple
@@ -644,18 +644,13 @@ fn scatter_nd_generator[
     for i in range(len(indices.get_shape()) - 1):
         iter_shape[i] = indices.get_shape()[i]
 
-    # Execute `elementwise()` synchronously because parametric closures capture
-    # variables by reference without extending their lifetimes.
-    let new_out_chain = OwningOutputChainPtr(out_chain.get_runtime())
-    elementwise[indices_rank - 1, 1, update_func](
-        iter_shape, new_out_chain.borrow()
-    )
-    new_out_chain.wait()
+    _elementwise_impl[
+        indices_rank - 1, 1, single_thread_blocking_override, update_func
+    ](iter_shape, out_chain)
 
-    # Avoid prematurely marking `out_chain` as ready if this kernel is fused.
     @parameter
     if not single_thread_blocking_override:
-        out_chain.mark_ready()
+        out_chain.wait()
 
 
 @always_inline
