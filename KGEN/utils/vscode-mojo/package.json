@@ -75,7 +75,10 @@
       {
         "language": "mojo",
         "scopeName": "source.mojo",
-        "path": "./syntaxes/mojo.syntax.json"
+        "path": "./syntaxes/mojo.syntax.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.mojo": "mojo"
+        }
       },
       {
         "language": "mojo-injection",
