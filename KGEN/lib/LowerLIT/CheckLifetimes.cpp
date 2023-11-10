@@ -1440,6 +1440,8 @@ void DestructorInsertion::checkOp(Operation &op) {
         // consumed value set because we emitted destructors for subfields,
         // which are not tracked in the ValueSet.
         consumedValues = original;
+      } else if (!valueInfo.endsUninit) {
+        consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
       }
 
     // Handle the operand of the return op.

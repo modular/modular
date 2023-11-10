@@ -619,3 +619,26 @@ lit.func @copy_del_reg_value() {
   %1 = kgen.call @Reg::@__copyinit__(%x) : !lit.signature<(!Reg borrow, |) ownedresult -> !Reg>
   kgen.return
 }
+
+// -----
+
+!MemType = !kgen.declref<@MemType, !lit.metatype<@MemType>>
+!Error = !kgen.declref<@Error, !lit.metatype<@Error>>
+
+lit.struct.decl @Error register_passable attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !kgen.signature<(!Error) -> !kgen.none>} {
+  lit.struct.field a : index
+  lit.func @__init__() -> !Error {
+     %idx0 = index.constant 0
+     %0 = lit.struct.create(a=%idx0) : (index) -> !Error
+     kgen.return %0 : !Error
+  }
+}
+
+lit.struct.decl @MemType attributes {destructor = #kgen.symbol.constant<@MemType::@"__del__" > : !kgen.signature<!lit.signature<("self": !kgen.pointer<!MemType> owned_in_mem) -> !kgen.none>>}  {
+  // CHECK-NOT: kgen.call @MemType::@__del__
+  lit.func @i_raise(%self[self]: !kgen.pointer<!MemType> borrow_in_mem) throws -> !kgen.variant<!Error, index> {
+    %0 = kgen.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error, !lit.metatype<@Error>>>
+    %1 = kgen.variant.create %0, 0 : <@Error : metatype<@Error>, index>
+    lit.error_return %1 : <@Error : metatype<@Error>, index>
+  }
+}
