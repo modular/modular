@@ -10,6 +10,7 @@ from memory.buffer import Buffer, NDBuffer
 
 from utils.list import DimList
 
+
 # CHECK-LABEL: test_ndbuffer_indexing
 fn test_ndbuffer_indexing():
     print("== test_ndbuffer_indexing")

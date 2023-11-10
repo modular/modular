@@ -15,6 +15,7 @@ from tensor import Tensor
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
+
 # CHECK-LABEL: test_ndbuffer
 fn test_ndbuffer():
     print("== test_ndbuffer")
