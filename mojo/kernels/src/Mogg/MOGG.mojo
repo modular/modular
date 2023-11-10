@@ -659,6 +659,7 @@ fn buffer_to_scalar[
 ](
     buf: NDBuffer[1, DimList.create_unknown[1](), type],
     out_chain: OutputChainPtr,
+    idx: Int = 0,
 ) -> SIMD[type, 1]:
     """If an op runs on the GPU, all inputs are allocated on the device.
     When the target is cuda, this function copies single element pointers
@@ -670,14 +671,14 @@ fn buffer_to_scalar[
 
     @parameter
     if target != "cuda":  # else in below if not working for some reason
-        val = buf[0]
+        val = buf[idx]
 
     @parameter
     if target == "cuda":
         try:
             _copy_device_to_host_async(
                 DTypePointer[type].address_of(val),
-                buf.data,
+                buf.data + idx,
                 1,
                 out_chain.get_cuda_stream(),
             )
@@ -1498,13 +1499,48 @@ fn slice[
     step_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     tensor: NDBuffer[rank, DimList.create_unknown[rank](), type],
     starts: NDBuffer[1, DimList.create_unknown[1](), start_type],
     ends: NDBuffer[1, DimList.create_unknown[1](), end_type],
     steps: NDBuffer[1, DimList.create_unknown[1](), step_type],
+    out_chain: OutputChainPtr,  # remove (#24946)
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-    return slice_as_view(tensor, starts, ends, steps)
+    # HACK HACK HACK (#24946)
+    # these inputs should be allocated on the host even if the target is cuda
+    @parameter
+    if target == "cpu":
+        return slice_as_view(tensor, starts, ends, steps)
+    else:
+        let starts_host = NDBuffer[
+            1, DimList(rank), start_type
+        ].stack_allocation()
+        let ends_host = NDBuffer[1, DimList(rank), end_type].stack_allocation()
+        let steps_host = NDBuffer[
+            1, DimList(rank), step_type
+        ].stack_allocation()
+        try:
+            _copy_device_to_host_async(
+                starts_host.data, starts.data, rank, out_chain.get_cuda_stream()
+            )
+            _copy_device_to_host_async(
+                ends_host.data, ends.data, rank, out_chain.get_cuda_stream()
+            )
+            _copy_device_to_host_async(
+                steps_host.data, steps.data, rank, out_chain.get_cuda_stream()
+            )
+            var stream = out_chain.get_cuda_stream()
+            stream.synchronize()
+        except e:
+            pass
+
+        return slice_as_view(
+            tensor,
+            starts_host.make_dims_unknown(),
+            ends_host.make_dims_unknown(),
+            steps_host.make_dims_unknown(),
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1757,9 +1793,11 @@ fn transpose[
     type: DType,
     int_type: DType,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    out_chain: OutputChainPtr,
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
     var new_shape = StaticIntTuple[rank]()
     var new_stride = StaticIntTuple[rank]()
@@ -1767,7 +1805,9 @@ fn transpose[
     @always_inline
     @parameter
     fn body[i: Int]():
-        let dim = perms[i].to_int()
+        # HACK HACK HACK (#24946)
+        # these inputs should be allocated on the host even if target is cuda
+        let dim = buffer_to_scalar[target](perms, out_chain, i).to_int()
         new_shape[i] = input.dynamic_shape[dim]
         new_stride[i] = input.dynamic_stride[dim]
 
@@ -1806,7 +1846,7 @@ fn transpose_shape[
 
     # NOTE this assumes `transpose` can handle input with null data pointer
     let out = transpose[rank, type, int_type, single_thread_blocking_override](
-        input, perms
+        input, perms, OutputChainPtr()
     ).dynamic_shape
 
     # TODO(17512)
