@@ -10,7 +10,7 @@ from sys.info import (
     has_avx2,
     has_avx512f,
     has_neon,
-    simd_byte_width,
+    simdbytewidth,
     simdwidthof,
 )
 from sys.intrinsics import PrefetchOptions, external_call
@@ -932,7 +932,7 @@ struct ConvIm2ColNCHW[
         let _bpacked_data = stack_allocation[
             pack_cache_size,  # Count.
             type,  # Data type.
-            simd_byte_width(),  # Alignment.
+            simdbytewidth(),  # Alignment.
         ]()
 
         # Manually set the shape of packed B buffer:
@@ -2045,7 +2045,7 @@ struct ConvIm2ColNHWC[
         let _bpacked_data = stack_allocation[
             pack_cache_size,  # Count.
             type,  # Data type.
-            simd_byte_width(),  # Alignment.
+            simdbytewidth(),  # Alignment.
         ]()
 
         # Manually set the shape of packed B buffer:
