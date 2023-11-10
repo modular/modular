@@ -65,13 +65,9 @@ fn matmul_naive(
 fn run_matmul_kernel_10() raises:
     print("== run_matmul_kernel_10")
 
-    let M = 4096
-    let N = 4096
-    let K = 4096
-
-    # GEMM input parameters, C=α*AB+β*C
-    let alpha: Float32 = 1.0
-    let beta: Float32 = 0.0
+    alias M = 4096
+    alias N = 4096
+    alias K = 4096
 
     # TODO: Find best for target GPU.
     #       For A100 see below (based on siboehm repo):
@@ -181,17 +177,22 @@ fn run_matmul_kernel_10() raises:
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
+    let c_buffer = NDBuffer[2, DimList(M, N), DType.float32](c_device)
+    let a_buffer = NDBuffer[2, DimList(M, K), DType.float32](a_device)
+    let b_buffer = NDBuffer[2, DimList(K, N), DType.float32](b_device)
+
     let func = Function[
         fn (
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            DTypePointer[DType.float32],
-            Int,
-            Int,
-            Int,
-            Float32,
-            Float32,
+            NDBuffer[2, DimList(M, N), DType.float32],
+            NDBuffer[2, DimList(M, K), DType.float32],
+            NDBuffer[2, DimList(K, N), DType.float32],
         ) -> None, sgemm_warp_tiling_kernel[
+            DType.float32,
+            DimList(M, N),
+            DType.float32,
+            DimList(M, K),
+            DType.float32,
+            DimList(K, N),
             BM=K10_BM,
             BN=K10_BN,
             BK=K10_BK,
@@ -211,14 +212,9 @@ fn run_matmul_kernel_10() raises:
         func(
             (div_ceil(N, K10_BN), div_ceil(M, K10_BM)),
             (K10_NUM_THREADS,),
-            a_device,
-            b_device,
-            c_device,
-            M,
-            N,
-            K,
-            alpha,
-            beta,
+            c_buffer,
+            a_buffer,
+            b_buffer,
             stream=stream,
         )
 
