@@ -16,6 +16,7 @@ from runtime.llcl import (
     TaskGroup,
 )
 
+
 # CHECK-LABEL: test_sync_coro
 fn test_sync_coro():
     print("== test_sync_coro")
