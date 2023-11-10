@@ -30,6 +30,14 @@ lit.trait.decl @TParam<MT: type, T: !kgen.paramref<MT>> {
   }
 }
 
+lit.trait.decl @MyTrait {}
+
+// CHECK-LABEL: @trait_metatype
+// CHECK-SAME: !kgen.paramref<:!lit.trait<@MyTrait> T>
+lit.func @trait_metatype<T: !lit.trait<@MyTrait>>(%arg0: !kgen.paramref<:!lit.trait<@MyTrait> T>) {
+  kgen.return
+}
+
 // CHECK: !lit.type_signature
 "type.sig"() : () -> !lit.type_signature
 // CHECK: !lit.type_signature<index, |>

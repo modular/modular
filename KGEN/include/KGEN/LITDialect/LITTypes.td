@@ -300,6 +300,32 @@ def LIT_REPLResultRefType : LITType<"REPLResultRef", "replresultref"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TraitType
+//===----------------------------------------------------------------------===//
+
+def LIT_TraitType: LITType<"Trait", "trait"> {
+  let summary = "Type of a trait value.";
+  let description = [{
+    The `!lit.trait` type represents the type of a lit.trait.decl value.
+
+    Example:
+
+    ```mlir
+    !lit.trait<@SomeTrait>
+    ```
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$symbol);
+  let assemblyFormat = "`<` $symbol `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
+      return get(symbol.getContext(), symbol);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // Types for magic declarations.
 //===----------------------------------------------------------------------===//
 
