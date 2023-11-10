@@ -26,6 +26,7 @@ from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
+
 # CHECK-LABEL: test_reductions
 fn test_reductions():
     print("== test_reductions")

@@ -9,6 +9,7 @@ from algorithm import vectorize, vectorize_unroll
 from memory import memcmp
 from memory.buffer import Buffer
 
+
 # CHECK-LABEL: test_vectorize
 fn test_vectorize():
     print("== test_vectorize")
