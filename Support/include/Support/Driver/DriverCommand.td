@@ -14,6 +14,34 @@
 
 include "llvm/Option/OptParser.td"
 
+// This mix-in record can be used to order option groups, options, and their
+// aliases relative to one another.
+// * Option groups are sorted in ascending index order.
+// * Within each option group, options are sorted in ascending index order.
+// * Among an option's aliases, aliases are sorted in ascending index order.
+// * Wihtin any of these groupings, if two records have the same index, the
+//   order is non-deterministic, and a warning is emitted.
+// * Records without an index are placed in a non-deterministic order (based on
+//   TableGen record ID) after records with an index. Warnings are emitted for
+//   records without an index.
+class Index<int i> {
+  int index = i;
+}
+
+/// This multiclass defines two option records: one that accepts an `=` suffix,
+/// and one that doesn't. In other words, given the option name `foo` and the
+/// metavar name `FOO`, this defines both `--foo <FOO>` and `--foo=<FOO>`
+multiclass CommandOption<list<string> prefixes, string name, OptionGroup group,
+                         Index i, MetaVarName meta, HelpText help> {
+  def NAME : Separate<prefixes, name>, Group<group>, Index<i.index>,
+             MetaVarName<meta.MetaVarName>, HelpText<help.HelpText>;
+
+  // The `=` alias is the first alias, at index 0. However, since it's hidden,
+  // it will not occupy the first spot in the list of aliases.
+  def NAME # _eq : Joined<prefixes, name # "=">, Group<group>,
+                   Index<0>, Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
+}
+
 // A collection of information related to a command's input, which is used to
 // generate usage strings for a command.
 class UsageInfo<string optName, string inName, bit varIn> {
@@ -71,18 +99,5 @@ class DriverDescription<string executable, string summary, string description,
   CommandDescription<executable, /*subcommand=*/"", summary, description,
                      usages>;
 
-// This mix-in record can be used to order option groups, options, and their
-// aliases relative to one another.
-// * Option groups are sorted in ascending index order.
-// * Within each option group, options are sorted in ascending index order.
-// * Among an option's aliases, aliases are sorted in ascending index order.
-// * Wihtin any of these groupings, if two records have the same index, the
-//   order is non-deterministic, and a warning is emitted.
-// * Records without an index are placed in a non-deterministic order (based on
-//   TableGen record ID) after records with an index. Warnings are emitted for
-//   records without an index.
-class Index<int i> {
-  int index = i;
-}
 
 #endif // SUPPORT_DRIVER_DRIVERCOMMAND_TD

@@ -170,6 +170,9 @@ public:
   /// Return all the aliases of this option.
   ArrayRef<const llvm::Record *> getAliases() const { return aliases; }
 
+  /// Whether the given option is hidden from help text.
+  static bool isHidden(const llvm::Record *option);
+
   /// Return the first prefix defined for the given `option`, which we treat as
   /// the "preferred" prefix for help text.
   static StringRef getPreferredPrefix(const llvm::Record *option) {
