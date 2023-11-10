@@ -83,6 +83,26 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
 //===----------------------------------------------------------------------===//
 
 FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
+  // Don't try to evaluate a parameter operator that still contains parametric
+  // things in it, since it may be transitory.
+  struct IndexRefFinder : IndexParameterReplacer<IndexRefFinder> {
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
+        if (ref.getDepth() >= depth) {
+          escapingReference = true;
+          return attr;
+        }
+      }
+      return nullptr;
+    }
+    Type tryReplace(Type, size_t) { return nullptr; }
+
+    bool escapingReference = false;
+  } finder;
+  finder.replace(op);
+  if (finder.escapingReference)
+    return {op};
+
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
   switch (op.getOpcode()) {
