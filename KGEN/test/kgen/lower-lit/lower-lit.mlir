@@ -7,7 +7,7 @@
 // CHECK-LABEL: kgen.generator @calls(%arg0
 lit.func @calls[a, b](%arg0: !lit.signature<[2]() -> ()>) {
   // CHECK: kgen.call @calls() : () -> ()
-  lit.call @calls[a, b]() : !lit.signature<() -> ()>
+  lit.call @calls[a, b]() : !lit.signature<[2]() -> ()>
   // CHECK: kgen.call_param[() -> (): @calls]()
   lit.call_param[!lit.signature<[2]() -> ()>: @calls][a, b]()
   // CHECK: kgen.call_signature %arg0() : () -> ()
@@ -18,7 +18,7 @@ lit.func @calls[a, b](%arg0: !lit.signature<[2]() -> ()>) {
 // CHECK-LABEL: kgen.generator @async_call()
 lit.func @async_call[a, b]() async {
   // CHECK: lit.async.call[() async -> (): @async_call]()
-  lit.async.call[!lit.signature<[2]() async -> ()>: @async_call]()
+  lit.async.call[!lit.signature<[2]() async -> ()>: @async_call][a, b]()
   kgen.return
 }
 
