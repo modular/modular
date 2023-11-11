@@ -2320,6 +2320,7 @@ fn scatter_nd[
     output_type: DType,
     indices_type: DType,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
         output_rank,
@@ -2344,6 +2345,7 @@ fn scatter_nd[
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        target,
     ](input, indices, updates, output, out_chain)
 
 
@@ -2355,6 +2357,7 @@ fn scatter_nd_add[
     indices_rank: Int,
     output_rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
         output_rank,
@@ -2385,6 +2388,7 @@ fn scatter_nd_add[
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        target,
         reduce_fn=reduce_fn,
     ](input, indices, updates, output, out_chain)
 
@@ -2397,6 +2401,7 @@ fn scatter_nd_max[
     indices_rank: Int,
     output_rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
         output_rank,
@@ -2427,6 +2432,7 @@ fn scatter_nd_max[
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        target,
         reduce_fn=reduce_fn,
     ](input, indices, updates, output, out_chain)
 
@@ -2439,6 +2445,7 @@ fn scatter_nd_min[
     indices_rank: Int,
     output_rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
         output_rank,
@@ -2469,6 +2476,7 @@ fn scatter_nd_min[
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        target,
         reduce_fn=reduce_fn,
     ](input, indices, updates, output, out_chain)
 
@@ -2481,6 +2489,7 @@ fn scatter_nd_mul[
     indices_rank: Int,
     output_rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[
         output_rank,
@@ -2511,6 +2520,7 @@ fn scatter_nd_mul[
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        target,
         reduce_fn=reduce_fn,
     ](input, indices, updates, output, out_chain)
 
