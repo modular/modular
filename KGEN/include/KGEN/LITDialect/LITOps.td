@@ -158,21 +158,21 @@ def LIT_CallOp : LITOp<"call", [
 
   let arguments = (ins
     KGEN_SymbolConstantAttr:$callee,
-    KGEN_ParameterExprArrayAttr:$lifetimeParams,
+    KGEN_ParameterExprArrayAttr:$implicitLifetimes,
     KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    custom<CallOp>($callee, $lifetimeParams, $paramDecls, $operands,
+    custom<CallOp>($callee, $implicitLifetimes, $paramDecls, $operands,
                    type($operands), type($results)) attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins "TypeRange":$results, "SymbolConstantAttr":$callee,
                    "ValueRange":$operands), [{
-      build($_builder, $_state, results, callee, /*lifetimeParams=*/{},
+      build($_builder, $_state, results, callee, /*implicitLifetimes=*/{},
             /*paramDecls=*/ArrayRef<ParamDeclAttr>(), operands);
     }]>
   ];
@@ -212,14 +212,14 @@ def LIT_CallParamOp : LITOp<"call_param", [
   let arguments = (ins
     AttrOfType<LIT_SignatureType>:$callee,
     KGEN_ParamDeclArrayAttr:$paramDecls,
-    KGEN_ParameterExprArrayAttr:$lifetimeParams,
+    KGEN_ParameterExprArrayAttr:$implicitLifetimes,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee, $paramDecls) ``
-    custom<LifetimeParams>($lifetimeParams) `(` $operands `)` attr-dict
+    custom<LifetimeParams>($implicitLifetimes) `(` $operands `)` attr-dict
   }];
 
   let hasVerifier = 1;
@@ -248,13 +248,13 @@ def LIT_CallSignatureOp : LITOp<"call_signature", [
 
   let arguments = (ins
     LIT_SignatureType:$callee,
-    KGEN_ParameterExprArrayAttr:$lifetimeParams,
+    KGEN_ParameterExprArrayAttr:$implicitLifetimes,
     Variadic<AnyType>:$arguments
   );
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    $callee `` custom<LifetimeParams>($lifetimeParams) `(` $arguments `)` `:`
+    $callee `` custom<LifetimeParams>($implicitLifetimes) `(` $arguments `)` `:`
     custom<Signature>(type($callee)) attr-dict
   }];
 
@@ -262,7 +262,7 @@ def LIT_CallSignatureOp : LITOp<"call_signature", [
     OpBuilder<(ins "TypeRange":$results, "Value":$callee,
                    "ValueRange":$args), [{
       build($_builder, $_state, results, callee,
-            /*lifetimeParams=*/ArrayRef<TypedAttr>(), args);
+            /*implicitLifetimes=*/ArrayRef<TypedAttr>(), args);
     }]>
   ];
 
@@ -1062,14 +1062,14 @@ def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
   let arguments = (ins
     AttrOfType<KGEN_SignatureType>:$callee,
     KGEN_ParamDeclArrayAttr:$paramDecls,
-    KGEN_ParameterExprArrayAttr:$lifetimeParams,
+    KGEN_ParameterExprArrayAttr:$implicitLifetimes,
     Variadic<AnyType>:$operands
   );
   let results = (outs POP_CoroutineType:$coroutine);
 
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee, $paramDecls) ``
-    custom<LifetimeParams>($lifetimeParams) `(` $operands `)` attr-dict
+    custom<LifetimeParams>($implicitLifetimes) `(` $operands `)` attr-dict
   }];
 
   let hasVerifier = 1;

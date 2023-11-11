@@ -232,14 +232,14 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
     if (p.parseLSquare() || p.parseInteger(depth) || p.parseComma() ||
         p.parseInteger(index) || p.parseRSquare())
       return failure();
-    result = LifetimeRefAttr::get(p.getContext(), depth, index);
+    result = ImplicitLifetimeRefAttr::get(p.getContext(), depth, index);
     return mlir::success();
   }
   return std::nullopt;
 }
 
 LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
-  if (auto ref = ::dyn_cast<LifetimeRefAttr>(value)) {
+  if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(value)) {
     p << "*[" << ref.getDepth() << ',' << ref.getIndex() << ']';
     return success();
   }
@@ -421,7 +421,7 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   p << "!lit.signature<";
   auto signature = ::cast<LITSignatureType>(sig);
 
-  if (unsigned numLifetimeDecls = getNumLifetimeDecls())
+  if (unsigned numLifetimeDecls = getNumImplicitLifetimeDecls())
     p << '[' << numLifetimeDecls << ']';
 
   printOptionalParamSignature(

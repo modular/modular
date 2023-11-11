@@ -63,7 +63,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
     OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
     OptionalArrayRefParameter<"TypedAttr">:$defaultParameters,
-    "unsigned":$numLifetimeDecls
+    "unsigned":$numImplicitLifetimeDecls
   );
   let assemblyFormat = [{
     `<` `[` (`]`) : ($argNames^          `]`)? `,`
@@ -72,7 +72,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
         `[` (`]`) : ($paramPassingKinds^ `]`)? `,`
         `[` (`]`) : ($defaultArguments^  `]`)? `,`
         `[` (`]`) : ($defaultParameters^ `]`)? `,`
-        $numLifetimeDecls
+        $numImplicitLifetimeDecls
     `>`
   }];
 
@@ -269,14 +269,15 @@ def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LifetimeRefAttr
+// ImplicitLifetimeRefAttr
 //===----------------------------------------------------------------------===//
 
-def LifetimeRefAttr : LITTypedAttr<"LifetimeRef", "lifetime_ref"> {
-  let summary = "Reference to an unbound lifetime parameter.";
+def ImplicitLifetimeRefAttr
+    : LITTypedAttr<"ImplicitLifetimeRef", "lifetime_ref"> {
+  let summary = "Reference to an unbound implicit lifetime parameter.";
   let description = [{
-    The `#lit.lifetime_ref` attribute is a reference to an unbound lifetime
-    parameter.
+    The `#lit.lifetime_ref` attribute is a reference to an unbound implicit
+    lifetime parameter.
 
     Example:
 
