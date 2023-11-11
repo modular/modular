@@ -26,6 +26,7 @@ from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt
 from utils.optional import Optional
+from gpu.memory import _copy_device_to_device_async
 
 
 @always_inline
@@ -478,6 +479,7 @@ fn scatter_nd_generator[
     indices_rank: Int,
     updates_rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
     /,
     reduce_fn: Optional[
         fn[
@@ -508,6 +510,7 @@ fn scatter_nd_generator[
         updates_rank: Rank of updates tensor (updates_rank = data_rank +
                       indices_rank - indices_shape[-1] - 1).
         single_thread_blocking_override: Whether this function can block.
+        target: Target cpu or cuda.
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
                    min.
 
@@ -537,7 +540,6 @@ fn scatter_nd_generator[
     let output_flat = output.flatten()
     let data_flat = data.flatten()
     let updates_flat = updates.flatten()
-    memcpy(output_flat, data_flat)
 
     let data_shape = data.get_shape()
     let indices_shape = indices.get_shape()
@@ -550,35 +552,43 @@ fn scatter_nd_generator[
     #   sheet (r_minus_m = 2),
     #   cuboid (r_minus_m = 3), etc.
     let r_minus_m = data_rank - last_shape_of_indices
-    # Calculate how many elements to copy (this is from the innermost
-    # dimensions, and is continuous memory locations).
-    var count_copy = 1
-    for i in range(r_minus_m):
-        count_copy = count_copy * data_shape[data_rank - 1 - i]
 
-    # Stores the full index on output, where to copy updates to.
-    let output_index_tensor = NDBuffer[
-        1,
-        DimList(data_rank),
-        DType.index,
-    ]().stack_allocation()
-    # Zeroing here to avoid doing it selectively within the nested loop below.
-    output_index_tensor.zero()
+    @parameter
+    if target == "cuda":
+        try:
+            # TODO: Make it async? Didn't work because of out_chain.get_cuda_stream() argument.
+            # TODO: Does it matter if output.data or output_flat.data (and data)?
+            _copy_device_to_device_async(
+                output.data,
+                data.data,
+                data.num_elements(),
+                out_chain.get_cuda_stream(),
+            )
+        except e:
+            out_chain.mark_error(e)
 
-    # Stores the full index on updates, where to copy from.
-    let updates_index_tensor = NDBuffer[
-        1,
-        DimList(updates_rank),
-        DType.index,
-    ]().stack_allocation()
-    # Zeroing here to avoid doing it selectively within the nested loop below.
-    updates_index_tensor.zero()
+    @parameter
+    if target != "cuda":
+        memcpy(output_flat, data_flat)
 
     @parameter
     fn update_func[
         simd_width: Int, _rank: Int
     ](_indices_coords: StaticIntTuple[_rank]):
+        # Calculate how many elements to copy (this is from the innermost
+        # dimensions, and is continuous memory locations).
+        var count_copy = 1
+        for i in range(r_minus_m):
+            count_copy = count_copy * data_shape[data_rank - 1 - i]
         let indices_coords = rebind[StaticIntTuple[_rank]](_indices_coords)
+
+        # Stores the full index on output, where to copy updates to.
+        # Zeroing here to avoid doing it selectively within the nested loop below.
+        var output_index_tensor = StaticIntTuple[data_rank](0)
+
+        # Stores the full index on updates, where to copy from.
+        # Zeroing here to avoid doing it selectively within the nested loop below.
+        var updates_index_tensor = StaticIntTuple[updates_rank](0)
 
         # Construct the full index on updates tensor, i.e., where to copy from.
         for dim in range(_rank):
@@ -608,8 +618,7 @@ fn scatter_nd_generator[
 
         for i in range(updates_rank):
             updates_offset = (
-                updates_offset
-                + updates.stride(i) * updates_index_tensor[i].to_int()
+                updates_offset + updates.stride(i) * updates_index_tensor[i]
             )
 
         # Calculate the output_offset to where to copy the updates.
@@ -617,8 +626,7 @@ fn scatter_nd_generator[
 
         for i in range(data_rank):
             output_offset = (
-                output_offset
-                + output.stride(i) * output_index_tensor[i].to_int()
+                output_offset + output.stride(i) * output_index_tensor[i]
             )
 
         # Perform the actual copy of element/slice/sheet/cuboid/etc.
@@ -645,11 +653,17 @@ fn scatter_nd_generator[
         iter_shape[i] = indices.get_shape()[i]
 
     _elementwise_impl[
-        indices_rank - 1, 1, single_thread_blocking_override, update_func
+        indices_rank - 1,
+        1,
+        single_thread_blocking_override,
+        update_func,
+        target,
     ](iter_shape, out_chain)
 
     @parameter
-    if not single_thread_blocking_override:
+    if single_thread_blocking_override or target == "cuda":
+        return
+    else:
         out_chain.wait()
 
 
@@ -661,6 +675,7 @@ fn scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), output_type],
     indices: NDBuffer[
@@ -683,6 +698,7 @@ fn scatter_nd[
         indices_rank,
         updates_rank,
         single_thread_blocking_override,
+        target,
         reduce_fn=None,
     ](data, indices, updates, output, out_chain)
 
