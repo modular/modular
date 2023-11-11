@@ -428,3 +428,8 @@ lit.struct.decl @StructCannotFileTrait([@Trait1]) {
 
 // expected-error @below {{only one '?' allowed in signature}}
 !sig = !lit.signature<<?, ?> -> ()>
+
+// -----
+
+// expected-error @below {{'lit.call' op operation has 2 bindings for implicit lifetime parameters, but callee expected 1}}
+lit.call @calls[a, b]() : !lit.signature<[1]() -> ()>

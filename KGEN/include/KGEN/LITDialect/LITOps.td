@@ -176,6 +176,8 @@ def LIT_CallOp : LITOp<"call", [
             /*paramDecls=*/ArrayRef<ParamDeclAttr>(), operands);
     }]>
   ];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -219,6 +221,8 @@ def LIT_CallParamOp : LITOp<"call_param", [
     `` custom<ParametricCallee>($callee, $paramDecls) ``
     custom<LifetimeParams>($lifetimeParams) `(` $operands `)` attr-dict
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -261,6 +265,8 @@ def LIT_CallSignatureOp : LITOp<"call_signature", [
             /*lifetimeParams=*/ArrayRef<TypedAttr>(), args);
     }]>
   ];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

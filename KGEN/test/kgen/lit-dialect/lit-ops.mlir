@@ -1,5 +1,16 @@
 // RUN: kgen-opt -split-input-file -allow-unregistered-dialect %s | kgen-opt -split-input-file -allow-unregistered-dialect | FileCheck %s
 
+// CHECK-LABEL: lit.func @calls[a, b]
+lit.func @calls[a, b](%arg0: !lit.signature<[2]() -> ()>) {
+  // CHECK: lit.call @calls[a, b]() : !lit.signature<[2]() -> ()>
+  lit.call @calls[a, b]() : !lit.signature<[2]() -> ()>
+  // CHECK: lit.call_param[!lit.signature<[2]() -> ()>: @calls][a, b]()
+  lit.call_param[!lit.signature<[2]() -> ()>: @calls][a, b]()
+  // CHECK: lit.call_signature %arg0[a, b]() : !lit.signature<[2]() -> ()>
+  lit.call_signature %arg0[a, b]() : !lit.signature<[2]() -> ()>
+  kgen.return
+}
+
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {

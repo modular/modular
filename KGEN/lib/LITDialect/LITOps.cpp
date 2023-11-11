@@ -171,6 +171,21 @@ LogicalResult PackageOp::verify() {
 // CallOp
 //===----------------------------------------------------------------------===//
 
+template <typename OpT>
+static LogicalResult verifyLifetimeParams(OpT op) {
+  size_t numImplicit = cast<LITSignatureType>(op.getCallee().getType())
+                           .getMetadata()
+                           .getNumLifetimeDecls();
+  size_t numParams = op.getLifetimeParams().size();
+  if (numParams == numImplicit)
+    return success();
+  return op->emitOpError("operation has ")
+         << numParams
+         << " bindings for implicit lifetime parameters, but callee "
+            "expected "
+         << numImplicit;
+}
+
 static ParseResult parseLifetimeParams(AsmParser &p,
                                        ParameterExprArrayAttr &lifetimeParams) {
   SmallVector<TypedAttr> values;
@@ -234,6 +249,12 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
       calleeCst.getType());
 }
 
+LogicalResult LIT::CallOp::verify() {
+  if (!isa<LITSignatureType>(getCallee().getType()))
+    return emitOpError("callee type must be a `!lit.signature`");
+  return verifyLifetimeParams(*this);
+}
+
 void LIT::CallOp::setCalleeAttr(TypedAttr callee) {
   setCalleeAttr(cast<SymbolConstantAttr>(callee));
 }
@@ -251,6 +272,20 @@ mlir::CallInterfaceCallable LIT::CallOp::getCallableForCallee() {
 void LIT::CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
   auto symbol = callee.get<SymbolRefAttr>();
   setCalleeAttr(SymbolConstantAttr::get(symbol, getCallee().getType()));
+}
+
+//===----------------------------------------------------------------------===//
+// CallParamOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult LIT::CallParamOp::verify() { return verifyLifetimeParams(*this); }
+
+//===----------------------------------------------------------------------===//
+// CallSignatureOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult LIT::CallSignatureOp::verify() {
+  return verifyLifetimeParams(*this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1523,9 +1558,12 @@ static POP::CoroutineType getCoroutineOfResultTypes(Type type) {
 }
 
 LogicalResult AsyncCallOp::verify() {
-  if (cast<SignatureType>(getCallee().getType()).isAsync())
-    return success();
-  return emitOpError("callable must be 'async'");
+  auto sig = cast<SignatureType>(getCallee().getType());
+  if (!sig.isAsync())
+    return emitOpError("callable must be 'async'");
+  if (isa<LITSignatureType>(sig))
+    return verifyLifetimeParams(*this);
+  return success();
 }
 
 void AsyncCallOp::concretizeCallee(mlir::IRRewriter &b,
