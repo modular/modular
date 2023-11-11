@@ -2131,30 +2131,30 @@ fn sgemm_warp_tiling_kernel[
     b_type: DType,
     b_shape: DimList,
     indexing_integral_dtype: DType,
-    BM: SIMD[indexing_integral_dtype, 1],
-    BN: SIMD[indexing_integral_dtype, 1],
-    BK: SIMD[indexing_integral_dtype, 1],
-    WM: SIMD[indexing_integral_dtype, 1],
-    WN: SIMD[indexing_integral_dtype, 1],
-    WMITER: SIMD[indexing_integral_dtype, 1],
-    WNITER: SIMD[indexing_integral_dtype, 1],
-    TM: SIMD[indexing_integral_dtype, 1],
-    TN: SIMD[indexing_integral_dtype, 1],
-    NUM_THREADS: SIMD[indexing_integral_dtype, 1],
+    BM: Scalar[indexing_integral_dtype],
+    BN: Scalar[indexing_integral_dtype],
+    BK: Scalar[indexing_integral_dtype],
+    WM: Scalar[indexing_integral_dtype],
+    WN: Scalar[indexing_integral_dtype],
+    WMITER: Scalar[indexing_integral_dtype],
+    WNITER: Scalar[indexing_integral_dtype],
+    TM: Scalar[indexing_integral_dtype],
+    TN: Scalar[indexing_integral_dtype],
+    NUM_THREADS: Scalar[indexing_integral_dtype],
 ](
     mat_c: NDBuffer[2, c_shape, c_type],
     mat_a: NDBuffer[2, a_shape, a_type],
     mat_b: NDBuffer[2, b_shape, b_type],
 ):
-    let M: SIMD[indexing_integral_dtype, 1] = mat_c.dim(0)
-    let K: SIMD[indexing_integral_dtype, 1] = mat_a.dim(1)
-    let N: SIMD[indexing_integral_dtype, 1] = mat_c.dim(1)
+    let M: Scalar[indexing_integral_dtype] = mat_c.dim(0)
+    let K: Scalar[indexing_integral_dtype] = mat_a.dim(1)
+    let N: Scalar[indexing_integral_dtype] = mat_c.dim(1)
 
-    let c_row: SIMD[indexing_integral_dtype, 1] = BlockIdx.y()
-    let c_col: SIMD[indexing_integral_dtype, 1] = BlockIdx.x()
+    let c_row: Scalar[indexing_integral_dtype] = BlockIdx.y()
+    let c_col: Scalar[indexing_integral_dtype] = BlockIdx.x()
 
     # Placement of the warp in the threadblock tile.
-    let warp_idx = SIMD[indexing_integral_dtype, 1](
+    let warp_idx = Scalar[indexing_integral_dtype](
         ThreadIdx.x()
     ) // WARP_SIZE  # the warp this thread is in
     let warp_col = warp_idx % (BN // WN)
@@ -2165,7 +2165,7 @@ fn sgemm_warp_tiling_kernel[
     alias w_sub_n = WN // WNITER  # 32/2=16
 
     # Placement of the thread in the warp subtile.
-    let thread_Idx_In_warp = SIMD[indexing_integral_dtype, 1](
+    let thread_Idx_In_warp = Scalar[indexing_integral_dtype](
         ThreadIdx.x()
     ) % WARP_SIZE  # [0, 31]
     let thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
@@ -2202,19 +2202,15 @@ fn sgemm_warp_tiling_kernel[
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    let inner_row_a = SIMD[indexing_integral_dtype, 1](ThreadIdx.x()) // (
+    let inner_row_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
         BK // 4
     )
-    let inner_col_a = SIMD[indexing_integral_dtype, 1](ThreadIdx.x()) % (
-        BK // 4
-    )
+    let inner_col_a = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BK // 4)
     alias row_stride_a = (NUM_THREADS * 4) // BK
-    let inner_row_b = SIMD[indexing_integral_dtype, 1](ThreadIdx.x()) // (
+    let inner_row_b = Scalar[indexing_integral_dtype](ThreadIdx.x()) // (
         BN // 4
     )
-    let inner_co_ib = SIMD[indexing_integral_dtype, 1](ThreadIdx.x()) % (
-        BN // 4
-    )
+    let inner_co_ib = Scalar[indexing_integral_dtype](ThreadIdx.x()) % (BN // 4)
     alias row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!
