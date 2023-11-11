@@ -261,11 +261,7 @@ def POP_CoroutineType : POPType<"Coroutine", "coroutine"> {
   let assemblyFormat = "`<` custom<KGENType>($signature) `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "SignatureType":$sig)>,
-    TypeBuilderWithInferredContext<(ins "Type":$type), [{
-      return get(
-        type.getContext(), SignatureType::get(type.getContext(), {}, type));
-    }]>
+    TypeBuilder<(ins "TypeRange":$resultTypes, CArg<"bool", "false">:$raises)>
   ];
 
   let extraClassDeclaration = [{
