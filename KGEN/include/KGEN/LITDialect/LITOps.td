@@ -185,7 +185,6 @@ def LIT_CallOp : LITOp<"call", [
 //===----------------------------------------------------------------------===//
 
 def LIT_CallParamOp : LITOp<"call_param", [
-    CalleeArgumentTypes, CalleeResultTypes,
     DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
     CallLikeOperation {
@@ -219,7 +218,10 @@ def LIT_CallParamOp : LITOp<"call_param", [
 
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee, $paramDecls) ``
-    custom<LifetimeParams>($implicitLifetimes) `(` $operands `)` attr-dict
+    custom<LifetimeParams>($implicitLifetimes) ``
+    custom<CallOpTypes>(type($operands), type($results), ref($callee),
+                        ref($implicitLifetimes))
+    `(` $operands `)` attr-dict
   }];
 
   let hasVerifier = 1;
@@ -229,10 +231,7 @@ def LIT_CallParamOp : LITOp<"call_param", [
 // CallSignatureOp
 //===----------------------------------------------------------------------===//
 
-def LIT_CallSignatureOp : LITOp<"call_signature", [
-    TypesMatchWith<"operands match callee argument types", "callee",
-    "arguments", "cast<SignatureType>($_self).getValueInputs()">,
-    CalleeResultTypes]> {
+def LIT_CallSignatureOp : LITOp<"call_signature"> {
   let summary = "indirect call";
   let description = [{
     The `lit.call_signature` operation is an indirect call to a signature-typed
@@ -255,7 +254,9 @@ def LIT_CallSignatureOp : LITOp<"call_signature", [
 
   let assemblyFormat = [{
     $callee `` custom<LifetimeParams>($implicitLifetimes) `(` $arguments `)` `:`
-    custom<Signature>(type($callee)) attr-dict
+    custom<Signature>(type($callee)) attr-dict ``
+    custom<CallOpTypes>(type($arguments), type($results), ref(type($callee)),
+                        ref($implicitLifetimes))
   }];
 
   let builders = [
@@ -1040,12 +1041,11 @@ def LIT_GlobalVarRefOp : LITOp<"globalvar.ref",
 // AsyncCallOp
 //===----------------------------------------------------------------------===//
 
-def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
+def LIT_AsyncCallOp : LITOp<"async.call", [
     DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
     DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
-    TypesMatchWith<"coroutine of callee result types", "callee", "coroutine",
-                    "getCoroutineOfResultTypes($_self)">]>, CallLikeOperation {
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
+    CallLikeOperation {
   let summary = "Call to an async function.";
   let description = [{
     The `lit.async.call` operation calls an `async` parametric callable. It
@@ -1069,7 +1069,10 @@ def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
 
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee, $paramDecls) ``
-    custom<LifetimeParams>($implicitLifetimes) `(` $operands `)` attr-dict
+    custom<LifetimeParams>($implicitLifetimes) ``
+    custom<AsyncCallOpTypes>(type($operands), type($coroutine), ref($callee),
+                             ref($implicitLifetimes))
+     `(` $operands `)` attr-dict
   }];
 
   let hasVerifier = 1;

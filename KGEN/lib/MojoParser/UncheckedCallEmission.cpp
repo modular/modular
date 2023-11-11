@@ -818,9 +818,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         sig && sig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
       // `!pop.coroutine<() -> T>` result in a `Coroutine[T]` object.
-      auto call = builder->create<AsyncCallOp>(loc, target.get(), resultParams,
-                                               /*lifetimeParams=*/std::nullopt,
-                                               callArgs);
+      auto call = builder->create<AsyncCallOp>(
+          loc,
+          POP::CoroutineType::get(getContext(), resultTypes, sig.isThrows()),
+          target.get(), resultParams, /*lifetimeParams=*/std::nullopt,
+          callArgs);
       ASTType coroType = getBoundCoroutineType(
           shared, declScope, callExpr->getLoc(), sig, resultTypes.front());
       if (!coroType)

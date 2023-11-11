@@ -171,21 +171,6 @@ LogicalResult PackageOp::verify() {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-template <typename OpT>
-static LogicalResult verifyLifetimeParams(OpT op) {
-  size_t numImplicit = cast<LITSignatureType>(op.getCallee().getType())
-                           .getMetadata()
-                           .getNumImplicitLifetimeDecls();
-  size_t numParams = op.getImplicitLifetimes().size();
-  if (numParams == numImplicit)
-    return success();
-  return op->emitOpError("operation has ")
-         << numParams
-         << " bindings for implicit lifetime parameters, but callee "
-            "expected "
-         << numImplicit;
-}
-
 static ParseResult
 parseLifetimeParams(AsmParser &p, ParameterExprArrayAttr &implicitLifetimes) {
   SmallVector<TypedAttr> values;
@@ -209,6 +194,70 @@ static void printLifetimeParams(AsmPrinter &p, Operation *op,
   p << ']';
 }
 
+/// Substitute implicit lifetime references in an attribute or type.
+static FunctionType
+substituteImplicitLifetimes(FunctionType value, ArrayRef<TypedAttr> values,
+                            function_ref<InFlightDiagnostic()> emitError) {
+  struct Substitutor : IndexParameterReplacer<Substitutor> {
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      // If we are substituting the signature directly, subtract 1.
+      if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
+          ref && ref.getDepth() == depth) {
+        // Verify if requested.
+        if (ref.getIndex() >= values.size()) {
+          emitError() << "implicit lifetime reference at depth " << depth
+                      << " has an out-of-range index: " << ref.getIndex()
+                      << " >= " << values.size();
+          hadError = true;
+          return ref;
+        }
+        return values[ref.getIndex()];
+      }
+      return nullptr;
+    }
+
+    ArrayRef<TypedAttr> values;
+    function_ref<InFlightDiagnostic()> emitError;
+    bool hadError = false;
+  } substitutor;
+  substitutor.values = values;
+  substitutor.emitError = emitError;
+  FunctionType result = substitutor.replace(value);
+  if (substitutor.hadError)
+    return {};
+  return result;
+}
+
+/// Infer call operation operand and result types from the signature,
+/// substituting implicit lifetime parameters.
+template <typename CalleeT>
+static ParseResult
+parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
+                 SmallVectorImpl<Type> &resultTypes, CalleeT callee,
+                 ArrayRef<TypedAttr> implicitLifetimes) {
+  Type calleeType;
+  if constexpr (std::is_same_v<Type, CalleeT>)
+    calleeType = callee;
+  else
+    calleeType = callee.getType();
+
+  llvm::SMLoc loc = p.getCurrentLocation();
+  FunctionType values = substituteImplicitLifetimes(
+      cast<SignatureType>(calleeType).getValues(), implicitLifetimes,
+      [&] { return p.emitError(loc); });
+  if (!values)
+    return failure();
+  llvm::append_range(operandTypes, values.getInputs());
+  llvm::append_range(resultTypes, values.getResults());
+  return success();
+}
+
+/// Nothing to do on print.
+template <typename CalleeT>
+static void printCallOpTypes(AsmPrinter &, Operation *, TypeRange, TypeRange,
+                             CalleeT, ArrayRef<TypedAttr>) {}
+
 static ParseResult parseCallOp(
     OpAsmParser &p, SymbolConstantAttr &calleeCst,
     ParameterExprArrayAttr &implicitLifetimes, ParamDeclArrayAttr &paramDecls,
@@ -227,8 +276,9 @@ static ParseResult parseCallOp(
   if (parseKGENSignature(p, paramDecls, functionType, signature))
     return failure();
   calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
-  llvm::append_range(operandTypes, functionType.getInputs());
-  llvm::append_range(resultTypes, functionType.getResults());
+  if (failed(parseCallOpTypes(p, operandTypes, resultTypes, calleeCst,
+                              implicitLifetimes)))
+    return failure();
   return success();
 }
 
@@ -249,10 +299,54 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
       calleeCst.getType());
 }
 
+template <typename OpT>
+static LogicalResult verifyLifetimeParams(OpT op, LITSignatureType sig) {
+  size_t numImplicit = sig.getMetadata().getNumImplicitLifetimeDecls();
+  size_t numParams = op.getImplicitLifetimes().size();
+  if (numParams == numImplicit)
+    return success();
+  return op->emitOpError("operation has ")
+         << numParams
+         << " bindings for implicit lifetime parameters, but callee "
+            "expected "
+         << numImplicit;
+}
+
+template <typename OpT>
+static LogicalResult verifyCallOp(OpT op, LITSignatureType sig,
+                                  ValueRange operands, TypeRange results) {
+  FunctionType values =
+      substituteImplicitLifetimes(sig.getValues(), op.getImplicitLifetimes(),
+                                  [&] { return op.emitOpError(); });
+  if (!values)
+    return failure();
+
+  auto verifyTypes = [&](StringRef kind, TypeRange types,
+                         TypeRange expected) -> LogicalResult {
+    for (auto [i, type, exp] : llvm::enumerate(types, expected)) {
+      if (type == exp)
+        continue;
+      return op.emitOpError("callee expected call ")
+             << kind << " #" << i << " to be " << exp << " but got " << type;
+    }
+    return success();
+  };
+
+  if (failed(verifyTypes("argument", operands, values.getInputs())) ||
+      failed(verifyTypes("result", results, values.getResults())))
+    return failure();
+  return success();
+}
+
 LogicalResult LIT::CallOp::verify() {
-  if (!isa<LITSignatureType>(getCallee().getType()))
+  auto sig = dyn_cast<LITSignatureType>(getCallee().getType());
+  if (!sig)
     return emitOpError("callee type must be a `!lit.signature`");
-  return verifyLifetimeParams(*this);
+  if (failed(verifyLifetimeParams(*this, sig)))
+    return failure();
+  return success();
+  // FIXME: This is a bug in closure emission generating invalid code.
+  // return verifyCallOp(*this, sig, getOperands(), getResultTypes());
 }
 
 void LIT::CallOp::setCalleeAttr(TypedAttr callee) {
@@ -278,14 +372,22 @@ void LIT::CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
 // CallParamOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult LIT::CallParamOp::verify() { return verifyLifetimeParams(*this); }
+LogicalResult LIT::CallParamOp::verify() {
+  auto sig = cast<LITSignatureType>(getCallee().getType());
+  if (failed(verifyLifetimeParams(*this, sig)))
+    return failure();
+  return verifyCallOp(*this, sig, getOperands(), getResultTypes());
+}
 
 //===----------------------------------------------------------------------===//
 // CallSignatureOp
 //===----------------------------------------------------------------------===//
 
 LogicalResult LIT::CallSignatureOp::verify() {
-  return verifyLifetimeParams(*this);
+  auto sig = cast<LITSignatureType>(getCallee().getType());
+  if (failed(verifyLifetimeParams(*this, sig)))
+    return failure();
+  return verifyCallOp(*this, sig, getArguments(), getResultTypes());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1556,16 +1658,39 @@ LogicalResult GlobalVarRefOp::verifySymbolUses(SymbolTableCollection &symtab) {
 // AsyncCallOp
 //===----------------------------------------------------------------------===//
 
-static POP::CoroutineType getCoroutineOfResultTypes(Type type) {
-  return POP::CoroutineType::get(cast<SignatureType>(type));
+/// Use the result types to form the coroutine type, inheriting the throws bit.
+static ParseResult
+parseAsyncCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
+                      Type &coroutineType, TypedAttr callee,
+                      ArrayRef<TypedAttr> implicitLifetimes) {
+  SmallVector<Type> resultTypes;
+  if (failed(parseCallOpTypes(p, operandTypes, resultTypes, callee,
+                              implicitLifetimes)))
+    return failure();
+  coroutineType =
+      POP::CoroutineType::get(p.getContext(), resultTypes,
+                              cast<SignatureType>(callee.getType()).isThrows());
+  return success();
 }
+
+/// Nothing to do on print.
+static void printAsyncCallOpTypes(AsmPrinter &, Operation *, TypeRange, Type,
+                                  TypedAttr, ArrayRef<TypedAttr>) {}
 
 LogicalResult AsyncCallOp::verify() {
   auto sig = cast<SignatureType>(getCallee().getType());
   if (!sig.isAsync())
     return emitOpError("callable must be 'async'");
-  if (isa<LITSignatureType>(sig))
-    return verifyLifetimeParams(*this);
+  SignatureType resultSig = getResult().getType().getSignature();
+  if (sig.isThrows() != resultSig.isThrows())
+    return emitOpError() << "'throws' of resultant coroutine must match callee";
+
+  if (auto litSig = dyn_cast<LITSignatureType>(sig)) {
+    if (failed(verifyLifetimeParams(*this, litSig)) ||
+        failed(verifyCallOp(*this, litSig, getOperands(),
+                            resultSig.getValueResults())))
+      return failure();
+  }
   return success();
 }
 

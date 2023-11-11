@@ -307,13 +307,10 @@ CoroutineType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
-CoroutineType CoroutineType::get(SignatureType sig) {
-  // Return a coroutine type whose result types match the signature type but
-  // which inherits the `throws` bit.
-  MLIRContext *ctx = sig.getContext();
-  auto coroSig =
-      SignatureType::get(FunctionType::get(ctx, {}, sig.getValueResults()), {},
-                         {}, {}, FnEffects().setThrows(sig.isThrows()));
+CoroutineType CoroutineType::get(MLIRContext *ctx, TypeRange resultTypes,
+                                 bool raises) {
+  auto coroSig = SignatureType::get(FunctionType::get(ctx, {}, resultTypes), {},
+                                    {}, {}, FnEffects().setThrows(raises));
   return POP::CoroutineType::get(ctx, coroSig);
 }
 
