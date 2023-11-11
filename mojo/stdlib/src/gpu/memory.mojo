@@ -9,7 +9,10 @@ from math import is_power_of_2
 from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 
 from memory import stack_allocation as _generic_stack_allocation
-from memory.unsafe import DTypePointer
+from memory.unsafe import DTypePointer, Pointer, bitcast
+from gpu.host.stream import Stream, _StreamImpl
+from gpu.host._utils import _check_error, _get_dylib_function
+from gpu.host.result import Result
 
 
 # ===----------------------------------------------------------------------===#
@@ -134,3 +137,75 @@ fn async_copy[
         llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.16", NoneType](
             dst, src
         )
+
+
+@always_inline
+fn _copy_device_to_device[
+    type: AnyType
+](device_dest: Pointer[type], device_src: Pointer[type], count: Int,) raises:
+    _check_error(
+        _get_dylib_function[
+            fn (
+                Pointer[UInt32],
+                Pointer[UInt32],
+                Int,
+            ) -> Result
+        ]("cuMemcpyDtoD_v2")(
+            device_dest.bitcast[UInt32](),
+            device_src.bitcast[UInt32](),
+            count * sizeof[type](),
+        )
+    )
+
+
+@always_inline
+fn _copy_device_to_device[
+    type: DType
+](
+    device_dest: DTypePointer[type],
+    device_src: DTypePointer[type],
+    count: Int,
+) raises:
+    _copy_device_to_device[SIMD[type, 1]](
+        device_dest._as_scalar_pointer(),
+        device_src._as_scalar_pointer(),
+        count,
+    )
+
+
+@always_inline
+fn _copy_device_to_device_async[
+    type: AnyType
+](
+    device_dest: Pointer[type],
+    device_src: Pointer[type],
+    count: Int,
+    stream: Stream,
+) raises:
+    _check_error(
+        _get_dylib_function[
+            fn (Pointer[UInt32], Pointer[UInt32], Int, _StreamImpl) -> Result
+        ]("cuMemcpyDtoDAsync_v2")(
+            device_dest.bitcast[UInt32](),
+            device_src.bitcast[UInt32](),
+            count * sizeof[type](),
+            stream.stream,
+        )
+    )
+
+
+@always_inline
+fn _copy_device_to_device_async[
+    type: DType
+](
+    device_dest: DTypePointer[type],
+    device_src: DTypePointer[type],
+    count: Int,
+    stream: Stream,
+) raises:
+    _copy_device_to_device_async[SIMD[type, 1]](
+        device_dest._as_scalar_pointer(),
+        device_src._as_scalar_pointer(),
+        count,
+        stream,
+    )
