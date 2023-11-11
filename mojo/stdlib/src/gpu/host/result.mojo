@@ -539,12 +539,15 @@ struct Result:
     """This indicates that an unknown internal error has occurred.
     """
 
+    @always_inline("nodebug")
     fn __init__(code: Int32) -> Self:
         return Self {code: code}
 
+    @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
         return self.code == other.code
 
+    @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 

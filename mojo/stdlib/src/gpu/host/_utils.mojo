@@ -8,7 +8,8 @@
 from sys.ffi import DLHandle
 
 from ._constants import CUDA_DRIVER_PATH
-from .result import Result
+from .result import Result as DriverResult
+from .nvml import Result as NVMLResult
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 # ===----------------------------------------------------------------------===#
@@ -17,8 +18,14 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 
 @always_inline
-fn _check_error(err: Result) raises:
-    if err != Result.SUCCESS:
+fn _check_error(err: DriverResult) raises:
+    if err != DriverResult.SUCCESS:
+        raise Error(err.__str__())
+
+
+@always_inline
+fn _check_error(err: NVMLResult) raises:
+    if err != NVMLResult.SUCCESS:
         raise Error(err.__str__())
 
 
