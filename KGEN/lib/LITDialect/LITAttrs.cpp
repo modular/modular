@@ -370,10 +370,10 @@ TypedAttr BindTypeAttr::get(MLIRContext *ctx, TypedAttr typeValue,
 Type LifetimeAttr::getType() const { return LifetimeType::get(getContext()); }
 
 //===----------------------------------------------------------------------===//
-// LifetimeRefAttr
+// ImplicitLifetimeRefAttr
 //===----------------------------------------------------------------------===//
 
-Type LifetimeRefAttr::getType() const {
+Type ImplicitLifetimeRefAttr::getType() const {
   return LifetimeType::get(getContext());
 }
 

@@ -164,7 +164,7 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       b.replaceOpWithNewOp<KGEN::CallSignatureOp>(
           call, call.getResultTypes(), call.getCallee(), call.getArguments());
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
-      call.setLifetimeParams({});
+      call.setImplicitLifetimes({});
     } else if (auto letDecl = dyn_cast<LetRegDeclOp>(op)) {
       // Build information for this decl if necessary.
       if (buildingDebugVars) {

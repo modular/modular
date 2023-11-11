@@ -75,7 +75,7 @@ def FnMetadataAttr : DialectAttribute<(attr
   EnumAttrArray<"PassingKind">:$paramPassingKinds,
   TypedAttrArray:$defaultArguments,
   TypedAttrArray:$defaultParameters,
-  VarInt:$numLifetimeDecls
+  VarInt:$numImplicitLifetimeDecls
 )>;
 
 def DocStringAttr : DialectAttribute<(attr
@@ -94,7 +94,7 @@ def ModuleAttr : DialectAttribute<(attr
 
 def LifetimeAttr : DialectAttribute<(attr)>;
 
-def LifetimeRefAttr : DialectAttribute<(attr
+def ImplicitLifetimeRefAttr : DialectAttribute<(attr
   VarInt:$depth,
   VarInt:$index
 )>;
@@ -133,7 +133,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnboundMLIROperationAttr,
     ModuleAttr,
     LifetimeAttr,
-    LifetimeRefAttr,
+    ImplicitLifetimeRefAttr,
     UnresolvedAliasValueAttr,
     LITStructAttr,
     StructExtractAttr,

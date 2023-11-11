@@ -175,8 +175,8 @@ template <typename OpT>
 static LogicalResult verifyLifetimeParams(OpT op) {
   size_t numImplicit = cast<LITSignatureType>(op.getCallee().getType())
                            .getMetadata()
-                           .getNumLifetimeDecls();
-  size_t numParams = op.getLifetimeParams().size();
+                           .getNumImplicitLifetimeDecls();
+  size_t numParams = op.getImplicitLifetimes().size();
   if (numParams == numImplicit)
     return success();
   return op->emitOpError("operation has ")
@@ -186,8 +186,8 @@ static LogicalResult verifyLifetimeParams(OpT op) {
          << numImplicit;
 }
 
-static ParseResult parseLifetimeParams(AsmParser &p,
-                                       ParameterExprArrayAttr &lifetimeParams) {
+static ParseResult
+parseLifetimeParams(AsmParser &p, ParameterExprArrayAttr &implicitLifetimes) {
   SmallVector<TypedAttr> values;
   auto lifetimeType = LifetimeType::get(p.getContext());
   if (p.parseCommaSeparatedList(
@@ -195,28 +195,28 @@ static ParseResult parseLifetimeParams(AsmParser &p,
             return parseParamValue(p, values.emplace_back(), lifetimeType);
           }))
     return failure();
-  lifetimeParams = ParameterExprArrayAttr::get(p.getContext(), values);
+  implicitLifetimes = ParameterExprArrayAttr::get(p.getContext(), values);
   return success();
 }
 
 static void printLifetimeParams(AsmPrinter &p, Operation *op,
-                                ParameterExprArrayAttr lifetimeParams) {
-  if (lifetimeParams.empty())
+                                ParameterExprArrayAttr implicitLifetimes) {
+  if (implicitLifetimes.empty())
     return;
   p << '[';
-  llvm::interleaveComma(lifetimeParams, p,
+  llvm::interleaveComma(implicitLifetimes, p,
                         [&](TypedAttr value) { printParamValue(p, value); });
   p << ']';
 }
 
 static ParseResult parseCallOp(
     OpAsmParser &p, SymbolConstantAttr &calleeCst,
-    ParameterExprArrayAttr &lifetimeParams, ParamDeclArrayAttr &paramDecls,
+    ParameterExprArrayAttr &implicitLifetimes, ParamDeclArrayAttr &paramDecls,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
     SmallVectorImpl<Type> &operandTypes, SmallVectorImpl<Type> &resultTypes) {
   SymbolRefAttr callee;
   ParameterExprArrayAttr paramValues;
-  if (p.parseAttribute(callee) || parseLifetimeParams(p, lifetimeParams),
+  if (p.parseAttribute(callee) || parseLifetimeParams(p, implicitLifetimes),
       parseCallOpParams(p, paramValues, paramDecls) ||
           p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
           p.parseColon())
@@ -234,11 +234,11 @@ static ParseResult parseCallOp(
 
 static void printCallOp(OpAsmPrinter &p, Operation *op,
                         SymbolConstantAttr calleeCst,
-                        ParameterExprArrayAttr lifetimeParams,
+                        ParameterExprArrayAttr implicitLifetimes,
                         ParamDeclArrayAttr paramDecls, ValueRange operands,
                         TypeRange operandTypes, TypeRange resultTypes) {
   p << calleeCst.getSymbol();
-  printLifetimeParams(p, op, lifetimeParams);
+  printLifetimeParams(p, op, implicitLifetimes);
   printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls,
                     calleeCst.getType().getResultParamTypes());
   p << '(';
@@ -467,14 +467,17 @@ static ParseResult parseLITFunctionSignature(
   if (!signature)
     return failure();
 
-  // Replace named lifetime parameter references with index references.
+  // Replace named implicit lifetime parameter references with index-based
+  // references in the signature.
   struct LifetimeDeclRemapper : IndexParameterReplacer<LifetimeDeclRemapper> {
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
       if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
         if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
           // Subtract 1 because we're replacing the signature directly.
-          return LifetimeRefAttr::get(attr.getContext(), depth - 1, it->second);
+          size_t index = it->second;
+          return ImplicitLifetimeRefAttr::get(attr.getContext(), depth - 1,
+                                              index);
         }
       }
       return nullptr;
