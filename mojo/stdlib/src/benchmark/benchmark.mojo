@@ -644,7 +644,7 @@ fn keep[type: DType](val: DTypePointer[type]):
 
 
 @always_inline
-fn keep[type: AnyType](val: Pointer[type]):
+fn keep[type: AnyRegType](val: Pointer[type]):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
@@ -668,7 +668,7 @@ fn keep[type: AnyType](val: Pointer[type]):
 
 
 @always_inline
-fn keep[type: AnyType](inout val: type):
+fn keep[type: AnyRegType](inout val: type):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
