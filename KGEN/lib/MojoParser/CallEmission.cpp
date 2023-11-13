@@ -374,7 +374,8 @@ InputParamBindings::verifyBindings(
     if (!isVarArg(idx) || binding.getValue().getType() == type) {
       if (failed(checkRedundantKwParam()))
         return {{}, fitness};
-      PValue paramValue = handlePosBinding(idx, binding, type);
+      PValue paramValue =
+          handlePosBinding(idx, binding, evaluator.getReboundType(type));
       if (!paramValue)
         return {{}, fitness};
       setParamValue(paramValue);
