@@ -708,10 +708,17 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
   for (auto &[op, uses] : opUses) {
     for (ParamDeclRefAttr use : uses) {
       auto it = decls.find(use.getName());
-      // Ensure that the use refers to a parameter that was declared.
-      if (it == decls.end())
+      // Handle parameters without a declaration.
+      if (it == decls.end()) {
+        // If we're not verifying, assume this is a capture.
+        if (!symtab) {
+          usesFromAbove.insert(use);
+          continue;
+        }
+        // Ensure that the use refers to a parameter that was declared.
         return op->emitOpError("invalid use of parameter with no declaration ")
                << use.getName();
+      }
 
       // Check that the type of the parameter references matches the type of its
       // declaration.

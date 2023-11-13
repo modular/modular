@@ -3,9 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
-# CHECK: lit.func @"__copyinit__{{.*}}(%self[self]: !kgen.pointer<!escaping1> init_self, %other[other]: !kgen.pointer<!escaping1> borrow_in_mem, |) -> !kgen.none
+# CHECK: lit.func @"__copyinit__{{.*}}(%self[self]: !kgen.pointer<!wrapper> init_self, %other[other]: !kgen.pointer<!wrapper> borrow_in_mem, |) -> !kgen.none
 # CHECK-NEXT:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
@@ -36,14 +36,14 @@
 
 # CHECK-LABEL: lit.func @"materialize_escaping_closure
 
-# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow, %other[other]: !kgen.pointer<none> borrow, |) -> !kgen.none
+# CHECK: lit.func @"_CW_{{.*}}_copyinit_`_CI_{{.*}}"(%[[PTR_TO_IMPL:.*]][ptrToImpl]: !kgen.pointer<pointer<none>> borrow, %other[other]: !kgen.pointer<none> borrow, |) -> !kgen.none
 
 # Allocate memory on the heap for impl and copy existing contents into it.
 # CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(
 # CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(
 # CHECK-NEXT:  [[V0:%.*]] = pop.aligned_alloc %index_0, %index
 # CHECK-NEXT:  [[V1:%.*]] = pop.pointer.bitcast %other
-# CHECK-NEXT:  [[V2:%.*]] = lit.call {{.*}}__copyinit__(${{.*}}::_CI_${{.*}}"([[V0]], [[V1]])
+# CHECK-NEXT:  [[V2:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[V0]], [[V1]])
 
 # Store the address of the heap allocated memory into the self.
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]

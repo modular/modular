@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
 
 alias ptr = __mlir_type.`!kgen.pointer<none>`

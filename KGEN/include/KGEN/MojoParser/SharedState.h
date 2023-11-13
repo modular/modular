@@ -381,19 +381,13 @@ public:
   Impl &getImpl() const { return *impl; }
 
   /// Emitters invoke this method to get a closure declaration.
-  StructDeclOp getOrGenerateClosureWrapperStruct(SMLoc location,
-                                                 SignatureType signatureType,
-                                                 ASTDecl *moduleDecl);
-
-  /// Emitters invoke this method to get a closure declaration.
-  StructDeclOp replaceNestedFunctionWithGeneratedClosureImplStruct(
-      SMLoc location, ASTDecl &nestedFunction, ASTDecl *moduleDecl,
-      OrderedCaptures orderedCaptures);
+  StructDeclOp getOrCreateClosureWrapper(SMLoc loc, SignatureType sig,
+                                         ASTDecl *moduleDecl);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values in the form of a range: the begin and end iterators of the capture
   /// list.
-  iterator_range<llvm::MapVector<ASTDecl *, Capture>::const_iterator>
+  const llvm::MapVector<ASTDecl *, Capture> &
   getCaptureRangeInScope(ASTDecl &scope);
 
   /// Given a nested function, a capture value, and the corresponding capture

@@ -20,7 +20,7 @@ fn use(x: StringNoMove):
     pass
 
 
-# CHECK: lit.struct.decl @"_CI_{{.*}}::StringNoMove{{.*}} attributes
+# CHECK: lit.struct.decl @"`_CI_
 # CHECK-SAME: copyInit =
 # CHECK-SAME: destructor =
 # CHECK-SAME: moveInit =

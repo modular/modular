@@ -19,7 +19,7 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
     pass
 
 
-# CHECK: lit.struct.decl @"_CI_
+# CHECK: lit.struct.decl @"`_CI_
 # CHECK-NEXT: lit.struct.field field0 : !MemType
 # CHECK-NEXT: lit.struct.field field1 : !Int
 # CHECK-NEXT: lit.struct.field field2 : index

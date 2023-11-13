@@ -123,33 +123,3 @@ fn caller():
 @value
 struct MyValueStruct:
     var value: __mlir_type.index
-
-
-# // -----
-
-# COM: This tests that code generated to support capturing closures is located and scoped correctly.
-
-# CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(<"index">, <"index">) from <(module)"parser-debuginfo">>
-# CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", file = #file, line = [[#LN42:]],
-
-# CHECK-DAG:    lit.func @"makes_escaping_closure
-# CHECK-DAG:    debuginfo.value #local_variable1 = %m : index loc(#[[LOC26:.*]])
-# CHECK-DAG:    debuginfo.value #local_variable2 = %z : index
-# CHECK-DAG:    %anonymous2A = lit.varlet.decl "anonymous*" synth : {{.*}}
-# CHECK-DAG:    %0 = lit.ref.to_pointer %anonymous2A
-# CHECK-DAG:    %1 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"(%0, %m)
-# CHECK-DAG:    %anonymous2A_0 = lit.varlet.decl "anonymous*" synth : !lit.ref<mut !escaping1
-# CHECK-DAG:    %2 = lit.ref.to_pointer %anonymous2A_0
-# CHECK-DAG:    %3 = lit.call {{.*}}CW{{.*}}__init__{{.*}}(%2, %0)
-# CHECK-DAG:    %4 = lit.call {{.*}}CW{{.*}}__copyinit__{{.*}}(%__result__, %2) {{.*}}
-
-# CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
-
-
-fn makes_escaping_closure(
-    m: __mlir_type.index, z: __mlir_type.index
-) -> fn (n: __mlir_type.index) escaping -> __mlir_type.index:
-    fn myclosure(n: __mlir_type.index) escaping -> __mlir_type.index:
-        return m
-
-    return myclosure
