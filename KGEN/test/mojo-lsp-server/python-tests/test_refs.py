@@ -173,7 +173,7 @@ fn print(x: StringRef):
 fn print(x: Bool):
     pass
 
-fn function[type: AnyType](arg: type):
+fn function[type: AnyRegType](arg: type):
     print(arg)
 """,
     )

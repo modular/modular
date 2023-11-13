@@ -5,5 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn identity[T: AnyType](data: T) -> T:
+fn identity[T: AnyRegType](data: T) -> T:
     return data

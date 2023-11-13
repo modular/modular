@@ -873,7 +873,7 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T
 }
 
 // CHECK-LABEL: kgen.generator @pack
-kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type, I: index>(
+kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T: type, I: index>(
   %arg0: !kgen.pack<Ts>,
   %arg1: !kgen.pack<[i32, T]>,
   %arg2: f32,

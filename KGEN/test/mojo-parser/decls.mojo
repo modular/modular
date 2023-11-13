@@ -190,7 +190,7 @@ fn capture_by_copy():
     alias f = doesnt_capture
 
 
-struct Param[T: AnyType]:
+struct Param[T: AnyRegType]:
     pass
 
 
@@ -325,7 +325,7 @@ fn packOverload(a: Int):
     pass
 
 
-fn packOverload[*Ts: __mlir_type.`!kgen.mlirtype`](*a: *Ts):
+fn packOverload[*Ts: __mlir_type.`!kgen.anyregtype`](*a: *Ts):
     pass
 
 
@@ -398,7 +398,7 @@ fn paramOverload(y: Int):
     pass
 
 
-fn paramOverload[x: Int, T: AnyType](y: T):
+fn paramOverload[x: Int, T: AnyRegType](y: T):
     pass
 
 
@@ -436,7 +436,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK: lit.call @"$decls"::@"paramOverload({{.*}}$int::Int)"
     paramOverload(x)
 
-    # CHECK: lit.call @"$decls"::@"paramOverload[{{.*}}$int::Int,AnyType]($1)"
+    # CHECK: lit.call @"$decls"::@"paramOverload[{{.*}}$int::Int,AnyRegType]($1)"
     paramOverload[a](x)
 
     # CHECK: lit.call @"$decls"::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]({{.*}}$int::Int)"
@@ -475,7 +475,7 @@ fn test_static_overload():
     a.foo()
 
 
-struct VariadicStruct[*Ts: AnyType]:
+struct VariadicStruct[*Ts: AnyRegType]:
     fn __init__(inout self):
         pass
 
@@ -484,7 +484,7 @@ struct VariadicStruct[*Ts: AnyType]:
         pass
 
 
-fn take_variadic_struct[*Ts: AnyType](a: VariadicStruct[Ts]):
+fn take_variadic_struct[*Ts: AnyRegType](a: VariadicStruct[Ts]):
     pass
 
 
@@ -602,7 +602,7 @@ fn nestedFnInLoop():
         let result = foo()
 
 
-fn paramRefFunc[T: AnyType](x: T):
+fn paramRefFunc[T: AnyRegType](x: T):
     pass
 
 
@@ -794,11 +794,11 @@ fn variadics(*a: Int):
     let elt1 = a[1]
 
 
-fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T):
+fn parameterizedVariadic[T: __mlir_type.`!kgen.anyregtype`](*args: T):
     pass
 
 
-struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
+struct ParameterizedStruct[T: __mlir_type.`!kgen.anyregtype`]:
     fn __init__(inout self, *args: T):
         pass
 
@@ -842,7 +842,7 @@ fn callVariadic[p: Int](x: Int):
 
 # CHECK-LABEL: lit.struct.decl @MyTuple
 # CHECK-SAME: <[[TUPLETS:.*]][Ts]: variadic<type>>
-struct MyTuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
+struct MyTuple[*Ts: __mlir_type.`!kgen.anyregtype`]:
     var elements: __mlir_type[`!kgen.pack<`, Ts, `>`]
 
     fn __init__(inout self, *args: *Ts):
@@ -851,20 +851,20 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.mlirtype`]:
 
 # CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!kgen.pack<*(0,0)>)"<
 # CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>(%args[args]: !kgen.pack<[[TS]]>)
-fn pack[*Ts: __mlir_type.`!kgen.mlirtype`](owned *args: *Ts):
+fn pack[*Ts: __mlir_type.`!kgen.anyregtype`](owned *args: *Ts):
     # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
     let copy = args
 
 
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}})"<
 # CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>
-fn packBorrowed[*Ts: __mlir_type.`!kgen.mlirtype`](borrowed *args: *Ts):
+fn packBorrowed[*Ts: __mlir_type.`!kgen.anyregtype`](borrowed *args: *Ts):
     # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
     let copy = args
 
 
 # Ensure that parameters can be bound correctly.
-fn variadicParameter[*Ts: __mlir_type.`!kgen.mlirtype`](x: Int):
+fn variadicParameter[*Ts: __mlir_type.`!kgen.anyregtype`](x: Int):
     pass
 
 

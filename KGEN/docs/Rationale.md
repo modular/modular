@@ -184,7 +184,7 @@ the compiler. It is not clear what `scalar<string>` would mean, for example.
 
 We could replace `DType` with MLIR builtin types, but this makes a mess out of
 the parameter system, because then everything would have to be parameterized
-with `!kgen.mlirtype`, which can be any MLIR type! We can introduce a new enum
+with `!kgen.anyregtype`, which can be any MLIR type! We can introduce a new enum
 that consists only of supported element types for scalars and vectors, but this
 adds unnecessary friction with an enum conversion.
 

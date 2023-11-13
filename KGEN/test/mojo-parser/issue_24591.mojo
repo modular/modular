@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | kgen-opt -verify-parameters -mlir-print-op-generic | FileCheck %s
 
-alias AnyType = __mlir_type.`!kgen.mlirtype`
+alias AnyRegType = __mlir_type.`!kgen.anyregtype`
 alias NoneType = __mlir_type.`!kgen.none`
 
 
 @register_passable
-struct Optional[T: AnyType]:
+struct Optional[T: AnyRegType]:
     fn __init__(none: NoneType) -> Self:
         pass
 

@@ -172,7 +172,7 @@ static Type extractMetaType(Type type) {
   if (auto paramRef = dyn_cast<ParamRefType>(type))
     return paramRef.getParam().getType();
   // Otherwise, this is a generic MLIR type.
-  return MLIRTypeType::get(type.getContext());
+  return AnyRegTypeType::get(type.getContext());
 }
 
 PValue::PValue(Type value)
@@ -184,7 +184,7 @@ ASTType PValue::getIfTypeValue() const {
   auto attr = get();
   // If this is a parameter expression of type value, use ParamRefType to turn
   // it into a type.
-  if (isa<MLIRTypeType, MetaTypeType>(attr.getType()))
+  if (isa<AnyRegTypeType, MetaTypeType>(attr.getType()))
     return ParamRefType::get(attr);
   return {};
 }

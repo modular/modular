@@ -29,10 +29,10 @@ PackType LIT::getIfPackType(SignatureType sig, size_t index) {
 
 bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
                              ASTType toType) {
-  // Permit upcasting any `!lit.metatype` to `!kgen.mlirtype`.
+  // Permit upcasting any `!lit.metatype` to `!kgen.anyregtype`.
   // FIXME(traits): Binding a Mojo type to an MLIR type is a hack. We should
   // forbid this when traits are fully operational.
-  if (isa<MetaTypeType>(fromType) && isa<MLIRTypeType>(toType))
+  if (isa<MetaTypeType>(fromType) && isa<AnyRegTypeType>(toType))
     return true;
 
   auto fromRef = dyn_cast<DeclRefType>(fromType);

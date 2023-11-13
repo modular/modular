@@ -423,7 +423,7 @@ static ParseResult parseGlobalConstantOpValue(OpAsmParser &p, TypedAttr &value,
       p.parseGreater())
     return failure();
   resultType = PointerType::get(
-      TypeConstantAttr::get(elementType, MLIRTypeType::get(p.getContext())));
+      TypeConstantAttr::get(elementType, AnyRegTypeType::get(p.getContext())));
   return success();
 }
 
@@ -589,7 +589,7 @@ static PointerType getCoroutinePromiseType(Type type) {
   return PointerType::get(TypeConstantAttr::get(
       StructType::get(type.getContext(),
                       cast<CoroutineType>(type).getResultTypes()),
-      MLIRTypeType::get(type.getContext())));
+      AnyRegTypeType::get(type.getContext())));
 }
 
 //===----------------------------------------------------------------------===//

@@ -369,7 +369,7 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
     #kgen.concretetype.constant<!myType, vtable={
       "method1" : <() -> index> = @method1,
       "method2" : <() -> index> = @method2
-    }> : !kgen.mlirtype
+    }> : !kgen.anyregtype
     ```
   }];
 

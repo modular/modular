@@ -289,7 +289,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
     MetaTypeType metatype = bind.getType();
     return TypeConstantAttr::get(replace(
         DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
-                         MLIRTypeType::get(bind.getContext()))));
+                         AnyRegTypeType::get(bind.getContext()))));
   };
 
   auto processParamOperatorAttr = [&](ParamOperatorAttr attr) -> Attribute {
@@ -415,7 +415,7 @@ Type StructOperationLowerer::replace(Type type) {
 
   // Erase metatypes.
   auto processMetaType = [](MetaTypeType type) {
-    return MLIRTypeType::get(type.getContext());
+    return AnyRegTypeType::get(type.getContext());
   };
 
   // Signature processing checks to see if there are any lifetime parameters;

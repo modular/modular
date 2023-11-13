@@ -894,7 +894,7 @@ verifyGetTypeMethod(ArrayRef<TypedAttr> operands,
   };
   if (operands.size() != 3)
     return error("'get_type_method' requires 3 operands");
-  if (!::isa<MLIRTypeType>(operands[0].getType()))
+  if (!::isa<AnyRegTypeType>(operands[0].getType()))
     return error("'get_type_method' first operand should be a type");
   if (!::isa<StringType>(operands[1].getType()))
     return error("'get_type_method' second operand should be a string");
@@ -1017,8 +1017,9 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetSizeOf:
     if (operands.size() != 2)
       return emitError() << "'get_sizeof' operator requires two operands";
-    if (!operands.front().getType().isa<MLIRTypeType>())
-      return emitError() << "'get_sizeof' operand 0 should be a !kgen.mlirtype";
+    if (!operands.front().getType().isa<AnyRegTypeType>())
+      return emitError()
+             << "'get_sizeof' operand 0 should be a !kgen.anyregtype";
     if (!operands[1].getType().isa<TargetType>())
       return emitError() << "'get_sizeof' operand 1 should be a !kgen.target";
     if (!type.isa<IndexType>())
@@ -1027,9 +1028,9 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetAlignOf:
     if (operands.size() != 2)
       return emitError() << "'get_alignof' operator requires two operands";
-    if (!llvm::isa<MLIRTypeType>(operands.front().getType()))
+    if (!llvm::isa<AnyRegTypeType>(operands.front().getType()))
       return emitError()
-             << "'get_alignof' operand 0 should be a !kgen.mlirtype";
+             << "'get_alignof' operand 0 should be a !kgen.anyregtype";
     if (!operands[1].getType().isa<TargetType>())
       return emitError() << "'get_alignof' operand 1 should be a !kgen.target";
     if (!type.isa<IndexType>())
@@ -1896,7 +1897,7 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
       // FIXME(metatypes): The layering is wrong here. Should MetaTypeType be
       // moved to KGENDialect?
       Type metatype =
-          isa<MLIRTypeType>(resultType) ? declRef.getMetaType() : resultType;
+          isa<AnyRegTypeType>(resultType) ? declRef.getMetaType() : resultType;
       return TypeConstantAttr::get(DeclRefType::get(declRef.getSymbol(),
                                                     declRef.getParamValues(),
                                                     metatype),

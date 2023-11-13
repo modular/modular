@@ -109,7 +109,7 @@ fn testAttrConcatWithoutType[
 # CHECK-LABEL: lit.struct.decl @MyPointer
 # CHECK-SAME: <[[ELTYPE:.*]][elType]: type>
 @register_passable
-struct MyPointer[elType: __mlir_type.`!kgen.mlirtype`]:
+struct MyPointer[elType: __mlir_type.`!kgen.anyregtype`]:
     alias StorageTy = __mlir_type[`!kgen.pointer<`, elType, `>`]
     # CHECK: lit.struct.field value : !kgen.pointer<[[ELTYPE]]>
     var value: Self.StorageTy
@@ -120,7 +120,9 @@ struct MyPointer[elType: __mlir_type.`!kgen.mlirtype`]:
 
 # CHECK-LABEL: getAddressOf{{.*}}"<
 # CHECK-SAME: [[T:.*_T]][T]: type>(%arg[arg]: !kgen.pointer<[[T]]> byref)
-fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
+fn getAddressOf[
+    T: __mlir_type.`!kgen.anyregtype`
+](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type = MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )

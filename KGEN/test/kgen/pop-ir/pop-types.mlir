@@ -49,7 +49,7 @@ kgen.generator @struct<size, dtype: dtype, ty: type>(
 }
 
 // CHECK-LABEL: @pack
-kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T0: type, T1: type>(
+kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T0: type, T1: type>(
   // CHECK-SAME: !kgen.pack<Ts>
   %arg0: !kgen.pack<Ts>,
   // CHECK-SAME: !kgen.pack<[T0, T1]>

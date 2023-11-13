@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct Foo[X: AnyType, Y: AnyType]:
+struct Foo[X: AnyRegType, Y: AnyRegType]:
     fn __init__(inout self):
         pass
 
-    fn getParametrized[T: AnyType](self, val: T) -> T:
+    fn getParametrized[T: AnyRegType](self, val: T) -> T:
         @parameter
         fn nested_function(z: T) -> T:
             return z  # breakpoint

@@ -943,7 +943,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         InputParamBindings::getForDeclaredType(baseRVType, emitter.shared),
         this, CallSyntax::kDirectCall);
     ASTType baseType = baseVal.getType();
-    if (isa<MLIRTypeType>(baseType.mlirType))
+    if (isa<AnyRegTypeType>(baseType.mlirType))
       baseType = ASTType(baseVal.getIfPValue());
     result->baseDecl = baseType.getDecl(emitter.shared);
 
@@ -1056,7 +1056,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       } else if (auto value = dyn_cast<TypedAttr>(attr.getValue())) {
         auto pushTypeToState = [&](TypedAttr type,
                                    std::string message) -> LogicalResult {
-          if (!isa<MLIRTypeType, MetaTypeType>(type.getType())) {
+          if (!isa<AnyRegTypeType, MetaTypeType>(type.getType())) {
             emitter.emitError(call.getLoc(), message);
             return failure();
           }

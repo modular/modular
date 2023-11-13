@@ -16,8 +16,8 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
     use3 = #kgen.param.expr<add, 1 : index, 2 : index> : index,
 
     // Type folding.
-    // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.mlirtype
-    use4 = #kgen.parameterizedtype.constant<!kgen.paramref<mlirType>> : !kgen.mlirtype
+    // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.anyregtype
+    use4 = #kgen.parameterizedtype.constant<!kgen.paramref<mlirType>> : !kgen.anyregtype
 
 
   } : () -> ()

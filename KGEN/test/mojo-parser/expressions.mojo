@@ -201,7 +201,7 @@ struct M:
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam
 # CHECK-SAME: <[[PARAM:.*]][comparator]: !lit.signature
 # CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)> borrow, |)
-struct StructWithFuncParam[comparator: fn[T: AnyType] (T) -> None]:
+struct StructWithFuncParam[comparator: fn[T: AnyRegType] (T) -> None]:
     # CHECK-LABEL: lit.func @"f
     # CHECK-SAME: %self[self]: !kgen.pointer<{{.*}}<:!lit.signature<<"T": type>(!kgen.paramref<*(0,0)>
     fn f(self):
@@ -1361,7 +1361,7 @@ fn function_types(
   float8: fn[a: Int](ParamType[a]) -> None,
   float9: fn[() -> a: Int]() -> None,
   float10: def[a: Int, b: ParamType[a]]() -> None,
-  float11: async def[*Ts: AnyType](* *Ts) -> None,
+  float11: async def[*Ts: AnyRegType](* *Ts) -> None,
   float12: fn(Int = 10, StringLiteral = "foo") -> None,
   named: fn(x: MemType) -> Int
 ): pass
@@ -1550,12 +1550,12 @@ fn test_kw_args_overload():
     overloaded_kw_arg(b=MyInt(8), a=5)
 
 
-fn take_kw_param_infer[A: AnyType, B: AnyType](a: A, b: B):
+fn take_kw_param_infer[A: AnyRegType, B: AnyRegType](a: A, b: B):
     pass
 
 
 # COM: test parametric overload in the presence of keyword operands.
-fn take_kw_param_infer[B: AnyType](a: StringLiteral, b: B):
+fn take_kw_param_infer[B: AnyRegType](a: StringLiteral, b: B):
     pass
 
 
@@ -1563,37 +1563,37 @@ fn take_kw_param_infer[B: AnyType](a: StringLiteral, b: B):
 fn test_kw_args_param_infer():
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer(1, b=3.14)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer(a=1, b=3.14)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer[Int, FloatLiteral](a=1, b=3.14)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer(b=3.14, a=1)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
-    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    # CHECK: lit.call @{{.*}}@"take_kw_param_infer[AnyRegType,AnyRegType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
     take_kw_param_infer[Int](b=3.14, a=1)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value: string = "hello"
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 3
-    # CHECK: lit.call @"{{.*}}@"take_kw_param_infer[AnyType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
+    # CHECK: lit.call @"{{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
     take_kw_param_infer("hello", b=3)
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value: string = "hello"
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 3
-    # CHECK: lit.call @"{{.*}}@"take_kw_param_infer[AnyType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
+    # CHECK: lit.call @"{{.*}}@"take_kw_param_infer[AnyRegType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
     take_kw_param_infer(b=3, a="hello")
 
 
@@ -1641,22 +1641,22 @@ fn indirect_kw_args():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"type_function
-# CHECK-SAME: (%a[a]: !Bool borrow) -> !kgen.mlirtype
-fn type_function(a: Bool) -> AnyType:
-    # CHECK: [[TYPE:%.*]] = hlcf.if %{{.*}} -> !kgen.mlirtype
+# CHECK-SAME: (%a[a]: !Bool borrow) -> !kgen.anyregtype
+fn type_function(a: Bool) -> AnyRegType:
+    # CHECK: [[TYPE:%.*]] = hlcf.if %{{.*}} -> !kgen.anyregtype
     # CHECK-NEXT: %metatype = kgen.param.constant: metatype<{{.*}}@Int> = <!Int>
     # CHECK-NEXT: [[COERCED:%.*]] = lit.call {{.*}}(%metatype)
     # CHECK-NEXT: yield [[COERCED]]
     # CHECK-NEXT: else
     # CHECK-NEXT: %type = kgen.param.constant: type = <!Bool>
     # CHECK-NEXT: yield %type
-    # CHECK: return [[TYPE]] : !kgen.mlirtype
-    return rebind[AnyType](Int) if a else Bool
+    # CHECK: return [[TYPE]] : !kgen.anyregtype
+    return rebind[AnyRegType](Int) if a else Bool
 
 
 # CHECK-LABEL: lit.func @"static_type
 # CHECK-SAME: <[[PARAM:.*]][a]: !Bool>
-# CHECK-SAME: %x[x]: !kgen.paramref<apply(:!lit.signature<("a": !Bool borrow) -> !kgen.mlirtype> {{.*}}@"type_function{{.*}}, [[PARAM]])> borrow)
+# CHECK-SAME: %x[x]: !kgen.paramref<apply(:!lit.signature<("a": !Bool borrow) -> !kgen.anyregtype> {{.*}}@"type_function{{.*}}, [[PARAM]])> borrow)
 fn static_type[a: Bool](x: type_function(a)):
     pass
 
