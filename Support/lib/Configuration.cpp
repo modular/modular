@@ -9,6 +9,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
@@ -86,6 +87,45 @@ ErrorOr<Config> Config::open() {
 
   // Return the initialized configuration.
   return std::move(cfg);
+}
+
+static std::pair<StringRef, StringRef> getSectionAndProp(const StringRef &key) {
+  auto [section, prop] = key.rsplit('.');
+  // If the property is empty, that means we didn't have a header (split
+  // always fills the first return value). Swap header and prop here cause if
+  // we want everything that doesn't have a section, then section should be an
+  // empty string.
+  if (prop.empty())
+    std::swap(section, prop);
+  return std::pair<StringRef, StringRef>(section, prop);
+}
+
+ErrorOrSuccess Config::overrideFrom(const Config &other) {
+  // Find all the sections present in other
+  llvm::StringSet<> overrideSections;
+  for (const auto &properties : other.getAllValues()) {
+    auto [section, prop] = getSectionAndProp(properties.first());
+    // Handle global properties one-at-a-time rather than by section
+    if (section.empty())
+      continue;
+    overrideSections.insert(section);
+  }
+
+  // Remove all keys in sections present in other
+  for (auto it = kv.begin(); it != kv.end();) {
+    const StringRef key = (*it).getKey();
+    auto [section, prop] = getSectionAndProp(key);
+    if (!section.empty() && overrideSections.contains(section))
+      kv.erase(key);
+    ++it;
+  }
+
+  // Copy over all the values from other. The two maps should be
+  // non-overlapping, EXCEPT for global params. Global params in other will
+  // clobber global params on this Config.
+  for (const auto &entry : other.getAllValues())
+    kv[entry.getKey()] = entry.getValue();
+  return success();
 }
 
 ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
@@ -225,14 +265,7 @@ void Config::getValuesInSection(
   // Iterate all the properties in the map.
   for (auto &properties : kv) {
     // Split on the last '.' - that's the section.
-    auto [header, prop] = properties.first().rsplit('.');
-    // If the property is empty, that means we didn't have a header (split
-    // always fills the first return value). Swap header and prop here cause if
-    // we want everything that doesn't have a section, then section should be an
-    // empty string.
-    if (prop.empty())
-      std::swap(header, prop);
-
+    auto [header, prop] = getSectionAndProp(properties.first());
     if (header == section)
       values.emplace_back(prop, properties.second);
   }
@@ -255,9 +288,7 @@ void Config::flush(raw_ostream &os) {
     if (v.empty())
       continue;
 
-    auto [section, prop] = k.rsplit('.');
-    if (prop.empty())
-      std::swap(section, prop);
+    auto [section, prop] = getSectionAndProp(k);
     if (section.empty())
       section = "globals";
 

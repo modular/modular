@@ -69,6 +69,9 @@ public:
   TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {},
                    std::optional<Config> config = std::nullopt);
 
+  /// Construct a TelemetryContext from a config.
+  TelemetryContext(Config config);
+
   ~TelemetryContext();
 
   // XXX: not sure if it's better to allocate Counter and Histogram on the heap

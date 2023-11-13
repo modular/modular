@@ -102,7 +102,7 @@ key3 = value3
   EXPECT_EQ(cfg.getValue("section.subsection.key3"), "value3");
 }
 
-TEST(Configuration, Override) {
+TEST(Configuration, EnvOverride) {
   // Check that the env override works as expected.
   setenv("MODULAR_AKEY", "foo", 0);
   setenv("MODULAR_SECTION_SUBSECTION_KEY3", "bar", 0);
@@ -381,4 +381,64 @@ TEST(Configuration, BooleanValues) {
   EXPECT_STREQ("Unable to interpret configuration key 'example' with value "
                "'maybe' as boolean",
                result.getError());
+}
+
+TEST(Configuration, Override) {
+  StringRef one = R"(
+global_key_1 = value1
+#maybe a comment in between these guys
+global_key_2 = value2
+
+[section.one]
+key_1 = value1
+key_2 = value2
+
+[sectionTwo]
+key_1 = value1
+key_2 = value2
+)";
+
+  StringRef two = R"(
+# this is a comment
+global_key_2 = value2_override
+
+[section.one]
+key_1 = value1_override
+
+[section3]
+key_1 = value1_override # with a comment
+key_2 = value2_override
+key_3 = value3_override
+)";
+
+  Config base;
+  auto err = base.parseFrom(one);
+  ASSERT_FALSE(err.isError()) << err.getError();
+  ASSERT_EQ(base.getAllValues().size(), 6);
+
+  Config over;
+  err = over.parseFrom(two);
+  ASSERT_FALSE(err.isError()) << err.getError();
+  ASSERT_EQ(over.getAllValues().size(), 5);
+
+  err = base.overrideFrom(over);
+  ASSERT_FALSE(err.isError()) << err.getError();
+  ASSERT_EQ(base.getAllValues().size(), 8);
+
+  EXPECT_EQ(base.getValue("global_key_1"), "value1");
+  EXPECT_EQ(base.getValue("global_key_2"), "value2_override");
+
+  // section.one is entirely overridden
+  EXPECT_EQ(base.getValue("section.one.key_1"), "value1_override");
+  // key_2 is not present in over. it should not present
+  EXPECT_EQ(base.getValueOr("section.one.key_2", "UNSET"), "UNSET");
+
+  // these should be unaffected by overrideFrom
+  EXPECT_EQ(base.getValue("sectionTwo.key_1"), "value1");
+  EXPECT_EQ(base.getValue("sectionTwo.key_2"), "value2");
+
+  // this section comes from over
+  EXPECT_EQ(base.getValue("section3.key_1"), "value1_override");
+  EXPECT_EQ(base.getValue("section3.key_2"), "value2_override");
+  EXPECT_EQ(base.getValue("section3.key_3"), "value3_override");
 }
