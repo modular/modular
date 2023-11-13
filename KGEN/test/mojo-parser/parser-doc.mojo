@@ -28,7 +28,7 @@ from test_package import method_defined_in_init
 
 # CHECK: lit.package @"$test_package"{{.*}}docString = #[[PACKAGE_DOC]]
 
-alias AliasType = __mlir_type.`!kgen.mlirtype`
+alias AliasType = __mlir_type.`!kgen.anyregtype`
 """This is an alias doc."""
 
 let value = 10
@@ -55,4 +55,3 @@ trait Trait:
   fn f(self: Self):
     """This is a trait function doc."""
     ...
-

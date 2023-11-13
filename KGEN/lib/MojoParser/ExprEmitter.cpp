@@ -1876,7 +1876,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   }
 
   // Tuple has a get method with a signature of:
-  //    get[i: Int, T: AnyType](self)
+  //    get[i: Int, T: AnyRegType](self)
   // FIXME(Issue #14946): The Tuple.get's T parameter shouldn't exist!
   //   https://github.com/modularml/modular/issues/14946
   // For the dynamic case we'd use __get_item__.

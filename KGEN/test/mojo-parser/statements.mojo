@@ -945,7 +945,7 @@ alias notMaterializedAlias = NmStruct(77)
 # CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}NmTarget{{.*}}false
 alias notMaterializedButConverted: NmTarget = NmStruct(76)
 
-fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
+fn tail_types[T: AnyRegType, *U: AnyRegType](a: T, *b: *U):
     pass
 fn nmTargetNoop(x: NmTarget): pass
 fn useNonmaterializable():

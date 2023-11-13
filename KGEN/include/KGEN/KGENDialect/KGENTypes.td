@@ -51,15 +51,15 @@ def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
 }
 
 //===----------------------------------------------------------------------===//
-// MLIRTypeType
+// AnyRegTypeType
 //===----------------------------------------------------------------------===//
 
-def KGEN_MLIRTypeType : KGENType<"MLIRType", "mlirtype",
+def KGEN_AnyRegTypeType : KGENType<"AnyRegType", "anyregtype",
     [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Arbitrary MLIR type";
   let description = [{
-    This kgen type represents an arbitrary MLIR type, used for parameterizing
-    type-generic operations.
+    This kgen type represents an arbitrary register-passable MLIR type, used for
+    parameterizing type-generic functions and structs.
 
     It cannot be materialized into an SSA value, because it has no runtime
     representation.
@@ -282,8 +282,8 @@ def PointerType : KGENType<"Pointer", "pointer", [
   let summary = "parameterized pointer type";
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
-    `!kgen.mlirtype` type. An optional `addressSpace` argument can be specified
-    (default to 0).
+    `!kgen.anyregtype` type. An optional `addressSpace` argument can be
+    specified (default to 0).
 
     Example:
 
@@ -376,7 +376,7 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
   let parameters = (ins
     "SymbolRefAttr":$symbol,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    DefaultValuedParameter<"Type", "MLIRTypeType::get($_ctxt)">:$metaType
+    DefaultValuedParameter<"Type", "AnyRegTypeType::get($_ctxt)">:$metaType
   );
   let assemblyFormat = [{
     `<` $symbol `` custom<ParameterValues>($paramValues) (`,` $metaType^)? `>`
@@ -594,7 +594,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
     // A concrete pack type with two element types.
     !kgen.pack<[i32, i64]>
 
-    kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T0: type, T1: type>(
+    kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T0: type, T1: type>(
       // A pack type parameterized on a variadic sequence of elements.
       %0: !kgen,pack<Ts>,
       // A pack type parameterized on two element types.
@@ -606,7 +606,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
   let parameters = (ins OptionalParameter<"TypedAttr">:$variadic);
   let assemblyFormat = [{
     `<` custom<ParamValue>(
-      $variadic, "VariadicType::get(MLIRTypeType::get($_ctxt))") `>`
+      $variadic, "VariadicType::get(AnyRegTypeType::get($_ctxt))") `>`
   }];
   let genVerifyDecl = 1;
 

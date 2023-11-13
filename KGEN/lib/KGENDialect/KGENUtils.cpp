@@ -192,7 +192,7 @@ OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &p, Type &type) {
       if (parseKGENType(p, metatype))
         return failure();
     } else {
-      metatype = MLIRTypeType::get(p.getContext());
+      metatype = AnyRegTypeType::get(p.getContext());
     }
     type = DeclRefType::get(symbol, values, metatype);
     return LogicalResult::success();
@@ -240,7 +240,7 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
     } else {
       p << ref.getSymbol();
       printParameterValues(p, ref.getParamValues());
-      if (auto type = ref.getMetaType(); !isa<MLIRTypeType>(type)) {
+      if (auto type = ref.getMetaType(); !isa<AnyRegTypeType>(type)) {
         p << " : ";
         printKGENType(p, type);
       }
@@ -311,7 +311,7 @@ ParseResult KGEN::parseDTypeParamValue(AsmParser &p, TypedAttr &value) {
 }
 
 void KGEN::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
-  if (!isa<MLIRTypeType>(value.getType()))
+  if (!isa<AnyRegTypeType>(value.getType()))
     printColonTypeOrIndexPrefix(p, value.getType());
   printParamValue(p, value);
 }
@@ -322,7 +322,7 @@ ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
     if (parseKGENType(p, type))
       return failure();
   } else {
-    type = MLIRTypeType::get(p.getContext());
+    type = AnyRegTypeType::get(p.getContext());
   }
   return parseParamValue(p, value, type);
 }
@@ -595,7 +595,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   case (uint32_t)POC::GetSizeOf:
   case (uint32_t)POC::GetAlignOf:
     if (parseParamValue(p, operands.emplace_back(),
-                        MLIRTypeType::get(p.getContext())) ||
+                        AnyRegTypeType::get(p.getContext())) ||
         p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())))
@@ -689,7 +689,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return success();
   case (uint32_t)POC::GetTypeMethod:
     if (parseParamValue(p, operands.emplace_back(),
-                        MLIRTypeType::get(p.getContext())) ||
+                        AnyRegTypeType::get(p.getContext())) ||
         p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
                         StringType::get(p.getContext())) ||
@@ -1005,7 +1005,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   }
 
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(value)) {
-    printParamName(p, declRef.getName(), isa<MLIRTypeType>(value.getType()));
+    printParamName(p, declRef.getName(), isa<AnyRegTypeType>(value.getType()));
     return;
   }
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {

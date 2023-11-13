@@ -42,7 +42,7 @@ void KGENDialect::registerTypes() {
 
   // Register custom type parser and printers for KGEN types.
   registerPrettyType(
-      "type", &MLIRTypeType::parse, TypeID::get<MLIRTypeType>(),
+      "type", &AnyRegTypeType::parse, TypeID::get<AnyRegTypeType>(),
       +[](AsmPrinter &p, Type) { p << "type"; });
   registerMnemonicType<DTypeType>();
   registerMnemonicType<PointerType>();
@@ -70,11 +70,11 @@ Type ParamRefType::get(TypedAttr param) {
 }
 
 //===----------------------------------------------------------------------===//
-// MLIRTypeType
+// AnyRegTypeType
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult MLIRTypeType::parseValue(AsmParser &p,
-                                             TypedAttr &value) const {
+OptionalParseResult AnyRegTypeType::parseValue(AsmParser &p,
+                                               TypedAttr &value) const {
   Type type;
   OptionalParseResult result = parseOptionalKGENType(p, type);
   if (!result.has_value())
@@ -85,7 +85,7 @@ OptionalParseResult MLIRTypeType::parseValue(AsmParser &p,
   return mlir::success();
 }
 
-LogicalResult MLIRTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult AnyRegTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto type = ::dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
@@ -510,7 +510,7 @@ Type PointerType::getElementAsType() const {
   TypedAttr elemType = getElementType();
   if (auto typeCst = ::dyn_cast<TypeConstantAttr>(elemType))
     return typeCst.getValue();
-  assert(::isa<MLIRTypeType>(elemType.getType()) &&
+  assert(::isa<AnyRegTypeType>(elemType.getType()) &&
          "parameter expr must have metatype type");
   return ParamRefType::get(elemType);
 }
@@ -715,8 +715,9 @@ KGEN::StringType::getTypeAlign(TargetInfoAttr target) const {
 LogicalResult VariadicType::verify(function_ref<InFlightDiagnostic()> emitError,
                                    TypedAttr type) {
   assert(type && "type cannot be null");
-  if (!type.getType().isa<MLIRTypeType>())
-    return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
+  if (!type.getType().isa<AnyRegTypeType>())
+    return emitError()
+           << "type parameter for pointer must be a !kgen.anyregtype";
   return success();
 }
 
@@ -724,7 +725,7 @@ Type VariadicType::getElementAsType() const {
   TypedAttr eltType = getElementType();
   if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(eltType))
     return typeCst.getValue();
-  assert(::isa<MLIRTypeType>(eltType.getType()) &&
+  assert(::isa<AnyRegTypeType>(eltType.getType()) &&
          "parameter expr must have metatype type");
   return ParamRefType::get(eltType);
 }
@@ -770,9 +771,9 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<TypedAttr> elementTypes,
                                  bool isMemoryOnly) {
   for (auto [index, elementType] : llvm::enumerate(elementTypes)) {
-    if (!elementType.getType().isa<MLIRTypeType>())
+    if (!elementType.getType().isa<AnyRegTypeType>())
       return emitError() << "struct element type at index " << index
-                         << " is not a !kgen.mlirtype";
+                         << " is not a !kgen.anyregtype";
   }
   return success();
 }
@@ -915,7 +916,7 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
 //===----------------------------------------------------------------------===//
 
 /// Verify that the element type of the variadic attribute or expression is a
-/// `!kgen.mlirtype`.
+/// `!kgen.anyregtype`.
 LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr variadic) {
   VariadicType type = ::dyn_cast<VariadicType>(variadic.getType());
@@ -924,9 +925,9 @@ LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
                        << variadic.getType();
 
   Type elementType = type.getElementAsType();
-  if (!::isa<MLIRTypeType>(elementType))
+  if (!::isa<AnyRegTypeType>(elementType))
     return emitError() << "expected a variadic type with a "
-                          "!kgen.mlirtype element type, but got "
+                          "!kgen.anyregtype element type, but got "
                        << elementType;
 
   return success();

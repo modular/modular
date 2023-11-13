@@ -50,10 +50,10 @@ fn test_func_type():
     alias float4: fn[a: Int](inout *Int) -> None = test_func_type
     # expected-error @below {{fn(owned *MemType) raises capturing -> None}}
     alias float5: def(*MemType) capturing -> None = test_func_type
-    # expected-error @below {{fn[*AnyType](owned * *$0) capt}}
-    alias float6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{fn[AnyType](inout *$0) capturing -> None}}
-    alias float7: fn[T: AnyType](inout *T) capturing -> None = test_func_type
+    # expected-error @below {{fn[*AnyRegType](owned * *$0) capt}}
+    alias float6: fn[*Ts: AnyRegType](owned* *Ts) capturing -> None = test_func_type
+    # expected-error @below {{fn[AnyRegType](inout *$0) capturing -> None}}
+    alias float7: fn[T: AnyRegType](inout *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
     alias f1: fn (a: Int, StringLiteral) -> Int
@@ -115,12 +115,12 @@ struct NonCopyable:
   fn __init__(inout self): pass
 
 # expected-note @+1 {{function declared here}}
-fn generic_on_type_bad[T: __mlir_type.`!kgen.mlirtype`](a: T): pass
+fn generic_on_type_bad[T: __mlir_type.`!kgen.anyregtype`](a: T): pass
 
 # expected-note @+1 {{function declared here}}
-fn generic_on_type_bad_raises[T: __mlir_type.`!kgen.mlirtype`]() raises -> T: pass
+fn generic_on_type_bad_raises[T: __mlir_type.`!kgen.anyregtype`]() raises -> T: pass
 
-fn generic_on_type_ok[T: __mlir_type.`!kgen.mlirtype`](): pass
+fn generic_on_type_ok[T: __mlir_type.`!kgen.anyregtype`](): pass
 
 def testLValuesRvalues() -> None:
   # Test with lvalues
@@ -222,7 +222,7 @@ fn dynamic_used_as_param_2() -> Int:
 fn var_func(s: StringLiteral, *args: Int): pass
 
 # expected-note @+1 {{function declared here}}
-fn pack_func[*Ts: AnyType](*args: *Ts): pass
+fn pack_func[*Ts: AnyRegType](*args: *Ts): pass
 
 # expected-note @+1 {{function declared here}}
 fn take_kw_args(i: Int, j: Int = 7): pass

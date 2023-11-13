@@ -999,7 +999,7 @@ fn passFieldToOwnedInt(owned a: MemExample):
 
 
 # Generic type: Issue #14018
-struct MyGenericType[Type: AnyType]:
+struct MyGenericType[Type: AnyRegType]:
     var value: Type
 
     fn __init__(inout self, v: Type):

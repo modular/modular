@@ -40,7 +40,7 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 
   // If this is a parameter expression of type value, use ParamRefType to turn
   // it into a type.
-  assert(isa<MLIRTypeType>(typeParamExpr.getType()) &&
+  assert(isa<AnyRegTypeType>(typeParamExpr.getType()) &&
          "parameter expr must have metatype type");
   mlirType = ParamRefType::get(typeParamExpr);
 }
@@ -528,8 +528,8 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       os << '$' << indexRef.getIndex();
     else
       printParam(os, paramRef.getParam(), forDiag, demangleParams);
-  } else if (isa<MLIRTypeType>(type)) {
-    os << "AnyType";
+  } else if (isa<AnyRegTypeType>(type)) {
+    os << "AnyRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "fn (";
     llvm::interleaveComma(fnType.getInputs(), os,

@@ -277,16 +277,16 @@ fn exampleVariadic(a: Float32, *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn exampleByRefVariadic(a: Float32, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn parameterizedVariadic[T: __mlir_type.`!kgen.mlirtype`](*args: T): pass
+fn parameterizedVariadic[T: __mlir_type.`!kgen.anyregtype`](*args: T): pass
 
 # expected-note @+1 {{struct declared here}}
-struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
+struct ParameterizedStruct[T: __mlir_type.`!kgen.anyregtype`]:
     # expected-note @+1 {{function declared here}}
     def __init__(inout self, *args: T):
         pass
 
 @value
-struct TestTuple[*Ts: AnyType]:
+struct TestTuple[*Ts: AnyRegType]:
     # expected-note @+1 {{function declared here}}
     fn test[i: Int, j: Int](self):
         pass
@@ -338,7 +338,7 @@ fn callWithOverloadedArg():
   takeFuncArgument(overloadedFunc)
 
 # expected-note @below {{function declared here}}
-fn takeGenericResultFn[T: AnyType](f: fn() -> T): pass
+fn takeGenericResultFn[T: AnyRegType](f: fn() -> T): pass
 
 @value
 struct MemType:
@@ -358,20 +358,20 @@ fn invalidStarExpression(*x: *): pass
 # expected-error @+1 {{only variadic types may be unpacked}}
 fn invalidPackType(*x: *Int): pass
 
-fn invalidParameterPack[*Ts: __mlir_type.`!kgen.mlirtype`]():
+fn invalidParameterPack[*Ts: __mlir_type.`!kgen.anyregtype`]():
   @parameter
   # expected-error @+1 {{parameters may not be variadic packs}}
   fn invalid[*Us: *Ts](): pass
 
 # expected-error @+2 {{only variadic arguments' types can be unpacked}}
 # expected-note @+1 {{'x' is not a variadic argument}}
-fn invalidArgumentUnpack[*Ts: __mlir_type.`!kgen.mlirtype`](x: *Ts): pass
+fn invalidArgumentUnpack[*Ts: __mlir_type.`!kgen.anyregtype`](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
 fn invalidOwned(owned inout x: Int): pass
 
 # expected-note @+1 {{function declared here}}
-fn examplePack[*Ts: __mlir_type.`!kgen.mlirtype`](*args: *Ts):
+fn examplePack[*Ts: __mlir_type.`!kgen.anyregtype`](*args: *Ts):
   pass
 
 fn packArgOverload():
@@ -407,7 +407,7 @@ def kw6(a, *):       pass # expected-error {{'*' marker is not allowed at end of
 # expected-error @+1 {{keyword-only arguments not supported yet}}
 def kw7(*a: Int, *b: Int): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 # expected-error @+1 {{keyword-only arguments not supported yet}}
-def kw8[*Ts: __mlir_type.`!kgen.mlirtype`](*a: *Ts, *b: *Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
+def kw8[*Ts: __mlir_type.`!kgen.anyregtype`](*a: *Ts, *b: *Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 fn kw9(*a: Int, b: Int): pass # expected-error {{keyword-only arguments not supported yet}}
 
 ##===----------------------------------------------------------------------===##
@@ -756,7 +756,7 @@ trait EverythingIsWrongTrait:
     struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
         pass
 
-trait TraitWithParams[T: AnyType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
+trait TraitWithParams[T: AnyRegType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
     ...
 
 # struct with traits that do not exist

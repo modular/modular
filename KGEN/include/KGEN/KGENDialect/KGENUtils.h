@@ -121,11 +121,11 @@ void printDTypeParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `dtype` type.
 ParseResult parseDTypeParamValue(AsmParser &p, TypedAttr &value);
 
-/// Print a type parameter value. Default to `MLIRTypeType`, but allow an
+/// Print a type parameter value. Default to `AnyRegTypeType`, but allow an
 /// optional type for the type value.
 void printTypeParamValue(AsmPrinter &p, TypedAttr value);
 /// Parse a type parameter value. Prints the type of the type value if it is not
-/// an `MLIRTypeType`.
+/// an `AnyRegTypeType`.
 ParseResult parseTypeParamValue(AsmParser &p, TypedAttr &value);
 
 /// Print an array of parameter type values.

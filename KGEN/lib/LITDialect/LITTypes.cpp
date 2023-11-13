@@ -264,7 +264,7 @@ Type RefType::getElementAsType() {
   TypedAttr elemType = getElementType();
   if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(elemType))
     return typeCst.getValue();
-  assert((::isa<MLIRTypeType, MetaTypeType>(elemType.getType())) &&
+  assert((::isa<AnyRegTypeType, MetaTypeType>(elemType.getType())) &&
          "parameter expr must have metatype type");
   return ParamRefType::get(elemType);
 }

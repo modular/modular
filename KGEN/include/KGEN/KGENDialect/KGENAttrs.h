@@ -57,7 +57,7 @@ public:
 
   /// TODO(metatypes): Delete this
   static TypedAttr get(Type value) {
-    return get(value, MLIRTypeType::get(value.getContext()));
+    return get(value, AnyRegTypeType::get(value.getContext()));
   }
 
   /// Returns true if the given type is classified as a concrete type.

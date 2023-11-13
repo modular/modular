@@ -54,8 +54,8 @@ POP::ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr size, TypedAttr elementType) {
   if (!size.getType().isa<IndexType>())
     return emitError() << "expected size expression to be index type";
-  if (!elementType.getType().isa<MLIRTypeType>())
-    return emitError() << "expected type expression to be !kgen.mlirtype";
+  if (!elementType.getType().isa<AnyRegTypeType>())
+    return emitError() << "expected type expression to be !kgen.anyregtype";
   return success();
 }
 
@@ -71,7 +71,7 @@ Type POP::ArrayType::getElementAsType() const {
     return {};
   if (auto typeCst = dyn_cast_if_present<TypeConstantAttr>(eltType))
     return typeCst.getValue();
-  assert(::isa<MLIRTypeType>(eltType.getType()));
+  assert(::isa<AnyRegTypeType>(eltType.getType()));
   return ParamRefType::get(eltType);
 }
 

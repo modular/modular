@@ -15,7 +15,7 @@ print(12
 
 # Will test a struct with multiline declaration
 struct Foo[
-    *Ts: AnyType
+    *Ts: AnyRegType
     ]:
   fn __init__(inout self):
     pass

@@ -290,7 +290,7 @@ fn take_kw_params[a: Int, b: Int = 0](): pass
 fn var_params[s: StringLiteral, *args: Int](): pass
 
 # expected-note @below {{declared here}}
-fn pack_params[*Ts: AnyType](*args: *Ts): pass
+fn pack_params[*Ts: AnyRegType](*args: *Ts): pass
 
 fn test_func_kw_params():
     # expected-error @below {{duplicate keyword parameter 'a'}}
