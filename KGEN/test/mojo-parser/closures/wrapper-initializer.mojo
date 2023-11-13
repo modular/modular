@@ -3,14 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo | FileCheck %s
+# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
 # CHECK: lit.struct.decl @"_CW_
 # CHECK-SAME: copyInit =
 # CHECK-SAME: destructor =
 # CHECK-SAME: moveInit =
 
-# CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!escaping1> init_self, %impl[impl]: !kgen.pointer<!escaping> owned_in_mem, |)
+# CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!wrapper> init_self, %impl[impl]: !kgen.pointer<!escaping0_> owned_in_mem, |)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
@@ -24,16 +24,16 @@
 # CHECK-NEXT: pop.store %[[V10]], %[[V9]]
 
 # Allocate memory on heap
-# CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(!escaping, current_target())>
-# CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(!escaping, current_target())>
-# CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index : <!escaping>
+# CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(!escaping0_, current_target())>
+# CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(!escaping0_, current_target())>
+# CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index : <!escaping0_>
 
 # Copy source (stack) into target (heap)
 # CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%[[V0]], %impl)
 
 # Store heap pointer in ClosureWrapper field
 # CHECK-NEXT:  %[[V2:.*]] = lit.struct.gep %self[field0]
-# CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !kgen.pointer<!escaping> to !kgen.pointer<none>
+# CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !kgen.pointer<!escaping0_> to !kgen.pointer<none>
 # CHECK-NEXT:  pop.store %[[V3]], %[[V2]] : !kgen.pointer<pointer<none>>
 
 # CHECK-NEXT:  %[[V4:.*]] = kgen.param.constant: none = <#kgen.none>
@@ -43,12 +43,12 @@
 
 # CHECK: lit.struct.decl @MemType
 
-# CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self[self]: !kgen.pointer<none>, |) -> !kgen.none
+# CHECK: lit.func @"_CW_{{.*}}_dtor_`_CI_{{.*}}"(%self[self]: !kgen.pointer<none>, |) -> !kgen.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: lit.ownership.end_lifetime %0
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
 # CHECK-NEXT: %[[A1:.*]] = lit.call @{{.*}}@"__call__{{.*}}"(%[[RES]], %[[A0]], %n)
 # CHECK-NEXT: lit.return %[[A1]] : !kgen.none

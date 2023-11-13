@@ -20,7 +20,7 @@ fn pass_param_closure():
     fn closure(x: Thing[two]) escaping:
         pass
 
-    # CHECK: rebind %{{.*}} : !kgen.pointer<!escaping1> to !kgen.pointer<{{.*}}<2>
+    # CHECK: rebind %{{.*}} : !kgen.pointer<!wrapper> to !kgen.pointer<{{.*}}<2>
     take_param_closure[two](closure)
 
 

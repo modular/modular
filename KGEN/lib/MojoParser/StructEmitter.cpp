@@ -10,6 +10,7 @@
 
 #include "KGEN/MojoParser/StructEmitter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -41,8 +42,10 @@ LIT::FuncOp StructEmitter::createFunction(
     fnEffects.setOwnedRegisterResult();
 
   SmallVector<StringAttr> parameterNames;
-  for (ParamDeclAttr p : inputParameters)
-    parameterNames.push_back(p.getName());
+  for (ParamDeclAttr p : inputParameters) {
+    parameterNames.push_back(
+        StringAttr::get(getContext(), demangleParameterName(p.getName())));
+  }
 
   auto metadata =
       FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,

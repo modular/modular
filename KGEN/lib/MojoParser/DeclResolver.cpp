@@ -25,6 +25,7 @@
 #include "Utils.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -2429,10 +2430,6 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   original.walk([&](ParamDeclRefAttr ref) { capturedRefs.insert(ref); });
 
   SmallVector<ParamDeclRefAttr> captured = capturedRefs.takeVector();
-  // FIXME: Closure gen wants the captures to be sorted.
-  llvm::sort(captured, [](ParamDeclRefAttr lhs, ParamDeclRefAttr rhs) {
-    return lhs.getName().strref() < rhs.getName().strref();
-  });
   // Unbind the N capture parameters, creating a new signature with N new input
   // parameters prepended.
   auto unbound = LITSignatureType::prependParams(
@@ -2471,100 +2468,69 @@ Type DeclResolver::createTypeFromSubsetOfParentParameters(
 }
 
 static Value emitClosureInstance(SignatureType closureSignature,
-                                 SharedState &shared,
-                                 ASTDecl &nestedFunctionDecl, SMLoc location) {
-  LIT::FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
-  auto parentFunction = nestedFunction->getParentOfType<LIT::FuncOp>();
-  assert(parentFunction &&
-         "Expected nestedFunctionDecl to have a parent FuncOp.");
+                                 SharedState &shared, ASTDecl &nestedFnDecl,
+                                 SMLoc loc) {
+  LIT::FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
+  auto parentFn = nestedFn->getParentOfType<LIT::FuncOp>();
+  assert(parentFn && "expected nested function to have a parent FuncOp");
+
   // Save the insertion point before closure creation since closure creation
   // nukes the nested function.
-  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
-      parentFunction.getLoc(), parentFunction.getBody());
-  builder.setInsertionPointAfter(nestedFunction);
-  auto insertPoint = builder.saveInsertionPoint();
-  ASTDecl *moduleDecl = nestedFunctionDecl.getNearestDeclOfType<FileModuleOp>();
-  LITSignatureType nestedFunctionSignature = nestedFunction.getSignature();
-  // In order to emit an instance, we need the captures and in order to compute
-  // the captures we need to resolve the body.
-  if (failed(shared.declResolver->resolveFully(nestedFunctionDecl, location)))
+  ImplicitLocOpBuilder builder =
+      ImplicitLocOpBuilder::atBlockEnd(parentFn.getLoc(), parentFn.getBody());
+  builder.setInsertionPointAfter(nestedFn);
+  OpBuilder::InsertPoint insertPoint = builder.saveInsertionPoint();
+  ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
+
+  auto [capturedRefs, wrapperSig] =
+      DeclResolver::createSelfContainedSignature(nestedFn.getSignature());
+  if (!wrapperSig)
     return {};
-  OrderedCaptures orderedCaptures =
-      shared.getParameterCaptureRangeInScope(nestedFunctionDecl);
-
-  // Recreate the nested function signature so there are no references to the
-  // parent captures. This may require adding unbound parameters to the
-  // signature.
-
-  // Collect the ordered subset of the parent parameters in both signature
-  // (closure wrapper) and body+signature (closure impl).
-  DenseSet<StringAttr> signatureDecls;
-  // TODO: remove me.
-  DenseSet<StringAttr> signatureParamReferencesNotInCaptureList;
-  nestedFunctionSignature.walk([&](ParamDeclRefAttr potentialCapture) {
-    signatureDecls.insert(potentialCapture.getName());
-    signatureParamReferencesNotInCaptureList.insert(potentialCapture.getName());
-  });
-
-  SmallVector<ParameterCapture> closureImplCaptures;
-  for (ParameterCapture capture : orderedCaptures) {
-    bool isInSignature = signatureDecls.contains(capture.getName());
-    // Only include input parameter captures.
-    if (capture.getIndex() > -1) {
-      closureImplCaptures.emplace_back(capture);
-      if (isInSignature)
-        signatureParamReferencesNotInCaptureList.erase(capture.getName());
-    } else if (isInSignature) {
-      shared.emitError(
-          location,
-          "Cannot capture local parameter in nested function signature.");
-      return {};
-    }
-  }
-
-  auto [capturedRefs, closureWrapperSignature] =
-      DeclResolver::createSelfContainedSignature(nestedFunctionSignature);
-  if (!closureWrapperSignature)
-    return {};
-  StructDeclOp closureWrapper = shared.getOrGenerateClosureWrapperStruct(
-      location, closureWrapperSignature, moduleDecl);
+  StructDeclOp closureWrapper =
+      shared.getOrCreateClosureWrapper(loc, wrapperSig, moduleDecl);
   if (!closureWrapper)
     return {};
 
+  // In order to emit a closure instance, we need the captures and in order to
+  // compute the captures we need to resolve the body.
+  if (failed(shared.declResolver->resolveFully(nestedFnDecl, loc)))
+    return {};
+  // Find all parameter captures in the function body.
+  ParameterCollector::Analysis collectorCache;
+  ParameterUseDefGraph graph(nestedFn.getBodyRegion());
+  graph.calculate(collectorCache);
+  SmallVector<ParamDeclRefAttr> paramCaptures =
+      graph.usesFromAbove.takeVector();
+
   // Create an instance of the closure implementation in the parent function
   // right after the nested function definition.
-  StructDeclOp closureImpl =
-      shared.replaceNestedFunctionWithGeneratedClosureImplStruct(
-          location, nestedFunctionDecl, moduleDecl, orderedCaptures);
   ClosureEmitter emitter(*moduleDecl, shared);
+  StructDeclOp closureImpl =
+      emitter.replaceNestedFunctionWithClosureImplStructDecl(
+          loc, nestedFnDecl, paramCaptures, wrapperSig);
 
   // Map the closure wrapper captures to the impl captures.
   SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterMap;
-  for (auto [i, wrapperCapture] : llvm::enumerate(capturedRefs)) {
-    for (auto [j, implCapture] : llvm::enumerate(closureImplCaptures))
-      if (implCapture.getName() == wrapperCapture.getName())
-        fromImplToWrapperParameterMap[j] = i;
-  }
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl,
-                                    fromImplToWrapperParameterMap, location);
+                                    fromImplToWrapperParameterMap, loc);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = parentFunction.getLocScope())
+  if (DebugInfo::DIScopeAttr spAttr = parentFn.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
   builder.restoreInsertionPoint(insertPoint);
 
-  ExprEmitter exprEmitter(shared, *nestedFunctionDecl.getParentDecl(), builder);
-  SyntheticNode node(location);
+  ExprEmitter exprEmitter(shared, *nestedFnDecl.getParentDecl(), builder);
+  SyntheticNode node(loc);
 
   // Create a copy of the captured value.
-  auto captureIteratorRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
+  auto captureIteratorRange = shared.getCaptureRangeInScope(nestedFnDecl);
   SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
   for (auto &[_, capture] : captureIteratorRange) {
     AnyValue arg = capture.getValue();
     if (capture.isMoveCapture()) {
       // HACK(#16110): This transfers ownership without an explicit `^` from the
       // user, because we don't have capture list syntax.
-      UnaryOpNode transfer(ExprNode::kTransfer, location, &node);
+      UnaryOpNode transfer(ExprNode::kTransfer, loc, &node);
       ValueDest dest(EC_CaptureCopy);
       arg = transfer.emitTransfer(arg, dest, exprEmitter);
     }
@@ -2575,8 +2541,8 @@ static Value emitClosureInstance(SignatureType closureSignature,
 
   // Create Closure Impl type by adding captured parameters to the ClosureImpl
   // DeclType.
-  Type closureImplType = DeclResolver::createTypeFromSubsetOfParentParameters(
-      shared, closureImpl, closureImplCaptures);
+  Type closureImplType = closureImpl.bindReference(llvm::map_to_vector(
+      paramCaptures, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
   CValue value = exprEmitter.emitConstructorCall(
       ASTType(closureImplType), closureImplInitArgs, &node,
       CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
@@ -2597,10 +2563,10 @@ static Value emitClosureInstance(SignatureType closureSignature,
       /*allowImplicitConversion=*/false);
 
   // We may have generated a capture. Record.
-  if (parentFunction.getSignature().isEscaping())
-    for (ParameterCapture param : orderedCaptures)
-      emitter.shared.addCapturedParameterToScope(
-          *nestedFunctionDecl.getParentDecl(), param);
+  // if (parentFn.getSignature().isEscaping())
+  //  for (ParameterCapture param : orderedCaptures)
+  //    emitter.shared.addCapturedParameterToScope(*nestedFnDecl.getParentDecl(),
+  //                                               param);
   return closureWrapperInstance.getIfMRValue();
 }
 

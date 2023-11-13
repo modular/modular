@@ -11,7 +11,7 @@ from test_package.return_closure import pass_int
 # CHECK-LABEL: lit.func @"call_it
 fn call_it() -> Int:
     # CHECK: call {{.*}}pass_int
-    # CHECK-SAME: !kgen.pointer<!escaping> byref_result
+    # CHECK-SAME: !kgen.pointer<!wrapper> byref_result
     # CHECK-NEXT: call {{.*}}__call__
-    # CHECK-SAME: (!kgen.pointer<!escaping> borrow_in_mem, |) -> !Int
+    # CHECK-SAME: (!kgen.pointer<!wrapper> borrow_in_mem, |) -> !Int
     return pass_int(50)()

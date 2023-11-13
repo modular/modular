@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo | FileCheck %s
 
-# CHECK: lit.struct.decl @"_CI_
+# CHECK: lit.struct.decl @"`_CI_
 # CHECK: lit.struct.decl @"_CW_
-# CHECK: lit.struct.decl @"_CI_
+# CHECK: lit.struct.decl @"`_CI_
 # CHECK: lit.struct.decl @"_CW_
 
 

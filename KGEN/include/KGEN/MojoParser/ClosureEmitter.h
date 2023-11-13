@@ -54,7 +54,7 @@ public:
   /// capture list.
   StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
       SMLoc loc, ASTDecl &nestedFunctionDecl,
-      OrderedCaptures orderedCapturedParams, ClosureCache &cache);
+      ArrayRef<ParamDeclRefAttr> paramCaptures, LITSignatureType wrapperSig);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance. The 'fromImplToWrapperParameterIndexMap' allows the caller to

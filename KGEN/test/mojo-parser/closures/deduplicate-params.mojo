@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
+# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | kgen-opt -verify-parameters | FileCheck %s
 
 alias Int = __mlir_type.index
 
@@ -14,7 +14,7 @@ struct C[B: Int]:
         pass
 
 
-# CHECK-COUNT-1: lit.struct.decl @"_CI_
+# CHECK-COUNT-1: lit.struct.decl @"`_CI_
 # CHECK-COUNT-1: lit.struct.decl @"_CW_
 
 

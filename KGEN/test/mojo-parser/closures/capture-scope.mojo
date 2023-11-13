@@ -10,7 +10,7 @@ fn use(x: Int):
     pass
 
 
-# CHECK: lit.struct.decl @"_CI_
+# CHECK: lit.struct.decl @"`_CI_
 # CHECK-NEXT: lit.struct.field field0 : !Int
 
 

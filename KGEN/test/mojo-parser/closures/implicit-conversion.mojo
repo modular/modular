@@ -13,8 +13,8 @@ fn closure_kw(a: Int):
 
     var has_kw_ref = has_kw
 
-    # CHECK: kgen.rebind %{{.*}} : !kgen.pointer<!escaping2> to !kgen.pointer<!escaping>
+    # CHECK: kgen.rebind %{{.*}} : !kgen.pointer<!wrapper1> to !kgen.pointer<!wrapper>
     let unbound: fn (Int) escaping -> Int = has_kw
-    # CHECK: kgen.rebind %{{.*}} : !lit.ref<mut !escaping2, *"`has_kw_ref0"> to
-    # CHECK-SAME: !lit.ref<mut !escaping, *"`has_kw_ref0">
+    # CHECK: kgen.rebind %{{.*}} : !lit.ref<mut !wrapper1, *"`has_kw_ref0"> to
+    # CHECK-SAME: !lit.ref<mut !wrapper, *"`has_kw_ref0">
     let unbound_ref: fn (Int) escaping -> Int = has_kw_ref

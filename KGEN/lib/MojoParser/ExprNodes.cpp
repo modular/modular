@@ -2971,20 +2971,20 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         DeclResolver::parametersInScope(emitter.declScope);
 
     // Create a self contained signature type that represents the closure.
-    auto [capturedRefs, closureWrapperSignature] =
+    auto [capturedRefs, wrapperSig] =
         DeclResolver::createSelfContainedSignature(signature);
-    ASTDecl *astDecl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
-    StructDeclOp declOp = emitter.shared.getOrGenerateClosureWrapperStruct(
-        getLoc(), closureWrapperSignature, astDecl);
+    ASTDecl *decl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
+    StructDeclOp structOp =
+        emitter.shared.getOrCreateClosureWrapper(getLoc(), wrapperSig, decl);
 
     // Closure creation failed. Error emitted in ClosureEmitter.
-    if (!declOp)
+    if (!structOp)
       return {};
 
     // Build the return type by binding the parent parameter values to the
     // struct parameters.
     // TODO: Handle partial binding.
-    DeclRefType selfType = declOp.bindReference(llvm::map_to_vector(
+    DeclRefType selfType = structOp.bindReference(llvm::map_to_vector(
         capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
     return emitter.emitResult(ASTType(selfType), this, dest);
   }

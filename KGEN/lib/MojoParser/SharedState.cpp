@@ -1920,37 +1920,30 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }
 
-LIT::StructDeclOp SharedState::getOrGenerateClosureWrapperStruct(
-    SMLoc location, SignatureType signatureType, ASTDecl *moduleDecl) {
+LIT::StructDeclOp SharedState::getOrCreateClosureWrapper(SMLoc loc,
+                                                         SignatureType sig,
+                                                         ASTDecl *moduleDecl) {
+  if (sig.getNumResultParams()) {
+    emitError(loc, "result parameters in closures are not supported yet");
+    return {};
+  }
+
   auto fileModuleOp = cast<FileModuleOp>(moduleDecl);
-  std::pair<SignatureType, StringAttr> key(signatureType,
-                                           fileModuleOp.getSymNameAttr());
+  std::pair<SignatureType, StringAttr> key(sig, fileModuleOp.getSymNameAttr());
   StructDeclOp existing = impl->closureWrappers[key];
   if (!existing) {
-    StringAttr name = ClosureEmitter::getClosureNameFromType(
-        "_CW_", fileModuleOp, signatureType);
+    StringAttr name =
+        ClosureEmitter::getClosureNameFromType("_CW_", fileModuleOp, sig);
     ClosureEmitter emitter(*moduleDecl, *this);
-    existing =
-        emitter.createClosureWrapperStructDecl(name, signatureType, location);
+    existing = emitter.createClosureWrapperStructDecl(name, sig, loc);
     impl->closureWrappers[key] = existing;
   }
   return existing;
 }
 
-LIT::StructDeclOp
-SharedState::replaceNestedFunctionWithGeneratedClosureImplStruct(
-    SMLoc location, ASTDecl &nestedFunc, ASTDecl *moduleDecl,
-    OrderedCaptures orderedCaptures) {
-  ClosureEmitter emitter(*moduleDecl, *this);
-  return emitter.replaceNestedFunctionWithClosureImplStructDecl(
-      location, nestedFunc, orderedCaptures, *this->impl);
-}
-
-iterator_range<llvm::MapVector<ASTDecl *, Capture>::const_iterator>
+const llvm::MapVector<ASTDecl *, Capture> &
 SharedState::getCaptureRangeInScope(ASTDecl &scope) {
-  llvm::MapVector<ASTDecl *, Capture> &result =
-      getImpl().capturesInScope[&scope];
-  return {result.begin(), result.end()};
+  return getImpl().capturesInScope[&scope];
 }
 
 void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,

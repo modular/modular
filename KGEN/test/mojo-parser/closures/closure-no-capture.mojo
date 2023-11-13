@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
-# CHECK: lit.struct.decl @"_CI_
+# CHECK: lit.struct.decl @"`_CI_
 # CHECK: lit.struct.decl @"_CW_
 
 

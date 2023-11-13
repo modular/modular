@@ -7,7 +7,7 @@
 
 # CHECK: lit.file_module @"$[[F:.*]]" attributes
 
-# CHECK-COUNT-2: lit.struct.decl @"_CI_
+# CHECK-COUNT-2: lit.struct.decl @"`_CI_
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 
