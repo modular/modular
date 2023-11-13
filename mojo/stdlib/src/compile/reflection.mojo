@@ -7,7 +7,7 @@
 
 fn _get_linkage_name[
     target: __mlir_type.`!kgen.target`,
-    func_type: AnyType,
+    func_type: AnyRegType,
     func: func_type->asm: StringLiteral,
 ]():
     param_return[
@@ -22,7 +22,7 @@ fn _get_linkage_name[
 
 
 fn get_linkage_name[
-    target: __mlir_type.`!kgen.target`, func_type: AnyType, func: func_type
+    target: __mlir_type.`!kgen.target`, func_type: AnyRegType, func: func_type
 ]() -> StringLiteral:
     """Returns `func` symbol name.
 
