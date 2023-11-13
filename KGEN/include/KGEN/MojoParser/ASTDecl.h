@@ -129,6 +129,9 @@ public:
   /// Given an MLIR op for a struct declaration, return the self type.
   static Type computeSelfTypeForStruct(StructDeclOp structOp);
 
+  /// Given an MLIR op for a trait declaration, return the self type.
+  static Type computeSelfTypeForTrait(TraitDeclOp traitOp);
+
   /// Add an unresolved wild card import into this scope.
   void addUnresolvedWildCardImport(StringAttr importedModule, bool isFullImport,
                                    SMLoc loc) {

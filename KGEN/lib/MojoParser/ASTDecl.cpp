@@ -160,3 +160,8 @@ Type ASTDecl::computeSelfTypeForStruct(StructDeclOp structOp) {
   // pointer so they can use and mutate it.
   return structOp.bindReference(parameters);
 }
+
+Type ASTDecl::computeSelfTypeForTrait(TraitDeclOp traitOp) {
+  return ParamRefType::get(
+      ParamDeclRefAttr::get(traitOp.getInputParamsAttr().back()));
+}
