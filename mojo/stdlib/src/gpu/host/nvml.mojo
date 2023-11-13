@@ -9,6 +9,7 @@ from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from memory.unsafe import Pointer
 from ._utils import _check_error
+from pathlib import Path
 
 # ===----------------------------------------------------------------------===#
 # Constants
@@ -36,7 +37,13 @@ fn _destroy_dylib(ptr: Pointer[NoneType]):
 
 
 @always_inline
-fn _get_dylib_function[result_type: AnyRegType](name: StringRef) -> result_type:
+fn _get_dylib_function[
+    result_type: AnyRegType
+](name: StringRef) raises -> result_type:
+    if not Path(CUDA_NVML_LIBRARY_PATH).exists():
+        raise "the CUDA NVML library was not found at " + String(
+            CUDA_NVML_LIBRARY_PATH
+        )
     return _ffi_get_dylib_function[
         "CUDA_NVML_LIBRARY", _init_dylib, _destroy_dylib, result_type
     ](name)

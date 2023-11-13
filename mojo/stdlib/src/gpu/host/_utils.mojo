@@ -11,6 +11,7 @@ from ._constants import CUDA_DRIVER_PATH
 from .result import Result as DriverResult
 from .nvml import Result as NVMLResult
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+from pathlib import Path
 
 # ===----------------------------------------------------------------------===#
 # Utilities
@@ -66,8 +67,10 @@ fn _destroy_dylib(ptr: Pointer[NoneType]):
 
 @always_inline
 fn _get_dylib_function[
-    result_type: AnyRegType, lib_name: StringLiteral = "CUDA_DRIVER_LIBRARY"
-](name: StringRef) -> result_type:
+    result_type: AnyRegType
+](name: StringRef) raises -> result_type:
+    if not Path(CUDA_DRIVER_PATH).exists():
+        raise "the CUDA library was not found at " + String(CUDA_DRIVER_PATH)
     return _ffi_get_dylib_function[
-        lib_name, _init_dylib, _destroy_dylib, result_type
+        "CUDA_DRIVER_LIBRARY", _init_dylib, _destroy_dylib, result_type
     ](name)

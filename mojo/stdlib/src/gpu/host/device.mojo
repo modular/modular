@@ -670,7 +670,7 @@ struct Device:
 
         return res
 
-    fn _name(self) -> String:
+    fn _name(self) raises -> String:
         alias buffer_size = 256
         let buffer = stack_allocation[buffer_size, DType.int8]()
 
