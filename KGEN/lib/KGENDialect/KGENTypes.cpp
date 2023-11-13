@@ -42,8 +42,8 @@ void KGENDialect::registerTypes() {
 
   // Register custom type parser and printers for KGEN types.
   registerPrettyType(
-      "type", &AnyRegTypeType::parse, TypeID::get<AnyRegTypeType>(),
-      +[](AsmPrinter &p, Type) { p << "type"; });
+      "regtype", &AnyRegTypeType::parse, TypeID::get<AnyRegTypeType>(),
+      +[](AsmPrinter &p, Type) { p << "regtype"; });
   registerMnemonicType<DTypeType>();
   registerMnemonicType<PointerType>();
   registerMnemonicType<NoneType>();

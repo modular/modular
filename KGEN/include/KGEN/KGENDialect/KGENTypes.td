@@ -594,7 +594,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
     // A concrete pack type with two element types.
     !kgen.pack<[i32, i64]>
 
-    kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T0: type, T1: type>(
+    kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T0: regtype, T1: regtype>(
       // A pack type parameterized on a variadic sequence of elements.
       %0: !kgen,pack<Ts>,
       // A pack type parameterized on two element types.

@@ -165,7 +165,7 @@ kgen.generator @pack_create<Ts: variadic<!kgen.anyregtype>>(%arg0: f32, %arg1: s
 
 // CHECK-LABEL: @pack_attr
 kgen.generator @pack_attr<Ts: variadic<i32>>() {
-  // expected-error @below {{pack attribute expected a variadic constant type, but got #kgen.param.decl.ref<"Ts"> : !kgen.variadic<type>}}
+  // expected-error @below {{pack attribute expected a variadic constant type, but got #kgen.param.decl.ref<"Ts"> : !kgen.variadic<regtype>}}
   %0 = kgen.param.constant: !kgen.pack<Ts> = <<>>
   kgen.return
 }

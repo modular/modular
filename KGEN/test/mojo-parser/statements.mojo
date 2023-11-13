@@ -975,7 +975,7 @@ fn useNonmaterializable():
 
   # Test that parameter inference using nonmaterializable gives the target,
   # not the nonmaterializable type.
-  # CHECK: call {{.*}}tail_types{{.*}}<:type !NmTarget, :variadic<type> []>
+  # CHECK: call {{.*}}tail_types{{.*}}<:regtype !NmTarget, :variadic<regtype> []>
   tail_types(NmStruct(5))
-  # CHECK: call {{.*}}tail_types{{.*}}<:type !NmTarget, :variadic<type> [{{.*}}NmTarget]>
+  # CHECK: call {{.*}}tail_types{{.*}}<:regtype !NmTarget, :variadic<regtype> [{{.*}}NmTarget]>
   tail_types(NmStruct(5), NmStruct(6))

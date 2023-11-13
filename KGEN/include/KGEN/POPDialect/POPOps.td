@@ -1061,21 +1061,21 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
     Example:
 
     ```mlir
-    kgen.generator @stack_memory<count, type: type>() {
+    kgen.generator @stack_memory<count, T: regtype>() {
       // This memory is allocated at the start of the function call and released
       // at the end.
-      %0 = pop.stack_allocation count x type
+      %0 = pop.stack_allocation count x T
 
       scf.if %cond {
         // This memory is allocated when control flow branches into the 'then'
         // region and released when control flow transfer back.
-        %1 = pop.stack_allocation count x type
+        %1 = pop.stack_allocation count x T
       }
 
       scf.for %iv = %lb to %ub step %step {
         // This memory is allocated each time the loop iterates and released
         // at the end of each iteration.
-        %2 = pop.stack_allocation count x type
+        %2 = pop.stack_allocation count x T
       }
     }
     ```

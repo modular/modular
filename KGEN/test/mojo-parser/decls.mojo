@@ -490,9 +490,9 @@ fn take_variadic_struct[*Ts: AnyRegType](a: VariadicStruct[Ts]):
 
 # CHECK-LABEL: lit.func @"variadic_params()"
 fn variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}$int::Int]()"<:variadic<type> [!Int, {{.*}}SIMD{{.*}}f32}>, :!Int {{.*}}1
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}$int::Int]()"<:variadic<regtype> [!Int, {{.*}}SIMD{{.*}}f32}>, :!Int {{.*}}1
     VariadicStruct[Int, Float32].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<type> [!Int, {{.*}}SIMD{{.*}}f32
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<regtype> [!Int, {{.*}}SIMD{{.*}}f32
     take_variadic_struct(VariadicStruct[Int, Float32]())
 
 
@@ -612,7 +612,7 @@ fn orvalueInferType():
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type !lit.signature<("x": index borrow) -> index>>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:regtype !lit.signature<("x": index borrow) -> index>>
     paramRefFunc(func)
 
 
@@ -830,9 +830,9 @@ fn callVariadic[p: Int](x: Int):
     # CHECK: @"variadics($builtin::$int::Int*)", [[[P]], {{.*}} = 1{{.*}}]
     alias NonEmptyVariadic = variadics(p, 1)
 
-    # CHECK: @"parameterizedVariadic{{.*}}"<:type !Int>
+    # CHECK: @"parameterizedVariadic{{.*}}"<:regtype !Int>
     parameterizedVariadic(1, 2)
-    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"<:type !Int>
+    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"<:regtype !Int>
     _ = ParameterizedStruct(3)
     # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS:.*]]]=&)"<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
     _ = VarArgsParameterizedStruct[4, 5]()
@@ -841,7 +841,7 @@ fn callVariadic[p: Int](x: Int):
 
 
 # CHECK-LABEL: lit.struct.decl @MyTuple
-# CHECK-SAME: <[[TUPLETS:.*]][Ts]: variadic<type>>
+# CHECK-SAME: <[[TUPLETS:.*]][Ts]: variadic<regtype>>
 struct MyTuple[*Ts: __mlir_type.`!kgen.anyregtype`]:
     var elements: __mlir_type[`!kgen.pack<`, Ts, `>`]
 
@@ -849,15 +849,15 @@ struct MyTuple[*Ts: __mlir_type.`!kgen.anyregtype`]:
         self.elements = args
 
 
-# CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<type>](__mlir_type.!kgen.pack<*(0,0)>)"<
-# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>(%args[args]: !kgen.pack<[[TS]]>)
+# CHECK-LABEL: lit.func @"pack[__mlir_type.!kgen.variadic<regtype>](__mlir_type.!kgen.pack<*(0,0)>)"<
+# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<regtype>>(%args[args]: !kgen.pack<[[TS]]>)
 fn pack[*Ts: __mlir_type.`!kgen.anyregtype`](owned *args: *Ts):
     # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
     let copy = args
 
 
 # CHECK-LABEL: lit.func @"packBorrowed{{.*}})"<
-# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<type>>
+# CHECK-SAME: [[TS:.*_Ts]][Ts]: variadic<regtype>>
 fn packBorrowed[*Ts: __mlir_type.`!kgen.anyregtype`](borrowed *args: *Ts):
     # CHECK: %copy = lit.letreg.decl "copy" = %args : !kgen.pack<[[TS]]>
     let copy = args
@@ -872,15 +872,15 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.anyregtype`](x: Int):
 # CHECK-SAME: [[ARGX:%.*]][x]: !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]][y]: !Int
 fn usePacks(x: Float32, y: Int):
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> [!Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<regtype> [!Int]>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<regtype> [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>
     var b: MyTuple[Int, Float32, Int]
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> [!Int]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<regtype> [!Int]>
     let c = MyTuple[Int](1)
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> [!FloatLiteral, index]>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<regtype> [!FloatLiteral, index]>
     let d = MyTuple(3.14, Int(6).value)
-    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<type> []>
+    # CHECK: lit.varlet.decl {{.*}} : !lit.ref<mut @"$decls"::@MyTuple<:variadic<regtype> []>
     let e = MyTuple()
 
     # CHECK: %[[PACK1:.*]] = kgen.param.constant: !kgen.pack<[index]> = <<1>>
@@ -906,9 +906,9 @@ fn usePacks(x: Float32, y: Int):
     # CHECK-NEXT: lit.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed(Int(1).value, x, y)
 
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}]>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<regtype>  [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}]>
     variadicParameter[Int, Float32](1)
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<regtype> []>
     variadicParameter(Int(2).value)
 
 
@@ -1234,7 +1234,7 @@ struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !kgen.none
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<() async -> !Int>: @"$decls"::@"coroutine()"]()
-        # CHECK-NEXT: %[[COROUTINE:.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
+        # CHECK-NEXT: %[[COROUTINE:.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:regtype !Int>(%[[CORO]])
         # CHECK-NEXT: lit.letreg.decl "a" = %[[COROUTINE]]
         let a = coroutine()
 
@@ -1247,7 +1247,7 @@ async fn throwing_coroutine() raises -> Int:
 # CHECK-LABEL: lit.func @"call_raising_coro()"
 fn call_raising_coro():
     # CHECK: %[[CORO:.*]] = lit.async.call[{{.*}}throwing_coroutine
-    # CHECK-NEXT: call {{.*}}RaisingCoroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
+    # CHECK-NEXT: call {{.*}}RaisingCoroutine::@"__init__{{.*}}<:regtype !Int>(%[[CORO]])
     let coro = throwing_coroutine()
 
 
@@ -1360,7 +1360,7 @@ struct SomeParamStruct[c_param: Int]:
 # FIXME: Empty tuple `Tuple[]` cannot be spelled.
 
 # CHECK-LABEL: lit.func @"returnTup0
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<type> []>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<regtype> []>
 fn returnTup0() -> Tuple:
   # FIXME: Why isn't this a kgen.param.constant for the whole call?
   # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[]> = <<>>
@@ -1369,7 +1369,7 @@ fn returnTup0() -> Tuple:
   return ()
 
 # CHECK-LABEL: lit.func @"returnTup0a
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<type> []>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<regtype> []>
 fn returnTup0a() -> ():
   # FIXME: Why isn't this a kgen.param.constant for the whole call?
   # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[]> = <<>>
@@ -1378,7 +1378,7 @@ fn returnTup0a() -> ():
   return ()
 
 # CHECK-LABEL: lit.func @"returnTup1
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<type> [!Int]>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<regtype> [!Int]>
 fn returnTup1() -> Tuple[Int]:
   # CHECK-NEXT: %0 = kgen.param.constant: !kgen.pack<[!Int]>
   # CHECK-NEXT: %1 = lit.call{{.*}}__init__
@@ -1386,7 +1386,7 @@ fn returnTup1() -> Tuple[Int]:
   return (Int(4),)
 
 # CHECK-LABEL: lit.func @"returnTup1
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<type> [!Int]>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<:variadic<regtype> [!Int]>
 fn returnTup1a() -> (Int,):
   return (Int(4),)
 
@@ -1394,13 +1394,13 @@ fn returnTup1b() -> (Int,):
   return Int(4),
 
 # CHECK-LABEL: lit.func @"returnTup2
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}:variadic<type> [!Int, !FloatLiteral]>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}:variadic<regtype> [!Int, !FloatLiteral]>
 fn returnTup2() -> Tuple[Int, FloatLiteral]:
   # CHECK-NEXT: kgen.param.constant: !kgen.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (Int(4), 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2a
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}:variadic<type> [!Int, !FloatLiteral]>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}:variadic<regtype> [!Int, !FloatLiteral]>
 fn returnTup2a() -> (Int, FloatLiteral):
   # CHECK-NEXT: kgen.param.constant: !kgen.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (Int(4), 2.0)
@@ -1552,7 +1552,7 @@ struct DecoratedStruct:
 # Traits
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.trait.decl @Trait<?, MT: type, T: !kgen.paramref<MT>> {
+# CHECK-LABEL: lit.trait.decl @Trait<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait Trait:
     # CHECK-DAG: lit.func @"f0(T)"(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.none
     # CHECK-NEXT:     lit.trait_func
@@ -1577,15 +1577,15 @@ trait Trait:
     def f4(inout self: Self):
         pass
 
-# CHECK-LABEL: lit.trait.decl @EmptyTrait<?, MT: type, T: !kgen.paramref<MT>> {
+# CHECK-LABEL: lit.trait.decl @EmptyTrait<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait EmptyTrait:
     pass
 
-# CHECK-LABEL: lit.trait.decl @Trait1<?, MT: type, T: !kgen.paramref<MT>> {
+# CHECK-LABEL: lit.trait.decl @Trait1<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait Trait1:
     fn f(self: Self) -> Self: ...
 
-# CHECK-LABEL: lit.trait.decl @Trait2<?, MT: type, T: !kgen.paramref<MT>> {
+# CHECK-LABEL: lit.trait.decl @Trait2<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait Trait2:
     fn f(self: Self) -> Self: ...
 

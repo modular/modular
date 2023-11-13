@@ -3,7 +3,7 @@
 
 // CHECK-LABEL: @sugaredScalar
 // CHECK-SAME: %arg0: !kgen.pointer<*"scalar">
-kgen.generator @sugaredScalar<scalar: type>(%arg0: !kgen.pointer<*"scalar">) {
+kgen.generator @sugaredScalar<scalar: regtype>(%arg0: !kgen.pointer<*"scalar">) {
   kgen.return
 }
 

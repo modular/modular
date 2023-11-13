@@ -59,10 +59,10 @@ fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
 
 # Issue #6282: [Lit] Placeholder substitution does not work on nested types
 # CHECK-LABEL: lit.struct.decl @ComplexSubstitution
-# CHECK-SAME: <[[TYPE:.*]][type]: dtype>
-struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
+# CHECK-SAME: <[[TYPE:.*]][T]: dtype>
+struct ComplexSubstitution[T: __mlir_type.`!kgen.dtype`]:
     # CHECK: lit.struct.field pointer : !kgen.pointer<scalar<[[TYPE]]>>
-    var pointer: __mlir_type[`!kgen.pointer<!pop.scalar<`, type, `>>`]
+    var pointer: __mlir_type[`!kgen.pointer<!pop.scalar<`, T, `>>`]
 
 
 # Issue #6374: [Lit] Add support for type placeholder
@@ -107,7 +107,7 @@ fn testAttrConcatWithoutType[
 
 
 # CHECK-LABEL: lit.struct.decl @MyPointer
-# CHECK-SAME: <[[ELTYPE:.*]][elType]: type>
+# CHECK-SAME: <[[ELTYPE:.*]][elType]: regtype>
 @register_passable
 struct MyPointer[elType: __mlir_type.`!kgen.anyregtype`]:
     alias StorageTy = __mlir_type[`!kgen.pointer<`, elType, `>`]
@@ -119,7 +119,7 @@ struct MyPointer[elType: __mlir_type.`!kgen.anyregtype`]:
 
 
 # CHECK-LABEL: getAddressOf{{.*}}"<
-# CHECK-SAME: [[T:.*_T]][T]: type>(%arg[arg]: !kgen.pointer<[[T]]> byref)
+# CHECK-SAME: [[T:.*_T]][T]: regtype>(%arg[arg]: !kgen.pointer<[[T]]> byref)
 fn getAddressOf[
     T: __mlir_type.`!kgen.anyregtype`
 ](inout arg: T) -> MyPointer[T]:
@@ -127,7 +127,7 @@ fn getAddressOf[
         __get_lvalue_as_address(arg)
     )
     # CHECK-NEXT: lit.ownership.def_lvalue %arg
-    # CHECK-NEXT: %0 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:type [[T]]>(%arg)
+    # CHECK-NEXT: %0 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:regtype [[T]]>(%arg)
     # CHECK-NEXT: lit.return %0
 
 

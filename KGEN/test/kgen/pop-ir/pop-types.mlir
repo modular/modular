@@ -2,7 +2,7 @@
 // RUN: kgen-opt -emit-bytecode %s | kgen-opt | FileCheck %s
 
 // CHECK-LABEL: @pointer
-kgen.generator @pointer<ty: type, address_space>(
+kgen.generator @pointer<ty: regtype, address_space>(
   // CHECK-SAME: !kgen.pointer<scalar<f32>>
   %arg0: !kgen.pointer<scalar<f32>>,
   // CHECK-SAME: !kgen.pointer<scalar<f32>, 5>
@@ -20,7 +20,7 @@ kgen.generator @pointer<ty: type, address_space>(
 }
 
 // CHECK-LABEL: @array
-kgen.generator @array<size, ty: type>(
+kgen.generator @array<size, ty: regtype>(
   // CHECK-SAME: !pop.array<4, scalar<f32>>
   %arg0: !pop.array<4, scalar<f32>>,
   // CHECK-SAME: !pop.array<size, ty>
@@ -30,7 +30,7 @@ kgen.generator @array<size, ty: type>(
 }
 
 // CHECK-LABEL: @struct
-kgen.generator @struct<size, dtype: dtype, ty: type>(
+kgen.generator @struct<size, dtype: dtype, ty: regtype>(
   // CHECK-SAME: !kgen.struct<(scalar<f32>, simd<4, ui64>)>
   %arg0: !kgen.struct<(scalar<f32>, simd<4, ui64>)>,
   // CHECK-SAME: !kgen.struct<(pointer<simd<4, si8>>, array<24, scalar<si64>>, struct<(scalar<f32>, scalar<f64>)>)>
@@ -49,7 +49,7 @@ kgen.generator @struct<size, dtype: dtype, ty: type>(
 }
 
 // CHECK-LABEL: @pack
-kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T0: type, T1: type>(
+kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T0: regtype, T1: regtype>(
   // CHECK-SAME: !kgen.pack<Ts>
   %arg0: !kgen.pack<Ts>,
   // CHECK-SAME: !kgen.pack<[T0, T1]>
@@ -63,7 +63,7 @@ kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T0: type, T1: type>(
 }
 
 // CHECK-LABEL: @variadic
-kgen.generator @variadic<ty: type>(
+kgen.generator @variadic<ty: regtype>(
   // CHECK-SAME: !kgen.variadic<scalar<f32>>
   %arg0: !kgen.variadic<!pop.scalar<f32>>,
   // CHECK-SAME: !kgen.variadic<ty>

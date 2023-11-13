@@ -63,11 +63,11 @@ fn generic_fn[a: DType, b: Int, c: __mlir_type.`!kgen.anyregtype`](d : Int):
 # CHECK: lit.func @"call_generic{{.*}}"<[[DT:.*_dt]][dt]: !DType>()
 fn call_generic[dt: DType]():
   # CHECK: %[[C57:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: lit.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int {{.*}}42{{.*}}, :type !DType>(%[[C57]])
+  # CHECK: lit.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int {{.*}}42{{.*}}, :regtype !DType>(%[[C57]])
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: lit.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int #lit.struct<{value = 13}>, :type @"$parameters"::@OurSIMD<:!Int #lit.struct<{value = 4}>{{.*}}, :!DType [[DT]]>{{.*}}>(%[[C57_2]])
+  # CHECK: lit.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int #lit.struct<{value = 13}>, :regtype @"$parameters"::@OurSIMD<:!Int #lit.struct<{value = 4}>{{.*}}, :!DType [[DT]]>{{.*}}>(%[[C57_2]])
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -183,23 +183,23 @@ fn makePair(a: OurSIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
   return Pair[DType.float32]{a: a, b: b}
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
-# CHECK-SAME: <[[TYPE:.*]][type]: type>
-struct TypeParameter[type: __mlir_type.`!kgen.anyregtype`]:
+# CHECK-SAME: <[[TYPE:.*]][T]: regtype>
+struct TypeParameter[T: __mlir_type.`!kgen.anyregtype`]:
   # CHECK: @"bar($parameters::TypeParameter{{.*}})"(%self[self]: {{.*}} borrow_in_mem, %val[val]: !kgen.paramref<[[TYPE]]> borrow)
-  fn bar(self, val: type):
+  fn bar(self, val: T):
     pass
 
 # Test that parameter decls can refine subsequent ones in the same param list.
 # CHECK-LABEL: lit.struct.decl @ParamSubst
-# CHECK-SAME: <[[TYPE:.*]][type]: type, [[SH:.*]][shape]: variadic<[[TYPE]]>>
+# CHECK-SAME: <[[TYPE:.*]][T]: regtype, [[SH:.*]][shape]: variadic<[[TYPE]]>>
 struct ParamSubst[
-    type: AnyRegType,
-    shape: __mlir_type[`!kgen.variadic<`, type,`>`],
+    T: AnyRegType,
+    shape: __mlir_type[`!kgen.variadic<`, T,`>`],
   ]: pass
 
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.varlet.decl {{.*}} : !lit.ref<mut @"$parameters"::@ParamSubst<:type index, :variadic<index> [1, 2]>
+  # CHECK: %xx = lit.varlet.decl {{.*}} : !lit.ref<mut @"$parameters"::@ParamSubst<:regtype index, :variadic<index> [1, 2]>
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
@@ -409,7 +409,7 @@ fn idx_result_params[a: Int -> b: Int, c: Int]() -> Int:
   return a+2
 
 # CHECK-LABEL: lit.func @"parametric_result_params{{.*}}"<
-# CHECK-SAME: [[T:.*_T]][T]: type, [[INPUT:.*_input]][input]: !kgen.paramref<[[T]]> ->
+# CHECK-SAME: [[T:.*_T]][T]: regtype, [[INPUT:.*_input]][input]: !kgen.paramref<[[T]]> ->
 fn parametric_result_params[T: AnyRegType, input: T -> out: T]():
     # CHECK: lit.param_return<:!kgen.paramref<[[T]]> [[INPUT]]>
     # CHECK: kgen.param.result_bind<:!kgen.paramref<[[T]]> *?>
@@ -616,7 +616,7 @@ fn dependent_variadic_parameter[
 fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
     # CHECK-NEXT: lit.call @"$parameters"::@"variadic_parameter{{.*}}"<:variadic<index> [[ELEMS]]>
     _ = variadic_parameter[elems]()
-    # CHECK: lit.call @"$parameters"::@"dependent_variadic_parameter{{.*}}"<:type !Int, :variadic<!Int>
+    # CHECK: lit.call @"$parameters"::@"dependent_variadic_parameter{{.*}}"<:regtype !Int, :variadic<!Int>
     _ = dependent_variadic_parameter[Int, 1, 2]()
 
 
@@ -652,11 +652,11 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(b)
   # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int apply({{.*}}__mul__{{.*}}, [[SIZE]], {{.*}}2{{.*}})>(%b2)
   callee1(b2)
-  # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:type @"$parameters"::@StaticVec<:!Int [[SIZE]]>{{.*}}>(%b)
+  # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:regtype @"$parameters"::@StaticVec<:!Int [[SIZE]]>{{.*}}>(%b)
   callee2(b)
   # CHECK-NEXT: lit.call @{{.*}}callee3{{.*}}<17, :dtype f32>(%c)
   callee3(c)
-  # CHECK-NEXT: lit.call @{{.*}}callee4{{.*}}<:type f32>(%d)
+  # CHECK-NEXT: lit.call @{{.*}}callee4{{.*}}<:regtype f32>(%d)
   callee4(d)
 
 # CHECK-LABEL: lit.struct.decl @Abstraction
@@ -728,11 +728,11 @@ fn tail_types[T: AnyRegType, *U: AnyRegType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.func @"call_with_tail_types()"
 fn call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> []>
+    # CHECK: call {{.*}}tail_types{{.*}}<:regtype !Int, :variadic<regtype> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}FloatLiteral]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:regtype !Int, :variadic<regtype> [{{.*}}FloatLiteral]>
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}Int]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:regtype !Int, :variadic<regtype> [{{.*}}Int]>
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -742,7 +742,7 @@ fn infer_with_default_arg[T: AnyRegType](a: T, b: Int = 7):
 
 # CHECK-LABEL: lit.func @"test_infer_with_default_arg()"
 fn test_infer_with_default_arg():
-    # lit.call @{{.*}}::@"infer_with_default_arg[AnyRegType]($0,{{.*}}::Int)"<:type !Int>
+    # lit.call @{{.*}}::@"infer_with_default_arg[AnyRegType]($0,{{.*}}::Int)"<:regtype !Int>
     infer_with_default_arg(128)
 
 fn fn_with_param[x: Int](y: Abstraction[x]):
@@ -964,8 +964,8 @@ struct StructWithParametricDefaultValue[T: AnyRegType, N: Int = IntForType[T]()]
 # CHECK-LABEL: lit.func @"test_struct_with_parametric_default_value()"
 fn test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl {{.*}}_a: metatype<{{.*}}> = <@{{.*}}::@StructWithParametricDefaultValue<
-    # CHECK-SAME: :type !Int
-    # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyRegType]()"<:type !Int>)>
+    # CHECK-SAME: :regtype !Int
+    # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyRegType]()"<:regtype !Int>)>
     alias a = StructWithParametricDefaultValue[Int]
 
 

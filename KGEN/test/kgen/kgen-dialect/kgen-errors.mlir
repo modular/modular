@@ -68,8 +68,8 @@ kgen.generator @scalar_params_verbose(%x : !pop.scalar<abc>) {
 // -----
 
 kgen.generator @dtype_params() {
-  // expected-error @+1 {{invalid use of parameter with no declaration "type"}}
-  %y = "someop" () {} : () -> !pop.scalar<type>
+  // expected-error @+1 {{invalid use of parameter with no declaration "T"}}
+  %y = "someop" () {} : () -> !pop.scalar<T>
   kgen.return
 }
 
@@ -288,13 +288,13 @@ kgen.generator @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>) {
 // -----
 
 // expected-note @below {{@callee declared here}}
-kgen.generator @callee<type: dtype>(%x: !pop.scalar<type>) {
+kgen.generator @callee<DT: dtype>(%x: !pop.scalar<DT>) {
   kgen.return
 }
 
-kgen.generator @caller<type : dtype>(%arg0: !pop.scalar<type>) {
-  // expected-error @below {{symbol use argument #0 has type '!pop.scalar<type>' but @callee expected type '!pop.scalar<f64>'}}
-  kgen.call @callee<:dtype f64>(%arg0) : (!pop.scalar<type>) -> ()
+kgen.generator @caller<DT: dtype>(%arg0: !pop.scalar<DT>) {
+  // expected-error @below {{symbol use argument #0 has type '!pop.scalar<DT>' but @callee expected type '!pop.scalar<f64>'}}
+  kgen.call @callee<:dtype f64>(%arg0) : (!pop.scalar<DT>) -> ()
   kgen.return
 }
 
@@ -418,9 +418,9 @@ kgen.generator @call_param() {
 
 // -----
 
-kgen.generator @call_param<fn: <type>()->()>() {
+kgen.generator @call_param<fn: <regtype>()->()>() {
   // expected-error @+1 {{cannot name an operation with no results}}
-  %0 = kgen.call_param[()->(): bind_signature(:<type>()->() fn, f32)]()
+  %0 = kgen.call_param[()->(): bind_signature(:<regtype>()->() fn, f32)]()
   kgen.return
 }
 

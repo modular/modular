@@ -55,19 +55,19 @@ fn metatypes():
     T.bar()
 
     # COM: Test that binding to a generic type works.
-    # CHECK: bound: !lit.signature<() -> !kgen.none> = <{{.*}}@"anytype[AnyRegType]()"<:type !Thing>>
+    # CHECK: bound: !lit.signature<() -> !kgen.none> = <{{.*}}@"anytype[AnyRegType]()"<:regtype !Thing>>
     alias bound = anytype[Thing]
 
     # COM: Test that result types are bound correctly.
-    # CHECK: call {{.*}}@"anytype_result[AnyRegType]()"<:type !Thing>
+    # CHECK: call {{.*}}@"anytype_result[AnyRegType]()"<:regtype !Thing>
     let v: Thing = anytype_result[Thing]()
 
     # COM: Test that argument type inference works correctly.
-    # CHECK: call {{.*}}@"anytype_arg[AnyRegType]($0)"<:type !Thing>
+    # CHECK: call {{.*}}@"anytype_arg[AnyRegType]($0)"<:regtype !Thing>
     anytype_arg(v)
 
     # COM: Test inferring from a non-materializable type.
     alias nm_alias = NMType()
     # CHECK: [[MVAL:%.*]] = kgen.param.constant: !Thing = <apply({{.*}}@Thing::@"__init__
-    # CHECK: call {{.*}}@"anytype_arg[AnyRegType]($0)"<:type !Thing>([[MVAL]])
+    # CHECK: call {{.*}}@"anytype_arg[AnyRegType]($0)"<:regtype !Thing>([[MVAL]])
     anytype_arg(nm_alias)

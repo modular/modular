@@ -1373,7 +1373,7 @@ def KGEN_PackGetOp : KGENOp<"pack.get", [Pure]> {
     Example:
 
     ```mlir
-    kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T: type, I: index>(
+    kgen.generator @pack<Ts: variadic<!kgen.anyregtype>, T: regtype, I: index>(
       %arg0: !kgen.pack<i32, T>
       %arg1: Ts,
     ) {
