@@ -40,7 +40,8 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 
   // If this is a parameter expression of type value, use ParamRefType to turn
   // it into a type.
-  assert((isa<AnyRegTypeType, ParamRefType>(typeParamExpr.getType())) &&
+  assert(((isa<AnyRegTypeType, MetaTypeType, ParamRefType>(
+             typeParamExpr.getType()))) &&
          "parameter expr must have metatype type");
   mlirType = ParamRefType::get(typeParamExpr);
 }
@@ -93,7 +94,12 @@ ArrayRef<TypedAttr> ASTType::getDefaultParameters(SharedState &shared) const {
 
 bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
-  return mlirType == other.mlirType;
+  if (mlirType == other.mlirType)
+    return true;
+  // Types with the same metatype are always equal.
+  if (getMetaType() && getMetaType() == other.getMetaType())
+    return true;
+  return false;
 }
 
 /// Return true if this is a None type.
