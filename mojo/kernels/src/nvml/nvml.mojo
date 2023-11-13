@@ -36,7 +36,7 @@ fn _destroy_dylib(ptr: Pointer[NoneType]):
 
 
 @always_inline
-fn _get_dylib_function[result_type: AnyType](name: StringRef) -> result_type:
+fn _get_dylib_function[result_type: AnyRegType](name: StringRef) -> result_type:
     return _ffi_get_dylib_function[
         "CUDA_NVML_LIBRARY", _init_dylib, _destroy_dylib, result_type
     ](name)
