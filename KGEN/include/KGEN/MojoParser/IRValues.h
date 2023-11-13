@@ -270,7 +270,7 @@ public:
   ASTType getRValueType() const { return getType(); }
 
   /// If this value /is/ a type (i.e., if it has metatype type) return it.
-  ASTType getIfTypeValue(bool allowParamRef = false) const;
+  ASTType getIfTypeValue() const;
 
   const void *getAsOpaquePointer() const {
     return storage.getAsOpaquePointer();

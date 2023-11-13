@@ -1413,7 +1413,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   if (!value)
     return {};
 
-  ASTType type = value.getIfTypeValue(true);
+  ASTType type = value.getIfTypeValue();
   if (!type) {
     emitError(expr->getLoc(), "expected a type, not a value")
         << expr->getRange();
