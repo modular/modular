@@ -3680,6 +3680,28 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();
 
+  // Insert the implicit trait parameters:
+  // - MT: an AnyRegTypeType which points to the struct that implements this
+  // trait.
+  // - T: a ParamRef to MT which is the type of MT.
+  auto mt = ParamDeclAttr::get("MT", AnyRegTypeType::get(decl.getContext()));
+  auto mtRef = ParamDeclAttr::get(
+      "T", KGEN::ParamRefType::get(KGEN::ParamDeclRefAttr::get(mt)));
+
+  auto inputParams = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});
+  traitOp.setInputParams(inputParams);
+  SmallVector<StringAttr> paramNames{StringAttr::get(decl.getContext(), ""),
+                                     StringAttr::get(decl.getContext(), "")};
+  SmallVector<PassingKind> paramPassingKinds{PassingKind::Implicit,
+                                             PassingKind::Implicit};
+  SmallVector<TypedAttr> paramDefaults;
+  auto sig = TypeSignatureType::remapToSignature(
+      silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
+      paramDefaults, false);
+  if (!sig)
+    return failure();
+  traitOp.setSignature(sig);
+
   // TODO: figure out selfType for trait.
   // selfType needs to be set to avoid silent parsing error that drops function
   // calls.

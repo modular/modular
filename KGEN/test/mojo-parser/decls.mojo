@@ -1552,7 +1552,7 @@ struct DecoratedStruct:
 # Traits
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.trait.decl @Trait {
+# CHECK-LABEL: lit.trait.decl @Trait<?, MT: type, T: !kgen.paramref<MT>> {
 trait Trait:
     # CHECK-DAG: lit.func @"f0({{.*}})"(%self[self]: !lit.typecheckerror borrow) -> !kgen.none
     # CHECK-NEXT:     lit.trait_func
@@ -1576,15 +1576,15 @@ trait Trait:
     def f4(inout self: Self):
         pass
 
-# CHECK-LABEL: lit.trait.decl @EmptyTrait {
+# CHECK-LABEL: lit.trait.decl @EmptyTrait<?, MT: type, T: !kgen.paramref<MT>> {
 trait EmptyTrait:
     pass
 
-# CHECK-LABEL: lit.trait.decl @Trait1 {
+# CHECK-LABEL: lit.trait.decl @Trait1<?, MT: type, T: !kgen.paramref<MT>> {
 trait Trait1:
     fn f(self: Self) -> Self: ...
 
-# CHECK-LABEL: lit.trait.decl @Trait2 {
+# CHECK-LABEL: lit.trait.decl @Trait2<?, MT: type, T: !kgen.paramref<MT>> {
 trait Trait2:
     fn f(self: Self) -> Self: ...
 
