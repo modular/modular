@@ -83,15 +83,12 @@ static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
     paths.push_back(path.str());
 }
 
-struct SharedState::Impl : public ClosureCache {
+struct SharedState::Impl {
   Impl(SharedState &shared, ParserConfig::CachingLevel moduleCachingLevel)
       : sourceNames(shared), moduleCachingLevel(moduleCachingLevel),
         bytecodeParserContext(shared.getContext(), /*verifyAfterParse=*/false) {
   }
   virtual ~Impl() = default;
-
-  StructDeclOp getExisting(ClosureHash key) override;
-  void storeClosure(ClosureHash key, StructDeclOp closure) override;
 
   SymbolTableCollection symbolTables;
 
@@ -168,8 +165,6 @@ struct SharedState::Impl : public ClosureCache {
   /// name.
   llvm::DenseMap<std::pair<SignatureType, StringAttr>, StructDeclOp>
       closureWrappers;
-  llvm::DenseMap<std::pair<SignatureType, StringAttr>, StructDeclOp>
-      closureImpls;
 
   /// The capture values and decls associated with their enclosing nested
   /// function.
@@ -180,13 +175,6 @@ struct SharedState::Impl : public ClosureCache {
   /// function.
   llvm::DenseMap<ASTDecl *, ParameterCaptures> capturedParametersInScope;
 };
-
-StructDeclOp SharedState::Impl::getExisting(ClosureHash key) {
-  return closureImpls[key];
-}
-void SharedState::Impl::storeClosure(ClosureHash key, StructDeclOp closure) {
-  closureImpls[key] = closure;
-}
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics,

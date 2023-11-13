@@ -30,15 +30,6 @@ struct TopLevelTypes {
   Type delFuncFieldType;
 };
 
-/// A ClosureCache stores previously generated closures to prevent duplicate
-/// definitions from being generated.
-class ClosureCache {
-public:
-  virtual ~ClosureCache() = default;
-  virtual StructDeclOp getExisting(ClosureHash key) = 0;
-  virtual void storeClosure(ClosureHash key, StructDeclOp closure) = 0;
-};
-
 class ClosureEmitter : public StructEmitter {
 public:
   ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared);
