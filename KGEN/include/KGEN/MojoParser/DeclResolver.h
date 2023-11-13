@@ -211,13 +211,12 @@ public:
   /// Given a scope, collect all parameters declared in that scope.
   static SmallVector<NamedParameter> parametersInScope(ASTDecl &scope);
 
-  /// Given a signature type that contains references to a parent function,
-  /// create a signature type that contains no references to the parent by
-  /// inserting an input parameter for every captured declaration.
-  static LITSignatureType
-  createSelfContainedSignature(LITSignatureType original,
-                               ArrayRef<NamedParameter> paramRefsToUnbind,
-                               std::function<void(StringRef)> errorHandler);
+  /// Given a signature type that may contain references to parameter
+  /// declarations in a parent context, isolate it by creating a signatuer with
+  /// no external references by inserting an input parameter for every captured
+  /// parameter declaration. Return the captured parameter references.
+  static std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureType>
+  createSelfContainedSignature(LITSignatureType original);
 
   /// Create a bound type from a struct and a list of bindings.
   static Type createTypeFromSubsetOfParentParameters(

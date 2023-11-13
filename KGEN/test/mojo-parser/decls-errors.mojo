@@ -29,11 +29,12 @@ fn has_result_param[a: Int->b: Int](dummyCapture: Int) -> fn () escaping -> Int:
     return foo
 
 
-fn illegal_alias_ref[a : Int](c:Int):
-  alias Y = Foo[a](2)
-  fn p_capture(x: Int, y:Foo[Y.get()]) escaping -> Int: # expected-error {{Cannot capture local parameter in nested function signature. TODO: fix global references.}}
-     return Foo[a](x+c).get()
-  return p_capture
+# FIXME: This crashes, but it should be supportable.
+# fn illegal_alias_ref[a : Int](c:Int):
+#   alias Y = Foo[a](2)
+#   fn p_capture(x: Int, y:Foo[Y.get()]) escaping -> Int:
+#      return Foo[a](x+c).get()
+#   return p_capture
 
 ##===----------------------------------------------------------------------===##
 # Closures

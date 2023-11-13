@@ -2421,73 +2421,25 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
       [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
 }
 
-// TODO: refactor the getSpecializedSignature method to support augmenting
-// parameter list when a capture is encountered in the signature. This function
-// accepts a list of parameters and a signature and returns a self contained
-// signature by augmenting the original's input parameter list for each
-// parameter reference that appears in the paramRefsToUnbind list.
-LITSignatureType DeclResolver::createSelfContainedSignature(
-    LITSignatureType original, ArrayRef<NamedParameter> paramRefsToUnbind,
-    std::function<void(StringRef)> errorHandler) {
-  auto fnMetadata = cast<FnMetadataAttr>(original.getMetadata());
-  // The size 16 was an optimization for perf that was hand tuned.
-  SmallVector<StringAttr, 16> argNames(fnMetadata.getArgNames());
-  SmallVector<PassingKind, 16> argPassingKind(fnMetadata.getArgPassingKinds());
+std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureType>
+DeclResolver::createSelfContainedSignature(LITSignatureType original) {
+  // Collect the subset of referenced parameters. Use a set vector to keep the
+  // order deterministic.
+  llvm::SetVector<ParamDeclRefAttr, SmallVector<ParamDeclRefAttr>> capturedRefs;
+  original.walk([&](ParamDeclRefAttr ref) { capturedRefs.insert(ref); });
 
-  MLIRContext *ctx = original.getContext();
-
-  // Collect the subset of referenced parameters.
-  SmallPtrSet<StringAttr, 4> seen;
-  original.walk([&](ParamDeclRefAttr paramDeclRefAttr) {
-    seen.insert(paramDeclRefAttr.getName());
+  SmallVector<ParamDeclRefAttr> captured = capturedRefs.takeVector();
+  // FIXME: Closure gen wants the captures to be sorted.
+  llvm::sort(captured, [](ParamDeclRefAttr lhs, ParamDeclRefAttr rhs) {
+    return lhs.getName().strref() < rhs.getName().strref();
   });
-
-  // Add the parameters in the order of declaration.
-  SmallDenseMap<StringAttr, std::pair<unsigned, Type>> parameterCaptures;
-  SmallVector<Type> paramInputTypes;
-  SmallVector<PassingKind, 16> newParamPassingKinds;
-  SmallVector<StringAttr, 16> newParamInputNames;
-  unsigned currentParamterIndex = 0;
-  for (auto [i, param] : llvm::enumerate(paramRefsToUnbind)) {
-    if (seen.contains(param.getMangledName())) {
-      parameterCaptures[param.getMangledName()] = {currentParamterIndex++,
-                                                   param.getType()};
-      paramInputTypes.push_back(param.getType());
-      newParamInputNames.push_back(StringAttr::get(ctx, param.getSrcName()));
-      newParamPassingKinds.push_back(PassingKind::PosOnly);
-    }
-  }
-
-  // Replace the illegal references with Index references.
-  // TODO: support existing parameters that are not captures.
-  SmallDenseMap<StringAttr, ParamIndexRefAttr> newParameterReferences;
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamDeclRefAttr paramDeclRefAttr) -> TypedAttr {
-    auto existing = newParameterReferences.find(paramDeclRefAttr.getName());
-    if (existing != newParameterReferences.end())
-      return existing->second;
-    if (auto it = parameterCaptures.find(paramDeclRefAttr.getName());
-        it != parameterCaptures.end()) {
-      StringAttr name = it->first;
-      Type type = it->second.second;
-      unsigned index = it->second.first;
-      auto updatedRef = ParamIndexRefAttr::get(0, false, index, type);
-      newParameterReferences[name] = updatedRef;
-      return updatedRef;
-    }
-    return paramDeclRefAttr;
-  });
-  auto originalWithUpdatedParamRefs =
-      cast<LITSignatureType>(replacer.replace(original));
-  return SignatureType::get(
-      ctx, paramInputTypes, /*resultParamTypes=*/{},
-      FunctionType::get(ctx, originalWithUpdatedParamRefs.getValueInputs(),
-                        originalWithUpdatedParamRefs.getValueResults()),
-      originalWithUpdatedParamRefs.getInputConventions(),
-      originalWithUpdatedParamRefs.getFnEffects(),
-      FnMetadataAttr::get(ctx, argNames, argPassingKind, newParamInputNames,
-                          newParamPassingKinds, /*defaultArguments=*/{},
-                          /*defaultParameters=*/{}));
+  // Unbind the N capture parameters, creating a new signature with N new input
+  // parameters prepended.
+  auto unbound = LITSignatureType::prependParams(
+      original, llvm::map_to_vector(captured, [](ParamDeclRefAttr ref) {
+        return ParamDeclAttr::get(ref);
+      }));
+  return {std::move(captured), unbound};
 }
 
 SmallVector<NamedParameter> DeclResolver::parametersInScope(ASTDecl &scope) {
@@ -2555,16 +2507,13 @@ static Value emitClosureInstance(SignatureType closureSignature,
   });
 
   SmallVector<ParameterCapture> closureImplCaptures;
-  SmallVector<ParameterCapture> closureWrapperCaptures;
   for (ParameterCapture capture : orderedCaptures) {
     bool isInSignature = signatureDecls.contains(capture.getName());
     // Only include input parameter captures.
     if (capture.getIndex() > -1) {
       closureImplCaptures.emplace_back(capture);
-      if (isInSignature) {
+      if (isInSignature)
         signatureParamReferencesNotInCaptureList.erase(capture.getName());
-        closureWrapperCaptures.push_back(capture);
-      }
     } else if (isInSignature) {
       shared.emitError(
           location,
@@ -2573,27 +2522,8 @@ static Value emitClosureInstance(SignatureType closureSignature,
     }
   }
 
-  // TODO(#24309): It is possible to capture a local reference without that
-  // reference getting recorded in the DeclRefNode::emitIR because when a
-  // parameter expression of a nested function signature is emitted in the
-  // context of the parent. As a result, it does not go through the capture
-  // pipeline. For now, handle this by disabling global references. Note we
-  // cannot lookup the capture in the parent scope because the parameter name is
-  // mangled.
-  if (!signatureParamReferencesNotInCaptureList.empty()) {
-    shared.emitError(location,
-                     "Cannot capture local parameter in nested function "
-                     "signature. TODO: fix global references.");
-    return {};
-  }
-  SmallVector<NamedParameter> parameterDeclarationsInScope =
-      DeclResolver::parametersInScope(*nestedFunctionDecl.getParentDecl());
-  LITSignatureType closureWrapperSignature =
-      DeclResolver::createSelfContainedSignature(
-          nestedFunctionSignature, parameterDeclarationsInScope,
-          [&](StringRef error) {
-            shared.emitError(nestedFunctionDecl.getLoc(), error);
-          });
+  auto [capturedRefs, closureWrapperSignature] =
+      DeclResolver::createSelfContainedSignature(nestedFunctionSignature);
   if (!closureWrapperSignature)
     return {};
   StructDeclOp closureWrapper = shared.getOrGenerateClosureWrapperStruct(
@@ -2610,7 +2540,7 @@ static Value emitClosureInstance(SignatureType closureSignature,
 
   // Map the closure wrapper captures to the impl captures.
   SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterMap;
-  for (auto [i, wrapperCapture] : llvm::enumerate(closureWrapperCaptures)) {
+  for (auto [i, wrapperCapture] : llvm::enumerate(capturedRefs)) {
     for (auto [j, implCapture] : llvm::enumerate(closureImplCaptures))
       if (implCapture.getName() == wrapperCapture.getName())
         fromImplToWrapperParameterMap[j] = i;
@@ -2657,9 +2587,10 @@ static Value emitClosureInstance(SignatureType closureSignature,
 
   // Create the ClosureWrapper type by binding parent parameters to the
   // ClosureWrapper type.
-  Type closureWrapperType =
-      DeclResolver::createTypeFromSubsetOfParentParameters(
-          shared, closureWrapper, closureWrapperCaptures);
+  // TODO: Handle partial binding.
+  DeclRefType closureWrapperType =
+      closureWrapper.bindReference(llvm::map_to_vector(
+          capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
   CValue closureWrapperInstance = exprEmitter.emitConstructorCall(
       ASTType(closureWrapperType), closureWrapperInitArgs, &node,
       CallSyntax::kTypeCall, closureWrapperDest,
