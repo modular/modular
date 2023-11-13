@@ -68,6 +68,10 @@ public:
   /// Error if any of the keys from incoming config already exist.
   ErrorOrSuccess copyFrom(const Config &other);
 
+  /// Copy the sections from another config object into the current object.
+  /// Pre-existing sections are removed and replaced, not merged.
+  ErrorOrSuccess overrideFrom(const Config &other);
+
   /// Get a value with a possible override from the environment.
   StringRef getValue(StringRef key);
 
