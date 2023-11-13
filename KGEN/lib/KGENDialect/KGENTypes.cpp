@@ -42,6 +42,9 @@ void KGENDialect::registerTypes() {
 
   // Register custom type parser and printers for KGEN types.
   registerPrettyType(
+      "type", &AnyTypeType::parse, TypeID::get<AnyTypeType>(),
+      +[](AsmPrinter &p, Type) { p << "type"; });
+  registerPrettyType(
       "regtype", &AnyRegTypeType::parse, TypeID::get<AnyRegTypeType>(),
       +[](AsmPrinter &p, Type) { p << "regtype"; });
   registerMnemonicType<DTypeType>();
@@ -70,27 +73,51 @@ Type ParamRefType::get(TypedAttr param) {
 }
 
 //===----------------------------------------------------------------------===//
-// AnyRegTypeType
+// AnyTypeType
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult AnyRegTypeType::parseValue(AsmParser &p,
-                                               TypedAttr &value) const {
-  Type type;
-  OptionalParseResult result = parseOptionalKGENType(p, type);
+/// Implementation of the parsing logic for sugar types (e.g. !kgen.anytype).
+static OptionalParseResult parseSugaredTypeValue(AsmParser &p, TypedAttr &value,
+                                                 Type type) {
+  Type typeValue;
+  OptionalParseResult result = parseOptionalKGENType(p, typeValue);
   if (!result.has_value())
     return {};
   if (failed(*result))
     return failure();
-  value = TypeConstantAttr::get(type, *this);
+  value = TypeConstantAttr::get(typeValue, type);
   return mlir::success();
 }
 
-LogicalResult AnyRegTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
+/// Implementation of the printing logic for sugar types (e.g. !kgen.anytype).
+static LogicalResult printSugaredTypeValue(AsmPrinter &p, TypedAttr value) {
   auto type = ::dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
   printKGENType(p, type.getValue());
   return success();
+}
+
+OptionalParseResult AnyTypeType::parseValue(AsmParser &p,
+                                            TypedAttr &value) const {
+  return parseSugaredTypeValue(p, value, *this);
+}
+
+LogicalResult AnyTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
+  return printSugaredTypeValue(p, value);
+}
+
+//===----------------------------------------------------------------------===//
+// AnyRegTypeType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult AnyRegTypeType::parseValue(AsmParser &p,
+                                               TypedAttr &value) const {
+  return parseSugaredTypeValue(p, value, *this);
+}
+
+LogicalResult AnyRegTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
+  return printSugaredTypeValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//
