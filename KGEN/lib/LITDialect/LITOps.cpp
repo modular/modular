@@ -344,9 +344,7 @@ LogicalResult LIT::CallOp::verify() {
     return emitOpError("callee type must be a `!lit.signature`");
   if (failed(verifyLifetimeParams(*this, sig)))
     return failure();
-  return success();
-  // FIXME: This is a bug in closure emission generating invalid code.
-  // return verifyCallOp(*this, sig, getOperands(), getResultTypes());
+  return verifyCallOp(*this, sig, getOperands(), getResultTypes());
 }
 
 void LIT::CallOp::setCalleeAttr(TypedAttr callee) {
