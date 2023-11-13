@@ -138,7 +138,9 @@ fn _top_k[
 
                 @parameter
                 @always_inline
-                fn _val_greater_than_eq[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
+                fn _val_greater_than_eq[
+                    ty: AnyRegType
+                ](lhs: ty, rhs: ty) -> Bool:
                     return indices_to_val(rebind[Int64](lhs)) >= indices_to_val(
                         rebind[Int64](rhs)
                     )
@@ -155,7 +157,7 @@ fn _top_k[
 
                 @parameter
                 @always_inline
-                fn _val_less_than_eq[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
+                fn _val_less_than_eq[ty: AnyRegType](lhs: ty, rhs: ty) -> Bool:
                     return indices_to_val(rebind[Int64](lhs)) <= indices_to_val(
                         rebind[Int64](rhs)
                     )
