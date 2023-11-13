@@ -742,7 +742,6 @@ fn function_with_struct():
 # Traits
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.trait.decl @EverythingIsWrongTrait {
 trait EverythingIsWrongTrait:
     var value: Int # expected-error {{fields in traits are not supported yet}}
 

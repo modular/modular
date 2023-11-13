@@ -180,10 +180,13 @@ PValue::PValue(Type value)
                     : Attribute()) {}
 
 /// If this value /is/ a type return it.
-ASTType PValue::getIfTypeValue() const {
+ASTType PValue::getIfTypeValue(bool allowParamRef) const {
   auto attr = get();
   // If this is a parameter expression of type value, use ParamRefType to turn
   // it into a type.
+  if (allowParamRef && isa<ParamRefType>(attr.getType()))
+    return ParamRefType::get(attr);
+
   if (isa<AnyRegTypeType, MetaTypeType>(attr.getType()))
     return ParamRefType::get(attr);
   return {};

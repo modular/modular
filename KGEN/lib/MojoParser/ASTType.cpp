@@ -40,7 +40,7 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 
   // If this is a parameter expression of type value, use ParamRefType to turn
   // it into a type.
-  assert(isa<AnyRegTypeType>(typeParamExpr.getType()) &&
+  assert((isa<AnyRegTypeType, ParamRefType>(typeParamExpr.getType())) &&
          "parameter expr must have metatype type");
   mlirType = ParamRefType::get(typeParamExpr);
 }

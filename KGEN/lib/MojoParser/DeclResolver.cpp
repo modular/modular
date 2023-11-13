@@ -3702,10 +3702,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     return failure();
   traitOp.setSignature(sig);
 
-  // TODO: figure out selfType for trait.
-  // selfType needs to be set to avoid silent parsing error that drops function
-  // calls.
-  decl.setSelfType(shared.getTypeCheckErrorType());
+  decl.setSelfType(ASTDecl::computeSelfTypeForTrait(traitOp));
 
   shared.notifyListenerOnTraitDecl(decl, identifierLoc);
 

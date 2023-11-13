@@ -1413,7 +1413,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   if (!value)
     return {};
 
-  ASTType type = value.getIfTypeValue();
+  ASTType type = value.getIfTypeValue(true);
   if (!type) {
     emitError(expr->getLoc(), "expected a type, not a value")
         << expr->getRange();
@@ -1673,6 +1673,9 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   // If this is a type declaration, return it as a type.
   if (auto structOp = dyn_cast<StructDeclOp>(decl))
     return emitResult(PValue(structOp.bindReference()), expr, dest);
+
+  if (auto traitOp = dyn_cast<TraitDeclOp>(decl))
+    return emitResult(traitOp.bindReference(), expr, dest);
 
   // If this is a module or package declaration, form a module reference.
   if (isa<FileModuleOp, PackageOp>(decl)) {

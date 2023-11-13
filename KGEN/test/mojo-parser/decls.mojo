@@ -1554,24 +1554,25 @@ struct DecoratedStruct:
 
 # CHECK-LABEL: lit.trait.decl @Trait<?, MT: type, T: !kgen.paramref<MT>> {
 trait Trait:
-    # CHECK-DAG: lit.func @"f0({{.*}})"(%self[self]: !lit.typecheckerror borrow) -> !kgen.none
+    # CHECK-DAG: lit.func @"f0(T)"(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.none
     # CHECK-NEXT:     lit.trait_func
     fn f0(self: Self): ...
 
-    # CHECK-DAG: lit.func @"f1({{.*}}&)"(%self[self]: !kgen.pointer<!lit.typecheckerror> byref) -> !kgen.none
+    # CHECK-DAG: lit.func @"f1(T&)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) -> !kgen.none
     # CHECK-NEXT:   lit.trait_func
     fn f1(inout self: Self): ...
 
-    # CHECK-DAG: lit.func @"f2({{.*}}&)"(%self[self]: !kgen.pointer<!lit.typecheckerror> byref) -> !kgen.none
+    # CHECK-DAG: lit.func @"f2(T&)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) -> !kgen.none attributes
     # CHECK-NEXT:   lit.trait_func
     fn f2(inout self: Self):
         pass
 
-    # CHECK-DAG: lit.func @"f3({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !lit.typecheckerror) throws -> !kgen.variant<!Error, none>
+    # CHECK-DAG: lit.func @"f3(,T)"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.paramref<:!kgen.paramref<MT> T>) throws -> !kgen.variant<!Error, none>
     # CHECK-NEXT:   lit.trait_func
-    def f3(self: Self): ...
+    def f3(self: Self):
+        pass
 
-    # CHECK-DAG: lit.func @"f4({{.*}})"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.pointer<!lit.typecheckerror> byref) throws -> !kgen.variant<!Error, none>
+    # CHECK-DAG: lit.func @"f4(,T&)"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) throws -> !kgen.variant<!Error, none>
     # CHECK-NEXT:   lit.trait_func
     def f4(inout self: Self):
         pass
