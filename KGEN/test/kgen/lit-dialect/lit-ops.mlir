@@ -419,6 +419,7 @@ lit.struct.decl @Foo {
 } loc(fused<#file>[#loc])
 
 // -----
+
 // struct with traits
 // CHECK-LABEL: lit.trait.decl @Trait1
 lit.trait.decl @Trait1 {
@@ -447,4 +448,11 @@ lit.func @lit_loop() {
   } {unrollLevel = #hlcf<unroll_level full>}
 
   kgen.return
+}
+
+// -----
+
+lit.func @load_consume(%arg0 : !kgen.pointer<index>) -> index {
+  %0 = lit.load.consume %arg0 : !kgen.pointer<index>
+  kgen.return %0 : index
 }
