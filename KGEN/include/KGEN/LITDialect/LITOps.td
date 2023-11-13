@@ -1513,10 +1513,10 @@ def LIT_LoadConsumeOp : LITOp<"load.consume",
                               [PointerElementType<"ptr", "result">]> {
   let summary = "consuming pointer load operation";
   let description = [{
-    Loads the data at the given pointer like `pop.load`, but consume the
-    ownership of the memory being accessed.  This is used when performing
-    MRValue to SRValue conversion (i.e. when consuming a `var` of
-    `@register_passable` type), and is lowered to `pop.load`.
+    Loads the data at the given pointer like `pop.load`, but consumes the
+    ownership of the memory being accessed. This is used when performing MRValue
+    to SRValue conversion (i.e. when consuming a `var` of `@register_passable`
+    type), and is lowered to `pop.load`.
 
     Example:
 
