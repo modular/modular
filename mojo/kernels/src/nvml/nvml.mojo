@@ -5,7 +5,41 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
+from sys.ffi import DLHandle
+from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+from memory.unsafe import Pointer
+from ._utils import _check_error
+
+# ===----------------------------------------------------------------------===#
+# Constants
+# ===----------------------------------------------------------------------===#
+
 alias CUDA_NVML_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so"
+
+
+# ===----------------------------------------------------------------------===#
+# Library Load
+# ===----------------------------------------------------------------------===#
+
+
+fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
+    let ptr = Pointer[DLHandle].alloc(1)
+    let handle = DLHandle(CUDA_NVML_LIBRARY_PATH)
+    _ = handle.get_function[fn () -> Result]("nvmlInit_v2")()
+    __get_address_as_lvalue(ptr.address) = handle
+    return ptr.bitcast[NoneType]()
+
+
+fn _destroy_dylib(ptr: Pointer[NoneType]):
+    __get_address_as_lvalue(ptr.bitcast[DLHandle]().address)._del_old()
+    ptr.free()
+
+
+@always_inline
+fn _get_dylib_function[result_type: AnyType](name: StringRef) -> result_type:
+    return _ffi_get_dylib_function[
+        "CUDA_NVML_LIBRARY", _init_dylib, _destroy_dylib, result_type
+    ](name)
 
 
 # ===----------------------------------------------------------------------===#
@@ -240,3 +274,70 @@ struct EnableState:
     @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
+
+
+# ===----------------------------------------------------------------------===#
+# Device
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct _DeviceImpl:
+    var handle: DTypePointer[DType.invalid]
+
+    @always_inline
+    fn __init__() -> Self:
+        return Self {handle: DTypePointer[DType.invalid]()}
+
+    @always_inline
+    fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
+        return Self {handle: handle}
+
+    @always_inline
+    fn __bool__(self) -> Bool:
+        return self.handle.__bool__()
+
+
+struct Device:
+    var device: _DeviceImpl
+
+    fn __init__(inout self, idx: Int = 0) raises:
+        var device = _DeviceImpl()
+        _check_error(
+            _get_dylib_function[fn (UInt32, Pointer[_DeviceImpl]) -> Result](
+                "nvmlDeviceGetHandleByIndex_v2"
+            )(UInt32(idx), Pointer.address_of(device))
+        )
+        self.device = device
+
+    fn mem_clocks(self) raises -> DynamicVector[Int]:
+        var num_clocks = UInt32()
+
+        let result = _get_dylib_function[
+            fn (_DeviceImpl, Pointer[UInt32], Pointer[UInt32]) -> Result
+        ]("nvmlDeviceGetSupportedMemoryClocks")(
+            self.device, Pointer.address_of(num_clocks), Pointer[UInt32]()
+        )
+        if result != Result.INSUFFICIENT_SIZE:
+            _check_error(result)
+
+        var clocks = DynamicVector[UInt32]()
+        clocks.resize(num_clocks.to_int())
+
+        _check_error(
+            _get_dylib_function[
+                fn (_DeviceImpl, Pointer[UInt32], Pointer[UInt32]) -> Result
+            ]("nvmlDeviceGetSupportedMemoryClocks")(
+                self.device, Pointer.address_of(num_clocks), clocks.data
+            )
+        )
+
+        var res = DynamicVector[Int]()
+        res.resize(num_clocks.to_int())
+        for i in range(num_clocks.to_int()):
+            res[i] = clocks[i].to_int()
+
+        clocks._del_old()
+
+        return res
