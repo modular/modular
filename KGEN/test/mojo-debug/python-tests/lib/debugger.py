@@ -27,7 +27,10 @@ def load_lldb() -> Any:
         ).strip()
         if lldb_lib != "<COULD NOT FIND PATH>":
             sys.path.insert(0, lldb_lib)
-            lldb = importlib.import_module("lldb")
+            try:
+                lldb = importlib.import_module("lldb")
+            except ImportError:
+                pass
     return lldb
 
 
