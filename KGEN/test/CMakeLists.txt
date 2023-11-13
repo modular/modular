@@ -11,21 +11,12 @@
 include(AddPython)
 modular_find_python3_development()
 
-configure_lit_site_cfg(
-  ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
-  ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
-  MAIN_CONFIG
-  ${CMAKE_CURRENT_SOURCE_DIR}/lit.cfg.py
-)
-
-add_modular_testsuite(check-mojo
-  TOOLS
-  llvm-objdump
-  kgen
-  kgen-opt
-  kgen-translate
-  mojo-sdk
-)
+# This is the top-level test target for all things Mojo. Subdirectories each
+# define their own test targets, and add those targets as dependencies of this
+# one.
+add_custom_target(check-mojo)
+set_target_properties(check-mojo PROPERTIES FOLDER "Tests")
+add_dependencies(check-all check-mojo)
 
 add_subdirectory(kgen)
 add_subdirectory(mojo-debug)
@@ -34,3 +25,4 @@ add_subdirectory(mojo-jupyter)
 add_subdirectory(mojo-lsp-server)
 add_subdirectory(mojo-parser)
 add_subdirectory(mojo-repl)
+add_subdirectory(mojo-tool)
