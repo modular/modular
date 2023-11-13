@@ -1110,3 +1110,15 @@ struct DependentDefault[x: Int = 1, y: Int = x]:
 fn dependent_default_ctad():
     # CHECK-NEXT: value: {{.*}}@DependentDefault<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 1}>>
     alias value = DependentDefault()
+
+
+# CHECK-LABEL: lit.func @"scalar_type
+# CHECK-SAME: <[[dt:.*]][dt]: !DType>
+fn scalar_type[dt: DType]():
+    # CHECK: alias.decl [[T:.*_T]]: metatype<{{.*}}SIMD<:!DType [[dt]],
+    alias T = Scalar[dt]
+
+    # CHECK: letreg.decl "value" = %{{.*}} : !kgen.declref<{{.*}}@SIMD<:!DType [[dt]],
+    let value: T = 1
+    # CHECK: call {{.*}}<:!DType [[dt]], {{.*}}, :!DType [[dt]]>(%value)
+    _ = value.cast[dt]()
