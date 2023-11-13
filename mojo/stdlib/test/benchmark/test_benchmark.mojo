@@ -102,7 +102,7 @@ fn test_keep():
 
 
 fn sleeper():
-    sleep(0.01)
+    sleep(0.001)
 
 
 # CHECK-LABEL: test_non_capturing
@@ -110,10 +110,21 @@ fn test_non_capturing():
     print("== test_non_capturing")
     let report = run[sleeper]()
     # CHECK: True
-    print(report.mean() > 0.01)
+    print(report.mean() > 0.001)
+
+
+# CHECK-LABEL: test_change_units
+fn test_change_units():
+    print("== test_change_units")
+    let report = run[sleeper]()
+    # CHECK: True
+    print(report.mean("ms") > 1.0)
+    # CHECK: True
+    print(report.mean("ns") > 1_000_000.0)
 
 
 def main():
     test_benchmark()
     test_keep()
     test_non_capturing()
+    test_change_units()

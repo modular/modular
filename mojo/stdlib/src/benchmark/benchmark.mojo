@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""
-Implements the benchmark module for runtime benchmarking.
+"""Implements the benchmark module for runtime benchmarking.
 
 You can import these APIs from the `benchmark` package. For example:
 
@@ -25,7 +24,7 @@ print(report.mean())
 ```
 
 ```output
-0.012451871794871795
+0.012256487394957985
 ```
 
 You can print a full report:
@@ -38,14 +37,14 @@ report.print()
 ---------------------
 Benchmark Report (s)
 ---------------------
-Mean: 0.012314264957264957
-Total: 1.440769
-Iters: 117
-Warmup Mean: 0.0119335
-Warmup Total: 0.023866999999999999
+Mean: 0.012265747899159664
+Total: 1.459624
+Iters: 119
+Warmup Mean: 0.01251
+Warmup Total: 0.025020000000000001
 Warmup Iters: 2
-Fastest Mean: 0.012227958333333334
-Slowest Mean: 0.012442699999999999
+Fastest Mean: 0.0121578
+Slowest Mean: 0.012321428571428572
 
 ```
 
@@ -57,36 +56,35 @@ report.print_full()
 
 ```output
 ---------------------
-Benchmark Report (ms)
+Benchmark Report (s)
 ---------------------
-Mean: 12.397538461538462
-Total: 1450.5119999999999
-Iters: 117
-Warmup Mean: 11.715
-Warmup Total: 23.43
+Mean: 0.012368649122807017
+Total: 1.410026
+Iters: 114
+Warmup Mean: 0.0116705
+Warmup Total: 0.023341000000000001
 Warmup Iters: 2
-Fastest Mean: 12.0754375
-Slowest Mean: 12.760265306122449
+Fastest Mean: 0.012295586956521738
+Slowest Mean: 0.012508099999999999
 
 Batch: 1
 Iterations: 20
-Mean: 12.2819
-Duration: 245.63800000000001
+Mean: 0.012508099999999999
+Duration: 0.250162
 
 Batch: 2
-Iterations: 48
-Mean: 12.0754375
-Duration: 579.62099999999998
+Iterations: 46
+Mean: 0.012295586956521738
+Duration: 0.56559700000000002
 
 Batch: 3
-Iterations: 49
-Mean: 12.760265306122449
-Duration: 625.25300000000004
-
+Iterations: 48
+Mean: 0.012380562499999999
+Duration: 0.59426699999999999
 ```
 
 If you want to use a different time unit you can bring in the Unit and pass
-it in as a parameter:
+it in as an argument:
 
 ```mojo
 from benchmark import Unit
@@ -98,21 +96,20 @@ report.print(Unit.ms)
 ---------------------
 Benchmark Report (ms)
 ---------------------
-Mean: 12.474991228070174
-Total: 1422.1489999999999
-Iters: 114
-Warmup Mean: 11.976000000000001
-Warmup Total: 23.952000000000002
+Mean: 0.012312411764705882
+Total: 1.465177
+Iters: 119
+Warmup Mean: 0.012505499999999999
+Warmup Total: 0.025010999999999999
 Warmup Iters: 2
-Fastest Mean: 12.297478260869564
-Slowest Mean: 12.6313125
-
+Fastest Mean: 0.012015649999999999
+Slowest Mean: 0.012421204081632654
 ```
 
 The unit's are just aliases for `StringLiteral`, so you can for example:
 
 ```mojo
-print(report.mean["ms"]())
+print(report.mean("ms"))
 ```
 
 ```output
@@ -163,7 +160,7 @@ struct Batch:
     var iterations: Int
     """Total iterations in the batch."""
 
-    fn mean(self, unit: StringLiteral = "s") -> Float64:
+    fn mean(self, unit: String = Unit.s) -> Float64:
         """
         Returns the average duration of the batch.
 
@@ -190,7 +187,7 @@ struct Unit:
     """Seconds"""
 
 
-fn _divisor(unit: StringLiteral = "s") -> Int:
+fn _divisor(unit: String) -> Int:
     if unit == Unit.ns:
         return 1
     elif unit == Unit.ms:
@@ -251,7 +248,7 @@ struct Report:
             iters += self.runs[i].iterations
         return iters
 
-    fn duration(self, unit: StringLiteral = Unit.s) -> Float64:
+    fn duration(self, unit: String = Unit.s) -> Float64:
         """
         The total duration it took to run all benchmarks.
 
@@ -266,7 +263,7 @@ struct Report:
             duration += self.runs[i].duration
         return duration / _divisor(unit)
 
-    fn mean(self, unit: StringLiteral = Unit.s) -> Float64:
+    fn mean(self, unit: String = Unit.s) -> Float64:
         """
         The average duration of all benchmark runs.
 
@@ -279,7 +276,7 @@ struct Report:
 
         return self.duration(unit) / self.iters()
 
-    fn min(self, unit: StringLiteral = Unit.s) -> Float64:
+    fn min(self, unit: String = Unit.s) -> Float64:
         """
         The batch of benchmarks that was the fastest to run.
 
@@ -297,7 +294,7 @@ struct Report:
                 min = self.runs[i].mean(unit)
         return min
 
-    fn max(self, unit: StringLiteral = Unit.s) -> Float64:
+    fn max(self, unit: String = Unit.s) -> Float64:
         """
         The batch of benchmarks that was the slowest to run.
 
@@ -313,7 +310,7 @@ struct Report:
                 result = self.runs[i].mean(unit)
         return result
 
-    fn print(self, unit: StringLiteral = Unit.s):
+    fn print(self, unit: String = Unit.s):
         """
         Prints out the shortened version of the report.
 
@@ -339,7 +336,7 @@ struct Report:
         print("Slowest Mean:", self.max(unit))
         print()
 
-    fn print_full(self, unit: StringLiteral = Unit.s):
+    fn print_full(self, unit: String = Unit.s):
         """
         Prints out the full version of the report with each batch of benchmark
         runs.
