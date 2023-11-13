@@ -159,12 +159,14 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   }
   SmallVector<ParamDeclAttr> wrapperDecls;
   ParameterEvaluator evaluator;
+  SmallVector<TypedAttr> paramValues;
   for (auto [i, type] :
        llvm::enumerate(dependentSignatureType.getInputParamTypes())) {
     wrapperDecls.push_back(
         ParamDeclAttr::get(StringAttr::get(getContext(), "p" + Twine(i)),
                            evaluator.getReboundType(type)));
-    evaluator.addInputValue(ParamDeclRefAttr::get(wrapperDecls.back()));
+    paramValues.push_back(ParamDeclRefAttr::get(wrapperDecls.back()));
+    evaluator.addInputValue(paramValues.back());
   }
   StructDeclOp declOp = createStruct(fileModuleOp, name, fieldTypes,
                                      fileModuleOp.getLoc(), wrapperDecls);
@@ -196,34 +198,19 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
-  // Recreate the signature type with no parameters, with all parameter
-  // references being substituted with the struct parameter references.
-  mlir::AttrTypeReplacer replacer;
-  // TODO: This logic is wrong for IndexRefs #24544
-  replacer.addReplacement([&](ParamIndexRefAttr indexRef) {
-    assert(indexRef.getDepth() == 0 && "Only depth 0 references allowed.");
-    assert(indexRef.getIndex() < declOp.getInputParams().size() &&
-           "The closure wrapper is expected to have the same number of "
-           "parameters as the signature for now.");
-    ParamDeclAttr structParameter =
-        declOp.getInputParams()[indexRef.getIndex()];
-    return ParamDeclRefAttr::get(structParameter);
-  });
+  dependentSignatureType = dependentSignatureType.getSpecializedSignature(
+      paramValues, []() -> InFlightDiagnostic {
+        llvm_unreachable("unexpected invalid signature");
+      });
   auto sigMetadata =
       FnMetadataAttr::get(ctx, dependentSignatureType.getArgNames(),
                           dependentSignatureType.getArgPassingKinds());
-  SmallVector<Type> argTypes = llvm::map_to_vector(
-      dependentSignatureType.getValueInputs(),
-      [&](Type argType) -> Type { return replacer.replace(argType); });
-  Type resultType =
-      replacer.replace(dependentSignatureType.getValueResults().front());
-  FunctionType functionType = b.getFunctionType(argTypes, resultType);
-  Location location = shared.translateLocation(nestedFunctionOrTypeLocation);
-  LITSignatureType signatureType = SignatureType::remapToSignature(
-      /*inputParams=*/{}, /*resultParams=*/{}, functionType,
-      dependentSignatureType.getInputConventions(),
-      dependentSignatureType.getFnEffects(), sigMetadata,
-      [&] { return mlir::emitError(location); });
+  Type resultType = dependentSignatureType.getValueResults().front();
+  FunctionType functionType =
+      b.getFunctionType(dependentSignatureType.getValueInputs(), resultType);
+  LITSignatureType signatureType = SignatureType::get(
+      functionType, {}, {}, dependentSignatureType.getInputConventions(),
+      dependentSignatureType.getFnEffects(), sigMetadata);
 
   // Add the call member
   bool hasResultSlot = dependentSignatureType.hasMemoryOnlyResult();
@@ -862,35 +849,19 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   LITSignatureType closureSignature = addClosureSelfArgToFunctionSignature(
       opaquePtrType, ValueInputConvention::BorrowedInReg, functionSignature);
   assert(closureSignature.getValueResults().size() == 1);
+  closureSignature = closureSignature.getSpecializedSignature(
+      ArrayRef(topLevelInputParamRefs).take_front(wrapperParamDecls.size()),
+      []() -> InFlightDiagnostic {
+        llvm_unreachable("unexpected invalid signature");
+      });
 
-  mlir::AttrTypeReplacer replacer;
-  // TODO: This logic is wrong for IndexRefs #24544
-  replacer.addReplacement([&](ParamIndexRefAttr indexRef) {
-    assert(indexRef.getDepth() == 0 && "Only depth 0 references allowed.");
-    ParamDeclAttr decl = topLevelInputParams[indexRef.getIndex()];
-    return ParamDeclRefAttr::get(decl);
-  });
-  replacer.addReplacement([&](ParamDeclRefAttr declRef) {
-    for (auto [index, param] : llvm::enumerate(closureImpl.getInputParams())) {
-      if (param.getName() == declRef.getName()) {
-        return ParamDeclRefAttr::get(topLevelInputParams[index].getName(),
-                                     topLevelInputParams[index].getType());
-      }
-    }
-    return declRef;
-  });
-  Type resultType =
-      replacer.replace(closureSignature.getValueResults().front());
-
-  SmallVector<Type> argumentTypes;
-  for (auto argType : closureSignature.getValueInputs())
-    argumentTypes.push_back(replacer.replace(argType));
+  Type resultType = closureSignature.getValueResults().front();
 
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCall = createFunction(
       generateName("_call_"), topLevelInputParams, paramPassingKinds,
-      argumentTypes, closureSignature.getInputConventions(),
+      closureSignature.getValueInputs(), closureSignature.getInputConventions(),
       closureSignature.getArgNames(), closureSignature.getArgPassingKinds(),
       resultType, SpecialFunctionKind::kNormal, loc, builder,
       closureSignature.getFnEffects());
