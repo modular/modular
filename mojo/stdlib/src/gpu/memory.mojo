@@ -105,7 +105,7 @@ fn async_copy[
 
 @always_inline
 fn async_copy[
-    size: Int, type: AnyType
+    size: Int, type: AnyRegType
 ](
     src: Pointer[type, AddressSpace.GLOBAL],
     dst: Pointer[type, AddressSpace.SHARED],
@@ -141,7 +141,7 @@ fn async_copy[
 
 @always_inline
 fn _copy_device_to_device[
-    type: AnyType
+    type: AnyRegType
 ](device_dest: Pointer[type], device_src: Pointer[type], count: Int,) raises:
     _check_error(
         _get_dylib_function[
@@ -175,7 +175,7 @@ fn _copy_device_to_device[
 
 @always_inline
 fn _copy_device_to_device_async[
-    type: AnyType
+    type: AnyRegType
 ](
     device_dest: Pointer[type],
     device_src: Pointer[type],

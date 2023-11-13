@@ -53,7 +53,7 @@ struct FunctionHandle:
 
     @always_inline
     fn _call_impl[
-        num_captures: Int, populate: _populate_fn_type, T0: AnyType
+        num_captures: Int, populate: _populate_fn_type, T0: AnyRegType
     ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, /, stream: Stream) raises:
         var _arg0 = arg0
 
@@ -67,7 +67,10 @@ struct FunctionHandle:
 
     @always_inline
     fn _call_impl[
-        num_captures: Int, populate: _populate_fn_type, T0: AnyType, T1: AnyType
+        num_captures: Int,
+        populate: _populate_fn_type,
+        T0: AnyRegType,
+        T1: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -95,9 +98,9 @@ struct FunctionHandle:
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -130,10 +133,10 @@ struct FunctionHandle:
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -171,11 +174,11 @@ struct FunctionHandle:
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -218,12 +221,12 @@ struct FunctionHandle:
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -271,13 +274,13 @@ struct FunctionHandle:
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
-        T6: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
+        T6: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -330,14 +333,14 @@ struct FunctionHandle:
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
-        T6: AnyType,
-        T7: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
+        T6: AnyRegType,
+        T7: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -395,15 +398,15 @@ struct FunctionHandle:
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
-        T6: AnyType,
-        T7: AnyType,
-        T8: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
+        T6: AnyRegType,
+        T7: AnyRegType,
+        T8: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -466,16 +469,16 @@ struct FunctionHandle:
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
-        T6: AnyType,
-        T7: AnyType,
-        T8: AnyType,
-        T9: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
+        T6: AnyRegType,
+        T7: AnyRegType,
+        T8: AnyRegType,
+        T9: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -665,7 +668,7 @@ struct _GlobalPayload:
 
 @parameter
 fn _init_fn[
-    func_type: AnyType, func: func_type
+    func_type: AnyRegType, func: func_type
 ](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
     try:
         let payload = payload_ptr.bitcast[_GlobalPayload]().load()
@@ -704,7 +707,7 @@ fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
 
 @always_inline
 fn _get_global_cache_info[
-    func_type: AnyType, func: func_type
+    func_type: AnyRegType, func: func_type
 ](
     debug: Bool = False,
     verbose: Bool = False,
@@ -738,7 +741,7 @@ fn _get_global_cache_info[
 
 
 @register_passable
-struct Function[func_type: AnyType, func: func_type]:
+struct Function[func_type: AnyRegType, func: func_type]:
     var info: _CachedFunctionInfo
 
     alias _impl = _compile_nvptx_asm[func_type, func]()
@@ -792,7 +795,7 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType
+        T0: AnyRegType
     ](
         self,
         grid_dim: Dim,
@@ -808,7 +811,7 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType, T1: AnyType
+        T0: AnyRegType, T1: AnyRegType
     ](
         self,
         grid_dim: Dim,
@@ -825,7 +828,7 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType, T1: AnyType, T2: AnyType
+        T0: AnyRegType, T1: AnyRegType, T2: AnyRegType
     ](
         self,
         grid_dim: Dim,
@@ -843,7 +846,7 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType
+        T0: AnyRegType, T1: AnyRegType, T2: AnyRegType, T3: AnyRegType
     ](
         self,
         grid_dim: Dim,
@@ -862,7 +865,11 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType, T1: AnyType, T2: AnyType, T3: AnyType, T4: AnyType
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -882,12 +889,12 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -918,13 +925,13 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
-        T6: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
+        T6: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -957,14 +964,14 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
-        T6: AnyType,
-        T7: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
+        T6: AnyRegType,
+        T7: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -999,15 +1006,15 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
-        T6: AnyType,
-        T7: AnyType,
-        T8: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
+        T6: AnyRegType,
+        T7: AnyRegType,
+        T8: AnyRegType,
     ](
         self,
         grid_dim: Dim,
@@ -1044,16 +1051,16 @@ struct Function[func_type: AnyType, func: func_type]:
     @closure
     @always_inline
     fn __call__[
-        T0: AnyType,
-        T1: AnyType,
-        T2: AnyType,
-        T3: AnyType,
-        T4: AnyType,
-        T5: AnyType,
-        T6: AnyType,
-        T7: AnyType,
-        T8: AnyType,
-        T9: AnyType,
+        T0: AnyRegType,
+        T1: AnyRegType,
+        T2: AnyRegType,
+        T3: AnyRegType,
+        T4: AnyRegType,
+        T5: AnyRegType,
+        T6: AnyRegType,
+        T7: AnyRegType,
+        T8: AnyRegType,
+        T9: AnyRegType,
     ](
         self,
         grid_dim: Dim,

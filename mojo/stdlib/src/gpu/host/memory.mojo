@@ -17,7 +17,7 @@ from .stream import Stream, _StreamImpl
 # ===----------------------------------------------------------------------===#
 
 
-fn _malloc[type: AnyType](count: Int) raises -> Pointer[type]:
+fn _malloc[type: AnyRegType](count: Int) raises -> Pointer[type]:
     var ptr = Pointer[UInt32]()
     _check_error(
         _get_dylib_function[fn (Pointer[Pointer[UInt32]], Int) -> Result](
@@ -31,7 +31,7 @@ fn _malloc[type: DType](count: Int) raises -> DTypePointer[type]:
     return _malloc[SIMD[type, 1]](count)
 
 
-fn _malloc_managed[type: AnyType](count: Int) raises -> Pointer[type]:
+fn _malloc_managed[type: AnyRegType](count: Int) raises -> Pointer[type]:
     var ptr = Pointer[UInt32]()
     _check_error(
         _get_dylib_function[fn (Pointer[Pointer[UInt32]], Int) -> Result](
@@ -45,7 +45,7 @@ fn _malloc_managed[type: DType](count: Int) raises -> DTypePointer[type]:
     return _malloc_managed[SIMD[type, 1]](count)
 
 
-fn _free[type: AnyType](ptr: Pointer[type]) raises:
+fn _free[type: AnyRegType](ptr: Pointer[type]) raises:
     _check_error(
         _get_dylib_function[fn (Pointer[UInt32]) -> Result]("cuMemFree_v2")(
             ptr.bitcast[UInt32]()
@@ -58,7 +58,7 @@ fn _free[type: DType](ptr: DTypePointer[type]) raises:
 
 
 fn _copy_host_to_device[
-    type: AnyType
+    type: AnyRegType
 ](device_dest: Pointer[type], host_src: Pointer[type], count: Int) raises:
     _check_error(
         _get_dylib_function[
@@ -84,7 +84,7 @@ fn _copy_host_to_device[
 
 
 fn _copy_device_to_host[
-    type: AnyType
+    type: AnyRegType
 ](host_dest: Pointer[type], device_src: Pointer[type], count: Int) raises:
     _check_error(
         _get_dylib_function[
@@ -110,7 +110,7 @@ fn _copy_device_to_host[
 
 
 fn _copy_device_to_host_async[
-    type: AnyType
+    type: AnyRegType
 ](
     host_dest: Pointer[type],
     device_src: Pointer[type],
@@ -146,7 +146,7 @@ fn _copy_device_to_host_async[
 
 
 fn _memset[
-    type: AnyType
+    type: AnyRegType
 ](device_dest: Pointer[type], val: UInt8, count: Int) raises:
     _check_error(
         _get_dylib_function[fn (Pointer[UInt32], UInt8, Int) -> Result](

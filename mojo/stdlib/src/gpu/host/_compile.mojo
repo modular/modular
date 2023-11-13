@@ -49,7 +49,7 @@ struct _CompiledClosure:
 
 @always_inline
 fn __compile_nvptx_asm_impl[
-    func_type: AnyType, func: func_type->closure: _CompiledClosure
+    func_type: AnyRegType, func: func_type->closure: _CompiledClosure
 ]():
     alias impl = __mlir_attr[
         `#kgen.param.expr<compile_assembly,`,
@@ -72,12 +72,14 @@ fn __compile_nvptx_asm_impl[
 
 @always_inline
 fn _compile_nvptx_asm[
-    func_type: AnyType, func: func_type
+    func_type: AnyRegType, func: func_type
 ]() -> _CompiledClosure:
     alias closure: _CompiledClosure
     __compile_nvptx_asm_impl[func_type, func -> closure]()
     return closure
 
 
-fn _get_nvptx_fn_name[func_type: AnyType, func: func_type]() -> StringLiteral:
+fn _get_nvptx_fn_name[
+    func_type: AnyRegType, func: func_type
+]() -> StringLiteral:
     return get_linkage_name[_get_nvptx_target(), func_type, func]()
