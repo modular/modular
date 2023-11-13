@@ -168,6 +168,36 @@ fn param_if_and[a: Bool, b: Bool]():
   # CHECK:   kgen.param.yield
   # CHECK: }
 
+# [Mojo] Can't have try inside else branch
+# https://github.com/modularml/modular/issues/25305
+# CHECK-LABEL: lit.func @"if_try
+fn if_try():
+    # CHECK: hlcf.if %0 {
+    if True:
+        # CHECK: lit.try {
+        try:
+            # CHECK: lit.letreg.decl "b"
+            let b = 1
+            # CHECK: lit.try.yield
+        # CHECK: } except (%arg0: !Error)
+        except e:
+            # CHECK: lit.letreg.decl "c"
+            let c = 2
+            # CHECK: lit.try.yield
+        # CHECK-NEXT: } else {
+        # CHECK-NEXT:  lit.try.yield
+        # CHECK-NEXT:} finally {
+        # CHECK-NEXT:  lit.try.yield
+        # CHECK-NEXT:}
+        # CHECK-NEXT: hlcf.yield
+    # CHECK-NEXT: } else {
+    else:
+        # CHECK: lit.letreg.decl "d"
+        let d = 3
+        # CHECK-NEXT: hlcf.yield
+    # CHECK-NEXT: }
+
+
 ##===----------------------------------------------------------------------===##
 # While
 ##===----------------------------------------------------------------------===##

@@ -1131,7 +1131,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
     // Parse the else suite if present. Otherwise, leave it as empty.
     builder.createBlock(&tryOp.getElseRegion());
-    if (consumeIf(Token::kw_else)) {
+    if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+        consumeIf(Token::kw_else)) {
       if (parseToken(Token::colon, "expected ':' after 'else'") ||
           parseLocalScopeSuite(curIndent))
         return failure();
