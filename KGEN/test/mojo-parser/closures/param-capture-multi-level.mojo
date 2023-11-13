@@ -1,0 +1,34 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen-translate %s -import-mojo | kgen-opt -verify-parameters | FileCheck %s
+
+
+@value
+@register_passable
+struct Foo[a: Int]:
+    var b: Int
+
+    fn get(self) -> Int:
+        return a + self.b
+
+
+fn bar[a: Int, b: Int]() -> Int:
+    return b * a
+
+
+# CHECK: lit.struct.decl @"`_CI_{{.*}}"<[[X:.*]]: !lit.signature<() -> !Int>, [[Y:[0-9a-zA-Z_]+]]: {{.*}}Foo<:!Int apply(:!lit.signature<() -> !Int> [[X]])>
+# CHECK: lit.func @"__call__{{.*}}"(
+# CHECK: constant: !Int = <{{.*}} [[X]])> {{.*}} [[Y]], "b">
+fn parameter_capture_multiple_levels[
+    a: Int
+](c: Int) -> fn (x: Int) escaping -> Int:
+    alias X = bar[a, a]
+    alias Y = Foo[X()](2)
+
+    fn p_capture(x: Int) escaping -> Int:
+        return Y.b + c
+
+    return p_capture
