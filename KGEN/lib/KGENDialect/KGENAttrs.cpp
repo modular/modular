@@ -867,7 +867,8 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   }
   for (auto [i, operand, type] :
        llvm::enumerate(operands, sig.getValueInputs())) {
-    if (operand.getType() != type) {
+    Type expected = upbindApplyResult(type);
+    if (operand.getType() != expected) {
       return emitError() << "'apply' operand #" << i << " type "
                          << operand.getType()
                          << " does not match expected type " << type;

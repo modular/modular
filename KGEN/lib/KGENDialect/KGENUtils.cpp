@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -628,8 +629,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     if (parseParamValue(p, operands.emplace_back(), sig))
       return failure();
     // Parse each operand, inferring its type from the signature type.
+    IndexDepthAdjuster adjuster(/*adjustDepth=*/-1);
     for (Type type : sig.getValueInputs())
-      if (p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
+      if (p.parseComma() ||
+          parseParamValue(p, operands.emplace_back(), adjuster.replace(type)))
         return failure();
     return success();
   }
