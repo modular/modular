@@ -113,7 +113,7 @@ fn _async_and_then(hdl: __mlir_type.`!kgen.pointer<i8>`, chain: Pointer[Chain]):
     )
 
 
-fn _async_execute[type: AnyType](handle: Coroutine[type], rt: Runtime):
+fn _async_execute[type: AnyRegType](handle: Coroutine[type], rt: Runtime):
     external_call["KGEN_CompilerRT_LLCL_Execute", NoneType](
         _coro_resume_fn, handle._handle, rt.ptr
     )
@@ -236,7 +236,7 @@ struct Runtime:
         ](self.ptr).to_int()
 
     fn create_task[
-        type: AnyType
+        type: AnyRegType
     ](self, owned handle: Coroutine[type]) -> Task[type]:
         """Run the coroutine as a task on the LLCL Runtime."""
         let ctx = handle.get_ctx[AsyncContext]()
@@ -245,7 +245,7 @@ struct Runtime:
         _async_execute(handle, self)
         return Task[type](handle ^)
 
-    fn run[type: AnyType](self, owned handle: Coroutine[type]) -> type:
+    fn run[type: AnyRegType](self, owned handle: Coroutine[type]) -> type:
         let t = self.create_task(handle ^)
         let result = t.wait()
         return result
@@ -256,7 +256,7 @@ struct Runtime:
 # ===----------------------------------------------------------------------===#
 
 
-struct Task[type: AnyType]:
+struct Task[type: AnyRegType]:
     var handle: Coroutine[type]
 
     fn __init__(inout self, owned handle: Coroutine[type]):
@@ -312,7 +312,7 @@ struct TaskGroupContext:
     var task_group: Pointer[TaskGroup]
 
 
-struct TaskGroupTask[type: AnyType]:
+struct TaskGroupTask[type: AnyRegType]:
     """A task that belongs to a taskgroup. This object retains ownership of the
     underlying coroutine handle, which can be used to query the results of the
     task once the taskgroup completes.
@@ -358,7 +358,7 @@ struct TaskGroup:
             _async_complete(Pointer[Chain].address_of(self.chain))
 
     fn create_task[
-        type: AnyType
+        type: AnyRegType
     ](inout self, owned task: Coroutine[type]) -> TaskGroupTask[type]:
         self.counter += 1
         let task_group_txt = task.get_ctx[TaskGroupContext]()
@@ -677,7 +677,7 @@ struct AsyncTaskGroupContext:
         self.async_task_group_ptr = async_task_group_ptr
 
 
-struct CoroutineList[type: AnyType]:
+struct CoroutineList[type: AnyRegType]:
     var data: Pointer[Coroutine[type]]
     var size: Int
 
