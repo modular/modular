@@ -1,9 +1,11 @@
 // RUN: kgen-opt %s | kgen-opt | FileCheck %s
 // RUN: kgen-opt -emit-bytecode %s | kgen-opt | FileCheck %s
 
-// CHECK-LABEL: @sugaredScalar
-// CHECK-SAME: %arg0: !kgen.pointer<*"scalar">
-kgen.generator @sugaredScalar<scalar: regtype>(%arg0: !kgen.pointer<*"scalar">) {
+// CHECK-LABEL: @genericSugar<scalar: regtype, T: type>
+// CHECK-SAME: %arg0: !kgen.pointer<*"scalar">, %arg1: !kgen.pointer<T>
+kgen.generator @genericSugar<scalar: regtype, T: type>(
+  %arg0: !kgen.pointer<*"scalar">, %arg1: !kgen.pointer<T>
+) {
   kgen.return
 }
 
