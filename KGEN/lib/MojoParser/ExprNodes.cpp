@@ -2971,12 +2971,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         DeclResolver::parametersInScope(emitter.declScope);
 
     // Create a self contained signature type that represents the closure.
-    LITSignatureType closureWrapperSignature =
-        DeclResolver::createSelfContainedSignature(
-            signature, parameterDeclarationsInScope,
-            [&](StringRef errorMessage) {
-              emitter.emitError(getLoc(), errorMessage);
-            });
+    auto [capturedRefs, closureWrapperSignature] =
+        DeclResolver::createSelfContainedSignature(signature);
     ASTDecl *astDecl = emitter.declScope.getNearestDeclOfType<FileModuleOp>();
     StructDeclOp declOp = emitter.shared.getOrGenerateClosureWrapperStruct(
         getLoc(), closureWrapperSignature, astDecl);
@@ -2987,20 +2983,9 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // Build the return type by binding the parent parameter values to the
     // struct parameters.
-    SmallPtrSet<StringAttr, 4> signatureDecls;
-    signature.walk([&](ParamDeclRefAttr paramDeclRef) {
-      signatureDecls.insert(paramDeclRef.getName());
-    });
-    SmallVector<ParameterCapture> newParameterInfos;
-    // Parameters in the parameterDeclarationsInScope are already ordered
-    // according to declaration so no need to track depth.
-    for (auto [i, parameter] : llvm::enumerate(parameterDeclarationsInScope)) {
-      if (signatureDecls.contains(parameter.getMangledName()))
-        newParameterInfos.push_back(
-            ParameterCapture(parameter.getDecl(), i, 0));
-    }
-    Type selfType = DeclResolver::createTypeFromSubsetOfParentParameters(
-        emitter.shared, declOp, newParameterInfos);
+    // TODO: Handle partial binding.
+    DeclRefType selfType = declOp.bindReference(llvm::map_to_vector(
+        capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
     return emitter.emitResult(ASTType(selfType), this, dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);

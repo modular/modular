@@ -76,6 +76,8 @@ def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type),
       "return $_get(type.getContext(), name, type);">,
+    AttrBuilderWithInferredContext<(ins "ParamDeclRefAttr":$ref),
+      "return $_get(ref.getContext(), ref.getName(), ref.getType());">,
     AttrBuilderWithInferredContext<(ins "StringRef":$name, "Type":$type),
       "return get(StringAttr::get(type.getContext(), name), type);">
   ];
