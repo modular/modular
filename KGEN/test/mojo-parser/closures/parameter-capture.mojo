@@ -223,6 +223,10 @@ struct Foo[A: Int, B: DType]:
         return A
 
 
+fn use(a: Int):
+    pass
+
+
 # COM: Ensure the captured parameter is added to the Closure Impl
 # CHECK: lit.struct.decl @"_CI_{{.*}}"<p0[p0]: !DType, |>
 
@@ -234,6 +238,6 @@ fn make_closure[
     c_type: DType
 ](w: Int) -> fn (z: Foo[2, c_type]) escaping -> None:
     fn foo(z: Foo[2, c_type]) escaping -> None:
-        print(z.get())
+        use(z.get())
 
     return foo
