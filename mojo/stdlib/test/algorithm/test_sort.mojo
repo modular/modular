@@ -21,7 +21,7 @@ fn test_sort_small_3():
     vector.push_back(2)
 
     @parameter
-    fn _less_than_equal[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _less_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) <= rebind[Int](rhs)
 
     _small_sort[length, Int, _less_than_equal](vector.data)
@@ -49,7 +49,7 @@ fn test_sort_small_5():
     vector.push_back(4)
 
     @parameter
-    fn _less_than_equal[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _less_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) <= rebind[Int](rhs)
 
     _small_sort[length, Int, _less_than_equal](vector.data)
@@ -147,7 +147,7 @@ fn test_sort3_dupe_elements():
     alias length = 3
 
     fn test[
-        cmp_fn: fn[type: AnyType] (type, type) capturing -> Bool,
+        cmp_fn: fn[type: AnyRegType] (type, type) capturing -> Bool,
     ]():
         var vector = DynamicVector[Int](3)
         vector.push_back(5)
@@ -165,11 +165,11 @@ fn test_sort3_dupe_elements():
         vector._del_old()
 
     @parameter
-    fn _lt[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _lt[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) < rebind[Int](rhs)
 
     @parameter
-    fn _leq[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _leq[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) <= rebind[Int](rhs)
 
     test[_lt]()
@@ -385,7 +385,7 @@ fn test_quick_sort_repeated_val():
         vector.push_back(i + 1)
 
     @parameter
-    fn _greater_than[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _greater_than[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Float32](lhs) > rebind[Float32](rhs)
 
     _quicksort[Float32, _greater_than](vector.data, vector.__len__())
@@ -430,7 +430,7 @@ fn test_quick_sort_repeated_val():
         print(vector[i])
 
     @parameter
-    fn _less_than[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _less_than[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Float32](lhs) < rebind[Float32](rhs)
 
     # CHECK: 1.0
@@ -489,7 +489,7 @@ fn test_partition_top_k(length: Int, k: Int):
         vector.push_back(i)
 
     @parameter
-    fn _great_than_equal[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _great_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Float32](lhs) >= rebind[Float32](rhs)
 
     partition[Float32, _great_than_equal](vector.data, k, vector.__len__())
@@ -509,8 +509,8 @@ fn test_sort_stress():
 
     @parameter
     fn test[
-        cmp_fn: fn[type: AnyType] (type, type) capturing -> Bool,
-        check_fn: fn[type: AnyType] (type, type) capturing -> Bool,
+        cmp_fn: fn[type: AnyRegType] (type, type) capturing -> Bool,
+        check_fn: fn[type: AnyRegType] (type, type) capturing -> Bool,
     ](length: Int):
         var vector = DynamicVector[Int](length)
         for i in range(length):
@@ -528,22 +528,22 @@ fn test_sort_stress():
 
     @parameter
     @always_inline
-    fn _gt[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _gt[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) > rebind[Int](rhs)
 
     @parameter
     @always_inline
-    fn _geq[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _geq[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) >= rebind[Int](rhs)
 
     @parameter
     @always_inline
-    fn _lt[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _lt[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) < rebind[Int](rhs)
 
     @parameter
     @always_inline
-    fn _leq[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _leq[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) <= rebind[Int](rhs)
 
     for i in range(len(lens)):

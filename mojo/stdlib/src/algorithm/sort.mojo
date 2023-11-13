@@ -25,14 +25,14 @@ from utils.vector import DynamicVector
 
 
 @always_inline
-fn _swap[type: AnyType](inout lhs: type, inout rhs: type):
+fn _swap[type: AnyRegType](inout lhs: type, inout rhs: type):
     let tmp = lhs
     lhs = rhs
     rhs = tmp
 
 
 @always_inline
-fn _swap[type: AnyType](array: Pointer[type], i0: Int, i1: Int):
+fn _swap[type: AnyRegType](array: Pointer[type], i0: Int, i1: Int):
     let tmp = array.load(i0)
     array.store(i0, array.load(i1))
     array.store(i1, tmp)
@@ -42,11 +42,11 @@ fn _swap[type: AnyType](array: Pointer[type], i0: Int, i1: Int):
 # sort
 # ===----------------------------------------------------------------------===#
 
-alias _cmp_fn_type = fn[type: AnyType] (type, type) capturing -> Bool
+alias _cmp_fn_type = fn[type: AnyRegType] (type, type) capturing -> Bool
 
 
 fn _insertion_sort[
-    type: AnyType, cmp_fn: _cmp_fn_type
+    type: AnyRegType, cmp_fn: _cmp_fn_type
 ](array: Pointer[type], start: Int, end: Int):
     """Sort the array[start:end] slice"""
 
@@ -65,7 +65,7 @@ fn _insertion_sort[
 
 
 fn _partition[
-    type: AnyType, cmp_fn: _cmp_fn_type
+    type: AnyRegType, cmp_fn: _cmp_fn_type
 ](array: Pointer[type], start: Int, end: Int) -> Int:
     if start == end:
         return end
@@ -99,7 +99,7 @@ fn _estimate_initial_height(size: Int) -> Int:
 
 
 fn _quicksort[
-    type: AnyType, cmp_fn: _cmp_fn_type
+    type: AnyRegType, cmp_fn: _cmp_fn_type
 ](array: Pointer[type], size: Int):
     if size == 0:
         return
@@ -149,7 +149,7 @@ fn _quicksort[
 # partition
 # ===----------------------------------------------------------------------===#
 fn partition[
-    type: AnyType, cmp_fn: _cmp_fn_type
+    type: AnyRegType, cmp_fn: _cmp_fn_type
 ](buff: Pointer[type], k: Int, size: Int):
     """Partition the input vector inplace such that first k elements are the
     largest (or smallest if cmp_fn is <= operator) elements.
@@ -198,7 +198,7 @@ fn sort(inout buff: Pointer[Int], len: Int):
     """
 
     @parameter
-    fn _less_than_equal[type: AnyType](lhs: type, rhs: type) -> Bool:
+    fn _less_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) <= rebind[Int](rhs)
 
     _quicksort[Int, _less_than_equal](buff, len)
@@ -218,7 +218,7 @@ fn sort[type: DType](inout buff: Pointer[SIMD[type, 1]], len: Int):
     """
 
     @parameter
-    fn _less_than_equal[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
+    fn _less_than_equal[ty: AnyRegType](lhs: ty, rhs: ty) -> Bool:
         return rebind[SIMD[type, 1]](lhs) <= rebind[SIMD[type, 1]](rhs)
 
     _quicksort[SIMD[type, 1], _less_than_equal](buff, len)
@@ -257,7 +257,7 @@ fn sort[type: DType](inout v: DynamicVector[SIMD[type, 1]]):
 
 @always_inline
 fn _sort2[
-    type: AnyType, cmp_fn: _cmp_fn_type
+    type: AnyRegType, cmp_fn: _cmp_fn_type
 ](array: Pointer[type], offset0: Int, offset1: Int):
     let a = array.load(offset0)
     let b = array.load(offset1)
@@ -268,7 +268,7 @@ fn _sort2[
 
 @always_inline
 fn _sort_partial_3[
-    type: AnyType, cmp_fn: _cmp_fn_type
+    type: AnyRegType, cmp_fn: _cmp_fn_type
 ](array: Pointer[type], offset0: Int, offset1: Int, offset2: Int):
     let a = array.load(offset0)
     let b = array.load(offset1)
@@ -286,7 +286,7 @@ fn _sort_partial_3[
 
 @always_inline
 fn _small_sort[
-    n: Int, type: AnyType, cmp_fn: _cmp_fn_type
+    n: Int, type: AnyRegType, cmp_fn: _cmp_fn_type
 ](array: Pointer[type]):
     @parameter
     if n == 2:
