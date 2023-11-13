@@ -74,12 +74,12 @@ kgen.generator @parent<A>() {
   // CHECK: %[[R1:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
   // CHECK-NEXT: hlcf.break "[[LABEL]]" %[[R1]]
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee<:type index>() : () -> index
+  %0 = kgen.call @callee<:regtype index>() : () -> index
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<T: type>() -> !kgen.paramref<T> always_inline {
+kgen.generator @callee<T: regtype>() -> !kgen.paramref<T> always_inline {
   %0 = "some.producer"() : () -> !kgen.paramref<T>
   %cond = "some.cond"() : () -> i1
   hlcf.if %cond {
@@ -627,37 +627,37 @@ kgen.generator @callee() always_inline {
 
 // CHECK-LABEL: kgen.generator @rebind_call_operands
 kgen.generator @rebind_call_operands(%arg0: !pop.scalar<f32>) {
-  // CHECK: kgen.param.declare type: dtype = <f32>
-  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<f32> to !pop.scalar<type>
-  // CHECK: pop.simd.extractelement %0[%idx0] : !pop.scalar<type>
+  // CHECK: kgen.param.declare DT: dtype = <f32>
+  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<f32> to !pop.scalar<DT>
+  // CHECK: pop.simd.extractelement %0[%idx0] : !pop.scalar<DT>
   kgen.call @callee<:dtype f32>(%arg0) : (!pop.scalar<f32>) -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<type: dtype>(%arg0: !pop.scalar<type>) always_inline {
+kgen.generator @callee<DT: dtype>(%arg0: !pop.scalar<DT>) always_inline {
   %idx0 = index.constant 0
-  %0 = pop.simd.extractelement %arg0[%idx0] : !pop.scalar<type>
+  %0 = pop.simd.extractelement %arg0[%idx0] : !pop.scalar<DT>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: kgen.generator @rebind_mangled_types
-kgen.generator @rebind_mangled_types<type: dtype>(%arg0: !pop.scalar<type>) {
-  // CHECK: kgen.param.declare type0: dtype = <type>
-  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<type> to !pop.scalar<type0>
-  // CHECK: %1 = pop.simd.extractelement %0[%idx0] : !pop.scalar<type0>
-  // CHECK: %2 = kgen.rebind %1 : !pop.scalar<type0> to !pop.scalar<type>
-  %0 = kgen.call @callee<:dtype type>(%arg0) : (!pop.scalar<type>) -> !pop.scalar<type>
+kgen.generator @rebind_mangled_types<DT: dtype>(%arg0: !pop.scalar<DT>) {
+  // CHECK: kgen.param.declare DT0: dtype = <DT>
+  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<DT> to !pop.scalar<DT0>
+  // CHECK: %1 = pop.simd.extractelement %0[%idx0] : !pop.scalar<DT0>
+  // CHECK: %2 = kgen.rebind %1 : !pop.scalar<DT0> to !pop.scalar<DT>
+  %0 = kgen.call @callee<:dtype DT>(%arg0) : (!pop.scalar<DT>) -> !pop.scalar<DT>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<type: dtype>(%arg0: !pop.scalar<type>) -> !pop.scalar<type> always_inline {
+kgen.generator @callee<DT: dtype>(%arg0: !pop.scalar<DT>) -> !pop.scalar<DT> always_inline {
   %idx0 = index.constant 0
-  %0 = pop.simd.extractelement %arg0[%idx0] : !pop.scalar<type>
-  kgen.return %0 : !pop.scalar<type>
+  %0 = pop.simd.extractelement %arg0[%idx0] : !pop.scalar<DT>
+  kgen.return %0 : !pop.scalar<DT>
 }
 
 // -----
@@ -794,16 +794,16 @@ kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
 #loc = loc(fused<#subprogram>[#fileLoc])
 
 // CHECK-LABEL: kgen.generator @parent
-kgen.generator @parent<T: type>(%arg0: index) {
-  // CHECK: kgen.param.declare T0: type = <index> loc(#[[CALL_LOC:.*]])
+kgen.generator @parent<T: regtype>(%arg0: index) {
+  // CHECK: kgen.param.declare T0: regtype = <index> loc(#[[CALL_LOC:.*]])
   // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.paramref<T0> loc(#[[CALL_LOC]])
   // CHECK-NEXT: kgen.return
-  kgen.call @nodebug_inline_me<:type index>(%arg0) : (index) -> () loc(#loc)
+  kgen.call @nodebug_inline_me<:regtype index>(%arg0) : (index) -> () loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
 
 // CHECK-LABEL: kgen.generator @nodebug_inline_me
-kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inline_no_debug {
+kgen.generator @nodebug_inline_me<T: regtype>(%arg0: !kgen.paramref<T>) always_inline_no_debug {
   debuginfo.value #local_variable = %arg0 : !kgen.paramref<T> loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
@@ -1211,13 +1211,13 @@ kgen.generator @top() {
 
 // -----
 
-kgen.generator @trivial<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
+kgen.generator @trivial<T: regtype>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
   kgen.return %arg0 : !kgen.paramref<T>
 }
 
 // CHECK-LABEL: kgen.generator @trivial_exprs
 kgen.generator @trivial_exprs() {
   // CHECK-NEXT: constant = <2>
-  kgen.param.constant = <apply(:(index) -> index @trivial<:type index>, 2)>
+  kgen.param.constant = <apply(:(index) -> index @trivial<:regtype index>, 2)>
   kgen.return
 }

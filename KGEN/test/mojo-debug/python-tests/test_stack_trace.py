@@ -26,23 +26,24 @@ class TestStackTrace(LLDBTestBase):
             self.assertRegex(
                 frame_descs[0],
                 (
-                    r"stack-trace.Foo\[...\].getParametrized\[...\].nested_function\(z=105.25\)"
-                    r" at stack-trace.mojo:15:13"
+                    r"stack-trace.Foo\[...\].getParametrized\[...\]"
+                    r".nested_function\(z=105.25\) at stack-trace.mojo:15:13"
                 ),
             )
             self.assertRegex(
                 frame_descs[1],
                 (
-                    r"stack-trace.Foo\[index,"
-                    r" index\].getParametrized\[scalar<f32>\]\(self=0x.*,"
+                    r"stack-trace.Foo\[:regtype index, :regtype index\]"
+                    r".getParametrized\[:regtype scalar<f32>\]\(self=0x.*,"
                     r" val=105.25\) at stack-trace.mojo:17:31"
                 ),
             )
             self.assertRegex(
                 frame_descs[2],
                 (
-                    r"stack-trace.Foo\[index, index\].getFloat\(self=0x.*,"
-                    r" x=1.125, y=100\) at stack-trace.mojo:20:45"
+                    r"stack-trace.Foo\[:regtype index, :regtype index\]"
+                    r".getFloat\(self=0x.*, x=1.125, y=100\)"
+                    r" at stack-trace.mojo:20:45"
                 ),
             )
             self.assertIn(

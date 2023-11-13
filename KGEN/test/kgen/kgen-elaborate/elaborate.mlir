@@ -45,7 +45,7 @@ kgen.generator @unknown_attr<width>() {
 }
 
 // CHECK-LABEL: @"empty_variadic,T=i32"
-kgen.generator @empty_variadic<T: type>() {
+kgen.generator @empty_variadic<T: regtype>() {
   // CHECK-NEXT: constant: variadic<i32> = <[]>
   kgen.param.constant: variadic<T> = <[]>
   kgen.return
@@ -54,7 +54,7 @@ kgen.generator @empty_variadic<T: type>() {
 // CHECK-LABEL: @call_unknown_attr
 kgen.generator @call_unknown_attr() {
   kgen.call @unknown_attr<4>() : () -> ()
-  kgen.call @empty_variadic<:type i32>() : () -> ()
+  kgen.call @empty_variadic<:regtype i32>() : () -> ()
   kgen.return
 }
 
@@ -68,20 +68,20 @@ kgen.generator @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:    kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
 
-kgen.generator @genA<size, type: dtype, val: f32 -> result: index>(%arg0: si32) -> si32 {
+kgen.generator @genA<size, DT: dtype, val: f32 -> result: index>(%arg0: si32) -> si32 {
 
   %0 = kgen.param.constant = <add(size, 4)>
-  %1 = kgen.param.constant: dtype = <type>
+  %1 = kgen.param.constant: dtype = <DT>
   %2 = kgen.param.constant: f32 = <val>
 
   // Silly op so we know when something used this.
-  "genA.op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !pop.scalar<type>
+  "genA.op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !pop.scalar<DT>
 
   kgen.param.result_bind<mul(size, 2)>
   kgen.return %arg0 : si32
 }
 
-// CHECK-LABEL: kgen.func @"genA,size=19,type=si8,val=1.50{{.*}}"
+// CHECK-LABEL: kgen.func @"genA,size=19,DT=si8,val=1.50{{.*}}"
 // CHECK-SAME: (%[[ARG0:.*]]: si32) -> si32 {
 // CHECK-NEXT:    %[[V0:.*]] = kgen.param.constant  = <23>
 // CHECK-NEXT:    %[[V1:.*]] = kgen.param.constant: dtype = <si8>
@@ -90,7 +90,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> result: index>(%arg0: si32) 
 // CHECK-NEXT:    kgen.return %[[ARG0]] : si32
 // CHECK-NEXT:  }
 
-// CHECK-LABEL: kgen.func @"genA,size=42,type=f32,val=2.00{{.*}}"
+// CHECK-LABEL: kgen.func @"genA,size=42,DT=f32,val=2.00{{.*}}"
 // CHECK-SAME: (%[[ARG0:.*]]: si32) -> si32 {
 // CHECK-NEXT:   %[[V0:.*]] = kgen.param.constant  = <46>
 // CHECK-NEXT:   %[[V1:.*]] = kgen.param.constant: dtype = <f32>
@@ -112,13 +112,13 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
 
   // Can invoke parameterized generators directly.
   %1 = kgen.call @genA<our_size, :dtype f32, :f32 2.0 -> resultSizeA>(%arg0) : (si32) -> si32
-  // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=42,type=f32,val=2.00{{.*}}"(%[[ARG0]]) : (si32) -> si32
+  // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=42,DT=f32,val=2.00{{.*}}"(%[[ARG0]]) : (si32) -> si32
 
   %2 = kgen.call @genA<19, :dtype si8, :f32 1.5 -> resultSizeB>(%arg1) : (si32) -> si32
-  // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=19,type=si8,val=1.50{{.*}}"(%[[ARG1]]) : (si32) -> si32
+  // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=19,DT=si8,val=1.50{{.*}}"(%[[ARG1]]) : (si32) -> si32
 
   %3 = kgen.call @genA<19, :dtype si8, :f32 1.5 -> resultSizeC>(%arg1) : (si32) -> si32
-  // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=19,type=si8,val=1.50{{.*}}"(%[[ARG1]]) : (si32) -> si32
+  // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=19,DT=si8,val=1.50{{.*}}"(%[[ARG1]]) : (si32) -> si32
 
 
   %4 = kgen.param.constant = <resultSizeA>
@@ -240,27 +240,27 @@ kgen.generator @track_expansions(%arg0: si32) {
 
 // Test that parameter and result argument types get rewritten and specialized.
 
-// CHECK-LABEL: kgen.func @"float_constant_f32,value=1.50{{.*}},type=f32"() -> !pop.scalar<f32> {
+// CHECK-LABEL: kgen.func @"float_constant_f32,value=1.50{{.*}},DT=f32"() -> !pop.scalar<f32> {
 // ...
 // CHECK:    %[[V1:.*]] = llvm.fptrunc
 // CHECK:    %[[V2:.*]] = pop.cast_from_builtin %[[V1]] : f32 to !pop.scalar<f32>
 // CHECK:    kgen.return %[[V2]] : !pop.scalar<f32>
 
-kgen.generator @float_constant_f32<value: f64, type: dtype>() -> !pop.scalar<type>
-  constraints <[eq(:dtype type, f32), "float please"]>  {
+kgen.generator @float_constant_f32<value: f64, DT: dtype>() -> !pop.scalar<DT>
+  constraints <[eq(:dtype DT, f32), "float please"]>  {
   %0 = kgen.param.constant: f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
-  %2 = pop.cast_from_builtin %1: f32 to !pop.scalar<type>
-  kgen.return %2 : !pop.scalar<type>
+  %2 = pop.cast_from_builtin %1: f32 to !pop.scalar<DT>
+  kgen.return %2 : !pop.scalar<DT>
 }
 
 // CHECK-LABEL: kgen.func @test_f32() -> f32 {
-// CHECK:    %[[V0:.*]] = kgen.call @"float_constant_f32,value=1.50{{.*}},type=f32"() : () -> !pop.scalar<f32>
+// CHECK:    %[[V0:.*]] = kgen.call @"float_constant_f32,value=1.50{{.*}},DT=f32"() : () -> !pop.scalar<f32>
 // CHECK:    %[[V1:.*]] = pop.cast_to_builtin %[[V0]] : !pop.scalar<f32> to f32
 kgen.generator @test_f32() -> f32 {
-  kgen.param.declare type : dtype = <f32>
-  %1 = kgen.call @float_constant_f32<:f64 1.5, :dtype type>() : () -> !pop.scalar<type>
-  %2 = pop.cast_to_builtin %1 : !pop.scalar<type> to f32
+  kgen.param.declare DT : dtype = <f32>
+  %1 = kgen.call @float_constant_f32<:f64 1.5, :dtype DT>() : () -> !pop.scalar<DT>
+  %2 = pop.cast_to_builtin %1 : !pop.scalar<DT> to f32
   kgen.return %2 : f32
 }
 
@@ -313,7 +313,7 @@ kgen.generator @parametricAdd<sz, dt: dtype>
 // CHECK-LABEL: kgen.func @parametricTypes(
 kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !pop.simd<2, f32>) {
   kgen.param.declare dt: dtype = <ui32>
-  kgen.param.declare ty1: type = <!pop.scalar<dt>>
+  kgen.param.declare ty1: regtype = <!pop.scalar<dt>>
 
   // CHECK-NEXT:   "impl.0"() : () -> !pop.scalar<ui32>
   "impl.0"() : () -> !kgen.paramref<ty1>
@@ -402,7 +402,7 @@ kgen.generator @test_symbol() {
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>, %[[ARG1:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
 // CHECK-NEXT: %[[V0:.*]] = "custom.op"(%[[ARG0]], %[[ARG1]]) : (!pop.scalar<f32>, !pop.scalar<f32>) -> !pop.scalar<f32>
 // CHECK-NEXT: kgen.return %[[V0]] : !pop.scalar<f32>
-kgen.generator @parametricBinOp<ty: type>
+kgen.generator @parametricBinOp<ty: regtype>
   (%a: !kgen.paramref<ty>, %b: !kgen.paramref<ty>) -> !kgen.paramref<ty> {
   %res = "custom.op" (%a, %b) : (!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
   kgen.return %res : !kgen.paramref<ty>
@@ -411,7 +411,7 @@ kgen.generator @parametricBinOp<ty: type>
 // CHECK-LABEL: kgen.func @"takeParametricBinary,dt=f32,fn=@parametricBinOp"() {
 kgen.generator @takeParametricBinary
   <dt: dtype,
-   fn: <type>(!kgen.paramref<*(0,0)>, !kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)>
+   fn: <regtype>(!kgen.paramref<*(0,0)>, !kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)>
   >() {
 
   %one = kgen.param.constant: scalar<si64> = <1>
@@ -419,7 +419,7 @@ kgen.generator @takeParametricBinary
 
   // CHECK: kgen.call @"parametricBinOp,ty=scalar<f32>"
   %1 = kgen.call_param[(!pop.scalar<dt>, !pop.scalar<dt>) -> !pop.scalar<dt>:
-    bind_signature(:<type>(!kgen.paramref<*(0,0)>, !kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)>
+    bind_signature(:<regtype>(!kgen.paramref<*(0,0)>, !kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)>
       fn, !pop.scalar<dt>)](%0, %0)
   kgen.return
 }
@@ -428,7 +428,7 @@ kgen.generator @takeParametricBinary
 kgen.generator @test_paramref_type_rewrite() {
   // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=@parametricBinOp"() : () -> ()
   kgen.call @takeParametricBinary<:dtype f32,
-      :<type>(!kgen.paramref<*(0,0)>, !kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> @parametricBinOp>() : () -> ()
+      :<regtype>(!kgen.paramref<*(0,0)>, !kgen.paramref<*(0,0)>) -> !kgen.paramref<*(0,0)> @parametricBinOp>() : () -> ()
 
   kgen.return
 }
@@ -439,7 +439,7 @@ kgen.generator @test_paramref_type_rewrite() {
 // to-be-bound types.
 // CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=@sillyFn"() -> index {
 // CHECK:  %0 = kgen.call @sillyFn() : () -> index
-kgen.generator @takeFnContextualType<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> {
+kgen.generator @takeFnContextualType<ty: regtype, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> {
   %0 = kgen.call_param[()->!kgen.paramref<ty>: fn]()
   kgen.return %0: !kgen.paramref<ty>
 }
@@ -452,7 +452,7 @@ kgen.generator @sillyFn() -> index {
 // CHECK-LABEL:  kgen.func @elaborateFnWithContextualType() -> index {
 // CHECK:   %0 = kgen.call @"takeFnContextualType,ty=index,fn=@sillyFn"() : () -> index
 kgen.generator @elaborateFnWithContextualType() -> index {
-  %0 = kgen.call @takeFnContextualType<:type index, :()->index @sillyFn>() : () -> index
+  %0 = kgen.call @takeFnContextualType<:regtype index, :()->index @sillyFn>() : () -> index
   kgen.return %0 : index
 }
 
@@ -460,16 +460,16 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
   // Show we can bind a generic signature to a concrete one.
   kgen.param.declare boundFn: ()->index =
-    <bind_signature(:<type, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> @takeFnContextualType,
+    <bind_signature(:<regtype, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> @takeFnContextualType,
                     index, @sillyFn)>
 
   // CHECK-NEXT: %0 = kgen.call @"takeFnContextualType,ty=index,fn=@sillyFn"()
   %0 = kgen.call_param[()->index: boundFn]()
 
-  kgen.param.declare fn: <type, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> = <@takeFnContextualType>
+  kgen.param.declare fn: <regtype, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> = <@takeFnContextualType>
 
   kgen.param.declare boundFn2: ()->index =
-    <bind_signature(:<type, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn,
+    <bind_signature(:<regtype, ()->!kgen.paramref<*(1,0)>>() -> !kgen.paramref<*(0,0)> fn,
                     index, @sillyFn)>
 
   // CHECK-NEXT: %1 = kgen.call @"takeFnContextualType,ty=index,fn=@sillyFn"()
@@ -519,14 +519,14 @@ kgen.generator @passTypeList() {
   kgen.return
 }
 
-kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T> -> is_unknown: i1>() {
+kgen.generator @type_of_unknown<T: regtype, value: !kgen.paramref<T> -> is_unknown: i1>() {
   kgen.param.result_bind<:i1 eq(:!kgen.paramref<T> value, *?)>
   kgen.return
 }
 
 // CHECK-LABEL: @check
 kgen.generator @check() {
-  kgen.call @type_of_unknown<:type i32, :i32 1 -> result: i1>() : () -> ()
+  kgen.call @type_of_unknown<:regtype i32, :i32 1 -> result: i1>() : () -> ()
   // CHECK: = <0>
   %0 = kgen.param.constant: i1 = <result>
   kgen.return
@@ -1431,7 +1431,7 @@ kgen.generator @caller() {
 // CHECK-LABEL: kgen.func @pointer_attr_elaborate
 kgen.generator @pointer_attr_elaborate() {
   // CHECK-NEXT: kgen.param.constant: pointer<i8> = <0>
-  kgen.param.declare type1: type = <i8>
+  kgen.param.declare type1: regtype = <i8>
   %0 = kgen.param.constant: pointer<type1> = <0>
   kgen.return
 }
@@ -1615,17 +1615,17 @@ kgen.generator @param_apply() {
 // COM: This crashes if you don't handle nested parameter ifs correctly *with* multi-versioned kgen.param.apply.
 
 
-kgen.generator @init_variadic<ty: type>(%arg0: !kgen.variadic<ty>) vararg -> !kgen.variadic<ty> {
-  %0 = kgen.call @pass_variadic<:type ty>(%arg0) : (!kgen.variadic<ty>) -> !kgen.variadic<ty>
+kgen.generator @init_variadic<ty: regtype>(%arg0: !kgen.variadic<ty>) vararg -> !kgen.variadic<ty> {
+  %0 = kgen.call @pass_variadic<:regtype ty>(%arg0) : (!kgen.variadic<ty>) -> !kgen.variadic<ty>
   kgen.return %0 : !kgen.variadic<ty>
 }
-kgen.generator @pass_variadic<ty: type>(%arg0: !kgen.variadic<ty>) -> !kgen.variadic<ty> {
+kgen.generator @pass_variadic<ty: regtype>(%arg0: !kgen.variadic<ty>) -> !kgen.variadic<ty> {
   kgen.return %arg0 : !kgen.variadic<ty>
 }
 
 kgen.generator @make_index_list() -> !kgen.variadic<scalar<index>> {
   %0 = kgen.param.constant: variadic<scalar<index>> = <[0, 1, 2]>
-  %1 = kgen.call @init_variadic<:type scalar<index>>(%0) : (!kgen.variadic<scalar<index>>) vararg -> !kgen.variadic<scalar<index>>
+  %1 = kgen.call @init_variadic<:regtype scalar<index>>(%0) : (!kgen.variadic<scalar<index>>) vararg -> !kgen.variadic<scalar<index>>
   kgen.return %1 : !kgen.variadic<scalar<index>>
 }
 
@@ -2101,7 +2101,7 @@ kgen.generator @func<x>() -> !pop.simd<x, f32> {
   kgen.unreachable
 }
 
-kgen.generator @create<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.variant<T, i1> {
+kgen.generator @create<T: regtype>(%arg0: !kgen.paramref<T>) -> !kgen.variant<T, i1> {
   %0 = kgen.variant.create %arg0, 0 : <T, i1>
   kgen.return %0 : !kgen.variant<T, i1>
 }
@@ -2109,7 +2109,7 @@ kgen.generator @create<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.variant<T, i1
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {
   // CHECK: constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <#kgen.variant<:<index>() -> !pop.simd<*(0,0), f32> @func, 0>>
-  kgen.param.apply value = [(!kgen.signature<<index>() -> !pop.simd<*(0,0), f32>>) -> !kgen.variant<<index>() -> !pop.simd<*(0,0), f32>, i1>: @create<:type <index>() -> !pop.simd<*(0,0), f32>>](@func)
+  kgen.param.apply value = [(!kgen.signature<<index>() -> !pop.simd<*(0,0), f32>>) -> !kgen.variant<<index>() -> !pop.simd<*(0,0), f32>, i1>: @create<:regtype <index>() -> !pop.simd<*(0,0), f32>>](@func)
   kgen.param.constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <value>
   kgen.return
 }
@@ -2150,7 +2150,7 @@ kgen.generator export @entry() {
 //
 // Ensure that this type is valid.
 
-kgen.generator @init<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.struct<()> {
+kgen.generator @init<T: regtype>(%arg0: !kgen.paramref<T>) -> !kgen.struct<()> {
   %struct = kgen.param.constant: struct<()> = <{  }>
   kgen.return %struct : !kgen.struct<()>
 }
@@ -2167,7 +2167,7 @@ kgen.generator @make<x>(%arg0: !pop.array<cond(apply(:(index, index) -> i1 @eq, 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: constant: struct<()> = <{ }>
-  kgen.param.apply lifted = [(!kgen.signature<<index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:type <index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make)
+  kgen.param.apply lifted = [(!kgen.signature<<index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:regtype <index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make)
   kgen.param.constant: struct<()> = <lifted>
   kgen.return
 }
@@ -2176,7 +2176,7 @@ kgen.generator export @top() {
 
 // CHECK-LABEL: kgen.func @"pass_paramref
 // CHECK-SAME: () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
-kgen.generator @pass_paramref<T: type>() -> !kgen.paramref<T> {
+kgen.generator @pass_paramref<T: regtype>() -> !kgen.paramref<T> {
   %0 = kgen.undef : !kgen.paramref<T>
   // CHECK: return %0 : !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
   kgen.return %0 : !kgen.paramref<T>
@@ -2195,7 +2195,7 @@ kgen.generator @give_func() -> !kgen.signature<(index) -> index>{
 kgen.generator @top() {
   kgen.param.apply func = [() -> !kgen.signature<(index) -> index>: @give_func]()
   // CHECK: () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
-  kgen.call @pass_paramref<:type <index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>() : () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>
+  kgen.call @pass_paramref<:regtype <index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>() : () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>
   kgen.return
 }
 
@@ -2209,7 +2209,7 @@ kgen.generator @indexTraitMethod(%arg0: index borrow) -> index {
 
 // COM: Check that this gets elaborated to use the concrete function from the vtable below.
 // CHECK-LABEL: kgen.func @"generic_call,T=index"
-kgen.generator @generic_call<T: type>(%arg0: !kgen.paramref<T> borrow) -> index{
+kgen.generator @generic_call<T: regtype>(%arg0: !kgen.paramref<T> borrow) -> index{
   kgen.param.declare traitMethod: (index borrow) -> index  = <get_type_method(T, "traitMethod",
     (index borrow) -> index
   )>
@@ -2222,28 +2222,28 @@ kgen.generator @generic_call<T: type>(%arg0: !kgen.paramref<T> borrow) -> index{
 kgen.generator @make_generic_call() -> index {
   %anInt = kgen.param.constant = <1>
   // CHECK: kgen.call @"generic_call,T=index"
-  %result = kgen.call @generic_call<:type #kgen.concretetype.constant<index, vtable={"traitMethod" : <(index borrow) -> index> = @indexTraitMethod}>>(%anInt) : (index borrow) -> index
+  %result = kgen.call @generic_call<:regtype #kgen.concretetype.constant<index, vtable={"traitMethod" : <(index borrow) -> index> = @indexTraitMethod}>>(%anInt) : (index borrow) -> index
   kgen.return %result : index
 }
 
 // -----
 
-kgen.generator @sizeof<T: type>() -> index {
+kgen.generator @sizeof<T: regtype>() -> index {
   %0 = kgen.param.constant = <get_sizeof(T, current_target())>
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func @"self_ref_apply,param=2"
 // CHECK-SAME: %arg0: !pop.array<16, i8>
-kgen.generator @self_ref_apply<param>(%arg0: !pop.array<apply(:()->index @sizeof<:type array<param, index>>), i8>) {
+kgen.generator @self_ref_apply<param>(%arg0: !pop.array<apply(:()->index @sizeof<:regtype array<param, index>>), i8>) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func export @param_alias
 // CHECK-SAME: %arg0: !pop.array<16, i8>
-kgen.generator export @param_alias(%arg0: !pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) {
-  kgen.param.declare fn: <index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () = <@self_ref_apply>
+kgen.generator export @param_alias(%arg0: !pop.array<apply(:()->index @sizeof<:regtype array<2, index>>), i8>) {
+  kgen.param.declare fn: <index>(!pop.array<apply(:()->index @sizeof<:regtype array<*(0,0), index>>), i8>) -> () = <@self_ref_apply>
   // CHECK: call @"self_ref_apply,param=2"(%arg0)
-  kgen.call_param[(!pop.array<apply(:()->index @sizeof<:type array<2, index>>), i8>) -> (): bind_signature(:<index>(!pop.array<apply(:()->index @sizeof<:type array<*(0,0), index>>), i8>) -> () fn, 2)](%arg0)
+  kgen.call_param[(!pop.array<apply(:()->index @sizeof<:regtype array<2, index>>), i8>) -> (): bind_signature(:<index>(!pop.array<apply(:()->index @sizeof<:regtype array<*(0,0), index>>), i8>) -> () fn, 2)](%arg0)
   kgen.return
 }

@@ -34,7 +34,7 @@ kgen.generator @return_one() -> index {
              b = #kgen.int_literal<12345678901234567899012345678901234567890> : !kgen.int_literal} : () -> ()
 
 // CHECK-LABEL: @struct_constants
-kgen.generator @struct_constants<T: type, A: !kgen.paramref<T>, value: !pop.scalar<f32>>() {
+kgen.generator @struct_constants<T: regtype, A: !kgen.paramref<T>, value: !pop.scalar<f32>>() {
   // CHECK: struct<(index, f32)> = <{ 1, 2.5{{0+}}e+00 }>
   kgen.param.constant: struct<(index, f32)> = <{ 1, 2.5 }>
   // CHECK: struct<(scalar<f32>)> = <{ value }>
@@ -54,7 +54,7 @@ kgen.generator @pack_constants<Ts: variadic<i32>>() {
 }
 
 // CHECK-LABEL: @variant_constants
-kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() {
+kgen.generator @variant_constants<T: regtype, U: regtype, value: !kgen.paramref<T>>() {
   // CHECK: variant<f32, f64> = <#kgen.variant<:f32 2.5{{0+}}e+00, 0>>
   %0 = kgen.param.constant: variant<f32, f64> = <#kgen.variant<:f32 2.5, 0>>
   // CHECK: variant<T, U> = <#kgen.variant<:!kgen.paramref<T> value, 0>>

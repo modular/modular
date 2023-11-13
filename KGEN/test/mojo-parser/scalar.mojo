@@ -8,19 +8,19 @@
 
 
 # REFERENCE
-#   kgen.generator.interface @erf_scalar<type: dtype>(%in: !pop.scalar<type>) -> !pop.scalar<type>
+#   kgen.generator.interface @erf_scalar<DT: dtype>(%in: !pop.scalar<DT>) -> !pop.scalar<DT>
 #
-#   lit.func @erf_scalar_taylor<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<type>
-#     constraints <[in(:dtype type, [float32, float64]), "incorrect element type"]> implements @erf_scalar {
+#   lit.func @erf_scalar_taylor<DT: dtype>(%x: !pop.scalar<DT>) -> !pop.scalar<DT>
+#     constraints <[in(:dtype DT, [float32, float64]), "incorrect element type"]> implements @erf_scalar {
 #     // Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
 #     // = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
 #     // = x * fma(x^2, -0.37612638903183752463, 1.1283791670955125739)
-#     %c0 = pop.constant(1.1283791670955125739) : !pop.scalar<type>
-#     %c1 = pop.constant(-0.37612638903183752463) : !pop.scalar<type>
-#     %x2 = pop.mul %x, %x : !pop.scalar<type>
-#     %t0 = pop.fma %x2, %c1, %c0 : !pop.scalar<type>
-#     %t1 = pop.mul %t0, %x : !pop.scalar<type>
-#     lit.return %t1 : !pop.scalar<type>
+#     %c0 = pop.constant(1.1283791670955125739) : !pop.scalar<DT>
+#     %c1 = pop.constant(-0.37612638903183752463) : !pop.scalar<DT>
+#     %x2 = pop.mul %x, %x : !pop.scalar<DT>
+#     %t0 = pop.fma %x2, %c1, %c0 : !pop.scalar<DT>
+#     %t1 = pop.mul %t0, %x : !pop.scalar<DT>
+#     lit.return %t1 : !pop.scalar<DT>
 #   }
 
 

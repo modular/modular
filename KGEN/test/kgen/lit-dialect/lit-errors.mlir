@@ -42,13 +42,13 @@ kgen.generator @InvalidTypeParamValue<a>(%arg0: !kgen.declref<@SomeType<a, c>>) 
 
 // -----
 
-lit.struct.decl @Bar<a: type> {
+lit.struct.decl @Bar<a: regtype> {
   lit.struct.field x : !pop.array<32, a>
 }
 
-kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
+kgen.generator @invalid_field_type<c: regtype>(%a: !kgen.paramref<c>) {
   // expected-error @below {{perand #0 has type '!kgen.paramref<c>' but corresponding struct field "x" expected '!pop.array<32, index>'}}
-  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<:type index>>
+  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<:regtype index>>
   kgen.return
 }
 
@@ -232,25 +232,25 @@ lit.func @struct_attr() {
 // -----
 
 // expected-note @below {{see struct declaration here}}
-lit.struct.decl @ParamField<ty: type> {
+lit.struct.decl @ParamField<ty: regtype> {
   lit.struct.field a : !kgen.paramref<ty>
 }
 
 lit.func @struct_attr() {
   // expected-error @below {{struct attribute field #0 has type 'index' but corresponding struct field "a" expected 'i1'}}
-  kgen.param.constant: @ParamField<:type i1> = <#lit.struct<{a = 5}>>
+  kgen.param.constant: @ParamField<:regtype i1> = <#lit.struct<{a = 5}>>
   kgen.return
 }
 
 // -----
 
-lit.struct.decl @ParamField<ty: type> {
+lit.struct.decl @ParamField<ty: regtype> {
   lit.struct.field a : !kgen.paramref<ty>
 }
 
 lit.func @struct_attr() {
   // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "A"}}
-  kgen.param.constant: @ParamField<:type i1> = <#lit.struct<{a: i1 = A}>>
+  kgen.param.constant: @ParamField<:regtype i1> = <#lit.struct<{a: i1 = A}>>
   kgen.return
 }
 
@@ -276,8 +276,8 @@ lit.func @bad_param_results<() -> r0: dtype>() {
 // -----
 
 lit.func @no_struct_decl(%a: index) {
-  // expected-error @below {{expected to find a struct decl for '!kgen.declref<@Bar<:type index>>'}}
-  %0 = lit.struct.create(x=%a) : (index) -> !kgen.declref<@Bar<:type index>>
+  // expected-error @below {{expected to find a struct decl for '!kgen.declref<@Bar<:regtype index>>'}}
+  %0 = lit.struct.create(x=%a) : (index) -> !kgen.declref<@Bar<:regtype index>>
   lit.end_func
 }
 
@@ -382,7 +382,7 @@ lit.struct.decl @StructCannotFileTrait([@Trait1]) {
 // -----
 
 // expected-error @below {{'bind_type' expected a metatyped type value}}
-#bind = #lit.bind_type<:type index, []> : !lit.metatype<@Foo>
+#bind = #lit.bind_type<:regtype index, []> : !lit.metatype<@Foo>
 
 // -----
 
