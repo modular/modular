@@ -15,7 +15,7 @@ alias n = 12
 
 
 @always_inline
-fn swap[type: AnyType](inout lhs: type, inout rhs: type):
+fn swap[type: AnyRegType](inout lhs: type, inout rhs: type):
     let tmp = lhs
     lhs = rhs
     rhs = tmp
