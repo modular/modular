@@ -1636,6 +1636,10 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                 typeWalker.walk<mlir::WalkOrder::PreOrder>(nmTarget);
               return success();
             })
+            .Case([&](TraitDeclOp traitOp) {
+              // TODO(traits): Resolve input parameter types, when they exist.
+              return success();
+            })
             .Case([&](UnresolvedImportOp unresolvedImport) {
               // Let the normal decl resolver handling insert aliases and other
               // import behavior.
@@ -1752,10 +1756,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case([&](TraitDeclOp op) {
             ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());
-            // TODO: figure out selfType for trait.
-            // selfType needs to be set to avoid silent parsing error that drops
-            // function calls.
-            traitDecl.setSelfType(getTypeCheckErrorType());
+            traitDecl.setSelfType(ASTDecl::computeSelfTypeForTrait(op));
+            // TODO(traits): Add decls for input parameters, when they exist.
           })
           .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),
