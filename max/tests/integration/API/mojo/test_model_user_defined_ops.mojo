@@ -1,0 +1,88 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# UNSUPPORTED: windows
+# RUN: %mojo package --parsing-stdlib %mojo_user_pkg -o %t.mojopkg
+# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %t.mojopkg | FileCheck %s
+
+from aiengine import (
+    InferenceSession,
+    TensorMap,
+    EngineTensorView,
+)
+from sys import argv
+from tensor import Tensor, TensorShape
+from test_utils import linear_fill
+
+
+fn test_model_compilation() raises:
+    let args = argv()
+    let model_path = args[1]
+    let user_defined_ops_path = args[2]
+
+    let session = InferenceSession()
+    let compiled_model = session.compile_model(
+        model_path, user_defined_ops_path
+    )
+    # CHECK: 1
+    print(compiled_model.num_model_inputs())
+
+    let input_names = compiled_model.get_model_input_names()
+    # CHECK: input
+    for name in input_names:
+        print(name)
+
+    # CHECK: input
+    print(input_names[0])
+
+    # CHECK: 1
+    print(compiled_model.num_model_outputs())
+
+    let output_names = compiled_model.get_model_output_names()
+    # CHECK: output
+    for name in output_names:
+        print(name)
+
+    # CHECK: output
+    print(output_names[0])
+
+
+fn test_model() raises:
+    let args = argv()
+    print(args[1])
+
+    let model_path = args[1]
+    let user_defined_ops_path = args[2]
+
+    let session = InferenceSession()
+    let model = session.load_model(model_path, user_defined_ops_path)
+    var input_tensor = Tensor[DType.float32](5)
+
+    for i in range(5):
+        input_tensor[i] = 1.0
+
+    # TODO: Hide tensor map from user
+    let input_map = session.new_tensor_map()
+    input_map.borrow("input", input_tensor)
+    let outputs = model.execute(input_map)
+    _ = input_tensor ^  # Keep inputs alive
+    let output_tensor = outputs.get[DType.float32]("output")
+
+    # CHECK: 5xfloat32
+    print(output_tensor.spec().__str__())
+
+    var expected_output = Tensor[DType.float32](5)
+
+    # Verify our custom add op got replaced and called during execution
+    # Our custom add op does x + y + 100 instead of the typical x + y.
+    linear_fill(expected_output, 104.0, 102.0, 95.0, 103.0, 106.0)
+
+    # CHECK: True
+    print(expected_output == output_tensor)
+
+
+fn main() raises:
+    test_model_compilation()
+    test_model()
