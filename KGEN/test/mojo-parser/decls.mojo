@@ -1583,15 +1583,42 @@ trait EmptyTrait:
 
 # CHECK-LABEL: lit.trait.decl @Trait1<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait Trait1:
-    fn f(self: Self) -> Self: ...
+    fn f(self: Self): ...
 
 # CHECK-LABEL: lit.trait.decl @Trait2<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait Trait2:
-    fn f(self: Self) -> Self: ...
+    fn f(self: Self): ...
 
-# CHECK-LABEL: lit.struct.decl @StructWithTraits([{{.*}}@Trait1, {{.*}}@Trait2])  {
+# CHECK-LABEL: lit.struct.decl @StructWithTraits([{{.*}}@Trait1, {{.*}}@Trait2]) register_passable {
+@register_passable
 struct StructWithTraits(Trait1, Trait2):
-    pass
+    fn f(self: Self): ...
+
+##===----------------------------------------------------------------------===##
+# Struct/Trait conformance check
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.trait.decl @CFMTrait<?, MT: regtype, T: !kgen.paramref<MT>>
+trait CFMTrait:
+   #CHECK: lit.func @"f1(T)"(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.none
+   fn f1(self: Self):
+        pass
+
+   #CHECK: lit.func @"f2()"() -> !kgen.none
+   @staticmethod
+   fn f2():
+       pass
+
+@register_passable
+struct CFMStruct(CFMTrait):
+   #CHECK: lit.func @"f1({{.*}})"(%self[self]: !CFMStruct borrow) -> !kgen.none
+   fn f1(self: Self):
+       pass
+
+   #CHECK: lit.func @"f2()"() -> !kgen.none
+   @staticmethod
+   fn f2():
+       pass
 
 # CHECK-LABEL: lit.func @"generic_trait_fn
 # CHECK-SAME: <[[T:.*]][T]: !lit.trait<{{.*}}@Trait>>

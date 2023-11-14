@@ -3945,6 +3945,101 @@ static void processRegisterPassableDecorator(
   }
 }
 
+//===----------------------------------------------------------------------===//
+// Conformance Check
+//===----------------------------------------------------------------------===//
+
+/// Get specialized signature of a trait function with a struct (who implements
+/// the trait) type.
+static SignatureType getSpecializedSignature(LIT::FuncOp traitFn,
+                                             Type structSelfType,
+                                             Type structSelfMetaType) {
+  auto signature = traitFn.getFullSignature();
+  SmallVector<TypedAttr> newInputParamValues;
+  SmallVector<Type> newInputParamTypes;
+
+  // Add trait's MT and T replacement.
+  Type tType = structSelfType;
+  Type mtType = structSelfMetaType;
+  newInputParamValues.push_back(TypeConstantAttr::get(mtType, mtType));
+  newInputParamValues.push_back(TypeConstantAttr::get(tType, tType));
+  newInputParamTypes.push_back(mtType);
+  newInputParamTypes.push_back(tType);
+  // Add other unbound parameters.
+  for (ParamDeclAttr attr : traitFn.getInputParamsAttr()) {
+    newInputParamValues.push_back(UnboundAttr::get(attr.getType()));
+    newInputParamTypes.push_back(attr.getType());
+  }
+
+  return SignatureType::getSpecializedSignature(
+      newInputParamValues,
+      [&] {
+        return emitError(
+            traitFn.getLoc(),
+            "Cannot specialize trait function for conformance check.");
+      },
+      newInputParamTypes, signature.getResultParamTypes(),
+      signature.getValues(), signature.getInputConventions(),
+      signature.getFnEffects(), signature.getMetadata());
+}
+
+/// Check conformance for struct that implements traits.
+static LogicalResult verifyConformance(LIT::StructDeclOp structDeclOp,
+                                       ASTDecl &structDecl, Type structSelfType,
+                                       Type structSelfMetaType,
+                                       SharedState &shared) {
+  InflightDiag diag =
+      shared.emitError(structDeclOp.getLoc(), "conformance check failed");
+
+  llvm::SmallVector<StringRef> failedTraits;
+  for (SymbolRefAttr attr : structDeclOp.getTraitsAttr()) {
+    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
+    for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+      bool allMatch = true;
+      for (ASTDecl *decl : decls) {
+        auto traitFn = cast<LIT::FuncOp>(*decl);
+        SignatureType newSignature = getSpecializedSignature(
+            traitFn, structSelfType, structSelfMetaType);
+
+        ArrayRef<ASTDecl *> structFnDecls =
+            structDecl.lookupInCurrentScope(name);
+        bool foundMatch = false;
+        for (ASTDecl *structFnDecl : structFnDecls) {
+          if (auto structFn = dyn_cast<LIT::FuncOp>(*structFnDecl))
+            foundMatch |= newSignature == structFn.getSignature();
+        }
+
+        if (foundMatch)
+          continue;
+
+        allMatch &= foundMatch;
+        diag.attachNote(traitFn.getLoc())
+            << "required function `" + name.str() + "` is not implemented";
+      }
+      if (!allMatch)
+        failedTraits.push_back(traitDecl.getNameIfOperation().value());
+    }
+  }
+
+  if (failedTraits.empty()) {
+    diag.abandon();
+    return success();
+  }
+
+  std::string errMsg;
+  llvm::raw_string_ostream os(errMsg);
+  os << "struct `" << structDeclOp.getNameAttr().str()
+     << "` does not implement all requirements for ";
+  for (auto [idx, failedTrait] : llvm::enumerate(failedTraits)) {
+    os << "`" << failedTrait << "`";
+    if (idx < failedTraits.size() - 1)
+      os << ", ";
+  }
+
+  diag.attachNote(structDeclOp.getLoc()) << os.str();
+  return failure();
+}
+
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
   // Push the debug scope for this struct if necessary so that nested operations
@@ -4028,7 +4123,26 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       structOp.setMoveInitAttr(takeInitAttr);
   }
 
-  return success();
+  if (!structOp.getTraitsAttr())
+    return success();
+
+  //// Resolve struct member functions' signature if they are candidates to
+  /// implement trait functions so that we do conformance check next.
+  for (SymbolRefAttr attr : structOp.getTraitsAttr()) {
+    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
+    for (auto &[name, _] : traitDecl.getDeclsInScope()) {
+      ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
+      for (ASTDecl *decl : decls) {
+        if (isa<LIT::FuncOp>(*decl))
+          if (failed(
+                  resolve(*decl, DeclResolvedness::signature, decl->getLoc())))
+            return failure();
+      }
+    }
+  }
+
+  return verifyConformance(structOp, structDecl, structDecl.getSelfType(),
+                           structDecl.getSelfType().getMetaType(), shared);
 }
 
 //===----------------------------------------------------------------------===//
@@ -4085,7 +4199,8 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
     for (ASTDecl *decl : decls)
       // Only fully resolve children of LIT::FuncOp type.
       if (decl->getParentDecl() == &traitDecl && isa<LIT::FuncOp>(*decl))
-        (void)resolveFully(*decl, decl->getLoc());
+        if (failed(resolveFully(*decl, decl->getLoc())))
+          return failure();
   }
 
   for (auto fn : traitOp.getBodyRegion().getOps<LIT::FuncOp>()) {
