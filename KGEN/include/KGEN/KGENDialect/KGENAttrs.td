@@ -992,15 +992,14 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
     - Exported: its linkage is external and its visibility is public.
     - Weak: its linkage is weak and its visibilty is public.
     - C exported: like `exported`, but with a C-compatible name and ABI.
-    - NVVM exported: like `exported`, but with NVVM annotations.
 
     Example:
 
     ```mlir
     #kgen.export_kind<not_exported>
     #kgen.export_kind<exported>
+    #kgen.export_kind<weak>
     #kgen.export_kind<c_exported>
-    #kgen.export_kind<nvvm_exported>
     ```
   }];
 
