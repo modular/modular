@@ -1592,3 +1592,8 @@ trait Trait2:
 # CHECK-LABEL: lit.struct.decl @StructWithTraits([{{.*}}@Trait1, {{.*}}@Trait2])  {
 struct StructWithTraits(Trait1, Trait2):
     pass
+
+# CHECK-LABEL: lit.func @"generic_trait_fn
+# CHECK: <[[T:.*_T]][T]: !lit.trait<{{.*}}@Trait>>()
+fn generic_trait_fn[T: Trait]():
+    pass
