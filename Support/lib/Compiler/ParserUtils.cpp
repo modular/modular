@@ -159,11 +159,9 @@ void M::printRegionWithShadowing(OpAsmPrinter &printer,
   }
 }
 
-ParseResult M::parseBufferSignature(
-    OpAsmParser &parser,
-    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &buffers,
-    SmallVectorImpl<Type> &bufferTypes,
-    InOutSignatureAttr &inOutSignatureAttr) {
+ParseResult M::parseInOutArgsSignature(
+    OpAsmParser &parser, SmallVectorImpl<OpAsmParser::UnresolvedOperand> &args,
+    SmallVectorImpl<Type> &argTypes, InOutSignatureAttr &inOutSignatureAttr) {
   SmallVector<InOutSignatureAttr::InOutSemantics> semantics;
   auto parseOperandFn = [&]() -> ParseResult {
     llvm::SMLoc loc;
@@ -182,12 +180,12 @@ ParseResult M::parseBufferSignature(
       return parser.emitError(loc) << "expecting 'in', 'out' or 'mut' keyword";
 
     // Parse the operand proper.
-    OpAsmParser::UnresolvedOperand &unresolvedOperand = buffers.emplace_back();
+    OpAsmParser::UnresolvedOperand &unresolvedOperand = args.emplace_back();
     if (parser.parseOperand(unresolvedOperand))
       return failure();
 
     // Parse the type annotation.
-    Type &bufferType = bufferTypes.emplace_back();
+    Type &bufferType = argTypes.emplace_back();
     if (parser.parseColon() || parser.parseType(bufferType))
       return failure();
 
@@ -195,7 +193,8 @@ ParseResult M::parseBufferSignature(
   };
 
   if (parser.parseCommaSeparatedList(OpAsmParser::Delimiter::Paren,
-                                     parseOperandFn, "in buffer operand list"))
+                                     parseOperandFn,
+                                     "in in/out signature list"))
     return failure();
 
   inOutSignatureAttr = InOutSignatureAttr::get(parser.getContext(), semantics);
@@ -203,12 +202,13 @@ ParseResult M::parseBufferSignature(
   return success();
 }
 
-void M::printBufferSignature(OpAsmPrinter &printer, const Operation *opIgnored,
-                             ValueRange buffers, TypeRange bufferTypes,
-                             InOutSignatureAttr inOutSignatureAttr) {
+void M::printInOutArgsSignature(OpAsmPrinter &printer,
+                                const Operation *opIgnored, ValueRange args,
+                                TypeRange argTypes,
+                                InOutSignatureAttr inOutSignatureAttr) {
   size_t arity = inOutSignatureAttr.size();
-  assert(buffers.size() == arity);
-  assert(bufferTypes.size() == arity);
+  assert(args.size() == arity);
+  assert(argTypes.size() == arity);
   printer << "(";
   for (size_t i = 0; i < arity; ++i) {
     if (i > 0)
@@ -228,9 +228,9 @@ void M::printBufferSignature(OpAsmPrinter &printer, const Operation *opIgnored,
       printer << "mut ";
       break;
     }
-    printer << buffers[i];
+    printer << args[i];
     printer << " : ";
-    printer << bufferTypes[i];
+    printer << argTypes[i];
   }
   printer << ")";
 }

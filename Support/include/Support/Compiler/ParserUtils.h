@@ -69,26 +69,24 @@ void printParenOperandListWithDefaultType(OpAsmPrinter &printer,
 void printRegionWithShadowing(OpAsmPrinter &printer,
                               const OperandRange &operands, Region &region);
 
-/// Parses a 'buffer signature' of the form:
+/// Parses an 'in/out signature' of the form:
 ///    ( in|out|mut %x : type, ... )
-/// The SSA values will be added to buffers, their types to bufferTypes,
+/// The SSA values will be added to args, their types to argTypes,
 /// and the inOutSignatureAttr will have matching arity and capture the
 /// in/out/mut keywords.
 ///
 /// Note that the types are unconstrained and need not be any particular
-/// 'buffer' type. However generally they are pointer-like for the in/out/mut
-/// keyword to be necessary.
-ParseResult
-parseBufferSignature(OpAsmParser &parser,
-                     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &buffers,
-                     SmallVectorImpl<Type> &bufferTypes,
-                     InOutSignatureAttr &inOutSignatureAttr);
+/// type. However generally they are pointer-like for the in/out/mut keyword
+/// to have any meaning.
+ParseResult parseInOutArgsSignature(
+    OpAsmParser &parser, SmallVectorImpl<OpAsmParser::UnresolvedOperand> &args,
+    SmallVectorImpl<Type> &argTypes, InOutSignatureAttr &inOutSignatureAttr);
 
-/// Prints a 'buffer signature', matching the syntax parsed by
-/// parseBufferSignature.
-void printBufferSignature(OpAsmPrinter &printer, const Operation *opIgnored,
-                          ValueRange buffers, TypeRange bufferTypes,
-                          InOutSignatureAttr inOutSignatureAttr);
+/// Prints an 'in/out signature', matching the syntax parsed by
+/// parseInOutArgsSignature.
+void printInOutArgsSignature(OpAsmPrinter &printer, const Operation *opIgnored,
+                             ValueRange buffers, TypeRange bufferTypes,
+                             InOutSignatureAttr inOutSignatureAttr);
 
 /// This is an AsmPrinter implementation that just outputs to an external output
 /// stream.
