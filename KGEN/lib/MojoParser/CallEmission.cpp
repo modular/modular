@@ -590,10 +590,7 @@ getBoundConstAttrFor(AnyValue baseValue, LIT::FuncOp funcOp, StringRef baseName,
   bindings.posBindings.erase(it, it + 2);
   for (Type type : signature.getInputParamTypes().drop_front(2))
     paramValues.push_back(UnboundAttr::get(type));
-  signature = signature.getSpecializedSignature(
-      paramValues, []() -> InFlightDiagnostic {
-        llvm_unreachable("unexpected invalid signature");
-      });
+  signature = signature.getSpecializedSignature(paramValues);
 
   TypedAttr fnRef = ParamOperatorAttr::get(
       POC::GetTypeMethod,
@@ -916,12 +913,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
 
       // If anything was bound, apply it to the signature so the expected
       // argument types are updated.
-      if (!newBindings.empty()) {
-        candidateType = candidateType.getSpecializedSignature(
-            newBindings, [&]() -> InFlightDiagnostic {
-              llvm_unreachable("bad bindings went undetected");
-            });
-      }
+      if (!newBindings.empty())
+        candidateType = candidateType.getSpecializedSignature(newBindings);
     }
 
     return functionType.isEqualCanon(candidateType) ||

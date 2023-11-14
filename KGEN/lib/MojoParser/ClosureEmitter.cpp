@@ -198,10 +198,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
-  dependentSignatureType = dependentSignatureType.getSpecializedSignature(
-      paramValues, []() -> InFlightDiagnostic {
-        llvm_unreachable("unexpected invalid signature");
-      });
+  dependentSignatureType =
+      dependentSignatureType.getSpecializedSignature(paramValues);
   auto sigMetadata =
       FnMetadataAttr::get(ctx, dependentSignatureType.getArgNames(),
                           dependentSignatureType.getArgPassingKinds());
@@ -850,10 +848,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       opaquePtrType, ValueInputConvention::BorrowedInReg, functionSignature);
   assert(closureSignature.getValueResults().size() == 1);
   closureSignature = closureSignature.getSpecializedSignature(
-      ArrayRef(topLevelInputParamRefs).take_front(wrapperParamDecls.size()),
-      []() -> InFlightDiagnostic {
-        llvm_unreachable("unexpected invalid signature");
-      });
+      ArrayRef(topLevelInputParamRefs).take_front(wrapperParamDecls.size()));
 
   Type resultType = closureSignature.getValueResults().front();
 

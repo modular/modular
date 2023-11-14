@@ -277,6 +277,7 @@ SignatureType SignatureType::getSpecializedSignature(
     // the second parameter will be refined when the first parameter is bound.
     auto remappedDeclType = remapType(type);
     if (value.getType() != remappedDeclType) {
+      assert(emitErrorFn && "unexpected invalid signature");
       emitErrorFn() << "caller input parameter #" << paramNo << " has type "
                     << value.getType() << " but callee expected type "
                     << remappedDeclType;
