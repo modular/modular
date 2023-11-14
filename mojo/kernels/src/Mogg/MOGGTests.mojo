@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm import vectorize
+from algorithm.functional import _elementwise_impl
 from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr
 
@@ -222,7 +223,6 @@ fn test_unary_kernel[
         out_chain.mark_ready()
 
 
-# FIXME: Use mogg_register_custom_shape instead.
 @mogg_register_shape_func("test_custom_op")
 @always_inline
 @export
@@ -233,4 +233,54 @@ fn test_unary_kernel_shape_func[
 ) -> StaticIntTuple[rank]:
     print("Hello")
 
+    return data.get_shape()
+
+
+@mogg_register("tf.Identity")
+@always_inline
+@export
+fn test_custom_identity[
+    type: DType,
+    rank: Int,
+    simd_width: Int,
+    input_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    single_thread_blocking_override: Bool,
+](
+    input_shape: StaticIntTuple[rank],
+    output_shape: StaticIntTuple[rank],
+    out_chain: OutputChainPtr,
+):
+    print("The custom identity op is running!")
+
+    @parameter
+    @always_inline
+    fn identity[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        let x = input_0_fn[simd_width, rank](idx)
+        output_0_fn[simd_width, rank](idx, x)
+
+    _elementwise_impl[
+        rank,
+        simd_width,
+        single_thread_blocking_override,
+        identity,
+        target="cpu",
+    ](
+        input_shape,
+        out_chain,
+    )
+
+
+@mogg_register_shape_func("tf.Identity")
+@always_inline
+@export
+fn test_custom_identity_shape_func[
+    type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+) -> StaticIntTuple[rank]:
     return data.get_shape()
