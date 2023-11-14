@@ -186,7 +186,7 @@ fn run_matmul_kernel_10() raises:
             NDBuffer[2, DimList(M, N), DType.float32],
             NDBuffer[2, DimList(M, K), DType.float32],
             NDBuffer[2, DimList(K, N), DType.float32],
-        ) -> None, sgemm_warp_tiling_kernel[
+        ) capturing -> None, sgemm_warp_tiling_kernel[
             DType.float32,
             DimList(M, N),
             DType.float32,
