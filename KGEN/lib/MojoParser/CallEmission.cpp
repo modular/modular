@@ -43,6 +43,12 @@ InputParamBindings InputParamBindings::getForDeclaredType(ASTType type,
   inputParamBindings.numCtadParams = inputParams.size();
   inputParamBindings.defaultTypeParams = type.getDefaultParameters(shared);
 
+  // When binding a trait function, add the self type bindings.
+  if (auto trait = dyn_cast<TraitType>(type.getMetaType())) {
+    inputParamBindings.addPrechecked(TypeConstantAttr::get(trait));
+    inputParamBindings.addPrechecked(TypeConstantAttr::get(type, trait));
+  }
+
   ArrayRef<TypedAttr> paramBindings = type.getParamBindings();
   for (TypedAttr binding : paramBindings)
     inputParamBindings.addPrechecked(binding);
