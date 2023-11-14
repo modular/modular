@@ -73,6 +73,8 @@ using InternalProfilerEntry =
 using AllWorkItemsProfilerEntry =
     ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3)>;
 
+using namespace std::chrono_literals;
+
 /// A work item to be added, or held, by a work queue. Contains the 'task'
 /// function. Depending on build type may contain extra bookkeeping data.
 struct WorkItem {
@@ -258,6 +260,7 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// random delays into work items to attempt to tickle race conditions.
 std::unique_ptr<WorkQueue>
 createThreadPoolWorkQueue(size_t numThreads = 0, bool mainWillDonate = true,
+                          std::chrono::microseconds threadBusyWaitTime = 200us,
                           bool paranoid = false,
                           std::string_view poolName = "🔥 Thread");
 

@@ -98,6 +98,17 @@ protected:
           "(default), will be chosen by heuristics."),
       llvm::cl::init(0)};
 
+  // Specify the amount of time a worker thread should spin for before sleeping.
+  // The optimal value here depends on the system latency for thread sleep and
+  // wake-up, as well as other external factors like how many other threadpools
+  // are sharing the system.
+  llvm::cl::opt<size_t> threadBusyWaitTime{
+      "thread-busy-wait-time-us",
+      llvm::cl::desc(
+          "Specify the number of microseconds for threads to spin before "
+          "locking. Zero indicates that threads should never spin."),
+      llvm::cl::init(200)};
+
   // Return the workqueue type to use, resolving kDefault into a concrete kind.
   WorkQueueType getWorkQueueType() const {
     // The default behavior picks a thread count based on the -num-threads
@@ -133,6 +144,10 @@ protected:
 public:
   /// Return the number of threads specified at the command-line.
   size_t getNumThreads() const { return numThreads; }
+
+  std::chrono::microseconds getThreadBusyWaitTime() const {
+    return std::chrono::microseconds(threadBusyWaitTime);
+  }
 
   /// Explicitly tell runtime to use single threaded workqueue. This is useful
   /// in situations where computation is performed by some other runtime (for

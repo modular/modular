@@ -53,12 +53,6 @@ constexpr size_t kTaskListSlotsPerThread = 1024;
 
 /// Max number of worker threads.
 constexpr size_t kMaxWorkers = 1024;
-/// Amount of time to spend spinning while waiting for work before going to
-/// sleep on a semaphore. Tuning this number is especially important for
-/// cases that interact with other threadpools. Ideally we should autotune
-/// this during the `warmup` phase or come up with heuristics based on
-/// the fallback ops distribution.
-constexpr std::chrono::nanoseconds kBusyWait = std::chrono::nanoseconds(200000);
 
 //===----------------------------------------------------------------------===//
 // WorkerThread
@@ -283,6 +277,13 @@ struct WorkQueueThread {
   /// affinity is intended for this worker.
   size_t cpuID;
 
+  /// Amount of time to spend spinning while waiting for work before going to
+  /// sleep on a semaphore. Tuning this number is especially important for
+  /// cases that interact with other threadpools. Ideally we should autotune
+  /// this during the `warmup` phase or come up with heuristics based on
+  /// the fallback ops distribution.
+  std::chrono::microseconds busyWaitTime;
+
   /// This is a per-worker semaphore that this blocks on when they run
   /// out of things to do.
   Semaphore sema;
@@ -310,11 +311,12 @@ struct WorkQueueThread {
                   LockFreeRingBuffer<WorkItem> &taskList,
                   std::mutex &overflowMutex,
                   SmallVectorImpl<WorkItem> &overflowTaskList, size_t workerID,
-                  size_t cpuID, std::string_view poolName)
+                  size_t cpuID, std::chrono::microseconds busyWaitTime,
+                  std::string_view poolName)
       : sharedState(sharedState), affinityTaskList(kTaskListSlotsPerThread),
         taskList(taskList), overflowMutex(overflowMutex),
         overflowTaskList(overflowTaskList), workerID(workerID), cpuID(cpuID),
-        poolName(poolName) {
+        busyWaitTime(busyWaitTime), poolName(poolName) {
     if (sharedState.mainWillDonate && workerID == 0) {
       // We can leave workerIDInTLS as zero.
       // Remember the caller is to be our 'main' thread, and will call
@@ -521,7 +523,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       // We also want to make sure to use exponential backoff to avoid pummeling
       // the memory hierarchy of the threads that are doing useful work.  As
       // such, we use a BusyWaitSpinWaiter.
-      BusyWaitSpinWaiter spinWaiter(kBusyWait);
+      BusyWaitSpinWaiter spinWaiter(busyWaitTime);
 
       // Spin until we find some work to do.
       while (!spinWaiter.wait()) {
@@ -639,6 +641,7 @@ public:
   /// destructor.
   ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
                       size_t taskListCapacity, bool mainWillDonate,
+                      std::chrono::microseconds threadBusyWaitTime,
                       bool paranoid, std::string_view poolName);
 
   ~ThreadPoolWorkQueue() override;
@@ -736,10 +739,10 @@ private:
 };
 } // namespace
 
-ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
-                                         size_t taskListCapacity,
-                                         bool mainWillDonate, bool paranoid,
-                                         std::string_view poolName)
+ThreadPoolWorkQueue::ThreadPoolWorkQueue(
+    const std::vector<size_t> &cpuIDs, size_t taskListCapacity,
+    bool mainWillDonate, std::chrono::microseconds threadBusyWaitTime,
+    bool paranoid, std::string_view poolName)
     : numWorkers(cpuIDs.size()),
       sharedState(mainWillDonate, paranoid, numWorkers),
       taskList(taskListCapacity), poolName(poolName) {
@@ -757,9 +760,9 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
       malloc(sizeof(WorkQueueThread) * numWorkers));
   assert(workers && "malloc of workers failed");
   for (size_t workerID = 0; workerID < numWorkers; ++workerID)
-    new (workers + workerID)
-        WorkQueueThread(sharedState, taskList, overflowMutex, overflowTaskList,
-                        workerID, cpuIDs[workerID], this->poolName);
+    new (workers + workerID) WorkQueueThread(
+        sharedState, taskList, overflowMutex, overflowTaskList, workerID,
+        cpuIDs[workerID], threadBusyWaitTime, this->poolName);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
@@ -1068,7 +1071,9 @@ bool ThreadPoolWorkQueue::callerIsForeign() const {
 
 std::unique_ptr<WorkQueue>
 M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
+                                   std::chrono::microseconds threadBusyWaitTime,
                                    bool paranoid, std::string_view poolName) {
+
 #if MODULAR_PARANOID
 #ifdef NDEBUG
   llvm::dbgs() << "CAUTION: Asked for a MODULAR_PARANOID build with NDEBUG. "
@@ -1113,5 +1118,6 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
              << taskListCapacity << " slots.\n");
 
   return std::make_unique<ThreadPoolWorkQueue>(
-      cpuIDs, taskListCapacity, mainWillDonate, paranoid, poolName);
+      cpuIDs, taskListCapacity, mainWillDonate, threadBusyWaitTime, paranoid,
+      poolName);
 }
