@@ -1,0 +1,218 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# A temporary home for the experimental int list type.
+
+
+from utils.index import StaticIntTuple
+from math import max
+
+
+struct IntList[static_values: DimList = DimList()]:
+    # Array must be >= 1 length, so we clamp to that if we have unknown
+    # length shape. DimList of size 0 represents a dynamically ranked list.
+    alias _length = static_values.__len__()
+    alias _safe_len = max(1, Self._length)
+
+    # An alias to a parameter of the same sized shape as this but with the values unknown.
+    alias _size_but_unknown = DimList() if Self._length == 0 else DimList.create_unknown[
+        Self._safe_len
+    ]()
+
+    var data: Pointer[Int]
+    var stack_alloc_data: StaticIntTuple[Self._safe_len]
+    var length: Int
+
+    @always_inline
+    fn __init__(inout self):
+        self.length = Self._length
+        self.data = Pointer[Int]()
+        self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+
+    # Should not be copy constructable, i.e passed by value, but can be cloned.
+    @always_inline
+    fn __init__(inout self, other: IntList):
+        let num_elements = other.__len__()
+        self.length = Self._length
+        self.data = Pointer[Int]()
+        self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+
+        @parameter
+        if Self.is_fully_static():
+            # Fully static case stores nothing. Will just resolve to the
+            # parameter values. Can just keep the default runtime values.
+            return
+        elif Self.has_static_length():
+            # 2nd best case, we know the length but not all the values.
+            # We can store the values in memory which doesn't need to be heap
+            # allocated.
+            @unroll
+            for i in range(Self._length):
+                self.stack_alloc_data[i] = other[i]
+        else:
+            # Worst case we allocate the memory on the heap.
+            self.length = num_elements
+            self.data = Pointer[Int].alloc(num_elements)
+            for i in range(num_elements):
+                self.data.store(i, other[i])
+            self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+
+    @always_inline
+    fn __init__(inout self, *elems: Int):
+        let elems_list: VariadicList[Int] = elems
+        let num_elements = elems_list.__len__()
+
+        self.length = Self._length
+        self.data = Pointer[Int]()
+        self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+
+        @parameter
+        if Self.is_fully_static():
+            # Fully static case stores nothing. Will just resolve to the
+            # parameter values. Can just keep the default runtime values.
+            return
+        elif Self.has_static_length():
+            # 2nd best case, we know the length but not all the values.
+            # We can store the values in memory which doesn't need to be heap
+            # allocated.
+            self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+
+            @unroll
+            for i in range(Self._length):
+                self.stack_alloc_data[i] = elems_list[i]
+        else:
+            # Worst case we allocate the memory on the heap.
+            self.length = num_elements
+            self.data = Pointer[Int].alloc(num_elements)
+            for i in range(num_elements):
+                self.data.store(i, elems_list[i])
+            self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
+
+    @always_inline
+    fn __moveinit__(inout self, owned existing: Self):
+        self.data = existing.data
+        self.stack_alloc_data = existing.stack_alloc_data
+        self.length = existing.length
+        existing.data = Pointer[Int]()
+
+    @always_inline
+    fn __copyinit__(inout self, existing: Self):
+        self.stack_alloc_data = existing.stack_alloc_data
+        self.length = existing.length
+        self.data = Pointer[Int]()
+
+        @parameter
+        if not Self.has_static_length():
+            self.data = Pointer[Int].alloc(self.length)
+            for i in range(self.length):
+                self.data.store(i, existing[i])
+
+    @staticmethod
+    @always_inline
+    fn shape_idx_statically_known[idx: Int]() -> Bool:
+        @parameter
+        if not Self.has_static_length():
+            return False
+        else:
+            return Self.static_values.at[idx]().has_value()
+
+    @staticmethod
+    @always_inline
+    fn is_fully_static() -> Bool:
+        @parameter
+        if not Self.has_static_length():
+            return False
+        else:
+            return Self.static_values.all_known[Self._length]()
+
+    @staticmethod
+    @always_inline
+    fn has_static_length() -> Bool:
+        return Self._length != 0
+
+    @always_inline
+    fn __getitem__(self, index: Int) -> Int:
+        """Gets the value at the specified index.
+
+        Args:
+          index: The index of the value to retrieve.
+
+        Returns:
+          The value at the specified indices.
+        """
+
+        @parameter
+        if Self.is_fully_static():
+            let v = StaticIntTuple[Self._length](Self.static_values)
+            return v[index]
+        elif Self.has_static_length():
+            return self.stack_alloc_data[index]
+        else:
+            return self.data.load(index)
+
+    @always_inline
+    fn nelems(self) -> Int:
+        var num_elms: Int = 1
+
+        @parameter
+        if Self.has_static_length():
+
+            @always_inline
+            @parameter
+            fn body[idx: Int]():
+                num_elms *= self[idx]
+
+            unroll[Self._length, body]()
+        else:
+            for i in range(self.__len__()):
+                num_elms *= self[i]
+        return num_elms
+
+    # Mutate the list. This should never be used by a user as it blurs the semantics, if the shape is known then static shape will not change with this function as one might expect.
+    fn _unsafe_set_dim(inout self, index: Int, value: Int):
+        @parameter
+        if Self.is_fully_static():
+            # No change for static
+            return
+        elif Self.has_static_length():
+            self.stack_alloc_data[index] = value
+        else:
+            self.data.store(index, value)
+
+    @staticmethod
+    @always_inline
+    fn empty(length: Int) -> IntList[Self._size_but_unknown]:
+        var x = IntList[Self._size_but_unknown]()
+        x.length = length
+
+        @parameter
+        if not Self.has_static_length():
+            x.data = Pointer[Int].alloc(length)
+            for i in range(length):
+                x.data.store(i, 0)
+        return x ^
+
+    fn print(self):
+        var str: String = "("
+        for i in range(self.__len__()):
+            str += self[i]
+            if i != (self.__len__() - 1):
+                str += ", "
+        str += ")"
+        print(str)
+
+    @always_inline
+    fn __len__(self) -> Int:
+        @parameter
+        if Self.has_static_length():
+            return Self._length
+        return self.length
+
+    @always_inline
+    fn __del__(owned self):
+        @parameter
+        if not Self.has_static_length():
+            if self.data != Pointer[Int]():
+                self.data.free()
