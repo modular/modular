@@ -287,7 +287,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   // TODO: Need to codegen here when parametric traits are a thing.
   auto processBindType = [this](BindTypeAttr bind) {
     MetaTypeType metatype = bind.getType();
-    // TODO: build AnyTypeType instead?
+    // TODO(#25619): build AnyTypeType instead. This is currently a hack.
     return TypeConstantAttr::get(replace(
         DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
                          AnyRegTypeType::get(bind.getContext()))));
@@ -414,12 +414,6 @@ Type StructOperationLowerer::replace(Type type) {
     return cast<KGEN::StructType>(result);
   };
 
-  // Erase metatypes.
-  auto processMetaType = [](MetaTypeType type) {
-    // TODO: build AnyTypeType instead?
-    return AnyRegTypeType::get(type.getContext());
-  };
-
   // Signature processing checks to see if there are any lifetime parameters;
   // if so, they are dropped.
   auto processSignatureType = [&](SignatureType signature) -> Type {
@@ -446,8 +440,11 @@ Type StructOperationLowerer::replace(Type type) {
     result = processPointer(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     result = processDeclRefType(ref);
-  } else if (auto metatype = dyn_cast<MetaTypeType>(type)) {
-    result = processMetaType(metatype);
+  } else if (isa<AnyTypeType, MetaTypeType>(type)) {
+    // Erase metatypes and reg-passable anytypes. Passability information is
+    // encoded elsewhere so this won't be needed.
+    // TODO(#25619): lower to AnyTypeType instead. This is currently a hack.
+    result = AnyRegTypeType::get(type.getContext());
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     result = processSignatureType(signature);
   } else if (isa<LIT::LifetimeType>(type)) {
@@ -773,6 +770,48 @@ static LogicalResult lowerFuncOp(GeneratorOp func) {
   return success();
 }
 
+/// Type references can be used in nested types. Walk through all the types and
+/// rewrite them in-place to use the lowered types. Walk pre-order, and while
+/// doing so, erase any trivial casts left over from the type conversion.
+static LogicalResult replaceTypes(Operation *op,
+                                  StructOperationLowerer &structLowerer) {
+  structLowerer.replaceElementsIn(op);
+
+  if (LLVM_UNLIKELY(structLowerer.errDeclRef)) {
+    return op->emitError("operation contains a declref type that does not "
+                         "refer to a struct: ")
+           << structLowerer.errDeclRef;
+  }
+  if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op)) {
+    // Fold trivial casts.
+    if (cast.getOperandTypes() == cast.getResultTypes()) {
+      cast.replaceAllUsesWith(cast.getOperands());
+      cast.erase();
+    } else {
+      if (cast->getNumResults() == 1 && cast->getNumOperands() == 1) {
+        if (isa<PointerType>(cast.getResult(0).getType()) &&
+            isa<PointerType>(cast.getOperand(0).getType())) {
+          // Change into a PointerBitcastOp for Pointer whose type is erased
+          // to be NoneType.
+          OpBuilder b(cast);
+          auto ptrBCast = b.create<POP::PointerBitcastOp>(
+              cast.getLoc(), cast.getResult(0).getType(), cast.getOperand(0));
+          cast->replaceAllUsesWith(ptrBCast->getResults());
+          cast.erase();
+        }
+      }
+    }
+
+    return success();
+  }
+  for (Region &region : op->getRegions()) {
+    for (Operation &op : llvm::make_early_inc_range(region.getOps()))
+      if (failed(replaceTypes(&op, structLowerer)))
+        return failure();
+  }
+  return success();
+};
+
 //===----------------------------------------------------------------------===//
 // LowerLITTypesPass
 //===----------------------------------------------------------------------===//
@@ -832,46 +871,6 @@ void LowerLITTypesPass::runOnOperation() {
   // update converted types with debug info
   structLowerer.runDebugTypeConversion = true;
 
-  // Type references can be used in nested types. Walk through all the types and
-  // rewrite them in-place to use the lowered types. Walk pre-order, and while
-  // doing so, erase any trivial casts left over from the type conversion.
-  std::function<LogicalResult(Operation *)> replaceTypes =
-      [&](Operation *op) -> LogicalResult {
-    structLowerer.replaceElementsIn(op);
-
-    if (LLVM_UNLIKELY(structLowerer.errDeclRef)) {
-      return op->emitError("operation contains a declref type that does not "
-                           "refer to a struct: ")
-             << structLowerer.errDeclRef;
-    }
-    if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op)) {
-      // Fold trivial casts.
-      if (cast.getOperandTypes() == cast.getResultTypes()) {
-        cast.replaceAllUsesWith(cast.getOperands());
-        cast.erase();
-      } else {
-        if (cast->getNumResults() == 1 && cast->getNumOperands() == 1) {
-          if (isa<PointerType>(cast.getResult(0).getType()) &&
-              isa<PointerType>(cast.getOperand(0).getType())) {
-            // Change into a PointerBitcastOp for Pointer whose type is erased
-            // to be NoneType.
-            OpBuilder b(cast);
-            auto ptrBCast = b.create<POP::PointerBitcastOp>(
-                cast.getLoc(), cast.getResult(0).getType(), cast.getOperand(0));
-            cast->replaceAllUsesWith(ptrBCast->getResults());
-            cast.erase();
-          }
-        }
-      }
-
-      return success();
-    }
-    for (Region &region : op->getRegions())
-      for (Operation &op : llvm::make_early_inc_range(region.getOps()))
-        if (failed(replaceTypes(&op)))
-          return failure();
-    return success();
-  };
-  if (failed(replaceTypes(getOperation())))
+  if (failed(replaceTypes(getOperation(), structLowerer)))
     return signalPassFailure();
 }
