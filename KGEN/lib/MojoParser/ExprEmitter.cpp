@@ -1672,8 +1672,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 
   // If this is a type declaration, return it as a type.
   if (auto structOp = dyn_cast<StructDeclOp>(decl))
-    return emitResult(PValue(structOp.bindReference()), expr, dest);
-
+    return emitResult(structOp.bindReference(), expr, dest);
   if (auto traitOp = dyn_cast<TraitDeclOp>(decl))
     return emitResult(traitOp.bindReference(), expr, dest);
 
