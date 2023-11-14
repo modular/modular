@@ -399,7 +399,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   }
 
   Type type = mlirType;
-  if (auto declRef = dyn_cast<DeclRefType>(type)) {
+  auto printUserType = [&](auto declRef) {
     SymbolRefAttr symbol = declRef.getSymbol();
     // Only print the leaf reference when pretty printing types.
     printSymbol(os, symbol, forDiag);
@@ -419,6 +419,13 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       });
       os << ']';
     }
+  };
+  if (auto declRef = dyn_cast<DeclRefType>(type)) {
+    printUserType(declRef);
+  } else if (auto metaType = dyn_cast<MetaTypeType>(type)) {
+    printUserType(metaType);
+  } else if (auto traitType = dyn_cast<TraitType>(type)) {
+    printSymbol(os, traitType.getSymbol(), forDiag);
   } else if (isNoneType()) {
     os << "None";
   } else if (auto sig = dyn_cast<LITSignatureType>(type)) {
