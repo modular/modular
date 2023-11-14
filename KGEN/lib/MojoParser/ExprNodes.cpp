@@ -22,6 +22,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/ExprNodes.h"
@@ -943,8 +944,9 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         InputParamBindings::getForDeclaredType(baseRVType, emitter.shared),
         this, CallSyntax::kDirectCall);
     ASTType baseType = baseVal.getType();
-    if (isa<AnyRegTypeType>(baseType.mlirType))
-      baseType = ASTType(baseVal.getIfPValue());
+    if (auto pValue = baseVal.getIfPValue())
+      if (LIT::isTypeExpr(pValue))
+        baseType = ASTType(pValue);
     result->baseDecl = baseType.getDecl(emitter.shared);
 
     // If the callee is a static method, we can directly reference it
@@ -1055,8 +1057,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       if (isa<NoneAttr>(attr.getValue())) {
       } else if (auto value = dyn_cast<TypedAttr>(attr.getValue())) {
         auto pushTypeToState = [&](TypedAttr type,
-                                   std::string message) -> LogicalResult {
-          if (!isa<AnyRegTypeType, MetaTypeType>(type.getType())) {
+                                   const Twine &message) -> LogicalResult {
+          if (!LIT::isTypeExpr(type)) {
             emitter.emitError(call.getLoc(), message);
             return failure();
           }

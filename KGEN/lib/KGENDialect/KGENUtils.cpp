@@ -1007,7 +1007,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   }
 
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(value)) {
-    printParamName(p, declRef.getName(), isa<AnyRegTypeType>(value.getType()));
+    printParamName(p, declRef.getName(), /*isRef=*/isTypeExpr(value));
     return;
   }
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {
@@ -1102,6 +1102,12 @@ void KGEN::printParamDeclaration(OpAsmPrinter &p, ParamDeclAttr paramDecl,
   printParamValue(p, value);
   p << ">";
 }
+
+bool KGEN::isTypeExprType(Type type) {
+  return isa<AnyTypeType, AnyRegTypeType>(type);
+}
+
+bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces

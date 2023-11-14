@@ -80,7 +80,7 @@ kgen.generator @dtype_params() {
 
 // -----
 
-// expected-error @below {{'get_sizeof' operand 0 should be a !kgen.anyregtype}}
+// expected-error @below {{'get_sizeof' operand 0 should be a type expression}}
 "someop"() {a = #kgen.param.expr<get_sizeof, 1, 2> : !kgen.dtype} : () -> ()
 
 // -----
@@ -97,7 +97,7 @@ kgen.generator @dtype_params() {
 
 // -----
 
-// expected-error @below {{'get_alignof' operand 0 should be a !kgen.anyregtype}}
+// expected-error @below {{'get_alignof' operand 0 should be a type expression}}
 "someop"() {a = #kgen.param.expr<get_alignof, 1, 2> : !kgen.dtype} : () -> ()
 
 // -----

@@ -1009,9 +1009,9 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetSizeOf:
     if (operands.size() != 2)
       return emitError() << "'get_sizeof' operator requires two operands";
-    if (!operands.front().getType().isa<AnyRegTypeType>())
+    if (!isTypeExpr(operands.front()))
       return emitError()
-             << "'get_sizeof' operand 0 should be a !kgen.anyregtype";
+             << "'get_sizeof' operand 0 should be a type expression";
     if (!operands[1].getType().isa<TargetType>())
       return emitError() << "'get_sizeof' operand 1 should be a !kgen.target";
     if (!type.isa<IndexType>())
@@ -1020,9 +1020,9 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetAlignOf:
     if (operands.size() != 2)
       return emitError() << "'get_alignof' operator requires two operands";
-    if (!llvm::isa<AnyRegTypeType>(operands.front().getType()))
+    if (!isTypeExpr(operands.front()))
       return emitError()
-             << "'get_alignof' operand 0 should be a !kgen.anyregtype";
+             << "'get_alignof' operand 0 should be a type expression";
     if (!operands[1].getType().isa<TargetType>())
       return emitError() << "'get_alignof' operand 1 should be a !kgen.target";
     if (!type.isa<IndexType>())
@@ -1889,7 +1889,7 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
       // FIXME(metatypes): The layering is wrong here. Should MetaTypeType be
       // moved to KGENDialect?
       Type metatype =
-          isa<AnyRegTypeType>(resultType) ? declRef.getMetaType() : resultType;
+          isTypeExprType(resultType) ? declRef.getMetaType() : resultType;
       return TypeConstantAttr::get(DeclRefType::get(declRef.getSymbol(),
                                                     declRef.getParamValues(),
                                                     metatype),

@@ -287,6 +287,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   // TODO: Need to codegen here when parametric traits are a thing.
   auto processBindType = [this](BindTypeAttr bind) {
     MetaTypeType metatype = bind.getType();
+    // TODO: build AnyTypeType instead?
     return TypeConstantAttr::get(replace(
         DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
                          AnyRegTypeType::get(bind.getContext()))));
@@ -415,6 +416,7 @@ Type StructOperationLowerer::replace(Type type) {
 
   // Erase metatypes.
   auto processMetaType = [](MetaTypeType type) {
+    // TODO: build AnyTypeType instead?
     return AnyRegTypeType::get(type.getContext());
   };
 
