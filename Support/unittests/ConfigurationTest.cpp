@@ -133,6 +133,50 @@ key3 = value3
   EXPECT_EQ(cfg.getValueOr("only.default.value", "default"), "default");
 }
 
+TEST(Configuration, DisabledOverride) {
+  // Check that the env override works as expected.
+  setenv("MODULAR_AKEY", "foo", 0);
+  setenv("MODULAR_SECTION_SUBSECTION_KEY3", "bar", 0);
+
+  auto unsetEnv = llvm::make_scope_exit([]() {
+    unsetenv("MODULAR_AKEY");
+    unsetenv("MODULAR_SECTION_SUBSECTION_KEY3");
+  });
+
+  StringRef input = R"(
+akey = value
+# this is a comment
+[section]
+key2 = value2 # with a comment
+; another comment
+
+[section.subsection] # yet another comment
+key3 = value3
+)";
+
+  Config cfg;
+  auto err = cfg.parseFrom(input);
+  ASSERT_FALSE(err.isError()) << err.getError();
+
+  cfg.setEnvOverride(false);
+
+  EXPECT_EQ(cfg.getValue("akey"), "value");
+  EXPECT_EQ(cfg.getValue("section.key2"), "value2");
+  EXPECT_EQ(cfg.getValue("section.subsection.key3"), "value3");
+  EXPECT_EQ(cfg.getValueOr("only.default.value", "default"), "default");
+
+  // Can be re-enabled for the default behavior.
+  cfg.setEnvOverride(true);
+  EXPECT_EQ(cfg.getValue("section.subsection.key3"), "bar");
+  setenv("MODULAR_SECTION_SUBSECTION_KEY3", "newbar", 1);
+  EXPECT_EQ(cfg.getValue("section.subsection.key3"), "newbar");
+
+  // Once it's overwritten, it's overwritten forever.
+  cfg.setEnvOverride(false);
+  setenv("MODULAR_SECTION_SUBSECTION_KEY3", "kombuchabar", 1);
+  EXPECT_EQ(cfg.getValue("section.subsection.key3"), "newbar");
+}
+
 TEST(Configuration, SetValue) {
   StringRef input = R"(
 akey = value
