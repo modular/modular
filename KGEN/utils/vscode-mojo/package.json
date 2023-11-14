@@ -2,7 +2,7 @@
   "name": "vscode-mojo",
   "displayName": "Mojo 🔥",
   "description": "Mojo language support",
-  "version": "5.0.2-dev",
+  "version": "5.0.3-dev",
   "publisher": "modular-mojotools",
   "icon": "icon.png",
   "engines": {
@@ -262,7 +262,11 @@
             "properties": {
               "program": {
                 "type": "string",
-                "description": "Path to the program to debug."
+                "description": "Path to the precompiled program to debug."
+              },
+              "mojoFile": {
+                "type": "string",
+                "description": "If provided, this supersedes the `program` argument and initiates a launch debug session where `mojoFile` is JIT compiled. All other properties keep their intended behavior, e.g. `args` are sent to the JIT compiled program as expected."
               },
               "args": {
                 "type": [

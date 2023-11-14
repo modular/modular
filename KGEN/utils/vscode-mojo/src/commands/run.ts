@@ -77,28 +77,11 @@ class ExecutionManager extends DisposableContext {
     if (!doc)
       return;
 
-    // Find the config for processing this file.
-    let config = await this._context?.getSDK().resolveConfig(
-        vscode.workspace.getWorkspaceFolder(doc.uri));
-    if (config === undefined)
-      return;
-
-    // Pull in the additional visualizers within the lldb-visualizers dir.
-    let visualizersDir = config.mojoLLDBVisualizersPath;
-    let visualizers = await vscode.workspace.fs.readDirectory(
-        vscode.Uri.file(visualizersDir));
-    let visualizerCommands = visualizers.map(
-        ([ name, _type ]) => `command script import ${visualizersDir}/${name}`);
-
     let debugConfig: vscode.DebugConfiguration = {
       type : "mojo-lldb",
       name : "Mojo",
       request : "launch",
-      program : config.mojoDriverPath,
-      modularHomePath : config.modularHomePath,
-      args :
-          [ "run", "--no-optimization", "--debug-level", "full", doc.fileName ],
-      initCommands : visualizerCommands,
+      mojoFile : doc.fileName,
     };
     await vscode.debug.startDebugging(
         vscode.workspace.getWorkspaceFolder(doc.uri), debugConfig);

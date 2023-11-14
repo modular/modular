@@ -13,6 +13,25 @@ import {DisposableContext} from '../utils/disposableContext';
 import {RpcLaunchServer, UriLaunchServer} from './externalDebugLauncher';
 
 /**
+ * Stricter version of vscode.DebugConfiguration intended to reduce the chances
+ * of typos when handling individual attributes.
+ */
+type MojoDebugConfiguration = {
+  type?: string;
+  name?: string;
+  request?: string;
+  modularHomePath?: string;
+  args?: string[];
+  program?: string;
+  mojoFile?: string;
+  env?: string[];
+  enableAutoVariableSummaries?: boolean;
+  commandEscapePrefix?: string;
+  timeout?: number;
+  initCommands?: string[];
+}
+
+/**
  * This class defines a factory used to find the lldb-vscode binary to use
  * depending on the session configuration.
  */
@@ -26,12 +45,14 @@ class MojoDebugAdapterDescriptorFactory implements
   async createDebugAdapterDescriptor(session: vscode.DebugSession,
                                      _executable: vscode.DebugAdapterExecutable|
                                      undefined):
-      Promise<vscode.DebugAdapterDescriptor|null> {
-
+      Promise<vscode.DebugAdapterDescriptor|undefined> {
     let config = await this.context?.getSDK().resolveConfig(
-        session.configuration.modularHomePath || session.workspaceFolder);
+        session.configuration.modularHomePath || session.workspaceFolder ||
+        session.configuration.mojoFile);
+    // We don't need to show error messages here because `resolveConfig` does
+    // that.
     if (!config)
-      return null;
+      return undefined;
     // The --repl-mode set to `auto` indicates LLDB to distinguish automatically
     // if the text passed in the debug console is an expression or a command and
     // handle it accordingly. In case of ambiguity, the user can use the `:`
@@ -52,10 +73,39 @@ class MojoDebugConfigurationProvider implements
 
   constructor(context: MOJOContext) { this.context = context; }
 
-  async resolveDebugConfiguration(folder: vscode.WorkspaceFolder|undefined,
-                                  debugConfiguration: vscode.DebugConfiguration,
-                                  token?: vscode.CancellationToken):
-      Promise<vscode.DebugConfiguration> {
+  async resolveDebugConfigurationWithSubstitutedVariables
+      ?(folder: vscode.WorkspaceFolder|undefined,
+        debugConfiguration: MojoDebugConfiguration,
+        token?: vscode.CancellationToken):
+          Promise<undefined|vscode.DebugConfiguration> {
+    // Load the MojoLLDB plugin. The SDK must be present because otherwise we
+    // can't get access to the debug adapter.
+    let config = await this.context?.getSDK().resolveConfig(
+        debugConfiguration.modularHomePath || folder ||
+        debugConfiguration.mojoFile);
+    // We don't need to show error messages here because `resolveConfig` does
+    // that.
+    if (!config)
+      return undefined;
+
+    if (debugConfiguration.mojoFile) {
+      if (!debugConfiguration.mojoFile.endsWith('.🔥') &&
+          !debugConfiguration.mojoFile.endsWith('.mojo')) {
+        const message = `Mojo Debug error: the file '${
+            debugConfiguration
+                .mojoFile}' doesn't have the .🔥 or .mojo extension.`;
+        this.context?.getLoggingService().logError(message);
+        vscode.window.showErrorMessage(message);
+        return undefined;
+      }
+      debugConfiguration.args = [
+        "run", "--no-optimization", "--debug-level", "full",
+        debugConfiguration.mojoFile, ...(debugConfiguration.args || [])
+      ];
+      debugConfiguration.program = config.mojoDriverPath;
+    }
+
+    // We give preference to the init commands specified by the user.
     // The timeout that will be used by LLDB when initializing the target in
     // different scenarios. We use 5 minutes as a very conservative timeout when
     // debugging massive LLVM targets.
@@ -63,17 +113,17 @@ class MojoDebugConfigurationProvider implements
 
     // This setting indicates LLDB to generate a useful summary for each
     // non-primitive type that is displayed right away in the IDE.
-    if (!("enableAutoVariableSummaries" in debugConfiguration))
+    if (debugConfiguration.enableAutoVariableSummaries === undefined)
       debugConfiguration.enableAutoVariableSummaries = true;
 
     // This setting indicates LLDB to use the `:` prefix in the Debug Console to
     // disambiguate variable printing from regular LLDB commands.
-    if (!("commandEscapePrefix" in debugConfiguration))
+    if (debugConfiguration.commandEscapePrefix === undefined)
       debugConfiguration.commandEscapePrefix = ':';
 
     // This timeout affects targets created with "attachCommands" or
     // "launchCommands".
-    if (!("timeout" in debugConfiguration))
+    if (debugConfiguration.timeout === undefined)
       debugConfiguration.timeout = initializationTimeoutSec;
 
     // This setting shortens the length of address strings.
@@ -81,18 +131,19 @@ class MojoDebugConfigurationProvider implements
       "settings set target.show-hex-variable-values-with-leading-zeroes false"
     ];
 
-    // Load the MojoLLDB plugin.
-    let config = await this.context?.getSDK().resolveConfig(
-        debugConfiguration.modularHomePath || folder);
-    if (config && config.mojoLLDBPluginPath &&
-        config.mojoLLDBPluginPath.length > 0) {
-      initCommands.push(`plugin load '${config.mojoLLDBPluginPath}'`);
-    }
+    initCommands.push(`plugin load '${config.mojoLLDBPluginPath}'`);
 
-    // We give preference to the init commands specified by the user.
+    // Pull in the additional visualizers within the lldb-visualizers dir.
+    let visualizersDir = config.mojoLLDBVisualizersPath;
+    let visualizers = await vscode.workspace.fs.readDirectory(
+        vscode.Uri.file(visualizersDir));
+    let visualizerCommands = visualizers.map(
+        ([ name, _type ]) => `command script import ${visualizersDir}/${name}`);
+
     debugConfiguration.initCommands = [
       ...initCommands,
       ...(debugConfiguration.initCommands || []),
+      ...visualizerCommands,
     ];
 
     const env = [
@@ -107,7 +158,24 @@ class MojoDebugConfigurationProvider implements
       env.push(`MODULAR_HOME=${config.modularHomePath}`);
 
     debugConfiguration.env = [...env, ...(debugConfiguration.env || []) ];
-    return debugConfiguration;
+    return debugConfiguration as vscode.DebugConfiguration;
+  }
+
+  async resolveDebugConfiguration(folder: vscode.WorkspaceFolder|undefined,
+                                  debugConfiguration: MojoDebugConfiguration,
+                                  token?: vscode.CancellationToken):
+      Promise<vscode.DebugConfiguration> {
+    // The `Debug: Start Debugging` command (aka F5 or the `Run and Debug`
+    // button if no launch.json files are present), invoke this method with a
+    // totally empty debugConfiguration, so we have to fill it in.
+    if (!debugConfiguration.request) {
+      debugConfiguration.type = MojoDebugConfigurationProvider.DEBUG_TYPE;
+      debugConfiguration.request = "launch";
+      // This will get replaced with the currently active document.
+      debugConfiguration.mojoFile = "${file}";
+    }
+
+    return debugConfiguration as vscode.DebugConfiguration;
   }
 }
 
