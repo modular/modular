@@ -1151,3 +1151,26 @@ struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`]:
 fn sadge(ptr: MemExamplePtr[]):
     __get_address_as_uninit_lvalue(ptr.value) = MemExample()
     return
+
+
+def foo(x: Int): pass
+fn use(x: Int): pass
+
+# Use of uninitialized value after call to def function
+
+# CHECK-LABEL: lit.func @"error_handling_int_let
+# https://github.com/modularml/modular/issues/25419
+def error_handling_int_let():
+    # CHECK: lit.letreg.decl "x"
+    let x: Int = 1
+    _ = foo(x)
+    use(x)
+
+
+struct RaisingInit:
+    var stream: Int
+    fn __init__(inout self, flags: Int = 0) raises:
+        let stream = 4
+        # This can raise, but 'self' doesn't need to be initialized.
+        _ = foo(1)
+        self.stream = stream
