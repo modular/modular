@@ -1577,6 +1577,10 @@ trait Trait:
     def f4(inout self: Self):
         pass
 
+    fn overloaded(self): ...
+    fn overloaded(self, x: Int): ...
+    fn overloaded(self, x: StringLiteral): ...
+
 # CHECK-LABEL: lit.trait.decl @EmptyTrait<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait EmptyTrait:
     pass
@@ -1627,6 +1631,13 @@ fn generic_trait_fn[T: Trait](x: T):
     # CHECK: call_param[!lit.signature<("self": !kgen.paramref<:!lit.trait<{{.*}}@Trait> [[T]]> borrow) -> !kgen.none>:
     # CHECK-SAME: get_type_method(:!lit.trait<{{.*}}@Trait> [[T]], "f0")](%x)
     x.f0()
+
+    # CHECK: call_param[!lit.signature<("self": {{.*}} borrow) -> !kgen.none>: get_type_method({{.*}}, "overloaded")](%x)
+    x.overloaded()
+    # CHECK: call_param[!lit.signature<("self": {{.*}} borrow, "x": !Int borrow) -> !kgen.none>: get_type_method({{.*}}, "overloaded")](%x, %{{.*}})
+    x.overloaded(1)
+    # CHECK: call_param[!lit.signature<("self": {{.*}} borrow, "x": !StringLiteral borrow) -> !kgen.none>: get_type_method({{.*}}, "overloaded")](%x, %{{.*}})
+    x.overloaded("trait")
     pass
 
 # CHECK-LABEL: lit.func @"existential_arg
