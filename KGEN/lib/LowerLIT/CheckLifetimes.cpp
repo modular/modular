@@ -861,9 +861,12 @@ ValueRef UninitializedValueScan::checkConsume(Value value, Operation &op) {
   if (!valueRef)
     return valueRef;
 
-  // This marks its value as dead, but the value as unmutated so it can be
-  // overwriten if it is a 'let'.
-  valueRef.markBits(liveValues, false);
+  // If tracked, marks its value as dead.
+  if (!valueSet.typeDeclInfo.isRegisterPassableTrivial(
+          valueRef.getValueType(value)))
+    valueRef.markBits(liveValues, false);
+
+  // Mark the value as mutated.
   valueRef.markBits(everMutatedValues, true);
   return valueRef;
 }
@@ -898,9 +901,6 @@ void UninitializedValueScan::scanBlock(Block &block) {
 }
 
 void UninitializedValueScan::checkOp(Operation &op) {
-  if (isa<LIT::ErrorReturnOp>(op))
-    return;
-
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.
   if (isa<DebugInfo::ValueOp>(op))
@@ -1020,11 +1020,22 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // If this is a kgen.return then we have an exit from the function
   // (including early returns and exception raises that leave the function).
   // Check that *all* of the values we are tracking are managed correctly.
-  if (isa<KGEN::ReturnOp>(op)) {
+  if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op)) {
     for (const ValueInfo &valueInfo :
-         llvm::drop_begin(valueSet.getValueInfos()))
-      if (!valueInfo.endsUninit)
-        checkUse(valueInfo.value, op);
+         llvm::drop_begin(valueSet.getValueInfos())) {
+      // If the value doesn't need to be live at end of function, ignore it.
+      if (valueInfo.endsUninit)
+        continue;
+
+      // If this is a `isFullObjectLiveOnEntry` value (i.e., the 'self' member
+      // in an __init__) then it is actually not used on the error path, only
+      // the normal path.
+      if (valueInfo.isFullObjectLiveOnEntry && isa<LIT::ErrorReturnOp>(op))
+        continue;
+
+      // Otherwise, it must be live at return/raise.
+      checkUse(valueInfo.value, op);
+    }
 
     // Indicate that all values are live after the return so that an early
     // return in an 'if' will get properly intersected with the other side of
@@ -1061,7 +1072,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
 
   // 'if' operations treat the condition as a use but have live outs that are
   // the intersection of the live values produced by the then/else branches.
-  if (isa<HLCF::IfOp, ParamIfOp>(op)) {
+  if (isa<HLCF::IfOp, ParamIfOp, HandleVariantOp>(op)) {
     assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
            op.getRegion(1).hasOneBlock() &&
            "if-like op should have two single-block regions");
@@ -1397,6 +1408,7 @@ void DestructorInsertion::checkOp(Operation &op) {
             dyn_cast<DeclRefType>(topLevelValueRef.getValueType(topLevelValue));
         if (!valueType)
           continue;
+
         mlir::ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
                                            op.getIterator());
         if (topLevelValueRef.isAllPresent(original)) {
@@ -1404,34 +1416,34 @@ void DestructorInsertion::checkOp(Operation &op) {
           // yet, which means the entire object can be destroyed.
           destroyValueIfNeeded(topLevelValue, topLevelValueRef, builder, &op);
           break;
-        } else if (topLevelValueRef.isAllMissing(original)) {
+        }
+
           // No fields have been initialized yet, so there is nothing to
           // destroy.
+        if (topLevelValueRef.isAllMissing(original))
           break;
-        } else {
-          // At this point we have some values that have been initialized
-          // and some that have not. Let's destroy those that have been
-          // initialized.
-          LIT::StructDeclOp structDecl =
-              valueSet.typeDeclInfo.getStructDeclForType(valueType);
 
-          unsigned offset = 0;
-          for (StructFieldOp field : structDecl.getFieldDecls()) {
-            unsigned numBits =
-                valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
-            ValueRef fieldValueRef =
-                topLevelValueRef.getSubfield(offset, numBits);
-            offset += numBits;
-            // Trivial types do not need to be destroyed.
-            if (valueSet.typeDeclInfo.isRegisterPassableTrivial(
-                    field.getType()))
-              continue;
-            if (fieldValueRef.isIndirect &&
-                original.test(fieldValueRef.startBit)) {
-              destroyValueIfNeeded(builder.create<LIT::StructGEPOp>(
-                                       op.getLoc(), topLevelValue, field),
-                                   fieldValueRef, builder, &op);
-            }
+        // At this point we have some values that have been initialized
+        // and some that have not. Let's destroy those that have been
+        // initialized.
+        LIT::StructDeclOp structDecl =
+            valueSet.typeDeclInfo.getStructDeclForType(valueType);
+
+        unsigned offset = 0;
+        for (StructFieldOp field : structDecl.getFieldDecls()) {
+          unsigned numBits =
+              valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
+          ValueRef fieldValueRef =
+              topLevelValueRef.getSubfield(offset, numBits);
+          offset += numBits;
+          // Trivial types do not need to be destroyed.
+          if (valueSet.typeDeclInfo.isRegisterPassableTrivial(field.getType()))
+            continue;
+          if (fieldValueRef.isIndirect &&
+              original.test(fieldValueRef.startBit)) {
+            destroyValueIfNeeded(builder.create<LIT::StructGEPOp>(
+                                     op.getLoc(), topLevelValue, field),
+                                 fieldValueRef, builder, &op);
           }
         }
 

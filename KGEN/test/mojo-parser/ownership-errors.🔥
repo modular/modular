@@ -362,3 +362,11 @@ fn testStructWithNoDel():
     var l = StructWithNoDel(100)
     take(l^)  # expected-error {{value 'l' cannot be consumed, because 'l.x' is used later}}
     l.x = 10
+
+
+# expected-note @+1 {{'x' declared here}}
+fn inout_restored_at_throw(inout x: MemExample, err: Error) raises:
+   # x is uninit after this point, needs to be restored if an
+   # error is thrown.
+   _ = x^
+   raise err # expected-error {{use of uninitialized value 'x'}}
