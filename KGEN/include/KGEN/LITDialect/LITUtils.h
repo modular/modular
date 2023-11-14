@@ -223,6 +223,7 @@ struct MangledSymbol {
 
 /// Print a mangled symbol.
 llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
+
 } // namespace LIT
 } // namespace KGEN
 } // namespace M

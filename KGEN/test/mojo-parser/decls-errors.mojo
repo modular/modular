@@ -763,6 +763,25 @@ trait TraitWithParams[T: AnyRegType]: # expected-error {{TODO: trait declaration
 struct StructWithTrait(T1):  # expected-error {{expected to find a trait decl of 'T1' for struct}}
     pass
 
+
+##===----------------------------------------------------------------------===##
+# Struct/Trait conformance check failure
+##===----------------------------------------------------------------------===##
+
+trait CFMTrait:
+    fn f1(self: Self): # expected-note {{required function `f1` is not implemented}}
+        pass
+
+    @staticmethod
+    fn f2(): # expected-note {{required function `f2` is not implemented}}
+        pass
+
+# struct implements CFMTrait but does not have f2().
+# expected-error @+2 {{conformance check failed}}
+@register_passable
+struct CFMStructFail(CFMTrait): # expected-note {{struct `CFMStructFail` does not implement all requirements for `CFMTrait`}}
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Class
 ##===----------------------------------------------------------------------===##
