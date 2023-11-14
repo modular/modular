@@ -601,11 +601,13 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
                                          CompactRuntimePtr runtime) {
     auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
         alignof(ConcreteAsyncValue<T>), sizeof(ConcreteAsyncValue<T>));
+#if MODULAR_PARANOID
     AsyncProfilerEntry::create("AsyncValue::allocate", [ptr]() {
       return (Twine(TypeID::get<T>().getTypeName()) + ", " +
               Detail::addrToHex(ptr))
           .str();
     }).record();
+#endif
     new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
                                     TypeID::get<T>(), runtime);
     return ptr;
