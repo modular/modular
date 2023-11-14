@@ -26,9 +26,7 @@ public:
     filePathKey = ("telemetry.exporters." + signalType + ".file_path").str();
     httpUrlKey = ("telemetry.exporters." + signalType + ".http_endpoint").str();
 
-    auto cfgOr = Config::open();
-    EXPECT_FALSE(cfgOr.isError()) << cfgOr.getError();
-    cfg = std::move(*cfgOr);
+    cfg.setEnvOverride(false);
   }
 
   /// NOTE: This config stays in-memory and is passed to the TelemetryContext

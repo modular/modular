@@ -103,6 +103,10 @@ public:
   /// Flush the configuration to the canonical location.
   ErrorOrSuccess flush();
 
+  // Enable or disable the functionality that allows environment variables to
+  // override the existing variables on read.
+  void setEnvOverride(bool newVal);
+
   /// Get the path to the canonical modular home directory.
   static std::filesystem::path getModularHomeDirPath();
 
@@ -114,6 +118,7 @@ private:
   /// notation. This is a map of property -> value, with each property prefixed
   /// by its section.
   llvm::StringMap<std::string> kv;
+  bool allowEnvOverride = true;
 };
 
 /// Given a file name, find that file in one of the modular search paths. If the

@@ -219,12 +219,14 @@ StringRef Config::getValue(StringRef key) {
   std::replace_if(
       upper.begin(), upper.end(), [](char c) { return c == '.'; }, '_');
 
-  // Check for this environment variable.
-  auto envOr = llvm::sys::Process::GetEnv("MODULAR_" + upper);
-  // If we have this env variable, save it in the map. We don't care if it
-  // overrides something.
-  if (envOr)
-    kv[key.lower()] = *envOr;
+  if (allowEnvOverride) {
+    // Check for this environment variable.
+    auto envOr = llvm::sys::Process::GetEnv("MODULAR_" + upper);
+    // If we have this env variable, save it in the map. We don't care if it
+    // overrides something.
+    if (envOr)
+      kv[key.lower()] = *envOr;
+  }
 
   return kv[key.lower()];
 }
@@ -424,6 +426,8 @@ std::filesystem::path Config::getConfigFilePath() {
   // Otherwise, return where it should be placed.
   return getModularHomeDirPath() / kModularConfigFileName.str();
 }
+
+void Config::setEnvOverride(bool newVal) { allowEnvOverride = newVal; }
 
 std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
   // First try and find it in the home dir if we can.
