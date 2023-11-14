@@ -25,13 +25,6 @@ from utils.vector import DynamicVector
 
 
 @always_inline
-fn _swap[type: AnyRegType](inout lhs: type, inout rhs: type):
-    let tmp = lhs
-    lhs = rhs
-    rhs = tmp
-
-
-@always_inline
 fn _swap[type: AnyRegType](array: Pointer[type], i0: Int, i1: Int):
     let tmp = array.load(i0)
     array.store(i0, array.load(i1))
