@@ -376,3 +376,16 @@ kgen.generator @thing() -> !kgen.declref<@Recursive> {
 kgen.generator @foo<T: type>() {
   kgen.return
 }
+
+//===----------------------------------------------------------------------===//
+// Traits
+//===----------------------------------------------------------------------===//
+
+// CHECK-NOT: lit.trait.decl
+lit.trait.decl @Trait {
+}
+
+// CHECK: kgen.generator @trait_fn<T: regtype>()
+kgen.generator @trait_fn<T: !lit.trait<@Trait>>() {
+  kgen.return
+}

@@ -696,6 +696,11 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
       // Skip external functions.
       if (func.isExternal())
         return;
+      // Just delete trait functions. They are no longer needed.
+      if (isa<LIT::TraitFuncOp>(func.getBody()->getTerminator())) {
+        func.erase();
+        return;
+      }
 
       // Lower things like lit.break into hlcf.break which are terminators,
       // and diagnose unreachable code.

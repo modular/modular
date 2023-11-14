@@ -770,3 +770,11 @@ lit.func @loop_with_else(%arg0: i1) {
   lit.return
   lit.end_func
 }
+
+// CHECK-LABEL: lit.trait.decl @Trait
+lit.trait.decl @Trait {
+  // CHECK-NOT: @trait_fn
+  lit.func @trait_fn() {
+    lit.trait_func
+  }
+}
