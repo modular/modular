@@ -580,12 +580,7 @@ static int package(const State &state) {
     return state.reportError(builtOrErr.getError());
   auto [builtModule, builtPackage] = builtOrErr.takeValue();
 
-  // If we're printing to stdout we want to print the full module (so the
-  // dialect resource is printed), but if we're printing to a file, we simply
-  // print the package bytecode, which will include the resources.
-  if (out->getFilename() == "-")
-    builtModule->print(out->os());
-  else if (failed(mlir::writeBytecodeToFile(builtPackage, out->os())))
+  if (failed(mlir::writeBytecodeToFile(builtPackage, out->os())))
     return state.reportError("failed to write package bytecode to a file");
 
   out->keep();

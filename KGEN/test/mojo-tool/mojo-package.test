@@ -1,5 +1,5 @@
-// RUN: mojo package -D fire="🔥" %mojo_cpu_build_arch %S/test_package | FileCheck %s
-// RUN: mojo package -D fire="🔥" -debug-level full %mojo_cpu_build_arch %S/test_package | FileCheck %s --check-prefix=DEBUGINFO
+// RUN: mojo package -D fire="🔥" %mojo_cpu_build_arch %S/test_package | kgen-opt | FileCheck %s
+// RUN: mojo package -D fire="🔥" -debug-level full %mojo_cpu_build_arch %S/test_package | kgen-opt | FileCheck %s --check-prefix=DEBUGINFO
 
 // DEBUGINFO-DAG: #local_variable{{[0-9]+}} =
 // DEBUGINFO-DAG: !subroutine{{[0-9]+}} =
