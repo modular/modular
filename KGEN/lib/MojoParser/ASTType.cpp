@@ -133,7 +133,12 @@ TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
 
   // We don't yet have a runtime representation for packages or modules, but
   // when we do, it will not be register-passable.
-  if (isa<FileModuleOp, PackageOp>(*decl))
+  if (isa<FileModuleOp, PackageOp>(decl))
+    return TypeConvention::MemoryOnly;
+
+  // We don't yet have a runtime representation for existentials, but they are
+  // always memory-only.
+  if (isa<TraitDeclOp>(decl))
     return TypeConvention::MemoryOnly;
 
   auto structOp = dyn_cast<StructDeclOp>(decl);

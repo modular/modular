@@ -1594,6 +1594,11 @@ struct StructWithTraits(Trait1, Trait2):
     pass
 
 # CHECK-LABEL: lit.func @"generic_trait_fn
-# CHECK: <[[T:.*_T]][T]: !lit.trait<{{.*}}@Trait>>()
-fn generic_trait_fn[T: Trait]():
+# CHECK-SAME: <[[T:.*]][T]: !lit.trait<{{.*}}@Trait>>
+fn generic_trait_fn[T: Trait](x: Trait):
+    pass
+
+# CHECK-LABEL: lit.func @"existential_arg
+# CHECK-SAME: (%x[x]: !kgen.pointer<!lit.trait<{{.*}}@Trait>>
+fn existential_arg(x: Trait):
     pass
