@@ -381,14 +381,6 @@ public:
   /// decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
   PValue getAdaptiveSet(ExprEmitter &emitter);
-
-private:
-  /// Resolve the callee into either a single PValue callee (if there's only
-  /// one decl provided) or a variadic that contains all the possible adaptive
-  /// overloads.
-  static PValue getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
-                          const InputParamBindings &inputParamBindings,
-                          const ExprNode *expr, ExprEmitter &emitter);
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,
