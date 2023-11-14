@@ -753,6 +753,9 @@ trait EverythingIsWrongTrait:
     trait NestedTrait: # expected-error {{nested trait not supported here}}
         ...
 
+    # expected-note @below {{function declared here}}
+    fn parametric[x: Int](self): ...
+
     struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
         pass
 
@@ -763,6 +766,9 @@ trait TraitWithParams[T: AnyRegType]: # expected-error {{TODO: trait declaration
 struct StructWithTrait(T1):  # expected-error {{expected to find a trait decl of 'T1' for struct}}
     pass
 
+
+fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
+  x.parametric() # expected-error {{invalid call to 'parametric': callee expects 1 input parameter, but 0 were specified}}
 
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check failure
