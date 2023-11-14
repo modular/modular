@@ -371,3 +371,8 @@ kgen.generator @thing() -> !kgen.declref<@Recursive> {
   // CHECK: kgen.unreachable
   kgen.unreachable
 }
+
+// CHECK-LABEL: kgen.generator @foo<T: regtype>()
+kgen.generator @foo<T: type>() {
+  kgen.return
+}
