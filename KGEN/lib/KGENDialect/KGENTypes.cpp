@@ -537,8 +537,7 @@ Type PointerType::getElementAsType() const {
   TypedAttr elemType = getElementType();
   if (auto typeCst = ::dyn_cast<TypeConstantAttr>(elemType))
     return typeCst.getValue();
-  assert(::isa<AnyRegTypeType>(elemType.getType()) &&
-         "parameter expr must have metatype type");
+  assert(isTypeExpr(elemType) && "parameter expr must be a type expression");
   return ParamRefType::get(elemType);
 }
 
@@ -742,9 +741,9 @@ KGEN::StringType::getTypeAlign(TargetInfoAttr target) const {
 LogicalResult VariadicType::verify(function_ref<InFlightDiagnostic()> emitError,
                                    TypedAttr type) {
   assert(type && "type cannot be null");
-  if (!type.getType().isa<AnyRegTypeType>())
+  if (!isTypeExpr(type))
     return emitError()
-           << "type parameter for pointer must be a !kgen.anyregtype";
+           << "type parameter for pointer must be a type expression";
   return success();
 }
 
@@ -752,8 +751,7 @@ Type VariadicType::getElementAsType() const {
   TypedAttr eltType = getElementType();
   if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(eltType))
     return typeCst.getValue();
-  assert(::isa<AnyRegTypeType>(eltType.getType()) &&
-         "parameter expr must have metatype type");
+  assert(isTypeExpr(eltType) && "parameter expr must be a type expression");
   return ParamRefType::get(eltType);
 }
 
@@ -798,9 +796,9 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<TypedAttr> elementTypes,
                                  bool isMemoryOnly) {
   for (auto [index, elementType] : llvm::enumerate(elementTypes)) {
-    if (!elementType.getType().isa<AnyRegTypeType>())
+    if (!isTypeExpr(elementType))
       return emitError() << "struct element type at index " << index
-                         << " is not a !kgen.anyregtype";
+                         << " is not a type expression";
   }
   return success();
 }
@@ -943,7 +941,7 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
 //===----------------------------------------------------------------------===//
 
 /// Verify that the element type of the variadic attribute or expression is a
-/// `!kgen.anyregtype`.
+/// type expression.
 LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr variadic) {
   VariadicType type = ::dyn_cast<VariadicType>(variadic.getType());
@@ -952,10 +950,11 @@ LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
                        << variadic.getType();
 
   Type elementType = type.getElementAsType();
-  if (!::isa<AnyRegTypeType>(elementType))
-    return emitError() << "expected a variadic type with a "
-                          "!kgen.anyregtype element type, but got "
+  if (!isTypeExprType(elementType)) {
+    return emitError() << "expected a variadic type with a type expression "
+                          "element type, but got "
                        << elementType;
+  }
 
   return success();
 }

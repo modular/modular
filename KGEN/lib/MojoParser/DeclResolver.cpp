@@ -3684,6 +3684,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   // - MT: an AnyRegTypeType which points to the struct that implements this
   // trait.
   // - T: a ParamRef to MT which is the type of MT.
+  // TODO: build AnyType instead
   auto mt = ParamDeclAttr::get("MT", AnyRegTypeType::get(decl.getContext()));
   auto mtRef = ParamDeclAttr::get(
       "T", KGEN::ParamRefType::get(KGEN::ParamDeclRefAttr::get(mt)));

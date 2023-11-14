@@ -25,6 +25,11 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+bool LIT::isTypeExpr(TypedAttr attr) {
+  return isa<AnyTypeType, AnyRegTypeType, MetaTypeType, ParamRefType>(
+      attr.getType());
+}
+
 //===----------------------------------------------------------------------===//
 // Parameter Mangling
 //===----------------------------------------------------------------------===//

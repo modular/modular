@@ -37,6 +37,9 @@ namespace LIT {
 class PassingKindArrayAttr;
 enum class PassingKind : uint32_t;
 
+/// Returns whether the given attribute is a LIT type expression.
+bool isTypeExpr(TypedAttr attr);
+
 //===----------------------------------------------------------------------===//
 // Parameter Mangling
 //===----------------------------------------------------------------------===//

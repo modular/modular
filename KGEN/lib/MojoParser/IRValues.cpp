@@ -11,6 +11,7 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -171,6 +172,7 @@ static Type extractMetaType(Type type) {
   // The metatype is the type of the carried type expression.
   if (auto paramRef = dyn_cast<ParamRefType>(type))
     return paramRef.getParam().getType();
+  // TODO: build AnyTypeType?
   // Otherwise, this is a generic MLIR type.
   return AnyRegTypeType::get(type.getContext());
 }
@@ -181,10 +183,10 @@ PValue::PValue(Type value)
 
 /// If this value /is/ a type return it.
 ASTType PValue::getIfTypeValue() const {
-  auto attr = get();
+  TypedAttr attr = get();
   // If this is a parameter expression of type value, use ParamRefType to turn
   // it into a type.
-  if (isa<AnyRegTypeType, MetaTypeType, ParamRefType>(attr.getType()))
+  if (LIT::isTypeExpr(attr))
     return ParamRefType::get(attr);
   return {};
 }

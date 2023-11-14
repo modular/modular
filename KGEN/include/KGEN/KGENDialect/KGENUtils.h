@@ -83,6 +83,12 @@ ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
 /// Print `: <type>` or elide it entirely if type is an `index` type.
 void printColonTypeOrIndex(AsmPrinter &p, Type type);
 
+/// Returns whether the given type could be the type of a KGEN type expression.
+bool isTypeExprType(Type type);
+
+/// Returns whether the given attribute is a KGEN type expression.
+bool isTypeExpr(TypedAttr attr);
+
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
 //===----------------------------------------------------------------------===//
