@@ -54,6 +54,7 @@ from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
+from utils.optional import Optional
 
 
 @closure
@@ -2141,6 +2142,7 @@ fn sgemm_warp_tiling_kernel[
     TM: Scalar[indexing_integral_dtype],
     TN: Scalar[indexing_integral_dtype],
     NUM_THREADS: Scalar[indexing_integral_dtype],
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
 ](
     mat_c: NDBuffer[2, c_shape, c_type],
     mat_a: NDBuffer[2, a_shape, a_type],
@@ -2358,10 +2360,31 @@ fn sgemm_warp_tiling_kernel[
                             res_idx_n,
                         )
                     )
-                    var vec = C_interim.aligned_simd_load[4, 16](c_idx.to_int())
-                    # Perform GEMM update in reg.
-                    vec = result_vec + vec
-                    C_interim.aligned_simd_store[4, 16](c_idx.to_int(), vec)
+
+                    let vec = C_interim.aligned_simd_load[4, 16](
+                        c_idx.to_int()
+                    ) + result_vec
+
+                    @parameter
+                    if elementwise_lambda_fn:
+                        alias elementwise_lambda = elementwise_lambda_fn.value()
+                        elementwise_lambda[c_type, 4](
+                            Index(
+                                (
+                                    thread_row_in_warp * TM
+                                    + res_idx_m
+                                    + w_sub_row_idx * w_sub_m
+                                ).to_int(),
+                                (
+                                    thread_col_in_warp * TN
+                                    + res_idx_n
+                                    + w_sub_col_idx * w_sub_n
+                                ).to_int(),
+                            ),
+                            vec,
+                        )
+                    else:
+                        C_interim.aligned_simd_store[4, 16](c_idx.to_int(), vec)
 
 
 fn matmul_kernel[
@@ -2369,8 +2392,7 @@ fn matmul_kernel[
     a_type: DType,
     b_type: DType,
     BLOCK_DIM: Int,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
 ](
     c_ptr: DTypePointer[c_type],
     a_ptr: DTypePointer[a_type],
@@ -2394,8 +2416,9 @@ fn matmul_kernel[
         accum = a[x, i].cast[c_type]() * b[i, y].cast[c_type]() + accum
 
     @parameter
-    if elementwise_epilogue_enabled:
-        elementwise_lambda_fn[c_type, 1](Index(x, y), accum)
+    if elementwise_lambda_fn:
+        alias elementwise_lambda = elementwise_lambda_fn.value()
+        elementwise_lambda[c_type, 1](Index(x, y), accum)
     else:
         c[Index(x, y)] = accum
 
@@ -2446,34 +2469,60 @@ fn matmul[
     let n = shape.N
     let k = shape.K
 
-    if (
-        m * n < max_finite[DType.uint32]().to_int()
-        and m * k < max_finite[DType.uint32]().to_int()
-        and n * k < max_finite[DType.uint32]().to_int()
-    ):
-        _matmul_gpu_dispatch[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            elementwise_epilogue_enabled,
-            elementwise_lambda_fn,
-            indexing_integral_dtype = DType.uint32,
-        ](c, a, b, out_chain)
+    let use_32bit_indexing = m * n < max_finite[
+        DType.uint32
+    ]().to_int() and m * k < max_finite[
+        DType.uint32
+    ]().to_int() and n * k < max_finite[
+        DType.uint32
+    ]().to_int()
+
+    @parameter
+    if elementwise_epilogue_enabled:
+        if use_32bit_indexing:
+            _matmul_gpu_dispatch[
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+                indexing_integral_dtype = DType.uint32,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](c, a, b, out_chain)
+        else:
+            _matmul_gpu_dispatch[
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+                indexing_integral_dtype = DType.uint64,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](c, a, b, out_chain)
+
     else:
-        _matmul_gpu_dispatch[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            elementwise_epilogue_enabled,
-            elementwise_lambda_fn,
-            indexing_integral_dtype = DType.uint64,
-        ](c, a, b, out_chain)
+        if use_32bit_indexing:
+            _matmul_gpu_dispatch[
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+                indexing_integral_dtype = DType.uint32,
+            ](c, a, b, out_chain)
+        else:
+            _matmul_gpu_dispatch[
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+                indexing_integral_dtype = DType.uint64,
+            ](c, a, b, out_chain)
 
 
 @always_inline
@@ -2485,9 +2534,8 @@ fn _matmul_gpu_dispatch[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
     indexing_integral_dtype: DType,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
 ](
     c: NDBuffer[2, c_shape, c_type],
     a: NDBuffer[2, a_shape, a_type],
@@ -2513,7 +2561,6 @@ fn _matmul_gpu_dispatch[
         if (
             warp_tiled_matmul_suppoered_shape
             and warp_tiled_matmul_supported_format
-            and not elementwise_epilogue_enabled
         ):
             # TODO: Auto tune these for A100.
             # TODO: NUM_THREADS need to vary as M, N varies.
@@ -2528,12 +2575,13 @@ fn _matmul_gpu_dispatch[
             alias TM = 8
             alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
             alias NUM_WARPS = NUM_THREADS / WARP_SIZE
+
             let gpu_func = Function[
                 fn (
                     NDBuffer[2, c_shape, c_type],
                     NDBuffer[2, a_shape, a_type],
                     NDBuffer[2, b_shape, b_type],
-                ) -> None, sgemm_warp_tiling_kernel[
+                ) capturing -> None, sgemm_warp_tiling_kernel[
                     c_type,
                     c_shape,
                     a_type,
@@ -2551,6 +2599,7 @@ fn _matmul_gpu_dispatch[
                     TM=TM,
                     TN=TN,
                     NUM_THREADS=NUM_THREADS,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ](threads_per_block=NUM_THREADS)
             gpu_func(
@@ -2576,8 +2625,7 @@ fn _matmul_gpu_dispatch[
                     b_type,
                     c_type,
                     BLOCK_DIM,
-                    elementwise_epilogue_enabled,
-                    elementwise_lambda_fn,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
             gpu_func(
