@@ -88,7 +88,7 @@ struct FileHandle {
     return status.getSize();
   }
 
-  llvm::StringRef read(llvm::StringRef *errMsg) {
+  llvm::StringRef readToEOF(llvm::StringRef *errMsg) {
     llvm::SmallVector<char> buf;
     llvm::Error err = llvm::sys::fs::readNativeFileToEOF(
         llvm::sys::fs::convertFDToNativeFile(handle), buf);
@@ -100,7 +100,25 @@ struct FileHandle {
     return copyString(llvm::StringRef(buf.data(), buf.size()));
   }
 
-  llvm::StringRef readBytes(llvm::StringRef *errMsg) {
+  /// Reads `size` bytes from file or to EOF if less than `size` bytes remain.
+  /// Returns the resulting string null-terminated.
+  llvm::StringRef read(int64_t size, llvm::StringRef *errMsg) {
+    char *ptr = reinterpret_cast<char *>(
+        alignedAlloc(kPreferredMemoryAlignment, size + 1));
+    llvm::MutableArrayRef<char> buf(ptr, size);
+
+    auto numReadOr = llvm::sys::fs::readNativeFile(
+        llvm::sys::fs::convertFDToNativeFile(handle), buf);
+    if (auto err = numReadOr.takeError()) {
+      *errMsg = copyString(llvm::toString(std::move(err)));
+      return {nullptr, 0};
+    }
+
+    ptr[*numReadOr] = '\0';
+    return llvm::StringRef(ptr, *numReadOr);
+  }
+
+  llvm::StringRef readBytesToEOF(llvm::StringRef *errMsg) {
     llvm::SmallVector<char> buf;
     llvm::Error err = llvm::sys::fs::readNativeFileToEOF(
         llvm::sys::fs::convertFDToNativeFile(handle), buf);
@@ -110,6 +128,22 @@ struct FileHandle {
     }
 
     return copyBytes(buf);
+  }
+
+  /// Reads `size` bytes from file or to EOF if less than `size` bytes remain.
+  llvm::StringRef readBytes(int64_t size, llvm::StringRef *errMsg) {
+    char *ptr =
+        reinterpret_cast<char *>(alignedAlloc(kPreferredMemoryAlignment, size));
+    llvm::MutableArrayRef<char> buf(ptr, size);
+
+    auto numReadOr = llvm::sys::fs::readNativeFile(
+        llvm::sys::fs::convertFDToNativeFile(handle), buf);
+    if (auto err = numReadOr.takeError()) {
+      *errMsg = copyString(llvm::toString(std::move(err)));
+      return {nullptr, 0};
+    }
+
+    return llvm::StringRef(ptr, *numReadOr);
   }
 
   uint64_t seek(uint64_t offset, llvm::StringRef *errMsg) {
@@ -195,17 +229,21 @@ KGEN_CompilerRT_IO_FileSeek(FileHandleWrapper file, uint64_t offset,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
-KGEN_CompilerRT_IO_FileRead(FileHandleWrapper file, uint64_t *size,
+KGEN_CompilerRT_IO_FileRead(FileHandleWrapper file, int64_t *size,
                             llvm::StringRef *errMsg) {
-  llvm::StringRef str = unwrap(file)->read(errMsg);
+  FileHandle *handle = unwrap(file);
+  llvm::StringRef str =
+      (*size < 0) ? handle->readToEOF(errMsg) : handle->read(*size, errMsg);
   *size = str.size();
   return str.data();
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
-KGEN_CompilerRT_IO_FileReadBytes(FileHandleWrapper file, uint64_t *size,
+KGEN_CompilerRT_IO_FileReadBytes(FileHandleWrapper file, int64_t *size,
                                  llvm::StringRef *errMsg) {
-  llvm::StringRef str = unwrap(file)->readBytes(errMsg);
+  FileHandle *handle = unwrap(file);
+  llvm::StringRef str = (*size < 0) ? handle->readBytesToEOF(errMsg)
+                                    : handle->readBytes(*size, errMsg);
   *size = str.size();
   return str.data();
 }
