@@ -784,7 +784,7 @@ trait CFMTrait:
 
 # struct implements CFMTrait but does not have f2().
 # expected-error @+2 {{conformance check failed}}
-@register_passable
+@register_passable("trivial")
 struct CFMStructFail(CFMTrait): # expected-note {{struct `CFMStructFail` does not implement all requirements for `CFMTrait`}}
     pass
 

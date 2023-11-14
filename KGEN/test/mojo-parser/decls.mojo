@@ -1591,16 +1591,19 @@ trait EmptyTrait:
 
 # CHECK-LABEL: lit.trait.decl @Trait1<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait Trait1:
-    fn f(self: Self): ...
+    # CHECK: lit.func @"f{{.*}}"(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.paramref<:!kgen.paramref<MT> T>
+    fn f(self: Self) -> Self: ...
 
 # CHECK-LABEL: lit.trait.decl @Trait2<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait Trait2:
-    fn f(self: Self): ...
+    # CHECK: lit.func @"f{{.*}}"(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.paramref<:!kgen.paramref<MT> T>
+    fn f(self: Self) -> Self: ...
 
-# CHECK-LABEL: lit.struct.decl @StructWithTraits([{{.*}}@Trait1, {{.*}}@Trait2]) register_passable {
-@register_passable
+# CHECK-LABEL: lit.struct.decl @StructWithTraits([{{.*}}@Trait1, {{.*}}@Trait2]) register_passable_trivial
+@register_passable("trivial")
 struct StructWithTraits(Trait1, Trait2):
-    fn f(self: Self): ...
+    # CHECK: lit.func @"f{{.*}}"(%self[self]: !StructWithTraits borrow) -> !StructWithTraits
+    fn f(self: Self) -> Self: ...
 
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check
@@ -1617,7 +1620,8 @@ trait CFMTrait:
    fn f2():
        pass
 
-@register_passable
+# CHECK-LABEL: lit.struct.decl @CFMStruct([{{.*}}@CFMTrait]) register_passable_trivial
+@register_passable("trivial")
 struct CFMStruct(CFMTrait):
    #CHECK: lit.func @"f1({{.*}})"(%self[self]: !CFMStruct borrow) -> !kgen.none
    fn f1(self: Self):
