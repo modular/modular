@@ -3971,6 +3971,8 @@ static SignatureType getSpecializedSignature(LIT::FuncOp traitFn,
     newInputParamTypes.push_back(attr.getType());
   }
 
+  // TODO: FnEffects only supports match for register_passable("trivial")
+  // structs
   return SignatureType::getSpecializedSignature(
       newInputParamValues,
       [&] {
