@@ -135,10 +135,10 @@ TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
   if (isa<FileModuleOp, PackageOp>(decl))
     return TypeConvention::MemoryOnly;
 
-  // We don't yet have a runtime representation for existentials, but they are
-  // always memory-only.
+  // Trait values are generic and therefore memory-only by default.
+  // FIXME(generics): Memory-only generic representation needed first!
   if (isa<TraitDeclOp>(decl))
-    return TypeConvention::MemoryOnly;
+    return TypeConvention::RegisterPassable;
 
   auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");

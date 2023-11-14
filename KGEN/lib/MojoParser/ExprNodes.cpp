@@ -937,8 +937,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
-    // Get a symbol for the underlying function.
-
+    // Build an overload set of all matching function declarations.
     auto result = ORValue::create(
         spelling, memberDecls,
         InputParamBindings::getForDeclaredType(baseRVType, emitter.shared),

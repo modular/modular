@@ -540,6 +540,121 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
       inputParamBindings(std::move(inputParamBindings)), expr(expr),
       syntax(syntax) {}
 
+/// Utility function to perform substitutions of the specified callable bindings
+/// into the symbol for the given function declaration. It returns the resultant
+/// SymbolConstantAttr or produces an error message and returns null.
+static TypedAttr
+getBoundConstAttrFor(AnyValue baseValue, LIT::FuncOp funcOp, StringRef baseName,
+                     const InputParamBindings &inputParamBindings,
+                     const ExprNode *expr, ExprEmitter &emitter) {
+  // Functor to get a direct bound reference to the function.
+  auto getDirectRef = [&]() -> TypedAttr {
+    // If there are no input parameters specified and if we allow unbound
+    // symbols, just return the unbound symbol.
+    if (inputParamBindings.empty())
+      return funcOp.getBoundReference();
+
+    // Check that the signature can be rebound with our set of bindings.
+    LITSignatureType signature = funcOp.getFullSignature();
+    ParameterExprArrayAttr newBindings = inputParamBindings.verifyBindings(
+        signature, emitter, baseName, funcOp.getLoc(), expr->getLoc());
+    if (!newBindings)
+      return {};
+
+    // Now that we checked the types match, form the binding.
+    return funcOp.getBoundReference(newBindings);
+  };
+  TypedAttr bound = getDirectRef();
+
+  // When referencing at trait function, bind the reference using a parameter
+  // expression instead of the direct reference.
+  auto getIfTrait = [](AnyValue value) -> ASTType {
+    if (auto cv = value.getIfCValue())
+      if (isa_and_nonnull<TraitType>(cv.getType().getMetaType()))
+        return cv.getType();
+    return {};
+  };
+  ASTType trait = getIfTrait(baseValue);
+  if (!trait)
+    return bound;
+
+  return ParamOperatorAttr::get(
+      POC::GetTypeMethod,
+      {PValue(trait),
+       StringAttr::get(baseName, StringType::get(funcOp.getContext()))},
+      bound.getType());
+}
+
+/// Perform substitutions of the specified bindings into the symbol, returning
+/// the resultant bound symbols of each adaptive function overload as a
+/// variadic. On failure it produces an error message and returns null.
+static VariadicAttr getAdaptiveSet(AnyValue baseValue,
+                                   ArrayRef<ASTDecl *> fnDecls,
+                                   StringRef baseName,
+                                   const InputParamBindings &inputParamBindings,
+                                   const ExprNode *expr, ExprEmitter &emitter) {
+  SmallVector<TypedAttr> symConstAttrs;
+  for (ASTDecl *fnDecl : fnDecls) {
+    auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+    if (!funcOp.getIsAdaptive()) {
+      auto diag = emitter.emitError(expr->getLoc(),
+                                    "cannot form a reference to non @adaptive "
+                                    "declaration of '")
+                  << baseName << "'" << expr->getRange();
+      diag.attachNote(funcOp.getLoc()) << "declared here";
+      return {};
+    }
+    TypedAttr symbolAttr = getBoundConstAttrFor(
+        baseValue, funcOp, baseName, inputParamBindings, expr, emitter);
+    if (!symbolAttr)
+      return {};
+    symConstAttrs.push_back(symbolAttr);
+  }
+
+  return VariadicAttr::get(emitter.getContext(), symConstAttrs,
+                           VariadicType::get(symConstAttrs.front().getType()));
+}
+
+/// Resolve the callee into either a single PValue callee (if there's only one
+/// decl provided) or a variadic that contains all the possible adaptive
+/// overloads. Because adaptive overloads must all have the same signature, this
+/// also returns the signature type that they all share.
+static PValue getCallee(AnyValue baseValue, ArrayRef<ASTDecl *> fnDecls,
+                        StringRef baseName,
+                        const InputParamBindings &inputParamBindings,
+                        const ExprNode *expr, ExprEmitter &emitter) {
+  assert(!fnDecls.empty() &&
+         "cannot get the callee when no callees have been resolved");
+  if (fnDecls.size() == 1) {
+    auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
+    return getBoundConstAttrFor(baseValue, funcOp, baseName, inputParamBindings,
+                                expr, emitter);
+  }
+
+  VariadicAttr variadicSetAttr = ::getAdaptiveSet(
+      baseValue, fnDecls, baseName, inputParamBindings, expr, emitter);
+  if (!variadicSetAttr)
+    return {};
+
+  // If the callee is a list, create a param.fork op and create a
+  // CallParam on that. Mangle the declared parameter name with the line and
+  // column number to ensure uniqueness.
+  auto [line, col] = emitter.getSourceMgr().getLineAndColumn(expr->getLoc());
+
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(
+        expr, "TODO: cannot call adaptive function in parameter contexts");
+
+  StringRef name = cast<LIT::FuncOp>(*fnDecls.front()).getName();
+  StringAttr declName = emitter.builder->getStringAttr(
+      Twine("(adaptive)") + name + Twine(line) + "_" + Twine(col));
+  auto decl = ParamDeclAttr::get(declName,
+                                 variadicSetAttr.getType().getElementAsType());
+  emitter.builder->create<ParamForkOp>(
+      emitter.translateLocation(expr->getLoc()), decl, variadicSetAttr);
+  return PValue(ParamDeclRefAttr::get(decl));
+}
+
 // Assuming we have at least one valid candidate, filter the candidate list to
 // the ones with the lowest number of implicit conversions required. If there is
 // more than one candidate with minimal implicit conversions, we filter for the
@@ -686,7 +801,8 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     InputParamBindings newBindings;
     for (TypedAttr bind : oneFitness->getParamBindings())
       newBindings.addPrechecked(bind);
-    return getCallee(newFnDecls, baseName, newBindings, expr, emitter);
+    return getCallee(baseValue.ir, newFnDecls, baseName, newBindings, expr,
+                     emitter);
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -810,8 +926,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   if (validCandidates.size() == 1 ||
       (!validCandidates.empty() && allMarkedAdaptive())) {
     if (inputParamBindings.empty())
-      return getCallee(validCandidates, baseName, inputParamBindings, expr,
-                       emitter);
+      return getCallee(baseValue.ir, validCandidates, baseName,
+                       inputParamBindings, expr, emitter);
 
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
@@ -819,7 +935,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     InputParamBindings newBindings;
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
-    return getCallee(validCandidates, baseName, newBindings, expr, emitter);
+    return getCallee(baseValue.ir, validCandidates, baseName, newBindings, expr,
+                     emitter);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
@@ -843,102 +960,12 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   return {};
 }
 
-/// Utility function to perform substitutions of the specified callable bindings
-/// into the symbol for the given function declaration. It returns the resultant
-/// SymbolConstantAttr or produces an error message and returns null.
-static TypedAttr
-getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
-                     const InputParamBindings &inputParamBindings,
-                     const ExprNode *expr, ExprEmitter &emitter) {
-  // If there are no input parameters specified and if we allow unbound
-  // symbols, just return the unbound symbol.
-  if (inputParamBindings.empty())
-    return funcOp.getBoundReference();
-
-  // Check that the signature can be rebound with our set of bindings.
-  LITSignatureType signature = funcOp.getFullSignature();
-  ParameterExprArrayAttr newBindings = inputParamBindings.verifyBindings(
-      signature, emitter, baseName, funcOp.getLoc(), expr->getLoc());
-  if (!newBindings)
-    return {};
-
-  // Now that we checked the types match, form the binding.
-  return funcOp.getBoundReference(newBindings);
-}
-
-/// Perform substitutions of the specified bindings into the symbol, returning,
-/// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
-/// function overload. On failure it produces an error message and returns null.
-static VariadicAttr getAdaptiveSet(ArrayRef<ASTDecl *> fnDecls,
-                                   StringRef baseName,
-                                   const InputParamBindings &inputParamBindings,
-                                   const ExprNode *expr, ExprEmitter &emitter) {
-  SmallVector<TypedAttr> symConstAttrs;
-  for (ASTDecl *fnDecl : fnDecls) {
-    auto funcOp = cast<LIT::FuncOp>(*fnDecl);
-    if (!funcOp.getIsAdaptive()) {
-      auto diag = emitter.emitError(expr->getLoc(),
-                                    "cannot form a reference to non @adaptive "
-                                    "declaration of '")
-                  << baseName << "'" << expr->getRange();
-      diag.attachNote(funcOp.getLoc()) << "declared here";
-      return {};
-    }
-    TypedAttr symbolAttr = getBoundConstAttrFor(
-        funcOp, baseName, inputParamBindings, expr, emitter);
-    if (!symbolAttr)
-      return {};
-    symConstAttrs.push_back(symbolAttr);
-  }
-
-  return VariadicAttr::get(emitter.getContext(), symConstAttrs,
-                           VariadicType::get(symConstAttrs.front().getType()));
-}
-
 /// Resolve the callee into either a single PValue callee (if there's only one
 /// decl provided) or a variadic that contains all the possible adaptive
 /// overloads.
 PValue OverloadSet::getAdaptiveSet(ExprEmitter &emitter) {
-  return ::getAdaptiveSet(fnDecls, baseName, inputParamBindings, expr, emitter);
-}
-
-/// Resolve the callee into either a single PValue callee (if there's only one
-/// decl provided) or a variadic that contains all the possible adaptive
-/// overloads. Because adaptive overloads must all have the same signature, this
-/// also returns the signature type that they all share.
-PValue OverloadSet::getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
-                              const InputParamBindings &inputParamBindings,
-                              const ExprNode *expr, ExprEmitter &emitter) {
-  assert(!fnDecls.empty() &&
-         "cannot get the callee when no callees have been resolved");
-  if (fnDecls.size() == 1) {
-    auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
-    return getBoundConstAttrFor(funcOp, baseName, inputParamBindings, expr,
-                                emitter);
-  }
-
-  VariadicAttr variadicSetAttr =
-      ::getAdaptiveSet(fnDecls, baseName, inputParamBindings, expr, emitter);
-  if (!variadicSetAttr)
-    return {};
-
-  // If the callee is a list, create a param.fork op and create a
-  // CallParam on that. Mangle the declared parameter name with the line and
-  // column number to ensure uniqueness.
-  auto [line, col] = emitter.getSourceMgr().getLineAndColumn(expr->getLoc());
-
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(
-        expr, "TODO: cannot call adaptive function in parameter contexts");
-
-  StringRef name = cast<LIT::FuncOp>(*fnDecls.front()).getName();
-  StringAttr declName = emitter.builder->getStringAttr(
-      Twine("(adaptive)") + name + Twine(line) + "_" + Twine(col));
-  auto decl = ParamDeclAttr::get(declName,
-                                 variadicSetAttr.getType().getElementAsType());
-  emitter.builder->create<ParamForkOp>(
-      emitter.translateLocation(expr->getLoc()), decl, variadicSetAttr);
-  return PValue(ParamDeclRefAttr::get(decl));
+  return ::getAdaptiveSet(baseValue.ir, fnDecls, baseName, inputParamBindings,
+                          expr, emitter);
 }
 
 /// Perform substitutions of the specified bindings into the symbol, returning
@@ -960,8 +987,8 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
     return {};
   }
 
-  return getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]), baseName,
-                              inputParamBindings, expr, emitter);
+  return getBoundConstAttrFor(baseValue.ir, cast<LIT::FuncOp>(*fnDecls[0]),
+                              baseName, inputParamBindings, expr, emitter);
 }
 
 /// Get a OverloadSet for a lookup of a named method on the specified type.
@@ -1196,7 +1223,6 @@ CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
     posOperandsWithSelf.reserve(posOperands.size() + 1);
     posOperandsWithSelf.push_back(baseValue);
     posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
-    baseValue = {};
     assert(syntax == CallSyntax::kMethodCall && "Unexpected syntax form");
     operands.posOperands = posOperandsWithSelf;
     operands.hasSelfOperand = true;

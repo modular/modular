@@ -1621,11 +1621,15 @@ struct CFMStruct(CFMTrait):
        pass
 
 # CHECK-LABEL: lit.func @"generic_trait_fn
-# CHECK-SAME: <[[T:.*]][T]: !lit.trait<{{.*}}@Trait>>
-fn generic_trait_fn[T: Trait](x: Trait):
+# CHECK-SAME: "<[[T:.*_T]][T]: !lit.trait<{{.*}}@Trait>>
+# CHECK-SAME: %x[x]: !kgen.paramref<:!lit.trait<{{.*}}@Trait> [[T]]> borrow
+fn generic_trait_fn[T: Trait](x: T):
+    # CHECK: call_param[!lit.signature<("self": !kgen.paramref<:!lit.trait<{{.*}}@Trait> [[T]]> borrow) -> !kgen.none>:
+    # CHECK-SAME: get_type_method(:!lit.trait<{{.*}}@Trait> [[T]], "f0")](%x)
+    x.f0()
     pass
 
 # CHECK-LABEL: lit.func @"existential_arg
-# CHECK-SAME: (%x[x]: !kgen.pointer<!lit.trait<{{.*}}@Trait>>
+# CHECK-SAME: (%x[x]: !lit.trait<{{.*}}@Trait>
 fn existential_arg(x: Trait):
     pass
