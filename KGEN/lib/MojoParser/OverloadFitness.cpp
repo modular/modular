@@ -767,8 +767,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           diag = emitDiagFor.wrongPosOnlyCount(numPosOnly, posBindings.size(),
                                                "input parameter");
         } else {
-          diag = emitDiagFor.wrongParamCount(signature.getNumInputParams(),
-                                             posBindings.size(), "input");
+          // Hide the implicit trait parameters from the diagnostic.
+          // HACK(#25492): Just dig out a trait type if possible.
+          size_t hidden = 0;
+          if (auto cr = callable.baseValue.ir.getIfCValue();
+              cr && isa_and_nonnull<TraitType>(cr.getType().getMetaType()))
+            hidden = 2;
+          diag = emitDiagFor.wrongParamCount(
+              signature.getNumInputParams() - hidden,
+              posBindings.size() - hidden, "input");
         }
       },
       /*emitPosType=*/

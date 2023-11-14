@@ -553,8 +553,15 @@ static TypedAttr
 getBoundConstAttrFor(AnyValue baseValue, LIT::FuncOp funcOp, StringRef baseName,
                      const InputParamBindings &inputParamBindings,
                      const ExprNode *expr, ExprEmitter &emitter) {
-  // Functor to get a direct bound reference to the function.
-  auto getDirectRef = [&]() -> TypedAttr {
+  // Try to dig out a trait base value.
+  auto getIfTrait = [](AnyValue value) -> ASTType {
+    if (auto cv = value.getIfCValue())
+      if (isa_and_nonnull<TraitType>(cv.getType().getMetaType()))
+        return cv.getType();
+    return {};
+  };
+  ASTType trait = getIfTrait(baseValue);
+  if (!trait) {
     // If there are no input parameters specified and if we allow unbound
     // symbols, just return the unbound symbol.
     if (inputParamBindings.empty())
@@ -569,26 +576,40 @@ getBoundConstAttrFor(AnyValue baseValue, LIT::FuncOp funcOp, StringRef baseName,
 
     // Now that we checked the types match, form the binding.
     return funcOp.getBoundReference(newBindings);
-  };
-  TypedAttr bound = getDirectRef();
+  }
 
   // When referencing at trait function, bind the reference using a parameter
-  // expression instead of the direct reference.
-  auto getIfTrait = [](AnyValue value) -> ASTType {
-    if (auto cv = value.getIfCValue())
-      if (isa_and_nonnull<TraitType>(cv.getType().getMetaType()))
-        return cv.getType();
-    return {};
-  };
-  ASTType trait = getIfTrait(baseValue);
-  if (!trait)
-    return bound;
+  // expression instead of the direct reference. Drop the implicit trait
+  // parameters.
+  // FIXME(#25492): The implicit trait parameters probably need a rethink.
+  LITSignatureType signature = funcOp.getFullSignature();
+  InputParamBindings bindings = inputParamBindings;
+  assert(bindings.posBindings.size() >= 2);
+  auto it = bindings.posBindings.begin();
+  SmallVector<TypedAttr> paramValues({it->value, (it + 1)->value});
+  bindings.posBindings.erase(it, it + 2);
+  for (Type type : signature.getInputParamTypes().drop_front(2))
+    paramValues.push_back(UnboundAttr::get(type));
+  signature = signature.getSpecializedSignature(
+      paramValues, []() -> InFlightDiagnostic {
+        llvm_unreachable("unexpected invalid signature");
+      });
 
-  return ParamOperatorAttr::get(
+  TypedAttr fnRef = ParamOperatorAttr::get(
       POC::GetTypeMethod,
       {PValue(trait),
        StringAttr::get(baseName, StringType::get(funcOp.getContext()))},
-      bound.getType());
+      signature);
+  if (bindings.empty())
+    return fnRef;
+
+  ParameterExprArrayAttr newBindings = bindings.verifyBindings(
+      signature, emitter, baseName, funcOp.getLoc(), expr->getLoc());
+  if (!newBindings)
+    return {};
+  SmallVector<TypedAttr> operands{fnRef};
+  llvm::append_range(operands, newBindings);
+  return ParamOperatorAttr::get(POC::BindSignature, operands);
 }
 
 /// Perform substitutions of the specified bindings into the symbol, returning

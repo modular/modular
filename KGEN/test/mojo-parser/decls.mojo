@@ -1554,32 +1554,36 @@ struct DecoratedStruct:
 
 # CHECK-LABEL: lit.trait.decl @Trait<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait Trait:
-    # CHECK-DAG: lit.func @"f0(T)"(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.none
-    # CHECK-NEXT:     lit.trait_func
+    # CHECK: lit.func @"f0(T)"(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.none
+    # CHECK-NEXT: lit.trait_func
     fn f0(self: Self): ...
 
-    # CHECK-DAG: lit.func @"f1(T&)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) -> !kgen.none
-    # CHECK-NEXT:   lit.trait_func
+    # CHECK: lit.func @"f1(T&)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) -> !kgen.none
+    # CHECK-NEXT: lit.trait_func
     fn f1(inout self: Self): ...
 
-    # CHECK-DAG: lit.func @"f2(T&)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) -> !kgen.none attributes
-    # CHECK-NEXT:   lit.trait_func
+    # CHECK: lit.func @"f2(T&)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) -> !kgen.none attributes
+    # CHECK-NEXT: lit.trait_func
     fn f2(inout self: Self):
         pass
 
-    # CHECK-DAG: lit.func @"f3(,T)"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.paramref<:!kgen.paramref<MT> T>) throws -> !kgen.variant<!Error, none>
-    # CHECK-NEXT:   lit.trait_func
+    # CHECK: lit.func @"f3(,T)"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.paramref<:!kgen.paramref<MT> T>) throws -> !kgen.variant<!Error, none>
+    # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass
 
-    # CHECK-DAG: lit.func @"f4(,T&)"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) throws -> !kgen.variant<!Error, none>
-    # CHECK-NEXT:   lit.trait_func
+    # CHECK: lit.func @"f4(,T&)"(%__result__[__result__]: !kgen.pointer<!object> byref_result, |, %self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) throws -> !kgen.variant<!Error, none>
+    # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
 
     fn overloaded(self): ...
     fn overloaded(self, x: Int): ...
     fn overloaded(self, x: StringLiteral): ...
+
+    # CHECK-LABEL: lit.func @"parametric
+    # CHECK-SAME: <[[x:.*]][x]: !Int>
+    fn parametric[x: Int](self): ...
 
 # CHECK-LABEL: lit.trait.decl @EmptyTrait<?, MT: regtype, T: !kgen.paramref<MT>> {
 trait EmptyTrait:
@@ -1638,7 +1642,11 @@ fn generic_trait_fn[T: Trait](x: T):
     x.overloaded(1)
     # CHECK: call_param[!lit.signature<("self": {{.*}} borrow, "x": !StringLiteral borrow) -> !kgen.none>: get_type_method({{.*}}, "overloaded")](%x, %{{.*}})
     x.overloaded("trait")
-    pass
+
+    # CHECK: call_param[!lit.signature<("self": {{.*}} borrow) -> !kgen.none>:
+    # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>({{.*}}) -> !kgen.none>
+    # CHECK-SAME: get_type_method(:{{.*}} [[T]], "parametric"), #lit.struct<{value = 1}>
+    x.parametric[1]()
 
 # CHECK-LABEL: lit.func @"existential_arg
 # CHECK-SAME: (%x[x]: !lit.trait<{{.*}}@Trait>
