@@ -440,7 +440,7 @@ Type StructOperationLowerer::replace(Type type) {
     result = processPointer(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     result = processDeclRefType(ref);
-  } else if (isa<AnyTypeType, MetaTypeType>(type)) {
+  } else if (isa<AnyTypeType, MetaTypeType, TraitType>(type)) {
     // Erase metatypes and reg-passable anytypes. Passability information is
     // encoded elsewhere so this won't be needed.
     // TODO(#25619): lower to AnyTypeType instead. This is currently a hack.
@@ -836,19 +836,23 @@ void LowerLITTypesPass::runOnOperation() {
 
   StructDeclarations structDecls;
 
-  for (auto structOp :
-       llvm::make_early_inc_range(getOperation().getOps<StructDeclOp>())) {
-    SmallVector<std::pair<StringAttr, Type>> fields;
-    for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
-      fields.emplace_back(field.getNameAttr(), field.getType());
-      structDecls.fieldIndices.try_emplace(
-          {structOp.getNameAttr(), field.getNameAttr()}, idx);
-    }
+  for (Operation &op : llvm::make_early_inc_range(getOperation().getOps())) {
+    if (auto structOp = dyn_cast<StructDeclOp>(op)) {
+      SmallVector<std::pair<StringAttr, Type>> fields;
+      for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
+        fields.emplace_back(field.getNameAttr(), field.getType());
+        structDecls.fieldIndices.try_emplace(
+            {structOp.getNameAttr(), field.getNameAttr()}, idx);
+      }
 
-    structDecls.decls.insert({structOp.getNameAttr(),
-                              {std::move(fields), structOp.getInputParamsAttr(),
-                               structOp.isRegisterPassable()}});
-    analysis.getTopLevelSymbolTable().erase(structOp);
+      structDecls.decls.insert(
+          {structOp.getNameAttr(),
+           {std::move(fields), structOp.getInputParamsAttr(),
+            structOp.isRegisterPassable()}});
+      analysis.getTopLevelSymbolTable().erase(structOp);
+    } else if (isa<TraitDeclOp>(op)) {
+      analysis.getTopLevelSymbolTable().erase(&op);
+    }
   }
 
   StructOperationLowerer structLowerer(&getContext(), structDecls);
