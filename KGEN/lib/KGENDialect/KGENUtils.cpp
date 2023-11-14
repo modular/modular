@@ -691,18 +691,12 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     return success();
   case (uint32_t)POC::GetTypeMethod:
-    if (parseParamValue(p, operands.emplace_back(),
-                        AnyRegTypeType::get(p.getContext())) ||
-        p.parseComma() ||
+    if (!type)
+      type = AnyRegTypeType::get(p.getContext());
+    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
-                        StringType::get(p.getContext())) ||
-        p.parseComma())
+                        StringType::get(p.getContext())))
       return failure();
-    Type sig;
-    if (parseSignature(p, sig))
-      return failure();
-    TypedAttr sigAttr = TypeConstantAttr::get(sig);
-    operands.push_back(sigAttr);
     return success();
   }
   llvm_unreachable("unknown operator");
@@ -828,6 +822,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         // Comparisons default to index type for their operand, since their
         // result is always `i1`.
         operandType = p.getBuilder().getIndexType();
+        break;
+      case (uint32_t)POC::GetTypeMethod:
         break;
       default:
         // Other operators default to the same operand type as the result type.
@@ -979,11 +975,14 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     break;
 
   case POC::GetTypeMethod:
+    if (!isa<AnyRegTypeType>(operands[0].getType())) {
+      p << ':';
+      printKGENType(p, operands[0].getType());
+      p << ' ';
+    }
     printParamValue(p, operands[0]);
     p << ", ";
     printParamValue(p, operands[1]);
-    p << ", ";
-    printParamValue(p, operands[2]);
     break;
   }
 }

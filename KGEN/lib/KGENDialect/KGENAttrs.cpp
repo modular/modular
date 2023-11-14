@@ -885,23 +885,14 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
 }
 
 static LogicalResult
-verifyGetTypeMethod(ArrayRef<TypedAttr> operands,
+verifyGetTypeMethod(ArrayRef<TypedAttr> operands, Type type,
                     function_ref<InFlightDiagnostic()> emitError) {
-  auto error = [&](std::string message) -> LogicalResult {
-    if (emitError)
-      return emitError() << message;
-    else
-      return failure();
-  };
-  if (operands.size() != 3)
-    return error("'get_type_method' requires 3 operands");
-  if (!::isa<AnyRegTypeType>(operands[0].getType()))
-    return error("'get_type_method' first operand should be a type");
-  if (!::isa<StringType>(operands[1].getType()))
-    return error("'get_type_method' second operand should be a string");
-  TypeConstantAttr signatureTCA = ::dyn_cast<TypeConstantAttr>(operands[2]);
-  if (!signatureTCA || !::isa<SignatureType>(signatureTCA.getValue()))
-    return error("'get_type_method' third operand should be a type signature");
+  if (operands.size() != 2)
+    return emitError() << "'get_type_method' requires 2 operands";
+  if (!isa<StringType>(operands[1].getType()))
+    return emitError() << "'get_type_method' second operand should be a string";
+  if (!isa<SignatureType>(type))
+    return emitError() << "'get_type_method' result should be a type signature";
   return success();
 }
 
@@ -1114,7 +1105,7 @@ LogicalResult ParamOperatorAttr::verify(
              << "'get_linkage_name' first operand should be a target type";
     break;
   case POC::GetTypeMethod:
-    if (failed(verifyGetTypeMethod(operands, emitError)))
+    if (failed(verifyGetTypeMethod(operands, type, emitError)))
       return failure();
     break;
   }
@@ -1937,9 +1928,8 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   return {};
 }
 
-static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands) {
-  if (failed(verifyGetTypeMethod(operands, {})))
-    return {};
+static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands,
+                                       Type resultType) {
   auto typeConstant = dyn_cast<TypeConstantAttr>(operands[0]);
   // typeConstant may actually be a parameter if this is called before
   // elaboration.  But after elaboration it should always be a TypeConstantAttr.
@@ -1947,9 +1937,7 @@ static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands) {
     return {};
   VTableAttr vtable = typeConstant.getVtable();
   StringAttr targetName = cast<StringAttr>(operands[1]);
-  TypeConstantAttr targetSignatureTCA = cast<TypeConstantAttr>(operands[2]);
-  SignatureType targetSignature =
-      cast<SignatureType>(targetSignatureTCA.getValue());
+  SignatureType targetSignature = cast<SignatureType>(resultType);
   // Scan the vtable for a name + signature match, then the method is the
   // payload.
   for (VTableEntryAttr entry : vtable.getEntries()) {
@@ -2072,7 +2060,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     result = {};
     break;
   case POC::GetTypeMethod:
-    result = evaluateGetTypeMethod(operands);
+    result = evaluateGetTypeMethod(operands, resultType);
     break;
   }
 
@@ -2106,15 +2094,15 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::BindSignature)
     resultType = operandsIn.front().getType();
-  assert(
-      llvm::is_contained({POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
-                          POC::TargetHasFeature, POC::TargetGetField,
-                          POC::BuildInfoGetField, POC::GetSizeOf,
-                          POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-                          POC::CompileAssembly, POC::GetLinkageName},
-                         opcode) ||
-      llvm::all_of(operandsIn.drop_front(),
-                   [&](auto op) { return op.getType() == resultType; }));
+  assert(llvm::is_contained({POC::BindSignature, POC::Apply,
+                             POC::ApplyResultSlot, POC::TargetHasFeature,
+                             POC::TargetGetField, POC::BuildInfoGetField,
+                             POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet,
+                             POC::GetEnv, POC::CompileAssembly,
+                             POC::GetLinkageName, POC::GetTypeMethod},
+                            opcode) ||
+         llvm::all_of(operandsIn.drop_front(),
+                      [&](auto op) { return op.getType() == resultType; }));
 
   return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
                           resultType);
