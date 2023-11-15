@@ -80,21 +80,48 @@ Type ParamRefType::get(TypedAttr param) {
 static OptionalParseResult parseSugaredTypeValue(AsmParser &p, TypedAttr &value,
                                                  Type type) {
   Type typeValue;
+  bool parsingVTable = succeeded(p.parseOptionalLSquare());
+  auto vtable = VTableAttr::get(p.getContext(), {});
+
   OptionalParseResult result = parseOptionalKGENType(p, typeValue);
-  if (!result.has_value())
+  if (!result.has_value()) {
+    // If a '[' was seen, require a type to be present.
+    if (parsingVTable)
+      return p.emitError(p.getCurrentLocation(), "expected a type");
     return {};
+  }
   if (failed(*result))
     return failure();
-  value = TypeConstantAttr::get(typeValue, type);
+
+  // Parse the vtable if a '[' was seen.
+  if (parsingVTable) {
+    if (p.parseComma() || p.parseLBrace() ||
+        (p.parseOptionalRBrace() &&
+         (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
+          p.parseRBrace())) ||
+        p.parseRSquare())
+      return failure();
+  }
+
+  value = TypeConstantAttr::get(typeValue, type, vtable);
   return mlir::success();
 }
 
 /// Implementation of the printing logic for sugar types (e.g. !kgen.anytype).
 static LogicalResult printSugaredTypeValue(AsmPrinter &p, TypedAttr value) {
-  auto type = ::dyn_cast<TypeConstantAttr>(value);
+  auto type = dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
+
+  VTableAttr vtable = type.getVTable();
+  if (!vtable.getEntries().empty())
+    p << '[';
   printKGENType(p, type.getValue());
+  if (!vtable.getEntries().empty()) {
+    p << ", {";
+    vtable.print(p);
+    p << "}]";
+  }
   return success();
 }
 

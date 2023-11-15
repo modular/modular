@@ -385,7 +385,7 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
   let parameters = (ins
     "Type":$value,
     AttributeSelfTypeParameter<"", "Type">:$type,
-    VTableParam:$vtable
+    VTableParam:$vTable
   );
 
   let builders = [
@@ -396,7 +396,7 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
                                    "", "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vtable^ `}` )? `>`";
+  let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -426,7 +426,7 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
   let parameters = (ins
     "Type":$value,
     AttributeSelfTypeParameter<"", "Type">:$type,
-    VTableParam:$vtable
+    VTableParam:$vTable
   );
 
   let builders = [
@@ -443,7 +443,7 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
                                    "", "TypedAttr">,
   ];
 
-  let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vtable^ `}` )? `>`";
+  let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
   let skipDefaultBuilders = 1;
 }
 

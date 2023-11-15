@@ -103,5 +103,7 @@ lit.trait.decl @Trait {
 kgen.generator @trait() {
   // CHECK-NEXT: trait<@Trait> = <@MyStructParams<1, :dtype f32, :regtype i32>>
   kgen.param.declare type: trait<@Trait> = <@MyStructParams<1, :dtype f32, :regtype i32>>
+  // CHECK-NEXT: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :regtype i32>, {"method" : <() -> ()> = @method}]>
+  kgen.param.declare vtable: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :regtype i32>, {"method" : <() -> ()> = @method}]>
   kgen.return
 }

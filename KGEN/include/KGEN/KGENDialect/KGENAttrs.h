@@ -50,10 +50,12 @@ public:
   Type getValue() const;
 
   /// Returns the constant type vtable.
-  VTableAttr getVtable() const;
+  VTableAttr getVTable() const;
 
   /// Get a type constant attribute.
   static TypedAttr get(Type value, Type type);
+  /// Get a type constant attribute with a vtable.
+  static TypedAttr get(Type value, Type type, VTableAttr vtable);
 
   /// TODO(metatypes): Delete this
   static TypedAttr get(Type value) {

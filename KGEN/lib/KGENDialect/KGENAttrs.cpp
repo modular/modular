@@ -209,6 +209,10 @@ TypedAttr TypeConstantAttr::get(Type value, Type type) {
   return ParameterizedTypeConstantAttr::get(value, type);
 }
 
+TypedAttr TypeConstantAttr::get(Type value, Type type, VTableAttr vtable) {
+  return ParameterizedTypeConstantAttr::get(value, type, vtable);
+}
+
 bool TypeConstantAttr::classof(Attribute attr) {
   return attr.isa<ConcreteTypeConstantAttr, ParameterizedTypeConstantAttr>();
 }
@@ -1935,9 +1939,7 @@ static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands,
   // elaboration.  But after elaboration it should always be a TypeConstantAttr.
   if (!typeConstant)
     return {};
-  VTableAttr vtable = typeConstant.getVtable();
-  if (!vtable)
-    return {};
+  VTableAttr vtable = typeConstant.getVTable();
   StringAttr targetName = cast<StringAttr>(operands[1]);
   SignatureType targetSignature = cast<SignatureType>(resultType);
   // Scan the vtable for a name + signature match, then the method is the
@@ -2290,8 +2292,8 @@ Type TypeConstantAttr::getValue() const {
   return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->value;
 }
 
-VTableAttr TypeConstantAttr::getVtable() const {
-  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->vtable;
+VTableAttr TypeConstantAttr::getVTable() const {
+  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->vTable;
 }
 
 Type ParameterizedTypeConstantAttr::getType() const { return getImpl()->type; }
@@ -2300,6 +2302,6 @@ Type ParameterizedTypeConstantAttr::getValue() const {
   return getImpl()->value;
 }
 
-VTableAttr ParameterizedTypeConstantAttr::getVtable() const {
-  return getImpl()->vtable;
+VTableAttr ParameterizedTypeConstantAttr::getVTable() const {
+  return getImpl()->vTable;
 }
