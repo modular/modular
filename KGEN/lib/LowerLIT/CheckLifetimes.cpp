@@ -1418,8 +1418,8 @@ void DestructorInsertion::checkOp(Operation &op) {
           break;
         }
 
-          // No fields have been initialized yet, so there is nothing to
-          // destroy.
+        // No fields have been initialized yet, so there is nothing to
+        // destroy.
         if (topLevelValueRef.isAllMissing(original))
           break;
 
