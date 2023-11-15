@@ -2208,7 +2208,7 @@ kgen.generator @indexTraitMethod(%arg0: index) -> index {
 }
 
 // COM: Check that this gets elaborated to use the concrete function from the vtable below.
-// CHECK-LABEL: kgen.func @"generic_call,T=index"
+// CHECK-LABEL: kgen.func @"generic_call,T=[index{{.*}}]"
 kgen.generator @generic_call<T: regtype>(%arg0: !kgen.paramref<T>) -> index{
   kgen.param.declare traitMethod: (index) -> index  = <get_type_method(T, "traitMethod")>
   %anInt = kgen.param.constant = <1>
@@ -2219,7 +2219,7 @@ kgen.generator @generic_call<T: regtype>(%arg0: !kgen.paramref<T>) -> index{
 
 kgen.generator @make_generic_call() -> index {
   %anInt = kgen.param.constant = <1>
-  // CHECK: kgen.call @"generic_call,T=index"
+  // CHECK: kgen.call @"generic_call,T=[index{{.*}}]"
   %result = kgen.call @generic_call<:regtype #kgen.concretetype.constant<index, vtable={"traitMethod" : <(index) -> index> = @indexTraitMethod}>>(%anInt) : (index borrow) -> index
   kgen.return %result : index
 }

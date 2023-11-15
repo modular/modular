@@ -129,6 +129,10 @@ TypeSignatureType TypeSignatureType::remapToSignature(
 
 static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
                                           Type metatype) {
+  Type typeValue;
+  bool parsingVTable = succeeded(p.parseOptionalLSquare());
+  auto vtable = VTableAttr::get(p.getContext(), {});
+
   SymbolRefAttr symbol;
   OptionalParseResult result = p.parseOptionalAttribute(symbol);
   if (result.has_value()) {
@@ -137,18 +141,30 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
     SmallVector<TypedAttr> values;
     if (parseParameterValues(p, values))
       return failure();
-    value = TypeConstantAttr::get(DeclRefType::get(symbol, values, metatype),
-                                  metatype);
-    return LogicalResult::success();
+    typeValue = DeclRefType::get(symbol, values, metatype);
+  } else {
+    result = parseOptionalKGENType(p, typeValue);
+    if (!result.has_value()) {
+      // If a '[' was seen, require a type to be present.
+      if (parsingVTable)
+        return p.emitError(p.getCurrentLocation(), "expected a type");
+      return {};
+    }
+    if (failed(*result))
+      return failure();
   }
 
-  Type type;
-  result = parseOptionalKGENType(p, type);
-  if (!result.has_value())
-    return {};
-  if (failed(*result))
-    return failure();
-  value = TypeConstantAttr::get(type, metatype);
+  // Parse the vtable if a '[' was seen.
+  if (parsingVTable) {
+    if (p.parseComma() || p.parseLBrace() ||
+        (p.parseOptionalRBrace() &&
+         (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
+          p.parseRBrace())) ||
+        p.parseRSquare())
+      return failure();
+  }
+
+  value = TypeConstantAttr::get(typeValue, metatype, vtable);
   return mlir::success();
 }
 
@@ -156,6 +172,10 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
   auto type = dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
+
+  VTableAttr vtable = type.getVTable();
+  if (!vtable.getEntries().empty())
+    p << '[';
 
   if (auto ref = ::dyn_cast<DeclRefType>(type.getValue())) {
     // Use the alias printer if suitable.
@@ -165,10 +185,15 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
       p << ref.getSymbol();
       printParameterValues(p, ref.getParamValues());
     }
-    return success();
+  } else {
+    printKGENType(p, type.getValue());
   }
 
-  printKGENType(p, type.getValue());
+  if (!vtable.getEntries().empty()) {
+    p << ", {";
+    vtable.print(p);
+    p << "}]";
+  }
   return success();
 }
 

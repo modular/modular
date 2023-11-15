@@ -32,3 +32,14 @@ kgen.func @memory_only_struct(
 ) {
   kgen.return
 }
+
+// CHECK-LABEL: @type_printing
+kgen.generator @type_printing() {
+  // CHECK: type = <struct<()>>
+  kgen.param.declare atype: type = <[struct<()>, {}]>
+  // CHECK: type = <struct<()>>
+  kgen.param.declare btype: type = <[struct<()>, {}]>
+  // CHECK: type = <[struct<()>, {"method" : <() -> ()> = @method}]>
+  kgen.param.declare btype: type = <[struct<()>, {"method" : <() -> ()> = @method}]>
+  kgen.return
+}
