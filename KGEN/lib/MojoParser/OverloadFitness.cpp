@@ -45,8 +45,8 @@ public:
                const CallOperands &callOperands);
 
 private:
-  LogicalResult matchTypes(Type actualType, Type expectedType);
-  LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  void matchTypes(Type actualType, Type expectedType);
+  void matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
   LogicalResult checkOneOperand(AnyValue value, ASTType expectedType,
                                 ValueInputConvention expectedConvention);
   LogicalResult checkOneOperand(ASTExprAnd<AnyValue> operand,
@@ -59,8 +59,7 @@ private:
 };
 } // namespace
 
-LogicalResult ParameterInferenceState::matchTypes(Type actualType,
-                                                  Type expectedType) {
+void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType))
@@ -69,45 +68,44 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
 
   // If the types trivially match then there is no inference to do.
   if (actualType == expectedType)
-    return success();
+    return;
 
   // Handle when both are DeclRefTypes.
   if (auto actualDRT = dyn_cast<DeclRefType>(actualType)) {
     if (auto expectedDRT = dyn_cast<DeclRefType>(expectedType)) {
       // Ignore if these are two fundamentally different symbols.
       if (actualDRT.getSymbol() != expectedDRT.getSymbol())
-        return success();
+        return;
 
       // Fail if the parameter lists fundamentally mismatch.
       // TODO: Defaulted parameters could make this ok?
       if (actualDRT.getParamValues().size() !=
           expectedDRT.getParamValues().size())
-        return failure();
+        return;
 
       // Match up the parameter bindings.
-      for (auto [actual, expected] : llvm::zip(actualDRT.getParamValues(),
-                                               expectedDRT.getParamValues())) {
-        if (failed(matchParams(actual, expected)))
-          return failure();
-      }
-      return success();
+      for (auto [actual, expected] :
+           llvm::zip(actualDRT.getParamValues(), expectedDRT.getParamValues()))
+        matchParams(actual, expected);
+      return;
     }
   }
 
   // Handle various common POP types for convenience, starting with SIMDType.
   if (auto actual = dyn_cast<POP::SIMDType>(actualType))
-    if (auto expected = dyn_cast<POP::SIMDType>(expectedType))
-      return failure(
-          failed(matchParams(actual.getSize(), expected.getSize())) ||
-          failed(matchParams(actual.getDType(), expected.getDType())));
+    if (auto expected = dyn_cast<POP::SIMDType>(expectedType)) {
+      matchParams(actual.getSize(), expected.getSize());
+      matchParams(actual.getDType(), expected.getDType());
+      return;
+    }
 
   // POP::ArrayType.
   if (auto actual = dyn_cast<POP::ArrayType>(actualType))
-    if (auto expected = dyn_cast<POP::ArrayType>(expectedType))
-      return failure(
-          failed(matchParams(actual.getSize(), expected.getSize())) ||
-          failed(
-              matchParams(actual.getElementType(), expected.getElementType())));
+    if (auto expected = dyn_cast<POP::ArrayType>(expectedType)) {
+      matchParams(actual.getSize(), expected.getSize());
+      matchParams(actual.getElementType(), expected.getElementType());
+      return;
+    }
 
   // Handle PointerType.
   if (auto actual = dyn_cast<PointerType>(actualType))
@@ -123,16 +121,14 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCH TYPES:\n";
              actualType.dump(); expectedType.dump();
              llvm::errs() << parameterIndex);
-  return success();
 }
 
-LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
-                                                   TypedAttr expectedAttr) {
+void ParameterInferenceState::matchParams(TypedAttr actualAttr,
+                                          TypedAttr expectedAttr) {
 
   // We can only match up these values if their types match.
-  if (actualAttr.getType() != expectedAttr.getType() &&
-      failed(matchTypes(actualAttr.getType(), expectedAttr.getType())))
-    return failure();
+  if (actualAttr.getType() != expectedAttr.getType())
+    matchTypes(actualAttr.getType(), expectedAttr.getType());
 
   // If the expected value is the parameter declaration in question, remember
   // this value!
@@ -140,17 +136,16 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     if (ire.getDepth() == 0 && !ire.getIsResult() &&
         ire.getIndex() == parameterIndex)
       inferredValues.push_back(actualAttr);
-    return success();
+    return;
   }
 
   // If the attrs trivial match then we're done and there is no inference to do.
   if (actualAttr == expectedAttr)
-    return success();
+    return;
 
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCHING ATTRS:\n";
              actualAttr.dump(); expectedAttr.dump();
              llvm::errs() << parameterIndex << "\n");
-  return success();
 }
 
 LogicalResult ParameterInferenceState::checkOneOperand(
@@ -173,8 +168,8 @@ LogicalResult ParameterInferenceState::checkOneOperand(
       return failure();
 
     // By-ref argument types must exactly match, no conversions are allowed.
-    return matchTypes(argVal.getRValueType(),
-                      expectedType.getReferenceElementType());
+    matchTypes(argVal.getRValueType(), expectedType.getReferenceElementType());
+    return success();
   }
 
   case ValueInputConvention::OwnedInMem:
@@ -187,12 +182,14 @@ LogicalResult ParameterInferenceState::checkOneOperand(
   case ValueInputConvention::BorrowedInReg:
     // Otherwise, we pass as an r-value if we know the type.
     // TODO: Consider implicit conversions?
-    if (CValue cValue = value.getIfCValue())
-      return matchTypes(cValue.getRValueType(), expectedType);
+    if (CValue cValue = value.getIfCValue()) {
+      matchTypes(cValue.getRValueType(), expectedType);
+      return success();
+    }
     // Consider the types of ORValues with single candidates.
     if (ORValue orValue = value.getIfORValue())
       if (PValue pValue = orValue->emitAsPValue())
-        return matchTypes(pValue.getType(), expectedType);
+        matchTypes(pValue.getType(), expectedType);
     return success();
   case ValueInputConvention::None:
     llvm_unreachable("none convention not permitted in lit");
