@@ -64,6 +64,22 @@ void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
   prototypeProfilerEntry = profilerEntry.copy<MojoProfilerEntry>();
 }
 
+void OutputChain::trace(StringRef name,
+                        llvm::function_ref<std::string()> detailFn) {
+  if (profilerEntry.empty()) {
+    // Establish the profiling entry for this Mojo kernel call.
+    profilerEntry = MojoProfilerEntry::create(name, detailFn);
+  } else {
+    // Merge the given details into the existing profile entry. This is useful
+    // when we need to combine profile data contributed from both the C++
+    // and Mojo sides.
+    profilerEntry = profilerEntry.withNameDetailSuffix(name, detailFn);
+  }
+  // (Re)establish the 'prototype' profile entry, which is only used
+  // by executeAsTask() below.
+  prototypeProfilerEntry = profilerEntry.copy<MojoProfilerEntry>();
+}
+
 void OutputChain::markReady() {
   complete();
   // CAUTION: Must copy so chain remains valid.

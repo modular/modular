@@ -158,6 +158,7 @@ struct OutputChain {
   ///
   /// Called from the Mojo side.
   void trace(StringRef name, std::optional<StringRef> detail = std::nullopt);
+  void trace(StringRef name, llvm::function_ref<std::string()> detailFn);
 
   /// Indicate the Mojo call is complete.
   ///
