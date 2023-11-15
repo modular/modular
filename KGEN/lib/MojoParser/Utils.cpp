@@ -36,12 +36,28 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   if (isa<MetaTypeType>(fromType) && isa<AnyTypeType, AnyRegTypeType>(toType))
     return true;
 
-  auto fromRef = dyn_cast<DeclRefType>(fromType);
-  auto toRef = dyn_cast<DeclRefType>(toType);
+  if (isa<AnyRegTypeType>(fromType) && isa<AnyTypeType>(toType))
+    return true;
+
+  auto fromParamRef = dyn_cast<ParamRefType>(fromType);
+  auto toParamRef = dyn_cast<ParamRefType>(toType);
+  if (fromParamRef && toParamRef) {
+    TypedAttr fromParam = fromParamRef.getParam();
+    TypedAttr toParam = toParamRef.getParam();
+    if (!canZeroCostConvert(shared, fromParam.getType(), toParam.getType()))
+      return false;
+    if (auto op = dyn_cast<ParamOperatorAttr>(toParam))
+      if (op.getOpcode() == POC::Rebind)
+        return op.getOperand(0) == fromParam;
+  }
+
+  auto fromDeclRef = dyn_cast<DeclRefType>(fromType);
+  auto toDeclRef = dyn_cast<DeclRefType>(toType);
   // Permit casting between concrete `!kgen.declref` types with different
   // metatypes. This arises when binding concrete types to generic types.
-  if (fromRef && toRef && fromRef.getSymbol() == toRef.getSymbol() &&
-      fromRef.getParamValues() == toRef.getParamValues())
+  if (fromDeclRef && toDeclRef &&
+      fromDeclRef.getSymbol() == toDeclRef.getSymbol() &&
+      fromDeclRef.getParamValues() == toDeclRef.getParamValues())
     return true;
 
   // Check for closure structs and dig out their underlying signature types to
@@ -53,8 +69,8 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     SignatureType toSig = toDecl.getClosureSignature().value_or(nullptr);
     if (fromSig && toSig) {
       // Compare the specialized signatures.
-      fromSig = fromSig.getSpecializedSignature(fromRef.getParamValues());
-      toSig = toSig.getSpecializedSignature(toRef.getParamValues());
+      fromSig = fromSig.getSpecializedSignature(fromDeclRef.getParamValues());
+      toSig = toSig.getSpecializedSignature(toDeclRef.getParamValues());
       return canZeroCostConvert(shared, fromSig, toSig);
     }
     return false;
