@@ -6,7 +6,7 @@
   "publisher": "modular-mojotools",
   "icon": "icon.png",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Programming Languages",
@@ -18,7 +18,6 @@
     "🔥"
   ],
   "activationEvents": [
-    "onLanguage:mojo",
     "onDebugResolve:mojo-lldb",
     "onUri",
     "onStartupFinished"
