@@ -155,13 +155,13 @@ def VTableEntryAttr : DialectAttribute<(attr
 def ConcreteTypeConstantAttr : DialectAttribute<(attr
   Type:$value,
   Type:$type,
-  ConcreteOptionalAttribute<"VTableAttr">:$vtable
+  ConcreteAttribute<"VTableAttr">:$vtable
 )>;
 
 def ParameterizedTypeConstantAttr : DialectAttribute<(attr
   Type:$value,
   Type:$type,
-  ConcreteOptionalAttribute<"VTableAttr">:$vtable
+  ConcreteAttribute<"VTableAttr">:$vtable
 )>;
 
 def DTypeConstantAttr : DialectAttribute<(attr

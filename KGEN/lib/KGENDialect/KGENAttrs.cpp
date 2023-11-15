@@ -243,7 +243,7 @@ TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type,
 }
 
 TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type) {
-  return get(value, type, {});
+  return get(value, type, VTableAttr::get(type.getContext(), {}));
 }
 
 /// Always a constant by definition.
@@ -267,7 +267,7 @@ TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
 
 TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
                                              Type type) {
-  return get(ctx, value, type, {});
+  return get(ctx, value, type, VTableAttr::get(ctx, {}));
 }
 
 TypedAttr ParameterizedTypeConstantAttr::get(Type value, Type type,
