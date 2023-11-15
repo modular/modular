@@ -34,7 +34,6 @@ class ASTDecl;
 class ASTType;
 class DeclResolver;
 class ExprNode;
-struct OrderedCaptures;
 struct Operand;
 class FileModuleOp;
 class FuncOp;
@@ -44,7 +43,6 @@ class ParserListener;
 class StructDeclOp;
 struct CallOperands;
 struct ParserConfig;
-class ParameterCapture;
 enum class CallSyntax : uint8_t;
 
 /// Capture represents a nested function value whose declaration is in the
@@ -393,15 +391,6 @@ public:
   /// Given a nested function, a capture value, and the corresponding capture
   /// ASTDecl, store the capture associated with the nested function.
   void addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl, Capture capture);
-
-  /// Given a nested function, a captured parameter, and the corresponding
-  /// parameter ASTDecl, store the capture associated with the nested function.
-  void addCapturedParameterToScope(ASTDecl &scope,
-                                   ParameterCapture parameterCapture);
-
-  /// Given a nested function, return a list of captured parameters in the form
-  /// of name-type pairs.
-  OrderedCaptures getParameterCaptureRangeInScope(ASTDecl &scope);
 
 private:
   /// The internal state of an imported module or package.

@@ -13,7 +13,6 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/CallEmission.h"
-#include "KGEN/MojoParser/CaptureParameter.h"
 #include "KGEN/MojoParser/ClosureEmitter.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/EntryPoint.h"
@@ -59,8 +58,6 @@ using namespace M::KGEN::LIT;
 
 using llvm::SMLoc;
 using llvm::SourceMgr;
-
-using ParameterCaptures = SmallVector<ParameterCapture>;
 
 static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 
@@ -170,10 +167,6 @@ struct SharedState::Impl {
   /// function.
   llvm::DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>>
       capturesInScope;
-
-  /// The parameter values and decls associated with their enclosing nested
-  /// function.
-  llvm::DenseMap<ASTDecl *, ParameterCaptures> capturedParametersInScope;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
@@ -1939,30 +1932,6 @@ SharedState::getCaptureRangeInScope(ASTDecl &scope) {
 void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
                                     Capture capture) {
   getImpl().capturesInScope[&scope].insert({captureDecl, capture});
-}
-
-void SharedState::addCapturedParameterToScope(
-    ASTDecl &scope, ParameterCapture parameterCapture) {
-  if (!getImpl().capturedParametersInScope.contains(&scope))
-    getImpl().capturedParametersInScope.insert({&scope, ParameterCaptures()});
-  ParameterCaptures &capturedParams =
-      getImpl().capturedParametersInScope[&scope];
-  auto existingEntry =
-      std::find_if(capturedParams.begin(), capturedParams.end(),
-                   [&](const ParameterCapture &other) {
-                     return other.getName() == parameterCapture.getName();
-                   });
-  if (existingEntry == capturedParams.end())
-    capturedParams.push_back(parameterCapture);
-}
-
-OrderedCaptures SharedState::getParameterCaptureRangeInScope(ASTDecl &scope) {
-  if (!getImpl().capturedParametersInScope.contains(&scope))
-    getImpl().capturedParametersInScope.insert({&scope, ParameterCaptures()});
-  ParameterCaptures &capturedParams =
-      getImpl().capturedParametersInScope[&scope];
-  std::sort(capturedParams.begin(), capturedParams.end());
-  return OrderedCaptures(capturedParams);
 }
 
 //===----------------------------------------------------------------------===//

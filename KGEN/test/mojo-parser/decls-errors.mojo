@@ -9,34 +9,6 @@
 from memory.unsafe import Pointer
 
 ##===----------------------------------------------------------------------===##
-# Escaping Closures
-##===----------------------------------------------------------------------===##
-
-@value
-@register_passable
-struct Foo[a : Int]:
-   var b:Int
-   fn get(self) -> Int:
-      return a + self.b
-
-fn has_result_param[a: Int->b: Int](dummyCapture: Int) -> fn () escaping -> Int:
-    fn foo() escaping -> Int:
-        print(dummyCapture)
-        # expected-error @below {{TODO: Support result parameters and escaping closures.}}
-        return a + b
-
-    param_return[a]
-    return foo
-
-
-# FIXME: This crashes, but it should be supportable.
-# fn illegal_alias_ref[a : Int](c:Int):
-#   alias Y = Foo[a](2)
-#   fn p_capture(x: Int, y:Foo[Y.get()]) escaping -> Int:
-#      return Foo[a](x+c).get()
-#   return p_capture
-
-##===----------------------------------------------------------------------===##
 # Closures
 ##===----------------------------------------------------------------------===##
 

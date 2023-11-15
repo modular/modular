@@ -40,23 +40,6 @@ class TraitDeclOp;
 struct ParsedArgument;
 enum class PassingKind : uint32_t;
 
-/// This is a convenience class for pairing the parameter declaration, which has
-/// a mangled name, with its source name.
-struct NamedParameter {
-  NamedParameter(StringRef name, ParamDeclAttr paramDecl)
-      : srcName(name), parameterDecl(paramDecl) {}
-  StringAttr getMangledName() const { return parameterDecl.getName(); }
-  StringRef getSrcName() const { return srcName; }
-  Type getType() const { return parameterDecl.getType(); }
-  ParamDeclAttr getDecl() const { return parameterDecl; }
-
-private:
-  /// Name as it appears in the source.
-  StringRef srcName;
-  /// Parameter declaration as it appears in the owning declaration.
-  ParamDeclAttr parameterDecl;
-};
-
 //===----------------------------------------------------------------------===//
 // DeclResolver
 //===----------------------------------------------------------------------===//
@@ -208,20 +191,12 @@ public:
                              MutableArrayRef<ParsedArgument> args,
                              MutableArrayRef<Type> argTypes);
 
-  /// Given a scope, collect all parameters declared in that scope.
-  static SmallVector<NamedParameter> parametersInScope(ASTDecl &scope);
-
   /// Given a signature type that may contain references to parameter
   /// declarations in a parent context, isolate it by creating a signatuer with
   /// no external references by inserting an input parameter for every captured
   /// parameter declaration. Return the captured parameter references.
   static std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureType>
   createSelfContainedSignature(LITSignatureType original);
-
-  /// Create a bound type from a struct and a list of bindings.
-  static Type createTypeFromSubsetOfParentParameters(
-      SharedState &shared, StructDeclOp baseStruct,
-      ArrayRef<ParameterCapture> parentDeclRefSubset);
 
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
