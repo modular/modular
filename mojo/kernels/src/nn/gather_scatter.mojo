@@ -577,9 +577,6 @@ fn scatter_nd_generator[
     fn update_func[
         simd_width: Int, _rank: Int
     ](_indices_coords: StaticIntTuple[_rank]):
-        let data_shape = data.get_shape()
-        let indices_shape = indices.get_shape()
-
         # Calculate how many elements to copy (this is from the innermost
         # dimensions, and is continuous memory locations).
         var count_copy = 1
