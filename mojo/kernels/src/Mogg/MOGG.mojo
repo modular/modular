@@ -654,6 +654,7 @@ fn simd_store[
 
 # TODO (#24946): remove this, kernel should be passed scalars directly, not
 # through NDBuffer
+@always_inline
 fn buffer_to_scalar[
     target: StringLiteral, type: DType
 ](
@@ -667,11 +668,11 @@ fn buffer_to_scalar[
     the kernel (e.g. reduction axis).
     """
 
-    var val: SIMD[type, 1] = 0
-
     @parameter
     if target != "cuda":  # else in below if not working for some reason
-        val = buf[idx]
+        return buf[idx]
+
+    var val: SIMD[type, 1] = 0
 
     @parameter
     if target == "cuda":
@@ -1005,6 +1006,7 @@ fn concat[
     simd_width: Int,
     single_thread_blocking_override: Bool,
     axis_type: DType,
+    target: StringLiteral = "cpu",
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
@@ -1012,8 +1014,11 @@ fn concat[
     *variadic_ins: NDBuffer[rank, DimList.create_unknown[rank](), type],
 ):
     let ins = variadic_list_to_vector(variadic_ins)
-    _concat[rank, type, single_thread_blocking_override](
-        output, normalize_neg_index(axis[0], rank), ins, out_chain
+    _concat[rank, type, single_thread_blocking_override, target](
+        output,
+        normalize_neg_index(buffer_to_scalar[target](axis, out_chain), rank),
+        ins,
+        out_chain,
     )
     ins._del_old()
 
