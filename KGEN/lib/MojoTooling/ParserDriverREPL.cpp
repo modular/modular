@@ -131,14 +131,18 @@ llvm::SMDiagnostic MojoParserContext::REPLLocMapper::mapDiagnostic(
 
   // Update the diagnostic contents based on the column difference.
   SmallVector<std::pair<unsigned, unsigned>> ranges(diag.getRanges());
-  StringRef lineContents = diag.getLineContents();
+  std::string lineContents = diag.getLineContents().str();
   if (colDiff) {
     for (auto &range : ranges) {
       range.first -= colDiff;
       range.second -= colDiff;
     }
-    if (!lineContents.empty())
-      lineContents = lineContents.drop_front(colDiff);
+    if (!lineContents.empty()) {
+      if (colDiff > 0)
+        lineContents.erase(0, colDiff);
+      else
+        lineContents.insert(0, -colDiff, ' ');
+    }
   }
 
   // Update the locations of the fixits.
@@ -161,6 +165,11 @@ llvm::SMDiagnostic MojoParserContext::REPLLocMapper::mapDiagnostic(
 //===----------------------------------------------------------------------===//
 // Expression Extraction
 //===----------------------------------------------------------------------===//
+
+/// Return the indentation level of the first line of the string.
+static size_t getIndentationLevel(StringRef str) {
+  return str.size() - str.ltrim().size();
+}
 
 /// Return true if the given line matches any of the given prefixes.
 template <typename Prefixes>
@@ -202,14 +211,12 @@ static bool isCloseParenthesis(char c) { return c == ')' || c == ']'; }
 /// the parsing fails, false is returned. `unparsedCode` is modified to point to
 /// the next statement is the parsing was successful, in which case true is
 /// returned.
-static bool tryHandleSimpleImport(StringRef &unparsedCode,
+static bool tryHandleSimpleImport(unsigned &line, unsigned lineE,
+                                  ArrayRef<StringRef> exprLines,
                                   SmallVectorImpl<StringRef> &topLevelCode) {
-  if (!isSimpleImport(unparsedCode))
+  if (!isSimpleImport(exprLines[line]))
     return false;
-  // It seems that mojo doesn't support simple imports yet.
-  auto [line, rest] = unparsedCode.split("\n");
-  topLevelCode.push_back(line);
-  unparsedCode = rest;
+  topLevelCode.push_back(exprLines[line++]);
   return true;
 }
 
@@ -218,10 +225,11 @@ static bool tryHandleSimpleImport(StringRef &unparsedCode,
 /// is returned. `unparsedCode` is modified to point to the next statement is
 /// the parsing was successful, in which case true is returned.
 static bool tryHandleFromImportAliasFunctionOrStruct(
-    StringRef &unparsedCode, SmallVectorImpl<StringRef> &topLevelCode) {
-  bool isFunctionOrStruct = isFunctionOrStructDeclaration(unparsedCode);
-  if (!isFunctionOrStruct && !isFromImport(unparsedCode) &&
-      !isAlias(unparsedCode))
+    unsigned &line, unsigned lineE, ArrayRef<StringRef> exprLines,
+    SmallVectorImpl<StringRef> &topLevelCode) {
+  bool isFunctionOrStruct = isFunctionOrStructDeclaration(exprLines[line]);
+  if (!isFunctionOrStruct && !isFromImport(exprLines[line]) &&
+      !isAlias(exprLines[line]))
     return false;
 
   // These statements can have a hierarchy of () or [], so we need to parse
@@ -239,62 +247,79 @@ static bool tryHandleFromImportAliasFunctionOrStruct(
   //
   // then this block find the `fn foo() -> Int:\n`, even if it's split across
   // many lines. The body will be handled later.
-  StringRef declStr;
-  {
-    // This is an iterator of the unparsed code.
-    size_t pos = 0;
-    // This counts how many unmatched ( or [ we have found so far.
-    size_t openings = 0;
-    for (size_t end = unparsedCode.size(); pos < end; ++pos) {
-      if (unparsedCode[pos] == '\n' && openings == 0 && !requiresOuterColon)
-        break;
+  // Traverse the body searching for the end of the signature, making sure to
+  // properly match groups of ( or [.
+  for (size_t openings = 0; line < lineE;) {
+    topLevelCode.push_back(exprLines[line++]);
+    for (char c : topLevelCode.back()) {
       // Skip past comments.
-      if (unparsedCode[pos] == '#') {
-        pos = unparsedCode.find('\n', pos) - 1;
-        continue;
-      }
+      if (c == '#')
+        break;
 
-      if (isOpenParenthesis(unparsedCode[pos]))
+      if (isOpenParenthesis(c)) {
         ++openings;
-      else if (isCloseParenthesis(unparsedCode[pos]))
+      } else if (isCloseParenthesis(c)) {
         --openings;
-      else if (unparsedCode[pos] == ':' && openings == 0)
+      } else if (c == ':' && openings == 0) {
         requiresOuterColon = false;
+        break;
+      }
     }
-    declStr = unparsedCode.substr(0, pos + 1);
-    unparsedCode = unparsedCode.substr(pos + 1);
+    if (openings == 0 && !requiresOuterColon)
+      break;
   }
 
   if (isFunctionOrStruct) {
-    // We now absorb all indented code included empty lines, which make the body
-    // of the entity we are parsing. This doesn't apply to aliases, for example.
-    while (!unparsedCode.empty()) {
-      auto [line, rest] = unparsedCode.split("\n");
-      if (!line.empty() && !isIndented(line) && !line.ltrim().starts_with("#"))
+    // We now absorb all indented code including empty lines, which make the
+    // body of the entity we are parsing. This doesn't apply to aliases, for
+    // example.
+    for (; line < lineE; ++line) {
+      StringRef lineStr = exprLines[line];
+      if (!lineStr.empty() && !isIndented(lineStr) && !lineStr.starts_with("#"))
         break;
-      declStr = StringRef(declStr.data(), line.end() - declStr.data());
-      unparsedCode = rest;
+      topLevelCode.push_back(lineStr);
     }
   }
-  topLevelCode.push_back(declStr);
   return true;
 }
 
 static void extractExpressionCode(StringRef exprText,
                                   SmallVectorImpl<StringRef> &topLevelCode,
                                   SmallVectorImpl<StringRef> &mainBodyCode) {
+  SmallVector<StringRef> exprLines;
+  exprText.split(exprLines, "\n");
+
+  // Determine the minimum indentation of the expression.
+  size_t indent = std::numeric_limits<size_t>::max();
+  for (StringRef &line : exprLines) {
+    // Trim out any carriage returns.
+    line = line.trim("\r");
+    if (line.empty())
+      continue;
+
+    indent = std::min(indent, getIndentationLevel(line));
+    if (indent == 0)
+      break;
+  }
+
+  // Remove the necessary indentation from the expression lines.
+  if (indent && indent != std::numeric_limits<size_t>::max()) {
+    for (StringRef &line : exprLines)
+      if (!line.empty())
+        line = line.drop_front(indent);
+  }
+
   // The following code will consume chunks of code assigning them to either
   // the top-level or the main body sections.
-  StringRef unparsedCode = exprText;
-  while (!unparsedCode.empty()) {
+  for (unsigned line = 0, lineE = exprLines.size(); line < lineE;) {
     // Note: We are not yet handling multiline expressions with \.
-    if (!tryHandleFromImportAliasFunctionOrStruct(unparsedCode, topLevelCode) &&
-        !tryHandleSimpleImport(unparsedCode, topLevelCode)) {
+    if (!tryHandleFromImportAliasFunctionOrStruct(line, lineE, exprLines,
+                                                  topLevelCode) &&
+        !tryHandleSimpleImport(line, lineE, exprLines, topLevelCode)) {
       // Any other case is just main body code.
-      auto [line, rest] = unparsedCode.split("\n");
-      if (!line.empty())
-        mainBodyCode.push_back(line);
-      unparsedCode = rest;
+      if (!exprLines[line].empty())
+        mainBodyCode.push_back(exprLines[line]);
+      ++line;
     }
   }
 }
@@ -341,7 +366,8 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   // Build a mapping for pieces of the input expression and the wrapped
   // expression, enabling seamless location mapping between the two.
   auto emitAndMapCode = [&](StringRef code) {
-    locMapper.addMapping(code, exprOS.str().size());
+    if (!code.empty())
+      locMapper.addMapping(code, exprOS.str().size());
     exprOS << code << "\n";
   };
 
