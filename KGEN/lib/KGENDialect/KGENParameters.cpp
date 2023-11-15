@@ -393,7 +393,8 @@ ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::end() const {
   if (!param)
     return {*this, g->params.size()};
   // Do not traverse through to parameters in higher scopes.
-  if (!g->scope->isAncestor(g->decls[param].scope))
+  Region *scope = g->decls[param].scope;
+  if (!scope || !g->scope->isAncestor(scope))
     return begin();
   // If the used parameter has no definition, this is a leaf node.
   auto it = g->defs.find(param);
@@ -774,8 +775,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
     nested.nestedScopes.clear();
     for (ParamDeclRefAttr use : nested.usesFromAbove) {
       auto it = decls.find(use.getName());
-      assert(it != decls.end() && "nested use has no declaration?");
-      if (!scope->isAncestor(it->second.scope))
+      if (it == decls.end() || !scope->isAncestor(it->second.scope))
         usesFromAbove.insert(use);
     }
     nestedScopes.try_emplace(nestedScope, std::move(nested));
@@ -804,8 +804,11 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
 
     assert(sccIt->size() == 1 && "non-cyclic regions should have one node");
     StringAttr param = sccIt->front().param;
-    if (param && scope->isAncestor(decls.find(param)->second.scope))
-      paramSolveOrder.push_back(param);
+    if (param) {
+      Region *paramScope = decls.find(param)->second.scope;
+      if (paramScope && scope->isAncestor(paramScope))
+        paramSolveOrder.push_back(param);
+    }
   }
   params = std::move(paramSolveOrder);
 
