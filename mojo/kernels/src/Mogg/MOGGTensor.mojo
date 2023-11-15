@@ -36,6 +36,7 @@ struct Tensor[
         self.strides = IntList[static_strides](strides)
         self.dyn_rank = shape.__len__()
 
+    @mogg_tensor_move_constructor()
     @always_inline
     fn __moveinit__(inout self, owned existing: Self):
         self.data = existing.data

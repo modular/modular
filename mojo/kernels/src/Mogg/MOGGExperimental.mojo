@@ -46,6 +46,7 @@ fn _get_start_indices_of_nth_subvolume[
     return out ^
 
 
+@mogg_tensor_allocator()
 @export
 fn empty_tensor[
     type: DType,
@@ -101,113 +102,82 @@ fn apply_per_element[
         _ = indices
 
 
+@mogg_register("to_tensor")
+@export
+@always_inline
+fn to_tensor[
+    type: DType,
+    static_shape: DimList = DimList(),
+    static_strides: DimList = DimList(),
+](
+    data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
+    raw_shape_ptr: __mlir_type.`!kgen.pointer<index>`,
+    length: Int,
+) -> Tensor[type, static_shape, static_strides]:
+    let shape_ptr = Pointer(raw_shape_ptr)
+
+    var shape = IntList[static_shape].empty(length)
+    var strides = IntList[static_strides].empty(length)
+
+    var stride: Int = 1
+
+    @parameter
+    if shape.has_static_length():
+        alias rank = static_shape.__len__()
+
+        @always_inline
+        @parameter
+        fn body[idx: Int]():
+            # Start from the back so we can accumulate the strides.
+            let i = rank - 1 - idx
+            shape._unsafe_set_dim(i, shape_ptr.load(i))
+            strides._unsafe_set_dim(i, stride)
+            stride *= shape[i]
+
+        unroll[rank, body]()
+    else:
+        # Start from the back so we can accumulate the strides.
+        for i in range(length - 1, -1, -1):
+            shape._unsafe_set_dim(i, shape_ptr.load(i))
+            strides._unsafe_set_dim(i, stride)
+            stride *= shape[i]
+
+    return Tensor[type, static_shape, static_strides](
+        DTypePointer[type](data), shape, strides
+    )
+
+
 @mogg_register_override("mo.add", 1000)
 @mogg_kgen_experiment_kernel()
 @export
-fn my_add[
-    type: DType, rank: Int
-](
-    out: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    x: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    y: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
-):
-    @always_inline
-    @parameter
-    fn func[width: Int, _rank: Int](i: StaticIntTuple[_rank]):
-        let indices = rebind[StaticIntTuple[rank]](i)
-        let i1 = simd_load[type, 1, rank, x.shape](x, indices)
-        let i2 = simd_load[type, 1, rank, y.shape](y, indices)
-        let tmp = i1 + i2
-        simd_store[type, width, rank](out, indices, tmp)
+fn my_add(
+    x: Tensor, y: Tensor
+) -> Tensor[x.type, x.static_shape, x.static_strides]:
+    var out = empty_tensor[x.type](x.shape, x.strides)
 
-    _elementwise_impl[rank, 1, True, func, target="cpu"](
-        out.dynamic_shape,
-        out_chain,
-    )
+    @parameter
+    @always_inline
+    fn func[width: Int](i: IntList):
+        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        out.simd_store[width](i, x.simd_load[width](i) + i2)
+
+    apply_per_element[1, func](out.shape)
+    return out ^
 
 
 @mogg_register_override("mo.sub", 1000)
 @mogg_kgen_experiment_kernel()
 @export
-fn my_sub[
-    type: DType, rank: Int
-](
-    out: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    x: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    y: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
-):
-    @always_inline
+fn my_sub(
+    x: Tensor, y: Tensor
+) -> Tensor[x.type, x.static_shape, x.static_strides]:
+    var out = empty_tensor[x.type](x.shape, x.strides)
+
     @parameter
-    fn func[width: Int, _rank: Int](i: StaticIntTuple[_rank]):
-        let indices = rebind[StaticIntTuple[rank]](i)
-        let i1 = simd_load[type, 1, rank, x.shape](x, indices)
-        let i2 = simd_load[type, 1, rank, y.shape](y, indices)
-        let tmp = i1 - i2
-        simd_store[type, width, rank](out, indices, tmp)
-
-    _elementwise_impl[rank, 1, True, func, target="cpu"](
-        out.dynamic_shape,
-        out_chain,
-    )
-
-
-@mogg_register_override("no-op", 1000)
-@mogg_kgen_experiment_kernel()
-@export
-fn noop[
-    type: DType, rank: Int
-](
-    out: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    x: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    y: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
-):
-    pass
-
-
-@mogg_register_override("diff_dtype", 1000)
-@mogg_kgen_experiment_kernel()
-@export
-fn diff_dtype[
-    type1: DType, type2: DType, rank: Int
-](
-    out: NDBuffer[rank, DimList.create_unknown[rank](), type1],
-    x: NDBuffer[rank, DimList.create_unknown[rank](), type1],
-    y: NDBuffer[rank, DimList.create_unknown[rank](), type2],
-    out_chain: OutputChainPtr,
-):
-    pass
-
-
-@mogg_register_override("many_lambdas", 1000)
-@mogg_kgen_experiment_kernel()
-@export
-fn many_lambdas[
-    type: DType, rank: Int
-](
-    out: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    x: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    y: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    out_chain: OutputChainPtr,
-):
-    # Lambda in lambda
     @always_inline
-    @parameter
-    fn func1[width: Int, _rank: Int](i: StaticIntTuple[_rank]):
-        let indices = rebind[StaticIntTuple[rank]](i)
-        let i1 = simd_load[type, 1, rank, x.shape](x, indices)
-        let i2 = simd_load[type, 1, rank, y.shape](y, indices)
-        let tmp = i1 + i2
-        simd_store[type, width, rank](out, indices, tmp)
+    fn func[width: Int](i: IntList):
+        let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
+        out.simd_store[width](i, x.simd_load[width](i) - i2)
 
-    # Second lambda
-    @always_inline
-    @parameter
-    fn func2[width: Int, _rank: Int](i: StaticIntTuple[_rank]):
-        let indices = rebind[StaticIntTuple[rank]](i)
-        let i1 = simd_load[type, 1, rank, x.shape](x, indices)
-        let i2 = simd_load[type, 1, rank, y.shape](y, indices)
-        let tmp = i1 - i2
-        simd_store[type, width, rank](out, indices, tmp)
+    apply_per_element[1, func](out.shape)
+    return out ^
