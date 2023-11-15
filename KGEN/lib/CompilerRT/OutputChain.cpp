@@ -79,6 +79,18 @@ void OutputChain::markReady() {
 
 void OutputChain::markError(StringRef message) {
   complete();
+  if (chain.isError()) {
+    // Currently, fused Mojo kernels may end up calling mark_error more than
+    // once for the same kernel call. Rather than assert failing, which causes
+    // the root error to be lost, instead forgive the subsequent errors.
+    // However, note we're on thin ice here since the above complete() will have
+    // already released all resources for the call.
+    // TODO(#25740): Remove once fused kernels correctly early exit.
+    llvm::errs() << "Mojo kernel has attempted to mark_error more than once, "
+                    "with message '"
+                 << message << "'\n";
+    return;
+  }
   // CAUTION: Must copy so chain remains valid.
   chain.copy().setToError({Twine(message), std::move(loc)});
 }
