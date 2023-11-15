@@ -1683,8 +1683,8 @@ trait SimpleTrait:
         ...
 
 
-@register_passable
-struct TraitStruct:
+@register_passable("trivial")
+struct TraitStruct(SimpleTrait):
     fn method(self, y: int):
         pass
 
@@ -1692,8 +1692,8 @@ struct TraitStruct:
         pass
 
 
-@register_passable
-struct ParametricTraitStruct[z: int]:
+@register_passable("trivial")
+struct ParametricTraitStruct[z: int](SimpleTrait):
     fn method(self, y: int):
         pass
 
