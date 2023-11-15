@@ -55,6 +55,8 @@ public:
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
                      ArrayRef<TypedAttr> paramValues);
+  /// Instantiate a new parameter evaluator with the given input parameters.
+  ParameterEvaluator(ArrayRef<TypedAttr> paramValues);
 
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(DenseMap<StringAttr, Attribute> paramValues =

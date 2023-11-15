@@ -6,6 +6,8 @@
 
 # RUN: kgen-translate %s -import-mojo | FileCheck %s
 
+alias int = __mlir_type.index
+
 ##===----------------------------------------------------------------------===##
 # var/let
 ##===----------------------------------------------------------------------===##
@@ -1670,3 +1672,46 @@ fn generic_trait_fn[T: Trait](x: T):
 # CHECK-SAME: (%x[x]: !lit.trait<{{.*}}@Trait>
 fn existential_arg(x: Trait):
     pass
+
+
+
+trait SimpleTrait:
+    fn method(self, y: int):
+        ...
+
+    fn param_method[x: int](self):
+        ...
+
+
+@register_passable
+struct TraitStruct:
+    fn method(self, y: int):
+        pass
+
+    fn param_method[x: int](self):
+        pass
+
+
+@register_passable
+struct ParametricTraitStruct[z: int]:
+    fn method(self, y: int):
+        pass
+
+    fn param_method[x: int](self):
+        pass
+
+
+fn take_simple_trait[T: SimpleTrait]():
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_metatype_to_trait_vtable
+fn test_metatype_to_trait_vtable():
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [!TraitStruct, {
+    # CHECK-SAME: "method" : !lit.signature<("self": !TraitStruct borrow, "y": index borrow) -> !kgen.none> = {{.*}}@TraitStruct::@"method
+    # CHECK-SAME: "param_method" : !lit.signature<<"x": index>("self": !TraitStruct borrow) -> !kgen.none> = {{.*}}@TraitStruct::@"param_method{{.*}}"<?>
+    take_simple_trait[TraitStruct]()
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2>, {
+    # CHECK-SAME: "method" : !lit.signature<("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow, "y": index borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>
+    # CHECK-SAME: "param_method" : !lit.signature<<"x": index>("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>
+    take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()

@@ -24,6 +24,7 @@ enum class CallSyntax : uint8_t;
 class ExprEmitter;
 struct CallOperands;
 class AliasDeclOp;
+class TraitType;
 class VarLetDeclOp;
 
 //===----------------------------------------------------------------------===//
@@ -395,6 +396,11 @@ public:
   bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                   ASTType requiredType,
                                   bool allowArgNameCheck = true);
+
+  /// Emit a metatype conversion to a trait type by materializing the type's
+  /// vtable for the trait.
+  AnyValue emitMetaTypeConversion(TraitType trait, MetaTypeType metatype,
+                                  ASTExprAnd<CValue> value, ValueDest &dest);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
