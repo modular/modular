@@ -577,6 +577,9 @@ fn scatter_nd_generator[
     fn update_func[
         simd_width: Int, _rank: Int
     ](_indices_coords: StaticIntTuple[_rank]):
+        let data_shape = data.get_shape()
+        let indices_shape = indices.get_shape()
+
         # Calculate how many elements to copy (this is from the innermost
         # dimensions, and is continuous memory locations).
         var count_copy = 1
@@ -661,12 +664,6 @@ fn scatter_nd_generator[
         update_func,
         target,
     ](iter_shape, out_chain)
-
-    @parameter
-    if single_thread_blocking_override or target == "cuda":
-        return
-    else:
-        out_chain.wait()
 
 
 @always_inline
