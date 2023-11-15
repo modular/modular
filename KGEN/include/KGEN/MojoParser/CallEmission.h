@@ -108,7 +108,7 @@ public:
   /// provided, which (if not null) can be used if the parameter cannot be
   /// inferred otherwise.
   using ParameterInferenceHookTy =
-      function_ref<PValue(size_t, Type, ArrayRef<TypedAttr>, TypedAttr)>;
+      function_ref<PValue(size_t, ArrayRef<TypedAttr>, TypedAttr)>;
 
   /// Describe how closely the given parameter bindings match the specified
   /// input parameters and call operands.
