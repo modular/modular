@@ -226,6 +226,7 @@ fn batched_matmul[
     ) capturing -> None,
     saturated_vnni: Bool,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
@@ -234,7 +235,12 @@ fn batched_matmul[
 ):
     # TODO: generalize to > rank 3
     @parameter
-    if single_thread_blocking_override and not adj_a and not adj_b:
+    if (
+        single_thread_blocking_override
+        and not adj_a
+        and not adj_b
+        and target == "cpu"
+    ):
         return _small_batched_matmul[
             elementwise_epilogue_enabled, elementwise_epilogue_fn
         ](c_buf, a_buf, b_buf, out_chain)
@@ -249,7 +255,7 @@ fn batched_matmul[
         pass
 
     @parameter
-    if single_thread_blocking_override:
+    if single_thread_blocking_override and target == "cpu":
         # Any error thrown by this kernel will get swallowed by this chain.
         # (It doesn't presently have any mark_error's)
         let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
@@ -264,6 +270,7 @@ fn batched_matmul[
             elementwise_epilogue_fn,
             rowwise_epilogue_enabled=False,
             saturated_vnni=saturated_vnni,
+            target=target,
         ](c_buf, a_buf, b_buf, null_rowwise_epilogue, new_chain.borrow())
         new_chain.wait()
     else:
@@ -278,6 +285,7 @@ fn batched_matmul[
             elementwise_epilogue_fn,
             rowwise_epilogue_enabled=False,
             saturated_vnni=saturated_vnni,
+            target=target,
         ](c_buf, a_buf, b_buf, null_rowwise_epilogue, out_chain)
 
 
@@ -323,6 +331,7 @@ fn batched_matmul[
     ](c_buf, a_buf, b_buf, null_rowwise_epilogue, out_chain)
 
 
+@adaptive
 @always_inline
 fn batched_matmul[
     rank: Int,
@@ -337,6 +346,7 @@ fn batched_matmul[
     ) capturing -> None,
     rowwise_epilogue_enabled: Bool,
     saturated_vnni: Bool,
+    target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
@@ -346,6 +356,7 @@ fn batched_matmul[
     ) capturing -> None,
     out_chain: OutputChainPtr,
 ):
+    constrained[target == "cpu", "only valid on CPUs"]()
     constrained[not adj_a, "batched matmul does not support adj_a yet"]()
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
 
@@ -589,6 +600,7 @@ fn batched_matmul[
     elementwise_epilogue_enabled: Bool,
     elementwise_epilogue_fn: elementwise_lambda_fn_sig_type,
     rowwise_epilogue_enabled: Bool,
+    saturated_vnni: Bool,
     target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
