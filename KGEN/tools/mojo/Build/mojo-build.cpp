@@ -16,9 +16,9 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Package/Package.h"
+#include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
@@ -215,16 +215,16 @@ static int linkExecutable(const State &state,
   StringRef libExt = ".a";
 #endif
   // Read the mojo configuration.
-  ErrorOr<Config> configOr = Config::open();
+  ErrorOr<MojoConfig> configOr = MojoConfig::open();
   if (failed(configOr)) {
     return state.reportError(Twine("failed to parse 'modular.cfg': ") +
                              configOr.getError());
   }
-  Config config = std::move(*configOr);
+  MojoConfig config = std::move(*configOr);
 
   // Resolve the path to the CompilerRT library.
   std::error_code ec;
-  StringRef compilerRTPath = config.getValue("mojo.compilerrt_static_path");
+  StringRef compilerRTPath = config.getStaticCompilerRTPath();
   if (!std::filesystem::exists(compilerRTPath.str(), ec) || ec)
     return state.reportError("unable to locate Mojo CompilerRT library");
 
@@ -328,8 +328,7 @@ static int linkExecutable(const State &state,
 #endif // !defined(_WIN32) && !SANITIZER_BUILD
 
   // Add any necessary system libraries.
-  StringRef systemLibsArg = config.getValue("mojo.system_libs");
-  systemLibsArg.split(linkerArgs, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  config.getSystemLibraryLinkArgs(linkerArgs);
 
   std::string errorMsg;
   int linkExitCode = llvm::sys::ExecuteAndWait(

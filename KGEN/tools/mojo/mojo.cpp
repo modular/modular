@@ -14,7 +14,7 @@
 #include "Run/mojo-run.h"
 
 #include "Config/Version.h"
-#include "Support/Configuration.h"
+#include "KGEN/Support/Configuration.h"
 #include "Support/CrashReporting.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LogicalResult.h"
@@ -69,10 +69,9 @@ int main(int argc, char **argv) {
   registerRunSubcommand(registry);
 
   // Configure the current python if it hasn't been set.
-  ErrorOr<Config> config = Config::open();
+  ErrorOr<KGEN::MojoConfig> config = KGEN::MojoConfig::open();
   if (succeeded(config)) {
-    (void)setProcessEnv("MOJO_PYTHON_LIBRARY",
-                        config->getValue("mojo.python_lib"),
+    (void)setProcessEnv("MOJO_PYTHON_LIBRARY", config->getPythonLib(),
                         /*overwrite=*/false);
   }
 

@@ -31,6 +31,7 @@ add_modular_library(MojoParser
 
   LINK_LIBS PUBLIC
   MCompilerSupport
+  KGENSupport
   KGENToolCommon
   LLCLRuntime
   MTelemetry

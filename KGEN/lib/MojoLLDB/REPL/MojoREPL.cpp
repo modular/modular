@@ -11,7 +11,7 @@
 
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
-#include "Support/Configuration.h"
+#include "KGEN/Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBBroadcaster.h"
@@ -352,9 +352,9 @@ llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
   std::optional<std::string> pythonLib =
       llvm::sys::Process::GetEnv("MOJO_PYTHON_LIBRARY");
   if (!pythonLib) {
-    ErrorOr<Config> config = Config::open();
+    ErrorOr<MojoConfig> config = MojoConfig::open();
     if (succeeded(config)) {
-      StringRef pythonLibConfig = config->getValue("mojo.python_lib");
+      StringRef pythonLibConfig = config->getPythonLib();
       if (!pythonLibConfig.empty())
         pythonLib = pythonLibConfig.str();
     }
