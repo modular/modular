@@ -312,12 +312,16 @@ static void lowerInputConventions(Operation &op) {
     // We must do this in a second pass, otherwise ops like kgen.call_signature
     // would be difficult to identify for lowering (since their argument types
     // would be lowered already).
-    op.walk([](Operation *op) {
-      mlir::AttrTypeReplacer replacer;
-      replacer.addReplacement([](SignatureType sig) {
-        auto [newSig, _, __] = lowerSignature(sig);
-        return newSig ? newSig : sig;
-      });
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([](SignatureType sig) {
+      auto [newSig, _, __] = lowerSignature(sig);
+      return newSig ? newSig : sig;
+    });
+    replacer.addReplacement([](TypeConstantAttr type) {
+      // Canonicalize metatypes.
+      return TypeConstantAttr::get(type.getValue());
+    });
+    op.walk([&](Operation *op) {
       replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
                                  /*replaceLocs=*/true,
                                  /*replaceAttrs=*/true);

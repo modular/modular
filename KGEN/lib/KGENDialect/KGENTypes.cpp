@@ -565,7 +565,6 @@ Type PointerType::getElementAsType() const {
   TypedAttr elemType = getElementType();
   if (auto typeCst = ::dyn_cast<TypeConstantAttr>(elemType))
     return typeCst.getValue();
-  assert(isTypeExpr(elemType) && "parameter expr must be a type expression");
   return ParamRefType::get(elemType);
 }
 
