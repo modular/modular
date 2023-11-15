@@ -83,6 +83,42 @@ fn _copy_host_to_device[
     )
 
 
+fn _copy_host_to_device_async[
+    type: AnyRegType
+](
+    device_dst: Pointer[type],
+    host_src: Pointer[type],
+    count: Int,
+    stream: Stream,
+) raises:
+    _check_error(
+        _get_dylib_function[
+            fn (Pointer[NoneType], Pointer[UInt32], Int, _StreamImpl) -> Result
+        ]("cuMemcpyHtoDAsync_v2")(
+            device_dst.bitcast[NoneType](),
+            host_src.bitcast[UInt32](),
+            count * sizeof[type](),
+            stream.stream,
+        )
+    )
+
+
+fn _copy_host_to_device_async[
+    type: DType
+](
+    device_dst: DTypePointer[type],
+    host_src: DTypePointer[type],
+    count: Int,
+    stream: Stream,
+) raises:
+    _copy_host_to_device_async[SIMD[type, 1]](
+        device_dst._as_scalar_pointer(),
+        host_src._as_scalar_pointer(),
+        count,
+        stream,
+    )
+
+
 fn _copy_device_to_host[
     type: AnyRegType
 ](host_dest: Pointer[type], device_src: Pointer[type], count: Int) raises:

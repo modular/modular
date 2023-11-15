@@ -209,3 +209,25 @@ fn _copy_device_to_device_async[
         count,
         stream,
     )
+
+
+fn _malloc_async[
+    type: AnyRegType
+](count: Int, stream: Stream) raises -> Pointer[type]:
+    var ptr = Pointer[UInt32]()
+    _check_error(
+        _get_dylib_function[
+            fn (Pointer[Pointer[UInt32]], Int, _StreamImpl) -> Result
+        ]("cuMemAllocAsync")(
+            Pointer.address_of(ptr), count * sizeof[type](), stream.stream
+        )
+    )
+    return ptr.bitcast[type]()
+
+
+fn _free_async[type: AnyRegType](ptr: Pointer[type], stream: Stream) raises:
+    _check_error(
+        _get_dylib_function[fn (Pointer[UInt32], _StreamImpl) -> Result](
+            "cuMemFreeAsync"
+        )(ptr.bitcast[UInt32](), stream.stream)
+    )
