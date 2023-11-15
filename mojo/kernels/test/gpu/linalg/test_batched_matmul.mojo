@@ -96,6 +96,7 @@ fn test_batched_matmul() raises:
         elementwise_epilogue_enabled=False,
         elementwise_epilogue_fn=elementwise_epilogue_empty_fn,
         rowwise_epilogue_enabled=False,
+        saturated_vnni=False,
         target="cuda",
     ](
         dst_buffer,
