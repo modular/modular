@@ -2074,6 +2074,7 @@ fn batched_matmul[
     output_0_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
+    target: StringLiteral = "cpu",
 ](
     a: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
     b: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
@@ -2107,7 +2108,11 @@ fn batched_matmul[
             + single_thread_blocking_override
         )
 
-    out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.batched_matmul")
+    @parameter
+    if target == "cpu":
+        out_chain.trace[TraceLevel.OP, description_fn](
+            "mojo.mogg.batched_matmul"
+        )
 
     return _batched_matmul[
         rank,
@@ -2120,6 +2125,7 @@ fn batched_matmul[
         epilogue_wrapper,
         False,  # saturated_vnni
         single_thread_blocking_override,
+        target=target,
     ](c, a, b, out_chain)
 
 
