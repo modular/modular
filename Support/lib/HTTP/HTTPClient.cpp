@@ -8,6 +8,7 @@
 
 #include "Cache/BlobCache.h"
 #include "Support/Base64.h"
+#include "Support/Configuration.h"
 #include "Support/Threading/Shared.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -74,6 +75,62 @@ HTTPClient::~HTTPClient() {
   }
 }
 
+ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
+  // Clean out anything we already had. This means just resetting to the
+  // defaults so that we don't accidentally use an outdated token, for example.
+  if (authSetup) {
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+    curl_easy_setopt(curl, CURLOPT_XOAUTH2_BEARER, nullptr);
+    curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, nullptr);
+    curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
+    curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, nullptr);
+    curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
+  }
+
+  // Short-circuit if we're using bearer token authorization. This way, libcurl
+  // will add the headers *for* us.
+  if (tok) {
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BEARER);
+    curl_easy_setopt(curl, CURLOPT_XOAUTH2_BEARER, tok->c_str());
+    authSetup = true;
+    return success();
+  }
+
+  auto clientCert = findModularFile("client.der");
+  if (!clientCert)
+    return Error("could not find the client certificate");
+
+  auto certBufOr = Buffer::getFile(*clientCert);
+  if (certBufOr.isError())
+    return certBufOr.takeError();
+
+  // Set the client certificate on the context.
+  curl_blob blob;
+  blob.data = (void *)(*certBufOr)->getBufferStart();
+  blob.len = (*certBufOr)->getBufferSize();
+  blob.flags = CURL_BLOB_COPY;
+  curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, &blob);
+  curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "DER");
+
+  auto clientKey = findModularFile("client_priv.der");
+  if (!clientKey)
+    return Error("could not find the client private key");
+
+  auto clientKeyBufOr = Buffer::getFile(*clientKey);
+  if (clientKeyBufOr.isError())
+    return clientKeyBufOr.takeError();
+
+  // Now set the client key on the request - used to sign the request.
+  blob.data = (void *)(*clientKeyBufOr)->getBufferStart();
+  blob.len = (*clientKeyBufOr)->getBufferSize();
+  curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, &blob);
+  curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "DER");
+
+  // All done!
+  authSetup = true;
+  return success();
+}
+
 struct RequestStreamReturn {
   llvm::raw_ostream *os;
   size_t limit = 0;
@@ -105,6 +162,8 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
                                         raw_ostream &os,
                                         std::chrono::milliseconds timeout,
                                         size_t maxLength) {
+  if (!authSetup)
+    llvm::report_fatal_error("auth must be setup before executing a request");
 
   RequestStreamReturn ret;
   ret.os = &os;
