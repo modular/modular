@@ -83,7 +83,7 @@ from GatherScatter import gather_reduce, gather_shape, scatter_elements
 from GatherScatter import scatter_elements_shape as scatter_shape
 from GatherScatter import scatter_nd as _scatter_nd
 from GatherScatter import scatter_nd_generator
-from GatherScatter import normalize_index
+from GatherScatter import normalize_neg_index
 from gpu.host.memory import _copy_device_to_host_async
 from Matmul import matmul as _matmul
 from Matmul import (
@@ -993,12 +993,8 @@ fn concat_from_list[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    var axis_int = axis[0].to_int()
-    if axis_int < 0:
-        axis_int = axis_int + rank
-
     _concat[rank, type, single_thread_blocking_override](
-        output, axis_int, inputs, out_chain
+        output, normalize_neg_index(axis[0], rank), inputs, out_chain
     )
 
 
@@ -1015,13 +1011,9 @@ fn concat[
     out_chain: OutputChainPtr,
     *variadic_ins: NDBuffer[rank, DimList.create_unknown[rank](), type],
 ):
-    var axis_int = axis[0].to_int()
-    if axis_int < 0:
-        axis_int = axis_int + rank
-
     let ins = variadic_list_to_vector(variadic_ins)
     _concat[rank, type, single_thread_blocking_override](
-        output, axis_int, ins, out_chain
+        output, normalize_neg_index(axis[0], rank), ins, out_chain
     )
     ins._del_old()
 
@@ -1087,13 +1079,9 @@ fn cumsum[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    var axis_int = axis[0].to_int()
-    if axis_int < 0:
-        axis_int = axis_int + rank
-    debug_assert(
-        axis_int >= 0 and axis_int < rank, "axis must be between 0 and rank - 1"
+    _cumsum[rank, type, exclusive == 1, reverse == 1](
+        output, input, normalize_neg_index(axis[0], rank)
     )
-    _cumsum[rank, type, exclusive == 1, reverse == 1](output, input, axis_int)
     out_chain.mark_ready()
 
 
@@ -1117,12 +1105,10 @@ fn split[
     out_chain: OutputChainPtr,
     *variadic_outs: NDBuffer[rank, DimList.create_unknown[rank](), type],
 ):
-    var axis_int = axis[0].to_int()
-    if axis_int < 0:
-        axis_int = axis_int + rank
-
     # NOTE: Synchronous, so stack allocated variadic list is safe
-    _split[type, rank](input, axis_int, variadic_outs, out_chain)
+    _split[type, rank](
+        input, normalize_neg_index(axis[0], rank), variadic_outs, out_chain
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1924,7 +1910,7 @@ fn gather[
     output_shape: StaticIntTuple[output_rank],
     out_chain: OutputChainPtr,
 ):
-    let axis = normalize_index(
+    let axis = normalize_neg_index(
         buffer_to_scalar[target](axis_buffer, out_chain), in_rank
     )
 
@@ -2165,9 +2151,13 @@ fn scatter[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return rhs  # always return the latest update element
 
-    let axis_int = axis[0].to_int()
     return scatter_elements[reduce_func](
-        input, indices, updates, axis_int, output, out_chain
+        input,
+        indices,
+        updates,
+        normalize_neg_index(axis[0], rank),
+        output,
+        out_chain,
     )
 
 
@@ -2199,9 +2189,13 @@ fn scatter_add[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs + rhs
 
-    let axis_int = axis[0].to_int()
     return scatter_elements[reduce_func](
-        input, indices, updates, axis_int, output, out_chain
+        input,
+        indices,
+        updates,
+        normalize_neg_index(axis[0], rank),
+        output,
+        out_chain,
     )
 
 
@@ -2233,9 +2227,13 @@ fn scatter_max[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.max(rhs)
 
-    let axis_int = axis[0].to_int()
     return scatter_elements[reduce_func](
-        input, indices, updates, axis_int, output, out_chain
+        input,
+        indices,
+        updates,
+        normalize_neg_index(axis[0], rank),
+        output,
+        out_chain,
     )
 
 
@@ -2267,9 +2265,13 @@ fn scatter_min[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.min(rhs)
 
-    let axis_int = axis[0].to_int()
     return scatter_elements[reduce_func](
-        input, indices, updates, axis_int, output, out_chain
+        input,
+        indices,
+        updates,
+        normalize_neg_index(axis[0], rank),
+        output,
+        out_chain,
     )
 
 
@@ -2301,9 +2303,13 @@ fn scatter_mul[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs * rhs
 
-    let axis_int = axis[0].to_int()
     return scatter_elements[reduce_func](
-        input, indices, updates, axis_int, output, out_chain
+        input,
+        indices,
+        updates,
+        normalize_neg_index(axis[0], rank),
+        output,
+        out_chain,
     )
 
 
