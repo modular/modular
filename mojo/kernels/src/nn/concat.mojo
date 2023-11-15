@@ -20,6 +20,17 @@ from runtime.llcl import OutputChainPtr
 from utils.index import StaticIntTuple, product
 from utils.list import Dim, DimList
 
+from gpu.host.memory import (
+    _copy_device_to_host,
+    _copy_host_to_device,
+    _copy_host_to_device_async,
+    _free,
+    _malloc,
+    _memset_async,
+)
+from gpu.host import Stream, Context, synchronize
+from gpu.memory import _malloc_async, _free_async
+
 # ===----------------------------------------------------------------------===#
 # concat
 # ===----------------------------------------------------------------------===#
@@ -408,11 +419,13 @@ fn _concat_small[
         ](output.dynamic_shape, out_chain)
 
 
+@adaptive
 @always_inline
 fn concat[
     rank: Int,
     type: DType,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
@@ -421,6 +434,10 @@ fn concat[
     ],
     out_chain: OutputChainPtr,
 ):
+    constrained[
+        target == "cpu", "Concat kernel implementation only valid on CPU."
+    ]()
+
     @parameter
     if single_thread_blocking_override:
         return _concat_small[rank, type](output, axis, inputs, out_chain)
@@ -509,3 +526,102 @@ fn concat_shape[
     var output_shape = input_bufs[0].get_shape()
     output_shape[axis] = concat_axis_dim_sum
     return output_shape
+
+
+@adaptive
+@always_inline
+fn concat[
+    rank: Int,
+    type: DType,
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: Int,
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
+    out_chain: OutputChainPtr,
+):
+    constrained[
+        target == "cuda", "Concat kernel implementation only valid on GPU."
+    ]()
+    try:
+        return _concat_gpu(output, axis, inputs, out_chain)
+    except e:
+        return out_chain.mark_error(e)
+
+
+@always_inline
+fn _concat_gpu[
+    rank: Int,
+    type: DType,
+](
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: Int,
+    inputs: InlinedFixedVector[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
+    out_chain: OutputChainPtr,
+) raises:
+    var stream = out_chain.get_cuda_stream()
+
+    let input_list_device = _malloc_async[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ](len(inputs), stream)
+
+    # Note: NDBuffers in `inputs` are on the device BUT storage for the vector itself
+    # on the host.
+    # Need to copy the vector storage onto the device so that I can access the
+    # inputs inside the kernel.
+    # Alternatively, we could launch a separate kernel per input at the expense
+    # of additional launch overhead.
+    let num_inputs = len(inputs)
+    for i in range(num_inputs):
+        var input = inputs[i]
+        _copy_host_to_device_async(
+            input_list_device.offset(i),
+            Pointer[
+                NDBuffer[rank, DimList.create_unknown[rank](), type]
+            ].address_of(input),
+            1,
+            stream,
+        )
+        # careful, need to synchronize stream before `input` goes out of scope
+        stream.synchronize()
+
+    @parameter
+    @always_inline
+    fn per_output_elem[
+        simd_width: Int, _rank: Int
+    ](out_index: StaticIntTuple[_rank]):
+        var in_index = out_index
+        in_index[axis] = out_index[axis]
+
+        # can use binary search here to reduce num iters to log2(num_inputs)
+        for i in range(num_inputs):
+            let input = input_list_device[i]
+
+            if in_index[axis] < input.get_shape()[axis]:
+                output[rebind[StaticIntTuple[rank]](out_index)] = input[
+                    rebind[StaticIntTuple[rank]](in_index)
+                ]
+                return
+
+            in_index[axis] -= input.get_shape()[axis]
+
+    # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
+    # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
+    # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
+    # Because the inner dim is contiguous we will get coalesced memory access
+    # using the elementwise generator with simd_width=1.
+    alias target = "cuda"
+    _elementwise_impl[
+        rank,
+        1,
+        False,
+        per_output_elem,
+        target,
+    ](output.get_shape(), out_chain)
+
+    _free_async(input_list_device, stream)
