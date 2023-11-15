@@ -30,6 +30,8 @@ void LITDialect::registerTypes() {
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
   dialect->registerMnemonicType<MetaTypeType>();
+  dialect->registerMnemonicType<TraitType>();
+  dialect->registerMnemonicType<LifetimeType>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -125,8 +127,8 @@ TypeSignatureType TypeSignatureType::remapToSignature(
 // MetaTypeType
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
-                                             TypedAttr &value) const {
+static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
+                                          Type metatype) {
   SymbolRefAttr symbol;
   OptionalParseResult result = p.parseOptionalAttribute(symbol);
   if (result.has_value()) {
@@ -135,8 +137,8 @@ OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
     SmallVector<TypedAttr> values;
     if (parseParameterValues(p, values))
       return failure();
-    value =
-        TypeConstantAttr::get(DeclRefType::get(symbol, values, *this), *this);
+    value = TypeConstantAttr::get(DeclRefType::get(symbol, values, metatype),
+                                  metatype);
     return LogicalResult::success();
   }
 
@@ -146,12 +148,12 @@ OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
     return {};
   if (failed(*result))
     return failure();
-  value = TypeConstantAttr::get(type, *this);
+  value = TypeConstantAttr::get(type, metatype);
   return mlir::success();
 }
 
-LogicalResult MetaTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
-  auto type = ::dyn_cast<TypeConstantAttr>(value);
+static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
+  auto type = dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
 
@@ -168,6 +170,15 @@ LogicalResult MetaTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
 
   printKGENType(p, type.getValue());
   return success();
+}
+
+OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
+                                             TypedAttr &value) const {
+  return parseTypeValue(p, value, *this);
+}
+
+LogicalResult MetaTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
+  return printTypeValue(p, value);
 }
 
 MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
@@ -212,6 +223,19 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
       TypeSignatureType::get(getContext(), newParamTypes, newParamNames,
                              newPassingKinds, newDefaults, paramVarArg);
   return MetaTypeType::get(getSymbol(), values, newSig);
+}
+
+//===----------------------------------------------------------------------===//
+// TraitType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult TraitType::parseValue(AsmParser &p,
+                                          TypedAttr &value) const {
+  return parseTypeValue(p, value, *this);
+}
+
+LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
+  return printTypeValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//

@@ -1633,11 +1633,11 @@ struct CFMStruct(CFMTrait):
        pass
 
 # CHECK-LABEL: lit.func @"generic_trait_fn
-# CHECK-SAME: "<[[T:.*_T]][T]: !lit.trait<{{.*}}@Trait>>
-# CHECK-SAME: %x[x]: !kgen.paramref<:!lit.trait<{{.*}}@Trait> [[T]]> borrow
+# CHECK-SAME: "<[[T:.*_T]][T]: trait<{{.*}}@Trait>>
+# CHECK-SAME: %x[x]: !kgen.paramref<:trait<{{.*}}@Trait> [[T]]> borrow
 fn generic_trait_fn[T: Trait](x: T):
-    # CHECK: call_param[!lit.signature<("self": !kgen.paramref<:!lit.trait<{{.*}}@Trait> [[T]]> borrow) -> !kgen.none>:
-    # CHECK-SAME: get_type_method(:!lit.trait<{{.*}}@Trait> [[T]], "f0")](%x)
+    # CHECK: call_param[!lit.signature<("self": !kgen.paramref<:trait<{{.*}}@Trait> [[T]]> borrow) -> !kgen.none>:
+    # CHECK-SAME: get_type_method(:trait<{{.*}}@Trait> [[T]], "f0")](%x)
     x.f0()
 
     # CHECK: call_param[!lit.signature<("self": {{.*}} borrow) -> !kgen.none>: get_type_method({{.*}}, "overloaded")](%x)

@@ -1936,6 +1936,8 @@ static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands,
   if (!typeConstant)
     return {};
   VTableAttr vtable = typeConstant.getVtable();
+  if (!vtable)
+    return {};
   StringAttr targetName = cast<StringAttr>(operands[1]);
   SignatureType targetSignature = cast<SignatureType>(resultType);
   // Scan the vtable for a name + signature match, then the method is the
