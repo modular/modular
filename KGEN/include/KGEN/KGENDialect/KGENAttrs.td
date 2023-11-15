@@ -345,14 +345,18 @@ def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
 
   let parameters = (ins "StringAttr":$name,
                         "SignatureType":$signature,
-                        "SymbolRefAttr":$method
-                        );
-  let assemblyFormat = "`` custom<VTableEntryName>($name) `:` $signature `=` $method";
+                        "SymbolRefAttr":$method);
+  let assemblyFormat = [{
+    `` custom<VTableEntryName>($name) `:` $signature `=` $method
+  }];
 }
 
 //===----------------------------------------------------------------------===//
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
+
+def VTableParam
+  : DefaultValuedParameter<"VTableAttr", "VTableAttr::get($_ctxt, {})">;
 
 def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
     "concretetype.constant"> {
@@ -381,7 +385,7 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
   let parameters = (ins
     "Type":$value,
     AttributeSelfTypeParameter<"", "Type">:$type,
-    OptionalParameter<"VTableAttr">:$vtable
+    VTableParam:$vtable
   );
 
   let builders = [
@@ -422,7 +426,7 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
   let parameters = (ins
     "Type":$value,
     AttributeSelfTypeParameter<"", "Type">:$type,
-    OptionalParameter<"VTableAttr">:$vtable
+    VTableParam:$vtable
   );
 
   let builders = [
