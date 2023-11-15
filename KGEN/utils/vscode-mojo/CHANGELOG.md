@@ -7,9 +7,12 @@
   the input with a colon (`:`) to force handling it as an LLDB command, which is
   similar to the behavior of the Mojo REPL.
 
-- Fixed the "Debug Mojo File" action in the editor's top menu.
-
 - Mojo code blocks within documentation strings are now syntax highlighted.
 
 - Added support for JIT debugging Mojo source files using F5 if no launch
   configurations are present.
+
+## Fixed
+
+- Fixed the `Debug Mojo File`` action in the editor's top menu and drop the
+  experimental tag.
