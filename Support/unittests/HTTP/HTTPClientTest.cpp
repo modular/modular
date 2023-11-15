@@ -65,6 +65,7 @@ TEST(ModularToolTest, fetchURL) {
   EXPECT_FALSE(ec);
   auto urlPath = pathToURL(filePath);
   HTTPClient client(GetHTTPContextRef());
+  client.noAuthNeeded();
   const HTTPRequest request = {urlPath};
   std::string ostring;
   llvm::raw_string_ostream stream(ostring);

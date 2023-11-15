@@ -188,6 +188,17 @@ public:
   HTTPClient(HTTPContextRef ctx);
   ~HTTPClient();
 
+  /// This function just sets authSetup to `true` for the case where we don't
+  /// actually need to set up auth. This should *ONLY* be used if you can
+  /// articulate *why* this is being used.
+  void noAuthNeeded() { authSetup = true; }
+
+  /// Set up the auth for this HTTP client. This can be set as often as desired.
+  /// If no token is provided, we will use the default client certificate and
+  /// keypair from the filesystem. This must be called at least once before
+  /// calling `executeRequest`.
+  ErrorOrSuccess setupAuth(std::optional<std::string> tok = std::nullopt);
+
   /// Blocking call that executes the HTTPRequest and writes the response to the
   /// provided ostream. Returns a HTTPResponse.
   ///
@@ -201,6 +212,9 @@ public:
 private:
   HTTPContextRef context;
   void *curl = nullptr;
+  /// False if we haven't set up the auth on the connection yet, true if we
+  /// have. We assert that the auth must be set up before executing any request.
+  bool authSetup = false;
 };
 } // namespace M
 
