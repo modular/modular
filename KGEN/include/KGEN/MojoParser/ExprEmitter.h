@@ -313,12 +313,11 @@ public:
   /// Emit any kind of PValue to an XLValue.
   XBValue emitPValueToXLValue(ASTExprAnd<PValue> value, XLValue dest,
                               ExprContext context);
-  /// This helpers emits a PValue to an MRValue that has a memory
-  /// representation, materializing the PValue.
+  /// This helper emits a PValue to an MRValue that has a memory representation,
+  /// materializing the PValue.
   MRValue emitPValueToMRValue(ASTExprAnd<PValue> value, ExprContext context);
-
-  /// This helpers emits a PValue to an XRValue that has a memory
-  /// representation, materializing the PValue.
+  /// This helper emits a PValue to an XRValue that has a memory representation,
+  /// materializing the PValue.
   XRValue emitPValueToXRValue(ASTExprAnd<PValue> value, ExprContext context);
 
   /// This helper emits the specified value as a SRValue which has an SSA

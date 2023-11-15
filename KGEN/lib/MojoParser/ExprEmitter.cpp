@@ -535,7 +535,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return overloads->emitAsCValue(*this, dest);
 }
 
-/// Emit an expression providing a immutable borrowed reference to a value.
+/// Emit an expression providing an immutable borrowed reference to a value.
 BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value)
     return {};
@@ -1299,7 +1299,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   SMLoc exprLoc = value.expr->getLoc();
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
-  // isn't movable, then copy it the destination.
+  // isn't movable, then copy it into the destination.
   if (!valueType.isMovableFrom(value, shared)) {
     ValueDest dest(destLV, context);
     auto result = emitCopyOfValue(value, dest);

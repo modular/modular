@@ -1171,7 +1171,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     }
   }
 
-  for (auto type : state.types)
+  for (Type type : state.types) {
     if (!ASTType(type).isRegisterPassable(call.getLoc(), emitter.shared)) {
       emitter.emitError(call.getLoc())
           << ASTType(type)
@@ -1179,6 +1179,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
              "'@register_passable' types";
       return {};
     }
+  }
 
   // Check for an unregistered operation, because otherwise MLIR will crash when
   // assertions are enabled.
@@ -1214,6 +1215,9 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   if (resultOp->getNumResults() == 0) {
     return PValue(emitter.shared.getNoneAttr());
   } else if (resultOp->getNumResults() == 1) {
+    OpResult res = resultOp->getResult(0);
+    ASTType resType = res.getType();
+
     // Check to see if we can fold this operation.  This enables use of
     // __mlir_op to produce meta-values without forcing them into the dynamic
     // value domain.
@@ -1225,10 +1229,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     if (succeeded(resultOp->fold(constOperands, foldResults)) &&
         foldResults.size() == 1) {
       auto folded = PointerUnion<Attribute, Value>(foldResults[0]);
-      Type foldedType;
+      ASTType foldedType;
       // If the result was some other value that already exists, use it.
       if (auto val = dyn_cast<Value>(folded)) {
-        if (val.getType() == resultOp->getResult(0).getType()) {
+        if (val.getType() == resType) {
           resultOp->erase();
           return SRValue(val);
         }
@@ -1236,7 +1240,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       } else {
         // If it is a constant, make an PValue result.
         auto attr = cast<TypedAttr>(cast<Attribute>(folded));
-        if (attr.getType() == resultOp->getResult(0).getType()) {
+        if (attr.getType() == resType) {
           resultOp->erase();
           return PValue(attr);
         }
@@ -1244,22 +1248,21 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       }
       emitter.emitError(call.getLoc())
           << unboundOp.getName() << " operation folded to result type "
-          << ASTType(foldedType) << " but we expected it to be "
-          << ASTType(resultOp->getResult(0).getType()) << call.getRange();
+          << foldedType << " but we expected it to be " << resType
+          << call.getRange();
       return {};
     }
 
     // If folding failed, return the operation normally.
-    return SRValue(resultOp->getResult(0));
+    return SRValue(res);
   } else {
     // Pack results into a tuple and return it.
     ValueDest tupleDest = ValueDest(EC_MLIRMagic);
     ASTType tupleType = emitter.shared.getBuiltinTupleInstantion(
         emitter.declScope, call.getLoc(), state.types);
     SmallVector<ASTExprAnd<AnyValue>> posOperands;
-    for (OpResult opResult : resultOp->getResults()) {
+    for (OpResult opResult : resultOp->getResults())
       posOperands.push_back({SRValue(opResult), &call});
-    }
     AnyValue tupleVal = emitter.emitConstructorCall(
         tupleType, posOperands, &call, CallSyntax::kImplicitConvert, tupleDest,
         /*allowImplicitConversion=*/true);

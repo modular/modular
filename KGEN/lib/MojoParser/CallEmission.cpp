@@ -251,8 +251,12 @@ InputParamBindings::verifyBindings(
       if (parameterInferenceHook) {
         if (PValue pValue = parameterInferenceHook(idx, type, newBindings,
                                                    /*defaultParam=*/{})) {
-          assert(pValue.getType().mlirType == requestedType &&
-                 "inferred a parameter value of wrong type");
+          Type inferredType = pValue.getType().mlirType;
+          if (!isa<AnyRegTypeType>(inferredType) &&
+              !isa<AnyTypeType>(requestedType)) {
+            assert(pValue.getType().mlirType == requestedType &&
+                   "inferred a parameter value of wrong type");
+          }
           setParamValue(pValue);
           continue;
         }
