@@ -7,6 +7,10 @@
 from math import div_ceil, gcd, max, min
 from sys.info import simdwidthof
 
+
+from gpu import ThreadIdx, BlockIdx, BlockDim
+from gpu.host import Function, Stream
+
 from algorithm import sync_parallelize, vectorize_unroll
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from algorithm.reduction import _reduce_generator
@@ -25,6 +29,7 @@ from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
+from utils.optional import Optional
 
 
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
@@ -487,6 +492,7 @@ fn batched_matmul[
 
 
 @always_inline
+@adaptive
 fn batched_matmul[
     rank: Int,
     a_type: DType,
@@ -499,6 +505,7 @@ fn batched_matmul[
         StaticIntTuple[rank], SIMD[c_type, width]
     ) capturing -> None,
     rowwise_epilogue_enabled: Bool,
+    target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
     a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
@@ -508,6 +515,7 @@ fn batched_matmul[
     ) capturing -> None,
     out_chain: OutputChainPtr,
 ):
+    constrained[target == "cpu", "only valid on GPUs"]()
     batched_matmul[
         rank,
         a_type,
@@ -520,6 +528,113 @@ fn batched_matmul[
         rowwise_epilogue_enabled,
         saturated_vnni=False,
     ](c_buf, a_buf, b_buf, rowwise_epilogue, out_chain)
+
+
+alias elementwise_lambda_fn_sig_type = fn[
+    c_type: DType, width: Int, rank: Int
+] (StaticIntTuple[rank], SIMD[c_type, width]) capturing -> None
+
+
+fn batched_matmul_kernel[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+](
+    c_buff: NDBuffer[3, c_shape, c_type],
+    a_buff: NDBuffer[3, a_shape, a_type],
+    b_buff: NDBuffer[3, b_shape, b_type],
+) -> None:
+    let batch_size = c_buff.dim(0)
+    let m = c_buff.dim(1)
+    let n = c_buff.dim(2)
+    let k = a_buff.dim(2)
+
+    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    let y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    let z = BlockIdx.z()
+
+    if z >= batch_size or x >= n or y >= m:
+        return
+    var val = Scalar[c_type](0.0)
+    for ki in range(k):
+        val += a_buff[z, y, ki].cast[c_type]() * b_buff[z, ki, x].cast[c_type]()
+
+    @parameter
+    if elementwise_lambda_fn:
+        alias elementwise_lambda = elementwise_lambda_fn.value()
+        elementwise_lambda[c_type, 1, 3](Index(z, y, x), val)
+    else:
+        c_buff[Index(z, y, x)] = val
+
+
+@always_inline
+@adaptive
+fn batched_matmul[
+    rank: Int,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    adj_a: Bool,
+    adj_b: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue_fn: elementwise_lambda_fn_sig_type,
+    rowwise_epilogue_enabled: Bool,
+    target: StringLiteral = "cpu",
+](
+    c_buf: NDBuffer[rank, DimList.create_unknown[rank](), c_type],
+    a_buf: NDBuffer[rank, DimList.create_unknown[rank](), a_type],
+    b_buf: NDBuffer[rank, DimList.create_unknown[rank](), b_type],
+    rowwise_epilogue: fn (
+        Int, Int, NDBuffer[2, DimList.create_unknown[2](), c_type]
+    ) capturing -> None,
+    out_chain: OutputChainPtr,
+):
+    constrained[target == "cuda", "only valid on GPUs"]()
+    constrained[rank == 3, "only rank-3 inputs are supported"]()
+    constrained[
+        not rowwise_epilogue_enabled, "rowwise epilogue fusion isn't supported"
+    ]()
+
+    alias BLOCK_DIM = 16
+    alias unkown_shape = DimList.create_unknown[3]()
+
+    let batch_size = a_buf.dim(0)
+    let m = a_buf.dim(1)
+    let k = a_buf.dim(2)
+    let n = b_buf.dim(2)
+
+    try:
+        let gpu_func = Function[
+            fn (
+                NDBuffer[3, unkown_shape, c_type],
+                NDBuffer[3, unkown_shape, a_type],
+                NDBuffer[3, unkown_shape, b_type],
+            ) capturing -> None, batched_matmul_kernel[
+                c_type,
+                unkown_shape,
+                a_type,
+                unkown_shape,
+                b_type,
+                unkown_shape,
+                elementwise_epilogue_fn,
+            ]
+        ]()
+        gpu_func(
+            (div_ceil(n, BLOCK_DIM), div_ceil(m, BLOCK_DIM), batch_size),
+            (BLOCK_DIM, BLOCK_DIM, 1),
+            c_buf,
+            a_buf,
+            b_buf,
+            stream=out_chain.get_cuda_stream() if out_chain else Stream[
+                is_borrowed=True
+            ](),
+        )
+    except e:
+        out_chain.mark_error(e)
 
 
 @always_inline
