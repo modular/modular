@@ -491,22 +491,24 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ValueDest refDest(dest.getContext());
   AnyValue result =
       emitter.emitDeclReference(spelling, decls, this, refDest, capture);
-  LIT::FuncOp functionContainer;
-  ASTDecl *functionContainerDecl =
-      CaptureUtility::nearestParentFuncOpDecl(container, true);
-  if (functionContainerDecl)
-    functionContainer = cast<LIT::FuncOp>(functionContainerDecl);
-  bool livesInsideNestedFunc = functionContainer &&
-                               !functionContainer.getIsParametric() &&
-                               functionContainer.getParamDeclAttr();
+
+  // Find the nearest escaping closure, if there is one.
+  ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
+  auto isClosureFn = [](LIT::FuncOp func) {
+    SignatureType sig = func.getSignature();
+    return sig.isEscaping() || (sig.isCapturing() && !func.getIsParametric());
+  };
+  while (funcDecl && !isClosureFn(cast<LIT::FuncOp>(funcDecl)))
+    funcDecl = funcDecl->getParentDecl()->getNearestDeclOfType<LIT::FuncOp>();
+  LIT::FuncOp functionContainer = cast_or_null<LIT::FuncOp>(funcDecl);
+
   ASTDecl *declRef = nullptr;
   if (!isa<LIT::FuncOp>(*decls[0])) {
     assert(decls.size() == 1 && "Only functions may be overloaded");
     declRef = decls[0];
   }
   bool declRefIsRecordableCapture =
-      livesInsideNestedFunc && declRef &&
-      functionContainer.getSignature().isEscaping();
+      funcDecl && functionContainer.getSignature().isEscaping() && declRef;
 
   // Record Parameter Capture.
   if (result.getIfPValue() && declRefIsRecordableCapture) {
@@ -522,8 +524,15 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Record Runtime Value Capture.
   if (declRefIsRecordableCapture) {
-    ASTDecl *funcDecl = container.getNearestDeclOfType<LIT::FuncOp>();
-    if (declRef->getParentDecl() && declRef->getParentDecl() != funcDecl)
+    bool inParentFunc = false;
+    for (ASTDecl *decl = declRef->getParentDecl(); decl;
+         decl = decl->getParentDecl()) {
+      if (decl == funcDecl) {
+        inParentFunc = true;
+        break;
+      }
+    }
+    if (!inParentFunc)
       emitter.shared.addCaptureToScope(*funcDecl, declRef, *capture);
   }
   CValue value = result.getIfCValue();
@@ -536,7 +545,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(result, this, dest);
 
   // If this is a capture inside a nonparametric function, emit a copy.
-  if (livesInsideNestedFunc && !functionContainer.getSignature().isEscaping()) {
+  if (funcDecl && declRef && !functionContainer.getSignature().isEscaping()) {
     assert(mlirValue && "unexpected PValue");
     if (mlirValue.getParentRegion()->isProperAncestor(
             &functionContainer.getBodyRegion())) {
