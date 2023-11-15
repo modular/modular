@@ -53,6 +53,30 @@ fn _get_batch_dims[
     return out
 
 
+# A utility to reshape NDBuffer with rank > 3 to rank-3.
+@always_inline
+fn _reshape_nd_buffer_with_batch_to_3d[
+    rank: Int, dtype: DType
+](buffer: NDBuffer[rank, DimList.create_unknown[rank](), dtype]) -> NDBuffer[
+    3, DimList.create_unknown[3](), dtype
+]:
+    constrained[rank >= 3, "expecting at least rank-3 NDBuffer"]()
+
+    var batch_size = 1
+    for i in range(0, rank - 2):
+        batch_size *= buffer.dim(i)
+
+    let matrix_shape = StaticIntTuple[3](
+        batch_size,
+        buffer.dim(buffer.get_rank() - 2),
+        buffer.dim(buffer.get_rank() - 1),
+    )
+
+    return NDBuffer[3, DimList.create_unknown[3](), dtype](
+        buffer.data.bitcast[dtype](), matrix_shape
+    )
+
+
 @always_inline
 fn _small_batched_matmul[
     elementwise_epilogue_enabled: Bool,
@@ -325,36 +349,11 @@ fn batched_matmul[
     constrained[not adj_a, "batched matmul does not support adj_a yet"]()
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
 
-    var batch_size: Int = c_buf.dim[0]()
-    if c_buf.get_rank() == 4:
-        batch_size *= c_buf.dim(1)
-
-    let c_matrix_shape = StaticIntTuple[3](
-        batch_size,
-        c_buf.dim(c_buf.get_rank() - 2),
-        c_buf.dim(c_buf.get_rank() - 1),
-    )
-    let a_matrix_shape = StaticIntTuple[3](
-        batch_size,
-        a_buf.dim(a_buf.get_rank() - 2),
-        a_buf.dim(a_buf.get_rank() - 1),
-    )
-    let b_matrix_shape = StaticIntTuple[3](
-        batch_size,
-        b_buf.dim(b_buf.get_rank() - 2),
-        b_buf.dim(b_buf.get_rank() - 1),
-    )
-
     # Flatten to 3D Tensor.
-    let c = NDBuffer[3, DimList.create_unknown[3](), c_type](
-        c_buf.data.bitcast[c_type](), c_matrix_shape
-    )
-    let a = NDBuffer[3, DimList.create_unknown[3](), a_type](
-        a_buf.data.bitcast[a_type](), a_matrix_shape
-    )
-    let b = NDBuffer[3, DimList.create_unknown[3](), b_type](
-        b_buf.data.bitcast[b_type](), b_matrix_shape
-    )
+    let c = _reshape_nd_buffer_with_batch_to_3d(c_buf)
+    let a = _reshape_nd_buffer_with_batch_to_3d(a_buf)
+    let b = _reshape_nd_buffer_with_batch_to_3d(b_buf)
+    var batch_size: Int = c.dim[0]()
 
     let m = c.dim[1]()
     let n = c.dim[2]()
@@ -536,6 +535,7 @@ alias elementwise_lambda_fn_sig_type = fn[
 
 
 fn batched_matmul_kernel[
+    rank: Int,
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -547,6 +547,7 @@ fn batched_matmul_kernel[
     c_buff: NDBuffer[3, c_shape, c_type],
     a_buff: NDBuffer[3, a_shape, a_type],
     b_buff: NDBuffer[3, b_shape, b_type],
+    c_buff_nd_shape: StaticIntTuple[rank],
 ) -> None:
     let batch_size = c_buff.dim(0)
     let m = c_buff.dim(1)
@@ -566,7 +567,12 @@ fn batched_matmul_kernel[
     @parameter
     if elementwise_lambda_fn:
         alias elementwise_lambda = elementwise_lambda_fn.value()
-        elementwise_lambda[c_type, 1, 3](Index(z, y, x), val)
+        var nd_corrds = _get_start_indices_of_nth_subvolume[rank, 2](
+            z, c_buff_nd_shape
+        )
+        nd_corrds[rank - 1] = x
+        nd_corrds[rank - 2] = y
+        elementwise_lambda[c_type, 1, rank](nd_corrds, val)
     else:
         c_buff[Index(z, y, x)] = val
 
@@ -594,18 +600,21 @@ fn batched_matmul[
     out_chain: OutputChainPtr,
 ):
     constrained[target == "cuda", "only valid on GPUs"]()
-    constrained[rank == 3, "only rank-3 inputs are supported"]()
     constrained[
         not rowwise_epilogue_enabled, "rowwise epilogue fusion isn't supported"
     ]()
 
+    let a_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(a_buf)
+    let b_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(b_buf)
+    let c_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(c_buf)
+
     alias BLOCK_DIM = 16
     alias unkown_shape = DimList.create_unknown[3]()
 
-    let batch_size = a_buf.dim(0)
-    let m = a_buf.dim(1)
-    let k = a_buf.dim(2)
-    let n = b_buf.dim(2)
+    let batch_size = a_buf_reshaped.dim(0)
+    let m = a_buf_reshaped.dim(1)
+    let k = a_buf_reshaped.dim(2)
+    let n = b_buf_reshaped.dim(2)
 
     try:
         let gpu_func = Function[
@@ -613,7 +622,9 @@ fn batched_matmul[
                 NDBuffer[3, unkown_shape, c_type],
                 NDBuffer[3, unkown_shape, a_type],
                 NDBuffer[3, unkown_shape, b_type],
+                StaticIntTuple[rank],
             ) capturing -> None, batched_matmul_kernel[
+                rank,
                 c_type,
                 unkown_shape,
                 a_type,
@@ -626,9 +637,10 @@ fn batched_matmul[
         gpu_func(
             (div_ceil(n, BLOCK_DIM), div_ceil(m, BLOCK_DIM), batch_size),
             (BLOCK_DIM, BLOCK_DIM, 1),
-            c_buf,
-            a_buf,
-            b_buf,
+            c_buf_reshaped,
+            a_buf_reshaped,
+            b_buf_reshaped,
+            c_buf.dynamic_shape,
             stream=out_chain.get_cuda_stream() if out_chain else Stream[
                 is_borrowed=True
             ](),
