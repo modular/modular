@@ -87,3 +87,17 @@ fn mogg_kgen_experiment_kernel():
     Marks this kernel as using the new experimental path of including the KGEN directly inside of MOGG.
     """
     return
+
+
+fn mogg_tensor_allocator():
+    """
+    Marks this function as being the allocator of a tensor.
+    """
+    return
+
+
+fn mogg_tensor_move_constructor():
+    """
+    Marks this function as being the move constructor of a tensor.
+    """
+    return
