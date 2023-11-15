@@ -3945,8 +3945,8 @@ static LogicalResult verifyConformance(LIT::StructDeclOp structDeclOp,
   llvm::SmallVector<StringRef> failedTraits;
   for (SymbolRefAttr attr : structDeclOp.getTraitsAttr()) {
     ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
+    bool allMatch = true;
     for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-      bool allMatch = true;
       for (ASTDecl *decl : decls) {
         auto traitFn = cast<LIT::FuncOp>(*decl);
         SignatureType newSignature = getSpecializedSignature(
@@ -3965,11 +3965,11 @@ static LogicalResult verifyConformance(LIT::StructDeclOp structDeclOp,
 
         allMatch &= foundMatch;
         diag.attachNote(traitFn.getLoc())
-            << "required function `" + name.str() + "` is not implemented";
+            << "required function '" + name.str() + "' is not implemented";
       }
-      if (!allMatch)
-        failedTraits.push_back(traitDecl.getNameIfOperation().value());
     }
+    if (!allMatch)
+      failedTraits.push_back(traitDecl.getNameIfOperation().value());
   }
 
   if (failedTraits.empty()) {
@@ -3979,10 +3979,10 @@ static LogicalResult verifyConformance(LIT::StructDeclOp structDeclOp,
 
   std::string errMsg;
   llvm::raw_string_ostream os(errMsg);
-  os << "struct `" << structDeclOp.getNameAttr().str()
-     << "` does not implement all requirements for ";
+  os << "struct '" << structDeclOp.getNameAttr().str()
+     << "' does not implement all requirements for ";
   for (auto [idx, failedTrait] : llvm::enumerate(failedTraits)) {
-    os << "`" << failedTrait << "`";
+    os << "'" << failedTrait << "'";
     if (idx < failedTraits.size() - 1)
       os << ", ";
   }
