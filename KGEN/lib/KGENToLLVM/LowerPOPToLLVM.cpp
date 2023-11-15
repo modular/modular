@@ -904,16 +904,31 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
   LogicalResult
   matchAndRewrite(InlineAsmOp op, InlineAsmOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    SmallVector<Type, 2> types;
-    if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
-      return failure();
-    rewriter.replaceOpWithNewOp<LLVM::InlineAsmOp>(
-        op, types, adaptor.getOperands(),
+    SmallVector<Type, 1> types;
+    if (op.getNumResults()) {
+      types.push_back(
+          getTypeConverter()->packFunctionResults(op->getResultTypes()));
+      if (!types.back())
+        return failure();
+    }
+    auto asmOp = rewriter.create<LLVM::InlineAsmOp>(
+        op.getLoc(), types, adaptor.getOperands(),
         cast<StringAttr>(adaptor.getAssembly()),
         cast<StringAttr>(adaptor.getConstraints()),
         adaptor.getHasSideEffectsAttr(), adaptor.getIsStackAlignedAttr(),
         LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
         adaptor.getOperandAttrsAttr());
+    if (op.getNumResults() <= 1) {
+      rewriter.replaceOp(op, asmOp);
+      return success();
+    }
+    // Unpack the results.
+    SmallVector<Value> results;
+    for (unsigned i = 0, e = op.getNumResults(); i != e; ++i) {
+      results.push_back(rewriter.create<LLVM::ExtractValueOp>(
+          op.getLoc(), asmOp.getResult(0), i));
+    }
+    rewriter.replaceOp(op, results);
     return success();
   }
 };
