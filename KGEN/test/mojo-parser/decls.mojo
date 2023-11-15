@@ -1635,14 +1635,14 @@ struct CFMStruct(CFMTrait):
 # Test for struct with parameters and function with parameters.
 # CHECK-LABEL: lit.trait.decl @CFMTraitParams<?, MT: regtype, T: !kgen.paramref<MT>>
 trait CFMTraitParams:
-    # CHECK: lit.func @"f1{{.*}}"<[[TT:_.*]]: !lit.trait<[[TN:@.*]]>>(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.paramref<:!kgen.paramref<MT> T>
+    # CHECK: lit.func @"f1{{.*}}"<[[TT:_.*]]: trait<[[TN:@.*]]>>(%self[self]: !kgen.paramref<:!kgen.paramref<MT> T> borrow) -> !kgen.paramref<:!kgen.paramref<MT> T>
     fn f1[x: CFMTraitParams](self: Self) -> Self:
         pass
 
 # CHECK-LABEL: lit.struct.decl @CFMStructParams
 @register_passable("trivial")
 struct CFMStructParams[t1: AnyRegType, t2: AnyRegType](CFMTraitParams):
-    # CHECK: lit.func @"f1{{.*}}"<[[ST1:_.*]]: !lit.trait<[[TN]]>>(%self[self]: !kgen.declref<{{.*}}@CFMStructParams<:regtype [[T1:_.*]], :regtype [[T2:_.*]]>, !lit.metatype<{{.*}}CFMStructParams<:regtype [[T1]], :regtype [[T2]]>>> borrow) -> !kgen.declref<{{.*}}@CFMStructParams<:regtype [[T1]], :regtype  [[T2]]>, !lit.metatype<{{.*}}@CFMStructParams<:regtype [[T1]], :regtype [[T2]]>>>
+    # CHECK: lit.func @"f1{{.*}}"<[[ST1:_.*]]: trait<[[TN]]>>(%self[self]: !kgen.declref<{{.*}}@CFMStructParams<:regtype [[T1:_.*]], :regtype [[T2:_.*]]>, !lit.metatype<{{.*}}CFMStructParams<:regtype [[T1]], :regtype [[T2]]>>> borrow) -> !kgen.declref<{{.*}}@CFMStructParams<:regtype [[T1]], :regtype  [[T2]]>, !lit.metatype<{{.*}}@CFMStructParams<:regtype [[T1]], :regtype [[T2]]>>>
     fn f1[x: CFMTraitParams](self: Self) -> Self:
        pass
 
