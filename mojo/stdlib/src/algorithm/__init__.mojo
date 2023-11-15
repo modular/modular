@@ -7,3 +7,4 @@
 
 from .functional import *
 from .reduction import *
+from .sort import *
