@@ -11,7 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/Registration.h"
-#include "Support/Configuration.h"
+#include "KGEN/Support/Configuration.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/CommandLine.h"
@@ -277,13 +277,13 @@ int main(int argc, char *argv[]) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Determine the path of the repl entry point.
-  ErrorOr<Config> config = Config::open();
+  ErrorOr<KGEN::MojoConfig> config = KGEN::MojoConfig::open();
   if (failed(config)) {
     llvm::errs() << "failed to parse 'modular.cfg': " << config.getError()
                  << "\n";
     return 1;
   }
-  StringRef exePath = config->getValue("mojo.repl_entry_point");
+  StringRef exePath = config->getREPLEntryPoint();
 
   // Initialize the kernel.
   MojoKernel kernel(

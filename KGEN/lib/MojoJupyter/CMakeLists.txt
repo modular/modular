@@ -24,6 +24,7 @@ add_modular_library(MojoJupyter SHARED
   ${matplotlib_inc}
 
   LINK_LIBS PRIVATE
+  KGENSupport
   MSupport
   MojoLLDB
 

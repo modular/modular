@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(KGENSupport
+  Configuration.cpp
   NameMangling.cpp
 
   LINK_LIBS PUBLIC

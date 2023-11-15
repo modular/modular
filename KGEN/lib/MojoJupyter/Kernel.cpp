@@ -16,7 +16,7 @@
 #include "KGEN/MojoJupyter/MatplotlibInitialization.h"
 
 #include "KGEN/MojoTooling/CodeComplete.h"
-#include "Support/Configuration.h"
+#include "KGEN/Support/Configuration.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/STLExtras.h"
@@ -372,10 +372,10 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe,
   removeUnwantedCommands(*debugger);
 
   // Initialize the Mojo LLDB plugin.
-  ErrorOr<Config> config = Config::open();
+  ErrorOr<KGEN::MojoConfig> config = KGEN::MojoConfig::open();
   if (failed(config))
     return reportKernelError(config.getError());
-  FileSpec mojoPlugin(config->getValue("mojo.lldb_plugin_path").str());
+  FileSpec mojoPlugin(config->getLLDBPluginPath().str());
   if (!FileSystem::Instance().Exists(mojoPlugin))
     return reportKernelError("unable to locate Mojo LLDB plugin");
 

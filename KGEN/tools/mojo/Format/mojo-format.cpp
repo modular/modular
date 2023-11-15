@@ -7,8 +7,8 @@
 #include "mojo-format.h"
 
 #include "../Common/Telemetry.h"
+#include "KGEN/Support/Configuration.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "llvm/Option/ArgList.h"
@@ -107,15 +107,15 @@ static int format(const State &state) {
   }
 
   // Read the mojo configuration.
-  ErrorOr<Config> configOr = Config::open();
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
   if (failed(configOr)) {
     return state.reportError(Twine("failed to parse 'modular.cfg': ") +
                              configOr.getError());
   }
-  Config config = std::move(*configOr);
+  KGEN::MojoConfig config = std::move(*configOr);
 
   // Resolve the path to mblack.
-  StringRef mblack = config.getValue("mojo.mblack_path");
+  StringRef mblack = config.getMBlackPath();
   if (!std::filesystem::exists(mblack.str(), ec) || ec ||
       !llvm::sys::fs::can_execute(mblack)) {
     return state.reportError("unable to resolve Mojo formatter in PATH");

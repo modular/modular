@@ -12,13 +12,13 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Package/Package.h"
+#include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
-#include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/MArchTarget.h"
@@ -530,10 +530,9 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Configure the current python if it hasn't been set.
-  ErrorOr<Config> config = Config::open();
+  ErrorOr<MojoConfig> config = MojoConfig::open();
   if (succeeded(config)) {
-    (void)setProcessEnv("MOJO_PYTHON_LIBRARY",
-                        config->getValue("mojo.python_lib"),
+    (void)setProcessEnv("MOJO_PYTHON_LIBRARY", config->getPythonLib(),
                         /*overwrite=*/false);
   }
 

@@ -7,8 +7,8 @@
 #include "LLDB.h"
 #include "../Common/Telemetry.h"
 #include "Debug/MojoDebug.h"
+#include "KGEN/Support/Configuration.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -22,9 +22,9 @@
 using namespace M;
 
 /// Returns the path to the `lldb` executable, or an error if not found.
-static ErrorOr<std::string> getLLDB(Config &config) {
+static ErrorOr<std::string> getLLDB(KGEN::MojoConfig &config) {
   std::error_code ec;
-  StringRef lldb = config.getValue("mojo.lldb_path");
+  StringRef lldb = config.getLLDBPath();
   if (!std::filesystem::exists(lldb.str(), ec) || ec)
     return Error("unable to resolve the lldb path");
   return lldb.str();
@@ -32,9 +32,9 @@ static ErrorOr<std::string> getLLDB(Config &config) {
 
 /// Returns the path to the MojoLLDB shared library, or an error if not found.
 /// This library implements Mojo's LLDB plugin.
-static ErrorOr<std::string> getMojoLLDB(Config &config) {
+static ErrorOr<std::string> getMojoLLDB(KGEN::MojoConfig &config) {
   std::error_code ec;
-  StringRef mojoLLDB = config.getValue("mojo.lldb_plugin_path");
+  StringRef mojoLLDB = config.getLLDBPluginPath();
   if (!std::filesystem::exists(mojoLLDB.str(), ec) || ec)
     return Error("unable to resolve the MojoLLDB plugin path");
   return mojoLLDB.str();
@@ -53,13 +53,13 @@ int M::invokeLLDB(const State &state, llvm::opt::InputArgList &args,
 
   // Find the path to the LLDB executable and the MojoLLDB plugin library.
   // Read the mojo configuration.
-  ErrorOr<Config> configOr = Config::open();
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
   if (failed(configOr)) {
     return state.reportError(Twine("failed to parse 'modular.cfg': ") +
                              configOr.getError());
   }
 
-  Config config = std::move(*configOr);
+  KGEN::MojoConfig config = std::move(*configOr);
   ErrorOr<std::string> lldb = getLLDB(config);
   if (failed(lldb))
     return state.reportError(lldb.getError());

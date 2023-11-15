@@ -27,6 +27,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
@@ -63,7 +64,7 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 
 /// Collect all of the default paths used for resolving imports.
 static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
-  ErrorOr<Config> cfg = Config::open();
+  ErrorOr<MojoConfig> cfg = MojoConfig::open();
   if (failed(cfg)) {
     LLVM_DEBUG(llvm::dbgs()
                << "failed to open config: " << cfg.getError() << "\n");
@@ -71,12 +72,12 @@ static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
   }
 
   // Add any paths specified in the config.
-  StringRef importPaths = cfg->getValue("mojo.import_path");
-  LLVM_DEBUG(llvm::dbgs() << "Using import paths: " << importPaths << "\n");
+  SmallVector<StringRef> importPaths;
+  cfg->getParserImportPaths(importPaths);
+  LLVM_DEBUG(llvm::dbgs() << "Using import paths: "
+                          << llvm::join(importPaths, ",") << "\n");
 
-  SmallVector<StringRef> splitPaths;
-  importPaths.split(splitPaths, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-  for (StringRef path : splitPaths)
+  for (StringRef path : importPaths)
     paths.push_back(path.str());
 }
 

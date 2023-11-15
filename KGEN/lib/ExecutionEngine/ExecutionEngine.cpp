@@ -10,8 +10,8 @@
 #include "KGEN/ExecutionEngine/COMPILERRTCASID.h"
 #include "KGEN/ExecutionEngine/ORCCASID.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
+#include "KGEN/Support/Configuration.h"
 #include "LLCL/Runtime/Algorithms.h"
-#include "Support/Configuration.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
@@ -343,7 +343,7 @@ static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
 
 /// Initialize the CompilerRT dylib.
 static ErrorOrSuccess
-initializeCompilerRT(llvm::orc::ExecutionSession &session, Config &cfg,
+initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
                      const llvm::DataLayout &layout,
                      const ExecutionEngineOptions &options) {
   auto compilerRTBuf = extractRTFromCache(M::CASID::kCompilerRT);
@@ -363,7 +363,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, Config &cfg,
     compilerRTPath = rtFile->getPath().string();
   } else {
     std::error_code ec;
-    compilerRTPath = cfg.getValue("mojo.compilerrt_path").str();
+    compilerRTPath = cfg.getCompilerRTPath().str();
     if (!std::filesystem::exists(compilerRTPath, ec) || ec)
       return Error("unable to locate compiler_rt");
   }
@@ -393,7 +393,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, Config &cfg,
 }
 
 /// Grab a memory buffer for the Orc runtime.
-static ErrorOr<std::optional<BufferRef>> initializeOrcRT(Config &cfg) {
+static ErrorOr<std::optional<BufferRef>> initializeOrcRT(MojoConfig &cfg) {
   // Try to grab the runtime from the cache.
   auto orcRTBuf = extractRTFromCache(M::CASID::kOrcRT);
   if (orcRTBuf.isError())
@@ -403,7 +403,7 @@ static ErrorOr<std::optional<BufferRef>> initializeOrcRT(Config &cfg) {
 
   // Otherwise, read it from the config.
   std::error_code ec;
-  std::string orcRTPath = cfg.getValue("mojo.orcrt_path").str();
+  std::string orcRTPath = cfg.getOrcRTPath().str();
   if (!std::filesystem::exists(orcRTPath, ec) || ec)
     return Error("unable to locate orc_rt");
   return Buffer::getFile(orcRTPath);
@@ -446,10 +446,10 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       new ExecutionEngine(std::move(sessionPtr), layout));
 
   // Open the config object so we can use it.
-  auto cfgOr = Config::open();
+  auto cfgOr = MojoConfig::open();
   if (cfgOr.isError())
     return cfgOr.takeError();
-  Config cfg = std::move(*cfgOr);
+  MojoConfig cfg = std::move(*cfgOr);
 
   // Get the ORC runtime binary.
   auto orcRTBuf = initializeOrcRT(cfg);
