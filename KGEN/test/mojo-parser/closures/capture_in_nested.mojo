@@ -1,0 +1,21 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
+
+alias Int = __mlir_type.index
+
+
+fn use(x: Int):
+    pass
+
+
+# CHECK-LABEL: lit.func @"function
+fn function():
+    # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%0)
+    fn closure_with_loop(x: Int) escaping:
+        if __mlir_attr.`true`:
+            let t = x
+            use(t)

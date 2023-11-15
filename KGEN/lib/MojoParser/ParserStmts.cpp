@@ -1835,17 +1835,22 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   if (parseIdentifier(baseName, "expected function name"))
     return failure();
 
-  auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc));
+  auto funcOp = builder.create<LIT::FuncOp>(translateLocation(loc));
 
   // If marked as 'def', remember this on the function decl.
   if (isDef)
-    funcDecl.setIsDef(true);
+    funcOp.setIsDef(true);
 
   // Skip the body of this definition: go to a token at the start of the next
   // line at the same indent level (or less) as the current definition.
   skipUntilIndentation(curIndent);
-  getDeclResolver().addDecl(funcDecl, loc, baseName, curDeclScope, startCursor,
-                            getLexer().getCursor(), curIndent);
+  ASTDecl &funcDecl =
+      getDeclResolver().addDecl(funcOp, loc, baseName, curDeclScope,
+                                startCursor, getLexer().getCursor(), curIndent);
+  // If this is a nested function, parse its body right now so captures can be
+  // resolved correctly.
+  if (curDeclScope->getNearestDeclOfType<LIT::FuncOp>())
+    (void)getDeclResolver().resolveFully(funcDecl, loc);
   return success();
 }
 
