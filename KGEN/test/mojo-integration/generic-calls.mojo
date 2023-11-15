@@ -36,21 +36,14 @@ fn borrowed_generic[T: AnyType](borrowed x: T):
 # CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> owned_in_mem)
 @export
 fn test_owned(owned x: RegPassable, owned y: MemOnly):
-    # CHECK: %[[XPTR:.*]] = pop.stack_allocation 1 x struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: pop.store %arg0, %[[XPTR]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: %[[XL:.*]] = pop.load %[[XPTR]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%[[XL]])
+    # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%arg0)
     borrowed_generic(x)
 
     # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%arg1)
     borrowed_generic(y)
 
-    # CHECK: %[[XL2:.*]] = pop.load %[[XPTR]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: %[[XCOPY:.*]] = kgen.call @"{{.*}}RegPassable::__copyinit__{{.*}}"(%[[XL2]])
-    # CHECK: %[[XPTR2:.*]] = pop.stack_allocation 1 x struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: pop.store %[[XCOPY]], %[[XPTR2]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: %[[XL3:.*]] = pop.load %[[XPTR2]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%[[XL3]])
+    # CHECK: %[[XCOPY:.*]] = kgen.call @"{{.*}}RegPassable::__copyinit__{{.*}}"(%arg0)
+    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%[[XCOPY]])
     owned_generic(x)
 
     # CHECK: %[[XPTR3:.*]] = pop.stack_allocation 1 x struct<(index, index) memoryOnly>
@@ -58,8 +51,7 @@ fn test_owned(owned x: RegPassable, owned y: MemOnly):
     # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%[[XPTR3]])
     owned_generic(y)
 
-    # CHECK: %[[XL3:.*]] = pop.load %[[XPTR]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%[[XL3]])
+    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%arg0)
     owned_generic(x ^)
     # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%arg1)
     owned_generic(y ^)
@@ -70,20 +62,14 @@ fn test_owned(owned x: RegPassable, owned y: MemOnly):
 # CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem)
 @export
 fn test_borrowed(borrowed x: RegPassable, borrowed y: MemOnly):
-    # CHECK: %[[XPTR:.*]] = pop.stack_allocation 1 x struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: pop.store %arg0, %[[XPTR]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: %[[XL:.*]] = pop.load %[[XPTR]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%[[XL]])
+    # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%arg0)
     borrowed_generic(x)
 
     # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%arg1)
     borrowed_generic(y)
 
     # CHECK: %[[XCOPY:.*]] = kgen.call @"{{.*}}RegPassable::__copyinit__{{.*}}"(%arg0)
-    # CHECK: %[[XPTR2:.*]] = pop.stack_allocation 1 x struct<(scalar<f32>, scalar<f32>)>
-    # CHECK: pop.store %[[XCOPY]], %[[XPTR2]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: %[[XL2:.*]] = pop.load %[[XPTR2]] : !kgen.pointer<struct<(scalar<f32>, scalar<f32>)>>
-    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%[[XL2]])
+    # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%[[XCOPY]])
     owned_generic(x)
 
     # CHECK: %[[XPTR3:.*]] = pop.stack_allocation 1 x struct<(index, index) memoryOnly>
