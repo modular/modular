@@ -11,7 +11,6 @@
 
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
-#include "KGEN/MojoParser/CaptureParameter.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
@@ -509,15 +508,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
   bool declRefIsRecordableCapture =
       funcDecl && functionContainer.getSignature().isEscaping() && declRef;
-
-  // Record Parameter Capture.
-  if (result.getIfPValue() && declRefIsRecordableCapture) {
-    if (auto paramDeclRef =
-            dyn_cast<ParamDeclRefAttr>(result.getIfPValue().get()))
-      (void)CaptureUtility::recordParameterCapture(emitter.shared, &container,
-                                                   spelling, paramDeclRef,
-                                                   getLocation(emitter));
-  }
 
   if (!capture)
     return emitter.emitResult(result, this, dest);
@@ -2976,10 +2966,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
   if (effects.isEscaping()) {
-    // Collect parameter references in parent.
-    SmallVector<NamedParameter> parameterDeclarationsInScope =
-        DeclResolver::parametersInScope(emitter.declScope);
-
     // Create a self contained signature type that represents the closure.
     auto [capturedRefs, wrapperSig] =
         DeclResolver::createSelfContainedSignature(signature);

@@ -11,7 +11,6 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
-#include "KGEN/MojoParser/CaptureParameter.h"
 #include "KGEN/MojoParser/ClosureEmitter.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
@@ -2439,34 +2438,6 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   return {std::move(captured), unbound};
 }
 
-SmallVector<NamedParameter> DeclResolver::parametersInScope(ASTDecl &scope) {
-  SmallVector<NamedParameter> paramsInScope;
-  for (auto [declName, declarations] : scope.getDeclsInScope()) {
-    for (ASTDecl *declaration : declarations) {
-      PValue pValue = declaration->getIfPValue();
-      if (!pValue)
-        continue;
-      if (auto paramRef = dyn_cast<ParamDeclRefAttr>(pValue.get()))
-        paramsInScope.push_back(
-            NamedParameter(declName, ParamDeclAttr::get(paramRef.getName(),
-                                                        paramRef.getType())));
-    }
-  }
-  return paramsInScope;
-}
-
-Type DeclResolver::createTypeFromSubsetOfParentParameters(
-    SharedState &shared, StructDeclOp baseStruct,
-    ArrayRef<ParameterCapture> parentDeclRefSubset) {
-  // Given an unordered list of captures and a base type, return a type of the
-  // base type with the captured types ordered.
-  SmallVector<TypedAttr> bindingValues(parentDeclRefSubset.size());
-  for (auto [index, signatureCapture] : llvm::enumerate(parentDeclRefSubset))
-    bindingValues[index] = ParamDeclRefAttr::get(signatureCapture.getName(),
-                                                 signatureCapture.getType());
-  return baseStruct.bindReference(bindingValues);
-}
-
 static Value emitClosureInstance(SignatureType closureSignature,
                                  SharedState &shared, ASTDecl &nestedFnDecl,
                                  SMLoc loc) {
@@ -2562,11 +2533,6 @@ static Value emitClosureInstance(SignatureType closureSignature,
       CallSyntax::kTypeCall, closureWrapperDest,
       /*allowImplicitConversion=*/false);
 
-  // We may have generated a capture. Record.
-  // if (parentFn.getSignature().isEscaping())
-  //  for (ParameterCapture param : orderedCaptures)
-  //    emitter.shared.addCapturedParameterToScope(*nestedFnDecl.getParentDecl(),
-  //                                               param);
   return closureWrapperInstance.getIfMRValue();
 }
 
@@ -2711,17 +2677,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       resultLoc, &decl, fnInfo, processSignature);
   if (!resultType)
     return failure();
-
-  // Check the types emitted for captures if the signature is escaping.
-  if (effects.isEscaping()) {
-    for (Type argType : argTypes) {
-      argType.walk([&](ParamDeclRefAttr paramDeclAttr) {
-        (void)CaptureUtility::recordParameterCapture(
-            shared, &decl, paramDeclAttr,
-            shared.translateLocation(decl.getLoc()));
-      });
-    }
-  }
 
   // Propagate errors and the parsed decls in the signature.
   moveDecls(decl, sigDecl);
