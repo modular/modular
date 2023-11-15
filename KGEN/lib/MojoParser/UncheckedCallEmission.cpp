@@ -141,7 +141,7 @@ private:
   LogicalResult emitRemainingPosOperands(
       size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
       ValueInputConvention convention, Type expectedType,
-      SmallVector<ASTExprAnd<AnyValue>> &argumentValues);
+      SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues);
 };
 
 void CallEmitter::AfterCallActions::emit() {
@@ -203,7 +203,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 LogicalResult CallEmitter::emitRemainingPosOperands(
     size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
     ValueInputConvention convention, Type expectedType,
-    SmallVector<ASTExprAnd<AnyValue>> &argumentValues) {
+    SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues) {
   // Emit all of the remaining values to make sure they're converted to the
   // right type.
   for (auto [idx, operand] : llvm::enumerate(remainingOperands)) {
@@ -499,9 +499,21 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ValueInputConvention::OwnedInReg:
     // Promote PValue's if needed.
     return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
-  case ValueInputConvention::OwnedInMem:
+  case ValueInputConvention::OwnedInMem: {
+    // Promote SRValue to MRValue (in case of calling a generic function).
+    if (SRValue srValue = argValAndExpr.ir.getIfSRValue()) {
+      const ExprNode *expr = argValAndExpr.expr;
+      Location argLoc = expr->getLocation(emitter);
+      VarLetDeclOp varOp =
+          emitter.emitVarLetDecl("__generic_arg__", srValue.getType(), argLoc);
+      auto ptr = emitter.builder->create<RefToPointerOp>(argLoc, varOp);
+      emitter.builder->create<POP::StoreOp>(argLoc, srValue, ptr);
+      return MRValue(ptr);
+    }
+
     // Promote PValue's if needed.
     return emitter.emitMRValue(argValAndExpr, EC_CallArgValue);
+  }
   case ValueInputConvention::BorrowedInReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
       return arg = emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
@@ -538,6 +550,19 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     arg = argValAndExpr.ir.getIfSBValue();
     break;
   case ValueInputConvention::BorrowedInMem:
+    if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
+      const ExprNode *expr = argValAndExpr.expr;
+      Location argLoc = expr->getLocation(emitter);
+      auto ptr = emitter.builder->create<POP::StackAllocationOp>(
+          argLoc, PointerType::get(sbValue.getType()), 1);
+      emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
+
+      // Because the result of StackAllocationOp is not a lifetime trackable,
+      // StoreOp will not transfer ownership and we must manually extend the
+      // lifetime of the SBValue.
+      afterCallActions.valuesToKeepAlive.push_back(sbValue);
+      return MRValue(ptr);
+    }
     // Promote PValue's if needed.
     return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::ByRefResult: {
@@ -758,14 +783,12 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
   // HACK: If any of the arguments are nonmaterializable and all arguments are
   // PValues, then emit the call in the parameter context.
-  bool forceParameterCall =
-      llvm::all_of(argumentValues,
-                   [](auto &arg) { return arg.ir.getIfPValue(); }) &&
-      llvm::any_of(argumentValues, [&](auto &arg) {
-        return arg.ir.getIfPValue().getType().getNonmaterializableTarget(
-            shared);
-      });
-
+  auto isPValue = [](ASTExprAnd<AnyValue> arg) { return arg.ir.getIfPValue(); };
+  auto isNonMaterializable = [&](ASTExprAnd<AnyValue> arg) {
+    return arg.ir.getIfPValue().getType().getNonmaterializableTarget(shared);
+  };
+  bool forceParameterCall = llvm::all_of(argumentValues, isPValue) &&
+                            llvm::any_of(argumentValues, isNonMaterializable);
   if (!builder || forceParameterCall) {
     TypedAttr paramCallResult;
     {

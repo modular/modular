@@ -123,8 +123,15 @@ TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
                                                SharedState &shared) const {
   ASTDecl *decl = getDecl(shared);
 
-  if (!decl) // MLIR types are assumed to be register-passable + Trivial.
+  if (!decl) {
+    // If this is a generic type, we treat it as memory only.
+    if (auto paramRefTy = dyn_cast<ParamRefType>(mlirType))
+      if (isa<AnyTypeType>(paramRefTy.getParam().getType()))
+        return TypeConvention::MemoryOnly;
+
+    // MLIR types are assumed to be register-passable + Trivial.
     return TypeConvention::RegisterPassableTrivial;
+  }
 
   // Make sure we know about the signature of the type.
   if (failed(shared.declResolver->resolveSignature(*decl, loc)))
