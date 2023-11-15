@@ -26,7 +26,7 @@ struct Event {
     ~RangeID();
 
   private:
-    uint64_t id;
+    uint64_t id = 0;
   };
 
   ErrorOrSuccess mark();

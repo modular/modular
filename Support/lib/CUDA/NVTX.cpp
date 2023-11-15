@@ -107,7 +107,7 @@ ErrorOrSuccess Event::mark() {
 }
 
 ErrorOr<Event::RangeID> Event::start() {
-#ifndef USE_NVTX_LIB
+#ifdef USE_NVTX_LIB
   static auto nvtxRangeStartEx =
       fallibleGetSymbol<uint64_t (*)(EventAttributes *)>("nvtxRangeStartEx");
   if (!nvtxRangeStartEx)
