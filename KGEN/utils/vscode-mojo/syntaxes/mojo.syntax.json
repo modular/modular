@@ -3640,7 +3640,7 @@
     },
     "string-mojo-code-block": {
       "name": "meta.embedded.block.mojo",
-      "begin": "^(\\s*\\`{3,})(mojo)?$",
+      "begin": "^(\\s*\\`{3,})(mojo)$",
       "end": "^(\\1)$",
       "contentName": "source.mojo",
       "beginCaptures": {
