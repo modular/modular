@@ -3958,31 +3958,25 @@ static SignatureType getSpecializedSignature(LIT::FuncOp traitFn,
   SmallVector<TypedAttr> newInputParamValues;
   SmallVector<Type> newInputParamTypes;
 
-  // Add trait's MT and T replacement.
-  Type tType = structSelfType;
-  Type mtType = structSelfMetaType;
-  newInputParamValues.push_back(TypeConstantAttr::get(mtType, mtType));
-  newInputParamValues.push_back(TypeConstantAttr::get(tType, tType));
-  newInputParamTypes.push_back(mtType);
-  newInputParamTypes.push_back(tType);
-  // Add other unbound parameters.
-  for (ParamDeclAttr attr : traitFn.getInputParamsAttr()) {
-    newInputParamValues.push_back(UnboundAttr::get(attr.getType()));
-    newInputParamTypes.push_back(attr.getType());
+  ArrayRef<Type> inputParamTypes = signature.getInputParamTypes();
+
+  // Add trait's MT replacement.
+  newInputParamValues.push_back(TypeConstantAttr::get(
+      UnknownAttr::get(structSelfMetaType).getType(), inputParamTypes[0]));
+  // Add trait's T replacement.
+  newInputParamValues.push_back(TypeConstantAttr::get(
+      structSelfType, UnknownAttr::get(structSelfMetaType).getType()));
+
+  for (Type type : inputParamTypes.drop_front(2)) {
+    newInputParamValues.push_back(UnboundAttr::get(type));
   }
 
   // TODO: FnEffects only supports match for register_passable("trivial")
   // structs
-  return SignatureType::getSpecializedSignature(
-      newInputParamValues,
-      [&] {
-        return emitError(
-            traitFn.getLoc(),
-            "Cannot specialize trait function for conformance check.");
-      },
-      newInputParamTypes, signature.getResultParamTypes(),
-      signature.getValues(), signature.getInputConventions(),
-      signature.getFnEffects(), signature.getMetadata());
+  return signature.getSpecializedSignature(newInputParamValues, [&] {
+    return emitError(traitFn.getLoc(),
+                     "cannot specialize trait function for conformance check");
+  });
 }
 
 /// Check conformance for struct that implements traits.
