@@ -72,16 +72,16 @@ kgen.generator @entry2() -> index {
   kgen.return %0 : index
 }
 
-// CHECK: vtableEntry = #kgen<vtable.entry"entry1" : <() -> index> = @entry1>
-"some.op"() {vtableEntry = #kgen<vtable.entry "entry1" : <() -> index> = @entry1>} : () -> ()
-// CHECK: vtable = #kgen<vtable"entry1" : <() -> index> = @entry1, "entry2" : <() -> index> = @entry2
-"some.op"() {vtable = #kgen<vtable "entry1" : <() -> index> = @entry1, "entry2" : <() -> index> = @entry2>} : () -> ()
+// CHECK: vtableEntry = #kgen<vtable.entry"entry1" : () -> index = @entry1>
+"some.op"() {vtableEntry = #kgen<vtable.entry "entry1" : () -> index = @entry1>} : () -> ()
+// CHECK: vtable = #kgen<vtable"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2
+"some.op"() {vtable = #kgen<vtable "entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2>} : () -> ()
 
-// CHECK: #kgen.concretetype.constant<index, vtable = {"entry1" : <() -> index> = @entry1,  "entry2" : <() -> index> = @entry2}> : !kgen.anyregtype
-"some.op"() {type = #kgen.concretetype.constant<index, vtable={"entry1" : <() -> index> = @entry1, "entry2" : <() -> index> = @entry2}> : !kgen.anyregtype} : () -> ()
-// CHECK: a = #kgen.concretetype.constant<!pop.array<1, i1>, vtable = {"entry1" : <() -> index> = @entry1,  "entry2" : <() -> index> = @entry2}> : !kgen.anyregtype
-// CHECK: b = #kgen.parameterizedtype.constant<!pop.array<apply(:() -> index @return_one), i1>, vtable = {"entry1" : <() -> index> = @entry1,  "entry2" : <() -> index> = @entry2}> : !kgen.anyregtype
+// CHECK: #kgen.concretetype.constant<index, vtable = {"entry1" : () -> index = @entry1,  "entry2" : () -> index = @entry2}> : !kgen.anyregtype
+"some.op"() {type = #kgen.concretetype.constant<index, vtable={"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2}> : !kgen.anyregtype} : () -> ()
+// CHECK: a = #kgen.concretetype.constant<!pop.array<1, i1>, vtable = {"entry1" : () -> index = @entry1,  "entry2" : () -> index = @entry2}> : !kgen.anyregtype
+// CHECK: b = #kgen.parameterizedtype.constant<!pop.array<apply(:() -> index @return_one), i1>, vtable = {"entry1" : () -> index = @entry1,  "entry2" : () -> index = @entry2}> : !kgen.anyregtype
 "some.op"() {
-  a = #kgen.parameterizedtype.constant<!pop.array<1, i1>, vtable={"entry1" : <() -> index> = @entry1, "entry2" : <() -> index> = @entry2}> : !kgen.anyregtype,
-  b = #kgen.parameterizedtype.constant<!pop.array<apply(:() -> index @return_one), i1>, vtable={"entry1" : <() -> index> = @entry1, "entry2" : <() -> index> = @entry2}> : !kgen.anyregtype
+  a = #kgen.parameterizedtype.constant<!pop.array<1, i1>, vtable={"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2}> : !kgen.anyregtype,
+  b = #kgen.parameterizedtype.constant<!pop.array<apply(:() -> index @return_one), i1>, vtable={"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2}> : !kgen.anyregtype
 } : () -> ()

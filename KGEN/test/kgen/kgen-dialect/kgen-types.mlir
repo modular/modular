@@ -39,7 +39,7 @@ kgen.generator @type_printing() {
   kgen.param.declare atype: type = <[struct<()>, {}]>
   // CHECK: type = <struct<()>>
   kgen.param.declare btype: type = <[struct<()>, {}]>
-  // CHECK: type = <[struct<()>, {"method" : <() -> ()> = @method}]>
-  kgen.param.declare btype: type = <[struct<()>, {"method" : <() -> ()> = @method}]>
+  // CHECK: type = <[struct<()>, {"method" : () -> () = @method}]>
+  kgen.param.declare btype: type = <[struct<()>, {"method" : () -> () = @method}]>
   kgen.return
 }
