@@ -148,10 +148,8 @@ struct TypeAttrCache {
   Type i32Type;
   Type i64Type;
   Type indexType;
-  Type ptrType;
   Type i8PtrType;
   Type tokenType;
-  Type asyncFnType;
   Type opaquePtr;
 };
 
@@ -195,11 +193,8 @@ static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
   // The resume function is the second element of the context.
   Value hdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
   // Bitcast `i8*` to `void(i8*)**`.
-  b.create<CallOp>(
-      TypeRange(),
-      ValueRange{b.create<LoadOp>(b.create<BitcastOp>(
-                     LLVMPointerType::get(cache.asyncFnType), hdl)),
-                 hdl});
+  b.create<CallOp>(TypeRange(),
+                   ValueRange{b.create<LoadOp>(cache.opaquePtr, hdl), hdl});
   op.erase();
 }
 
@@ -286,7 +281,8 @@ static LLVMFuncOp synthesizeCoroCtxtProjFn(SymbolTable &symtab, LLVMBuilder &b,
 }
 
 namespace {
-struct CoroutineInfo {
+class CoroutineInfo {
+public:
   CoroutineInfo(LLVMFuncOp asyncFn, int64_t contextBaseSize,
                 LLVMStructType contextType, Value hdlValue, Type hdlType)
       : asyncFn(asyncFn), contextBaseSize(contextBaseSize),
@@ -333,8 +329,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   //
   MLIRContext *ctx = b.getContext();
   SmallVector<Type, 16> contextTypes{
-      cache.asyncFnType,
-      LLVMStructType::getLiteral(ctx, {cache.ptrType, cache.ptrType})};
+      cache.opaquePtr,
+      LLVMStructType::getLiteral(ctx, {cache.opaquePtr, cache.opaquePtr})};
   for (Type resultType : coroType.getResultTypes()) {
     resultType = b.convertType(resultType);
     if (!resultType)
@@ -486,8 +482,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
         b.create<GEPOp>(cache.opaquePtr, hdleType, hdl,
                         GEPArg(-contextBaseSize), /*inbounds=*/true);
     if (noSuspend) {
-      b.create<CallOp>(coroEndFn,
-                       Value(b.create<BitcastOp>(cache.opaquePtr, contextPtr)));
+      b.create<CallOp>(coroEndFn, Value(contextPtr));
     } else {
       b.create<CallIntrinsicOp>(
           cache.i1Type, "llvm.coro.end.async",
@@ -759,13 +754,9 @@ void LowerKGENCoroutinesAsyncPass::runOnOperation() {
                          b.getI32Type(),
                          b.getI64Type(),
                          b.getIntegerType(b.getIndexTypeBitwidth()),
-                         b.getType<LLVMPointerType>(),
                          LLVMPointerType::get(b.getI8Type()),
                          b.getType<LLVMTokenType>(),
-                         nullptr,
                          LLVMPointerType::get(b.getContext())};
-  cache.asyncFnType = LLVMPointerType::get(
-      LLVMFunctionType::get(b.getType<LLVMVoidType>(), cache.i8PtrType));
 
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();

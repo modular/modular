@@ -15,9 +15,8 @@ llvm.func @coro_promise() {
 // CHECK-LABEL: llvm.func @coro_resume
 llvm.func @coro_resume() {
   %0 = "make_handle"() : () -> !pop.coroutine<() -> (i32, i64)>
-  // CHECK: %2 = llvm.bitcast %1
-  // CHECK: %3 = llvm.load %2
-  // CHECK-NEXT: llvm.call %3(%1)
+  // CHECK: %2 = llvm.load %1
+  // CHECK-NEXT: llvm.call %2(%1)
   pop.coroutine.resume %0 : !pop.coroutine<() -> (i32, i64)>
   llvm.return
 }
