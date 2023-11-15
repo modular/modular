@@ -3,11 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
 # RUN: kgen -elaborate -O0 %s -S | FileCheck %s
-
-
-alias AnyType = __mlir_type.`!kgen.anytype`
 
 
 @value

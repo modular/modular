@@ -596,7 +596,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   case (uint32_t)POC::GetSizeOf:
   case (uint32_t)POC::GetAlignOf:
     if (parseParamValue(p, operands.emplace_back(),
-                        AnyRegTypeType::get(p.getContext())) ||
+                        AnyTypeType::get(p.getContext())) ||
         p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())))
