@@ -11,6 +11,7 @@
 #include "Support/ForwardDecls.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 using namespace M;
@@ -39,6 +40,9 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
 
   // And finally canonicalize again.
+  // FIXME(#25742): The MLIR region simplifier has exponential behaviour.
+  mlir::GreedyRewriteConfig config;
+  config.enableRegionSimplification = false;
   pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<LLVMFuncOp>(mlir::createCSEPass());
 
