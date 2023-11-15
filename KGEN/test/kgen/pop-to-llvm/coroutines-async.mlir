@@ -56,7 +56,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 
 // CHECK-LABEL: llvm.func @async_fn_af
-// CHECK-SAME: (%arg0: !llvm.ptr<i8> loc({{.*}}))
+// CHECK-SAME: (%arg0: !llvm.ptr loc({{.*}}))
 llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   // CHECK: %[[C32:.*]] = llvm.mlir.constant(40 : i32)
   // CHECK: %[[C1:.*]] = llvm.mlir.constant(8 : i32)
@@ -101,11 +101,11 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-LABEL: llvm.mlir.global internal constant @async_fn_afp
 // CHECK-SAME: !llvm.struct<(i32, i32)> {
 // CHECK-NEXT: %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i32)>
-// CHECK-NEXT: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp : !llvm.ptr<struct<(i32, i32)>>
-// CHECK-NEXT: %[[AFP_VALUE:.*]] = llvm.getelementptr inbounds %[[AFP]][0, 1] : (!llvm.ptr<struct<(i32, i32)>>) -> !llvm.ptr<i32>
+// CHECK-NEXT: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp : !llvm.ptr
+// CHECK-NEXT: %[[AFP_VALUE:.*]] = llvm.getelementptr inbounds %[[AFP]][0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32)>
 // CHECK-DAG: %[[AF:.*]] = llvm.mlir.addressof @async_fn_af : !llvm.ptr
 // CHECK-DAG: %[[AF_INT:.*]] = llvm.ptrtoint %[[AF]] : !llvm.ptr to i64
-// CHECK-DAG: %[[AFP_INT:.*]] = llvm.ptrtoint %[[AFP_VALUE]] : !llvm.ptr<i32> to i64
+// CHECK-DAG: %[[AFP_INT:.*]] = llvm.ptrtoint %[[AFP_VALUE]] : !llvm.ptr to i64
 // CHECK-NEXT: %[[OFFSET_i32:.*]] = llvm.sub %[[AF_INT]], %[[AFP_INT]]  : i64
 // CHECK-NEXT: %[[OFFSET:.*]] = llvm.trunc %[[OFFSET_i32]] : i64 to i32
 // CHECK-NEXT: %[[V0:.*]] = llvm.insertvalue %[[OFFSET]], %[[UNDEF]][0] : !llvm.struct<(i32, i32)>
@@ -126,22 +126,22 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: %[[CTXT_SZ_INDEX:.*]] = builtin.unrealized_conversion_cast %[[CTXT_SZ]] : i64 to index
 // CHECK-NEXT: %[[MEM_I8:.*]] = pop.aligned_alloc %[[CTXT_ALIGN_INDEX]], %[[CTXT_SZ_INDEX]] : <i8>
 // CHECK-NEXT: %[[MEM:.*]] = builtin.unrealized_conversion_cast %[[MEM_I8]]
-// CHECK-NEXT: %[[FRAME:.*]] = llvm.bitcast %[[MEM]]
+// CHECK-NEXT: %[[MEM_OPAQUE:.*]] = llvm.bitcast %[[MEM]] : !llvm.ptr<i8> to !llvm.ptr
 // CHECK-DAG: %[[AF:.*]] = llvm.mlir.addressof @async_fn_af
-// CHECK-DAG: %[[RESUME_FN_PTR:.*]] = llvm.getelementptr inbounds %[[FRAME]][0, 0]
+// CHECK-DAG: %[[RESUME_FN_PTR:.*]] = llvm.getelementptr inbounds %[[MEM_OPAQUE]][0, 0]
 // CHECK-NEXT: llvm.store %[[AF]], %[[RESUME_FN_PTR]]
-// CHECK-NEXT: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[FRAME]][0, 3]
+// CHECK-NEXT: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[MEM_OPAQUE]][0, 3]
 // CHECK-NEXT: llvm.store %arg0, %[[ARG_PTR]]
-// CHECK-NEXT: %[[RESULT:.*]] = llvm.bitcast %[[FRAME]]
+// CHECK-NEXT: %[[RESULT:.*]] = llvm.bitcast %[[MEM_OPAQUE]]
 // CHECK-NEXT: llvm.return %[[RESULT]] : !llvm.ptr<i8>
 
-// CHECK-LABEL: llvm.func internal @__kgen_coro_end_fn(%arg0: !llvm.ptr<i8> loc({{.*}}))
-// CHECK-NEXT: %[[CLOSURE:.*]] = llvm.getelementptr inbounds %arg0[8] : (!llvm.ptr<i8>) -> !llvm.ptr<struct<(ptr<func<void (ptr<i8>)>>, ptr<i8>)>>
-// CHECK-NEXT: %[[FN_PTR:.*]] = llvm.getelementptr inbounds %[[CLOSURE]][0, 0]
-// CHECK-NEXT: %[[FN:.*]] = llvm.load %[[FN_PTR]]
-// CHECK-NEXT: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[CLOSURE]][0, 1]
-// CHECK-NEXT: %[[ARG:.*]] = llvm.load %[[ARG_PTR]]
-// CHECK-NEXT: llvm.call %[[FN]](%[[ARG]])
+// CHECK-LABEL: llvm.func internal @__kgen_coro_end_fn(%arg0: !llvm.ptr loc({{.*}}))
+// CHECK-NEXT: %[[CLOSURE:.*]] = llvm.getelementptr inbounds %arg0[8] : (!llvm.ptr) -> !llvm.ptr, i8
+// CHECK-NEXT: %[[FN_PTR:.*]] = llvm.getelementptr inbounds %[[CLOSURE]][0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(ptr, ptr)>
+// CHECK-NEXT: %[[FN:.*]] = llvm.load %[[FN_PTR]] : !llvm.ptr -> !llvm.ptr
+// CHECK-NEXT: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[CLOSURE]][0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(ptr, ptr)>
+// CHECK-NEXT: %[[ARG:.*]] = llvm.load %[[ARG_PTR]] : !llvm.ptr -> !llvm.ptr
+// CHECK-NEXT: llvm.call %[[FN]](%[[ARG]]) : !llvm.ptr, (!llvm.ptr) -> ()
 // CHECK-NEXT: llvm.return
 
 // CHECK-LABEL: llvm.func internal @__kgen_coro_ctxt_proj_fn(%arg0: !llvm.ptr<i8> loc({{.*}})) -> !llvm.ptr<i8>
