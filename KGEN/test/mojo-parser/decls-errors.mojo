@@ -760,6 +760,16 @@ trait CFMTrait:
 struct CFMStructFail(CFMTrait): # expected-note {{struct `CFMStructFail` does not implement all requirements for `CFMTrait`}}
     pass
 
+@register_passable("trivial")
+struct NoTraits: # expected-note {{'NoTraits' does not implement 'CFMTrait'}}
+    pass
+
+fn trait_fn[T: CFMTrait]():
+    pass
+
+fn invalid_trait_bind():
+    trait_fn[NoTraits]() # expected-error {{cannot bind type 'NoTraits' to trait 'CFMTrait'}}
+
 ##===----------------------------------------------------------------------===##
 # Class
 ##===----------------------------------------------------------------------===##

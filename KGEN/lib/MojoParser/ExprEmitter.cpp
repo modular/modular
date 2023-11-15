@@ -957,19 +957,28 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
     return {};
   }
 
-  // Assume the metatype conforms to the trait, and synthesize the vtable
-  // required for the trait from the struct.
+  // Check that the struct implements the trait.
   ASTDecl *typeDecl = ASTType(metatype).getDecl(shared);
-  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
+  if (!llvm::count(
+          cast<StructDeclOp>(typeDecl).getTraits().value_or(std::nullopt),
+          trait.getSymbol())) {
+    dest.resetForError();
+    InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
+                        << ASTType(metatype) << " to trait " << ASTType(trait)
+                        << value.expr->getRange();
+    diag.attachNote(typeDecl->getLoc())
+        << ASTType(metatype) << " does not implement " << ASTType(trait);
+    return {};
+  }
 
+  // Synthesize the vtable required for the trait from the struct.
+  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
   auto selfType = DeclRefType::get(metatype.getSymbol(),
                                    metatype.getParamValues(), metatype);
   SmallVector<TypedAttr> selfParams(
       {TypeConstantAttr::get(metatype),
        TypeConstantAttr::get(selfType, metatype)});
 
-  // All of the subsequent code is expected to succeed, since conformance has
-  // already been checked.
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
@@ -997,7 +1006,13 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
       OverloadSet ov(name, typeFuncs, std::move(bindings), value.expr,
                      CallSyntax::kMethodCall);
       PValue result = ov.filterOverloadSetForValueType(
-          sig, /*emitDiagnosticOnFailure=*/true, *this);
+          sig, /*emitDiagnosticOnFailure=*/false, *this);
+      if (!result) {
+        // The struct does not conform to the trait. Just silently return, since
+        // an error has already been emitted.
+        dest.resetForError();
+        return {};
+      }
       vtable.push_back(
           VTableEntryAttr::get(name, cast<SymbolConstantAttr>(result.get())));
     }
