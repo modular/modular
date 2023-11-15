@@ -495,25 +495,63 @@
           {
             "type": "mojo-lldb",
             "request": "launch",
-            "name": "Debug",
+            "name": "Mojo: Debug binary",
             "program": "${workspaceFolder}/<your program>",
             "args": [],
             "env": [],
             "cwd": "${workspaceFolder}"
+          },
+          {
+            "type": "mojo-lldb",
+            "request": "launch",
+            "name": "Mojo: Debug current file",
+            "mojoFile": "${file}",
+            "args": [],
+            "env": [],
+            "cwd": "${workspaceFolder}"
+          },
+          {
+            "type": "mojo-lldb",
+            "request": "attach",
+            "name": "Mojo: Attach to binary",
+            "pid": "<pid>"
           }
         ],
         "configurationSnippets": [
           {
-            "label": "Mojo LLDB: Launch",
-            "description": "",
+            "label": "Mojo: Debug binary",
+            "description": "A new configuration for launching a precompiled program",
             "body": {
               "type": "mojo-lldb",
               "request": "launch",
-              "name": "${2:Launch}",
-              "program": "^\"\\${workspaceFolder}/${1:<your program>}\"",
+              "name": "Mojo: Debug binary",
+              "program": "^\"\\${workspaceFolder}\"/<your program>",
               "args": [],
               "env": [],
               "cwd": "^\"\\${workspaceFolder}\""
+            }
+          },
+          {
+            "label": "Mojo: Debug current file",
+            "description": "A new configuration for debugging the current file",
+            "body": {
+              "type": "mojo-lldb",
+              "request": "launch",
+              "name": "Mojo: Debug current file",
+              "mojoFile": "^\"\\${file}\"",
+              "args": [],
+              "env": [],
+              "cwd": "^\"\\${workspaceFolder}\""
+            }
+          },
+          {
+            "label": "Mojo: Attach to process",
+            "description": "A new configuration for attaching to a process",
+            "body": {
+              "type": "mojo-lldb",
+              "request": "attach",
+              "name": "Mojo: Attach to process",
+              "pid": "<pid>"
             }
           }
         ]
