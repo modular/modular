@@ -34,7 +34,7 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState {
 public:
-  ParameterInferenceState(SharedState &state, size_t index, Type type)
+  ParameterInferenceState(SharedState &state, size_t index)
       : state(state), parameterIndex(index) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
@@ -814,10 +814,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
   };
 
-  auto parameterInferenceHook = [&](size_t index, Type type,
+  auto parameterInferenceHook = [&](size_t index,
                                     ArrayRef<TypedAttr> bindingsSoFar,
                                     TypedAttr defaultParam) -> PValue {
-    if (PValue inferred = ParameterInferenceState(emitter.shared, index, type)
+    if (PValue inferred = ParameterInferenceState(emitter.shared, index)
                               .infer(signature, bindingsSoFar, callOperands))
       return inferred;
     return PValue(defaultParam);

@@ -249,7 +249,7 @@ InputParamBindings::verifyBindings(
       // If we have a method to infer parameter values, invoke it to see if we
       // can get an inferred value for the parameter.
       if (parameterInferenceHook) {
-        if (PValue pValue = parameterInferenceHook(idx, type, newBindings,
+        if (PValue pValue = parameterInferenceHook(idx, newBindings,
                                                    /*defaultParam=*/{})) {
           Type inferredType = pValue.getType().mlirType;
           if (!isa<AnyRegTypeType>(inferredType) &&
@@ -314,7 +314,7 @@ InputParamBindings::verifyBindings(
 
         Type requestedType = evaluator.getReboundType(type);
         if (PValue pValue =
-                parameterInferenceHook(idx, type, newBindings, defaultParam)) {
+                parameterInferenceHook(idx, newBindings, defaultParam)) {
           assert(pValue.getType().mlirType == requestedType &&
                  "inferred a parameter value of wrong type");
           setParamValue(pValue);
