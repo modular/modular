@@ -355,19 +355,34 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
 
   switch (tag) {
   case DW_TAG_pointer_type: {
-    DWARFDIE typeDie = attrs.type.Reference();
-    lldb_private::Type *elementType =
-        dwarf->ResolveTypeUID(typeDie, /*assert_not_being_parsed=*/true);
-    CompilerType mojoType = typeSystem.GetPointerType(
-        elementType->GetFullCompilerType().GetOpaqueQualType());
-
-    type =
-        dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
-                        attrs.type.Reference().GetID(),
-                        lldb_private::Type::eEncodingIsPointerUID, &attrs.decl,
-                        mojoType, lldb_private::Type::ResolveState::Full);
+    // Pointer types are lazily resolved by LLDB, which handles cases of pointee
+    // types that failed parsing.
+    type = dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
+                           attrs.type.Reference().GetID(),
+                           lldb_private::Type::eEncodingIsPointerUID,
+                           &attrs.decl, CompilerType(),
+                           lldb_private::Type::ResolveState::Unresolved);
     break;
   }
+  case DW_TAG_unspecified_type:
+    // For clang, these are often `nullptr_t` or `decltype(nullptr)`. However,
+    // if a different name is found, clang attempts to parse this unspecified as
+    // a base type using its encoding, which might fail anyway. We follow that
+    // approach.
+
+    // FIXME(25720): `void` maps to DType.invalid.
+    if (attrs.name == "void") {
+      CompilerType mojoType = typeSystem.getBuiltinScalarType(
+          "invalid", DW_ATE_unsigned, attrs.byteSize.value_or(0));
+
+      type = dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
+                             attrs.type.Reference().GetID(),
+                             lldb_private::Type::eEncodingIsUID, &attrs.decl,
+                             mojoType, lldb_private::Type::ResolveState::Full);
+      break;
+    }
+
+    [[fallthrough]];
   case DW_TAG_base_type: {
     if (attrs.byteSize.value_or(0) == 0) {
       dwarf->GetObjectFile()->GetModule()->ReportError(
@@ -383,7 +398,6 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
           "[MojoDWARFParser::ParseTypeFromDWARF] Couldn't create builtin type. "
           "Die = {0:x16}, tag = {1}, name = '{2}'.",
           die.GetOffset(), die.GetTagAsCString(), die.GetName());
-      break;
     }
     type = dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
                            attrs.type.Reference().GetID(),
@@ -505,10 +519,15 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     break;
   }
 
-  if (type) {
-    updateSymbolContextScopeForType(sc, die, type);
-    dwarf->GetDIEToType()[die.GetDIE()] = type.get();
+  if (!type) {
+    type = dwarf->MakeType(
+        die.GetID(), attrs.name, attrs.byteSize, nullptr,
+        attrs.type.Reference().GetID(), lldb_private::Type::eEncodingIsUID,
+        &attrs.decl, CompilerType(), lldb_private::Type::ResolveState::Full);
   }
+
+  updateSymbolContextScopeForType(sc, die, type);
+  dwarf->GetDIEToType()[die.GetDIE()] = type.get();
   return type;
 }
 
