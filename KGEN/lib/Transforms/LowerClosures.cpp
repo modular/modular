@@ -34,14 +34,18 @@ using namespace POP;
 ///
 /// The captured values, excluding the cloned values, are populate into
 /// `captures`.
-static void liftClosureRegion(Region &body, SmallVectorImpl<Value> &captures) {
+static void liftClosureRegion(Region &body, SmallVectorImpl<Value> &captures,
+                              bool formTransitiveClosure = false) {
   // Isolate the region from above.
   llvm::SetVector<Value> captureSet;
   mlir::getUsedValuesDefinedAbove(body, captureSet);
-  for (Value capture : captureSet) {
+  // Note: The size of `captureSet` is changing.
+  for (unsigned i = 0; i < captureSet.size(); ++i) {
+    Value capture = captureSet[i];
     Operation *capturingOp = capture.getDefiningOp();
     // Clone ConstantLike operations into the region.
-    if (capturingOp && capturingOp->hasTrait<OpTrait::ConstantLike>()) {
+    if (capturingOp && (formTransitiveClosure ||
+                        capturingOp->hasTrait<OpTrait::ConstantLike>())) {
       auto b = OpBuilder::atBlockBegin(&body.front());
       Operation *cloned = b.clone(*capturingOp);
       // We update the location of the cloned constant, as if it was inlined
@@ -52,6 +56,9 @@ static void liftClosureRegion(Region &body, SmallVectorImpl<Value> &captures) {
       for (auto [orig, replacement] :
            llvm::zip(capturingOp->getResults(), cloned->getResults()))
         replaceAllUsesInRegionWith(orig, replacement, body);
+      if (formTransitiveClosure)
+        for (Value operand : cloned->getOperands())
+          captureSet.insert(operand);
     } else {
       // Otherwise these are captured variables and we need to pass them as
       // arguments to the block body.
@@ -149,7 +156,10 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   Region &body = op.getBodyRegion();
   unsigned numArgs = body.getNumArguments();
   SmallVector<Value> captures;
-  liftClosureRegion(body, captures);
+  // If the `stage_closure` is not capturing, then this is an inline (?)
+  // function pointer. Force the transitive closure of operations to be cloned
+  // into the body to isolate it.
+  liftClosureRegion(body, captures, !op.getType().isCapturing());
   // Add the captured arguments to the front so they can be partially applied by
   // `kgen.create_closure`.
   std::rotate(body.getArguments().begin(),

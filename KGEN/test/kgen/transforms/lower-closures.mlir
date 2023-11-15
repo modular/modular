@@ -147,3 +147,19 @@ kgen.func @async_closure_in_async(%arg1: index) async {
   // CHECK: pop.coroutine.promise {{.*}} : <() -> ()>
   kgen.return
 }
+
+// CHECK-LABEL: @transitive_closure_closure_0
+// CHECK-NEXT: %string = kgen.param.constant: string = <"123">
+// CHECK-NEXT: %0 = pop.string.address %string
+// CHECK-NEXT: return %0
+
+// CHECK-LABEL: @transitive_closure
+kgen.func @transitive_closure() {
+  %0 = kgen.param.constant: string = <"123">
+  %1 = pop.string.address %0
+  // CHECK: create_closure[() -> !kgen.pointer<scalar<si8>>: @transitive_closure_closure_0]()
+  kgen.stage_closure = () -> !kgen.pointer<scalar<si8>> {
+    kgen.return %1 : !kgen.pointer<scalar<si8>>
+  }
+  kgen.return
+}
