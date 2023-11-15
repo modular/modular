@@ -39,9 +39,9 @@ fn test() raises:
 
     # Query, key, value dimensions.
     alias batch_size = 1
-    alias num_heads = 12
-    alias seq_len = 128
-    alias depth = 64
+    alias num_heads = 32
+    alias seq_len = 1024
+    alias depth = 128
     alias mask_val = Float32(-1e10)
     alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
 
@@ -100,25 +100,36 @@ fn test() raises:
     _copy_host_to_device(v_device_ptr, v_ptr, qkv_size)
     _copy_host_to_device(mask_device_ptr, mask_ptr, seq_len * seq_len)
 
+    alias q_tile_num_rows = 32
+    alias kv_tile_num_rows = WARP_SIZE
+
     let func = Function[
-        # fmt: off
-        fn (DTypePointer[type],
+        fn (
             DTypePointer[type],
             DTypePointer[type],
             DTypePointer[type],
             DTypePointer[type],
-            Float32, Int, Int, Int, Int) -> None,
-        # fmt: on
-        flash_attention_kernel,
+            DTypePointer[type],
+            Float32,
+            Int,
+            Int,
+        ) -> None, flash_attention_kernel[
+            BM=32,  # q_tile_num_rows,
+            BN=128,  # kv_tile_num_rows,
+            BK=16,
+            depth=128,
+            num_heads=32,
+            TM=8,
+            TN=4,
+            num_threads=128,  # q_tile_num_rows * kv_tile_num_rows,
+        ]
     ]()
 
-    alias q_tile_num_rows = 8
-    alias kv_tile_num_rows = WARP_SIZE
     func(
         # grid
         (div_ceil(seq_len, q_tile_num_rows), num_heads, batch_size),
         # block
-        (min(1024, q_tile_num_rows * kv_tile_num_rows), 1, 1),
+        (128, 1, 1),
         q_device_ptr,
         k_device_ptr,
         v_device_ptr,
@@ -127,8 +138,6 @@ fn test() raises:
         scale,
         batch_size,
         seq_len,
-        num_heads,
-        depth,
         stream=stream,
     )
 
