@@ -30,7 +30,7 @@ from gpu.memory import _copy_device_to_device_async
 
 
 @always_inline
-fn normalize_index[type: DType](idx: SIMD[type, 1], dim_size: Int) -> Int:
+fn normalize_neg_index[type: DType](idx: SIMD[type, 1], dim_size: Int) -> Int:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
 
@@ -42,7 +42,7 @@ fn normalize_index[type: DType](idx: SIMD[type, 1], dim_size: Int) -> Int:
     )
     constrained[
         type.is_integral(),
-        "normalize_index expects index to be an integral type",
+        "normalize_neg_index expects index to be an integral type",
     ]()
     return idx.to_int() + dim_size if idx < 0 else idx.to_int()
 
@@ -157,7 +157,9 @@ fn gather_reduce[
                     if has_neon():  # TODO(#24060): remove this branch
                         idx = indices[i, j].value
                     else:
-                        idx = normalize_index(indices[i, j], gather_axis_size)
+                        idx = normalize_neg_index(
+                            indices[i, j], gather_axis_size
+                        )
 
                     # min so that we don't read beyond end of indices
                     @parameter
@@ -251,7 +253,7 @@ fn gather[
             let next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
-            input_coords[axis] = normalize_index(
+            input_coords[axis] = normalize_neg_index(
                 next_idx_ptr.load(), input.get_shape()[axis]
             )
             input.prefetch[
@@ -423,7 +425,7 @@ fn gather[
         @parameter
         fn input_indices_get[unrolled_i: Int]():
             if unrolled_i == axis.get():
-                data_indices[unrolled_i] = normalize_index(
+                data_indices[unrolled_i] = normalize_neg_index(
                     data_index, input_shape[axis.get()]
                 )
             elif unrolled_i > axis.get():
@@ -610,7 +612,7 @@ fn scatter_nd_generator[
             indices_index[indices_rank - 1] = dim
 
             let idx_on_axis = indices[indices_index]
-            let pos_idx_on_axis = normalize_index(idx_on_axis, input_ax_dim)
+            let pos_idx_on_axis = normalize_neg_index(idx_on_axis, input_ax_dim)
             output_index_tensor[dim] = pos_idx_on_axis
 
         # Calculate the updates_offset from where to copy the updates.
@@ -842,7 +844,7 @@ fn scatter_elements[
         let indices_coords = rebind[StaticIntTuple[rank]](_indices_coords)
         let idx_on_axis = indices[indices_coords]
         var output_coords = indices_coords
-        output_coords[axis] = normalize_index(idx_on_axis, input_ax_dim)
+        output_coords[axis] = normalize_neg_index(idx_on_axis, input_ax_dim)
         let curr = output[output_coords]
         output[output_coords] = reduce_fn[input_type, 1](
             curr, updates[indices_coords]
@@ -960,7 +962,7 @@ fn gather_elements[
         let output_coords = rebind[StaticIntTuple[rank]](_output_coords)
         let idx_on_axis = indices[output_coords]
         var input_coords = output_coords
-        input_coords[axis] = normalize_index(idx_on_axis, input_ax_dim)
+        input_coords[axis] = normalize_neg_index(idx_on_axis, input_ax_dim)
         output[output_coords] = input[input_coords]
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
@@ -1177,7 +1179,7 @@ fn gather_nd[
             for constr in range(reshaped_indices_shape[2]):
                 let input_ax_dim = reshaped_data.get_shape()[constr + 1]
                 let idx_on_axis = reshaped_indices[batch_dim, outer_dim, constr]
-                idx[constr] = normalize_index(idx_on_axis, input_ax_dim)
+                idx[constr] = normalize_neg_index(idx_on_axis, input_ax_dim)
 
             # Construct the full index on reshaped_data, where to copy from.
             start_tensor[0] = batch_dim
