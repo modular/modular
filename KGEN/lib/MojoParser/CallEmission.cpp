@@ -560,8 +560,8 @@ getBoundConstAttrFor(AnyValue baseValue, LIT::FuncOp funcOp, StringRef baseName,
   // Try to dig out a trait base value.
   auto getIfTrait = [](AnyValue value) -> ASTType {
     if (auto cv = value.getIfCValue())
-      if (isa_and_nonnull<TraitType>(cv.getType().getMetaType()))
-        return cv.getType();
+      if (isa_and_nonnull<TraitType>(cv.getRValueType().getMetaType()))
+        return cv.getRValueType();
     return {};
   };
   ASTType trait = getIfTrait(baseValue);

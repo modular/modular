@@ -3916,22 +3916,18 @@ static SignatureType getSpecializedSignature(LIT::FuncOp traitFn,
   ArrayRef<Type> inputParamTypes = signature.getInputParamTypes();
 
   // Add trait's MT replacement.
-  newInputParamValues.push_back(TypeConstantAttr::get(
-      UnknownAttr::get(structSelfMetaType).getType(), inputParamTypes[0]));
+  // FIXME(generics): We aren't propagating metatypes into pointer types, so
+  // just pass a generic metatype here.
+  newInputParamValues.push_back(
+      TypeConstantAttr::get(AnyRegTypeType::get(traitFn.getContext())));
   // Add trait's T replacement.
   newInputParamValues.push_back(TypeConstantAttr::get(
-      structSelfType, UnknownAttr::get(structSelfMetaType).getType()));
+      structSelfType, AnyRegTypeType::get(traitFn.getContext())));
 
-  for (Type type : inputParamTypes.drop_front(2)) {
+  for (Type type : inputParamTypes.drop_front(2))
     newInputParamValues.push_back(UnboundAttr::get(type));
-  }
 
-  // TODO: FnEffects only supports match for register_passable("trivial")
-  // structs
-  return signature.getSpecializedSignature(newInputParamValues, [&] {
-    return emitError(traitFn.getLoc(),
-                     "cannot specialize trait function for conformance check");
-  });
+  return signature.getSpecializedSignature(newInputParamValues);
 }
 
 /// Check conformance for struct that implements traits.
@@ -3955,10 +3951,9 @@ static LogicalResult verifyConformance(LIT::StructDeclOp structDeclOp,
         ArrayRef<ASTDecl *> structFnDecls =
             structDecl.lookupInCurrentScope(name);
         bool foundMatch = false;
-        for (ASTDecl *structFnDecl : structFnDecls) {
+        for (ASTDecl *structFnDecl : structFnDecls)
           if (auto structFn = dyn_cast<LIT::FuncOp>(*structFnDecl))
             foundMatch |= newSignature == structFn.getSignature();
-        }
 
         if (foundMatch)
           continue;

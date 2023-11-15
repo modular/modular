@@ -124,9 +124,10 @@ TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
   ASTDecl *decl = getDecl(shared);
 
   if (!decl) {
-    // If this is a generic type, we treat it as memory only.
+    // If this is a generic type, we treat it as memory only. If the metatype
+    // is a parameter reference, then pessimistically assume it is memory-only.
     if (auto paramRefTy = dyn_cast<ParamRefType>(mlirType))
-      if (isa<AnyTypeType>(paramRefTy.getParam().getType()))
+      if (isa<AnyTypeType, ParamRefType>(paramRefTy.getParam().getType()))
         return TypeConvention::MemoryOnly;
 
     // MLIR types are assumed to be register-passable + Trivial.
@@ -143,9 +144,8 @@ TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
     return TypeConvention::MemoryOnly;
 
   // Trait values are generic and therefore memory-only by default.
-  // FIXME(generics): Memory-only generic representation needed first!
   if (isa<TraitDeclOp>(decl))
-    return TypeConvention::RegisterPassable;
+    return TypeConvention::MemoryOnly;
 
   auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");
