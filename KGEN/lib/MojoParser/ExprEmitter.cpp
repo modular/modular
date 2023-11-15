@@ -870,6 +870,11 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (allowArgNameCheck && canZeroCostConvert(shared, rvType, requiredType))
     return true;
 
+  // Metatypes can implicitly convert to any trait type they implement.
+  // TODO(traits): Enforce conformance checking here.
+  if (isa<TraitType>(requiredType) && isa<MetaTypeType>(rvType))
+    return true;
+
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
   OverloadSet callee(requiredType, "__init__", value.expr,
@@ -939,6 +944,68 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
   auto srValue = value.getIfSRValue();
   assert(srValue && "Unknown value kind");
   return SRValue(rebind(srValue));
+}
+
+AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
+                                             MetaTypeType metatype,
+                                             ASTExprAnd<CValue> value,
+                                             ValueDest &dest) {
+  // Only static vtables are supported right now.
+  if (!value.ir.getIfPValue()) {
+    dest.resetForError();
+    emitError(value.expr->getLoc(), "existentials are not supported yet!");
+    return {};
+  }
+
+  // Assume the metatype conforms to the trait, and synthesize the vtable
+  // required for the trait from the struct.
+  ASTDecl *typeDecl = ASTType(metatype).getDecl(shared);
+  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
+
+  auto selfType = DeclRefType::get(metatype.getSymbol(),
+                                   metatype.getParamValues(), metatype);
+  SmallVector<TypedAttr> selfParams(
+      {TypeConstantAttr::get(metatype),
+       TypeConstantAttr::get(selfType, metatype)});
+
+  // All of the subsequent code is expected to succeed, since conformance has
+  // already been checked.
+  SmallVector<VTableEntryAttr> vtable;
+  for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
+    if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+      continue;
+    LookupResult result = shared.lookupAndResolveDecl(
+        name, value.expr->getLoc(), *typeDecl, /*searchParentScopes=*/false);
+    ArrayRef<ASTDecl *> typeFuncs = result.getIfSuccess();
+    // Form an overload set of the functions and bind the type parameters.
+    for (ASTDecl *expected : decls) {
+      auto traitFn = cast<LIT::FuncOp>(expected);
+
+      // Bind away the self type parameter.
+      SmallVector<TypedAttr> fnParams = selfParams;
+      LITSignatureType sig = traitFn.getFullSignature();
+      ParameterEvaluator evaluator(selfParams);
+      auto bindings = InputParamBindings::getForDeclaredType(metatype, shared);
+      for (Type type : sig.getInputParamTypes().drop_front(2)) {
+        fnParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
+        evaluator.addInputValue(fnParams.back());
+        bindings.addPrechecked(fnParams.back());
+      }
+      sig = sig.getSpecializedSignature(fnParams);
+
+      // Grab the matching function.
+      OverloadSet ov(name, typeFuncs, std::move(bindings), value.expr,
+                     CallSyntax::kMethodCall);
+      PValue result = ov.filterOverloadSetForValueType(
+          sig, /*emitDiagnosticOnFailure=*/true, *this);
+      vtable.push_back(
+          VTableEntryAttr::get(name, cast<SymbolConstantAttr>(result.get())));
+    }
+  }
+
+  PValue result = TypeConstantAttr::get(selfType, trait,
+                                        VTableAttr::get(getContext(), vtable));
+  return emitResult(result, value.expr, dest);
 }
 
 /// When emitting a result value, attempt to "refine" the value type by
@@ -1015,13 +1082,11 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         return emitCValue({value, expr}, dest);
       }
 
-      // We disable implicit conversions to prevent converting T -> S -> U in
-      // one step, and to avoid infinite conversion cycles.
+      // If this is a conversion to the non-materializable target of a type,
+      // emit the conversion in the parameter domain.
       if (rvalueType.getNonmaterializableTarget(shared).isEqualCanon(
               requiredType) &&
           cValue.getIfPValue()) {
-        // For nonmaterializable types, we force a conversion to happen in the
-        // parameter domain.
         CValue converted;
         {
           llvm::SaveAndRestore savedBuilder(builder, {});
@@ -1038,6 +1103,15 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         return emitResult(converted, expr, dest);
       }
 
+      // Emit metatype conversions to trait types if the metatype implements the
+      // specified trait.
+      // TODO(traits): actually enforce conformance checking.
+      if (auto trait = dyn_cast<TraitType>(requiredType))
+        if (auto metatype = dyn_cast<MetaTypeType>(rvalueType))
+          return emitMetaTypeConversion(trait, metatype, {cValue, expr}, dest);
+
+      // We disable implicit conversions to prevent converting T -> S -> U in
+      // one step, and to avoid infinite conversion cycles.
       return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
                                  expr, CallSyntax::kImplicitConvert, dest,
                                  /*allowImplicitConversion=*/false);

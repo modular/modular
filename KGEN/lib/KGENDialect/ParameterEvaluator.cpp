@@ -63,6 +63,11 @@ ParameterEvaluator::ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
     setParameterValue(decl, value);
 }
 
+ParameterEvaluator::ParameterEvaluator(ArrayRef<TypedAttr> paramValues) {
+  for (TypedAttr param : paramValues)
+    addInputValue(param);
+}
+
 // NOTE: This is out of line to provide a home for the ParameterEvaluator
 // vtable.
 FailureOr<TypedAttr>

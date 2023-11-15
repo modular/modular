@@ -326,7 +326,6 @@ def KGEN_VTableAttr : KGENAttr<"VTable", "vtable"> {
   }];
 
   let parameters = (ins ArrayRefParameter<"VTableEntryAttr">:$entries);
-
   let assemblyFormat = "`` $entries";
 }
 
@@ -346,6 +345,13 @@ def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
   let parameters = (ins "StringAttr":$name,
                         "SymbolConstantAttr":$method);
   let assemblyFormat = "`` custom<VTableEntry>($name, $method)";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        "SymbolConstantAttr":$method), [{
+      return $_get(name.getContext(), name, method);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
