@@ -2214,13 +2214,39 @@ kgen.generator @generic_call<T: regtype>(%arg0: !kgen.paramref<T>) -> index{
   %anInt = kgen.param.constant = <1>
   // CHECK: kgen.call @indexTraitMethod
   %result = kgen.call_param[(index) -> index : traitMethod](%anInt)
+
+  kgen.param.declare parametric: <index>() -> ()  = <get_type_method(T, "parametric")>
+  // CHECK: kgen.call @"parametricTraitMethod,param=2"
+  kgen.call_param[() -> (): bind_signature(:<index>() -> () parametric, 2)]()
+
+  kgen.param.declare bound: () -> () = <get_type_method(T, "bound")>
+  // CHECK: kgen.call @"parametricTraitMethod,param=1"
+  kgen.call_param[() -> (): bound]()
+
+  kgen.param.declare partial: <index>() -> () = <get_type_method(T, "partial")>
+  // CHECK: kgen.call @"twoParameters,parent=11,func=42"
+  kgen.call_param[() -> (): bind_signature(:<index>() -> () partial, 11)]()
+
   kgen.return %result : index
+}
+
+kgen.generator @parametricTraitMethod<param>() {
+  kgen.return
+}
+
+kgen.generator @twoParameters<parent, func>() {
+  kgen.return
 }
 
 kgen.generator @make_generic_call() -> index {
   %anInt = kgen.param.constant = <1>
   // CHECK: kgen.call @"generic_call,T=[index{{.*}}]"
-  %result = kgen.call @generic_call<:regtype #kgen.concretetype.constant<index, vtable={"traitMethod" : <(index) -> index> = @indexTraitMethod}>>(%anInt) : (index borrow) -> index
+  %result = kgen.call @generic_call<:regtype [index, {
+    "traitMethod" : (index) -> index = @indexTraitMethod,
+    "parametric": <index>() -> () = @parametricTraitMethod,
+    "bound": () -> () = @parametricTraitMethod<1>,
+    "partial": <index>() -> () = @twoParameters<?, 42>
+  }]>(%anInt) : (index borrow) -> index
   kgen.return %result : index
 }
 

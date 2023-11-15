@@ -394,18 +394,30 @@ bool IntLiteralAttr::isConstant() const { return true; }
 // VTableAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseVTableEntryName(AsmParser &p, StringAttr &name) {
+static ParseResult parseVTableEntry(AsmParser &p, StringAttr &name,
+                                    SymbolConstantAttr &method) {
   std::string nameStr;
-  OptionalParseResult parseResult = p.parseString(&nameStr);
-  if (!parseResult.has_value() || failed(*parseResult)) {
+  if (p.parseString(&nameStr))
     return failure();
-  }
   name = StringAttr::get(p.getContext(), nameStr);
+  Type signature;
+  SymbolRefAttr symbol;
+  SmallVector<TypedAttr> paramValues;
+  if (p.parseColon() || parseSignature(p, signature) || p.parseEqual() ||
+      p.parseAttribute(symbol) || parseParameterValues(p, paramValues))
+    return failure();
+  method = SymbolConstantAttr::get(symbol, paramValues,
+                                   cast<SignatureType>(signature));
   return success();
 }
 
-static void printVTableEntryName(AsmPrinter &p, const StringAttr &name) {
+static void printVTableEntry(AsmPrinter &p, StringAttr name,
+                             SymbolConstantAttr method) {
   p.printString(name.getValue());
+  p << " : ";
+  printSignature(p, method.getType());
+  p << " = " << method.getSymbol();
+  printParameterValues(p, method.getParamValues());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1946,10 +1958,8 @@ static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands,
   // payload.
   for (VTableEntryAttr entry : vtable.getEntries()) {
     if (entry.getName() == targetName.getValue() &&
-        entry.getSignature() == targetSignature) {
-      TypedAttr method =
-          SymbolConstantAttr::get(entry.getMethod(), targetSignature);
-      return method;
+        entry.getMethod().getType() == targetSignature) {
+      return entry.getMethod();
     }
   }
   return {};

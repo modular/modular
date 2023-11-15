@@ -344,11 +344,8 @@ def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
   }];
 
   let parameters = (ins "StringAttr":$name,
-                        "SignatureType":$signature,
-                        "SymbolRefAttr":$method);
-  let assemblyFormat = [{
-    `` custom<VTableEntryName>($name) `:` $signature `=` $method
-  }];
+                        "SymbolConstantAttr":$method);
+  let assemblyFormat = "`` custom<VTableEntry>($name, $method)";
 }
 
 //===----------------------------------------------------------------------===//
