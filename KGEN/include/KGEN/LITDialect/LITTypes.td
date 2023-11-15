@@ -195,6 +195,33 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
 }
 
 //===----------------------------------------------------------------------===//
+// TraitType
+//===----------------------------------------------------------------------===//
+
+def LIT_TraitType: LITType<"Trait", "trait",
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  let summary = "Type of a trait value.";
+  let description = [{
+    The `!lit.trait` type represents the type of a lit.trait.decl value.
+
+    Example:
+
+    ```mlir
+    !lit.trait<@SomeTrait>
+    ```
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$symbol);
+  let assemblyFormat = "`<` $symbol `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
+      return get(symbol.getContext(), symbol);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // LifetimeType
 //===----------------------------------------------------------------------===//
 
@@ -205,6 +232,7 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime",
     This type is used for lifetime parameters when tracking ownership and
     provenance in a signature.
   }];
+  let assemblyFormat = "";
 }
 
 //===----------------------------------------------------------------------===//
@@ -297,32 +325,6 @@ def LIT_REPLResultRefType : LITType<"REPLResultRef", "replresultref"> {
     /// Return the elementType attribute as a type.
     Type getElementAsType();
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// TraitType
-//===----------------------------------------------------------------------===//
-
-def LIT_TraitType: LITType<"Trait", "trait"> {
-  let summary = "Type of a trait value.";
-  let description = [{
-    The `!lit.trait` type represents the type of a lit.trait.decl value.
-
-    Example:
-
-    ```mlir
-    !lit.trait<@SomeTrait>
-    ```
-  }];
-
-  let parameters = (ins "SymbolRefAttr":$symbol);
-  let assemblyFormat = "`<` $symbol `>`";
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
-      return get(symbol.getContext(), symbol);
-    }]>
-  ];
 }
 
 //===----------------------------------------------------------------------===//

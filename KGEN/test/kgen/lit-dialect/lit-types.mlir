@@ -33,8 +33,8 @@ lit.trait.decl @TParam<MT: regtype, T: !kgen.paramref<MT>> {
 lit.trait.decl @MyTrait {}
 
 // CHECK-LABEL: @trait_metatype
-// CHECK-SAME: !kgen.paramref<:!lit.trait<@MyTrait> T>
-lit.func @trait_metatype<T: !lit.trait<@MyTrait>>(%arg0: !kgen.paramref<:!lit.trait<@MyTrait> T>) {
+// CHECK-SAME: !kgen.paramref<:trait<@MyTrait> T>
+lit.func @trait_metatype<T: trait<@MyTrait>>(%arg0: !kgen.paramref<:trait<@MyTrait> T>) {
   kgen.return
 }
 
@@ -93,5 +93,15 @@ kgen.generator @passing_kinds(
     // CHECK-SAME: !lit.signature<<i8, i8, i8, ?, i8>() -> ()>
     %arg3: !lit.signature<<i8, i8, i8, ?, i8>() -> ()>
 ) {
+  kgen.return
+}
+
+lit.trait.decl @Trait {
+}
+
+// CHECK-LABEL: kgen.generator @trait
+kgen.generator @trait() {
+  // CHECK-NEXT: trait<@Trait> = <@MyStructParams<1, :dtype f32, :regtype i32>>
+  kgen.param.declare type: trait<@Trait> = <@MyStructParams<1, :dtype f32, :regtype i32>>
   kgen.return
 }

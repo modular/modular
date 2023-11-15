@@ -386,6 +386,6 @@ lit.trait.decl @Trait {
 }
 
 // CHECK: kgen.generator @trait_fn<T: regtype>()
-kgen.generator @trait_fn<T: !lit.trait<@Trait>>() {
+kgen.generator @trait_fn<T: trait<@Trait>>() {
   kgen.return
 }

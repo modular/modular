@@ -137,14 +137,6 @@ void LITDialect::initialize() {
   // Register types.
   registerTypes();
 
-  // Give the lifetime type a pretty kgen type.
-  auto *kgenDialect = getContext()->getOrLoadDialect<KGENDialect>();
-  kgenDialect->registerPrettyType(
-      "lifetime",
-      [](AsmParser &p) -> Type { return LifetimeType::get(p.getContext()); },
-      TypeID::get<LifetimeType>(),
-      +[](AsmPrinter &p, Type type) { p << "lifetime"; });
-
   // Register operations.
   addOperations<
 #define GET_OP_LIST
