@@ -114,6 +114,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in decorator";
   case EC_LifetimeSpec:
     return " in lifetime specifier";
+  case EC_Trait:
+    return " in trait conformance checking";
   }
   llvm_unreachable("invalid expr context");
 }

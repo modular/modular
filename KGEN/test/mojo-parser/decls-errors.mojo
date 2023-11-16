@@ -746,8 +746,8 @@ fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
 # Struct/Trait conformance check failure
 ##===----------------------------------------------------------------------===##
 
-trait CFMTrait:
-    fn f1(self: Self): # expected-note {{required function 'f1' is not implemented}}
+trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
+    fn f1(self: Self): # expected-note {{no 'f1' candidates have type 'fn(self = CFMStructFail) -> None'}}
         pass
 
     @staticmethod
@@ -755,9 +755,9 @@ trait CFMTrait:
         pass
 
 # struct implements CFMTrait but does not have f2().
-# expected-error @+2 {{conformance check failed}}
 @register_passable("trivial")
-struct CFMStructFail(CFMTrait): # expected-note {{struct 'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
+struct CFMStructFail(CFMTrait): # expected-error {{struct 'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
+  fn f1(self, x: Int): # expected-note {{candidate declared here with type 'fn(self = CFMStructFail, x = Int) -> None'}}
     pass
 
 @register_passable("trivial")

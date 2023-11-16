@@ -73,6 +73,7 @@ enum ExprContext {
   EC_CaptureCopy,           // def f(): use(x)
   EC_Decorator,             // @x
   EC_LifetimeSpec,          // ref[x] y
+  EC_Trait,                 // trait conformance checking for `T`
 };
 const char *getContextMessage(ExprContext context);
 
