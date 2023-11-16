@@ -141,6 +141,7 @@ from math import max, min
 from time import time_function
 
 from memory.unsafe import DTypePointer, Pointer
+from utils.vector import DynamicVector
 
 
 # ===----------------------------------------------------------------------===#
