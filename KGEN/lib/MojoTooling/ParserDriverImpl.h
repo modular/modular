@@ -37,11 +37,6 @@ struct MojoParserContext::Impl {
 
   /// The decls of each REPL module that have been successfully parsed.
   SmallVector<KGEN::LIT::ASTDecl *> replModuleDecls;
-
-  /// The detached IR created for invalid REPL modules.
-  /// TODO: We should restructure the parser to make it clean to drop parsed
-  /// modules in the case of failure, in which case we could remove this.
-  SmallVector<OwningOpRef<Operation *>> detachedREPLModules;
 };
 } // namespace M
 

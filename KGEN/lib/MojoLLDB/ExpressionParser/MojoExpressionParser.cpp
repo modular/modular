@@ -15,6 +15,7 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -31,6 +32,7 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Object/Archive.h"
@@ -731,8 +733,10 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   LIT::FuncOp exprFn = cast<LIT::FuncOp>(exprFnDecl.getIfOperation());
   exprFn.setLinkageName(exprFnName);
   mlir::IRMapping mapping;
-  OwningOpRef<ModuleOp> module =
-      cast<ModuleOp>(parserContext.getModule()->clone(mapping));
+  OwningOpRef<ModuleOp> module = KGEN::LIT::cloneDeclModuleForCompilation(
+      *exprFnDecl.getParentDecl(), mapping);
+  if (failed(mlir::verify(*module)))
+    return returnErrorCleanup();
 
   // Ensure the expression function in the cloned module gets exported.
   auto clonedExprFn = cast<LIT::FuncOp>(mapping.lookup(&*exprFn));

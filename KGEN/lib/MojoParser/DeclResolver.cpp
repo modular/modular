@@ -485,15 +485,6 @@ ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
   return errDecl;
 }
 
-/// Resolve all of the declarations that are visible.
-void DeclResolver::resolveAll() {
-  // We can do this in any order, but choose to use the order they are
-  // discovered so diagnostics are mostly top-down.  Resolving declarations
-  // may cause more entries to be added to this list.
-  for (size_t i = 0; i != parsedDeclList.size(); ++i)
-    (void)resolveFully(*parsedDeclList[i], parsedDeclList[i]->getLoc());
-}
-
 void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
   TimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
     return decl.getNameIfOperation().value_or("").str();

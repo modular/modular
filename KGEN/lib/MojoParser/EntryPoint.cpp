@@ -359,11 +359,15 @@ LIT::importMojoFile(llvm::SourceMgr &sourceMgr, ParserConfig &config,
 }
 
 OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl) {
+  IRMapping mapping;
+  return cloneDeclModuleForCompilation(decl, mapping);
+}
+OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl,
+                                                         IRMapping &mapping) {
   Operation *declOp = decl.getIfOperation();
   assert(declOp && "expected decl to be an operation");
 
   // Clone the module containing the decl.
-  IRMapping mapping;
   ModuleOp declModule = declOp->getParentOfType<ModuleOp>();
   OwningOpRef<ModuleOp> newModule = cast<ModuleOp>(declModule->clone(mapping));
   Operation *newDeclOp = mapping.lookup(declOp);

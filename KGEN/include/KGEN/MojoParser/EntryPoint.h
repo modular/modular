@@ -125,6 +125,8 @@ importMojoPackage(StringRef path, StringRef packageName,
 /// This handles stripping out any unused decls, stabilizing value uses, and
 /// performing any other necessary transformations.
 OwningOpRef<ModuleOp> cloneDeclModuleForCompilation(ASTDecl &decl);
+OwningOpRef<ModuleOp> cloneDeclModuleForCompilation(ASTDecl &decl,
+                                                    mlir::IRMapping &mapping);
 
 //===----------------------------------------------------------------------===//
 // ParserListener
