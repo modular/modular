@@ -34,8 +34,9 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState {
 public:
-  ParameterInferenceState(SharedState &shared, size_t index)
-      : shared(shared), parameterIndex(index) {}
+  ParameterInferenceState(SharedState &shared, size_t index,
+                          ParserParamEvaluator &evaluator)
+      : shared(shared), parameterIndex(index), evaluator(evaluator) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
   /// signature, try to infer the value of the next 'decl' parameter.  This
@@ -55,6 +56,7 @@ private:
 
   SharedState &shared;
   size_t parameterIndex;
+  ParserParamEvaluator &evaluator;
   SmallVector<PValue> inferredValues;
 };
 } // namespace
@@ -135,16 +137,12 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
     if (ire.getDepth() == 0 && !ire.getIsResult() &&
         ire.getIndex() == parameterIndex) {
-      if (actualAttr.getType() == expectedAttr.getType())
+      Type expectedType = evaluator.getReboundType(expectedAttr.getType());
+      if (actualAttr.getType() == expectedType)
         inferredValues.push_back(actualAttr);
-      else if (canZeroCostConvert(shared, actualAttr.getType(),
-                                  expectedAttr.getType())) {
+      else if (canZeroCostConvert(shared, actualAttr.getType(), expectedType)) {
         inferredValues.push_back(KGEN::ParamOperatorAttr::get(
-            POC::Rebind, actualAttr, expectedAttr.getType()));
-      } else {
-        // HACK: Assume the types are rebound to be the same.
-        // FIXME: Pass an ParamEvaluator here.
-        inferredValues.push_back(actualAttr);
+            POC::Rebind, actualAttr, expectedType));
       }
     }
     return;
@@ -822,11 +820,12 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
   };
 
-  auto parameterInferenceHook = [&](size_t index,
-                                    ArrayRef<TypedAttr> bindingsSoFar,
-                                    TypedAttr defaultParam) -> PValue {
-    if (PValue inferred = ParameterInferenceState(emitter.shared, index)
-                              .infer(signature, bindingsSoFar, callOperands))
+  auto parameterInferenceHook =
+      [&](size_t index, ArrayRef<TypedAttr> bindingsSoFar,
+          TypedAttr defaultParam, ParserParamEvaluator &evaluator) -> PValue {
+    if (PValue inferred =
+            ParameterInferenceState(emitter.shared, index, evaluator)
+                .infer(signature, bindingsSoFar, callOperands))
       return inferred;
     return PValue(defaultParam);
   };
