@@ -22,6 +22,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 #include <cmath>
+
 #define DEBUG_TYPE "llcl"
 
 using namespace M;
@@ -247,6 +248,7 @@ struct WorkQueueThread {
   ///
   /// Work items on this list always take precedence over those in taskList and
   /// overflowTaskList.
+  size_t nextLocalTaskListIndex = 0;
   SmallVector<WorkItem, 6> localTaskList;
   /// Thread Local Queue of tasks processed according to taskId ordering.
   /// This is like localTaskList but can have multiple producers.
@@ -485,20 +487,26 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // Stop immediately if there is nothing to do.
     if (earlyStopPredicate())
       return;
+
     // Prefer to run local work items as soon as they are available.
-    // CAUTION: a work function may add to this list, and may even invoke
-    // runItems recursively.
-    while (!localTaskList.empty()) {
+    // CAUTION: A work function may append to this list, and may even
+    //          invoke runItems recursively.
+    while (nextLocalTaskListIndex < localTaskList.size()) {
 #if MODULAR_PARANOID
       // Try to tickle bugs by working through work items in random order.
       size_t i = rand() % localTaskList.size();
       WorkItem workItem = std::move(localTaskList[i]);
       localTaskList.erase(localTaskList.begin() + i);
 #else
-      WorkItem workItem = localTaskList.pop_back_val();
+      WorkItem workItem = std::move(localTaskList[nextLocalTaskListIndex++]);
 #endif
+      // May append to localTaskList.
+      // May re-enter this loop.
       doWork</*IsWaiter=*/true>(std::move(workItem));
     }
+    localTaskList.clear();
+    nextLocalTaskListIndex = 0;
+
     // Check for tasks in local taskId affinitized queue.
     if (auto workItem = affinityTaskList.dequeue()) {
       doWork</*IsWaiter=*/false>(std::move(workItem));
