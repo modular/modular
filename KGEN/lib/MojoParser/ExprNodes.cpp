@@ -717,8 +717,8 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
                        StringRef getterName, StringRef setterName,
                        CallSyntax syntax, function_ref<void()> lookupError,
                        SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
-                       SmallDenseMap<StringRef, FuncOperand> &&kwOperands =
-                           SmallDenseMap<StringRef, FuncOperand>()) {
+                       SmallDenseMap<StringAttr, FuncOperand> &&kwOperands =
+                           SmallDenseMap<StringAttr, FuncOperand>()) {
   // If there is no getter at all, then this is not a subscriptable type.
   OverloadSet getter(baseType, getterName, node, syntax, emitter.shared,
                      /*no error on failure*/ {});
@@ -1285,7 +1285,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   /// Emit all the operands that we'll need.
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands;
+  SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>> kwOperands;
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       emitter.emitError(operand.getLoc(),
@@ -1629,7 +1629,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> posOperands{{baseValue, base}};
-  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands;
+  SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>> kwOperands;
   for (const Operand &operand : operands) {
     ExprNode *expr = operand.value;
     ValueDest indexDest(EC_Subscript);

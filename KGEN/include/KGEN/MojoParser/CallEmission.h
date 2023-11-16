@@ -228,7 +228,7 @@ struct CallOperands {
 
   /// Create call operands with positional and optional keyword arguments.
   CallOperands(PositionalOperands posOperands = {},
-               const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>>
+               const SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>>
                    *kwOperands = nullptr)
       : posOperands(posOperands), kwOperands(kwOperands) {}
 
@@ -243,7 +243,7 @@ struct CallOperands {
   }
 
   /// Return a keyword argument value if present, or null otherwise.
-  std::optional<ASTExprAnd<AnyValue>> findKwArg(StringRef argName) const {
+  std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
     if (hasKwOperands())
       if (auto it = kwOperands->find(argName); it != kwOperands->end())
         return it->getSecond();
@@ -262,7 +262,7 @@ struct CallOperands {
   PositionalOperands posOperands;
 
   /// The values passed as keyword operands.
-  const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> *kwOperands;
+  const SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>> *kwOperands;
 
   /// Inidicates if the positional operands include a self operand.
   bool hasSelfOperand = false;

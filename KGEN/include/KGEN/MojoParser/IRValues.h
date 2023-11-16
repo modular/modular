@@ -768,13 +768,13 @@ public:
   // Positional operands (including self) for the setter/getter call.
   SmallVector<FuncOperand> posOperands;
   // Keyword operands for the setter/getter call.
-  SmallDenseMap<StringRef, FuncOperand> kwOperands;
+  SmallDenseMap<StringAttr, FuncOperand> kwOperands;
 
   /// Return true if this is a subscript, false if this is an attribute access.
   bool isSubscript() const;
 
   SubscriptDLValue(SmallVectorImpl<FuncOperand> &&posOperands,
-                   SmallDenseMap<StringRef, FuncOperand> &&kwOperands,
+                   SmallDenseMap<StringAttr, FuncOperand> &&kwOperands,
                    ASTType elementType, const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
