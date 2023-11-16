@@ -859,6 +859,13 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 //===----------------------------------------------------------------------===//
 // Type conversion helpers.
 
+/// Return true if the given type implements the trait.
+static bool metaTypeImplements(TraitType trait, ASTDecl *typeDecl) {
+  return llvm::count(
+      cast<StructDeclOp>(typeDecl).getTraits().value_or(std::nullopt),
+      trait.getSymbol());
+}
+
 bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                              ASTType requiredType,
                                              bool allowArgNameCheck) {
@@ -871,9 +878,10 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     return true;
 
   // Metatypes can implicitly convert to any trait type they implement.
-  // TODO(traits): Enforce conformance checking here.
-  if (isa<TraitType>(requiredType) && isa<MetaTypeType>(rvType))
-    return true;
+  if (auto traitType = dyn_cast<TraitType>(requiredType))
+    if (isa<MetaTypeType>(rvType) &&
+        metaTypeImplements(traitType, rvType.getDecl(shared)))
+      return true;
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
@@ -959,9 +967,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
 
   // Check that the struct implements the trait.
   ASTDecl *typeDecl = ASTType(metatype).getDecl(shared);
-  if (!llvm::count(
-          cast<StructDeclOp>(typeDecl).getTraits().value_or(std::nullopt),
-          trait.getSymbol())) {
+  if (!metaTypeImplements(trait, typeDecl)) {
     dest.resetForError();
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << ASTType(metatype) << " to trait " << ASTType(trait)

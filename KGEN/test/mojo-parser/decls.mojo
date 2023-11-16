@@ -1700,6 +1700,9 @@ fn take_simple_trait[T: SimpleTrait]():
     pass
 
 
+fn infer_trait[T: SimpleTrait](value: T):
+    pass
+
 # CHECK-LABEL: lit.func @"test_metatype_to_trait_vtable
 fn test_metatype_to_trait_vtable():
     # CHECK: call {{.*}}take_simple_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [!TraitStruct, {
@@ -1710,3 +1713,10 @@ fn test_metatype_to_trait_vtable():
     # CHECK-SAME: "method" : !lit.signature<("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>
     # CHECK-SAME: "param_method" : !lit.signature<<"x": index>("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>
     take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()
+
+# CHECK-LABEL: lit.func @"test_infer_trait
+fn test_infer_trait(a: TraitStruct, b: ParametricTraitStruct[__mlir_attr.`2 : index`]):
+    # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [!TraitStruct,
+    infer_trait(a)
+    # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2>,
+    infer_trait(b)
