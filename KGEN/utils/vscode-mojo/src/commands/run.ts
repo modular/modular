@@ -27,14 +27,11 @@ class ExecutionManager extends DisposableContext {
    * Activate the run commands, used for executing and debugging mojo files.
    */
   activateRunCommands() {
-    let execCommands = [
-      'mojo.execInTerminal', 'mojo.execInTerminal-icon',
-      'mojo.execInDedicatedTerminal'
-    ];
-    for (const cmd of execCommands) {
+    for (const cmd of ['mojo.execFileInTerminal',
+                       'mojo.execFileInDedicatedTerminal']) {
       this.pushSubscription(vscode.commands.registerCommand(cmd, async () => {
         await this.executeFileInTerminal({
-          newTerminalPerFile : cmd === 'mojo.execInDedicatedTerminal',
+          newTerminalPerFile : cmd === 'mojo.execFileInDedicatedTerminal',
         });
       }));
     }
@@ -62,6 +59,7 @@ class ExecutionManager extends DisposableContext {
     // Execute the file.
     let terminal =
         this.getTerminalForFile(doc, config, options.newTerminalPerFile);
+    terminal.show();
     terminal.sendText(config.mojoDriverPath + ' ' + doc.fileName);
 
     // Focus on the terminal if the user has configured it to do so.

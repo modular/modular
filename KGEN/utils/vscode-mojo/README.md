@@ -10,7 +10,8 @@ This VS Code extension from the Modular team adds support for the
 - Code diagnostics and quick fixes
 - API docs on hover
 - Code formatting
-- Run Mojo File
+- Run mojo file
+- Mojo debug
 
 ## Get started
 
@@ -78,13 +79,26 @@ Rebind the hotkey in Preferences: Open Keyboard Shortcuts >
 
 ## Run Mojo File
 
-There will be a small `▶️` button up the top right of a Mojo file to run the
-active file:
+The extension provides a set of actions on the top right of a Mojo file to run
+the active file, which by default are under a small `▶️` button up the top right
+of the editor:
 
 ![run-file](https://github.com/modularml/mojo/assets/77730378/22ef37cf-154a-430b-9ef3-427dbab411fc)
 
-Bind a hotkey in Preferences: Open Keyboard Shortcuts >
-`Mojo: Run Mojo File`
+These actions are also available in the command palette.
+
+You may bind a hotkey in Preferences: Open Keyboard Shortcuts >
+`Mojo: Run Mojo File in Terminal`
+
+### Run Mojo File in Terminal
+
+This executes the current mojo file in a terminal that is reused by other
+invocations of this same action, even if they run a different file.
+
+### Run Mojo File in Dedicated Terminal
+
+This executes the current mojo file in a dedicated terminal that is reused only
+by subsequent runs of this very same file.
 
 ## Code Formatting
 
