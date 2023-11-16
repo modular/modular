@@ -50,6 +50,9 @@ public:
   /// Get the function parameter passing kinds (e.g. keyword-only).
   ArrayRef<PassingKind> getParamPassingKinds();
 
+  /// LIT-level signatures always have one result type.
+  Type getResultType() { return getValueResults().front(); }
+
   /// Return this signature with the input parameters dropped.
   LITSignatureType dropParamValues();
 
