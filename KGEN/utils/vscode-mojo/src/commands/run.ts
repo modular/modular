@@ -29,15 +29,23 @@ class ExecutionManager extends DisposableContext {
   activateRunCommands() {
     for (const cmd of ['mojo.execFileInTerminal',
                        'mojo.execFileInDedicatedTerminal']) {
-      this.pushSubscription(vscode.commands.registerCommand(cmd, async () => {
-        await this.executeFileInTerminal({
-          newTerminalPerFile : cmd === 'mojo.execFileInDedicatedTerminal',
-        });
-      }));
+      this.pushSubscription(
+          vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
+            await this.executeFileInTerminal(
+                file,
+                /*newTerminalPerFile=*/ cmd ===
+                    'mojo.execFileInDedicatedTerminal',
+            );
+          }));
     }
 
-    this.pushSubscription(vscode.commands.registerCommand(
-        'mojo.debugInTerminal', async () => { this.debugFileInTerminal(); }));
+    for (const cmd of ['mojo.debugFile', 'mojo.debugFileInTerminal']) {
+      this.pushSubscription(
+          vscode.commands.registerCommand(cmd, async (file?: vscode.Uri) => {
+            await this.debugFile(file, /*runInTerminal=*/ cmd ===
+                                           'mojo.debugFileInTerminal');
+          }));
+    }
   }
 
   /**
@@ -45,8 +53,9 @@ class ExecutionManager extends DisposableContext {
    *
    * @param options Options to consider when executing the file.
    */
-  async executeFileInTerminal(options: {newTerminalPerFile: boolean}) {
-    let doc = await this.getFileToExecute();
+  async executeFileInTerminal(file: vscode.Uri|undefined,
+                              newTerminalPerFile: boolean) {
+    let doc = await this.getDocumentToExecute(file);
     if (!doc)
       return;
 
@@ -57,8 +66,7 @@ class ExecutionManager extends DisposableContext {
       return;
 
     // Execute the file.
-    let terminal =
-        this.getTerminalForFile(doc, config, options.newTerminalPerFile);
+    let terminal = this.getTerminalForFile(doc, config, newTerminalPerFile);
     terminal.show();
     terminal.sendText(config.mojoDriverPath + ' ' + doc.fileName);
 
@@ -68,10 +76,14 @@ class ExecutionManager extends DisposableContext {
   }
 
   /**
-   * Debug the current file in a terminal.
+   * Debug the current file.
+   *
+   * @param runInTerminal If true, then a target is launched in a new
+   *     terminal, and therefore its stdin and stdout are not managed by the
+   *     Debug Console.
    */
-  async debugFileInTerminal() {
-    let doc = await this.getFileToExecute();
+  async debugFile(file: vscode.Uri|undefined, runInTerminal: boolean) {
+    let doc = await this.getDocumentToExecute(file);
     if (!doc)
       return;
 
@@ -80,6 +92,7 @@ class ExecutionManager extends DisposableContext {
       name : "Mojo",
       request : "launch",
       mojoFile : doc.fileName,
+      runInTerminal : runInTerminal,
     };
     await vscode.debug.startDebugging(
         vscode.workspace.getWorkspaceFolder(doc.uri), debugConfig);
@@ -106,14 +119,29 @@ class ExecutionManager extends DisposableContext {
   }
 
   /**
-   * Get the currently active file to execute.
+   * Get the vscode.Document to execute, ensuring that it's saved if pending
+   * changes exist.
+   *
+   * This method show a pop up in case of errors.
+   *
+   * @param file If provided, the document will point to this file, otherwise,
+   *     it will point to the currently active document.
    */
-  async getFileToExecute(): Promise<vscode.TextDocument|undefined> {
-    let doc = vscode.window.activeTextEditor?.document;
-    if (!doc)
+  async getDocumentToExecute(file?: vscode.Uri):
+      Promise<vscode.TextDocument|undefined> {
+    let doc = file === undefined
+                  ? vscode.window.activeTextEditor?.document
+                  : await vscode.workspace.openTextDocument(file);
+    if (!doc) {
+      vscode.window.showErrorMessage(
+          `Couldn't access the file '${file}' for execution.`);
       return undefined;
-    if (doc.isDirty && !await doc.save())
+    }
+    if (doc.isDirty && !await doc.save()) {
+      vscode.window.showErrorMessage(
+          `Couldn't save file '${file}' before execution.`);
       return undefined;
+    }
     return doc;
   }
 

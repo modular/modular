@@ -12,9 +12,12 @@
 - Added support for JIT debugging Mojo source files using F5 if no launch
   configurations are present.
 
-## Fixed
+- Added a `Debug Mojo File in Terminal` action.
 
-- Fixed the `Debug Mojo File` action in the editor's top menu and drop the
-  experimental tag.
+- Added a `Mojo` submenu for Mojo files in the File Explorer that exposes the
+  `Run or Debug Mojo File` actions.
 
-- Improved the experience of the `Run Mojo File` actions.
+## Changed
+
+- Enhanced the `Run or Debug Mojo File` actions, fixing bugs, improving icons
+  and wording, as well as polishing the overall experience.
