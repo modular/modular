@@ -111,8 +111,8 @@ fn test() raises:
             DTypePointer[type],
             DTypePointer[type],
             Float32,
-            Int,
-            Int,
+            Scalar[DType.uint32],
+            Scalar[DType.uint32],
         ) -> None, flash_attention_kernel[
             BM=32,  # q_tile_num_rows,
             BN=128,  # kv_tile_num_rows,
