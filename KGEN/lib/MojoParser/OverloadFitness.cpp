@@ -487,18 +487,16 @@ InflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
 }
 
 InflightDiag DiagEmitter::resultGenericMemType(Type outputType) const {
-  return initDiag()
-         << "result cannot bind generic !mlirtype to memory-only type "
-         << outputType;
+  return initDiag() << "result cannot bind AnyRegType type to memory-only type "
+                    << outputType;
 }
 
 InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
                                             Type expectedType) const {
   InflightDiag diag = initDiag();
   describeArgumentNo(diag, expectedArgIdx);
-  return std::move(diag)
-         << " cannot bind generic !mlirtype to memory-only type "
-         << expectedType;
+  return std::move(diag) << " cannot bind AnyRegType type to memory-only type "
+                         << expectedType;
 }
 
 InflightDiag DiagEmitter::redundantArg(size_t argIdx,
