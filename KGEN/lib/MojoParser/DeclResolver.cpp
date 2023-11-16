@@ -3896,87 +3896,89 @@ static void processRegisterPassableDecorator(
 //===----------------------------------------------------------------------===//
 
 /// Get specialized signature of a trait function with a struct (who implements
-/// the trait) type.
-static SignatureType getSpecializedSignature(LIT::FuncOp traitFn,
-                                             Type structSelfType,
-                                             Type structSelfMetaType) {
-  auto signature = traitFn.getFullSignature();
-  SmallVector<TypedAttr> newInputParamValues;
-  SmallVector<Type> newInputParamTypes;
-
+/// the trait) type. Also return parameter bindings for specializing the
+/// expected struct method with the current struct type.
+static std::pair<SignatureType, InputParamBindings>
+getTraitFunctionSignature(SharedState &shared, LIT::FuncOp traitFn,
+                          ASTType structSelfType) {
+  LITSignatureType signature = traitFn.getFullSignature();
+  SmallVector<TypedAttr> params;
   ArrayRef<Type> inputParamTypes = signature.getInputParamTypes();
 
   // Add trait's MT replacement.
   // FIXME(generics): We aren't propagating metatypes into pointer types, so
   // just pass a generic metatype here.
   auto anyRegTypeType = AnyRegTypeType::get(traitFn.getContext());
-  newInputParamValues.push_back(
-      TypeConstantAttr::get(anyRegTypeType, anyRegTypeType));
+  params.push_back(TypeConstantAttr::get(anyRegTypeType, anyRegTypeType));
   // Add trait's T replacement.
-  newInputParamValues.push_back(
-      TypeConstantAttr::get(structSelfType, anyRegTypeType));
+  params.push_back(TypeConstantAttr::get(structSelfType, anyRegTypeType));
+  ParameterEvaluator evaluator(params);
+  auto bindings = InputParamBindings::getForDeclaredType(
+      structSelfType.getMetaType(), shared);
+  for (Type type : inputParamTypes.drop_front(2)) {
+    params.push_back(UnboundAttr::get(type));
+    evaluator.addInputValue(params.back());
+    bindings.addPrechecked(params.back());
+  }
 
-  for (Type type : inputParamTypes.drop_front(2))
-    newInputParamValues.push_back(UnboundAttr::get(type));
-
-  return signature.getSpecializedSignature(newInputParamValues);
+  return {signature.getSpecializedSignature(params), std::move(bindings)};
 }
 
 /// Check conformance for struct that implements traits.
-static LogicalResult verifyConformance(LIT::StructDeclOp structDeclOp,
-                                       ASTDecl &structDecl, Type structSelfType,
-                                       Type structSelfMetaType,
+static LogicalResult verifyConformance(ASTDecl &structDecl,
                                        SharedState &shared) {
-  InflightDiag diag =
-      shared.emitError(structDeclOp.getLoc(), "conformance check failed");
-
-  llvm::SmallVector<StringRef> failedTraits;
-  DenseMap<StringRef, DenseSet<SignatureType>> structFnSignatures;
-  for (auto [name, decls] : structDecl.getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      if (auto structFn = dyn_cast<LIT::FuncOp>(*decl))
-        structFnSignatures[name.strref()].insert(structFn.getSignature());
-    }
-  }
+  auto structDeclOp = cast<StructDeclOp>(structDecl);
+  bool hadErrors = false;
+  SyntheticNode node(structDecl.getLoc());
+  ExprEmitter emitter(shared, structDecl, EC_Trait);
+  ASTType selfType = structDecl.getSelfType();
 
   for (SymbolRefAttr attr : structDeclOp.getTraitsAttr()) {
     ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
     bool allMatchFound = true;
+    // Prepare an error. It will be abandoned if the check succeeds.
+    StringRef traitName = cast<TraitDeclOp>(traitDecl).getSymName();
+    InflightDiag diag = shared.emitError(structDecl.getLoc(), "struct ")
+                        << selfType
+                        << " does not implement all requirements for '"
+                        << traitName << "'";
+
     for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
-        auto traitFn = cast<LIT::FuncOp>(*decl);
-        SignatureType newSignature = getSpecializedSignature(
-            traitFn, structSelfType, structSelfMetaType);
-        auto iter = structFnSignatures.find(name);
-        if (iter != structFnSignatures.end() &&
-            iter->second.contains(newSignature))
-          continue;
-        diag.attachNote(traitFn.getLoc())
-            << "required function '" + name.str() + "' is not implemented";
-        allMatchFound = false;
+        auto traitFn = dyn_cast<LIT::FuncOp>(*decl);
+        // Skip any children that aren't methods. This could be an alias.
+        if (!traitFn)
+          break;
+        ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
+        if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
+          diag.attachNote(traitFn.getLoc())
+              << "required function '" + name.str() + "' is not implemented";
+          allMatchFound = false;
+          break;
+        }
+
+        auto [newSignature, bindings] =
+            getTraitFunctionSignature(shared, traitFn, selfType);
+        OverloadSet ov(name, decls, std::move(bindings), &node,
+                       CallSyntax::kMethodCall);
+        PValue result = ov.filterOverloadSetForValueType(
+            newSignature, emitter, [&](SMLoc loc) -> InflightDiag & {
+              return diag.attachNote(decl->getLoc());
+            });
+        if (!result)
+          allMatchFound = false;
       }
     }
-    if (!allMatchFound)
-      failedTraits.push_back(traitDecl.getNameIfOperation().value());
+    if (allMatchFound) {
+      diag.abandon();
+    } else {
+      diag.attachNote(traitDecl.getLoc())
+          << "trait '" << traitName << "' declared here";
+      hadErrors = true;
+    }
   }
 
-  if (failedTraits.empty()) {
-    diag.abandon();
-    return success();
-  }
-
-  std::string errMsg;
-  llvm::raw_string_ostream os(errMsg);
-  os << "struct '" << structDeclOp.getNameAttr().str()
-     << "' does not implement all requirements for ";
-  for (auto [idx, failedTrait] : llvm::enumerate(failedTraits)) {
-    os << "'" << failedTrait << "'";
-    if (idx < failedTraits.size() - 1)
-      os << ", ";
-  }
-
-  diag.attachNote(structDeclOp.getLoc()) << os.str();
-  return failure();
+  return success(!hadErrors);
 }
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
@@ -4080,8 +4082,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     }
   }
 
-  return verifyConformance(structOp, structDecl, structDecl.getSelfType(),
-                           structDecl.getSelfType().getMetaType(), shared);
+  return verifyConformance(structDecl, shared);
 }
 
 //===----------------------------------------------------------------------===//

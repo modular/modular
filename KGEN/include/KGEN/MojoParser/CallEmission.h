@@ -376,6 +376,9 @@ public:
   PValue filterOverloadSetForValueType(ASTType functionType,
                                        bool emitDiagnosticOnFailure,
                                        ExprEmitter &emitter) const;
+  PValue filterOverloadSetForValueType(
+      ASTType functionType, ExprEmitter &emitter,
+      function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
 
   /// Resolve the callee into either a single PValue callee (if there's only one
   /// decl provided) or a variadic that contains all the possible adaptive

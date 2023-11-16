@@ -862,18 +862,30 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   return {};
 }
 
-/// Filter down and complete this overload set based on knowledge that we need
-/// to produce a function pointer with the specified type.
 PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
                                                   bool emitDiagnosticOnFailure,
                                                   ExprEmitter &emitter) const {
+  if (!emitDiagnosticOnFailure) {
+    return filterOverloadSetForValueType(functionType, emitter,
+                                         /*emitError=*/{});
+  }
+  std::optional<InflightDiag> diag;
+  return filterOverloadSetForValueType(
+      functionType, emitter, [&](SMLoc loc) -> InflightDiag & {
+        return diag.emplace(emitter.emitError(loc));
+      });
+}
+
+PValue OverloadSet::filterOverloadSetForValueType(
+    ASTType functionType, ExprEmitter &emitter,
+    function_ref<InflightDiag &(SMLoc)> emitError) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
   if (!isa<SignatureType>(functionType.mlirType)) {
-    if (emitDiagnosticOnFailure) {
-      auto diag = emitter.emitError(expr->getLoc())
-                  << "cannot convert function to non-function type "
-                  << functionType;
+    if (emitError) {
+      auto &diag = emitError(expr->getLoc())
+                   << "cannot convert function to non-function type "
+                   << functionType;
       for (ASTDecl *candidate : fnDecls)
         diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
             << "candidate declared here with type "
@@ -961,10 +973,10 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
-  if (!emitDiagnosticOnFailure)
+  if (!emitError)
     return {};
 
-  auto diag = emitter.emitError(expr->getLoc());
+  auto &diag = emitError(expr->getLoc());
   if (validCandidates.empty()) {
     diag << "no '" << baseName << "' candidates have type " << functionType
          << expr->getRange();
@@ -973,11 +985,11 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
          << expr->getRange();
   }
 
-  for (ASTDecl *candidate : fnDecls)
+  for (ASTDecl *candidate : fnDecls) {
     diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
         << "candidate declared here with type "
         << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
-
+  }
   return {};
 }
 
