@@ -656,7 +656,8 @@ fn simd_store[
 # through NDBuffer
 @always_inline
 fn buffer_to_scalar[
-    target: StringLiteral, type: DType
+    target: StringLiteral,
+    type: DType,
 ](
     buf: NDBuffer[1, DimList.create_unknown[1](), type],
     out_chain: OutputChainPtr,
@@ -1202,7 +1203,8 @@ fn mean[
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
-    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
+    # The axis is always on the host.
+    let axis = buffer_to_scalar["cpu"](axis_buffer, out_chain)
     _mean[
         type,
         rank,
