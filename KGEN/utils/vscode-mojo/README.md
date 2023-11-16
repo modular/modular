@@ -10,7 +10,7 @@ This VS Code extension from the Modular team adds support for the
 - Code diagnostics and quick fixes
 - API docs on hover
 - Code formatting
-- Run mojo file
+- Run or debug Mojo file
 - Mojo debug
 
 ## Get started
@@ -77,28 +77,42 @@ the lightbulb icon or use the default hotkey `ctrl + .` for a list of options:
 Rebind the hotkey in Preferences: Open Keyboard Shortcuts >
 `Quick Fix...`
 
-## Run Mojo File
+## Run or Debug Mojo File
 
-The extension provides a set of actions on the top right of a Mojo file to run
-the active file, which by default are under a small `▶️` button up the top right
-of the editor:
+The extension provides a set of actions on the top-right of a Mojo file to run
+or debug the active file, which by default are under a small `▶️` button up the
+top-right of the editor:
 
 ![run-file](https://github.com/modularml/mojo/assets/77730378/22ef37cf-154a-430b-9ef3-427dbab411fc)
 
-These actions are also available in the command palette.
+These actions are also available in the command palette and under the `Mojo`
+submenu in the File Explorer when right-clicking on Mojo files.
 
-You may bind a hotkey in Preferences: Open Keyboard Shortcuts >
-`Mojo: Run Mojo File in Terminal`
+You may bind hotkeys to any of the actions listed here. For example, to bind a
+hotkey for the "Run Mojo File in Terminal" action, open preferences, then select
+`Keyboard Shortcuts > Mojo: Run Mojo File in Terminal`.
 
 ### Run Mojo File in Terminal
 
-This executes the current mojo file in a terminal that is reused by other
+This executes the current Mojo file in a terminal that is reused by other
 invocations of this same action, even if they run a different file.
 
 ### Run Mojo File in Dedicated Terminal
 
-This executes the current mojo file in a dedicated terminal that is reused only
+This executes the current Mojo file in a dedicated terminal that is reused only
 by subsequent runs of this very same file.
+
+### Debug Mojo File
+
+This debugs the current Mojo file without creating a new terminal. The stdin and
+stdout of the new process are managed by the debugger in the Debug Console.
+
+### Debug Mojo File in Terminal
+
+This launches the current Mojo file in a new terminal and attaches the debugger
+to it, without the debugger interfering with the stdin and stdout of the
+process. This terminal may be reused by subsequent invocations of this action,
+as the editor controls this behavior.
 
 ## Code Formatting
 
