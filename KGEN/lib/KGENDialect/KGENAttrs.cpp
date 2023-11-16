@@ -1946,7 +1946,7 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   return {};
 }
 
-static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands,
+static TypedAttr simplifyGetTypeMethod(ArrayRef<TypedAttr> operands,
                                        Type resultType) {
   auto typeConstant = dyn_cast<TypeConstantAttr>(operands[0]);
   // typeConstant may actually be a parameter if this is called before
@@ -1956,6 +1956,15 @@ static TypedAttr evaluateGetTypeMethod(ArrayRef<TypedAttr> operands,
   VTableAttr vtable = typeConstant.getVTable();
   StringAttr targetName = cast<StringAttr>(operands[1]);
   SignatureType targetSignature = cast<SignatureType>(resultType);
+  // FIXME: Nuke out nested vtables in the target signature. This occurs when
+  // attempting to extract a method with a self type reference, since the type
+  // parameter will have the vtable but the signatures inside it will not.
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([](TypeConstantAttr type) {
+    return TypeConstantAttr::get(type.getValue(), type.getType());
+  });
+  targetSignature = cast<SignatureType>(replacer.replace(targetSignature));
+
   // Scan the vtable for a name + signature match, then the method is the
   // payload.
   for (VTableEntryAttr entry : vtable.getEntries()) {
@@ -2076,7 +2085,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     result = {};
     break;
   case POC::GetTypeMethod:
-    result = evaluateGetTypeMethod(operands, resultType);
+    result = simplifyGetTypeMethod(operands, resultType);
     break;
   }
 
@@ -2302,6 +2311,10 @@ std::string PackageArchiveArrayAttr::getTargetsAsString() {
 
 Type TypeConstantAttr::getValue() const {
   return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->value;
+}
+
+Type TypeConstantAttr::getType() const {
+  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->type;
 }
 
 VTableAttr TypeConstantAttr::getVTable() const {
