@@ -2549,6 +2549,7 @@ fn softmax[
     input_0_fn: fn[_simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _simd_width],
+    target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -2560,6 +2561,7 @@ fn softmax[
         rank,
         DimList.create_unknown[rank](),
         input_0_fn,
+        target,
     ](shape, output, rank - 1, out_chain)
 
 
