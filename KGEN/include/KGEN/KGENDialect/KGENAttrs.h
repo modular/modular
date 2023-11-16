@@ -49,6 +49,9 @@ public:
   /// Returns the constant type value.
   Type getValue() const;
 
+  /// Get the metatype.
+  Type getType() const;
+
   /// Returns the constant type vtable.
   VTableAttr getVTable() const;
 
