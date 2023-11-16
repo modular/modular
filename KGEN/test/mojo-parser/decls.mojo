@@ -1801,3 +1801,18 @@ struct RegTypeTrivial(TraitForReg):
     @staticmethod
     fn may_throw() raises -> Self:
         pass
+
+trait AsyncTrait:
+    async fn foobar(self):
+        pass
+
+
+struct AsyncStruct(AsyncTrait):
+    async fn foobar(self):
+        pass
+
+
+# CHECK-LABEL: lit.func @"async_trait
+fn async_trait[T: AsyncTrait](value: T):
+    # CHECK: lit.async.call[!lit.signature<("self": {{.*}} borrow_in_mem) async -> !kgen.none>: get_type_method
+    _ = value.foobar()
