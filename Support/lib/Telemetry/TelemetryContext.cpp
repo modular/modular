@@ -90,11 +90,6 @@ static void configureInternalLogging(Config &cfg) {
 }
 #endif // MODULAR_ENABLE_TELEMETRY
 
-TelemetryContext::TelemetryContext(Config config) {
-  const llvm::StringMap<AttributeValue> resources;
-  TelemetryContext(resources, std::move(config));
-}
-
 TelemetryContext::TelemetryContext(
     const llvm::StringMap<TelemetryContext::AttributeValue> &resources,
     std::optional<Config> config) {
