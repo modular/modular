@@ -43,7 +43,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   // FIXME(#25742): The MLIR region simplifier has exponential behaviour.
   mlir::GreedyRewriteConfig config;
   config.enableRegionSimplification = false;
-  pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass());
+  pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass(config));
   pm.addNestedPass<LLVMFuncOp>(mlir::createCSEPass());
 
   // If requested, generate debug info at the LLVM level.
