@@ -1180,7 +1180,8 @@ void MojoDocStringCodeBlocks::addCodeBlocks(MojoDocument &mainDoc,
 
     // Create the new codeblock.
     CodeBlock *codeBlock = codeBlocks.emplace_back(
-        new (codeBlockAllocator.Allocate()) CodeBlock(persistentVariables));
+        new (codeBlockAllocator.Allocate())
+            CodeBlock(mainDocContents, persistentVariables));
 
     // Parse the code block.
     LSPMojoREPLListener listener(sourceMgr, persistentVariables);
@@ -1194,6 +1195,29 @@ void MojoDocStringCodeBlocks::addCodeBlocks(MojoDocument &mainDoc,
     // Map the code block location to the main buffer.
     rangeToCodeBlock.insert(docStartLoc, docEndLoc, codeBlock);
   }
+}
+
+auto MojoDocStringCodeBlocks::findContainingCodeBlock(SMLoc loc)
+    -> CodeBlock * {
+  if (auto it = rangeToCodeBlock.find(loc); it.valid() && it.start() <= loc)
+    return it.value();
+  return nullptr;
+}
+
+std::vector<KGEN::Mojo::CodeCompletionResult>
+MojoDocStringCodeBlocks::CodeBlock::onCodeCompletion(llvm::SMLoc completeLoc,
+                                                     MojoParserContext &ctx) {
+  uint64_t rawCompletePos = completeLoc.getPointer() - contents.data();
+  return ctx.codeCompleteREPLExpression(contents, rawCompletePos,
+                                        persistentVariables, decl);
+}
+
+std::optional<KGEN::Mojo::SignatureHelpResult>
+MojoDocStringCodeBlocks::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
+                                                    MojoParserContext &ctx) {
+  uint64_t rawPos = loc.getPointer() - contents.data();
+  return ctx.signatureHelpREPLExpression(contents, rawPos, persistentVariables,
+                                         decl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1252,6 +1276,11 @@ SMLoc MojoTextDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
 
 std::vector<KGEN::Mojo::CodeCompletionResult>
 MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
+  // Check for code completion within a code block.
+  if (auto *codeBlock = codeBlocks.findContainingCodeBlock(completeLoc))
+    return codeBlock->onCodeCompletion(completeLoc, getParserContext());
+
+  // Otherwise, perform completion using the main doc.
   llvm::SourceMgr &sourceMgr = getSourceMgr();
   const llvm::MemoryBuffer *buffer =
       sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
@@ -1283,6 +1312,11 @@ MojoTextDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
 MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
+  // Check for signature help within a code block.
+  if (auto *codeBlock = codeBlocks.findContainingCodeBlock(loc))
+    return codeBlock->onSignatureHelp(loc, getParserContext());
+
+  // Otherwise, perform signature help using the main doc.
   llvm::SourceMgr &sourceMgr = getSourceMgr();
   const llvm::MemoryBuffer *buffer =
       sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
@@ -1421,6 +1455,10 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
          "expected to find cell buffer containing location");
   Cell &cell = *cells[cellBufferId - 1];
 
+  // Check for code completion within a code block.
+  if (auto *codeBlock = cell.codeBlocks.findContainingCodeBlock(completeLoc))
+    return codeBlock->onCodeCompletion(completeLoc, getParserContext());
+
   // Query the mojo parser for potential completion results.
   uint64_t rawCompletePos = completeLoc.getPointer() - cell.contents.data();
   return getParserContext().codeCompleteREPLExpression(
@@ -1454,6 +1492,10 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   assert(cellBufferId > 0 && cellBufferId <= static_cast<int>(cells.size()) &&
          "expected to find cell buffer containing location");
   Cell &cell = *cells[cellBufferId - 1];
+
+  // Check for signature help within a code block.
+  if (auto *codeBlock = cell.codeBlocks.findContainingCodeBlock(loc))
+    return codeBlock->onSignatureHelp(loc, getParserContext());
 
   // Query the mojo parser for potential help results.
   uint64_t rawPos = loc.getPointer() - cell.contents.data();

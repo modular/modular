@@ -8,7 +8,7 @@ import os
 
 import pytest_lsp
 from lib.utils import Document, Requests, fail_if_none
-from lsprotocol.types import MarkupContent, Position, Range
+from lsprotocol.types import CompletionItemKind, MarkupContent, Position, Range
 from pytest_lsp import ClientServerConfig, LanguageClient
 
 
@@ -82,4 +82,35 @@ fn function():
     )
     assert result.range == Range(
         start=Position(line=6, character=8), end=Position(line=6, character=11)
+    )
+
+
+async def test_codeblock_completion(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        '''
+fn function():
+  """Test doc string.
+
+  ```mojo
+  let value = 10
+  ```
+
+  ```mojo
+  value.completion
+  ```
+
+  """
+''',
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    items = fail_if_none(
+        await requests.completion(doc, doc.find_first_pos("completion"))
+    )
+
+    assert any(
+        item.label == "value" and item.kind == CompletionItemKind.Field
+        for item in items
     )
