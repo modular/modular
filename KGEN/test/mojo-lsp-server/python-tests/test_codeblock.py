@@ -1,0 +1,85 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+import os
+
+import pytest_lsp
+from lib.utils import Document, Requests, fail_if_none
+from lsprotocol.types import MarkupContent, Position, Range
+from pytest_lsp import ClientServerConfig, LanguageClient
+
+
+@pytest_lsp.fixture(
+    config=ClientServerConfig(
+        server_command=[os.environ["MOJO_LSP_SERVER"]],
+    ),
+)
+async def client(lsp_client: LanguageClient):
+    # Setup
+    await Requests(lsp_client).initialize()
+    yield
+    # Teardown
+    await lsp_client.shutdown_session()
+
+
+async def test_codeblock_diagnostic(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        '''
+fn function():
+  """Test doc string.
+
+  ```mojo
+  let foo = bar
+  ```
+  """
+''',
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+    await requests.client.wait_for_notification(
+        "textDocument/publishDiagnostics"
+    )
+
+    assert (
+        doc.uri in requests.client.diagnostics
+        and len(requests.client.diagnostics[doc.uri]) == 1
+        and requests.client.diagnostics[doc.uri][0].message
+        == "use of unknown declaration 'bar'"
+    )
+
+
+async def test_codeblock_hover(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        '''
+fn function():
+  """Test doc string.
+
+  ```mojo
+  fn test():
+    let foo: Int = 420
+    var bar = 1 + `foo`
+    print(bar)
+  ```
+
+  """
+''',
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    result = fail_if_none(await requests.hover(doc, doc.find_first_pos("foo")))
+    assert isinstance(result.contents, MarkupContent)
+    assert (
+        result.contents.value
+        == """```mojo
+(variable) let foo: Int
+```"""
+    )
+    assert result.range == Range(
+        start=Position(line=6, character=8), end=Position(line=6, character=11)
+    )

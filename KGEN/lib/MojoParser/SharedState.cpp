@@ -2109,7 +2109,7 @@ void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
   if (!loc.isValid())
     return;
   SMLoc endLoc = SMLoc::getFromPointer(loc.getPointer() + spelling.size());
-  notifyListenerOnRef(decls, spelling, {loc, endLoc});
+  notifyListenerOnRef(decls, spelling, SourceRange::getByteLevel(loc, endLoc));
 }
 
 void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,

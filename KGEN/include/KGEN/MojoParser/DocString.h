@@ -39,6 +39,40 @@ public:
   FileLineColLoc getLoc() const { return loc; }
 
   //===----------------------------------------------------------------------===//
+  // Code Blocks
+
+  /// This class represents a code block within a doc string. Code blocks are
+  /// defined by ```mojo style markdown blocks.
+  class CodeBlock {
+  public:
+    /// Return the raw code block contained in the original doc string, fully
+    /// indented as defined within the source file.
+    StringRef getRawCode() const;
+
+  private:
+    CodeBlock(const DocString &docString, unsigned indentLevel,
+              unsigned beginLine)
+        : docString(&docString), indentLevel(indentLevel),
+          lineRange(beginLine, beginLine) {}
+
+    /// Allow access to the constructor.
+    friend class DocString;
+
+    /// The owning doc string.
+    const DocString *docString;
+
+    /// The indent level of the code block within the doc string.
+    unsigned indentLevel;
+
+    /// The range of lines, [start, end], within the description of the parent
+    /// doc string.
+    std::pair<unsigned, unsigned> lineRange;
+  };
+
+  /// Return the code blocks defined within the doc string.
+  SmallVector<CodeBlock> getCodeBlocks() const;
+
+  //===----------------------------------------------------------------------===//
   // Section names
 
   /// Within a doc string, the "Constraints" section describes invariants that
@@ -66,6 +100,9 @@ private:
 
   /// The beginning location of the doc string.
   FileLineColLoc loc;
+
+  /// The indentation of the doc string within the source file.
+  size_t indent = 0;
 };
 
 //===----------------------------------------------------------------------===//
