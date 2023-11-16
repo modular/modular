@@ -49,6 +49,12 @@ public:
     /// indented as defined within the source file.
     StringRef getRawCode() const;
 
+    /// Return the indentation level of the code block within the raw code
+    /// string.
+    unsigned getRawIndentLevel() const {
+      return indentLevel + docString->indent;
+    }
+
   private:
     CodeBlock(const DocString &docString, unsigned indentLevel,
               unsigned beginLine)

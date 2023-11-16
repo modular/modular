@@ -34,6 +34,44 @@ namespace M::Mojo::LSP {
 class MojoDocStringCodeBlocks;
 
 //===----------------------------------------------------------------------===//
+// MojoInlayHint
+//===----------------------------------------------------------------------===//
+
+/// This class is used to represent an inlay hint in the document. This is a bit
+/// more stripped, optimized, and mojo specific compared to lsp::InlayHint.
+struct MojoInlayHint {
+  MojoInlayHint(mlir::lsp::InlayHintKind kind, StringRef label, SMLoc loc)
+      : label(label), loc(loc), leftIndent(0), kind(kind), paddingLeft(false),
+        paddingRight(false) {}
+
+  /// Generate an LSP inlay hint from this inlay hint.
+  mlir::lsp::InlayHint toLspInlayHint(SourceMgr &sourceMgr) const;
+
+  /// Order inlay hints by their location.
+  bool operator<(const MojoInlayHint &other) const {
+    return loc.getPointer() < other.loc.getPointer();
+  }
+
+  /// The label of the inlay hint.
+  StringRef label;
+
+  /// The location of the inlay hint.
+  SMLoc loc;
+
+  /// An optional left indent for the inlay hint.
+  unsigned leftIndent : 28;
+
+  /// The kind of the inlay hint.
+  mlir::lsp::InlayHintKind kind : 2;
+
+  /// If the hint should be padded to the left.
+  bool paddingLeft : 1;
+
+  /// If the hint should be padded to the right.
+  bool paddingRight : 1;
+};
+
+//===----------------------------------------------------------------------===//
 // MojoDocument
 //===----------------------------------------------------------------------===//
 
@@ -185,6 +223,10 @@ public:
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
 
+  void onInlayHint(const mlir::lsp::URIForFile &uri,
+                   const mlir::lsp::Range &range,
+                   OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint);
+
   void onSignatureHelp(const mlir::lsp::URIForFile &uri,
                        const mlir::lsp::Position &pos,
                        OnResultFn<mlir::lsp::SignatureHelp> onHelpFn);
@@ -268,6 +310,8 @@ private:
 
   std::optional<mlir::lsp::Hover> onHoverSync(llvm::SMLoc loc);
 
+  std::vector<mlir::lsp::InlayHint> onInlayHintSync(llvm::SMRange range);
+
   mlir::lsp::SignatureHelp onSignatureHelpSync(llvm::SMLoc loc);
 
   //===--------------------------------------------------------------------===//
@@ -321,6 +365,9 @@ private:
            std::vector<mlir::lsp::CodeAction>>
       fixits;
 
+  /// An ordered set of inlay hints for the current version of the file.
+  std::vector<MojoInlayHint> inlayHints;
+
   /// Indicates if the document produced parser errors.
   bool hasParserErrors = false;
 
@@ -345,13 +392,18 @@ public:
   /// This class represents an individual code block within a doc string.
   struct CodeBlock {
     CodeBlock(StringRef contents,
-              SmallVector<std::pair<StringRef, Type>> persistentVariables)
+              SmallVector<std::pair<StringRef, Type>> persistentVariables,
+              unsigned contentsIndent)
         : contents(contents),
-          persistentVariables(std::move(persistentVariables)) {}
+          persistentVariables(std::move(persistentVariables)),
+          contentsIndent(contentsIndent) {}
 
     /// Attempt to perform code completion at the given location.
     std::vector<KGEN::Mojo::CodeCompletionResult>
     onCodeCompletion(llvm::SMLoc loc, MojoParserContext &ctx);
+
+    /// Compute inlay hints for this code block.
+    void onInlayHint(std::vector<MojoInlayHint> &inlayHints);
 
     /// Attempt to compute signature help at the given location.
     std::optional<KGEN::Mojo::SignatureHelpResult>
@@ -366,6 +418,9 @@ public:
 
     /// The AST decl for the module containing this code block.
     MojoASTDeclRef decl;
+
+    /// The indent of the code within the contents.
+    unsigned contentsIndent;
   };
 
   /// Add any code blocks in the doc string for the given decl.
@@ -374,7 +429,8 @@ public:
   /// decl for the REPL module that contains `decl`. In the case of a normal
   /// text document, `curReplDecl` is null.
   void addCodeBlocks(MojoDocument &mainDoc, MojoASTDeclRef decl,
-                     MojoASTDeclRef curReplDecl, unsigned bufferId);
+                     MojoASTDeclRef curReplDecl, unsigned bufferId,
+                     std::vector<MojoInlayHint> &inlayHints);
 
   /// Find the code block that contains the given location.
   CodeBlock *findContainingCodeBlock(llvm::SMLoc loc);

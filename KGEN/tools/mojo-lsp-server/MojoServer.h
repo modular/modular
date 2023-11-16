@@ -105,6 +105,11 @@ public:
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
 
+  /// Get inlay hints for the given document range.
+  void onInlayHint(const mlir::lsp::URIForFile &uri,
+                   const mlir::lsp::Range &range,
+                   OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint);
+
   /// Get the signature help for the position within the given document.
   void getSignatureHelp(const mlir::lsp::URIForFile &uri,
                         const mlir::lsp::Position &pos,

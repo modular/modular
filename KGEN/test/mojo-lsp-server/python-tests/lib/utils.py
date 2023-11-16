@@ -19,6 +19,7 @@ from lsprotocol.types import (
     DocumentSymbolParams,
     HoverParams,
     InitializeParams,
+    InlayHintParams,
 )
 from lsprotocol.types import NotebookCell as LspNotebookCell
 from lsprotocol.types import NotebookCellKind
@@ -41,7 +42,8 @@ def fail_if_none(t: Optional[T]) -> T:
 
 
 class Document:
-    """Helper class for dealing with documents, either from files or from memory."""
+    """Helper class for dealing with documents, either from files or from memory.
+    """
 
     @staticmethod
     def from_file(file_name: str):
@@ -85,7 +87,8 @@ class Document:
     ) -> Optional[Range]:
         """Find the range of the first occurrence of the given `substr` in the document.
 
-        See `find_all_ranges` for additional notes on the `find` family of functions."""
+        See `find_all_ranges` for additional notes on the `find` family of functions.
+        """
         for range in self.find_all_ranges(substr, in_line_with):
             return range
         return None
@@ -93,7 +96,8 @@ class Document:
     def find_first_pos(self, substr: str) -> Optional[Position]:
         """Find the position of the first occurrence of the given `substr` in the document.
 
-        See `find_all_ranges` for additional notes on the `find` family of functions."""
+        See `find_all_ranges` for additional notes on the `find` family of functions.
+        """
         for range in self.find_all_ranges(substr):
             return range.start
         return None
@@ -103,7 +107,8 @@ class Document:
     ) -> Optional[Range]:
         """Find the range of the last occurrence of the given `substr` in the document.
 
-        See `find_all_ranges` for additional notes on the `find` family of functions."""
+        See `find_all_ranges` for additional notes on the `find` family of functions.
+        """
         for range in reversed(list(self.find_all_ranges(substr, in_line_with))):
             return range
         return None
@@ -111,10 +116,18 @@ class Document:
     def find_last_pos(self, substr: str) -> Optional[Position]:
         """Find the position of the last occurrence of the given `substr` in the document.
 
-        See `find_all_ranges` for additional notes on the `find` family of functions."""
+        See `find_all_ranges` for additional notes on the `find` family of functions.
+        """
         for range in reversed(list(self.find_all_ranges(substr))):
             return range.start
         return None
+
+    def get_full_range(self):
+        """Return a range covering the entire document."""
+        return Range(
+            start=Position(line=0, character=0),
+            end=Position(line=len(self.lines), character=0),
+        )
 
     @property
     def identifier(self) -> TextDocumentIdentifier:
@@ -133,7 +146,8 @@ class NotebookDocument:
 
 
 class Requests:
-    """Helper class for issuing requests to the server. It is not intenteded to be a full wrapper of `LanguageClient`."""
+    """Helper class for issuing requests to the server. It is not intenteded to be a full wrapper of `LanguageClient`.
+    """
 
     def __init__(self, client: LanguageClient):
         self.client = client
@@ -206,6 +220,11 @@ class Requests:
         if results is None:
             return None
         return results.items if isinstance(results, CompletionList) else results
+
+    async def inlay_hint(self, doc: Document, range: Range):
+        return await self.client.text_document_inlay_hint_async(
+            params=InlayHintParams(text_document=doc.identifier, range=range)
+        )
 
     async def signature_help(self, doc: Document, pos: Position):
         return await self.client.text_document_signature_help_async(

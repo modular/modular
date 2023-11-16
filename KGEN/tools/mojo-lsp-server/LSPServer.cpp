@@ -71,6 +71,9 @@ struct LSPServer {
   void onHover(const TextDocumentPositionParams &params,
                Callback<llvm::json::Value> reply);
 
+  void onInlayHint(const InlayHintsParams &params,
+                   Callback<std::vector<InlayHint>> reply);
+
   void onSignatureHelp(const TextDocumentPositionParams &params,
                        Callback<SignatureHelp2> reply);
 
@@ -109,6 +112,7 @@ void LSPServer::onInitialize(const InitializeParams &params,
        }},
       {"definitionProvider", true},
       {"hoverProvider", true},
+      {"inlayHintProvider", true},
       {"notebookDocumentSync",
        JSONObject{{
            "notebookSelector",
@@ -267,6 +271,15 @@ void LSPServer::onHover(const TextDocumentPositionParams &params,
       });
 }
 
+void LSPServer::onInlayHint(const InlayHintsParams &params,
+                            Callback<std::vector<InlayHint>> reply) {
+  server.onInlayHint(
+      params.textDocument.uri, params.range,
+      [reply = std::move(reply)](std::vector<InlayHint> hints) mutable {
+        reply(std::move(hints));
+      });
+}
+
 void LSPServer::onSignatureHelp(const TextDocumentPositionParams &params,
                                 Callback<SignatureHelp2> reply) {
   server.getSignatureHelp(
@@ -337,6 +350,8 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
   messageHandler.method("textDocument/documentSymbol", &lspServer,
                         &LSPServer::onDocumentSymbol);
   messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
+  messageHandler.method("textDocument/inlayHint", &lspServer,
+                        &LSPServer::onInlayHint);
   messageHandler.method("textDocument/signatureHelp", &lspServer,
                         &LSPServer::onSignatureHelp);
 
