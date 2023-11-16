@@ -13,6 +13,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/SharedState.h"
 
 namespace M::KGEN::LIT {
@@ -64,13 +65,13 @@ public:
   /// Create a FuncOp within the scope of the given struct and add function
   /// terminators.
   LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
-                            ArrayRef<ParamDeclAttr> inputParameters,
-                            ArrayRef<PassingKind> paramPassingKinds,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ValueInputConvention> argConventions,
                             ArrayRef<StringAttr> argNames,
                             ArrayRef<PassingKind> argPassingKinds,
-                            SpecialFunctionKind kind);
+                            SpecialFunctionKind kind,
+                            ArrayRef<ParamDeclAttr> inputParams = {},
+                            ArrayRef<PassingKind> paramPassingKinds = {});
 
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.
@@ -79,12 +80,13 @@ public:
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the cody.
   LIT::FuncOp createFunction(
-      StringRef name, ArrayRef<ParamDeclAttr> inputParameters,
+      StringRef name, ArrayRef<ParamDeclAttr> inputParams,
       ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
       ArrayRef<ValueInputConvention> argConventions,
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-      ImplicitLocOpBuilder &builder, FnEffects effects = FnEffects());
+      ImplicitLocOpBuilder &builder, FnEffects effects = FnEffects(),
+      ArrayRef<ParamDeclAttr> resultParams = {});
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -97,11 +99,20 @@ public:
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
-      StringRef name, ArrayRef<ParamDeclAttr> inputParameters,
+      StringRef name, ArrayRef<ParamDeclAttr> inputParams,
       ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
       ArrayRef<ValueInputConvention> argConventions,
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
-      Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
+      Type resultType, ASTDecl &structDecl,
+      SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
+      FnEffects effects = FnEffects(),
+      ArrayRef<ParamDeclAttr> resultParams = {});
+  std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
+      StringRef name, ArrayRef<Type> argTypes,
+      ArrayRef<ValueInputConvention> argConventions,
+      ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
+      Type resultType, ASTDecl &structDecl,
+      SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects effects = FnEffects());
 
 protected:

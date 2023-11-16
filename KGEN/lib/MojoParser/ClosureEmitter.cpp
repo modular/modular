@@ -341,8 +341,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       addClosureSelfArgToFunctionSignature(
           ptrToSelfType, ValueInputConvention::BorrowedInMem, signatureType);
   auto [callMethod, callDecl] = synthesizeMethodInStruct(
-      "__call__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
-      closureMethodSignatureType.getValueInputs(),
+      "__call__", closureMethodSignatureType.getValueInputs(),
       closureMethodSignatureType.getInputConventions(),
       closureMethodSignatureType.getArgNames(),
       closureMethodSignatureType.getArgPassingKinds(), resultType, astDecl,
@@ -701,8 +700,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   FuncOp init = addVoidMethod(
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared),
-      "__init__", initParams, paramPassingKindsOfInit, argTypes, argConventions,
-      argNames, argPassingKinds, SpecialFunctionKind::kInit);
+      "__init__", argTypes, argConventions, argNames, argPassingKinds,
+      SpecialFunctionKind::kInit, initParams, paramPassingKindsOfInit);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = init.getLocScope())

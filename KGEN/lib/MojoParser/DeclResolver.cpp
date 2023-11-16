@@ -3728,8 +3728,7 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   // Create the FuncOp and ASTDecl for the method.
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
-      "__del__", /*inputParameters=*/{}, /*paramPassingKinds=*/{},
-      selfType.mlirType, convention, selfName, PassingKind::PosOnly,
+      "__del__", selfType.mlirType, convention, selfName, PassingKind::PosOnly,
       shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
 
   // Set up the body.
