@@ -983,9 +983,10 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
                                    metatype.getParamValues(), metatype);
   // FIXME(generics): We aren't propagating metatypes into pointer types, so
   // just pass a generic metatype here.
+  auto anyRegTypeType = AnyRegTypeType::get(getContext());
   SmallVector<TypedAttr> selfParams(
-      {TypeConstantAttr::get(AnyRegTypeType::get(getContext())),
-       TypeConstantAttr::get(selfType, AnyRegTypeType::get(getContext()))});
+      {TypeConstantAttr::get(anyRegTypeType, anyRegTypeType),
+       TypeConstantAttr::get(selfType, anyRegTypeType)});
 
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {

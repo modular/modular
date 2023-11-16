@@ -3909,11 +3909,12 @@ static SignatureType getSpecializedSignature(LIT::FuncOp traitFn,
   // Add trait's MT replacement.
   // FIXME(generics): We aren't propagating metatypes into pointer types, so
   // just pass a generic metatype here.
+  auto anyRegTypeType = AnyRegTypeType::get(traitFn.getContext());
   newInputParamValues.push_back(
-      TypeConstantAttr::get(AnyRegTypeType::get(traitFn.getContext())));
+      TypeConstantAttr::get(anyRegTypeType, anyRegTypeType));
   // Add trait's T replacement.
-  newInputParamValues.push_back(TypeConstantAttr::get(
-      structSelfType, AnyRegTypeType::get(traitFn.getContext())));
+  newInputParamValues.push_back(
+      TypeConstantAttr::get(structSelfType, anyRegTypeType));
 
   for (Type type : inputParamTypes.drop_front(2))
     newInputParamValues.push_back(UnboundAttr::get(type));

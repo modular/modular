@@ -432,8 +432,8 @@ static ASTDecl &lookupSingleDecl(ASTDecl &decl, StringRef name) {
 static void processVariablesForPersistence(MojoParserREPLListener &listener,
                                            ASTDecl &exprFnDecl,
                                            ASTDecl &stateStructDecl) {
-  auto exprFn = cast<KGEN::LIT::FuncOp>(exprFnDecl);
-  auto stateStruct = cast<KGEN::LIT::StructDeclOp>(stateStructDecl);
+  auto exprFn = cast<LIT::FuncOp>(exprFnDecl);
+  auto stateStruct = cast<StructDeclOp>(stateStructDecl);
 
   // Grab all of the variables within the expression body and sort them by name,
   // so that we can deterministically process them.
@@ -449,14 +449,14 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
   OpBuilder structBuilder = OpBuilder::atBlockEnd(stateStruct.getBody());
   Value structValue = exprFn.getArgument(0);
-  Attribute targetAttr =
-      KGEN::ParamOperatorAttr::get(POC::CurrentTarget, /*operands=*/{},
-                                   structBuilder.getType<KGEN::TargetType>());
+  Attribute targetAttr = ParamOperatorAttr::get(
+      POC::CurrentTarget, /*operands=*/{}, structBuilder.getType<TargetType>());
 
   // Utility functor to check if a variable should be inserted, and if so insert
   // a new field into the persistent state struct. If the variable was
   // persisted, returns a value corresponding to the address of the field.
   // Returns nullptr otherwise.
+  auto anyRegTypeType = structBuilder.getType<AnyRegTypeType>();
   auto checkInsertPersistentVar = [&](Operation *varOp, StringAttr name,
                                       mlir::Type elementType) {
     PointerType type = PointerType::get(elementType);
@@ -481,20 +481,18 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // variable for the address and ensure it gets preserved. For now, we just
     // malloc the memory.
     mlir::Type indexType = structBuilder.getIndexType();
+    SmallVector<TypedAttr> operands{
+        TypeConstantAttr::get(elementType, anyRegTypeType),
+        cast<TypedAttr>(targetAttr)};
     // Compute the size of the type.
-    Attribute sizeOfAttr = KGEN::ParamOperatorAttr::get(
-        POC::GetSizeOf,
-        {KGEN::TypeConstantAttr::get(elementType), cast<TypedAttr>(targetAttr)},
-        indexType);
-    Value sizeOf = builder.create<KGEN::ParamConstantOp>(
-        indexType, cast<TypedAttr>(sizeOfAttr));
+    Attribute sizeOfAttr =
+        ParamOperatorAttr::get(POC::GetSizeOf, operands, indexType);
+    Value sizeOf =
+        builder.create<ParamConstantOp>(indexType, cast<TypedAttr>(sizeOfAttr));
     // Compute the alignment of the type.
-    Attribute alignOfAttr = KGEN::ParamOperatorAttr::get(
-        POC::GetAlignOf,
-        {cast<TypedAttr>(KGEN::TypeConstantAttr::get(elementType)),
-         cast<TypedAttr>(targetAttr)},
-        indexType);
-    Value alignOf = builder.create<KGEN::ParamConstantOp>(
+    Attribute alignOfAttr =
+        ParamOperatorAttr::get(POC::GetAlignOf, operands, indexType);
+    Value alignOf = builder.create<ParamConstantOp>(
         indexType, cast<TypedAttr>(alignOfAttr));
     // Allocate an aligned blob for the variable.
     Value mallocCast = builder.create<POP::AlignedAllocOp>(
@@ -898,7 +896,7 @@ MojoParserContext::codeCompleteREPLExpression(
                                     MojoASTDeclRef());
 }
 
-std::vector<KGEN::Mojo::CodeCompletionResult>
+std::vector<Mojo::CodeCompletionResult>
 MojoParserContext::codeCompleteREPLExpression(
     StringRef exprText, uint64_t completionPosition,
     ArrayRef<std::pair<StringRef, Type>> replVariables,
@@ -909,7 +907,7 @@ MojoParserContext::codeCompleteREPLExpression(
       std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
 
   // Invoke the parser and collect code completion results.
-  std::vector<KGEN::Mojo::CodeCompletionResult> results;
+  std::vector<Mojo::CodeCompletionResult> results;
   parseCompletionImpl(
       completionPosition, exprText, *locMapper.exprMappers.back(),
       replVariables, impl->replModuleDecls, impl->prevReplModuleDecls,
@@ -924,13 +922,13 @@ MojoParserContext::codeCompleteREPLExpression(
       });
 
   // Filter out results pointing to internal decls.
-  llvm::erase_if(results, [&](const KGEN::Mojo::CodeCompletionResult &result) {
+  llvm::erase_if(results, [&](const Mojo::CodeCompletionResult &result) {
     return StringRef(result.label).starts_with("__mojo_repl");
   });
   return results;
 }
 
-std::optional<KGEN::Mojo::SignatureHelpResult>
+std::optional<Mojo::SignatureHelpResult>
 MojoParserContext::signatureHelpREPLExpression(
     StringRef exprText, uint64_t position,
     ArrayRef<std::pair<StringRef, Type>> replVariables,
@@ -941,7 +939,7 @@ MojoParserContext::signatureHelpREPLExpression(
       std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
 
   // Invoke the parser and collect the signature help result.
-  std::optional<KGEN::Mojo::SignatureHelpResult> result;
+  std::optional<Mojo::SignatureHelpResult> result;
   parseCompletionImpl(
       position, exprText, *locMapper.exprMappers.back(), replVariables,
       impl->replModuleDecls, impl->prevReplModuleDecls, replDecl.decl,

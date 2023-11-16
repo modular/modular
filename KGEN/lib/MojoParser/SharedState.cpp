@@ -317,8 +317,9 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   impl->lifetimeType = LifetimeType::get(context);
 
   // Add an empty struct with the specified name to the resolver.
+  auto anyRegTypeType = AnyRegTypeType::get(getContext());
   auto addMagicMLIRDecl = [&](StringRef name, Type magicType) {
-    TypedAttr value = TypeConstantAttr::get(magicType);
+    TypedAttr value = TypeConstantAttr::get(magicType, anyRegTypeType);
     resolver.addFullyResolvedDecl(PValue(value), name, builtinsDecl.getLoc(),
                                   &builtinsDecl);
   };
@@ -964,16 +965,17 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
   if (tupleType.isTypeCheckErrorType())
     return tupleType;
 
-  // Bind the correct element types for the tuple to the tuple type.
-  SmallVector<TypedAttr> eltTypes;
-  for (auto elt : elements)
-    eltTypes.push_back(TypeConstantAttr::get(elt));
-
   // Get the pack parameter from the Tuple type.
   ASTDecl &tupleLiteralDecl = *tupleType.getDecl(*this);
   auto tupleLiteralStruct = cast<StructDeclOp>(tupleLiteralDecl);
   assert(tupleLiteralStruct.getInputParams().size() == 1);
   ParamDeclAttr tupleParam = tupleLiteralStruct.getInputParams()[0];
+
+  // Bind the correct element types for the tuple to the tuple type.
+  SmallVector<TypedAttr> eltTypes;
+  auto anyRegTypeType = AnyRegTypeType::get(tupleLiteralStruct.getContext());
+  for (auto elt : elements)
+    eltTypes.push_back(TypeConstantAttr::get(elt, anyRegTypeType));
 
   // Bind it to a VariadicAttr of the right elements.
   TypedAttr packAttr =
@@ -993,7 +995,8 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
   ASTType varListType = getBuiltinVariadicListType(context, loc, elemInMem);
   if (varListType.isTypeCheckErrorType())
     return varListType;
-  TypedAttr elemTypeValue = TypeConstantAttr::get(elemType);
+  TypedAttr elemTypeValue = TypeConstantAttr::get(
+      elemType, AnyRegTypeType::get(elemType.getContext()));
   return BindTypeAttr::get(PValue(varListType), elemTypeValue);
 }
 

@@ -2586,8 +2586,10 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         emitter.emitError(getLoc(), "only variadic types may be unpacked");
         return {};
       }
-      return emitter.emitResult(
-          TypeConstantAttr::get(PackType::get(pValue.get())), this, dest);
+      auto typeExpr =
+          TypeConstantAttr::get(PackType::get(pValue.get()),
+                                AnyRegTypeType::get(emitter.getContext()));
+      return emitter.emitResult(typeExpr, this, dest);
     }
   }
 

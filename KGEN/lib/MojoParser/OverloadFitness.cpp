@@ -351,7 +351,8 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
         // Infer nonmaterializable types as their materialization target.
         if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
           toPush = nmTarget;
-        types.push_back(TypeConstantAttr::get(toPush));
+        types.push_back(TypeConstantAttr::get(
+            toPush, AnyRegTypeType::get(shared.getContext())));
       }
 
       inferredValues.push_back(VariadicAttr::get(

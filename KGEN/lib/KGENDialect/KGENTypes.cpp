@@ -574,8 +574,13 @@ PointerType PointerType::get(TypedAttr elementType, unsigned addressSpace) {
                           IntegerAttr::get(IndexType::get(ctx), addressSpace));
 }
 
+/// Return the type as a TypeConstantAttr with AnyRegTypeType as metatype.
+static TypedAttr getTypeConstantAttr(Type type) {
+  return TypeConstantAttr::get(type, AnyRegTypeType::get(type.getContext()));
+}
+
 PointerType PointerType::get(Type elementType, unsigned addressSpace) {
-  return get(TypeConstantAttr::get(elementType), addressSpace);
+  return get(getTypeConstantAttr(elementType), addressSpace);
 }
 
 PointerType PointerType::get(TypedAttr elementType, TypedAttr addressSpace) {
@@ -583,7 +588,7 @@ PointerType PointerType::get(TypedAttr elementType, TypedAttr addressSpace) {
 }
 
 PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {
-  return get(TypeConstantAttr::get(elementType), addressSpace);
+  return get(getTypeConstantAttr(elementType), addressSpace);
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
@@ -787,7 +792,7 @@ VariadicType VariadicType::get(TypedAttr elementType) {
 }
 
 VariadicType VariadicType::get(Type elementType) {
-  return VariadicType::get(TypeConstantAttr::get(elementType));
+  return VariadicType::get(getTypeConstantAttr(elementType));
 }
 
 /// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
@@ -872,7 +877,7 @@ StructType StructType::get(MLIRContext *context, ArrayRef<Type> elementTypes,
   SmallVector<TypedAttr> elementTypeExprs;
   elementTypeExprs.reserve(elementTypes.size());
   for (Type elementType : elementTypes)
-    elementTypeExprs.push_back(TypeConstantAttr::get(elementType));
+    elementTypeExprs.push_back(getTypeConstantAttr(elementType));
   return get(context, elementTypeExprs, isMemoryOnly);
 }
 
@@ -1029,7 +1034,7 @@ VariantType VariantType::get(ArrayRef<Type> types) {
   assert(!types.empty());
   SmallVector<TypedAttr> typeExprs;
   for (Type type : types)
-    typeExprs.push_back(TypeConstantAttr::get(type));
+    typeExprs.push_back(getTypeConstantAttr(type));
   return get(types.front().getContext(), typeExprs);
 }
 

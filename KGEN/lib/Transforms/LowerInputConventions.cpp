@@ -317,9 +317,10 @@ static void lowerInputConventions(Operation &op) {
       auto [newSig, _, __] = lowerSignature(sig);
       return newSig ? newSig : sig;
     });
-    replacer.addReplacement([](TypeConstantAttr type) {
+    auto anyRegTypeType = AnyRegTypeType::get(op.getContext());
+    replacer.addReplacement([&](TypeConstantAttr type) {
       // Canonicalize metatypes.
-      return TypeConstantAttr::get(type.getValue());
+      return TypeConstantAttr::get(type.getValue(), anyRegTypeType);
     });
     op.walk([&](Operation *op) {
       replacer.replaceElementsIn(op, /*replaceAttrs=*/true,

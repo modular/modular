@@ -288,9 +288,11 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   auto processBindType = [this](BindTypeAttr bind) {
     MetaTypeType metatype = bind.getType();
     // TODO(#25619): build AnyTypeType instead. This is currently a hack.
-    return TypeConstantAttr::get(replace(
-        DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
-                         AnyRegTypeType::get(bind.getContext()))));
+    auto anyRegTypeType = AnyRegTypeType::get(bind.getContext());
+    return TypeConstantAttr::get(
+        replace(DeclRefType::get(metatype.getSymbol(),
+                                 metatype.getParamValues(), anyRegTypeType)),
+        anyRegTypeType);
   };
 
   auto processParamOperatorAttr = [&](ParamOperatorAttr attr) -> Attribute {
