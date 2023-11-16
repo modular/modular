@@ -716,7 +716,7 @@ buildAndResolveREPLModule(const llvm::MemoryBuffer *sourceBuf,
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
-  sharedState.declResolver->resolveAll();
+  sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
   return moduleDecl;
 }
 
@@ -770,14 +770,8 @@ MojoASTDeclRef MojoParserContext::parseREPLExpression(
 
   // Check if we have a non-recoverable parse error, or emitted an error and
   // then recovered.
-  if (failed(diagHandler.processDiagnostics()) ||
-      failed(mlir::verify(*impl->module))) {
-    // In the case of failure, remove the module so that it doesn't prevent
-    // parsing future cells.
-    impl->detachedREPLModules.push_back(moduleDecl.getIfOperation());
-    moduleDecl.getIfOperation()->remove();
+  if (failed(diagHandler.processDiagnostics()))
     return nullptr;
-  }
 
   // Process variables within the expression function for persistence.
   processVariablesForPersistence(
@@ -791,9 +785,7 @@ MojoASTDeclRef MojoParserContext::parseREPLExpression(
 
 void MojoParserContext::removeLastREPLExpression() {
   assert(!impl->replModuleDecls.empty() && "expected at least one REPL module");
-  ASTDecl *moduleDecl = impl->replModuleDecls.pop_back_val();
-  impl->detachedREPLModules.push_back(moduleDecl->getIfOperation());
-  moduleDecl->getIfOperation()->remove();
+  impl->replModuleDecls.pop_back();
 }
 
 //===----------------------------------------------------------------------===//

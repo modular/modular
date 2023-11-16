@@ -1332,7 +1332,7 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
   // For a given textual buffer, we can cache what the dependent module names
   // are. Caching this prevents the need to actually parse the buffer when the
   // content of the module hasn't changed.
-  if (impl->transformCache) {
+  if (impl->transformCache && moduleState.canCacheModule) {
     auto onCacheMiss = [&](Operation *op, WriteableBufferRef buf,
                            LLCL::AnyAsyncValueRef chain) {
       auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
