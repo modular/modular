@@ -126,7 +126,7 @@ fn mbarrier_init[
         num_threads: Number of threads participating.
     """
     llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
-        shared_mem, Int32
+        shared_mem, num_threads
     )
 
 
