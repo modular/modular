@@ -344,8 +344,21 @@ public:
 
   /// This class represents an individual code block within a doc string.
   struct CodeBlock {
-    CodeBlock(SmallVector<std::pair<StringRef, Type>> persistentVariables)
-        : persistentVariables(std::move(persistentVariables)) {}
+    CodeBlock(StringRef contents,
+              SmallVector<std::pair<StringRef, Type>> persistentVariables)
+        : contents(contents),
+          persistentVariables(std::move(persistentVariables)) {}
+
+    /// Attempt to perform code completion at the given location.
+    std::vector<KGEN::Mojo::CodeCompletionResult>
+    onCodeCompletion(llvm::SMLoc loc, MojoParserContext &ctx);
+
+    /// Attempt to compute signature help at the given location.
+    std::optional<KGEN::Mojo::SignatureHelpResult>
+    onSignatureHelp(llvm::SMLoc loc, MojoParserContext &ctx);
+
+    /// The contents of the code block.
+    StringRef contents;
 
     /// The persistent REPL variables defined in code blocks defined before this
     /// one in the same doc string.
@@ -362,6 +375,9 @@ public:
   /// text document, `curReplDecl` is null.
   void addCodeBlocks(MojoDocument &mainDoc, MojoASTDeclRef decl,
                      MojoASTDeclRef curReplDecl, unsigned bufferId);
+
+  /// Find the code block that contains the given location.
+  CodeBlock *findContainingCodeBlock(llvm::SMLoc loc);
 
 private:
   using MapT = llvm::IntervalMap<
