@@ -168,6 +168,8 @@ static LogicalResult lowerCoroutinePromiseAsync(LLVMBuilder &b,
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
+  // TODO: Remove i8PtrType in favor of opaquePtr once pop to llvm lowering
+  // update is complete.
   Value hdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
   Type ptrType = b.convertType(op.getType());
   if (!ptrType)
@@ -191,8 +193,10 @@ static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   // The resume function is the second element of the context.
-  Value hdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
-  // Bitcast `i8*` to `void(i8*)**`.
+  // TODO: Remove Bitcast and createConverstion to opaquePtr after kgen/pop llvm
+  // lowering is updated.
+  Value typedHdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
+  Value hdl = b.create<BitcastOp>(cache.opaquePtr, typedHdl);
   b.create<CallOp>(TypeRange(),
                    ValueRange{b.create<LoadOp>(cache.opaquePtr, hdl), hdl});
   op.erase();
@@ -204,6 +208,8 @@ static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   // Just free the coroutine context.
+  // TODO: Replace i8PtrType with opaquePtr when kgen/pop lowering is updated to
+  // remove typed pointers.
   Value hdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
   b.create<POP::AlignedFreeOp>(
       b.createConversion(PointerType::get(cache.i8Type), hdl));
@@ -267,6 +273,7 @@ static LLVMFuncOp synthesizeCoroCtxtProjFn(SymbolTable &symtab, LLVMBuilder &b,
   b.setLoc(symtab.getOp()->getLoc());
   b.clearInsertionPoint();
 
+  // TODO: Replace i8PtrType with opaquePtr next llvm update.
   LLVMFuncOp projFn =
       b.createFunc("__kgen_coro_ctxt_proj_fn",
                    LLVMFunctionType::get(cache.i8PtrType, cache.i8PtrType),
@@ -413,17 +420,19 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
                           GEPArg(contextBaseSize),
                           /*inbounds=*/true);
   } else {
+    // TODO: Remove bitcast next llvm update.
+    auto typedPtr =
+        b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp));
     auto coroIdOp = b.create<CallIntrinsicOp>(
         cache.tokenType, "llvm.coro.id.async",
-        ValueRange{
-            b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseSize)),
-            b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseAlign)),
-            b.create<ConstantOp>(b.getI32IntegerAttr(0)),
-            b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))});
-    hdl = b.create<CoroBeginOp>(
-        cache.opaquePtr, coroIdOp.getResult(0),
-        b.create<IntToPtrOp>(cache.i8PtrType,
-                             b.create<ConstantOp>(b.getI32IntegerAttr(0))));
+        ValueRange{b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseSize)),
+                   b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseAlign)),
+                   b.create<ConstantOp>(b.getI32IntegerAttr(0)), typedPtr});
+    // TODO: Replace cache.i8PtrType with cache.opaquePtr next llvm update.
+    auto typedPtrFromInt = b.create<IntToPtrOp>(
+        cache.i8PtrType, b.create<ConstantOp>(b.getI32IntegerAttr(0)));
+    hdl = b.create<CoroBeginOp>(cache.opaquePtr, coroIdOp.getResult(0),
+                                typedPtrFromInt);
   }
 
   // The coroutine handle is specially handled by the coroutine splitting pass
@@ -500,13 +509,15 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // NOTE: Hide the global read behind a "prepare" intrinsic to prevent the size
   // from being inlined into the allocator call until after coroutine splitting,
   // when it gets updated with the frame size.
-  auto prepare = b.create<CallIntrinsicOp>(
-      cache.i8PtrType, "llvm.coro.prepare.async",
-      Value(b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))));
+  // TODO: remove bitcast next llvm update.
+  auto typedArg =
+      b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp));
+  auto i8prepare = b.create<CallIntrinsicOp>(
+      cache.i8PtrType, "llvm.coro.prepare.async", Value(typedArg));
+  auto prepare = b.create<BitcastOp>(cache.opaquePtr, i8prepare.getResult(0));
   Value contextSize = b.create<LoadOp>(
-      b.create<GEPOp>(LLVMPointerType::get(cache.i32Type),
-                      b.create<BitcastOp>(LLVMPointerType::get(afp.getType()),
-                                          prepare.getResult(0)),
+      cache.i32Type,
+      b.create<GEPOp>(cache.opaquePtr, afp.getType(), prepare,
                       ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true));
   Value allocCall = b.create<POP::AlignedAllocOp>(
       PointerType::get(cache.i8Type),
@@ -516,6 +527,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
               b.create<ConstantOp>(cache.indexType, contextBaseAlign)),
           b.createConversion(b.getType<IndexType>(),
                              b.create<ZExtOp>(cache.indexType, contextSize))});
+  // TODO: remove bitcast after kgen/pop llvm lowering update and convert
+  // directly to opaque pointer.
   Value contextValue = b.create<BitcastOp>(
       cache.opaquePtr, b.createConversion(cache.i8PtrType, allocCall));
   auto gep = b.create<GEPOp>(cache.opaquePtr, contextType, contextValue,
@@ -528,6 +541,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
         /*inbounds=*/true);
     b.create<StoreOp>(arg, argPtr);
   }
+  // TODO: remove bitcast after kgen/pop llvm lowering update.
   b.create<ReturnOp>(b.create<BitcastOp>(cache.i8PtrType, contextValue));
   return CoroutineInfo(asyncFn, contextBaseSize, contextType, hdl, hdleType);
 }
@@ -620,6 +634,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
 
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
+  // TODO: replace i8PtrType with opaquePtr after llvm update
   Value resumeFn = b.create<CallIntrinsicOp>(
                         cache.i8PtrType, "llvm.coro.async.resume", ValueRange())
                        .getResult(0);
@@ -631,14 +646,19 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
                       ArrayRef<GEPArg>{0, 0}, /*inbounds=*/true);
   b.create<StoreOp>(resumeFn, resumeFnPtr);
 
+  // TODO: replace i8PtrType with opaquePtr after llvm update
+  auto typedPtr =
+      b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(coroProjFn));
   SmallVector<Value> suspendAsyncArgs{
-      b.create<ConstantOp>(b.getI32IntegerAttr(0)), resumeFn,
-      b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(coroProjFn)),
+      b.create<ConstantOp>(b.getI32IntegerAttr(0)), resumeFn, typedPtr,
       b.create<AddressOfOp>(suspendFn)};
   llvm::append_range(suspendAsyncArgs, captures);
+
+  // TODO: replace i8PtrType with opaquePtr after llvm update
   auto suspendRetType = LLVMStructType::getLiteral(
       ctx, {cache.i8PtrType, cache.i8PtrType, cache.i8PtrType});
   // FIXME: For some reason, `call_intrinsic` fails to resolve the overload.
+  // TODO: replace i8PtrType with opaquePtr after llvm update
   b.create<POP::ExternalCallOp>(
       suspendRetType, "llvm.coro.suspend.async.sl_p0p0p0s", suspendAsyncArgs,
       b.getFunctionType({cache.i32Type, cache.i8PtrType, cache.i8PtrType},
@@ -684,8 +704,11 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
       b.setLoc(opaque.getLoc());
       b.setInsertionPoint(opaque);
       Value cstNullPtr = b.create<IntToPtrOp>(
-          cache.i8PtrType, b.create<ConstantOp>(b.getIndexType(), 0));
-      opaque.replaceAllUsesWith(cstNullPtr);
+          cache.opaquePtr, b.create<ConstantOp>(b.getIndexType(), 0));
+      // TODO: once pop to llvm lowering is updated to not use typed pointers,
+      // remove this bitcast.
+      Value typedNullPtr = b.create<BitcastOp>(cache.i8PtrType, cstNullPtr);
+      opaque.replaceAllUsesWith(typedNullPtr);
       opaque.erase();
     }
 
@@ -715,8 +738,10 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     Value contextPtr = b.create<GEPOp>(
         cache.opaquePtr, coro->getHdlType(), coro->getHdlValue(),
         GEPArg(-coro->contextBaseSize), /*inbounds=*/true);
-    op.replaceAllUsesWith(
-        b.create<BitcastOp>(cache.i8PtrType, contextPtr).getResult());
+    // TODO: Remove bitcast once pop to llvm lowering is updated.
+    auto typedContextPtr =
+        b.create<BitcastOp>(cache.i8PtrType, contextPtr).getResult();
+    op.replaceAllUsesWith(typedContextPtr);
     op.erase();
   }
   for (POP::CoroutineOpaqueHandleOp op : opaques) {
@@ -725,8 +750,10 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     Value contextPtr = b.create<GEPOp>(
         cache.opaquePtr, coro->getHdlType(), coro->getHdlValue(),
         GEPArg(-coro->contextBaseSize), /*inbounds=*/true);
-    op.replaceAllUsesWith(
-        b.create<BitcastOp>(cache.i8PtrType, contextPtr).getResult());
+    // TODO: Remove bitcast once pop to llvm lowering is updated.
+    auto typedContextPtr =
+        b.create<BitcastOp>(cache.i8PtrType, contextPtr).getResult();
+    op.replaceAllUsesWith(typedContextPtr);
     op.erase();
   }
   for (auto [i, op] : llvm::enumerate(awaits)) {

@@ -15,8 +15,10 @@ llvm.func @coro_promise() {
 // CHECK-LABEL: llvm.func @coro_resume
 llvm.func @coro_resume() {
   %0 = "make_handle"() : () -> !pop.coroutine<() -> (i32, i64)>
-  // CHECK: %2 = llvm.load %1
-  // CHECK-NEXT: llvm.call %2(%1)
+  // CECK: [[FUNC:%.*]] = llvm.load [[HND:%.*]] : !llvm.ptr -> !llvm.ptr
+  // CECK-NEXT: llvm.call [[FUNC]]([[HND]])
+  // CHECK: llvm.load
+  // CHECK-NEXT: llvm.call
   pop.coroutine.resume %0 : !pop.coroutine<() -> (i32, i64)>
   llvm.return
 }
@@ -57,11 +59,11 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: llvm.func @async_fn_af
 // CHECK-SAME: (%arg0: !llvm.ptr loc({{.*}}))
 llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
+  // CHECK: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp
+  // CHECK: %[[AFP_CAST:.*]] = llvm.bitcast %[[AFP]]
   // CHECK: %[[C32:.*]] = llvm.mlir.constant(40 : i32)
   // CHECK: %[[C1:.*]] = llvm.mlir.constant(8 : i32)
   // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
-  // CHECK: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp
-  // CHECK: %[[AFP_CAST:.*]] = llvm.bitcast %[[AFP]]
   // CHECK: %[[TOK:.*]] = llvm.call_intrinsic "llvm.coro.id.async"(%[[C32]], %[[C1]], %[[C0]], %[[AFP_CAST]])
   // CHECK: %[[HDL:.*]] = llvm.intr.coro.begin %[[TOK]]
   %hdl = pop.coroutine.handle : <() -> (i64)>
@@ -80,9 +82,9 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   // CHECK: %[[BASE_CTXT_RESUME:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
   // CHECK: %[[RESUME_FN_PTR:.*]] = llvm.getelementptr inbounds %[[BASE_CTXT_RESUME]][0, 0]
   // CHECK: llvm.store %[[RESUME_FN]], %[[RESUME_FN_PTR]]
-  // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[PROJ_FN:.*]] = llvm.mlir.addressof @__kgen_coro_ctxt_proj_fn
   // CHECK: %[[PROJ_FN_OPAQUE:.*]] = llvm.bitcast %[[PROJ_FN]]
+  // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[SUSPEND_FN:.*]] = llvm.mlir.addressof @async_fn_af_suspend
   // CHECK-NEXT: external_call @llvm.coro.suspend.async.sl_p0p0p0s
   // CHECK-SAME: (%[[C0]], %[[RESUME_FN]], %[[PROJ_FN_OPAQUE]], %[[SUSPEND_FN]], %[[CAPTURED]])
