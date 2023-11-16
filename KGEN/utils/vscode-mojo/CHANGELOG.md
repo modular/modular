@@ -14,5 +14,7 @@
 
 ## Fixed
 
-- Fixed the `Debug Mojo File`` action in the editor's top menu and drop the
+- Fixed the `Debug Mojo File` action in the editor's top menu and drop the
   experimental tag.
+
+- Improved the experience of the `Run Mojo File` actions.
