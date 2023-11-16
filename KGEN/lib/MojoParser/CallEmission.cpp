@@ -36,12 +36,11 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-InputParamBindings InputParamBindings::getForDeclaredType(ASTType type,
-                                                          SharedState &shared) {
+InputParamBindings InputParamBindings::getForDeclaredType(ASTType type) {
   InputParamBindings inputParamBindings;
-  ArrayRef<Type> inputParams = type.getInputParameters(shared);
+  ArrayRef<Type> inputParams = type.getInputParameters();
   inputParamBindings.numCtadParams = inputParams.size();
-  inputParamBindings.defaultTypeParams = type.getDefaultParameters(shared);
+  inputParamBindings.defaultTypeParams = type.getDefaultParameters();
 
   // When binding a trait function, add the self type bindings.
   if (auto trait = dyn_cast<TraitType>(type.getMetaType())) {
@@ -1056,9 +1055,9 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
   if (!isa<LIT::FuncOp>(*resultDecls[0]))
     return;
 
-  *this = OverloadSet(methodName, resultDecls,
-                      InputParamBindings::getForDeclaredType(type, shared),
-                      expr, syntax);
+  *this =
+      OverloadSet(methodName, resultDecls,
+                  InputParamBindings::getForDeclaredType(type), expr, syntax);
   baseType = type;
 }
 

@@ -1005,7 +1005,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
       SmallVector<TypedAttr> fnParams = selfParams;
       LITSignatureType sig = traitFn.getFullSignature();
       ParameterEvaluator evaluator(selfParams);
-      auto bindings = InputParamBindings::getForDeclaredType(metatype, shared);
+      auto bindings = InputParamBindings::getForDeclaredType(metatype);
       for (Type type : sig.getInputParamTypes().drop_front(2)) {
         fnParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
         evaluator.addInputValue(fnParams.back());
