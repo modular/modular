@@ -540,7 +540,7 @@ fn _reduce_generator[
     reduce_function: fn[ty: DType, width: Int] (
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
-    target: StringLiteral,
+    target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
     init_value: SIMD[type, 1],
