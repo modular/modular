@@ -280,10 +280,10 @@ public:
   /// e.g. `x`.
   ASTExprAnd<AnyValue> baseValue;
 
-  /// In a method or static method reference, this is the declaration of the
-  /// user defined type. This is not load-bearing, and it's only used for
-  /// emitting better diagnostics.
-  ASTDecl *baseDecl = nullptr;
+  /// In a method or static method reference, this is the base user defined
+  /// type. This is used to emit better diagnostics and emit trait function
+  /// references.
+  ASTType baseType;
 
   /// This is the basename of the declaration set, used in diagnostics.
   StringRef baseName;

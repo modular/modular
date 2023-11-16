@@ -808,10 +808,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                                "input parameter");
         } else {
           // Hide the implicit trait parameters from the diagnostic.
-          // HACK(#25492): Just dig out a trait type if possible.
+          // FIXME(#25492): This is awkward and the model should be reworked.
           size_t hidden = 0;
-          if (auto cr = callable.baseValue.ir.getIfCValue())
-            if (isa_and_nonnull<TraitType>(cr.getRValueType().getMetaType()))
+          if (ASTType type = callable.baseType)
+            if (isa_and_nonnull<TraitType>(type.getMetaType()))
               hidden = 2;
           diag = emitDiagFor.wrongParamCount(
               signature.getNumInputParams() - hidden,
@@ -845,7 +845,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
       /*emitCtadFailure=*/
       [&](size_t paramIdx) {
-        ASTDecl &decl = *callable.baseDecl;
+        ASTDecl &decl = *callable.baseType.getDecl(emitter.shared);
         auto structOp = cast<StructDeclOp>(decl);
         diag << "could not deduce parameter #" << paramIdx << " ("
              << structOp.getSignature().getParamNames()[paramIdx]

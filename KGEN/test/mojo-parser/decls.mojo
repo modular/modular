@@ -1720,3 +1720,49 @@ fn test_infer_trait(a: TraitStruct, b: ParametricTraitStruct[__mlir_attr.`2 : in
     infer_trait(a)
     # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2>,
     infer_trait(b)
+
+
+trait StaticMethodTrait:
+    @staticmethod
+    fn foobar():
+        pass
+
+trait Copyable:
+    fn __copyinit__(inout self, existing: Self):
+        pass
+
+trait Movable:
+    fn __moveinit__(inout self, owned existing: Self):
+        pass
+
+struct StaticMethodStruct(StaticMethodTrait, Copyable):
+    @staticmethod
+    fn foobar():
+        pass
+
+    fn __copyinit__(inout self, existing: Self):
+        pass
+
+# CHECK-LABEL: lit.func @"trait_static_method
+# CHECK-SAME: <[[T:.*]][T]
+fn trait_static_method[T: StaticMethodTrait]():
+    # CHECK: call_param[!lit.signature<() -> !kgen.none>: get_type_method(:trait<{{.*}}@StaticMethodTrait> [[T]], "foobar")]()
+    T.foobar()
+
+# CHECK-LABEL: lit.func @"copy_me
+# CHECK-SAME: <[[T:.*]][T]
+# CHECK-SAME: %__result__[__result__]: !kgen.pointer<:trait<{{.*}}@Copyable> [[T]]> byref_result, |,
+# CHECK-SAME: %value[value]: !kgen.pointer<:trait<{{.*}}@Copyable> [[T]]> borrow_in_mem)
+fn copy_me[T: Copyable](value: T) -> T:
+    # CHECK-NEXT: call_param[!lit.signature<("self": {{.*}}[[T]]> init_self, |, "existing": {{.*}}[[T]]> borrow_in_mem) -> !kgen.none>:
+    # CHECK-SAME: get_type_method({{.*}} [[T]], "__copyinit__")](%__result__, %value)
+    return value
+
+# CHECK-LABEL: lit.func @"move_me
+# CHECK-SAME: <[[T:.*]][T]
+# CHECK-SAME: @Movable> [[T]]> byref_result
+# CHECK-SAME: @Movable> [[T]]> owned_in_mem
+fn move_me[T: Movable](owned value: T) -> T:
+    # CHECK: %0 = lit.ownership.end_lifetime %value
+    # CHECK: call_param[{{.*}}get_type_method({{.*}} [[T]], "__moveinit__")](%__result__, %0)
+    return value ^
