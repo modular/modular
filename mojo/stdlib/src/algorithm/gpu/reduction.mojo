@@ -55,8 +55,43 @@ fn block_reduce[
     barrier()
 
     return warp_reduce[type, shuffle_down, reduce_fn](
-        shared.load(lane) if ThreadIdx.x() < (BlockDim.x() // WARP_SIZE) else 0
+        shared.load(lane) if ThreadIdx.x()
+        < (BlockDim.x() // WARP_SIZE) else init
     )
+
+
+@always_inline
+fn row_reduce[
+    BLOCK_SIZE: Int,
+    input_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    reduce_fn: fn[type: DType, width: Int] (
+        SIMD[type, width], SIMD[type, width]
+    ) capturing -> SIMD[type, width],
+    type: DType,
+    rank: Int,
+](
+    inout row_coords: StaticIntTuple[rank],
+    axis: Int,
+    init: SIMD[type, 1],
+    row_size: Int,
+) -> SIMD[type, 1]:
+    let row_size_padded = align_up(row_size, BLOCK_SIZE)
+    var accum = init
+    let tid = ThreadIdx.x()
+    for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
+        let idx_in_padded_row = tid + offset_in_row
+
+        if idx_in_padded_row >= row_size:
+            break
+
+        row_coords[axis] = idx_in_padded_row
+        let val = input_fn[type, 1, rank](row_coords)
+
+        accum = reduce_fn(val, accum)
+
+    return block_reduce[BLOCK_SIZE, reduce_fn](accum, init)
 
 
 @__llvm_metadata(`nvvm.maxntid`=[BLOCK_SIZE])
@@ -75,7 +110,6 @@ fn reduce_kernel[
     type: DType,
 ](shape: StaticIntTuple[rank], axis: Int, init: SIMD[type, 1],):
     let row_size = shape[axis]
-    let row_size_padded = align_up(row_size, BLOCK_SIZE)
     let num_rows = shape.flattened_length() // row_size
 
     # grid stride loop over rows
@@ -85,24 +119,14 @@ fn reduce_kernel[
         num_rows,
         GridDim.x(),
     ):
-        var accum = init
         var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
+        let row_accum = row_reduce[BLOCK_SIZE, input_fn, reduce_fn](
+            row_coords, axis, init, row_size
+        )
 
-        # thread block takes a row
-        for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-            let idx_in_padded_row = ThreadIdx.x() + offset_in_row
-
-            row_coords[axis] = idx_in_padded_row
-            let val = init if idx_in_padded_row >= row_size else input_fn[
-                type, 1, rank
-            ](row_coords)
-
-            accum = reduce_fn(val, accum)
-
-        let final_accum = block_reduce[BLOCK_SIZE, reduce_fn](accum, init)
         if ThreadIdx.x() == 0:
             row_coords[axis] = 0
-            output_fn(row_coords, final_accum)
+            output_fn(row_coords, row_accum)
 
 
 fn reduce_launch[
