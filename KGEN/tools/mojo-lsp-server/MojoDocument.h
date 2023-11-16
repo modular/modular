@@ -7,6 +7,7 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
 
+#include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
@@ -16,9 +17,22 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"
 #include "llvm/ADT/FunctionExtras.h"
+#include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/MapVector.h"
 
+/// Define ordering operators for SMLoc for use in IntervalMap.
+namespace llvm {
+inline bool operator<(const SMLoc &lhs, const SMLoc &rhs) {
+  return lhs.getPointer() < rhs.getPointer();
+}
+inline bool operator<=(const SMLoc &lhs, const SMLoc &rhs) {
+  return lhs.getPointer() <= rhs.getPointer();
+}
+} // namespace llvm
+
 namespace M::Mojo::LSP {
+class MojoDocStringCodeBlocks;
+
 //===----------------------------------------------------------------------===//
 // MojoDocument
 //===----------------------------------------------------------------------===//
@@ -119,6 +133,28 @@ public:
                           std::vector<mlir::lsp::DocumentSymbol> &symbols,
                           function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl);
 
+  /// Recursively process the document string code blocks in decls nested within
+  /// `decl`. The provided functor defines whether a decl should be processed.
+  /// If the main document represents a REPL module, `curReplDecl` is the AST
+  /// decl for the REPL module that contains `decl`. In the case of a normal
+  /// text document, `curReplDecl` is null.
+  void processDocStringCodeBlocks(
+      MojoDocStringCodeBlocks &codeBlocks, MojoASTDeclRef decl,
+      unsigned bufferId, function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
+      MojoASTDeclRef curReplDecl = {});
+
+  /// Recursively process the document string code blocks in decls nested within
+  /// `decl`. If the main document represents a REPL module, `curReplDecl` is
+  /// the AST decl for the REPL module that contains `decl`. In the case of a
+  /// normal text document, `curReplDecl` is null.
+  void processDocStringCodeBlocks(MojoDocStringCodeBlocks &codeBlocks,
+                                  MojoASTDeclRef decl,
+                                  MojoASTDeclRef curReplDecl = {});
+
+  /// Check the given the parsed module decl for high-level semantic issues. Any
+  /// errors are reported to the source manager.
+  void checkModuleSemantics(MojoASTDeclRef decl);
+
   //===--------------------------------------------------------------------===//
   // Asynchronous LSP Queries
   //===--------------------------------------------------------------------===//
@@ -162,10 +198,6 @@ protected:
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
   /// It also sets up a SourceMgr with the given MojoDocument as its main file.
   struct Context;
-
-  /// Check the given the parsed module decl for high-level semantic issues. Any
-  /// errors are reported to the source manager.
-  void checkModuleSemantics(MojoASTDeclRef decl);
 
   //===--------------------------------------------------------------------===//
   // Derived Document Hooks
@@ -299,6 +331,56 @@ private:
 using MojoDocumentRef = RCRef<MojoDocument>;
 
 //===----------------------------------------------------------------------===//
+// MojoDocStringCodeBlocks
+//===----------------------------------------------------------------------===//
+
+/// This class represents all of the doc string code block state within a mojo
+/// document. These code blocks somewhat function as independent documents, as
+/// they are parsed and processed separately from the main document, but are
+/// still tied to the main document (e.g. for locations, requests, etc.).
+class MojoDocStringCodeBlocks {
+public:
+  MojoDocStringCodeBlocks() : rangeToCodeBlock(allocator) {}
+
+  /// This class represents an individual code block within a doc string.
+  struct CodeBlock {
+    CodeBlock(SmallVector<std::pair<StringRef, Type>> persistentVariables)
+        : persistentVariables(std::move(persistentVariables)) {}
+
+    /// The persistent REPL variables defined in code blocks defined before this
+    /// one in the same doc string.
+    SmallVector<std::pair<StringRef, Type>> persistentVariables;
+
+    /// The AST decl for the module containing this code block.
+    MojoASTDeclRef decl;
+  };
+
+  /// Add any code blocks in the doc string for the given decl.
+  /// `bufferId` is the source manager buffer for the main document.
+  /// If the main document represents a REPL module, `curReplDecl` is the AST
+  /// decl for the REPL module that contains `decl`. In the case of a normal
+  /// text document, `curReplDecl` is null.
+  void addCodeBlocks(MojoDocument &mainDoc, MojoASTDeclRef decl,
+                     MojoASTDeclRef curReplDecl, unsigned bufferId);
+
+private:
+  using MapT = llvm::IntervalMap<
+      SMLoc, CodeBlock *,
+      llvm::IntervalMapImpl::NodeSizer<SMLoc, CodeBlock *>::LeafSize,
+      llvm::IntervalMapHalfOpenInfo<SMLoc>>;
+
+  /// An allocator to use for code blocks.
+  llvm::SpecificBumpPtrAllocator<CodeBlock> codeBlockAllocator;
+
+  /// The code blocks within the document.
+  SmallVector<CodeBlock *> codeBlocks;
+
+  /// A map of source locations within the main document to code blocks.
+  MapT::Allocator allocator;
+  MapT rangeToCodeBlock;
+};
+
+//===----------------------------------------------------------------------===//
 // MojoTextDocument
 //===----------------------------------------------------------------------===//
 
@@ -335,6 +417,10 @@ private:
   /// Returns true if the document contains the given location.
   bool containsLocation(llvm::SMLoc loc) override;
 
+  /// Translate the given parser location into one usable by the language
+  /// server.
+  llvm::SMLoc translateParserLoc(llvm::SMLoc loc) override;
+
   /// Returns true if the document contains the given location.
   llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
                             mlir::lsp::Position position) override;
@@ -360,6 +446,9 @@ private:
 
   /// The AST decl for the module containing this document.
   MojoASTDeclRef parsedDecl;
+
+  /// The doc string code blocks within this document.
+  MojoDocStringCodeBlocks codeBlocks;
 };
 
 using MojoTextDocumentRef = RCRef<MojoTextDocument>;
@@ -396,6 +485,9 @@ public:
 
     /// The persistent REPL variables defined before this cell.
     SmallVector<std::pair<StringRef, Type>> persistentVariables;
+
+    /// The doc string code blocks within this cell.
+    MojoDocStringCodeBlocks codeBlocks;
   };
 
   MojoNotebookDocument(ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs,

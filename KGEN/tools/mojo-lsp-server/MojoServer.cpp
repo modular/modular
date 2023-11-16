@@ -9,6 +9,7 @@
 #include "MojoDocument.h"
 
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
@@ -27,7 +28,6 @@
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
-#include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/CrashRecoveryContext.h"
@@ -57,16 +57,6 @@ static SMRange getRangeForText(SMLoc loc, StringRef text) {
     return {};
   return {loc, SMLoc::getFromPointer(loc.getPointer() + text.size())};
 }
-
-/// Define ordering operators for SMLoc for use in IntervalMap.
-namespace llvm {
-bool operator<(const SMLoc &lhs, const SMLoc &rhs) {
-  return lhs.getPointer() < rhs.getPointer();
-}
-bool operator<=(const SMLoc &lhs, const SMLoc &rhs) {
-  return lhs.getPointer() <= rhs.getPointer();
-}
-} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 // Symbol
@@ -636,7 +626,7 @@ void MojoDocument::markDocumentParsed() {
 
 void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
   // Don't check the semantics of the module if there were parser errors.
-  if (hasParserErrors || !decl.getIfOperation())
+  if (hasParserErrors || !decl || !decl.getIfOperation())
     return;
 
   // Clone the module this decl is in so that we don't mess with the AST, as
@@ -1032,6 +1022,40 @@ void MojoDocument::onDocumentSymbol(
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDocument: Document String Code Blocks
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::processDocStringCodeBlocks(
+    MojoDocStringCodeBlocks &codeBlocks, MojoASTDeclRef decl, unsigned bufferId,
+    function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
+    MojoASTDeclRef curReplDecl) {
+  codeBlocks.addCodeBlocks(*this, decl, curReplDecl, bufferId);
+
+  // Traverse the child decls.
+  for (const auto &childIt : decl.getChildren()) {
+    for (MojoASTDeclRef child : childIt.getDecls())
+      if (shouldIncludeDecl(child))
+        processDocStringCodeBlocks(codeBlocks, child, bufferId,
+                                   shouldIncludeDecl, curReplDecl);
+  }
+}
+
+void MojoDocument::processDocStringCodeBlocks(
+    MojoDocStringCodeBlocks &codeBlocks, MojoASTDeclRef decl,
+    MojoASTDeclRef curReplDecl) {
+  unsigned bufferId = sourceMgr.FindBufferContainingLoc(decl.getLoc());
+  StringRef declBufferRef = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
+  auto processFn = [declBufferRef](MojoASTDeclRef decl) {
+    // Imported decls may be in a different buffer, only consider decls in the
+    // same buffer as the main decl.
+    const char *declLoc = decl.getLoc().getPointer();
+    return declBufferRef.begin() <= declLoc && declLoc <= declBufferRef.end();
+  };
+  processDocStringCodeBlocks(codeBlocks, decl, bufferId, processFn,
+                             curReplDecl);
+}
+
+//===----------------------------------------------------------------------===//
 // MojoDocument: Hover
 //===----------------------------------------------------------------------===//
 
@@ -1103,6 +1127,76 @@ lsp::SignatureHelp MojoDocument::onSignatureHelpSync(SMLoc loc) {
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDocStringCodeBlocks
+//===----------------------------------------------------------------------===//
+
+void MojoDocStringCodeBlocks::addCodeBlocks(MojoDocument &mainDoc,
+                                            MojoASTDeclRef decl,
+                                            MojoASTDeclRef curReplDecl,
+                                            unsigned bufferId) {
+  // Check if the decl has a doc string with a decipherable location.
+  std::optional<DocString> docString = decl->getParsedDocString();
+  if (!docString)
+    return;
+  FileLineColLoc docLocAttr = docString->getLoc();
+  if (!docLocAttr)
+    return;
+  SourceMgr &sourceMgr = mainDoc.getSourceMgr();
+  SMLoc docStartLoc = sourceMgr.FindLocForLineAndColumn(
+      bufferId, docLocAttr.getLine(), docLocAttr.getColumn());
+  if (!docStartLoc.isValid())
+    return;
+  StringRef rawDocStr = decl->getDocString().getString();
+
+  // Translate a doc string location to a source location in the main buffer.
+  auto translateLoc = [&](const char *loc) -> const char * {
+    if (!docStartLoc.isValid())
+      return nullptr;
+    return docStartLoc.getPointer() + (loc - rawDocStr.data());
+  };
+
+  // Process the code blocks in the doc string.
+  SmallVector<std::pair<StringRef, mlir::Type>> persistentVariables;
+  MojoParserContext &ctx = mainDoc.getParserContext();
+  MojoASTDeclRef prevDecl = curReplDecl;
+  for (const auto &block : docString->getCodeBlocks()) {
+    StringRef blockContents = block.getRawCode();
+    const char *blockStartLoc = translateLoc(blockContents.data());
+    const char *blockEndLoc = translateLoc(blockContents.end());
+    if (!blockStartLoc || !blockEndLoc || blockStartLoc == blockEndLoc)
+      continue;
+    StringRef contents(blockStartLoc, blockEndLoc - blockStartLoc);
+
+    // Make sure the contents are mapped to the main document (important in the
+    // case of the REPL, whose parsed buffer is different from the input).
+    SMLoc docStartLoc =
+        mainDoc.translateParserLoc(SMLoc::getFromPointer(contents.data()));
+    SMLoc docLastLoc = mainDoc.translateParserLoc(
+        SMLoc::getFromPointer(contents.data() + contents.size() - 1));
+    SMLoc docEndLoc = SMLoc::getFromPointer(docLastLoc.getPointer() + 1);
+    StringRef mainDocContents(
+        docStartLoc.getPointer(),
+        (docLastLoc.getPointer() - docStartLoc.getPointer()) + 1);
+
+    // Create the new codeblock.
+    CodeBlock *codeBlock = codeBlocks.emplace_back(
+        new (codeBlockAllocator.Allocate()) CodeBlock(persistentVariables));
+
+    // Parse the code block.
+    LSPMojoREPLListener listener(sourceMgr, persistentVariables);
+    auto [moduleDecl, exprFnDecl] = ctx.parseREPLExpression(
+        listener, bufferId, contents, "__mojo_repl_lsp_main",
+        persistentVariables, prevDecl);
+    prevDecl = codeBlock->decl = moduleDecl;
+    if (exprFnDecl)
+      mainDoc.checkModuleSemantics(codeBlock->decl);
+
+    // Map the code block location to the main buffer.
+    rangeToCodeBlock.insert(docStartLoc, docEndLoc, codeBlock);
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // MojoTextDocument
 //===----------------------------------------------------------------------===//
 
@@ -1124,6 +1218,7 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
 void MojoTextDocument::parseDocumentImpl() {
   parsedDecl = getParserContext().parseFile(getSourceMgr().getMainFileID());
   checkModuleSemantics(parsedDecl);
+  processDocStringCodeBlocks(codeBlocks, parsedDecl);
 }
 
 const mlir::lsp::URIForFile &
@@ -1134,6 +1229,16 @@ MojoTextDocument::getURIFromContainedLoc(SMLoc loc) {
 bool MojoTextDocument::containsLocation(SMLoc loc) {
   return getSourceMgr().FindBufferContainingLoc(loc) ==
          getSourceMgr().getMainFileID();
+}
+
+SMLoc MojoTextDocument::translateParserLoc(SMLoc loc) {
+  if (containsLocation(loc))
+    return loc;
+
+  // If the location isn't in the main document, try to map it (e.g. in the case
+  // of a location within a doc string code block).
+  auto newLoc = getParserContext().getREPLLocMapper().mapLocation(loc);
+  return newLoc.isValid() ? newLoc : loc;
 }
 
 SMLoc MojoTextDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
@@ -1233,6 +1338,8 @@ void MojoNotebookDocument::parseDocumentImpl() {
       prevDecl = cell.decl = result.moduleDecl;
       if (result.isValid())
         checkModuleSemantics(cell.decl);
+      processDocStringCodeBlocks(cell.codeBlocks, cell.decl,
+                                 /*curReplDecl=*/cell.decl);
       continue;
     }
 
@@ -1284,6 +1391,14 @@ bool MojoNotebookDocument::containsLocation(SMLoc loc) {
 
 SMLoc MojoNotebookDocument::translateParserLoc(SMLoc loc) {
   auto newLoc = getParserContext().getREPLLocMapper().mapLocation(loc);
+  if (!newLoc.isValid())
+    return loc;
+
+  // If this location isn't contained, try to map it again, this can happen if
+  // the location is in a doc string.
+  if (containsLocation(newLoc))
+    return newLoc;
+  newLoc = getParserContext().getREPLLocMapper().mapLocation(newLoc);
   return newLoc.isValid() ? newLoc : loc;
 }
 

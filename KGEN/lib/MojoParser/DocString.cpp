@@ -115,7 +115,7 @@ DocString::DocString(DocStringAttr rawDocStringAttr)
     return;
 
   // Determine the minimum indentation (first line doesn't count).
-  size_t indent = std::numeric_limits<size_t>::max();
+  indent = std::numeric_limits<size_t>::max();
   for (StringRef &line : lines.drop_front()) {
     // Trim out any carriage returns.
     line = line.trim("\r");
@@ -162,6 +162,50 @@ DocString::DocString(DocStringAttr rawDocStringAttr)
 
   // The remaining lines are the description, or sections there within.
   descriptionLines.append(lines.begin() + line, lines.end());
+}
+
+SmallVector<DocString::CodeBlock> DocString::getCodeBlocks() const {
+  SmallVector<CodeBlock> codeBlocks;
+
+  // Process the description looking for code blocks.
+  std::optional<CodeBlock> curCodeBlock;
+  for (unsigned i = 0, e = descriptionLines.size(); i < e; ++i) {
+    StringRef line = descriptionLines[i];
+    StringRef strippedLine = line.trim();
+
+    // Check if we're in a code block currently.
+    if (curCodeBlock) {
+      // If this isn't the end, add the line to the current block.
+      if (strippedLine != "```" ||
+          (line.size() - strippedLine.size()) != curCodeBlock->indentLevel)
+        continue;
+      // Just ignore empty code blocks.
+      if (curCodeBlock->lineRange.first == i)
+        continue;
+      curCodeBlock->lineRange.second = i - 1;
+      codeBlocks.emplace_back(std::move(*curCodeBlock));
+      curCodeBlock.reset();
+      continue;
+    }
+
+    // Check for a new code block.
+    if (strippedLine == "```mojo") {
+      curCodeBlock.emplace(
+          CodeBlock(*this, line.size() - strippedLine.size(), i + 1));
+    }
+  }
+  return codeBlocks;
+}
+
+//===----------------------------------------------------------------------===//
+// DocString::CodeBlock
+//===----------------------------------------------------------------------===//
+
+StringRef DocString::CodeBlock::getRawCode() const {
+  const char *startPos =
+      docString->descriptionLines[lineRange.first].data() - docString->indent;
+  const char *lastPos = docString->descriptionLines[lineRange.second].end();
+  return StringRef(startPos, lastPos - startPos);
 }
 
 //===----------------------------------------------------------------------===//
