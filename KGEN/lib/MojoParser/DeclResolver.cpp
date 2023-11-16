@@ -4064,8 +4064,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (!structOp.getTraitsAttr())
     return success();
 
-  //// Resolve struct member functions' signature if they are candidates to
-  /// implement trait functions so that we do conformance check next.
+  // Resolve struct member functions' signature if they are candidates to
+  // implement trait functions so that we can do conformance check next.
   for (SymbolRefAttr attr : structOp.getTraitsAttr()) {
     ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
     for (auto &[name, _] : traitDecl.getDeclsInScope()) {
