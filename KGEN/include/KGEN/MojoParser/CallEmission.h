@@ -81,8 +81,7 @@ public:
   /// Create a (possibly partially unbound) set of bindings for the given type.
   /// This can be used to initialize the binding set for methods. If the given
   /// type is not a parametric user defined type, this returns empty bindings.
-  static InputParamBindings getForDeclaredType(ASTType type,
-                                               SharedState &shared);
+  static InputParamBindings getForDeclaredType(ASTType type);
 
   /// Return whether there are any bindings given.
   bool empty() const { return posBindings.empty() && kwBindings.empty(); }

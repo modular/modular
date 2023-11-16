@@ -77,14 +77,14 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   return {};
 }
 
-ArrayRef<Type> ASTType::getInputParameters(SharedState &shared) const {
+ArrayRef<Type> ASTType::getInputParameters() const {
   // Query the metatype for the parameter signature.
   if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
     return metaType.getSignature().getInputParamTypes();
   return {};
 }
 
-ArrayRef<TypedAttr> ASTType::getDefaultParameters(SharedState &shared) const {
+ArrayRef<TypedAttr> ASTType::getDefaultParameters() const {
   // Query the metatype for the parameter signature.
   if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(getMetaType()))
     return metaType.getSignature().getDefaultParameters();

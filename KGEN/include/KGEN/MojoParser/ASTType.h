@@ -66,10 +66,10 @@ public:
   ArrayRef<TypedAttr> getParamBindings() const;
 
   /// Get the types of any unbound input parameters of the type.
-  ArrayRef<Type> getInputParameters(SharedState &shared) const;
+  ArrayRef<Type> getInputParameters() const;
 
   /// Get the default values for the unbound input parameters of the type.
-  ArrayRef<TypedAttr> getDefaultParameters(SharedState &shared) const;
+  ArrayRef<TypedAttr> getDefaultParameters() const;
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.

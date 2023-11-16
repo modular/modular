@@ -3912,8 +3912,8 @@ getTraitFunctionSignature(SharedState &shared, LIT::FuncOp traitFn,
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, anyRegTypeType));
   ParameterEvaluator evaluator(params);
-  auto bindings = InputParamBindings::getForDeclaredType(
-      structSelfType.getMetaType(), shared);
+  auto bindings =
+      InputParamBindings::getForDeclaredType(structSelfType.getMetaType());
   for (Type type : inputParamTypes.drop_front(2)) {
     params.push_back(UnboundAttr::get(type));
     evaluator.addInputValue(params.back());
