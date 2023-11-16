@@ -656,39 +656,14 @@ fn simd_store[
 # through NDBuffer
 @always_inline
 fn buffer_to_scalar[
-    target: StringLiteral,
-    type: DType,
+    type: DType
 ](
     buf: NDBuffer[1, DimList.create_unknown[1](), type],
-    out_chain: OutputChainPtr,
     idx: Int = 0,
-) -> SIMD[type, 1]:
-    """If an op runs on the GPU, all inputs are allocated on the device.
-    When the target is cuda, this function copies single element pointers
-    from the device to host, because they are sometimes needed to launch
-    the kernel (e.g. reduction axis).
-    """
-
-    @parameter
-    if target != "cuda":  # else in below if not working for some reason
-        return buf[idx]
-
-    var val: SIMD[type, 1] = 0
-
-    @parameter
-    if target == "cuda":
-        try:
-            _copy_device_to_host_async(
-                DTypePointer[type].address_of(val),
-                buf.data + idx,
-                1,
-                out_chain.get_cuda_stream(),
-            )
-            var stream = out_chain.get_cuda_stream()
-            stream.synchronize()
-        except e:
-            out_chain.mark_error(e)
-    return val
+) -> SIMD[
+    type, 1
+]:
+    return buf[idx]
 
 
 # ===----------------------------------------------------------------------===#
@@ -1017,7 +992,7 @@ fn concat[
     let ins = variadic_list_to_vector(variadic_ins)
     _concat[rank, type, single_thread_blocking_override, target](
         output,
-        normalize_neg_index(buffer_to_scalar[target](axis, out_chain), rank),
+        normalize_neg_index(buffer_to_scalar(axis), rank),
         ins,
         out_chain,
     )
@@ -1203,8 +1178,7 @@ fn mean[
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
-    # The axis is always on the host.
-    let axis = buffer_to_scalar["cpu"](axis_buffer, out_chain)
+    let axis = buffer_to_scalar(axis_buffer)
     _mean[
         type,
         rank,
@@ -1315,7 +1289,7 @@ fn reduce_add[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
+    let axis = buffer_to_scalar(axis_buffer)
     _reduce_generator[
         type,
         rank,
@@ -1323,6 +1297,7 @@ fn reduce_add[
         input_0_fn_wrapper,
         output_0_fn_wrapper,
         reduce_impl,
+        target,
     ](input_shape, 0, axis.to_int(), out_chain)
 
 
@@ -1365,7 +1340,7 @@ fn reduce_max[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
-    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
+    let axis = buffer_to_scalar(axis_buffer)
     _reduce_generator[
         type,
         rank,
@@ -1373,6 +1348,7 @@ fn reduce_max[
         input_0_fn_wrapper,
         output_0_fn_wrapper,
         reduce_impl,
+        target,
     ](input_shape, min_or_neginf[type](), axis.to_int(), out_chain)
 
 
@@ -1415,7 +1391,7 @@ fn reduce_min[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return min(v1, v2)
 
-    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
+    let axis = buffer_to_scalar(axis_buffer)
     _reduce_generator[
         type,
         rank,
@@ -1423,6 +1399,7 @@ fn reduce_min[
         input_0_fn_wrapper,
         output_0_fn_wrapper,
         reduce_impl,
+        target,
     ](input_shape, max_or_inf[type](), axis.to_int(), out_chain)
 
 
@@ -1465,7 +1442,7 @@ fn reduce_mul[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
 
-    let axis = buffer_to_scalar[target](axis_buffer, out_chain)
+    let axis = buffer_to_scalar(axis_buffer)
     _reduce_generator[
         type,
         rank,
@@ -1473,6 +1450,7 @@ fn reduce_mul[
         input_0_fn_wrapper,
         output_0_fn_wrapper,
         reduce_impl,
+        target,
     ](input_shape, 1, axis.to_int(), out_chain)
 
 
@@ -1798,9 +1776,7 @@ fn transpose[
     @always_inline
     @parameter
     fn body[i: Int]():
-        # HACK HACK HACK (#24946)
-        # these inputs should be allocated on the host even if target is cuda
-        let dim = buffer_to_scalar[target](perms, out_chain, i).to_int()
+        let dim = buffer_to_scalar(perms, i).to_int()
         new_shape[i] = input.dynamic_shape[dim]
         new_stride[i] = input.dynamic_stride[dim]
 
@@ -1917,9 +1893,7 @@ fn gather[
     output_shape: StaticIntTuple[output_rank],
     out_chain: OutputChainPtr,
 ):
-    let axis = normalize_neg_index(
-        buffer_to_scalar[target](axis_buffer, out_chain), in_rank
-    )
+    let axis = normalize_neg_index(buffer_to_scalar(axis_buffer), in_rank)
 
     @parameter
     @always_inline
