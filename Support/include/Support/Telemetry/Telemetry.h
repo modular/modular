@@ -70,7 +70,7 @@ public:
                    std::optional<Config> config = std::nullopt);
 
   /// Construct a TelemetryContext from a config.
-  TelemetryContext(Config config);
+  TelemetryContext(Config config) : TelemetryContext({}, std::move(config)){};
 
   ~TelemetryContext();
 
