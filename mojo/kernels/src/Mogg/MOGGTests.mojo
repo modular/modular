@@ -238,6 +238,7 @@ fn test_unary_kernel_shape_func[
 
 @mogg_register("tf.Identity")
 @mogg_register("torch.aten.abs")
+@mogg_register("monnx.abs_v13")
 @always_inline
 @export
 fn test_custom_identity[
@@ -278,6 +279,7 @@ fn test_custom_identity[
 
 @mogg_register_shape_func("tf.Identity")
 @mogg_register_shape_func("torch.aten.abs")
+@mogg_register_shape_func("monnx.abs_v13")
 @always_inline
 @export
 fn test_custom_identity_shape_func[
