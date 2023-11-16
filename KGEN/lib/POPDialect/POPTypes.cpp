@@ -30,7 +30,7 @@ static ParseResult parsePrettyTypeImpl(AsmParser &p, TypedAttr &typeExpr) {
   Type type = TypeT::parse(p);
   if (!type)
     return failure();
-  typeExpr = TypeConstantAttr::get(type);
+  typeExpr = TypeConstantAttr::get(type, AnyRegTypeType::get(p.getContext()));
   return success();
 }
 
@@ -81,7 +81,9 @@ POP::ArrayType POP::ArrayType::get(TypedAttr size, TypedAttr elementType) {
 }
 
 POP::ArrayType POP::ArrayType::get(TypedAttr size, Type elementType) {
-  return get(size.getContext(), size, TypeConstantAttr::get(elementType));
+  MLIRContext *ctx = size.getContext();
+  return get(ctx, size,
+             TypeConstantAttr::get(elementType, AnyRegTypeType::get(ctx)));
 }
 
 POP::ArrayType POP::ArrayType::get(int64_t size, Type elementType) {

@@ -57,11 +57,6 @@ public:
   /// Get a type constant attribute with a vtable.
   static TypedAttr get(Type value, Type type, VTableAttr vtable);
 
-  /// TODO(metatypes): Delete this
-  static TypedAttr get(Type value) {
-    return get(value, AnyRegTypeType::get(value.getContext()));
-  }
-
   /// Returns true if the given type is classified as a concrete type.
   static bool isConcreteType(Type type);
 

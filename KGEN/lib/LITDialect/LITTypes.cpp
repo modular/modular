@@ -306,7 +306,9 @@ RefType RefType::get(bool isMutable, TypedAttr elementType,
 }
 
 RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime) {
-  return get(isMutable, TypeConstantAttr::get(elementType), lifetime);
+  auto typeExpr = TypeConstantAttr::get(
+      elementType, AnyRegTypeType::get(elementType.getContext()));
+  return get(isMutable, typeExpr, lifetime);
 }
 
 Type RefType::getElementAsType() {

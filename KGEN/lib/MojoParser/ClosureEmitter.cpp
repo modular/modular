@@ -618,7 +618,8 @@ createTypedSymbol(SymbolConstantAttr symbol,
 
 /// Generate the code to allocate heap memory for the given pointer type.
 static Value allocateHeapMemory(PointerType ptrType, ImplicitLocOpBuilder &b) {
-  TypedAttr elementType = TypeConstantAttr::get(ptrType.getElementAsType());
+  TypedAttr elementType = TypeConstantAttr::get(
+      ptrType.getElementAsType(), AnyRegTypeType::get(ptrType.getContext()));
   TypedAttr target =
       ParamOperatorAttr::get(POC::CurrentTarget, {}, b.getType<TargetType>());
   Value sizeOf = b.create<ParamConstantOp>(

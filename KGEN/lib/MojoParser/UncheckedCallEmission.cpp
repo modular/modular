@@ -753,7 +753,9 @@ static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
   }
 
   // Bind the result type to the base coroutine type.
-  return BindTypeAttr::get(PValue(coroType), TypeConstantAttr::get(resultType));
+  auto typeExpr = TypeConstantAttr::get(
+      resultType, AnyRegTypeType::get(shared.getContext()));
+  return BindTypeAttr::get(PValue(coroType), typeExpr);
 }
 
 CValue ExprEmitter::emitCallUnchecked(CRValue callee,
