@@ -59,6 +59,21 @@ static SMRange getRangeForText(SMLoc loc, StringRef text) {
 }
 
 //===----------------------------------------------------------------------===//
+// Inlay Hints
+//===----------------------------------------------------------------------===//
+
+lsp::InlayHint MojoInlayHint::toLspInlayHint(SourceMgr &sourceMgr) const {
+  lsp::InlayHint hint(kind, lsp::Position(sourceMgr, loc));
+  if (leftIndent)
+    hint.label.assign(leftIndent, ' ');
+  hint.label += label.str();
+
+  hint.paddingLeft = paddingLeft;
+  hint.paddingRight = paddingRight;
+  return hint;
+}
+
+//===----------------------------------------------------------------------===//
 // Symbol
 //===----------------------------------------------------------------------===//
 
@@ -596,6 +611,9 @@ void MojoDocument::parseDocument() {
   for (auto &params : llvm::make_second_range(fileToDiags))
     sendDiagnosticsFn(*params);
 
+  // Sort any inlay hints computed during parsing.
+  llvm::stable_sort(inlayHints);
+
   // Mark the document as fully parsed now that we're done.
   markDocumentParsed();
 }
@@ -1029,7 +1047,7 @@ void MojoDocument::processDocStringCodeBlocks(
     MojoDocStringCodeBlocks &codeBlocks, MojoASTDeclRef decl, unsigned bufferId,
     function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
     MojoASTDeclRef curReplDecl) {
-  codeBlocks.addCodeBlocks(*this, decl, curReplDecl, bufferId);
+  codeBlocks.addCodeBlocks(*this, decl, curReplDecl, bufferId, inlayHints);
 
   // Traverse the child decls.
   for (const auto &childIt : decl.getChildren()) {
@@ -1084,6 +1102,38 @@ std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) {
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDocument: Inlay Hints
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::onInlayHint(
+    const mlir::lsp::URIForFile &uri, const mlir::lsp::Range &range,
+    OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint) {
+  startTaskAfterParsing([uri, range, onInlayHint = std::move(onInlayHint)](
+                            MojoDocument &doc) mutable {
+    if (doc.isInvalidated)
+      return onInlayHint({});
+    SMRange smRange = doc.getLocFromPos(uri, range);
+    if (!smRange.isValid())
+      return onInlayHint({});
+    onInlayHint(doc.onInlayHintSync(smRange));
+  });
+}
+
+std::vector<lsp::InlayHint> MojoDocument::onInlayHintSync(SMRange range) {
+  std::vector<lsp::InlayHint> hints;
+
+  // Grab the set of inlay hints contained within the given range.
+  auto hintIt = llvm::partition_point(
+      inlayHints, [&](const auto &hint) { return hint.loc < range.Start; });
+  auto hintEndIt = llvm::partition_point(
+      inlayHints, [&](const auto &hint) { return hint.loc < range.End; });
+  for (const MojoInlayHint &hint : llvm::make_range(hintIt, hintEndIt))
+    hints.push_back(hint.toLspInlayHint(sourceMgr));
+
+  return hints;
+}
+
+//===----------------------------------------------------------------------===//
 // MojoDocument: Signature Help
 //===----------------------------------------------------------------------===//
 
@@ -1130,10 +1180,9 @@ lsp::SignatureHelp MojoDocument::onSignatureHelpSync(SMLoc loc) {
 // MojoDocStringCodeBlocks
 //===----------------------------------------------------------------------===//
 
-void MojoDocStringCodeBlocks::addCodeBlocks(MojoDocument &mainDoc,
-                                            MojoASTDeclRef decl,
-                                            MojoASTDeclRef curReplDecl,
-                                            unsigned bufferId) {
+void MojoDocStringCodeBlocks::addCodeBlocks(
+    MojoDocument &mainDoc, MojoASTDeclRef decl, MojoASTDeclRef curReplDecl,
+    unsigned bufferId, std::vector<MojoInlayHint> &inlayHints) {
   // Check if the decl has a doc string with a decipherable location.
   std::optional<DocString> docString = decl->getParsedDocString();
   if (!docString)
@@ -1179,9 +1228,9 @@ void MojoDocStringCodeBlocks::addCodeBlocks(MojoDocument &mainDoc,
         (docLastLoc.getPointer() - docStartLoc.getPointer()) + 1);
 
     // Create the new codeblock.
-    CodeBlock *codeBlock = codeBlocks.emplace_back(
-        new (codeBlockAllocator.Allocate())
-            CodeBlock(mainDocContents, persistentVariables));
+    CodeBlock *codeBlock =
+        codeBlocks.emplace_back(new (codeBlockAllocator.Allocate()) CodeBlock(
+            mainDocContents, persistentVariables, block.getRawIndentLevel()));
 
     // Parse the code block.
     LSPMojoREPLListener listener(sourceMgr, persistentVariables);
@@ -1194,6 +1243,9 @@ void MojoDocStringCodeBlocks::addCodeBlocks(MojoDocument &mainDoc,
 
     // Map the code block location to the main buffer.
     rangeToCodeBlock.insert(docStartLoc, docEndLoc, codeBlock);
+
+    // Add inlay hints for the code block.
+    codeBlock->onInlayHint(inlayHints);
   }
 }
 
@@ -1210,6 +1262,23 @@ MojoDocStringCodeBlocks::CodeBlock::onCodeCompletion(llvm::SMLoc completeLoc,
   uint64_t rawCompletePos = completeLoc.getPointer() - contents.data();
   return ctx.codeCompleteREPLExpression(contents, rawCompletePos,
                                         persistentVariables, decl);
+}
+
+void MojoDocStringCodeBlocks::CodeBlock::onInlayHint(
+    std::vector<MojoInlayHint> &inlayHints) {
+  // Add an `>>>` inlay hint for each line in the code block. This helps to
+  // differentiate the code block from normal code.
+  SmallVector<StringRef> lines;
+  contents.split(lines, '\n');
+  for (StringRef line : lines) {
+    SMLoc loc = SMLoc::getFromPointer(line.data() +
+                                      (line.empty() ? 0 : contentsIndent));
+
+    MojoInlayHint hint(lsp::InlayHintKind::Type, ">>>", loc);
+    hint.leftIndent = line.empty() ? contentsIndent : 0;
+    hint.paddingRight = true;
+    inlayHints.emplace_back(hint);
+  }
 }
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
@@ -1815,6 +1884,15 @@ void MojoServer::onHover(
     doc->onHover(uri, pos, std::move(onHoverFn));
   else
     onHoverFn({});
+}
+
+void MojoServer::onInlayHint(
+    const lsp::URIForFile &uri, const lsp::Range &range,
+    OnResultFn<std::vector<lsp::InlayHint>> onInlayHint) {
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
+    doc->onInlayHint(uri, range, std::move(onInlayHint));
+  else
+    onInlayHint({});
 }
 
 void MojoServer::getSignatureHelp(
