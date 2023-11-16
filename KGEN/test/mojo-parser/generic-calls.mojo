@@ -78,3 +78,18 @@ fn test_reg_converts_to_generic[T: AnyRegType](t: T):
     # CHECK: pop.store %[[TREB]], %[[TPTR]]
     # CHECK: lit.call @{{.*}}::@"generic{{.*}}"<:type rebind(:regtype [[T]])>(%[[TPTR]])
     generic(t)
+
+
+struct Foo[T: AnyType]:
+    pass
+
+
+fn generic_foo[T: AnyRegType](t: Foo[T]):
+    pass
+
+
+# CHECK-LABEL: lit.func @"infers_for_generic_foo
+# CHECK-SAME: "<[[T:.*]][T]: regtype>
+fn infers_for_generic_foo[T: AnyRegType](t: Foo[T]):
+    # CHECKL lit.call @{{.*}}::@"generic_foo{{.*}}"<:regtype [[T]]>(%t)
+    generic_foo(t)
