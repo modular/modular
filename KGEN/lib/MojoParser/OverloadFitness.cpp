@@ -64,9 +64,18 @@ private:
 void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
-  if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType))
-    return matchParams(TypeConstantAttr::get(actualType),
-                       expectedParamRef.getParam());
+  if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType)) {
+    if (Type metatype = ASTType(actualType).getMetaType()) {
+      matchParams(TypeConstantAttr::get(actualType, metatype),
+                  expectedParamRef.getParam());
+    } else {
+      // Otherwise, this is an MLIR type.
+      matchParams(TypeConstantAttr::get(
+                      actualType, AnyRegTypeType::get(actualType.getContext())),
+                  expectedParamRef.getParam());
+    }
+    return;
+  }
 
   // If the types trivially match then there is no inference to do.
   if (actualType == expectedType)
@@ -154,12 +163,21 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
         inferredValues.push_back(actualAttr);
         return;
       }
+      // Otherwise, compare the rebound types to handle dependent types.
       expectedType = evaluator.getReboundType(expectedType);
-      if (actualAttr.getType() == expectedType)
+      if (actualAttr.getType() == expectedType) {
         inferredValues.push_back(actualAttr);
-      else if (canZeroCostConvert(shared, actualAttr.getType(), expectedType)) {
-        inferredValues.push_back(KGEN::ParamOperatorAttr::get(
-            POC::Rebind, actualAttr, expectedType));
+        return;
+      }
+      // Otherwise, attempt an implicit conversion between the inferred type and
+      // the expected type.
+      ExprEmitter emitter(shared, shared.getTopLevelDecl(), EC_TypeParamValue);
+      SyntheticNode node(shared.getTopLevelDecl().getLoc());
+      if (emitter.canImplicitlyConvertToType({actualAttr, &node},
+                                             expectedType)) {
+        PValue result = emitter.emitPValue({actualAttr, &node},
+                                           EC_TypeParamValue, expectedType);
+        inferredValues.push_back(result);
       }
     }
     return;

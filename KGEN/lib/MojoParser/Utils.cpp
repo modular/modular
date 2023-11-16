@@ -35,18 +35,16 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   // forbid this when traits are fully operational.
   if (isa<MetaTypeType>(fromType) && isa<AnyTypeType, AnyRegTypeType>(toType))
     return true;
-
+  // Register-passable types can bind to any types.
   if (isa<AnyRegTypeType>(fromType) && isa<AnyTypeType>(toType))
     return true;
 
-  auto fromDeclRef = dyn_cast<DeclRefType>(fromType);
-  auto toDeclRef = dyn_cast<DeclRefType>(toType);
-  // Permit casting between concrete `!kgen.declref` types with different
-  // metatypes. This arises when binding concrete types to generic types.
-  if (fromDeclRef && toDeclRef &&
-      fromDeclRef.getSymbol() == toDeclRef.getSymbol() &&
-      fromDeclRef.getParamValues() == toDeclRef.getParamValues())
-    return true;
+  // Two types can be converted to each other if their metatypes can be as well.
+  if (isa<ParamRefType, DeclRefType>(fromType) &&
+      isa<ParamRefType, DeclRefType>(toType))
+    if (canZeroCostConvert(shared, fromType.getMetaType(),
+                           toType.getMetaType()))
+      return true;
 
   // Check for closure structs and dig out their underlying signature types to
   // check whether the conversion can occur.
@@ -57,8 +55,8 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     SignatureType toSig = toDecl.getClosureSignature().value_or(nullptr);
     if (fromSig && toSig) {
       // Compare the specialized signatures.
-      fromSig = fromSig.getSpecializedSignature(fromDeclRef.getParamValues());
-      toSig = toSig.getSpecializedSignature(toDeclRef.getParamValues());
+      fromSig = fromSig.getSpecializedSignature(fromType.getParamBindings());
+      toSig = toSig.getSpecializedSignature(toType.getParamBindings());
       return canZeroCostConvert(shared, fromSig, toSig);
     }
     return false;
