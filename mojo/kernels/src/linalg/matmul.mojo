@@ -2603,7 +2603,7 @@ fn _matmul_gpu_dispatch[
                 ]
             ](threads_per_block=NUM_THREADS)
             gpu_func(
-                (div_ceil(m, BM), div_ceil(n, BN)),
+                (div_ceil(n, BN), div_ceil(m, BM)),
                 (NUM_THREADS),
                 c,
                 a,
