@@ -13,21 +13,12 @@
 
 from builtin.io import _printf
 from utils.index import Index
-from utils.vector import DynamicVector
-from memory.buffer import Buffer
 from tensor import Tensor
-from utils.list import Dim, DimList
 from runtime.llcl import num_cores
-from algorithm import (
-    parallelize,
-    vectorize,
-    sync_parallelize,
-    async_parallelize,
-)
+from algorithm import parallelize, vectorize
 from math import iota
 from complex import ComplexSIMD
 from benchmark import run, keep
-from memory.unsafe import Pointer, DTypePointer
 from sys.info import simdwidthof
 from math import abs
 
