@@ -74,13 +74,19 @@ static void printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
 
 LogicalResult ForOp::verify() {
   if (getIterArgs().size() != getBody().getNumArguments())
-    return emitOpError("operand types do not match body region argument types");
+    return emitOpError("operand size do not match body region argument size.");
 
   for (auto [loopArgs, blockarg] :
-       llvm::zip(getIterArgs(), getBody().getArgumentTypes())) {
-    if (loopArgs.getType() != blockarg)
+       llvm::zip(getIterArgs(), getBody().getArguments())) {
+    if (loopArgs.getType() != blockarg.getType()) {
+      std::string str;
+      llvm::raw_string_ostream os(str);
+      os << "argument type: " << blockarg.getType()
+         << " operand type: " << loopArgs.getType();
       return emitOpError(
-          "operand types do not match body region argument types");
+          "operand types do not match body region argument types: " +
+          Twine(blockarg.getArgNumber()) + "th argument -- " + str);
+    }
   }
 
   for (auto [returnValueArg, resultType] :
@@ -211,7 +217,7 @@ void ForOp::insertVariants(ValueRange newOperands) {
       NamedAttribute(StringAttr::get(getContext(), "operandSegmentSizes"),
                      newOperandSegmentSizesAttr));
   operandSegments[1].append(newOperands);
-  operandSegments[2].append(newOperands);
+  getOperation()->insertOperands(getNumOperands(), newOperands);
 }
 
 BlockArgument ForOp::insertArgumentToRegion(Location loc, Type argType,

@@ -123,7 +123,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
 
   let assemblyFormat = [{
     ` ``[` $lowerBound `to` $upperBound `step` $step ``$cmpPredicateType ``
-    $indVarComputeType`]`
+    $indVarComputeType`]` ``
     custom<Loop>($iterArgs, type($iterArgs), type($results), $body) attr-dict
   }];
 
