@@ -147,7 +147,14 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
     if (ire.getDepth() == 0 && !ire.getIsResult() &&
         ire.getIndex() == parameterIndex) {
-      Type expectedType = evaluator.getReboundType(expectedAttr.getType());
+      Type expectedType = expectedAttr.getType();
+      if (actualAttr.getType() == expectedType) {
+        // Microoptimization: first just check the common case of the types
+        // matching exactly, so that we don't always need to rebound.
+        inferredValues.push_back(actualAttr);
+        return;
+      }
+      expectedType = evaluator.getReboundType(expectedType);
       if (actualAttr.getType() == expectedType)
         inferredValues.push_back(actualAttr);
       else if (canZeroCostConvert(shared, actualAttr.getType(), expectedType)) {
