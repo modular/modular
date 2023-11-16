@@ -1766,3 +1766,38 @@ fn move_me[T: Movable](owned value: T) -> T:
     # CHECK: %0 = lit.ownership.end_lifetime %value
     # CHECK: call_param[{{.*}}get_type_method({{.*}} [[T]], "__moveinit__")](%__result__, %0)
     return value ^
+
+# COM: Just check that conformance checking succeeds.
+trait TraitForReg:
+    fn __init__(inout self, x: int):
+        ...
+
+    fn __copyinit__(inout self, existing: Self):
+        ...
+
+    @staticmethod
+    fn may_throw() raises -> Self:
+        ...
+
+
+@register_passable
+struct RegTraitType(TraitForReg):
+    fn __init__(x: int) -> Self:
+        pass
+
+    fn __copyinit__(existing: Self) -> Self:
+        pass
+
+    @staticmethod
+    fn may_throw() raises -> Self:
+        pass
+
+
+@register_passable("trivial")
+struct RegTypeTrivial(TraitForReg):
+    fn __init__(x: int) -> Self:
+        pass
+
+    @staticmethod
+    fn may_throw() raises -> Self:
+        pass

@@ -3924,10 +3924,85 @@ getTraitFunctionSignature(SharedState &shared, LIT::FuncOp traitFn,
   return {signature.getSpecializedSignature(params), std::move(bindings)};
 }
 
+/// Given the signature of a trait function, which assumes that the self type is
+/// memory-only, compute the equivalent signature as if the self type is
+/// register-passable.
+static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
+                                                     ASTType selfType,
+                                                     bool trivial) {
+  // This function does two things: if the self type is in the result slot, it
+  // moves it to the return, mindful of error handling, and if it is found in
+  // any arguments, it is taken out of memory as appropriate.
+  SmallVector<Type> argTypes;
+  SmallVector<ValueInputConvention> conventions;
+  bool replacedResult = false;
+  Type resultType = traitSig.getResultType();
+  FnEffects fnEffects = traitSig.getFnEffects();
+
+  for (auto [type, conv] :
+       llvm::zip(traitSig.getValueInputs(), traitSig.getInputConventions())) {
+    // Check for a `Self`-type result.
+    if (conv == ValueInputConvention::ByRefResult ||
+        conv == ValueInputConvention::InitSelf) {
+      if (cast<PointerType>(type).getElementAsType() != selfType) {
+        argTypes.push_back(type);
+        conventions.push_back(conv);
+        continue;
+      }
+      replacedResult = true;
+      // Make sure to set the `ownedresult` bit if the type is not trivial.
+      if (!trivial)
+        fnEffects.setOwnedRegisterResult();
+      // Move the self type into the result.
+      if (!traitSig.isThrows()) {
+        // Just overwrite the none result type.
+        resultType = selfType;
+        continue;
+      }
+      // For a throwing function, we need to insert the type into the variant.
+      // The error type is the first type.
+      auto variant = cast<VariantType>(resultType);
+      resultType = VariantType::get(
+          {ParamRefType::get(variant.getTypes().front()), selfType});
+      continue;
+    }
+
+    // Check for a `Self`-type argument. It would always be in-memory.
+    if (conv == ValueInputConvention::OwnedInMem ||
+        conv == ValueInputConvention::BorrowedInMem) {
+      if (cast<PointerType>(type).getElementAsType() != selfType) {
+        argTypes.push_back(type);
+        conventions.push_back(conv);
+        continue;
+      }
+      // Unwrap the pointer type and update the convention.
+      argTypes.push_back(selfType);
+      conventions.push_back(conv == ValueInputConvention::OwnedInMem
+                                ? ValueInputConvention::OwnedInReg
+                                : ValueInputConvention::BorrowedInReg);
+      continue;
+    }
+    argTypes.push_back(type);
+    conventions.push_back(conv);
+  }
+
+  return SignatureType::get(
+      FunctionType::get(traitSig.getContext(), argTypes, resultType),
+      traitSig.getInputParamTypes(), traitSig.getResultParamTypes(),
+      conventions, fnEffects,
+      FnMetadataAttr::get(
+          traitSig.getContext(),
+          traitSig.getArgNames().drop_front(replacedResult),
+          traitSig.getArgPassingKinds().drop_front(replacedResult),
+          traitSig.getParamNames(), traitSig.getParamPassingKinds(),
+          traitSig.getDefaultArguments(), traitSig.getDefaultParameters()));
+}
+
 /// Check conformance for struct that implements traits.
 static LogicalResult verifyConformance(ASTDecl &structDecl,
                                        SharedState &shared) {
   auto structDeclOp = cast<StructDeclOp>(structDecl);
+  bool rpTrivial = structDeclOp.isRegisterPassableTrivial();
   bool hadErrors = false;
   SyntheticNode node(structDecl.getLoc());
   ExprEmitter emitter(shared, structDecl, EC_Trait);
@@ -3949,8 +4024,14 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
         // Skip any children that aren't methods. This could be an alias.
         if (!traitFn)
           break;
+
         ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
         if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
+          // Trivial types are not allowed to have explicit `__copyinit__` and
+          // `__del__` methods, so if the trait requires them, consider them
+          // automatically satisfied by trivial types.
+          if (rpTrivial && (name == "__copyinit__" || name == "__del__"))
+            continue;
           diag.attachNote(traitFn.getLoc())
               << "required function '" + name.str() + "' is not implemented";
           allMatchFound = false;
@@ -3959,6 +4040,13 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
 
         auto [newSignature, bindings] =
             getTraitFunctionSignature(shared, traitFn, selfType);
+        // Match against the transformed calling convention if the struct is
+        // register-passable.
+        if (structDeclOp.isRegisterPassable()) {
+          newSignature =
+              getRegisterPassableSignature(newSignature, selfType, rpTrivial);
+        }
+
         OverloadSet ov(name, decls, std::move(bindings), &node,
                        CallSyntax::kMethodCall);
         PValue result = ov.filterOverloadSetForValueType(
