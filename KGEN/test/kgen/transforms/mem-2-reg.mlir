@@ -308,10 +308,11 @@ kgen.func @mem2reg_valueop(%arg0: index) {
 // -----
 
 // CHECK-LABEL: @for_variant
-kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index) -> (index, index, index) {
+kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !pop.scalar<f32>, %arg5: !pop.scalar<f32>) -> (index, index, index, !pop.scalar<f32>) {
   %var0 = pop.stack_allocation 1 x index
   %var1 = pop.stack_allocation 1 x index
   %var2 = pop.stack_allocation 1 x index
+  %var3 = pop.stack_allocation 1 x !pop.scalar<f32>
 
   // COM: var var0 = arg0
   // COM: var var1 = arg1
@@ -319,6 +320,7 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index) -> (index, inde
   pop.store %arg0, %var0 : !kgen.pointer<index>
   pop.store %arg1, %var1 : !kgen.pointer<index>
   pop.store %arg2, %var2: !kgen.pointer<index>
+  pop.store %arg4, %var3: !kgen.pointer<!pop.scalar<f32>>
 
   %idx0 = index.constant 0
   %idx1 = index.constant 1
@@ -329,21 +331,30 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index) -> (index, inde
   //CHECK-NEXT: %[[IDX2:.*]] = index.constant 2
 
   // COM: for i in range(2)
-  // CHECK: %[[V0:.*]]:3 = hlcf.for [%idx2 to %idx0 step %idx1 sgt sub]
-  // CHECK-SAME: (%arg3 = %idx2 : index, %arg4 = %arg0 : index, %arg5 = %arg1 : index, %arg6 = %arg2 : index, %arg7 = %arg0 : index, %arg8 = %arg1 : index, %arg9 = %arg2 : index)
-  // CHECK-SAME: -> (index, index, index)
-  hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg3 = %idx2 : index) {
-    // CHECK-NEXT: %[[V1:.*]] = index.sub %arg3, %[[IDX1]]
+  // CHECK: %[[V0:.*]]:4 = hlcf.for [%idx2 to %idx0 step %idx1 sgt sub]
+  // CHECK-SAME: (%arg5 = %idx2 : index,
+  // CHECK-SAME   %arg6 = %arg0 : index, %arg7 = %arg1 : index, %arg8 = %arg2 : index, %arg9 = %arg3 : !pop.scalar<f32>,
+  // CHECK-SAME   %arg10 = %arg4 : !pop.scalar<f32>, %arg11 = %arg0 : index, %arg12 = %arg1 : index, %arg13 = %arg2 : index, %arg14 = %arg3 : !pop.scalar<f32>)
+  // CHECK-SAME: -> (index, index, index, !pop.scalar<f32>)
+  hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg3 = %idx2 : index, %arg6 = %arg5: !pop.scalar<f32>) {
+    // CHECK-NEXT: %[[V1:.*]] = index.sub %arg5, %[[IDX1]]
     %0 = index.sub %arg3, %idx1
     %v00 = pop.load %var0 : !kgen.pointer<index>
     %v01 = pop.load %var1 : !kgen.pointer<index>
     %v02 = pop.load %var2: !kgen.pointer<index>
     // COM: var1 + var2
-    // CHECK-NEXT: %[[V2:.*]] = index.add %arg8, %arg9
+    // CHECK-NEXT: %[[V2:.*]] = index.add %arg12, %arg13
     %v03 = index.add %v01, %v02
     // COM: var0 + var1 + var2
-    // CHECK-NEXT: %[[V3:.*]] = index.add %[[V2]], %arg7
+    // CHECK-NEXT: %[[V3:.*]] = index.add %[[V2]], %arg11
     %v04 = index.add %v03, %v00
+    %v05 = pop.load %var3 : !kgen.pointer<!pop.scalar<f32>>
+
+    // COM: var3 + %arg6
+    // CHECK-NEXT: %[[V6:.*]] = pop.add %arg14, %arg10
+    %v07 = pop.add %v05, %arg6: !pop.scalar<f32>
+
+    pop.store %v07, %var3: !kgen.pointer<!pop.scalar<f32>>
 
     // COM: var0 = var0 + var1 + var2
     pop.store %v04, %var0 : !kgen.pointer<index>
@@ -351,31 +362,32 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index) -> (index, inde
     %v10 = pop.load %var0 : !kgen.pointer<index>
     %v11 = pop.load %var1 : !kgen.pointer<index>
     // COM: var0 * var1
-    // CHECK-NEXT: %[[V4:.*]] = index.mul %[[V3]], %arg8
+    // CHECK-NEXT: %[[V4:.*]] = index.mul %[[V3]], %arg12
     %v12 = index.mul %v10, %v11
     // COM: var1 = var0 * var1
     pop.store %v12, %var1 : !kgen.pointer<index>
 
     %i0 = pop.load %var2: !kgen.pointer<index>
     // COM: var2 + iter
-    // CHECK-NEXT: %[[V5:.*]] = index.add %arg9, %[[V1]]
+    // CHECK-NEXT: %[[V5:.*]] = index.add %arg13, %[[V1]]
     %i1 = index.add %i0, %0
     // COM: var2 = var2 + iter
     pop.store %i1, %var2: !kgen.pointer<index>
 
     // CHECK-DAG: hlcf.for.yield
     // CHECK-SAME: [induction_var (%[[V1]] : index)]
-    // CHECK-SAME: [retvals (%[[V3]], %[[V4]], %[[V5]] : index, index, index)]
-    // CHECK-SAME: [iterargs (%[[V3]], %[[V4]], %[[V5]] : index, index, index)]
-    hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
+    // CHECK-SAME: [retvals (%[[V3]], %[[V4]], %[[V5]], %[[V6]] : index, index, index, !pop.scalar<f32>)]
+    // CHECK-SAME: [iterargs (%[[V6]], %[[V3]], %[[V4]], %[[V5]], %[[V6]] : !pop.scalar<f32>, index, index, index, !pop.scalar<f32>)]
+    hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs (%v07: !pop.scalar<f32>)]
   } {unrollLevel = #hlcf<unroll_level full>}
 
   %r0 = pop.load %var0 : !kgen.pointer<index>
   %r1 = pop.load %var1 : !kgen.pointer<index>
   %r2 = pop.load %var2 : !kgen.pointer<index>
+  %r3 = pop.load %var3 : !kgen.pointer<!pop.scalar<f32>>
 
-  // CHECK-DAG: kgen.return %[[V0]]#0, %[[V0]]#1, %[[V0]]#2 : index, index, index
-  kgen.return %r0, %r1, %r2 : index, index, index
+  // CHECK-DAG: kgen.return %[[V0]]#0, %[[V0]]#1, %[[V0]]#2, %[[V0]]#3 : index, index, index, !pop.scalar<f32>
+  kgen.return %r0, %r1, %r2, %r3 : index, index, index, !pop.scalar<f32>
 }
 
 
@@ -393,7 +405,7 @@ kgen.generator @nested_alloc_in_for(%arg0: index) -> index {
   pop.store %arg0, %v0 : !kgen.pointer<index>
 
   // CHECK:      %[[V0:.*]] = hlcf.for [%idx2 to %idx0 step %idx1 sgt sub]
-  // CHECK-SAME: (%arg1 = %idx2 : index, %arg2 = %arg0 : index, %arg3 = %arg0 : index, %arg4 = %idx0 : index)
+  // CHECK-SAME: (%arg1 = %idx2 : index, %arg2 = %arg0 : index, %arg3 = %idx0 : index, %arg4 = %arg0 : index)
   // CHECK-SAME: -> index
   hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg1 = %idx2 : index, %arg2 = %idx0 : index) {
     // COM: iter0
@@ -410,7 +422,7 @@ kgen.generator @nested_alloc_in_for(%arg0: index) -> index {
     pop.store %v03, %v01 : !kgen.pointer<index>
 
     // CHECK-NEXT: %[[V3:.*]] = hlcf.for [%idx2 to %idx0 step %idx1 sgt sub]
-    // CHECK-SAME: (%arg5 = %idx2 : index, %arg6 = %2 : index, %arg7 = %2 : index, %arg8 = %idx0 : index)
+    // CHECK-SAME: (%arg5 = %idx2 : index, %arg6 = %2 : index, %arg7 = %idx0 : index, %arg8 = %2 : index)
     // CHECK-SAME: -> index
     hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg3 = %idx2 : index, %arg4 = %idx0 : index) {
       // COM: iter1
