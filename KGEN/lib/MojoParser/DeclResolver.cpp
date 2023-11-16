@@ -3930,31 +3930,32 @@ static LogicalResult verifyConformance(LIT::StructDeclOp structDeclOp,
       shared.emitError(structDeclOp.getLoc(), "conformance check failed");
 
   llvm::SmallVector<StringRef> failedTraits;
+  DenseMap<StringRef, DenseSet<SignatureType>> structFnSignatures;
+  for (auto [name, decls] : structDecl.getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      if (auto structFn = dyn_cast<LIT::FuncOp>(*decl))
+        structFnSignatures[name.strref()].insert(structFn.getSignature());
+    }
+  }
+
   for (SymbolRefAttr attr : structDeclOp.getTraitsAttr()) {
     ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
-    bool allMatch = true;
+    bool allMatchFound = true;
     for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
         auto traitFn = cast<LIT::FuncOp>(*decl);
         SignatureType newSignature = getSpecializedSignature(
             traitFn, structSelfType, structSelfMetaType);
-
-        ArrayRef<ASTDecl *> structFnDecls =
-            structDecl.lookupInCurrentScope(name);
-        bool foundMatch = false;
-        for (ASTDecl *structFnDecl : structFnDecls)
-          if (auto structFn = dyn_cast<LIT::FuncOp>(*structFnDecl))
-            foundMatch |= newSignature == structFn.getSignature();
-
-        if (foundMatch)
+        auto iter = structFnSignatures.find(name);
+        if (iter != structFnSignatures.end() &&
+            iter->second.contains(newSignature))
           continue;
-
-        allMatch &= foundMatch;
         diag.attachNote(traitFn.getLoc())
             << "required function '" + name.str() + "' is not implemented";
+        allMatchFound = false;
       }
     }
-    if (!allMatch)
+    if (!allMatchFound)
       failedTraits.push_back(traitDecl.getNameIfOperation().value());
   }
 
