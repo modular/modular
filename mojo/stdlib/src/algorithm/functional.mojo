@@ -61,8 +61,8 @@ fn unroll[
 
     Parameters:
         count: A number of repetitions.
-        func: The function to evaluate. The function should take a single Int
-          argument.
+        func: The function to evaluate. The function should take a single `Int`
+          argument, which is the loop index value.
     """
     _unroll_impl[0, count, func]()
 
@@ -95,8 +95,8 @@ fn unroll[
     Parameters:
         dim0: The first dimension size.
         dim1: The second dimension size.
-        func: The function to evaluate. The function should take two Int
-          arguments.
+        func: The function to evaluate. The function should take two `Int`
+          arguments: the outer and inner loop index values.
     """
 
     @always_inline
@@ -130,8 +130,8 @@ fn unroll[
         dim0: The first dimension size.
         dim1: The second dimension size.
         dim2: The second dimension size.
-        func: The function to evaluate. The function should take three Int
-          arguments.
+        func: The function to evaluate. The function should take three `Int`
+          arguments: one for each nested loop index value.
     """
 
     @always_inline
