@@ -195,7 +195,8 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
     return true;
 
   // If the type is trivial, then it is copyable.
-  if (cast<StructDeclOp>(*typeDecl).isRegisterPassableTrivial())
+  if (auto structDecl = dyn_cast<StructDeclOp>(*typeDecl);
+      structDecl && structDecl.isRegisterPassableTrivial())
     return true;
 
   return !typeDecl->lookupInCurrentScope("__copyinit__").empty();

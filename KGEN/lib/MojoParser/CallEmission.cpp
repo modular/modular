@@ -552,17 +552,16 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
 /// into the symbol for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
 static TypedAttr
-getBoundConstAttrFor(AnyValue baseValue, LIT::FuncOp funcOp, StringRef baseName,
+getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp, StringRef baseName,
                      const InputParamBindings &inputParamBindings,
                      const ExprNode *expr, ExprEmitter &emitter) {
   // Try to dig out a trait base value.
-  auto getIfTrait = [](AnyValue value) -> ASTType {
-    if (auto cv = value.getIfCValue())
-      if (isa_and_nonnull<TraitType>(cv.getRValueType().getMetaType()))
-        return cv.getRValueType();
+  auto getIfTrait = [](ASTType type) -> ASTType {
+    if (isa_and_nonnull<TraitType>(type.getMetaType()))
+      return type;
     return {};
   };
-  ASTType trait = getIfTrait(baseValue);
+  ASTType trait = getIfTrait(baseType);
   if (!trait) {
     // If there are no input parameters specified and if we allow unbound
     // symbols, just return the unbound symbol.
@@ -614,7 +613,7 @@ getBoundConstAttrFor(AnyValue baseValue, LIT::FuncOp funcOp, StringRef baseName,
 /// Perform substitutions of the specified bindings into the symbol, returning
 /// the resultant bound symbols of each adaptive function overload as a
 /// variadic. On failure it produces an error message and returns null.
-static VariadicAttr getAdaptiveSet(AnyValue baseValue,
+static VariadicAttr getAdaptiveSet(ASTType baseType,
                                    ArrayRef<ASTDecl *> fnDecls,
                                    StringRef baseName,
                                    const InputParamBindings &inputParamBindings,
@@ -631,7 +630,7 @@ static VariadicAttr getAdaptiveSet(AnyValue baseValue,
       return {};
     }
     TypedAttr symbolAttr = getBoundConstAttrFor(
-        baseValue, funcOp, baseName, inputParamBindings, expr, emitter);
+        baseType, funcOp, baseName, inputParamBindings, expr, emitter);
     if (!symbolAttr)
       return {};
     symConstAttrs.push_back(symbolAttr);
@@ -645,7 +644,7 @@ static VariadicAttr getAdaptiveSet(AnyValue baseValue,
 /// decl provided) or a variadic that contains all the possible adaptive
 /// overloads. Because adaptive overloads must all have the same signature, this
 /// also returns the signature type that they all share.
-static PValue getCallee(AnyValue baseValue, ArrayRef<ASTDecl *> fnDecls,
+static PValue getCallee(ASTType baseType, ArrayRef<ASTDecl *> fnDecls,
                         StringRef baseName,
                         const InputParamBindings &inputParamBindings,
                         const ExprNode *expr, ExprEmitter &emitter) {
@@ -653,12 +652,12 @@ static PValue getCallee(AnyValue baseValue, ArrayRef<ASTDecl *> fnDecls,
          "cannot get the callee when no callees have been resolved");
   if (fnDecls.size() == 1) {
     auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
-    return getBoundConstAttrFor(baseValue, funcOp, baseName, inputParamBindings,
+    return getBoundConstAttrFor(baseType, funcOp, baseName, inputParamBindings,
                                 expr, emitter);
   }
 
   VariadicAttr variadicSetAttr = ::getAdaptiveSet(
-      baseValue, fnDecls, baseName, inputParamBindings, expr, emitter);
+      baseType, fnDecls, baseName, inputParamBindings, expr, emitter);
   if (!variadicSetAttr)
     return {};
 
@@ -827,7 +826,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     InputParamBindings newBindings;
     for (TypedAttr bind : oneFitness->getParamBindings())
       newBindings.addPrechecked(bind);
-    return getCallee(baseValue.ir, newFnDecls, baseName, newBindings, expr,
+    return getCallee(baseType, newFnDecls, baseName, newBindings, expr,
                      emitter);
   }
 
@@ -948,8 +947,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   if (validCandidates.size() == 1 ||
       (!validCandidates.empty() && allMarkedAdaptive())) {
     if (inputParamBindings.empty())
-      return getCallee(baseValue.ir, validCandidates, baseName,
-                       inputParamBindings, expr, emitter);
+      return getCallee(baseType, validCandidates, baseName, inputParamBindings,
+                       expr, emitter);
 
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
@@ -957,7 +956,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     InputParamBindings newBindings;
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
-    return getCallee(baseValue.ir, validCandidates, baseName, newBindings, expr,
+    return getCallee(baseType, validCandidates, baseName, newBindings, expr,
                      emitter);
   }
 
@@ -986,8 +985,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
 /// decl provided) or a variadic that contains all the possible adaptive
 /// overloads.
 PValue OverloadSet::getAdaptiveSet(ExprEmitter &emitter) {
-  return ::getAdaptiveSet(baseValue.ir, fnDecls, baseName, inputParamBindings,
-                          expr, emitter);
+  return ::getAdaptiveSet(baseType, fnDecls, baseName, inputParamBindings, expr,
+                          emitter);
 }
 
 /// Perform substitutions of the specified bindings into the symbol, returning
@@ -1009,7 +1008,7 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
     return {};
   }
 
-  return getBoundConstAttrFor(baseValue.ir, cast<LIT::FuncOp>(*fnDecls[0]),
+  return getBoundConstAttrFor(baseType, cast<LIT::FuncOp>(*fnDecls[0]),
                               baseName, inputParamBindings, expr, emitter);
 }
 
@@ -1048,7 +1047,7 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
   *this = OverloadSet(methodName, resultDecls,
                       InputParamBindings::getForDeclaredType(type, shared),
                       expr, syntax);
-  this->baseDecl = type.getDecl(shared);
+  baseType = type;
 }
 
 /// Lookup of a named named method on the specified type, filtered to match a
