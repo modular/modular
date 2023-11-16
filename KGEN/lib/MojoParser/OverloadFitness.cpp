@@ -34,8 +34,8 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState {
 public:
-  ParameterInferenceState(SharedState &state, size_t index)
-      : state(state), parameterIndex(index) {}
+  ParameterInferenceState(SharedState &shared, size_t index)
+      : shared(shared), parameterIndex(index) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
   /// signature, try to infer the value of the next 'decl' parameter.  This
@@ -53,7 +53,7 @@ private:
                                 ASTType expectedType,
                                 ValueInputConvention expectedConvention);
 
-  SharedState &state;
+  SharedState &shared;
   size_t parameterIndex;
   SmallVector<PValue> inferredValues;
 };
@@ -134,8 +134,19 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
   // this value!
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
     if (ire.getDepth() == 0 && !ire.getIsResult() &&
-        ire.getIndex() == parameterIndex)
-      inferredValues.push_back(actualAttr);
+        ire.getIndex() == parameterIndex) {
+      if (actualAttr.getType() == expectedAttr.getType())
+        inferredValues.push_back(actualAttr);
+      else if (canZeroCostConvert(shared, actualAttr.getType(),
+                                  expectedAttr.getType())) {
+        inferredValues.push_back(KGEN::ParamOperatorAttr::get(
+            POC::Rebind, actualAttr, expectedAttr.getType()));
+      } else {
+        // HACK: Assume the types are rebound to be the same.
+        // FIXME: Pass an ParamEvaluator here.
+        inferredValues.push_back(actualAttr);
+      }
+    }
     return;
   }
 
@@ -298,14 +309,14 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
         ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
         CValue value = operand.ir.getIfCValue();
         if (!value) {
-          state.emitWarning(operand.expr->getLoc(),
-                            "could not infer parameter type for this value, "
-                            "because it is not concrete");
+          shared.emitWarning(operand.expr->getLoc(),
+                             "could not infer parameter type for this value, "
+                             "because it is not concrete");
           return {};
         }
         ASTType toPush = value.getRValueType();
         // Infer nonmaterializable types as their materialization target.
-        if (ASTType nmTarget = toPush.getNonmaterializableTarget(state))
+        if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
           toPush = nmTarget;
         types.push_back(TypeConstantAttr::get(toPush));
       }
@@ -334,7 +345,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
     if (llvm::all_of(inferredValues, sameAsFirst)) {
       // Infer nonmaterializable types as their materialization target.
       if (ASTType typeVal = first.getIfTypeValue()) {
-        if (ASTType nmTarget = typeVal.getNonmaterializableTarget(state)) {
+        if (ASTType nmTarget = typeVal.getNonmaterializableTarget(shared)) {
           // The metatype of the non-materializable target type will not match,
           // so emit a rebind to ensure they match.
           return ParamOperatorAttr::get(POC::Rebind, {PValue(nmTarget)},
