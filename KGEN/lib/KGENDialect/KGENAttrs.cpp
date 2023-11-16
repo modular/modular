@@ -1911,6 +1911,8 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
                                                     metatype),
                                    resultType);
     }
+    if (isTypeExprType(resultType))
+      return TypeConstantAttr::get(typeCst.getValue(), resultType);
   }
   return {};
 }

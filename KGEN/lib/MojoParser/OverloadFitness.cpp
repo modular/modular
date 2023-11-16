@@ -132,6 +132,16 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (actualAttr.getType() != expectedAttr.getType())
     matchTypes(actualAttr.getType(), expectedAttr.getType());
 
+  auto actualOp = dyn_cast<ParamOperatorAttr>(actualAttr);
+  auto expectedOp = dyn_cast<ParamOperatorAttr>(expectedAttr);
+  if (actualOp && expectedOp &&
+      actualOp.getOpcode() == expectedOp.getOpcode() &&
+      actualOp.getNumOperands() == expectedOp.getNumOperands()) {
+    for (auto [a, b] :
+         llvm::zip(actualOp.getOperands(), expectedOp.getOperands()))
+      matchParams(a, b);
+  }
+
   // If the expected value is the parameter declaration in question, remember
   // this value!
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {

@@ -39,18 +39,6 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   if (isa<AnyRegTypeType>(fromType) && isa<AnyTypeType>(toType))
     return true;
 
-  auto fromParamRef = dyn_cast<ParamRefType>(fromType);
-  auto toParamRef = dyn_cast<ParamRefType>(toType);
-  if (fromParamRef && toParamRef) {
-    TypedAttr fromParam = fromParamRef.getParam();
-    TypedAttr toParam = toParamRef.getParam();
-    if (!canZeroCostConvert(shared, fromParam.getType(), toParam.getType()))
-      return false;
-    if (auto op = dyn_cast<ParamOperatorAttr>(toParam))
-      if (op.getOpcode() == POC::Rebind)
-        return op.getOperand(0) == fromParam;
-  }
-
   auto fromDeclRef = dyn_cast<DeclRefType>(fromType);
   auto toDeclRef = dyn_cast<DeclRefType>(toType);
   // Permit casting between concrete `!kgen.declref` types with different
