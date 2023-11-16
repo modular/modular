@@ -20,6 +20,26 @@ from utils.index import product
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
+from math import align_up
+
+from algorithm.gpu.reduction import row_reduce, block_reduce
+
+from gpu import (
+    ThreadIdx,
+    BlockIdx,
+    BlockDim,
+    GridDim,
+    barrier,
+)
+
+from gpu.host import (
+    Stream,
+    Function,
+    Device,
+    DeviceAttribute,
+)
+from gpu.memory import AddressSpace
+
 # ===----------------------------------------------------------------------===#
 # Utilities
 # ===----------------------------------------------------------------------===#
@@ -555,7 +575,7 @@ fn logsoftmax[
 # ===----------------------------------------------------------------------===#
 
 
-# Softmax (w/ input lambda)
+@adaptive
 fn softmax[
     type: DType,
     simd_width: Int,
@@ -564,17 +584,20 @@ fn softmax[
     input_fn: fn[_simd_width: Int, _rank: Int] (
         StaticIntTuple[_rank]
     ) capturing -> SIMD[type, _simd_width],
+    target: StringLiteral = "cpu",
 ](
     shape: StaticIntTuple[rank],
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
     out_chain: OutputChainPtr,
 ):
+    constrained[target == "cpu", "cpu softmax"]()
     # TODO: Add rowwise generator to de-duplicate partioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
-        out_chain.mark_error("softmax not supported on non-inner axis yet")
-        return
+        return out_chain.mark_error(
+            "softmax not supported on non-inner axis yet"
+        )
 
     @always_inline
     @parameter
@@ -647,3 +670,144 @@ fn softmax[
     softmax[type, simd_width, rank, static_shape, input_fn](
         input.get_shape(), output, axis, out_chain
     )
+
+
+fn softmax_kernel[
+    BLOCK_SIZE: Int,
+    input_fn: fn[_type: DType, _simd_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[_type, _simd_width],
+    type: DType,
+    rank: Int,
+](
+    shape: StaticIntTuple[rank],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: Int,
+):
+    let row_size = shape[axis]
+    let num_rows = shape.flattened_length() // row_size
+
+    let max_buf = Buffer[1, type, AddressSpace.SHARED].stack_allocation()
+    let exp_sum_buf = Buffer[1, type, AddressSpace.SHARED].stack_allocation()
+
+    @parameter
+    @always_inline
+    @closure
+    fn _max[
+        type: DType, width: Int
+    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        return max(x, y)
+
+    @parameter
+    @always_inline
+    @closure
+    fn _sum[
+        type: DType, width: Int
+    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        return x + y
+
+    let row_size_padded = align_up(row_size, BLOCK_SIZE)
+
+    # grid stride loop over rows
+    # each block reduces a row, which is convenient because it requires no partial
+    # reductions across blocks
+    for row_idx in range(
+        BlockIdx.x(),
+        num_rows,
+        GridDim.x(),
+    ):
+        # Step 1: compute max in row
+        var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
+        let row_max = row_reduce[BLOCK_SIZE, input_fn, _max](
+            row_coords, axis, min_or_neginf[type](), row_size
+        )
+        if ThreadIdx.x() == 0:
+            max_buf[0] = row_max
+        barrier()
+
+        # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
+        var exp_sum = SIMD[type, 1](0)
+        for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
+            let idx_in_padded_row = ThreadIdx.x() + offset_in_row
+            if idx_in_padded_row >= row_size:
+                break
+
+            row_coords[axis] = idx_in_padded_row
+            # loads from input_fn twice
+            let val = exp(input_fn[type, 1, rank](row_coords) - max_buf[0])
+            output[row_coords] = val
+            exp_sum += val
+
+        let block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
+        if ThreadIdx.x() == 0:
+            exp_sum_buf[0] = block_exp_sum
+        barrier()
+
+        # Step 3: Normalize output
+        let block_exp_sum_recip = 1 / exp_sum_buf[0]
+        for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
+            let idx_in_padded_row = ThreadIdx.x() + offset_in_row
+            if idx_in_padded_row >= row_size:
+                break
+
+            row_coords[axis] = idx_in_padded_row
+            output[row_coords] *= block_exp_sum_recip
+
+
+@adaptive
+fn softmax[
+    type: DType,
+    simd_width: Int,
+    rank: Int,
+    static_shape: DimList,
+    input_fn: fn[_simd_width: Int, _rank: Int] (
+        StaticIntTuple[_rank]
+    ) capturing -> SIMD[type, _simd_width],
+    target: StringLiteral,
+](
+    shape: StaticIntTuple[rank],
+    output: NDBuffer[rank, static_shape, type],
+    axis: Int,
+    out_chain: OutputChainPtr,
+):
+    if axis != rank - 1:
+        return out_chain.mark_error(
+            "softmax not supported on non-inner axis yet"
+        )
+
+    constrained[target == "cuda", "cuda softmax"]()
+
+    @always_inline
+    fn input_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+
+    alias BLOCK_SIZE = 128
+    try:
+        # HACK HACK HACK (#25473)
+        let stream = out_chain.get_cuda_stream() if out_chain else Stream[
+            is_borrowed=True
+        ]()
+
+        let func = Function[
+            fn (
+                StaticIntTuple[rank],
+                NDBuffer[rank, DimList.create_unknown[rank](), type],
+                Int,
+            ) capturing -> None, softmax_kernel[
+                BLOCK_SIZE,
+                input_fn_wrapper,
+                type,
+                rank,
+            ]
+        ]()
+
+        let num_rows = shape.flattened_length() // shape[axis]
+        let sm_count = Device()._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        alias sm_overprovision_factor = 32  # tunable
+        let num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+
+        func((num_blocks,), (BLOCK_SIZE,), shape, output, axis, stream=stream)
+    except e:
+        out_chain.mark_error(e)
