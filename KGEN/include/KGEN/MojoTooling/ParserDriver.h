@@ -8,6 +8,7 @@
 #define KGEN_MOJOTOOLING_PARSERDRIVER_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <filesystem>
@@ -217,6 +218,20 @@ public:
     std::vector<std::unique_ptr<ExprLocMapper>> exprMappers;
   };
 
+  /// This class represents the result of a parsed REPL expression.
+  struct ParsedREPLExpr {
+    /// Return true if the expression was parsed successfully.
+    bool isValid() const { return exprFnDecl; }
+
+    /// The module decl corresponding to the REPL expression. This field is
+    /// always valid.
+    MojoASTDeclRef moduleDecl;
+
+    /// The function decl corresponding to the REPL expression. If the REPL
+    /// expression failed to parse, this will be null.
+    MojoASTDeclRef exprFnDecl;
+  };
+
   /// Return the location mapper used for REPL expressions.
   REPLLocMapper &getREPLLocMapper();
 
@@ -241,12 +256,22 @@ public:
   ///   fn replExprFn(context&: ReplContext):
   ///      print(context.a.load().load())
   ///
-  /// In the case of success, the decl corresponding to the expr function is
-  /// returned. In the case of an error, a null decl is returned.
-  MojoASTDeclRef
+  ParsedREPLExpr
   parseREPLExpression(MojoParserREPLListener &listener, unsigned exprFileId,
                       StringRef replExprFnName,
                       ArrayRef<std::pair<StringRef, Type>> replVariables);
+
+  /// The following methods allow for interacting with the parser for REPL
+  /// like expressions, i.e., in environments like Jupyter notebooks.
+  /// `exprText` is the expression text, and represents a sub-string of the
+  /// buffer with id `exprFileId`.
+  /// `prevReplExpr` is the decl corresponding to the previously parsed REPL
+  /// expression, whose state should be imported into the new REPL expression.
+  ParsedREPLExpr
+  parseREPLExpression(MojoParserREPLListener &listener, unsigned exprFileId,
+                      StringRef exprText, StringRef replExprFnName,
+                      ArrayRef<std::pair<StringRef, Type>> replVariables,
+                      MojoASTDeclRef prevReplExpr);
 
   /// Return the code completion results for the given REPL expression.
   std::vector<KGEN::Mojo::CodeCompletionResult> codeCompleteREPLExpression(

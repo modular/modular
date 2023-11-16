@@ -674,7 +674,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
       llvm::MemoryBuffer::getMemBufferCopy(impl->expr.Text(), exprModuleName),
       llvm::SMLoc());
   impl->expr.setFunctionName(exprFnName);
-  MojoASTDeclRef exprFnDecl = parserContext.parseREPLExpression(
+  MojoParserContext::ParsedREPLExpr result = parserContext.parseREPLExpression(
       listener, exprFileId, exprFnName, variables);
 
   // If the parser supplied a fixed expression, abort processing and use that
@@ -695,12 +695,12 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
     // If the parser was actually successful, make sure to reset it so that we
     // don't include the un-fixed module in the REPL history.
-    if (exprFnDecl)
+    if (result.isValid())
       parserContext.removeLastREPLExpression();
     return failure();
   }
 
-  if (!exprFnDecl) {
+  if (!result.isValid()) {
     impl->expressionLogger->errorLog("Failed to parse the module");
     return failure();
   }
@@ -730,11 +730,11 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Create a clone of the parser module so that we can compile it without
   // thrashing on the current parser state.
-  LIT::FuncOp exprFn = cast<LIT::FuncOp>(exprFnDecl.getIfOperation());
+  LIT::FuncOp exprFn = cast<LIT::FuncOp>(result.exprFnDecl.getIfOperation());
   exprFn.setLinkageName(exprFnName);
   mlir::IRMapping mapping;
-  OwningOpRef<ModuleOp> module = KGEN::LIT::cloneDeclModuleForCompilation(
-      *exprFnDecl.getParentDecl(), mapping);
+  OwningOpRef<ModuleOp> module =
+      KGEN::LIT::cloneDeclModuleForCompilation(*result.moduleDecl, mapping);
   if (failed(mlir::verify(*module)))
     return returnErrorCleanup();
 

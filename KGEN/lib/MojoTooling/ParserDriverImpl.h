@@ -35,7 +35,10 @@ struct MojoParserContext::Impl {
   /// The location mapper used for REPL expressions.
   MojoParserContext::REPLLocMapper replLocMapper;
 
-  /// The decls of each REPL module that have been successfully parsed.
+  /// The decls of each REPL module that have been successfully parsed, mapped
+  /// to the previous REPL module that they replaced.
+  llvm::MapVector<KGEN::LIT::ASTDecl *, KGEN::LIT::ASTDecl *>
+      prevReplModuleDecls;
   SmallVector<KGEN::LIT::ASTDecl *> replModuleDecls;
 };
 } // namespace M

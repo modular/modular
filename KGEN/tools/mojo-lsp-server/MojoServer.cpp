@@ -1221,14 +1221,18 @@ void MojoNotebookDocument::parseDocumentImpl() {
 
   // Parse each of the cells in the notebook.
   MojoParserContext &ctx = getParserContext();
+  MojoASTDeclRef prevDecl;
   for (Cell &cell : getCells()) {
     // If the cell isn't a python expression, parse it as normal.
     StringRef contents(cell.contents);
     if (!contents.consume_front("%%python")) {
       cell.persistentVariables = persistentVariables;
-      cell.decl = ctx.parseREPLExpression(
-          listener, cell.bufferId, "__mojo_repl_lsp_main", persistentVariables);
-      checkModuleSemantics(cell.decl);
+      MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
+          listener, cell.bufferId, cell.contents, "__mojo_repl_lsp_main",
+          persistentVariables, prevDecl);
+      prevDecl = cell.decl = result.moduleDecl;
+      if (result.isValid())
+        checkModuleSemantics(cell.decl);
       continue;
     }
 
@@ -1255,8 +1259,10 @@ void MojoNotebookDocument::parseDocumentImpl() {
         llvm::MemoryBuffer::getMemBuffer(pythonCell,
                                          (cell.uri.file() + "_py").str()),
         SMLoc());
-    ctx.parseREPLExpression(listener, pythonCellId, "__mojo_repl_lsp_main",
-                            persistentVariables);
+    MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
+        listener, pythonCellId, pythonCell, "__mojo_repl_lsp_main",
+        persistentVariables, prevDecl);
+    prevDecl = result.moduleDecl;
   }
 }
 
