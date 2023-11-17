@@ -9,6 +9,7 @@ add_modular_tool(mojo-lsp-server
   MojoServer.cpp
   mojo-lsp-server.cpp
   Protocol.cpp
+  SemanticTokens.cpp
 
   LINK_LIBS PRIVATE
   KGENPipeline

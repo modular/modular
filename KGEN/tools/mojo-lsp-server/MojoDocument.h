@@ -32,6 +32,7 @@ inline bool operator<=(const SMLoc &lhs, const SMLoc &rhs) {
 
 namespace M::Mojo::LSP {
 class MojoDocStringCodeBlocks;
+struct SemanticToken;
 
 //===----------------------------------------------------------------------===//
 // MojoInlayHint
@@ -140,6 +141,10 @@ public:
                          getLocFromPos(uri, range.end));
   }
 
+  /// Return a location range for the document of the given uri.
+  virtual llvm::SMRange
+  getFullRangeForURI(const mlir::lsp::URIForFile &uri) = 0;
+
   /// Translate the given parser location into one usable by the language
   /// server.
   virtual llvm::SMLoc translateParserLoc(llvm::SMLoc loc) { return loc; }
@@ -227,6 +232,10 @@ public:
                    const mlir::lsp::Range &range,
                    OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint);
 
+  void onSemanticTokens(
+      const mlir::lsp::URIForFile &uri,
+      OnResultFn<std::optional<std::vector<SemanticToken>>> onSemanticTokens);
+
   void onSignatureHelp(const mlir::lsp::URIForFile &uri,
                        const mlir::lsp::Position &pos,
                        OnResultFn<mlir::lsp::SignatureHelp> onHelpFn);
@@ -311,6 +320,9 @@ private:
   std::optional<mlir::lsp::Hover> onHoverSync(llvm::SMLoc loc);
 
   std::vector<mlir::lsp::InlayHint> onInlayHintSync(llvm::SMRange range);
+
+  std::optional<std::vector<SemanticToken>>
+  onSemanticTokensSync(llvm::SMRange range);
 
   mlir::lsp::SignatureHelp onSignatureHelpSync(llvm::SMLoc loc);
 
@@ -497,6 +509,9 @@ private:
   llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
                             mlir::lsp::Position position) override;
 
+  /// Return a location range for the document of the given uri.
+  llvm::SMRange getFullRangeForURI(const mlir::lsp::URIForFile &uri) override;
+
   //===--------------------------------------------------------------------===//
   // Language Features
 
@@ -597,6 +612,9 @@ private:
   /// Returns true if the document contains the given location.
   llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
                             mlir::lsp::Position position) override;
+
+  /// Return a location range for the document of the given uri.
+  llvm::SMRange getFullRangeForURI(const mlir::lsp::URIForFile &uri) override;
 
   /// Hook that returns the URI for the given contained location.
   const mlir::lsp::URIForFile &getURIFromContainedLoc(llvm::SMLoc loc) override;

@@ -8,10 +8,12 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "MojoServer.h"
 #include "Protocol.h"
+#include "SemanticTokens.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/ADT/FunctionExtras.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/StringMap.h"
 #include <optional>
 
@@ -74,6 +76,11 @@ struct LSPServer {
   void onInlayHint(const InlayHintsParams &params,
                    Callback<std::vector<InlayHint>> reply);
 
+  void onSemanticTokens(const SemanticTokensParams &params,
+                        Callback<llvm::json::Value> reply);
+  void onSemanticTokensDelta(const SemanticTokensDeltaParams &params,
+                             Callback<llvm::json::Value> reply);
+
   void onSignatureHelp(const TextDocumentPositionParams &params,
                        Callback<SignatureHelp2> reply);
 
@@ -92,6 +99,23 @@ struct LSPServer {
 
 //===----------------------------------------------------------------------===//
 // Initialization
+
+/// Return the set of supported semantic token types.
+static std::vector<StringRef> semanticTokenTypes() {
+  std::vector<StringRef> types;
+  for (int i : llvm::seq(0, static_cast<int>(SemanticTokenKind::kCount)))
+    types.push_back(toLspSemanticTokenType(static_cast<SemanticTokenKind>(i)));
+  return types;
+}
+
+/// Return the set of supported semantic token modifiers.
+static std::vector<StringRef> semanticTokenModifiers() {
+  std::vector<StringRef> modifiers;
+  for (int i : llvm::seq(0, static_cast<int>(SemanticTokenModifier::kCount)))
+    modifiers.push_back(
+        toLspSemanticTokenModifier(static_cast<SemanticTokenModifier>(i)));
+  return modifiers;
+}
 
 void LSPServer::onInitialize(const InitializeParams &params,
                              Callback<llvm::json::Value> reply) {
@@ -122,6 +146,14 @@ void LSPServer::onInitialize(const InitializeParams &params,
                {"cells", JSONArray{JSONObject{{"language", "mojo"}}}},
            }},
        }}},
+      {"semanticTokensProvider",
+       llvm::json::Object{
+           {"full", llvm::json::Object{{"delta", true}}},
+           {"range", false},
+           {"legend",
+            llvm::json::Object{{"tokenTypes", semanticTokenTypes()},
+                               {"tokenModifiers", semanticTokenModifiers()}}},
+       }},
       {
           "textDocumentSync",
           JSONObject{
@@ -280,6 +312,25 @@ void LSPServer::onInlayHint(const InlayHintsParams &params,
       });
 }
 
+void LSPServer::onSemanticTokens(const SemanticTokensParams &params,
+                                 Callback<llvm::json::Value> reply) {
+  server.onSemanticTokens(
+      params.textDocument.uri,
+      [reply = std::move(reply)](std::optional<SemanticTokens> tokens) mutable {
+        reply(std::move(tokens));
+      });
+}
+
+void LSPServer::onSemanticTokensDelta(const SemanticTokensDeltaParams &params,
+                                      Callback<llvm::json::Value> reply) {
+  server.onSemanticTokensDelta(
+      params.textDocument.uri, params.previousResultId,
+      [reply = std::move(reply)](
+          std::optional<SemanticTokensOrDelta> tokens) mutable {
+        reply(std::move(tokens));
+      });
+}
+
 void LSPServer::onSignatureHelp(const TextDocumentPositionParams &params,
                                 Callback<SignatureHelp2> reply) {
   server.getSignatureHelp(
@@ -352,6 +403,10 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
   messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
   messageHandler.method("textDocument/inlayHint", &lspServer,
                         &LSPServer::onInlayHint);
+  messageHandler.method("textDocument/semanticTokens/full", &lspServer,
+                        &LSPServer::onSemanticTokens);
+  messageHandler.method("textDocument/semanticTokens/full/delta", &lspServer,
+                        &LSPServer::onSemanticTokensDelta);
   messageHandler.method("textDocument/signatureHelp", &lspServer,
                         &LSPServer::onSignatureHelp);
 

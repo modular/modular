@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from typing import Generator, List, Optional, TypeVar
 
+import lsprotocol.types as lsp_types
 from lsprotocol.types import (
     CompletionList,
     CompletionParams,
@@ -27,6 +28,7 @@ from lsprotocol.types import NotebookDocument as LspNotebookDocument
 from lsprotocol.types import (
     Position,
     Range,
+    SemanticTokensParams,
     SignatureHelpParams,
     TextDocumentIdentifier,
     TextDocumentItem,
@@ -145,6 +147,35 @@ class NotebookDocument:
             self.cells.append(Document(str(len(self.cells)), cell))
 
 
+class SemanticToken:
+    """High level representation of a semantic token"""
+
+    def __init__(
+        self,
+        token: List[int],
+        token_types: List[str],
+        token_modifiers: List[str],
+        last_token,
+    ):
+        line = token[0]
+        col = token[1]
+        if last_token:
+            line += last_token.range.start.line
+
+            # If the line number is 0, we are in the same line as the last token.
+            # In that case, we need to add the column offset of the last token.
+            if token[0] == 0:
+                col += last_token.range.start.character
+        self.range = Range(Position(line, col), Position(line, col + token[2]))
+        self.token_type = token_types[token[3]]
+
+        # Unpack the modifier bit list into a list of strings.
+        self.token_modifiers = []
+        for i in range(0, len(token_modifiers)):
+            if token[4] & (1 << i):
+                self.token_modifiers = token_modifiers[token[i]]
+
+
 class Requests:
     """Helper class for issuing requests to the server. It is not intenteded to be a full wrapper of `LanguageClient`.
     """
@@ -225,6 +256,27 @@ class Requests:
         return await self.client.text_document_inlay_hint_async(
             params=InlayHintParams(text_document=doc.identifier, range=range)
         )
+
+    async def semantic_tokens(
+        self, doc: Document, token_types: List[str], token_modifiers: List[str]
+    ):
+        lsp_result = await self.client.text_document_semantic_tokens_full_async(
+            params=SemanticTokensParams(text_document=doc.identifier)
+        )
+        if lsp_result is None:
+            return None
+
+        result = []
+        last_token = None
+        for i in range(0, len(lsp_result.data), 5):
+            last_token = SemanticToken(
+                lsp_result.data[i : i + 5],
+                token_types,
+                token_modifiers,
+                last_token,
+            )
+            result.append(last_token)
+        return result
 
     async def signature_help(self, doc: Document, pos: Position):
         return await self.client.text_document_signature_help_async(

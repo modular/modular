@@ -245,6 +245,113 @@ struct DidCloseNotebookDocumentParams {
 bool fromJSON(const llvm::json::Value &value,
               DidCloseNotebookDocumentParams &result, llvm::json::Path path);
 
+//===----------------------------------------------------------------------===//
+// Semantic Token
+//===----------------------------------------------------------------------===//
+
+/// Specifies a single semantic token in the document.
+/// This struct is not part of LSP, which just encodes lists of tokens as
+/// arrays of numbers directly.
+struct SemanticToken {
+  bool operator==(const SemanticToken &rhs) const;
+
+  /// The token line number, relative to the previous token.
+  unsigned deltaLine = 0;
+  /// The token start character, relative to the previous token.
+  /// (relative to 0 or the previous token's start if they are on the same line)
+  unsigned deltaStart = 0;
+  /// The length of the token. Note, a token cannot be multiline.
+  unsigned length = 0;
+  /// The type of the token, which will be looked up in
+  /// `SemanticTokensLegend.tokenTypes`.
+  unsigned tokenType = 0;
+  /// The modifiers of the token. Each set bit will be looked up in
+  /// `SemanticTokensLegend.tokenModifiers`
+  unsigned tokenModifiers = 0;
+};
+
+/// A versioned set of tokens.
+struct SemanticTokens {
+  SemanticTokens() = default;
+  SemanticTokens(std::vector<SemanticToken> tokens)
+      : tokens(std::move(tokens)) {}
+
+  /// An optional result id. If provided and clients support delta updating
+  /// the client will include the result id in the next semantic token request.
+  /// A server can then instead of computing all semantic tokens again simply
+  /// send a delta.
+  std::string resultId;
+
+  /// The actual tokens, encoded as a flat integer array.
+  std::vector<SemanticToken> tokens;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const SemanticTokens &value);
+
+//===----------------------------------------------------------------------===//
+// SemanticTokensParams
+//===----------------------------------------------------------------------===//
+
+/// Body of textDocument/semanticTokens/full request.
+struct SemanticTokensParams {
+  /// The text document.
+  TextDocumentIdentifier textDocument;
+};
+
+/// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &params, SemanticTokensParams &result,
+              llvm::json::Path path);
+
+/// Body of textDocument/semanticTokens/full/delta request. Requests the changes
+/// in semantic tokens since a previous response.
+struct SemanticTokensDeltaParams {
+  /// The text document.
+  TextDocumentIdentifier textDocument;
+  /// The previous result id.
+  std::string previousResultId;
+};
+
+/// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &params,
+              SemanticTokensDeltaParams &result, llvm::json::Path path);
+
+//===----------------------------------------------------------------------===//
+// SemanticTokensEdit
+//===----------------------------------------------------------------------===//
+
+/// Describes a replacement of a contiguous range of semanticTokens.
+struct SemanticTokensEdit {
+  /// LSP specifies `start` and `deleteCount` which are relative to the array
+  /// encoding of the previous tokens.
+  /// We use token counts instead, and translate when serializing this struct.
+  unsigned startToken = 0;
+  unsigned deleteTokens = 0;
+
+  /// The tokens of the edit, encoded as a flat integer array.
+  std::vector<SemanticToken> tokens;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const SemanticTokensEdit &value);
+
+//===----------------------------------------------------------------------===//
+// SemanticTokensOrDelta
+//===----------------------------------------------------------------------===//
+
+/// This models LSP SemanticTokensDelta | SemanticTokens, which is the result of
+/// textDocument/semanticTokens/full/delta.
+struct SemanticTokensOrDelta {
+  std::string resultId;
+  /// Set if we computed edits relative to a previous set of tokens.
+  std::optional<std::vector<SemanticTokensEdit>> edits;
+  /// Set if we computed a fresh set of tokens, encoded as an integer array.
+  std::optional<std::vector<SemanticToken>> tokens;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const SemanticTokensOrDelta &value);
+
 } // namespace lsp
 } // namespace mlir
 
