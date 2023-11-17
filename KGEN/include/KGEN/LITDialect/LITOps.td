@@ -1509,6 +1509,28 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 }
 
 //===----------------------------------------------------------------------===//
+// StoreBorrowOp
+//===----------------------------------------------------------------------===//
+
+def LIT_StoreBorrowOp : LITOp<"store.borrow",
+                              [PointerElementType<"ptr", "arg">]> {
+  let summary = "borrow register-passable value via memcpy";
+  let description = [{
+    The `lit.store.borrow` operation is a special store that creates a borrow
+    of a register-passable value that lives in-memory.
+
+    Example:
+
+    ```mlir
+    lit.store.borrow %arg0, %alloc : <index>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$arg, Arg<PointerType, "", [MemWrite]>:$ptr);
+  let assemblyFormat = "$arg `,` $ptr attr-dict `:` type($ptr)";
+}
+
+//===----------------------------------------------------------------------===//
 // LoadConsumeOp
 //===----------------------------------------------------------------------===//
 

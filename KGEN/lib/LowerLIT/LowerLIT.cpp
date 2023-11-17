@@ -152,6 +152,9 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       op->erase();
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
       b.replaceOpWithNewOp<POP::LoadOp>(loadConsume, loadConsume.getPtr());
+    } else if (auto storeBorrow = dyn_cast<StoreBorrowOp>(op)) {
+      b.replaceOpWithNewOp<POP::StoreOp>(storeBorrow, storeBorrow.getArg(),
+                                         storeBorrow.getPtr());
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
       b.replaceOpWithNewOp<KGEN::CallOp>(
           call, call.getResultTypes(), call.getCallee(),
