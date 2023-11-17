@@ -17,6 +17,7 @@ from math.limit import max_finite
 from Matmul import matmul
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
+from memory.unsafe import AddressSpace as _AddressSpace
 from memory import stack_allocation
 from runtime.llcl import OwningOutputChainPtr, Runtime, OutputChainPtr
 from Softmax import softmax, softmax_3_pass
@@ -504,7 +505,9 @@ fn _mm[
 
 
 @always_inline
-fn _fill[len: Int, type: DType](ptr: DTypePointer[type], val: SIMD[type, 1]):
+fn _fill[
+    len: Int, type: DType, address_space: _AddressSpace
+](ptr: DTypePointer[type, address_space], val: Scalar[type]):
     alias simd_width = simdwidthof[val.type]()
     alias vector_end = (len // simd_width) * simd_width
 
@@ -773,9 +776,7 @@ fn flash_attention_kernel[
                 )
 
         # Clear thread register results for P * V.
-        @unroll
-        for i in range((TM * TN).to_int()):
-            reg_result.store(i, 0.0)
+        _fill[(TM * TN).to_int()](reg_result, 0)
 
         # V tile has shape [BN, depth]. Load sub-tile [BK, depth] each time and
         # multiply with the corresponding P slice of shape [BM, BK].
