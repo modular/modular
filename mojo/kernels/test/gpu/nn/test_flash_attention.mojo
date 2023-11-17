@@ -15,6 +15,8 @@ from utils.index import Index
 from utils.list import DimList
 from BatchedMatmul import batched_matmul
 from Softmax import softmax
+from gpu.host.event import time_function
+from sys import argv
 
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
@@ -31,6 +33,13 @@ from MultiHeadAttention import (
 )
 
 alias type = DType.float32
+
+
+fn is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark":
+            return True
+    return False
 
 
 # CHECK-LABEL: test_flash_attention
@@ -125,21 +134,54 @@ fn test() raises:
         ]
     ]()
 
-    func(
-        # grid
-        (div_ceil(seq_len, q_tile_num_rows), num_heads, batch_size),
-        # block
-        (128, 1, 1),
-        q_device_ptr,
-        k_device_ptr,
-        v_device_ptr,
-        mask_device_ptr,
-        output_device_ptr,
-        scale,
-        batch_size,
-        seq_len,
-        stream=stream,
-    )
+    if is_benchmark():
+        alias nrun = 1000
+
+        @always_inline
+        @parameter
+        fn run_func() raises:
+            for i in range(nrun):
+                func(
+                    # grid
+                    (div_ceil(seq_len, q_tile_num_rows), num_heads, batch_size),
+                    # block
+                    (128, 1, 1),
+                    q_device_ptr,
+                    k_device_ptr,
+                    v_device_ptr,
+                    mask_device_ptr,
+                    output_device_ptr,
+                    scale,
+                    batch_size,
+                    seq_len,
+                    num_heads,
+                    depth,
+                    stream=stream,
+                )
+
+        # Warmup
+        run_func()
+
+        var nstime = time_function[run_func]() / nrun
+        let sectime = nstime / 1000000
+        print(nrun, "runs avg", sectime, "ms")
+
+    else:
+        func(
+            # grid
+            (div_ceil(seq_len, q_tile_num_rows), num_heads, batch_size),
+            # block
+            (128, 1, 1),
+            q_device_ptr,
+            k_device_ptr,
+            v_device_ptr,
+            mask_device_ptr,
+            output_device_ptr,
+            scale,
+            batch_size,
+            seq_len,
+            stream=stream,
+        )
 
     synchronize()
 
