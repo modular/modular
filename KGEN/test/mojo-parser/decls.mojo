@@ -1905,3 +1905,38 @@ fn test_bind_variadic():
     # CHECK: call_param
     # CHECK: "foo" : !lit.signature<("self": {{.*}}<:variadic<index> []>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}`thunk_foo{{.*}}"<:variadic<index> []>
     bind_trait[VariadicTrait[]]()
+
+
+trait ThunkAmbiguity:
+    fn mismatched_arg(self):
+        ...
+
+    @staticmethod
+    fn mismatched_ret() -> Self:
+        ...
+
+    fn __init__(inout self):
+        ...
+
+
+@register_passable
+struct ThunkAmbiguityRP(ThunkAmbiguity):
+    fn mismatched_arg(self):
+        pass
+
+    @staticmethod
+    fn mismatched_ret() -> Self:
+        return Self {}
+
+    fn __init__() -> Self:
+        return Self {}
+
+
+# COM: Make sure that the generated thunks aren't select over the methods.
+
+# CHECK-LABEL: lit.func @"ambiguous_thunk
+fn ambiguous_thunk(x: ThunkAmbiguityRP):
+    # CHECK-NOT: `thunk
+    x.mismatched_arg()
+    _ = ThunkAmbiguityRP.mismatched_ret()
+    _ = ThunkAmbiguityRP()
