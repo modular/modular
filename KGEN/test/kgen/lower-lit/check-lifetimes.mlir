@@ -642,3 +642,20 @@ lit.struct.decl @MemType attributes {destructor = #kgen.symbol.constant<@MemType
     lit.error_return %1 : <@Error : metatype<@Error>, index>
   }
 }
+
+lit.struct.decl @RegType register_passable {}
+
+!RegType = !kgen.declref<@RegType>
+
+lit.func @use_value(%arg0: !RegType borrow) {
+  kgen.return
+}
+
+// COM: Just check that this is a valid borrow.
+lit.func @sbvalue_to_mbvalue(%arg0: !RegType owned) {
+  %x = lit.letreg.decl "x" = %arg0 : !RegType
+  %0 = pop.stack_allocation 1 x !RegType
+  lit.store.borrow %x, %0 : <!RegType>
+  lit.call @use_value(%x) : !lit.signature<(!RegType) -> ()>
+  kgen.return
+}

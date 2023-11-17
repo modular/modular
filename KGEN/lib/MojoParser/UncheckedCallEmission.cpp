@@ -555,7 +555,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       Location argLoc = expr->getLocation(emitter);
       auto ptr = emitter.builder->create<POP::StackAllocationOp>(
           argLoc, PointerType::get(sbValue.getType()), 1);
-      emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
+      emitter.builder->create<LIT::StoreBorrowOp>(argLoc, sbValue, ptr);
 
       // Because the result of StackAllocationOp is not a lifetime trackable,
       // StoreOp will not transfer ownership and we must manually extend the

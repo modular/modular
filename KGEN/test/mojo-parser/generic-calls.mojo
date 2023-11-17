@@ -51,7 +51,7 @@ fn test_owned(owned x: RegPassable):
 # CHECK-LABEL: lit.func @"test_borrowed{{.*}}"(%x[x]: !RegPassable borrow)
 fn test_borrowed(borrowed x: RegPassable):
     # CHECK: %[[XSTACK:.*]] = pop.stack_allocation 1 x !RegPassable
-    # CHECK: pop.store %x, %[[XSTACK]] : !kgen.pointer<!RegPassable>
+    # CHECK: lit.store.borrow %x, %[[XSTACK]] : <!RegPassable>
     # CHECK: %[[XREB:.*]] = kgen.rebind %[[XSTACK]]
     # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}"<:type !RegPassable>(%[[XREB]])
     borrowed_generic(x)
@@ -75,7 +75,7 @@ fn generic[T: AnyType](t: T):
 fn test_reg_converts_to_generic[T: AnyRegType](t: T):
     # CHECK: %[[TREB:.*]] = kgen.rebind %t : !kgen.paramref<[[T]]> to !kgen.paramref<:type rebind(:regtype [[T]])>
     # CHECK: %[[TPTR:.*]] = pop.stack_allocation 1 x :type rebind(:regtype [[T]])
-    # CHECK: pop.store %[[TREB]], %[[TPTR]]
+    # CHECK: lit.store.borrow %[[TREB]], %[[TPTR]]
     # CHECK: lit.call @{{.*}}::@"generic{{.*}}"<:type rebind(:regtype [[T]])>(%[[TPTR]])
     generic(t)
 
