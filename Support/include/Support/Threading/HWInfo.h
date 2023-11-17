@@ -80,6 +80,11 @@ inline raw_ostream &operator<<(raw_ostream &os, const CPUSystemInfo &info) {
 /// Get the number of physical cores of in processor.
 ErrorOr<size_t> getNumPhysicalCores();
 
+/// Get the number of recommended threads. This is typically the exact same as
+/// getNumPysicalCores, however on some platforms this may exclude "efficiency"
+/// cores, as LLCL does not currently handle unbalanced cores very well.
+ErrorOr<size_t> getRecommendedThreads();
+
 //===----------------------------------------------------------------------===//
 // OS and architecture-specific utilities, visible for testing only
 //===----------------------------------------------------------------------===//
