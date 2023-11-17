@@ -352,6 +352,43 @@ struct SemanticTokensOrDelta {
 /// Add support for JSON serialization.
 llvm::json::Value toJSON(const SemanticTokensOrDelta &value);
 
+//===----------------------------------------------------------------------===//
+// FoldingRangeParams
+//===----------------------------------------------------------------------===//
+
+struct FoldingRangeParams {
+  TextDocumentIdentifier textDocument;
+};
+
+/// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &params, FoldingRangeParams &result,
+              llvm::json::Path path);
+
+//===----------------------------------------------------------------------===//
+// FoldingRange
+//===----------------------------------------------------------------------===//
+
+/// Stores information about a region of code that can be folded.
+struct FoldingRange {
+  FoldingRange(Range range, StringRef kind)
+      : startLine(range.start.line), startCharacter(range.start.character),
+        endLine(range.end.line), endCharacter(range.end.character),
+        kind(kind.str()) {}
+
+  const static llvm::StringLiteral kRegionKind;
+  const static llvm::StringLiteral kCommentKind;
+  const static llvm::StringLiteral kImportKind;
+
+  unsigned startLine = 0;
+  unsigned startCharacter;
+  unsigned endLine = 0;
+  unsigned endCharacter;
+  std::string kind;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const FoldingRange &value);
+
 } // namespace lsp
 } // namespace mlir
 

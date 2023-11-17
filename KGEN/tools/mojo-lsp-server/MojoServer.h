@@ -101,6 +101,11 @@ public:
       const mlir::lsp::URIForFile &uri,
       OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn);
 
+  /// Find all of the folding ranges within the given file.
+  void onFoldingRange(
+      const mlir::lsp::URIForFile &uri,
+      OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn);
+
   /// Get a `Hover` element corresponding to the given document position.
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
