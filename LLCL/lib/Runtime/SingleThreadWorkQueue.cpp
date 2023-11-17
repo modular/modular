@@ -8,7 +8,6 @@
 
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Support/ConcurrentQueue.h"
-#include "LLCL/Support/ThreadAffinity.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 
@@ -25,7 +24,7 @@ namespace {
 /// threads.
 class SingleThreadWorkQueue : public WorkQueue {
 public:
-  SingleThreadWorkQueue(size_t cpuID) : cpuID(cpuID) {}
+  SingleThreadWorkQueue() {}
 
   void shutdown() override {
 #if MODULAR_PARANOID
@@ -129,9 +128,6 @@ private:
 #endif
   }
 
-  /// CPU ID to set affinity to when running the runUntil loop.
-  size_t cpuID;
-
 #if MODULAR_PARANOID
   enum WorkQueueState : uint8_t {
     kReady = 0,
@@ -183,7 +179,7 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 
 template <typename StopPredicateFn>
 void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
-  LLCL::runWithThreadAffinity(cpuID, [&]() { runUntilImpl(stopPredicate); });
+  runUntilImpl(stopPredicate);
 }
 
 template <typename StopPredicateFn>
@@ -196,12 +192,5 @@ void SingleThreadWorkQueue::runUntilImpl(StopPredicateFn stopPredicate) {
 }
 
 std::unique_ptr<WorkQueue> M::LLCL::createSingleThreadWorkQueue() {
-  auto cpuIDOr = getThreadAffinityCpuIds(/*numThreads=*/1, /*maxWorkers=*/1);
-
-  // TODO: This function should return the error back to caller.
-  if (cpuIDOr.isError())
-    llvm::report_fatal_error(cpuIDOr.getError());
-  std::vector<size_t> cpuIDs = *cpuIDOr;
-  assert(cpuIDs.size() == 1);
-  return std::make_unique<SingleThreadWorkQueue>(cpuIDs[0]);
+  return std::make_unique<SingleThreadWorkQueue>();
 }
