@@ -651,13 +651,12 @@ OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
 }
 
 std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
-OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
-                                 ValueInputConvention expectedConvention,
-                                 ASTType expectedType,
-                                 size_t &numImplicitConversions,
-                                 bool &hasNonmaterializableConversion,
-                                 bool allowImplicitConversions,
-                                 ExprEmitter &emitter) {
+OverloadFitness::checkOneOperand(
+    ASTExprAnd<AnyValue> operand, ValueInputConvention expectedConvention,
+    ASTType expectedType, size_t &numImplicitConversions,
+    size_t &numMismatchedConventions, bool &hasNonmaterializableConversion,
+    bool allowImplicitConversions, ExprEmitter &emitter, SMLoc loc,
+    SharedState &shared) {
   switch (expectedConvention) {
   case ValueInputConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for type
@@ -674,9 +673,11 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       return {kNotLValue, expectedType};
 
     // By-ref argument types must exactly match, no conversions are allowed.
-    if (!argVal.getRValueType().isEqualCanon(
-            expectedType.getReferenceElementType()))
+    ASTType elementType = expectedType.getReferenceElementType();
+    if (!argVal.getRValueType().isEqualCanon(elementType))
       return {kWrongLVType, expectedType};
+    // If a register-passable type is being returned in-memory, remember this.
+    numMismatchedConventions += elementType.isRegisterPassable(loc, shared);
     break;
   }
   case ValueInputConvention::BorrowedInMem:
@@ -685,6 +686,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // Note: Should do not support overloading on borrow/owned currently,
     // but we could add this if there is a reason to.
     expectedType = expectedType.getReferenceElementType();
+    // If a register-passable type is being passed in-memory, remember this.
+    numMismatchedConventions += expectedType.isRegisterPassable(loc, shared);
     [[fallthrough]];
   case ValueInputConvention::BorrowedInReg:
   case ValueInputConvention::OwnedInReg: {
@@ -933,6 +936,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                          "argument");
   }
 
+  SMLoc loc = callable.expr->getLoc();
+
   // We will accumulate the implicit conversion in arguments to those counted
   // for the parameter bindings.
   size_t numImplicitConversions = bindingFitness.numImplicitConversions;
@@ -944,6 +949,20 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // conversions required for a match.
   size_t posOperandIdx = 0;
   bool passesVarArgArgument = false;
+
+  // For each mismatch in "preferred" argument convention, penalize the
+  // overload. This is to resolve ambiguities that can arise from synthesized
+  // thunks for converting calling conventions.
+  size_t numMismatchedConventions = 0;
+
+  auto checkAnOperand = [&](ASTExprAnd<AnyValue> operand,
+                            ValueInputConvention expectedConvention,
+                            ASTType expectedType) {
+    return checkOneOperand(
+        operand, expectedConvention, expectedType, numImplicitConversions,
+        numMismatchedConventions, hasNonmaterializableConversion,
+        allowImplicitConversions, emitter, loc, emitter.shared);
+  };
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
@@ -957,14 +976,18 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
            "`**arg` variadics not supported yet");
 
     // Ignore the return slot if present.
-    if (expectedConvention == ValueInputConvention::ByRefResult)
+    Type expectedType = evaluator.refineType(unboundExpectedType);
+    if (expectedConvention == ValueInputConvention::ByRefResult) {
+      numMismatchedConventions += ASTType(expectedType)
+                                      .getReferenceElementType()
+                                      .isRegisterPassable(loc, emitter.shared);
       continue;
+    }
 
     // If the arguments or results got bound to a memory-only type then their
     // argument convention needs to change.  We cannot support this until we get
     // proper type traits.  Note that the PointerType is considered a valid
     // register passable type, so things passed byref are ok.
-    Type expectedType = evaluator.refineType(unboundExpectedType);
     if (!ASTType(expectedType).isRegisterPassable(callLoc, emitter.shared))
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
 
@@ -984,10 +1007,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
               callOperands.findKwArg(argName)) {
         // If we found a keyword argument, we check it normally.
-        auto [kind, ty] = checkOneOperand(*kwOperandOr, expectedConvention,
-                                          expectedType, numImplicitConversions,
-                                          hasNonmaterializableConversion,
-                                          allowImplicitConversions, emitter);
+        auto [kind, ty] =
+            checkAnOperand(*kwOperandOr, expectedConvention, expectedType);
         if (kind != kValidType) {
           return emitDiagFor.argTypeMismatch(kind, ty, *kwOperandOr,
                                              expectedArgIdx);
@@ -1013,9 +1034,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         [&, expectedConvention = expectedConvention](
             ASTType expectedType) -> std::optional<InflightDiag> {
       ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx];
-      auto [kind, ty] = checkOneOperand(
-          operand, expectedConvention, expectedType, numImplicitConversions,
-          hasNonmaterializableConversion, allowImplicitConversions, emitter);
+      auto [kind, ty] =
+          checkAnOperand(operand, expectedConvention, expectedType);
       if (kind != kValidType)
         return emitDiagFor.argTypeMismatch(kind, ty, operand, posOperandIdx);
       ++posOperandIdx;
@@ -1065,7 +1085,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // conversions, and whether anything was passed through varargs.  We consider
   // exact matches of concrete types to be more specific than varargs matches,
   // and both of these more specific than matches with variadic parameters.
-  size_t payload = numImplicitConversions * 8;
+  size_t payload = numMismatchedConventions * 16;
+  payload += numImplicitConversions * 8;
   payload += (hasNonmaterializableConversion ? 4 : 0);
   payload += (passesVarArgArgument ? 2 : 0);
   payload += (bindingFitness.hasVariadicParams ? 1 : 0);

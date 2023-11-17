@@ -94,12 +94,12 @@ private:
   /// Check the expected type against the provided operand. This identifies any
   /// problems with the operand type and also returns the type to be used for
   /// error propagation.
-  static std::pair<ArgTypeMismatchKind, ASTType>
-  checkOneOperand(ASTExprAnd<AnyValue> operand,
-                  ValueInputConvention expectedConvention, ASTType expectedType,
-                  size_t &numImplicitConversions,
-                  bool &hasNonmaterializableConversion,
-                  bool allowImplicitConversions, ExprEmitter &emitter);
+  static std::pair<ArgTypeMismatchKind, ASTType> checkOneOperand(
+      ASTExprAnd<AnyValue> operand, ValueInputConvention expectedConvention,
+      ASTType expectedType, size_t &numImplicitConversions,
+      size_t &numMismatchedConventions, bool &hasNonmaterializableConversion,
+      bool allowImplicitConversions, ExprEmitter &emitter, SMLoc loc,
+      SharedState &shared);
 };
 
 } // namespace M::KGEN::LIT
