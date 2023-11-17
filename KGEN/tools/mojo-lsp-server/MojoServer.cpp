@@ -103,9 +103,9 @@ struct Symbol {
 
 /// Return if the given view kind should be included in the markdown
 /// declaration.
-static bool shouldIncludeViewKindInMarkdown(DeclView::DeclViewKind kind) {
-  return kind != DeclView::DK_AliasDeclView &&
-         kind != DeclView::DK_StructDeclView;
+static bool shouldIncludeViewKindInMarkdown(DeclViewKind kind) {
+  return kind != DeclViewKind::DK_AliasDeclView &&
+         kind != DeclViewKind::DK_StructDeclView;
 }
 
 std::string Symbol::getMarkdownDeclaration() const {

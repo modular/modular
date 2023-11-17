@@ -266,23 +266,23 @@ std::string ParameterDeclView::getDeclarationSnippet() const {
 
 StringRef DeclView::getKindAsString() const {
   switch (kind) {
-  case DK_AliasDeclView:
+  case DeclViewKind::DK_AliasDeclView:
     return "alias";
-  case DK_ArgumentDeclView:
+  case DeclViewKind::DK_ArgumentDeclView:
     return "argument";
-  case DK_FunctionDeclView:
+  case DeclViewKind::DK_FunctionDeclView:
     return "function";
-  case DK_ModuleDeclView:
+  case DeclViewKind::DK_ModuleDeclView:
     return "module";
-  case DK_PackageDeclView:
+  case DeclViewKind::DK_PackageDeclView:
     return "package";
-  case DK_ParameterDeclView:
+  case DeclViewKind::DK_ParameterDeclView:
     return "parameter";
-  case DK_StructDeclView:
+  case DeclViewKind::DK_StructDeclView:
     return "struct";
-  case DK_StructFieldDeclView:
+  case DeclViewKind::DK_StructFieldDeclView:
     return "field";
-  case DK_VariableDeclView:
+  case DeclViewKind::DK_VariableDeclView:
     return "variable";
   }
   llvm_unreachable("invalid kind");
@@ -337,7 +337,8 @@ llvm::json::Object VariableDeclView::toJSON() const {
 }
 
 VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_VariableDeclView, declRef.getName().value_or(StringRef{})),
+    : DeclView(DeclViewKind::DK_VariableDeclView,
+               declRef.getName().value_or(StringRef{})),
       isGlobalVariable(false) {
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
       .Case([&](VarLetDeclOp op) {
@@ -446,7 +447,8 @@ static bool isGlobalAliasDecl(MojoASTDeclRef declRef) {
 }
 
 AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_AliasDeclView, declRef.getName().value_or(StringRef())),
+    : DeclView(DeclViewKind::DK_AliasDeclView,
+               declRef.getName().value_or(StringRef())),
       isGlobalAlias(isGlobalAliasDecl(declRef)) {
   auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
 
@@ -607,7 +609,8 @@ llvm::json::Object FunctionDeclView::toJSON() const {
 }
 
 FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_FunctionDeclView, declRef.getName().value_or(StringRef{})) {
+    : DeclView(DeclViewKind::DK_FunctionDeclView,
+               declRef.getName().value_or(StringRef{})) {
   auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
 
   ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
@@ -697,7 +700,7 @@ llvm::json::Object StructFieldDeclView::toJSON() const {
 }
 
 StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_StructFieldDeclView,
+    : DeclView(DeclViewKind::DK_StructFieldDeclView,
                declRef.getName().value_or(StringRef{})) {
   auto fieldOp = cast<StructFieldOp>(declRef.getIfOperation());
 
@@ -803,7 +806,8 @@ llvm::json::Object StructDeclView::toJSON() const {
 }
 
 StructDeclView::StructDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_StructDeclView, declRef.getName().value_or(StringRef())) {
+    : DeclView(DeclViewKind::DK_StructDeclView,
+               declRef.getName().value_or(StringRef())) {
   ASTDecl &decl = *declRef;
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
 
@@ -848,7 +852,8 @@ llvm::json::Object ModuleDeclView::toJSON() const {
 }
 
 ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_ModuleDeclView, declRef.getName().value_or(StringRef())) {
+    : DeclView(DeclViewKind::DK_ModuleDeclView,
+               declRef.getName().value_or(StringRef())) {
   ASTDecl &decl = *declRef;
 
   aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
@@ -883,7 +888,8 @@ llvm::json::Object PackageDeclView::toJSON() const {
 }
 
 PackageDeclView::PackageDeclView(MojoASTDeclRef declRef)
-    : DeclView(DK_PackageDeclView, declRef.getName().value_or(StringRef())) {
+    : DeclView(DeclViewKind::DK_PackageDeclView,
+               declRef.getName().value_or(StringRef())) {
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
     description = llvm::join(docStr->getDescription(), "\n");

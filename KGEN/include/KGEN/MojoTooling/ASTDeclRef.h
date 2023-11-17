@@ -23,6 +23,7 @@ class SharedState;
 
 class DeclView;
 class MojoASTTypeRef;
+enum class DeclViewKind;
 
 //===----------------------------------------------------------------------===//
 // MojoASTDeclRef
@@ -66,6 +67,11 @@ public:
   /// this decl. It supports aliases, modules, functions, structs, arguments,
   /// struct fields and variables.
   std::unique_ptr<DeclView> getView() const;
+
+  /// Return the approximate kind of view this decl would create, if any. This
+  /// isn't guaranteed to be the exact decl kind, but it can be used to provide
+  /// a fast indicator of the type of view this decl represents.
+  std::optional<DeclViewKind> getApproximateViewKind() const;
 
   //===--------------------------------------------------------------------===//
   // Children
