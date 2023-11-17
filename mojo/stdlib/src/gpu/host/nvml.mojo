@@ -11,6 +11,7 @@ from memory.unsafe import Pointer
 from ._utils import _check_error
 from pathlib import Path
 from utils.vector import DynamicVector
+from debug import trap
 
 # ===----------------------------------------------------------------------===#
 # Constants
@@ -25,6 +26,9 @@ alias CUDA_NVML_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so"
 
 
 fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
+    if not Path(CUDA_NVML_LIBRARY_PATH).exists():
+        print("the CUDA NVML library was not found at", CUDA_NVML_LIBRARY_PATH)
+        trap()
     let ptr = Pointer[DLHandle].alloc(1)
     let handle = DLHandle(CUDA_NVML_LIBRARY_PATH)
     _ = handle.get_function[fn () -> Result]("nvmlInit_v2")()
@@ -41,10 +45,6 @@ fn _destroy_dylib(ptr: Pointer[NoneType]):
 fn _get_dylib_function[
     result_type: AnyRegType
 ](name: StringRef) raises -> result_type:
-    if not Path(CUDA_NVML_LIBRARY_PATH).exists():
-        raise "the CUDA NVML library was not found at " + String(
-            CUDA_NVML_LIBRARY_PATH
-        )
     return _ffi_get_dylib_function[
         "CUDA_NVML_LIBRARY", _init_dylib, _destroy_dylib, result_type
     ](name)

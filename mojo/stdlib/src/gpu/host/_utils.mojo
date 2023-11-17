@@ -12,6 +12,7 @@ from .result import Result as DriverResult
 from .nvml import Result as NVMLResult
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from pathlib import Path
+from debug import trap
 
 # ===----------------------------------------------------------------------===#
 # Utilities
@@ -53,6 +54,10 @@ fn _human_memory(size: Int) -> String:
 
 
 fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
+    if not Path(CUDA_DRIVER_PATH).exists():
+        print("the CUDA library was not found at", CUDA_DRIVER_PATH)
+        trap()
+
     let ptr = Pointer[DLHandle].alloc(1)
     let handle = DLHandle(CUDA_DRIVER_PATH)
     _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
@@ -69,8 +74,6 @@ fn _destroy_dylib(ptr: Pointer[NoneType]):
 fn _get_dylib_function[
     result_type: AnyRegType
 ](name: StringRef) raises -> result_type:
-    if not Path(CUDA_DRIVER_PATH).exists():
-        raise "the CUDA library was not found at " + String(CUDA_DRIVER_PATH)
     return _ffi_get_dylib_function[
         "CUDA_DRIVER_LIBRARY", _init_dylib, _destroy_dylib, result_type
     ](name)
