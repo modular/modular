@@ -316,7 +316,7 @@ fn flash_attention[
     q: NDBuffer[rank, q_shape, q_type],
     k: NDBuffer[rank, k_shape, k_type],
     v: NDBuffer[rank, v_shape, v_type],
-    mask: NDBuffer[2, mask_shape, mask_type],
+    mask: NDBuffer[3, mask_shape, mask_type],
     scale: Float32,
     out_chain: OutputChainPtr,
 ):
@@ -609,6 +609,8 @@ fn flash_attention_kernel[
     let head_idx: _int32 = BlockIdx.y()
     let q_tile_idx: _int32 = BlockIdx.x()
 
+    let global_mask_offset: _int32 = batch_idx * seq_len * seq_len
+
     # Load Q.
     # Offset in global Q buffer, BSHD layout
     let global_q_offset: _int32 = depth * (
@@ -703,7 +705,7 @@ fn flash_attention_kernel[
         # Scale and add mask.
         # Mask has shape [seq_len, seq_len]. p_tile correlates to a mask tile
         # starting at (q_tile_idx * BM, kv_tile_start_row).
-        let mask_offset = (
+        let mask_offset = global_mask_offset + (
             q_tile_idx * BM + mm_row
         ) * seq_len + kv_tile_start_row + mm_col
 
