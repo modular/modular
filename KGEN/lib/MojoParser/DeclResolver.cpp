@@ -3897,7 +3897,7 @@ static void processRegisterPassableDecorator(
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
-static std::pair<SignatureType, InputParamBindings>
+static std::pair<LITSignatureType, InputParamBindings>
 getTraitFunctionSignature(SharedState &shared, LIT::FuncOp traitFn,
                           ASTType structSelfType) {
   LITSignatureType signature = traitFn.getFullSignature();
@@ -3997,15 +3997,170 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
           traitSig.getDefaultArguments(), traitSig.getDefaultParameters()));
 }
 
+/// Synthesize a single stub for a register-passable type to meet a conformance
+/// requirement for a trait. Trait function prototypes assume memory-only
+/// conventions for the trait self type, but register-passable types will
+/// implement the opposite. Synthesize thunks that match the required signatures
+/// by the trait.
+static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
+                                        SharedState &shared, StringAttr name,
+                                        TypedAttr callee,
+                                        LITSignatureType memSig) {
+  // Synthesize input and result parameter decls.
+  SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  Builder b(shared.getContext());
+  for (auto [i, type, name] :
+       llvm::enumerate(memSig.getInputParamTypes(), memSig.getParamNames())) {
+    // The input parameter names are derived from the decl name.
+    inputParamDecls.push_back(ParamDeclAttr::get(
+        name.empty() ? b.getStringAttr("i" + Twine(i)) : name, type));
+  }
+  for (auto [i, type] : llvm::enumerate(memSig.getResultParamTypes())) {
+    resultParamDecls.push_back(
+        ParamDeclAttr::get(b.getStringAttr("o" + Twine(i)), type));
+  }
+
+  // Synthesize the method inside the struct.
+  auto [thunk, decl] = StructEmitter(shared).synthesizeMethodInStruct(
+      name, inputParamDecls, memSig.getParamPassingKinds(),
+      memSig.getValueInputs(), memSig.getInputConventions(),
+      memSig.getArgNames(), memSig.getArgPassingKinds(), memSig.getResultType(),
+      structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
+      resultParamDecls, "`thunk_");
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+  // Always inline the thunk. The calling convention conversion overhead is
+  // guaranteed to be optimized away.
+  thunk.setInlineLevel(InlineLevel::Always);
+
+  // Now prepare to emit the call to the register-passable method.
+  ExprEmitter emitter(shared, structDecl, EC_Trait);
+  emitter.builder = OpBuilder::atBlockBegin(thunk.getBody());
+
+  // The callee is partially bound, containing only its parent struct
+  // parameters. Bind the rest of them here.
+  SmallVector<TypedAttr> bindSigInputs{callee};
+  for (ParamDeclAttr inputParam : inputParamDecls)
+    bindSigInputs.push_back(ParamDeclRefAttr::get(inputParam));
+  callee = ParamOperatorAttr::get(POC::BindSignature, bindSigInputs);
+
+  // Treat the `init_self` argument like a result slot.
+  bool hasResultSlot =
+      memSig.hasMemoryOnlyResult() ||
+      (memSig.getNumInputs() &&
+       memSig.getInputConvention(0) == ValueInputConvention::InitSelf);
+
+  // Construct the call operands from the function block arguments. Ensure
+  // keyword-only arguments are specified accordingly.
+  SyntheticNode node(structDecl.getLoc());
+  SmallVector<FuncOperand> posOperands;
+  SmallDenseMap<StringAttr, FuncOperand> kwOperands;
+  for (auto [arg, kind, conv, name] : llvm::drop_begin(
+           llvm::zip(thunk.getArguments(), memSig.getArgPassingKinds(),
+                     memSig.getInputConventions(), memSig.getArgNames()),
+           hasResultSlot)) {
+    AnyValue value;
+    switch (conv) {
+    case ValueInputConvention::ByRef:
+    case ValueInputConvention::OwnedInMem:
+      value = MLValue(arg);
+      break;
+    case ValueInputConvention::OwnedInReg:
+      value = MLValue(makeArgLValueVarSlot(
+          SRValue(arg), name, decl, *emitter.builder, decl.getLoc(), shared));
+      break;
+    case ValueInputConvention::BorrowedInReg:
+      value = SBValue(arg);
+      break;
+    case ValueInputConvention::BorrowedInMem:
+      value = MBValue(arg);
+      break;
+    default:
+      llvm_unreachable("unexpected input convention");
+    }
+    if (kind == PassingKind::KwOnly)
+      kwOperands.insert({name, {value, &node}});
+    else
+      posOperands.push_back({value, &node});
+  }
+
+  // Declare result parameters for the call, if required.
+  SmallVector<ParamDeclAttr> callResultParams;
+  for (auto [i, type] : llvm::enumerate(memSig.getResultParamTypes())) {
+    callResultParams.push_back(
+        ParamDeclAttr::get(b.getStringAttr("r" + Twine(i)), type));
+  }
+
+  // Allocate the value dest for the call. Set the value dest to the result
+  // slot, if there is one, otherwise provide the expected rvalue type.
+  ValueDest dest = hasResultSlot
+                       ? ValueDest(MLValue(thunk.getArgument(0)), EC_Trait)
+                       : ValueDest(EC_Trait);
+  CValue callResult = emitter.emitCallUnchecked(
+      PValue(callee), CallOperands(posOperands, &kwOperands), callResultParams,
+      dest, &node);
+
+  // Bind result parameters, if there are any.
+  ImplicitLocOpBuilder builder(shared.translateLocation(structDecl.getLoc()),
+                               *emitter.builder);
+  if (!callResultParams.empty()) {
+    SmallVector<TypedAttr> resultRefs;
+    for (ParamDeclAttr resultDecl : callResultParams)
+      resultRefs.push_back(ParamDeclRefAttr::get(resultDecl));
+    builder.create<LIT::ParamReturnOp>(
+        ParameterExprArrayAttr::get(b.getContext(), resultRefs));
+  }
+
+  // Emit the function return. It's just a none return if the function has a
+  // result slot.
+  // FIXME: handle async
+  Value retVal;
+  if (hasResultSlot) {
+    retVal =
+        builder.create<ParamConstantOp>(KGEN::NoneAttr::get(b.getContext()));
+  } else {
+    retVal = emitter.emitSRValue({callResult, &node}, EC_Trait);
+  }
+  if (memSig.isThrows()) {
+    retVal = builder.create<VariantCreateOp>(memSig.getResultType(), retVal,
+                                             /*index=*/1);
+  }
+  ExprEmitter::emitNormalReturn(builder, retVal, decl);
+  builder.create<LIT::EndFuncOp>();
+}
+
+/// Synthesize stubs for register-passable types to meet conformance
+/// requirements for a trait.
+static void synthesizeRegisterTraitStubs(
+    ASTDecl &structDecl, SharedState &shared,
+    ArrayRef<std::pair<std::pair<StringAttr, TypedAttr>, LITSignatureType>>
+        stubs) {
+  for (auto [key, sig] : stubs) {
+    auto [name, callee] = key;
+    // If no rewrite is necessary, skip this function.
+    if (callee.getType() == sig)
+      continue;
+    synthesizeRegisterTraitStub(structDecl, shared, name, callee, sig);
+  }
+}
+
 /// Check conformance for struct that implements traits.
 static LogicalResult verifyConformance(ASTDecl &structDecl,
                                        SharedState &shared) {
   auto structDeclOp = cast<StructDeclOp>(structDecl);
   bool rpTrivial = structDeclOp.isRegisterPassableTrivial();
+  bool regPassable = structDeclOp.isRegisterPassable();
   bool hadErrors = false;
   SyntheticNode node(structDecl.getLoc());
   ExprEmitter emitter(shared, structDecl, EC_Trait);
   ASTType selfType = structDecl.getSelfType();
+
+  // For register-passable types, this is the set of stubs that need to be
+  // synthesized for calling convention conversion. This maps a function name
+  // and symbol reference to the required memory-only signature.
+  llvm::MapVector<std::pair<StringAttr, TypedAttr>, LITSignatureType> regStubs;
 
   for (SymbolRefAttr attr : structDeclOp.getTraitsAttr()) {
     ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
@@ -4041,7 +4196,8 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
             getTraitFunctionSignature(shared, traitFn, selfType);
         // Match against the transformed calling convention if the struct is
         // register-passable.
-        if (structDeclOp.isRegisterPassable()) {
+        LITSignatureType traitSignature = newSignature;
+        if (regPassable) {
           newSignature =
               getRegisterPassableSignature(newSignature, selfType, rpTrivial);
         }
@@ -4054,6 +4210,8 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
             });
         if (!result)
           allMatchFound = false;
+        if (regPassable)
+          regStubs.insert({{name, result.get()}, traitSignature});
       }
     }
     if (allMatchFound) {
@@ -4065,7 +4223,11 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
     }
   }
 
-  return success(!hadErrors);
+  if (hadErrors)
+    return failure();
+  if (regPassable)
+    synthesizeRegisterTraitStubs(structDecl, shared, regStubs.takeVector());
+  return success();
 }
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,

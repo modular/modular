@@ -35,7 +35,7 @@ LIT::FuncOp StructEmitter::createFunction(
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
     ImplicitLocOpBuilder &builder, FnEffects fnEffects,
-    ArrayRef<ParamDeclAttr> resultParams) {
+    ArrayRef<ParamDeclAttr> resultParams, StringRef prefix) {
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
@@ -58,7 +58,8 @@ LIT::FuncOp StructEmitter::createFunction(
       inputParams, resultParams, functionType, argConventions, fnEffects,
       metadata, [&] { return mlir::emitError(location); });
   StringAttr sourceName = builder.getStringAttr(name);
-  StringAttr mangledName = DeclResolver::getMangledName(sourceName, signature);
+  StringAttr mangledName = builder.getStringAttr(
+      prefix + DeclResolver::getMangledName(sourceName, signature).getValue());
   auto funcOp = builder.create<LIT::FuncOp>(mangledName, sourceName, signature,
                                             specialFnID);
 
@@ -104,7 +105,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects effects, ArrayRef<ParamDeclAttr> resultParams) {
+    FnEffects effects, ArrayRef<ParamDeclAttr> resultParams, StringRef prefix) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
@@ -113,7 +114,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
       argPassingKinds, resultType, specialFnID, structDecl.getLoc(), builder,
       effects.setParamVarArgs(effects.hasParamVarArgs() ||
                               structOp.getSignature().getParamVarArg()),
-      resultParams);
+      resultParams, prefix);
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").
