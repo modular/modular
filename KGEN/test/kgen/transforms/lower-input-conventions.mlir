@@ -229,3 +229,24 @@ kgen.func @byref_throws_optimized_error(
   // CHECK-NEXT: kgen.return %[[RES]]
   kgen.return %res : !kgen.variant<!Error, !kgen.none>
 }
+
+// CHECK-LABEL: @self_result_and_arg
+// CHECK-SAME: (%arg0: !kgen.struct<()>, %arg1: i8 borrow) -> !kgen.struct<()>
+kgen.func @self_result_and_arg(%arg0: !kgen.pointer<struct<()>> byref_result,
+                               %arg1: !kgen.pointer<struct<()>> borrow_in_mem,
+                               %arg2: i8 borrow) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// CHECK-LABEL: @call_it_self_result_and_arg
+// CHECK-SAME: %arg0: !kgen.struct<()>
+kgen.func @call_it_self_result_and_arg(%arg0: !kgen.pointer<struct<()>> borrow_in_mem) -> !kgen.none {
+  %0 = pop.stack_allocation 1 x struct<()>
+  // CHECK: %[[CST:.*]] = kgen.param.constant: i8 = <4>
+  %1 = kgen.param.constant: i8 = <4>
+  // CHECK: call @self_result_and_arg(%{{.*}}, %[[CST]]) : (!kgen.struct<()>, i8 borrow) -> !kgen.struct<()>
+  %2 = kgen.call @self_result_and_arg(%0, %arg0, %1) : (!kgen.pointer<struct<()>> byref_result, !kgen.pointer<struct<()>> borrow_in_mem, i8 borrow) -> !kgen.none
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}

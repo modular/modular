@@ -122,7 +122,7 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
   ImplicitLocOpBuilder b(op->getLoc(), op);
   SmallVector<Value> newOperands(oldOperands.drop_front(changedRes));
   for (size_t idx : changedIndices)
-    newOperands[idx] = b.create<POP::LoadOp>(oldOperands[idx]);
+    newOperands[idx - changedRes] = b.create<POP::LoadOp>(oldOperands[idx]);
 
   // Update the result, if needed.
   if (changedRes) {
@@ -261,7 +261,7 @@ static void lowerFuncOp(FuncOp funcOp) {
     BlockArgument arg = body.getArgument(idx);
     auto ptr = b.create<POP::StackAllocationOp>(arg.getLoc(), arg.getType(), 1);
     auto storeOp = b.create<POP::StoreOp>(arg.getLoc(), arg, ptr);
-    arg.setType(newSig.getValueInputs()[idx]);
+    arg.setType(newSig.getValueInputs()[idx - changedRes]);
     arg.replaceAllUsesExcept(ptr, storeOp);
   }
 
