@@ -830,3 +830,21 @@ kgen.generator @variant_constant<value: i32>() {
   // expected-error @below {{variant attribute value type 'i32' does not match type at index 0 which is 'f32'}}
   %0 = kgen.param.constant: variant<f32, f64> = <#kgen.variant<:i32 value, 0>>
 }
+
+// -----
+
+// expected-error @below {{elaborated module cannot be empty}}
+"someop"() {a = #kgen.package.archive<
+  target = #M.target<triple = "", arch="">,
+  elaboratedModule = dense_resource<abc> : tensor<0xui8>,
+  archive = dense_resource<def> : tensor<0xui8>
+>} : () -> ()
+
+// -----
+
+// expected-error @below {{archive cannot be empty}}
+"someop"() {a = #kgen.package.archive<
+  target = #M.target<triple = "", arch="">,
+  elaboratedModule = dense_resource<abc> : tensor<1xui8>,
+  archive = dense_resource<def> : tensor<0xui8>
+>} : () -> ()
