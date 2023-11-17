@@ -13,7 +13,6 @@ from algorithm import (
     unswitch,
 )
 from BatchedMatmul import batched_matmul
-from math.limit import max_finite
 from Matmul import matmul
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
@@ -363,13 +362,9 @@ fn flash_attention[
 
     alias qtile_num_rows = 32
     alias ktile_num_rows = 128
-    let use_32bit_indexing = qtile_num_rows * depth < max_finite[
-        DType.uint32
-    ]().to_int() and ktile_num_rows * depth < max_finite[
-        DType.uint32
-    ]().to_int() and qtile_num_rows * ktile_num_rows < max_finite[
-        DType.uint32
-    ]().to_int()
+    # TODO: #25898, use max_finite
+    alias max_uint32 = Int(0xFFFFFFFF)
+    let use_32bit_indexing = qtile_num_rows * depth < max_uint32 and ktile_num_rows * depth < max_uint32 and qtile_num_rows * ktile_num_rows < max_uint32 and batch_size * seq_len * seq_len < max_uint32
 
     if not use_32bit_indexing:
         return out_chain.mark_error("32bits index overflow.")
