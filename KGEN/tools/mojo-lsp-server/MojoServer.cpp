@@ -21,6 +21,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "SemanticTokens.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ReferenceCounted.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -82,6 +83,7 @@ namespace {
 struct Symbol {
   Symbol(MojoASTDeclRef declRef, StringRef identifier, SMLoc identifierLoc)
       : identifier(identifier), declRef(declRef),
+        approximateViewKind(declRef.getApproximateViewKind()),
         range(getRangeForText(identifierLoc, identifier)) {}
 
   Symbol(const Symbol &) = delete;
@@ -95,6 +97,10 @@ struct Symbol {
 
   /// API for accessing the internals of this decl.
   MojoASTDeclRef declRef;
+
+  /// The approximate view kind for this decl. This can provide a rough estimate
+  /// for what kind of decl this is.
+  std::optional<DeclViewKind> approximateViewKind;
 
   /// The location of the identifier of this decl.
   SMRange range;
@@ -216,6 +222,10 @@ public:
   /// Return nullptr if not found.
   Symbol *findSymbol(MojoASTDeclRef declRef);
 
+  /// Walk the symbol references in the given range, including references that
+  /// are only partially overlapped.
+  void walkSymbolRefs(SMRange range, function_ref<void(SymbolRef &)> callback);
+
 private:
   /// Store the range corresponding to the reference or the declaration of a
   /// symbol in the main doc.
@@ -241,6 +251,20 @@ Symbol *SymbolIndex::findSymbol(MojoASTDeclRef declRef) {
   if (auto it = symbolTable.find(&*declRef); it != symbolTable.end())
     return it->getSecond().get();
   return nullptr;
+}
+
+void SymbolIndex::walkSymbolRefs(SMRange range,
+                                 function_ref<void(SymbolRef &)> callback) {
+  auto startIt = rangeToSymbolRef.find(range.Start);
+  auto endIt = rangeToSymbolRef.find(range.End);
+  if (!startIt.valid())
+    return;
+  // Include partial overlaps at the end.
+  if (endIt.valid())
+    ++endIt;
+
+  for (SymbolRef *ref : llvm::make_range(startIt, endIt))
+    callback(*ref);
 }
 
 void SymbolIndex::insertRangeInMainDoc(SymbolRef &&symbolRef) {
@@ -1137,6 +1161,84 @@ std::vector<lsp::InlayHint> MojoDocument::onInlayHintSync(SMRange range) {
 // MojoDocument: Signature Help
 //===----------------------------------------------------------------------===//
 
+void MojoDocument::onSemanticTokens(
+    const lsp::URIForFile &uri,
+    OnResultFn<std::optional<std::vector<SemanticToken>>> onSemanticTokens) {
+  startTaskAfterParsing([uri, onSemanticTokens = std::move(onSemanticTokens)](
+                            MojoDocument &doc) mutable {
+    if (doc.isInvalidated)
+      return onSemanticTokens({});
+    // Get a document range for the given uri.
+    SMRange range = doc.getFullRangeForURI(uri);
+    if (!range.isValid())
+      return onSemanticTokens({});
+    onSemanticTokens(doc.onSemanticTokensSync(range));
+  });
+}
+
+/// Return a semantic token kind for the given ast decl.
+static SemanticTokenKind
+getSemanticTokenKind(MojoASTDeclRef symDecl,
+                     std::optional<DeclViewKind> declKind) {
+  // If we can't decipher the kind, it's nearly always a variable.
+  if (!declKind)
+    return SemanticTokenKind::kVariable;
+
+  switch (*declKind) {
+  case DeclViewKind::DK_AliasDeclView: {
+    auto aliasOp = cast<KGEN::LIT::AliasDeclOp>(symDecl->getIfOperation());
+    Attribute aliasValue = aliasOp.getValue();
+
+    // Try to decipher a token kind from the alias value.
+    if (isa<ModuleAttr>(aliasValue))
+      return SemanticTokenKind::kModule;
+    if (isa<KGEN::ConcreteTypeConstantAttr,
+            KGEN::ParameterizedTypeConstantAttr>(aliasValue))
+      return SemanticTokenKind::kType;
+    return SemanticTokenKind::kVariable;
+  }
+  case DeclViewKind::DK_ArgumentDeclView:
+    return SemanticTokenKind::kVariable;
+  case DeclViewKind::DK_FunctionDeclView:
+    return SemanticTokenKind::kFunction;
+  case DeclViewKind::DK_ModuleDeclView:
+  case DeclViewKind::DK_PackageDeclView:
+    return SemanticTokenKind::kModule;
+  case DeclViewKind::DK_ParameterDeclView:
+    return SemanticTokenKind::kParameter;
+  case DeclViewKind::DK_StructDeclView:
+    return SemanticTokenKind::kClass;
+  case DeclViewKind::DK_StructFieldDeclView:
+    return SemanticTokenKind::kField;
+  case DeclViewKind::DK_VariableDeclView:
+    return SemanticTokenKind::kVariable;
+  }
+}
+
+std::optional<std::vector<SemanticToken>>
+MojoDocument::onSemanticTokensSync(SMRange range) {
+  if (!context)
+    return std::nullopt;
+
+  // Compute the set of semantic tokens in the document.
+  std::vector<SemanticToken> tokens;
+
+  // Compute tokens for known symbol references.
+  context->symbolIndex.walkSymbolRefs(range, [&](SymbolRef &ref) {
+    const Symbol *symbol = ref.symbols.front();
+    tokens.emplace_back(
+        getSemanticTokenKind(symbol->declRef, symbol->approximateViewKind),
+        lsp::Range(sourceMgr, ref.range));
+  });
+  llvm::sort(tokens);
+
+  return tokens;
+}
+
+//===----------------------------------------------------------------------===//
+// MojoDocument: Signature Help
+//===----------------------------------------------------------------------===//
+
 void MojoDocument::onSignatureHelp(
     const mlir::lsp::URIForFile &uri, const lsp::Position &pos,
     OnResultFn<mlir::lsp::SignatureHelp> onHelpFn) {
@@ -1339,6 +1441,11 @@ SMLoc MojoTextDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
   return position.getAsSMLoc(getSourceMgr());
 }
 
+SMRange MojoTextDocument::getFullRangeForURI(const lsp::URIForFile &uri) {
+  return SMRange(SMLoc::getFromPointer(contents.data()),
+                 SMLoc::getFromPointer(StringRef(contents).end()));
+}
+
 //===----------------------------------------------------------------------===//
 // MojoTextDocument: Code Completion
 //===----------------------------------------------------------------------===//
@@ -1512,6 +1619,12 @@ SMLoc MojoNotebookDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
       cell.bufferId, position.line + 1, position.character + 1);
 }
 
+SMRange MojoNotebookDocument::getFullRangeForURI(const lsp::URIForFile &uri) {
+  StringRef cellContents = uriToCell[uri.file()]->contents;
+  return SMRange(SMLoc::getFromPointer(cellContents.data()),
+                 SMLoc::getFromPointer(cellContents.end()));
+}
+
 //===----------------------------------------------------------------------===//
 // MojoNotebookDocument: Code Completion
 //===----------------------------------------------------------------------===//
@@ -1632,6 +1745,10 @@ struct MojoServer::Impl {
   /// A mapping from individual notebook cells to their documents.
   llvm::StringMap<MojoDocumentRef> notebookCellToFile;
 
+  /// A mapping from file to the last set of semantic tokens sent to the client.
+  llvm::StringMap<lsp::SemanticTokens> prevSemanticTokensForFile;
+  std::mutex lastSemanticTokensMutex;
+
   /// Mojo parser flag that indicates parsing the input files as the Mojo
   /// standard library.
   bool parseStdlib = false;
@@ -1703,6 +1820,11 @@ void MojoServer::removeDocument(const lsp::URIForFile &uri) {
   if (it == impl->files.end())
     return;
 
+  { // Clear out the semantic token state for the file.
+    std::lock_guard<std::mutex> lock(impl->lastSemanticTokensMutex);
+    impl->prevSemanticTokensForFile.erase(uri.file());
+  }
+
   // Empty out the diagnostics shown for this document. This will clear out
   // anything currently displayed by the client for this document (e.g. in the
   // "Problems" pane of VSCode).
@@ -1752,8 +1874,14 @@ void MojoServer::removeNotebookDocument(
   removeDocument(uri);
 
   // Clear out mappings from the cell documents to the notebook document.
-  for (const mlir::lsp::TextDocumentIdentifier &cell : cellDocuments)
+  for (const mlir::lsp::TextDocumentIdentifier &cell : cellDocuments) {
     impl->notebookCellToFile.erase(cell.uri.file());
+
+    { // Clear out the semantic token state for the cell.
+      std::lock_guard<std::mutex> lock(impl->lastSemanticTokensMutex);
+      impl->prevSemanticTokensForFile.erase(cell.uri.file());
+    }
+  }
 }
 
 void MojoServer::updateNotebookDocument(
@@ -1893,6 +2021,86 @@ void MojoServer::onInlayHint(
     doc->onInlayHint(uri, range, std::move(onInlayHint));
   else
     onInlayHint({});
+}
+
+/// Increment a numeric string: "" -> 1 -> 2 -> ... -> 9 -> 10 -> 11 ...
+static void incrementNumericString(std::string &str) {
+  for (char &c : llvm::reverse(str)) {
+    if (c != '9') {
+      ++c;
+      return;
+    }
+    c = '0';
+  }
+  str.insert(str.begin(), '1');
+}
+
+void MojoServer::onSemanticTokens(
+    const lsp::URIForFile &uri,
+    OnResultFn<std::optional<lsp::SemanticTokens>> onSemanticTokens) {
+  MojoDocumentRef doc = impl->findDocument(uri.file());
+  if (!doc)
+    return onSemanticTokens({});
+
+  doc->onSemanticTokens(
+      uri, [this, uri = uri.file().str(),
+            onSemanticTokens = std::move(onSemanticTokens)](
+               std::optional<std::vector<SemanticToken>> tokens) mutable {
+        if (!tokens)
+          return onSemanticTokens({});
+
+        lsp::SemanticTokens result(toLspSemanticTokens(*tokens));
+        {
+          std::lock_guard<std::mutex> lock(impl->lastSemanticTokensMutex);
+          lsp::SemanticTokens &prevResult =
+              impl->prevSemanticTokensForFile[uri];
+
+          prevResult.tokens = result.tokens;
+          incrementNumericString(prevResult.resultId);
+          result.resultId = prevResult.resultId;
+        }
+        onSemanticTokens(std::move(result));
+      });
+}
+
+void MojoServer::onSemanticTokensDelta(
+    const lsp::URIForFile &uri, StringRef prevId,
+    OnResultFn<std::optional<lsp::SemanticTokensOrDelta>> onSemanticTokens) {
+  MojoDocumentRef doc = impl->findDocument(uri.file());
+  if (!doc)
+    return onSemanticTokens({});
+
+  doc->onSemanticTokens(
+      uri, [this, uri = uri.file().str(), prevId = prevId.str(),
+            onSemanticTokens = std::move(onSemanticTokens)](
+               std::optional<std::vector<SemanticToken>> tokens) mutable {
+        if (!tokens)
+          return onSemanticTokens({});
+        std::vector<lsp::SemanticToken> lspTokens =
+            toLspSemanticTokens(*tokens);
+
+        lsp::SemanticTokensOrDelta result;
+        {
+          std::lock_guard<std::mutex> lock(impl->lastSemanticTokensMutex);
+          lsp::SemanticTokens &prevResult =
+              impl->prevSemanticTokensForFile[uri];
+
+          if (prevResult.resultId == prevId) {
+            result.edits = diffTokens(prevResult.tokens, lspTokens);
+          } else {
+            lsp::Logger::debug(
+                "semanticTokens/full/delta: wanted edits vs {0} but last "
+                "result had ID {1}. Returning full token list.",
+                prevId, prevResult.resultId);
+            result.tokens = lspTokens;
+          }
+
+          prevResult.tokens = std::move(lspTokens);
+          incrementNumericString(prevResult.resultId);
+          result.resultId = prevResult.resultId;
+        }
+        onSemanticTokens(std::move(result));
+      });
 }
 
 void MojoServer::getSignatureHelp(

@@ -110,6 +110,18 @@ public:
                    const mlir::lsp::Range &range,
                    OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint);
 
+  /// Get the semantic tokens for the given document.
+  void onSemanticTokens(
+      const mlir::lsp::URIForFile &uri,
+      OnResultFn<std::optional<mlir::lsp::SemanticTokens>> onSemanticTokens);
+
+  /// Get the delta of semantic tokens for the given document compared to the
+  /// tokens at the given identifier (representing a previous result).
+  void onSemanticTokensDelta(
+      const mlir::lsp::URIForFile &uri, StringRef prevId,
+      OnResultFn<std::optional<mlir::lsp::SemanticTokensOrDelta>>
+          onSemanticTokens);
+
   /// Get the signature help for the position within the given document.
   void getSignatureHelp(const mlir::lsp::URIForFile &uri,
                         const mlir::lsp::Position &pos,

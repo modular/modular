@@ -179,3 +179,78 @@ bool mlir::lsp::fromJSON(const llvm::json::Value &value,
   return o && o.map("notebookDocument", result.notebookDocument) &&
          o.map("cellTextDocuments", result.cellTextDocuments);
 }
+
+//===----------------------------------------------------------------------===//
+// Semantic Token
+//===----------------------------------------------------------------------===//
+
+/// The encoded size of a single semantic token.
+static constexpr unsigned kSemanticTokenEncodingSize = 5;
+
+/// Encode the given list of semantic tokens into a JSON array.
+static llvm::json::Value encodeTokens(ArrayRef<SemanticToken> tokens) {
+  llvm::json::Array result;
+  result.reserve(kSemanticTokenEncodingSize * tokens.size());
+  for (const SemanticToken &token : tokens) {
+    result.push_back(token.deltaLine);
+    result.push_back(token.deltaStart);
+    result.push_back(token.length);
+    result.push_back(token.tokenType);
+    result.push_back(token.tokenModifiers);
+  }
+  assert(result.size() == (kSemanticTokenEncodingSize * tokens.size()));
+  return std::move(result);
+}
+
+bool SemanticToken::operator==(const SemanticToken &rhs) const {
+  return std::tie(deltaLine, deltaStart, length, tokenType, tokenModifiers) ==
+         std::tie(rhs.deltaLine, rhs.deltaStart, rhs.length, rhs.tokenType,
+                  rhs.tokenModifiers);
+}
+
+llvm::json::Value mlir::lsp::toJSON(const SemanticTokens &value) {
+  return llvm::json::Object{{"resultId", value.resultId},
+                            {"data", encodeTokens(value.tokens)}};
+}
+
+//===----------------------------------------------------------------------===//
+// SemanticTokensParams
+//===----------------------------------------------------------------------===//
+
+bool mlir::lsp::fromJSON(const llvm::json::Value &params,
+                         SemanticTokensParams &result, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(params, path);
+  return o && o.map("textDocument", result.textDocument);
+}
+
+bool mlir::lsp::fromJSON(const llvm::json::Value &params,
+                         SemanticTokensDeltaParams &result,
+                         llvm::json::Path path) {
+  llvm::json::ObjectMapper o(params, path);
+  return o && o.map("textDocument", result.textDocument) &&
+         o.map("previousResultId", result.previousResultId);
+}
+
+//===----------------------------------------------------------------------===//
+// SemanticTokensEdit
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value mlir::lsp::toJSON(const SemanticTokensEdit &value) {
+  return llvm::json::Object{
+      {"start", kSemanticTokenEncodingSize * value.startToken},
+      {"deleteCount", kSemanticTokenEncodingSize * value.deleteTokens},
+      {"data", encodeTokens(value.tokens)}};
+}
+
+//===----------------------------------------------------------------------===//
+// SemanticTokensOrDelta
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value mlir::lsp::toJSON(const SemanticTokensOrDelta &value) {
+  llvm::json::Object result{{"resultId", value.resultId}};
+  if (value.edits)
+    result["edits"] = *value.edits;
+  if (value.tokens)
+    result["data"] = encodeTokens(*value.tokens);
+  return std::move(result);
+}
