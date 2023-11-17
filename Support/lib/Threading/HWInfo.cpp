@@ -6,6 +6,7 @@
 
 #include "Support/Threading/HWInfo.h"
 #include "Support/ErrorOr.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
@@ -15,6 +16,11 @@
 #include <windows.h>
 #endif // _MSC_VER
 
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#endif // __APPLE__
+
 #define DEBUG_TYPE "threading-hw-info"
 
 using namespace M;
@@ -23,10 +29,9 @@ using namespace M;
 // CPUSystemInfo
 //===----------------------------------------------------------------------===//
 
-#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
-
 namespace {
 
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
 std::unique_ptr<llvm::MemoryBuffer> fileBuffer(StringRef path) {
   auto errOrBuf = llvm::MemoryBuffer::getFileAsStream(path);
   if (std::error_code ec = errOrBuf.getError()) {
@@ -36,9 +41,33 @@ std::unique_ptr<llvm::MemoryBuffer> fileBuffer(StringRef path) {
   }
   return std::move(errOrBuf.get());
 }
+#endif
+
+#if defined(__APPLE__)
+std::optional<size_t> getNumPerformanceCores() {
+  // Attempt to read the sysctl "hw.perflevel0.physicalcpu", which contains the
+  // number of local performance cores. This is described here [1]. For
+  // auto-setting the number of threads, we use this number if it is available
+  // to avoid contention and lagging on the efficiency cores. We rely on the
+  // operating system to keep busy threads running on the performance cores
+  // rather than any explicit affinity.
+  //
+  // Per sysctl(2), this type is expected to be int32_t.
+  //
+  // [1]
+  // https://developer.apple.com/documentation/kernel/1387446-sysctlbyname/determining_system_capabilities
+  int32_t pcores;
+  size_t len = sizeof(pcores);
+  if (sysctlbyname("hw.perflevel0.physicalcpu", &pcores, &len, NULL, 0) == 0 &&
+      pcores > 0)
+    return static_cast<size_t>(pcores);
+  return std::nullopt;
+}
+#endif
 
 } // namespace
 
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
 ErrorOr<std::string> Detail::parseV1CpuCgroup(const llvm::MemoryBuffer &buf) {
   std::string cgroup;
   SmallVector<StringRef> strs;
@@ -260,6 +289,15 @@ M::ErrorOr<size_t> M::getNumPhysicalCores() {
   if (numPhysicalCoresOr.isError())
     return M::Error(numPhysicalCoresOr.getError());
   return *numPhysicalCoresOr;
+}
+
+M::ErrorOr<size_t> M::getRecommendedThreads() {
+#if defined(__APPLE__)
+  auto maybePerformanceCores = getNumPerformanceCores();
+  if (maybePerformanceCores)
+    return *maybePerformanceCores;
+#endif // __APPLE__
+  return getNumPhysicalCores();
 }
 
 void CPUSystemInfo::print(raw_ostream &os) const {

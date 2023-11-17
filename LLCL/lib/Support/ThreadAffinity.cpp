@@ -79,7 +79,7 @@ M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
 
   // Fallback case.
   if (numThreads == 0) {
-    auto numThreadsOr = M::getNumPhysicalCores();
+    auto numThreadsOr = M::getRecommendedThreads();
     if (numThreadsOr.isError())
       return numThreadsOr.takeError();
     numThreads = *numThreadsOr;
