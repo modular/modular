@@ -306,6 +306,13 @@ function(add_kgen_library target)
   if (NOT KGEN_OUTPUT)
     set(KGEN_OUTPUT ${target}.lib.mlirbc)
   endif ()
+  # Workaround for us setting cmake_policy CMP0116 to OLD.  Ninja expects all
+  # paths in depfiles to be relative paths from the build directory.  CMake
+  # automatically fixes this if CMP0116 is NEW, but CMP0116 NEW is currently
+  # incompatible with the LLVM TableGen rules, so we need to manually adjust
+  # the output paths and working directory of custom commands that emit
+  # DEPFILEs until then.
+  file(RELATIVE_PATH kgen_output_rel ${CMAKE_BINARY_DIR} ${KGEN_OUTPUT})
 
   add_custom_command(
     OUTPUT ${KGEN_OUTPUT}
@@ -314,13 +321,13 @@ function(add_kgen_library target)
       ${MOJO_DEFINES}
       $<$<BOOL:${KGEN_DISABLE_PREBUILT_PACKAGES}>:-disable-prebuilt-packages>
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
-      -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${KGEN_OUTPUT}
+      -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${kgen_output_rel}
       -O${KGEN_OPTIMIZATION_LEVEL}
       ${KGEN_SANITIZER_OPTIONS}
       -debug-level=${KGEN_DEBUG_LEVEL}
       -d ${CMAKE_CURRENT_BINARY_DIR}/${target}.d
     DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${target}.d
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS kgen
             mojo-sdk
             ${KGEN_LIB_DEPENDS}
