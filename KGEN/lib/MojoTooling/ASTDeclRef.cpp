@@ -204,6 +204,37 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
   return nullptr;
 }
 
+std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
+  if (isa<AliasDeclOp>(*decl))
+    return DeclViewKind::DK_AliasDeclView;
+  if (isa<FileModuleOp>(*decl))
+    return DeclViewKind::DK_ModuleDeclView;
+  if (isa<FuncOp>(*decl))
+    return DeclViewKind::DK_FunctionDeclView;
+  if (isa<StructDeclOp>(*decl))
+    return DeclViewKind::DK_StructDeclView;
+  if (isa<StructFieldOp>(*decl))
+    return DeclViewKind::DK_StructFieldDeclView;
+  if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(*decl))
+    return DeclViewKind::DK_VariableDeclView;
+  if (isa<PackageOp>(*decl))
+    return DeclViewKind::DK_PackageDeclView;
+
+  // After failing to match with regular Ops, we then inspect the IR to identify
+  // if this decl is an argument.
+  if (getIfNotOwnedFunctionArgument(*this))
+    return DeclViewKind::DK_ArgumentDeclView;
+
+  // Now we inspect the IR checking for a parameter.
+  if (getIfParameter(*this))
+    return DeclViewKind::DK_ParameterDeclView;
+
+  // FIXME(#17974): Owned arguments are resolved as VarLet decls, and currently
+  // it is not possible to recover their original BlockArguments, so we can't
+  // generate a proper View for this kind of decl.
+  return std::nullopt;
+}
+
 //===----------------------------------------------------------------------===//
 // Children
 

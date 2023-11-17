@@ -36,6 +36,19 @@ class MojoASTDeclRef;
 // snippets.
 //===----------------------------------------------------------------------===//
 
+/// The different kinds of decl views.
+enum class DeclViewKind {
+  DK_AliasDeclView,
+  DK_ArgumentDeclView,
+  DK_FunctionDeclView,
+  DK_ModuleDeclView,
+  DK_PackageDeclView,
+  DK_ParameterDeclView,
+  DK_StructDeclView,
+  DK_StructFieldDeclView,
+  DK_VariableDeclView,
+};
+
 /// Base class of all decl views.
 class DeclView {
 public:
@@ -66,18 +79,6 @@ public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
   //===----------------------------------------------------------------------===//
-
-  enum DeclViewKind {
-    DK_AliasDeclView,
-    DK_ArgumentDeclView,
-    DK_FunctionDeclView,
-    DK_ModuleDeclView,
-    DK_PackageDeclView,
-    DK_ParameterDeclView,
-    DK_StructDeclView,
-    DK_StructFieldDeclView,
-    DK_VariableDeclView,
-  };
 
   DeclViewKind getKind() const { return kind; }
 
@@ -118,7 +119,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_VariableDeclView;
+    return decl->getKind() == DeclViewKind::DK_VariableDeclView;
   }
 
 private:
@@ -135,7 +136,7 @@ private:
 class ParameterDeclView : public DeclView {
 public:
   ParameterDeclView(StringRef name, StringRef type)
-      : DeclView(DK_ParameterDeclView, name), type(type){};
+      : DeclView(DeclViewKind::DK_ParameterDeclView, name), type(type){};
 
   std::string getDeclarationSnippet() const override;
 
@@ -163,7 +164,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_ParameterDeclView;
+    return decl->getKind() == DeclViewKind::DK_ParameterDeclView;
   }
 
 private:
@@ -181,7 +182,7 @@ class ArgumentDeclView : public DeclView {
 public:
   ArgumentDeclView(StringRef name, StringRef type,
                    KGEN::LIT::PassingKind passingKind, bool inout, bool owned)
-      : DeclView(DK_ArgumentDeclView, name), type(type),
+      : DeclView(DeclViewKind::DK_ArgumentDeclView, name), type(type),
         passingKind(passingKind), inout(inout), owned(owned) {}
 
   std::string getDeclarationSnippet() const override;
@@ -220,7 +221,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_ArgumentDeclView;
+    return decl->getKind() == DeclViewKind::DK_ArgumentDeclView;
   }
 
 private:
@@ -265,7 +266,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_AliasDeclView;
+    return decl->getKind() == DeclViewKind::DK_AliasDeclView;
   }
 
 private:
@@ -367,7 +368,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_FunctionDeclView;
+    return decl->getKind() == DeclViewKind::DK_FunctionDeclView;
   }
 
 private:
@@ -408,7 +409,7 @@ private:
 class StructFieldDeclView : public DeclView {
 public:
   StructFieldDeclView(StringRef name, StringRef type)
-      : DeclView(DK_StructFieldDeclView, name), type(type) {}
+      : DeclView(DeclViewKind::DK_StructFieldDeclView, name), type(type) {}
 
   std::string getDeclarationSnippet() const override;
 
@@ -434,7 +435,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_StructFieldDeclView;
+    return decl->getKind() == DeclViewKind::DK_StructFieldDeclView;
   }
 
 private:
@@ -529,7 +530,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_StructDeclView;
+    return decl->getKind() == DeclViewKind::DK_StructDeclView;
   }
 
 private:
@@ -591,7 +592,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_ModuleDeclView;
+    return decl->getKind() == DeclViewKind::DK_ModuleDeclView;
   }
 
 private:
@@ -637,7 +638,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_PackageDeclView;
+    return decl->getKind() == DeclViewKind::DK_PackageDeclView;
   }
 
 private:
