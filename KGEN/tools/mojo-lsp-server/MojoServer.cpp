@@ -1064,27 +1064,42 @@ void MojoDocument::onDocumentSymbol(
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDocument: Folding Ranges
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::onFoldingRange(
+    const mlir::lsp::URIForFile &uri,
+    OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn) {
+  startTaskAfterParsing([uri, onFoldingRangeFn = std::move(onFoldingRangeFn)](
+                            MojoDocument &doc) mutable {
+    if (doc.isInvalidated)
+      return onFoldingRangeFn({});
+    onFoldingRangeFn(doc.onFoldingRangeSync(uri));
+  });
+}
+
+//===----------------------------------------------------------------------===//
 // MojoDocument: Document String Code Blocks
 //===----------------------------------------------------------------------===//
 
-void MojoDocument::processDocStringCodeBlocks(
-    MojoDocStringCodeBlocks &codeBlocks, MojoASTDeclRef decl, unsigned bufferId,
+void MojoDocument::processDocStrings(
+    MojoDocStrings &docStrings, MojoASTDeclRef decl, unsigned bufferId,
     function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
     MojoASTDeclRef curReplDecl) {
-  codeBlocks.addCodeBlocks(*this, decl, curReplDecl, bufferId, inlayHints);
+  docStrings.addDocString(*this, decl, curReplDecl, bufferId, inlayHints);
 
   // Traverse the child decls.
   for (const auto &childIt : decl.getChildren()) {
     for (MojoASTDeclRef child : childIt.getDecls())
       if (shouldIncludeDecl(child))
-        processDocStringCodeBlocks(codeBlocks, child, bufferId,
-                                   shouldIncludeDecl, curReplDecl);
+        processDocStrings(docStrings, child, bufferId, shouldIncludeDecl,
+                          curReplDecl);
   }
 }
 
-void MojoDocument::processDocStringCodeBlocks(
-    MojoDocStringCodeBlocks &codeBlocks, MojoASTDeclRef decl,
-    MojoASTDeclRef curReplDecl) {
+void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
+                                     MojoASTDeclRef decl,
+                                     MojoASTDeclRef curReplDecl) {
   unsigned bufferId = sourceMgr.FindBufferContainingLoc(decl.getLoc());
   StringRef declBufferRef = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
   auto processFn = [declBufferRef](MojoASTDeclRef decl) {
@@ -1093,8 +1108,7 @@ void MojoDocument::processDocStringCodeBlocks(
     const char *declLoc = decl.getLoc().getPointer();
     return declBufferRef.begin() <= declLoc && declLoc <= declBufferRef.end();
   };
-  processDocStringCodeBlocks(codeBlocks, decl, bufferId, processFn,
-                             curReplDecl);
+  processDocStrings(docStrings, decl, bufferId, processFn, curReplDecl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1279,14 +1293,14 @@ lsp::SignatureHelp MojoDocument::onSignatureHelpSync(SMLoc loc) {
 }
 
 //===----------------------------------------------------------------------===//
-// MojoDocStringCodeBlocks
+// MojoDocStrings
 //===----------------------------------------------------------------------===//
 
-void MojoDocStringCodeBlocks::addCodeBlocks(
-    MojoDocument &mainDoc, MojoASTDeclRef decl, MojoASTDeclRef curReplDecl,
-    unsigned bufferId, std::vector<MojoInlayHint> &inlayHints) {
+void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
+                                  MojoASTDeclRef curReplDecl, unsigned bufferId,
+                                  std::vector<MojoInlayHint> &inlayHints) {
   // Check if the decl has a doc string with a decipherable location.
-  std::optional<DocString> docString = decl->getParsedDocString();
+  std::optional<KGEN::LIT::DocString> docString = decl->getParsedDocString();
   if (!docString)
     return;
   FileLineColLoc docLocAttr = docString->getLoc();
@@ -1305,6 +1319,19 @@ void MojoDocStringCodeBlocks::addCodeBlocks(
       return nullptr;
     return docStartLoc.getPointer() + (loc - rawDocStr.data());
   };
+  auto translateEndLocToMainDoc = [&](const char *loc) {
+    // When translating an end location to the main document, we need to take
+    // extra care when handling translation (the end position may not be
+    // mapped).
+    SMLoc lastLoc = SMLoc::getFromPointer(loc - 1);
+    return SMLoc::getFromPointer(
+        mainDoc.translateParserLoc(lastLoc).getPointer() + 1);
+  };
+
+  // Add the doc string.
+  docStrings.emplace_back(llvm::SMRange(
+      mainDoc.translateParserLoc(docStartLoc),
+      translateEndLocToMainDoc(docStartLoc.getPointer() + rawDocStr.size())));
 
   // Process the code blocks in the doc string.
   SmallVector<std::pair<StringRef, mlir::Type>> persistentVariables;
@@ -1322,12 +1349,11 @@ void MojoDocStringCodeBlocks::addCodeBlocks(
     // case of the REPL, whose parsed buffer is different from the input).
     SMLoc docStartLoc =
         mainDoc.translateParserLoc(SMLoc::getFromPointer(contents.data()));
-    SMLoc docLastLoc = mainDoc.translateParserLoc(
-        SMLoc::getFromPointer(contents.data() + contents.size() - 1));
-    SMLoc docEndLoc = SMLoc::getFromPointer(docLastLoc.getPointer() + 1);
-    StringRef mainDocContents(
-        docStartLoc.getPointer(),
-        (docLastLoc.getPointer() - docStartLoc.getPointer()) + 1);
+    SMLoc docEndLoc =
+        translateEndLocToMainDoc(contents.data() + contents.size());
+    StringRef mainDocContents(docStartLoc.getPointer(),
+                              docEndLoc.getPointer() -
+                                  docStartLoc.getPointer());
 
     // Create the new codeblock.
     CodeBlock *codeBlock =
@@ -1351,22 +1377,29 @@ void MojoDocStringCodeBlocks::addCodeBlocks(
   }
 }
 
-auto MojoDocStringCodeBlocks::findContainingCodeBlock(SMLoc loc)
-    -> CodeBlock * {
+auto MojoDocStrings::findContainingCodeBlock(SMLoc loc) -> CodeBlock * {
   if (auto it = rangeToCodeBlock.find(loc); it.valid() && it.start() <= loc)
     return it.value();
   return nullptr;
 }
 
+void MojoDocStrings::getFoldingRanges(
+    SourceMgr &sourceMgr, std::vector<mlir::lsp::FoldingRange> &ranges) {
+  for (DocString &docString : docStrings) {
+    ranges.emplace_back(lsp::Range(sourceMgr, docString.range),
+                        lsp::FoldingRange::kCommentKind);
+  }
+}
+
 std::vector<KGEN::Mojo::CodeCompletionResult>
-MojoDocStringCodeBlocks::CodeBlock::onCodeCompletion(llvm::SMLoc completeLoc,
-                                                     MojoParserContext &ctx) {
+MojoDocStrings::CodeBlock::onCodeCompletion(llvm::SMLoc completeLoc,
+                                            MojoParserContext &ctx) {
   uint64_t rawCompletePos = completeLoc.getPointer() - contents.data();
   return ctx.codeCompleteREPLExpression(contents, rawCompletePos,
                                         persistentVariables, decl);
 }
 
-void MojoDocStringCodeBlocks::CodeBlock::onInlayHint(
+void MojoDocStrings::CodeBlock::onInlayHint(
     std::vector<MojoInlayHint> &inlayHints) {
   // Add an `>>>` inlay hint for each line in the code block. This helps to
   // differentiate the code block from normal code.
@@ -1384,8 +1417,8 @@ void MojoDocStringCodeBlocks::CodeBlock::onInlayHint(
 }
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
-MojoDocStringCodeBlocks::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
-                                                    MojoParserContext &ctx) {
+MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
+                                           MojoParserContext &ctx) {
   uint64_t rawPos = loc.getPointer() - contents.data();
   return ctx.signatureHelpREPLExpression(contents, rawPos, persistentVariables,
                                          decl);
@@ -1413,7 +1446,7 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
 void MojoTextDocument::parseDocumentImpl() {
   parsedDecl = getParserContext().parseFile(getSourceMgr().getMainFileID());
   checkModuleSemantics(parsedDecl);
-  processDocStringCodeBlocks(codeBlocks, parsedDecl);
+  processDocStrings(docStrings, parsedDecl);
 }
 
 const mlir::lsp::URIForFile &
@@ -1453,7 +1486,7 @@ SMRange MojoTextDocument::getFullRangeForURI(const lsp::URIForFile &uri) {
 std::vector<KGEN::Mojo::CodeCompletionResult>
 MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   // Check for code completion within a code block.
-  if (auto *codeBlock = codeBlocks.findContainingCodeBlock(completeLoc))
+  if (auto *codeBlock = docStrings.findContainingCodeBlock(completeLoc))
     return codeBlock->onCodeCompletion(completeLoc, getParserContext());
 
   // Otherwise, perform completion using the main doc.
@@ -1483,13 +1516,26 @@ MojoTextDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
 }
 
 //===----------------------------------------------------------------------===//
+// MojoTextDocument: Document Symbol
+//===----------------------------------------------------------------------===//
+
+std::vector<mlir::lsp::FoldingRange>
+MojoTextDocument::onFoldingRangeSync(const mlir::lsp::URIForFile &uri) {
+  if (!parsedDecl)
+    return {};
+  std::vector<mlir::lsp::FoldingRange> ranges;
+  docStrings.getFoldingRanges(getSourceMgr(), ranges);
+  return ranges;
+}
+
+//===----------------------------------------------------------------------===//
 // MojoTextDocument: Signature Help
 //===----------------------------------------------------------------------===//
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
 MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   // Check for signature help within a code block.
-  if (auto *codeBlock = codeBlocks.findContainingCodeBlock(loc))
+  if (auto *codeBlock = docStrings.findContainingCodeBlock(loc))
     return codeBlock->onSignatureHelp(loc, getParserContext());
 
   // Otherwise, perform signature help using the main doc.
@@ -1548,8 +1594,7 @@ void MojoNotebookDocument::parseDocumentImpl() {
       prevDecl = cell.decl = result.moduleDecl;
       if (result.isValid())
         checkModuleSemantics(cell.decl);
-      processDocStringCodeBlocks(cell.codeBlocks, cell.decl,
-                                 /*curReplDecl=*/cell.decl);
+      processDocStrings(cell.docStrings, cell.decl, /*curReplDecl=*/cell.decl);
       continue;
     }
 
@@ -1638,7 +1683,7 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   Cell &cell = *cells[cellBufferId - 1];
 
   // Check for code completion within a code block.
-  if (auto *codeBlock = cell.codeBlocks.findContainingCodeBlock(completeLoc))
+  if (auto *codeBlock = cell.docStrings.findContainingCodeBlock(completeLoc))
     return codeBlock->onCodeCompletion(completeLoc, getParserContext());
 
   // Query the mojo parser for potential completion results.
@@ -1664,6 +1709,22 @@ MojoNotebookDocument::onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) {
 }
 
 //===----------------------------------------------------------------------===//
+// MojoNotebookDocument: Document Symbol
+//===----------------------------------------------------------------------===//
+
+std::vector<mlir::lsp::FoldingRange>
+MojoNotebookDocument::onFoldingRangeSync(const mlir::lsp::URIForFile &uri) {
+  auto cellIt = uriToCell.find(uri.file());
+  if (cellIt == uriToCell.end() || !cellIt->second->decl ||
+      cellIt->second->isPythonCell())
+    return {};
+
+  std::vector<mlir::lsp::FoldingRange> ranges;
+  cellIt->second->docStrings.getFoldingRanges(getSourceMgr(), ranges);
+  return ranges;
+}
+
+//===----------------------------------------------------------------------===//
 // MojoNotebookDocument: Signature Help
 //===----------------------------------------------------------------------===//
 
@@ -1676,7 +1737,7 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   Cell &cell = *cells[cellBufferId - 1];
 
   // Check for signature help within a code block.
-  if (auto *codeBlock = cell.codeBlocks.findContainingCodeBlock(loc))
+  if (auto *codeBlock = cell.docStrings.findContainingCodeBlock(loc))
     return codeBlock->onSignatureHelp(loc, getParserContext());
 
   // Query the mojo parser for potential help results.
@@ -2003,6 +2064,15 @@ void MojoServer::onDocumentSymbol(
     doc->onDocumentSymbol(uri, std::move(onSymbolsFn));
   else
     onSymbolsFn({});
+}
+
+void MojoServer::onFoldingRange(
+    const mlir::lsp::URIForFile &uri,
+    OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn) {
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
+    doc->onFoldingRange(uri, std::move(onFoldingRangeFn));
+  else
+    onFoldingRangeFn({});
 }
 
 void MojoServer::onHover(

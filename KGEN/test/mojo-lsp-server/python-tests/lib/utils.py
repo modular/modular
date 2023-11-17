@@ -18,6 +18,7 @@ from lsprotocol.types import (
     DidOpenTextDocumentParams,
     DocumentSymbol,
     DocumentSymbolParams,
+    FoldingRangeParams,
     HoverParams,
     InitializeParams,
     InlayHintParams,
@@ -251,6 +252,11 @@ class Requests:
         if results is None:
             return None
         return results.items if isinstance(results, CompletionList) else results
+
+    async def folding_range(self, doc: Document):
+        return await self.client.text_document_folding_range_async(
+            params=FoldingRangeParams(text_document=doc.identifier)
+        )
 
     async def inlay_hint(self, doc: Document, range: Range):
         return await self.client.text_document_inlay_hint_async(

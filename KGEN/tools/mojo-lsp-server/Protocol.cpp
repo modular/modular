@@ -254,3 +254,35 @@ llvm::json::Value mlir::lsp::toJSON(const SemanticTokensOrDelta &value) {
     result["data"] = encodeTokens(*value.tokens);
   return std::move(result);
 }
+
+//===----------------------------------------------------------------------===//
+// FoldingRangeParams
+//===----------------------------------------------------------------------===//
+
+bool mlir::lsp::fromJSON(const llvm::json::Value &params,
+                         FoldingRangeParams &result, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(params, path);
+  return o && o.map("textDocument", result.textDocument);
+}
+
+//===----------------------------------------------------------------------===//
+// FoldingRange
+//===----------------------------------------------------------------------===//
+
+const llvm::StringLiteral FoldingRange::kRegionKind = "region";
+const llvm::StringLiteral FoldingRange::kCommentKind = "comment";
+const llvm::StringLiteral FoldingRange::kImportKind = "import";
+
+llvm::json::Value mlir::lsp::toJSON(const FoldingRange &value) {
+  llvm::json::Object result{
+      {"startLine", value.startLine},
+      {"endLine", value.endLine},
+  };
+  if (value.startCharacter)
+    result["startCharacter"] = value.startCharacter;
+  if (value.endCharacter)
+    result["endCharacter"] = value.endCharacter;
+  if (!value.kind.empty())
+    result["kind"] = value.kind;
+  return result;
+}

@@ -31,7 +31,7 @@ inline bool operator<=(const SMLoc &lhs, const SMLoc &rhs) {
 } // namespace llvm
 
 namespace M::Mojo::LSP {
-class MojoDocStringCodeBlocks;
+class MojoDocStrings;
 struct SemanticToken;
 
 //===----------------------------------------------------------------------===//
@@ -176,23 +176,22 @@ public:
                           std::vector<mlir::lsp::DocumentSymbol> &symbols,
                           function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl);
 
-  /// Recursively process the document string code blocks in decls nested within
-  /// `decl`. The provided functor defines whether a decl should be processed.
-  /// If the main document represents a REPL module, `curReplDecl` is the AST
-  /// decl for the REPL module that contains `decl`. In the case of a normal
-  /// text document, `curReplDecl` is null.
-  void processDocStringCodeBlocks(
-      MojoDocStringCodeBlocks &codeBlocks, MojoASTDeclRef decl,
-      unsigned bufferId, function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
-      MojoASTDeclRef curReplDecl = {});
+  /// Recursively process the document strings in decls nested within `decl`.
+  /// The provided functor defines whether a decl should be processed. If the
+  /// main document represents a REPL module, `curReplDecl` is the AST decl for
+  /// the REPL module that contains `decl`. In the case of a normal text
+  /// document, `curReplDecl` is null.
+  void processDocStrings(MojoDocStrings &docStrings, MojoASTDeclRef decl,
+                         unsigned bufferId,
+                         function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
+                         MojoASTDeclRef curReplDecl = {});
 
-  /// Recursively process the document string code blocks in decls nested within
-  /// `decl`. If the main document represents a REPL module, `curReplDecl` is
-  /// the AST decl for the REPL module that contains `decl`. In the case of a
-  /// normal text document, `curReplDecl` is null.
-  void processDocStringCodeBlocks(MojoDocStringCodeBlocks &codeBlocks,
-                                  MojoASTDeclRef decl,
-                                  MojoASTDeclRef curReplDecl = {});
+  /// Recursively process the document strings in decls nested within `decl`. If
+  /// the main document represents a REPL module, `curReplDecl` is the AST decl
+  /// for the REPL module that contains `decl`. In the case of a normal text
+  /// document, `curReplDecl` is null.
+  void processDocStrings(MojoDocStrings &docStrings, MojoASTDeclRef decl,
+                         MojoASTDeclRef curReplDecl = {});
 
   /// Check the given the parsed module decl for high-level semantic issues. Any
   /// errors are reported to the source manager.
@@ -224,6 +223,10 @@ public:
   void onDocumentSymbol(
       const mlir::lsp::URIForFile &uri,
       OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn);
+
+  void onFoldingRange(
+      const mlir::lsp::URIForFile &uri,
+      OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn);
 
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
@@ -271,6 +274,10 @@ protected:
   /// Hook that returns the symbols within the document.
   virtual std::vector<mlir::lsp::DocumentSymbol>
   onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) = 0;
+
+  /// Hook that returns the folding ranges within the document.
+  virtual std::vector<mlir::lsp::FoldingRange>
+  onFoldingRangeSync(const mlir::lsp::URIForFile &uri) = 0;
 
   /// Hook that is invoked to perform signature help at the given position.
   virtual std::optional<KGEN::Mojo::SignatureHelpResult>
@@ -390,16 +397,17 @@ private:
 using MojoDocumentRef = RCRef<MojoDocument>;
 
 //===----------------------------------------------------------------------===//
-// MojoDocStringCodeBlocks
+// MojoDocStrings
 //===----------------------------------------------------------------------===//
 
-/// This class represents all of the doc string code block state within a mojo
-/// document. These code blocks somewhat function as independent documents, as
-/// they are parsed and processed separately from the main document, but are
-/// still tied to the main document (e.g. for locations, requests, etc.).
-class MojoDocStringCodeBlocks {
+/// This class represents all of the doc string state within a Mojo document,
+/// including code block state. Code blocks somewhat function as independent
+/// documents, as they are parsed and processed separately from the main
+/// document, but are still tied to the main document (e.g. for locations,
+/// requests, etc.).
+class MojoDocStrings {
 public:
-  MojoDocStringCodeBlocks() : rangeToCodeBlock(allocator) {}
+  MojoDocStrings() : rangeToCodeBlock(allocator) {}
 
   /// This class represents an individual code block within a doc string.
   struct CodeBlock {
@@ -435,17 +443,29 @@ public:
     unsigned contentsIndent;
   };
 
-  /// Add any code blocks in the doc string for the given decl.
-  /// `bufferId` is the source manager buffer for the main document.
-  /// If the main document represents a REPL module, `curReplDecl` is the AST
-  /// decl for the REPL module that contains `decl`. In the case of a normal
-  /// text document, `curReplDecl` is null.
-  void addCodeBlocks(MojoDocument &mainDoc, MojoASTDeclRef decl,
-                     MojoASTDeclRef curReplDecl, unsigned bufferId,
-                     std::vector<MojoInlayHint> &inlayHints);
+  /// This class represents an individual doc string within a Mojo document.
+  struct DocString {
+    DocString(llvm::SMRange range) : range(range) {}
+
+    /// The range of the doc string.
+    llvm::SMRange range;
+  };
+
+  /// Add the doc string and any code blocks for the given decl. `bufferId` is
+  /// the source manager buffer for the main document. If the main document
+  /// represents a REPL module, `curReplDecl` is the AST decl for the REPL
+  /// module that contains `decl`. In the case of a normal text document,
+  /// `curReplDecl` is null.
+  void addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
+                    MojoASTDeclRef curReplDecl, unsigned bufferId,
+                    std::vector<MojoInlayHint> &inlayHints);
 
   /// Find the code block that contains the given location.
   CodeBlock *findContainingCodeBlock(llvm::SMLoc loc);
+
+  /// Get the folding ranges for held doc strings.
+  void getFoldingRanges(SourceMgr &sourceMgr,
+                        std::vector<mlir::lsp::FoldingRange> &ranges);
 
 private:
   using MapT = llvm::IntervalMap<
@@ -458,6 +478,9 @@ private:
 
   /// The code blocks within the document.
   SmallVector<CodeBlock *> codeBlocks;
+
+  /// The doc strings within the document.
+  SmallVector<DocString> docStrings;
 
   /// A map of source locations within the main document to code blocks.
   MapT::Allocator allocator;
@@ -521,6 +544,9 @@ private:
   std::vector<mlir::lsp::DocumentSymbol>
   onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) override;
 
+  std::vector<mlir::lsp::FoldingRange>
+  onFoldingRangeSync(const mlir::lsp::URIForFile &uri) override;
+
   std::optional<KGEN::Mojo::SignatureHelpResult>
   onSignatureHelpSyncImpl(llvm::SMLoc loc) override;
 
@@ -534,8 +560,8 @@ private:
   /// The AST decl for the module containing this document.
   MojoASTDeclRef parsedDecl;
 
-  /// The doc string code blocks within this document.
-  MojoDocStringCodeBlocks codeBlocks;
+  /// The doc strings within this document.
+  MojoDocStrings docStrings;
 };
 
 using MojoTextDocumentRef = RCRef<MojoTextDocument>;
@@ -573,8 +599,8 @@ public:
     /// The persistent REPL variables defined before this cell.
     SmallVector<std::pair<StringRef, Type>> persistentVariables;
 
-    /// The doc string code blocks within this cell.
-    MojoDocStringCodeBlocks codeBlocks;
+    /// The doc strings within this cell.
+    MojoDocStrings docStrings;
   };
 
   MojoNotebookDocument(ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs,
@@ -627,6 +653,9 @@ private:
 
   std::vector<mlir::lsp::DocumentSymbol>
   onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) override;
+
+  std::vector<mlir::lsp::FoldingRange>
+  onFoldingRangeSync(const mlir::lsp::URIForFile &uri) override;
 
   std::optional<KGEN::Mojo::SignatureHelpResult>
   onSignatureHelpSyncImpl(llvm::SMLoc loc) override;

@@ -70,6 +70,9 @@ struct LSPServer {
   void onDocumentSymbol(const DocumentSymbolParams &params,
                         Callback<std::vector<DocumentSymbol>> reply);
 
+  void onFoldingRange(const FoldingRangeParams &params,
+                      Callback<std::vector<FoldingRange>> reply);
+
   void onHover(const TextDocumentPositionParams &params,
                Callback<llvm::json::Value> reply);
 
@@ -135,6 +138,7 @@ void LSPServer::onInitialize(const InitializeParams &params,
            {"triggerCharacters", {"(", "[", ","}},
        }},
       {"definitionProvider", true},
+      {"foldingRangeProvider", true},
       {"hoverProvider", true},
       {"inlayHintProvider", true},
       {"notebookDocumentSync",
@@ -294,6 +298,15 @@ void LSPServer::onDocumentSymbol(const DocumentSymbolParams &params,
       });
 }
 
+void LSPServer::onFoldingRange(const FoldingRangeParams &params,
+                               Callback<std::vector<FoldingRange>> reply) {
+  server.onFoldingRange(
+      params.textDocument.uri,
+      [reply = std::move(reply)](std::vector<FoldingRange> ranges) mutable {
+        reply(std::move(ranges));
+      });
+}
+
 void LSPServer::onHover(const TextDocumentPositionParams &params,
                         Callback<llvm::json::Value> reply) {
   server.onHover(
@@ -400,6 +413,8 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
                         &LSPServer::onDefinition);
   messageHandler.method("textDocument/documentSymbol", &lspServer,
                         &LSPServer::onDocumentSymbol);
+  messageHandler.method("textDocument/foldingRange", &lspServer,
+                        &LSPServer::onFoldingRange);
   messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
   messageHandler.method("textDocument/inlayHint", &lspServer,
                         &LSPServer::onInlayHint);
