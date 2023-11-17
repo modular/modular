@@ -62,6 +62,22 @@ kgen.generator @variant_constants<T: regtype, U: regtype, value: !kgen.paramref<
   kgen.return
 }
 
+// CHECK: #kgen.package.archive<target = {{.*}}, elaboratedModule = {{.*}}, archive = {{.*}}>
+"some.op"() {a = #kgen.package.archive<
+  target = #M.target<triple = "arm64-apple-darwin21.6.0", arch="apple-m1">,
+  elaboratedModule = dense_resource<foo> : tensor<42xui8>,
+  archive = dense_resource<bar> : tensor<13xui8>
+>} : () -> ()
+
+// CHECK: #kgen<package.archives[<{{.*}}>, <{{.*}}>]>
+"some.op"() {a = #kgen<package.archives[
+  <target = #M.target<triple = "", arch="">,
+   elaboratedModule = dense_resource<a> : tensor<1xui8>,
+   archive = dense_resource<b> : tensor<2xui8>>,
+  <target = #M.target<triple = "", arch="">,
+   elaboratedModule = dense_resource<c> : tensor<3xui8>,
+   archive = dense_resource<d> : tensor<4xui8>>
+]>} : () -> ()
 
 kgen.generator @entry1() -> index {
   %0 = index.constant 1
