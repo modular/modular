@@ -692,7 +692,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return success();
   case (uint32_t)POC::GetTypeMethod:
     if (!type)
-      type = AnyRegTypeType::get(p.getContext());
+      type = AnyTypeType::get(p.getContext());
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
                         StringType::get(p.getContext())))
@@ -975,7 +975,7 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     break;
 
   case POC::GetTypeMethod:
-    if (!isa<AnyRegTypeType>(operands[0].getType())) {
+    if (!isa<AnyTypeType>(operands[0].getType())) {
       p << ':';
       printKGENType(p, operands[0].getType());
       p << ' ';
