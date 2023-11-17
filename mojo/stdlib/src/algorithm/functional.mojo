@@ -14,10 +14,15 @@ from algorithm import map
 
 from math import div_ceil, max, min
 from math._numerics import FlushDenormals
-from sys.info import triple_is_nvidia_cuda
+from sys.info import triple_is_nvidia_cuda, sizeof
 
-from gpu import BlockDim, BlockIdx, ThreadIdx
+from gpu import GridDim, BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Dim, Function, Stream
+from gpu.host._constants import (
+    CUDA_DEVICE_MAX_REGISTERS_PER_BLOCK,
+    CUDA_DEVICE_MAX_THREADS_PER_SM,
+    CUDA_DEVICE_SM_COUNT,
+)
 from runtime.llcl import (
     AsyncTaskGroupPtr,
     OutputChainPtr,
@@ -1207,30 +1212,62 @@ fn _elementwise_impl[
 
     constrained[target == "cuda", "Target must be cuda"]()
 
-    alias block_dim = 32
+    # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
+    alias registers_per_thread = 255
+    alias num_waves = 32
+
+    # optimize based on device attributes
+    # TODO Re-enable dynamic device attribute query (#25800)
+    let sm_count = CUDA_DEVICE_SM_COUNT
+    let registers_per_block = CUDA_DEVICE_MAX_REGISTERS_PER_BLOCK
+    let threads_per_sm = CUDA_DEVICE_MAX_THREADS_PER_SM
+
+    # split between packed and tail regions of input
     let length = shape.flattened_length()
+    let num_packed_elems = length // simd_width
+    let unpacked_tail_length = length % simd_width
+    let packed_region_length = length - unpacked_tail_length
+
+    let block_size_unrounded = registers_per_block // registers_per_thread
+    let block_size = block_size_unrounded - (block_size_unrounded % 2)
+    let num_blocks = max(
+        1,
+        min(
+            (num_packed_elems + block_size - 1) // block_size,
+            sm_count * threads_per_sm // block_size * num_waves,
+        ),
+    )
 
     @parameter
-    fn _elementwise_gpu_kernel(shape: StaticIntTuple[rank]):
+    fn _elementwise_gpu_kernel():
         @parameter
         if not triple_is_nvidia_cuda():
             return
 
+        # process the packed region
         let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
-        if tid >= length:
-            return
+        for idx in range(tid, num_packed_elems, BlockDim.x() * GridDim.x()):
+            func[simd_width, rank](
+                _get_start_indices_of_nth_subvolume[rank, 0](
+                    idx * simd_width, shape
+                )
+            )
 
-        func[1, rank](_get_start_indices_of_nth_subvolume[rank, 0](tid, shape))
+        # process the tail region
+        if tid < unpacked_tail_length:
+            let index_tup = _get_start_indices_of_nth_subvolume[rank, 0](
+                packed_region_length + tid, shape
+            )
+            func[1, rank](index_tup)
 
     try:
-        alias func_type = fn (StaticIntTuple[rank]) capturing -> None
+        alias func_type = fn () capturing -> None
         let gpu_func = Function[
             func_type, rebind[func_type](_elementwise_gpu_kernel)
         ]()
         gpu_func(
-            (div_ceil(length, block_dim),),
-            (block_dim,),
-            shape,
+            num_blocks,
+            block_size,
             stream=out_chain.get_cuda_stream() if out_chain else Stream[
                 is_borrowed=True
             ](),
