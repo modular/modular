@@ -293,7 +293,7 @@ fn fused_attention[
 # ===----------------------------------------------------------------------===#
 
 # Using 32 bits index for GPU kernel.
-alias _int32 = Scalar[DType.uint32]
+alias _uint32 = Scalar[DType.uint32]
 
 
 fn flash_attention[
@@ -355,10 +355,10 @@ fn flash_attention[
     # constrained[q_shape.at[3]().get() == 128, "Only support depth = 128."]()
 
     # q shape [batch_size, seq_len, # heads, depth]
-    let batch_size: _int32 = q.dim[0]()
-    let seq_len: _int32 = q.dim[1]()
-    let num_heads: _int32 = q.dim[2]()
-    let depth: _int32 = q.dim[3]()
+    let batch_size: _uint32 = q.dim[0]()
+    let seq_len: _uint32 = q.dim[1]()
+    let num_heads: _uint32 = q.dim[2]()
+    let depth: _uint32 = q.dim[3]()
 
     alias qtile_num_rows = 32
     alias ktile_num_rows = 128
@@ -378,8 +378,8 @@ fn flash_attention[
                 DTypePointer[DType.float32],
                 DTypePointer[DType.float32],
                 Float32,
-                _int32,
-                _int32,
+                _uint32,
+                _uint32,
             ) -> None, flash_attention_kernel[
                 BM=qtile_num_rows,
                 BN=ktile_num_rows,
@@ -438,18 +438,18 @@ fn _max_capturing[
 # Helper function for the gemm in attention block.
 @always_inline
 fn _mm[
-    M: _int32,
-    N: _int32,
-    K: _int32,
-    leading_dim_a: _int32,
-    TM: _int32,
-    TN: _int32,
+    M: _uint32,
+    N: _uint32,
+    K: _uint32,
+    leading_dim_a: _uint32,
+    TM: _uint32,
+    TN: _uint32,
     transpose_a: Bool,
 ](
     a: DTypePointer[DType.float32, AddressSpace.SHARED],
     b: DTypePointer[DType.float32, AddressSpace.SHARED],
-    row: _int32,
-    col: _int32,
+    row: _uint32,
+    col: _uint32,
     reg_m: DTypePointer[DType.float32],
     reg_n: DTypePointer[DType.float32],
     reg_res: DTypePointer[DType.float32],
@@ -516,14 +516,14 @@ fn _fill[
 
 
 fn flash_attention_kernel[
-    BM: _int32,  # number of queries per block
-    BN: _int32,  # number of keys per block
-    BK: _int32,  # tile size in depth dimension
-    depth: _int32,
-    num_heads: _int32,
-    TM: _int32,
-    TN: _int32,
-    num_threads: _int32,
+    BM: _uint32,  # number of queries per block
+    BN: _uint32,  # number of keys per block
+    BK: _uint32,  # tile size in depth dimension
+    depth: _uint32,
+    num_heads: _uint32,
+    TM: _uint32,
+    TN: _uint32,
+    num_threads: _uint32,
 ](
     q_ptr: DTypePointer[DType.float32],
     k_ptr: DTypePointer[DType.float32],
@@ -531,34 +531,34 @@ fn flash_attention_kernel[
     mask_ptr: DTypePointer[DType.float32],
     output_ptr: DTypePointer[DType.float32],
     scale: Float32,
-    batch_size: _int32,
-    seq_len: _int32,
+    batch_size: _uint32,
+    seq_len: _uint32,
 ):
     # To ressemble cuda float4.
     alias simd_size = simdwidthof[DType.float32]()
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
     alias float_alignment = alignof[DType.float32]()
 
-    alias num_warps: _int32 = num_threads // WARP_SIZE
+    alias num_warps: _uint32 = num_threads // WARP_SIZE
 
-    let tid: _int32 = ThreadIdx.x()
-    let lane: _int32 = lane_id()
-    let warpid: _int32 = tid // WARP_SIZE
+    let tid: _uint32 = ThreadIdx.x()
+    let lane: _uint32 = lane_id()
+    let warpid: _uint32 = tid // WARP_SIZE
 
     # Warp index mapping for 2nd gemm.
-    alias warp_dim_x: _int32 = 32
-    alias warp_dim_y: _int32 = 1
-    alias num_warps_m: _int32 = BM // (warp_dim_y * TM)
-    alias num_warps_n: _int32 = depth // (warp_dim_x * TN)
-    let warpx: _int32 = warpid % num_warps_n
-    let warpy: _int32 = warpid // num_warps_n
+    alias warp_dim_x: _uint32 = 32
+    alias warp_dim_y: _uint32 = 1
+    alias num_warps_m: _uint32 = BM // (warp_dim_y * TM)
+    alias num_warps_n: _uint32 = depth // (warp_dim_x * TN)
+    let warpx: _uint32 = warpid % num_warps_n
+    let warpy: _uint32 = warpid // num_warps_n
     # Thread index mapping in MxN matrix.
     # Each warp handles TM rows of output matrix, applicable to both bmms.
-    let tx_in_warp: _int32 = lane % warp_dim_x
-    let ty_in_warp: _int32 = lane // warp_dim_x
+    let tx_in_warp: _uint32 = lane % warp_dim_x
+    let ty_in_warp: _uint32 = lane // warp_dim_x
     # Thread tile's start row and column in output matrix.
-    let mm_row: _int32 = (ty_in_warp + warpy * warp_dim_y) * TM
-    let mm_col: _int32 = (tx_in_warp + warpx * warp_dim_x) * TN
+    let mm_row: _uint32 = (ty_in_warp + warpy * warp_dim_y) * TM
+    let mm_col: _uint32 = (tx_in_warp + warpx * warp_dim_x) * TN
 
     let q_tile = stack_allocation[
         (BM * depth).to_int(),
@@ -617,15 +617,15 @@ fn flash_attention_kernel[
         alignment=float_alignment,
     ]()
 
-    let batch_idx: _int32 = BlockIdx.z()
-    let head_idx: _int32 = BlockIdx.y()
-    let q_tile_idx: _int32 = BlockIdx.x()
+    let batch_idx: _uint32 = BlockIdx.z()
+    let head_idx: _uint32 = BlockIdx.y()
+    let q_tile_idx: _uint32 = BlockIdx.x()
 
-    let global_mask_offset: _int32 = batch_idx * seq_len * seq_len
+    let global_mask_offset: _uint32 = batch_idx * seq_len * seq_len
 
     # Load Q.
     # Offset in global Q buffer, BSHD layout
-    let global_q_offset: _int32 = depth * (
+    let global_q_offset: _uint32 = depth * (
         head_idx + num_heads * (q_tile_idx * BM + seq_len * batch_idx)
     )
     alias loadq_num_rows_per_iter = (num_threads * simd_size) // depth
@@ -634,13 +634,13 @@ fn flash_attention_kernel[
     # != depth in global Q array because the stride is based on BSHD.
     alias row_stride = num_heads * depth
     # Index of the 1st row and col loaded by current thread.
-    let loadq_row: _int32 = (tid * simd_size) // depth
-    let loadq_col: _int32 = (tid * simd_size) % depth
+    let loadq_row: _uint32 = (tid * simd_size) // depth
+    let loadq_col: _uint32 = (tid * simd_size) % depth
 
     @unroll
     for i in range(loadq_num_iters.to_int()):
-        let row_in_tile: _int32 = loadq_row + i * loadq_num_rows_per_iter
-        let global_q_idx: _int32 = global_q_offset + row_in_tile * row_stride + loadq_col
+        let row_in_tile: _uint32 = loadq_row + i * loadq_num_rows_per_iter
+        let global_q_idx: _uint32 = global_q_offset + row_in_tile * row_stride + loadq_col
         let vec = q_ptr.aligned_simd_load[simd_size, alignment](
             global_q_idx.to_int(),
         )
@@ -655,19 +655,19 @@ fn flash_attention_kernel[
     _fill[TM.to_int()](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
-    var global_kv_offset: _int32 = depth * (
+    var global_kv_offset: _uint32 = depth * (
         head_idx + num_heads * seq_len * batch_idx
     )
 
     # K tile has shape [BN, depth] and is divided sub-tiles [BN, BK].
     # 1st row and col in k sub-tile loaded by current thread.
-    let loadk_row: _int32 = (tid * simd_size) // BK
-    let loadk_col: _int32 = (tid * simd_size) % BK
+    let loadk_row: _uint32 = (tid * simd_size) // BK
+    let loadk_col: _uint32 = (tid * simd_size) % BK
 
     # V tile has shape [BN, depth] and is divided sub-tiles [BK, depth].
     # 1st row and col in v sub-tile loaded by current thread.
-    let loadv_row: _int32 = (tid * simd_size) // depth
-    let loadv_col: _int32 = (tid * simd_size) % depth
+    let loadv_row: _uint32 = (tid * simd_size) // depth
+    let loadv_col: _uint32 = (tid * simd_size) % depth
 
     for kv_tile_start_row in range(0, seq_len.to_int(), BN.to_int()):
         # Clear thread tile results.
@@ -682,8 +682,8 @@ fn flash_attention_kernel[
 
             @unroll
             for i in range(loadk_num_iters.to_int()):
-                let row_in_tile: _int32 = loadk_row + i * loadk_num_rows_per_iter
-                let global_idx: _int32 = global_kv_offset + row_in_tile * row_stride + subtile_start_col + loadk_col
+                let row_in_tile: _uint32 = loadk_row + i * loadk_num_rows_per_iter
+                let global_idx: _uint32 = global_kv_offset + row_in_tile * row_stride + subtile_start_col + loadk_col
                 let vec = k_ptr.aligned_simd_load[simd_size, alignment](
                     global_idx.to_int()
                 )
@@ -782,8 +782,8 @@ fn flash_attention_kernel[
 
             @unroll
             for i in range(loadv_num_iters.to_int()):
-                let row_in_tile: _int32 = loadv_row + i * loadv_num_rows_per_iter
-                let global_idx: _int32 = global_kv_offset + (
+                let row_in_tile: _uint32 = loadv_row + i * loadv_num_rows_per_iter
+                let global_idx: _uint32 = global_kv_offset + (
                     subtile_start_row + row_in_tile
                 ) * row_stride + loadv_col
                 let vec = v_ptr.aligned_simd_load[simd_size, alignment](
