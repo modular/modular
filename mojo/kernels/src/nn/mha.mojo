@@ -515,6 +515,7 @@ fn _fill[
         ptr.store(i, val)
 
 
+@__llvm_metadata(`nvvm.maxntid`=[num_threads])
 fn flash_attention_kernel[
     BM: _uint32,  # number of queries per block
     BN: _uint32,  # number of keys per block
