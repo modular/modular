@@ -340,6 +340,15 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.constant = <shr(p1, 0)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <div(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mod(p1, 1)>  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <mod(p1, p1)>  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <mod(mul(p1, 2), p1)>  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <mod(mul_nuw(p1, 2), p1)>  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <mod(add(p1, 2), p1)>  // CHECK: kgen.param.constant = <mod(add(p1, 2), p1)>
+  kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(2, p2))>  // CHECK: kgen.param.constant = <mul_nuw(max(p1, p2), 2)>
+  kgen.param.constant = <max(mul(p1, 2), mul(2, p2))>  // CHECK: kgen.param.constant = <max(mul(p1, 2), mul(p2, 2))>
+  kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(p2, 3))>  // CHECK: kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(p2, 3))>
+  kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(p2, 4))>  // CHECK: kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(p2, 4))>
+  kgen.param.constant = <max(add(p1, 2), add(p2, 2))>  // CHECK: kgen.param.constant = <max(add(p1, 2), add(p2, 2))>
 
   kgen.param.declare square = <mul(p1, p1)>  // CHECK: kgen.param.declare square = <mul(p1, p1)>
   kgen.param.constant = <square>  // CHECK: kgen.param.constant = <square>

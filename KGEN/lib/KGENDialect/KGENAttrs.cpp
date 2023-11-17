@@ -1398,11 +1398,60 @@ static bool intIsMinValue(Type type, const APInt &value) {
 
 static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
   Type type = operands.front().getType();
-  return simplifyAssocOp(
+  Attribute maybeConstAttr = simplifyAssocOp(
       POC::Max, operands, llvm::APIntOps::umax, llvm::APIntOps::smax,
       [&](auto cst) { return intIsMinValue(type, cst); },
       [&](auto cst) { return intIsMaxValue(type, cst); },
       /*shouldDeduplicateOperands*/ true);
+  if (maybeConstAttr)
+    return maybeConstAttr;
+
+  // Add folding rule: max(a*x, a*y) --> a*max(x, y)
+  IntegerAttr commonFactor;
+  for (TypedAttr operand : operands) {
+    // Operand must be a product.
+    auto mulAttr = dyn_castPE(POC::MulNuw, operand);
+    if (!mulAttr)
+      return {};
+
+    // The product must end with a constant integer attribute, which (if
+    // present) will be canonicalized to be in the back
+    auto factor = dyn_cast<IntegerAttr>(mulAttr.getOperands().back());
+    if (!factor)
+      return {};
+
+    if (!commonFactor) {
+      commonFactor = factor;
+      continue;
+    }
+
+    // Else we have a common factor from previous operand, the new factor must
+    // match it.
+    if (commonFactor != factor)
+      return {};
+
+    // At this point, the invariant is `operand` is a product that ends with a
+    // constant integer, which matches for all previous `operand`s.
+  }
+
+  // New operands with the common factor dropped from the end of each product.
+  SmallVector<TypedAttr> newOperands;
+  for (TypedAttr operand : operands) {
+    auto mulAttr = dyn_castPE(POC::MulNuw, operand);
+
+    // If the product has the form `x * commonFactor`, the new operand is `x`.
+    size_t numOperands = mulAttr.getNumOperands();
+    if (numOperands == 2) {
+      newOperands.push_back(mulAttr.getOperand(0));
+    } else {
+      auto newOperand = ParamOperatorAttr::get(
+          mulAttr.getOpcode(), mulAttr.getOperands().slice(0, numOperands - 1));
+      newOperands.push_back(newOperand);
+    }
+  }
+  auto newMax = ParamOperatorAttr::get(POC::Max, newOperands);
+  auto product = ParamOperatorAttr::get(POC::MulNuw, {newMax, commonFactor});
+  return product;
 }
 
 static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
@@ -1577,7 +1626,27 @@ static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
-  // Implement support for identities like `x%1 = 0`.
+  TypedAttr lhs = operands[0];
+  TypedAttr rhs = operands[1];
+
+  // Check whether `x` is a multiple of `y`, only for simple cases.
+  auto isMultipleOf = [](TypedAttr x, TypedAttr y) {
+    if (x == y)
+      return true;
+
+    ArrayRef<TypedAttr> xProductOperands;
+    if (auto mulAttr = dyn_castPE(POC::Mul, x))
+      xProductOperands = mulAttr.getOperands();
+    if (auto mulAttr = dyn_castPE(POC::MulNuw, x))
+      xProductOperands = mulAttr.getOperands();
+    return llvm::is_contained(xProductOperands, y);
+  };
+
+  // Add folding rule `(n * x) % x = 0` for `x` of integer type.
+  if (lhs.getType().isIntOrIndex() && isMultipleOf(lhs, rhs))
+    return IntegerAttr::get(rhs.getType(), 0);
+
+  // Implement support for identities like `x%1 = 0`
   if (auto rhs = dyn_cast<IntegerAttr>(operands[1]))
     if (rhs.getValue().isOne())
       return IntegerAttr::get(rhs.getType(), 0);
