@@ -219,7 +219,7 @@
   },
   "onEnterRules": [
     {
-      "beforeText": "^\\s*(?:def|class|fn|struct|for|if|elif|else|while|try|with|finally|except|async).*?:\\s*$",
+      "beforeText": "^\\s*(?:def|class|fn|struct|trait|for|if|elif|else|while|try|with|finally|except|async).*?:\\s*$",
       "action": {
         "indent": "indent"
       }
