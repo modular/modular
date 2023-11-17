@@ -46,7 +46,6 @@ from memory.buffer import (
     partial_simd_load,
     partial_simd_store,
 )
-from math.limit import max_finite
 from memory.unsafe import DTypePointer, bitcast
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from Transpose import transpose_inplace
@@ -2469,13 +2468,9 @@ fn matmul[
     let n = shape.N
     let k = shape.K
 
-    let use_32bit_indexing = m * n < max_finite[
-        DType.uint32
-    ]().to_int() and m * k < max_finite[
-        DType.uint32
-    ]().to_int() and n * k < max_finite[
-        DType.uint32
-    ]().to_int()
+    # TODO: #25898, use max_finite
+    alias max_uint32 = Int(0xFFFFFFFF)
+    let use_32bit_indexing = m * n < max_uint32 and m * k < max_uint32 and n * k < max_uint32
 
     @parameter
     if elementwise_epilogue_enabled:
