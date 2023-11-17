@@ -121,7 +121,7 @@
         },
         {
           "name": "storage.type.class.python",
-          "match": "\\b(?<!\\.)(class|struct)\\b"
+          "match": "\\b(?<!\\.)(class|struct|trait)\\b"
         },
         {
           "match": "(?x)\n  ^\\s*(\n    case | match\n  )(?=\\s*([-+\\w\\d(\\[{'\":#]|$))\\b\n",
@@ -854,7 +854,7 @@
       "patterns": [
         {
           "name": "meta.class.python",
-          "begin": "(?x)\n  \\s*(class|struct)\\s+\n    (?=\n      [[:alpha:]_]\\w* \\s* (:|\\()\n    )\n",
+          "begin": "(?x)\n  \\s*(class|struct|trait)\\s+\n    (?=\n      [[:alpha:]_]\\w* \\s* (:|\\()\n    )\n",
           "end": "(:)",
           "beginCaptures": {
             "1": {
@@ -1658,7 +1658,7 @@
     },
     "magic-variable-names": {
       "comment": "magic variables which a class/module may have.",
-      "match": "(?x)\n  \\b(\n    __(?:\n      all | annotations | bases | builtins | class\n      | struct\n      | closure | code | debug | defaults | dict | doc | file | func\n      | globals | kwdefaults | match_args | members | metaclass | methods\n      | module | mro | mro_entries | name | qualname | post_init | self\n      | signature | slots | subclasses | version | weakref | wrapped\n      | classcell | spec | path | package | future | traceback\n    )__\n  )\\b\n",
+      "match": "(?x)\n  \\b(\n    __(?:\n      all | annotations | bases | builtins | class\n      | struct\n      | trait\n      | closure | code | debug | defaults | dict | doc | file | func\n      | globals | kwdefaults | match_args | members | metaclass | methods\n      | module | mro | mro_entries | name | qualname | post_init | self\n      | signature | slots | subclasses | version | weakref | wrapped\n      | classcell | spec | path | package | future | traceback\n    )__\n  )\\b\n",
       "captures": {
         "1": {
           "name": "support.variable.magic.python"
@@ -1676,7 +1676,7 @@
       ]
     },
     "illegal-names": {
-      "match": "(?x)\n  \\b(?:\n    (\n      and | assert | async | await | break | class | struct | continue | def\n       | fn\n      | del | elif | else | except | finally | for | from | global\n      | if | in | is | (?<=\\.)lambda | lambda(?=\\s*[\\.=])\n      | nonlocal | not | or | pass | raise | return | try | while | with\n      | yield\n    ) | (\n      as | import\n    )\n  )\\b\n",
+      "match": "(?x)\n  \\b(?:\n    (\n      and | assert | async | await | break | class | struct | trait | continue | def\n       | fn\n      | del | elif | else | except | finally | for | from | global\n      | if | in | is | (?<=\\.)lambda | lambda(?=\\s*[\\.=])\n      | nonlocal | not | or | pass | raise | return | try | while | with\n      | yield\n    ) | (\n      as | import\n    )\n  )\\b\n",
       "captures": {
         "1": {
           "name": "keyword.control.flow.python"

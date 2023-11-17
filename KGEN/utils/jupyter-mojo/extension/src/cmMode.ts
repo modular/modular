@@ -31,7 +31,7 @@ export function defineCodeMirrorMode(codeMirror: ICodeMirror) {
     "False", "True",
 
     // Mojo Keywords.
-    "alias", "fn", "let", "struct", "var"
+    "alias", "fn", "let", "struct", "var", "trait"
   ];
   var commonBuiltins = [
     "abs", "all", "any", "bin", "bool", "bytearray", "callable", "chr",
@@ -196,7 +196,8 @@ export function defineCodeMirrorMode(codeMirror: ICodeMirror) {
 
       if (stream.match(identifiers)) {
         if (state.lastToken == "def" || state.lastToken == "class" ||
-            state.lastToken == "fn" || state.lastToken == "struct")
+            state.lastToken == "fn" || state.lastToken == "struct" ||
+            state.lastToken == "trait")
           return "def";
         return "variable";
       }
