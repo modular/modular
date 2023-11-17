@@ -503,6 +503,20 @@ fn _mm[
                 )
 
 
+@always_inline
+fn _fill[len: Int, type: DType](ptr: DTypePointer[type], val: SIMD[type, 1]):
+    alias simd_width = simdwidthof[val.type]()
+    alias vector_end = (len // simd_width) * simd_width
+
+    @unroll
+    for i in range(0, vector_end, simd_width):
+        ptr.simd_store(i, SIMD[type, simd_width].splat(val))
+
+    @unroll
+    for i in range(vector_end, len, 1):
+        ptr.store(i, val)
+
+
 fn flash_attention_kernel[
     BM: _int32,  # number of queries per block
     BN: _int32,  # number of keys per block
@@ -637,14 +651,10 @@ fn flash_attention_kernel[
         )
 
     # Clear thread's register tile for output.
-    @unroll
-    for i in range((TM * TN).to_int()):
-        o_thread_tile.store(i, 0.0)
+    _fill[(TM * TN).to_int()](o_thread_tile, 0)
 
-    @unroll
-    for i in range(TM.to_int()):
-        rowmax.store(i, neginf[DType.float32]())
-        rowsum.store(i, 0.0)
+    _fill[TM.to_int()](rowmax, neginf[DType.float32]())
+    _fill[TM.to_int()](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
     var global_kv_offset: _int32 = depth * (
@@ -663,9 +673,7 @@ fn flash_attention_kernel[
 
     for kv_tile_start_row in range(0, seq_len.to_int(), BN.to_int()):
         # Clear thread tile results.
-        @unroll
-        for i in range((TM * TN).to_int()):
-            reg_result.store(i, 0.0)
+        _fill[(TM * TN).to_int()](reg_result, 0)
 
         # K tile has shape [BN, depth]. Load sub-tile [BN, BK] each time and
         # multiply with the corresponding Q slice of shape [BM, BK].
