@@ -1884,3 +1884,24 @@ fn convert_result_type():
 
     # CHECK: call_param{{.*}}@ChangedResultTypeStruct::@"`thunk_result_type()"
     convert_result_type[ChangedResultTypeStruct]()
+
+
+trait SimpleTraitMethod:
+    fn foo(self):
+        ...
+
+@register_passable
+struct VariadicTrait[*I: int](SimpleTraitMethod):
+    fn foo(self):
+        pass
+
+
+# CHECK-LABEL: lit.func @"test_bind_variadic
+fn test_bind_variadic():
+    @parameter
+    fn bind_trait[T: SimpleTraitMethod]():
+        pass
+
+    # CHECK: call_param
+    # CHECK: "foo" : !lit.signature<("self": {{.*}}<:variadic<index> []>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}`thunk_foo{{.*}}"<:variadic<index> []>
+    bind_trait[VariadicTrait[]]()

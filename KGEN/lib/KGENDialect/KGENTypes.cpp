@@ -323,6 +323,8 @@ SignatureType SignatureType::getSpecializedSignature(
       unboundParamTypes.push_back(remappedDeclType);
       evaluator.addInputValue(value);
     } else {
+      if (::isa<VariadicType>(type))
+        effects.setParamVarArgs(false);
       evaluator.addInputValue(value);
       boundParams.set(paramNo);
     }
