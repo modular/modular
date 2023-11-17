@@ -17,12 +17,7 @@ from math._numerics import FlushDenormals
 from sys.info import triple_is_nvidia_cuda, sizeof
 
 from gpu import GridDim, BlockDim, BlockIdx, ThreadIdx
-from gpu.host import Dim, Function, Stream
-from gpu.host._constants import (
-    CUDA_DEVICE_MAX_REGISTERS_PER_BLOCK,
-    CUDA_DEVICE_MAX_THREADS_PER_SM,
-    CUDA_DEVICE_SM_COUNT,
-)
+from gpu.host import Dim, Function, Stream, Device
 from runtime.llcl import (
     AsyncTaskGroupPtr,
     OutputChainPtr,
@@ -1217,10 +1212,19 @@ fn _elementwise_impl[
     alias num_waves = 32
 
     # optimize based on device attributes
-    # TODO Re-enable dynamic device attribute query (#25800)
-    let sm_count = CUDA_DEVICE_SM_COUNT
-    let registers_per_block = CUDA_DEVICE_MAX_REGISTERS_PER_BLOCK
-    let threads_per_sm = CUDA_DEVICE_MAX_THREADS_PER_SM
+    let sm_count: Int
+    let registers_per_block: Int
+    let threads_per_sm: Int
+    try:
+        sm_count = Device().multiprocessor_count()
+        registers_per_block = Device().max_registers_per_block()
+        threads_per_sm = Device().max_threads_per_sm()
+    except e:
+        if out_chain:
+            out_chain.mark_error(e)
+        else:
+            print(e)
+        return
 
     # split between packed and tail regions of input
     let length = shape.flattened_length()
