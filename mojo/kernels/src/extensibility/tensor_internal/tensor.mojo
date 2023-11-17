@@ -140,6 +140,20 @@ struct Tensor[dtype: DType]:
         self._ptr = ptr
 
     @always_inline
+    fn __init__(inout self, shape: TensorShape, *data: SIMD[dtype, 1]):
+        """Initializes a Tensor from the shape and data provided.
+        The caller assumes ownership of the new tensor data.
+
+        Args:
+          shape: The tensor shape.
+          data: Elements to place into the created tensor.
+        """
+        let ptr = DTypePointer[dtype].alloc(len(data))
+        for i in range(len(data)):
+            ptr.store(i, data[i])
+        self.__init__(ptr, shape)
+
+    @always_inline
     fn __del__(owned self):
         """Delete the spec and release any owned memory."""
         self._ptr.free()
