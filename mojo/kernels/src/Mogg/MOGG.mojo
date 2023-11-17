@@ -742,11 +742,12 @@ fn broadcast_to_tensor[
     target_rank: Int,
     output_rank: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     original: NDBuffer[
         original_rank, DimList.create_unknown[original_rank](), type
     ],
-    target: StaticIntTuple[target_rank],
+    target_shape: StaticIntTuple[target_rank],
 ) -> NDBuffer[output_rank, DimList.create_unknown[output_rank](), type]:
     var shape = StaticIntTuple[output_rank]()
     var stride = StaticIntTuple[output_rank]()
@@ -762,7 +763,7 @@ fn broadcast_to_tensor[
     fn add_new_dims[i: Int]():
         @parameter
         if target_rank >= original_rank:
-            shape[i] = target[i]
+            shape[i] = target_shape[i]
             stride[i] = 0
         else:
             shape[i] = original.dim(i)
@@ -785,13 +786,13 @@ fn broadcast_to_tensor[
             target_index = small_index
 
         # If the dims are the same use the stride of the original.
-        if original.dim(orig_index) == target[target_index]:
+        if original.dim(orig_index) == target_shape[target_index]:
             stride[big_index] = original.stride(orig_index)
             shape[big_index] = original.dim(orig_index)
         elif original.dim(orig_index) == 1:
             # If they don't match and original is 1 then we broadcast.
             stride[big_index] = 0
-            shape[big_index] = target[target_index]
+            shape[big_index] = target_shape[target_index]
         else:
             # The target is the one being broadcast here so we don't need to
             # change the strides but we do need to restore the old shape.
