@@ -17,4 +17,5 @@ add_modular_testsuite(check-mojo-integration
   TOOLS
   mojo-sdk
   kgen
+  kgen-translate
 )

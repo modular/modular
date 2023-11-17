@@ -32,6 +32,7 @@ tool_dirs = [
 tools = [
     "mojo",
     "kgen",
+    "kgen-translate",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
