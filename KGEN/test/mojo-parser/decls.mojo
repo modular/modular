@@ -1780,16 +1780,32 @@ trait TraitForReg:
         ...
 
 
+# CHECK-LABEL: lit.struct.decl @RegTraitType
 @register_passable
 struct RegTraitType(TraitForReg):
+    # CHECK-LABEL: lit.func @"`thunk___init__
+    # CHECK-SAME: %self[self]: !kgen.pointer<!RegTraitType> init_self, |, %x[x]: index borrow) -> !kgen.none
     fn __init__(x: int) -> Self:
+        # CHECK: %0 = lit.call {{.*}}@RegTraitType{{.*}}__init__{{.*}}(%x)
+        # CHECK: store %0, %self
         pass
 
+    # CHECK-LABEL: lit.func @"`thunk___copyinit__
+    # CHECK-SAME: %self[self]: !kgen.pointer<!RegTraitType> init_self, |, %arg[existing]: !kgen.pointer<!RegTraitType> borrow_in_mem) -> !kgen.none
     fn __copyinit__(existing: Self) -> Self:
+        # CHECK: %0 = pop.load %arg
+        # CHECK: %1 = lit.call {{.*}}@RegTraitType{{.*}}__copyinit__{{.*}}(%0)
+        # CHECK: store %1, %self
         pass
 
+    # CHECK-LABEL: lit.func @"`thunk_may_throw
+    # CHECK-SAME: %__result__[{{.*}}]: !kgen.pointer<!RegTraitType> byref_result
+    # CHECK-SAME: throws -> !kgen.variant<!Error, none> always_inline
     @staticmethod
     fn may_throw() raises -> Self:
+        # CHECK: %0 = lit.call {{.*}}@RegTraitType::@"may_throw()"
+        # CHECK: %1 = lit.handle_variant %0
+        # CHECK: store %1, %__result__
         pass
 
 
@@ -1816,3 +1832,55 @@ struct AsyncStruct(AsyncTrait):
 fn async_trait[T: AsyncTrait](value: T):
     # CHECK: lit.async.call[!lit.signature<("self": {{.*}} borrow_in_mem) async -> !kgen.none>: get_type_method
     _ = value.foobar()
+
+
+trait CrazyTrait:
+    pass
+
+    fn foo[b: int->d: int](self, c: int) -> Self:
+        ...
+
+
+# CHECK-LABEL: lit.struct.decl @CrazyRegisterPassable
+# CHECK-SAME: <[[a:.*]][a]>
+@value
+@register_passable
+struct CrazyRegisterPassable[a: int](CrazyTrait):
+    pass
+
+    # CHECK-LABEL: lit.func @"`thunk_foo
+    # CHECK-SAME: <b[b] -> o0>(%__result__[__result__]: !kgen.pointer<{{.*}}@CrazyRegisterPassable<[[a]]>>{{.*}} byref_result, |,
+    # CHECK-SAME: %self[self]: !kgen.pointer<{{.*}}@CrazyRegisterPassable<[[a]]>{{.*}} borrow_in_mem
+    # CHECK-SAME: %c[c]: index borrow) -> !kgen.none
+    fn foo[b: int->d: int](self, c: int) -> Self:
+        # CHECK: %0 = pop.load %self
+        # CHECK: %1 = lit.call {{.*}}@CrazyRegisterPassable::@"foo{{.*}}<[[a]], b -> r0>(%0, %c)
+        # CHECK: store %1, %__result__
+        # CHECK: lit.param_return<r0>
+        param_return[__mlir_attr.`2:index`]
+        return self
+
+@register_passable
+trait ChangedResultTypeTrait:
+    @staticmethod
+    fn result_type() -> Self:
+        ...
+
+
+# COM: The calling convention rewrite results in a decl with two "overloads" that
+# COM: differ only in result type. Ensure that the thunk gets selected.
+@register_passable
+struct ChangedResultTypeStruct(ChangedResultTypeTrait):
+    @staticmethod
+    fn result_type() -> Self:
+        pass
+
+
+# CHECK-LABEL: lit.func @"convert_result_type
+fn convert_result_type():
+    @parameter
+    fn convert_result_type[T: ChangedResultTypeTrait]():
+        pass
+
+    # CHECK: call_param{{.*}}@ChangedResultTypeStruct::@"`thunk_result_type()"
+    convert_result_type[ChangedResultTypeStruct]()

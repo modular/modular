@@ -78,7 +78,8 @@ public:
   LIT::FuncOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands);
 
   /// Emit an emtpy function stub at the specified location. The block arguments
-  /// are added to the body of the function but no ops are added to the cody.
+  /// are added to the body of the function but no ops are added to the body.
+  /// `prefix` is prepended to the mangled function name.
   LIT::FuncOp createFunction(
       StringRef name, ArrayRef<ParamDeclAttr> inputParams,
       ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
@@ -86,7 +87,7 @@ public:
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
       ImplicitLocOpBuilder &builder, FnEffects effects = FnEffects(),
-      ArrayRef<ParamDeclAttr> resultParams = {});
+      ArrayRef<ParamDeclAttr> resultParams = {}, StringRef prefix = "");
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -97,7 +98,7 @@ public:
                            ArrayRef<PassingKind> argPassingKinds);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
-  /// populated.
+  /// populated. `prefix` is prepended to the mangled function name.
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> inputParams,
       ArrayRef<PassingKind> paramPassingKinds, ArrayRef<Type> argTypes,
@@ -106,7 +107,7 @@ public:
       Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects effects = FnEffects(),
-      ArrayRef<ParamDeclAttr> resultParams = {});
+      ArrayRef<ParamDeclAttr> resultParams = {}, StringRef prefix = "");
   std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ValueInputConvention> argConventions,

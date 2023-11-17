@@ -16,13 +16,12 @@ using namespace KGEN;
 
 void KGEN::buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
                                  const CompilationOptions &options) {
-  pm.addPass(createVerifyParameters());
-
-  // These passes doesn't touch parameters, no need to re-verify them after it.
-
   // Lower semantic control flow operations like lit.return to terminators and
   // diagnose unreachable code.
   pm.addPass(createLowerSemanticCF());
+  pm.addPass(createVerifyParameters());
+
+  // These passes doesn't touch parameters, no need to re-verify them after it.
 
   // Check if a struct contains recursive nested struct fields and emit error if
   // found.
