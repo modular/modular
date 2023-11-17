@@ -790,3 +790,10 @@ kgen.generator @unification() {
   kgen.param.declare T0: regtype = <rebind(:!metatype.type #kgen.concretetype.constant<!kgen.declref<@unification, !metatype.type>>)>
   kgen.return
 }
+
+// CHECK-LABEL: @bind_variadic_param
+kgen.generator @bind_variadic_param<f: <variadic<index>>() param_vararg -> ()>() {
+  // CHECK: declare bound: () -> () = <bind_signature(:<variadic<index>>() param_vararg -> () f, [])>
+  kgen.param.declare bound: () -> () = <bind_signature(:<variadic<index>>() param_vararg -> () f, [])>
+  kgen.return
+}

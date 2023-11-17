@@ -585,8 +585,8 @@ fn useParamVariadics():
   alias fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.signature<() param_vararg -> !kgen.none>: @"$parameters"::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
-  # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<!lit.signature<() param_vararg -> !kgen.none>>
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.signature<() -> !kgen.none>: @"$parameters"::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
+  # CHECK-NEXT: %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<!lit.signature<() -> !kgen.none>>
   let fnLet = fnWithVariadics
 
   # CHECK-NEXT: %a = lit.varlet.decl {{.*}} : !lit.ref<mut @"{{.*}}::@StructWithVariadics<:variadic<!Int> []>
