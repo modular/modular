@@ -1570,7 +1570,8 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
-  walker.addWalk([=, &shared](DeclRefType typeRef) -> WalkResult {
+
+  auto visitTypeRef = [=, &shared](auto typeRef) -> WalkResult {
     ASTDecl *moduleDecl = resolveParents(typeRef.getSymbol());
     if (!moduleDecl)
       return WalkResult::interrupt();
@@ -1581,19 +1582,11 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
                                      DeclResolvedness::signature))
       return WalkResult::interrupt();
     return WalkResult::advance();
-  });
-  walker.addWalk([=, &shared](MetaTypeType typeRef) -> WalkResult {
-    ASTDecl *moduleDecl = resolveParents(typeRef.getSymbol());
-    if (!moduleDecl)
-      return WalkResult::interrupt();
-    // Resolve the base type.
-    FlatSymbolRefAttr leaf = typeRef.getSymbol().getNestedReferences().back();
-    if (!lookupAndResolveMangledDecl(shared, leaf.getValue(), leaf.getValue(),
-                                     loc, *moduleDecl,
-                                     DeclResolvedness::signature))
-      return WalkResult::interrupt();
-    return WalkResult::advance();
-  });
+  };
+
+  walker.addWalk([=](DeclRefType typeRef) { return visitTypeRef(typeRef); });
+  walker.addWalk([=](MetaTypeType typeRef) { return visitTypeRef(typeRef); });
+  walker.addWalk([=](TraitType typeRef) { return visitTypeRef(typeRef); });
 
   return walker;
 }
@@ -1629,6 +1622,13 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               // Resolve the types of any parameters.
               typeWalker.walk<mlir::WalkOrder::PreOrder>(
                   structOp.getInputParamsAttr());
+              if (SymbolRefArrayAttr traits = structOp.getTraitsAttr()) {
+                // FIXME(#25436): The trait list should be some TypedAttrs.
+                for (SymbolRefAttr trait : traits) {
+                  typeWalker.walk<mlir::WalkOrder::PreOrder>(
+                      TraitType::get(trait));
+                }
+              }
               if (TypeAttr nmTarget = structOp.getNonmaterializableTargetAttr())
                 typeWalker.walk<mlir::WalkOrder::PreOrder>(nmTarget);
               return success();

@@ -4164,6 +4164,14 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
 
   for (SymbolRefAttr attr : structDeclOp.getTraitsAttr()) {
     ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
+
+    // Make sure to fully resolve the trait first.
+    if (failed(shared.declResolver->resolveFully(traitDecl,
+                                                 structDecl.getLoc()))) {
+      hadErrors = true;
+      continue;
+    }
+
     bool allMatchFound = true;
     // Prepare an error. It will be abandoned if the check succeeds.
     StringRef traitName = cast<TraitDeclOp>(traitDecl).getSymName();
@@ -4177,7 +4185,7 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
         auto traitFn = dyn_cast<LIT::FuncOp>(*decl);
         // Skip any children that aren't methods. This could be an alias.
         if (!traitFn)
-          break;
+          continue;
 
         ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
         if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
@@ -4190,6 +4198,13 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
               << "required function '" + name.str() + "' is not implemented";
           allMatchFound = false;
           break;
+        }
+
+        // Signature resolve the found decls first, so they can be checked.
+        for (ASTDecl *decl : decls) {
+          if (failed(shared.declResolver->resolve(
+                  *decl, DeclResolvedness::signature, structDecl.getLoc())))
+            hadErrors = true;
         }
 
         auto [newSignature, bindings] =
@@ -4315,21 +4330,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   if (!structOp.getTraitsAttr())
     return success();
-
-  // Resolve struct member functions' signature if they are candidates to
-  // implement trait functions so that we can do conformance check next.
-  for (SymbolRefAttr attr : structOp.getTraitsAttr()) {
-    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
-    for (auto &[name, _] : traitDecl.getDeclsInScope()) {
-      ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
-      for (ASTDecl *decl : decls) {
-        if (isa<LIT::FuncOp>(*decl))
-          if (failed(
-                  resolve(*decl, DeclResolvedness::signature, decl->getLoc())))
-            return failure();
-      }
-    }
-  }
 
   return verifyConformance(structDecl, shared);
 }
