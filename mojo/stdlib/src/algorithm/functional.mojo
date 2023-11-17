@@ -1210,14 +1210,13 @@ fn _elementwise_impl[
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
     alias registers_per_thread = 255
     alias num_waves = 32
+    alias registers_per_block = 65536
 
     # optimize based on device attributes
     let sm_count: Int
-    let registers_per_block: Int
     let threads_per_sm: Int
     try:
         sm_count = Device().multiprocessor_count()
-        registers_per_block = Device().max_registers_per_block()
         threads_per_sm = Device().max_threads_per_sm()
     except e:
         if out_chain:
@@ -1232,25 +1231,26 @@ fn _elementwise_impl[
     let unpacked_tail_length = length % simd_width
     let packed_region_length = length - unpacked_tail_length
 
-    let block_size_unrounded = registers_per_block // registers_per_thread
-    let block_size = block_size_unrounded - (block_size_unrounded % 2)
+    alias block_size_unrounded = registers_per_block // registers_per_thread
+    alias block_size = block_size_unrounded - (block_size_unrounded % 2)
     let num_blocks = max(
         1,
         min(
-            (num_packed_elems + block_size - 1) // block_size,
+            div_ceil(num_packed_elems, block_size),
             sm_count * threads_per_sm // block_size * num_waves,
         ),
     )
 
     @parameter
+    @__llvm_metadata(`nvvm.maxntid`=[block_size])
     fn _elementwise_gpu_kernel():
         @parameter
         if not triple_is_nvidia_cuda():
             return
 
         # process the packed region
-        let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
-        for idx in range(tid, num_packed_elems, BlockDim.x() * GridDim.x()):
+        let tid = ThreadIdx.x() + block_size * BlockIdx.x()
+        for idx in range(tid, num_packed_elems, block_size * GridDim.x()):
             func[simd_width, rank](
                 _get_start_indices_of_nth_subvolume[rank, 0](
                     idx * simd_width, shape
