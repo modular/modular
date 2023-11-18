@@ -488,11 +488,11 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   auto [elaboratedBytecode, symtab, exportMap] = std::move(*elaboratedOr);
 
   auto archiveOr =
-      createPackageArchive(symtab, exportMap, compilationOptions, runtime);
+      createPackageArchive(symtab, exportMap, packageArgs.target,
+                           elaboratedBytecode, compilationOptions, runtime);
   if (archiveOr.isError())
     return archiveOr.takeError();
-  packageBuilder.attachArchive(PackageArchiveAttr::get(
-      packageArgs.target, elaboratedBytecode, archiveOr.takeValue()));
+  packageBuilder.attachArchive(archiveOr.takeValue());
   return packageBuilder.build();
 }
 

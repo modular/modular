@@ -334,14 +334,25 @@ private:
 };
 } // namespace
 
-/// For each external call, add a link directive to the set.
-static void collectLinks(ModuleOp theModule, const SymbolTable &symtab,
-                         DenseSet<DenseResourceElementsAttr> &links) {
+/// For each external call, find the `kgen.link` op that it references, and add
+/// that op's linked bytes to the `links` collection.
+static void
+collectLinks(ModuleOp theModule, const SymbolTable &symtab,
+             DenseMap<StringAttr, DenseResourceElementsAttr> &links) {
   auto addLinkOp = [&](SymbolRefAttr linkRef, StringRef user) {
     auto link =
         symtab.lookup<LinkOp>(cast<FlatSymbolRefAttr>(linkRef).getAttr());
     assert(link && "There wasn't a valid LinkOp?");
-    links.insert(link.getLinkBytesAttr());
+
+    // First, add the bytes of the libraries that the linked library depends
+    // upon, if any.
+    if (std::optional<ArrayRef<LinkDependencyAttr>> dependencies =
+            link.getDependencies())
+      for (LinkDependencyAttr dependency : *dependencies)
+        links[dependency.getName()] = dependency.getBytes();
+
+    // Then, add the linked library bytes.
+    links[link.getSymNameAttr()] = link.getLinkBytesAttr();
   };
 
   // Get all LinkOps that were actually used. They're always referenced from
@@ -402,41 +413,50 @@ addBinaryToArchive(llvm::MemoryBufferRef bufferRef,
 /// Take the bytes provided, interpret them as a static archive, and add the
 /// archive members to the provided list.
 static ErrorOrSuccess
-handleLink(DenseResourceElementsAttr linkBytes, DenseSet<Attribute> &processed,
+handleLink(StringAttr name, DenseResourceElementsAttr bytes,
+           DenseSet<StringAttr> &processed,
            SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
-  // Only pull in each library exactly once.
-  if (!processed.insert(linkBytes).second)
+  // Only pull in each library once. Libraries are uniqued by their given name.
+  if (!processed.insert(name).second)
     return success();
 
   // Create the llvm memory buffer ref.
-  ArrayRef<char> rawBytes = linkBytes.getRawHandle().getBlob()->getData();
+  ArrayRef<char> rawBytes = bytes.getRawHandle().getBlob()->getData();
   llvm::MemoryBufferRef byteBuffer(StringRef(rawBytes.begin(), rawBytes.size()),
-                                   linkBytes.getRawHandle().getKey());
+                                   bytes.getRawHandle().getKey());
 
   return addBinaryToArchive(byteBuffer, archiveMembers);
 }
 
 //===----------------------------------------------------------------------===//
-// produceStandaloneArchive
+// produceArchive
 //===----------------------------------------------------------------------===//
 
 ErrorOr<BufferRef>
-ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
-                                         const ExportMap &exportedSymbols) {
-  TimeTraceScope<> traceScope("produce-standalone-archive");
+ObjectCompiler::produceArchive(const SymbolTable &symtab,
+                               const ExportMap &exportedSymbols,
+                               bool standalone) {
+  TimeTraceScope<> traceScope("produce-archive");
 
   // Slice out a standalone module for the exported symbols.
   OwningOpRef<ModuleOp> slicedModule =
       produceStandaloneModule(symtab, exportedSymbols);
 
-  // Collect the set of linked library bytes. Do this while we still have the IR
-  // in a recognizable state to make things simple.
-  DenseSet<DenseResourceElementsAttr> links;
-  collectLinks(*slicedModule, symtab, links);
-
-  // Set up a SourceMgr that we can use to find link files.
+  // Collect a mapping from library names to their object code bytes, to add as
+  // members of the archive.
+  DenseMap<StringAttr, DenseResourceElementsAttr> links;
   llvm::SourceMgr linkMgr;
-  linkMgr.setIncludeDirs(options.linkDirs);
+  if (standalone) {
+    // When producing standalone archives, `kgen.link`ed libraries are pulled in
+    // only when the module makes use of symbols in those libraries (such as by
+    // calling a function defined in a linked library). We analyze these
+    // references and collect the linked library bytes here, before lowering to
+    // LLVM (`kgen.link` ops are removed during lowering).
+    collectLinks(*slicedModule, symtab, links);
+
+    // Set up a SourceMgr that we can use to find link files.
+    linkMgr.setIncludeDirs(options.linkDirs);
+  }
 
   // Perform a cache aware transformation to translate the module to an archive
   // file.
@@ -445,7 +465,7 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
     chain.andThenSync([this, op, links = std::move(links),
                        linkMgr = std::move(linkMgr), output = output.copy(),
-                       buf = buf.copy()]() mutable {
+                       buf = buf.copy(), standalone]() mutable {
       // Lower the module to LLVM.
       llvm::LLVMContext ctx;
       auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
@@ -465,9 +485,10 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
           options.targetTriple.find("nvptx") != std::string::npos;
 
       // Split the module into multiple slices and compile each in parallel.
+      // FIXME(#25622): Disable module splitting for non-standalone archives.
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
       bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2 ||
-                         savingTemps || generatingPtx;
+                         savingTemps || generatingPtx || !standalone;
       if (noSplitting) {
         cacheResults.push_back(
             lowerLLVMModuleToObject(*llvmModule, op->getLoc()));
@@ -506,9 +527,10 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
             // Process all the link directives now. We keep a set of
             // already-processed link directives, so we don't re-process
             // libraries.
-            DenseSet<Attribute> processedLinks;
-            for (DenseResourceElementsAttr &link : links) {
-              if (auto err = handleLink(link, processedLinks, archiveMembers)) {
+            DenseSet<StringAttr> processedNames;
+            for (auto &[name, bytes] : links) {
+              if (auto err =
+                      handleLink(name, bytes, processedNames, archiveMembers)) {
                 return std::move(output).setToError(
                     LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
               }
@@ -544,19 +566,29 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
   };
   auto onCacheHit = [](Operation *op, BufferRef buf) { return buf.copy(); };
 
-  WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
-  options.print(*produceStandaloneArchiveKey << "produceStandaloneArchive(");
-  *produceStandaloneArchiveKey << ", isJIT=" << isJIT << ')';
+  WriteableBufferRef produceArchiveKey = WriteableBuffer::get();
+  options.print(*produceArchiveKey << "produceArchive(");
+  *produceArchiveKey << ", isJIT=" << isJIT << ')';
 
   auto output = cachedTransform(
       *slicedModule, transformCache.copy(),
       LLCL::AsyncValueRef<Chain>::createReady(runtime),
-      std::move(produceStandaloneArchiveKey), runTransformation, onCacheHit);
+      std::move(produceArchiveKey), runTransformation, onCacheHit);
   await(output);
 
   if (output.isError())
     return {std::move(output.takeDiagnostic().getMessage())};
   return {std::move(output.get<BufferRef>())};
+}
+
+//===----------------------------------------------------------------------===//
+// produceStandaloneArchive
+//===----------------------------------------------------------------------===//
+
+ErrorOr<BufferRef>
+ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
+                                         const ExportMap &exportedSymbols) {
+  return produceArchive(symtab, exportedSymbols, /*standalone=*/true);
 }
 
 LLCL::AnyAsyncValueRef

@@ -44,3 +44,12 @@ struct _PrivateReg(UsedInPackageTrait):
 @always_inline
 fn contains_thunk_ref():
     trait_method[_PrivateReg]()
+
+
+# To test that linking multiple packages together works as expected, we wish to
+# prevent this function definition from being inlined into modules that import
+# it. Its definition should remain in this package module, and be callable from
+# other modules.
+@no_inline
+fn dont_inline_me():
+    print("Don't you dare!")

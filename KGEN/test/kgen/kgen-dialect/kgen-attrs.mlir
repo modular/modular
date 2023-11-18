@@ -66,7 +66,10 @@ kgen.generator @variant_constants<T: regtype, U: regtype, value: !kgen.paramref<
 "some.op"() {a = #kgen.package.archive<
   target = #M.target<triple = "arm64-apple-darwin21.6.0", arch="apple-m1">,
   elaboratedModule = dense_resource<foo> : tensor<42xui8>,
-  archive = dense_resource<bar> : tensor<13xui8>
+  archive = dense_resource<bar> : tensor<13xui8>,
+  dependencies = [
+    <dense_resource<baz> : tensor<29xui8> as "libBaz">
+  ]
 >} : () -> ()
 
 // CHECK: #kgen<package.archives[<{{.*}}>, <{{.*}}>]>
