@@ -25,16 +25,16 @@ fn test_tensor_map() raises:
     let map = session.new_tensor_map()
 
     # CHECK: 0
-    print(map.__len__())
+    print(len(map))
 
     map.borrow("tensor", t1)
 
     # CHECK: 1
-    print(map.__len__())
+    print(len(map))
     let t2 = map.get[DType.float32]("tensor")
 
     # CHECK: 1
-    print(map.__len__())
+    print(len(map))
 
     let t3 = map.get[DType.float32]("tensor")
 
