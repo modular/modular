@@ -328,6 +328,20 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: = kgen.param.constant = <div(mul_nuw(p1, 3), p2)>
   kgen.param.constant = <div(mul_nuw(p1, p1, p2, 3), mul_nuw(p1, p2, p2))>
 
+  // CHECK: = kgen.param.constant = <mul_nuw(p1, 40)>
+  kgen.param.constant = <div(mul_nuw(p1, 200000), 5000)>
+
+  // CHECK: = kgen.param.constant = <div(p1, 5000)>
+  kgen.param.constant = <div(p1, 5000)>
+
+  // These are too large so the result may overflow on some devices for indices
+  // 5B --> too large for 32 bit systems. This may be poisoned so we do
+  // CHECK: = kgen.param.constant = <div(mul_nuw(p1, 5000000000), 5000)>
+  kgen.param.constant = <div(mul_nuw(p1, 5000000000), 5000)>
+
+  // CHECK: = kgen.param.constant = <div(p1, 10)>
+  kgen.param.constant = <div(mul_nuw(50, 2, p1), 1000)>
+
   kgen.param.constant = <mul(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mul(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <mul_nuw(p1, 1)>  // CHECK: kgen.param.constant = <p1>
