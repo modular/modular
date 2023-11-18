@@ -5,111 +5,104 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+import builtin
+
 from Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import Buffer, NDBuffer
-from Pool import (
-    Pool2d,
-    avg_pool_init_fn,
-    avg_pool_reduce_fn,
-    avg_pool_update_fn,
-    max_pool_init_fn,
-    max_pool_reduce_fn,
-    max_pool_update_fn,
-)
+from Pool import max_pool, avg_pool, PoolMethod
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
+from memory import stack_allocation
+
+from tensor import Tensor
 
 
-fn fill_buffer[shape: DimList](buf: NDBuffer[4, shape, DType.float32]):
+fn fill_tensor[rank: Int](tensor: Tensor[DType.float32]):
+    for j in range(tensor.num_elements()):
+        tensor._to_ndbuffer[rank]().flatten()[j] = SIMD[DType.float32, 1](j)
+
+
+fn fill_tensor[rank: Int](tensor: Tensor[DType.float32], val: Float32):
+    for j in range(tensor.num_elements()):
+        tensor._to_ndbuffer[rank]().flatten()[j] = val
+
+
+fn _static_int_tuple_to_tensor[
+    rank: Int
+](tuple: StaticIntTuple[rank]) -> Tensor[DType.int32]:
+    var tensor = Tensor[DType.int32](rank)
+    for i in range(rank):
+        tensor[i] = tuple[i]
+    return tensor
+
+
+fn print_buffer[
+    rank: Int
+](buf: NDBuffer[4, DimList.create_unknown[rank](), DType.float32]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
 
     for j in range(s):
-        buf.flatten()[j] = SIMD[DType.float32, 1](j)
+        builtin.io._printf("%.4f\n", buf.flatten()[j].cast[DType.float64]())
 
 
-fn print_buffer[shape: DimList](buf: NDBuffer[4, shape, DType.float32]):
-    var s: Int = 1
-    for i in range(buf.get_rank()):
-        s *= buf.dim(i)
-
-    for j in range(s):
-        print(buf.flatten()[j])
-
-
-struct PoolMethod:
-    alias MAX = 0
-    alias AVG = 1
-
-
-fn pool[count_boundary: Bool = False](pool_method: Int):
+fn pool[count_boundary: Bool = False](pool_method: PoolMethod):
     alias in_shape = DimList(2, 5, 7, 2)
     alias out_shape = DimList(2, 2, 2, 2)
-    # Create an input buffer.
-    let input_buffer = NDBuffer[4, in_shape, DType.float32].stack_allocation()
-    fill_buffer[in_shape](input_buffer)
-    # Create an output buffer.
-    let output_buffer = NDBuffer[4, out_shape, DType.float32].stack_allocation()
-    output_buffer.fill(0)
 
-    let pad_h = StaticIntTuple[2](0, 0)
-    let pad_w = StaticIntTuple[2](0, 0)
+    let input_tensor = Tensor[DType.float32](2, 5, 7, 2)
+    let output_tensor = Tensor[DType.float32](2, 2, 2, 2)
+    fill_tensor[4](input_tensor)
+    fill_tensor[4](output_tensor, 0.0)
+
+    let paddings = StaticIntTuple[4](0, 0, 0, 0)
     let filter = StaticIntTuple[2](3, 2)
     let stride = StaticIntTuple[2](2, 3)
     let dilation = StaticIntTuple[2](1, 1)
+
+    let paddings_tensor = _static_int_tuple_to_tensor(paddings)
+    let filter_tensor = _static_int_tuple_to_tensor(filter)
+    let stride_tensor = _static_int_tuple_to_tensor(stride)
+    let dilation_tensor = _static_int_tuple_to_tensor(dilation)
 
     alias simd_width = simdwidthof[DType.float32]()
 
     with Runtime() as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
         if pool_method == PoolMethod.MAX:
-            Pool2d[
-                out_shape,
-                in_shape,
-                simd_width,
-                DType.float32,
-                Image2DLayout.NHWC,
-                max_pool_init_fn[simd_width, DType.float32],
-                max_pool_update_fn[simd_width, DType.float32],
-                max_pool_reduce_fn[simd_width, DType.float32],
-                count_boundary=count_boundary,
-            ].run(
-                output_buffer,
-                input_buffer,
-                pad_h,
-                pad_w,
-                filter,
-                stride,
-                dilation,
+            max_pool[int_type = DType.int32](
+                input_tensor._to_ndbuffer[4](),
+                filter_tensor._to_ndbuffer[1](),
+                stride_tensor._to_ndbuffer[1](),
+                dilation_tensor._to_ndbuffer[1](),
+                paddings_tensor._to_ndbuffer[1](),
+                output_tensor._to_ndbuffer[4](),
                 out_chain.borrow(),
             )
         else:
-            Pool2d[
-                out_shape,
-                in_shape,
-                simd_width,
-                DType.float32,
-                Image2DLayout.NHWC,
-                avg_pool_init_fn[simd_width, DType.float32],
-                avg_pool_update_fn[simd_width, DType.float32],
-                avg_pool_reduce_fn[simd_width, DType.float32],
-                count_boundary=count_boundary,
-            ].run(
-                output_buffer,
-                input_buffer,
-                pad_h,
-                pad_w,
-                filter,
-                stride,
-                dilation,
+            avg_pool[int_type = DType.int32](
+                input_tensor._to_ndbuffer[4](),
+                filter_tensor._to_ndbuffer[1](),
+                stride_tensor._to_ndbuffer[1](),
+                dilation_tensor._to_ndbuffer[1](),
+                paddings_tensor._to_ndbuffer[1](),
+                output_tensor._to_ndbuffer[4](),
+                False,
                 out_chain.borrow(),
             )
         out_chain.wait()
 
-    print_buffer(output_buffer)
+    print_buffer[4](output_tensor._to_ndbuffer[4]())
+
+    _ = input_tensor
+    _ = output_tensor
+    _ = paddings_tensor
+    _ = filter_tensor
+    _ = stride_tensor
+    _ = dilation_tensor
 
 
 # CHECK-LABEL: test_max_pool_2d
@@ -126,22 +119,22 @@ fn test_max_pool_2d():
     #   [[128., 129.],
     #    [134., 135.]]]])
 
-    # CHECK: 30.0
-    # CHECK: 31.0
-    # CHECK: 36.0
-    # CHECK: 37.0
-    # CHECK: 58.0
-    # CHECK: 59.0
-    # CHECK: 64.0
-    # CHECK: 65.0
-    # CHECK: 100.0
-    # CHECK: 101.0
-    # CHECK: 106.0
-    # CHECK: 107.0
-    # CHECK: 128.0
-    # CHECK: 129.0
-    # CHECK: 134.0
-    # CHECK: 135.0
+    # CHECK: 30.0000
+    # CHECK: 31.0000
+    # CHECK: 36.0000
+    # CHECK: 37.0000
+    # CHECK: 58.0000
+    # CHECK: 59.0000
+    # CHECK: 64.0000
+    # CHECK: 65.0000
+    # CHECK: 100.0000
+    # CHECK: 101.0000
+    # CHECK: 106.0000
+    # CHECK: 107.0000
+    # CHECK: 128.0000
+    # CHECK: 129.0000
+    # CHECK: 134.0000
+    # CHECK: 135.0000
     pool(PoolMethod.MAX)
 
 
@@ -159,25 +152,122 @@ fn test_avg_pool_2d():
     #   [[113.0, 114.0],
     #    [119.0, 120.0]]]])
 
-    # CHECK: 15.0
-    # CHECK: 16.0
-    # CHECK: 21.0
-    # CHECK: 22.0
-    # CHECK: 43.0
-    # CHECK: 44.0
-    # CHECK: 49.0
-    # CHECK: 50.0
-    # CHECK: 85.0
-    # CHECK: 86.0
-    # CHECK: 91.0
-    # CHECK: 92.0
-    # CHECK: 113.0
-    # CHECK: 114.0
-    # CHECK: 119.0
-    # CHECK: 120.0
+    # CHECK: 15.0000
+    # CHECK: 16.0000
+    # CHECK: 21.0000
+    # CHECK: 22.0000
+    # CHECK: 43.0000
+    # CHECK: 44.0000
+    # CHECK: 49.0000
+    # CHECK: 50.0000
+    # CHECK: 85.0000
+    # CHECK: 86.0000
+    # CHECK: 91.0000
+    # CHECK: 92.0000
+    # CHECK: 113.0000
+    # CHECK: 114.0000
+    # CHECK: 119.0000
+    # CHECK: 120.0000
     pool(PoolMethod.AVG)
+
+
+# CHECK: test_avg_pool_2d
+fn test_avg_pool_2d_with_padding():
+    print("== test_avg_pool_2d")
+    alias in_shape = DimList(1, 7, 7, 1)
+    alias out_shape = DimList(1, 7, 7, 1)
+
+    let input_tensor = Tensor[DType.float32](1, 7, 7, 1)
+    let output_tensor = Tensor[DType.float32](1, 7, 7, 1)
+    fill_tensor[4](input_tensor)
+    fill_tensor[4](output_tensor, 0.0)
+
+    let paddings = StaticIntTuple[4](1, 1, 1, 1)
+    let filter = StaticIntTuple[2](3, 3)
+    let stride = StaticIntTuple[2](1, 1)
+    let dilation = StaticIntTuple[2](1, 1)
+
+    let paddings_tensor = _static_int_tuple_to_tensor(paddings)
+    let filter_tensor = _static_int_tuple_to_tensor(filter)
+    let stride_tensor = _static_int_tuple_to_tensor(stride)
+    let dilation_tensor = _static_int_tuple_to_tensor(dilation)
+
+    alias simd_width = simdwidthof[DType.float32]()
+
+    with Runtime() as runtime:
+        let out_chain = OwningOutputChainPtr(runtime)
+        avg_pool[int_type = DType.int32](
+            input_tensor._to_ndbuffer[4](),
+            filter_tensor._to_ndbuffer[1](),
+            stride_tensor._to_ndbuffer[1](),
+            dilation_tensor._to_ndbuffer[1](),
+            paddings_tensor._to_ndbuffer[1](),
+            output_tensor._to_ndbuffer[4](),
+            False,
+            out_chain.borrow(),
+        )
+        out_chain.wait()
+
+    # CHECK: 1.7778
+    # CHECK: 3.0000
+    # CHECK: 3.6667
+    # CHECK: 4.3333
+    # CHECK: 5.0000
+    # CHECK: 5.6667
+    # CHECK: 4.0000
+    # CHECK: 5.0000
+    # CHECK: 8.0000
+    # CHECK: 9.0000
+    # CHECK: 10.0000
+    # CHECK: 11.0000
+    # CHECK: 12.0000
+    # CHECK: 8.3333
+    # CHECK: 9.6667
+    # CHECK: 15.0000
+    # CHECK: 16.0000
+    # CHECK: 17.0000
+    # CHECK: 18.0000
+    # CHECK: 19.0000
+    # CHECK: 13.0000
+    # CHECK: 14.3333
+    # CHECK: 22.0000
+    # CHECK: 23.0000
+    # CHECK: 24.0000
+    # CHECK: 25.0000
+    # CHECK: 26.0000
+    # CHECK: 17.6667
+    # CHECK: 19.0000
+    # CHECK: 29.0000
+    # CHECK: 30.0000
+    # CHECK: 31.0000
+    # CHECK: 32.0000
+    # CHECK: 33.0000
+    # CHECK: 22.3333
+    # CHECK: 23.6667
+    # CHECK: 36.0000
+    # CHECK: 37.0000
+    # CHECK: 38.0000
+    # CHECK: 39.0000
+    # CHECK: 40.0000
+    # CHECK: 27.0000
+    # CHECK: 17.3333
+    # CHECK: 26.3333
+    # CHECK: 27.0000
+    # CHECK: 27.6667
+    # CHECK: 28.3333
+    # CHECK: 29.0000
+    # CHECK: 19.5556
+    print_buffer[4](output_tensor._to_ndbuffer[4]())
+
+    _ = input_tensor
+    _ = output_tensor
+    _ = paddings_tensor
+    _ = filter_tensor
+    _ = stride_tensor
+    _ = dilation_tensor
 
 
 fn main():
     test_max_pool_2d()
     test_avg_pool_2d()
+    test_avg_pool_2d_with_padding()

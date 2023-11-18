@@ -8,7 +8,7 @@ from math import add, div_ceil, max, min
 from math.limit import neginf
 from sys.info import simdwidthof
 
-from algorithm import elementwise
+from algorithm import elementwise, stencil
 from Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from runtime.llcl import OutputChainPtr
@@ -33,298 +33,6 @@ struct PoolMethod:
     @always_inline("nodebug")
     fn __ne__(self, rhs: PoolMethod) -> Bool:
         return self.value != rhs.value
-
-
-@register_passable("trivial")
-struct Pool2d[
-    static_output_shape: DimList,
-    static_input_shape: DimList,
-    width: Int,
-    type: DType,
-    static_data_layout: Image2DLayout,
-    init_fn: fn () -> SIMD[type, width],
-    update_fn: fn (SIMD[type, width], SIMD[type, width]) -> SIMD[type, width],
-    reduce_fn: fn (SIMD[type, width], Int) -> SIMD[type, width],
-    /,
-    count_boundary: Bool = True,
-]:
-    """Struct wrapper for pool implementation."""
-
-    # Input params.
-    var output: NDBuffer[4, static_output_shape, type]
-    var input: NDBuffer[4, static_input_shape, type]
-    var pad_h: StaticIntTuple[2]
-    var pad_w: StaticIntTuple[2]
-    var filter_shape: StaticIntTuple[2]
-    var stride: StaticIntTuple[2]
-    var dilation: StaticIntTuple[2]
-
-    # Derived params.
-    var output_shape: ImageShape
-    var input_shape: ImageShape
-
-    @staticmethod
-    fn run(
-        output: NDBuffer[4, static_output_shape, type],
-        input: NDBuffer[4, static_input_shape, type],
-        pad_h: StaticIntTuple[2],
-        pad_w: StaticIntTuple[2],
-        filter_shape: StaticIntTuple[2],
-        stride: StaticIntTuple[2],
-        dilation: StaticIntTuple[2],
-        out_chain: OutputChainPtr,
-    ):
-        """Interface function to run a pooling op on the given input and
-        filter tensor and stores the result in the give output tensor.
-
-        Args:
-            output: Pre-allocated output tensor space.
-            input: Batched image input to the pool2d operator.
-            pad_h: Padding on the height dimension with assumed tuple def
-                (pad_lower, pad_upper).
-            pad_w: Padding on the width dimension with assumed tuple def
-                (pad_lower, pad_upper).
-            filter_shape: Filter size on height and width dimensions with
-                assumed tuple def (filter_h, filter_w).
-            stride: Strides on height and width dimensions with assumed tuple
-                def (stride_h, stride_w).
-            dilation: Dilations on height and width dimensions with assumed
-              tuple def (dilation_h, dilation_w).
-            out_chain: OutputChain.
-        """
-        # TODO: Find a heuristic to replace the magic numbers.
-        alias min_task_num_slices = 64
-        alias unroll_factor = 8
-
-        let num_threads = out_chain.get_runtime().parallelism_level()
-        let num_tasks = min(
-            div_ceil(output.num_elements(), min_task_num_slices), num_threads
-        )
-        let N = output.dim(0)
-        let H = output.dim(1)
-        let W = output.dim(2)
-        let C = output.dim(3)
-
-        @always_inline
-        @parameter
-        fn task_func_nhwc[
-            sim_width: Int, rank: Int
-        ](point: StaticIntTuple[rank]):
-            # Create an instance of the pooling op.
-            let pool2d = Self(
-                output, input, pad_h, pad_w, filter_shape, stride, dilation
-            )
-
-            let idx = Index(point[0], point[1], point[2], point[3])
-
-            let load_size = min(C - point[3], width)
-            if load_size != width:
-                let values = pool2d._compute_point_nhwc[sub_vector=True](
-                    idx, load_size
-                )
-                partial_simd_store[type, width](
-                    pool2d.output._offset(idx),
-                    0,
-                    load_size,
-                    values,
-                )
-            else:
-                let values = pool2d._compute_point_nhwc[sub_vector=False](
-                    idx, load_size
-                )
-                pool2d.output.simd_store(idx, values)
-
-        debug_assert(
-            static_data_layout == Image2DLayout.NHWC,
-            "Only NHWC layot format is supported.",
-        )
-
-        elementwise[4, width, task_func_nhwc](
-            Index(N, H, W, C),
-            out_chain,
-        )
-
-    fn __init__(
-        output: NDBuffer[4, static_output_shape, type],
-        input: NDBuffer[4, static_input_shape, type],
-        pad_h: StaticIntTuple[2],
-        pad_w: StaticIntTuple[2],
-        filter_shape: StaticIntTuple[2],
-        stride: StaticIntTuple[2],
-        dilation: StaticIntTuple[2],
-    ) -> Self:
-        """Constructor of a pooling op instance on the given input tensor and
-        stores the result in the give output tensor.
-
-        Args:
-            output: Pre-allocated output tensor space.
-            input: Batched image input to the pool2d operator.
-            pad_h: Padding on the height dimension with assumed
-              tuple def (pad_lower, pad_lower).
-            pad_w: Padding on the width dimension with assumed
-              tuple def (pad_lower, pad_lower).
-            filter_shape: Filter size on height and width
-              dimensions with assumed tuple def (filter_h, filter_w).
-            stride: Strides on height and width dimensions
-              with assumed tuple def (stride_h, stride_w).
-            dilation: Dilations on height and width dimensions
-              with assumed tuple def (dilation_h, dilation_w).
-
-        Returns:
-            An instance of the pooling operator with the input and output buffers
-            registered.
-        """
-        # Register input/output buffers and parameters.
-        return Self {
-            output: output,
-            input: input,
-            pad_h: pad_h,
-            pad_w: pad_w,
-            filter_shape: filter_shape,
-            stride: stride,
-            dilation: dilation,
-            # Derive layout agnostic shape information.
-            output_shape: ImageShape.__init__[
-                static_output_shape, type, static_data_layout
-            ](output),
-            input_shape: ImageShape.__init__[
-                static_input_shape, type, static_data_layout
-            ](input),
-        }
-
-    fn _compute_point_nhwc[
-        sub_vector: Bool
-    ](self, idx: StaticIntTuple[4], vec_size: Int) -> SIMD[type, width]:
-        """Implementation of the inner loop computation of a nhwc pooling
-        operator producing a single scalar value at the given output tensor
-        index.
-
-        Args:
-            idx: Flat index specifying which value of the output tensor to
-              produce.
-            vec_size: The vector size.
-        """
-
-        let n_idx = idx[0]
-        let c_idx = idx[3]
-
-        # Initialize the result of this point.
-        var value = init_fn()
-
-        # Extract the H and W size of the input image.
-        let image_bound = StaticIntTuple[2](
-            self.input_shape.H, self.input_shape.W
-        )
-
-        @always_inline
-        fn get_input_image_idx(
-            filter_idx: StaticIntTuple[2],
-        ) -> StaticIntTuple[2]:
-            return (
-                # Output HxW with striding.
-                (
-                    Index(
-                        idx[1],  # H
-                        idx[2],  # W
-                    )
-                    * self.stride
-                )
-                +
-                # filter RxS with dilation.
-                (filter_idx * self.dilation)
-                -
-                # Padding offset, using the left padding only here.
-                Index(self.pad_h[0], self.pad_w[0])
-            )
-
-        @always_inline
-        fn index_in_bounds(idx: StaticIntTuple[2]) -> Bool:
-            """Check that the current image index is within valid range on the
-            input image data tensor."""
-            return Index(0, 0) <= idx < image_bound
-
-        # Iterate on filter height dimension.
-        var num_in_bounds = 0
-        for r_idx in range(self.filter_shape[0]):
-            # Iterate on filter width dimension.
-            for s_idx in range(self.filter_shape[1]):
-                # Compute input access index, on the H and W dimension.
-                let input_image_index = get_input_image_idx(Index(r_idx, s_idx))
-
-                if index_in_bounds(input_image_index):
-                    num_in_bounds += 1
-
-                    # Compute function on input data.
-                    @parameter
-                    if sub_vector:
-                        let elem = partial_simd_load[type, width](
-                            self.input._offset(
-                                Index(
-                                    n_idx,
-                                    input_image_index[0],  # H
-                                    input_image_index[1],  # W
-                                    c_idx,
-                                )
-                            ),
-                            0,
-                            vec_size,
-                            init_fn()[0],
-                        )
-                        value = update_fn(value, elem)
-                    else:
-                        let elem = self.input.simd_load[width](
-                            Index(
-                                n_idx,
-                                input_image_index[0],  # H
-                                input_image_index[1],  # W
-                                c_idx,
-                            )
-                        )
-                        value = update_fn(value, elem)
-
-        @parameter
-        if count_boundary and not sub_vector:
-            return reduce_fn(value, self.filter_shape[0] * self.filter_shape[1])
-        else:
-            return reduce_fn(value, num_in_bounds)
-
-
-@always_inline
-fn max_pool_init_fn[width: Int, type: DType]() -> SIMD[type, width]:
-    return neginf[type]()
-
-
-@always_inline
-fn max_pool_update_fn[
-    width: Int, type: DType
-](a: SIMD[type, width], b: SIMD[type, width]) -> SIMD[type, width]:
-    return max(a, b)
-
-
-@always_inline
-fn max_pool_reduce_fn[
-    width: Int, type: DType
-](a: SIMD[type, width], s: Int) -> SIMD[type, width]:
-    return a
-
-
-@always_inline
-fn avg_pool_init_fn[width: Int, type: DType]() -> SIMD[type, width]:
-    return 0
-
-
-@always_inline
-fn avg_pool_update_fn[
-    width: Int, type: DType
-](a: SIMD[type, width], b: SIMD[type, width]) -> SIMD[type, width]:
-    return add(a, b)
-
-
-@always_inline
-fn avg_pool_reduce_fn[
-    width: Int, type: DType
-](a: SIMD[type, width], s: Int) -> SIMD[type, width]:
-    return a / s
 
 
 @always_inline
@@ -415,74 +123,15 @@ fn pool_shape[
 
 
 @always_inline
-fn _pool_dispatcher[
-    width: Int,
-    type: DType,
-    int_type: DType,
-    init_fn: fn () -> SIMD[type, width],
-    update_fn: fn (SIMD[type, width], SIMD[type, width]) -> SIMD[type, width],
-    reduce_fn: fn (SIMD[type, width], Int) -> SIMD[type, width],
-    /,
-    count_boundary: Bool = False,
-](
-    input: NDBuffer[4, DimList.create_unknown[4](), type],
-    filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    output: NDBuffer[4, DimList.create_unknown[4](), type],
-    out_chain: OutputChainPtr,
-):
-    # Only supported layout in MO right now.
-    alias layout = Image2DLayout.NHWC
-
-    # Padding directly on the op is not yet supported in MO so is always 0.
-    # It's decomposed to more ops currently.
-    let pad_h = StaticIntTuple[2](0, 0)
-    let pad_w = StaticIntTuple[2](0, 0)
-
-    constrained[
-        type.is_floating_point(),
-        "Pool input / output type must be floating point",
-    ]()
-
-    let filter_shape = StaticIntTuple[2](filter[0].to_int(), filter[1].to_int())
-    let stride = StaticIntTuple[2](strides[0].to_int(), strides[1].to_int())
-    let dilation = StaticIntTuple[2](
-        dilations[0].to_int(), dilations[1].to_int()
-    )
-
-    Pool2d[
-        DimList.create_unknown[4](),  # Output shape.
-        DimList.create_unknown[4](),  # Input shape.
-        width,
-        type,  # Data type.
-        layout,  # Data Layout.
-        init_fn,
-        update_fn,
-        reduce_fn,
-        count_boundary=count_boundary,
-    ].run(
-        output,
-        input,
-        pad_h,
-        pad_w,
-        filter_shape,
-        stride,
-        dilation,
-        out_chain,
-    )
-
-
-@always_inline
 fn max_pool[
-    type: DType, int_type: DType
+    type: DType, int_type: DType, rank: Int = 4
 ](
-    input: NDBuffer[4, DimList.create_unknown[4](), type],
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
     strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
     paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
     """Computes fp32 pooling.
@@ -501,33 +150,149 @@ fn max_pool[
         out_chain: OutputChain.
     """
 
+    var empty_padding = True
     for i in range(paddings.size()):
         if paddings[i] != 0:
-            return out_chain.mark_error(
-                "Non-zero padding is not supported yet."
-            )
+            empty_padding = False
+            break
+
+    let padding_h_low = 0 if empty_padding else paddings[0].to_int()
+    let padding_h_high = 0 if empty_padding else paddings[1].to_int()
+    let padding_w_low = 0 if empty_padding else paddings[2].to_int()
+    let padding_w_high = 0 if empty_padding else paddings[3].to_int()
+
     alias simd_width = simdwidthof[type]()
 
-    _pool_dispatcher[
+    let input_height = input.dim(1)
+    let input_width = input.dim(2)
+
+    let pool_window_h = filter[0].to_int()
+    let pool_window_w = filter[1].to_int()
+
+    let stride_h = strides[0].to_int()
+    let stride_w = strides[1].to_int()
+
+    let dilation_h = dilations[0].to_int()
+    let dilation_w = dilations[1].to_int()
+
+    alias stencil_rank = 2
+    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+    let pad_value = 0
+
+    @always_inline
+    @parameter
+    fn map_fn[
+        rank: Int
+    ](point: StaticIntTuple[stencil_rank]) -> (
+        StaticIntTuple[stencil_rank],
+        StaticIntTuple[stencil_rank],
+    ):
+        let lower_bound = StaticIntTuple[stencil_rank](
+            point[0] * stride_h - padding_h_low,
+            point[1] * stride_w - padding_w_low,
+        )
+        let upper_bound = StaticIntTuple[stencil_rank](
+            lower_bound[0] + (pool_window_h - 1) * dilation_h + 1,
+            lower_bound[1] + (pool_window_w - 1) * dilation_w + 1,
+        )
+        return lower_bound, upper_bound
+
+    @always_inline
+    @parameter
+    fn load_fn[
+        simd_width: Int, type: DType
+    ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        if (
+            point[1] < 0
+            or point[1] >= input_height
+            or point[2] < 0
+            or point[2] >= input_width
+        ):
+            return pad_value
+        return rebind[SIMD[type, simd_width]](
+            input.simd_load[simd_width](point)
+        )
+
+    @always_inline
+    @parameter
+    fn load_fn_no_padding[
+        simd_width: Int, type: DType
+    ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        return rebind[SIMD[type, simd_width]](
+            input.simd_load[simd_width](point)
+        )
+
+    @always_inline
+    @parameter
+    fn max_pool_compute_init[simd_width: Int]() -> SIMD[type, simd_width]:
+        return neginf[type]()
+
+    @always_inline
+    @parameter
+    fn max_pool_compute[
+        simd_width: Int
+    ](
+        point: StaticIntTuple[rank],
+        val: SIMD[type, simd_width],
+        result: SIMD[type, simd_width],
+    ) -> SIMD[type, simd_width]:
+        return math.max(val, result)
+
+    @always_inline
+    @parameter
+    fn max_pool_compute_finalize[
+        simd_width: Int
+    ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
+        output.simd_store(point, val)
+
+    @always_inline
+    @parameter
+    fn dilation_fn(dim: Int) -> Int:
+        return dilations[dim].to_int()
+
+    alias stencil_with_padding = stencil[
+        rank,
+        stencil_rank,
+        stencil_axis,
         simd_width,
         type,
-        int_type,
-        max_pool_init_fn[simd_width, type],
-        max_pool_update_fn[simd_width, type],
-        max_pool_reduce_fn[simd_width, type],
-    ](input, filter, strides, dilations, output, out_chain)
+        map_fn[stencil_rank],
+        dilation_fn,
+        load_fn,
+        max_pool_compute_init,
+        max_pool_compute,
+        max_pool_compute_finalize,
+    ]
+
+    alias stencil_empty_padding = stencil[
+        rank,
+        stencil_rank,
+        stencil_axis,
+        simd_width,
+        type,
+        map_fn[stencil_rank],
+        dilation_fn,
+        load_fn_no_padding,
+        max_pool_compute_init,
+        max_pool_compute,
+        max_pool_compute_finalize,
+    ]
+    if empty_padding:
+        return stencil_empty_padding(output.get_shape(), out_chain)
+    else:
+        return stencil_with_padding(output.get_shape(), out_chain)
 
 
 @always_inline
 fn avg_pool[
-    type: DType, int_type: DType
+    type: DType, int_type: DType, rank: Int = 4
 ](
-    input: NDBuffer[4, DimList.create_unknown[4](), type],
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
     strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
     paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
-    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     count_boundary: Bool,
     out_chain: OutputChainPtr,
 ):
@@ -548,29 +313,135 @@ fn avg_pool[
         out_chain: OutputChain.
     """
 
+    var empty_padding = True
     for i in range(paddings.size()):
         if paddings[i] != 0:
-            return out_chain.mark_error(
-                "Non-zero padding is not supported yet."
-            )
+            empty_padding = False
+            break
+
+    let padding_h_low = 0 if empty_padding else paddings[0].to_int()
+    let padding_h_high = 0 if empty_padding else paddings[1].to_int()
+    let padding_w_low = 0 if empty_padding else paddings[2].to_int()
+    let padding_w_high = 0 if empty_padding else paddings[3].to_int()
+
     alias simd_width = simdwidthof[type]()
 
-    if count_boundary:
-        _pool_dispatcher[
-            simd_width,
-            type,
-            int_type,
-            avg_pool_init_fn[simd_width, type],
-            avg_pool_update_fn[simd_width, type],
-            avg_pool_reduce_fn[simd_width, type],
-            count_boundary=True,
-        ](input, filter, strides, dilations, output, out_chain)
+    let input_height = input.dim(1)
+    let input_width = input.dim(2)
+
+    let pool_window_h = filter[0].to_int()
+    let pool_window_w = filter[1].to_int()
+
+    let stride_h = strides[0].to_int()
+    let stride_w = strides[1].to_int()
+
+    let dilation_h = dilations[0].to_int()
+    let dilation_w = dilations[1].to_int()
+
+    alias stencil_rank = 2
+    alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
+    let pad_value = 0
+
+    @always_inline
+    @parameter
+    fn map_fn[
+        rank: Int
+    ](point: StaticIntTuple[stencil_rank]) -> (
+        StaticIntTuple[stencil_rank],
+        StaticIntTuple[stencil_rank],
+    ):
+        let lower_bound = StaticIntTuple[stencil_rank](
+            point[0] * stride_h - padding_h_low,
+            point[1] * stride_w - padding_w_low,
+        )
+        let upper_bound = StaticIntTuple[stencil_rank](
+            lower_bound[0] + (pool_window_h - 1) * dilation_h + 1,
+            lower_bound[1] + (pool_window_w - 1) * dilation_w + 1,
+        )
+        return lower_bound, upper_bound
+
+    @always_inline
+    @parameter
+    fn load_fn[
+        simd_width: Int, type: DType
+    ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        if (
+            point[1] < 0
+            or point[1] >= input_height
+            or point[2] < 0
+            or point[2] >= input_width
+        ):
+            return pad_value
+        return rebind[SIMD[type, simd_width]](
+            input.simd_load[simd_width](point)
+        )
+
+    @always_inline
+    @parameter
+    fn load_fn_no_padding[
+        simd_width: Int, type: DType
+    ](point: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        return rebind[SIMD[type, simd_width]](
+            input.simd_load[simd_width](point)
+        )
+
+    @always_inline
+    @parameter
+    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[type, simd_width]:
+        return SIMD[type, simd_width](0)
+
+    @always_inline
+    @parameter
+    fn avg_pool_compute[
+        simd_width: Int
+    ](
+        point: StaticIntTuple[rank],
+        val: SIMD[type, simd_width],
+        result: SIMD[type, simd_width],
+    ) -> SIMD[type, simd_width]:
+        return val + result
+
+    @always_inline
+    @parameter
+    fn avg_pool_compute_finalize[
+        simd_width: Int
+    ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
+        let res = val / (pool_window_h * pool_window_w)
+        output.simd_store(point, res)
+
+    @always_inline
+    @parameter
+    fn dilation_fn(dim: Int) -> Int:
+        return dilations[dim].to_int()
+
+    alias stencil_with_padding = stencil[
+        rank,
+        stencil_rank,
+        stencil_axis,
+        simd_width,
+        type,
+        map_fn[stencil_rank],
+        dilation_fn,
+        load_fn,
+        avg_pool_compute_init,
+        avg_pool_compute,
+        avg_pool_compute_finalize,
+    ]
+
+    alias stencil_empty_padding = stencil[
+        rank,
+        stencil_rank,
+        stencil_axis,
+        simd_width,
+        type,
+        map_fn[stencil_rank],
+        dilation_fn,
+        load_fn_no_padding,
+        avg_pool_compute_init,
+        avg_pool_compute,
+        avg_pool_compute_finalize,
+    ]
+    if empty_padding:
+        return stencil_empty_padding(output.get_shape(), out_chain)
     else:
-        _pool_dispatcher[
-            simd_width,
-            type,
-            int_type,
-            avg_pool_init_fn[simd_width, type],
-            avg_pool_update_fn[simd_width, type],
-            avg_pool_reduce_fn[simd_width, type],
-        ](input, filter, strides, dilations, output, out_chain)
+        return stencil_with_padding(output.get_shape(), out_chain)
