@@ -289,6 +289,18 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: <{{.*}}>
   kgen.param.constant = <apply(:() -> index @store_undef)>
 
+  // CHECK-NEXT: <tf32>
+  kgen.param.constant: dtype = <apply(
+    :(!kgen.dtype) -> !kgen.dtype @store_load<:regtype dtype>, tf32)>
+
+  // CHECK-NEXT: "hello world"
+  kgen.param.constant: string = <apply(
+    :(!kgen.string) -> !kgen.string @store_load<:regtype string>, "hello world")>
+
+  // CHECK-NEXT: <[3, 4, 5]>
+  kgen.param.constant: variadic<i32> = <apply(
+    :(!kgen.variadic<i32>) -> !kgen.variadic<i32> @store_load<:regtype variadic<i32>>, [3, 4, 5])>
+
   kgen.return
 }
 

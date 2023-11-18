@@ -93,8 +93,9 @@ def KGEN_AnyRegTypeType : KGENType<"AnyRegType", "anyregtype",
 // DTypeType
 //===----------------------------------------------------------------------===//
 
-def KGEN_DTypeType : KGENType<"DType", "dtype",
-    [DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+def KGEN_DTypeType : KGENType<"DType", "dtype", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "8-bit integer DType type";
   let description = [{
     This type corresponds to the DType runtime class, representing an
@@ -108,8 +109,9 @@ def KGEN_DTypeType : KGENType<"DType", "dtype",
 // StringType
 //===----------------------------------------------------------------------===//
 
-def KGEN_StringType : KGENType<"String", "string",
-    [DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+def KGEN_StringType : KGENType<"String", "string", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "String type for parameters";
   let description = [{
     This kgen type represents an string value, used for parameterizing
@@ -426,6 +428,7 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
 
 def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized variadic type";
   let description = [{
