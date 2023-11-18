@@ -96,6 +96,8 @@ from MatrixSolve import matrix_solve
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import bitcast, DTypePointer, Pointer
+from MultiHeadAttention import flash_attention
+
 from NonMaxSuppression import (
     non_max_suppression,
     non_max_suppression_shape_func,
@@ -3133,3 +3135,51 @@ fn pack_conv_filter_shape[
         return _pack_conv_filter_shape[
             filter_type, WO, single_thread_blocking_override
         ](filter_buf, num_groups)
+
+
+# ===----------------------------------------------------------------------===#
+# Custom Ops
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mo.multi_head_flash_attention")
+@always_inline
+@export
+fn multi_head_flash_attention[
+    rank: Int,
+    input_0_static_shape: DimList,
+    input_1_static_shape: DimList,
+    input_2_static_shape: DimList,
+    input_3_static_shape: DimList,
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    mask_type: DType,
+    output_type: DType,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[rank, input_0_static_shape, q_type],
+    k: NDBuffer[rank, input_1_static_shape, k_type],
+    v: NDBuffer[rank, input_2_static_shape, v_type],
+    mask: NDBuffer[3, input_3_static_shape, mask_type],
+    scale: NDBuffer[1, DimList.create_unknown[1](), DType.float32],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    out_chain: OutputChainPtr,
+):
+    constrained[target == "cuda", "only valid on CUDA GPUs"]()
+
+    flash_attention[
+        rank,
+        input_0_static_shape,
+        input_1_static_shape,
+        input_2_static_shape,
+        input_3_static_shape,
+        DimList.create_unknown[rank](),
+        q_type,
+        k_type,
+        v_type,
+        mask_type,
+        output_type,
+        True,
+        target,
+    ](output, q, k, v, mask, scale[0], out_chain)
