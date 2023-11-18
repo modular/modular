@@ -115,8 +115,13 @@ InterpreterState::MemoryTable::getBlob(int64_t addr) {
       llvm::lower_bound(blobs, addr, [](const MemoryBlob &blob, int64_t addr) {
         return blob.baseAddr + blob.size <= static_cast<size_t>(addr);
       });
-  if (it == blobs.end())
-    return Error("address is out-of-bounds: " + Twine(addr));
+  if (it == blobs.end()) {
+    // Handle zero-size blobs at the end of the list.
+    if (!blobs.empty() && blobs.back().baseAddr == addr)
+      it = std::prev(blobs.end());
+    else
+      return Error("address is out-of-bounds: " + Twine(addr));
+  }
 
   // If the blob has been freed, then return an error.
   if (it->isFreed())

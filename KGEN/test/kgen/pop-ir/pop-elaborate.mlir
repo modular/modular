@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -elaborate-generators %s | FileCheck %s
+// RUN: kgen-opt -elaborate-generators %s | FileCheck %s
 
 kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   %0 = pop.stack_allocation 1 x i32
@@ -299,9 +299,13 @@ kgen.generator export @do_it() {
   kgen.param.constant: dtype = <apply(
     :(!kgen.dtype) -> !kgen.dtype @store_load<:regtype dtype>, tf32)>
 
-  // CHECK-NEXT: "hello world"
+  // CHECK-NEXT: <"hello world">
   kgen.param.constant: string = <apply(
     :(!kgen.string) -> !kgen.string @store_load<:regtype string>, "hello world")>
+
+  // CHECK-NEXT: <"">
+  kgen.param.constant: string = <apply(
+    :(!kgen.string) -> !kgen.string @store_load<:regtype string>, "")>
 
   // CHECK-NEXT: <[3, 4, 5]>
   kgen.param.constant: variadic<i32> = <apply(

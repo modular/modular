@@ -892,8 +892,8 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
     return ptrSize.takeError();
   auto [strAddr, strSize] = *ptrSize;
 
-  // Read back the string, including its expected null terminator.
-  ErrorOr<const void *> strMem = state.getReadableMemory(strAddr, strSize + 1);
+  // Read back the string.
+  ErrorOr<const void *> strMem = state.getReadableMemory(strAddr, strSize);
   if (strMem.isError())
     return strMem.takeError();
 
