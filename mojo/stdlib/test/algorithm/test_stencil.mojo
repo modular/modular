@@ -113,6 +113,11 @@ fn test_stencil_avg_pool():
 
     @always_inline
     @parameter
+    fn dilation_fn(dim: Int) -> Int:
+        return 1
+
+    @always_inline
+    @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
@@ -129,7 +134,7 @@ fn test_stencil_avg_pool():
             simd_with,
             dtype,
             map_fn[stencil_rank],
-            StaticIntTuple[stencil_rank](1, 1),
+            dilation_fn,
             load_fn,
             avg_pool_compute_init,
             avg_pool_compute,
@@ -235,6 +240,11 @@ fn test_stencil_avg_pool_padded():
         let res = val / (pool_window_h * pool_window_w)
         output.simd_store(point, res)
 
+    @always_inline
+    @parameter
+    fn dilation_fn(dim: Int) -> Int:
+        return 1
+
     with Runtime() as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
         alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
@@ -245,7 +255,7 @@ fn test_stencil_avg_pool_padded():
             simd_with,
             dtype,
             map_fn[stencil_rank],
-            StaticIntTuple[stencil_rank](1, 1),
+            dilation_fn,
             load_fn,
             avg_pool_compute_init,
             avg_pool_compute,
@@ -351,6 +361,11 @@ fn test_stencil_avg_pool_stride_2():
         let res = val / (pool_window_h * pool_window_w)
         output.simd_store(point, res)
 
+    @always_inline
+    @parameter
+    fn dilation_fn(dim: Int) -> Int:
+        return 1
+
     with Runtime() as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
         alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
@@ -361,7 +376,7 @@ fn test_stencil_avg_pool_stride_2():
             simd_with,
             dtype,
             map_fn[stencil_rank],
-            StaticIntTuple[stencil_rank](1, 1),
+            dilation_fn,
             load_fn,
             avg_pool_compute_init,
             avg_pool_compute,
@@ -468,6 +483,11 @@ fn test_stencil_max_pool_dilation_2():
     ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
         output.simd_store(point, val)
 
+    @always_inline
+    @parameter
+    fn dilation_fn(dim: Int) -> Int:
+        return dilation
+
     with Runtime() as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
         alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
@@ -478,7 +498,7 @@ fn test_stencil_max_pool_dilation_2():
             simd_with,
             dtype,
             map_fn[stencil_rank],
-            StaticIntTuple[stencil_rank](dilation, dilation),
+            dilation_fn,
             load_fn,
             max_pool_compute_init,
             max_pool_compute,
