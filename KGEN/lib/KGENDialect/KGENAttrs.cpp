@@ -24,6 +24,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <numeric>
 
 using namespace M;
 using namespace KGEN;
@@ -1550,66 +1551,160 @@ static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
       [](auto a, auto b) { return a.ashr(b); });
 }
 
+/// Tracks the operands of MulNuw in a form which allows easy simplification.
+namespace {
+struct DivOperandInfo {
+  MLIRContext *ctx;
+
+  // tracks the occurrences of non-integral operands only, e.g. D1
+  SmallDenseMap<TypedAttr, size_t> symOccurences;
+
+  // tracks the coalesced constant terms, e.g. mul_nuw(5, 10, D1)
+  // this would be 5 * 10 = 50.
+  int64_t constant = 1;
+
+  Type constType; // the type of IntegerAttr i the original expression.
+
+  // whether folding of `constant` leads to overflow on the current system
+  // OR initialized with wrong attr (only support IntegerAttr and MulNuw)
+  // OR when dealing with potential expressions which are sufficiently large
+  //    as to differ in behavior on 32/64 bit systems
+  bool isPoisoned = false;
+
+  // Multiplies `constant` by `num`, checking overflow
+  inline void updateConstant(IntegerAttr integerAttr) {
+    int64_t num = integerAttr.getInt();
+    constType = integerAttr.getType();
+    int64_t new_constant = constant * num;
+    if (num == 0) {
+      // the power of 0 -- it's always going to be 0!
+      constant = 0;
+
+      // TODO: think of this more
+      isPoisoned = false;
+      return;
+    }
+
+    // poison if overflow on the current system OR would overflow on
+    // 32 bit system for `index` types
+    isPoisoned = isPoisoned || (new_constant / num != constant) ||
+                 (new_constant > std::numeric_limits<int32_t>::max()) ||
+                 (new_constant < std::numeric_limits<int32_t>::min());
+    constant = new_constant;
+  }
+
+  /// Construct an Info object using a MulNuw operator, or constant IntegerAttr
+  DivOperandInfo(TypedAttr attr) {
+    constant = 1;
+    ctx = attr.getContext();
+
+    if (auto constAttr = dyn_cast<IntegerAttr>(attr)) {
+      updateConstant(constAttr);
+      return;
+    }
+
+    if (auto mulAttr = dyn_castPE(POC::MulNuw, attr)) {
+      for (TypedAttr numOpAttr : mulAttr.getOperands()) {
+        if (auto constAttr = dyn_cast<IntegerAttr>(numOpAttr)) {
+          updateConstant(constAttr);
+        } else {
+          ++symOccurences[numOpAttr];
+        }
+      }
+      return;
+    }
+
+    // Not supported attr
+    isPoisoned = true;
+  }
+
+  /// Create a new MulNuw expression from the info stored. If no symbolic
+  /// variables are left, return an IntegerAttr, else return a MulNuw
+  TypedAttr getExpression() {
+    SmallVector<TypedAttr> operands;
+
+    Type integerAttrType = constType ? constType : mlir::IndexType::get(ctx);
+    IntegerAttr constTerm = IntegerAttr::get(integerAttrType, constant);
+
+    operands.push_back(constTerm);
+    for (auto [operand, occurrences] : symOccurences)
+      for (size_t i = 0; i < occurrences; i++)
+        operands.push_back(operand);
+
+    if (operands.size() == 1) {
+      // Implies `constant` only term
+      return constTerm;
+    }
+
+    return ParamOperatorAttr::get(POC::MulNuw, operands);
+  }
+
+  /// Simplify terms in `numerator` and `denominator` assuming deriving terms
+  /// are dividing each other. Mutates operands in place.
+  static void simplifyDivInPlace(DivOperandInfo &numerator,
+                                 DivOperandInfo &denominator) {
+    SmallDenseMap<TypedAttr, size_t> &numeratorOperandOccurences =
+        numerator.symOccurences;
+    SmallDenseMap<TypedAttr, size_t> &denominatorOperandOccurences =
+        denominator.symOccurences;
+
+    // Emulate cancelling out shared operand(s) by decrementing their
+    // occurrences. e.g., for
+    //   `mul_nuw(D0, D2, D0)` with occurrence mapping `{ D0 : 2, D2 : 1 }`.
+    //   `mul_nuw(D2, D0, D2)` with occurrence mapping `{ D0 : 1, D2 : 2 }`.
+    // the new occurrence mappings are
+    //   `{ D0 : 1, D2 : 0 }`.
+    //   `{ D0 : 0, D2 : 1 }`.
+    for (auto [numOpAttr, occurrences] : numeratorOperandOccurences) {
+      if (size_t denomOccurrences =
+              denominatorOperandOccurences.lookup(numOpAttr)) {
+        size_t sharedOccurrences = std::min(occurrences, denomOccurrences);
+        numeratorOperandOccurences[numOpAttr] -= sharedOccurrences;
+        denominatorOperandOccurences[numOpAttr] -= sharedOccurrences;
+      }
+    }
+
+    // Cancel out the constant terms
+    if (numerator.constant == 0) {
+      numerator.symOccurences.clear();
+    }
+    if (denominator.constant == 0) {
+      denominator.symOccurences.clear();
+    }
+    if (numerator.constant != 0 && denominator.constant != 0) {
+      // abs to keep signedness of constants
+      int64_t gcd_term =
+          std::abs(std::gcd(numerator.constant, denominator.constant));
+      numerator.constant /= gcd_term;
+      denominator.constant /= gcd_term;
+    }
+  }
+};
+
+} // namespace
+
 /// Simplify division operands by cancelling out shared elements within
 /// numerator and denominator products, e.g., `(a*b)/(b*b) --> a/b`
 static void simplifyDivOperands(SmallVectorImpl<TypedAttr> &operands) {
   TypedAttr &numeratorAttr = operands[0];
   TypedAttr &denominatorAttr = operands[1];
 
-  // We can only simplify if both operands are products
-  ParamOperatorAttr numeratorMulAttr = dyn_castPE(POC::MulNuw, numeratorAttr);
-  ParamOperatorAttr denominatorMulAttr =
-      dyn_castPE(POC::MulNuw, denominatorAttr);
-  if (!numeratorMulAttr || !denominatorMulAttr)
+  // Build mapping from each MulNuw op operand to the number of its occurrences,
+  // e.g., for `mul_nuw(D0, 42, D0)`, we build the mapping `{ D0 : 2}, constant:
+  // 42`
+  DivOperandInfo numeratorInfo = DivOperandInfo(numeratorAttr);
+  DivOperandInfo denominatorInfo = DivOperandInfo(denominatorAttr);
+
+  // Poisoning: implies overflow in folding of constant @ precision of int64_t:
+  //     e.g. mul_nuw(1e18, 1e18, D1) --> 1e90
+  // Or numerator/denominator is is not a MulNuw or an IntegerAttr
+  if (numeratorInfo.isPoisoned || denominatorInfo.isPoisoned)
     return;
 
-  // Build mapping from each Mul op operand to the number of its occurrences,
-  // e.g., for `mul(D0, 42, D0)`, we build the mapping `{ D0 : 2, 42 : 1 }`.
-  SmallDenseMap<TypedAttr, size_t> numeratorOperandToOccurrences;
-  SmallDenseMap<TypedAttr, size_t> denominatorOperandToOccurrences;
-  for (TypedAttr numOpAttr : numeratorMulAttr.getOperands())
-    ++numeratorOperandToOccurrences[numOpAttr];
-  for (TypedAttr denomOpAttr : denominatorMulAttr.getOperands())
-    ++denominatorOperandToOccurrences[denomOpAttr];
+  DivOperandInfo::simplifyDivInPlace(numeratorInfo, denominatorInfo);
 
-  // Emulate cancelling out shared operand(s) by decrementing their occurrences.
-  // e.g.,
-  // for
-  //   `mul(D0, 42, D0)` with occurrence mapping `{ D0 : 2, 42 : 1 }`.
-  //   `mul(42, D0, 42)` with occurrence mapping `{ D0 : 1, 42 : 2 }`.
-  // the new occurrence mappings are
-  //   `{ D0 : 1, 42 : 0 }`.
-  //   `{ D0 : 0, 42 : 1 }`.
-  for (auto [numOpAttr, occurrences] : numeratorOperandToOccurrences) {
-    if (size_t denomOccurrences =
-            denominatorOperandToOccurrences.lookup(numOpAttr)) {
-      size_t sharedOccurrences = std::min(occurrences, denomOccurrences);
-      numeratorOperandToOccurrences[numOpAttr] -= sharedOccurrences;
-      denominatorOperandToOccurrences[numOpAttr] -= sharedOccurrences;
-    }
-  }
-
-  // Build up new operand list, e.g.,
-  // for occurrence mapping `{ D0 : 1, 42 : 2 }`, we get { D0, 42, 42 }
-  SmallVector<TypedAttr> newNumeratorOperands;
-  SmallVector<TypedAttr> newDenominatorOperands;
-  for (auto [numAttr, occurrences] : numeratorOperandToOccurrences)
-    if (occurrences)
-      newNumeratorOperands.push_back(numAttr);
-  for (auto [denomAttr, occurrences] : denominatorOperandToOccurrences)
-    if (occurrences)
-      newDenominatorOperands.push_back(denomAttr);
-
-  // Update each product operands. Note that if all operands were cancelled out
-  // for a product, we use 1, the multiplicative identity.
-  auto updateMulOp = [](TypedAttr &mulOp, ArrayRef<TypedAttr> operands) {
-    if (operands.empty())
-      mulOp = IntegerAttr::get(mulOp.getType(), 1);
-    else
-      mulOp = ParamOperatorAttr::get(POC::MulNuw, operands);
-  };
-  updateMulOp(numeratorAttr, newNumeratorOperands);
-  updateMulOp(denominatorAttr, newDenominatorOperands);
+  operands[0] = numeratorInfo.getExpression();
+  operands[1] = denominatorInfo.getExpression();
 }
 
 static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
