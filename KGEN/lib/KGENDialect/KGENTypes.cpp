@@ -148,6 +148,51 @@ LogicalResult AnyRegTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printSugaredTypeValue(p, value);
 }
 
+// FIXME(laszlo): Move these four methods to AnyTypeType when layering is fixed.
+std::optional<int64_t>
+AnyRegTypeType::getTypeSize(TargetInfoAttr target) const {
+  // TODO: Types don't have a runtime representation yet! But one can imagine it
+  // would contain a type ID, and a pointer to the witness table.
+  return target.getDataLayout().getPointerSize() * 2;
+}
+
+std::optional<int64_t>
+AnyRegTypeType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
+ErrorOrSuccess AnyRegTypeType::writeTo(TypedAttr value, int64_t addr,
+                                       InterpreterState &state) const {
+  ErrorOr<void *> mem =
+      state.getWritableMemory(addr, *getTypeSize(state.getTarget()));
+  if (mem)
+    return mem.takeError();
+
+  // Without a concrete runtime representation, just make sure the value can be
+  // roundtripped.
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  llvm::StoreIntToMemory(
+      APInt(ptrSize * 8, (uint64_t)value.getAsOpaquePointer()), (uint8_t *)*mem,
+      ptrSize);
+  return success();
+}
+
+ErrorOr<TypedAttr> AnyRegTypeType::readFrom(int64_t addr,
+                                            InterpreterState &state) const {
+  ErrorOr<const void *> mem =
+      state.getReadableMemory(addr, *getTypeSize(state.getTarget()));
+  if (mem)
+    return mem.takeError();
+
+  // Without a concrete runtime representation, just make sure the value can be
+  // roundtripped.
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  APInt opaque(ptrSize * 8, 0);
+  llvm::LoadIntFromMemory(opaque, (const uint8_t *)*mem, ptrSize);
+  return ::cast<TypedAttr>(
+      Attribute::getFromOpaquePointer((const void *)opaque.getLimitedValue()));
+}
+
 //===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
