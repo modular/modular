@@ -162,6 +162,12 @@ kgen.generator @store_undef() -> index {
   kgen.return %2 : index
 }
 
+kgen.generator @borrowed_variadic(%arg0: !kgen.pointer<variadic<i32>>, %arg1: index) -> i32{
+  %0 = pop.load %arg0 : !kgen.pointer<variadic<i32>>
+  %1 = pop.variadic.get %0[%arg1] : !kgen.variadic<i32>
+  kgen.return %1 : i32
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -300,6 +306,10 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: <[3, 4, 5]>
   kgen.param.constant: variadic<i32> = <apply(
     :(!kgen.variadic<i32>) -> !kgen.variadic<i32> @store_load<:regtype variadic<i32>>, [3, 4, 5])>
+
+  // CHECK-NEXT: <4>
+  kgen.param.constant: i32 = <apply(
+    :(!kgen.pointer<variadic<i32>>, index) -> i32 @borrowed_variadic, store_to_mem([3, 4, 5]), 1)>
 
   kgen.return
 }
