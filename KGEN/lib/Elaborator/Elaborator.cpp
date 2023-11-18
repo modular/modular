@@ -386,10 +386,22 @@ static ElaborationState processRebindOp(ImplNode *inode, RebindOp op) {
   Type inType;
   HANDLE_EVALUATOR_CONC(inType, inode, op.getLoc(), op.getInput().getType());
   if (outType != inType) {
+    // If the rebound types differ only in type metadata, let it slide.
+    // FIXME(#25916): Where the vtable is stored is not perfect.
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([](TypeConstantAttr type) {
+      return TypeConstantAttr::get(type.getValue(), type.getType());
+    });
+    Type replacedOutType = replacer.replace(outType);
+    inType = replacer.replace(inType);
+    if (replacedOutType == inType) {
+      op.getResult().setType(outType);
+      return ElaborationState::advance();
+    }
     inode->setToError(ErrorTree(
         op.getLoc(), "error: rebind input type '" + mlir::debugString(inType) +
                          "' does not match result type '" +
-                         mlir::debugString(outType) + "'"));
+                         mlir::debugString(replacedOutType) + "'"));
     return failure();
   }
   op.replaceAllUsesWith(op.getOperand());
