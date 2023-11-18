@@ -564,13 +564,15 @@ static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
 ErrorTreeOrSuccess
 InterpreterState::startInterpreterAt(Region &region,
                                      ArrayRef<Attribute> arguments) {
+  // Push an empty stack frame.
+  pushFrame(nullptr, region.getParentOp());
+
   // Internal memory references.
   SmallVector<Attribute> args = llvm::to_vector(arguments);
   if (ErrorOrSuccess err = internalizeMemory(args); err.isError())
     return ErrorTree(region.getLoc(), err.takeError());
 
-  // Push an empty stack frame and map the region arguments.
-  pushFrame(nullptr, region.getParentOp());
+  // Set the program counter and map the region arguments.
   transferControlFlowTo(&region.front(), args);
   return success();
 }
