@@ -1267,6 +1267,9 @@ void ForceInlinePass::runOnOperation() {
     if (innerPipelineFailed)
       signalPassFailure();
   }
+
+  // The symbol table is invalid now; we don't remove from it. Rebuild it.
+  symtab = SymbolTable(getOperation());
 }
 
 std::unique_ptr<mlir::Pass> KGEN::createForceInline(
