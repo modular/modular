@@ -164,6 +164,8 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
   }
 
+  pm.addPass(createEliminateDeadSymbols());
+
   // Run the AutomaticInliner with an inner function pass pipeline.
   auto buildAutomaticInlinerFuncPasses = [options](mlir::OpPassManager &pm) {
     if (options.optimizationLevel < 1)
