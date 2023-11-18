@@ -6,6 +6,7 @@
 
 set(SOURCES
   Globals.cpp
+  HashMap.cpp
   IO.cpp
   InitIntelAMX.cpp
   Initialize.cpp
