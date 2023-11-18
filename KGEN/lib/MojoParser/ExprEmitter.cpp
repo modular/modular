@@ -1033,8 +1033,10 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
     }
   }
 
-  PValue result = TypeConstantAttr::get(selfType, trait,
-                                        VTableAttr::get(getContext(), vtable));
+  // Create the new type value with the vtable and the trait metatype.
+  PValue result = TypeConstantAttr::get(
+      DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(), trait),
+      trait, VTableAttr::get(getContext(), vtable));
   return emitResult(result, value.expr, dest);
 }
 

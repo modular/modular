@@ -41,10 +41,16 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
 
   // Two types can be converted to each other if their metatypes can be as well.
   if (isa<ParamRefType, DeclRefType>(fromType) &&
-      isa<ParamRefType, DeclRefType>(toType))
+      isa<ParamRefType, DeclRefType>(toType)) {
     if (canZeroCostConvert(shared, fromType.getMetaType(),
                            toType.getMetaType()))
       return true;
+    // If we hit this branch, we can allow downcasting to a trait type because
+    // the conversion has already been checked and enabled.
+    if (isa<MetaTypeType>(fromType.getMetaType()) &&
+        isa<TraitType>(toType.getMetaType()))
+      return true;
+  }
 
   // Check for closure structs and dig out their underlying signature types to
   // check whether the conversion can occur.

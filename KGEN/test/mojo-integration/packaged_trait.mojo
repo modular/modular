@@ -36,13 +36,13 @@ fn bind_trait[T: PackageTrait]():
 
 # CHECK-LABEL: lit.func @"test
 fn test():
-    # CHECK-NEXT: [!MyType, {"method" {{.*}}@MyType::@"method
+    # CHECK-NEXT: [!MyType{{[0-9]*}}, {"method" {{.*}}@MyType::@"method
     bind_trait[MyType]()
-    # CHECK-NEXT: [!MyRegType, {"method" {{.*}}@MyRegType::@"`thunk_method
+    # CHECK-NEXT: [!MyRegType{{[0-9]*}}, {"method" {{.*}}@MyRegType::@"`thunk_method
     bind_trait[MyRegType]()
-    # CHECK-NEXT: [!UseTrait, {"method" {{.*}}@UseTrait::@"method
+    # CHECK-NEXT: [!UseTrait{{[0-9]*}}, {"method" {{.*}}@UseTrait::@"method
     trait_method[UseTrait]()
-    # CHECK-NEXT: [!UseTraitReg, {"method" {{.*}}@UseTraitReg::@"`thunk_method
+    # CHECK-NEXT: [!UseTraitReg{{[0-9]*}}, {"method" {{.*}}@UseTraitReg::@"`thunk_method
     trait_method[UseTraitReg]()
 
     # COM: Anchor this decl reference to materialize it.
