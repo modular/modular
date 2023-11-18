@@ -311,6 +311,10 @@ kgen.generator export @do_it() {
   kgen.param.constant: i32 = <apply(
     :(!kgen.pointer<variadic<i32>>, index) -> i32 @borrowed_variadic, store_to_mem([3, 4, 5]), 1)>
 
+  // CHECK-NEXT: <[index, {"f" : (i32) -> i32 = @store_load_pointer}]>
+  kgen.param.constant: regtype = <apply(
+    :(!kgen.anyregtype) -> !kgen.anyregtype @store_load<:regtype regtype>, [index, {"f" : (i32) -> (i32) = @store_load_pointer}])>
+
   kgen.return
 }
 

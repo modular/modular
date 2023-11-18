@@ -75,8 +75,10 @@ def KGEN_AnyTypeType : KGENType<"AnyType", "anytype",
 // AnyRegTypeType
 //===----------------------------------------------------------------------===//
 
-def KGEN_AnyRegTypeType : KGENType<"AnyRegType", "anyregtype",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+def KGEN_AnyRegTypeType : KGENType<"AnyRegType", "anyregtype", [
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
   let summary = "Arbitrary MLIR type";
   let description = [{
     This kgen type represents an arbitrary register-passable MLIR type, used for
