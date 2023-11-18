@@ -249,6 +249,10 @@ def LinkDependencyAttr : DialectAttribute<(attr
   ConcreteAttribute<"DenseResourceElementsAttr">:$bytes
 )>;
 
+def LinkDependencyArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"LinkDependencyAttr">:$value
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -282,7 +286,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     StructExtractAttr,
     PackAttr,
     VariantAttr,
-    LinkDependencyAttr
+    LinkDependencyAttr,
+    LinkDependencyArrayAttr
   ];
 }
 

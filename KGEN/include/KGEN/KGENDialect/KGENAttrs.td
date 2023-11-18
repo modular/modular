@@ -1104,4 +1104,30 @@ def KGEN_LinkDependencyAttr : KGENAttr<"LinkDependency", "link.dependency"> {
   let genVerifyDecl = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// LinkDependencyArrayAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_LinkDependencyArrayAttr
+  : ArrayOfAttr<KGENDialect, "LinkDependencyArray", "link.dependencies",
+                "LinkDependencyAttr"> {
+  let summary = "link dependencies";
+  let description = [{
+    The `#kgen.link.dependencies` attribute is an array of zero or more
+    attributes, each of which stores bytes of object code that can be linked
+    into the final Mojo build product.
+
+    Example:
+
+    ```mlir
+    #dependencies = [
+      <dense_resource<a862fa01d> : tensor<422xui8> as "ffmpeg">,
+      <dense_resource<e062d0e42> : tensor<91xui8> as "libavutil">
+    ]
+    ```
+  }];
+
+  let genVerifyDecl = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
