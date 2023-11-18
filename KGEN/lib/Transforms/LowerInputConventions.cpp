@@ -255,20 +255,30 @@ static void lowerFuncOp(FuncOp funcOp) {
   if (!newSig)
     return;
 
+  // Argument locations do not have subprogram scopes. If we have debuginfo,
+  // make sure to add it.
+  DebugInfo::DISubprogramAttr spAttr = funcOp.getSubprogramScope();
+  auto addDI = [&](Location loc) -> Location {
+    if (!spAttr)
+      return loc;
+    return FusedLoc::get(loc.getContext(), loc, spAttr);
+  };
+
   Region &body = funcOp.getBodyRegion();
   auto b = OpBuilder::atBlockBegin(&body.front());
   for (size_t idx : changedIndices) {
     BlockArgument arg = body.getArgument(idx);
-    auto ptr = b.create<POP::StackAllocationOp>(arg.getLoc(), arg.getType(), 1);
-    auto storeOp = b.create<POP::StoreOp>(arg.getLoc(), arg, ptr);
+    Location loc = addDI(arg.getLoc());
+    auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType(), 1);
+    auto storeOp = b.create<POP::StoreOp>(loc, arg, ptr);
     arg.setType(newSig.getValueInputs()[idx - changedRes]);
     arg.replaceAllUsesExcept(ptr, storeOp);
   }
 
   if (changedRes) {
     BlockArgument byrefResArg = body.getArgument(0);
-    auto newResPtr = b.create<POP::StackAllocationOp>(byrefResArg.getLoc(),
-                                                      byrefResArg.getType(), 1);
+    auto newResPtr = b.create<POP::StackAllocationOp>(
+        addDI(byrefResArg.getLoc()), byrefResArg.getType(), 1);
     byrefResArg.replaceAllUsesWith(newResPtr);
     body.eraseArgument(0);
 
