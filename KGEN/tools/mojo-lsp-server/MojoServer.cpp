@@ -1227,6 +1227,7 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
   case DeclViewKind::DK_VariableDeclView:
     return SemanticTokenKind::kVariable;
   }
+  llvm_unreachable("invalid decl kind");
 }
 
 std::optional<std::vector<SemanticToken>>
