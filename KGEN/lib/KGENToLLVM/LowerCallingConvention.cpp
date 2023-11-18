@@ -146,7 +146,8 @@ static void rewriteCallingConventions(Operation &op) {
       OpBuilder b(promise);
       Value newPromise = b.create<POP::CoroutinePromiseOp>(
           promise.getLoc(),
-          PointerType::get(StructType::get(op->getContext(), newResults)),
+          PointerType::get(
+              StructType::get(newResults, b.getType<AnyRegTypeType>())),
           promise.getCoroutine());
       Value casted = b.create<POP::PointerBitcastOp>(
           promise.getLoc(), promise.getType(), newPromise);

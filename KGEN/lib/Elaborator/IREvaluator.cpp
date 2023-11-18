@@ -281,11 +281,14 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   elaborator->addDeferredFunction(populate);
 
   Builder b(op.getContext());
-  return {
-      StructAttr::get({closure->contents, b.getIndexAttr(closure->numCaptures),
-                       SymbolConstantAttr::get(
-                           FlatSymbolRefAttr::get(populate.getSymNameAttr()),
-                           populate.getSignature())})};
+  SmallVector<TypedAttr> fieldValues{
+      closure->contents, b.getIndexAttr(closure->numCaptures),
+      SymbolConstantAttr::get(FlatSymbolRefAttr::get(populate.getSymNameAttr()),
+                              populate.getSignature())};
+  SmallVector<Type> fieldTypes =
+      llvm::map_to_vector(fieldValues, [](TypedAttr v) { return v.getType(); });
+  auto structType = StructType::get(fieldTypes, b.getType<AnyRegTypeType>());
+  return {StructAttr::get(fieldValues, structType)};
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
