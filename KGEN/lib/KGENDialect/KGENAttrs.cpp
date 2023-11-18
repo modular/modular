@@ -2483,6 +2483,25 @@ LinkDependencyAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// LinkDependencyArrayAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+LinkDependencyArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                ArrayRef<LinkDependencyAttr> value) {
+  if (value.empty())
+    return emitError() << "dependencies cannot be empty";
+
+  DenseSet<StringAttr> names;
+  for (LinkDependencyAttr dependency : value)
+    if (!names.insert(dependency.getName()).second)
+      return emitError() << "two dependencies cannot use the same name, '"
+                         << dependency.getName().strref() << "'";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

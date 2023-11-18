@@ -853,3 +853,16 @@ kgen.generator @variant_constant<value: i32>() {
 
 // expected-error @below {{bytes cannot be empty}}
 "someop"() {a = #kgen.link.dependency<dense_resource<a862fa01d> : tensor<0xui8> as "ffmpeg">} : () -> ()
+
+// -----
+
+// expected-error @below {{dependencies cannot be empty}}
+"some.op"() {a = #kgen<link.dependencies[]>} : () -> ()
+
+// -----
+
+// expected-error @below {{two dependencies cannot use the same name, 'libavcodec'}}
+"some.op"() {a = #kgen<link.dependencies[
+  <dense_resource<avcodec_1> : tensor<8xui8> as "libavcodec">,
+  <dense_resource<avcodec_2> : tensor<9xui8> as "libavcodec">
+]>} : () -> ()
