@@ -1073,4 +1073,35 @@ def KGEN_PackageArchiveArrayAttr
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// LinkDependencyAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_LinkDependencyAttr : KGENAttr<"LinkDependency", "link.dependency"> {
+  let summary = "link dependency";
+  let description = [{
+    The `#kgen.link.dependency` attribute is a tuple of a dependency's name,
+    plus object code bytes that are to be linked into some build product.
+
+    Example:
+
+    ```mlir
+    #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">
+    ```
+  }];
+
+  let parameters = (ins "StringAttr":$name, "DenseResourceElementsAttr":$bytes);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        "DenseResourceElementsAttr":$bytes), [{
+      return get(name.getContext(), name, bytes);
+    }]>
+  ];
+
+  let assemblyFormat = "`<` $bytes `as` $name `>`";
+
+  let genVerifyDecl = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

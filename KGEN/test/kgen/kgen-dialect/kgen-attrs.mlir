@@ -79,6 +79,11 @@ kgen.generator @variant_constants<T: regtype, U: regtype, value: !kgen.paramref<
    archive = dense_resource<d> : tensor<4xui8>>
 ]>} : () -> ()
 
+// CHECK: #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">
+"some.op"() {
+  a = #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">
+} : () -> ()
+
 kgen.generator @entry1() -> index {
   %0 = index.constant 1
   kgen.return %0 : index

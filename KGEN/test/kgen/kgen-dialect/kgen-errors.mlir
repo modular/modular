@@ -848,3 +848,8 @@ kgen.generator @variant_constant<value: i32>() {
   elaboratedModule = dense_resource<abc> : tensor<1xui8>,
   archive = dense_resource<def> : tensor<0xui8>
 >} : () -> ()
+
+// -----
+
+// expected-error @below {{bytes cannot be empty}}
+"someop"() {a = #kgen.link.dependency<dense_resource<a862fa01d> : tensor<0xui8> as "ffmpeg">} : () -> ()
