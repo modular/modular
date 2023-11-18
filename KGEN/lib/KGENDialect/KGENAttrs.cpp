@@ -2394,18 +2394,16 @@ TypedAttr KGEN::emitMLIROperationCall(
 // PackageArchiveAttr
 //===----------------------------------------------------------------------===//
 
-LogicalResult PackageArchiveAttr::verify(
-    function_ref<InFlightDiagnostic()> emitError, TargetInfoAttr target,
-    DenseResourceElementsAttr elaboratedModule,
-    DenseResourceElementsAttr archive, LinkDependencyArrayAttr dependencies) {
+LogicalResult
+PackageArchiveAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           TargetInfoAttr target,
+                           DenseResourceElementsAttr elaboratedModule,
+                           DenseResourceElementsAttr archive) {
   if (elaboratedModule.empty())
     return emitError() << "elaborated module cannot be empty";
 
   if (archive.empty())
     return emitError() << "archive cannot be empty";
-
-  if (dependencies && dependencies.getValue().empty())
-    return emitError() << "if not null, dependencies cannot be empty";
 
   return success();
 }

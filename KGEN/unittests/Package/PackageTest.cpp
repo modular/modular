@@ -24,8 +24,8 @@ TEST(Package, createElaboratedBytecodeAttr) {
   OwningOpRef<ModuleOp> module = ModuleOp::create(loc);
   OpBuilder b(module->getBody(), module->getBody()->begin());
 
-  b.create<FuncOp>(loc, b.getStringAttr("foo"),
-                   SignatureType::get(&ctx, {}, {}));
+  auto func = b.create<FuncOp>(loc, b.getStringAttr("foo"),
+                               SignatureType::get(&ctx, {}, {}));
 
   // Technically this function expects an elaborated module, but it doesn't
   // check.
@@ -37,4 +37,6 @@ TEST(Package, createElaboratedBytecodeAttr) {
   ASSERT_FALSE(bytecodeOr.isError());
   EXPECT_THAT(bytecodeOr->getRawHandle().getKey().str(),
               testing::StartsWith("bytecode_"));
+  // Functions in the module are exported.
+  EXPECT_TRUE(func.isExported());
 }
