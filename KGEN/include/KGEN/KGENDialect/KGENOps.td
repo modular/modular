@@ -1237,19 +1237,33 @@ def KGEN_LinkOp : KGENOp<"link", [Symbol]> {
     by their symbol name - it is illegal to attempt to link more than one
     library as a given symbol name.
 
+    If a linked library has transitive depencies -- in other words, that library
+    depends in turn on other libraries -- those dependencies must be included in
+    the list of dependencies defined on the link op.
+
     Example:
 
     ```mlir
-    kgen.link dense_resource<musl_libc> : tensor<422xui8> as @libc
+    kgen.link dense_resource<musl_libc> : tensor<1xui8> as @libc
+
+    kgen.link dense_resource<a862fa> : tensor<92xui8> as @ffmpeg, dependencies([
+      <dense_resource<c95292> : tensor<659xui8> as "libavcodec">,
+      <dense_resource<e062d0> : tensor<861xui8> as "libavutil">
+    ])
     ```
   }];
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    Builtin_DenseResourceElementsAttr:$linkBytes
+    Builtin_DenseResourceElementsAttr:$linkBytes,
+    OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies
   );
 
-  let assemblyFormat = "$linkBytes `as` $sym_name attr-dict";
+  let assemblyFormat = [{
+    $linkBytes `as` $sym_name
+    (`,` `dependencies` `(` $dependencies^ `)`)?
+    attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//

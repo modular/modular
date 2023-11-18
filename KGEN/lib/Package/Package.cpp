@@ -32,10 +32,15 @@ M::KGEN::createElaboratedBytecodeAttr(const SymbolTable &symtab,
   ModuleOp theModule = cast<ModuleOp>(symtab.getOp());
 
   // Prepare the functions within the module for use when importing the package.
+  SmallVector<KGEN::FuncOp> exportedFuncs;
   for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>()) {
-    // Attach a reference to the precompiled body to the KGEN::FuncOp.
+    // Only tag functions that will be exported from the generated archive with
+    // a reference to this package.
+    if (!func.isExported() || func.getPrecompiledBodyRef())
+      continue;
+
     func.setPrecompiledBodyRefAttr(packageName);
-    func.setWeakExported();
+    exportedFuncs.push_back(func);
   }
 
   // Write the package bytecode to the given buffer. This will be attached to
@@ -45,7 +50,7 @@ M::KGEN::createElaboratedBytecodeAttr(const SymbolTable &symtab,
     return Error("could not write bytecode for package module");
 
   // Reset the precompiled references now that we've written to bytecode.
-  for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>())
+  for (KGEN::FuncOp func : exportedFuncs)
     func.removePrecompiledBodyRefAttr();
 
   // Hash the bytecode itself - this will give us a unique'd attr name that
@@ -63,10 +68,43 @@ M::KGEN::createElaboratedBytecodeAttr(const SymbolTable &symtab,
 // createPackageArchive
 //===----------------------------------------------------------------------===//
 
-ErrorOr<DenseResourceElementsAttr> M::KGEN::createPackageArchive(
+/// Loop over each `kgen.link` op in the given module, adding each of them (and
+/// their dependencies) to the collection of `linkDependencies`. As dependencies
+/// are added to the collection, a hash of their contents is made and appended
+/// to the library name.
+static void collectLinkDependencies(
+    ModuleOp theModule,
+    DenseMap<StringAttr, LinkDependencyAttr> &linkDependencies) {
+  for (LinkOp linkOp : theModule.getOps<LinkOp>()) {
+    // Collect the link dependencies: first the link op's dependencies.
+    if (LinkDependencyArrayAttr dependencies = linkOp.getDependenciesAttr())
+      for (LinkDependencyAttr dependency : dependencies.getValue())
+        linkDependencies.insert({dependency.getName(), dependency});
+
+    // Then, collect the linked library itself: first compute a hash of its
+    // contents to form its name, then insert it into the collection.
+    ArrayRef<char> bytes =
+        linkOp.getLinkBytes().getRawHandle().getBlob()->getData();
+    auto hash = llvm::BLAKE3::hash(
+        ArrayRef((const uint8_t *)bytes.begin(), bytes.size()));
+    StringAttr name = StringAttr::get(
+        theModule.getContext(), linkOp.getSymName().str() + '_' +
+                                    llvm::toHex(hash, /*LowerCase=*/true));
+    linkDependencies.insert(
+        {name, LinkDependencyAttr::get(name, linkOp.getLinkBytes())});
+  }
+}
+
+ErrorOr<PackageArchiveAttr> M::KGEN::createPackageArchive(
     const SymbolTable &symtab, const ExportMap &exportedSymbols,
+    TargetInfoAttr targetInfo, DenseResourceElementsAttr elaboratedBytecode,
     const CompilationOptions &compileOptions, LLCL::Runtime &runtime) {
   ModuleOp theModule = cast<ModuleOp>(symtab.getOp());
+
+  // Before elaborating the package module, collect its link dependencies,
+  // uniquing them based on their given name.
+  DenseMap<StringAttr, LinkDependencyAttr> linkDependencies;
+  collectLinkDependencies(theModule, linkDependencies);
 
   // Now we can start to generate the archive.
   mlir::PassManager archivePM(theModule->getContext());
@@ -75,29 +113,34 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::createPackageArchive(
   if (failed(objectCompiler))
     return objectCompiler.takeError();
 
-  ErrorOr<BufferRef> archiveOr =
-      objectCompiler->produceStandaloneArchive(symtab, exportedSymbols);
+  ErrorOr<BufferRef> archiveOr = objectCompiler->produceArchive(
+      symtab, exportedSymbols, /*standalone=*/false);
   if (failed(archiveOr))
     return archiveOr.takeError();
   BufferRef archive = std::move(*archiveOr);
 
-  // Get the standalone archive key to use as the archive name.
-  WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
-  compileOptions.print(*produceStandaloneArchiveKey
-                       << "produceStandaloneArchive(");
-  *produceStandaloneArchiveKey << ")";
-  if (failed(
-          mlir::writeBytecodeToFile(theModule, *produceStandaloneArchiveKey)))
+  // Get the archive key to use as the archive name.
+  WriteableBufferRef produceArchiveKey = WriteableBuffer::get();
+  compileOptions.print(*produceArchiveKey << "produceArchive(");
+  *produceArchiveKey << ")";
+  if (failed(mlir::writeBytecodeToFile(theModule, *produceArchiveKey)))
     return Error("failed to write bytecode file");
   // Hash it so the name isn't enormous.
   auto hash = llvm::BLAKE3::hash(
-      ArrayRef((const uint8_t *)produceStandaloneArchiveKey->getBufferStart(),
-               produceStandaloneArchiveKey->getBufferSize()));
+      ArrayRef((const uint8_t *)produceArchiveKey->getBufferStart(),
+               produceArchiveKey->getBufferSize()));
 
-  return createResourceAttr(
+  DenseResourceElementsAttr archiveBytes = createResourceAttr(
       theModule.getContext(),
       ArrayRef(archive->getBufferStart(), archive->getBufferSize()),
       "archive_" + llvm::toHex(hash, /*LowerCase=*/true));
+
+  // Collect and return the archive and its dependencies.
+  SmallVector<LinkDependencyAttr> dependencies;
+  for (auto &[name, dependency] : linkDependencies)
+    dependencies.push_back(dependency);
+  return PackageArchiveAttr::get(targetInfo, elaboratedBytecode, archiveBytes,
+                                 dependencies);
 }
 
 //===----------------------------------------------------------------------===//
@@ -188,13 +231,13 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
   // Create the compiled archive of the package, and add the resulting archive
   // bytes to the package link op's archives attribute.
   auto archiveOr =
-      createPackageArchive(symtab, exportedSymbols, compileOptions, runtime);
+      createPackageArchive(symtab, exportedSymbols, targetInfo,
+                           bytecodeResource, compileOptions, runtime);
   if (archiveOr.isError())
     return archiveOr.takeError();
 
   // Insert the new archive into the array of archives on the package link op.
-  SmallVector<PackageArchiveAttr> archives{PackageArchiveAttr::get(
-      targetInfo, bytecodeResource, archiveOr.takeValue())};
+  SmallVector<PackageArchiveAttr> archives{archiveOr.takeValue()};
   if (PackageArchiveArrayAttr existing = packageLink.getArchivesAttr())
     llvm::append_range(archives, existing.getValue());
   packageLink.setArchives(archives);
