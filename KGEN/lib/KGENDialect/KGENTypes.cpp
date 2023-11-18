@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -680,6 +681,25 @@ std::optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
   return 1;
 }
 
+ErrorOrSuccess DTypeType::writeTo(TypedAttr value, int64_t addr,
+                                  InterpreterState &state) const {
+  // DType is one byte.
+  ErrorOr<void *> mem = state.getWritableMemory(addr, 1);
+  if (mem.isError())
+    return mem.takeError();
+  *(uint8_t *)*mem = ::cast<DTypeConstantAttr>(value).getDType().getValue();
+  return success();
+}
+
+ErrorOr<TypedAttr> DTypeType::readFrom(int64_t addr,
+                                       InterpreterState &state) const {
+  ErrorOr<const void *> mem = state.getReadableMemory(addr, 1);
+  if (mem.isError())
+    return mem.takeError();
+  return DTypeConstantAttr::get(getContext(),
+                                KGENDType(*(const uint8_t *)*mem));
+}
+
 //===----------------------------------------------------------------------===//
 // NoneType
 //===----------------------------------------------------------------------===//
@@ -768,6 +788,73 @@ KGEN::StringType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
+/// Helper to write a data pointer plus size type, both of which are pointer
+/// width, and the pointer comes first.
+static ErrorOrSuccess writePointerAndSize(int64_t writeAddr, int64_t ptr,
+                                          int64_t size,
+                                          InterpreterState &state) {
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  ErrorOr<void *> mem = state.getWritableMemory(writeAddr, ptrSize * 2);
+  if (mem.isError())
+    return mem.takeError();
+  // Store the pointer address, and then advance a pointer width and store the
+  // size.
+  llvm::StoreIntToMemory(APInt(ptrSize * 8, ptr), (uint8_t *)*mem, ptrSize);
+  llvm::StoreIntToMemory(APInt(ptrSize * 8, size), (uint8_t *)*mem + ptrSize,
+                         ptrSize);
+  return success();
+}
+
+/// Helper to read a data pointer and size type, both of which are pointer
+/// width, and the pointer comes first.
+static ErrorOr<std::pair<int64_t, int64_t>>
+readPointerAndSize(int64_t readAddr, InterpreterState &state) {
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  ErrorOr<const void *> mem = state.getReadableMemory(readAddr, ptrSize * 2);
+  if (mem.isError())
+    return mem.takeError();
+  APInt ptrVal(ptrSize * 8, 0);
+  APInt sizeVal(ptrSize * 8, 0);
+  llvm::LoadIntFromMemory(ptrVal, (const uint8_t *)*mem, ptrSize);
+  llvm::LoadIntFromMemory(sizeVal, (const uint8_t *)*mem + ptrSize, ptrSize);
+  return std::make_pair(ptrVal.getLimitedValue(), sizeVal.getLimitedValue());
+}
+
+ErrorOrSuccess StringType::writeTo(TypedAttr value, int64_t addr,
+                                   InterpreterState &state) const {
+  DialectResourceManager &mgr = MemoryHandle::getManagerInterface(getContext());
+  // Ensure the string is null-terminated. This is safe because `StringAttr`
+  // always stores a null terminator.
+  auto strAttr = ::cast<StringAttr>(value);
+  StringRef str(strAttr.data(), strAttr.size() + 1);
+  if (strAttr.getValue().empty())
+    str = "\0";
+  MemoryHandle hdl = mgr.getOrAddStringResource(str);
+  ErrorOr<int64_t> strAddr = state.mapConstGlobalMemory(hdl);
+  if (strAddr.isError())
+    return strAddr.takeError();
+
+  // Store a pointer and a size.
+  return writePointerAndSize(addr, *strAddr, strAttr.size(), state);
+}
+
+ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
+                                        InterpreterState &state) const {
+  // Load a pointer and size.
+  ErrorOr<std::pair<int64_t, int64_t>> ptrSize =
+      readPointerAndSize(addr, state);
+  if (ptrSize)
+    return ptrSize.takeError();
+  auto [strAddr, strSize] = *ptrSize;
+
+  // Read back the string, including its expected null terminator.
+  ErrorOr<const void *> strMem = state.getReadableMemory(strAddr, strSize + 1);
+  if (strMem.isError())
+    return strMem.takeError();
+
+  return StringAttr::get(StringRef((const char *)*strMem, strSize), *this);
+}
+
 //===----------------------------------------------------------------------===//
 // VariadicType
 //===----------------------------------------------------------------------===//
@@ -809,6 +896,70 @@ std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
 /// The alignment of the variadic type is that its pointer and size.
 std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
+}
+
+ErrorOrSuccess VariadicType::writeTo(TypedAttr value, int64_t addr,
+                                     InterpreterState &state) const {
+  // A variadic is a pointer and a size, where the pointer refers to
+  // stack-allocated memory.
+  ArrayRef<TypedAttr> values = ::cast<VariadicAttr>(value).getValues();
+  TargetInfoAttr target = state.getTarget();
+
+  // Query the size and alignment of the element type.
+  Type elemType = getElementAsType();
+  std::optional<int64_t> typeAlign =
+      DataLayoutInterface::getTypeABIAlign(target, elemType);
+  std::optional<int64_t> allocSize =
+      DataLayoutInterface::getTypeAllocSize(target, elemType);
+  if (!typeAlign || !allocSize)
+    return Error("could not query element type size or alignment");
+
+  // Allocate stack memory for the elements.
+  ErrorOr<int64_t> valuesAddr =
+      state.allocateStackMemory(*allocSize * values.size(), *typeAlign);
+  if (valuesAddr.isError())
+    return valuesAddr.takeError();
+  int64_t baseAddr = *valuesAddr;
+
+  // Now write all the elements to the stack memory.
+  for (auto [i, value] : llvm::enumerate(values)) {
+    if (ErrorOrSuccess err =
+            state.writeAttributeToMemory(baseAddr + i * *allocSize, value))
+      return err.takeError();
+  }
+
+  // And now write the pointer and size.
+  return writePointerAndSize(addr, baseAddr, values.size(), state);
+}
+
+ErrorOr<TypedAttr> VariadicType::readFrom(int64_t addr,
+                                          InterpreterState &state) const {
+  // Read the pointer and size.
+  ErrorOr<std::pair<int64_t, int64_t>> ptrSize =
+      readPointerAndSize(addr, state);
+  if (ptrSize)
+    return ptrSize.takeError();
+  auto [baseAddr, numElems] = *ptrSize;
+
+  // Query the size and alignment of the element type.
+  TargetInfoAttr target = state.getTarget();
+  Type elemType = getElementAsType();
+  std::optional<int64_t> allocSize =
+      DataLayoutInterface::getTypeAllocSize(target, elemType);
+  if (!allocSize)
+    return Error("could not query element type size or alignment");
+
+  // Now read the variadic elements off the stack.
+  SmallVector<TypedAttr> values;
+  for (unsigned i = 0; i != numElems; ++i) {
+    ErrorOr<TypedAttr> value =
+        state.readAttributeFromMemory(baseAddr + i * *allocSize, elemType);
+    if (value)
+      return value.takeError();
+    values.push_back(value.takeValue());
+  }
+
+  return VariadicAttr::get(values, *this);
 }
 
 //===----------------------------------------------------------------------===//
