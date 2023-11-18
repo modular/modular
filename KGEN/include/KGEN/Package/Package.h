@@ -31,11 +31,10 @@ createElaboratedBytecodeAttr(const SymbolTable &symtab,
                              FlatSymbolRefAttr packageName);
 
 /// Given the symbol table of an elaborated module for a Mojo package, compiles
-/// that module to a static archive, and if successful returns an archive
-/// attribute. If unsuccessful, returns an error.
-ErrorOr<PackageArchiveAttr> createPackageArchive(
+/// that module to a static archive, and if successful returns an attribute
+/// of the archive bytes. If unsuccessful, returns an error.
+ErrorOr<DenseResourceElementsAttr> createPackageArchive(
     const SymbolTable &symtab, const ExportMap &exportedSymbols,
-    TargetInfoAttr targetInfo, DenseResourceElementsAttr elaboratedBytecode,
     const CompilationOptions &compileOptions, LLCL::Runtime &runtime);
 
 /// Loads the serialized MLIR bytecode representing a pre-elaborated module for
