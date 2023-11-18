@@ -677,7 +677,7 @@ struct AsyncTaskGroupContext:
         self.async_task_group_ptr = async_task_group_ptr
 
 
-struct CoroutineList[type: AnyRegType]:
+struct CoroutineList[type: AnyRegType](Sized):
     var data: Pointer[Coroutine[type]]
     var size: Int
 
@@ -763,7 +763,7 @@ struct AsyncTaskGroup:
         __get_address_as_uninit_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
             Self._task_complete, self_ptr
         )
-        let task_id = self.coroutines.__len__()
+        let task_id = len(self.coroutines)
         # Take a copy of the handle reference, then move the coroutine onto the
         # list. Do this before scheduling the coroutine on the taskqueue.
         let hdl = coroutine._handle
