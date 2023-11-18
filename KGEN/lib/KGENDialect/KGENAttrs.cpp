@@ -2470,6 +2470,19 @@ std::string PackageArchiveArrayAttr::getTargetsAsString() {
 }
 
 //===----------------------------------------------------------------------===//
+// LinkDependencyAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+LinkDependencyAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           StringAttr name, DenseResourceElementsAttr bytes) {
+  if (bytes.empty())
+    return emitError() << "bytes cannot be empty";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
