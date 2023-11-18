@@ -143,7 +143,7 @@ fn main():
     _tile_dpbssd_emulated(c.data, a.data, b.data)
     # print_matrix[16, 16, DType.int32](c.data.bitcast[void]())
     var errors: Int = 0
-    errors = memcmp(c.data, c2.data, c.__len__())
+    errors = memcmp(c.data, c2.data, len(c))
     print("Emulated AMX-int8 matmul test.")
     # CHECK: 0
     print(errors)
@@ -167,9 +167,7 @@ fn main():
         _tile_stored[0](c.data.bitcast[void](), 64)
         _tile_release()
 
-        errors = memcmp(
-            c.data.bitcast[void](), c2.data.bitcast[void](), c.__len__()
-        )
+        errors = memcmp(c.data.bitcast[void](), c2.data.bitcast[void](), len(c))
     # CHECK: 0
     print(errors)
     if errors != 0:

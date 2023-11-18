@@ -845,7 +845,7 @@ struct MatmulGenerator[
         """
 
         debug_assert(
-            actions.__len__() == action_tile_shapes.__len__(),
+            len(actions) == len(action_tile_shapes),
             "Number of static actions must equal number of dynamic tile sizes",
         )
 
@@ -874,7 +874,7 @@ struct MatmulGenerator[
         """
 
         @parameter
-        if current_action_idx == actions.__len__():
+        if current_action_idx == len(actions):
             return
         # Read the current action.
         alias current_action = actions[current_action_idx]

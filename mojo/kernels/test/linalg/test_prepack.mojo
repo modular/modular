@@ -48,7 +48,7 @@ fn test_prepack():
         dst_storage.data, dst_shape_static
     )
 
-    for i in range(src_storage.__len__()):
+    for i in range(len(src_storage)):
         src_storage[i] = i
 
     pack_b[

@@ -31,7 +31,7 @@ fn test_gemv():
     out.zero()
     gemv[simd_width](out, lhs, rhs)
 
-    for i in range(out.__len__()):
+    for i in range(len(out)):
         if out[i] != k:
             print(out[i])
             print("Error")
