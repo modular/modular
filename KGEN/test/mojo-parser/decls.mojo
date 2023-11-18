@@ -1940,3 +1940,4 @@ fn ambiguous_thunk(x: ThunkAmbiguityRP):
     x.mismatched_arg()
     _ = ThunkAmbiguityRP.mismatched_ret()
     _ = ThunkAmbiguityRP()
+    # CHECK-LABEL: lit.end_func
