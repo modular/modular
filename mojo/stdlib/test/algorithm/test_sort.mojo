@@ -388,7 +388,7 @@ fn test_quick_sort_repeated_val():
     fn _greater_than[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Float32](lhs) > rebind[Float32](rhs)
 
-    _quicksort[Float32, _greater_than](vector.data, vector.__len__())
+    _quicksort[Float32, _greater_than](vector.data, len(vector))
 
     # CHECK: 9.0
     # CHECK: 9.0
@@ -469,7 +469,7 @@ fn test_quick_sort_repeated_val():
     # CHECK: 9.0
     # CHECK: 9.0
     # CHECK: 9.0
-    _quicksort[Float32, _less_than](vector.data, vector.__len__())
+    _quicksort[Float32, _less_than](vector.data, len(vector))
     for i in range(0, length):
         print(vector[i])
 
@@ -492,7 +492,7 @@ fn test_partition_top_k(length: Int, k: Int):
     fn _great_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Float32](lhs) >= rebind[Float32](rhs)
 
-    partition[Float32, _great_than_equal](vector.data, k, vector.__len__())
+    partition[Float32, _great_than_equal](vector.data, k, len(vector))
 
     for i in range(0, k):
         if vector[i] < length - k:

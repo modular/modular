@@ -625,7 +625,7 @@ fn test_cumsum():
     print("== test_cumsum")
 
     let vector = Buffer[150, DType.float32].stack_allocation()
-    for i in range(vector.__len__()):
+    for i in range(len(vector)):
         vector[i] = i + 1
     let cumsum_out1 = Buffer[150, DType.float32].stack_allocation()
     cumsum[150, DType.float32](cumsum_out1, vector)

@@ -25,7 +25,7 @@ fn test_map():
     fn add_two(idx: Int):
         vector[idx] = vector[idx] + 2
 
-    map[add_two](vector.__len__())
+    map[add_two](len(vector))
 
     # CHECK: 3.0
     print(vector[0])
@@ -42,7 +42,7 @@ fn test_map():
     fn add(idx: Int):
         vector[idx] = vector[idx] + vector[idx]
 
-    map[add](vector.__len__())
+    map[add](len(vector))
 
     # CHECK: 6.0
     print(vector[0])

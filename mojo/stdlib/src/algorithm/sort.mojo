@@ -100,7 +100,7 @@ fn _quicksort[
     var stack = DynamicVector[Int](_estimate_initial_height(size))
     stack.push_back(0)
     stack.push_back(size)
-    while stack.__len__() > 0:
+    while len(stack) > 0:
         let end = stack.pop_back()
         let start = stack.pop_back()
 
@@ -160,7 +160,7 @@ fn partition[
     var stack = DynamicVector[Int](_estimate_initial_height(size))
     stack.push_back(0)
     stack.push_back(size)
-    while stack.__len__() > 0:
+    while len(stack) > 0:
         let end = stack.pop_back()
         let start = stack.pop_back()
         let pivot = _partition[type, cmp_fn](buff, start, end)
@@ -225,7 +225,7 @@ fn sort(inout v: DynamicVector[Int]):
     Args:
         v: Input integer vector to sort.
     """
-    sort(v.data, v.__len__())
+    sort(v.data, len(v))
 
 
 fn sort[type: DType](inout v: DynamicVector[SIMD[type, 1]]):
@@ -240,7 +240,7 @@ fn sort[type: DType](inout v: DynamicVector[SIMD[type, 1]]):
         v: Input vector to sort.
     """
 
-    sort[type](v.data, v.__len__())
+    sort[type](v.data, len(v))
 
 
 # ===----------------------------------------------------------------------===#

@@ -20,16 +20,16 @@ fn test_async_parallelize():
 
     let vector = Buffer[20, DType.index].stack_allocation()
 
-    for i in range(vector.__len__()):
+    for i in range(len(vector)):
         vector[i] = i
 
-    let chunk_size = div_ceil(vector.__len__(), num_work_items)
+    let chunk_size = div_ceil(len(vector), num_work_items)
 
     @always_inline
     @parameter
     fn parallel_fn(thread_id: Int):
         let start = thread_id * chunk_size
-        let end = min(start + chunk_size, vector.__len__())
+        let end = min(start + chunk_size, len(vector))
 
         @always_inline
         @parameter
@@ -44,7 +44,7 @@ fn test_async_parallelize():
         out_chain.wait()
 
     # CHECK-NOT: ERROR
-    for i in range(vector.__len__()):
+    for i in range(len(vector)):
         let expected_val = i + 2
         if Int(vector[i].value) != expected_val:
             print("ERROR: Expecting the result to be i + 2")
@@ -58,16 +58,16 @@ fn test_sync_parallelize():
 
     let vector = Buffer[20, DType.index].stack_allocation()
 
-    for i in range(vector.__len__()):
+    for i in range(len(vector)):
         vector[i] = i
 
-    let chunk_size = div_ceil(vector.__len__(), num_work_items)
+    let chunk_size = div_ceil(len(vector), num_work_items)
 
     @always_inline
     @parameter
     fn parallel_fn(thread_id: Int):
         let start = thread_id * chunk_size
-        let end = min(start + chunk_size, vector.__len__())
+        let end = min(start + chunk_size, len(vector))
 
         @always_inline
         @parameter
@@ -82,7 +82,7 @@ fn test_sync_parallelize():
         out_chain.assert_ready()
 
     # CHECK-NOT: ERROR
-    for i in range(vector.__len__()):
+    for i in range(len(vector)):
         let expected_val = i + 2
         if Int(vector[i].value) != expected_val:
             print("ERROR: Expecting the result to be i + 2")
@@ -96,16 +96,16 @@ fn test_parallelize():
 
     let vector = Buffer[20, DType.index].stack_allocation()
 
-    for i in range(vector.__len__()):
+    for i in range(len(vector)):
         vector[i] = i
 
-    let chunk_size = div_ceil(vector.__len__(), num_work_items)
+    let chunk_size = div_ceil(len(vector), num_work_items)
 
     @parameter
     @always_inline
     fn parallel_fn(thread_id: Int):
         let start = thread_id * chunk_size
-        let end = min(start + chunk_size, vector.__len__())
+        let end = min(start + chunk_size, len(vector))
 
         @always_inline
         @parameter

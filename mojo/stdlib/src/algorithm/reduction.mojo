@@ -202,9 +202,9 @@ fn map_reduce[
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
-    let len = dst.__len__()
-    let unrolled_vector_end = align_down(len, unrolled_simd_width)
-    let vector_end = align_down(len, simd_width)
+    let length = len(dst)
+    let unrolled_vector_end = align_down(length, unrolled_simd_width)
+    let vector_end = align_down(length, simd_width)
 
     var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width].splat(init)
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
@@ -228,7 +228,7 @@ fn map_reduce[
     acc = reduce_vec_to_vec_fn[acc_type, acc_type, 1](
         acc, reduce_vec_to_scalar_fn[acc_type, simd_width](acc_simd)
     )
-    for i in range(vector_end, len):
+    for i in range(vector_end, length):
         let val = input_gen_fn[type, 1](i)
         dst[i] = val
         acc = reduce_vec_to_vec_fn[acc_type, type, 1](acc, val)
@@ -286,7 +286,7 @@ fn reduce[
     ](acc: SIMD[type, width], val: SIMD[type, width]) -> SIMD[type, width]:
         return reduce_fn(acc, val)
 
-    let shape = Index(src.__len__())
+    let shape = Index(len(src))
     _reduce_generator[
         type,
         1,
@@ -335,9 +335,9 @@ fn reduce_boolean[
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
 
-    let len = src.__len__()
-    let unrolled_vector_end = align_down(len, unrolled_simd_width)
-    let vector_end = align_down(len, simd_width)
+    let length = len(src)
+    let unrolled_vector_end = align_down(length, unrolled_simd_width)
+    let vector_end = align_down(length, simd_width)
     var curr = init
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
         curr = reduce_fn[type, unrolled_simd_width](
@@ -351,7 +351,7 @@ fn reduce_boolean[
         if not continue_fn(curr):
             return curr
 
-    for i in range(vector_end, len):
+    for i in range(vector_end, length):
         curr = reduce_fn[type, 1](src[i])
         if not continue_fn(curr):
             return curr
@@ -773,8 +773,8 @@ fn _reduce_along_inner_dimension[
         let start_parallel_offset = i * chunk_size
         let end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
 
-        let len = end_parallel_offset - start_parallel_offset
-        if len <= 0:
+        let length = end_parallel_offset - start_parallel_offset
+        if length <= 0:
             return
 
         reduce_rows_unrolled(start_parallel_offset, end_parallel_offset)
@@ -860,9 +860,9 @@ fn _reduce_along_outer_dimension[
         let start_parallel_offset = i * chunk_size
         let end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
 
-        let len = end_parallel_offset - start_parallel_offset
+        let length = end_parallel_offset - start_parallel_offset
 
-        if len <= 0:
+        if length <= 0:
             return
 
         for slice_idx in range(start_parallel_offset, end_parallel_offset):
@@ -1250,10 +1250,10 @@ fn mean[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
         The mean value of the elements in the given buffer.
     """
 
-    debug_assert(src.__len__() != 0, "input must not be empty")
+    debug_assert(len(src) != 0, "input must not be empty")
 
     let total = sum(src)
-    let buffer_len = src.__len__()
+    let buffer_len = len(src)
 
     @parameter
     if type.is_integral():
@@ -1303,7 +1303,7 @@ fn mean[
             let to_store = elem // n
             dst_1d.simd_store[simd_width](idx, to_store)
 
-        vectorize[simd_width, normalize_integral](dst_1d.__len__())
+        vectorize[simd_width, normalize_integral](len(dst_1d))
     else:
         let n_recip = SIMD[type, 1](1) / n
 
@@ -1314,7 +1314,7 @@ fn mean[
             let to_store = elem * n_recip
             dst_1d.simd_store[simd_width](idx, to_store)
 
-        vectorize[simd_width, normalize_floating](dst_1d.__len__())
+        vectorize[simd_width, normalize_floating](len(dst_1d))
 
 
 @always_inline
@@ -1449,7 +1449,7 @@ fn variance[
     Returns:
         The variance value of the elements in a buffer.
     """
-    debug_assert(src.__len__() > 1, "input length must be greater than 1")
+    debug_assert(len(src) > 1, "input length must be greater than 1")
 
     @always_inline
     @parameter
@@ -1477,7 +1477,7 @@ fn variance[
     ](acc: SIMD[type, width], val: SIMD[type, width]) -> SIMD[type, width]:
         return acc + val
 
-    let shape = StaticIntTuple[1](src.__len__())
+    let shape = StaticIntTuple[1](len(src))
     let init = SIMD[type, 1](0)
     _reduce_generator[
         type,
@@ -1487,7 +1487,7 @@ fn variance[
         output_fn,
         reduce_fn_wrapper,
     ](shape, rebind[SIMD[type, 1]](init), 0, OutputChainPtr())
-    return out / (src.__len__() - correction)
+    return out / (len(src) - correction)
 
 
 fn variance[
@@ -2030,8 +2030,8 @@ fn cumsum[
         src: The buffer of elements for which the cumulative sum is computed.
     """
 
-    debug_assert(src.__len__() != 0, "Input must not be empty")
-    debug_assert(dst.__len__() != 0, "Output must not be empty")
+    debug_assert(len(src) != 0, "Input must not be empty")
+    debug_assert(len(dst) != 0, "Output must not be empty")
 
     alias simd_width = simdwidthof[type]()
 

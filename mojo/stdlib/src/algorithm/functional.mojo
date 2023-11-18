@@ -506,7 +506,7 @@ fn tile[
             workgroup_function[tile_size](current_offset)
             current_offset += tile_size
 
-    unroll[tile_size_list.__len__(), static_tile_impl]()
+    unroll[len(tile_size_list), static_tile_impl]()
 
 
 @always_inline
@@ -531,7 +531,7 @@ fn tile[
     # Initialize the work_idx with the starting offset.
     var work_idx = offset
     # Iterate on the list of given tile sizes.
-    for tile_idx in range(tile_size_list.__len__()):
+    for tile_idx in range(len(tile_size_list)):
         let tile_size = tile_size_list[tile_idx]
         # Launch workloads on the current tile sizes until cannot proceed.
         while work_idx <= upperbound - tile_size:
@@ -575,7 +575,7 @@ fn tile[
           don't fit exactly within the upperbound.
     """
     var work_idx = offset
-    alias num_tiles = secondary_tile_size_list.__len__()
+    alias num_tiles = len(secondary_tile_size_list)
 
     @always_inline
     @parameter
@@ -636,8 +636,8 @@ fn tile[
     var current_offset_x: Int = offset_x
     var current_offset_y: Int = offset_y
 
-    alias num_tiles_x = tile_sizes_x.__len__()
-    alias num_tiles_y = tile_sizes_y.__len__()
+    alias num_tiles_x = len(tile_sizes_x)
+    alias num_tiles_y = len(tile_sizes_y)
 
     @always_inline
     @parameter
@@ -809,11 +809,11 @@ fn tile_and_unswitch[
             )
             current_offset += tile_size
 
-    unroll[tile_size_list.__len__(), static_tile_impl]()
+    unroll[len(tile_size_list), static_tile_impl]()
 
     # Use the last tile size to process the residue.
     if current_offset < upperbound:
-        workgroup_function[tile_size_list[tile_size_list.__len__() - 1], False](
+        workgroup_function[tile_size_list[len(tile_size_list) - 1], False](
             current_offset, upperbound
         )
 
@@ -847,7 +847,7 @@ fn tile_and_unswitch[
     # Initialize where to start on the overall work load.
     var current_offset: Int = offset
 
-    for idx in range(tile_size_list.__len__()):
+    for idx in range(len(tile_size_list)):
         # Get the tile size to proceed with.
         let tile_size = tile_size_list[idx]
 
@@ -864,7 +864,7 @@ fn tile_and_unswitch[
         workgroup_function[False](
             current_offset,
             upperbound,
-            tile_size_list[tile_size_list.__len__() - 1],
+            tile_size_list[len(tile_size_list) - 1],
         )
 
 

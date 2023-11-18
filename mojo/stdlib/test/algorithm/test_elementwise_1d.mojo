@@ -30,10 +30,10 @@ fn test_elementwise_1d():
 
         let vector = Buffer[num_elements, DType.float32](buf.data)
 
-        for i in range(vector.__len__()):
+        for i in range(len(vector)):
             vector[i] = i
 
-        let chunk_size = div_ceil(vector.__len__(), num_work_items)
+        let chunk_size = div_ceil(len(vector), num_work_items)
 
         @always_inline
         @parameter

@@ -30,7 +30,7 @@ fn test_vectorize():
             idx, vector.simd_load[simd_width](idx) + 2
         )
 
-    vectorize[2, add_two](vector.__len__())
+    vectorize[2, add_two](len(vector))
 
     # CHECK: 3.0
     print(vector[0])
@@ -52,7 +52,7 @@ fn test_vectorize():
             + vector.simd_load[simd_width](idx),
         )
 
-    vectorize[2, add](vector.__len__())
+    vectorize[2, add](len(vector))
 
     # CHECK: 6.0
     print(vector[0])
@@ -97,10 +97,10 @@ fn test_vectorize_unroll():
     alias simd_width = 4
     alias unroll_factor = 2
 
-    vectorize_unroll[simd_width, unroll_factor, double_vec](vec.__len__())
-    vectorize[simd_width, double_buf](buf.__len__())
+    vectorize_unroll[simd_width, unroll_factor, double_vec](len(vec))
+    vectorize[simd_width, double_buf](len(buf))
 
-    let err = memcmp(vec.data, buf.data, buf.__len__())
+    let err = memcmp(vec.data, buf.data, len(buf))
     # CHECK: 0
     print(err)
 
