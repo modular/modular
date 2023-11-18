@@ -55,6 +55,7 @@ from utils._serialize import (
 
 from .tensor_shape import TensorShape
 from .tensor_spec import TensorSpec
+from utils.list import Dim
 from utils.static_tuple import StaticTuple
 
 # ===----------------------------------------------------------------------===#
