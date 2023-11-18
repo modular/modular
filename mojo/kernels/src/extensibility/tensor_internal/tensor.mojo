@@ -466,7 +466,7 @@ struct Tensor[dtype: DType]:
         Returns:
           The SIMD value at the specified indices.
         """
-        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
+        debug_assert(len(indices) == self.rank(), "invalid rank value")
         return self._ptr.simd_load[simd_width](
             self._compute_linear_offset(indices)
         )
@@ -557,7 +557,7 @@ struct Tensor[dtype: DType]:
           indices: The indices of the value to set.
           val: The SIMD value to store.
         """
-        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
+        debug_assert(len(indices) == self.rank(), "invalid rank value")
         self._ptr.simd_store[simd_width](
             self._compute_linear_offset(indices), val
         )
@@ -625,7 +625,7 @@ struct Tensor[dtype: DType]:
         Returns:
           The linearized index into the tensor data.
         """
-        let rank = indices.__len__()
+        let rank = len(indices)
         var result = indices[0]
         for i in range(rank - 1):
             result = self.dim(i + 1) * result + indices[i + 1]
@@ -712,14 +712,12 @@ struct Tensor[dtype: DType]:
           The tensor read from file.
         """
         let bytes = path.read_bytes()
-        let minimum_size = _SERIALIZATION_HEADER.__len__() + (
-            3 * sizeof[UInt32]()
-        )
+        let minimum_size = len(_SERIALIZATION_HEADER) + (3 * sizeof[UInt32]())
 
         if bytes.num_elements() < minimum_size:
             raise "given file is not a serialized mojo tensor."
 
-        for i in range(_SERIALIZATION_HEADER.__len__()):
+        for i in range(len(_SERIALIZATION_HEADER)):
             if bytes[i] != _SERIALIZATION_HEADER[i]:
                 raise "given file is not a serialized mojo tensor."
 
@@ -728,7 +726,7 @@ struct Tensor[dtype: DType]:
             let spec_ptr = bitcast[UInt32](ptr)
             return __get_address_as_owned_value(spec_ptr.address)
 
-        let major_format_ptr = bytes.data() + _SERIALIZATION_HEADER.__len__()
+        let major_format_ptr = bytes.data() + len(_SERIALIZATION_HEADER)
         let major_format = _uint32_from_bytes(major_format_ptr)
         let minor_format_ptr = major_format_ptr + sizeof[UInt32]()
         let minor_format = _uint32_from_bytes(minor_format_ptr)

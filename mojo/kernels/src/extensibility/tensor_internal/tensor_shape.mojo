@@ -725,7 +725,7 @@ struct TensorShape:
         Args:
           shapes: The shapes to initialize the shape with.
         """
-        let rank = shapes.__len__()
+        let rank = len(shapes)
 
         # Decide which representation we can use and initialize the elements.
         # The most common case should fit into 4 dimensions.
@@ -773,7 +773,7 @@ struct TensorShape:
         Args:
           shapes: The vector to initialize the shape with.
         """
-        let rank = shapes.__len__()
+        let rank = len(shapes)
 
         # Decide which representation we can use and initialize the elements.
         # The most common case should fit into 4 dimensions.
