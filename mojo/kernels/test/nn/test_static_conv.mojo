@@ -25,7 +25,7 @@ from memory.buffer import NDBuffer
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from utils.list import DimList, Dim
 
 
 fn test[

@@ -19,6 +19,7 @@ from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple, product
 from utils.list import Dim, DimList
+from utils.vector import InlinedFixedVector
 
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -41,7 +42,7 @@ from gpu.memory import _malloc_async, _free_async
 # manually convert to a FixedVector.
 fn variadic_list_to_vector[
     type: AnyRegType
-](elems: VariadicList[type],) -> InlinedFixedVector[type]:
+](elems: VariadicList[type]) -> InlinedFixedVector[type]:
     var vector = InlinedFixedVector[type](len(elems))
     for i in range(len(elems)):
         vector.append(elems[i])

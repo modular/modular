@@ -23,7 +23,7 @@ from Softmax import softmax, softmax_3_pass
 from Transpose import transpose
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from utils.list import DimList, Dim
 
 from gpu import (
     ThreadIdx,

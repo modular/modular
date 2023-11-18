@@ -21,7 +21,7 @@ from MatmulUtils import partition_work
 from memory.buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from utils.list import DimList, Dim
 from utils.optional_param import OptionalParamInt, OptionalParamInts
 
 

@@ -24,7 +24,7 @@ from ConvUtils import (
 from memory.buffer import NDBuffer
 
 from utils.index import Index
-from utils.list import DimList
+from utils.list import DimList, Dim
 
 alias N = 1
 alias H = 14
