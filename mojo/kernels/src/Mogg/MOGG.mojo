@@ -84,7 +84,6 @@ from GatherScatter import scatter_elements_shape as scatter_shape
 from GatherScatter import scatter_nd as _scatter_nd
 from GatherScatter import scatter_nd_generator
 from GatherScatter import normalize_neg_index
-from gpu.host.memory import _copy_device_to_host_async
 from Matmul import matmul as _matmul
 from Matmul import (
     pack_b_ndbuffer,
@@ -1479,40 +1478,7 @@ fn slice[
     steps: NDBuffer[1, DimList.create_unknown[1](), step_type],
     out_chain: OutputChainPtr,  # remove (#24946)
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-    # HACK HACK HACK (#24946)
-    # these inputs should be allocated on the host even if the target is cuda
-    @parameter
-    if target == "cpu":
-        return slice_as_view(tensor, starts, ends, steps)
-    else:
-        let starts_host = NDBuffer[
-            1, DimList(rank), start_type
-        ].stack_allocation()
-        let ends_host = NDBuffer[1, DimList(rank), end_type].stack_allocation()
-        let steps_host = NDBuffer[
-            1, DimList(rank), step_type
-        ].stack_allocation()
-        try:
-            _copy_device_to_host_async(
-                starts_host.data, starts.data, rank, out_chain.get_cuda_stream()
-            )
-            _copy_device_to_host_async(
-                ends_host.data, ends.data, rank, out_chain.get_cuda_stream()
-            )
-            _copy_device_to_host_async(
-                steps_host.data, steps.data, rank, out_chain.get_cuda_stream()
-            )
-            var stream = out_chain.get_cuda_stream()
-            stream.synchronize()
-        except e:
-            pass
-
-        return slice_as_view(
-            tensor,
-            starts_host.make_dims_unknown(),
-            ends_host.make_dims_unknown(),
-            steps_host.make_dims_unknown(),
-        )
+    return slice_as_view(tensor, starts, ends, steps)
 
 
 # ===----------------------------------------------------------------------===#
