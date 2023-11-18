@@ -26,7 +26,7 @@ fn test_logsoftmax():
         let in_buf_flat = in_buf.flatten()
         let out_buf_flat = out_buf.flatten()
         out_buf.zero()
-        for i in range(in_buf_flat.__len__()):
+        for i in range(len(in_buf_flat)):
             in_buf_flat[i] = i
 
         with Runtime() as rt:
@@ -36,7 +36,7 @@ fn test_logsoftmax():
             )
             chain.wait()
 
-        for i in range(out_buf_flat.__len__()):
+        for i in range(len(out_buf_flat)):
             print(out_buf_flat[i])
 
     logsoftmax_test_nd[1, DimList(5)]()

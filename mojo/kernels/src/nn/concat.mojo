@@ -99,7 +99,7 @@ fn _canonical_reshape_output[
 ) -> _CanonicallyReshapedBuffer:
     let input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
-    for i in range(1, inputs.__len__()):
+    for i in range(1, len(inputs)):
         out_w += inputs[i].dim(axis)
     return _CanonicallyReshapedBuffer(
         out_buf.data.bitcast[DType.uint8](),
@@ -146,7 +146,7 @@ fn _concat_parallel[
         var amount_traversed = 0
         var output_wc_offset = 0
 
-        for input_index in range(inputs.__len__()):
+        for input_index in range(len(inputs)):
             let input = inputs[input_index]
             let input_canon = _canonical_reshape(input, axis)
             let input_h = input_canon.h
@@ -256,14 +256,14 @@ fn _concat[
     let c = product(inputs[0].get_shape(), axis + 1, rank)
 
     var w_out: Int = 0
-    for i in range(inputs.__len__()):
+    for i in range(len(inputs)):
         w_out += inputs[i].dim(axis)
 
     let stride_h_out = w_out * c
     let stride_w_out = c
 
     var w_offset: Int = 0
-    for i in range(inputs.__len__()):
+    for i in range(len(inputs)):
         # copy one w x c slice along h at a time
         let w = inputs[i].dim(axis)
         for j in range(h):
@@ -291,7 +291,7 @@ fn _concat_inner[
 ):
     constrained[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
-    for i in range(inputs.__len__()):
+    for i in range(len(inputs)):
         let buffer_len = inputs[i].size()
         memcpy[type](
             output.data.offset(num_elems_copied), inputs[i].data, buffer_len
@@ -312,7 +312,7 @@ fn _check_input_consistency[
     if not is_kernels_debug_build():
         return
     # check inputs have same rank and same dims except for axis dim
-    for i in range(inputs.__len__()):
+    for i in range(len(inputs)):
         debug_assert(
             inputs[0].get_rank() == inputs[i].get_rank(),
             "all concat inputs must have the same rank",
@@ -377,7 +377,7 @@ fn _concat_small[
         var target_dim = out_index[axis]
 
         # Iterate through the inputs to find the one we should be storing to.
-        for i in range(inputs.__len__()):
+        for i in range(len(inputs)):
             let input = inputs[i]
 
             # This is the input we should be loading/storing.
@@ -404,7 +404,7 @@ fn _concat_small[
 
     # We need to check it's safe to simd_load from each input.
     var inputs_simd_aligned = True
-    for i in range(inputs.__len__()):
+    for i in range(len(inputs)):
         if inputs[i].dynamic_shape[rank - 1] % simd_width != 0:
             inputs_simd_aligned = False
 
@@ -513,7 +513,7 @@ fn concat_shape[
         return True
 
     var concat_axis_dim_sum = 0
-    for i in range(input_bufs.__len__()):
+    for i in range(len(input_bufs)):
         concat_axis_dim_sum += input_bufs[i].dim(axis)
         # TODO(#17512)
         debug_assert(

@@ -1178,7 +1178,7 @@ fn gather_nd[
             # Construct the full index on reshaped_data, where to copy from.
             start_tensor[0] = batch_dim
             var start_index = 1
-            for dim in range(idx.__len__()):
+            for dim in range(len(idx)):
                 start_tensor[start_index] = idx[dim]
                 start_index = start_index + 1
 

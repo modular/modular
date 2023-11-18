@@ -95,7 +95,7 @@ fn non_max_suppression[
     # note that the output tensor takes ownership of output_predictions.data
     # output_predictions.data may be larger than the actual tensor size indicated
     # by the shape, but that is OK since the tensor.__del__() frees the pointer
-    let output_shape = TensorShape(output_predictions.__len__() // 3, 3)
+    let output_shape = TensorShape(len(output_predictions) // 3, 3)
     return Tensor[DType.int64](
         rebind[DTypePointer[DType.int64]](output_predictions.data), output_shape
     )
@@ -232,7 +232,7 @@ fn non_max_suppression[
                 )
 
             # sort box_idxs based on corresponding scores
-            _quicksort[Int64, _greater_than](box_idxs.data, box_idxs.__len__())
+            _quicksort[Int64, _greater_than](box_idxs.data, len(box_idxs))
 
             var pred_idx = 0
             while (

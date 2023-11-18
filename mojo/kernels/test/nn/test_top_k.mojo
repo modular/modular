@@ -202,8 +202,8 @@ fn main():
         rank: Int, type: DType
     ](inout buf: NDBuffer[rank, DimList.create_unknown[rank](), type]):
         let flat_buf = buf.flatten()
-        for i in range(flat_buf.__len__()):
-            flat_buf[i] = flat_buf.__len__() - i - 1
+        for i in range(len(flat_buf)):
+            flat_buf[i] = len(flat_buf) - i - 1
         flat_buf[0] = -1
 
     fn test_5d():

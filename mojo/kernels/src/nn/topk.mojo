@@ -148,11 +148,11 @@ fn _top_k[
 
                 if sorted:
                     _quicksort[Int64, _val_greater_than_eq](
-                        idxs.data, idxs.__len__()
+                        idxs.data, len(idxs)
                     )
                 else:
                     partition[Int64, _val_greater_than_eq](
-                        idxs.data, k, idxs.__len__()
+                        idxs.data, k, len(idxs)
                     )
             else:
 
@@ -164,13 +164,9 @@ fn _top_k[
                     )
 
                 if sorted:
-                    _quicksort[Int64, _val_less_than_eq](
-                        idxs.data, idxs.__len__()
-                    )
+                    _quicksort[Int64, _val_less_than_eq](idxs.data, len(idxs))
                 else:
-                    partition[Int64, _val_less_than_eq](
-                        idxs.data, k, idxs.__len__()
-                    )
+                    partition[Int64, _val_less_than_eq](idxs.data, k, len(idxs))
 
             if sorted:
                 # for duplicate vals, the smaller index needs to appear first

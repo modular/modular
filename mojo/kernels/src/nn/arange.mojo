@@ -26,7 +26,7 @@ fn _arange_get_numelems[
 ](start: SIMD[type, 1], stop: SIMD[type, 1], step: SIMD[type, 1]) -> Int:
     @parameter
     if type.is_integral():
-        return range(start.to_int(), stop.to_int(), step.to_int()).__len__()
+        return len(range(start.to_int(), stop.to_int(), step.to_int()))
     else:
         return ceil(abs(stop - start) / abs(step)).to_int()
 

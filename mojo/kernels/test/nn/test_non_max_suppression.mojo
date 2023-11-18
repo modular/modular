@@ -33,9 +33,9 @@ struct BoxCoords[type: DType]:
 fn fill_boxes[
     type: DType
 ](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> Tensor[type]:
-    let num_boxes = box_list.__len__() // batch_size
+    let num_boxes = len(box_list) // batch_size
     var boxes = Tensor[type](batch_size, num_boxes, 4)
-    for i in range(box_list.__len__()):
+    for i in range(len(box_list)):
         let coords = linear_offset_to_coords[2](
             i, TensorShape(batch_size, num_boxes)
         )
@@ -64,11 +64,11 @@ fn fill_scores[
 ](
     batch_size: Int, num_classes: Int, scores_list: VariadicList[SIMD[type, 1]]
 ) -> Tensor[type]:
-    let num_boxes = scores_list.__len__() // batch_size // num_classes
+    let num_boxes = len(scores_list) // batch_size // num_classes
 
     let shape = TensorShape(batch_size, num_classes, num_boxes)
     var scores = Tensor[type](shape)
-    for i in range(scores_list.__len__()):
+    for i in range(len(scores_list)):
         let coords = linear_offset_to_coords[3](i, shape)
         scores[coords] = scores_list[i]
 

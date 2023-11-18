@@ -16,7 +16,7 @@ from utils.list import Dim, DimList
 from utils.vector import InlinedFixedVector
 
 
-struct _NDBufferVector[rank: Int, type: DType]:
+struct _NDBufferVector[rank: Int, type: DType](Sized):
     """Utility to store a VariadicList of NDBuffers. Required because there is not
     a clean way to convert a VariadicList of DynamicRankBuffers to a VariadicList
     of NDBuffers."""
@@ -37,8 +37,8 @@ struct _NDBufferVector[rank: Int, type: DType]:
         self.__init__(inputs)
 
     fn __init__(inout self, input_list: VariadicList[DynamicRankBuffer]):
-        self.storage = Self.StorageType(input_list.__len__())
-        for i in range(input_list.__len__()):
+        self.storage = Self.StorageType(len(input_list))
+        for i in range(len(input_list)):
             self.storage.append(input_list[i].to_ndbuffer[rank, type]())
 
     @always_inline
@@ -46,8 +46,8 @@ struct _NDBufferVector[rank: Int, type: DType]:
         self.__init__(inputs)
 
     fn __init__(inout self, input_list: VariadicList[Self.BufferType]):
-        self.storage = Self.StorageType(input_list.__len__())
-        for i in range(input_list.__len__()):
+        self.storage = Self.StorageType(len(input_list))
+        for i in range(len(input_list)):
             self.storage.append(input_list[i])
 
     @always_inline
@@ -58,7 +58,7 @@ struct _NDBufferVector[rank: Int, type: DType]:
 
     @always_inline
     fn __len__(self) -> Int:
-        return self.storage.__len__()
+        return len(self.storage)
 
     @always_inline
     fn __del__(owned self):
@@ -95,14 +95,14 @@ fn _split[
     let c = product(shape, axis + 1, rank)
 
     var w_in: Int = 0
-    for i in range(outputs.__len__()):
+    for i in range(len(outputs)):
         w_in += outputs[i].dim(axis)
 
     let stride_h_in = w_in * c
     let stride_w_in = c
 
     var w_offset: Int = 0
-    for i in range(outputs.__len__()):
+    for i in range(len(outputs)):
         # copy one w x c slice along h at a time
         let w = outputs[i].dim(axis)
         let out_buf = outputs[i].flatten()
@@ -126,9 +126,9 @@ fn _split_inner[
 ):
     constrained[axis == 0, "_split_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
-    for i in range(outputs.__len__()):
+    for i in range(len(outputs)):
         let output_buf = outputs[i].flatten()
-        let buffer_len = output_buf.__len__()
+        let buffer_len = len(output_buf)
         let input_buffer_offset = Buffer[Dim(), type](
             input.data.offset(num_elems_copied), buffer_len
         )
@@ -146,7 +146,7 @@ fn split[
     out_chain: OutputChainPtr,
 ):
     # check inputs have same rank and same dims except for axis dim
-    for i in range(outputs.__len__()):
+    for i in range(len(outputs)):
         if outputs[0].get_rank() != outputs[i].get_rank():
             return out_chain.mark_error(
                 "all split inputs must have the same rank"

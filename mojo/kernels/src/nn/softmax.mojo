@@ -99,8 +99,8 @@ fn _softmax_2_pass_step1[
     # scope, we therefore replicate the logic of Functional.vectorize here.
     # In the future (once we have non-isolated-from-above regions) we can
     # just reuse the Functional.vectorize code.
-    let len = input.__len__()
-    let vector_end = (len // simd_width) * simd_width
+    let lengt = len(input)
+    let vector_end = (lengt // simd_width) * simd_width
 
     for i in range(0, vector_end, simd_width):
         let simd_elem = input.simd_load[simd_width](i)
@@ -115,7 +115,7 @@ fn _softmax_2_pass_step1[
     var running_max = running_max_vec.reduce_max()
     var running_sum = running_sum_vec.reduce_add()
 
-    for i in range(vector_end, len):
+    for i in range(vector_end, lengt):
         let elem = input[i]
         let new_max = running_max.max(elem)
         running_sum = running_sum * exp(running_max - new_max) + exp(
@@ -155,7 +155,7 @@ fn _softmax_2_pass_step2[
             exp(input_val - running_max_simd) / running_sum_simd,
         )
 
-    vectorize_unroll[simd_width, unroll_factor, _step_2](output.__len__())
+    vectorize_unroll[simd_width, unroll_factor, _step_2](len(output))
 
 
 fn softmax_2_pass[
@@ -251,7 +251,7 @@ fn _softmax_3_pass_step_2[
             accum_scalar, accum_simd, elem
         )
 
-    vectorize_unroll[simd_width, unroll_factor, step_2](output.__len__())
+    vectorize_unroll[simd_width, unroll_factor, step_2](len(output))
     # Reduce the values from both the scalar and vector accum.
     return accum_scalar + accum_simd.reduce_add()
 
@@ -283,7 +283,7 @@ fn _softmax_3_pass_step_3[
         elem = accum_apply_func[type, simd_width](elem, accum_simd)
         output.simd_store[simd_width](idx, elem)
 
-    vectorize_unroll[simd_width, unroll_factor, step_3](output.__len__())
+    vectorize_unroll[simd_width, unroll_factor, step_3](len(output))
 
 
 fn _softmax_3_pass_base[
@@ -357,7 +357,7 @@ fn _softmax_3_pass_base[
 
     # Generate fused input-reduction
     _reduce_generator[type, 1, True, input_fn, output_fn, reduce_impl](
-        StaticIntTuple[1](output.__len__()), min_or_neginf[type](), 0, out_chain
+        StaticIntTuple[1](len(output)), min_or_neginf[type](), 0, out_chain
     )
 
     let max_val = max_buff[0]

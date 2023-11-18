@@ -75,7 +75,7 @@ fn slice_as_view[
 
         # If the steps are positive we traverse from start, if negative from
         # stop.
-        new_shape[i] = slice(start, stop, step).__len__()
+        new_shape[i] = len(slice(start, stop, step))
 
     # Create the new view
     return NDBuffer[rank, DimList.create_unknown[rank](), type](
