@@ -1565,6 +1565,9 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
     // The function reference itself is mangled.
     FlatSymbolRefAttr leaf = funcRef.getSymbol().getNestedReferences().back();
     StringRef baseName = leaf.getValue().split('(').first.split('[').first;
+    // Drop the thunk prefix if it's there.
+    // FIXME(#25950): Use source name here.
+    baseName.consume_front("`thunk_");
     if (!lookupAndResolveMangledDecl(shared, baseName, leaf.getValue(), loc,
                                      *moduleDecl, DeclResolvedness::signature))
       return WalkResult::interrupt();
@@ -1730,6 +1733,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             // The mangled name may include the input parameter signature.
             StringRef baseFuncName =
                 op.getName().split('(').first.split('[').first;
+            // Drop the thunk prefix if it's there.
+            // FIXME(#25950): Use source name here.
+            baseFuncName.consume_front("`thunk_");
             addDeclForOp(op, StringAttr::get(getContext(), baseFuncName));
           })
           .Case([&](UnresolvedImportOp op) {

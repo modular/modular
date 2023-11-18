@@ -7,12 +7,46 @@
 # RUN: mojo package %S/inputs/test_package -o %T/test_package_trait.mojopkg
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %T %s | FileCheck %s
 
-from test_package_trait.module import PackageTrait, UseTrait
+from test_package_trait.module import (
+    PackageTrait,
+    UseTrait,
+    UseTraitReg,
+    trait_method,
+    contains_thunk_ref,
+)
 
 
+# CHECK: lit.struct.decl @MyType{{.*}}@PackageTrait]
 struct MyType(PackageTrait):
     fn method(self):
         pass
+
+
+# CHECK: lit.struct.decl @MyRegType{{.*}}@PackageTrait]
+@register_passable
+struct MyRegType(PackageTrait):
+    # CHECK: lit.func @"`thunk_method
+    fn method(self):
+        pass
+
+
+fn bind_trait[T: PackageTrait]():
+    pass
+
+
+# CHECK-LABEL: lit.func @"test
+fn test():
+    # CHECK-NEXT: [!MyType, {"method" {{.*}}@MyType::@"method
+    bind_trait[MyType]()
+    # CHECK-NEXT: [!MyRegType, {"method" {{.*}}@MyRegType::@"`thunk_method
+    bind_trait[MyRegType]()
+    # CHECK-NEXT: [!UseTrait, {"method" {{.*}}@UseTrait::@"method
+    trait_method[UseTrait]()
+    # CHECK-NEXT: [!UseTraitReg, {"method" {{.*}}@UseTraitReg::@"`thunk_method
+    trait_method[UseTraitReg]()
+
+    # COM: Anchor this decl reference to materialize it.
+    contains_thunk_ref()
 
 
 fn use_trait[T: PackageTrait](x: UseTrait, y: T):
@@ -23,3 +57,5 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
 # CHECK: lit.trait.decl @UsedInPackageTrait
 # CHECK: lit.struct.decl @UseTrait
 # CHECK-SAME: {{.*}}@UsedInPackageTrait
+
+# CHECK: lit.func @"`thunk_method({{.*}}_PrivateReg)"

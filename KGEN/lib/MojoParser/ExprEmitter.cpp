@@ -979,8 +979,12 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
     return {};
   }
 
-  // Synthesize the vtable required for the trait from the struct.
+  // Synthesize the vtable required for the trait from the struct. Make sure the
+  // trait body is fully resolved so we know what the methods are.
   ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
+  if (failed(getDeclResolver().resolveFully(*traitDecl, value.expr->getLoc())))
+    return {};
+
   auto selfType = DeclRefType::get(metatype.getSymbol(),
                                    metatype.getParamValues(), metatype);
   // FIXME(generics): We aren't propagating metatypes into pointer types, so
