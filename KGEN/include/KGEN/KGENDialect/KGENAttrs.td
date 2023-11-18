@@ -661,7 +661,6 @@ def KGEN_StructAttr : KGENAttr<"Struct", "struct", [
   }];
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values)>,
     AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
                                         "StructType":$type), [{
       return get(type.getContext(), values, type);

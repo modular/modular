@@ -153,15 +153,19 @@ struct StructOperationLowerer : public mlir::IRRewriter {
 
   /// Debug type converter.
   DebugInfo::DebugInfoTypeConverter debugTypeConverter;
+
+  /// Cached anyRegTypeType so we don't need to recreate it.
+  AnyRegTypeType anyRegTypeType;
 };
 } // namespace
 
 StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
                                                StructDeclarations &structDecls)
-    : IRRewriter(ctx), structDecls(structDecls) {
+    : IRRewriter(ctx), structDecls(structDecls),
+      anyRegTypeType(AnyRegTypeType::get(ctx)) {
 
   // Get the empty `#kgen.struct<>` attribute, which has empty struct type.
-  auto emptyStructType = KGEN::StructType::get(ctx, ArrayRef<Type>());
+  auto emptyStructType = KGEN::StructType::get({}, anyRegTypeType);
   emptyStructAttr = KGEN::StructAttr::get({}, emptyStructType);
 
   // Build a converter to handle updating converted types within debug info
@@ -288,7 +292,6 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   auto processBindType = [this](BindTypeAttr bind) {
     MetaTypeType metatype = bind.getType();
     // TODO(#25619): build AnyTypeType instead. This is currently a hack.
-    auto anyRegTypeType = AnyRegTypeType::get(bind.getContext());
     return TypeConstantAttr::get(
         replace(DeclRefType::get(metatype.getSymbol(),
                                  metatype.getParamValues(), anyRegTypeType)),
@@ -446,7 +449,7 @@ Type StructOperationLowerer::replace(Type type) {
     // Erase metatypes and reg-passable anytypes. Passability information is
     // encoded elsewhere so this won't be needed.
     // TODO(#25619): lower to AnyTypeType instead. This is currently a hack.
-    result = AnyRegTypeType::get(type.getContext());
+    result = anyRegTypeType;
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     result = processSignatureType(signature);
   } else if (isa<LIT::LifetimeType>(type)) {
@@ -485,8 +488,7 @@ StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   // Flatten register-passable, single-element structs.
   if (elementTypes.size() == 1 && decl.isRegisterPassable)
     return elementTypes[0];
-
-  return KGEN::StructType::get(ref.getContext(), elementTypes,
+  return KGEN::StructType::get(elementTypes, anyRegTypeType,
                                !decl.isRegisterPassable);
 }
 

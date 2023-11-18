@@ -576,11 +576,9 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilder<(ins "ArrayRef<Type>":$elementTypes)>,
-    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$elementTypes)>,
-    TypeBuilder<(ins "ArrayRef<Type>":$elementTypes, "bool":$isMemoryOnly)>,
-    TypeBuilderWithInferredContext<(ins
-      "ArrayRef<Type>":$elementTypes, "bool":$isMemoryOnly)>,
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$elementTypes,
+                                        "Type":$metaType,
+                                        CArg<"bool", "false">:$isMemoryOnly)>,
   ];
 
   let extraClassDeclaration = [{
@@ -682,7 +680,8 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
   let assemblyFormat = "`<` custom<TypeParamValues>($types) `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>
+    TypeBuilderWithInferredContext<(ins
+      "ArrayRef<Type>":$types, "Type":$metaType)>
   ];
 
   let extraClassDeclaration = [{

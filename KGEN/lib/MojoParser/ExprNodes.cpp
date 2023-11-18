@@ -2949,7 +2949,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (!errorType)
       return {};
 
-    resultType = VariantType::get({errorType, resultType});
+    resultType = VariantType::get({errorType, resultType},
+                                  AnyRegTypeType::get(emitter.getContext()));
   }
 
   // Build the signature type.

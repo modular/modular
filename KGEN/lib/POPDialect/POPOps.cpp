@@ -586,10 +586,11 @@ LogicalResult CoroutineHandleOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static PointerType getCoroutinePromiseType(Type type) {
+  auto anyRegTypeType = AnyRegTypeType::get(type.getContext());
   return PointerType::get(TypeConstantAttr::get(
-      StructType::get(type.getContext(),
-                      cast<CoroutineType>(type).getResultTypes()),
-      AnyRegTypeType::get(type.getContext())));
+      StructType::get(cast<CoroutineType>(type).getResultTypes(),
+                      anyRegTypeType),
+      anyRegTypeType));
 }
 
 //===----------------------------------------------------------------------===//
@@ -602,10 +603,11 @@ static Type getCmpXChgResultType(Type type) {
   auto pointerType = dyn_cast<PointerType>(type);
   if (!pointerType)
     return nullptr;
-  auto eltType = pointerType.getElementAsType();
+  Type eltType = pointerType.getElementAsType();
   auto boolType =
       SIMDType::get(1, DTypeConstantAttr::get(type.getContext(), DType::kBool));
-  return StructType::get({eltType, boolType});
+  return StructType::get({eltType, boolType},
+                         AnyRegTypeType::get(eltType.getContext()));
 }
 
 //===----------------------------------------------------------------------===//

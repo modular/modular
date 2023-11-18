@@ -1062,26 +1062,13 @@ Type StructType::getConcreteElementType(unsigned i) const {
   return llvm::cast<ConcreteTypeConstantAttr>(getElementTypes()[i]).getValue();
 }
 
-StructType StructType::get(MLIRContext *context, ArrayRef<Type> elementTypes) {
-  return get(context, elementTypes, /*isMemoryOnly=*/false);
-}
-
-StructType StructType::get(ArrayRef<Type> elementTypes) {
-  return get(elementTypes, /*isMemoryOnly=*/false);
-}
-
-StructType StructType::get(MLIRContext *context, ArrayRef<Type> elementTypes,
+StructType StructType::get(ArrayRef<Type> elementTypes, Type metaType,
                            bool isMemoryOnly) {
   SmallVector<TypedAttr> elementTypeExprs;
   elementTypeExprs.reserve(elementTypes.size());
   for (Type elementType : elementTypes)
-    elementTypeExprs.push_back(getTypeConstantAttr(elementType));
-  return get(context, elementTypeExprs, isMemoryOnly);
-}
-
-StructType StructType::get(ArrayRef<Type> elementTypes, bool isMemoryOnly) {
-  assert(!elementTypes.empty() && "expected at least one element type");
-  return get(elementTypes.front().getContext(), elementTypes, isMemoryOnly);
+    elementTypeExprs.push_back(TypeConstantAttr::get(elementType, metaType));
+  return get(metaType.getContext(), elementTypeExprs, isMemoryOnly);
 }
 
 static std::optional<int64_t>
@@ -1228,11 +1215,11 @@ VariadicAttr PackType::getVariadicAttr() const {
 // VariantType
 //===----------------------------------------------------------------------===//
 
-VariantType VariantType::get(ArrayRef<Type> types) {
+VariantType VariantType::get(ArrayRef<Type> types, Type metaType) {
   assert(!types.empty());
   SmallVector<TypedAttr> typeExprs;
   for (Type type : types)
-    typeExprs.push_back(getTypeConstantAttr(type));
+    typeExprs.push_back(TypeConstantAttr::get(type, metaType));
   return get(types.front().getContext(), typeExprs);
 }
 

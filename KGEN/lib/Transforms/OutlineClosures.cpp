@@ -92,8 +92,10 @@ void OutlineClosuresPass::runOnOperation() {
       StringAttr globalVar = nullptr;
       StructType structType = nullptr;
       if (!isolated) {
-        structType = b.getType<StructType>(llvm::map_to_vector(
-            captures, [](Value capture) { return capture.getType(); }));
+        structType = StructType::get(
+            llvm::map_to_vector(
+                captures, [](Value capture) { return capture.getType(); }),
+            b.getType<AnyRegTypeType>());
 
         LLVM_DEBUG(llvm::dbgs()
                    << "Created capture struct: " << structType << "\n");
