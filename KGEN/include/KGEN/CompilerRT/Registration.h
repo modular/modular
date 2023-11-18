@@ -116,4 +116,10 @@ namespace M::KGEN {
 void registerPython(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
+namespace M::KGEN {
+/// Register the Python functions.
+void registerHashMap(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
 #endif // KGEN_COMPILERRT_REGISTRATION_H
