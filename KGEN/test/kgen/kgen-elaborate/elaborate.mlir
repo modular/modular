@@ -2271,3 +2271,36 @@ kgen.generator export @param_alias(%arg0: !pop.array<apply(:()->index @sizeof<:r
   kgen.call_param[(!pop.array<apply(:()->index @sizeof<:regtype array<2, index>>), i8>) -> (): bind_signature(:<index>(!pop.array<apply(:()->index @sizeof<:regtype array<*(0,0), index>>), i8>) -> () fn, 2)](%arg0)
   kgen.return
 }
+
+// -----
+
+kgen.generator @f() {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @"rebind_type,p=1"
+kgen.generator @rebind_type<p>(%arg0: !kgen.pointer<array<p, i8>>)
+    -> !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]> {
+  // CHECK-NEXT: kgen.rebind %arg0 : !kgen.pointer<array<1, i8>> to !kgen.pointer<[array<1, i8>
+  %0 = kgen.rebind %arg0 : !kgen.pointer<array<p, i8>> to !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]>
+  // CHECK-NEXT: constant: pointer<[{{.*}}]> = <store_to_mem(1)>
+  kgen.param.constant: pointer<[index, {"f": () -> () = @f}]> = <rebind(:pointer<index> store_to_mem(p))>
+  // CHECK-NEXT: constant: pointer<[{{.*}}]> = <0>
+  kgen.param.constant: pointer<[array<p, i8>, {"f": () -> () = @f}]> = <rebind(:pointer<array<p, i8>> 0)>
+  kgen.return %0 : !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]>
+}
+
+kgen.generator @nonparametric_rebind(%arg0: !kgen.pointer<index>) -> index {
+  %0 = kgen.rebind %arg0 : !kgen.pointer<index> to !kgen.pointer<[index, {"f": () -> () = @f}]>
+  %1 = pop.load %0 : !kgen.pointer<[index, {"f": () -> () = @f}]>
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: kgen.func @try_rebind
+kgen.generator @try_rebind(%arg0: !kgen.pointer<array<1, i8>>) {
+  kgen.call @rebind_type<1>(%arg0) : (!kgen.pointer<array<1, i8>>) -> ()
+  kgen.param.apply a = [(!kgen.pointer<index>) -> index: @nonparametric_rebind](store_to_mem(1))
+  // CHECK: constant = <1>
+  kgen.param.constant = <a>
+  kgen.return
+}
