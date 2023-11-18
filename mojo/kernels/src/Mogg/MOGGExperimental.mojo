@@ -38,7 +38,7 @@ fn _get_start_indices_of_nth_subvolume[
 
         unroll[rank - subvolume_rank, compute_shape]()
     else:
-        let rank = out.__len__()
+        let rank = len(out)
         for i in range(rank - subvolume_rank - 1, -1, -1):
             out._unsafe_set_dim(i, curr_index % shape[i])
             curr_index //= shape[i]
@@ -74,9 +74,9 @@ fn apply_per_element[
     simd_width: Int,
     func: fn[width: Int] (IntList) capturing -> None,
 ](shape: IntList):
-    let rank = shape.__len__()
+    let rank = len(shape)
     let total_size: Int = shape.nelems()
-    let inner_loop = shape[shape.__len__() - 1]
+    let inner_loop = shape[len(shape) - 1]
     let outer_loop = total_size // inner_loop
 
     for outer_i in range(outer_loop):
@@ -123,7 +123,7 @@ fn to_tensor[
 
     @parameter
     if shape.has_static_length():
-        alias rank = static_shape.__len__()
+        alias rank = len(static_shape)
 
         @always_inline
         @parameter

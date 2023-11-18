@@ -10,10 +10,10 @@ from utils.index import StaticIntTuple
 from math import max
 
 
-struct IntList[static_values: DimList = DimList()]:
+struct IntList[static_values: DimList = DimList()](Sized):
     # Array must be >= 1 length, so we clamp to that if we have unknown
     # length shape. DimList of size 0 represents a dynamically ranked list.
-    alias _length = static_values.__len__()
+    alias _length = len(static_values)
     alias _safe_len = max(1, Self._length)
 
     # An alias to a parameter of the same sized shape as this but with the values unknown.
@@ -34,7 +34,7 @@ struct IntList[static_values: DimList = DimList()]:
     # Should not be copy constructable, i.e passed by value, but can be cloned.
     @always_inline
     fn __init__(inout self, other: IntList):
-        let num_elements = other.__len__()
+        let num_elements = len(other)
         self.length = Self._length
         self.data = Pointer[Int]()
         self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
@@ -62,7 +62,7 @@ struct IntList[static_values: DimList = DimList()]:
     @always_inline
     fn __init__(inout self, *elems: Int):
         let elems_list: VariadicList[Int] = elems
-        let num_elements = elems_list.__len__()
+        let num_elements = len(elems_list)
 
         self.length = Self._length
         self.data = Pointer[Int]()
@@ -166,7 +166,7 @@ struct IntList[static_values: DimList = DimList()]:
 
             unroll[Self._length, body]()
         else:
-            for i in range(self.__len__()):
+            for i in range(len(self)):
                 num_elms *= self[i]
         return num_elms
 
@@ -196,9 +196,9 @@ struct IntList[static_values: DimList = DimList()]:
 
     fn print(self):
         var str: String = "("
-        for i in range(self.__len__()):
+        for i in range(len(self)):
             str += self[i]
-            if i != (self.__len__() - 1):
+            if i != (len(self) - 1):
                 str += ", "
         str += ")"
         print(str)

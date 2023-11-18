@@ -17,7 +17,7 @@ struct Tensor[
     static_shape: DimList = DimList(),
     static_strides: DimList = DimList(),
 ]:
-    alias static_rank = -1 if static_shape.__len__() == 0 else static_shape.__len__()
+    alias static_rank = -1 if len(static_shape) == 0 else len(static_shape)
 
     var data: DTypePointer[type]
     var shape: IntList[static_shape]
@@ -34,7 +34,7 @@ struct Tensor[
         self.data = ptr
         self.shape = IntList[static_shape](shape)
         self.strides = IntList[static_strides](strides)
-        self.dyn_rank = shape.__len__()
+        self.dyn_rank = len(shape)
 
     @mogg_tensor_move_constructor()
     @always_inline
