@@ -153,7 +153,7 @@ struct Dim:
 
 
 @register_passable("trivial")
-struct DimList:
+struct DimList(Sized):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
@@ -191,7 +191,7 @@ struct DimList:
         Returns:
             The number of elements in the DimList.
         """
-        return self.value.__len__()
+        return len(self.value)
 
     @always_inline("nodebug")
     fn at[i: Int](self) -> Dim:

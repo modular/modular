@@ -323,7 +323,7 @@ struct Buffer[
         Returns:
             The size of the Buffer in bytes.
         """
-        return self.__len__() * sizeof[type]()
+        return len(self) * sizeof[type]()
 
     @always_inline
     fn zero(self):
@@ -353,7 +353,7 @@ struct Buffer[
         fn _fill[simd_width: Int](idx: Int):
             self.simd_store[simd_width](idx, SIMD[type, simd_width].splat(val))
 
-        vectorize[simd_width, _fill](self.__len__())
+        vectorize[simd_width, _fill](len(self))
 
     @always_inline
     fn fill(self, val: SIMD[type, 1]):
@@ -622,7 +622,7 @@ struct NDBuffer[
     type: DType,
     /,
     address_space: AddressSpace = AddressSpace.GENERIC,
-]:
+](Sized):
     """An N-dimensional Buffer.
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does
@@ -1432,7 +1432,7 @@ struct NDBuffer[
             The buffer must be contiguous.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        memset_zero(self.data, self.__len__())
+        memset_zero(self.data, len(self))
 
     fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
         """Assigns val to all elements in chunks of size simd_width.
