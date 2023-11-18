@@ -49,7 +49,7 @@ struct Buffer[
     type: DType,
     /,
     address_space: AddressSpace = AddressSpace.GENERIC,
-]:
+](Sized):
     """Defines a Buffer which can be parametrized on a static size and Dtype.
 
     The Buffer does not own its underlying pointer.
