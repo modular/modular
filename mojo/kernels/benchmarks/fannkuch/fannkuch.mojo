@@ -84,7 +84,7 @@ fn main():
         out_chain.wait()
 
     var max_flips = max_vals[0]
-    for i in range(max_vals.__len__()):
+    for i in range(len(max_vals)):
         # print("i = ", i, " max_vals[i] = ", max_vals[i])
         max_flips = max(max_flips, max_vals[i])
 

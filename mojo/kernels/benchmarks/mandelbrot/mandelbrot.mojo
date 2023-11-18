@@ -42,7 +42,7 @@ fn draw_mandelbrot(inout out: Tensor[int_type]):
         for col in range(out.dim(1)):
             let v: Int = out[row, col].value
             if v > 0:
-                let p = charset[v % charset.__len__()]
+                let p = charset[v % len(charset)]
                 _printf("%c", p)
             else:
                 print_no_newline("0")
