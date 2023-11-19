@@ -548,7 +548,230 @@ fn concat[
         target == "cuda", "Concat kernel implementation only valid on GPU."
     ]()
     try:
-        return _concat_gpu(output, axis, inputs, out_chain)
+        let num_inputs = len(inputs)
+        # TODO: The number of Variadic arguments are know at compile time,
+        # we should replace InlinedFixedVector with StaticTuple for any
+        # operation that accept Variadic<MO_Tensor>
+        if num_inputs == 1:
+            return _concat_gpu[num_inputs=1](
+                output, axis, StaticTuple[1](inputs[0]), out_chain
+            )
+        if num_inputs == 2:
+            return _concat_gpu[num_inputs=2](
+                output, axis, StaticTuple[2](inputs[0], inputs[1]), out_chain
+            )
+        if num_inputs == 3:
+            return _concat_gpu[num_inputs=3](
+                output,
+                axis,
+                StaticTuple[3](inputs[0], inputs[1], inputs[2]),
+                out_chain,
+            )
+        if num_inputs == 4:
+            return _concat_gpu[num_inputs=4](
+                output,
+                axis,
+                StaticTuple[4](inputs[0], inputs[1], inputs[2], inputs[3]),
+                out_chain,
+            )
+        if num_inputs == 5:
+            return _concat_gpu[num_inputs=5](
+                output,
+                axis,
+                StaticTuple[5](
+                    inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]
+                ),
+                out_chain,
+            )
+        if num_inputs == 6:
+            return _concat_gpu[num_inputs=6](
+                output,
+                axis,
+                StaticTuple[6](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                ),
+                out_chain,
+            )
+        if num_inputs == 7:
+            return _concat_gpu[num_inputs=7](
+                output,
+                axis,
+                StaticTuple[7](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                ),
+                out_chain,
+            )
+        if num_inputs == 8:
+            return _concat_gpu[num_inputs=8](
+                output,
+                axis,
+                StaticTuple[8](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                    inputs[7],
+                ),
+                out_chain,
+            )
+        if num_inputs == 9:
+            return _concat_gpu[num_inputs=9](
+                output,
+                axis,
+                StaticTuple[9](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                    inputs[7],
+                    inputs[8],
+                ),
+                out_chain,
+            )
+        if num_inputs == 10:
+            return _concat_gpu[num_inputs=10](
+                output,
+                axis,
+                StaticTuple[10](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                    inputs[7],
+                    inputs[8],
+                    inputs[9],
+                ),
+                out_chain,
+            )
+        if num_inputs == 11:
+            return _concat_gpu[num_inputs=11](
+                output,
+                axis,
+                StaticTuple[11](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                    inputs[7],
+                    inputs[8],
+                    inputs[9],
+                    inputs[10],
+                ),
+                out_chain,
+            )
+        if num_inputs == 12:
+            return _concat_gpu[num_inputs=12](
+                output,
+                axis,
+                StaticTuple[12](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                    inputs[7],
+                    inputs[8],
+                    inputs[9],
+                    inputs[10],
+                    inputs[11],
+                ),
+                out_chain,
+            )
+        if num_inputs == 13:
+            return _concat_gpu[num_inputs=13](
+                output,
+                axis,
+                StaticTuple[13](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                    inputs[7],
+                    inputs[8],
+                    inputs[9],
+                    inputs[10],
+                    inputs[11],
+                    inputs[12],
+                ),
+                out_chain,
+            )
+        if num_inputs == 14:
+            return _concat_gpu[num_inputs=14](
+                output,
+                axis,
+                StaticTuple[14](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                    inputs[7],
+                    inputs[8],
+                    inputs[9],
+                    inputs[10],
+                    inputs[11],
+                    inputs[12],
+                    inputs[13],
+                ),
+                out_chain,
+            )
+        if num_inputs == 15:
+            return _concat_gpu[num_inputs=15](
+                output,
+                axis,
+                StaticTuple[15](
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
+                    inputs[3],
+                    inputs[4],
+                    inputs[5],
+                    inputs[6],
+                    inputs[7],
+                    inputs[8],
+                    inputs[9],
+                    inputs[10],
+                    inputs[11],
+                    inputs[12],
+                    inputs[13],
+                    inputs[14],
+                ),
+                out_chain,
+            )
+        else:
+            return out_chain.mark_error(
+                "Unsupported concat with num_inputs > 15"
+            )
     except e:
         return out_chain.mark_error(e)
 
@@ -557,39 +780,16 @@ fn concat[
 fn _concat_gpu[
     rank: Int,
     type: DType,
+    num_inputs: Int,
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: InlinedFixedVector[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    inputs: StaticTuple[
+        num_inputs, NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
     out_chain: OutputChainPtr,
 ) raises:
     var stream = out_chain.get_cuda_stream()
-
-    let input_list_device = _malloc_async[
-        NDBuffer[rank, DimList.create_unknown[rank](), type]
-    ](len(inputs), stream)
-
-    # Note: NDBuffers in `inputs` are on the device BUT storage for the vector itself
-    # on the host.
-    # Need to copy the vector storage onto the device so that I can access the
-    # inputs inside the kernel.
-    # Alternatively, we could launch a separate kernel per input at the expense
-    # of additional launch overhead.
-    let num_inputs = len(inputs)
-    for i in range(num_inputs):
-        var input = inputs[i]
-        _copy_host_to_device_async(
-            input_list_device.offset(i),
-            Pointer[
-                NDBuffer[rank, DimList.create_unknown[rank](), type]
-            ].address_of(input),
-            1,
-            stream,
-        )
-        # careful, need to synchronize stream before `input` goes out of scope
-        stream.synchronize()
 
     @parameter
     @always_inline
@@ -601,7 +801,7 @@ fn _concat_gpu[
 
         # can use binary search here to reduce num iters to log2(num_inputs)
         for i in range(num_inputs):
-            let input = input_list_device[i]
+            let input = inputs[i]
 
             if in_index[axis] < input.get_shape()[axis]:
                 output[rebind[StaticIntTuple[rank]](out_index)] = input[
@@ -624,5 +824,3 @@ fn _concat_gpu[
         per_output_elem,
         target,
     ](output.get_shape(), out_chain)
-
-    _free_async(input_list_device, stream)
