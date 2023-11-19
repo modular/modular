@@ -1967,3 +1967,18 @@ fn ambiguous_thunk(x: ThunkAmbiguityRP):
     _ = ThunkAmbiguityRP.mismatched_ret()
     _ = ThunkAmbiguityRP()
     # CHECK-LABEL: lit.end_func
+
+
+trait OwnedArguments:
+    fn take(owned self, owned x: RegTraitType):
+        ...
+
+
+# CHECK-LABEL: lit.struct.decl @NoDtor
+@register_passable
+struct NoDtor(OwnedArguments):
+    # CHECK-LABEL: lit.func @"`thunk_take
+    fn take(owned self, owned x: RegTraitType):
+        # CHECK-NEXT: %0 = lit.load.consume %self
+        # CHECK-NEXT: lit.call {{.*}}take{{.*}}(%0, %x)
+        pass

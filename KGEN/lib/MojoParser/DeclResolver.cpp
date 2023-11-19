@@ -4073,12 +4073,13 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     AnyValue value;
     switch (conv) {
     case ValueInputConvention::ByRef:
-    case ValueInputConvention::OwnedInMem:
       value = MLValue(arg);
       break;
+    case ValueInputConvention::OwnedInMem:
+      value = MRValue(arg);
+      break;
     case ValueInputConvention::OwnedInReg:
-      value = MLValue(makeArgLValueVarSlot(
-          SRValue(arg), name, decl, *emitter.builder, decl.getLoc(), shared));
+      value = SRValue(arg);
       break;
     case ValueInputConvention::BorrowedInReg:
       value = SBValue(arg);
