@@ -1822,9 +1822,35 @@ trait AsyncTrait:
     async fn foobar(self):
         pass
 
+    async fn foobar_raise(self) raises -> int:
+        pass
+
 
 struct AsyncStruct(AsyncTrait):
     async fn foobar(self):
+        pass
+
+    async fn foobar_raise(self) raises -> int:
+        pass
+
+
+# CHECK-LABEL: lit.struct.decl @AsyncStructReg
+@register_passable
+struct AsyncStructReg(AsyncTrait):
+    # CHECK-LABEL: lit.func @"`thunk_foobar{{.*}}"(%self[self]: !kgen.pointer<!AsyncStructReg>
+    async fn foobar(self):
+        # CHECK: [[POP_CORO:%.*]] = lit.async.call
+        # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
+        # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}__await__{{.*}}([[CORO]])
+        # CHECK-NEXT: return [[RES]]
+        pass
+
+    async fn foobar_raise(self) raises -> int:
+        # CHECK: [[POP_CORO:%.*]] = lit.async.call
+        # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
+        # CHECK-NEXT: [[RES_OR:%.*]] = lit.call {{.*}}__await__{{.*}}([[CORO]])
+        # CHECK-NEXT: [[RES:%.*]] = lit.handle_variant [[RES_OR]]
+        # CHECK: [[VAR:%.*]] = kgen.variant.create [[RES]]
         pass
 
 

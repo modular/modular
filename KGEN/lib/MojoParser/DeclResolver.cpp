@@ -2736,6 +2736,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (!signature)
     return failure();
 
+  // FIXME(#26008): Async functions with memory-only do not work.
+  if (signature.isAsync() && signature.hasMemoryOnlyResult()) {
+    return emitError(
+        resultTypeExpr ? resultTypeExpr->getLoc() : decl.getLoc(),
+        "TODO: async functions do not support memory-only results yet");
+  }
+
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
 
   // Set the symbol to the mangled name and check for redefinition.
@@ -4113,6 +4120,16 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       resultRefs.push_back(ParamDeclRefAttr::get(resultDecl));
     builder.create<LIT::ParamReturnOp>(
         ParameterExprArrayAttr::get(b.getContext(), resultRefs));
+  }
+
+  // If the callee is async, then await the result.
+  if (memSig.isAsync()) {
+    // FIXME: Need async optimizations to make this zero-cost.
+    OverloadSet await(callResult.getRValueType(), "__await__", &node,
+                      CallSyntax::kMethodCall, shared);
+    assert(!await.isNull() && "async call result must be awaitable");
+    ValueDest dest(EC_Trait);
+    callResult = await.emitCall(FuncOperand{callResult, &node}, dest, emitter);
   }
 
   // Emit the function return. It's just a none return if the function has a

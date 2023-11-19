@@ -201,6 +201,16 @@ fn issue1242():
         print(e)
 
 
+@value
+struct MemType:
+    pass
+
+# FIXME(#26008): Async functions with memory-only do not work.
+# expected-error @below {{TODO: async functions do not support memory-only results yet}}
+async fn async_mem_result() -> MemType:
+  pass
+
+
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
@@ -312,10 +322,6 @@ fn callWithOverloadedArg():
 
 # expected-note @below {{function declared here}}
 fn takeGenericResultFn[T: AnyRegType](f: fn() -> T): pass
-
-@value
-struct MemType:
-    pass
 
 fn returnMemType() -> MemType:
     return MemType()
