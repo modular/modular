@@ -177,8 +177,8 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
                                              expectedType)) {
         PValue result = emitter.emitPValue({actualAttr, &node},
                                            EC_TypeParamValue, expectedType);
-        assert(result && "unexpected failed PValue conversion");
-        inferredValues.push_back(result);
+        if (result)
+          inferredValues.push_back(result);
       }
     }
     return;
