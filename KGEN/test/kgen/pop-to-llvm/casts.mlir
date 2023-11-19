@@ -50,34 +50,6 @@ kgen.func @simd_bitcast(
      !pop.simd<4, ui32>
 }
 
-// CHECK-LABEL: @pointer_bitcast
-// CHECK-SAME: %[[UI32:[a-z0-9]+]]:
-// CHECK-SAME: %[[F32:[a-z0-9]+]]:
-// CHECK-SAME: %[[F64:[a-z0-9]+]]:
-kgen.func @pointer_bitcast(
-    %ui32: !kgen.pointer<simd<1, ui32>>,
-    %simd_f32: !kgen.pointer<simd<4, f32>>,
-    %simd_f64: !kgen.pointer<simd<2, f64>>) -> (
-     !kgen.pointer<simd<4, f32>>,
-     !kgen.pointer<simd<1, si32>>,
-     !kgen.pointer<simd<1, ui32>>,
-     !kgen.pointer<simd<1, invalid>>
-    ) {
-  // CHECK: llvm.bitcast %[[UI32]]
-  %0 = pop.pointer.bitcast %ui32 : !kgen.pointer<simd<1, ui32>> to !kgen.pointer<simd<4, f32>>
-  // CHECK: llvm.bitcast %[[F32]]
-  %1 = pop.pointer.bitcast %simd_f32 : !kgen.pointer<simd<4, f32>> to !kgen.pointer<simd<1, si32>>
-  // CHECK: llvm.bitcast %[[F64]]
-  %2 = pop.pointer.bitcast %simd_f64 : !kgen.pointer<simd<2, f64>> to !kgen.pointer<simd<1, ui32>>
-  // CHECK: llvm.bitcast %[[UI32]]
-  %3 = pop.pointer.bitcast %ui32 : !kgen.pointer<simd<1, ui32>> to !kgen.pointer<simd<1, invalid>>
-  kgen.return %0, %1, %2, %3 :
-     !kgen.pointer<simd<4, f32>>,
-     !kgen.pointer<simd<1, si32>>,
-     !kgen.pointer<simd<1, ui32>>,
-     !kgen.pointer<simd<1, invalid>>
-}
-
 // CHECK-LABEL: @scalar_cast
 // CHECK-SAME: %[[UI32:[a-z0-9]+]]:
 // CHECK-SAME: %[[SI32:[a-z0-9]+]]:
@@ -222,9 +194,9 @@ kgen.func @simd_cast(
 //  CHECK-SAME: %[[ARG1:[a-z0-9]+]]:
 kgen.func @address_space_cast(%arg0: !kgen.pointer<scalar<f32>>, %arg1: !kgen.pointer<f32>)
     -> (!kgen.pointer<scalar<f32>, 1>, !kgen.pointer<f32, 3>) {
-  // CHECK: llvm.addrspacecast %[[ARG0]] : !llvm.ptr<f32> to !llvm.ptr<f32, 1>
+  // CHECK: llvm.addrspacecast %[[ARG0]] : !llvm.ptr to !llvm.ptr<1>
   %0 = pop.pointer.addrspacecast %arg0 : !kgen.pointer<scalar<f32>> to !kgen.pointer<scalar<f32>, 1>
-  // CHECK: llvm.addrspacecast %[[ARG1]] : !llvm.ptr<f32> to !llvm.ptr<f32, 3>
+  // CHECK: llvm.addrspacecast %[[ARG1]] : !llvm.ptr to !llvm.ptr<3>
   %1 = pop.pointer.addrspacecast %arg1 : !kgen.pointer<f32> to !kgen.pointer<f32, 3>
   kgen.return %0, %1 : !kgen.pointer<scalar<f32>, 1>, !kgen.pointer<f32, 3>
 }

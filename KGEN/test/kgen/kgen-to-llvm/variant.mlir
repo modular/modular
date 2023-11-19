@@ -296,7 +296,7 @@ kgen.func @variant_get_5(%arg0: !kgen.variant<pointer<index>>) -> !kgen.pointer<
 // CHECK-LABEL: @unpack_pointer
 kgen.func @unpack_pointer(%arg0: !kgen.variant<pointer<i8>>) -> !kgen.pointer<i8> {
   // CHECK: trunc %{{.*}} : i64 to i64
-  // CHECK: inttoptr %{{.*}} : i64 to !llvm.ptr<i8>
+  // CHECK: inttoptr %{{.*}} : i64 to !llvm.ptr
   %0 = kgen.variant.get %arg0, 0 : <pointer<i8>>
   kgen.return %0 : !kgen.pointer<i8>
 }

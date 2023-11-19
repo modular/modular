@@ -75,11 +75,6 @@ private:
 std::optional<Type> getMLIRTypeForDType(mlir::MLIRContext *ctx, KGENDType dtype,
                                         size_t indexBitwidth);
 
-/// Get an LLVM pointer to the given dtype. If the dtype is unknown, return an
-/// untyped pointer.
-Type getLLVMPointerTo(mlir::MLIRContext *ctx, KGENDType dtype,
-                      size_t indexBitwidth);
-
 /// This type converter maps fully-specified pop dialect parametric types and
 /// built-in MLIR types to LLVM types.
 struct POPToLLVMTypeConverter : public mlir::LLVMTypeConverter,

@@ -21,7 +21,7 @@ kgen.func @none_type() -> !kgen.none {
 
 // CHECK-LABEL: llvm.func internal @convert_pop_types
 // CHECK-SAME: %{{.*}}: f32
-// CHECK-SAME: %{{.*}}: !llvm.ptr<f32>
+// CHECK-SAME: %{{.*}}: !llvm.ptr
 // CHECK-SAME: %{{.*}}: vector<4xf32>
 
 kgen.func @convert_pop_types(
@@ -77,13 +77,13 @@ kgen.func @unknown() -> index {
 
 kgen.func @constant_str() -> !kgen.string {
   // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64
-  // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, i64)>
   // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @[[STATIC_STRING:.*]] : !llvm.ptr
-  // CHECK: %[[GEP:.*]] = llvm.bitcast %[[GLOBAL_STR]] : !llvm.ptr to !llvm.ptr<i8>
-  // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[GEP]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
-  // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: %[[GEP:.*]] = llvm.bitcast %[[GLOBAL_STR]] : !llvm.ptr to !llvm.ptr
+  // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[GEP]], %[[STRUCT]][0] : !llvm.struct<(ptr, i64)>
+  // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr, i64)>
   %0 = kgen.param.constant: string = <"AB">
-  // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr, i64)>
   kgen.return %0 : !kgen.string
 }
 
@@ -211,7 +211,7 @@ kgen.func @test_unreachable() -> !pop.simd<1, f32> {
 
 // CHECK-LABEL: @address_of
 kgen.func @address_of() -> !kgen.signature<() -> !pop.scalar<f32>> {
-  // CHECK: llvm.mlir.addressof @test_unreachable : !llvm.ptr<func<f32 ()>>
+  // CHECK: llvm.mlir.addressof @test_unreachable : !llvm.ptr
   %0 = kgen.param.constant: () -> !pop.scalar<f32> = <@test_unreachable>
   kgen.return %0 : !kgen.signature<() -> !pop.scalar<f32>>
 }

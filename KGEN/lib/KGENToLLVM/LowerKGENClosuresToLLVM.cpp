@@ -362,8 +362,12 @@ struct CallSignatureOpConversion
     } else {
       // Create the LLVM call operation.
       // Note: adaptor.getOperands() is a list of callee followed by inputs.
-      llvmCall = createLLVMCall(rewriter, op.getLoc(), adaptor.getCallee(),
-                                adaptor.getArguments());
+      SmallVector<Type> wrapperFnArgTypes;
+      llvm::append_range(wrapperFnArgTypes, adaptor.getArguments().getTypes());
+      auto wrapperFnType = LLVM::LLVMFunctionType::get(getContext(), resultType,
+                                                       wrapperFnArgTypes, 0);
+      llvmCall = createLLVMCall(rewriter, op.getLoc(), wrapperFnType,
+                                adaptor.getOperands());
     }
 
     if (op.getNumResults() <= 1) {

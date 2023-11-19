@@ -680,7 +680,7 @@ kgen.func @call_void_intrinsic(%arg0: !pop.scalar<si64>,
                                %arg1: !kgen.pointer<si8>) {
   // CHECK: %[[ARG0_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[ARG1_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
-  // CHECK: llvm.call_intrinsic "llvm.lifetime.start"(%[[ARG0_CAST]], %[[ARG1_CAST]]) : (i64, !llvm.ptr<i8>) -> ()
+  // CHECK: llvm.call_intrinsic "llvm.lifetime.start"(%[[ARG0_CAST]], %[[ARG1_CAST]]) : (i64, !llvm.ptr) -> ()
   pop.call_llvm_intrinsic "llvm.lifetime.start", (%arg0, %arg1) :
     (!pop.scalar<si64>, !kgen.pointer<si8>) -> ()
   kgen.return
@@ -755,16 +755,16 @@ kgen.func @atomic_rmw(%ptr0: !kgen.pointer<scalar<index>>,
 // CHECK-SAME: %[[A0:.*]]: i24
 kgen.func @variadic_create(%a: i24) {
   // CHECK: %[[ALLOCA_SIZE:.*]] = llvm.mlir.constant(2 : i64)
-  // CHECK: %[[ALLOCA:.*]] = llvm.alloca %[[ALLOCA_SIZE]] x i24 {alignment = 4 : i64} : (i64) -> !llvm.ptr<i24>
-  // CHECK: llvm.intr.lifetime.start 8, %[[ALLOCA]] : !llvm.ptr<i24>
+  // CHECK: %[[ALLOCA:.*]] = llvm.alloca %[[ALLOCA_SIZE]] x i24 {alignment = 4 : i64} : (i64) -> !llvm.ptr
+  // CHECK: llvm.intr.lifetime.start 8, %[[ALLOCA]] : !llvm.ptr
   // CHECK: %[[GEPI0:.*]] = llvm.mlir.constant(0 : i64)
-  // CHECK: %[[GEP0:.*]] = llvm.getelementptr %[[ALLOCA]][%[[GEPI0]]] : (!llvm.ptr<i24>, i64) -> !llvm.ptr<i24>
-  // CHECK: llvm.store %[[A0]], %[[GEP0]] : !llvm.ptr<i24>
+  // CHECK: %[[GEP0:.*]] = llvm.getelementptr %[[ALLOCA]][%[[GEPI0]]] : (!llvm.ptr, i64) -> !llvm.ptr
+  // CHECK: llvm.store %[[A0]], %[[GEP0]] : i24, !llvm.ptr
   // CHECK: %[[GEPI1:.*]] = llvm.mlir.constant(1 : i64)
   // CHECK: %[[GEP1:.*]] = llvm.getelementptr %[[ALLOCA]][%[[GEPI1]]]
   // CHECK: llvm.store %[[A0]], %[[GEP1]]
   // CHECK: %[[SIZE:.*]] = llvm.mlir.constant(2 : i64)
-  // CHECK: %[[STRUCT1:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i24>, i64)>
+  // CHECK: %[[STRUCT1:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, i64)>
   // CHECK: %[[STRUCT2:.*]] = llvm.insertvalue %[[ALLOCA]], %[[STRUCT1]][0]
   // CHECK: llvm.insertvalue %[[SIZE]], %[[STRUCT2]][1]
   // CHECK: llvm.intr.lifetime.end 8, %[[ALLOCA]]
@@ -774,7 +774,7 @@ kgen.func @variadic_create(%a: i24) {
 
 // CHECK-LABEL: @variadic_create_empty
 kgen.func @variadic_create_empty() {
-  // CHECK: llvm.mlir.undef : !llvm.struct<(ptr<i32>, i64)>
+  // CHECK: llvm.mlir.undef : !llvm.struct<(ptr, i64)>
   %0 = pop.variadic.create [] : !kgen.variadic<i32>
   kgen.return
 }
@@ -782,14 +782,14 @@ kgen.func @variadic_create_empty() {
 // CHECK-LABEL: @variadic_create_index
 kgen.func @variadic_create_index() {
   %0 = index.constant 64
-  // CHECK: llvm.mlir.undef : !llvm.struct<(ptr<i64>, i64)>
+  // CHECK: llvm.mlir.undef : !llvm.struct<(ptr, i64)>
   %1 = pop.variadic.create [%0] : !kgen.variadic<index>
   kgen.return
 }
 
 // CHECK-LABEL: @variadic_size
 kgen.func @variadic_size(%arg0: !kgen.variadic<f32>) -> index {
-  // CHECK: llvm.extractvalue %{{.*}}[1] : !llvm.struct<(ptr<f32>, i64)>
+  // CHECK: llvm.extractvalue %{{.*}}[1] : !llvm.struct<(ptr, i64)>
   %0 = pop.variadic.size %arg0 : !kgen.variadic<f32>
   kgen.return %0 : index
 }
@@ -797,7 +797,7 @@ kgen.func @variadic_size(%arg0: !kgen.variadic<f32>) -> index {
 // CHECK-LABEL: @variadic_get
 kgen.func @variadic_get(%arg0: !kgen.variadic<f32>) -> f32 {
   %0 = index.constant 3
-  // CHECK: %[[ALLOCA:.*]] = llvm.extractvalue %{{.*}}[0] : !llvm.struct<(ptr<f32>, i64)>
+  // CHECK: %[[ALLOCA:.*]] = llvm.extractvalue %{{.*}}[0] : !llvm.struct<(ptr, i64)>
   // CHECK: %[[GEP:.*]] = llvm.getelementptr %[[ALLOCA]][%{{[0-9]+}}]
   // CHECK: %[[LOAD:.*]] = llvm.load %[[GEP]]
   %1 = pop.variadic.get %arg0[%0] : !kgen.variadic<f32>
@@ -806,15 +806,15 @@ kgen.func @variadic_get(%arg0: !kgen.variadic<f32>) -> f32 {
 
 // CHECK-LABEL: @extract_size
 kgen.func @extract_size(%a: !kgen.string) ->  index {
-  // CHECK: unrealized_conversion_cast %arg0 : !kgen.string to !llvm.struct<(ptr<i8>, i64)>
-  // CHECK: llvm.extractvalue %0[1] : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: unrealized_conversion_cast %arg0 : !kgen.string to !llvm.struct<(ptr, i64)>
+  // CHECK: llvm.extractvalue %0[1] : !llvm.struct<(ptr, i64)>
   %1 = pop.string.size %a
   kgen.return %1: index
 }
 
 // CHECK-LABEL: @extract_addr
 kgen.func @extract_addr(%a: !kgen.string) -> !kgen.pointer<scalar<si8>> {
-  // CHECK: llvm.extractvalue %0[0] : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: llvm.extractvalue %0[0] : !llvm.struct<(ptr, i64)>
   %1 = pop.string.address %a
   kgen.return %1: !kgen.pointer<scalar<si8>>
 }
@@ -840,7 +840,7 @@ kgen.func @memcpy(%dest: !kgen.pointer<!pop.scalar<si32>>,
   // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
   // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
   // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %[[SIZE]]
-  // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]]) <{isVolatile = false}> : (!llvm.ptr<i32>, !llvm.ptr<f32>, i64) -> ()
+  // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]]) <{isVolatile = false}> : (!llvm.ptr, !llvm.ptr, i64) -> ()
   pop.memcpy %dest, %src, %size : !kgen.pointer<!pop.scalar<f32>> to !kgen.pointer<!pop.scalar<si32>>
   kgen.return
 }
@@ -855,7 +855,7 @@ kgen.func @memcpy_volatile(%dest: !kgen.pointer<!pop.scalar<si32>>,
   // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
   // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
   // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %[[SIZE]]
-  // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]]) <{isVolatile = true}> : (!llvm.ptr<i32>, !llvm.ptr<f32>, i64) -> ()
+  // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]]) <{isVolatile = true}> : (!llvm.ptr, !llvm.ptr, i64) -> ()
   pop.memcpy volatile %dest, %src, %size : !kgen.pointer<!pop.scalar<f32>> to !kgen.pointer<!pop.scalar<si32>>
   kgen.return
 }
@@ -869,7 +869,7 @@ kgen.func @memcpy_inline(%dest: !kgen.pointer<!pop.scalar<si32>>,
                          %size: index) {
   // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
   // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
-  // CHECK:  "llvm.intr.memcpy.inline"(%[[DEST_CAST]], %[[SRC_CAST]]) <{isVolatile = false, len = 32 : i64}> : (!llvm.ptr<i32>, !llvm.ptr<f32>) -> ()
+  // CHECK:  "llvm.intr.memcpy.inline"(%[[DEST_CAST]], %[[SRC_CAST]]) <{isVolatile = false, len = 32 : i64}> : (!llvm.ptr, !llvm.ptr) -> ()
   pop.memcpy inline %dest, %src, %size : !kgen.pointer<!pop.scalar<f32>> to !kgen.pointer<!pop.scalar<si32>>
   kgen.return
 }

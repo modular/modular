@@ -3,7 +3,7 @@
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
   // CHECK-SAME: %[[SIZE:.*]]: [[INDEXTY:.*]], %[[PTR:.*]]: !llvm.ptr, %[[DTYPE:.*]]: i8
-  // CHECK-SAME: %[[SIZE_OUT:.*]]: !llvm.ptr<[[INDEXTY]]>, %[[PTR_OUT:.*]]: !llvm.ptr<ptr>, %[[DTYPE_OUT:.*]]: !llvm.ptr<i8>
+  // CHECK-SAME: %[[SIZE_OUT:.*]]: !llvm.ptr, %[[PTR_OUT:.*]]: !llvm.ptr, %[[DTYPE_OUT:.*]]: !llvm.ptr
   // CHECK: %[[BUFFER:.*]] = llvm.mlir.undef
   // CHECK: %[[B0:.*]] = llvm.insertvalue %[[SIZE]], %[[BUFFER]][0]
   // CHECK: %[[B1:.*]] = llvm.insertvalue %[[PTR]], %[[B0]][1]
@@ -28,7 +28,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @kernel
-  // CHECK-SAME: %[[V:.*]]: f32, %[[V_OUT:.*]]: !llvm.ptr<f32>
+  // CHECK-SAME: %[[V:.*]]: f32, %[[V_OUT:.*]]: !llvm.ptr
   // CHECK-NEXT: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(f32)>)>
   // CHECK-NEXT: %[[EMPTY:.*]] = llvm.mlir.undef : !llvm.struct<()>
   // CHECK-NEXT: %[[S1:.*]] = llvm.insertvalue %[[EMPTY]], %[[S0]][0]

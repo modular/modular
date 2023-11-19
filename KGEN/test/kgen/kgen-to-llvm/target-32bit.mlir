@@ -13,7 +13,7 @@ kgen.func @index_32bit() -> index {
 // CHECK-LABEL: @string_32bit
 kgen.func @string_32bit() -> !kgen.string {
   // CHECK: [[SIZE:%.*]] = llvm.mlir.constant(6 : i32) : i32
-  // CHECK: llvm.insertvalue [[SIZE]], {{.*}}[1] : !llvm.struct<(ptr<i8>, i32)>
+  // CHECK: llvm.insertvalue [[SIZE]], {{.*}}[1] : !llvm.struct<(ptr, i32)>
   %0 = kgen.param.constant: string = <"abduld">
   kgen.return %0 : !kgen.string
 }
