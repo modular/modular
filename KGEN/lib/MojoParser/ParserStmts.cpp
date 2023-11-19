@@ -2008,23 +2008,20 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // an initializer.  We don't care about the address being available and
   // this produces smaller IR.
   ASTType inferredRValueType = ASTType(varOp.getType().getElementAsType());
-  if (initExpr && (varOp.getKind() != VarLetDeclKind::Var) &&
-      // NOTE: This is assuming type parameters are valid register types.  We
-      // will need to build out better support when we have traits, but this is
-      // important for kernels in practice today.
-      inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared) &&
-      // Variable could have multiple uses in invalid cases like "var x = x+1".
-      varOp->hasOneUse()) {
-    auto theStore = cast<RefStoreOp>(*varOp->user_begin());
+  if (varOp->hasOneUse() && varOp.getKind() == VarLetDeclKind::Let &&
+      inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared)) {
+    // Check if the single use is a store. Otherwise, the register-passable
+    // `let` decl could have been assigned through a generic call.
+    if (auto store = dyn_cast<RefStoreOp>(*varOp->user_begin())) {
+      // Create new LetRegDeclOp and put it into the ASTDecl.
+      OpBuilder builder(store);
+      decl.setIRValue(&*builder.create<LetRegDeclOp>(
+          varOp.getLoc(), varOp.getNameAttr(), store.getArg()));
 
-    // Create new LetRegDeclOp and put it into the ASTDecl.
-    OpBuilder builder(theStore);
-    decl.setIRValue(&*builder.create<LetRegDeclOp>(
-        varOp.getLoc(), varOp.getNameAttr(), theStore.getArg()));
-
-    // Remove the store and the original VarLetDeclOp.
-    theStore->erase();
-    varOp->erase();
+      // Remove the store and the original VarLetDeclOp.
+      store->erase();
+      varOp->erase();
+    }
   }
 
   // Now mark the decl as fully resolved.

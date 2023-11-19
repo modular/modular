@@ -220,6 +220,10 @@ struct CapturingMember[f: fn() capturing -> None]:
 # let
 ##===----------------------------------------------------------------------===##
 
+
+fn return_generic_memory_only[T: AnyType]() -> T:
+    pass
+
 # CHECK-LABEL:  lit.func @"let_decls()
 def let_decls() -> None:
     # CHECK: %x = lit.letreg.decl "x" = %index123 : index
@@ -237,6 +241,11 @@ def let_decls() -> None:
     let b = a
     # CHECK: %a = lit.letreg.decl "a" =
     # CHECK: %b = lit.letreg.decl "b" =
+
+    # COM: The parser cannot emit this into a `lit.letreg.decl` because the
+    # COM: generic function call assumes memory-only conventions.
+    # CHECK: lit.varlet.decl "c"
+    let c = return_generic_memory_only[Int]()
 
 
 ##===----------------------------------------------------------------------===##
