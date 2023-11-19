@@ -509,11 +509,11 @@ void SROAPass::runOnOperation() {
         ReplaceStack replacer{builder, alloc, maxNumElements};
         changed |= replacer.run(toDelete);
       } else if (auto structTy =
-                     dyn_cast<StructType>(ptrType.getElementAsType())) {
+                     dyn_cast<StructType>(ptrType.getElementType())) {
         ReplaceStructs replacer{builder, alloc, structTy, maxNumElements};
         changed |= replacer.run(toDelete);
       } else if (auto arrayTy =
-                     dyn_cast<POP::ArrayType>(ptrType.getElementAsType())) {
+                     dyn_cast<POP::ArrayType>(ptrType.getElementType())) {
         ReplaceArray replacer{builder, alloc, arrayTy, maxNumElements};
         changed |= replacer.run(toDelete);
       }

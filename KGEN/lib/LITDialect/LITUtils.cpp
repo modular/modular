@@ -85,7 +85,7 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
                                            Type type, bool hasAddress) {
   if (hasAddress) {
     if (auto ptr = dyn_cast<PointerType>(type))
-      type = ptr.getElementAsType();
+      type = ptr.getElementType();
     else if (auto ref = dyn_cast<RefType>(type))
       type = ref.getElementAsType();
   }

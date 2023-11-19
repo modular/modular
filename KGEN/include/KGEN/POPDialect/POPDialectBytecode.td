@@ -18,11 +18,6 @@ def ArrayType : DialectType<(type
   TypedAttr:$elementType
 )>;
 
-def PointerType : DialectType<(type
-  TypedAttr:$elementType,
-  TypedAttr:$addressSpace
-)>;
-
 def SIMDType : DialectType<(type
   TypedAttr:$size,
   TypedAttr:$dType
@@ -35,7 +30,6 @@ def CoroutineType : DialectType<(type
 def POPDialectTypes : DialectTypes<"pop"> {
   let elems = [
     ArrayType,
-    PointerType,
     SIMDType,
     CoroutineType
   ];

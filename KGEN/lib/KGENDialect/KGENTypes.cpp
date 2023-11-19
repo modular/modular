@@ -596,58 +596,30 @@ SignatureType::prependParams(SignatureType sig,
 // PointerType
 //===----------------------------------------------------------------------===//
 
-LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr type, TypedAttr addressSpace) {
-  if (addressSpace && !addressSpace.getType().isIndex())
-    return emitError() << "address space parameter `" << addressSpace
-                       << "` must be an index type";
-  return success();
-}
-
-Type PointerType::getElementAsType() const {
-  TypedAttr elemType = getElementType();
-  if (auto typeCst = ::dyn_cast<TypeConstantAttr>(elemType))
-    return typeCst.getValue();
-  return ParamRefType::get(elemType);
-}
-
-PointerType PointerType::get(TypedAttr elementType, unsigned addressSpace) {
-  Builder b(elementType.getContext());
-  return PointerType::get(elementType, b.getIndexAttr(addressSpace));
-}
-
 /// Return the type as a TypeConstantAttr with AnyRegTypeType as metatype.
 static TypedAttr getTypeConstantAttr(Type type) {
   return TypeConstantAttr::get(type, AnyRegTypeType::get(type.getContext()));
 }
 
+LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  Type type, TypedAttr addressSpace) {
+  if (!addressSpace || addressSpace.getType().isIndex())
+    return success();
+  return emitError() << "address space parameter `" << addressSpace
+                     << "` must be an index type";
+}
+
+PointerType PointerType::get(TypedAttr elementType, unsigned addressSpace) {
+  return PointerType::get(ParamRefType::get(elementType), addressSpace);
+}
+
 PointerType PointerType::get(Type elementType, unsigned addressSpace) {
-  return get(getTypeConstantAttr(elementType), addressSpace);
-}
-
-PointerType PointerType::get(TypedAttr elementType, TypedAttr addressSpace) {
-  return get(elementType.getContext(), elementType, addressSpace);
-}
-
-PointerType PointerType::get(MLIRContext *ctx, TypedAttr elementType,
-                             TypedAttr addressSpace) {
-  // Canonicalize away the metatype. Just store the pure `Type`.
-  // FIXME: Change PointerType to just carry a `Type` then.
-  TypedAttr rawType = getTypeConstantAttr(ParamRefType::get(elementType));
-  return Base::get(ctx, rawType, addressSpace);
-}
-
-PointerType
-PointerType::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                        MLIRContext *ctx, TypedAttr elementType,
-                        TypedAttr addressSpace) {
-  if (failed(verify(emitError, elementType, addressSpace)))
-    return {};
-  return get(ctx, elementType, addressSpace);
+  Builder b(elementType.getContext());
+  return get(elementType, b.getIndexAttr(addressSpace));
 }
 
 PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {
-  return get(getTypeConstantAttr(elementType), addressSpace);
+  return get(elementType.getContext(), elementType, addressSpace);
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
@@ -697,7 +669,7 @@ OptionalParseResult PointerType::parseValue(AsmParser &p,
   // Parse a `store_to_mem` directive.
   if (succeeded(p.parseOptionalKeyword("store_to_mem"))) {
     TypedAttr memValue;
-    if (p.parseLParen() || parseParamValue(p, memValue, getElementAsType()) ||
+    if (p.parseLParen() || parseParamValue(p, memValue, getElementType()) ||
         p.parseRParen())
       return failure();
     value = StoreToMemAttr::get(memValue, *this);

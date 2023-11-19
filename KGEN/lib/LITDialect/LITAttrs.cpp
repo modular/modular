@@ -193,7 +193,7 @@ LogicalResult FnMetadataAttr::verifySignature(
       if (!convs.empty()) {
         if (SignatureType::hasAddress(convs[index])) {
           if (auto ptr = ::dyn_cast<PointerType>(expected))
-            expected = ptr.getElementAsType();
+            expected = ptr.getElementType();
           else
             expected = ::cast<RefType>(expected).getElementAsType();
         }

@@ -989,7 +989,7 @@ ASTType SharedState::getBuiltinVariadicListInstantiation(ASTDecl &context,
   bool elemInMem = false;
   if (auto pointerType = dyn_cast<PointerType>(elemType)) {
     elemInMem = true;
-    elemType = pointerType.getElementAsType();
+    elemType = pointerType.getElementType();
   }
 
   ASTType varListType = getBuiltinVariadicListType(context, loc, elemInMem);

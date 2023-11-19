@@ -251,7 +251,7 @@ bool MojoTypeSystem::IsPointerType(lldb::opaque_compiler_type_t type,
 
   if (auto pointerType = dyn_cast<KGEN::PointerType>(MojoASTTypeRef(type))) {
     if (pointeeType)
-      *pointeeType = createCompilerType(pointerType.getElementAsType());
+      *pointeeType = createCompilerType(pointerType.getElementType());
     return true;
   }
   return false;
@@ -312,7 +312,7 @@ uint32_t MojoTypeSystem::GetTypeInfo(
   if (auto ptrType = dyn_cast<PointerType>(astType)) {
     if (pointeeOrElementCompilerType) {
       *pointeeOrElementCompilerType =
-          createCompilerType(ptrType.getElementAsType());
+          createCompilerType(ptrType.getElementType());
     }
     return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
   }

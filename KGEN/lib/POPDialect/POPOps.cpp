@@ -283,7 +283,7 @@ static Type getPointerToArrayElementType(Type arrayPtr) {
   auto ptr = dyn_cast<PointerType>(arrayPtr);
   if (!ptr)
     return Type();
-  auto array = dyn_cast<POP::ArrayType>(ptr.getElementAsType());
+  auto array = dyn_cast<POP::ArrayType>(ptr.getElementType());
   return array ? PointerType::get(array.getElementType()) : Type();
 }
 
@@ -294,8 +294,8 @@ static Type getPointerToArrayElementType(Type arrayPtr) {
 /// Parse the element type of the allocated pointer type.
 static ParseResult parsePointerOf(AsmParser &p, Type &result,
                                   TypedAttr &addressSpace) {
-  TypedAttr elementType;
-  if (parseTypeParamValue(p, elementType) ||
+  Type elementType;
+  if (parseParamType(p, elementType) ||
       KGEN::parseOptionalAddressSpaceParamValue(p, addressSpace))
     return failure();
 
@@ -306,7 +306,7 @@ static ParseResult parsePointerOf(AsmParser &p, Type &result,
 /// Print the element type of the allocated pointer type.
 static void printPointerOf(AsmPrinter &p, Operation *op, Type result,
                            TypedAttr addressSpace) {
-  printTypeParamValue(p, cast<PointerType>(result).getElementType());
+  printParamType(p, cast<PointerType>(result).getElementType());
   KGEN::printOptionalAddressSpaceParamValue(p, op, addressSpace);
 }
 
@@ -429,14 +429,14 @@ static ParseResult parseGlobalConstantOpValue(OpAsmParser &p, TypedAttr &value,
 
 static void printGlobalConstantOpValue(OpAsmPrinter &p, Operation *,
                                        TypedAttr value, Type type) {
-  printColonTypeOrIndex(p, cast<PointerType>(type).getElementAsType());
+  printColonTypeOrIndex(p, cast<PointerType>(type).getElementType());
   p << " = <";
   printParamValue(p, value);
   p << ">";
 }
 
 LogicalResult GlobalConstantOp::verify() {
-  if (!isa<ParamRefType>(getResult().getType().getElementAsType()))
+  if (!isa<ParamRefType>(getResult().getType().getElementType()))
     return success();
   return emitOpError("must have a concrete element type");
 }
@@ -603,7 +603,7 @@ static Type getCmpXChgResultType(Type type) {
   auto pointerType = dyn_cast<PointerType>(type);
   if (!pointerType)
     return nullptr;
-  Type eltType = pointerType.getElementAsType();
+  Type eltType = pointerType.getElementType();
   auto boolType =
       SIMDType::get(1, DTypeConstantAttr::get(type.getContext(), DType::kBool));
   return StructType::get({eltType, boolType},

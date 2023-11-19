@@ -34,7 +34,7 @@ struct PassStats {
 
 /// Return the pointer element type of an allocation.
 static Type getAllocType(StackAllocationOp alloc) {
-  return ParamRefType::get(cast<PointerType>(alloc.getType()).getElementType());
+  return cast<PointerType>(alloc.getType()).getElementType();
 }
 
 /// We can promote a stack allocation if all its uses are as the pointer to
@@ -67,7 +67,7 @@ unwrapPointer(DebugInfo::DILocalVariableAttr diVarAttr) {
   // Unwrap the DIUnresolvedMLIRType (if there is one) and return the new type.
   if (auto unresolved = dyn_cast<DebugInfo::DIUnresolvedMLIRType>(type))
     if (auto ptr = dyn_cast<KGEN::PointerType>(unresolved.getType()))
-      newType = DebugInfo::DIUnresolvedMLIRType::get(ptr.getElementAsType());
+      newType = DebugInfo::DIUnresolvedMLIRType::get(ptr.getElementType());
 
   // Unwrap the DIPointerType if there is one and use the new type.
   if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(type))

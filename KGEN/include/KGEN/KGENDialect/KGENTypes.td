@@ -333,35 +333,28 @@ def PointerType : KGENType<"Pointer", "pointer", [
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$elementType,
+  let parameters = (ins "Type":$elementType,
                         DefaultValuedParameter<"TypedAttr",
                           "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
-    `<` custom<TypeParamValue>($elementType) ``
+    `<` custom<ParamType>($elementType) ``
     (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
   let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
 
   let builders = [
-    TypeBuilder<(ins "TypedAttr":$elementType, "TypedAttr":$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
                                         CArg<"unsigned", "0">:$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
                                         CArg<"unsigned", "0">:$addressSpace)>,
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
-                                        "TypedAttr":$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
                                         "TypedAttr":$addressSpace)>,
   ];
 
   let extraClassDeclaration = [{
-    /// Return the elementType attribute as a type.
-    Type getElementAsType() const;
-
     /// Get the element type as the provided type.
     template <typename ElTy>
-    ElTy getElementAs() { return getElementAsType().cast<ElTy>(); }
+    ElTy getElementAs() { return getElementType().cast<ElTy>(); }
   }];
 }
 
@@ -370,12 +363,12 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
 class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "pointer element type", lhs, rhs,
-    "$_self.cast<PointerType>().getElementAsType()">;
+    "$_self.cast<PointerType>().getElementType()">;
 
 class PointerOf<Type type> : ConfinedType<PointerType,
     [CPred<"$_self.cast<PointerType>().getElementType()">,
      SubstLeaves<"$_self",
-      "$_self.cast<PointerType>().getElementAsType()",
+      "$_self.cast<PointerType>().getElementType()",
       type.predicate>],
     "pointer to " # type.summary> {
   let cppClassName = "::M::KGEN::PointerType";

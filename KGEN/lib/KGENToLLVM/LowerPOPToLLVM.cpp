@@ -549,7 +549,7 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 
   // Compute the bytecount of the allocated buffer.
   std::optional<int64_t> typeAllocSize = DataLayoutInterface::getTypeAllocSize(
-      target, cast<PointerType>(op.getType()).getElementAsType());
+      target, cast<PointerType>(op.getType()).getElementType());
   if (!typeAllocSize)
     return op.emitError("could not get size of variadic element");
 
@@ -700,8 +700,7 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
             dyn_cast_or_null<IntegerAttr>(ptrType.getAddressSpace());
         addressSpace && addressSpace.getInt() != 0) {
       auto castOp = rewriter.create<LLVM::AddrSpaceCastOp>(
-          op.getLoc(),
-          convertType(PointerType::get(ptrType.getElementAsType())),
+          op.getLoc(), convertType(PointerType::get(ptrType.getElementType())),
           adaptor.getPtr());
       auto newOp =
           rewriter.create<LLVM::LoadOp>(op.getLoc(), castOp, alignment);
@@ -731,8 +730,7 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
             dyn_cast_or_null<IntegerAttr>(ptrType.getAddressSpace());
         addressSpace && addressSpace.getInt() != 0) {
       auto castOp = rewriter.create<LLVM::AddrSpaceCastOp>(
-          op.getLoc(),
-          convertType(PointerType::get(ptrType.getElementAsType())),
+          op.getLoc(), convertType(PointerType::get(ptrType.getElementType())),
           adaptor.getPtr());
       auto newOp = rewriter.create<LLVM::StoreOp>(
           op.getLoc(), adaptor.getArg(), castOp, alignment,

@@ -37,7 +37,7 @@ def SignatureType : DialectType<(type
 )>;
 
 def PointerType : DialectType<(type
-  TypedAttr:$elementType,
+  Type:$elementType,
   TypedAttr:$addressSpace
 )>;
 

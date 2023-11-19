@@ -134,6 +134,10 @@ void printTypeParamValue(AsmPrinter &p, TypedAttr value);
 /// an `AnyRegTypeType`.
 ParseResult parseTypeParamValue(AsmParser &p, TypedAttr &value);
 
+/// Parse or print a parametric type expression and convert it to a type.
+ParseResult parseParamType(AsmParser &p, Type &elementType);
+void printParamType(AsmPrinter &p, Type elementType);
+
 /// Print an array of parameter type values.
 void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
 /// Parse an array of parameter type values.

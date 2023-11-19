@@ -98,7 +98,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
 
   if (auto ptr = dyn_cast<PointerType>(t)) {
     ErrorOr<std::string> elementaryType =
-        getCTypeForElementary(ptr.getElementAsType());
+        getCTypeForElementary(ptr.getElementType());
     // If the type is not elementary, then pass it as an opaque pointer.
     if (elementaryType.isError())
       types.push_back("void *");

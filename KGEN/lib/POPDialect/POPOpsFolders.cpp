@@ -859,7 +859,7 @@ ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
   if (!ptr || !offset)
     return ErrorTree(getLoc(), "non-constant inputs");
   std::optional<int64_t> elSize = DataLayoutInterface::getTypeAllocSize(
-      state.getTarget(), cast<PointerType>(ptr.getType()).getElementAsType());
+      state.getTarget(), cast<PointerType>(ptr.getType()).getElementType());
   if (!elSize)
     return ErrorTree(getLoc(), "could not query pointer element size");
   state.mapResults(PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(),
@@ -929,7 +929,7 @@ ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
                                                 InterpreterState &state) {
   // Determine the allocation size.
   int64_t count = cast<IntegerAttr>(getCount()).getInt();
-  Type type = cast<PointerType>(getType()).getElementAsType();
+  Type type = cast<PointerType>(getType()).getElementType();
   std::optional<int64_t> size =
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), type);
   if (!size)

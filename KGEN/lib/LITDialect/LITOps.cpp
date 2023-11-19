@@ -82,7 +82,7 @@ Type LIT::getSignatureUserResultType(SignatureType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
   // If this function is a memory only type, return the by-ref result.
   if (sigType.hasMemoryOnlyResult())
-    return cast<PointerType>(argTypes.front()).getElementAsType();
+    return cast<PointerType>(argTypes.front()).getElementType();
 
   // Otherwise it is the normal result.
   if (sigType.isThrows())
@@ -1365,15 +1365,15 @@ OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
 
 LogicalResult
 LIT::StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  Type structType = getContainer().getType().getElementAsType();
+  Type structType = getContainer().getType().getElementType();
   return verifyStructFieldAndType(symbolTable, *this,
                                   cast<DeclRefType>(structType), getFieldAttr(),
-                                  getResult().getType().getElementAsType());
+                                  getResult().getType().getElementType());
 }
 
 void LIT::StructGEPOp::build(OpBuilder &builder, OperationState &result,
                              Value structBasePtr, StructFieldOp field) {
-  Type eltType = cast<PointerType>(structBasePtr.getType()).getElementAsType();
+  Type eltType = cast<PointerType>(structBasePtr.getType()).getElementType();
   auto structType = field.getReboundType(cast<DeclRefType>(eltType));
   build(builder, result, PointerType::get(structType), field.getNameAttr(),
         structBasePtr);
@@ -1651,7 +1651,7 @@ DebugInfo::DIScopeAttr GlobalVarDeclOp::getLocScope() {
 LogicalResult GlobalVarRefOp::verifySymbolUses(SymbolTableCollection &symtab) {
   auto global = symtab.lookupSymbolIn<GlobalVarDeclOp>(
       (*this)->getParentOfType<ModuleOp>(), getGlobal());
-  if (!global || global.getType() != getResult().getType().getElementAsType())
+  if (!global || global.getType() != getResult().getType().getElementType())
     return emitOpError() << "does not refer to a global variable declaration "
                             "of the right type";
   return success();

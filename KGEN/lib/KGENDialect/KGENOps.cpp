@@ -1106,7 +1106,7 @@ LogicalResult GlobalAddressOp::verifySymbolUses(SymbolTableCollection &symtab) {
       (*this)->getParentOfType<ModuleOp>(), getGlobal());
   if (!global)
     return emitOpError("does not reference a `pop.global` operation");
-  if (global.getType() != getResult().getType().getElementAsType())
+  if (global.getType() != getResult().getType().getElementType())
     return emitOpError("result type does not match global type ")
            << global.getType();
   return success();
@@ -1512,8 +1512,8 @@ OpFoldResult StructReplaceOp::fold(FoldAdaptor adaptor) {
 
 LogicalResult StructGEPOp::verify() {
   return verifyStructValueType(
-      *this, cast<StructType>(getContainer().getType().getElementAsType()),
-      getIndexAttr(), getType().getElementAsType(), "result");
+      *this, cast<StructType>(getContainer().getType().getElementType()),
+      getIndexAttr(), getType().getElementType(), "result");
 }
 
 LogicalResult StructGEPOp::inferReturnTypes(
@@ -1528,7 +1528,7 @@ LogicalResult StructGEPOp::inferReturnTypes(
   auto pointerType = dyn_cast<PointerType>(operands.front().getType());
   if (!pointerType)
     return emitError("expected pointer operand");
-  auto structType = dyn_cast<StructType>(pointerType.getElementAsType());
+  auto structType = dyn_cast<StructType>(pointerType.getElementType());
   FailureOr<TypedAttr> type = inferStructElementType<StructExtractOp>(
       emitError, structType, attributes);
   if (succeeded(type))
