@@ -5,10 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/CUDA/NVTX.h"
-#include "llvm/ADT/Twine.h"
-#include "llvm/Support/DynamicLibrary.h"
+#include "Utils.h"
 
 using namespace M;
+using namespace M::CUDA;
 using namespace M::CUDA::NVTX;
 
 static constexpr int kNVTXVersion = 3;
@@ -72,27 +72,21 @@ static ErrorOr<llvm::sys::DynamicLibrary> getNVMLLibraryHandle() {
 }
 
 template <typename SymbolTy>
-M::ErrorOr<SymbolTy> fallibleGetSymbol(std::string_view symbolName) {
-  static_assert(std::is_pointer_v<SymbolTy>, "Should be a pointer type");
-
+ErrorOr<SymbolTy> fallibleGetNVMLSymbol(std::string_view symbolName) {
   ErrorOr<llvm::sys::DynamicLibrary> nvmlLib = getNVMLLibraryHandle();
   if (nvmlLib.isError())
     return nvmlLib.takeError();
 
-  void *symbolOr = nvmlLib->getAddressOfSymbol(symbolName.data());
-  if (!symbolOr)
-    return M::Error(Twine("failed to get symbol '") + symbolName +
-                    "' from the NVTX library");
-  return reinterpret_cast<SymbolTy>(symbolOr);
+  return fallibleGetSymbol<SymbolTy>(*nvmlLib, symbolName);
 }
 #endif // USE_NVTX_LIB
 
 ErrorOrSuccess Event::mark() {
 #ifdef USE_NVTX_LIB
   static auto nvtxMarkEx =
-      fallibleGetSymbol<void (*)(EventAttributes *)>("nvtxMarkEx");
-  if (!nvtxMarkEx)
-    return Error("unable to load NVML library symbol 'nvtxMarkEx'");
+      fallibleGetNVMLSymbol<void (*)(EventAttributes *)>("nvtxMarkEx");
+  if (nvtxMarkEx.isError())
+    return nvtxMarkEx.takeError();
 
   // Set the marker attributes.
   EventAttributes attr;
@@ -109,9 +103,10 @@ ErrorOrSuccess Event::mark() {
 ErrorOr<Event::RangeID> Event::start() {
 #ifdef USE_NVTX_LIB
   static auto nvtxRangeStartEx =
-      fallibleGetSymbol<uint64_t (*)(EventAttributes *)>("nvtxRangeStartEx");
-  if (!nvtxRangeStartEx)
-    return Error("unable to load NVML library symbol 'nvtxRangeStartEx'");
+      fallibleGetNVMLSymbol<uint64_t (*)(EventAttributes *)>(
+          "nvtxRangeStartEx");
+  if (nvtxRangeStartEx.isError())
+    return nvtxRangeStartEx.takeError();
 
   // Set the range attributes.
   EventAttributes attr;
@@ -128,7 +123,7 @@ ErrorOr<Event::RangeID> Event::start() {
 Event::RangeID::~RangeID() {
 #ifdef USE_NVTX_LIB
   static auto nvtxRangeEnd =
-      fallibleGetSymbol<void (*)(uint64_t)>("nvtxRangeEnd");
+      fallibleGetNVMLSymbol<void (*)(uint64_t)>("nvtxRangeEnd");
   assert(nvtxRangeEnd && "unable to load NVML library symbol 'nvtxRangeEnd'");
   (*nvtxRangeEnd)(id);
 #endif

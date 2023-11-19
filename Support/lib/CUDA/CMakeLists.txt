@@ -7,7 +7,7 @@
 find_package(CUDAToolkit QUIET)
 
 set(NVTX_LIB_FOUND OFF)
-if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND MODULAR_LLC_PROFILING_NSIGHT)
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND MODULAR_PROFILING_NSIGHT)
   if(${CMAKE_VERSION} VERSION_LESS 3.25)
     if(TARGET CUDA::nvToolsExt)
       set(NVTX_LIB_FOUND ON)
@@ -26,6 +26,8 @@ endif()
 
 add_modular_library(MSupportCUDA
   NVTX.cpp
+  Profile.cpp
+  Utils.cpp
 
   LINK_LIBS PUBLIC
   MSupport
