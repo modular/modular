@@ -2281,11 +2281,11 @@ kgen.generator @f() {
 // CHECK-LABEL: kgen.func @"rebind_type,p=1"
 kgen.generator @rebind_type<p>(%arg0: !kgen.pointer<array<p, i8>>)
     -> !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]> {
-  // CHECK-NEXT: kgen.rebind %arg0 : !kgen.pointer<array<1, i8>> to !kgen.pointer<[array<1, i8>
+  // CHECK-NOT: kgen.rebind %arg0
   %0 = kgen.rebind %arg0 : !kgen.pointer<array<p, i8>> to !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]>
-  // CHECK-NEXT: constant: pointer<[{{.*}}]> = <store_to_mem(1)>
+  // CHECK-NEXT: constant: pointer<index> = <store_to_mem(1)>
   kgen.param.constant: pointer<[index, {"f": () -> () = @f}]> = <rebind(:pointer<index> store_to_mem(p))>
-  // CHECK-NEXT: constant: pointer<[{{.*}}]> = <0>
+  // CHECK-NEXT: constant: pointer<array<1, i8>> = <0>
   kgen.param.constant: pointer<[array<p, i8>, {"f": () -> () = @f}]> = <rebind(:pointer<array<p, i8>> 0)>
   kgen.return %0 : !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]>
 }

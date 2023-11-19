@@ -28,8 +28,7 @@ fn test_owned(owned x: RegPassable):
     # CHECK: %[[XVAR:.*]] = lit.varlet.decl "x"
     # CHECK: lit.ref.store %x, %[[XVAR]]
     # CHECK: %[[XPTR:.*]] = lit.ref.to_pointer %[[XVAR]]
-    # CHECK: %[[XREB:.*]] = kgen.rebind %[[XPTR]]
-    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}"<:type !RegPassable>(%[[XREB]])
+    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}"<:type !RegPassable>(%[[XPTR]])
     borrowed_generic(x)
 
     # CHECK: %[[XREF:.*]] = lit.ref.load %[[XVAR]]
@@ -37,14 +36,12 @@ fn test_owned(owned x: RegPassable):
     # CHECK: %[[XVAR2:.*]] = lit.varlet.decl
     # CHECK: %[[XPTR2:.*]] = lit.ref.to_pointer %[[XVAR2]]
     # CHECK: pop.store %[[XCOPY]], %[[XPTR2]] : !kgen.pointer<!RegPassable>
-    # CHECK: %[[XREB2:.*]] = kgen.rebind %[[XPTR2]]
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XREB2]])
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XPTR2]])
     owned_generic(x)
 
     # CHECK: %[[XPTR3:.*]] = lit.ref.to_pointer %[[XVAR]]
     # CHECK: %[[XMOVED:.*]] = lit.ownership.end_lifetime %[[XPTR3]] : !kgen.pointer<!RegPassable> {isReg = false}
-    # CHECK: %[[XREB3:.*]] = kgen.rebind %[[XMOVED]]
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XREB3]])
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XMOVED]])
     owned_generic(x ^)
 
 
@@ -52,8 +49,7 @@ fn test_owned(owned x: RegPassable):
 fn test_borrowed(borrowed x: RegPassable):
     # CHECK: %[[XSTACK:.*]] = pop.stack_allocation 1 x !RegPassable
     # CHECK: lit.store.borrow %x, %[[XSTACK]] : <!RegPassable>
-    # CHECK: %[[XREB:.*]] = kgen.rebind %[[XSTACK]]
-    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}"<:type !RegPassable>(%[[XREB]])
+    # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}"<:type !RegPassable>(%[[XSTACK]])
     borrowed_generic(x)
     # CHECK-NEXT: lit.ownership.use %x : !RegPassable
 
@@ -61,8 +57,7 @@ fn test_borrowed(borrowed x: RegPassable):
     # CHECK: %[[XVAR:.*]] = lit.varlet.decl
     # CHECK: %[[XPTR:.*]] = lit.ref.to_pointer %[[XVAR]]
     # CHECK: pop.store %[[XCOPY]], %[[XPTR]] : !kgen.pointer<!RegPassable>
-    # CHECK: %[[XREB2:.*]] = kgen.rebind %[[XPTR]]
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XREB2]])
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XPTR]])
     owned_generic(x)
 
 

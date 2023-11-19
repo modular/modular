@@ -1718,16 +1718,16 @@ fn test_metatype_to_trait_vtable():
     # CHECK-SAME: "method" : !lit.signature<("self": !kgen.pointer<!TraitStruct> borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@TraitStruct::@"method
     # CHECK-SAME: "param_method" : !lit.signature<<"x": index>("self": !kgen.pointer<!TraitStruct> borrow_in_mem) -> !kgen.none> = {{.*}}@TraitStruct::@"param_method{{.*}}"<?>
     take_simple_trait[TraitStruct]()
-    # CHECK: call {{.*}}take_simple_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2>, {
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>, {
     # CHECK-SAME: "method" : !lit.signature<("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>
     # CHECK-SAME: "param_method" : !lit.signature<<"x": index>("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>
     take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()
 
 # CHECK-LABEL: lit.func @"test_infer_trait
 fn test_infer_trait(a: TraitStruct, b: ParametricTraitStruct[__mlir_attr.`2 : index`]):
-    # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [!TraitStruct{{[0-9]+}},
+    # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [!TraitStruct,
     infer_trait(a)
-    # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2>,
+    # CHECK: call {{.*}}infer_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>,
     infer_trait(b)
 
 
@@ -1985,9 +1985,31 @@ trait OwnedArguments:
 
 # CHECK-LABEL: lit.struct.decl @NoDtor
 @register_passable
-struct NoDtor(OwnedArguments):
+struct NoDtor(OwnedArguments, DefaultConstructible):
     # CHECK-LABEL: lit.func @"`thunk_take
     fn take(owned self, owned x: RegTraitType):
         # CHECK-NEXT: %0 = lit.load.consume %self
         # CHECK-NEXT: lit.call {{.*}}take{{.*}}(%0, %x)
         pass
+
+    fn __init__() -> Self:
+        pass
+
+    fn method(self):
+        pass
+
+trait DefaultConstructible:
+    fn __init__(inout self):
+        ...
+
+fn default_construct[T: DefaultConstructible]() -> T:
+    return T()
+
+# CHECK-LABEL: lit.func @"generic_fn_return_type
+fn generic_fn_return_type():
+    # CHECK: lit.varlet.decl "c" let : !lit.ref<mut !NoDtor,
+    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
+    # CHECK-NEXT: call {{.*}}default_construct{{.*}}<:trait<{{.*}}> [!NoDtor,
+    let c = default_construct[NoDtor]()
+    # CHECK: call {{.*}}@NoDtor::@"method
+    c.method()

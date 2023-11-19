@@ -878,10 +878,6 @@ void ParamYieldOp::getBranchTargets(
 OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   if (getInput().getType() == getType())
     return getInput();
-  // FIXME(#25916): Where the vtable is stored is not perfect.
-  if (auto ptr = dyn_cast_or_null<PointerAttr>(adaptor.getInput()))
-    if (auto ptrType = dyn_cast<PointerType>(getType()))
-      return PointerAttr::get(ptr.getAddr(), ptrType);
   return {};
 }
 

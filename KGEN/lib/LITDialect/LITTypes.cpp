@@ -141,7 +141,11 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
     SmallVector<TypedAttr> values;
     if (parseParameterValues(p, values))
       return failure();
-    typeValue = DeclRefType::get(symbol, values, metatype);
+    Type declRefMetaType = metatype;
+    if (succeeded(p.parseOptionalColon()))
+      if (parseKGENType(p, declRefMetaType))
+        return failure();
+    typeValue = DeclRefType::get(symbol, values, declRefMetaType);
   } else {
     result = parseOptionalKGENType(p, typeValue);
     if (!result.has_value()) {
@@ -168,7 +172,8 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
   return mlir::success();
 }
 
-static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
+static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
+                                    Type metatype) {
   auto type = dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
@@ -184,6 +189,10 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
     } else {
       p << ref.getSymbol();
       printParameterValues(p, ref.getParamValues());
+      if (ref.getMetaType() != metatype) {
+        p << " : ";
+        printKGENType(p, ref.getMetaType());
+      }
     }
   } else {
     printKGENType(p, type.getValue());
@@ -203,7 +212,7 @@ OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
 }
 
 LogicalResult MetaTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value);
+  return printTypeValue(p, value, *this);
 }
 
 MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
@@ -260,7 +269,7 @@ OptionalParseResult TraitType::parseValue(AsmParser &p,
 }
 
 LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value);
+  return printTypeValue(p, value, *this);
 }
 
 //===----------------------------------------------------------------------===//
