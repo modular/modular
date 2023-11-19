@@ -20,3 +20,18 @@ fn SM80_16x8x8_F16F16F16F16_TN(
     mma(d, a, b, c)
 
     return d
+
+
+# CHECK-LABEL: SM80_m16n8k4_F32F16F16F32_TN
+@export
+fn SM80_m16n8k4_F32F16F16F32_TN(
+    a: SIMD[DType.float32, 2],
+    b: SIMD[DType.float32, 1],
+    c: SIMD[DType.float32, 4],
+) -> SIMD[DType.float32, 4]:
+    var d = SIMD[DType.float32, 4]()
+
+    # CHECK: mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32
+    mma(d, a, b, c)
+
+    return d
