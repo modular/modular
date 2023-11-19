@@ -283,21 +283,24 @@ static void lowerFuncOp(FuncOp funcOp) {
     byrefResArg.replaceAllUsesWith(newResPtr);
     body.eraseArgument(0);
 
-    auto returnOp = cast<ReturnOp>(body.front().getTerminator());
-    b.setInsertionPoint(returnOp);
+    // Find all return sites in the function and rewrite them.
+    body.walk([&, newSig = newSig](ReturnOp returnOp) {
+      b.setInsertionPoint(returnOp);
 
-    if (newSig.isThrows()) {
-      // If the function throws, we need to potentially unpack and repack the
-      // result/error variant.
-      auto newVariantTy = cast<VariantType>(newSig.getValueResults()[0]);
-      Value newRetVal =
-          repackFuncVariantResult(returnOp, newVariantTy, newResPtr);
-      returnOp.setOperand(0, newRetVal);
-    } else {
-      // If the function doesn't throw, we just load and return the new result.
-      auto newRes = b.create<POP::LoadOp>(returnOp.getLoc(), newResPtr);
-      returnOp.setOperand(0, newRes);
-    }
+      if (newSig.isThrows()) {
+        // If the function throws, we need to potentially unpack and repack the
+        // result/error variant.
+        auto newVariantTy = cast<VariantType>(newSig.getValueResults()[0]);
+        Value newRetVal =
+            repackFuncVariantResult(returnOp, newVariantTy, newResPtr);
+        returnOp.setOperand(0, newRetVal);
+      } else {
+        // If the function doesn't throw, we just load and return the new
+        // result.
+        auto newRes = b.create<POP::LoadOp>(returnOp.getLoc(), newResPtr);
+        returnOp.setOperand(0, newRes);
+      }
+    });
   }
   funcOp.setSignature(newSig);
 }

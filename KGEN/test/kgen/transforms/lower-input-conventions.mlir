@@ -264,3 +264,17 @@ kgen.func @init_a_reg_type() {
   kgen.call @reg__init__(%0) : (!kgen.pointer<struct<()>> init_self) -> !kgen.none
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @unreachable_byref_result() -> index
+kgen.func @unreachable_byref_result(%arg0: !kgen.pointer<index> byref_result) -> !kgen.none {
+  // CHECK: loop
+  hlcf.loop {
+    %none = kgen.param.constant: none = <#kgen.none>
+    // CHECK: [[R:%.*]] = pop.load
+    // CHECK-NEXT: return [[R]]
+    kgen.return %none : !kgen.none
+    // CHECK-NEXT: }
+  }
+  // CHECK-NEXT: unreachable
+  kgen.unreachable
+}
