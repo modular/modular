@@ -537,13 +537,16 @@ struct ConvertKGENStructGEP : ConvertPOPToLLVMPattern<StructGEPOp> {
   LogicalResult
   matchAndRewrite(StructGEPOp op, StructGEPOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type ptrType = convertType(op.getType());
-    if (!ptrType)
+    PointerType ptrType = cast<PointerType>(op.getContainer().getType());
+    Type elementType = convertType(ptrType.getElementType());
+    if (!elementType)
       return op.emitError("failed to convert result type");
-    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, ptrType, adaptor.getContainer(),
+    LLVM::LLVMPointerType opaquePtr = LLVM::LLVMPointerType::get(getContext());
+    LLVM::GEPOp newOp = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), opaquePtr, elementType, adaptor.getContainer(),
         ArrayRef<LLVM::GEPArg>{
             0, static_cast<int32_t>(op.getIndexAttr().getInt())});
+    rewriter.replaceOp(op, newOp);
     return success();
   }
 };
@@ -799,9 +802,9 @@ static Value convertArgCallingConvention(ImplicitLocOpBuilder &b, Type type,
     return flattenArgumentStruct(structTy);
   if (auto arrayTy = dyn_cast<LLVM::LLVMArrayType>(type)) {
     // Change the array to be pass-by-reference.
-    Value arrPtr =
-        body->addArgument(LLVM::LLVMPointerType::get(arrayTy), b.getLoc());
-    return b.create<LLVM::LoadOp>(arrPtr);
+    Value arrPtr = body->addArgument(LLVM::LLVMPointerType::get(b.getContext()),
+                                     b.getLoc());
+    return b.create<LLVM::LoadOp>(arrayTy, arrPtr);
   }
   return body->addArgument(type, b.getLoc());
 }
@@ -814,7 +817,7 @@ static unsigned flattenResultStruct(Location loc, LLVM::LLVMStructType structTy,
     if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type)) {
       numAdded += flattenResultStruct(loc, nestedStruct, body);
     } else {
-      body->addArgument(LLVM::LLVMPointerType::get(type), loc);
+      body->addArgument(LLVM::LLVMPointerType::get(type.getContext()), loc);
       ++numAdded;
     }
   }

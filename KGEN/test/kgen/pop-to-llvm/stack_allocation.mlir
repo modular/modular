@@ -39,7 +39,7 @@ kgen.func @stack_allocation_with_alignment() {
 // CHECK-LABEL: @stack_allocation_with_addressspace
 kgen.func @stack_allocation_with_addressspace() {
   // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
-  // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x i32 : (i64) -> !llvm.ptr<i32, 5>
+  // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x i32 : (i64) -> !llvm.ptr<5>
   // CHECK: llvm.intr.lifetime.start 64, %[[PTR0]]
   %0 = pop.stack_allocation 16 x !pop.simd<1, si32> address_space 5
   // CHECK-NEXT: llvm.intr.lifetime.end 64, %[[PTR0]]
@@ -50,7 +50,7 @@ kgen.func @stack_allocation_with_addressspace() {
 // CHECK-LABEL: @stack_allocation_with_align_and_addressspace
 kgen.func @stack_allocation_with_align_and_addressspace() {
   // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
-  // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 8 : i64} : (i64) -> !llvm.ptr<f32, 3>
+  // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 8 : i64} : (i64) -> !llvm.ptr<3>
   // CHECK: llvm.intr.lifetime.start 64, %[[PTR0]]
   %0 = pop.stack_allocation 16 x !pop.simd<1, f32> address_space 3 align 8
   // CHECK-NEXT: llvm.intr.lifetime.end 64, %[[PTR0]]

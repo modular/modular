@@ -5,15 +5,15 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: llvm.func internal @heap
 kgen.func @heap() -> !kgen.pointer<i16> {
   // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %idx32, %idx2 : <i8>
-  // CHECK: %[[ALLOC_LLVM:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]] : !kgen.pointer<i8> to !llvm.ptr<i8>
-  // CHECK: %[[BASE:.*]] = llvm.bitcast %[[ALLOC_LLVM]] : !llvm.ptr<i8> to !llvm.ptr
+  // CHECK: %[[ALLOC_LLVM:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]] : !kgen.pointer<i8> to !llvm.ptr
+  // CHECK: %[[BASE:.*]] = llvm.bitcast %[[ALLOC_LLVM]] : !llvm.ptr to !llvm.ptr
   // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[CST_EFBE:.*]] = llvm.mlir.constant(#M.dense_array<-17, -66> : vector<2xi8>)
   // CHECK: llvm.store %[[CST_EFBE]], %[[P0]] {alignment = 32 :
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
   %0 = kgen.param.materialize: !kgen.pointer<i16> = <#interp.memref<[(mem_heap, heap, [])], 0, 0>>
-  // CHECK: llvm.return %[[RESULT_TYPED]] : !llvm.ptr<i16>
+  // CHECK: llvm.return %[[RESULT_TYPED]] : !llvm.ptr
   kgen.return %0 : !kgen.pointer<i16>
 }
 

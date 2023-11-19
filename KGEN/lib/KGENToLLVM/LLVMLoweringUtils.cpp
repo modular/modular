@@ -27,8 +27,7 @@ namespace LLVM = mlir::LLVM;
 /// we lower it as struct with a pointer field holding the data and a index
 /// field holding the string size.
 static Type getLLVMTypeForKGENStringType(MLIRContext *ctx, Type strSizeType) {
-  SmallVector<Type> elementTypes{
-      LLVM::LLVMPointerType::get(IntegerType::get(ctx, 8)), strSizeType};
+  SmallVector<Type> elementTypes{LLVM::LLVMPointerType::get(ctx), strSizeType};
   return LLVM::LLVMStructType::getLiteral(ctx, elementTypes);
 }
 
@@ -150,13 +149,6 @@ std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
   return {};
 }
 
-Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, KGENDType dtype,
-                               size_t indexBitwidth) {
-  if (std::optional<Type> type = getMLIRTypeForDType(ctx, dtype, indexBitwidth))
-    return LLVM::LLVMPointerType::get(*type);
-  return LLVM::LLVMPointerType::get(ctx);
-}
-
 /// Build LLVM lowering options for a target.
 static mlir::LowerToLLVMOptions buildLLVMLoweringOpts(TargetInfoAttr target) {
   mlir::LowerToLLVMOptions opts(target.getContext());
@@ -204,16 +196,13 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
     return LLVM::LLVMStructType::getLiteral(
         &getContext(),
-        {LLVM::LLVMPointerType::get(convertedType), getIndexType()});
+        {LLVM::LLVMPointerType::get(variadic.getContext()), getIndexType()});
   });
 
-  // Convert pointer types to LLVM pointer types. If the element type is
-  // unspecified, return an opaque pointer.
+  // Convert pointer types to LLVM pointer types.
   addConversion([=](PointerType pointer) -> std::optional<Type> {
     unsigned addressSpace =
         cast<IntegerAttr>(pointer.getAddressSpace()).getInt();
-    if (Type elementType = convertType(pointer.getElementType()))
-      return LLVM::LLVMPointerType::get(elementType, addressSpace);
     return LLVM::LLVMPointerType::get(pointer.getContext(), addressSpace);
   });
 
@@ -315,7 +304,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
   // Coroutine handles are always lowered to opaque pointers.
   addConversion([](POP::CoroutineType coro) {
-    return LLVM::LLVMPointerType::get(Builder(coro.getContext()).getI8Type());
+    return LLVM::LLVMPointerType::get(coro.getContext());
   });
 }
 
@@ -639,7 +628,6 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     return it->second;
 
   MaterializedBlobs materialized;
-  auto i8PtrType = LLVM::LLVMPointerType::get(b.getI8Type());
   auto ptrType = LLVM::LLVMPointerType::get(b.getContext());
 
   // First emit the allocations and the memcpy's.
@@ -662,7 +650,7 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
           b.create<mlir::index::ConstantOp>(mem->getDataAlignment()),
           b.create<mlir::index::ConstantOp>(mem->getData().size()));
     }
-    Value ptr = b.create<mlir::UnrealizedConversionCastOp>(i8PtrType, popAlloc)
+    Value ptr = b.create<mlir::UnrealizedConversionCastOp>(ptrType, popAlloc)
                     .getResult(0);
     materialized.emplace_back(Value(b.create<LLVM::BitcastOp>(ptrType, ptr)));
   }
@@ -870,7 +858,7 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
   Value undefOp = b.create<LLVM::UndefOp>(
       b.getLoc(), getLLVMTypeForKGENStringType(b.getContext(), sizeType));
   Value llvmString =
-      b.create<LLVM::BitcastOp>(LLVM::LLVMPointerType::get(b.getI8Type()),
+      b.create<LLVM::BitcastOp>(LLVM::LLVMPointerType::get(b.getContext()),
                                 b.create<LLVM::AddressOfOp>(global));
   Value structVal0 =
       b.create<LLVM::InsertValueOp>(b.getLoc(), undefOp, llvmString, 0);
@@ -1007,7 +995,7 @@ Value KGEN::convertParameterToLLVM(
     Value size = b.create<LLVM::ConstantOp>(
         b.getI64IntegerAttr(variadic.getValues().size()));
     Value ptr = b.create<LLVM::AllocaOp>(
-        LLVM::LLVMPointerType::get(elementType), elementType, size);
+        LLVM::LLVMPointerType::get(b.getContext()), elementType, size);
 
     // 2. Store elements of the sequence into the allocated space.
     for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
@@ -1015,8 +1003,8 @@ Value KGEN::convertParameterToLLVM(
       if (!element)
         return {};
 
-      Value destination = b.create<LLVM::GEPOp>(
-          LLVM::LLVMPointerType::get(elementType), ptr,
+      auto destination = b.create<LLVM::GEPOp>(
+          LLVM::LLVMPointerType::get(b.getContext()), elementType, ptr,
           ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(idx)});
       b.create<LLVM::StoreOp>(element, destination);
     }

@@ -460,8 +460,13 @@ struct ConvertPOPOffset : public ConvertPOPToLLVMPattern<OffsetOp> {
   LogicalResult
   matchAndRewrite(OffsetOp op, OffsetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, adaptor.getPtr().getType(), adaptor.getPtr(), adaptor.getIndex());
+    Type elementType =
+        typeConverter->convertType(op.getPtr().getType().getElementType());
+    auto gep = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), /*resultType=*/adaptor.getPtr().getType(),
+        /*basePtrType=*/elementType,
+        /*basePtr=*/adaptor.getPtr(), adaptor.getIndex());
+    rewriter.replaceOp(op, gep);
     return success();
   }
 };
@@ -516,18 +521,24 @@ private:
 /// Generate the LLVM IR to materialize an alloca with the given LLVM type and
 /// count. The alloca is created at the top of the given block, and lifetime
 /// markers are inserted at the end of the given operation's block.
-static Value materializeLLVMAlloca(OpBuilder &b, Type allocaType, int64_t count,
-                                   Block *block, Operation *op,
+static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
+                                   int64_t count, Block *block, Operation *op,
                                    int64_t typeAllocSize, int64_t align) {
   // Hoist the alloca to the top of the given block.
   b.setInsertionPointToStart(block);
   Value countVal =
       b.create<LLVM::ConstantOp>(op->getLoc(), b.getI64IntegerAttr(count));
 
-  Value ptr = b.create<LLVM::AllocaOp>(
-      op->getLoc(), allocaType,
-      cast<LLVM::LLVMPointerType>(allocaType).getElementType(), countVal,
-      align);
+  unsigned addressSpace = 0;
+  if (auto stackAlloc = dyn_cast<StackAllocationOp>(op);
+      stackAlloc && stackAlloc.getAddressSpaceAttr())
+    if (auto addrSpaceAttr =
+            cast_or_null<IntegerAttr>(stackAlloc.getAddressSpaceAttr()))
+      addressSpace = addrSpaceAttr.getInt();
+
+  auto ptr = b.create<LLVM::AllocaOp>(
+      op->getLoc(), LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
+      elementType, countVal, align);
 
   // Insert lifetime markers starting from the op to the end of its block.
   b.setInsertionPoint(op);
@@ -543,19 +554,20 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type allocaType, int64_t count,
 LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
     StackAllocationOp op, StackAllocationOpAdaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
-  Type ptrType = convertType(op.getType());
-  if (!ptrType)
+  PointerType ptrType = cast<PointerType>(op.getType());
+  Type elementType = convertType(ptrType.getElementType());
+  if (!elementType)
     return op.emitError("could not lower pointer element type");
 
   // Compute the bytecount of the allocated buffer.
-  std::optional<int64_t> typeAllocSize = DataLayoutInterface::getTypeAllocSize(
-      target, cast<PointerType>(op.getType()).getElementType());
+  std::optional<int64_t> typeAllocSize =
+      DataLayoutInterface::getTypeAllocSize(target, ptrType.getElementType());
   if (!typeAllocSize)
     return op.emitError("could not get size of variadic element");
 
   Value alloca = materializeLLVMAlloca(
-      rewriter, ptrType, cast<IntegerAttr>(op.getCount()).getInt(), body, op,
-      *typeAllocSize, resolveAlignment(op.getAlignment()));
+      rewriter, elementType, cast<IntegerAttr>(op.getCount()).getInt(), body,
+      op, *typeAllocSize, resolveAlignment(op.getAlignment()));
   rewriter.replaceOp(op, alloca);
   return success();
 }
@@ -657,10 +669,11 @@ struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
   matchAndRewrite(ArrayGEPOp op, ArrayGEPOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type ptrType = convertType(op.getType());
+    Type elementType = convertType(op.getArray().getType().getElementType());
     if (!ptrType)
       return op.emitError("failed to convert result type");
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, ptrType, adaptor.getArray(),
+        op, ptrType, elementType, adaptor.getArray(),
         ArrayRef<LLVM::GEPArg>{0, adaptor.getIndex()});
     return success();
   }
@@ -670,17 +683,16 @@ struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
 // getAlignment
 //===----------------------------------------------------------------------===//
 
-static unsigned getAlignment(const POPToLLVMTypeConverter *tc, Type ptrType,
+static unsigned getAlignment(const POPToLLVMTypeConverter *tc,
+                             PointerType ptrType,
                              TypedAttr alignmentAttr = {}) {
   // If we have the alignment attribute, use it.
   if (alignmentAttr)
     return cast<IntegerAttr>(alignmentAttr).getInt();
 
-  if (isa<PointerType>(ptrType))
-    ptrType = tc->convertType(ptrType);
+  Type elementType = tc->convertType(ptrType.getElementType());
 
-  return tc->getTypeABIAlign(
-      cast<LLVM::LLVMPointerType>(ptrType).getElementType());
+  return tc->getTypeABIAlign(elementType);
 }
 
 //===----------------------------------------------------------------------===//
@@ -694,6 +706,7 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
   matchAndRewrite(LoadOp op, LoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto ptrType = cast<PointerType>(op.getPtr().getType());
+    Type elementType = typeConverter->convertType(ptrType.getElementType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
     if (auto addressSpace =
@@ -702,12 +715,14 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
       auto castOp = rewriter.create<LLVM::AddrSpaceCastOp>(
           op.getLoc(), convertType(PointerType::get(ptrType.getElementType())),
           adaptor.getPtr());
-      auto newOp =
-          rewriter.create<LLVM::LoadOp>(op.getLoc(), castOp, alignment);
+      auto newOp = rewriter.create<LLVM::LoadOp>(op.getLoc(), elementType,
+                                                 castOp, alignment);
       rewriter.replaceOp(op, newOp);
       return success();
     }
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, adaptor.getPtr(), alignment);
+    auto loadOp = rewriter.create<LLVM::LoadOp>(op.getLoc(), elementType,
+                                                adaptor.getPtr(), alignment);
+    rewriter.replaceOp(op, loadOp);
     return success();
   }
 };
@@ -791,17 +806,18 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     return op.emitError("failed to convert element type");
 
   size_t count = op.getOperands().size();
-  Value ptr =
-      materializeLLVMAlloca(rewriter, LLVM::LLVMPointerType::get(elementType),
-                            count, body, op, *typeAllocSize, *typeABIAlign);
+  Value ptr = materializeLLVMAlloca(rewriter, elementType, count, body, op,
+                                    *typeAllocSize, *typeABIAlign);
 
   // 2. Store elements of the sequence into the allocated space.
   Type indexType = getTypeConverter()->getIndexType();
+  auto opaquePtr = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
   for (auto [index, operand] : llvm::enumerate(adaptor.getOperands())) {
     Value indexConstant = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), rewriter.getIntegerAttr(indexType, index));
-    Value destination = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), LLVM::LLVMPointerType::get(elementType), ptr,
+    auto destination = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), /*resultType=*/opaquePtr,
+        /*basePtrType=*/elementType, /*basePtr=*/ptr,
         ArrayRef<LLVM::GEPArg>{indexConstant});
     rewriter.create<LLVM::StoreOp>(op.getLoc(), operand, destination);
   }
@@ -835,11 +851,13 @@ struct ConvertPOPVariadicGet : public ConvertPOPToLLVMPattern<VariadicGetOp> {
   LogicalResult
   matchAndRewrite(VariadicGetOp op, VariadicGetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    Type ptrElement = typeConverter->convertType(
+        op.getVariadic().getType().getElementAsType());
     Value ptr = rewriter.create<LLVM::ExtractValueOp>(op.getLoc(),
                                                       adaptor.getVariadic(), 0);
-    Value gep = rewriter.create<LLVM::GEPOp>(op.getLoc(), ptr.getType(), ptr,
-                                             adaptor.getIndex());
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, gep);
+    auto gep = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), ptr.getType(), ptrElement, ptr, adaptor.getIndex());
+    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, ptrElement, gep);
     return success();
   }
 };
@@ -1611,9 +1629,10 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
     b.setInsertionPoint(func);
 
     // Set the alignment if specified. Otherwise use the natural alignment.
-    auto ptrType = cast<LLVM::LLVMPointerType>(convertType(op.getType()));
+    auto kgenPtrType = cast<PointerType>(op.getType());
+    auto elementType = typeConverter->convertType(kgenPtrType.getElementType());
     unsigned alignment =
-        getAlignment(getTypeConverter(), ptrType, op.getAlignmentAttr());
+        getAlignment(getTypeConverter(), kgenPtrType, op.getAlignmentAttr());
 
     // Set the address space if specified.
     unsigned addrSpace = 0;
@@ -1627,7 +1646,7 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
     // Create the global.
     auto global = b.create<LLVM::GlobalOp>(
         op.getLoc(),
-        LLVM::LLVMArrayType::get(ptrType.getElementType(),
+        LLVM::LLVMArrayType::get(elementType,
                                  cast<IntegerAttr>(op.getCount()).getInt()),
         /*isConstant=*/false, LLVM::Linkage::Internal, name,
         /*value=*/Attribute(), alignment, addrSpace);
@@ -1635,11 +1654,12 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
 
     // Replace the alloc op with an `addressof`.
     b.setInsertionPoint(op);
+    auto opaquePtrType = LLVM::LLVMPointerType::get(getContext(), addrSpace);
     auto ptr = b.create<LLVM::AddressOfOp>(op.getLoc(), global);
     b.replaceOpWithNewOp<LLVM::BitcastOp>(
         op,
-        LLVM::LLVMPointerType::get(ptrType.getElementType(),
-                                   ptrType.getAddressSpace()),
+        LLVM::LLVMPointerType::get(opaquePtrType.getContext(),
+                                   opaquePtrType.getAddressSpace()),
         ptr);
     return success();
   }
@@ -1663,11 +1683,12 @@ public:
   LogicalResult
   matchAndRewrite(GlobalConstantOp op, GlobalConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type type = convertType(op.getType());
-    if (!type)
+    auto kgenPtrType = cast<PointerType>(op.getType());
+    auto opaquePtrType = LLVM::LLVMPointerType::get(getContext());
+    Type elementType = convertType(kgenPtrType.getElementType());
+    if (!elementType)
       return rewriter.notifyMatchFailure(
           op.getLoc(), "failed to convert constant result type");
-    auto ptrType = cast<LLVM::LLVMPointerType>(type);
 
     // Unique the constant.
     auto [it, inserted] = constants.try_emplace(
@@ -1678,9 +1699,9 @@ public:
       rewriter.clearInsertionPoint();
 
       LLVM::GlobalOp global = rewriter.create<LLVM::GlobalOp>(
-          op.getLoc(), ptrType.getElementType(), true, LLVM::Linkage::Internal,
+          op.getLoc(), elementType, true, LLVM::Linkage::Internal,
           "global_constant", Attribute(),
-          getAlignment(getTypeConverter(), ptrType,
+          getAlignment(getTypeConverter(), kgenPtrType,
                        adaptor.getAlignmentAttr()));
       // Emit the constant using an initializer region.
       global.getBodyRegion().push_back(new Block);
@@ -1698,7 +1719,7 @@ public:
     }
 
     rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
-        op, ptrType, FlatSymbolRefAttr::get(it->second.getSymNameAttr()));
+        op, opaquePtrType, FlatSymbolRefAttr::get(it->second.getSymNameAttr()));
     return success();
   }
 

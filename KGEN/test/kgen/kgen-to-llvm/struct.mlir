@@ -50,14 +50,14 @@ kgen.func @struct_extract_one(%a: !kgen.struct<(f32)>) -> f32 {
 
 // CHECK-LABEL: @struct_gep
 kgen.func @struct_gep(%a: !kgen.pointer<struct<(i32, i64)>>) -> !kgen.pointer<i64> {
-  // CHECK: llvm.getelementptr %{{.*}}[0, 1] : (!llvm.ptr<struct<(i32, i64)>>) -> !llvm.ptr<i64>
+  // CHECK: llvm.getelementptr %{{.*}}[0, 1] : (!llvm.ptr) -> !llvm.ptr
   %0 = kgen.struct.gep %a[1] : <struct<(i32, i64)>>
   kgen.return %0 : !kgen.pointer<i64>
 }
 
 // CHECK-LABEL: @struct_gep_one
 kgen.func @struct_gep_one(%a: !kgen.pointer<struct<(i32)>>) -> !kgen.pointer<i32> {
-  // CHECK: llvm.getelementptr %arg0[0, 0] : (!llvm.ptr<struct<(i32)>>) -> !llvm.ptr<i32>
+  // CHECK: llvm.getelementptr %arg0[0, 0] : (!llvm.ptr) -> !llvm.ptr
   %0 = kgen.struct.gep %a[0] : <struct<(i32)>>
   kgen.return %0 : !kgen.pointer<i32>
 }

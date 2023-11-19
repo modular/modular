@@ -15,7 +15,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK: llvm.func @foo(i32) -> vector<4xf64>
   // CHECK-SAME: memory = #llvm.memory_effects<other = read, argMem = read, inaccessibleMem = read>
   // CHECK-SAME: passthrough = ["noinline", "noreturn"
-  // CHECK: llvm.func @bar(!llvm.ptr<i32> {llvm.noalias}) -> (i32 {llvm.signext})
+  // CHECK: llvm.func @bar(!llvm.ptr {llvm.noalias}) -> (i32 {llvm.signext})
 }
 
 // -----
@@ -37,11 +37,11 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @global_constant
   kgen.func @global_constant() {
-    // CHECK: llvm.mlir.addressof @global_constant_0 : !llvm.ptr<i32>
+    // CHECK: llvm.mlir.addressof @global_constant_0 : !llvm.ptr
     %0 = pop.global_constant: ui32 = <5>
-    // CHECK: llvm.mlir.addressof @global_constant_0 : !llvm.ptr<i32>
+    // CHECK: llvm.mlir.addressof @global_constant_0 : !llvm.ptr
     %1 = pop.global_constant: ui32 = <5>
-    // CHECK: llvm.mlir.addressof @global_constant_1 : !llvm.ptr<vector<2xi32>>
+    // CHECK: llvm.mlir.addressof @global_constant_1 : !llvm.ptr
     %2 = pop.global_constant: simd<2, si32> = <<2, 5>>
     kgen.return
   }
@@ -50,7 +50,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK-LABEL: kgen.func @global_alloc
   kgen.func @global_alloc() -> !kgen.pointer<scalar<f32>, 3> {
     // CHECK-NEXT: %0 = llvm.mlir.addressof @global_alloc_global_alloc : !llvm.ptr<3>
-    // CHECK-NEXT: %1 = llvm.bitcast %0 : !llvm.ptr<3> to !llvm.ptr<f32, 3>
+    // CHECK-NEXT: %1 = llvm.bitcast %0 : !llvm.ptr<3> to !llvm.ptr<3>
     %0 = pop.global_alloc 2 x !pop.scalar<f32> address_space 3 align 4
     kgen.return %0 : !kgen.pointer<scalar<f32>, 3>
   }
@@ -109,9 +109,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %size = index.constant 1
     %align = index.constant 8
     // CHECK: [[RAW_PTR:%.*]] = llvm.call @kgenAlignedAlloc
-    // CHECK-NEXT: [[PTR:%.*]] = llvm.bitcast [[RAW_PTR]] : !llvm.ptr to !llvm.ptr<i64>
+    // CHECK-NEXT: [[PTR:%.*]] = llvm.bitcast [[RAW_PTR]] : !llvm.ptr to !llvm.ptr
     %0 = pop.aligned_alloc %align, %size : <index>
-    // CHECK: [[RAW_PTR:%.*]] = llvm.bitcast [[PTR]] : !llvm.ptr<i64> to !llvm.ptr
+    // CHECK: [[RAW_PTR:%.*]] = llvm.bitcast [[PTR]] : !llvm.ptr to !llvm.ptr
     // CHECK-NEXT: llvm.call @kgenAlignedFree([[RAW_PTR]])
     pop.aligned_free %0 : <index>
     llvm.return
