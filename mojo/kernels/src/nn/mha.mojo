@@ -85,9 +85,9 @@ fn fused_attention[
         (3) P = softmax(P);
         (4) output = Bmm(P, V).
 
-    Q, V, and the output have shape BHSD. K has shape BHDS if transposed otherwise
-    BHSD. B, S, H, D denote batch size, sequence length, head count and depth,
-    respectively.
+    Q, V, and the output have shape BHSD. K has shape BHDS if transposed=false
+    and  otherwise BHSD. B, S, H, D denote batch size, sequence length, head
+    count and depth, respectively.
 
     (2) and (3) can be fused into (1) as elementwise and row-wise epilogue.
 
