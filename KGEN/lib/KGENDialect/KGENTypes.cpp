@@ -617,9 +617,8 @@ Type PointerType::getElementAsType() const {
 }
 
 PointerType PointerType::get(TypedAttr elementType, unsigned addressSpace) {
-  MLIRContext *ctx = elementType.getContext();
-  return PointerType::get(ctx, elementType,
-                          IntegerAttr::get(IndexType::get(ctx), addressSpace));
+  Builder b(elementType.getContext());
+  return PointerType::get(elementType, b.getIndexAttr(addressSpace));
 }
 
 /// Return the type as a TypeConstantAttr with AnyRegTypeType as metatype.

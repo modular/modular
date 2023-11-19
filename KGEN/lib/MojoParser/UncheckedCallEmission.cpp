@@ -765,7 +765,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                       const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);
 
-  auto calleeSig = cast<SignatureType>(callee.getType().mlirType);
+  auto calleeSig = cast<LITSignatureType>(callee.getType());
   assert(calleeSig.getNumResultParams() == resultParams.size() &&
          "Type checking should be done");
 
@@ -836,7 +836,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     callArgs.push_back(arg);
   }
 
-  ArrayRef<Type> resultTypes = calleeSig.getValueResults();
+  Type resultType = calleeSig.getResultType();
   Value callResult;
   if (auto target = callee.getIfPValue()) {
     if (auto sig = dyn_cast<SignatureType>(target.getType());
@@ -845,11 +845,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       // `!pop.coroutine<() -> T>` result in a `Coroutine[T]` object.
       auto call = builder->create<AsyncCallOp>(
           loc,
-          POP::CoroutineType::get(getContext(), resultTypes, sig.isThrows()),
+          POP::CoroutineType::get(getContext(), resultType, sig.isThrows()),
           target.get(), resultParams, /*lifetimeParams=*/std::nullopt,
           callArgs);
       ASTType coroType = getBoundCoroutineType(
-          shared, declScope, callExpr->getLoc(), sig, resultTypes.front());
+          shared, declScope, callExpr->getLoc(), sig, resultType);
       if (!coroType)
         return {};
       ValueDest ctorDest(dest.getContext());
@@ -860,19 +860,19 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
               .getIfSRValue();
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
-      auto call = builder->create<CallOp>(loc, resultTypes, symbol,
+      auto call = builder->create<CallOp>(loc, resultType, symbol,
                                           /*lifetimeParams=*/std::nullopt,
                                           resultParams, callArgs);
       callResult = call.getResult(0);
     } else {
       auto call = builder->create<CallParamOp>(
-          loc, resultTypes, target.get(), resultParams,
+          loc, resultType, target.get(), resultParams,
           /*lifetimeParams=*/std::nullopt, callArgs);
       callResult = call.getResult(0);
     }
   } else {
     auto call = builder->create<CallSignatureOp>(
-        loc, resultTypes, callee.getIfSRValue(), callArgs);
+        loc, resultType, callee.getIfSRValue(), callArgs);
     callResult = call.getResult(0);
   }
 

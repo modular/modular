@@ -4057,9 +4057,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
 
   // Treat the `init_self` argument like a result slot.
   bool hasResultSlot =
-      memSig.hasMemoryOnlyResult() ||
-      (memSig.getNumInputs() &&
-       memSig.getInputConvention(0) == ValueInputConvention::InitSelf);
+      memSig.hasMemoryOnlyResult() || memSig.hasInitSelfResult();
 
   // Construct the call operands from the function block arguments. Ensure
   // keyword-only arguments are specified accordingly.
