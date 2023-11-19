@@ -66,7 +66,7 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
   if (!ptr)
     return ErrorTree(func.getLoc(), "first argument is not a pointer");
   ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
-      ptr.getElementAsType(), func.getBodyRegion(), arguments);
+      ptr.getElementType(), func.getBodyRegion(), arguments);
 
   // Report an error if evaluation fails.
   if (result.isError()) {

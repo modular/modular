@@ -121,7 +121,7 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   // Handle PointerType.
   if (auto actual = dyn_cast<PointerType>(actualType))
     if (auto expected = dyn_cast<PointerType>(expectedType))
-      return matchParams(actual.getElementType(), expected.getElementType());
+      return matchTypes(actual.getElementType(), expected.getElementType());
 
   // Handle VariadicType
   if (auto actual = dyn_cast<VariadicType>(actualType))

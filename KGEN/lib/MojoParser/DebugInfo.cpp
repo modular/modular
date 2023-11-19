@@ -70,7 +70,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
         if (auto ref = dyn_cast<RefType>(type))
           type = ref.getElementAsType();
         else
-          type = cast<PointerType>(type).getElementAsType();
+          type = cast<PointerType>(type).getElementType();
       }
       argTypes.push_back(getSourceName(type));
     }

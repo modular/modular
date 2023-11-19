@@ -175,7 +175,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(PackType type) {
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PointerType type) {
-  return buildPointerType(convertDebugType(type.getElementAsType()));
+  return buildPointerType(convertDebugType(type.getElementType()));
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {

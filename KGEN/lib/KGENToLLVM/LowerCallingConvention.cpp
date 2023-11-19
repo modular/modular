@@ -138,7 +138,7 @@ static void rewriteCallingConventions(Operation &op) {
     // safe to bitcast the promise pointer.
     if (auto promise = dyn_cast<POP::CoroutinePromiseOp>(op)) {
       auto [anyNone, newResults] =
-          removeNoneTypes(cast<StructType>(promise.getType().getElementAsType())
+          removeNoneTypes(cast<StructType>(promise.getType().getElementType())
                               .getParameterizedElementTypes());
       if (!anyNone)
         return;

@@ -328,6 +328,19 @@ ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
   return parseParamValue(p, value, type);
 }
 
+ParseResult KGEN::parseParamType(AsmParser &p, Type &type) {
+  TypedAttr typeParam;
+  if (parseTypeParamValue(p, typeParam))
+    return failure();
+  type = ParamRefType::get(typeParam);
+  return success();
+}
+
+void KGEN::printParamType(AsmPrinter &p, Type type) {
+  printTypeParamValue(
+      p, TypeConstantAttr::get(type, AnyRegTypeType::get(type.getContext())));
+}
+
 void KGEN::printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
   llvm::interleaveComma(
       values, p, [&](TypedAttr value) { printTypeParamValue(p, value); });

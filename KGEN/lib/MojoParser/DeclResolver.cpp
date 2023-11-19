@@ -3951,7 +3951,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     // Check for a `Self`-type result.
     if (conv == ValueInputConvention::ByRefResult ||
         conv == ValueInputConvention::InitSelf) {
-      if (cast<PointerType>(type).getElementAsType() != selfType) {
+      if (cast<PointerType>(type).getElementType() != selfType) {
         argTypes.push_back(type);
         conventions.push_back(conv);
         continue;
@@ -3978,7 +3978,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     // Check for a `Self`-type argument. It would always be in-memory.
     if (conv == ValueInputConvention::OwnedInMem ||
         conv == ValueInputConvention::BorrowedInMem) {
-      if (cast<PointerType>(type).getElementAsType() != selfType) {
+      if (cast<PointerType>(type).getElementType() != selfType) {
         argTypes.push_back(type);
         conventions.push_back(conv);
         continue;

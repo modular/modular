@@ -212,7 +212,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   addConversion([=](PointerType pointer) -> std::optional<Type> {
     unsigned addressSpace =
         cast<IntegerAttr>(pointer.getAddressSpace()).getInt();
-    if (Type elementType = convertType(pointer.getElementAsType()))
+    if (Type elementType = convertType(pointer.getElementType()))
       return LLVM::LLVMPointerType::get(elementType, addressSpace);
     return LLVM::LLVMPointerType::get(pointer.getContext(), addressSpace);
   });

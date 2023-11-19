@@ -231,7 +231,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       // If dealing with a memory-only type, remove the pointer.
       if (convention == ValueInputConvention::OwnedInMem ||
           convention == ValueInputConvention::BorrowedInMem)
-        varElType = cast<PointerType>(varElType).getElementAsType();
+        varElType = cast<PointerType>(varElType).getElementType();
       attr = VariadicAttr::get(args, VariadicType::get(varElType));
     } else {
       attr = PackAttr::get(args, cast<PackType>(expectedType));
@@ -299,7 +299,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       assert(passingKind == PassingKind::PosOnly);
 
       // TODO(references): drop this cast eventually.
-      expectedType = cast<PointerType>(expectedType).getElementAsType();
+      expectedType = cast<PointerType>(expectedType).getElementType();
       auto resultTmp =
           emitter.emitVarLetDecl("__call_result_tmp__", expectedType, loc);
       argumentValues.push_back({XLValue(resultTmp), callExpr});
