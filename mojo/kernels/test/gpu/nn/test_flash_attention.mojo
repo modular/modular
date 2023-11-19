@@ -37,7 +37,7 @@ alias type = DType.float32
 
 fn is_benchmark() -> Bool:
     for arg in argv():
-        if arg == "--benchmark":
+        if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
