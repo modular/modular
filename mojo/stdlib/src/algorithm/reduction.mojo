@@ -145,8 +145,8 @@ fn _get_nd_indices_from_flat_index[
         if i == skip_dim:
             out[i] = 0
         else:
-            out[i] = curr_index % shape[i]
-            curr_index //= shape[i]
+            out[i] = curr_index._positive_rem(shape[i])
+            curr_index = curr_index._positive_div(shape[i])
 
     unroll[rank, compute_shape]()
 
