@@ -1174,3 +1174,28 @@ struct RaisingInit:
         # This can raise, but 'self' doesn't need to be initialized.
         _ = foo(1)
         self.stream = stream
+
+
+trait SomeTrait:
+    pass
+
+struct GenericType(SomeTrait):
+    fn __del__(owned self):
+        pass
+
+@register_passable
+struct GenericRegType(SomeTrait):
+    fn __del__(owned self):
+        pass
+
+# CHECK-LABEL: lit.func @"destruct_generic_return
+fn destruct_generic_return():
+    @parameter
+    fn return_generic_type[T: SomeTrait]() -> T:
+        while True:
+            pass
+
+    # CHECK: call {{.*}}@GenericType::@"__del__
+    _ = return_generic_type[GenericType]()
+    # CHECK: call {{.*}}@GenericRegType::@"__del__
+    _ = return_generic_type[GenericRegType]()

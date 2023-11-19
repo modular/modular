@@ -626,7 +626,24 @@ PointerType PointerType::get(Type elementType, unsigned addressSpace) {
 }
 
 PointerType PointerType::get(TypedAttr elementType, TypedAttr addressSpace) {
-  return get(addressSpace.getContext(), elementType, addressSpace);
+  return get(elementType.getContext(), elementType, addressSpace);
+}
+
+PointerType PointerType::get(MLIRContext *ctx, TypedAttr elementType,
+                             TypedAttr addressSpace) {
+  // Canonicalize away the metatype. Just store the pure `Type`.
+  // FIXME: Change PointerType to just carry a `Type` then.
+  TypedAttr rawType = getTypeConstantAttr(ParamRefType::get(elementType));
+  return Base::get(ctx, rawType, addressSpace);
+}
+
+PointerType
+PointerType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                        MLIRContext *ctx, TypedAttr elementType,
+                        TypedAttr addressSpace) {
+  if (failed(verify(emitError, elementType, addressSpace)))
+    return {};
+  return get(ctx, elementType, addressSpace);
 }
 
 PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {

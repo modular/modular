@@ -2071,13 +2071,6 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
     if (isTypeExprType(resultType))
       return TypeConstantAttr::get(typeCst.getValue(), resultType);
   }
-  // FIXME(#25916): Where the vtable is stored is not perfect.
-  if (auto ptrType = dyn_cast<PointerType>(resultType)) {
-    if (auto ptrAttr = dyn_cast<PointerAttr>(input))
-      return PointerAttr::get(ptrAttr.getAddr(), ptrType);
-    if (auto storeAttr = dyn_cast<StoreToMemAttr>(input))
-      return StoreToMemAttr::get(storeAttr.getValue(), ptrType);
-  }
   return {};
 }
 

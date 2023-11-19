@@ -341,8 +341,10 @@ def PointerType : KGENType<"Pointer", "pointer", [
     (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
   let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
 
   let builders = [
+    TypeBuilder<(ins "TypedAttr":$elementType, "TypedAttr":$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
                                         CArg<"unsigned", "0">:$addressSpace)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
