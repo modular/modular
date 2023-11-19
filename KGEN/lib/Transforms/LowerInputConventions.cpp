@@ -72,7 +72,8 @@ lowerSignature(SignatureType sig) {
         newInputTypes[idx] = newArgTy;
         changedIndices.push_back(idx);
       }
-    } else if (convention == ValueInputConvention::ByRefResult) {
+    } else if (convention == ValueInputConvention::ByRefResult ||
+               convention == ValueInputConvention::InitSelf) {
       Type loweredByrefResTy = lowerPointerType(argTy);
       if (!loweredByrefResTy)
         continue;

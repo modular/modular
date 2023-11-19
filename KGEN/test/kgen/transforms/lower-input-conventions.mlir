@@ -250,3 +250,17 @@ kgen.func @call_it_self_result_and_arg(%arg0: !kgen.pointer<struct<()>> borrow_i
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
+
+// CHECK-LABEL: kgen.func @reg__init__() -> !kgen.struct<()>
+kgen.func @reg__init__(%arg0: !kgen.pointer<struct<()>> init_self) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// CHECK-LABEL: @init_a_reg_type
+kgen.func @init_a_reg_type() {
+  %0 = pop.stack_allocation 1 x struct<()>
+  // CHECK: call @reg__init__() : () -> !kgen.struct<()>
+  kgen.call @reg__init__(%0) : (!kgen.pointer<struct<()>> init_self) -> !kgen.none
+  kgen.return
+}
