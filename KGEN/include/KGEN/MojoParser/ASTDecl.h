@@ -198,6 +198,11 @@ public:
   /// postpending a unique ID.
   StringAttr getAnonymousLifetimeFor(const Twine &valueName);
 
+  /// Move the children decls of `src` into this decl. This is useful when a
+  /// temporary decl needs to be created for parsing subexpressions but whose
+  /// children will be inherited later by a decl being resolved.
+  void takeDecls(ASTDecl &src);
+
 private:
   /// This is set to true if there is an entry for body-decorators in a backing
   /// hashtable.  Clients should use "getBodyDecorators().

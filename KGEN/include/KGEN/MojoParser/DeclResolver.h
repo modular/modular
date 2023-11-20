@@ -55,9 +55,9 @@ public:
   DeclResolver(SharedState &state);
   ~DeclResolver();
 
-  /// Resolve all of the declarations that are defined within or referenced by
-  /// the given container `decl`.
-  void resolveAllReferencedFrom(ASTDecl &decl);
+  //===--------------------------------------------------------------------===//
+  // Decl Constructors
+  //===--------------------------------------------------------------------===//
 
   /// Add a new declaration that needs to be resolved.
   ASTDecl &addDecl(Operation *op, llvm::SMLoc loc, StringAttr baseName,
@@ -66,6 +66,17 @@ public:
   ASTDecl &addDecl(DeclIRValue irValue, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
+
+  /// Add a declaration that is already fully resolved.
+  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr baseName,
+                                llvm::SMLoc loc, ASTDecl *parentDecl);
+  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,
+                                llvm::SMLoc loc, ASTDecl *parentDecl);
+
+  /// Add a declaration that represents an erroneous declaration. The generated
+  /// decl is treated as fully resolved, and in an error state.
+  ASTDecl &addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
+                            ASTDecl *parentDecl);
 
   /// Add a new declaration that needs to be resolved, but don't attach it to
   /// parent's name table.  It needs to be added later.
@@ -79,6 +90,10 @@ public:
   /// Attach a declaration to its parent's name table.  For use with
   /// `makeUnlistedDecl`.
   void attachDeclToParentNameTable(ASTDecl *decl, StringAttr name);
+
+  //===--------------------------------------------------------------------===//
+  // Import Resolution
+  //===--------------------------------------------------------------------===//
 
   /// Add a pre-existing set of declarations as children of the specified
   /// context, using the provided alias name (which may differ from that of the
@@ -99,6 +114,17 @@ public:
                                  StringAttr moduleName, llvm::SMLoc aliasLoc,
                                  ASTDecl &context);
 
+private:
+  /// Add a pre-existing set of declarations, which may optionally be imported
+  /// from a given module, as children of the specified context, using the
+  /// provided alias name (which may differ from that of the decl).
+  LogicalResult aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
+                               StringAttr name, llvm::SMLoc aliasLoc,
+                               ASTDecl &context, bool emitDiagnostics = true,
+                               StringAttr moduleName = StringAttr(),
+                               StringAttr declNameInModule = StringAttr());
+
+public:
   /// Import the given module into the provided destination.
   LogicalResult importModule(ASTDecl &dest, PackageOp currentPackage,
                              StringAttr moduleName, StringAttr importName,
@@ -118,21 +144,18 @@ public:
                                               bool isFullImport,
                                               llvm::SMLoc loc);
 
+  //===--------------------------------------------------------------------===//
+  // Decl Lookup
+  //===--------------------------------------------------------------------===//
+
   /// Lookup a declaration from within a given module or package, emitting an
   /// error if it was not found.
   FailureOr<ArrayRef<ASTDecl *>>
   lookupDeclInModule(ASTDecl &module, StringAttr sourceName, SMLoc loc);
 
-  /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr baseName,
-                                llvm::SMLoc loc, ASTDecl *parentDecl);
-  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,
-                                llvm::SMLoc loc, ASTDecl *parentDecl);
-
-  /// Add a declaration that represents an erroneous declaration. The generated
-  /// decl is treated as fully resolved, and in an error state.
-  ASTDecl &addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
-                            ASTDecl *parentDecl);
+  //===--------------------------------------------------------------------===//
+  // Decl Resolution
+  //===--------------------------------------------------------------------===//
 
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
@@ -145,35 +168,42 @@ public:
     return resolve(decl, DeclResolvedness::fully, loc);
   }
 
+  //===--------------------------------------------------------------------===//
+  // Top-Level Decl Resolution
+  //===--------------------------------------------------------------------===//
+
+  /// Resolve all of the declarations that are defined within or referenced by
+  /// the given container `decl`.
+  void resolveAllReferencedFrom(ASTDecl &decl);
+
   /// Resolve the pending wildcard imports in the decl if it represents a
   /// module.
   LogicalResult resolveAllWildcardImports(ASTDecl &module);
 
-  /// Given the symbol for a lit type declaration, return the ASTDecl that
-  /// corresponds to it.  This doesn't allow null symbols, so it always
-  /// succeeds.
-  ASTDecl &getDeclForTypeSymbol(SymbolRefAttr symbol) const {
-    auto it = declForTypeSymbol.find(symbol);
-#ifndef NDEBUG
-    if (it == declForTypeSymbol.end())
-      symbol.dump();
-    assert(it != declForTypeSymbol.end() && "Unknown decl symbol!");
-#endif
-    return *it->second;
-  }
+  //===--------------------------------------------------------------------===//
+  // Symbol-ASTDecl Mapping
+  //===--------------------------------------------------------------------===//
+
+  /// Given the symbol for a declaration, return the ASTDecl that corresponds to
+  /// it.  This doesn't allow null symbols, so it always succeeds.
+  ASTDecl &getDeclForTypeSymbol(SymbolRefAttr symbol) const;
+  ASTDecl *getDeclForFuncSymbol(SymbolRefAttr attr) const;
 
   /// This registers the finalized function with the DeclResolver after its
   /// signature has been resolved and its mangled name is available.  This
   /// returns an existing function if there is a redefinition problem.
   Operation *finalizeFuncSignature(LIT::FuncOp funcOp, ASTDecl &decl);
 
+  //===--------------------------------------------------------------------===//
+  // Export Handling
+  //===--------------------------------------------------------------------===//
+
   void registerAndCheckExport(StringRef aliasName, SMLoc loc);
   void exportMain(ASTDecl &funcDecl);
 
-  ASTDecl *getDeclForFuncSymbol(SymbolRefAttr attr) const {
-    auto it = declForFuncSymbol.find(attr);
-    return it != declForFuncSymbol.end() ? it->second : nullptr;
-  }
+  //===--------------------------------------------------------------------===//
+  // Decl Helpers
+  //===--------------------------------------------------------------------===//
 
   /// Create a name from a signature by appending argument types into the name.
   static StringAttr getMangledName(StringAttr baseName,
@@ -182,10 +212,9 @@ public:
   /// Given a fully resolved signature, compute the final types and KGEN input
   /// conventions of the arguments. This function also ensures that self
   /// arguments are marked as positional-only.
-  void
-  computeArgumentConventions(SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
-                             MutableArrayRef<ParsedArgument> args,
-                             MutableArrayRef<Type> argTypes);
+  static void computeArgumentConventions(
+      SharedState &shared, SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
+      MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes);
 
   /// Given a signature type that may contain references to parameter
   /// declarations in a parent context, isolate it by creating a signatuer with
@@ -220,20 +249,6 @@ private:
   LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(AliasForwardDeclOp op, Lexer &lexer, ASTDecl &decl);
-
-  /// Add a pre-existing set of declarations, which may optionally be imported
-  /// from a given module, as children of the specified context, using the
-  /// provided alias name (which may differ from that of the decl).
-  LogicalResult aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
-                               StringAttr name, llvm::SMLoc aliasLoc,
-                               ASTDecl &context, bool emitDiagnostics = true,
-                               StringAttr moduleName = StringAttr(),
-                               StringAttr declNameInModule = StringAttr());
-
-  /// Move the children decls of `src` into `dst`. This is useful when a
-  /// temporary decl needs to be created for parsing subexpressions but whose
-  /// children will be inherited later by a decl being resolved.
-  void moveDecls(ASTDecl &dst, ASTDecl &src);
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a

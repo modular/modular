@@ -31,7 +31,6 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringRef name) const {
   return lookupInCurrentScope(StringAttr::get(getContext(), name));
 }
 
-/// Look up a name in this declaration's scope only: return null on failure.
 ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
   assert(resolvedness == DeclResolvedness::fully &&
          "cannot perform lookup in a decl that isn't fully resolved");
@@ -39,6 +38,14 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
   if (it != declsInScope.end() && !it->second.empty())
     return it->second;
   return {};
+}
+
+void ASTDecl::takeDecls(ASTDecl &src) {
+  hasReferenceError |= src.hasReferenceError;
+  for (auto &[name, children] : src.declsInScope)
+    for (ASTDecl *child : children)
+      child->parentDecl = this;
+  declsInScope = std::move(src.declsInScope);
 }
 
 StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName) {

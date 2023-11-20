@@ -96,17 +96,52 @@ DeclResolver::~DeclResolver() {
     decl->~ASTDecl();
 }
 
-/// This registers the finalized function with the DeclResolver after its
-/// signature has been resolved and its mangled name is available.  This
-/// returns an existing function if there is a redefinition problem.
-Operation *DeclResolver::finalizeFuncSignature(LIT::FuncOp funcOp,
-                                               ASTDecl &decl) {
-  // Remember the mapping from its fully mangled symbol so we can find its AST
-  // representation and body from IR references.
-  declForFuncSymbol[getFullyResolvedSymbolRef(funcOp)] = &decl;
+//===----------------------------------------------------------------------===//
+// Decl Constructors
 
-  // Install it in the symbol table and check for redefinition while doing so.
-  return shared.setResolvedDeclSymbol(funcOp);
+ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr baseName,
+                               ASTDecl *parentDecl, LexerCursor cursor,
+                               LexerCursor endCursor, ssize_t indentation) {
+  return addDecl(DeclIRValue(op), loc, baseName, parentDecl, cursor, endCursor,
+                 indentation);
+}
+ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc,
+                               StringAttr baseName, ASTDecl *parentDecl,
+                               LexerCursor cursor, LexerCursor endCursor,
+                               ssize_t indentation) {
+  ASTDecl &decl = createUnlistedDecl(irValue, loc, parentDecl, cursor,
+                                     endCursor, indentation);
+  // If this has a parent and a name, insert it into the parents name table so
+  // name lookup will resolve it.  If it doesn't, then we're done.
+  if (baseName)
+    attachDeclToParentNameTable(&decl, baseName);
+  return decl;
+}
+
+ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
+                                            StringAttr name, SMLoc loc,
+                                            ASTDecl *parentDecl) {
+  auto &decl =
+      addDecl(declVal, loc, name, parentDecl, LexerCursor(), LexerCursor(), 0);
+  decl.resolvedness = DeclResolvedness::fully;
+  return decl;
+}
+
+ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
+                                            llvm::SMLoc loc,
+                                            ASTDecl *parentDecl) {
+  return addFullyResolvedDecl(declVal, StringAttr::get(getContext(), name), loc,
+                              parentDecl);
+}
+
+ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
+                                        ASTDecl *parentDecl) {
+  // Use a dummy attribute representation for the error.
+  BoolAttr dummyAttr = BoolAttr::get(parentDecl->getContext(), true);
+  ASTDecl &errDecl =
+      addFullyResolvedDecl(PValue(dummyAttr), baseName, loc, parentDecl);
+  errDecl.hasReferenceError = true;
+  return errDecl;
 }
 
 ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
@@ -216,27 +251,8 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
     previous->hasReferenceError = true;
 }
 
-/// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc,
-                               StringAttr baseName, ASTDecl *parentDecl,
-                               LexerCursor cursor, LexerCursor endCursor,
-                               ssize_t indentation) {
-  ASTDecl &decl = createUnlistedDecl(irValue, loc, parentDecl, cursor,
-                                     endCursor, indentation);
-  // If this has a parent and a name, insert it into the parents name table so
-  // name lookup will resolve it.  If it doesn't, then we're done.
-  if (baseName)
-    attachDeclToParentNameTable(&decl, baseName);
-  return decl;
-}
-
-void DeclResolver::moveDecls(ASTDecl &dst, ASTDecl &src) {
-  dst.hasReferenceError |= src.hasReferenceError;
-  for (auto &[name, children] : src.declsInScope)
-    for (ASTDecl *child : children)
-      child->parentDecl = &dst;
-  dst.declsInScope = std::move(src.declsInScope);
-}
+//===----------------------------------------------------------------------===//
+// Import Resolution
 
 void DeclResolver::aliasDecls(const TinyPtrVector<ASTDecl *> &decls,
                               StringAttr name, llvm::SMLoc aliasLoc,
@@ -428,6 +444,9 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
   return result;
 }
 
+//===----------------------------------------------------------------------===//
+// Decl Lookup
+
 FailureOr<ArrayRef<ASTDecl *>>
 DeclResolver::lookupDeclInModule(ASTDecl &module, StringAttr sourceName,
                                  SMLoc loc) {
@@ -451,40 +470,153 @@ DeclResolver::lookupDeclInModule(ASTDecl &module, StringAttr sourceName,
   return result.getIfSuccess();
 }
 
-/// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr baseName,
-                               ASTDecl *parentDecl, LexerCursor cursor,
-                               LexerCursor endCursor, ssize_t indentation) {
-  return addDecl(DeclIRValue(op), loc, baseName, parentDecl, cursor, endCursor,
-                 indentation);
+//===----------------------------------------------------------------------===//
+// Decl Resolution
+
+LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
+                                    SMLoc loc) {
+  // If decl is already resolved enough, we're done.
+  if (decl.resolvedness >= howResolved) {
+    // If decl is busted, then return failure.
+    return success(!decl.hasReferenceError);
+  }
+
+  auto emitError = [&](SMLoc loc, const Twine &message) -> InflightDiag {
+    return this->emitError(loc, message);
+  };
+
+  // If we are currently name binding this operation, we found a cycle, reject
+  // it with an error.
+  if (!declsCurrentlyProcessing.insert({&decl, loc}).second) {
+    emitError(loc, "recursive reference to declaration")
+            .attachNote(declsCurrentlyProcessing[&decl])
+        << "previously used here";
+    decl.hasReferenceError = true;
+    return failure();
+  }
+
+  // Handle decls that are loaded from bytecode. These decls are not parsed like
+  // decls originating from source files.
+  if (decl.loadedFromBytecode) {
+    if (failed(shared.resolveDeclFromBytecode(decl, howResolved)))
+      decl.hasReferenceError = true;
+
+    declsCurrentlyProcessing.erase(&decl);
+    return success(!decl.hasReferenceError);
+  }
+
+  // If the signature hasn't been parsed, do so.
+  if (decl.resolvedness < DeclResolvedness::signature) {
+    // Handle each operation that can be name bound.  We handle this by
+    // restoring the lexer to the position where parsing can continue, calling
+    // the `resolveSignature` method for the op, and re-saving the new cursor
+    // for the next stage of resolution.
+    TypeSwitch<ASTDecl &>(decl)
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, TraitDeclOp,
+              GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
+          Lexer lexer(shared.diags, decl.getCursor());
+
+          // Generate pretty stack traces if a crash happens in this scope.
+          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                           "resolving decl signature");
+
+          // Resolve the signature: on a parse error, we note that the decl
+          // is malformed and should not be referenced to silence downstream
+          // errors.
+          if (failed(resolveSignature(op, lexer, decl)))
+            decl.hasReferenceError = true;
+          decl.getCursor() = lexer.getCursor();
+        })
+        .Case<UnresolvedImportOp>([&](auto op) {
+          // Resolve the signature: on a parse error, we note that the decl
+          // is malformed and should not be referenced to silence downstream
+          // errors.
+          if (failed(resolveSignature(op, decl)))
+            decl.hasReferenceError = true;
+        })
+        .Case<LIT::FileModuleOp, ModuleOp, PackageOp,
+              UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
+        .Default([&](auto &attr) {
+          // Invalid function arguments will not be resolved to a value and will
+          // have a null IR representation.
+          if (!decl.hasReferenceError) {
+            emitError(decl.getLoc(),
+                      "do not know how to resolve the signature of this decl!");
+            decl.hasReferenceError = true;
+          }
+        });
+    // Never regress resolvedness. In the case of non inlined nested functions,
+    // the body is fully resolved when the signature is resolved in order
+    // to identify the value of 'capturing'
+    if (decl.resolvedness != DeclResolvedness::fully)
+      decl.resolvedness = DeclResolvedness::signature;
+  }
+
+  // If the declaration hasn't been fully parsed and we need to, do so.
+  if (decl.resolvedness < DeclResolvedness::fully &&
+      howResolved == DeclResolvedness::fully) {
+    auto checkEndOfBodyCursor = [&](Lexer &lexer) {
+      // If the final parse of the declaration didn't match the initial
+      // parse, report an error about unrecognized tokens at end of
+      // declaration.
+      if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
+          !decl.hasReferenceError) {
+        if (lexer.getToken().isAny(Token::kw_def, Token::kw_struct,
+                                   Token::kw_trait, Token::kw_class,
+                                   Token::kw_var)) {
+          lexer.emitTokenError(
+              "definition isn't on its own line at the correct "
+              "indentation");
+        } else if (lexer.getToken().is(Token::eof)) {
+          lexer.emitTokenError(
+                   "internal error: decl parsing skipped beyond end "
+                   "of declaration")
+                  .attachNote(decl.getLoc())
+              << "declaration started here";
+        } else {
+          lexer.emitTokenError("unknown tokens at the end of a declaration");
+        }
+      }
+    };
+
+    // Mark the body as already resolved so that name lookup can be performed
+    // in the decl during resolution.
+    decl.resolvedness = DeclResolvedness::fully;
+
+    // Handle each operation that can be name bound.
+    TypeSwitch<ASTDecl &>(decl)
+        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
+              TraitDeclOp, GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp,
+              AliasForwardDeclOp>([&](auto op) {
+          // Parse the body of the declaration from the correct point.
+          Lexer lexer(shared.diags, decl.getCursor());
+
+          // Generate pretty stack traces if a crash happens in this scope.
+          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                           "resolving decl body");
+
+          if (resolveBody(op, lexer, decl))
+            return;
+
+          checkEndOfBodyCursor(lexer);
+        })
+        .Case([&](PackageOp op) { (void)resolveBody(op, decl); })
+        .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
+            [&](auto op) { /*Nothing*/ })
+        .Default([&](auto &attr) {
+          if (!decl.hasReferenceError)
+            emitError(decl.getLoc(),
+                      "do not know how to resolve the body of this decl!");
+        });
+  }
+
+  declsCurrentlyProcessing.erase(&decl);
+  // If decl is busted, then return failure.
+  return success(!decl.hasReferenceError);
 }
 
-/// Add a declaration that is already fully resolved.
-ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
-                                            StringAttr name, SMLoc loc,
-                                            ASTDecl *parentDecl) {
-  auto &decl =
-      addDecl(declVal, loc, name, parentDecl, LexerCursor(), LexerCursor(), 0);
-  decl.resolvedness = DeclResolvedness::fully;
-  return decl;
-}
-
-ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
-                                            llvm::SMLoc loc,
-                                            ASTDecl *parentDecl) {
-  return addFullyResolvedDecl(declVal, StringAttr::get(getContext(), name), loc,
-                              parentDecl);
-}
-
-ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
-                                        ASTDecl *parentDecl) {
-  // Use a dummy attribute representation for the error.
-  BoolAttr dummyAttr = BoolAttr::get(parentDecl->getContext(), true);
-  ASTDecl &errDecl =
-      addFullyResolvedDecl(PValue(dummyAttr), baseName, loc, parentDecl);
-  errDecl.hasReferenceError = true;
-  return errDecl;
-}
+//===----------------------------------------------------------------------===//
+// Top-Level Decl Resolution
 
 void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
   TimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
@@ -566,6 +698,51 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
     } while (resolvedAnything);
   } while (parsedDeclIt != parsedDeclList.size());
 }
+
+LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {
+  while (!module.unresolvedWildcardImports.empty()) {
+    auto it = module.unresolvedWildcardImports.begin();
+    auto [moduleName, locAndIsFullImport] = *it;
+    module.unresolvedWildcardImports.erase(it);
+
+    if (failed(importWildCardDeclsFromModule(module, moduleName,
+                                             locAndIsFullImport.second,
+                                             locAndIsFullImport.first)))
+      return failure();
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Symbol-ASTDecl Mapping
+
+ASTDecl &DeclResolver::getDeclForTypeSymbol(SymbolRefAttr symbol) const {
+  auto it = declForTypeSymbol.find(symbol);
+#ifndef NDEBUG
+  if (it == declForTypeSymbol.end())
+    symbol.dump();
+  assert(it != declForTypeSymbol.end() && "Unknown decl symbol!");
+#endif
+  return *it->second;
+}
+
+ASTDecl *DeclResolver::getDeclForFuncSymbol(SymbolRefAttr attr) const {
+  auto it = declForFuncSymbol.find(attr);
+  return it != declForFuncSymbol.end() ? it->second : nullptr;
+}
+
+Operation *DeclResolver::finalizeFuncSignature(LIT::FuncOp funcOp,
+                                               ASTDecl &decl) {
+  // Remember the mapping from its fully mangled symbol so we can find its AST
+  // representation and body from IR references.
+  declForFuncSymbol[getFullyResolvedSymbolRef(funcOp)] = &decl;
+
+  // Install it in the symbol table and check for redefinition while doing so.
+  return shared.setResolvedDeclSymbol(funcOp);
+}
+
+//===----------------------------------------------------------------------===//
+// Export Handling
 
 void DeclResolver::registerAndCheckExport(StringRef aliasName, SMLoc loc) {
   auto [it, inserted] = exportedSymbolNames.try_emplace(aliasName, loc);
@@ -715,162 +892,75 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   exportedSymbolNames.insert({mainAttr, funcDecl.getLoc()});
 }
 
-/// Resolve the specified declaration to at least the specified level of
-/// resolution, performing incremental type checking as appropriate.
-LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
-                                    SMLoc loc) {
-  // If decl is already resolved enough, we're done.
-  if (decl.resolvedness >= howResolved) {
-    // If decl is busted, then return failure.
-    return success(!decl.hasReferenceError);
+//===----------------------------------------------------------------------===//
+// Decl Helpers
+
+StringAttr DeclResolver::getMangledName(StringAttr baseName,
+                                        SignatureType signature) {
+  // TODO(#16040): Struct names mangled into the signature should be parameter
+  // name-erased.
+  SmallString<64> mangledName(baseName.getValue().begin(),
+                              baseName.getValue().end());
+  llvm::raw_svector_ostream os(mangledName);
+  ArrayRef<Type> inputParams = signature.getInputParamTypes();
+  if (!inputParams.empty()) {
+    os << '[';
+    llvm::interleave(
+        inputParams, os,
+        [&](ASTType type) {
+          os << type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
+        },
+        ",");
+    os << ']';
   }
 
-  auto emitError = [&](SMLoc loc, const Twine &message) -> InflightDiag {
-    return this->emitError(loc, message);
-  };
+  mangledName += '(';
+  for (auto [argNo, convention, argType] : llvm::enumerate(
+           signature.getInputConventions(), signature.getValueInputs())) {
+    // We do not mangle byref results into the signature.
+    if (convention == ValueInputConvention::ByRefResult)
+      continue;
 
-  // If we are currently name binding this operation, we found a cycle, reject
-  // it with an error.
-  if (!declsCurrentlyProcessing.insert({&decl, loc}).second) {
-    emitError(loc, "recursive reference to declaration")
-            .attachNote(declsCurrentlyProcessing[&decl])
-        << "previously used here";
-    decl.hasReferenceError = true;
-    return failure();
+    // Update the mangled name for this argument.
+    if (argNo != 0)
+      mangledName += ",";
+
+    // If this had adjustments added to it because of its argument convention /
+    // variadic state, strip them off.
+    ASTType type = argType;
+    // FIXME(#13015, #13603): In general, we shouldn't be checking for variadic
+    // types specifically, but this is a quick stop-gap to address a crash.
+    if (signature.isVarArg(argNo) && isa<VariadicType>(type.mlirType))
+      type = type.getVariadicElementType();
+    if (convention != ValueInputConvention::OwnedInReg &&
+        convention != ValueInputConvention::BorrowedInReg)
+      type = type.getReferenceElementType();
+    mangledName += type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
+
+    // Add suffix to disambiguate overloadable conventions.
+    switch (convention) {
+    case ValueInputConvention::OwnedInReg:
+    case ValueInputConvention::OwnedInMem:
+    case ValueInputConvention::BorrowedInReg:
+    case ValueInputConvention::BorrowedInMem:
+      break;
+    case ValueInputConvention::ByRef:
+      mangledName += '&';
+      break;
+    case ValueInputConvention::InitSelf:
+      mangledName += "=&";
+      break;
+    case ValueInputConvention::ByRefResult:
+      llvm_unreachable("byref_result should be skipped");
+    case ValueInputConvention::None:
+      llvm_unreachable("none convention not permitted in lit");
+    }
+
+    if (signature.isVarArg(argNo))
+      mangledName += '*';
   }
-
-  // Handle decls that are loaded from bytecode. These decls are not parsed like
-  // decls originating from source files.
-  if (decl.loadedFromBytecode) {
-    if (failed(shared.resolveDeclFromBytecode(decl, howResolved)))
-      decl.hasReferenceError = true;
-
-    declsCurrentlyProcessing.erase(&decl);
-    return success(!decl.hasReferenceError);
-  }
-
-  // If the signature hasn't been parsed, do so.
-  if (decl.resolvedness < DeclResolvedness::signature) {
-    // Handle each operation that can be name bound.  We handle this by
-    // restoring the lexer to the position where parsing can continue, calling
-    // the `resolveSignature` method for the op, and re-saving the new cursor
-    // for the next stage of resolution.
-    TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, TraitDeclOp,
-              GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
-          Lexer lexer(shared.diags, decl.getCursor());
-
-          // Generate pretty stack traces if a crash happens in this scope.
-          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                           "resolving decl signature");
-
-          // Resolve the signature: on a parse error, we note that the decl
-          // is malformed and should not be referenced to silence downstream
-          // errors.
-          if (failed(resolveSignature(op, lexer, decl)))
-            decl.hasReferenceError = true;
-          decl.getCursor() = lexer.getCursor();
-        })
-        .Case<UnresolvedImportOp>([&](auto op) {
-          // Resolve the signature: on a parse error, we note that the decl
-          // is malformed and should not be referenced to silence downstream
-          // errors.
-          if (failed(resolveSignature(op, decl)))
-            decl.hasReferenceError = true;
-        })
-        .Case<LIT::FileModuleOp, ModuleOp, PackageOp,
-              UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
-        .Default([&](auto &attr) {
-          // Invalid function arguments will not be resolved to a value and will
-          // have a null IR representation.
-          if (!decl.hasReferenceError) {
-            emitError(decl.getLoc(),
-                      "do not know how to resolve the signature of this decl!");
-            decl.hasReferenceError = true;
-          }
-        });
-    // Never regress resolvedness. In the case of non inlined nested functions,
-    // the body is fully resolved when the signature is resolved in order
-    // to identify the value of 'capturing'
-    if (decl.resolvedness != DeclResolvedness::fully)
-      decl.resolvedness = DeclResolvedness::signature;
-  }
-
-  // If the declaration hasn't been fully parsed and we need to, do so.
-  if (decl.resolvedness < DeclResolvedness::fully &&
-      howResolved == DeclResolvedness::fully) {
-    auto checkEndOfBodyCursor = [&](Lexer &lexer) {
-      // If the final parse of the declaration didn't match the initial
-      // parse, report an error about unrecognized tokens at end of
-      // declaration.
-      if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
-          !decl.hasReferenceError) {
-        if (lexer.getToken().isAny(Token::kw_def, Token::kw_struct,
-                                   Token::kw_trait, Token::kw_class,
-                                   Token::kw_var)) {
-          lexer.emitTokenError(
-              "definition isn't on its own line at the correct "
-              "indentation");
-        } else if (lexer.getToken().is(Token::eof)) {
-          lexer.emitTokenError(
-                   "internal error: decl parsing skipped beyond end "
-                   "of declaration")
-                  .attachNote(decl.getLoc())
-              << "declaration started here";
-        } else {
-          lexer.emitTokenError("unknown tokens at the end of a declaration");
-        }
-      }
-    };
-
-    // Mark the body as already resolved so that name lookup can be performed
-    // in the decl during resolution.
-    decl.resolvedness = DeclResolvedness::fully;
-
-    // Handle each operation that can be name bound.
-    TypeSwitch<ASTDecl &>(decl)
-        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
-              TraitDeclOp, GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp,
-              AliasForwardDeclOp>([&](auto op) {
-          // Parse the body of the declaration from the correct point.
-          Lexer lexer(shared.diags, decl.getCursor());
-
-          // Generate pretty stack traces if a crash happens in this scope.
-          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                           "resolving decl body");
-
-          if (resolveBody(op, lexer, decl))
-            return;
-
-          checkEndOfBodyCursor(lexer);
-        })
-        .Case([&](PackageOp op) { (void)resolveBody(op, decl); })
-        .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
-            [&](auto op) { /*Nothing*/ })
-        .Default([&](auto &attr) {
-          if (!decl.hasReferenceError)
-            emitError(decl.getLoc(),
-                      "do not know how to resolve the body of this decl!");
-        });
-  }
-
-  declsCurrentlyProcessing.erase(&decl);
-  // If decl is busted, then return failure.
-  return success(!decl.hasReferenceError);
-}
-
-LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {
-  while (!module.unresolvedWildcardImports.empty()) {
-    auto it = module.unresolvedWildcardImports.begin();
-    auto [moduleName, locAndIsFullImport] = *it;
-    module.unresolvedWildcardImports.erase(it);
-
-    if (failed(importWildCardDeclsFromModule(module, moduleName,
-                                             locAndIsFullImport.second,
-                                             locAndIsFullImport.first)))
-      return failure();
-  }
-  return success();
+  mangledName += ')';
+  return StringAttr::get(baseName.getContext(), mangledName);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1543,8 +1633,10 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 }
 
 void DeclResolver::computeArgumentConventions(
-    SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
+    SharedState &shared, SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
     MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes) {
+  MLIRContext *ctx = shared.getContext();
+
   for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
@@ -1597,9 +1689,9 @@ void DeclResolver::computeArgumentConventions(
         // because you can't spell this identifier in Mojo, even with backticks!
         StringAttr lifetimeName;
         if (arg.name)
-          lifetimeName = StringAttr::get(getContext(), "`" + arg.name.str());
+          lifetimeName = StringAttr::get(ctx, "`" + arg.name.str());
         else // Used by function types, for example.
-          lifetimeName = StringAttr::get(getContext(), "`" + llvm::utostr(i));
+          lifetimeName = StringAttr::get(ctx, "`" + llvm::utostr(i));
         auto lifetimeDecl =
             ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
         inputParamDecls.push_back(lifetimeDecl);
@@ -1613,10 +1705,8 @@ void DeclResolver::computeArgumentConventions(
         argType = PointerType::get(argType);
       }
     }
-    if (arg.vararg == VarArgKind::VarArg) {
-      argType =
-          KGEN::VariadicType::get(argType, AnyRegTypeType::get(getContext()));
-    }
+    if (arg.vararg == VarArgKind::VarArg)
+      argType = KGEN::VariadicType::get(argType, AnyRegTypeType::get(ctx));
   }
 }
 
@@ -2103,75 +2193,6 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     funcOp.setSpecialFnKind(uint8_t(fnInfo.kind));
 }
 
-/// Mangle 'name', ensuring that overloaded methods get unique symbol names.
-/// TODO(#16040): Struct names mangled into the signature should be parameter
-/// name-erased.
-StringAttr DeclResolver::getMangledName(StringAttr baseName,
-                                        SignatureType signature) {
-  SmallString<64> mangledName(baseName.getValue().begin(),
-                              baseName.getValue().end());
-  llvm::raw_svector_ostream os(mangledName);
-  ArrayRef<Type> inputParams = signature.getInputParamTypes();
-  if (!inputParams.empty()) {
-    os << '[';
-    llvm::interleave(
-        inputParams, os,
-        [&](ASTType type) {
-          os << type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
-        },
-        ",");
-    os << ']';
-  }
-
-  mangledName += '(';
-  for (auto [argNo, convention, argType] : llvm::enumerate(
-           signature.getInputConventions(), signature.getValueInputs())) {
-    // We do not mangle byref results into the signature.
-    if (convention == ValueInputConvention::ByRefResult)
-      continue;
-
-    // Update the mangled name for this argument.
-    if (argNo != 0)
-      mangledName += ",";
-
-    // If this had adjustments added to it because of its argument convention /
-    // variadic state, strip them off.
-    ASTType type = argType;
-    // FIXME(#13015, #13603): In general, we shouldn't be checking for variadic
-    // types specifically, but this is a quick stop-gap to address a crash.
-    if (signature.isVarArg(argNo) && isa<VariadicType>(type.mlirType))
-      type = type.getVariadicElementType();
-    if (convention != ValueInputConvention::OwnedInReg &&
-        convention != ValueInputConvention::BorrowedInReg)
-      type = type.getReferenceElementType();
-    mangledName += type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
-
-    // Add suffix to disambiguate overloadable conventions.
-    switch (convention) {
-    case ValueInputConvention::OwnedInReg:
-    case ValueInputConvention::OwnedInMem:
-    case ValueInputConvention::BorrowedInReg:
-    case ValueInputConvention::BorrowedInMem:
-      break;
-    case ValueInputConvention::ByRef:
-      mangledName += '&';
-      break;
-    case ValueInputConvention::InitSelf:
-      mangledName += "=&";
-      break;
-    case ValueInputConvention::ByRefResult:
-      llvm_unreachable("byref_result should be skipped");
-    case ValueInputConvention::None:
-      llvm_unreachable("none convention not permitted in lit");
-    }
-
-    if (signature.isVarArg(argNo))
-      mangledName += '*';
-  }
-  mangledName += ')';
-  return StringAttr::get(baseName.getContext(), mangledName);
-}
-
 namespace {
 struct FnDecorators : public SharedStateUser {
   FnDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
@@ -2576,7 +2597,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return failure();
 
   // Propagate errors and the parsed decls in the signature.
-  moveDecls(decl, sigDecl);
+  decl.takeDecls(sigDecl);
 
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
@@ -2588,7 +2609,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types and KGEN conventions.  This also introduces
   // implicit lifetime parameters for borrows/inout/owned arguments.
-  computeArgumentConventions(inputParamDecls, args, argTypes);
+  computeArgumentConventions(shared, inputParamDecls, args, argTypes);
 
   // Now that we've processed the signature, bail if we had a missing colon.
   if (missingColon)
@@ -3482,7 +3503,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
 
   // Propagate signature errors and decls.
-  moveDecls(decl, sigDecl);
+  decl.takeDecls(sigDecl);
 
   auto inputParams = ParamDeclArrayAttr::get(getContext(), inputParamDecls);
   structOp.setInputParamsAttr(inputParams);
