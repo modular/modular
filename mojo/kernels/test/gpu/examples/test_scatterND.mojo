@@ -54,13 +54,15 @@ fn scatter_nd_gpu[
     let indices_end = indices_start + last_index_dimension
 
     for i in range(indices_start, indices_end):
-        var index = indices_data_ptr.load(i).to_int()
-        let element_count_dim = element_counts_and_input_dims[
-            i - indices_start
-        ].to_int()
-        let dim_value = element_counts_and_input_dims[
-            i - indices_start + last_index_dimension
-        ].to_int()
+        var index = int(indices_data_ptr.load(i))
+        let element_count_dim = int(
+            element_counts_and_input_dims[i - indices_start]
+        )
+        let dim_value = int(
+            element_counts_and_input_dims[
+                i - indices_start + last_index_dimension
+            ]
+        )
 
         # Clamp the index if out of range.
         # This would have been an error in the CPU kernel, but throwing in the CUDA EP
