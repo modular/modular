@@ -260,6 +260,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
     return failure();
   }
 
+  // Check the format that we want to compile to.
   auto format = cast<StringAttr>(op.getOperand(1)).getValue().lower();
   if (!llvm::is_contained({"llvm", "asm"}, format)) {
     emitError({*errorLoc, "'compile_assembly' function second argument '" +
@@ -278,10 +279,9 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // primary generator, and the functor will return an error.
   StringAttr name =
       getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
-  ErrorOr<CrossDeviceFunction> closure = elaborator->getCompileAsmFn(
-      format == "llvm"
-          ? Elaborator::ASMFormat::LLVM
-          : Elaborator::ASMFormat::ASM)(func, symbol, name, symtabCopy, target);
+  ErrorOr<CrossDeviceFunction> closure = elaborator->getCompileAsmFn()(
+      func, symbol, name, symtabCopy, target,
+      format == "llvm" ? EmissionKind::LLVM : EmissionKind::ASM);
   if (closure.isError()) {
     emitError({*errorLoc, closure.takeError()});
     return failure();

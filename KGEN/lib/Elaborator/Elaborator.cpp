@@ -2614,7 +2614,7 @@ public:
     // Default compile assembly hook will just error.
     if (!compileAsmFn) {
       compileAsmFn = [](GeneratorOp, SymbolConstantAttr, StringAttr,
-                        const SymbolTable &, TargetInfoAttr) {
+                        const SymbolTable &, TargetInfoAttr, EmissionKind) {
         return Error("internal error: cannot compile assembly without a JIT");
       };
     }

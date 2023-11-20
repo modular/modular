@@ -287,7 +287,7 @@ static ErrorOr<CrossDeviceFunction>
 compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
                      StringAttr name, const SymbolTable &symtab,
                      LLCL::Runtime &runtime, TargetInfoAttr target,
-                     CompilationOptions options) {
+                     EmissionKind emissionKind, CompilationOptions options) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
@@ -351,17 +351,18 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       },
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target) {
+                    TargetInfoAttr target, EmissionKind emissionKind) {
         // Recursion...!
         return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
-                                    options);
+                                    emissionKind, options);
       }));
   buildPostElaborationPipeline(pm, runtime, options);
 
   // This functor runs the desired transformation to cache.
   auto compileToAsm =
-      [&pm, &compiler, &options, &runtime, tm = std::move(tm), name](
-          Operation *op, WriteableBufferRef buffer) mutable -> ErrorOrSuccess {
+      [&pm, &compiler, &options, &runtime, tm = std::move(tm), name,
+       emissionKind](Operation *op,
+                     WriteableBufferRef buffer) mutable -> ErrorOrSuccess {
     if (failed(pm.run(op)))
       return Error("failed to run the pass manager");
     if (failed(writeCaptureArgs(cast<ModuleOp>(op), name, buffer.copy())))
@@ -369,6 +370,11 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
     llvm::LLVMContext llvmCtx;
     std::unique_ptr<llvm::Module> llvmModule =
         compiler.lowerAllFuncsToLLVM(llvmCtx, cast<ModuleOp>(op));
+
+    if (emissionKind == EmissionKind::LLVM) {
+      llvmModule->print(*buffer, nullptr);
+      return success();
+    }
 
     if (failed(compileLLVMToObject(*llvmModule, *tm, *buffer, options, runtime,
                                    /*emitAssembly=*/true)))
@@ -431,9 +437,9 @@ void KGEN::populateElaborateModulePasses(
       /*compileAsmFn=*/
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target) {
+                    TargetInfoAttr target, EmissionKind) {
         return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
-                                    options);
+                                    EmissionKind::ASM, options);
       },
       packageLinkHandlerFn);
   buildPostElaborationPipeline(pm, runtime, options);
@@ -624,9 +630,9 @@ KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
       },
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target) {
+                    TargetInfoAttr target, EmissionKind emissionKind) {
         return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
-                                    options);
+                                    emissionKind, options);
       });
 }
 
