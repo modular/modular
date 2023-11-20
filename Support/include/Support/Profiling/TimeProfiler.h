@@ -413,8 +413,9 @@ struct ProfilerEntry<true> {
                        llvm::function_ref<std::string()> detailFn) const {
     if (name.empty())
       return {};
-    return ProfilerEntry(Twine(name).concat(name).concat(Twine(suffix)).str(),
-                         Twine(getDetail()).concat(detailFn()).str());
+    return ProfilerEntry(
+        Twine(name).concat(name).concat(Twine(suffix)).str(),
+        Twine(getDetail()).concat(";").concat(detailFn()).str());
   }
 
   template <typename Result>
