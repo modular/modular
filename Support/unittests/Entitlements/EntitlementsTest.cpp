@@ -4,18 +4,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Configuration.h"
 #include "Support/Entitlements/Entitlement.h"
 #include "Support/Entitlements/EntitlementStore.h"
+#include "Support/HTTP/HTTPClient.h"
 #include "Support/Random.h"
 #include "mbedtls/error.h"
 #include "mbedtls/x509_crt.h"
+#include "mbedtls/x509_csr.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
-#include "Support/Cryptography/Keypair.h"
 #include "gtest/gtest.h"
+
+#include "RootCert.inc"
 
 using namespace M;
 
@@ -58,6 +61,15 @@ struct TestEntitlement : public Entitlement {
 };
 } // namespace
 
+// HACK: We can only initialize HTTPContext once per process but multiple test
+// will need HTTPContext.
+static HTTPContextRef getHTTPContextRef() {
+  static HTTPContextRef ref;
+  static llvm::once_flag flag;
+  llvm::call_once(flag, [&]() { ref = HTTPContext::init(); });
+  return ref.copy();
+}
+
 /// Provide the platform-specific csprng call.
 static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
   auto *rng = (SecureRandomBytesGenerator *)ctx;
@@ -76,47 +88,162 @@ struct WrittenCert {
   std::array<uint8_t, 2048> buf = {};
   size_t bytesWritten = 0;
 
-  // This is the keypair used for the CA cert.
-  Keypair keypair;
-
   ArrayRef<uint8_t> getCertificate() {
     return ArrayRef<uint8_t>(buf.data() + buf.size() - bytesWritten,
                              bytesWritten);
   }
 };
 
-/// Generate a keypair, a certificate, and write both in DER form.
-static WrittenCert getCertificate(mbedtls_pk_context *issuer) {
-  mbedtls_x509write_cert cert;
-  mbedtls_x509write_crt_init(&cert);
+class Firechicken : public HTTPClient {
+public:
+  mbedtls_pk_context keyCtx;
+  mbedtls_x509_crt rootCert;
 
-  // Set up basic cert info.
-  EXPECT_EQ(
-      mbedtls_x509write_crt_set_subject_name(&cert, "CN=Cert,O=mbed TLS,C=UK"),
-      0);
-  EXPECT_EQ(
-      mbedtls_x509write_crt_set_issuer_name(&cert, "CN=Cert,O=mbed TLS,C=UK"),
-      0);
-  mbedtls_x509write_crt_set_version(&cert, MBEDTLS_X509_CRT_VERSION_3);
-  mbedtls_x509write_crt_set_md_alg(&cert, MBEDTLS_MD_SHA256);
-  mbedtls_mpi serno;
-  mbedtls_mpi_init(&serno);
-  mbedtls_mpi_lset(&serno, 1);
-  EXPECT_EQ(mbedtls_x509write_crt_set_serial(&cert, &serno), 0);
-  mbedtls_mpi_free(&serno);
+  Firechicken(HTTPContextRef ref) : HTTPClient(std::move(ref)) {
+    // For PEM-format objects, the size must include the null terminator (hence
+    // the +1).
+    mbedtls_pk_init(&keyCtx);
+    int rc = mbedtls_pk_parse_key(&keyCtx, modularRootKey.bytes_begin(),
+                                  modularRootKey.size() + 1, nullptr, 0,
+                                  nullptr, nullptr);
+    EXPECT_EQ(rc, 0) << "mbedtls_pk_parse_key failed";
 
-  EXPECT_EQ(mbedtls_x509write_crt_set_validity(&cert,
-                                               /*not_before=*/"20131231235959",
-                                               /*not_after=*/"20931231235959"),
-            0);
-  if (!issuer) {
-    // This cert is a CA cert. Its max path length is unlimited.
-    mbedtls_x509write_crt_set_basic_constraints(&cert, /*is_ca=*/1,
-                                                /*max_pathlen=*/-1);
+    mbedtls_x509_crt_init(&rootCert);
+    rc = mbedtls_x509_crt_parse(&rootCert, modularRootCertificate.bytes_begin(),
+                                modularRootCertificate.size() + 1);
+    EXPECT_EQ(rc, 0) << "mbedtls_x509_crt_parse failed";
+  }
+  ~Firechicken() { mbedtls_pk_free(&keyCtx); }
+
+private:
+  HTTPResponse executeRequestImpl(
+      const HTTPRequest &request, raw_ostream &os,
+      std::chrono::milliseconds timeout = std::chrono::milliseconds::zero(),
+      size_t maxLength = 0) override {
+
+    StringRef requestURL(request.URL);
+
+    llvm::unique_function<ErrorOrSuccess(llvm::raw_ostream & os,
+                                         const HTTPRequest &request)>
+        func;
+    if (requestURL.ends_with_insensitive("/oauth/device/code")) {
+      func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
+        return oauthDeviceCode(os, request);
+      };
+    } else if (requestURL.ends_with_insensitive("/oauth/token")) {
+      func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
+        return oauthToken(os, request);
+      };
+    } else if (requestURL.ends_with_insensitive("/user/certificates:issue")) {
+      func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
+        return issueCertificate(os, request);
+      };
+    }
+
+    if (auto err = func(os, request)) {
+      return HTTPResponse{
+          /*kind=*/HTTPResponse::HTTPResponseError,
+          /*responseCode=*/HTTPResponseCode::InternalServerError,
+          /*transportErrorMessage=*/err.getError()};
+    }
+
+    return HTTPResponse{/*kind=*/HTTPResponse::Success,
+                        /*responseCode=*/200,
+                        /*transportErrorMessage=*/std::nullopt};
   }
 
-  // Add the entitlement as an extension.
-  if (issuer) {
+  ErrorOrSuccess oauthDeviceCode(llvm::raw_ostream &os,
+                                 const HTTPRequest &request) {
+    oauthRegisterCalled = true;
+
+    constexpr llvm::StringLiteral response = R"({
+      "device_code": "abcdefg",
+      "interval": 5,
+      "verification_uri_complete": "https://testing.modular.com"
+    })";
+
+    os << response;
+    return success();
+  }
+
+  ErrorOrSuccess oauthToken(llvm::raw_ostream &os, const HTTPRequest &request) {
+    EXPECT_TRUE(oauthRegisterCalled)
+        << "the client did not attempt to get the device code";
+    // This is a static JWT that contains {"alg": "ES256", "typ": "JWT"}.{"sub":
+    // "C=US,O=Modular,CN=mut_abcdefg", "role": "client", "iat":
+    // 1516239022}.{sig}. It was generated from the JWT debugger from jwt.io
+    // using their default keypair. We use it for both the ID token and the
+    // access token.
+    constexpr llvm::StringLiteral token =
+        "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJzdWIiOiJtdXRfYWJjZGVmZyIsInJvbGUiOiJjbGllbnQiLCJpYXQiOjE1MTYyMzkwMj"
+        "J9.p6XksRx9SLQ_b-Jh1b0lvCnJqXLNIxR9gI8nPhS4mhwceOKgn2_viIQm9t-"
+        "JxfKt80v4_ab7LiVJu_nWpRF-IA";
+    std::string response = (R"({"id_token": ")" + token +
+                            R"(", "access_token": ")" + token + R"("})")
+                               .str();
+
+    os << response;
+    return success();
+  }
+
+  ErrorOrSuccess issueCertificate(llvm::raw_ostream &os,
+                                  const HTTPRequest &request) {
+    // Read the full body. This requires stripping the const because
+    std::string bodyData(*request.bodyLen, 0);
+    auto bytesWrittenOr = const_cast<HTTPRequest &>(request).body(
+        (char *)bodyData.data(), bodyData.size());
+    EXPECT_FALSE(bytesWrittenOr.isError()) << bytesWrittenOr.getError();
+    EXPECT_EQ(*bytesWrittenOr, *request.bodyLen);
+
+    auto jsonOr = llvm::json::parse(bodyData);
+    EXPECT_TRUE(bool(jsonOr)) << llvm::toString(jsonOr.takeError());
+
+    llvm::json::Object *jsonObj = jsonOr->getAsObject();
+    auto csrOr = jsonObj->getString("certificate_request");
+    EXPECT_TRUE(csrOr) << "didn't have a CSR";
+
+    mbedtls_x509_csr csr;
+    mbedtls_x509_csr_init(&csr);
+
+    // PEM encoded stuff needs the +1 in the length since mbedTLS wants us to
+    // include the null terminator.
+    int rc = mbedtls_x509_csr_parse(&csr, (const uint8_t *)csrOr->str().c_str(),
+                                    csrOr->size() + 1);
+    EXPECT_EQ(rc, 0) << "mbedtls_x509_csr_parse failed with "
+                     << mbedtls_high_level_strerr(rc) << " - "
+                     << mbedtls_low_level_strerr(rc);
+
+    mbedtls_x509write_cert cert;
+    mbedtls_x509write_crt_init(&cert);
+    // Free at the end of the scope.
+    auto freeCrt =
+        llvm::make_scope_exit([&]() { mbedtls_x509write_crt_free(&cert); });
+
+    // Set up the basic certificate info.
+    mbedtls_x509write_crt_set_subject_name(&cert,
+                                           "C=US,O=Modular Inc,CN=mut_abcdefg");
+    mbedtls_x509write_crt_set_issuer_name(
+        &cert, "C=US,O=Modular Inc,CN=dev.auth.modular.com");
+
+    mbedtls_x509write_crt_set_version(&cert, MBEDTLS_X509_CRT_VERSION_3);
+    mbedtls_x509write_crt_set_md_alg(&cert, MBEDTLS_MD_SHA256);
+    mbedtls_mpi serno;
+    mbedtls_mpi_init(&serno);
+    mbedtls_mpi_lset(&serno, 1);
+    EXPECT_EQ(mbedtls_x509write_crt_set_serial(&cert, &serno), 0);
+    mbedtls_mpi_free(&serno);
+
+    mbedtls_x509write_crt_set_basic_constraints(&cert, /*is_ca=*/0,
+                                                /*max_pathlen=*/-1);
+
+    EXPECT_EQ(
+        mbedtls_x509write_crt_set_validity(&cert,
+                                           /*not_before=*/"20131231235959",
+                                           /*not_after=*/"20931231235959"),
+        0);
+
+    // Add the entitlement as an extension.
     auto testEntitlement = std::make_unique<TestEntitlement>();
     auto setEntitlement = [&](ArrayRef<uint8_t> oid, bool critical,
                               ArrayRef<uint8_t> data) {
@@ -127,210 +254,119 @@ static WrittenCert getCertificate(mbedtls_pk_context *issuer) {
     };
 
     testEntitlement->setAsExtension(setEntitlement);
+
+    // Set the subject and issuer keys.
+    mbedtls_x509write_crt_set_subject_key(&cert, &csr.pk);
+    mbedtls_x509write_crt_set_issuer_key(&cert, &keyCtx);
+    EXPECT_EQ(mbedtls_x509write_crt_set_subject_key_identifier(&cert), 0);
+    EXPECT_EQ(mbedtls_x509write_crt_set_authority_key_identifier(&cert), 0);
+
+    mbedtls_x509write_crt_set_key_usage(&cert, csr.key_usage);
+
+    std::array<uint8_t, 2048> outBuf = {};
+
+    // Write the cert to a PEM buffer.
+    SecureRandomBytesGenerator rng;
+    int bytesWritten = mbedtls_x509write_crt_pem(&cert, outBuf.data(),
+                                                 outBuf.size(), &csprng, &rng);
+    EXPECT_TRUE(bytesWritten >= 0)
+        << "failed to write the PEM of the certificate we just created: "
+        << mbedtls_low_level_strerr(bytesWritten);
+
+    // Return the PEM certificate.
+    auto obj =
+        llvm::json::Object({{"certificate", (const char *)outBuf.data()}});
+    llvm::json::Value val(std::move(obj));
+
+    std::string certBody;
+    llvm::raw_string_ostream stream(certBody);
+    stream << val;
+
+    // Write the response.
+    os << certBody;
+
+    return success();
   }
 
-  WrittenCert out;
-
-  // Generate the keypair and set it on the cert.
-  auto keysOr = Keypair::generate();
-  EXPECT_FALSE(keysOr.isError()) << keysOr.getError();
-  out.keypair = keysOr.takeValue();
-
-  // Set the subject and issuer keys.
-  mbedtls_x509write_crt_set_subject_key(&cert, out.keypair.getRawKey());
-  mbedtls_x509write_crt_set_issuer_key(&cert, issuer ? issuer
-                                                     : out.keypair.getRawKey());
-  EXPECT_EQ(mbedtls_x509write_crt_set_subject_key_identifier(&cert), 0);
-  EXPECT_EQ(mbedtls_x509write_crt_set_authority_key_identifier(&cert), 0);
-
-  // Write the cert to a DER buffer.
-  SecureRandomBytesGenerator rng;
-  int bytesWritten = mbedtls_x509write_crt_der(&cert, out.buf.data(),
-                                               out.buf.size(), &csprng, &rng);
-  EXPECT_TRUE(bytesWritten >= 0)
-      << "failed to write the DER of the CSR we just created: "
-      << mbedtls_low_level_strerr(bytesWritten);
-
-  mbedtls_x509write_crt_free(&cert);
-
-  out.bytesWritten = bytesWritten;
-  return out;
-}
+  bool oauthRegisterCalled = false;
+};
 
 TEST(TestEntitlement, Roundtrip) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
-  WrittenCert cert = getCertificate(nullptr);
-  ArrayRef<uint8_t> certBuf = cert.getCertificate();
+  TestEntitlement test;
 
-  WrittenCert childCert = getCertificate(cert.keypair.getRawKey());
-  ArrayRef<uint8_t> childBuf = childCert.getCertificate();
+  SmallVector<uint8_t> entitlementString;
+  auto setEntitlement = [&](ArrayRef<uint8_t> oid, bool critical,
+                            ArrayRef<uint8_t> data) {
+    entitlementString.push_back(oid.size());
+    entitlementString.append(oid.begin(), oid.end());
+    entitlementString.push_back(critical);
+    entitlementString.append(data.begin(), data.end());
+  };
 
-  // The cert is now self-signed, so we can parse it and parse out the
-  // entitlements too.
-  mbedtls_x509_crt parsed;
-  mbedtls_x509_crt_init(&parsed);
-  int rc = mbedtls_x509_crt_parse_der_with_ext_cb(
-      &parsed, childBuf.data(), childBuf.size(),
-      /*make_copy=*/0,
-      [](void *p_ctx, mbedtls_x509_crt const *crt,
-         mbedtls_x509_buf const *oidBuf, int critical, const unsigned char *p,
-         const unsigned char *end) -> int {
-        auto oidOr = ASN1::ObjectID::fromEncoded(
-            ArrayRef<uint8_t>(oidBuf->p, oidBuf->len));
-        EXPECT_FALSE(oidOr.isError()) << oidOr.getError();
-        ASN1::ObjectID oid = std::move(*oidOr);
+  test.setAsExtension(setEntitlement);
 
-        // Can't handle non-modular OIDs.
-        if (!oid.isModularOID())
-          return -1;
+  // The OID is the first [1,buf[0] + 1] bytes.
+  ArrayRef<uint8_t> oidbuf(entitlementString.begin() + 1,
+                           entitlementString.begin() +
+                               *entitlementString.begin() + 1);
 
-        auto entitlementOr =
-            Entitlement::parse(oid, bool(critical), ArrayRef<uint8_t>(p, end));
-        EXPECT_FALSE(entitlementOr.isError()) << entitlementOr.getError();
-        return 0;
-      },
-      nullptr);
-  EXPECT_TRUE(rc == 0) << "failed to parse the certificate DER we just wrote: "
-                       << mbedtls_low_level_strerr(rc)
-                       << " hl: " << mbedtls_high_level_strerr(rc);
+  auto oidOr = ASN1::ObjectID::fromEncoded(oidbuf);
+  EXPECT_FALSE(oidOr.isError()) << oidOr.getError();
+  ASN1::ObjectID oid = std::move(*oidOr);
 
-  // Parse the CA cert.
-  mbedtls_x509_crt ca;
-  mbedtls_x509_crt_init(&ca);
-  rc = mbedtls_x509_crt_parse_der_nocopy(&ca, certBuf.data(), certBuf.size());
-  EXPECT_TRUE(rc == 0) << "failed to parse the CA cert";
+  // Can't handle non-modular OIDs.
+  EXPECT_TRUE(oid.isModularOID()) << "it wasn't a modular OID?";
 
-  mbedtls_x509_crl crl;
-  mbedtls_x509_crl_init(&crl);
+  // Critical is buf[0] + 2
+  bool critical = *(entitlementString.begin() + *entitlementString.begin() + 1);
 
-  uint32_t flags = 0;
-  rc = mbedtls_x509_crt_verify(&parsed, &ca, &crl, nullptr, &flags, nullptr,
-                               nullptr);
-  if (rc != 0) {
-    std::string errStr(1024, '\0');
-    mbedtls_x509_crt_verify_info(errStr.data(), errStr.size(), "", flags);
-    ADD_FAILURE() << errStr.c_str();
-  }
+  // Attempt to parse the entitlement.
+  auto entitlementOr =
+      Entitlement::parse(oid, critical,
+                         ArrayRef<uint8_t>(entitlementString.begin() +
+                                               *entitlementString.begin() + 2,
+                                           entitlementString.end()));
 
-  mbedtls_x509_crt_free(&parsed);
-  mbedtls_x509_crt_free(&ca);
-  mbedtls_x509_crl_free(&crl);
+  EXPECT_FALSE(entitlementOr.isError()) << entitlementOr.getError();
 }
 
-TEST(TestEntitlementStore, Works) {
+/// This test is a bit of a catch-all because many of the pertinent functions
+/// are all bundled together in one big test. The EntitlementStore is a useful
+/// abstraction over the complexity of dealing with certificates, and we want to
+/// avoid forcing it to leak.
+TEST(TestEntitlementStore, Bootstrap) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
-  WrittenCert cert = getCertificate(nullptr);
-  ArrayRef<uint8_t> certBuf = cert.getCertificate();
+  HTTPContextRef httpCtx = getHTTPContextRef();
+  Firechicken client(std::move(httpCtx));
+  client.noAuthNeeded();
 
-  WrittenCert childCert = getCertificate(cert.keypair.getRawKey());
-  ArrayRef<uint8_t> childBuf = childCert.getCertificate();
-
-  // Create a tmp dir under the CWD.
-  std::error_code ec;
-  std::filesystem::path workdir =
-      std::filesystem::absolute("test-entitlement-store-works", ec);
-  ASSERT_FALSE(ec) << ec.message();
-
-  std::filesystem::create_directories(workdir, ec);
-  ASSERT_FALSE(ec) << ec.message();
-
-  std::string clientCertPath = (workdir / "client.der").string();
-
-  // Write the certificate to the client location so we can read it later.
-  auto err = llvm::writeToOutput(clientCertPath, [&](llvm::raw_ostream &os) {
-    os.write((const char *)childBuf.data(), childBuf.size());
-    return llvm::Error::success();
-  });
-  EXPECT_FALSE(err) << llvm::toString(std::move(err));
-
-  std::string clientPrivPath = (workdir / "client_priv.der").string();
-
-  // Write the private key in DER form.
-  err = llvm::writeToOutput(
-      clientPrivPath, [&](llvm::raw_ostream &os) -> llvm::Error {
-        std::array<uint8_t, 512> buf = {};
-        int bytesWritten = mbedtls_pk_write_key_der(
-            childCert.keypair.getRawKey(), buf.data(), buf.size());
-        if (bytesWritten <= 0)
-          return llvm::createStringError(std::errc::interrupted,
-                                         "could not write the keypair to DER");
-
-        os.write((const char *)buf.data() + buf.size() - bytesWritten,
-                 bytesWritten);
-        return llvm::Error::success();
-      });
-  EXPECT_FALSE(err) << llvm::toString(std::move(err));
-
-  // The cert is now self-signed, so we can parse it and parse out the
-  // entitlements too.
-  mbedtls_x509_crt parsed;
-  mbedtls_x509_crt_init(&parsed);
-  int rc = mbedtls_x509_crt_parse_der_nocopy(&parsed, certBuf.data(),
-                                             certBuf.size());
-  EXPECT_TRUE(rc == 0) << "failed to parse the certificate DER we just wrote: "
-                       << mbedtls_low_level_strerr(rc)
-                       << " hl: " << mbedtls_high_level_strerr(rc);
-
-  auto storeOr =
-      EntitlementStore::open(clientCertPath, clientPrivPath, &parsed);
-  ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
-
-  mbedtls_x509_crt_free(&parsed);
+  auto storeOr = EntitlementStore::open(client);
+  EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
 }
 
-/// This test checks that we don't open the certificate store without having a
-/// valid key by ensuring we return an error on an invalid key.
-TEST(TestEntitlementStore, InvalidKey) {
+/// Check that we can boostrap and then refresh the entitlement certificate.
+TEST(TestEntitlementStore, Refresh) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
-  WrittenCert cert = getCertificate(nullptr);
-  ArrayRef<uint8_t> certBuf = cert.getCertificate();
+  HTTPContextRef httpCtx = getHTTPContextRef();
+  Firechicken client(std::move(httpCtx));
+  client.noAuthNeeded();
 
-  WrittenCert childCert = getCertificate(cert.keypair.getRawKey());
-  ArrayRef<uint8_t> childBuf = childCert.getCertificate();
+  auto storeOr = EntitlementStore::open(client);
+  EXPECT_FALSE(storeOr.isError()) << storeOr.getError();
 
-  // Create a tmp dir under the CWD.
-  std::error_code ec;
-  std::filesystem::path workdir =
-      std::filesystem::absolute("test-entitlement-store-invalid-key", ec);
-  ASSERT_FALSE(ec) << ec.message();
+  auto e = storeOr->getEntitlement<TestEntitlement>();
+  EXPECT_TRUE(e != nullptr);
 
-  std::filesystem::create_directories(workdir, ec);
-  ASSERT_FALSE(ec) << ec.message();
+  auto err = storeOr->refresh(client);
+  EXPECT_FALSE(err.isError()) << err.getError();
 
-  std::string clientCertPath = (workdir / "client.der").string();
-
-  // Write the certificate to the client location so we can read it later.
-  auto err = llvm::writeToOutput(clientCertPath, [&](llvm::raw_ostream &os) {
-    os.write((const char *)childBuf.data(), childBuf.size());
-    return llvm::Error::success();
-  });
-  EXPECT_FALSE(err) << llvm::toString(std::move(err));
-
-  std::string clientPrivPath = (workdir / "client_priv.der").string();
-
-  // Write the incorrect key in DER form.
-  auto wrongOr = Keypair::generate(workdir);
-  EXPECT_FALSE(wrongOr.isError()) << wrongOr.getError();
-
-  // The cert is now self-signed, so we can parse it and parse out the
-  // entitlements too.
-  mbedtls_x509_crt parsed;
-  mbedtls_x509_crt_init(&parsed);
-  int rc = mbedtls_x509_crt_parse_der_nocopy(&parsed, certBuf.data(),
-                                             certBuf.size());
-  EXPECT_TRUE(rc == 0) << "failed to parse the certificate DER we just wrote: "
-                       << mbedtls_low_level_strerr(rc)
-                       << " hl: " << mbedtls_high_level_strerr(rc);
-
-  auto storeOr =
-      EntitlementStore::open(clientCertPath, clientPrivPath, &parsed);
-  EXPECT_TRUE(storeOr.isError());
-
-  mbedtls_x509_crt_free(&parsed);
+  e = storeOr->getEntitlement<TestEntitlement>();
+  EXPECT_TRUE(e != nullptr);
 }

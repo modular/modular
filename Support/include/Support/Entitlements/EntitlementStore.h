@@ -8,8 +8,10 @@
 #define SUPPORT_ENTITLEMENTS_ENTITLEMENTSTORE_H
 
 #include "Support/ASN1/ObjectID.h"
+#include "Support/Cryptography/Keypair.h"
 #include "Support/Entitlements/Entitlement.h"
 #include "Support/ErrorOr.h"
+#include "Support/HTTP/HTTPClient.h"
 #include "llvm/ADT/DenseMap.h"
 #include <filesystem>
 
@@ -32,22 +34,34 @@ public:
   EntitlementStore(const EntitlementStore &other) = delete;
   EntitlementStore(EntitlementStore &&other) = default;
 
-  /// Open the certificate that exists at a well-known location. This will
-  /// parse the certificate and set up the list of entitlements.
-  static ErrorOr<EntitlementStore> open();
+  /// Open the entitlements store. If the client certificate exists, that one
+  /// will be used. Otherwise, we drop into the OAuth Device Authorization Flow
+  /// and prompt the user to perform actions in their browser to authorize this
+  /// process. If the certificate found on the system is invalid or fails to
+  /// parse, then we return an error. Users should prefer `openWithRetry` below
+  /// unless there's a clear reason to error on an invalid certificate.
+  static ErrorOr<EntitlementStore> open(HTTPClient &client);
 
-  /// Open the certificate that exists at the provided location. This is
-  /// identical to `EntitlementStore::open` above, but it takes the CA certs as
-  /// a parameter. The caCerts option should only be used for local testing - we
-  /// do *NOT* want users to be able to override the roots of trust, because if
-  /// they can do that, they can forge certificates with arbitrary entitlements.
-  static ErrorOr<EntitlementStore>
-  open(const std::filesystem::path &clientCertPath,
-       const std::filesystem::path &clientPrivKeyPath,
-       mbedtls_x509_crt *caCerts);
+  /// Open the entitlement store with a single retry. Performs the actions of
+  /// `open` above. The main use-case for this function is when the certificate
+  /// on-disk is invalid or does not parse; this function will remove that
+  /// certificate and perform the OAuth Device Authorization Flow to issue a new
+  /// certificate. This will also retry in case there is a separate error in the
+  /// flow. To re-emphasize, this will perform a *single* retry if an error
+  /// occurs in the `open` procedure.
+  static ErrorOr<EntitlementStore> openWithRetry(HTTPClient &client);
+
+  /// Refresh the entitlement store by refreshing the client certificate. This
+  /// will also invalidate any entitlements that currently exist, even if the
+  /// user's entitlements have not changed.
+  ErrorOrSuccess refresh(HTTPClient &client);
 
   /// Get the instance of the entitlement with type `EntitlementT`, if it's been
-  /// registered. If it hasn't been registered, we return `nullptr`.
+  /// registered. If it hasn't been registered, we return `nullptr`. Consumers
+  /// should NOT save entitlements returned by this method as they may be
+  /// invalidated the next time `refresh` is called. Recommended usage is to get
+  /// the entitlement in question, and parse its data immediately and act upon
+  /// it.
   template <typename EntitlementT>
   EntitlementT *getEntitlement() const {
     auto found = entitlements.find(Entitlement::getObjectID<EntitlementT>());
@@ -61,10 +75,39 @@ public:
   void addEntitlement(std::unique_ptr<Entitlement> entitlement);
 
 private:
+  /// Open the certificate that exists at the provided location. This is
+  /// identical to `EntitlementStore::open` above, but it takes the CA certs as
+  /// a parameter. The caCerts option should only be used for local testing - we
+  /// do *NOT* want users to be able to override the roots of trust, because if
+  /// they can do that, they can forge certificates with arbitrary entitlements.
+  ErrorOrSuccess parseCertificate(mbedtls_x509_crt *caCerts);
+
+  // TODO: fetch the intermediate certs too
+
+  /// Use the OAuth Device Authorization Flow to do initial authentication and
+  /// bootstrap the client certificate. Note that this does not validate the
+  /// client certificate, since that validation will happen when the cert is
+  /// read in EntitlementStore::refresh. The client certificate will be stored
+  /// in clientCertDER on successful completion.
+  ErrorOrSuccess authAndFetchCertificate(HTTPClient &client);
+
+  /// Takes a CSR and requests a certificate. The certificate is returned in PEM
+  /// form and decoded. Once the certificate is received, it is stored to
+  /// `clientCertDER`. No validation is performed at this stage to avoid parsing
+  /// the certificate into the mbedtls_x509 structure.
+  ErrorOrSuccess requestCertificate(HTTPClient &client, BufferRef csr);
+
   /// This is a map of all the entitlements we have, indexed by their OID. This
   /// means that we can only have a single instance of a given entitlement at a
   /// time.
   llvm::DenseMap<ASN1::ObjectID, std::unique_ptr<Entitlement>> entitlements;
+
+  /// Store the DER-encoded bytes of the client certificate here to be flushed
+  /// if necessary/requested.
+  BufferRef clientCertDER;
+
+  /// Store the client keys. If these cannot be found, they'll be generated.
+  Keypair clientKeys;
 };
 } // namespace M
 
