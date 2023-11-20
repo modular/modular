@@ -461,7 +461,7 @@ fn tensor_to_shape[
 ]:
     var out = StaticIntTuple[rank]()
     for i in range(rank):
-        out[i] = tensor[i].to_int()
+        out[i] = int(tensor[i])
 
     return out
 
@@ -716,8 +716,8 @@ fn broadcast_shape_impl[
 
     for lhs_idx in range(lhs_rank):
         let rhs_idx = lhs_idx + size_diff
-        let lhs_dim = lhs_buf[lhs_idx].to_int()
-        let rhs_dim = rhs_buf[rhs_idx].to_int()
+        let lhs_dim = int(lhs_buf[lhs_idx])
+        let rhs_dim = int(rhs_buf[rhs_idx])
         if lhs_dim == rhs_dim:
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
@@ -854,7 +854,7 @@ fn broadcast_to_shape[
     # move the output shape from buffer into a static int tuple
     var output_shape = StaticIntTuple[output_rank]()
     for axis in range(output_rank):
-        output_shape[axis] = target_shape_buf[axis].to_int()
+        output_shape[axis] = int(target_shape_buf[axis])
 
     # Validate the compatibility between input and output shapes
     # NOTE we don't need to check the padded dims
@@ -1191,7 +1191,7 @@ fn mean[
         target,
     ](
         input_shape,
-        axis.to_int(),
+        int(axis),
         output_shape,
         out_chain,
     )
@@ -1301,7 +1301,7 @@ fn reduce_add[
         output_0_fn_wrapper,
         reduce_impl,
         target,
-    ](input_shape, 0, axis.to_int(), out_chain)
+    ](input_shape, 0, int(axis), out_chain)
 
 
 @always_inline
@@ -1352,7 +1352,7 @@ fn reduce_max[
         output_0_fn_wrapper,
         reduce_impl,
         target,
-    ](input_shape, min_or_neginf[type](), axis.to_int(), out_chain)
+    ](input_shape, min_or_neginf[type](), int(axis), out_chain)
 
 
 @always_inline
@@ -1628,14 +1628,14 @@ fn calculate_squeeze_shape[
     )
     var input_shape_copy = StaticIntTuple[MAX_VECTOR_LIMIT]()
     for i in range(num_input_dims):
-        input_shape_copy[i] = input_shape[i].to_int()
+        input_shape_copy[i] = int(input_shape[i])
 
     # Mark every squeezed dimension as -1 in our copy of the shape tensor
     for remove_index_index in range(num_remove_indices):
         let remove_index = remove_indices[remove_index_index].to_int()
-        let remove_index_normalize = remove_index + num_input_dims * (
+        let remove_index_normalize = remove_index + num_input_dims * int(
             remove_indices[remove_index_index] < 0
-        ).to_int()
+        )
 
         debug_assert(
             remove_index_normalize >= 0 and remove_index_normalize < final_rank,
@@ -1690,10 +1690,10 @@ fn calculate_unsqueeze_shape[
         output_shape[output_index] = -1
 
     for padding_index_index in range(num_padding_indices):
-        let padding_index = padding_indices[padding_index_index].to_int()
-        let padding_index_normalize = padding_index + final_rank * (
+        let padding_index = int(padding_indices[padding_index_index])
+        let padding_index_normalize = padding_index + final_rank * int(
             padding_indices[padding_index_index] < 0
-        ).to_int()
+        )
 
         debug_assert(
             padding_index_normalize >= 0
@@ -1746,7 +1746,7 @@ fn transpose[
     @always_inline
     @parameter
     fn body[i: Int]():
-        let dim = buffer_to_scalar(perms, i).to_int()
+        let dim = int(buffer_to_scalar(perms, i))
         new_shape[i] = input.dynamic_shape[dim]
         new_stride[i] = input.dynamic_stride[dim]
 
@@ -1778,7 +1778,7 @@ fn transpose_shape[
 
     @unroll
     for i in range(rank):
-        let perm = perms[i].to_int()
+        let perm = int(perms[i])
         # TODO(17512)
         debug_assert(perm >= 0, "Transpose permutation is less than zero")
         debug_assert(perm < rank, "Transpose permutation is out of range")
@@ -2639,7 +2639,7 @@ fn resize_shape[
 
     @unroll
     for i in range(rank):
-        shape[i] = size[i].to_int()
+        shape[i] = int(size[i])
     return shape
 
 
@@ -2672,8 +2672,8 @@ fn roi_align[
         output,
         input,
         rois,
-        output_height[0].to_int(),
-        output_width[0].to_int(),
+        int(output_height[0]),
+        int(output_width[0]),
         spatial_scale[0],
         sampling_ratio[0],
     )
@@ -2696,8 +2696,8 @@ fn roi_align_shape[
     # rois shape is [M, 5]
     # output shape is [M, output_height, output_width, C]
     shape[0] = rois.get_shape()[0]
-    shape[1] = output_height[0].to_int()
-    shape[2] = output_width[0].to_int()
+    shape[1] = int(output_height[0])
+    shape[2] = int(output_width[0])
     shape[3] = input.get_shape()[3]
 
     return shape
