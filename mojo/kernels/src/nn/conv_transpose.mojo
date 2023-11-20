@@ -198,18 +198,18 @@ fn conv_transpose_shape[
 
     # compute and return the output shape
     let output_height = (
-        strides[0].to_int() * (input.dim(1) - 1)
-        + output_pads[0].to_int()
-        + ((kernel.dim(0) - 1) * dilations[0].to_int() + 1)
-        - pads[PADS_H_START].to_int()
-        - pads[PADS_H_END].to_int()
+        int(strides[0]) * (input.dim(1) - 1)
+        + int(output_pads[0])
+        + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
+        - int(pads[PADS_H_START])
+        - int(pads[PADS_H_END])
     )
     let output_width = (
-        strides[1].to_int() * (input.dim(2) - 1)
-        + output_pads[1].to_int()
-        + ((kernel.dim(1) - 1) * dilations[1].to_int() + 1)
-        - pads[PADS_W_START].to_int()
-        - pads[PADS_W_END].to_int()
+        int(strides[1]) * (input.dim(2) - 1)
+        + int(output_pads[1])
+        + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
+        - int(pads[PADS_W_START])
+        - int(pads[PADS_W_END])
     )
 
     var output_shape = StaticIntTuple[input_rank]()

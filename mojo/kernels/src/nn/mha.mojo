@@ -394,11 +394,7 @@ fn flash_attention[
 
         func(
             # grid
-            (
-                div_ceil(seq_len.to_int(), 32),
-                num_heads.to_int(),
-                batch_size.to_int(),
-            ),
+            (div_ceil(int(seq_len), 32), int(num_heads), int(batch_size)),
             # block
             (128, 1, 1),
             q.data,
@@ -461,7 +457,7 @@ fn _mm[
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
 
     @unroll
-    for k in range(K.to_int()):
+    for k in range(int(K)):
         # load a element starting from (row, k) or (k, row) if transposed.
         @parameter
         if transpose_a:
@@ -471,13 +467,13 @@ fn _mm[
                 reg_m.simd_store[simd_size](
                     offset,
                     a.aligned_simd_load[simd_size, alignment](
-                        (k * M + row + offset).to_int()
+                        int(k * M + row + offset)
                     ),
                 )
         else:
             # scalar load
             @unroll
-            for i in range(TM.to_int()):
+            for i in range(int(TM)):
                 reg_m.store(i, a.load(((row + i) * leading_dim_a + k).to_int()))
 
         @unroll
@@ -837,11 +833,11 @@ fn flash_attention_kernel[
         for offset in range(0, TN.to_int(), simd_size):
             # Apply the denominator of softmax.
             let vec = o_thread_tile.simd_load[simd_size](
-                (i * TN + offset).to_int()
+                int(i * TN + offset)
             ) / rowsum.load(i)
 
             output_ptr.aligned_simd_store[simd_size, alignment](
-                (o_global_row_offset + mm_col + offset).to_int(), vec
+                int(o_global_row_offset + mm_col + offset), vec
             )
         o_global_row_offset += row_stride
 
