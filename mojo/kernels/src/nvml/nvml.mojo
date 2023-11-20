@@ -331,7 +331,7 @@ struct Device:
             _check_error(result)
 
         var clocks = DynamicVector[UInt32]()
-        clocks.resize(num_clocks.to_int())
+        clocks.resize(int(num_clocks))
 
         _check_error(
             _get_dylib_function[
@@ -342,9 +342,9 @@ struct Device:
         )
 
         var res = DynamicVector[Int]()
-        res.resize(num_clocks.to_int())
-        for i in range(num_clocks.to_int()):
-            res[i] = clocks[i].to_int()
+        res.resize(int(num_clocks))
+        for i in range(int(num_clocks)):
+            res[i] = int(clocks[i])
 
         clocks._del_old()
 
