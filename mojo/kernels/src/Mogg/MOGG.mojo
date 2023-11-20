@@ -1403,7 +1403,7 @@ fn reduce_min[
         output_0_fn_wrapper,
         reduce_impl,
         target,
-    ](input_shape, max_or_inf[type](), axis.to_int(), out_chain)
+    ](input_shape, max_or_inf[type](), int(axis), out_chain)
 
 
 @always_inline
@@ -1454,7 +1454,7 @@ fn reduce_mul[
         output_0_fn_wrapper,
         reduce_impl,
         target,
-    ](input_shape, 1, axis.to_int(), out_chain)
+    ](input_shape, 1, int(axis), out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1550,7 +1550,7 @@ fn reshape_shape[
     var to_be_inferred_axis = -1
     var non_negative_dim_prodcut = 1
     for axis in range(output_rank):
-        let target_dim = target_shape_buf[axis].to_int()
+        let target_dim = int(target_shape_buf[axis])
         target_shape[axis] = target_dim
         if target_dim == -1:
             # TODO(#17512)
@@ -1632,7 +1632,7 @@ fn calculate_squeeze_shape[
 
     # Mark every squeezed dimension as -1 in our copy of the shape tensor
     for remove_index_index in range(num_remove_indices):
-        let remove_index = remove_indices[remove_index_index].to_int()
+        let remove_index = int(remove_indices[remove_index_index])
         let remove_index_normalize = remove_index + num_input_dims * int(
             remove_indices[remove_index_index] < 0
         )
@@ -2550,7 +2550,7 @@ fn non_maximum_suppression[
     output: NDBuffer[2, DimList.create_unknown[2](), DType.int64],
     out_chain: OutputChainPtr,
 ):
-    let max_output_boxes_int = max_output_boxes_per_class[0].to_int()
+    let max_output_boxes_int = int(max_output_boxes_per_class[0])
     let iou_threshold_float = iou_threshold[0]
     let score_threshold_float = score_threshold[0]
 
@@ -2574,7 +2574,7 @@ fn non_maximum_suppression_shape_func[
     iou_threshold: NDBuffer[1, DimList(1), DType.float32],
     score_threshold: NDBuffer[1, DimList(1), DType.float32],
 ) -> StaticIntTuple[2]:
-    let max_output_boxes_int = max_output_boxes_per_class[0].to_int()
+    let max_output_boxes_int = int(max_output_boxes_per_class[0])
     let iou_threshold_float = iou_threshold[0]
     let score_threshold_float = score_threshold[0]
 
@@ -2727,9 +2727,9 @@ fn split_ith_output_shape[
         0 <= output_idx and output_idx < split_sizes_buf.size(),
         "output index must be within range [0, len(split_sizes))",
     )
-    let output_split_size = split_sizes_buf[output_idx].to_int()
+    let output_split_size = int(split_sizes_buf[output_idx])
 
-    var split_axis = split_axis_buf[0].to_int()
+    var split_axis = int(split_axis_buf[0])
     if split_axis < 0:
         split_axis += rank
     # TODO(#17512)
@@ -2740,7 +2740,7 @@ fn split_ith_output_shape[
 
     var split_sizes_sum = 0
     for i in range(split_sizes_buf.dim(0)):
-        split_sizes_sum += split_sizes_buf[i].to_int()
+        split_sizes_sum += int(split_sizes_buf[i])
     # TODO(#17512)
     debug_assert(
         split_sizes_sum == input_buf.dim(split_axis),
@@ -2814,21 +2814,13 @@ fn conv[
     let dilation_flat = dilation.flatten()
     let paddings_flat = paddings.flatten()
 
-    let strides_tuple = Index(
-        strides_flat[0].to_int(), strides_flat[1].to_int()
-    )
-    let dilation_tuple = Index(
-        dilation_flat[0].to_int(), dilation_flat[1].to_int()
-    )
+    let strides_tuple = Index(int(strides_flat[0]), int(strides_flat[1]))
+    let dilation_tuple = Index(int(dilation_flat[0]), int(dilation_flat[1]))
     if dilation_tuple != Index(1, 1):
         return out_chain.mark_error("Non-unit dilation is not supported yet.")
 
-    let pad_h_tuple = Index(
-        paddings_flat[0].to_int(), paddings_flat[1].to_int()
-    )
-    let pad_w_tuple = Index(
-        paddings_flat[2].to_int(), paddings_flat[3].to_int()
-    )
+    let pad_h_tuple = Index(int(paddings_flat[0]), int(paddings_flat[1]))
+    let pad_w_tuple = Index(int(paddings_flat[2]), int(paddings_flat[3]))
 
     # TODO: eventually padding, strides and dilation will be passed in as
     # parameters here when they are constant in the graph
@@ -2838,7 +2830,7 @@ fn conv[
         pad_w_tuple,
         strides_tuple,
         dilation_tuple,
-        num_groups[0].to_int(),
+        int(num_groups[0]),
     )
 
     # Specialize the function to take 4D coordiantes.
@@ -3021,8 +3013,8 @@ fn bottom_k[
 ):
     _top_k[rank, type](
         input,
-        k_buf[0].to_int(),
-        axis_buf[0].to_int(),
+        int(k_buf[0]),
+        int(axis_buf[0]),
         False,
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
         out_idxs,
@@ -3047,8 +3039,8 @@ fn top_k[
 ):
     _top_k[rank, type](
         input,
-        k_buf[0].to_int(),
-        axis_buf[0].to_int(),
+        int(k_buf[0]),
+        int(axis_buf[0]),
         True,
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
         out_idxs,
