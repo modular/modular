@@ -39,9 +39,9 @@ fn slice_as_view[
     var new_data = tensor.data
 
     for i in range(rank):
-        var start = starts[i].to_int()
-        var stop = ends[i].to_int()
-        let step = steps[i].to_int()
+        var start = int(starts[i])
+        var stop = int(ends[i])
+        let step = int(steps[i])
         let dim_i = tensor.dim(i)
         debug_assert(step != 0, "step must be nonzero")
 
@@ -148,7 +148,7 @@ fn slice_shape[
         input_rank == step_buf.dim(0), "step indices size must equal input rank"
     )
     for axis in range(input_rank):
-        debug_assert(step_buf[axis].to_int() != 0, "step must be non-zero")
+        debug_assert(int(step_buf[axis]) != 0, "step must be non-zero")
 
     # NOTE this assumes `slice_as_view` can handle input with null data pointer
     let output_shape = slice_as_view(

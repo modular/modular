@@ -95,17 +95,17 @@ fn pool_shape[
     let input_height = input_buf.dim(1)
     let input_width = input_buf.dim(2)
 
-    let filter_height = filter_buf[0].to_int()
-    let filter_width = filter_buf[1].to_int()
+    let filter_height = int(filter_buf[0])
+    let filter_width = int(filter_buf[1])
 
-    let stride_height = strides_buf[0].to_int()
-    let stride_width = strides_buf[1].to_int()
+    let stride_height = int(strides_buf[0])
+    let stride_width = int(strides_buf[1])
 
-    let dilation_height = dilations_buf[0].to_int()
-    let dilation_width = dilations_buf[1].to_int()
+    let dilation_height = int(dilations_buf[0])
+    let dilation_width = int(dilations_buf[1])
 
-    let pad_height = paddings_buf[0].to_int() + paddings_buf[1].to_int()
-    let pad_width = paddings_buf[2].to_int() + paddings_buf[3].to_int()
+    let pad_height = int(paddings_buf[0] + paddings_buf[1])
+    let pad_width = int(paddings_buf[2] + paddings_buf[3])
 
     var output_shape = StaticIntTuple[input_rank]()
 
@@ -156,24 +156,24 @@ fn max_pool[
             empty_padding = False
             break
 
-    let padding_h_low = 0 if empty_padding else paddings[0].to_int()
-    let padding_h_high = 0 if empty_padding else paddings[1].to_int()
-    let padding_w_low = 0 if empty_padding else paddings[2].to_int()
-    let padding_w_high = 0 if empty_padding else paddings[3].to_int()
+    let padding_h_low = 0 if empty_padding else int(paddings[0])
+    let padding_h_high = 0 if empty_padding else int(paddings[1])
+    let padding_w_low = 0 if empty_padding else int(paddings[2])
+    let padding_w_high = 0 if empty_padding else int(paddings[3])
 
     alias simd_width = simdwidthof[type]()
 
     let input_height = input.dim(1)
     let input_width = input.dim(2)
 
-    let pool_window_h = filter[0].to_int()
-    let pool_window_w = filter[1].to_int()
+    let pool_window_h = int(filter[0])
+    let pool_window_w = int(filter[1])
 
-    let stride_h = strides[0].to_int()
-    let stride_w = strides[1].to_int()
+    let stride_h = int(strides[0])
+    let stride_w = int(strides[1])
 
-    let dilation_h = dilations[0].to_int()
-    let dilation_w = dilations[1].to_int()
+    let dilation_h = int(dilations[0])
+    let dilation_w = int(dilations[1])
 
     alias stencil_rank = 2
     alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
@@ -248,7 +248,7 @@ fn max_pool[
     @always_inline
     @parameter
     fn dilation_fn(dim: Int) -> Int:
-        return dilations[dim].to_int()
+        return int(dilations[dim])
 
     alias stencil_with_padding = stencil[
         rank,
@@ -319,24 +319,24 @@ fn avg_pool[
             empty_padding = False
             break
 
-    let padding_h_low = 0 if empty_padding else paddings[0].to_int()
-    let padding_h_high = 0 if empty_padding else paddings[1].to_int()
-    let padding_w_low = 0 if empty_padding else paddings[2].to_int()
-    let padding_w_high = 0 if empty_padding else paddings[3].to_int()
+    let padding_h_low = 0 if empty_padding else int(paddings[0])
+    let padding_h_high = 0 if empty_padding else int(paddings[1])
+    let padding_w_low = 0 if empty_padding else int(paddings[2])
+    let padding_w_high = 0 if empty_padding else int(paddings[3])
 
     alias simd_width = simdwidthof[type]()
 
     let input_height = input.dim(1)
     let input_width = input.dim(2)
 
-    let pool_window_h = filter[0].to_int()
-    let pool_window_w = filter[1].to_int()
+    let pool_window_h = int(filter[0])
+    let pool_window_w = int(filter[1])
 
-    let stride_h = strides[0].to_int()
-    let stride_w = strides[1].to_int()
+    let stride_h = int(strides[0])
+    let stride_w = int(strides[1])
 
-    let dilation_h = dilations[0].to_int()
-    let dilation_w = dilations[1].to_int()
+    let dilation_h = int(dilations[0])
+    let dilation_w = int(dilations[1])
 
     alias stencil_rank = 2
     alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
@@ -412,7 +412,7 @@ fn avg_pool[
     @always_inline
     @parameter
     fn dilation_fn(dim: Int) -> Int:
-        return dilations[dim].to_int()
+        return int(dilations[dim])
 
     alias stencil_with_padding = stencil[
         rank,

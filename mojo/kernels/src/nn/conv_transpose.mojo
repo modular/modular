@@ -99,17 +99,15 @@ fn conv_transpose[
         for c in range(C):
             for f in range(C_filter):
                 for i in range(H):
-                    let indX_out = i * strides[0].to_int() - pads[
-                        PADS_H_START
-                    ].to_int()
+                    let indX_out = i * int(strides[0]) - int(pads[PADS_H_START])
                     for j in range(W):
-                        let indY_out = j * strides[1].to_int() - pads[
-                            PADS_W_START
-                        ].to_int()
+                        let indY_out = j * int(strides[1]) - int(
+                            pads[PADS_W_START]
+                        )
                         for r in range(R):
                             for s in range(S):
-                                let x_out = indX_out + r * dilations[0].to_int()
-                                let y_out = indY_out + s * dilations[1].to_int()
+                                let x_out = indX_out + r * int(dilations[0])
+                                let y_out = indY_out + s * int(dilations[1])
                                 if (
                                     x_out >= 0
                                     and x_out < HO

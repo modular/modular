@@ -72,8 +72,8 @@ fn _bilinear_interpolate[
     #
     #   (y_high, x_low)      (y_high, x_high)
     # and bilinar weights (w1, w2, w3, w4)
-    let y_low = math.min(y.to_int(), height - 1)
-    let x_low = math.min(x.to_int(), width - 1)
+    let y_low = math.min(int(y), height - 1)
+    let x_low = math.min(int(x), width - 1)
     let y_high = math.min(y_low + 1, height - 1)
     let x_high = math.min(x_low + 1, width - 1)
 
@@ -152,7 +152,7 @@ fn roi_align_nhwc[
 
     for ri in range(n_regions):
         # Region coordinates and batch indix
-        let roi_batch_idx = rois[ri, 0].to_int()
+        let roi_batch_idx = int(rois[ri, 0])
         let roi_start_w = rois[ri, 1].cast[
             DType.float32
         ]() * spatial_scale - offset
@@ -180,12 +180,12 @@ fn roi_align_nhwc[
 
         # Use pooling window size as either sampling_ration x sampling_ration or
         # ⌈bin_size_h x bin_size_w⌉.
-        let roi_bin_grid_h = (
+        let roi_bin_grid_h = int(
             sampling_ration if sampling_ration > 0 else math.ceil(bin_size_h)
-        ).to_int()
-        let roi_bin_grid_w = (
+        )
+        let roi_bin_grid_w = int(
             sampling_ration if sampling_ration > 0 else math.ceil(bin_size_w)
-        ).to_int()
+        )
 
         # Number of points in the pooling window.
         let pool_elemn_num = math.max(roi_bin_grid_h * roi_bin_grid_w, 1)

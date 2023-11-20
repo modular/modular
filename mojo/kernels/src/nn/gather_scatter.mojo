@@ -37,14 +37,14 @@ fn normalize_neg_index[type: DType](idx: SIMD[type, 1], dim_size: Int) -> Int:
     Returns val + dim if val < 0 else val
     """
     debug_assert(
-        -dim_size <= idx.to_int() < dim_size,
+        -dim_size <= int(idx) < dim_size,
         "indices must be in range [-dim_size, dim_size)",
     )
     constrained[
         type.is_integral(),
         "normalize_neg_index expects index to be an integral type",
     ]()
-    return idx.to_int() + dim_size if idx < 0 else idx.to_int()
+    return int(idx) + dim_size if idx < 0 else int(idx)
 
 
 @always_inline
@@ -178,7 +178,7 @@ fn gather_reduce[
                             .for_read()
                             .high_locality()
                             .to_data_cache()
-                        ](next_idx_ptr.load().to_int(), 0)
+                        ](int(next_idx_ptr.load()), 0)
 
                     let in_idx = StaticIntTuple[2](idx, k)
 
@@ -750,7 +750,7 @@ fn gather_shape[
     ]()
 
     # extract hyper parameter
-    var axis = axis_buf[0].to_int()
+    var axis = int(axis_buf[0])
     if axis < 0:
         axis += input_rank
     # TODO(#17512)
@@ -883,7 +883,7 @@ fn scatter_elements_shape[
     """
 
     # Check axis
-    let axis_int = axis[0].to_int()
+    let axis_int = int(axis[0])
     # TODO(#17512)
     debug_assert(
         -rank <= axis_int and axis_int < rank,
@@ -1185,9 +1185,8 @@ fn gather_nd[
             # Calculate the input_offset from where to copy the data.
             var input_offset = 0
             for i in range(reshaped_data_rank):
-                input_offset = (
-                    input_offset
-                    + reshaped_data.stride(i) * start_tensor[i].to_int()
+                input_offset = input_offset + reshaped_data.stride(i) * int(
+                    start_tensor[i]
                 )
 
             # Calculate the output_offset where to copy the data.

@@ -650,10 +650,10 @@ fn flash_attention_kernel[
         )
 
     # Clear thread's register tile for output.
-    _fill[(TM * TN).to_int()](o_thread_tile, 0)
+    _fill[int(TM * TN)](o_thread_tile, 0)
 
-    _fill[TM.to_int()](rowmax, neginf[DType.float32]())
-    _fill[TM.to_int()](rowsum, 0)
+    _fill[int(TM)](rowmax, neginf[DType.float32]())
+    _fill[int(TM)](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
     var global_kv_offset: _uint32 = depth * (
@@ -670,16 +670,16 @@ fn flash_attention_kernel[
     let loadv_row: _uint32 = (tid * simd_size) // depth
     let loadv_col: _uint32 = (tid * simd_size) % depth
 
-    for kv_tile_start_row in range(0, seq_len.to_int(), BN.to_int()):
+    for kv_tile_start_row in range(0, int(seq_len), int(BN)):
         # Clear thread tile results.
-        _fill[(TM * TN).to_int()](reg_result, 0)
+        _fill[int(TM * TN)](reg_result, 0)
 
         # K tile has shape [BN, depth]. Load sub-tile [BN, BK] each time and
         # multiply with the corresponding Q slice of shape [BM, BK].
         alias loadk_num_rows_per_iter = (num_threads * simd_size) // BK
         alias loadk_num_iters = BN // loadk_num_rows_per_iter
         alias BN_padded = BN + smem_pad
-        for subtile_start_col in range(0, depth.to_int(), BK.to_int()):
+        for subtile_start_col in range(0, int(depth), int(BK)):
 
             @unroll
             for i in range(loadk_num_iters.to_int()):

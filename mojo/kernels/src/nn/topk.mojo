@@ -44,8 +44,8 @@ fn top_k_shape[
     debug_assert(k_buf.size() == 1, "k_buf must be a scalar")
     debug_assert(axis_buf.size() == 1, "axis_buf must be a scalar")
 
-    let axis = axis_buf[0].to_int()
-    let k = k_buf[0].to_int()
+    let axis = int(axis_buf[0])
+    let k = int(k_buf[0])
 
     debug_assert(axis < rank, "Axis should be less than the rank of the input")
     debug_assert(
@@ -132,7 +132,7 @@ fn _top_k[
             @parameter
             @always_inline
             fn indices_to_val(idx: Int64) -> SIMD[type, 1]:
-                indices[axis] = idx.__int__()
+                indices[axis] = int(idx)
                 return input[indices]
 
             if largest:
@@ -176,11 +176,11 @@ fn _top_k[
                 # https://github.com/tensorflow/tensorflow/blob/v2.10.0/tensorflow/core/kernels/topk_op.cc#L171-L172
                 var i = 0
                 while i < shape[axis] - 1:
-                    indices[axis] = idxs[i].__int__()
+                    indices[axis] = int(idxs[i])
                     let curr = input[indices]
                     var num_equal = 1
                     for j in range(i + 1, shape[axis]):
-                        indices[axis] = idxs[j].__int__()
+                        indices[axis] = int(idxs[j])
                         let next = input[indices]
                         if curr != next:
                             break
@@ -191,7 +191,7 @@ fn _top_k[
                     i += num_equal
 
             for i in range(k):
-                indices[axis] = idxs[i].__int__()
+                indices[axis] = int(idxs[i])
                 let val = input[indices]
                 indices[axis] = i
                 out_vals[indices] = val

@@ -31,7 +31,7 @@ fn test_gather():
         alias row_size = 4
 
         # Setup input.
-        var input = NDBuffer[
+        let input = NDBuffer[
             2,
             DimList(num_rows, row_size),
             DType.float32,
@@ -43,7 +43,7 @@ fn test_gather():
 
         # Setup indices.
         alias num_indices = 16
-        var indices = NDBuffer[
+        let indices = NDBuffer[
             1,
             DimList(num_indices),
             indices_type,
@@ -55,7 +55,7 @@ fn test_gather():
         indices[1] = -num_rows
 
         # create output
-        var output = NDBuffer[
+        let output = NDBuffer[
             2,
             DimList(num_indices, row_size),
             DType.float32,
@@ -103,7 +103,7 @@ fn test_gather_3d():
         alias row_size = 4
 
         # Setup input.
-        var input = NDBuffer[
+        let input = NDBuffer[
             3,
             DimList(num_rows, row_size, 1),
             DType.float32,
@@ -115,7 +115,7 @@ fn test_gather_3d():
 
         # Setup indices.
         alias num_indices = 16
-        var indices = NDBuffer[
+        let indices = NDBuffer[
             2,
             DimList(num_indices, 1),
             indices_type,
@@ -125,7 +125,7 @@ fn test_gather_3d():
             indices[StaticIntTuple[2](i, 0)] = i // 2
 
         # create output
-        var output = NDBuffer[
+        let output = NDBuffer[
             4,
             DimList(num_indices, 1, row_size, 1),
             DType.float32,
@@ -176,7 +176,7 @@ fn test_gather_empty_indices():
         alias output_size = 0
 
         # Setup input.
-        var input = NDBuffer[
+        let input = NDBuffer[
             2,
             DimList(num_rows, row_size),
             DType.float32,
@@ -187,7 +187,7 @@ fn test_gather_empty_indices():
                 input[StaticIntTuple[2](i, j)] = Float32(i).value
 
         # Setup indices.
-        var indices = NDBuffer[
+        let indices = NDBuffer[
             1,
             DimList(num_indices),
             indices_type,
@@ -197,7 +197,7 @@ fn test_gather_empty_indices():
             indices[StaticIntTuple[1](i)] = i // 2
 
         # create output
-        var output = NDBuffer[
+        let output = NDBuffer[
             2,
             DimList(num_indices, row_size),
             DType.float32,
