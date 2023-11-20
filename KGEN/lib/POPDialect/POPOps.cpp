@@ -145,8 +145,10 @@ LogicalResult CastOp::verify() {
 
 static ParseResult parseShuffleMask(AsmParser &p, TypedAttr &mask,
                                     Type resultType) {
-  return parseParamValue(p, mask,
-                         VariadicType::get(p.getBuilder().getIndexType()));
+  return parseParamValue(
+      p, mask,
+      VariadicType::get(p.getBuilder().getIndexType(),
+                        AnyRegTypeType::get(p.getContext())));
 }
 
 static void printShuffleMask(AsmPrinter &p, Operation *op, TypedAttr mask,
@@ -299,7 +301,7 @@ static ParseResult parsePointerOf(AsmParser &p, Type &result,
       KGEN::parseOptionalAddressSpaceParamValue(p, addressSpace))
     return failure();
 
-  result = PointerType::get(elementType, addressSpace);
+  result = PointerType::get(p.getContext(), elementType, addressSpace);
   return success();
 }
 

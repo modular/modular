@@ -232,7 +232,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       if (convention == ValueInputConvention::OwnedInMem ||
           convention == ValueInputConvention::BorrowedInMem)
         varElType = cast<PointerType>(varElType).getElementType();
-      attr = VariadicAttr::get(args, VariadicType::get(varElType));
+      auto newVarType = VariadicType::get(
+          varElType, AnyRegTypeType::get(emitter.getContext()));
+      attr = VariadicAttr::get(args, newVarType);
     } else {
       attr = PackAttr::get(args, cast<PackType>(expectedType));
     }
@@ -705,7 +707,9 @@ TypedAttr CallEmitter::emitCallInParamContext(
         SmallVector<TypedAttr> storedAttrs;
         for (TypedAttr var : cast<VariadicAttr>(arg).getValues())
           storedAttrs.push_back(StoreToMemAttr::get(var, varElType));
-        arg = VariadicAttr::get(storedAttrs, VariadicType::get(varElType));
+        auto newVarType = VariadicType::get(
+            varElType, AnyRegTypeType::get(emitter.getContext()));
+        arg = VariadicAttr::get(storedAttrs, newVarType);
       } else {
         arg = StoreToMemAttr::get(arg, PointerType::get(actualArgType));
       }

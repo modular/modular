@@ -449,7 +449,7 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType, "Type":$metaType)>,
   ];
 
   let extraClassDeclaration = [{
@@ -623,10 +623,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
   }];
 
   let parameters = (ins OptionalParameter<"TypedAttr">:$variadic);
-  let assemblyFormat = [{
-    `<` custom<ParamValue>(
-      $variadic, "VariadicType::get(AnyRegTypeType::get($_ctxt))") `>`
-  }];
+  let assemblyFormat = "`<` custom<PackType>($variadic) `>`";
   let genVerifyDecl = 1;
 
   let builders = [

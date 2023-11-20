@@ -248,9 +248,9 @@ LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
   return success();
 }
 
-SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
+SignatureType SignatureType::get(MLIRContext *context, TypeRange inputs,
                                  TypeRange results) {
-  return get(FunctionType::get(ctx, inputs, results));
+  return get(FunctionType::get(context, inputs, results));
 }
 
 SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
@@ -424,23 +424,24 @@ bool SignatureType::isConcrete() {
   return getInputParamTypes().empty() && getResultParamTypes().empty();
 }
 
-Type SignatureType::parse(AsmParser &p) {
+Type SignatureType::parse(AsmParser &parser) {
   SignatureType signature;
-  if (p.parseLess() || parseSignature(p, signature) || p.parseGreater())
+  if (parser.parseLess() || parseSignature(parser, signature) ||
+      parser.parseGreater())
     return {};
   return signature;
 }
 
-void SignatureType::print(AsmPrinter &p) const {
-  p << '<';
-  printSignature(p, *this);
-  p << '>';
+void SignatureType::print(AsmPrinter &printer) const {
+  printer << '<';
+  printSignature(printer, *this);
+  printer << '>';
 }
 
 LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
-                      ArrayRef<Type> inputParams, ArrayRef<Type> resultParams,
-                      FunctionType values,
+                      ArrayRef<Type> inputParamTypes,
+                      ArrayRef<Type> resultParamTypes, FunctionType values,
                       ArrayRef<ValueInputConvention> inputConventions,
                       FnEffects effects, FnMetadataAttrInterface metadata) {
   // Check we have the right number of conventions.
@@ -457,8 +458,9 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   // If the signature has metadata, defer to it for further verification.
   // Otherwise, run the standard KGEN signature verification.
   if (metadata) {
-    return metadata.verifySignature(emitError, inputParams, resultParams,
-                                    values, inputConventions, effects);
+    return metadata.verifySignature(emitError, inputParamTypes,
+                                    resultParamTypes, values, inputConventions,
+                                    effects);
   }
 
   // Verify input convention and argument types.
@@ -595,11 +597,6 @@ SignatureType::prependParams(SignatureType sig,
 //===----------------------------------------------------------------------===//
 // PointerType
 //===----------------------------------------------------------------------===//
-
-/// Return the type as a TypeConstantAttr with AnyRegTypeType as metatype.
-static TypedAttr getTypeConstantAttr(Type type) {
-  return TypeConstantAttr::get(type, AnyRegTypeType::get(type.getContext()));
-}
 
 LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
                                   Type type, TypedAttr addressSpace) {
@@ -908,8 +905,8 @@ VariadicType VariadicType::get(TypedAttr elementType) {
   return VariadicType::get(elementType.getContext(), elementType);
 }
 
-VariadicType VariadicType::get(Type elementType) {
-  return VariadicType::get(getTypeConstantAttr(elementType));
+VariadicType VariadicType::get(Type elementType, Type metaType) {
+  return VariadicType::get(TypeConstantAttr::get(elementType, metaType));
 }
 
 /// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
@@ -1139,6 +1136,16 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
 //===----------------------------------------------------------------------===//
 // PackType
 //===----------------------------------------------------------------------===//
+
+static void printPackType(AsmPrinter &p, TypedAttr value) {
+  printParamValue(p, value);
+}
+
+static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
+  auto anyRegTypeType = AnyRegTypeType::get(p.getContext());
+  return parseParamValue(p, value,
+                         VariadicType::get(anyRegTypeType, anyRegTypeType));
+}
 
 /// Verify that the element type of the variadic attribute or expression is a
 /// type expression.
