@@ -6,7 +6,7 @@
 # RUN: mojo -debug-level full -O0 --parsing-stdlib %s | FileCheck %s
 
 from gpu import ThreadIdx
-from gpu.host._compile import _compile_nvptx_asm
+from gpu.host._compile import _compile_nvptx
 
 
 fn outer[y: Int]():
@@ -15,7 +15,7 @@ fn outer[y: Int]():
         pass
 
     print(
-        _compile_nvptx_asm[
+        _compile_nvptx[
             fn (SIMD[DType.float32, y]) capturing -> None, param[y]
         ]().asm
     )
