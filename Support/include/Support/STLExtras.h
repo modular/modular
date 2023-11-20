@@ -9,8 +9,16 @@
 
 #include "Support/AlignedAlloc.h"
 #include "Support/LogicalResult.h"
+#include <type_traits>
 
 namespace M {
+
+/// Converts an enumeration to its underlying type. Note this function is
+/// available as part of the STL in C++23.
+template <typename Enum>
+constexpr std::underlying_type_t<Enum> to_underlying(Enum e) {
+  return static_cast<std::underlying_type_t<Enum>>(e);
+}
 
 //===----------------------------------------------------------------------===//
 // failableInterleave
