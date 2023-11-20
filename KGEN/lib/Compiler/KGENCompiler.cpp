@@ -437,9 +437,9 @@ void KGEN::populateElaborateModulePasses(
       /*compileAsmFn=*/
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target, EmissionKind) {
+                    TargetInfoAttr target, EmissionKind emissionKind) {
         return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
-                                    EmissionKind::ASM, options);
+                                    emissionKind, options);
       },
       packageLinkHandlerFn);
   buildPostElaborationPipeline(pm, runtime, options);
