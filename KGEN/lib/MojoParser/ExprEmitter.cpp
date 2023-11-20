@@ -863,9 +863,7 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 
 /// Return true if the given type implements the trait.
 static bool metaTypeImplements(TraitType trait, ASTDecl *typeDecl) {
-  return llvm::count(
-      cast<StructDeclOp>(typeDecl).getTraits().value_or(std::nullopt),
-      trait.getSymbol());
+  return llvm::count(cast<StructDeclOp>(typeDecl).getParentTypes(), trait);
 }
 
 bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,

@@ -1610,7 +1610,7 @@ trait Trait2:
     # CHECK: lit.func @"f{{.*}}"(%__result__[__result__]: !kgen.pointer<:!kgen.paramref<MT> T> byref_result, |, %self[self]: !kgen.pointer<:!kgen.paramref<MT> T> borrow_in_mem) -> !kgen.none
     fn f(self: Self) -> Self: ...
 
-# CHECK-LABEL: lit.struct.decl @StructWithTraits([{{.*}}@Trait1, {{.*}}@Trait2])
+# CHECK-LABEL: lit.struct.decl @StructWithTraits(trait<{{.*}}@Trait1>, trait<{{.*}}@Trait2>)
 struct StructWithTraits(Trait1, Trait2):
     # CHECK: lit.func @"f{{.*}}"(%{{.*}}: !kgen.pointer<!StructWithTraits> byref_result, |, %self[self]: !kgen.pointer<!StructWithTraits> borrow_in_mem) -> !kgen.none
     fn f(self: Self) -> Self: ...
@@ -1630,7 +1630,7 @@ trait CFMTrait:
    fn f2():
        pass
 
-# CHECK-LABEL: lit.struct.decl @CFMStruct([{{.*}}@CFMTrait])
+# CHECK-LABEL: lit.struct.decl @CFMStruct(trait<{{.*}}@CFMTrait>)
 struct CFMStruct(CFMTrait):
    #CHECK: lit.func @"f1({{.*}})"(%self[self]: !kgen.pointer<!CFMStruct> borrow_in_mem) -> !kgen.none
    fn f1(self: Self):

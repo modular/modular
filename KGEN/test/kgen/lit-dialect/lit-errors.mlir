@@ -13,6 +13,7 @@ lit.struct.decl @SomeStruct {
 }) {sym_name = "StructArgs",
     decorators = #kgen<decorators[]>,
     signature = !lit.type_signature,
+    parentTypes = #M<type.array[]>,
     inputParams = #kgen<param.decls[]>
     } : () -> ()
 
@@ -367,11 +368,6 @@ lit.unresolved_import @module as @newModule declNameLoc(loc(unknown))
 lit.func @f() -> !kgen.none {
   // expected-error @below {{'lit.trait_func' op expected a parent function in a trait}}
   lit.trait_func
-}
-
-// -----
-// expected-error @below {{'lit.struct.decl' op expected to find a trait decl of @Trait1 for struct}}
-lit.struct.decl @StructCannotFileTrait([@Trait1]) {
 }
 
 // -----

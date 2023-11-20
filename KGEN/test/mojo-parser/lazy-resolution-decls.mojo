@@ -10,6 +10,7 @@
 
 from imported_cached_module import StringLiteralAlias, global_variable, Trait
 
+
 # CHECK-LABEL: lit.func @"assign_from()"
 fn assign_from():
     # CHECK: !StringLiteral = <{{.*}}"foobar"
@@ -17,6 +18,7 @@ fn assign_from():
     # CHECK: lit.globalvar.ref {{.*}}@global_variable
     let bar = global_variable
 
-#CHECK-LABEL: lit.struct.decl @Struct([@"$imported_cached_module"::@Trait])
+
+# CHECK-LABEL: lit.struct.decl @Struct(trait<@"$imported_cached_module"::@Trait>)
 struct Struct(Trait):
     pass
