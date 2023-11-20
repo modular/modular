@@ -41,6 +41,9 @@ using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
 
 class Elaborator {
 public:
+  /// Enumeration of the compile assembly format.
+  enum ASMFormat : uint8_t { ASM, LLVM };
+
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTable &symtab, TargetInfoAttr target,
              const ElaborateGeneratorsOptions &config)
@@ -64,7 +67,8 @@ public:
       ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) = 0;
 
   /// Get the functor for compiling a generator to assembly.
-  virtual ElaboratorCompileAsmFnRef getCompileAsmFn() const = 0;
+  virtual ElaboratorCompileAsmFnRef
+  getCompileAsmFn(ASMFormat format = ASMFormat::ASM) const = 0;
 
   /// Add an owned function operation that should be appended to the module at
   /// the end of elaboration. This is where generated functions during

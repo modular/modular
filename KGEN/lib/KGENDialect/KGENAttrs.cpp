@@ -1100,11 +1100,14 @@ LogicalResult ParamOperatorAttr::verify(
     }
     break;
   case POC::CompileAssembly: {
-    if (operands.size() != 2)
-      return emitError() << "'compile_assembly' requires 2 operands";
+    if (operands.size() != 3)
+      return emitError() << "'compile_assembly' requires 3 operands";
     if (!::isa<TargetType>(operands.front().getType()))
       return emitError()
              << "'compile_assembly' first operand should be a target type";
+    if (!::isa<StringType>(operands[1].getType()))
+      return emitError()
+             << "'compile_assembly' second operand should be a string type";
     break;
   }
   case POC::GetLinkageName:
