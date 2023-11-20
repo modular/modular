@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """This module includes utilities for working with the
-warm-matrix-matrix-multiplication (wmma) instructions."""
+warp-matrix-matrix-multiplication (wmma) instructions."""
 
 from memory.unsafe import bitcast, Pointer
 from .ptx_assembly import ptx_assembly
