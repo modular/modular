@@ -612,6 +612,11 @@ struct _PathOrBool:
         self.path = path
 
     @always_inline
+    fn __init__(inout self, path: String):
+        self.print_val = False
+        self.path = Path(path)
+
+    @always_inline
     fn __bool__(self) -> Bool:
         return self.print_val or self._is_path()
 
