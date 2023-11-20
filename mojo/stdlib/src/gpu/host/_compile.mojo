@@ -77,12 +77,46 @@ fn __compile_nvptx_asm_impl[
 
 
 @always_inline
-fn _compile_nvptx_asm[
-    func_type: AnyRegType, func: func_type
+fn __compile_nvptx_llvm_impl[
+    func_type: AnyRegType, func: func_type->closure: _CompiledClosure
+]():
+    alias impl = __mlir_attr[
+        `#kgen.param.expr<compile_assembly,`,
+        _get_nvptx_target(),
+        `,`,
+        _EMISSION_KIND_LLVM,
+        `,`,
+        func,
+        `> : `,
+        _CompiledClosureImpl,
+    ]
+    param_return[
+        _CompiledClosure(
+            impl.asm,
+            impl.num_captures,
+            rebind[fn (Pointer[Pointer[NoneType]]) capturing -> None](
+                impl.populate
+            ),
+        )
+    ]
+
+
+@always_inline
+fn _compile_nvptx[
+    func_type: AnyRegType,
+    func: func_type,
+    /,
+    emission_kind: StringLiteral = "asm",
 ]() -> _CompiledClosure:
-    alias closure: _CompiledClosure
-    __compile_nvptx_asm_impl[func_type, func -> closure]()
-    return closure
+    @parameter
+    if emission_kind == "llvm":
+        alias llvm_closure: _CompiledClosure
+        __compile_nvptx_llvm_impl[func_type, func -> llvm_closure]()
+        return llvm_closure
+    else:
+        alias asm_closure: _CompiledClosure
+        __compile_nvptx_asm_impl[func_type, func -> asm_closure]()
+        return asm_closure
 
 
 fn _get_nvptx_fn_name[

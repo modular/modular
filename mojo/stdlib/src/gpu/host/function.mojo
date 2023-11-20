@@ -12,7 +12,7 @@ from sys.ffi import _get_global
 from utils.optional import Optional
 
 from pathlib import Path
-from ._compile import _compile_nvptx_asm, _get_nvptx_fn_name
+from ._compile import _compile_nvptx, _get_nvptx_fn_name
 from ._utils import _check_error, _get_dylib_function
 from .dim import Dim
 from .module import ModuleHandle, _ModuleImpl
@@ -678,7 +678,7 @@ fn _init_fn[
     try:
         let payload = payload_ptr.bitcast[_GlobalPayload]().load()
 
-        alias _impl = _compile_nvptx_asm[func_type, func]()
+        alias _impl = _compile_nvptx[func_type, func, emission_kind="asm"]()
         alias fn_name = _get_nvptx_fn_name[func_type, func]()
 
         var mod_handle = ModuleHandle(
@@ -749,13 +749,14 @@ fn _get_global_cache_info[
 struct Function[func_type: AnyRegType, func: func_type]:
     var info: _CachedFunctionInfo
 
-    alias _impl = _compile_nvptx_asm[func_type, func]()
+    alias _impl = _compile_nvptx[func_type, func, emission_kind="asm"]()
 
     @always_inline
     fn __init__(
         debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: _PathOrBool = _PathOrBool(),
+        dump_llvm: _PathOrBool = _PathOrBool(),
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
     ) raises -> Self:
@@ -766,6 +767,15 @@ struct Function[func_type: AnyRegType, func: func_type]:
                     f.write(ptx)
             else:
                 print(ptx)
+        if dump_llvm:
+            alias llvm = _compile_nvptx[
+                func_type, func, emission_kind="llvm"
+            ]().asm
+            if dump_llvm._is_path():
+                with open(dump_llvm.path, "w") as f:
+                    f.write(llvm)
+            else:
+                print(llvm)
 
         return Self {
             info: _get_global_cache_info[func_type, func](
