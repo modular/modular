@@ -230,10 +230,12 @@ struct Runtime:
 
     fn parallelism_level(self) -> Int:
         """Gets the parallelism level of the Runtime."""
-        return external_call[
-            "KGEN_CompilerRT_LLCL_ParallelismLevel",
-            Int32,
-        ](self.ptr).to_int()
+        return int(
+            external_call[
+                "KGEN_CompilerRT_LLCL_ParallelismLevel",
+                Int32,
+            ](self.ptr)
+        )
 
     fn create_task[
         type: AnyRegType
@@ -432,6 +434,11 @@ struct OutputChainPtr:
 
     @always_inline("nodebug")
     fn __bool__(self) -> Bool:
+        """Return True if the chain is valid and False otherwise.
+
+        Returns:
+          True if the chain is valid and False otherwise.
+        """
         return self.ptr != Self.ptr_type()
 
     @always_inline
@@ -521,6 +528,8 @@ struct OutputChainPtr:
         @parameter
         if is_mojo_profiling_disabled[level]():
             return
+        if not self:
+            return
         external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Trace", NoneType](
             self.ptr,
             label.data,
@@ -538,6 +547,8 @@ struct OutputChainPtr:
 
         @parameter
         if is_mojo_profiling_disabled[level]():
+            return
+        if not self:
             return
         external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Trace", NoneType](
             self.ptr,
@@ -558,6 +569,8 @@ struct OutputChainPtr:
 
         @parameter
         if is_mojo_profiling_disabled[level]():
+            return
+        if not self:
             return
 
         let str = detail_fn()
