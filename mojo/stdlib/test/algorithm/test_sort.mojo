@@ -514,7 +514,7 @@ fn test_sort_stress():
     ](length: Int):
         var vector = DynamicVector[Int](length)
         for i in range(length):
-            vector.push_back(random_si64(-length, length).to_int())
+            vector.push_back(int(random_si64(-length, length)))
 
         _quicksort[Int, cmp_fn](vector.data, len(vector))
 

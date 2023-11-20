@@ -70,17 +70,17 @@ fn _index_of_first_one[width: Int](val: SIMD[DType.bool, width]) -> Int:
         # Cast to int8 and count the number of trailing zeros.
         var local_val = val
         let i8_ptr = Pointer.address_of(local_val).bitcast[Int8]()
-        return cttz(i8_ptr.load().to_int())
+        return cttz(int(i8_ptr.load()))
     elif width == 16:
         # Cast to int16 and count the number of trailing zeros.
         var local_val = val
         let i16_ptr = Pointer.address_of(local_val).bitcast[Int16]()
-        return cttz(i16_ptr.load().to_int())
+        return cttz(int(i16_ptr.load()))
     elif width == 32:
         # Cast to int32 and count the number of trailing zeros.
         var local_val = val
         let i32_ptr = Pointer.address_of(local_val).bitcast[Int32]()
-        return cttz(i32_ptr.load().to_int())
+        return cttz(int(i32_ptr.load()))
     else:
         alias half_width: Int = width // 2
         let lhs = val.slice[half_width](0)
@@ -1778,7 +1778,7 @@ fn _argn[
 
                 var matching = global_values == global_val
 
-                idx = global_indices[_index_of_first_one(matching)].to_int()
+                idx = int(global_indices[_index_of_first_one(matching)])
 
                 # Check that no match was found on lower indices.
                 if matching == 0:
@@ -1866,7 +1866,7 @@ fn argmax[
 
     constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
 
-    argmax(input, axis_buf[0].to_int(), output, out_chain)
+    argmax(input, int(axis_buf[0]), output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1936,7 +1936,7 @@ fn argmin[
 
     constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
 
-    argmin(input, axis_buf[0].to_int(), output, out_chain)
+    argmin(input, int(axis_buf[0]), output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1975,7 +1975,7 @@ fn reduce_shape[
     """
 
     # extract hyper parameter
-    var axis = axis_buf[0].to_int()
+    var axis = int(axis_buf[0])
     if axis < 0:
         axis += input_rank
     # TODO(#17512)
