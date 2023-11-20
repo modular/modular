@@ -23,12 +23,18 @@ public:
 
   /// Keypairs are move-able, but not copy-able.
   Keypair(const Keypair &other) = delete;
-  Keypair(Keypair &&other) { std::swap(ctx, other.ctx); }
+  Keypair &operator=(const Keypair &other) = delete;
+  Keypair(Keypair &&other) {
+    std::swap(ctx, other.ctx);
+    havePrivateKey = other.havePrivateKey;
+  }
 
   /// Explicitly create the move assignment operator.
   Keypair &operator=(Keypair &&other) {
-    if (this != &other)
+    if (this != &other) {
       std::swap(ctx, other.ctx);
+      havePrivateKey = other.havePrivateKey;
+    }
 
     return *this;
   }
@@ -73,6 +79,9 @@ public:
   /// use this if you *know* this is the thing you need. Most users should
   /// use the higher-level APIs.
   mbedtls_pk_context *getRawKey() { return &ctx; }
+
+  /// Check if this keypair has a private key available.
+  bool hasPrivateKey() const { return havePrivateKey; }
 
 private:
   bool havePrivateKey = false;
