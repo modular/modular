@@ -117,9 +117,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
 
   // Build debuginfo for the stub if requested.
-  bool hasDebugInfo = false;
   if (auto scope = func.getSubprogramScope()) {
-    hasDebugInfo = true;
     scope = scope.cloneWith(
         DebugInfo::SourceNameAttr::get("asm_stub", scope.getName()), stubName);
     DebugInfo::DIAttrTypeReplacer replacer;
@@ -134,17 +132,16 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   SignatureType sig = symbol.getType();
   auto wrapper = b.create<GeneratorOp>(name, sig);
   wrapper.setExported();
+  wrapper.setLLVMMetadataAttr(sliced.getLLVMMetadataAttr());
   Block *entry =
       b.createBlock(&wrapper.getBodyRegion(), {}, sig.getValueInputs(),
                     llvm::map_to_vector(sliced.getArguments(),
                                         [](Value v) { return v.getLoc(); }));
 
   // Re-declare the captured parameter values.
-  if (hasDebugInfo) {
-    for (auto [decl, value] :
-         llvm::zip(sliced.getInputParams(), symbol.getParamValues()))
-      b.create<ParamDeclareOp>(decl, value);
-  }
+  for (auto [decl, value] :
+       llvm::zip(sliced.getInputParams(), symbol.getParamValues()))
+    b.create<ParamDeclareOp>(decl, value);
 
   auto call =
       b.create<CallOp>(sig.getValueResults(),
