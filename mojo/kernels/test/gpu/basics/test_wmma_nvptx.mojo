@@ -34,4 +34,7 @@ fn SM80_m16n8k4_F32F16F16F32_TN(
     # CHECK: mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32
     mma(d, a, b, c)
 
+    # CHECK: mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32
+    mma(d, a, b.join(b), c)
+
     return d
