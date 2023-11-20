@@ -154,7 +154,6 @@ static mlir::LowerToLLVMOptions buildLLVMLoweringOpts(TargetInfoAttr target) {
   mlir::LowerToLLVMOptions opts(target.getContext());
   opts.overrideIndexBitwidth(target.getDataLayout().getPointerBitWidth());
   opts.dataLayout.reset(target.getDataLayout().toString());
-  opts.useOpaquePointers = false;
   return opts;
 }
 
