@@ -178,7 +178,7 @@ class SemanticToken:
 
 
 class Requests:
-    """Helper class for issuing requests to the server. It is not intenteded to be a full wrapper of `LanguageClient`.
+    """Helper class for issuing requests to the server. It is not intended to be a full wrapper of `LanguageClient`.
     """
 
     def __init__(self, client: LanguageClient):
