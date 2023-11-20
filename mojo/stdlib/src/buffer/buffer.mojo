@@ -489,7 +489,7 @@ fn _compute_ndbuffer_offset[
         for i in range(rank):
             result = fma(Int32(buf.stride(i)), Int32(index[i]), result)
 
-        return result.to_int()
+        return int(result)
 
     else:
         var result: Int = 0
@@ -561,7 +561,7 @@ fn _compute_ndbuffer_offset[
         for i in range(rank):
             result = fma(Int32(buf.stride(i)), Int32(index[i]), result)
 
-        return result.to_int()
+        return int(result)
 
     else:
         var result: Int = 0
