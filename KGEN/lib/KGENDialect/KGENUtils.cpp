@@ -697,6 +697,15 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return parseParamValue(p, operands.emplace_back(),
                            StringType::get(p.getContext()));
   case (uint32_t)POC::CompileAssembly:
+    if (parseParamValue(p, operands.emplace_back(),
+                        TargetType::get(p.getContext())) ||
+            p.parseComma() ||
+            parseParamValue(p, operands.emplace_back(),
+                            StringType::get(p.getContext())) ||
+            p.parseComma(),
+        parseColonTypeParamValue(p, operands.emplace_back()))
+      return failure();
+    return success();
   case (uint32_t)POC::GetLinkageName:
     if (parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())) ||
@@ -981,6 +990,13 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     break;
 
   case POC::CompileAssembly:
+    printParamValue(p, operands[0]);
+    p << ", ";
+    printParamValue(p, operands[1]);
+    p << ", ";
+    printColonTypeParamValue(p, operands[2]);
+    break;
+
   case POC::GetLinkageName:
     printParamValue(p, operands[0]);
     p << ", ";

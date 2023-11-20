@@ -529,7 +529,8 @@ public:
       ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
       ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) override;
 
-  ElaboratorCompileAsmFnRef getCompileAsmFn() const override {
+  ElaboratorCompileAsmFnRef
+  getCompileAsmFn(Elaborator::ASMFormat format) const override {
     return compileAsmFn;
   }
 
