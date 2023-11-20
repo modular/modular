@@ -47,6 +47,10 @@ struct _CompiledClosure:
     var populate: fn (Pointer[Pointer[NoneType]]) capturing -> None
 
 
+alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
+alias _EMISSION_KIND_LLVM: __mlir_type.index = (1).__as_mlir_index()
+
+
 @always_inline
 fn __compile_nvptx_asm_impl[
     func_type: AnyRegType, func: func_type->closure: _CompiledClosure
@@ -54,7 +58,9 @@ fn __compile_nvptx_asm_impl[
     alias impl = __mlir_attr[
         `#kgen.param.expr<compile_assembly,`,
         _get_nvptx_target(),
-        `, "asm" : !kgen.string, `,
+        `, `,
+        _EMISSION_KIND_ASM,
+        `, `,
         func,
         `> : `,
         _CompiledClosureImpl,
