@@ -2304,3 +2304,21 @@ kgen.generator @try_rebind(%arg0: !kgen.pointer<array<1, i8>>) {
   kgen.param.constant = <a>
   kgen.return
 }
+
+// -----
+
+kgen.generator @fma(%arg0: index, %arg1: index, %arg2: index) -> index {
+  %0 = index.mul %arg1, %arg2
+  %1 = index.add %0, %arg0
+  kgen.return %1 : index
+}
+
+!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>> borrow) capturing -> !kgen.none)>
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() {
+  // CHECK: mul i64
+  // CHECK: add i64
+  %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), "llvm", :(index, index, index) -> (index) @fma)>
+  kgen.return
+}

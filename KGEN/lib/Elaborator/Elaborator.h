@@ -37,7 +37,7 @@ using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
 using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr)>;
+    TargetInfoAttr, EmissionKind)>;
 
 class Elaborator {
 public:

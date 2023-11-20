@@ -180,7 +180,7 @@ DIUnresolvedMLIRType::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
-// AsmFormat Utilities
+// ASMFormat Utilities
 //===----------------------------------------------------------------------===//
 
 static LogicalResult parseName(AsmParser &p, StringAttr &result) {

@@ -82,6 +82,9 @@ using ElaboratorSearchFn = llvm::unique_function<ErrorOr<ssize_t>()>;
 using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
 
+/// Enumeration of the compile emission format.
+enum class EmissionKind : uint8_t { ASM, LLVM };
+
 /// This struct represents the result of a cross-device compilation, which is a
 /// function or closure reference.
 struct CrossDeviceFunction {
@@ -102,7 +105,7 @@ struct CrossDeviceFunction {
 /// passed to be used as the entry point.
 using ElaboratorCompileAsmFn = std::function<ErrorOr<CrossDeviceFunction>(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr)>;
+    TargetInfoAttr, EmissionKind)>;
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.
