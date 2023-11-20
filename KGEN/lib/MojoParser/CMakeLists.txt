@@ -20,6 +20,7 @@ add_modular_library(MojoParser
   OverloadFitness.cpp
   ParserBase.cpp
   ParserExprs.cpp
+  ParserParamEvaluator.cpp
   ParserStmts.cpp
   SharedState.cpp
   StructEmitter.cpp
