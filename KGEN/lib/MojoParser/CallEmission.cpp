@@ -402,8 +402,10 @@ InputParamBindings::verifyBindings(
         return {{}, fitness};
       elements.emplace_back(pValue);
     } while (posBindingIdx != numPosBindings);
-    setParamValue(VariadicAttr::get(
-        elements, VariadicType::get(evaluator.getReboundType(expectedType))));
+
+    auto varType = VariadicType::get(evaluator.getReboundType(expectedType),
+                                     AnyRegTypeType::get(emitter.getContext()));
+    setParamValue(VariadicAttr::get(elements, varType));
   }
 
   // Check and complain if we have bindings that didn't get used.
@@ -635,8 +637,9 @@ static VariadicAttr getAdaptiveSet(ASTType baseType,
     symConstAttrs.push_back(symbolAttr);
   }
 
-  return VariadicAttr::get(emitter.getContext(), symConstAttrs,
-                           VariadicType::get(symConstAttrs.front().getType()));
+  auto varType = VariadicType::get(symConstAttrs.front().getType(),
+                                   AnyRegTypeType::get(emitter.getContext()));
+  return VariadicAttr::get(emitter.getContext(), symConstAttrs, varType);
 }
 
 /// Resolve the callee into either a single PValue callee (if there's only one
