@@ -54,7 +54,7 @@ fn __compile_nvptx_asm_impl[
     alias impl = __mlir_attr[
         `#kgen.param.expr<compile_assembly,`,
         _get_nvptx_target(),
-        `, `,
+        `, "asm" : !kgen.string, `,
         func,
         `> : `,
         _CompiledClosureImpl,
