@@ -8,30 +8,26 @@
 // CHECK-DAG: #[[OPAQUE_PTR:.*]] = #llvm.di_derived_type<tag = DW_TAG_pointer_type, baseType = #[[OPAQUE_BASE]], sizeInBits = {{.*}}, alignInBits = {{.*}}>
 !opaquePointer = !debuginfo.unresolved<!llvm.ptr>
 
-// CHECK-DAG: #[[I32:.*]] = #llvm.di_basic_type<tag = DW_TAG_base_type, name = "i32", sizeInBits = 32, encoding = DW_ATE_unsigned>
-// CHECK-DAG: #[[PTR:.*]] = #llvm.di_derived_type<tag = DW_TAG_pointer_type, baseType = #[[I32]], sizeInBits = {{.*}}, alignInBits = {{.*}}>
-!pointer = !debuginfo.unresolved<!llvm.ptr<i32>>
-
 // CHECK-DAG: #[[I64:.*]] = #llvm.di_basic_type<tag = DW_TAG_base_type, name = "i64", sizeInBits = 64, encoding = DW_ATE_unsigned>
-// CHECK-DAG: #[[STRUCT_MEM1:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "field_0", baseType = #[[I32]], sizeInBits = 32, alignInBits = 32>
+// CHECK-DAG: #[[STRUCT_MEM1:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "field_0", baseType = #[[I32:.*]], sizeInBits = 32, alignInBits = 32>
 // CHECK-DAG: #[[STRUCT_MEM2:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "field_1", baseType = #[[I64]], sizeInBits = 64, alignInBits = 64, offsetInBits = 32>
-// CHECK-DAG: #[[STRUCT:.*]] = #llvm.di_composite_type<tag = DW_TAG_structure_type, name = "", sizeInBits = {{.*}}, alignInBits = {{.*}}, elements = #di_derived_type2, #di_derived_type3>
+// CHECK-DAG: #[[STRUCT:.*]] = #llvm.di_composite_type<tag = DW_TAG_structure_type, name = "", sizeInBits = {{.*}}, alignInBits = {{.*}}, elements = #di_derived_type1, #di_derived_type2>
 !struct = !debuginfo.unresolved<!llvm.struct<(i32, i64)>>
 
-// CHECK-DAG: #[[NAMED_STRUCT_MEM1:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "field_0", baseType = #[[PTR]], sizeInBits = {{.*}}, alignInBits = {{.*}}>
+// CHECK-DAG: #[[NAMED_STRUCT_MEM1:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "field_0", baseType = #[[OPAQUE_PTR]], sizeInBits = {{.*}}, alignInBits = {{.*}}>
 // CHECK-DAG: #[[NAMED_STRUCT_MEM2:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "field_1", baseType = #[[I64]], sizeInBits = {{.*}}, alignInBits = {{.*}}, offsetInBits = {{.*}}>
 // CHECK-DAG: #[[NAMED_STRUCT:.*]] = #llvm.di_composite_type<tag = DW_TAG_structure_type, name = "Buffer", sizeInBits = {{.*}}, alignInBits = {{.*}}, elements = #[[NAMED_STRUCT_MEM1]], #[[NAMED_STRUCT_MEM2]]>
-!namedStruct = !debuginfo.unresolved<!llvm.struct<"Buffer", (ptr<i32>, i64)>>
+!namedStruct = !debuginfo.unresolved<!llvm.struct<"Buffer", (ptr, i64)>>
 
 // CHECK-DAG: #[[ARRAY:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[I32]], sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !array = !debuginfo.unresolved<!llvm.array<10 x i32>>
 
-// CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[PTR]], flags = Vector, sizeInBits = {{.*}}, elements = #llvm.di_subrange<count = 10 : i64>>
-!vector = !debuginfo.unresolved<!llvm.vec<10 x ptr<i32>>>
+// CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[OPAQUE_PTR]], flags = Vector, sizeInBits = {{.*}}, elements = #llvm.di_subrange<count = 10 : i64>>
+!vector = !debuginfo.unresolved<!llvm.vec<10 x ptr>>
 
-// CHECK-DAG: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[VOID]], #[[OPAQUE_PTR]], #[[PTR]], #[[STRUCT]], #[[NAMED_STRUCT]], #[[ARRAY]], #[[VECTOR]]>
+// CHECK-DAG: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[VOID]], #[[OPAQUE_PTR]], #[[STRUCT]], #[[NAMED_STRUCT]], #[[ARRAY]], #[[VECTOR]]>
 !subroutineType = !debuginfo.subroutine<(
-  !opaquePointer, !pointer, !struct, !namedStruct,
+  !opaquePointer, !struct, !namedStruct,
   !array, !vector
 ) -> (): DW_CC_normal>
 

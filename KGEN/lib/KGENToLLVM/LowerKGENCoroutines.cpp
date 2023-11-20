@@ -289,8 +289,6 @@ public:
         contextType(contextType), hdlValue(hdlValue), hdlType(hdlType) {
     assert(hdlValue.getType().isa<LLVMPointerType>() &&
            "handle type must be a pointer");
-    assert(cast<LLVMPointerType>(hdlValue.getType()).isOpaque() &&
-           "handle must be opaque");
   }
   Type getContextType() const { return contextType; }
   Value getHdlValue() const { return hdlValue; }
@@ -761,7 +759,7 @@ void LowerKGENCoroutinesAsyncPass::runOnOperation() {
                          b.getI32Type(),
                          b.getI64Type(),
                          b.getIntegerType(b.getIndexTypeBitwidth()),
-                         LLVMPointerType::get(b.getI8Type()),
+                         LLVMPointerType::get(b.getContext()),
                          b.getType<LLVMTokenType>(),
                          LLVMPointerType::get(b.getContext())};
 

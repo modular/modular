@@ -323,13 +323,8 @@ struct DebugInfoToLLVMTypeConverter : public DebugInfo::DebugInfoTypeConverter {
     const llvm::DataLayout &dataLayout = typeConverter.getDataLayout();
     addConversion([&](LLVM::LLVMPointerType type) -> DebugInfo::DIType {
       // Convert the pointer element type.
-      DIType diEltType;
-      if (auto eltType = type.getElementType()) {
-        diEltType = convertDebugType(eltType);
-      } else {
-        diEltType =
-            DebugInfo::DIUnspecifiedType::get(type.getContext(), "opaque");
-      }
+      DIType diEltType =
+          DebugInfo::DIUnspecifiedType::get(type.getContext(), "opaque");
 
       size_t size = dataLayout.getPointerSizeInBits();
       llvm::Align align =
@@ -417,9 +412,11 @@ static void convertDbgValueToAddr(Operation *op) {
         &op->getParentOfType<mlir::FunctionOpInterface>().front());
     auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
         allocBuilder.getUnknownLoc(), allocBuilder.getI32Type(), 1);
+
     auto allocaOp = allocBuilder.create<LLVM::AllocaOp>(
         allocBuilder.getUnknownLoc(),
-        LLVM::LLVMPointerType::get(value.getType()), allocSize, 0);
+        LLVM::LLVMPointerType::get(value.getContext()), value.getType(),
+        allocSize, 0);
 
     // Replace the old dbg.value with a dbg.declare.
     OpBuilder(op).create<LLVM::DbgDeclareOp>(op.getLoc(), allocaOp,
@@ -432,7 +429,8 @@ static void convertDbgValueToAddr(Operation *op) {
       auto *user = *value.user_begin();
       OpBuilder loadBuilder(user);
       user->replaceUsesOfWith(
-          value, loadBuilder.create<LLVM::LoadOp>(user->getLoc(), allocaOp));
+          value, loadBuilder.create<LLVM::LoadOp>(user->getLoc(),
+                                                  value.getType(), allocaOp));
     }
 
     // Store into the alloca at the place where the value was defined.

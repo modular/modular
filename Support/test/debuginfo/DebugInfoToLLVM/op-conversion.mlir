@@ -43,10 +43,10 @@ func.func @simple() {
 // CHECK-SAME: (%[[ARG:.*]]: i32 loc({{.*}}))
 func.func @value_to_addr_arg(%arg: i32) -> i32 {
   // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32
-  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr<i32>
-  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr<i32>
-  // CHECK: llvm.store %[[ARG]], %[[ALLOC]] : !llvm.ptr<i32> loc(#[[LOC_STORE:.*]])
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr<i32>
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
+  // CHECK: llvm.store %[[ARG]], %[[ALLOC]] : i32, !llvm.ptr loc(#[[LOC_STORE:.*]])
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr -> i32
   // CHECK: return %[[RESULT]] : i32
 
   debuginfo.value #local_variable = %arg : i32
@@ -57,11 +57,11 @@ func.func @value_to_addr_arg(%arg: i32) -> i32 {
 // CHECK-LABEL: func @value_to_addr_op
 func.func @value_to_addr_op() -> i32 {
   // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32
-  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr<i32>
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr
   // CHECK: %[[VALUE:.*]] = "test.op"() : () -> i32
-  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr<i32>
-  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr<i32>
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr<i32>
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : i32, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
   // CHECK: return %[[RESULT]] : i32
 
   %value = "test.op"() : () -> i32
