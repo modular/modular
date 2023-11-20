@@ -1013,6 +1013,63 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LinkDependencyAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_LinkDependencyAttr : KGENAttr<"LinkDependency", "link.dependency"> {
+  let summary = "link dependency";
+  let description = [{
+    The `#kgen.link.dependency` attribute is a tuple of a dependency's name,
+    plus object code bytes that are to be linked into some build product.
+
+    Example:
+
+    ```mlir
+    #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">
+    ```
+  }];
+
+  let parameters = (ins "StringAttr":$name, "DenseResourceElementsAttr":$bytes);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        "DenseResourceElementsAttr":$bytes), [{
+      return get(name.getContext(), name, bytes);
+    }]>
+  ];
+
+  let assemblyFormat = "`<` $bytes `as` $name `>`";
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// LinkDependencyArrayAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_LinkDependencyArrayAttr
+  : ArrayOfAttr<KGENDialect, "LinkDependencyArray", "link.dependencies",
+                "LinkDependencyAttr"> {
+  let summary = "link dependencies";
+  let description = [{
+    The `#kgen.link.dependencies` attribute is an array of zero or more
+    attributes, each of which stores bytes of object code that can be linked
+    into the final Mojo build product.
+
+    Example:
+
+    ```mlir
+    #dependencies = [
+      <dense_resource<a862fa01d> : tensor<422xui8> as "ffmpeg">,
+      <dense_resource<e062d0e42> : tensor<91xui8> as "libavutil">
+    ]
+    ```
+  }];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // PackageArchiveAttr
 //===----------------------------------------------------------------------===//
 
@@ -1070,63 +1127,6 @@ def KGEN_PackageArchiveArrayAttr
     /// targets, or "none" if there are no archives in this array.
     std::string getTargetsAsString();
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// LinkDependencyAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_LinkDependencyAttr : KGENAttr<"LinkDependency", "link.dependency"> {
-  let summary = "link dependency";
-  let description = [{
-    The `#kgen.link.dependency` attribute is a tuple of a dependency's name,
-    plus object code bytes that are to be linked into some build product.
-
-    Example:
-
-    ```mlir
-    #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">
-    ```
-  }];
-
-  let parameters = (ins "StringAttr":$name, "DenseResourceElementsAttr":$bytes);
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "DenseResourceElementsAttr":$bytes), [{
-      return get(name.getContext(), name, bytes);
-    }]>
-  ];
-
-  let assemblyFormat = "`<` $bytes `as` $name `>`";
-
-  let genVerifyDecl = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// LinkDependencyArrayAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_LinkDependencyArrayAttr
-  : ArrayOfAttr<KGENDialect, "LinkDependencyArray", "link.dependencies",
-                "LinkDependencyAttr"> {
-  let summary = "link dependencies";
-  let description = [{
-    The `#kgen.link.dependencies` attribute is an array of zero or more
-    attributes, each of which stores bytes of object code that can be linked
-    into the final Mojo build product.
-
-    Example:
-
-    ```mlir
-    #dependencies = [
-      <dense_resource<a862fa01d> : tensor<422xui8> as "ffmpeg">,
-      <dense_resource<e062d0e42> : tensor<91xui8> as "libavutil">
-    ]
-    ```
-  }];
-
-  let genVerifyDecl = 1;
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
