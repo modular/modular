@@ -1922,13 +1922,11 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   ASTDecl &decl = getDeclResolver().createUnlistedDecl(
       declOp, smLoc, curDeclScope, startCursor, getLexer().getCursor(),
       stmtIndent);
-  if (!delayAddingName) {
+  if (!delayAddingName)
     getDeclResolver().attachDeclToParentNameTable(&decl, name);
-  }
   auto temporaryNameReplace = llvm::make_scope_exit([&]() {
-    if (delayAddingName) {
+    if (delayAddingName)
       getDeclResolver().attachDeclToParentNameTable(&decl, name);
-    }
   });
 
   auto varOp = dyn_cast<VarLetDeclOp>(decl);

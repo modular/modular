@@ -2930,8 +2930,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!resultType)
     return {};
 
-  emitter.getDeclResolver().computeArgumentConventions(inputParamDecls, args,
-                                                       argTypes);
+  DeclResolver::computeArgumentConventions(emitter.shared, inputParamDecls,
+                                           args, argTypes);
 
   Builder b(emitter.getContext());
   SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
