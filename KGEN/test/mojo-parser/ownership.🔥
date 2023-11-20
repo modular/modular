@@ -1201,10 +1201,6 @@ fn destruct_generic_return():
     _ = return_generic_type[GenericRegType]()
 
 
-trait Destructable:
-    fn __del__(owned self, /):
-        ...
-
 # CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
 @register_passable
 struct RegisterExistingDtor(Destructable):
