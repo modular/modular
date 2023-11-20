@@ -3505,35 +3505,43 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
   return failure();
 }
 
-static ParseResult
-parseOptionalParentList(ParserBase &p, ASTDecl &declScope,
-                        SmallVectorImpl<SymbolRefAttr> &traits,
-                        SharedState &shared) {
+/// For a struct or trait declaration, parse an optional list of parent types to
+/// inherit from.
+static ParseResult parseOptionalParentList(ParserBase &p, ASTDecl &declScope,
+                                           SmallVectorImpl<Type> &parentTypes,
+                                           SharedState &shared) {
   if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
     return success();
 
-  SmallVector<ParsedArgument> names;
-  if (ParsedArgument::parseAndResolvePresentArgumentList(
-          p, names, ParsedArgument::ArgListKind::kArgList))
-    return failure();
+  auto parseParent = [&]() -> ParseResult {
+    ASTType type;
+    SMLoc loc;
+    if (p.getLocation(loc) ||
+        parseType(p, type, declScope, declScope.getIndentation()))
+      return failure();
 
-  // Resolve traits.
-  // TODO: use `emitExprType` when we have types for traits.
-  for (ParsedArgument name : names) {
-    auto lookupResult = shared.lookupAndResolveDecl(
-        name.name, declScope.getLoc(), *declScope.getParentDecl(),
-        /*searchParentScopes*/ true);
-    ArrayRef<ASTDecl *> decls = lookupResult.getIfSuccess();
-    if (!decls.empty()) {
-      traits.push_back(decls.front()->getSymbolRef());
-      continue;
+    // Reject inheriting from types we don't support yet.
+    if (!isa<TraitType>(type)) {
+      if (isa<DeclRefType>(type)) {
+        p.emitError(loc)
+            << "TODO: inheriting from other structs is not implemented";
+      } else if (isa<ParamRefType>(type)) {
+        p.emitError(loc) << "TODO: inheriting from a parameter expression is "
+                            "not implemented";
+      } else {
+        p.emitError(loc) << "don't know how to inherit from this type";
+      }
+      declScope.hasReferenceError = true;
+      return success();
     }
-    p.emitError(declScope.getLoc(), "expected to find a trait decl of ")
-        << name.name << " for struct";
-    declScope.hasReferenceError = true;
-  }
 
-  return p.parseToken(Token::r_paren, "expected ')' for parameter list");
+    parentTypes.push_back(type);
+    return success();
+  };
+  if (p.parseCommaSeparatedList(parseParent, Token::r_paren) ||
+      p.parseToken(Token::r_paren, "expected ')' for parameter list"))
+    return failure();
+  return success();
 }
 
 /// structdef ::=
@@ -3553,7 +3561,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> paramDefaults;
-  SmallVector<SymbolRefAttr> traits;
+  SmallVector<Type> parentTypes;
 
   bool paramVarArgs = false;
   SMLoc identifierLoc;
@@ -3564,7 +3572,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       parseOptionalParameterSignature(
           p, sigDecl, inputParamDecls, resultParamDecls, paramNames,
           paramPassingKinds, paramDefaults, paramVarArgs) ||
-      parseOptionalParentList(p, sigDecl, traits, shared) ||
+      parseOptionalParentList(p, sigDecl, parentTypes, shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.hasReferenceError)
     return failure();
@@ -3580,10 +3588,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   if (!sig)
     return failure();
   structOp.setSignature(sig);
-
-  if (!traits.empty())
-    structOp.setTraitsAttr(
-        M::SymbolRefArrayAttr::get(decl.getContext(), traits));
+  structOp.setParentTypes(parentTypes);
 
   // Reject result parameters.
   if (!resultParamDecls.empty())
@@ -3901,8 +3906,7 @@ static void processRegisterPassableDecorator(
 }
 
 //===----------------------------------------------------------------------===//
-// Conformance Check
-//===----------------------------------------------------------------------===//
+// Trait Conformance Checking
 
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
@@ -4275,8 +4279,12 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
     return false;
   };
 
-  for (SymbolRefAttr attr : structDeclOp.getTraitsAttr()) {
-    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
+  for (Type parent : structDeclOp.getParentTypes()) {
+    auto trait = dyn_cast<TraitType>(parent);
+    if (!trait)
+      continue;
+    ASTDecl &traitDecl =
+        shared.declResolver->getDeclForTypeSymbol(trait.getSymbol());
 
     // Make sure to fully resolve the trait first.
     if (failed(shared.declResolver->resolveFully(traitDecl,
@@ -4440,9 +4448,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       structOp.setMoveInitAttr(takeInitAttr);
   }
 
-  if (!structOp.getTraitsAttr())
-    return success();
-
+  // Finally, verify conformance of inherited traits.
   return verifyConformance(structDecl, shared);
 }
 

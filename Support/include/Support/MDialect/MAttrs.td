@@ -25,13 +25,6 @@ def StringArrayAttr
     : ArrayOfAttr<MDialect, "StringArray", "strings", "StringAttr">;
 
 //===----------------------------------------------------------------------===//
-// SymbolRefArrayAttr
-//===----------------------------------------------------------------------===//
-
-def M_SymbolRefArrayAttr
-    : ArrayOfAttr<MDialect, "SymbolRefArray", "symbols", "SymbolRefAttr">;
-
-//===----------------------------------------------------------------------===//
 // TypeArrayAttr
 //===----------------------------------------------------------------------===//
 

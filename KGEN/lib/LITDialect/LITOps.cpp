@@ -954,7 +954,8 @@ static void printTypeConvention(AsmPrinter &p, Operation *op,
 
 static ParseResult parseStructParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &inputParams,
-                                            TypeAttr &signature) {
+                                            TypeAttr &signature,
+                                            TypeArrayAttr &parentTypes) {
   SmallVector<TypedAttr> defaultParams;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
@@ -967,6 +968,13 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
     return p.emitError(loc, "expected no result parameters");
   bool paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
 
+  SmallVector<Type> parentTypeExprs;
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalParen, [&] {
+        return parseParamType(p, parentTypeExprs.emplace_back());
+      }))
+    return failure();
+  parentTypes = TypeArrayAttr::get(p.getContext(), parentTypeExprs);
+
   auto sig = TypeSignatureType::remapToSignature(
       [&] { return p.emitError(loc); }, inputParams, paramNames,
       paramPassingKinds, defaultParams, paramVarArg);
@@ -978,7 +986,8 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
 
 static void printStructParameterSpec(AsmPrinter &p, Operation *op,
                                      ArrayRef<ParamDeclAttr> inputParamDecls,
-                                     TypeAttr signature) {
+                                     TypeAttr signature,
+                                     ArrayRef<Type> parentTypes) {
   auto sig = cast<TypeSignatureType>(signature.getValue());
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, inputParamDecls, {}, sig.getParamNames(),
@@ -986,6 +995,12 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
                              sig.getDefaultParameters(), evaluator);
   if (sig.getParamVarArg())
     p << " param_vararg";
+  if (!parentTypes.empty()) {
+    p << '(';
+    llvm::interleaveComma(parentTypes, p,
+                          [&](Type type) { printParamType(p, type); });
+    p << ')';
+  }
 }
 
 DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
@@ -1080,27 +1095,12 @@ LogicalResult StructDeclOp::verifyRegions() {
   return success();
 }
 
-LogicalResult
-StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (!getTraitsAttr())
-    return success();
-
-  KGENModule module = KGENModule::from(*this, symbolTable);
-  for (SymbolRefAttr trait : getTraitsAttr()) {
-    auto traitDeclOp = module.lookup<TraitDeclOp>(trait);
-    if (!traitDeclOp)
-      return emitOpError("expected to find a trait decl of ")
-             << trait << " for struct";
-  }
-  return success();
-}
-
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
-        /*traits=*/nullptr, /*nonmaterializableTarget=*/nullptr,
+        TypeArrayAttr::get(ctx, {}), /*nonmaterializableTarget=*/nullptr,
         /*destructor=*/nullptr, /*moveInit=*/nullptr, /*copyInit=*/nullptr,
         /*closureSignature=*/nullptr, /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
@@ -1413,7 +1413,8 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
-        ParamDeclArrayAttr::get(ctx, {}), /*docString=*/nullptr);
+        ParamDeclArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
+        /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
 }
 

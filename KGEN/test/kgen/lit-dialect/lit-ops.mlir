@@ -422,16 +422,14 @@ lit.struct.decl @Foo {
 
 // struct with traits
 // CHECK-LABEL: lit.trait.decl @Trait1
-lit.trait.decl @Trait1 {
-}
+lit.trait.decl @Trait1 {}
 
 // CHECK-LABEL: lit.trait.decl @Trait2
-lit.trait.decl @Trait2 {
-}
+lit.trait.decl @Trait2 {}
 
 // CHECK-LABEL: lit.struct.decl @StructHasTraits
-lit.struct.decl @StructHasTraits([@Trait1, @Trait2]) {
-}
+// CHECK-SAME: (trait<@Trait1>, trait<@Trait2>)
+lit.struct.decl @StructHasTraits(trait<@Trait1>, trait<@Trait2>) {}
 
 // CHECK-LABEL: lit.func @lit_loop
 lit.func @lit_loop() {

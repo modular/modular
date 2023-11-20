@@ -740,11 +740,6 @@ trait EverythingIsWrongTrait:
 trait TraitWithParams[T: AnyRegType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
     ...
 
-# struct with traits that do not exist
-struct StructWithTrait(T1):  # expected-error {{expected to find a trait decl of 'T1' for struct}}
-    pass
-
-
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
   x.parametric() # expected-error {{invalid call to 'parametric': callee expects 1 input parameter, but 0 were specified}}
 

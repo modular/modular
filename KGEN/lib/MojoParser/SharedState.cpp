@@ -1625,13 +1625,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               // Resolve the types of any parameters.
               typeWalker.walk<mlir::WalkOrder::PreOrder>(
                   structOp.getInputParamsAttr());
-              if (SymbolRefArrayAttr traits = structOp.getTraitsAttr()) {
-                // FIXME(#25436): The trait list should be some TypedAttrs.
-                for (SymbolRefAttr trait : traits) {
-                  typeWalker.walk<mlir::WalkOrder::PreOrder>(
-                      TraitType::get(trait));
-                }
-              }
+              typeWalker.walk<mlir::WalkOrder::PreOrder>(
+                  structOp.getParentTypesAttr());
               if (TypeAttr nmTarget = structOp.getNonmaterializableTargetAttr())
                 typeWalker.walk<mlir::WalkOrder::PreOrder>(nmTarget);
               return success();

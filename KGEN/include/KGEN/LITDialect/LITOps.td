@@ -375,8 +375,7 @@ def PackageOp : LITOp<"package", [
 def LIT_StructDeclOp : LITOp<"struct.decl", [
     IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
-    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>
+    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>
   ]> {
   let summary = "Struct declaration.";
   let description = [{
@@ -424,7 +423,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_DecoratorsAttr:$decorators,
-    OptionalAttr<M_SymbolRefArrayAttr>:$traits,
+    M_TypeArrayAttr:$parentTypes,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
     OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
@@ -435,9 +434,10 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
-    $sym_name `` custom<StructParameterSpec>($inputParams, $signature)
-    (`(`$traits^`)`)? custom<TypeConvention>($convention)
-    attr-dict-with-keyword custom<OptionalDecorators>($decorators) $fields
+    $sym_name ``
+    custom<StructParameterSpec>($inputParams, $signature, $parentTypes)
+    custom<TypeConvention>($convention) attr-dict-with-keyword
+    custom<OptionalDecorators>($decorators) $fields
   }];
 
   let extraClassDeclaration = [{
@@ -693,18 +693,20 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     SymbolNameAttr:$sym_name,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$inputParams,
+    M_TypeArrayAttr:$parentTypes,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
 
   let regions = (region SizedRegion<1>:$fields);
 
   let assemblyFormat = [{
-    $sym_name `` custom<StructParameterSpec>($inputParams, $signature)
+    $sym_name ``
+    custom<StructParameterSpec>($inputParams, $signature, $parentTypes)
     attr-dict-with-keyword $fields
   }];
 
   let extraClassDeclaration = [{
-    /// Struct declarations have no result parameters.
+    /// Trait declarations have no result parameters.
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
     /// Get a bound reference to the Trait type.
