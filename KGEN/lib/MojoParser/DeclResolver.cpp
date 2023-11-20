@@ -4147,8 +4147,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     retVal = builder.create<VariantCreateOp>(memSig.getResultType(), retVal,
                                              /*index=*/1);
   }
-  ExprEmitter::emitNormalReturn(builder, retVal, decl);
-  builder.create<LIT::EndFuncOp>();
+  builder.create<KGEN::ReturnOp>(retVal);
 }
 
 /// Synthesize stubs for register-passable types to meet conformance
@@ -4166,6 +4165,64 @@ static void synthesizeRegisterTraitStubs(
   }
 }
 
+/// Allow synthesizing default implementations of certain special functions.
+static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
+                                      SpecialFunctionKind kind) {
+  StructEmitter gen(shared);
+  auto selfPtrType = PointerType::get(structDecl.getSelfType());
+  auto empty = StringAttr::get(shared.getContext());
+
+  // Synthesize the required special method. Importantly, don't mark the struct
+  // as actually having this method so that destructors et al. are not
+  // needlessly emitted.
+  LIT::FuncOp func;
+  if (kind == SpecialFunctionKind::kDel) {
+    // Synthesize an empty destructor. Don't do anything special, because we
+    // want check lifetimes to insert a call to the real destructor here, if it
+    // has one.
+    auto [dtor, decl] = gen.synthesizeMethodInStruct(
+        "__del__", selfPtrType, ValueInputConvention::OwnedInMem, empty,
+        PassingKind::PosOnly, shared.getNoneType(), structDecl, kind,
+        FnEffects(), "`thunk_");
+    func = dtor;
+  } else {
+    // Determine the name and argument conventions of the function.
+    ValueInputConvention otherConv;
+    switch (kind) {
+    case SpecialFunctionKind::kCopyInit:
+      otherConv = ValueInputConvention::BorrowedInMem;
+      break;
+    case SpecialFunctionKind::kMoveInit:
+      otherConv = ValueInputConvention::OwnedInMem;
+      break;
+    case SpecialFunctionKind::kTakeInit:
+      otherConv = ValueInputConvention::ByRef;
+      break;
+    default:
+      llvm_unreachable("unexpected special function kind to synthesize");
+    }
+    StringRef name = SpecialFunctionInfo::get(kind).name;
+    auto [ctor, decl] = gen.synthesizeMethodInStruct(
+        name, {selfPtrType, selfPtrType},
+        {ValueInputConvention::InitSelf, otherConv}, {empty, empty},
+        {PassingKind::PosOnly, PassingKind::PosOnly}, shared.getNoneType(),
+        structDecl, kind, FnEffects(), "`thunk_");
+    func = ctor;
+    // In every case, the implementation is a load+store.
+    auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
+    Value value;
+    if (kind == SpecialFunctionKind::kMoveInit)
+      value = b.create<LIT::LoadConsumeOp>(func.getArgument(1));
+    else
+      value = b.create<POP::LoadOp>(func.getArgument(1));
+    b.create<POP::StoreOp>(value, func.getArgument(0));
+  }
+  func.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
+  b.create<KGEN::ReturnOp>(
+      Value(b.create<ParamConstantOp>(NoneAttr::get(b.getContext()))));
+}
+
 /// Check conformance for struct that implements traits.
 static LogicalResult verifyConformance(ASTDecl &structDecl,
                                        SharedState &shared) {
@@ -4181,6 +4238,42 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
   // synthesized for calling convention conversion. This maps a function name
   // and symbol reference to the required memory-only signature.
   llvm::MapVector<std::pair<StringAttr, TypedAttr>, LITSignatureType> regStubs;
+
+  // These are the special methods that need to be synthesized.
+  SmallVector<SpecialFunctionKind> specialFns;
+
+  // Certain special methods have type-specific restrictions or need special
+  // handling. This functor returns true if a type is allowed to conform to a
+  // trait despite missing the method.
+  auto canSynthesizeIfMissing = [&](StringRef name) {
+    // Allow types that lack `__del__` to conform. A no-op destructor will be
+    // synthesized for them.
+    if (name == "__del__") {
+      specialFns.push_back(SpecialFunctionKind::kDel);
+      return true;
+    }
+    // Trivial types are not allowed to have explicit `__copyinit__` methods, so
+    // if the trait requires them, consider them automatically satisfied by
+    // trivial types.
+    if (rpTrivial && (name == "__copyinit__")) {
+      specialFns.push_back(SpecialFunctionKind::kCopyInit);
+      return true;
+    }
+    // All register-passable types are not allowed to have move or take
+    // constructors, so permit them to conform.
+    if (regPassable) {
+      if (name == "__moveinit__") {
+        specialFns.push_back(SpecialFunctionKind::kMoveInit);
+        return true;
+      }
+      // FIXME(#26060): Register-passable types should define `__takeinit__`.
+      if (name == "__takeinit__") {
+        specialFns.push_back(SpecialFunctionKind::kTakeInit);
+        return true;
+      }
+    }
+    return false;
+  };
 
   for (SymbolRefAttr attr : structDeclOp.getTraitsAttr()) {
     ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(attr);
@@ -4209,10 +4302,7 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
 
         ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
         if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
-          // Trivial types are not allowed to have explicit `__copyinit__` and
-          // `__del__` methods, so if the trait requires them, consider them
-          // automatically satisfied by trivial types.
-          if (rpTrivial && (name == "__copyinit__" || name == "__del__"))
+          if (canSynthesizeIfMissing(name))
             continue;
           diag.attachNote(traitFn.getLoc())
               << "required function '" + name.str() + "' is not implemented";
@@ -4262,6 +4352,8 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
     return failure();
   if (regPassable)
     synthesizeRegisterTraitStubs(structDecl, shared, regStubs.takeVector());
+  for (SpecialFunctionKind kind : specialFns)
+    synthesizeSpecialFunction(structDecl, shared, kind);
   return success();
 }
 
