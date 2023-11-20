@@ -30,8 +30,8 @@ fn matrix_band_part[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    let lower_diagonal_index = num_lower[0].to_int()
-    let upper_diagonal_index = num_upper[0].to_int()
+    let lower_diagonal_index = int(num_lower[0])
+    let upper_diagonal_index = int(num_upper[0])
     let exclude = exclude_buf[0] != 0
 
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()

@@ -2179,25 +2179,25 @@ fn sgemm_warp_tiling_kernel[
     alias BM_padded = BM + sram_bank_padding_size
     let a_sram = NDBuffer[
         1,
-        DimList((BK * BM_padded).to_int()),
+        DimList(int(BK * BM_padded)),
         a_type,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     let b_sram = NDBuffer[
         1,
-        DimList((BK * BN).to_int()),
+        DimList(int(BK * BN)),
         b_type,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a._offset(Index((c_row * BM).to_int(), 0))
-    var bb_ptr = mat_b._offset(Index(0, (c_col * BN).to_int()))
+    var aa_ptr = mat_a._offset(Index(int(c_row * BM), 0))
+    var bb_ptr = mat_b._offset(Index(0, int(c_col * BN)))
     # Move C_ptr to warp's output tile
     let cc_ptr = mat_c._offset(
         Index(
-            (c_row * BM + warp_row * WM).to_int(),
-            (c_col * BN + warp_col * WN).to_int(),
+            int(c_row * BM + warp_row * WM),
+            int(c_col * BN + warp_col * WN),
         )
     )
 
@@ -2218,103 +2218,95 @@ fn sgemm_warp_tiling_kernel[
     # Allocate thread-local cache for results in register file.
     let thread_results = NDBuffer[
         4,
-        DimList(WMITER.to_int(), WNITER.to_int(), TM.to_int(), TN.to_int()),
+        DimList(int(WMITER), int(WNITER), int(TM), int(TN)),
         c_type,
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     let reg_m = NDBuffer[
-        2, DimList(WMITER.to_int(), TM.to_int()), a_type
+        2, DimList(int(WMITER), int(TM)), a_type
     ]().stack_allocation()
     reg_m.zero()
 
     let reg_n = NDBuffer[
-        2, DimList(WNITER.to_int(), TN.to_int()), b_type
+        2, DimList(int(WNITER), int(TN)), b_type
     ]().stack_allocation()
     reg_n.zero()
 
     # Outer-most loop over block tiles.
-    for bk_idx in range(0, K.to_int(), BK.to_int()):
-        for offset in range(
-            0, (BM - row_stride_a + 1).to_int(), row_stride_a.to_int()
-        ):
+    for bk_idx in range(0, int(K), int(BK)):
+        for offset in range(0, int(BM - row_stride_a + 1), int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
             let tmp = __nvvm_ldg_f4[a_type](
-                aa_ptr.offset(
-                    ((inner_row_a + offset) * K + inner_col_a * 4).to_int()
-                )
+                aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
             )
 
             @unroll
             for i in range(4):
                 a_sram[
-                    (
+                    int(
                         (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
-                    ).to_int()
+                    )
                 ] = tmp[i]
 
-        for offset in range(
-            0, (BK - row_stride_b + 1).to_int(), row_stride_b.to_int()
-        ):
+        for offset in range(0, int(BK - row_stride_b + 1), int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
             let tmp = __nvvm_ldg_f4[b_type](
-                bb_ptr.offset(
-                    ((inner_row_b + offset) * N + inner_co_ib * 4).to_int()
-                )
+                bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
             )
             b_sram.aligned_simd_store[4, 16](
-                Index(((inner_row_b + offset) * BN + inner_co_ib * 4).to_int()),
+                Index(int((inner_row_b + offset) * BN + inner_co_ib * 4)),
                 tmp,
             )
 
         barrier()
 
-        for dot_idx in range(BK.to_int()):
+        for dot_idx in range(int(BK)):
             # Populate registers for whole warptile.
             @unroll
-            for w_sub_row_idx in range(WMITER.to_int()):
+            for w_sub_row_idx in range(int(WMITER)):
 
                 @unroll
-                for i in range(0, TM.to_int(), 4):
+                for i in range(0, int(TM), 4):
                     let vec = a_sram.aligned_simd_load[4, 16](
-                        (
+                        int(
                             (dot_idx * BM_padded)
                             + warp_row * WM
                             + w_sub_row_idx * w_sub_m
                             + thread_row_in_warp * TM
                             + i
-                        ).to_int()
+                        )
                     )
                     reg_m.simd_store(Index(w_sub_row_idx, i), vec)
 
             @unroll
-            for w_sub_col_idx in range(WNITER.to_int()):
+            for w_sub_col_idx in range(int(WNITER)):
 
                 @unroll
-                for i in range(0, TN.to_int(), 4):
+                for i in range(0, int(TN), 4):
                     let vec = b_sram.aligned_simd_load[4, 16](
-                        (
+                        int(
                             (dot_idx * BN)
                             + warp_col * WN
                             + w_sub_col_idx * w_sub_n
                             + thread_col_in_warp * TN
-                        ).to_int()
+                        )
                     )
                     reg_n.simd_store(Index(w_sub_col_idx, i), vec)
 
             # Execute warptile matmul.
             @unroll
-            for w_sub_row_idx in range(WMITER.to_int()):
+            for w_sub_row_idx in range(int(WMITER)):
 
                 @unroll
-                for w_sub_col_idx in range(WNITER.to_int()):
+                for w_sub_col_idx in range(int(WNITER)):
                     # Calculate per-thread results.
                     @unroll
-                    for res_idx_m in range(TM.to_int()):
+                    for res_idx_m in range(int(TM)):
 
                         @unroll
-                        for res_idx_n in range(TN.to_int()):
+                        for res_idx_n in range(int(TN)):
                             thread_results[
                                 Index(
                                     w_sub_row_idx,
@@ -2326,28 +2318,26 @@ fn sgemm_warp_tiling_kernel[
                                 reg_m[w_sub_row_idx, res_idx_m].cast[c_type]()
                                 * reg_n[w_sub_col_idx, res_idx_n].cast[c_type]()
                             )
-        aa_ptr = aa_ptr.offset(BK.to_int())  # move BK columns to right
-        bb_ptr = bb_ptr.offset((BK * N).to_int())  # move BK rows down
+        aa_ptr = aa_ptr.offset(int(BK))  # move BK columns to right
+        bb_ptr = bb_ptr.offset(int(BK * N))  # move BK rows down
         barrier()
 
     # Write out the results.
     @unroll
-    for w_sub_row_idx in range(WMITER.to_int()):
+    for w_sub_row_idx in range(int(WMITER)):
 
         @unroll
-        for w_sub_col_idx in range(WNITER.to_int()):
+        for w_sub_col_idx in range(int(WNITER)):
             # Move C pointer to current warp subtile.
             let C_interim = cc_ptr.offset(
-                (
-                    (w_sub_row_idx * w_sub_m) * N + w_sub_col_idx * w_sub_n
-                ).to_int()
+                int((w_sub_row_idx * w_sub_m) * N + w_sub_col_idx * w_sub_n)
             )
 
             @unroll
-            for res_idx_m in range(TM.to_int()):
+            for res_idx_m in range(int(TM)):
 
                 @unroll
-                for res_idx_n in range(0, TN.to_int(), 4):
+                for res_idx_n in range(0, int(TN), 4):
                     let c_idx = (
                         thread_row_in_warp * TM + res_idx_m
                     ) * N + thread_col_in_warp * TN + res_idx_n
@@ -2361,7 +2351,7 @@ fn sgemm_warp_tiling_kernel[
                     )
 
                     let vec = C_interim.aligned_simd_load[4, 16](
-                        c_idx.to_int()
+                        int(c_idx)
                     ) + result_vec
 
                     @parameter
@@ -2369,21 +2359,21 @@ fn sgemm_warp_tiling_kernel[
                         alias elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[c_type, 4](
                             Index(
-                                (
+                                int(
                                     thread_row_in_warp * TM
                                     + res_idx_m
                                     + w_sub_row_idx * w_sub_m
-                                ).to_int(),
-                                (
+                                ),
+                                int(
                                     thread_col_in_warp * TN
                                     + res_idx_n
                                     + w_sub_col_idx * w_sub_n
-                                ).to_int(),
+                                ),
                             ),
                             vec,
                         )
                     else:
-                        C_interim.aligned_simd_store[4, 16](c_idx.to_int(), vec)
+                        C_interim.aligned_simd_store[4, 16](int(c_idx), vec)
 
 
 fn matmul_kernel[
