@@ -1244,7 +1244,7 @@ fn _elementwise_impl[
     )
 
     @parameter
-    @__llvm_metadata(`nvvm.maxntid`=[block_size])
+    @__llvm_metadata(`nvvm.maxntid`=[Int(block_size)])
     fn _elementwise_gpu_kernel():
         @parameter
         if not triple_is_nvidia_cuda():
