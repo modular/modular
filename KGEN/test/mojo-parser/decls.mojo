@@ -2014,10 +2014,6 @@ fn generic_fn_return_type():
     # CHECK: call {{.*}}@NoDtor::@"method
     c.method()
 
-trait Destructable:
-    fn __del__(owned self, /):
-        ...
-
 trait Takeable:
     fn __takeinit__(inout self, inout existing: Self, /):
         ...
