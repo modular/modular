@@ -384,6 +384,8 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   WriteableBufferRef key = WriteableBuffer::get();
   pm.printAsTextualPipeline(*key);
   options.print(*key);
+  // Encode the cache key to disambiguiate between different emission kinds.
+  *key << (int)emissionKind;
   // Functor to adapt the transform functor to the required API.
   auto runTransformation =
       [func = std::move(compileToAsm)](Operation *op, WriteableBufferRef buf,
