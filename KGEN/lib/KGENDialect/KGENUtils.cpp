@@ -696,16 +696,27 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   case (uint32_t)POC::GetEnv:
     return parseParamValue(p, operands.emplace_back(),
                            StringType::get(p.getContext()));
-  case (uint32_t)POC::CompileAssembly:
+  case (uint32_t)POC::CompileAssembly: {
+    StringRef emissionKind;
     if (parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())) ||
-            p.parseComma() ||
-            parseParamValue(p, operands.emplace_back(),
-                            StringType::get(p.getContext())) ||
-            p.parseComma(),
-        parseColonTypeParamValue(p, operands.emplace_back()))
+        p.parseComma() || p.parseKeyword(&emissionKind))
       return failure();
+
+    if (!llvm::is_contained({"llvm", "asm"}, emissionKind))
+      return p.emitError(p.getCurrentLocation(),
+                         "the emission kind must be either llvm or asm");
+
+    EmissionKind emissionKindEnum =
+        emissionKind == "llvm" ? EmissionKind::LLVM : EmissionKind::ASM;
+    operands.emplace_back(
+        p.getBuilder().getIndexAttr(to_underlying(emissionKindEnum)));
+
+    if (p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
+      return failure();
+
     return success();
+  }
   case (uint32_t)POC::GetLinkageName:
     if (parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())) ||
@@ -989,14 +1000,19 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     printParamValue(p, operands[2]);
     break;
 
-  case POC::CompileAssembly:
+  case POC::CompileAssembly: {
     printParamValue(p, operands[0]);
     p << ", ";
-    printParamValue(p, operands[1]);
+    EmissionKind emissionKind =
+        (EmissionKind)cast<IntegerAttr>(operands[1]).getInt();
+    if (emissionKind == EmissionKind::ASM)
+      p << "asm";
+    else if (emissionKind == EmissionKind::LLVM)
+      p << "llvm";
     p << ", ";
     printColonTypeParamValue(p, operands[2]);
     break;
-
+  }
   case POC::GetLinkageName:
     printParamValue(p, operands[0]);
     p << ", ";

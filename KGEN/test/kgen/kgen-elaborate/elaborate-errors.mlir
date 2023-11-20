@@ -310,7 +310,7 @@ kgen.generator @kernel() {
 // expected-error @below {{no viable expansions found}}
 kgen.generator export @top() {
   // expected-note @below {{failed to run the pass manager}}
-  kgen.param.constant: string = <compile_assembly(current_target(), "asm", :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(current_target(), asm, :() -> () @kernel)>
   kgen.return
 }
 
@@ -320,10 +320,9 @@ kgen.generator @kernel() {
   kgen.return
 }
 
-// expected-error @below {{no viable expansions found}}
 kgen.generator export @top() {
-  // expected-note @below {{'compile_assembly' function second argument 'invalid_format' must be either 'llvm' or 'asm'}}
-  kgen.param.constant: string = <compile_assembly(current_target(), "invalid_format", :() -> () @kernel)>
+  // expected-error @below {{custom op 'kgen.param.constant' the emission kind must be either llvm or asm}}
+  kgen.param.constant: string = <compile_assembly(current_target(), something, :() -> () @kernel)>
   kgen.return
 }
 
