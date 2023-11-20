@@ -128,18 +128,25 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     return existing;
   });
 
-  // Constraints must be evaluatable in isolation.
-  replacer.addReplacement([](ConstraintArrayAttr constraints) {
-    return std::make_pair(constraints, WalkResult::skip());
-  });
-
   // If the parent is a function, extract 'apply' operators and place them at
   // the start of the body.
   if (auto func = dyn_cast<GeneratorOp>(body->getParentOp())) {
     b.setLoc(func.getLoc());
     b.setInsertionPointToStart(func.getBody());
-    replacer.replaceElementsIn(func, /*replaceAttrs=*/true,
+    replacer.replaceElementsIn(func, /*replaceAttrs=*/false,
                                /*replaceLocs=*/true, /*replaceTypes=*/true);
+    // Certain generator attributes need to be evaluatable in isolation.
+    // Specially handle them here.
+    NamedAttrList attrs = func->getAttrDictionary();
+    attrs.set(func.getFunctionTypeAttrName(),
+              replacer.replace(func.getFunctionTypeAttr()));
+    attrs.set(func.getInputParamsAttrName(),
+              replacer.replace(func.getInputParamsAttr()));
+    attrs.set(func.getResultParamsAttrName(),
+              replacer.replace(func.getResultParamsAttr()));
+    attrs.set(func.getDecoratorsAttrName(),
+              replacer.replace(func.getDecoratorsAttr()));
+    func->setAttrs(attrs.getDictionary(func.getContext()));
   }
 
   body->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
