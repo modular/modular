@@ -20,17 +20,21 @@
 
 using namespace M;
 
+//===----------------------------------------------------------------------===//
+// HTTPContext
+//===----------------------------------------------------------------------===//
+
 HTTPContextRef HTTPContext::init() {
   static std::atomic_flag initialized = ATOMIC_FLAG_INIT;
-  if (initialized.test_and_set())
-    assert(false && "A HTTPContext can only be initialize once in a process.");
+  assert(!initialized.test_and_set() &&
+         "A HTTPContext can only be initialize once in a process.");
+
+  // Warm up cURL's SSL backend, resolver cache, logging, etc
+  curl_global_init(CURL_GLOBAL_ALL);
   return HTTPContextRef::create();
 }
 
-HTTPContext::HTTPContext() : userAgent("modular-installer/0.1") {
-  // Warm up cURL's SSL backend, resolver cache, logging, etc
-  curl_global_init(CURL_GLOBAL_ALL);
-}
+HTTPContext::HTTPContext() : userAgent("modular-installer/0.1") {}
 
 void HTTPContext::setShouldVerifyTLSPeer(bool verifyTLSPeer) {
   this->verifyTLSPeer = verifyTLSPeer;
@@ -62,6 +66,10 @@ ErrorOrSuccess HTTPResponse::asError(StringRef extraContext) {
   }
   llvm_unreachable("Invalid response kind.");
 }
+
+//===----------------------------------------------------------------------===//
+// HTTPClient
+//===----------------------------------------------------------------------===//
 
 HTTPClient::HTTPClient(HTTPContextRef ctx) : context(std::move(ctx)) {
   curl = curl_easy_init();
@@ -165,6 +173,13 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   if (!authSetup)
     llvm::report_fatal_error("auth must be setup before executing a request");
 
+  return executeRequestImpl(request, os, timeout, maxLength);
+}
+
+HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
+                                            raw_ostream &os,
+                                            std::chrono::milliseconds timeout,
+                                            size_t maxLength) {
   RequestStreamReturn ret;
   ret.os = &os;
   ret.limit = maxLength;

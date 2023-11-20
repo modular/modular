@@ -186,7 +186,7 @@ struct HTTPResponse {
 class HTTPClient {
 public:
   HTTPClient(HTTPContextRef ctx);
-  ~HTTPClient();
+  virtual ~HTTPClient();
 
   /// This function just sets authSetup to `true` for the case where we don't
   /// actually need to set up auth. This should *ONLY* be used if you can
@@ -205,6 +205,16 @@ public:
   /// Request `timeout` and `maxLength` can specified to limit requests.
   /// A `timeout` and `maxLength` of zero will not limit the request.
   HTTPResponse executeRequest(
+      const HTTPRequest &request, raw_ostream &os,
+      std::chrono::milliseconds timeout = std::chrono::milliseconds::zero(),
+      size_t maxLength = 0);
+
+protected:
+  /// Core implementation of executeRequest. This includes all the calls to
+  /// libcurl. The separation is so the base class can implement any state
+  /// checking that needs to happen before the actual network request, while
+  /// allowing subclasses to implement the network request any way they like.
+  virtual HTTPResponse executeRequestImpl(
       const HTTPRequest &request, raw_ostream &os,
       std::chrono::milliseconds timeout = std::chrono::milliseconds::zero(),
       size_t maxLength = 0);
