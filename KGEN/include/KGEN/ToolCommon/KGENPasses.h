@@ -7,6 +7,7 @@
 #ifndef KGEN_TOOLCOMMON_KGENPASSES_H
 #define KGEN_TOOLCOMMON_KGENPASSES_H
 
+#include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Buffer.h"
 #include "Support/LLVMForwardDecls.h"
@@ -81,9 +82,6 @@ using ElaboratorSearchFn = llvm::unique_function<ErrorOr<ssize_t>()>;
 /// guarantees executes in isolation.
 using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
     FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
-
-/// Enumeration of the compile emission format.
-enum class EmissionKind : uint8_t { ASM, LLVM };
 
 /// This struct represents the result of a cross-device compilation, which is a
 /// function or closure reference.

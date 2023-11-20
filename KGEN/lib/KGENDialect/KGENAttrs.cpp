@@ -1105,9 +1105,9 @@ LogicalResult ParamOperatorAttr::verify(
     if (!::isa<TargetType>(operands.front().getType()))
       return emitError()
              << "'compile_assembly' first operand should be a target type";
-    if (!::isa<StringType>(operands[1].getType()))
-      return emitError()
-             << "'compile_assembly' second operand should be a string type";
+    if (!::isa<IndexType>(operands[1].getType()))
+      return emitError() << "'compile_assembly' second operand should be "
+                            "either asm or llvm keyword";
     break;
   }
   case POC::GetLinkageName:

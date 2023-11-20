@@ -254,17 +254,11 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
 
   // Slice out a stanalone module to re-elaborate with the new target.
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
+  auto emissionKind =
+      (EmissionKind)cast<IntegerAttr>(op.getOperand(1)).getInt();
   auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(2));
   if (!symbol || !symbol.getType().isConcrete()) {
     emitError({*errorLoc, "'compile_assembly' function is not concrete"});
-    return failure();
-  }
-
-  // Check the format that we want to compile to.
-  auto format = cast<StringAttr>(op.getOperand(1)).getValue().lower();
-  if (!llvm::is_contained({"llvm", "asm"}, format)) {
-    emitError({*errorLoc, "'compile_assembly' function second argument '" +
-                              format + "' must be either 'llvm' or 'asm'."});
     return failure();
   }
 
@@ -280,8 +274,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   StringAttr name =
       getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
   ErrorOr<CrossDeviceFunction> closure = elaborator->getCompileAsmFn()(
-      func, symbol, name, symtabCopy, target,
-      format == "llvm" ? EmissionKind::LLVM : EmissionKind::ASM);
+      func, symbol, name, symtabCopy, target, emissionKind);
   if (closure.isError()) {
     emitError({*errorLoc, closure.takeError()});
     return failure();
