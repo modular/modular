@@ -2122,7 +2122,7 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
 # WNITER: The number of subwarp tiling steps in N dimension.
 # TM: The per-thread tile size for M dimension.
 # TN: The per-thread tile size for N dimension.
-@__llvm_metadata(`nvvm.maxntid`=[NUM_THREADS])
+@__llvm_metadata(`nvvm.maxntid`=[int(NUM_THREADS)])
 fn sgemm_warp_tiling_kernel[
     c_type: DType,
     c_shape: DimList,
