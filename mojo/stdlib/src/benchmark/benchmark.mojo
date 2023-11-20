@@ -502,8 +502,8 @@ fn _run_impl(opts: _RunOptions) -> Report:
     report.warmup_duration = prev_dur
     var total_iters: Int = 0
     var time_elapsed: Int = 0
-    let min_time_ns = (opts.min_time_secs * 1_000_000_000).to_int()
-    let max_time_ns = (opts.max_time_secs * 1_000_000_000).to_int()
+    let min_time_ns = int(opts.min_time_secs * 1_000_000_000)
+    let max_time_ns = int(opts.max_time_secs * 1_000_000_000)
 
     while time_elapsed < max_time_ns:
         if total_iters > opts.max_iters and time_elapsed > min_time_ns:
