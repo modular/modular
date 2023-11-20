@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -disable-prebuilt-packages -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_90 --target-features="" %s | FileCheck %s
 
-from gpu.wmma import mma
+from gpu.mma import mma
 
 
 # CHECK-LABEL: SM80_16x8x8_F16F16F16F16_TN
