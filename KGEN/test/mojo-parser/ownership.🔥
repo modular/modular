@@ -1199,3 +1199,29 @@ fn destruct_generic_return():
     _ = return_generic_type[GenericType]()
     # CHECK: call {{.*}}@GenericRegType::@"__del__
     _ = return_generic_type[GenericRegType]()
+
+
+trait Destructable:
+    fn __del__(owned self, /):
+        ...
+
+# CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
+@register_passable
+struct RegisterExistingDtor(Destructable):
+    # CHECK: lit.func @"`thunk___del__
+    fn __del__(owned self):
+        # CHECK: call {{.*}}@"__del__
+        pass
+
+@register_passable
+struct RegisterNoDtor(Destructable):
+    pass
+
+struct MemoryNoDtor(Destructable):
+    pass
+
+# CHECK-LABEL: lit.func @"do_not_call_synth_dtors
+fn do_not_call_synth_dtors(owned x: RegisterNoDtor, owned y: MemoryNoDtor):
+    # CHECK-NOT: call {{.*}}@"__del__
+    # CHECK-LABEL: kgen.return
+    pass

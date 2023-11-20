@@ -114,7 +114,7 @@ public:
       ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
       Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
-      FnEffects effects = FnEffects());
+      FnEffects effects = FnEffects(), StringRef prefix = "");
 
 protected:
   Type noneType;

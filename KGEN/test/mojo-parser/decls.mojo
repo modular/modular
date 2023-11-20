@@ -1737,11 +1737,11 @@ trait StaticMethodTrait:
         pass
 
 trait Copyable:
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(inout self, existing: Self, /):
         pass
 
 trait Movable:
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(inout self, owned existing: Self, /):
         pass
 
 struct StaticMethodStruct(StaticMethodTrait, Copyable):
@@ -1763,7 +1763,7 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__[__result__]: !kgen.pointer<:trait<{{.*}}@Copyable> [[T]]> byref_result, |,
 # CHECK-SAME: %value[value]: !kgen.pointer<:trait<{{.*}}@Copyable> [[T]]> borrow_in_mem)
 fn copy_me[T: Copyable](value: T) -> T:
-    # CHECK-NEXT: call_param[!lit.signature<("self": {{.*}}[[T]]> init_self, |, "existing": {{.*}}[[T]]> borrow_in_mem) -> !kgen.none>:
+    # CHECK-NEXT: call_param[!lit.signature<("self": {{.*}}[[T]]> init_self, "existing": {{.*}}[[T]]> borrow_in_mem, |) -> !kgen.none>:
     # CHECK-SAME: get_type_method({{.*}} [[T]], "__copyinit__")](%__result__, %value)
     return value
 
@@ -2013,3 +2013,90 @@ fn generic_fn_return_type():
     let c = default_construct[NoDtor]()
     # CHECK: call {{.*}}@NoDtor::@"method
     c.method()
+
+trait Destructable:
+    fn __del__(owned self, /):
+        ...
+
+trait Takeable:
+    fn __takeinit__(inout self, inout existing: Self, /):
+        ...
+
+# CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
+@register_passable("trivial")
+struct RegTrivialSpecial(Destructable, Copyable, Movable, Takeable):
+    pass
+    # CHECK: lit.func @"`thunk___del__
+    # CHECK-SAME: %0[{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
+    # CHECK: return %none
+
+    # CHECK: lit.func @"`thunk___copyinit__
+    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} borrow_in_mem
+    # CHECK-NEXT: [[V:%.*]] = pop.load %1
+    # CHECK-NEXT: pop.store [[V]], %0
+
+    # CHECK: lit.func @"`thunk___moveinit__
+    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} owned_in_mem
+    # CHECK-NEXT: [[V:%.*]] = lit.load.consume %1
+    # CHECK-NEXT: pop.store [[V]], %0
+
+    # CHECK: lit.func @"`thunk___takeinit__
+    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} byref,
+
+# CHECK-LABEL: lit.struct.decl @RegSpecial
+@register_passable
+struct RegSpecial(Destructable, Copyable, Movable, Takeable):
+    fn __copyinit__(existing: Self) -> Self:
+        return Self {}
+
+    # CHECK: lit.func @"`thunk___del__
+    # CHECK-SAME: %0[{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
+    # CHECK: return %none
+
+    # CHECK: lit.func @"`thunk___moveinit__
+    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} owned_in_mem
+    # CHECK-NEXT: [[V:%.*]] = lit.load.consume %1
+    # CHECK-NEXT: pop.store [[V]], %0
+
+    # CHECK: lit.func @"`thunk___takeinit__
+    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} byref,
+
+# CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
+struct MemoryOnlySpecial(Destructable, Copyable, Movable, Takeable):
+    fn __copyinit__(inout self, existing: Self):
+        pass
+
+    fn __moveinit__(inout self, owned existing: Self):
+        pass
+
+    fn __takeinit__(inout self, inout existing: Self):
+        pass
+
+    # CHECK: lit.func @"`thunk___del__
+    # CHECK-SAME: %0[{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
+    # CHECK: return %none
+
+fn copy[T: Copyable](x: T):
+    pass
+
+fn move[T: Movable](x: T):
+    pass
+
+fn destroy[T: Destructable](x: T):
+    pass
+
+# CHECK-LABEL: lit.func @"test_special_fn_traits
+fn test_special_fn_traits(
+    inout x: RegTrivialSpecial, inout y: RegSpecial, inout z: MemoryOnlySpecial
+):
+    # COM: Just check that the implicit conversion succeeds.
+    # CHECK-COUNT-9: lit.call
+    copy(x)
+    move(x)
+    destroy(x)
+    copy(y)
+    move(y)
+    destroy(y)
+    copy(z)
+    move(z)
+    destroy(z)

@@ -92,11 +92,11 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects effects) {
-  return synthesizeMethodInStruct(name, /*inputParams=*/{},
-                                  /*paramPassingKinds=*/{}, argTypes,
-                                  argConventions, argNames, argPassingKinds,
-                                  resultType, structDecl, specialFnID, effects);
+    FnEffects effects, StringRef prefix) {
+  return synthesizeMethodInStruct(
+      name, /*inputParams=*/{}, /*paramPassingKinds=*/{}, argTypes,
+      argConventions, argNames, argPassingKinds, resultType, structDecl,
+      specialFnID, effects, /*resultParams=*/{}, prefix);
 }
 
 std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
