@@ -124,14 +124,16 @@ fn fused_attention[
         K = q.dim[2]()
         flatten_batch_size = q.dim[0]()
 
-    # If the size of the score is less than the output, then we can reuse
-    # the output buffer, otherwise we have to allocate an intermediate buffer.
     alias score_type = output_type
     let score_ptr: DTypePointer[score_type]
-    if score_size <= output.num_elements():
-        score_ptr = bitcast[score_type](output.data)
-    else:
-        score_ptr = DTypePointer[score_type].alloc(score_size)
+
+    # If the size of the score is less than the output, then we can reuse
+    # the output buffer, otherwise we have to allocate an intermediate buffer.
+    # TODO(26152): Re-enable after fixing race condition
+    # if score_size <= output.num_elements():
+    #     score_ptr = bitcast[score_type](output.data)
+    # else:
+    score_ptr = DTypePointer[score_type].alloc(score_size)
 
     let score_shape: StaticIntTuple[rank]
 
