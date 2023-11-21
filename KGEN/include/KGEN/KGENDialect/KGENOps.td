@@ -1674,4 +1674,67 @@ def KGEN_VariantGetOp : KGENOp<"variant.get", [Pure,
   let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// CaptureListCreate
+//===----------------------------------------------------------------------===//
+
+def KGEN_CaptureListCreate : KGENOp<"capture_list.create"> {
+  let summary = "Create a capture list for a capturing closure.";
+  let description = [{
+    The `kgen.capture_list.create` operation creates a capture list
+    for use in instantiating closure state on the heap.
+
+    Example:
+
+    ```mlir
+    %cl = kgen.capture_list.create : <() capturing -> index : @cap_closure>
+    ```
+  }];
+
+  let results = (outs KGEN_CaptureList:$result);
+  let assemblyFormat = "attr-dict `:` type($result)";
+}
+
+//===----------------------------------------------------------------------===//
+// CaptureListExpand
+//===----------------------------------------------------------------------===//
+
+def KGEN_CaptureListExpand : KGENOp<"capture_list.expand"> {
+  let summary = "Expand the capture list from a capturing closure.";
+  let description = [{
+    The `kgen.capture_list.expand` operation allocates heap memory and
+    initializes the capture list for a closure.
+
+    Example:
+
+    ```mlir
+    kgen.capture_list.expand %cl : <() capturing -> index : @cap_closure>
+    ```
+  }];
+
+  let arguments = (ins KGEN_CaptureList:$captureList);
+  let assemblyFormat = "$captureList `:` type($captureList) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// CaptureListDestroy
+//===----------------------------------------------------------------------===//
+
+def KGEN_CaptureListDestroy : KGENOp<"capture_list.destroy"> {
+  let summary = "Destroy the capture list from a capturing closure.";
+  let description = [{
+    The `kgen.capture_list.destroy` operation frees the heap memory
+    allocated by the `kgen.capture_list.expand` op.
+
+    Example:
+
+    ```mlir
+    kgen.capture_list.destroy %cl : <() capturing -> index : @cap_closure>
+    ```
+  }];
+
+  let arguments = (ins KGEN_CaptureList:$captureList);
+  let assemblyFormat = "$captureList `:` type($captureList) attr-dict";
+}
+
 #endif // KGEN_KGENDIALECT_KGENOPS_TD
