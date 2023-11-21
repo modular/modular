@@ -54,6 +54,7 @@ from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 from utils.optional import Optional
+from algorithm.functional import tile_and_unswitch
 
 
 @closure
@@ -2380,6 +2381,118 @@ fn matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    tile_size: Int,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+](
+    c_ptr: DTypePointer[c_type],
+    a_ptr: DTypePointer[a_type],
+    b_ptr: DTypePointer[b_type],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    """Matrix Multiplication using shared memory.
+    This version loads blocks of size tile_size x tile_size from A and B
+    and updates a tile_size x tile_size in C.
+
+    The thread block should have shape (tile_size, tile_size, 1). Each
+    thread is mapped one element in C. The grid should have shape
+    (N/tile_size, M/tile_size, 1). N is the first dimension for coalesced
+    access.
+    """
+
+    let a = NDBuffer[2, DimList.create_unknown[2](), a_type](a_ptr, Index(m, k))
+    let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
+    let c = NDBuffer[2, DimList.create_unknown[2](), c_type](c_ptr, Index(m, n))
+
+    # Allocate A, B tile in shared memory.
+    let a_shared = stack_allocation[
+        tile_size * tile_size,
+        a_type,
+        address_space = AddressSpace.SHARED,
+    ]()
+    let b_shared = stack_allocation[
+        tile_size * tile_size,
+        b_type,
+        address_space = AddressSpace.SHARED,
+    ]()
+
+    # Global index in C.
+    # These are the same indices in A and B when loading to SRAM.
+    # Map thread x to column for coalesced access in B.
+    let col = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    let row = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+
+    # Local index in the c sub-matrix updated by current block.
+    let localCol = ThreadIdx.x()
+    let localRow = ThreadIdx.y()
+
+    # Result of current thread in C.
+    var result = SIMD[c_type, 1](0.0)
+
+    let K_roundbytile = align_down(k, tile_size)
+    # Can't use 0 as tile size so set to 1 when the remainder is 0.
+    let K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
+
+    @parameter
+    @always_inline
+    fn update_tile[full_tile: Bool](offset: Int, end: Int, tile_size: Int):
+        # If K is not multiple of tile_size, the last tile contains less than
+        # tile_size elements. The thread block needs to take addition bound check
+        # when loading elements into shared memory.
+
+        # Load A tile into shared memory.
+        let a_val: SIMD[a_type, 1]
+
+        @parameter
+        if not full_tile:
+            a_val = a[row, offset + localCol] if (
+                row < m and offset + localCol < k
+            ) else 0.0
+        else:
+            a_val = a[row, offset + localCol] if row < m else 0.0
+        a_shared.store(localRow * tile_size + localCol, a_val)
+
+        # Load B tile into shared memory.
+        let b_val: SIMD[b_type, 1]
+
+        @parameter
+        if not full_tile:
+            b_val = b[offset + localRow, col] if (
+                col < n and offset + localRow < k
+            ) else 0.0
+        else:
+            b_val = b[offset + localRow, col] if col < n else 0.0
+        b_shared.store(localRow * tile_size + localCol, b_val)
+
+        barrier()
+
+        for kk in range(tile_size):
+            result += (
+                a_shared.load(localRow * tile_size + kk).cast[c_type]()
+                * b_shared.load(kk * tile_size + localCol).cast[c_type]()
+            )
+
+        barrier()
+
+    tile_and_unswitch[update_tile](
+        0, k, VariadicList[Int](tile_size, K_remainder)
+    )
+
+    if row < m and col < n:
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda[c_type, 1](Index(row, col), result)
+        else:
+            c[Index(row, col)] = result
+
+
+fn matmul_kernel_naive[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
     BLOCK_DIM: Int,
     elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
 ](
@@ -2596,34 +2709,67 @@ fn _matmul_gpu_dispatch[
                 stream=out_chain.get_cuda_stream(),
             )
         else:
-            alias BLOCK_DIM = 16
-            let gpu_func = Function[
-                fn (
-                    DTypePointer[a_type],
-                    DTypePointer[b_type],
-                    DTypePointer[c_type],
-                    Int,
-                    Int,
-                    Int,
-                ) capturing -> None, matmul_kernel[
-                    a_type,
-                    b_type,
-                    c_type,
-                    BLOCK_DIM,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            gpu_func(
-                (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
-                (BLOCK_DIM, BLOCK_DIM),
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                stream=out_chain.get_cuda_stream(),
-            )
+            # Tile size for tiling in shared memory.
+            # Thread block would have shape (tile_size, tile_size, 1)
+            # If k < tile_size use naive version.
+            alias tile_size = 16
+            if k >= tile_size:
+                let gpu_func = Function[
+                    fn (
+                        DTypePointer[c_type],
+                        DTypePointer[a_type],
+                        DTypePointer[b_type],
+                        Int,
+                        Int,
+                        Int,
+                    ) capturing -> None, matmul_kernel[
+                        c_type,
+                        a_type,
+                        b_type,
+                        tile_size,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                gpu_func(
+                    (div_ceil(n, tile_size), div_ceil(m, tile_size)),
+                    (tile_size, tile_size),
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    stream=out_chain.get_cuda_stream(),
+                )
+            else:
+                alias BLOCK_DIM = 16
+                let gpu_func = Function[
+                    fn (
+                        DTypePointer[a_type],
+                        DTypePointer[b_type],
+                        DTypePointer[c_type],
+                        Int,
+                        Int,
+                        Int,
+                    ) capturing -> None, matmul_kernel_naive[
+                        a_type,
+                        b_type,
+                        c_type,
+                        BLOCK_DIM,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                gpu_func(
+                    (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+                    (BLOCK_DIM, BLOCK_DIM),
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    stream=out_chain.get_cuda_stream(),
+                )
     except e:
         out_chain.mark_error(e)
 
