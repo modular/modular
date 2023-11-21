@@ -215,7 +215,8 @@ def ExportKindAttr : DialectAttribute<(attr
 def PackageArchiveAttr : DialectAttribute<(attr
   ConcreteAttribute<"TargetInfoAttr">:$target,
   ConcreteAttribute<"DenseResourceElementsAttr">:$elaboratedModule,
-  ConcreteAttribute<"DenseResourceElementsAttr">:$archive
+  ConcreteAttribute<"DenseResourceElementsAttr">:$archive,
+  ConcreteOptionalAttribute<"LinkDependencyArrayAttr">:$dependencies
 )>;
 
 def PackageArchiveArrayAttr : DialectAttribute<(attr

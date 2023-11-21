@@ -70,8 +70,16 @@ public:
   produceStandaloneModule(const SymbolTable &symtab,
                           const ExportMap &exportedSymbols);
 
-  /// Slices the call graph for all exported symbols to produce a standalone
-  /// archive.
+  /// Slices the call graph for all exported symbols to produce an archive.
+  /// The `standalone` argument is false by default, but if set to true, then
+  /// dependent libraries are pulled into the archive itself.
+  ErrorOr<BufferRef> produceArchive(const SymbolTable &symtab,
+                                    const ExportMap &exportedSymbols,
+                                    bool standalone = false);
+
+  /// Slices the call graph for all exported symbols to produce a "standalone"
+  /// archive, meaning all external libraries the archive depends upon are
+  /// pulled into the archive itself.
   ErrorOr<BufferRef> produceStandaloneArchive(const SymbolTable &symtab,
                                               const ExportMap &exportedSymbols);
 
