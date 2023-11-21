@@ -706,7 +706,6 @@ def KGEN_CaptureList : KGENType<"CaptureList", "capture_list"> {
 
   let parameters = (ins "TypedAttr":$capturingFunc);
 
-  //let assemblyFormat = "`<` $capturingFunc `>`";
   let assemblyFormat = "`<` custom<CaptureListType>($capturingFunc) `>`";
 }
 
