@@ -16,13 +16,13 @@ from sys.intrinsics import llvm_intrinsic
 @always_inline("nodebug")
 fn clock() -> Int:
     """Returns a 32-bit unsigned cycle counter."""
-    return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock", Int32]())
+    return Int__(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock", Int32]())
 
 
 @always_inline("nodebug")
 fn clock64() -> Int:
     """Returns a 64-bit unsigned cycle counter."""
-    return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock64", Int64]())
+    return Int__(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock64", Int64]())
 
 
 # ===----------------------------------------------------------------------===#
@@ -37,7 +37,7 @@ fn now() -> Int:
     Returns:
         The current time in ns.
     """
-    return int(
+    return Int__(
         ptx_assembly["mov.u64  $0, %globaltimer;", UInt64, constraints="=l"]()
     )
 

@@ -601,7 +601,7 @@ fn device_count() raises -> Int:
             Pointer.address_of(res)
         )
     )
-    return int(res)
+    return Int__(res)
 
 
 @value
@@ -696,7 +696,7 @@ struct Device:
                 fn (Pointer[Int32], DeviceAttribute, Device) -> Result
             ]("cuDeviceGetAttribute")(Pointer.address_of(res), attr, self)
         )
-        return int(res)
+        return Int__(res)
 
     fn multiprocessor_count(self) raises -> Int:
         """Returns the number of multiprocessors on this device."""
