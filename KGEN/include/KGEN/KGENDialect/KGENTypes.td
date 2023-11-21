@@ -692,7 +692,7 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
 // CaptureList
 //===----------------------------------------------------------------------===//
 
-def KGEN_CaptureList : KGENType<"CaptureList", "capture_list"> {
+def KGEN_CaptureListType : KGENType<"CaptureList", "capture_list"> {
   let summary = "A type for a capture list for a capturing closure.";
   let description = [{
     A `!kgen.capture_list` is the type of a closure capture list for

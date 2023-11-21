@@ -33,6 +33,10 @@ def MetaTypeType : DialectType<(type
   ConcreteType<"TypeSignatureType">:$signature
 )>;
 
+def TraitType : DialectType<(type
+  ConcreteAttribute<"SymbolRefAttr">:$symbol
+)>;
+
 def LifetimeType : DialectType<(type)>;
 
 def RefType : DialectType<(type
@@ -58,6 +62,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
     DiscardType,
     TypeSignatureType,
     MetaTypeType,
+    TraitType,
     LifetimeType,
     RefType,
     REPLResultRefType,
@@ -95,6 +100,12 @@ def ModuleAttr : DialectAttribute<(attr
   ConcreteType<"MetaTypeType">:$type
 )>;
 
+def BindTypeAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttrArray:$values,
+  ConcreteType<"MetaTypeType">:$type
+)>;
+
 def LifetimeAttr : DialectAttribute<(attr)>;
 
 def ImplicitLifetimeRefAttr : DialectAttribute<(attr
@@ -124,14 +135,16 @@ def TypeLineageAttr : DialectAttribute<(attr
   TypeArray:$inheritedFrom
 )>;
 
+def TypeConventionAttr : DialectAttribute<(attr
+  EnumAttr<"TypeConvention">:$value
+)>;
+
 def PassingKindArrayAttr : DialectAttribute<(attr
   EnumAttrArray<"PassingKind">:$value
 )>;
 
-def BindTypeAttr : DialectAttribute<(attr
-  TypedAttr:$typeValue,
-  TypedAttrArray:$values,
-  ConcreteType<"MetaTypeType">:$type
+def VarLetDeclKindAttr : DialectAttribute<(attr
+  EnumAttr<"VarLetDeclKind">:$value
 )>;
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
@@ -140,14 +153,16 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     DocStringAttr,
     UnboundMLIROperationAttr,
     ModuleAttr,
+    BindTypeAttr,
     LifetimeAttr,
     ImplicitLifetimeRefAttr,
     UnresolvedAliasValueAttr,
     LITStructAttr,
     StructExtractAttr,
     TypeLineageAttr,
+    TypeConventionAttr,
     PassingKindArrayAttr,
-    BindTypeAttr
+    VarLetDeclKindAttr
   ];
 }
 
