@@ -181,6 +181,31 @@ fn _copy_device_to_host_async[
     )
 
 
+fn _copy_device_to_device_async[
+    type: AnyRegType
+](dst: Pointer[type], src: Pointer[type], count: Int, stream: Stream) raises:
+    _check_error(
+        _get_dylib_function[
+            fn (Pointer[NoneType], Pointer[UInt32], Int, _StreamImpl) -> Result
+        ]("cuMemcpyDtoDAsync_v2")(
+            dst.bitcast[NoneType](),
+            src.bitcast[UInt32](),
+            count * sizeof[type](),
+            stream.stream,
+        )
+    )
+
+
+fn _copy_device_to_device_async[
+    type: DType
+](
+    dst: DTypePointer[type], src: DTypePointer[type], count: Int, stream: Stream
+) raises:
+    return _copy_device_to_device_async(
+        dst._as_scalar_pointer(), src._as_scalar_pointer(), count, stream
+    )
+
+
 fn _memset[
     type: AnyRegType
 ](device_dest: Pointer[type], val: UInt8, count: Int) raises:
