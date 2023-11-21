@@ -155,7 +155,7 @@ struct amx_detail:
         Self._op_gpr[__mlir_attr.`16:si32`](gpr)
 
     @staticmethod
-    fn vecint(gpr: Int):
+    fn vecInt__(gpr: Int):
         """
         Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
         """
@@ -169,7 +169,7 @@ struct amx_detail:
         Self._op_gpr[__mlir_attr.`19:si32`](gpr)
 
     @staticmethod
-    fn matint(gpr: Int):
+    fn matInt__(gpr: Int):
         """
         UI16 matrix multiply.
         """
