@@ -18,6 +18,7 @@ add_modular_library(MojoParser
   IRValues.cpp
   Lexer.cpp
   OverloadFitness.cpp
+  ParsedArgument.cpp
   ParserBase.cpp
   ParserExprs.cpp
   ParserParamEvaluator.cpp

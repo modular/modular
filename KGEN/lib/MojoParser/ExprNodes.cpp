@@ -15,6 +15,7 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "ParsedArgument.h"
 #include "Utils.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
