@@ -971,7 +971,30 @@ fn _get_start_indices_of_nth_subvolume[
 
 
 @always_inline
-@adaptive
+fn elementwise[
+    rank: Int,
+    simd_width: Int,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+](shape: StaticIntTuple[rank]):
+    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
+    combination of width and indices so as to cover shape.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        func: The body function.
+
+    Args:
+        shape: The shape of the buffer.
+    """
+
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        elementwise[rank, simd_width, func](shape, out_chain.borrow())
+        out_chain.wait()
+
+
+@always_inline
 fn elementwise[
     rank: Int,
     simd_width: Int,

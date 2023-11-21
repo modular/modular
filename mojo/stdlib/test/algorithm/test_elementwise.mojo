@@ -8,6 +8,7 @@
 from math import min, mul
 
 from algorithm.functional import (
+    elementwise,
     _elementwise_impl,
     _get_start_indices_of_nth_subvolume,
 )
@@ -15,7 +16,7 @@ from memory import stack_allocation
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
-from utils.index import StaticIntTuple
+from utils.index import StaticIntTuple, Index
 from utils.list import Dim, DimList
 
 
@@ -77,6 +78,29 @@ fn test_elementwise[
     for i2 in range(min(numelems, 64)):
         if out_buffer.data.offset(i2).load() != 2 * (i2 + 1):
             print("ERROR")
+
+
+fn test_elementwise_implicit_runtime():
+    print("== test_elementwise_implicit_runtime")
+    let vector = Buffer[20, DType.index].stack_allocation()
+
+    for i in range(len(vector)):
+        vector[i] = i
+
+    @always_inline
+    @parameter
+    fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        vector[idx[0]] = 42
+
+    elementwise[1, 1, func](Index(20))
+
+    for i in range(len(vector)):
+        let expected_val = i + 2
+        if Int(vector[i].value) != 42:
+            print("ERROR: Expecting the result to be 42")
+            return
+
+    print("OK")
 
 
 fn test_indices_conversion():
@@ -163,6 +187,11 @@ fn main():
     test_elementwise[131072, 2, DimList.create_unknown[2](), True](
         DimList(1024, 128)
     )
+
+    # CHECK-LABEL: == test_elementwise_implicit_runtime
+    # CHECK-NOT: ERROR
+    # CHECK: OK
+    test_elementwise_implicit_runtime()
 
     # CHECK-LABEL: == Testing indices conversion:
     # CHECK: (0, 0, 1, 4)
