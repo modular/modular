@@ -8,6 +8,7 @@
 # RUN: %mojo --no-optimization %s
 # RUN: %mojo -O0 %s
 
+
 # CHECK: ok
 fn main() -> None:
     print("ok")
