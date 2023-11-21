@@ -438,12 +438,13 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
   //   using the infra better.
 
   // Vector of binaries we will delegate to JITLink.
-  SmallVector<std::pair<std::unique_ptr<llvm::object::Binary>,
-                        std::unique_ptr<llvm::MemoryBuffer>>>
+  SmallVector<std::tuple<std::unique_ptr<llvm::object::Binary>,
+                         std::unique_ptr<llvm::MemoryBuffer>, size_t>>
       toDelegate;
   while (!worklist.empty()) {
     llvm::orc::SymbolStringPtr sym = worklist.pop_back_val();
-    auto childOr = toModularErrorOr(archive->findSym(*sym));
+    ErrorOr<std::optional<llvm::object::Archive::Child>> childOr =
+        toModularErrorOr(archive->findSym(*sym));
     if (childOr.isError())
       return childOr.takeError();
 
@@ -455,7 +456,8 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
     }
 
     // Grab the memory buffer for that object.
-    auto bufferRef = toModularErrorOr((*childOr)->getMemoryBufferRef());
+    llvm::object::Archive::Child &child = **childOr;
+    auto bufferRef = toModularErrorOr(child.getMemoryBufferRef());
     if (bufferRef.isError())
       return bufferRef.takeError();
 
@@ -470,7 +472,7 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
 
     // Get the child as a binary - that will allow us to look up the symbols
     // contained in the object.
-    auto binaryOr = toModularErrorOr((*childOr)->getAsBinary());
+    auto binaryOr = toModularErrorOr(child.getAsBinary());
     if (binaryOr.isError())
       return binaryOr.takeError();
     std::unique_ptr<llvm::object::Binary> objectBin = std::move(*binaryOr);
@@ -506,11 +508,18 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
 
     // Add the object file and its memory buffer to the list of objects to be
     // delegated to JITLink.
-    toDelegate.emplace_back(std::move(objectBin), std::move(objectBuf));
+    toDelegate.emplace_back(std::move(objectBin), std::move(objectBuf),
+                            child.getDataOffset());
   }
 
+  // Sort the objects by their offset in the archive. This makes sure that we
+  // maintain the order of the objects in the archive.
+  llvm::sort(toDelegate, [](const auto &lhs, const auto &rhs) {
+    return std::get<2>(lhs) < std::get<2>(rhs);
+  });
+
   // Delegate each object file through its own materialization unit.
-  for (auto &[bin, buf] : llvm::reverse(toDelegate)) {
+  for (auto &[bin, buf, offset] : toDelegate) {
     // Get all the symbols defined by the object file.
     auto itf = toModularErrorOr(
         llvm::orc::getObjectFileInterface(session, buf->getMemBufferRef()));

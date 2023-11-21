@@ -1080,13 +1080,22 @@ def KGEN_PackageArchiveAttr : KGENAttr<"PackageArchive", "package.archive"> {
     elaborated Mojo package module that has been compiled into a standalone
     archive for a specific target.
 
+    These binary artifacts include:
+    - The elaborated package module, serialized as MLIR bytecode.
+    - The package module's object code bytes, lowered for the given target.
+    - If the package depends on other libraries, the names and bytes of those
+      libraries.
+
     Example:
 
     ```mlir
     #archive = #kgen.package.archive<
       target = #M.target<triple = "arm64-apple-darwin21.6.0", arch="apple-m1">,
       elaboratedModule = dense_resource<foo> : tensor<42xui8>,
-      archive = dense_resource<bar> : tensor<13xui8>
+      archive = dense_resource<bar> : tensor<13xui8>,
+      dependencies = [
+        <dense_resource<baz> : tensor<29xui8> as "libBaz">
+      ]
     >
     ```
   }];
@@ -1094,15 +1103,29 @@ def KGEN_PackageArchiveAttr : KGENAttr<"PackageArchive", "package.archive"> {
   let parameters = (ins
     "TargetInfoAttr":$target,
     "DenseResourceElementsAttr":$elaboratedModule,
-    "DenseResourceElementsAttr":$archive
+    "DenseResourceElementsAttr":$archive,
+    OptionalParameter<"LinkDependencyArrayAttr">:$dependencies
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
       "TargetInfoAttr":$target,
       "DenseResourceElementsAttr":$elaboratedModule,
-      "DenseResourceElementsAttr":$archive), [{
-        return get(target.getContext(), target, elaboratedModule, archive);
+      "DenseResourceElementsAttr":$archive,
+      CArg<"LinkDependencyArrayAttr", "nullptr">:$dependencies), [{
+        return get(target.getContext(), target, elaboratedModule, archive,
+                   dependencies);
+      }]>,
+    AttrBuilderWithInferredContext<(ins
+      "TargetInfoAttr":$target,
+      "DenseResourceElementsAttr":$elaboratedModule,
+      "DenseResourceElementsAttr":$archive,
+      "ArrayRef<LinkDependencyAttr>":$dependencies), [{
+        MLIRContext *ctx = target.getContext();
+        LinkDependencyArrayAttr dependenciesAttr;
+        if (!dependencies.empty())
+          dependenciesAttr = LinkDependencyArrayAttr::get(ctx, dependencies);
+        return get(ctx, target, elaboratedModule, archive, dependenciesAttr);
       }]>
   ];
 

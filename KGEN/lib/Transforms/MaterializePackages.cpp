@@ -249,14 +249,15 @@ void MaterializePackagesPass::runOnOperation() {
     // If we read in the elaborated functions, convert the `kgen.package_link`
     // op to a `kgen.link` op`, signifying that the package is now linked in as
     // a library. Otherwise, erase the `kgen.package_link` op altogether -- the
-    // imported functions now exist as part of the module they were imported
-    // into.
+    // imported functions now exist as part of the module into which they were
+    // imported.
     if (archive) {
-      // Convert the package link to a kgen link directive.
+      // Convert the package link to a kgen link directive, passing along the
+      // transitive dependencies.
       OpBuilder b(packageLink);
-      auto linkOp = b.create<KGEN::LinkOp>(packageLink.getLoc(),
-                                           packageLink.getSymNameAttr(),
-                                           archive->getArchive());
+      auto linkOp = b.create<KGEN::LinkOp>(
+          packageLink.getLoc(), packageLink.getSymNameAttr(),
+          archive->getArchive(), archive->getDependencies());
       symtab.erase(packageLink);
       symtab.insert(linkOp);
     } else {
