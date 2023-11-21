@@ -367,6 +367,8 @@ public:
 
   void onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
+  void onTraitDecl(ASTDecl *decl, SMLoc identifierLoc) override;
+
   void onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
   void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
@@ -423,6 +425,10 @@ void LSPParserListener::onStructDecl(ASTDecl *decl, SMLoc identifierLoc) {
 }
 
 void LSPParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onTraitDecl(ASTDecl *decl, SMLoc identifierLoc) {
   addSymbolDecl(decl, identifierLoc);
 }
 
@@ -935,6 +941,9 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
     case KGEN::Mojo::CodeCompletionResult::kVariable:
       item.kind = lsp::CompletionItemKind::Variable;
       break;
+    case KGEN::Mojo::CodeCompletionResult::kTrait:
+      item.kind = lsp::CompletionItemKind::Interface;
+      break;
     }
 
     if (!it.documentation.empty())
@@ -1224,6 +1233,8 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
     return SemanticTokenKind::kClass;
   case DeclViewKind::DK_StructFieldDeclView:
     return SemanticTokenKind::kField;
+  case DeclViewKind::DK_TraitDeclView:
+    return SemanticTokenKind::kTrait;
   case DeclViewKind::DK_VariableDeclView:
     return SemanticTokenKind::kVariable;
   }

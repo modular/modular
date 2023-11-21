@@ -46,6 +46,10 @@ fn foo():
   return
 
 alias int_alias = 10
+
+trait ATrait:
+  fn foo(owned self, i: Int):
+     ...
 """,
     )
     requests.open_document(doc)
@@ -94,5 +98,11 @@ alias int_alias = 10
     assert any(
         token.range == doc.find_first_range("int_alias")
         and token.token_type == "variable"
+        for token in tokens
+    )
+
+    assert any(
+        token.range == doc.find_first_range("ATrait")
+        and token.token_type == "interface"
         for token in tokens
     )

@@ -282,6 +282,8 @@ StringRef DeclView::getKindAsString() const {
     return "struct";
   case DeclViewKind::DK_StructFieldDeclView:
     return "field";
+  case DeclViewKind::DK_TraitDeclView:
+    return "trait";
   case DeclViewKind::DK_VariableDeclView:
     return "variable";
   }
@@ -735,6 +737,44 @@ llvm::json::Object FunctionDeclOverloadSetView::toJSON() const {
   return llvm::json::Object{{"kind", "function"},
                             {"name", baseName},
                             {"overloads", toJSONArray(functions)}};
+}
+
+//===----------------------------------------------------------------------===//
+// TraitDeclView
+//===----------------------------------------------------------------------===//
+std::string TraitDeclView::getDeclarationSnippet() const {
+  return "trait " + getName().str();
+}
+
+std::string TraitDeclView::getMarkdownDocString() const {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+  dumpMarkdownDocumentationHeader(os, summary, description);
+  return markdown;
+}
+
+llvm::json::Object TraitDeclView::toJSON() const {
+  return llvm::json::Object{
+      {"description", description},
+      {"functions", toJSONArray(functionOverloads)},
+      {"kind", getKindAsString()},
+      {"name", getName()},
+      {"summary", summary},
+  };
+}
+
+TraitDeclView::TraitDeclView(MojoASTDeclRef declRef)
+    : DeclView(DeclViewKind::DK_TraitDeclView,
+               declRef.getName().value_or(StringRef())) {
+  ASTDecl &decl = *declRef;
+
+  functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
+      extractChildDecls<FunctionDeclView, FuncOp>(decl));
+
+  if (auto docStr = decl.getParsedDocString()) {
+    summary = docStr->getSummary();
+    description = llvm::join(docStr->getDescription(), "\n");
+  }
 }
 
 //===----------------------------------------------------------------------===//
