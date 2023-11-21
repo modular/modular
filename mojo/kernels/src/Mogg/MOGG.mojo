@@ -97,6 +97,7 @@ from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import bitcast, DTypePointer, Pointer
 from MultiHeadAttention import flash_attention
+from MultiHeadAttention import fused_attention as cpu_fused_attention_impl
 
 from NonMaxSuppression import (
     non_max_suppression,
@@ -3175,3 +3176,68 @@ fn multi_head_flash_attention[
         True,
         target,
     ](output, q, k, v, mask, scale[0], out_chain)
+
+
+@mogg_register("no_mask_fused_attention_cpu")
+@always_inline
+@export
+fn no_mask_fused_attention_cpu[
+    rank: Int,
+    input_0_static_shape: DimList,
+    input_1_static_shape: DimList,
+    input_2_static_shape: DimList,
+    input_3_static_shape: DimList,
+    output_type: DType,
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    scale_type: DType,
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[rank, input_0_static_shape, q_type],
+    k: NDBuffer[rank, input_1_static_shape, k_type],
+    v: NDBuffer[rank, input_2_static_shape, v_type],
+    scale: NDBuffer[0, input_3_static_shape, scale_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    out_chain: OutputChainPtr,
+):
+    # TODO:
+    # - no attention mask
+    # - no causaul mask
+
+    # Dimension names:
+    #     - (B)atch
+    #     - Attention (H)ead
+    #     - (S)equence
+    #     - Embedding (D)imension
+    #
+    # layouts:
+    # q -- BHSD
+    # k -- BHDS (we assume transpose = true for now)
+    # v -- BHSD
+    # output: BHSD
+    constrained[target == "cpu"]()
+
+    # TODO: Unimplemented and not used
+    alias mask_shape = DimList()
+    alias mask_type = DType.float32
+    let mask = NDBuffer[2, mask_shape, mask_type]()
+    let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
+    let causal_mask: Float32 = 0
+    cpu_fused_attention_impl[
+        rank,
+        input_0_static_shape,
+        input_1_static_shape,
+        input_2_static_shape,
+        mask_shape,
+        DimList.create_unknown[rank](),
+        q_type,
+        k_type,
+        v_type,
+        mask_type,
+        output_type,
+        False,  # transpose_k
+        False,  # add_attn_mask
+        False,  # add_causal_mask
+    ](output, q, k, v, mask, scale_f32, causal_mask, out_chain)
