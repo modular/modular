@@ -388,6 +388,10 @@ def LIT_TypeLineageAttr : LITAttr<"TypeLineage", "type_lineage"> {
     was inherited from. This attribute is used to provide nicer diagnostics in
     the parser when diagnosing errors with inherited types.
 
+    The attribute simply encodes a straight line of ancestor types that the type
+    was inherited from, instead of the full graph representation of the
+    ancestry.
+
     Example:
 
     ```mlir
@@ -397,7 +401,7 @@ def LIT_TypeLineageAttr : LITAttr<"TypeLineage", "type_lineage"> {
 
   let parameters = (ins "Type":$type,
                         OptionalArrayRefParameter<"Type">:$inheritedFrom);
-  let assemblyFormat = "`<` $type `,` `[` (`]`) : ($inheritedFrom^ `]`)? `>`";
+  let assemblyFormat = "`<` $type (`,` `[` $inheritedFrom^ `]`)? `>`";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "Type":$type,
@@ -409,6 +413,9 @@ def LIT_TypeLineageAttr : LITAttr<"TypeLineage", "type_lineage"> {
     }]>
   ];
 }
+
+def TypeLineageArrayAttr : ArrayOfAttr<LITDialect, "TypeLineageArray",
+                                       "type_lineage.array", "TypeLineageAttr">;
 
 //===----------------------------------------------------------------------===//
 // TypeConventionAttr

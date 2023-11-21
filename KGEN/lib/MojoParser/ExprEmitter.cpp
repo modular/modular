@@ -863,7 +863,11 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 
 /// Return true if the given type implements the trait.
 static bool metaTypeImplements(TraitType trait, ASTDecl *typeDecl) {
-  return llvm::count(cast<StructDeclOp>(typeDecl).getParentTypes(), trait);
+  ArrayRef<TypeLineageAttr> parentTypes =
+      cast<StructDeclOp>(typeDecl).getParentTypes();
+  return llvm::find_if(parentTypes, [trait](TypeLineageAttr type) {
+           return type.getType() == trait;
+         }) != parentTypes.end();
 }
 
 bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,

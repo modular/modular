@@ -1679,14 +1679,15 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 
 /// For a struct or trait declaration, parse an optional list of parent types to
 /// inherit from.
-static ParseResult parseOptionalParentList(ParserBase &p, ASTDecl &declScope,
-                                           SmallVectorImpl<Type> &parentTypes,
-                                           SharedState &shared) {
+static ParseResult
+parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
+                        SmallVectorImpl<TypeLineageAttr> &parentTypes,
+                        SharedState &shared) {
   if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
     return success();
 
   // Resolve the traits such that there are no duplicates.
-  llvm::SetVector<Type, SmallVector<Type>, SmallPtrSet<Type, 8>> parentTypeSet;
+  llvm::MapVector<Type, std::pair<TypeLineageAttr, SMLoc>> parentTypeSet;
   auto parseParent = [&]() -> ParseResult {
     ASTType type;
     SMLoc loc;
@@ -1709,20 +1710,45 @@ static ParseResult parseOptionalParentList(ParserBase &p, ASTDecl &declScope,
       return success();
     }
 
-    parentTypeSet.insert(type);
+    auto it = parentTypeSet.insert({type, {TypeLineageAttr::get(type), loc}});
+    if (!it.second) {
+      // If the user explicitly inherited a trait that is already provided
+      // elsewhere, provide a warning.
+      auto [cur, curLoc] = it.first->second;
+      InflightDiag diag = shared.emitWarning(loc, "'")
+                          << declName << "' already inherits from "
+                          << ASTType(type);
+      if (cur.getInheritedFrom().empty()) {
+        diag.attachNote(curLoc) << "previously inherited here";
+      } else {
+        diag.attachNote(curLoc)
+            << "inherited through " << ASTType(cur.getInheritedFrom().back())
+            << " here";
+      }
+    }
     // Successively flatten the parent list so we always have all the parents
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
     ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(
         cast<TraitType>(type).getSymbol());
-    for (Type inherited : cast<TraitDeclOp>(traitDecl).getParentTypes())
-      parentTypeSet.insert(inherited);
+    for (TypeLineageAttr inherited :
+         cast<TraitDeclOp>(traitDecl).getParentTypes()) {
+      if (auto it = parentTypeSet.find(inherited.getType());
+          it != parentTypeSet.end())
+        continue;
+      SmallVector<Type> lineage = llvm::to_vector(inherited.getInheritedFrom());
+      lineage.push_back(type);
+      Type parent = inherited.getType();
+      parentTypeSet.insert(
+          {parent, {TypeLineageAttr::get(parent, lineage), loc}});
+    }
     return success();
   };
   if (p.parseCommaSeparatedList(parseParent, Token::r_paren) ||
       p.parseToken(Token::r_paren, "expected ')' for parameter list"))
     return failure();
-  parentTypes = parentTypeSet.takeVector();
+  for (auto [type, _] : llvm::make_second_range(parentTypeSet))
+    parentTypes.push_back(type);
   return success();
 }
 
@@ -1746,8 +1772,9 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
               "TODO: trait declarations do not support parameters yet");
     return failure();
   }
-  SmallVector<Type> parentTypes;
-  if (parseOptionalParentList(p, *decl.getParentDecl(), parentTypes, shared))
+  SmallVector<TypeLineageAttr> parentTypes;
+  if (parseOptionalParentList(p, *decl.getParentDecl(), traitOp.getSymName(),
+                              parentTypes, shared))
     return failure();
 
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
@@ -1881,7 +1908,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> paramDefaults;
-  SmallVector<Type> parentTypes;
+  SmallVector<TypeLineageAttr> parentTypes;
 
   bool paramVarArgs = false;
   SMLoc identifierLoc;
@@ -1892,7 +1919,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       impl::parseOptionalParameterSignature(
           p, sigDecl, inputParamDecls, resultParamDecls, paramNames,
           paramPassingKinds, paramDefaults, paramVarArgs) ||
-      parseOptionalParentList(p, sigDecl, parentTypes, shared) ||
+      parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
+                              shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.hasReferenceError)
     return failure();
@@ -2541,12 +2569,12 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
     return false;
   };
 
-  for (Type parent : structDeclOp.getParentTypes()) {
-    auto trait = dyn_cast<TraitType>(parent);
+  for (TypeLineageAttr parent : structDeclOp.getParentTypes()) {
+    auto trait = dyn_cast<TraitType>(parent.getType());
     if (!trait)
       continue;
     ASTDecl &traitDecl =
-        shared.declResolver->getDeclForTypeSymbol(trait.getSymbol());
+        emitter.getDeclResolver().getDeclForTypeSymbol(trait.getSymbol());
 
     // Make sure to fully resolve the trait first.
     if (failed(shared.declResolver->resolveFully(traitDecl,
@@ -2614,6 +2642,13 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
     } else {
       diag.attachNote(traitDecl.getLoc())
           << "trait '" << traitName << "' declared here";
+      if (!parent.getInheritedFrom().empty()) {
+        ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
+            cast<TraitType>(parent.getInheritedFrom().front()).getSymbol());
+        diag.attachNote(parentDecl.getLoc())
+            << "inherited through '" << *parentDecl.getNameIfOperation()
+            << "' here";
+      }
       hadErrors = true;
     }
   }

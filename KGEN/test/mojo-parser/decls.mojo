@@ -2106,12 +2106,12 @@ trait GrandFather(GreatGrandFather):
     fn bar(self): ...
 
 # CHECK-LABEL: lit.trait.decl @Father
-# CHECK-SAME: (trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>)
-trait Father(GrandFather, GreatGrandFather):
+# CHECK-SAME: (trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>])
+trait Father(GrandFather):
     pass
 
 # CHECK-LABEL: lit.struct.decl @TraitInheritance
-# CHECK-SAME: (trait<{{.*}}@Father>, trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>)
+# CHECK-SAME: (trait<{{.*}}@Father>, trait<{{.*}}@GrandFather>[trait<{{.*}}@Father>], trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>, trait<{{.*}}@Father>])
 struct TraitInheritance(Father):
     fn foo(self):
         pass
