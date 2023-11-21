@@ -44,12 +44,12 @@ kgen.generator @type_printing() {
   kgen.return
 }
 
-kgen.func @capturingClosure() capturing -> index {
+kgen.func @capturing_closure() capturing -> index {
   %idx4 = index.constant 4
   kgen.return %idx4 : index
 }
 // CHECK-LABEL: @capture_list_round_trip
 // CHECK-SAME: %arg0: !kgen.capture_list
-kgen.generator @capture_list_round_trip(%arg0: !kgen.capture_list<() capturing -> index : @capturingClosure>) {
+kgen.generator @capture_list_round_trip(%arg0: !kgen.capture_list<() capturing -> index : @capturing_closure>) {
   kgen.return
 }
