@@ -329,6 +329,9 @@ fn avg_pool[
     let input_height = input.dim(1)
     let input_width = input.dim(2)
 
+    let output_height = output.dim(1)
+    let output_width = output.dim(2)
+
     let pool_window_h = int(filter[0])
     let pool_window_w = int(filter[1])
 
@@ -401,6 +404,37 @@ fn avg_pool[
     ) -> SIMD[type, simd_width]:
         return val + result
 
+    # Returns the size of the pooling window at dim excluding the
+    # pool_window_size.
+    @always_inline
+    fn pool_dim_size(
+        dim: Int, size: Int, pad_low: Int, pad_high: Int, pool_window_size: Int
+    ) -> Int:
+        if dim < pad_low:
+            return pool_window_size - dim - 1
+        elif dim >= size - pad_high:
+            return pool_window_size - size + dim
+        else:
+            return pool_window_size
+
+    @always_inline
+    @parameter
+    fn avg_pool_compute_finalize_exclude_boundry[
+        simd_width: Int
+    ](point: StaticIntTuple[rank], val: SIMD[type, simd_width]):
+        let window_h = pool_dim_size(
+            point[1],
+            output_height,
+            padding_h_low,
+            padding_h_high,
+            pool_window_h,
+        )
+        let window_w = pool_dim_size(
+            point[2], output_width, padding_w_low, padding_w_high, pool_window_w
+        )
+        let res = val / (window_h * window_w)
+        output.simd_store(point, res)
+
     @always_inline
     @parameter
     fn avg_pool_compute_finalize[
@@ -428,6 +462,20 @@ fn avg_pool[
         avg_pool_compute_finalize,
     ]
 
+    alias stencil_with_padding_count_exclude_boundry = stencil[
+        rank,
+        stencil_rank,
+        stencil_axis,
+        simd_width,
+        type,
+        map_fn[stencil_rank],
+        dilation_fn,
+        load_fn,
+        avg_pool_compute_init,
+        avg_pool_compute,
+        avg_pool_compute_finalize_exclude_boundry,
+    ]
+
     alias stencil_empty_padding = stencil[
         rank,
         stencil_rank,
@@ -441,7 +489,13 @@ fn avg_pool[
         avg_pool_compute,
         avg_pool_compute_finalize,
     ]
+
     if empty_padding:
         return stencil_empty_padding(output.get_shape(), out_chain)
     else:
-        return stencil_with_padding(output.get_shape(), out_chain)
+        if count_boundary:
+            return stencil_with_padding(output.get_shape(), out_chain)
+        else:
+            return stencil_with_padding_count_exclude_boundry(
+                output.get_shape(), out_chain
+            )

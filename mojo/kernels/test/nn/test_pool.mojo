@@ -171,9 +171,8 @@ fn test_avg_pool_2d():
     pool(PoolMethod.AVG)
 
 
-# CHECK: test_avg_pool_2d
-fn test_avg_pool_2d_with_padding():
-    print("== test_avg_pool_2d")
+fn test_avg_pool_2d_with_padding(count_boundary: Bool = False):
+    print("== test_avg_pool_2d_count_boundary:", count_boundary)
     alias in_shape = DimList(1, 7, 7, 1)
     alias out_shape = DimList(1, 7, 7, 1)
 
@@ -203,11 +202,26 @@ fn test_avg_pool_2d_with_padding():
             dilation_tensor._to_ndbuffer[1](),
             paddings_tensor._to_ndbuffer[1](),
             output_tensor._to_ndbuffer[4](),
-            False,
+            count_boundary,
             out_chain.borrow(),
         )
         out_chain.wait()
 
+    print_buffer[4](output_tensor._to_ndbuffer[4]())
+
+    _ = input_tensor
+    _ = output_tensor
+    _ = paddings_tensor
+    _ = filter_tensor
+    _ = stride_tensor
+    _ = dilation_tensor
+
+
+fn main():
+    test_max_pool_2d()
+    test_avg_pool_2d()
+
+    # CHECK: test_avg_pool_2d_count_boundary: True
     # CHECK: 1.7778
     # CHECK: 3.0000
     # CHECK: 3.6667
@@ -257,17 +271,57 @@ fn test_avg_pool_2d_with_padding():
     # CHECK: 28.3333
     # CHECK: 29.0000
     # CHECK: 19.5556
-    print_buffer[4](output_tensor._to_ndbuffer[4]())
 
-    _ = input_tensor
-    _ = output_tensor
-    _ = paddings_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
+    test_avg_pool_2d_with_padding(True)
 
-
-fn main():
-    test_max_pool_2d()
-    test_avg_pool_2d()
-    test_avg_pool_2d_with_padding()
+    # CHECK: test_avg_pool_2d_count_boundary: False
+    # CHECK: 4.0000
+    # CHECK: 4.5000
+    # CHECK: 5.5000
+    # CHECK: 6.5000
+    # CHECK: 7.5000
+    # CHECK: 8.5000
+    # CHECK: 9.0000
+    # CHECK: 7.5000
+    # CHECK: 8.0000
+    # CHECK: 9.0000
+    # CHECK: 10.0000
+    # CHECK: 11.0000
+    # CHECK: 12.0000
+    # CHECK: 12.5000
+    # CHECK: 14.5000
+    # CHECK: 15.0000
+    # CHECK: 16.0000
+    # CHECK: 17.0000
+    # CHECK: 18.0000
+    # CHECK: 19.0000
+    # CHECK: 19.5000
+    # CHECK: 21.5000
+    # CHECK: 22.0000
+    # CHECK: 23.0000
+    # CHECK: 24.0000
+    # CHECK: 25.0000
+    # CHECK: 26.0000
+    # CHECK: 26.5000
+    # CHECK: 28.5000
+    # CHECK: 29.0000
+    # CHECK: 30.0000
+    # CHECK: 31.0000
+    # CHECK: 32.0000
+    # CHECK: 33.0000
+    # CHECK: 33.5000
+    # CHECK: 35.5000
+    # CHECK: 36.0000
+    # CHECK: 37.0000
+    # CHECK: 38.0000
+    # CHECK: 39.0000
+    # CHECK: 40.0000
+    # CHECK: 40.5000
+    # CHECK: 39.0000
+    # CHECK: 39.5000
+    # CHECK: 40.5000
+    # CHECK: 41.5000
+    # CHECK: 42.5000
+    # CHECK: 43.5000
+    # CHECK: 44.0000
+    test_avg_pool_2d_with_padding(False)
