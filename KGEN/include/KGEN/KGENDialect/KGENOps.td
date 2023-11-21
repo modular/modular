@@ -1705,7 +1705,7 @@ def KGEN_CaptureListCreate : KGENOp<"capture_list.create"> {
     ```
   }];
 
-  let results = (outs KGEN_CaptureList:$result);
+  let results = (outs KGEN_CaptureListType:$result);
   let assemblyFormat = "attr-dict `:` type($result)";
 }
 
@@ -1726,7 +1726,7 @@ def KGEN_CaptureListExpand : KGENOp<"capture_list.expand"> {
     ```
   }];
 
-  let arguments = (ins KGEN_CaptureList:$captureList);
+  let arguments = (ins KGEN_CaptureListType:$captureList);
   let assemblyFormat = "$captureList `:` type($captureList) attr-dict";
 }
 
@@ -1747,7 +1747,7 @@ def KGEN_CaptureListDestroy : KGENOp<"capture_list.destroy"> {
     ```
   }];
 
-  let arguments = (ins KGEN_CaptureList:$captureList);
+  let arguments = (ins KGEN_CaptureListType:$captureList);
   let assemblyFormat = "$captureList `:` type($captureList) attr-dict";
 }
 

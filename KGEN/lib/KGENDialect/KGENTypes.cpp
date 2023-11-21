@@ -1323,7 +1323,7 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
-// CaptureList
+// CaptureListType
 //===----------------------------------------------------------------------===//
 
 /// Implementation of parsing for CaptureListType.
