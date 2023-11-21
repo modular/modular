@@ -10,6 +10,7 @@ add_modular_library(MojoParser
   CallEmission.cpp
   ClosureEmitter.cpp
   DebugInfo.cpp
+  DeclResolution.cpp
   DeclResolver.cpp
   DocString.cpp
   EntryPoint.cpp
