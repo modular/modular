@@ -25,6 +25,7 @@ from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _copy_host_to_device_async,
+    _copy_device_to_device_async,
     _free,
     _malloc,
     _memset_async,
@@ -790,6 +791,33 @@ fn _concat_gpu[
     out_chain: OutputChainPtr,
 ) raises:
     var stream = out_chain.get_cuda_stream()
+
+    # Size of outer dims, if 1 we should memcpy to the output buffer.
+    var outer_dims = 1
+    for i in range(axis):
+        # Use input[0], all dims should be equal except axis.
+        outer_dims *= inputs[0].dim(i)
+
+    @parameter
+    @always_inline
+    fn _concat_buffers_contiguously() raises:
+        var input_size = 0
+
+        @unroll
+        for i in range(num_inputs):
+            # Skip empty inputs.
+            if inputs[i].num_elements() > 0:
+                _copy_device_to_device_async(
+                    output.data.offset(input_size),
+                    inputs[i].data,
+                    inputs[i].num_elements(),
+                    stream,
+                )
+                input_size += inputs[i].num_elements()
+
+    # If outer_dims are ones use device-to-device copies.
+    if outer_dims == 1:
+        return _concat_buffers_contiguously()
 
     @parameter
     @always_inline
