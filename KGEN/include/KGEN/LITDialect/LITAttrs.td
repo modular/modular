@@ -156,7 +156,8 @@ def UnboundMLIROperationAttr
   let extraClassDeclaration = [{ Type getType() const; }];
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "DictionaryAttr":$attrs), [{
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        "DictionaryAttr":$attrs), [{
       return $_get(name.getContext(), name, attrs);
     }]>
   ];
@@ -373,6 +374,39 @@ def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
     AttrBuilder<(ins "TypedAttr":$structValue, "StringAttr":$field,
                      "Type":$resultType), "", "TypedAttr">
 
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// TypeLineageAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_TypeLineageAttr : LITAttr<"TypeLineage", "type_lineage"> {
+  let summary = "a type and where it was inherited from";
+  let description = [{
+    The `#lit.type_lineage` attribute contains a type and a lineage of types it
+    was inherited from. This attribute is used to provide nicer diagnostics in
+    the parser when diagnosing errors with inherited types.
+
+    Example:
+
+    ```mlir
+    #lit.type_lineage<trait<@Foo>, [trait<@Bar>]>
+    ```
+  }];
+
+  let parameters = (ins "Type":$type,
+                        OptionalArrayRefParameter<"Type">:$inheritedFrom);
+  let assemblyFormat = "`<` $type `,` `[` (`]`) : ($inheritedFrom^ `]`)? `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "Type":$type,
+                                        "ArrayRef<Type>":$inheritedFrom), [{
+      return get(type.getContext(), type, inheritedFrom);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "Type":$type), [{
+      return get(type, {});
+    }]>
   ];
 }
 

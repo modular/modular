@@ -10,6 +10,9 @@
 // CHECK: #kgen.none : !kgen.none
 "a"() {a = #kgen.none : !kgen.none} : () -> ()
 
+// CHECK: #lit.type_lineage<index, [index]>
+"a"() {a = #lit.type_lineage<index, [index]>} : () -> ()
+
 lit.struct.decl @Foo {
   lit.struct.field foo : index
   lit.struct.field bar : !kgen.dtype

@@ -119,6 +119,11 @@ def StructExtractAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def TypeLineageAttr : DialectAttribute<(attr
+  Type:$type,
+  TypeArray:$inheritedFrom
+)>;
+
 def PassingKindArrayAttr : DialectAttribute<(attr
   EnumAttrArray<"PassingKind">:$value
 )>;
@@ -140,6 +145,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnresolvedAliasValueAttr,
     LITStructAttr,
     StructExtractAttr,
+    TypeLineageAttr,
     PassingKindArrayAttr,
     BindTypeAttr
   ];
