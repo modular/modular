@@ -1822,24 +1822,23 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   if (ParserBase(shared, lexer).parseSuite(traitDecl))
     return failure();
 
-  // Resolve TraitDeclOp's body here so that we get more information about its
-  // functions right away.
+  // Resolve functions in the body here so that we can diagnose them.
   for (auto &decls : llvm::make_second_range(traitDecl.declsInScope)) {
-    for (ASTDecl *decl : decls)
-      // Only fully resolve children of LIT::FuncOp type.
-      if (decl->getParentDecl() == &traitDecl && isa<LIT::FuncOp>(*decl))
-        if (failed(resolveFully(*decl, decl->getLoc())))
-          return failure();
-  }
+    for (ASTDecl *decl : decls) {
+      auto func = dyn_cast<LIT::FuncOp>(*decl);
+      if (!func)
+        continue;
+      if (failed(resolveFully(*decl, decl->getLoc())))
+        return failure();
 
-  for (auto fn : traitOp.getBodyRegion().getOps<LIT::FuncOp>()) {
-    if (!fn.getBody()->empty())
-      shared.emitError(fn.getLoc(),
-                       "unexpected function body in trait function "
-                       "declaration, use `...` or `pass`");
-
-    auto b = ImplicitLocOpBuilder::atBlockEnd(fn.getLoc(), fn.getBody());
-    b.create<TraitFuncOp>();
+      if (!func.getBody()->empty()) {
+        shared.emitError(decl->getLoc(),
+                         "unexpected function body in trait function "
+                         "declaration, use `...` or `pass`");
+      }
+      auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
+      b.create<TraitFuncOp>();
+    }
   }
 
   return success();
