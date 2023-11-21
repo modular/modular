@@ -462,7 +462,7 @@ fn tensor_to_shape[
 ]:
     var out = StaticIntTuple[rank]()
     for i in range(rank):
-        out[i] = int(tensor[i])
+        out[i] = Int__(tensor[i])
 
     return out
 
@@ -717,8 +717,8 @@ fn broadcast_shape_impl[
 
     for lhs_idx in range(lhs_rank):
         let rhs_idx = lhs_idx + size_diff
-        let lhs_dim = int(lhs_buf[lhs_idx])
-        let rhs_dim = int(rhs_buf[rhs_idx])
+        let lhs_dim = Int__(lhs_buf[lhs_idx])
+        let rhs_dim = Int__(rhs_buf[rhs_idx])
         if lhs_dim == rhs_dim:
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
@@ -855,7 +855,7 @@ fn broadcast_to_shape[
     # move the output shape from buffer into a static int tuple
     var output_shape = StaticIntTuple[output_rank]()
     for axis in range(output_rank):
-        output_shape[axis] = int(target_shape_buf[axis])
+        output_shape[axis] = Int__(target_shape_buf[axis])
 
     # Validate the compatibility between input and output shapes
     # NOTE we don't need to check the padded dims
@@ -1192,7 +1192,7 @@ fn mean[
         target,
     ](
         input_shape,
-        int(axis),
+        Int__(axis),
         output_shape,
         out_chain,
     )
@@ -1302,7 +1302,7 @@ fn reduce_add[
         output_0_fn_wrapper,
         reduce_impl,
         target,
-    ](input_shape, 0, int(axis), out_chain)
+    ](input_shape, 0, Int__(axis), out_chain)
 
 
 @always_inline
@@ -1353,7 +1353,7 @@ fn reduce_max[
         output_0_fn_wrapper,
         reduce_impl,
         target,
-    ](input_shape, min_or_neginf[type](), int(axis), out_chain)
+    ](input_shape, min_or_neginf[type](), Int__(axis), out_chain)
 
 
 @always_inline
@@ -1404,7 +1404,7 @@ fn reduce_min[
         output_0_fn_wrapper,
         reduce_impl,
         target,
-    ](input_shape, max_or_inf[type](), int(axis), out_chain)
+    ](input_shape, max_or_inf[type](), Int__(axis), out_chain)
 
 
 @always_inline
@@ -1455,7 +1455,7 @@ fn reduce_mul[
         output_0_fn_wrapper,
         reduce_impl,
         target,
-    ](input_shape, 1, int(axis), out_chain)
+    ](input_shape, 1, Int__(axis), out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1551,7 +1551,7 @@ fn reshape_shape[
     var to_be_inferred_axis = -1
     var non_negative_dim_prodcut = 1
     for axis in range(output_rank):
-        let target_dim = int(target_shape_buf[axis])
+        let target_dim = Int__(target_shape_buf[axis])
         target_shape[axis] = target_dim
         if target_dim == -1:
             # TODO(#17512)
@@ -1629,12 +1629,12 @@ fn calculate_squeeze_shape[
     )
     var input_shape_copy = StaticIntTuple[MAX_VECTOR_LIMIT]()
     for i in range(num_input_dims):
-        input_shape_copy[i] = int(input_shape[i])
+        input_shape_copy[i] = Int__(input_shape[i])
 
     # Mark every squeezed dimension as -1 in our copy of the shape tensor
     for remove_index_index in range(num_remove_indices):
-        let remove_index = int(remove_indices[remove_index_index])
-        let remove_index_normalize = remove_index + num_input_dims * int(
+        let remove_index = Int__(remove_indices[remove_index_index])
+        let remove_index_normalize = remove_index + num_input_dims * Int__(
             remove_indices[remove_index_index] < 0
         )
 
@@ -1691,8 +1691,8 @@ fn calculate_unsqueeze_shape[
         output_shape[output_index] = -1
 
     for padding_index_index in range(num_padding_indices):
-        let padding_index = int(padding_indices[padding_index_index])
-        let padding_index_normalize = padding_index + final_rank * int(
+        let padding_index = Int__(padding_indices[padding_index_index])
+        let padding_index_normalize = padding_index + final_rank * Int__(
             padding_indices[padding_index_index] < 0
         )
 
@@ -1747,7 +1747,7 @@ fn transpose[
     @always_inline
     @parameter
     fn body[i: Int]():
-        let dim = int(buffer_to_scalar(perms, i))
+        let dim = Int__(buffer_to_scalar(perms, i))
         new_shape[i] = input.dynamic_shape[dim]
         new_stride[i] = input.dynamic_stride[dim]
 
@@ -1779,7 +1779,7 @@ fn transpose_shape[
 
     @unroll
     for i in range(rank):
-        let perm = int(perms[i])
+        let perm = Int__(perms[i])
         # TODO(17512)
         debug_assert(perm >= 0, "Transpose permutation is less than zero")
         debug_assert(perm < rank, "Transpose permutation is out of range")
@@ -2551,7 +2551,7 @@ fn non_maximum_suppression[
     output: NDBuffer[2, DimList.create_unknown[2](), DType.int64],
     out_chain: OutputChainPtr,
 ):
-    let max_output_boxes_int = int(max_output_boxes_per_class[0])
+    let max_output_boxes_int = Int__(max_output_boxes_per_class[0])
     let iou_threshold_float = iou_threshold[0]
     let score_threshold_float = score_threshold[0]
 
@@ -2575,7 +2575,7 @@ fn non_maximum_suppression_shape_func[
     iou_threshold: NDBuffer[1, DimList(1), DType.float32],
     score_threshold: NDBuffer[1, DimList(1), DType.float32],
 ) -> StaticIntTuple[2]:
-    let max_output_boxes_int = int(max_output_boxes_per_class[0])
+    let max_output_boxes_int = Int__(max_output_boxes_per_class[0])
     let iou_threshold_float = iou_threshold[0]
     let score_threshold_float = score_threshold[0]
 
@@ -2640,7 +2640,7 @@ fn resize_shape[
 
     @unroll
     for i in range(rank):
-        shape[i] = int(size[i])
+        shape[i] = Int__(size[i])
     return shape
 
 
@@ -2673,8 +2673,8 @@ fn roi_align[
         output,
         input,
         rois,
-        int(output_height[0]),
-        int(output_width[0]),
+        Int__(output_height[0]),
+        Int__(output_width[0]),
         spatial_scale[0],
         sampling_ratio[0],
     )
@@ -2697,8 +2697,8 @@ fn roi_align_shape[
     # rois shape is [M, 5]
     # output shape is [M, output_height, output_width, C]
     shape[0] = rois.get_shape()[0]
-    shape[1] = int(output_height[0])
-    shape[2] = int(output_width[0])
+    shape[1] = Int__(output_height[0])
+    shape[2] = Int__(output_width[0])
     shape[3] = input.get_shape()[3]
 
     return shape
@@ -2728,9 +2728,9 @@ fn split_ith_output_shape[
         0 <= output_idx and output_idx < split_sizes_buf.size(),
         "output index must be within range [0, len(split_sizes))",
     )
-    let output_split_size = int(split_sizes_buf[output_idx])
+    let output_split_size = Int__(split_sizes_buf[output_idx])
 
-    var split_axis = int(split_axis_buf[0])
+    var split_axis = Int__(split_axis_buf[0])
     if split_axis < 0:
         split_axis += rank
     # TODO(#17512)
@@ -2741,7 +2741,7 @@ fn split_ith_output_shape[
 
     var split_sizes_sum = 0
     for i in range(split_sizes_buf.dim(0)):
-        split_sizes_sum += int(split_sizes_buf[i])
+        split_sizes_sum += Int__(split_sizes_buf[i])
     # TODO(#17512)
     debug_assert(
         split_sizes_sum == input_buf.dim(split_axis),
@@ -2815,13 +2815,13 @@ fn conv[
     let dilation_flat = dilation.flatten()
     let paddings_flat = paddings.flatten()
 
-    let strides_tuple = Index(int(strides_flat[0]), int(strides_flat[1]))
-    let dilation_tuple = Index(int(dilation_flat[0]), int(dilation_flat[1]))
+    let strides_tuple = Index(Int__(strides_flat[0]), Int__(strides_flat[1]))
+    let dilation_tuple = Index(Int__(dilation_flat[0]), Int__(dilation_flat[1]))
     if dilation_tuple != Index(1, 1):
         return out_chain.mark_error("Non-unit dilation is not supported yet.")
 
-    let pad_h_tuple = Index(int(paddings_flat[0]), int(paddings_flat[1]))
-    let pad_w_tuple = Index(int(paddings_flat[2]), int(paddings_flat[3]))
+    let pad_h_tuple = Index(Int__(paddings_flat[0]), Int__(paddings_flat[1]))
+    let pad_w_tuple = Index(Int__(paddings_flat[2]), Int__(paddings_flat[3]))
 
     # TODO: eventually padding, strides and dilation will be passed in as
     # parameters here when they are constant in the graph
@@ -2831,7 +2831,7 @@ fn conv[
         pad_w_tuple,
         strides_tuple,
         dilation_tuple,
-        int(num_groups[0]),
+        Int__(num_groups[0]),
     )
 
     # Specialize the function to take 4D coordiantes.
@@ -3014,8 +3014,8 @@ fn bottom_k[
 ):
     _top_k[rank, type](
         input,
-        int(k_buf[0]),
-        int(axis_buf[0]),
+        Int__(k_buf[0]),
+        Int__(axis_buf[0]),
         False,
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
         out_idxs,
@@ -3040,8 +3040,8 @@ fn top_k[
 ):
     _top_k[rank, type](
         input,
-        int(k_buf[0]),
-        int(axis_buf[0]),
+        Int__(k_buf[0]),
+        Int__(axis_buf[0]),
         True,
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
         out_idxs,
