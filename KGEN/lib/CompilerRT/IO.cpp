@@ -148,10 +148,17 @@ struct FileHandle {
 
   uint64_t seek(uint64_t offset, llvm::StringRef *errMsg) {
 #ifdef _WIN32
-    return _lseeki64(handle, offset, SEEK_SET);
+    uint64_t pos = _lseeki64(handle, offset, SEEK_SET);
+    if (pos == (uint64_t)-1)
+      *errMsg =
+          copyString((Twine("seek error: ") + std::to_string(errno)).str());
 #else
-    return lseek(handle, offset, SEEK_SET);
-#endif
+    uint64_t pos = lseek(handle, offset, SEEK_SET);
+    if (pos == (uint64_t)-1)
+      *errMsg = copyString((Twine("seek error: ") + strerror(errno)).str());
+#endif // _WIN32
+
+    return pos;
   }
 
   void write(llvm::StringRef buf, llvm::StringRef *errMsg) {
@@ -256,18 +263,25 @@ KGEN_CompilerRT_IO_FileWrite(FileHandleWrapper file, const char *data,
 
 void M::KGEN::registerIO(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back(
-      {"KGEN_CompilerRT_IO_FileOpen", (void *)&KGEN_CompilerRT_IO_FileOpen});
-  funcs.push_back(
-      {"KGEN_CompilerRT_IO_FileClose", (void *)&KGEN_CompilerRT_IO_FileClose});
-  funcs.push_back(
-      {"KGEN_CompilerRT_IO_FileSize", (void *)&KGEN_CompilerRT_IO_FileSize});
-  funcs.push_back(
-      {"KGEN_CompilerRT_IO_FileSeek", (void *)&KGEN_CompilerRT_IO_FileSeek});
-  funcs.push_back(
-      {"KGEN_CompilerRT_IO_FileRead", (void *)&KGEN_CompilerRT_IO_FileRead});
-  funcs.push_back(
-      {"KGEN_CompilerRT_IO_FileWrite", (void *)&KGEN_CompilerRT_IO_FileWrite});
-  funcs.push_back({"KGEN_CompilerRT_IO_FileReadBytes",
-                   (void *)&KGEN_CompilerRT_IO_FileReadBytes});
+  funcs.emplace_back(
+      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileOpen"),
+                (void *)&KGEN_CompilerRT_IO_FileOpen});
+  funcs.emplace_back(
+      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileClose"),
+                (void *)&KGEN_CompilerRT_IO_FileClose});
+  funcs.emplace_back(
+      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileSize"),
+                (void *)&KGEN_CompilerRT_IO_FileSize});
+  funcs.emplace_back(
+      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileSeek"),
+                (void *)&KGEN_CompilerRT_IO_FileSeek});
+  funcs.emplace_back(
+      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileRead"),
+                (void *)&KGEN_CompilerRT_IO_FileRead});
+  funcs.emplace_back(
+      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileWrite"),
+                (void *)&KGEN_CompilerRT_IO_FileWrite});
+  funcs.emplace_back(
+      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileReadBytes"),
+                (void *)&KGEN_CompilerRT_IO_FileReadBytes});
 }
