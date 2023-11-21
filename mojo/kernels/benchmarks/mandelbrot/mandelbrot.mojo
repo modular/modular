@@ -151,7 +151,7 @@ fn main_blog_part1():
     var pixel_sum: Int = 0
     for i in range(height):
         for j in range(width):
-            pixel_sum += int(m[i, j])
+            pixel_sum += Int__(m[i, j])
     print("pixel sum: ", pixel_sum)
 
     var num_warmup: Int = 1
@@ -285,7 +285,7 @@ fn main_blog_part2():
     var pixel_sum: Int = 0
     for i in range(height):
         for j in range(width):
-            pixel_sum += int(m[i, j])
+            pixel_sum += Int__(m[i, j])
     print("pixel sum: ", pixel_sum)
 
     alias num_warmup = 1
