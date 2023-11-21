@@ -1677,6 +1677,55 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 // Trait Decl implementation
 //===----------------------------------------------------------------------===//
 
+/// For a struct or trait declaration, parse an optional list of parent types to
+/// inherit from.
+static ParseResult parseOptionalParentList(ParserBase &p, ASTDecl &declScope,
+                                           SmallVectorImpl<Type> &parentTypes,
+                                           SharedState &shared) {
+  if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
+    return success();
+
+  // Resolve the traits such that there are no duplicates.
+  llvm::SetVector<Type, SmallVector<Type>, SmallPtrSet<Type, 8>> parentTypeSet;
+  auto parseParent = [&]() -> ParseResult {
+    ASTType type;
+    SMLoc loc;
+    if (p.getLocation(loc) ||
+        parseType(p, type, declScope, declScope.getIndentation()))
+      return failure();
+
+    // Reject inheriting from types we don't support yet.
+    if (!isa<TraitType>(type)) {
+      if (isa<DeclRefType>(type)) {
+        p.emitError(loc)
+            << "TODO: inheriting from other structs is not implemented";
+      } else if (isa<ParamRefType>(type)) {
+        p.emitError(loc) << "TODO: inheriting from a parameter expression is "
+                            "not implemented";
+      } else {
+        p.emitError(loc) << "don't know how to inherit from this type";
+      }
+      declScope.hasReferenceError = true;
+      return success();
+    }
+
+    parentTypeSet.insert(type);
+    // Successively flatten the parent list so we always have all the parents
+    // available to check.
+    // TODO: Encode an "inherited from" here, to make diagnostics nice.
+    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(
+        cast<TraitType>(type).getSymbol());
+    for (Type inherited : cast<TraitDeclOp>(traitDecl).getParentTypes())
+      parentTypeSet.insert(inherited);
+    return success();
+  };
+  if (p.parseCommaSeparatedList(parseParent, Token::r_paren) ||
+      p.parseToken(Token::r_paren, "expected ')' for parameter list"))
+    return failure();
+  parentTypes = parentTypeSet.takeVector();
+  return success();
+}
+
 LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
@@ -1697,6 +1746,9 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
               "TODO: trait declarations do not support parameters yet");
     return failure();
   }
+  SmallVector<Type> parentTypes;
+  if (parseOptionalParentList(p, *decl.getParentDecl(), parentTypes, shared))
+    return failure();
 
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();
@@ -1723,10 +1775,45 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (!sig)
     return failure();
   traitOp.setSignature(sig);
+  traitOp.setParentTypes(parentTypes);
 
   decl.setSelfType(ASTDecl::computeSelfTypeForTrait(traitOp));
 
   shared.notifyListenerOnTraitDecl(decl, identifierLoc);
+
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
+                                      ASTDecl &traitDecl) {
+  // Push the debug scope for this trait if necessary so that nested operations
+  // have proper debug info.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = traitOp.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+  if (ParserBase(shared, lexer).parseSuite(traitDecl))
+    return failure();
+
+  // Resolve TraitDeclOp's body here so that we get more information about its
+  // functions right away.
+  for (auto &decls : llvm::make_second_range(traitDecl.declsInScope)) {
+    for (ASTDecl *decl : decls)
+      // Only fully resolve children of LIT::FuncOp type.
+      if (decl->getParentDecl() == &traitDecl && isa<LIT::FuncOp>(*decl))
+        if (failed(resolveFully(*decl, decl->getLoc())))
+          return failure();
+  }
+
+  for (auto fn : traitOp.getBodyRegion().getOps<LIT::FuncOp>()) {
+    if (!fn.getBody()->empty())
+      shared.emitError(fn.getLoc(),
+                       "unexpected function body in trait function "
+                       "declaration, use `...` or `pass`");
+
+    auto b = ImplicitLocOpBuilder::atBlockEnd(fn.getLoc(), fn.getBody());
+    b.create<TraitFuncOp>();
+  }
 
   return success();
 }
@@ -1775,45 +1862,6 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
   }
   // Not handled in signature phase.
   return failure();
-}
-
-/// For a struct or trait declaration, parse an optional list of parent types to
-/// inherit from.
-static ParseResult parseOptionalParentList(ParserBase &p, ASTDecl &declScope,
-                                           SmallVectorImpl<Type> &parentTypes,
-                                           SharedState &shared) {
-  if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
-    return success();
-
-  auto parseParent = [&]() -> ParseResult {
-    ASTType type;
-    SMLoc loc;
-    if (p.getLocation(loc) ||
-        parseType(p, type, declScope, declScope.getIndentation()))
-      return failure();
-
-    // Reject inheriting from types we don't support yet.
-    if (!isa<TraitType>(type)) {
-      if (isa<DeclRefType>(type)) {
-        p.emitError(loc)
-            << "TODO: inheriting from other structs is not implemented";
-      } else if (isa<ParamRefType>(type)) {
-        p.emitError(loc) << "TODO: inheriting from a parameter expression is "
-                            "not implemented";
-      } else {
-        p.emitError(loc) << "don't know how to inherit from this type";
-      }
-      declScope.hasReferenceError = true;
-      return success();
-    }
-
-    parentTypes.push_back(type);
-    return success();
-  };
-  if (p.parseCommaSeparatedList(parseParent, Token::r_paren) ||
-      p.parseToken(Token::r_paren, "expected ')' for parameter list"))
-    return failure();
-  return success();
 }
 
 /// structdef ::=
@@ -2696,44 +2744,6 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
 ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
                                       ASTDecl &decl) {
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// TraitFieldDecl implementation
-//===----------------------------------------------------------------------===//
-
-ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
-                                      ASTDecl &traitDecl) {
-  // Push the debug scope for this trait if necessary so that nested operations
-  // have proper debug info.
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = traitOp.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-
-  if (ParserBase(shared, lexer).parseSuite(traitDecl))
-    return failure();
-
-  // Resolve TraitDeclOp's body here so that we get more information about its
-  // functions right away.
-  for (auto &decls : llvm::make_second_range(traitDecl.declsInScope)) {
-    for (ASTDecl *decl : decls)
-      // Only fully resolve children of LIT::FuncOp type.
-      if (decl->getParentDecl() == &traitDecl && isa<LIT::FuncOp>(*decl))
-        if (failed(resolveFully(*decl, decl->getLoc())))
-          return failure();
-  }
-
-  for (auto fn : traitOp.getBodyRegion().getOps<LIT::FuncOp>()) {
-    if (!fn.getBody()->empty())
-      shared.emitError(fn.getLoc(),
-                       "unexpected function body in trait function "
-                       "declaration, use `...` or `pass`");
-
-    auto b = ImplicitLocOpBuilder::atBlockEnd(fn.getLoc(), fn.getBody());
-    b.create<TraitFuncOp>();
-  }
-
   return success();
 }
 

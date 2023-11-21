@@ -2096,3 +2096,42 @@ fn test_special_fn_traits(
     copy(z)
     move(z)
     destroy(z)
+
+trait GreatGrandFather:
+    fn foo(self): ...
+
+# CHECK-LABEL: lit.trait.decl @GrandFather
+# CHECK-SAME: (trait<{{.*}}@GreatGrandFather>)
+trait GrandFather(GreatGrandFather):
+    fn bar(self): ...
+
+# CHECK-LABEL: lit.trait.decl @Father
+# CHECK-SAME: (trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>)
+trait Father(GrandFather, GreatGrandFather):
+    pass
+
+# CHECK-LABEL: lit.struct.decl @TraitInheritance
+# CHECK-SAME: (trait<{{.*}}@Father>, trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>)
+struct TraitInheritance(Father):
+    fn foo(self):
+        pass
+
+    fn bar(self):
+        pass
+
+# CHECK-LABEL: lit.func @"test_trait_inheritance
+fn test_trait_inheritance():
+    @parameter
+    fn take_great_grand_father[T: GreatGrandFather]():
+        pass
+    @parameter
+    fn take_grand_father[T: GrandFather]():
+        pass
+    @parameter
+    fn take_father[T: Father]():
+        pass
+
+    # CHECK-COUNT-3: call_param
+    take_great_grand_father[TraitInheritance]()
+    take_grand_father[TraitInheritance]()
+    take_father[TraitInheritance]()
