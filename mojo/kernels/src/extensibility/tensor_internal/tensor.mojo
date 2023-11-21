@@ -43,7 +43,6 @@ from builtin.io import _Printable
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import bitcast
-from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils._serialize import (
     _serialize,
@@ -57,6 +56,7 @@ from .tensor_shape import TensorShape
 from .tensor_spec import TensorSpec
 from utils.list import Dim
 from utils.static_tuple import StaticTuple
+from utils.index import Index
 
 # ===----------------------------------------------------------------------===#
 # Tensor
@@ -211,6 +211,40 @@ struct Tensor[dtype: DType]:
         return not (self == other)
 
     @always_inline
+    fn __add__(self, other: Self) raises -> Self:
+        """Adds a tensor to another tensor.
+
+        Constraints:
+             The two tensors must have the same rank, type, and dimensions.
+
+        Args:
+            other: The RHS of the add operation.
+
+        Returns:
+            The addition of both tensors.
+        """
+        if self._spec != other._spec:
+            raise "shape mismatch during tensor addition"
+
+        let result = Self(self._spec)
+        let lhs = self._to_buffer()
+        let rhs = other._to_buffer()
+        let result_buffer = result._to_buffer()
+
+        @parameter
+        fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+            let idx = indices[0]
+            result_buffer.simd_store(
+                idx, lhs.simd_load[width](idx) + rhs.simd_load[width](idx)
+            )
+
+        elementwise[rank=1, simd_width = simdwidthof[dtype](), func=func](
+            Index(len(lhs))
+        )
+
+        return result
+
+    @always_inline
     fn __ipow__(inout self, exponent: Int) -> None:
         """In-place pow operator.
 
@@ -246,18 +280,15 @@ struct Tensor[dtype: DType]:
         fn _pow[width: Int, rank: Int](indices: StaticIntTuple[rank]) -> None:
             let idx = indices[0]
             let val = buffer.simd_load[width](idx)
-            let res = math.pow[dtype, width](val, exponent)
-            buffer.simd_store[width](idx, res)
+            let res = math.pow(val, exponent)
+            buffer.simd_store(idx, res)
 
         # Use the `elementwise` generator to run `pow` in parallel.
-        with Runtime() as rt:
-            let out_chain = OwningOutputChainPtr(rt)
-            alias dtype_simd_width = simdwidthof[dtype]()
+        alias dtype_simd_width = simdwidthof[dtype]()
 
-            elementwise[rank=1, simd_width=dtype_simd_width, func=_pow](
-                StaticIntTuple[1](len(buffer)), out_chain.borrow()
-            )
-            out_chain.wait()
+        elementwise[rank=1, simd_width=dtype_simd_width, func=_pow](
+            Index(len(buffer))
+        )
 
         return result
 
