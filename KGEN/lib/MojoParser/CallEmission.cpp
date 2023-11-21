@@ -97,7 +97,7 @@ static PValue emitSingleParameterValue(InputParamBindings::Binding binding,
 
   // If the parameter already has the right type, then we're good.
   PValue bindingPVal(binding.getValue());
-  if (expectedType.isEqualCanon(binding.getValue().getType()))
+  if (expectedType.isEqualCanon(bindingPVal.getType()))
     return bindingPVal;
 
   // If the parameter can be implicitly converted, do so.

@@ -271,6 +271,12 @@ fn infer_implicit_params():
     # CHECK-SAME: :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!Int #lit.struct<{value = 4}>>
     implicit_params_with_others[42](one, two)
 
+# CHECK-LABEL: lit.func @"explicit_autoparameterization
+# CHECK-SAME: "<?, [[V0:.*_v0]]: !Int, [[W0:.*_w0]]: !Int, [[W1:.*_w1]]: !Int>(
+# CHECK-SAME: %v[v]: {{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>>
+# CHECK-SAME: %w[w]: {{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int [[W0]], :!Int [[W1]]>>
+fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
+    pass
 
 @register_passable("trivial")
 struct IndexParam[x: index]:
@@ -1122,3 +1128,19 @@ fn scalar_type[dt: DType]():
     let value: T = 1
     # CHECK: call {{.*}}<:!DType [[dt]], {{.*}}, :!DType [[dt]]>(%value)
     _ = value.cast[dt]()
+
+
+struct T: pass
+
+# CHECK-LABEL: lit.func @"funct_partial_binding
+# CHECK-SAME: <[[X:.*]][x]: !T, [[F:.*]][F]:
+fn funct_partial_binding[x: T, F: fn[t: T, s: T] () -> None]():
+    # CHECK: !lit.signature<<"u": !T, "v": !T>() -> !kgen.none> = <rebind(
+    # CHECK-SAME: :!lit.signature<<"t": !T, "s": !T>() -> !kgen.none>
+    # CHECK-SAME: bind_signature(:!lit.signature<<"t": !T, "s": !T>() -> !kgen.none> [[F]], ?, ?)
+
+    alias G: fn[u: T, v: T] () -> None = F[s=_, t=_]
+    # CHECK: !lit.signature<<"u": !T>() -> !kgen.none> = <rebind(
+    # CHECK-SAME: :!lit.signature<<"s": !T>() -> !kgen.none>
+    # CHECK-SAME: bind_signature(:!lit.signature<<"t": !T, "s": !T>() -> !kgen.none> [[F]], [[X]], ?))>
+    alias H: fn[u: T] () -> None = F[x, _]

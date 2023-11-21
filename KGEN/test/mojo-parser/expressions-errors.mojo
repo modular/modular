@@ -188,15 +188,6 @@ fn unused_values():
   _ = testLValuesRvalues # OK
 
 
-def no_unused_values_in_def():
-  var x : Int = 42
-  4+4  # MValue
-  x  # LValue
-  x+1 # DRValue
-  testLValuesRvalues
-
-  _ # expected-error {{discard pattern requires an initializing expression}}
-
 fn func_with_static_param[x: Int]() -> Int:
   return x
 

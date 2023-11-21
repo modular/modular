@@ -2057,6 +2057,10 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   TypedAttr input = operands.front();
   if (input.getType() == resultType)
     return input;
+  // Fold rebinds of an unbound.
+  if (isa<UnboundAttr>(input))
+    return UnboundAttr::get(resultType);
+
   // Fold rebinds of a DeclRefType. Unify metatypes so information is not lost.
   if (auto typeCst = dyn_cast<TypeConstantAttr>(input)) {
     if (auto declRef = dyn_cast<DeclRefType>(typeCst.getValue())) {
