@@ -6,6 +6,7 @@
 import copy
 
 from _pytest.logging import LogCaptureFixture
+
 from modular.utils.profiling import TimeTrace
 
 trace_fast = {
@@ -17,10 +18,31 @@ trace_fast = {
             "name": "process_name",
             "args": {"name": "trace_fast"},
         },
+        {
+            "pid": 1,
+            "ph": "M",
+            "name": "thread_name",
+            "args": {"name": "mt"},
+        },
+        {
+            "pid": 1,
+            "ph": "M",
+            "name": "thread_name",
+            "args": {"name": "🔥 Thread1"},
+        },
         {"pid": 1, "ph": "X", "ts": 10, "dur": 10, "name": "executeModel.run"},
         {"pid": 1, "ph": "X", "ts": 20, "dur": 10, "name": "executeModel.run"},
         {"pid": 1, "ph": "X", "ts": 30, "dur": 10, "name": "executeModel.run"},
         {"pid": 1, "ph": "X", "ts": 40, "dur": 10, "name": "executeModel.run"},
+        {"pid": 1, "ph": "X", "ts": 15, "dur": 3, "name": "foo.mojo.matmul"},
+        {
+            "pid": 1,
+            "ph": "X",
+            "ts": 15,
+            "dur": 3,
+            "name": "foo.mojo.matmul.task",
+        },
+        {"pid": 1, "ph": "X", "ts": 15, "dur": 3, "name": "bar.mojo.elemwise"},
     ],
     "filename": "trace_fast.json",
     "versionInfo": {
@@ -63,3 +85,57 @@ def test_process_name():
 def test_get_runs():
     runs = TimeTrace.from_dict(trace_fast).get_runs()
     assert len(runs) == 4
+
+
+def test_execution_interval_all():
+    start_time, end_time = TimeTrace.from_dict(
+        trace_fast
+    ).get_execution_interval()
+    assert start_time == 10
+    assert end_time == 50
+
+
+def test_execution_interval_selected():
+    start_time, end_time = TimeTrace.from_dict(
+        trace_fast
+    ).get_execution_interval(1)
+    assert start_time == 20
+    assert end_time == 30
+
+
+def test_num_threads_multiple():
+    assert TimeTrace.from_dict(trace_fast).num_threads == 2
+
+
+def test_trim():
+    trimmed = TimeTrace.from_dict(trace_fast).trim(start_time=20, end_time=35)
+    assert len(trimmed.get_runs()) == 2
+    # check that metadata calls still work
+    assert trimmed.num_threads == 2
+    assert trimmed.process_name == "trace_fast"
+
+
+def test_filter_events():
+    full = TimeTrace.from_dict(trace_fast)
+    filtered = full.filter_events(
+        include_fragments=["matmul"], exclude_fragments=["task"]
+    )
+    # only the parent matmul should survive the filter
+    assert len([x for x in filtered.events if "mojo" in x["name"]]) == 1
+
+
+def test_standardize_names():
+    unchanged = ["foo", "__gen_ins_P0_P1_call_spam.mojo.matmul.task"]
+
+    for invariant in unchanged:
+        assert invariant == TimeTrace.standardize_operator_name(invariant)
+
+    to_standardize = {
+        "CST0_0": "CST0_?",
+        "CST123_456": "CST123_?",
+        "_CST1_0_CST2_4_CST4_8_": "_CST1_?_CST2_?_CST4_?_",
+    }
+    for orig, std in to_standardize.items():
+        assert std == TimeTrace.standardize_operator_name(orig)
+        # standardization should be idempotent
+        assert std == TimeTrace.standardize_operator_name(std)

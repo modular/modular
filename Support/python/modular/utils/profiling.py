@@ -12,8 +12,11 @@ performance analysis-related helpers.
 """
 
 import json
-
+from copy import deepcopy as dcopy
+from functools import cached_property
 from pathlib import Path
+from re import sub
+
 from modular.utils.logging import warning
 from modular.utils.typing import Any, Dict, List, Optional
 
@@ -24,6 +27,8 @@ EventList = List[EventDict]
 
 # Perfetto Trace Event Format doc:
 # https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
+
+RUN_NAMES = {"benchmarkModelOnce", "executeModel.run"}
 
 
 class TimeTrace:
@@ -41,7 +46,8 @@ class TimeTrace:
         trace: TraceDict,
         check_build_type: Optional[str] = "rel",
         check_profiling_levels: Optional[str] = "00001",
-    ):
+        deepcopy: bool = True,
+    ) -> "TimeTrace":
         """
         Factory function to create a TimeTrace from a dictionary.
         Args:
@@ -51,9 +57,13 @@ class TimeTrace:
                               The check is not case-sensitive.
             check_profiling_levels: Octal string of minimum required levels.
                                     If None, then no check is performed.
+            deepcopy: make a deep copy of the input data (default: true)
         Returns:
             The constructed TimeTrace.
         """
+        if deepcopy:
+            trace = dcopy(trace)
+
         # Construct TimeTrace
         time_trace = cls(trace)
         fname = trace.get("filename", "Trace")
@@ -75,7 +85,7 @@ class TimeTrace:
         return time_trace
 
     @classmethod
-    def from_file(cls, tracefile: Path, **kwargs):
+    def from_file(cls, tracefile: Path, **kwargs) -> "TimeTrace":
         """
         Factory function to create a TimeTrace from a filename.
         Args:
@@ -88,19 +98,99 @@ class TimeTrace:
         trace.update({"filename": tracefile})
         return cls.from_dict(trace, **kwargs)
 
+    def to_file(self, outfile: Path, **kwargs):
+        """Write the trace to a file as json."""
+        with open(outfile, "w") as f:
+            json.dump(self.trace, f)
+
     @property
     def events(self) -> EventList:
         """Return all events in the trace"""
         return self.trace["traceEvents"]
 
+    def standardize_names(self) -> "TimeTrace":
+        """Standardize the names of operators in-place."""
+        for e in self.events:
+            e["name"] = TimeTrace.standardize_operator_name(e["name"])
+        return self
+
+    @staticmethod
+    def standardize_operator_name(name: str) -> str:
+        """Standardize the name of an operator.
+
+        The goal here is to remove elements of the operator name that don't
+        indicate differences in its computational signature, so that they
+        can be more meaningfully aggregated by name downstream.  Current
+        standardizations:
+          - Replace constant value references with "?"
+
+        """
+        return sub(
+            r"(CST[\d+]+\_[\d+]+)",
+            lambda match: match.group().partition("_")[0] + "_?",
+            name,
+        )
+
+    @cached_property
+    def num_threads(self) -> int:
+        """Get the number of threads used in the profile."""
+
+        # note: there aren't many thread events
+        thread_events = [
+            x["args"]["name"] for x in self.events if "dur" not in x
+        ]
+
+        thread_ids = [
+            int(x.rpartition("Thread")[-1].strip())
+            for x in thread_events
+            if "Thread" in x
+        ] + [
+            0
+        ]  # main thread doesn't have "Thread" in it
+        return max(thread_ids) + 1
+
+    def trim(
+        self, start_time: int, end_time: int, include_metadata: bool = True
+    ) -> "TimeTrace":
+        """Trim the timeline of the events based on time timestamps (in us)"""
+
+        def __include(x: EventDict):
+            if x["ph"] == "M" and include_metadata:
+                return True
+            elif x["ph"] == "M" and not include_metadata:
+                return False
+            else:
+                return x["ts"] >= start_time and x["ts"] <= end_time
+
+        self.trace["traceEvents"] = list(filter(__include, self.events))
+        return self
+
+    def filter_events(
+        self,
+        include_fragments: Optional[List[str]] = None,
+        exclude_fragments: Optional[List[str]] = None,
+    ) -> "TimeTrace":
+        """Select and remove events with names that match the given fragments.
+        """
+        local_include = (
+            # default to the empty string, which is in everything
+            include_fragments if include_fragments
+            is not None else [""]
+        )
+        local_exclude = exclude_fragments if exclude_fragments else []
+
+        def __include(ev: EventDict):
+            name = ev["name"]
+            return all(x not in name for x in local_exclude) and any(
+                x in name for x in local_include
+            )
+
+        self.trace["traceEvents"] = list(filter(__include, self.events))
+        return self
+
     @property
     def version_info(self) -> VersionInfoDict:
         return self.trace["versionInfo"]
-
-    @property
-    def num_threads(self) -> int:
-        """Return # of threads used in the trace"""
-        return sum(x["name"] == "thread_name" for x in self.events)
 
     def get_process_name_event(self) -> EventDict:
         """Find the 'process_name' event and return it"""
@@ -195,3 +285,17 @@ class TimeTrace:
         assert len(exec_runs) == 0 or len(bench_runs) == 0, "Mixed runs?"
         runs = exec_runs if len(exec_runs) != 0 else bench_runs
         return sorted(runs, key=lambda x: x["ts"])
+
+    def get_execution_interval(self, run_number: Optional[int] = None):
+        """
+        Return the (start_time, end_time) pair for all or the selected run
+        """
+        runs = self.get_runs()
+        if run_number is not None:
+            assert 0 <= run_number < len(runs), "Invalid --run-number"
+            start_time = runs[run_number]["ts"]
+            end_time = start_time + runs[run_number]["dur"]
+        else:
+            start_time = runs[0]["ts"]
+            end_time = runs[-1]["ts"] + runs[-1]["dur"]
+        return (start_time, end_time)
