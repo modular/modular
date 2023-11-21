@@ -46,6 +46,7 @@ enum class DeclViewKind {
   DK_ParameterDeclView,
   DK_StructDeclView,
   DK_StructFieldDeclView,
+  DK_TraitDeclView,
   DK_VariableDeclView,
 };
 
@@ -486,6 +487,47 @@ private:
 
   std::string baseName;
   SmallVector<FunctionDeclView, 2> functions;
+};
+
+// View for trait decls.
+class TraitDeclView : public DeclView {
+public:
+  std::string getDeclarationSnippet() const override;
+
+  std::string getMarkdownDocString() const override;
+
+  /// The output of the generation is defined in the following schema:
+  ///
+  /// {
+  ///   "kind": "trait",
+  ///   "name": string,
+  ///   "description": string,
+  ///   "functions": FunctionDeclOverloadSetView[],
+  ///   "summary": string
+  /// }
+  llvm::json::Object toJSON() const override;
+
+  //===----------------------------------------------------------------------===//
+  // LLVM RTTI Support
+  //===----------------------------------------------------------------------===//
+
+  static bool classof(const DeclView *decl) {
+    return decl->getKind() == DeclViewKind::DK_TraitDeclView;
+  }
+
+private:
+  friend class MojoASTDeclRef;
+
+  TraitDeclView(MojoASTDeclRef declRef);
+
+  SmallVector<FunctionDeclOverloadSetView, 2> functionOverloads;
+
+  //===----------------------------------------------------------------------===//
+  // Parsed DocString
+  //===----------------------------------------------------------------------===//
+
+  std::string description;
+  std::string summary;
 };
 
 /// View for struct decls.

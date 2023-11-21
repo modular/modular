@@ -64,6 +64,7 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
       .Case([&](FuncOp op) { return op.getFullSignature(); })
       .Case([&](StructDeclOp op) { return decl->computeSelfTypeForStruct(op); })
+      .Case([&](TraitDeclOp op) { return decl->computeSelfTypeForTrait(op); })
       .Default({});
 }
 
@@ -159,6 +160,8 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
   if (isa<PackageOp>(*decl))
     return std::unique_ptr<PackageDeclView>(new PackageDeclView(*this));
+  if (isa<TraitDeclOp>(*decl))
+    return std::unique_ptr<TraitDeclView>(new TraitDeclView(*this));
 
   // After failing to match with regular Ops, we then inspect the IR to identify
   // if this decl is an argument.
@@ -219,6 +222,8 @@ std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
     return DeclViewKind::DK_VariableDeclView;
   if (isa<PackageOp>(*decl))
     return DeclViewKind::DK_PackageDeclView;
+  if (isa<TraitDeclOp>(*decl))
+    return DeclViewKind::DK_TraitDeclView;
 
   // After failing to match with regular Ops, we then inspect the IR to identify
   // if this decl is an argument.

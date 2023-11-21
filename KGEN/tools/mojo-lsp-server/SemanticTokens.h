@@ -26,6 +26,7 @@ enum class SemanticTokenKind {
   kMethod,
   kField,
   kClass,
+  kTrait,
   kType,
   kModule,
 

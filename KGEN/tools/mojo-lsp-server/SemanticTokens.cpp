@@ -35,6 +35,8 @@ StringRef Mojo::LSP::toLspSemanticTokenType(SemanticTokenKind kind) {
     return "type";
   case SemanticTokenKind::kModule:
     return "namespace";
+  case SemanticTokenKind::kTrait:
+    return "interface";
   default:
     llvm_unreachable("unhandled SemanticTokenKind");
   }

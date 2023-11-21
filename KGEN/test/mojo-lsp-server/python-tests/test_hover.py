@@ -592,3 +592,41 @@ fn function[type: AnyRegType](arg: type):
 (function) fn print(x: Bool)
 ```""",
     )
+
+
+async def test_hover(client: LanguageClient):
+    doc = Document.from_file("traits.mojo")
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_hover(text: str, expected: str):
+        range = fail_if_none(doc.find_first_range(text))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert isinstance(result.contents, MarkupContent)
+        assert result.contents.value == expected
+
+    await assert_hover(
+        "ATrait:",
+        """```mojo
+(trait) trait ATrait
+```
+---
+
+###
+Some documentation.
+
+""",
+    )
+
+    await assert_hover(
+        "ATrait):",
+        """```mojo
+(trait) trait ATrait
+```
+---
+
+###
+Some documentation.
+
+""",
+    )

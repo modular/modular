@@ -32,6 +32,7 @@ struct CodeCompletionResult {
     kFunction,
     kField,
     kVariable,
+    kTrait,
   };
 
   CodeCompletionResult() = default;
