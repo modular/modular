@@ -54,11 +54,11 @@ fn scatter_nd_gpu[
     let indices_end = indices_start + last_index_dimension
 
     for i in range(indices_start, indices_end):
-        var index = int(indices_data_ptr.load(i))
-        let element_count_dim = int(
+        var index = Int__(indices_data_ptr.load(i))
+        let element_count_dim = Int__(
             element_counts_and_input_dims[i - indices_start]
         )
-        let dim_value = int(
+        let dim_value = Int__(
             element_counts_and_input_dims[
                 i - indices_start + last_index_dimension
             ]
