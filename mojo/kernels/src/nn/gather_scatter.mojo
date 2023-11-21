@@ -662,6 +662,12 @@ fn scatter_nd_generator[
         target,
     ](iter_shape, out_chain)
 
+    @parameter
+    if single_thread_blocking_override or target == "cuda":
+        return
+    else:
+        out_chain.wait()
+
 
 @always_inline
 fn scatter_nd[
