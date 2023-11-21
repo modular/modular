@@ -781,6 +781,25 @@ fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}
 fn dont_crash_pvalue_convert(x: CFMStructFail):
     trait_fn_infer(x) # expected-error {{invalid call to 'trait_fn_infer': callee expects 1 input parameter, but 0 were specified}}
 
+trait GrandFather: # expected-note {{trait 'GrandFather' declared here}}
+    fn foo(self): # expected-note {{required function 'foo' is not implemented}}
+        ...
+
+trait Father(GrandFather): # expected-note {{inherited through 'Father' here}}
+    pass
+
+# expected-error @below {{struct 'MissingInheritedFn' does not implement all requirements for 'GrandFather'}}
+# expected-warning @below {{'MissingInheritedFn' already inherits from 'GrandFather'}}
+# expected-note @below {{inherited through 'Father' here}}
+struct MissingInheritedFn(Father, GrandFather):
+    pass
+
+# expected-warning @below {{'InheritsTwice' already inherits from 'Father'}}
+# expected-note @below {{previously inherited here}}
+struct InheritsTwice(Father, Father):
+    fn foo(self):
+        pass
+
 ##===----------------------------------------------------------------------===##
 # Class
 ##===----------------------------------------------------------------------===##

@@ -13,7 +13,7 @@ lit.struct.decl @SomeStruct {
 }) {sym_name = "StructArgs",
     decorators = #kgen<decorators[]>,
     signature = !lit.type_signature,
-    parentTypes = #M<type.array[]>,
+    parentTypes = #lit<type_lineage.array[]>,
     inputParams = #kgen<param.decls[]>
     } : () -> ()
 

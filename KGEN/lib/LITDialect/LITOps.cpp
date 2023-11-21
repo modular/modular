@@ -955,7 +955,7 @@ static void printTypeConvention(AsmPrinter &p, Operation *op,
 static ParseResult parseStructParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &inputParams,
                                             TypeAttr &signature,
-                                            TypeArrayAttr &parentTypes) {
+                                            TypeLineageArrayAttr &parentTypes) {
   SmallVector<TypedAttr> defaultParams;
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
@@ -968,12 +968,22 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
     return p.emitError(loc, "expected no result parameters");
   bool paramVarArg = succeeded(p.parseOptionalKeyword("param_vararg"));
 
-  SmallVector<Type> parentTypeExprs;
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalParen, [&] {
-        return parseParamType(p, parentTypeExprs.emplace_back());
-      }))
+  SmallVector<TypeLineageAttr> parentTypeExprs;
+  auto parseTypeAndLineage = [&]() -> ParseResult {
+    Type type;
+    SmallVector<Type> lineage;
+    if (parseParamType(p, type) ||
+        p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare, [&] {
+          return parseParamType(p, lineage.emplace_back());
+        }))
+      return failure();
+    parentTypeExprs.push_back(TypeLineageAttr::get(type, lineage));
+    return success();
+  };
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalParen,
+                                parseTypeAndLineage))
     return failure();
-  parentTypes = TypeArrayAttr::get(p.getContext(), parentTypeExprs);
+  parentTypes = TypeLineageArrayAttr::get(p.getContext(), parentTypeExprs);
 
   auto sig = TypeSignatureType::remapToSignature(
       [&] { return p.emitError(loc); }, inputParams, paramNames,
@@ -987,7 +997,7 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
 static void printStructParameterSpec(AsmPrinter &p, Operation *op,
                                      ArrayRef<ParamDeclAttr> inputParamDecls,
                                      TypeAttr signature,
-                                     ArrayRef<Type> parentTypes) {
+                                     ArrayRef<TypeLineageAttr> parentTypes) {
   auto sig = cast<TypeSignatureType>(signature.getValue());
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, inputParamDecls, {}, sig.getParamNames(),
@@ -997,8 +1007,15 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
     p << " param_vararg";
   if (!parentTypes.empty()) {
     p << '(';
-    llvm::interleaveComma(parentTypes, p,
-                          [&](Type type) { printParamType(p, type); });
+    llvm::interleaveComma(parentTypes, p, [&](TypeLineageAttr type) {
+      printParamType(p, type.getType());
+      if (!type.getInheritedFrom().empty()) {
+        p << '[';
+        llvm::interleaveComma(type.getInheritedFrom(), p,
+                              [&](Type type) { printParamType(p, type); });
+        p << ']';
+      }
+    });
     p << ')';
   }
 }
@@ -1100,7 +1117,7 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
-        TypeArrayAttr::get(ctx, {}), /*nonmaterializableTarget=*/nullptr,
+        TypeLineageArrayAttr::get(ctx, {}), /*nonmaterializableTarget=*/nullptr,
         /*destructor=*/nullptr, /*moveInit=*/nullptr, /*copyInit=*/nullptr,
         /*closureSignature=*/nullptr, /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
@@ -1413,7 +1430,7 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
-        ParamDeclArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
+        ParamDeclArrayAttr::get(ctx, {}), TypeLineageArrayAttr::get(ctx, {}),
         /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
 }

@@ -423,7 +423,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_DecoratorsAttr:$decorators,
-    M_TypeArrayAttr:$parentTypes,
+    TypeLineageArrayAttr:$parentTypes,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
     OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
@@ -693,7 +693,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     SymbolNameAttr:$sym_name,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$inputParams,
-    M_TypeArrayAttr:$parentTypes,
+    TypeLineageArrayAttr:$parentTypes,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
 
