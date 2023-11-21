@@ -1839,9 +1839,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 //===----------------------------------------------------------------------===//
 
 CValue DiscardDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
-  emitter.emitError(expr->getLoc(), "cannot read from discard pattern '_'")
-      << expr->getRange();
-  return {};
+  // The `_` syntax stands for an unbound parameter.
+  return UnboundAttr::get(elementType);
 }
 
 void DiscardDLValue::emitStore(ASTExprAnd<CValue> value,

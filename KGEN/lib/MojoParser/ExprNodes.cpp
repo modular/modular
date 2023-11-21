@@ -326,16 +326,12 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
   if (kind == kNoneLiteral)
     return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
 
-  // Discard pattern is a DLValue.
   if (kind == kDiscardLiteral) {
-    // We can only create an implicitly declared value if we have a contextual
-    // type to infer from.
+    // If we have a contextual type to infer from, we create an implicitly
+    // declared value from that. Otherwise, we use a DiscardType as placeholder.
     ASTType initializerType = dest.getIfLValueInitializerType();
-    if (!initializerType) {
-      emitter.emitError(getLoc(),
-                        "discard pattern requires an initializing expression");
-      return {};
-    }
+    if (!initializerType)
+      initializerType = DiscardType::get(emitter.getContext());
     DLValue result(RCRef<DiscardDLValue>::create(initializerType, this));
     return emitter.emitResult(result, this, dest);
   }
