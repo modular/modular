@@ -1339,12 +1339,10 @@ static ParseResult parseCaptureListType(AsmParser &p,
 }
 
 /// Implementation of printing for CaptureListType.
-static LogicalResult printCaptureListType(AsmPrinter &p,
-                                          TypedAttr capturingFunc) {
+static void printCaptureListType(AsmPrinter &p, TypedAttr capturingFunc) {
   printKGENType(p, capturingFunc.getType());
   p << " : ";
   printParamValue(p, capturingFunc, capturingFunc.getType());
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
