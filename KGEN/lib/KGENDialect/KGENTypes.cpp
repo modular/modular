@@ -1323,6 +1323,31 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
+// CaptureList
+//===----------------------------------------------------------------------===//
+
+/// Implementation of parsing for CaptureListType.
+static ParseResult parseCaptureListType(AsmParser &p,
+                                        TypedAttr &capturingFunc) {
+  Type type;
+  if (parseKGENType(p, type) || p.parseColon() ||
+      parseParamValue(p, capturingFunc, type))
+    return failure();
+  if (!isa<SignatureType>(type))
+    return failure();
+  return mlir::success();
+}
+
+/// Implementation of printing for CaptureListType.
+static LogicalResult printCaptureListType(AsmPrinter &p,
+                                          TypedAttr capturingFunc) {
+  printKGENType(p, capturingFunc.getType());
+  p << " : ";
+  printParamValue(p, capturingFunc, capturingFunc.getType());
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
