@@ -119,8 +119,8 @@ fn _pad_impl[
     """
 
     let axis_dim = output.dim(axis)
-    let pre_pad = int(paddings.load(2 * axis))
-    let post_pad = int(paddings.load(2 * axis + 1))
+    let pre_pad = Int__(paddings.load(2 * axis))
+    let post_pad = Int__(paddings.load(2 * axis + 1))
     let non_pad = axis_dim - pre_pad - post_pad
 
     if axis + 1 == rank:
@@ -206,8 +206,8 @@ fn pad_shape[
     # compute and return the output shape
     var output_shape = StaticIntTuple[input_rank]()
     for axis in range(input_rank):
-        let pre_pad = int(paddings_buf[axis, 0])
-        let post_pad = int(paddings_buf[axis, 1])
+        let pre_pad = Int__(paddings_buf[axis, 0])
+        let post_pad = Int__(paddings_buf[axis, 1])
         output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
 
     return output_shape
@@ -297,8 +297,8 @@ fn _pad_reflect_impl[
         input_offset: The offset at which input data starts.
     """
     let axis_dim = output_shape[axis]
-    let pre_pad = int(paddings.load(2 * axis))
-    let post_pad = int(paddings.load(2 * axis + 1))
+    let pre_pad = Int__(paddings.load(2 * axis))
+    let post_pad = Int__(paddings.load(2 * axis + 1))
     let non_pad = axis_dim - pre_pad - post_pad
     let pre_pad_start_ptr = output.offset(output_offset)
     let input_start_ptr = input.offset(input_offset)

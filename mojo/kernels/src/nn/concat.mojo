@@ -495,7 +495,7 @@ fn concat_shape[
     """
 
     # extract hyper parameters
-    var axis = int(axis_buf[0])
+    var axis = Int__(axis_buf[0])
     if axis < 0:
         axis += input_rank
     # TODO(#17512)

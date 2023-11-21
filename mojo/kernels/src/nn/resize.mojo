@@ -148,7 +148,7 @@ fn resize_nearest_neighbor[
         @unroll
         for i in range(rank):
             in_coords[i] = min(
-                int(
+                Int__(
                     round(
                         coord_transform[coordinate_transformation_mode](
                             out_coords[i],
@@ -205,8 +205,8 @@ fn interpolate_point_1d[
     ) + 0.5
     let filter_scale = 1 / scale if antialias and scale < 1 else 1
     let support = interpolator.filter_length() * filter_scale
-    let xmin = max(0, int(center - support + 0.5))
-    let xmax = min(input.dim(dim), int(center + support + 0.5))
+    let xmin = max(0, Int__(center - support + 0.5))
+    let xmax = min(input.dim(dim), Int__(center + support + 0.5))
     var in_coords = out_coords
     var sum = SIMD[type, 1](0)
     var acc = SIMD[type, 1](0)
