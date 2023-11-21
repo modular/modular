@@ -44,6 +44,60 @@ using namespace M::KGEN;
 using namespace M;
 
 //===----------------------------------------------------------------------===//
+// Doc String support logic
+//===----------------------------------------------------------------------===//
+
+void ParserBase::parseDocString(ASTDecl &decl) {
+  // The doc string is simply a follow-on string literal.
+  Token docToken = getToken();
+  if (!consumeIf(Token::string))
+    return;
+  if (auto astDeclOp = dyn_cast<ASTDeclInterface>(decl)) {
+    StringRef docSpelling = docToken.getSpelling();
+    Location loc = shared.diags.translateLocation(
+        lexer.getStringLiteralStartLoc(docSpelling));
+
+    astDeclOp.setDocStringAttr(DocStringAttr::get(
+        StringAttr::get(getContext(), lexer.getStringLiteralValue(docSpelling)),
+        dyn_cast<FileLineColLoc>(loc)));
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// Decorator support logic
+//===----------------------------------------------------------------------===//
+
+SmallVector<std::pair<ExprNode *, LexerCursor>>
+ParserBase::parseDecorators(ASTDecl &decl) {
+  return parseDecorators(decl.getParentDecl()->getIndentation());
+}
+
+SmallVector<std::pair<ExprNode *, LexerCursor>>
+ParserBase::parseDecorators(ssize_t indentation) {
+  SmallVector<std::pair<ExprNode *, LexerCursor>> result;
+  if (getToken().getIndentation())
+    indentation = getToken().getIndentation().value();
+  while (consumeIf(Token::at)) {
+    ExprNode *decoratorExpr;
+    LexerCursor cursor = lexer.getCursor();
+    if (parseExpression(decoratorExpr, indentation))
+      break;
+    result.push_back({decoratorExpr, cursor});
+
+    if (!getToken().getIndentation() ||
+        ssize_t(getToken().getIndentation().value()) > indentation) {
+      emitTokenError("unexpected tokens after decorator, each need to be on "
+                     "their own line");
+      skipUntilIndentation(indentation);
+    }
+  }
+  // Decorators are applied to a decl starting from the one closest to it, so
+  // reverse the vector.
+  std::reverse(result.begin(), result.end());
+  return result;
+}
+
+//===----------------------------------------------------------------------===//
 // StmtParser
 //===----------------------------------------------------------------------===//
 

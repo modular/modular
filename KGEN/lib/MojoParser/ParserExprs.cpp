@@ -21,10 +21,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/ParserBase.h"
+#include "ParsedArgument.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
