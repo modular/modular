@@ -2097,26 +2097,44 @@ fn test_special_fn_traits(
     move(z)
     destroy(z)
 
+trait ParentTraitSameSig:
+    fn foo(self): ...
+
+# CHECK-LABEL: lit.trait.decl @ChildTraitSameSig
+trait ChildTraitSameSig(ParentTraitSameSig):
+    # CHECK-NEXT: lit.func @"foo(T)"
+    # CHECK-NEXT: lit.trait_func
+    fn foo(self): ...
+    # CHECK-NOT: foo
+
+# CHECK-LABEL: lit.trait.decl @GreatGrandFather
 trait GreatGrandFather:
+    # CHECK: lit.func @"foo(T)"
     fn foo(self): ...
 
 # CHECK-LABEL: lit.trait.decl @GrandFather
 # CHECK-SAME: (trait<{{.*}}@GreatGrandFather>)
 trait GrandFather(GreatGrandFather):
+    # CHECK: lit.func @"bar(T)"
     fn bar(self): ...
+    # CHECK: lit.func @"foo(T)"
 
 # CHECK-LABEL: lit.trait.decl @Father
 # CHECK-SAME: (trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>])
 trait Father(GrandFather):
-    pass
+    # CHECK: lit.func @"baz(T)"
+    fn baz(self): ...
+    # CHECK: lit.func @"bar(T)"
+    # CHECK: lit.func @"foo(T)"
 
 # CHECK-LABEL: lit.struct.decl @TraitInheritance
 # CHECK-SAME: (trait<{{.*}}@Father>, trait<{{.*}}@GrandFather>[trait<{{.*}}@Father>], trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>, trait<{{.*}}@Father>])
 struct TraitInheritance(Father):
     fn foo(self):
         pass
-
     fn bar(self):
+        pass
+    fn baz(self):
         pass
 
 # CHECK-LABEL: lit.func @"test_trait_inheritance

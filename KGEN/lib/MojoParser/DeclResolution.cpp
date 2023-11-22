@@ -1823,14 +1823,19 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
     return failure();
 
   // Resolve functions in the body here so that we can diagnose them.
-  for (auto &decls : llvm::make_second_range(traitDecl.declsInScope)) {
+  // Deduplicate inherited functions based on their name and mangled name, since
+  // the mangled name contains the required information for distinguishing
+  // overload candidates.
+  DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
+  for (auto &[name, decls] : traitDecl.declsInScope) {
+    if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+      continue;
     for (ASTDecl *decl : decls) {
-      auto func = dyn_cast<LIT::FuncOp>(*decl);
-      if (!func)
-        continue;
+      auto func = cast<LIT::FuncOp>(*decl);
       if (failed(resolveFully(*decl, decl->getLoc())))
         return failure();
 
+      existingFns.insert({name, func.getSymNameAttr()});
       if (!func.getBody()->empty()) {
         shared.emitError(decl->getLoc(),
                          "unexpected function body in trait function "
@@ -1841,6 +1846,37 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
     }
   }
 
+  // Now just pull in the functions in the bodies of all parents.
+  Block &body = *traitOp.getBody();
+  for (TypeLineageAttr parent : traitOp.getParentTypes()) {
+    ASTDecl &parentDecl =
+        getDeclForTypeSymbol(cast<TraitType>(parent.getType()).getSymbol());
+    if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
+      continue;
+
+    // Inherit function members, which we can override without worry because
+    // they are all just declarations.
+    for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
+      if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+        continue;
+      for (ASTDecl *decl : decls) {
+        // The function decls are fully resolved because we do so when resolving
+        // the inherited trait.
+        auto func = cast<LIT::FuncOp>(decl);
+        // Ensure that a function with the same name and signature hasn't
+        // already been declared.
+        if (!existingFns.insert({name, func.getSymNameAttr()}).second)
+          continue;
+        func = func.clone();
+        // Mark the function as inherited so that conformance checking won't
+        // give duplicate errors if it is not provided.
+        func.setIsInherited(true);
+        body.push_back(func);
+        finalizeFuncSignature(func, traitDecl);
+        addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
+      }
+    }
+  }
   return success();
 }
 
@@ -2593,8 +2629,9 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
     for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
         auto traitFn = dyn_cast<LIT::FuncOp>(*decl);
-        // Skip any children that aren't methods. This could be an alias.
-        if (!traitFn)
+        // Skip any children that aren't methods or are inherited. This could be
+        // an alias.
+        if (!traitFn || traitFn.getIsInherited())
           continue;
 
         ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
