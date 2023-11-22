@@ -262,7 +262,8 @@ TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
                                              Type type, VTableAttr vtable) {
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
-  if (auto refType = ::dyn_cast<ParamRefType>(value))
+  if (auto refType = ::dyn_cast<ParamRefType>(value);
+      refType && vtable.getEntries().empty())
     return refType.getParam();
 
   if (isParameterizedType(value))
@@ -396,29 +397,24 @@ bool IntLiteralAttr::isConstant() const { return true; }
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseVTableEntry(AsmParser &p, StringAttr &name,
-                                    SymbolConstantAttr &method) {
+                                    TypedAttr &method) {
   std::string nameStr;
   if (p.parseString(&nameStr))
     return failure();
   name = StringAttr::get(p.getContext(), nameStr);
   Type signature;
-  SymbolRefAttr symbol;
-  SmallVector<TypedAttr> paramValues;
   if (p.parseColon() || parseSignature(p, signature) || p.parseEqual() ||
-      p.parseAttribute(symbol) || parseParameterValues(p, paramValues))
+      parseParamValue(p, method, signature))
     return failure();
-  method = SymbolConstantAttr::get(symbol, paramValues,
-                                   cast<SignatureType>(signature));
   return success();
 }
 
-static void printVTableEntry(AsmPrinter &p, StringAttr name,
-                             SymbolConstantAttr method) {
+static void printVTableEntry(AsmPrinter &p, StringAttr name, TypedAttr method) {
   p.printString(name.getValue());
   p << " : ";
   printSignature(p, method.getType());
-  p << " = " << method.getSymbol();
-  printParameterValues(p, method.getParamValues());
+  p << " = ";
+  printParamValue(p, method);
 }
 
 //===----------------------------------------------------------------------===//

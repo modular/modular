@@ -342,13 +342,12 @@ def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
     ```
   }];
 
-  let parameters = (ins "StringAttr":$name,
-                        "SymbolConstantAttr":$method);
+  let parameters = (ins "StringAttr":$name, "TypedAttr":$method);
   let assemblyFormat = "`` custom<VTableEntry>($name, $method)";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "SymbolConstantAttr":$method), [{
+                                        "TypedAttr":$method), [{
       return $_get(name.getContext(), name, method);
     }]>
   ];
