@@ -63,6 +63,60 @@ from utils.index import Index
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
+fn _elementwise[
+    op: fn[dtype: DType, simd_width: Int] (x: SIMD[dtype, simd_width]) -> SIMD[
+        dtype, simd_width
+    ],
+    dtype: DType,
+](tensor: Tensor[dtype]) -> Tensor[dtype]:
+    let result = Tensor[tensor.dtype](tensor._spec)
+    let buffer = tensor._to_buffer()
+    let result_buffer = result._to_buffer()
+
+    @parameter
+    fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+        let idx = indices[0]
+        result_buffer.simd_store(
+            idx, op[dtype, width](buffer.simd_load[width](idx))
+        )
+
+    elementwise[rank=1, simd_width = simdwidthof[dtype](), func=func](
+        Index(len(buffer))
+    )
+
+    return result
+
+
+@always_inline
+fn _elementwise[
+    op: fn[dtype: DType, simd_width: Int] (
+        x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]
+    ) -> SIMD[dtype, simd_width],
+    dtype: DType,
+](a: Tensor[dtype], b: Tensor[dtype]) -> Tensor[dtype]:
+    let result = Tensor[a.dtype](a._spec)
+    let a_buffer = a._to_buffer()
+    let b_buffer = b._to_buffer()
+    let result_buffer = result._to_buffer()
+
+    @parameter
+    fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+        let idx = indices[0]
+        result_buffer.simd_store(
+            idx,
+            op[dtype, width](
+                a_buffer.simd_load[width](idx), b_buffer.simd_load[width](idx)
+            ),
+        )
+
+    elementwise[rank=1, simd_width = simdwidthof[dtype](), func=func](
+        Index(len(a_buffer))
+    )
+
+    return result
+
+
 struct Tensor[dtype: DType]:
     """A tensor type which owns its underlying data and is parameterized on
     DType.
@@ -212,7 +266,7 @@ struct Tensor[dtype: DType]:
 
     @always_inline
     fn __add__(self, other: Self) raises -> Self:
-        """Adds a tensor to another tensor.
+        """Adds this tensor with another tensor.
 
         Constraints:
              The two tensors must have the same rank, type, and dimensions.
@@ -226,23 +280,63 @@ struct Tensor[dtype: DType]:
         if self._spec != other._spec:
             raise "shape mismatch during tensor addition"
 
-        let result = Self(self._spec)
-        let lhs = self._to_buffer()
-        let rhs = other._to_buffer()
-        let result_buffer = result._to_buffer()
+        return _elementwise[math.add](self, other)
 
-        @parameter
-        fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
-            let idx = indices[0]
-            result_buffer.simd_store(
-                idx, lhs.simd_load[width](idx) + rhs.simd_load[width](idx)
-            )
+    @always_inline
+    fn __sub__(self, other: Self) raises -> Self:
+        """Subtracts a tensor from this tensor.
 
-        elementwise[rank=1, simd_width = simdwidthof[dtype](), func=func](
-            Index(len(lhs))
-        )
+        Constraints:
+             The two tensors must have the same rank, type, and dimensions.
 
-        return result
+        Args:
+            other: The RHS of the sub operation.
+
+        Returns:
+            The addition of both tensors.
+        """
+        if self._spec != other._spec:
+            raise "shape mismatch during tensor subtraction"
+
+        return _elementwise[math.sub](self, other)
+
+    @always_inline
+    fn __mul__(self, other: Self) raises -> Self:
+        """Multiplies this tensor with another tensor.
+
+        Constraints:
+             The two tensors must have the same rank, type, and dimensions.
+
+        Args:
+            other: The RHS of the mul operation.
+
+        Returns:
+            The multiplication of both tensors.
+        """
+        if self._spec != other._spec:
+            raise "shape mismatch during tensor multiplication"
+
+        return _elementwise[math.mul](self, other)
+
+    @always_inline
+    fn __truediv__(self, other: Self) raises -> Self:
+        """Divides this tensor by another tensor.
+
+        TODO: Change the return type if inputs are int
+
+        Constraints:
+             The two tensors must have the same rank, type, and dimensions.
+
+        Args:
+            other: The RHS of the div operation.
+
+        Returns:
+            The division of both tensors.
+        """
+        if self._spec != other._spec:
+            raise "shape mismatch during tensor multiplication"
+
+        return _elementwise[math.div](self, other)
 
     @always_inline
     fn __ipow__(inout self, exponent: Int) -> None:
