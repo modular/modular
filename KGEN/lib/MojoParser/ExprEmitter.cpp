@@ -863,8 +863,11 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 
 /// Return true if the given type implements the trait.
 static bool metaTypeImplements(TraitType trait, ASTDecl *typeDecl) {
-  ArrayRef<TypeLineageAttr> parentTypes =
-      cast<StructDeclOp>(typeDecl).getParentTypes();
+  ArrayRef<TypeLineageAttr> parentTypes;
+  if (auto structOp = dyn_cast<StructDeclOp>(typeDecl))
+    parentTypes = structOp.getParentTypes();
+  else
+    parentTypes = cast<TraitDeclOp>(typeDecl).getParentTypes();
   return llvm::find_if(parentTypes, [trait](TypeLineageAttr type) {
            return type.getType() == trait;
          }) != parentTypes.end();
@@ -883,7 +886,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Metatypes can implicitly convert to any trait type they implement.
   if (auto traitType = dyn_cast<TraitType>(requiredType))
-    if (isa<MetaTypeType>(rvType) &&
+    if (isa<MetaTypeType, TraitType>(rvType) &&
         metaTypeImplements(traitType, rvType.getDecl(shared)))
       return true;
 
@@ -958,26 +961,26 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
   return SRValue(rebind(srValue));
 }
 
-AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
-                                             MetaTypeType metatype,
+AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
                                              ASTExprAnd<CValue> value,
                                              ValueDest &dest) {
   // Only static vtables are supported right now.
-  if (!value.ir.getIfPValue()) {
+  PValue typeValue = value.ir.getIfPValue();
+  if (!typeValue) {
     dest.resetForError();
     emitError(value.expr->getLoc(), "existentials are not supported yet!");
     return {};
   }
 
   // Check that the struct implements the trait.
-  ASTDecl *typeDecl = ASTType(metatype).getDecl(shared);
+  ASTDecl *typeDecl = type.getDecl(shared);
   if (!metaTypeImplements(trait, typeDecl)) {
     dest.resetForError();
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
-                        << ASTType(metatype) << " to trait " << ASTType(trait)
+                        << type << " to trait " << ASTType(trait)
                         << value.expr->getRange();
     diag.attachNote(typeDecl->getLoc())
-        << ASTType(metatype) << " does not implement " << ASTType(trait);
+        << type << " does not implement " << ASTType(trait);
     return {};
   }
 
@@ -987,14 +990,23 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
   if (failed(getDeclResolver().resolveFully(*traitDecl, value.expr->getLoc())))
     return {};
 
-  auto selfType = DeclRefType::get(metatype.getSymbol(),
-                                   metatype.getParamValues(), metatype);
-  // FIXME(generics): We aren't propagating metatypes into pointer types, so
-  // just pass a generic metatype here.
+  Type selfType;
+  SmallVector<TypedAttr> selfParams;
   auto anyRegTypeType = AnyRegTypeType::get(getContext());
-  SmallVector<TypedAttr> selfParams(
-      {TypeConstantAttr::get(anyRegTypeType, anyRegTypeType),
-       TypeConstantAttr::get(selfType, anyRegTypeType)});
+  if (auto metatype = dyn_cast<MetaTypeType>(type)) {
+    // When converting from a concrete type, construct the self type value as
+    // a declref to the metatype.
+    selfType = DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
+                                metatype);
+    // Substitute the implicit trait parameters.
+    selfParams.assign({TypeConstantAttr::get(anyRegTypeType, anyRegTypeType),
+                       TypeConstantAttr::get(selfType, anyRegTypeType)});
+  } else {
+    // Otherwise, we are converting from a trait. Just rebind the types.
+    selfType = ParamRefType::get(typeValue);
+    selfParams.assign({TypeConstantAttr::get(type, anyRegTypeType),
+                       TypeConstantAttr::get(selfType, anyRegTypeType)});
+  }
 
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
@@ -1011,7 +1023,8 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
       SmallVector<TypedAttr> fnParams = selfParams;
       LITSignatureType sig = traitFn.getFullSignature();
       ParameterEvaluator evaluator(selfParams);
-      auto bindings = InputParamBindings::getForDeclaredType(metatype);
+      auto bindings =
+          InputParamBindings::getForDeclaredType(ASTType(typeValue));
       for (Type type : sig.getInputParamTypes().drop_front(2)) {
         fnParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
         evaluator.addInputValue(fnParams.back());
@@ -1022,6 +1035,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
       // Grab the matching function.
       OverloadSet ov(name, typeFuncs, std::move(bindings), value.expr,
                      CallSyntax::kMethodCall);
+      ov.baseType = ASTType(typeValue);
       PValue result = ov.filterOverloadSetForValueType(
           sig, /*emitDiagnosticOnFailure=*/false, *this);
       if (!result) {
@@ -1030,8 +1044,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait,
         dest.resetForError();
         return {};
       }
-      vtable.push_back(
-          VTableEntryAttr::get(name, cast<SymbolConstantAttr>(result.get())));
+      vtable.push_back(VTableEntryAttr::get(name, result));
     }
   }
 
@@ -1138,10 +1151,12 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
       // Emit metatype conversions to trait types if the metatype implements the
       // specified trait.
-      // TODO(traits): actually enforce conformance checking.
-      if (auto trait = dyn_cast<TraitType>(requiredType))
-        if (auto metatype = dyn_cast<MetaTypeType>(rvalueType))
-          return emitMetaTypeConversion(trait, metatype, {cValue, expr}, dest);
+      if (auto trait = dyn_cast<TraitType>(requiredType)) {
+        if (isa<MetaTypeType, TraitType>(rvalueType)) {
+          return emitMetaTypeConversion(trait, rvalueType, {cValue, expr},
+                                        dest);
+        }
+      }
 
       // We disable implicit conversions to prevent converting T -> S -> U in
       // one step, and to avoid infinite conversion cycles.

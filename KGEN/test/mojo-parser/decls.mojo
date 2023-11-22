@@ -2149,7 +2149,28 @@ fn test_trait_inheritance():
     fn take_father[T: Father]():
         pass
 
-    # CHECK-COUNT-3: call_param
+    # CHECK: call_param
+    # CHECK-SAME: "foo"
     take_great_grand_father[TraitInheritance]()
+    # CHECK: call_param
+    # CHECK-SAME: "bar"
+    # CHECK-SAME: "foo"
     take_grand_father[TraitInheritance]()
+    # CHECK: call_param
+    # CHECK-SAME: "baz"
+    # CHECK-SAME: "bar"
+    # CHECK-SAME: "foo"
     take_father[TraitInheritance]()
+
+fn infer_grand_father[T: GrandFather](x: T):
+    pass
+
+# CHECK-LABEL: lit.func @"pass_up_trait
+# CHECK-SAME: <[[T:.*]][T]: trait<{{.*}}@Father>>
+fn pass_up_trait[T: Father](x: T):
+    # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:trait<{{.*}}@GrandFather>
+    # CHECK-SAME: [!kgen.paramref<:trait<{{.*}}@Father> [[T]]>, {
+    # CHECK-SAME: "bar" : !lit.signature<("self": !kgen.pointer<:trait<{{.*}}@Father> [[T]]> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} [[T]], "bar"),
+    # CHECK-SAME: "foo" : !lit.signature<("self": !kgen.pointer<:trait<{{.*}}@Father> [[T]]> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} [[T]], "foo")
+    # CHECK-SAME: }]>(%x)
+    infer_grand_father(x)
