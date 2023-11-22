@@ -9,6 +9,7 @@
 
 include "Support/DebugInfoDialect/IR/DebugInfoAttrs.td"
 include "Support/DebugInfoDialect/IR/DebugInfoEnums.td"
+include "Support/DebugInfoDialect/IR/DebugInfoExprAttrs.td"
 include "Support/DebugInfoDialect/IR/DebugInfoOps.td"
 include "Support/DebugInfoDialect/IR/DebugInfoTypes.td"
 

@@ -48,6 +48,7 @@ public:
   /// Support LLVM type casting.
   static bool classof(Attribute attr);
 };
+
 } // namespace M::DebugInfo
 
 //===----------------------------------------------------------------------===//
@@ -55,6 +56,7 @@ public:
 //===----------------------------------------------------------------------===//
 
 #include "Support/DebugInfoDialect/IR/DebugInfoEnums.h.inc"
+#include "Support/DebugInfoDialect/IR/DebugInfoExprAttrInterfaces.h.inc"
 
 #define GET_ATTRDEF_CLASSES
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h.inc"
