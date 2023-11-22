@@ -177,7 +177,6 @@ fn max_pool[
 
     alias stencil_rank = 2
     alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
-    let pad_value = 0
 
     @always_inline
     @parameter
@@ -208,7 +207,7 @@ fn max_pool[
             or point[2] < 0
             or point[2] >= input_width
         ):
-            return pad_value
+            return neginf[type]()
         return rebind[SIMD[type, simd_width]](
             input.simd_load[simd_width](point)
         )
