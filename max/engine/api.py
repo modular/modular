@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
 from pathlib import Path
 from sys import version_info
@@ -39,9 +39,11 @@ class TensorFlowLoadOptions:
 
 
 @dataclass
-class ExperimentalLoadOptions:
-    """Base class for experimental load options.
-    These are for internal use only."""
+class CommonLoadOptions:
+    """Common options for how to load models."""
+
+    custom_ops_path: str = field(default="")
+    """The path from which to load custom ops."""
 
 
 class Model:
@@ -324,9 +326,7 @@ class InferenceSession:
     def load(
         self,
         model_path: Union[str, Path],
-        options: Optional[
-            Union[TensorFlowLoadOptions, ExperimentalLoadOptions]
-        ] = None,
+        *options: Union[TensorFlowLoadOptions, CommonLoadOptions],
         **kwargs,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
@@ -337,7 +337,7 @@ class InferenceSession:
             Path to a model. May be a TensorFlow model in the SavedModel
             format or a traceable PyTorch model.
 
-        options: Union[TensorFlowLoadOptions, ExperimentalLoadOptions]
+        *options: Union[TensorFlowLoadOptions, CommonLoadOptions]
             Load options for configuring how the model should be compiled.
 
         Returns
@@ -352,25 +352,20 @@ class InferenceSession:
         """
 
         options_dict = {}
-        if options:
+        for options_obj in options:
+            if not is_dataclass(options_obj):
+                raise TypeError(
+                    "Invalid load options object; must be dataclass."
+                )
             # Unwrap dataclass options to a dictionary, and furthermore unwrap
             # any nested objects that are not pybind classes so that the values
             # passed to the compile implementation can be interpreted.
-            options_dict = asdict(
-                options, dict_factory=_unwrap_pybind_objects_dict_factory
+            options_dict.update(
+                asdict(
+                    options_obj,
+                    dict_factory=_unwrap_pybind_objects_dict_factory,
+                ).items()
             )
-            if not isinstance(
-                options, TensorFlowLoadOptions
-            ) and not isinstance(options, ExperimentalLoadOptions):
-                raise TypeError("Invalid compilation options object.")
-
-        # Merge experimental options with existing options.
-        if kwargs and "experimental_options" in kwargs:
-            for key, value in kwargs["experimental_options"].items():
-                if key != "type":
-                    options_dict[key] = value
-                elif key not in options_dict:
-                    options_dict[key] = value
 
         model_path = Path(str(model_path))
         _model = self._impl.compile(model_path, options_dict)

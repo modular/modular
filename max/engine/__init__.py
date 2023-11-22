@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .api import (
+    CommonLoadOptions,
     DType,
-    ExperimentalLoadOptions,
     InferenceSession,
     Model,
     TensorFlowLoadOptions,
