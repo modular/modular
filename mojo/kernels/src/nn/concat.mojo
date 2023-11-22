@@ -10,7 +10,10 @@ from sys.build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
 
 from algorithm import sync_parallelize
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import (
+    _elementwise_impl,
+    _get_start_indices_of_nth_subvolume,
+)
 from memory import memcpy
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
@@ -30,8 +33,10 @@ from gpu.host.memory import (
     _malloc,
     _memset_async,
 )
-from gpu.host import Stream, Context, synchronize
+from gpu.host import Stream, Context, Function, synchronize
 from gpu.memory import _malloc_async, _free_async
+
+from gpu import ThreadIdx, BlockIdx
 
 # ===----------------------------------------------------------------------===#
 # concat
@@ -1328,6 +1333,29 @@ fn concat[
         return out_chain.mark_error(e)
 
 
+fn _concat_inner_most_single_dim[
+    rank: Int, type: DType, num_inputs: Int, block_size: Int
+](
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    inputs: StaticTuple[
+        num_inputs, NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ],
+):
+    let idx = BlockIdx.x() * block_size + ThreadIdx.x()
+    let index = _get_start_indices_of_nth_subvolume[rank, 1](
+        idx, output.dynamic_shape
+    )
+
+    if index > output.num_elements():
+        return
+
+    @unroll
+    for i in range(num_inputs):
+        var out_index = index
+        out_index[rank - 1] = i
+        output[out_index] = inputs[i][index]
+
+
 @always_inline
 fn _concat_gpu[
     rank: Int,
@@ -1341,7 +1369,9 @@ fn _concat_gpu[
     ],
     out_chain: OutputChainPtr,
 ) raises:
-    var stream = out_chain.get_cuda_stream()
+    var stream = out_chain.get_cuda_stream() if out_chain else Stream[
+        is_borrowed=True
+    ]()
 
     # Size of outer dims, if 1 we should memcpy to the output buffer.
     var outer_dims = 1
@@ -1389,6 +1419,35 @@ fn _concat_gpu[
                 return
 
             in_index[axis] -= input.get_shape()[axis]
+
+    if axis == rank - 1:
+        var inner_most_unit_dim = True
+        for i in range(num_inputs):
+            if inputs[i].dim(axis) != 1:
+                inner_most_unit_dim = False
+                break
+
+        if inner_most_unit_dim:
+            alias block_size = 32
+            let func = Function[
+                fn (
+                    NDBuffer[rank, DimList.create_unknown[rank](), type],
+                    StaticTuple[
+                        num_inputs,
+                        NDBuffer[rank, DimList.create_unknown[rank](), type],
+                    ],
+                ) -> None, _concat_inner_most_single_dim[
+                    rank, type, num_inputs, block_size
+                ]
+            ]()
+
+            return func(
+                (output.num_elements() // block_size),
+                (block_size),
+                output,
+                inputs,
+                stream=stream,
+            )
 
     # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
     # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
