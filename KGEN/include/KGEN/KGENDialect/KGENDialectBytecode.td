@@ -156,7 +156,7 @@ def VTableAttr : DialectAttribute<(attr
 
 def VTableEntryAttr : DialectAttribute<(attr
   StringAttr:$name,
-  ConcreteAttribute<"SymbolConstantAttr">:$method
+  ConcreteAttribute<"TypedAttr">:$method
 )>;
 
 def ConcreteTypeConstantAttr : DialectAttribute<(attr
