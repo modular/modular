@@ -1868,9 +1868,15 @@ void SharedState::traverseImportDirectories(
   // Check the working directory.
   if (importBufferFileId) {
     const auto *includeBuffer = sourceMgr.getMemoryBuffer(importBufferFileId);
-    auto includerPath =
-        std::filesystem::path(includeBuffer->getBufferIdentifier().str());
-    if (callback(includerPath.parent_path().string()).wasInterrupted())
+    std::filesystem::path includerPath(
+        includeBuffer->getBufferIdentifier().str());
+
+    // Use the top-most non-package directory.
+    do {
+      includerPath = includerPath.parent_path();
+    } while (isMojoSourcePackagePath(includerPath));
+
+    if (callback(includerPath.string()).wasInterrupted())
       return;
   }
 

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file -I=%S %s | FileCheck %s
+# RUN: kgen-translate -import-mojo -verify-diagnostics -I=%S %s | FileCheck %s
 
 # Test import of a module, and we properly allow import of an imported decl.
 
@@ -17,7 +17,25 @@ fn import_of_import(arg: Float64):
     pass
 
 
-# // -----
+from test_package.module import top_level_alias
+
+
+# CHECK-LABEL: lit.func @"foo
+fn foo():
+    let t = top_level_alias
+
+
+# CHECK-NOT: lit.alias.decl
+
+# Test that a package importing another package at
+# the same level is properly supported.
+
+from test_package_user import using_test_package
+
+# CHECK-LABEL: lit.func @"test_package_user
+
+fn test_package_user():
+    using_test_package()
 
 # Test import of a package.
 
@@ -47,16 +65,3 @@ fn test_function_calls(arg: builtin.int.Int):
     function()
     nested_function()
     method_defined_in_init()
-
-
-# // -----
-
-from test_package.module import top_level_alias
-
-
-# CHECK-LABEL: lit.func @"foo
-fn foo():
-    let t = top_level_alias
-
-
-# CHECK-NOT: lit.alias.decl
