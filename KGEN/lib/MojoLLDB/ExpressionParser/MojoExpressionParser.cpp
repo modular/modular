@@ -159,11 +159,14 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
                                        specializations);
       },
       /*packageLinkHandlerFn=*/
-      [this](PackageLinkOp packageLink, TargetInfoAttr targetInfo,
-             BuildInfoAttr buildInfo) {
-        return loadAndElaborateBytecode(packageLink, targetInfo, buildInfo,
-                                        compilationOptions,
-                                        typeSystem->getRuntime());
+      [](PackageLinkOp packageLink, TargetInfoAttr, BuildInfoAttr) {
+        // FIXME(#22766): MCJIT crashes when using precompiled archives. So,
+        // load the pre-elaborated bytecode into the importing module, instead
+        // of compiling it on-demand into a package archive. Note that the
+        // pre-elaborated functions are still marked as "exported" from the
+        // module that now imports them -- this is subtly incorrect but has no
+        // significance in the REPL.
+        return packageLink.getPreElaborationModuleAttr();
       });
 
   // Create the compiler instance.
@@ -732,8 +735,6 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
       KGEN::LIT::cloneDeclModuleForCompilation(*result.moduleDecl, mapping);
   if (failed(mlir::verify(*module)))
     return returnErrorCleanup();
-  setTargetInfo(*module, impl->typeSystem->GetTargetInfo());
-  setBuildInfo(*module, BuildInfoAttr::getForCurrentBuild(ctx));
 
   // Ensure the expression function in the cloned module gets exported.
   auto clonedExprFn = cast<LIT::FuncOp>(mapping.lookup(&*exprFn));
