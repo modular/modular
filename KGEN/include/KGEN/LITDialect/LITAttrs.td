@@ -164,6 +164,24 @@ def UnboundMLIROperationAttr
 }
 
 //===----------------------------------------------------------------------===//
+// UnpackedAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
+  let summary = "An attribute representing an unpacked value.";
+  let description = [{
+    Represents unpacked expressions (a.k.a. starred expressions in Python).
+    The contained expression must be a single iterable attribute e.g. a
+    `#kgen.variadic` (in which case this represents unpacking it), or an
+    `UnboundAttr` (whose unpacking means repeating it).
+  }];
+
+  let parameters = (ins "TypedAttr":$value,
+                        AttributeSelfTypeParameter<"", "UnpackedType">:$type);
+  let assemblyFormat = "`<` custom<ColonTypeParamValue>($value) `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // ModuleAttr
 //===----------------------------------------------------------------------===//
 

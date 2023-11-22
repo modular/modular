@@ -146,6 +146,21 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
 }
 
 //===----------------------------------------------------------------------===//
+// UnpackedType
+//===----------------------------------------------------------------------===//
+
+def LIT_UnpackedType : LITType<"Unpacked", "unpacked"> {
+  let summary = "Parameterized unpacked expression type.";
+  let description = [{
+    The `!lit.unpacked` type represent the type of an unpacked expression before
+    the unpacking is actually performed. It stores the type of the expression to
+    be unpacked.
+  }];
+  let parameters = (ins "Type":$exprType);
+  let assemblyFormat = "`<` custom<ParamType>($exprType) `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // MetaTypeType
 //===----------------------------------------------------------------------===//
 

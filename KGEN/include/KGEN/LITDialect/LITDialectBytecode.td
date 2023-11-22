@@ -27,6 +27,10 @@ def TypeSignatureType : DialectType<(type
   Bool:$paramVarArg
 )>;
 
+def UnpackedType : DialectType<(type
+  Type:$exprType
+)>;
+
 def MetaTypeType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
@@ -61,6 +65,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
     UnresolvedType,
     DiscardType,
     TypeSignatureType,
+    UnpackedType,
     MetaTypeType,
     TraitType,
     LifetimeType,
@@ -94,6 +99,11 @@ def DocStringAttr : DialectAttribute<(attr
 def UnboundMLIROperationAttr : DialectAttribute<(attr
   StringAttr:$name,
   ConcreteAttribute<"DictionaryAttr">:$attrs
+)>;
+
+def UnpackedAttr : DialectAttribute<(attr
+  TypedAttr:$value,
+  ConcreteType<"UnpackedType">:$type
 )>;
 
 def ModuleAttr : DialectAttribute<(attr
@@ -152,6 +162,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     FnMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,
+    UnpackedAttr,
     ModuleAttr,
     BindTypeAttr,
     LifetimeAttr,
