@@ -291,8 +291,10 @@ InputParamBindings::verifyBindings(
         setParamValue(UnboundAttr::get(expectedType));
         continue;
       }
-      if (diagEmitter.emitParamCount)
-        diagEmitter.emitParamCount(passingKind == PassingKind::PosOnly);
+      if (diagEmitter.emitParamCount) {
+        diagEmitter.emitParamCount(numPosBindings,
+                                   passingKind == PassingKind::PosOnly);
+      }
       return {{}, fitness};
     }
 
@@ -411,7 +413,7 @@ InputParamBindings::verifyBindings(
   // Check and complain if we have bindings that didn't get used.
   if (posBindingIdx != numPosBindings) {
     if (diagEmitter.emitParamCount)
-      diagEmitter.emitParamCount(/*posOnly=*/false);
+      diagEmitter.emitParamCount(numPosBindings, /*posOnly=*/false);
     return {{}, fitness};
   }
 
@@ -426,22 +428,18 @@ InputParamBindings::verifyBindings(
     ExprEmitter &emitter, bool hasParamVarArgs, StringRef baseName,
     Location opLoc, llvm::SMLoc exprLoc, bool allowPartiallyBound) const {
   DiagEmitter diagEmitter{
-      /*emitParamCount=*/[&](bool posOnly) {
+      /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
         InflightDiag diag = emitter.emitError(exprLoc, "'") << baseName << "'";
         if (posOnly) {
-          auto isPosOnly = [](PassingKind kind) {
-            return kind == PassingKind::PosOnly;
-          };
-          size_t minRequired = llvm::count_if(paramPassingKinds, isPosOnly);
-          emitWrongArgOrParamCount(diag, minRequired,
-                                   /*maxAllowed=*/expectedParamTypes.size(),
-                                   /*numActual=*/posBindings.size(),
-                                   "positional input parameter");
+          emitWrongArgOrParamCount(
+              diag, /*minRequired=*/countNumPosOnly(paramPassingKinds),
+              /*maxAllowed=*/expectedParamTypes.size(), /*numActual=*/numActual,
+              "positional input parameter");
         } else {
           size_t minRequired = expectedParamTypes.size() - defaultParams.size();
           emitWrongArgOrParamCount(diag, minRequired,
                                    /*maxAllowed=*/expectedParamTypes.size(),
-                                   /*numActual=*/size(), "input parameter");
+                                   numActual, "input parameter");
         }
 
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";

@@ -122,6 +122,9 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
+/// Count the number of positional-only passing kinds.
+size_t countNumPosOnly(ArrayRef<PassingKind> kinds);
+
 /// Count the number of implicit passing kinds.
 size_t countNumImplicitKinds(ArrayRef<PassingKind> kinds);
 

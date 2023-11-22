@@ -135,9 +135,10 @@ public:
   /// Helper class to customizing diagnostic emission for verification. The
   /// default implementation suppresses all diagnostics.
   struct DiagEmitter {
-    /// Emit diagnostics for incorrect parameter count. The flag indicates if
-    /// this is due to an insufficient number of positional-only parameters.
-    std::function<void(bool posOnly)> emitParamCount;
+    /// Emit diagnostics for incorrect parameter count given the actual
+    /// parameter count. The flag indicates if this is due to an insufficient
+    /// number of positional-only parameters.
+    std::function<void(size_t, bool)> emitParamCount;
     /// Emit diagnostics for incorrect type in a positional parameter.
     std::function<void(size_t, const Binding &, ASTType)> emitPosType;
     /// Emit diagnostics for incorrect type in a keyword parameter.
