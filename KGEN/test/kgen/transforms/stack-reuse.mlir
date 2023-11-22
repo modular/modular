@@ -177,3 +177,28 @@ kgen.func @copy_elision_alias() {
   pop.load %3 : !kgen.pointer<struct<(index)>>
   kgen.return
 }
+
+// CHECK-LABEL: @function_boundary
+kgen.func @function_boundary(%arg0: index) -> index {
+  // CHECK: [[S0:%.*]] = pop.stack_allocation
+  %0 = pop.stack_allocation 1 x index
+  pop.store %arg0, %0 : !kgen.pointer<index>
+  %1 = pop.stack_allocation 1 x index
+  pop.store %arg0, %1 : !kgen.pointer<index>
+  // CHECK: lit.async.execute
+  lit.async.execute <() -> index> {
+    // CHECK: [[S1:%.*]] = pop.stack_allocation
+    %3 = pop.stack_allocation 1 x index
+    pop.store %arg0, %3 : !kgen.pointer<index>
+    %4 = pop.stack_allocation 1 x index
+    pop.store %arg0, %4 : !kgen.pointer<index>
+    // CHECK: [[R1:%.*]] = pop.load [[S1]]
+    %5 = pop.load %4 : !kgen.pointer<index>
+    // CHECK-NEXT: return [[R1]]
+    kgen.return %5 : index
+  }
+  // CHECK: [[R0:%.*]] = pop.load [[S0]]
+  %2 = pop.load %1 : !kgen.pointer<index>
+  // CHECK-NEXT: return [[R0]]
+  kgen.return %2 : index
+}
