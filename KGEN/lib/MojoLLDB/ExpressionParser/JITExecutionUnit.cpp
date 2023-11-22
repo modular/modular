@@ -845,12 +845,21 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   impl->executionEngine->setProcessAllSections(true);
   impl->executionEngine->DisableLazyCompilation();
 
-  std::unique_ptr<llvm::MemoryBuffer> buffer =
-      llvm::MemoryBuffer::getMemBuffer(impl->archiveBuffer->getMemBufferRef(),
-                                       /*RequiresNullTerminator=*/false);
-  impl->executionEngine->addArchive(
-      llvm::object::OwningBinary<llvm::object::Archive>(
-          std::move(impl->archive), std::move(buffer)));
+  llvm::Error err = llvm::Error::success();
+  for (auto &child : impl->archive->children(err)) {
+    if (err)
+      return Status(std::move(err));
+    auto binOrErr = child.getAsBinary();
+    if (!binOrErr)
+      return Status(binOrErr.takeError());
+    auto objectFile = dyn_cast<llvm::object::ObjectFile>(*binOrErr);
+    if (!objectFile)
+      return Status("archive member was not an object file");
+
+    impl->executionEngine->addObjectFile(std::move(objectFile));
+  }
+  // Handle all errors - we didn't hit anything.
+  llvm::handleAllErrors(std::move(err));
 
   // Register each function in the module.
   for (auto &[sym, exportVal] : impl->exportedSymbols) {
