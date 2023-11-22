@@ -1563,7 +1563,7 @@ struct DecoratedStruct:
 # Traits
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.trait.decl @Trait<?, MT: regtype, T: !kgen.paramref<MT>> {
+# CHECK-LABEL: lit.trait.decl @Trait<?, MT: regtype, T: !kgen.paramref<MT>>
 trait Trait:
     # CHECK: lit.func @"f0(T)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> borrow_in_mem) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
@@ -1596,16 +1596,16 @@ trait Trait:
     # CHECK-SAME: <[[x:.*]][x]: !Int>
     fn parametric[x: Int](self): ...
 
-# CHECK-LABEL: lit.trait.decl @EmptyTrait<?, MT: regtype, T: !kgen.paramref<MT>> {
+# CHECK-LABEL: lit.trait.decl @EmptyTrait<?, MT: regtype, T: !kgen.paramref<MT>>
 trait EmptyTrait:
     pass
 
-# CHECK-LABEL: lit.trait.decl @Trait1<?, MT: regtype, T: !kgen.paramref<MT>> {
+# CHECK-LABEL: lit.trait.decl @Trait1<?, MT: regtype, T: !kgen.paramref<MT>>
 trait Trait1:
     # CHECK: lit.func @"f{{.*}}"(%__result__[__result__]: !kgen.pointer<:!kgen.paramref<MT> T> byref_result, |, %self[self]: !kgen.pointer<:!kgen.paramref<MT> T> borrow_in_mem) -> !kgen.none
     fn f(self: Self) -> Self: ...
 
-# CHECK-LABEL: lit.trait.decl @Trait2<?, MT: regtype, T: !kgen.paramref<MT>> {
+# CHECK-LABEL: lit.trait.decl @Trait2<?, MT: regtype, T: !kgen.paramref<MT>>
 trait Trait2:
     # CHECK: lit.func @"f{{.*}}"(%__result__[__result__]: !kgen.pointer<:!kgen.paramref<MT> T> byref_result, |, %self[self]: !kgen.pointer<:!kgen.paramref<MT> T> borrow_in_mem) -> !kgen.none
     fn f(self: Self) -> Self: ...
@@ -1630,7 +1630,7 @@ trait CFMTrait:
    fn f2():
        pass
 
-# CHECK-LABEL: lit.struct.decl @CFMStruct(trait<{{.*}}@CFMTrait>)
+# CHECK-LABEL: lit.struct.decl @CFMStruct(trait<{{.*}}@CFMTrait>
 struct CFMStruct(CFMTrait):
    #CHECK: lit.func @"f1({{.*}})"(%self[self]: !kgen.pointer<!CFMStruct> borrow_in_mem) -> !kgen.none
    fn f1(self: Self):
@@ -1719,8 +1719,8 @@ fn test_metatype_to_trait_vtable():
     # CHECK-SAME: "param_method" : !lit.signature<<"x": index>("self": !kgen.pointer<!TraitStruct> borrow_in_mem) -> !kgen.none> = {{.*}}@TraitStruct::@"param_method{{.*}}"<?>
     take_simple_trait[TraitStruct]()
     # CHECK: call {{.*}}take_simple_trait{{.*}}<:trait<{{.*}}@SimpleTrait> [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>, {
-    # CHECK-SAME: "method" : !lit.signature<("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>
-    # CHECK-SAME: "param_method" : !lit.signature<<"x": index>("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>
+    # CHECK-SAME: "method" : !lit.signature<("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>,
+    # CHECK-SAME: "param_method" : !lit.signature<<"x": index>("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>,
     take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()
 
 # CHECK-LABEL: lit.func @"test_infer_trait
@@ -2108,19 +2108,20 @@ trait ChildTraitSameSig(ParentTraitSameSig):
     # CHECK-NOT: foo
 
 # CHECK-LABEL: lit.trait.decl @GreatGrandFather
+# CHECK-SAME: (trait<{{.*}}@Destructable>)
 trait GreatGrandFather:
     # CHECK: lit.func @"foo(T)"
     fn foo(self): ...
 
 # CHECK-LABEL: lit.trait.decl @GrandFather
-# CHECK-SAME: (trait<{{.*}}@GreatGrandFather>)
+# CHECK-SAME: (trait<{{.*}}@GreatGrandFather>,
 trait GrandFather(GreatGrandFather):
     # CHECK: lit.func @"bar(T)"
     fn bar(self): ...
     # CHECK: lit.func @"foo(T)"
 
 # CHECK-LABEL: lit.trait.decl @Father
-# CHECK-SAME: (trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>])
+# CHECK-SAME: (trait<{{.*}}@GrandFather>, trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>],
 trait Father(GrandFather):
     # CHECK: lit.func @"baz(T)"
     fn baz(self): ...
@@ -2128,7 +2129,7 @@ trait Father(GrandFather):
     # CHECK: lit.func @"foo(T)"
 
 # CHECK-LABEL: lit.struct.decl @TraitInheritance
-# CHECK-SAME: (trait<{{.*}}@Father>, trait<{{.*}}@GrandFather>[trait<{{.*}}@Father>], trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>, trait<{{.*}}@Father>])
+# CHECK-SAME: (trait<{{.*}}@Father>, trait<{{.*}}@GrandFather>[trait<{{.*}}@Father>], trait<{{.*}}@GreatGrandFather>[trait<{{.*}}@GrandFather>, trait<{{.*}}@Father>],
 struct TraitInheritance(Father):
     fn foo(self):
         pass

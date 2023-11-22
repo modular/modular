@@ -100,3 +100,27 @@ fn take_father[T: Father](value: T):
 fn like_father_like(value: Son):
     # CHECK: call [[TAKE_FATHER]]
     take_father(value)
+
+
+trait Copyable:
+    fn __copyinit__(inout self, existing: Self, /):
+        ...
+
+
+@value
+@register_passable
+struct SomeType(Copyable):
+    fn __del__(owned self):
+        pass
+
+
+# CHECK-LABEL: kgen.func {{.*}}drop_copy
+fn drop_copy[T: Copyable](value: T):
+    # CHECK: %0 = kgen.call {{.*}}SomeType::__copyinit__{{.*}}(%arg0)
+    # CHECK: call {{.*}}SomeType::__del__{{.*}}(%0)
+    let unused = value
+
+
+@export
+fn copy_destroy(x: SomeType):
+    drop_copy(x)
