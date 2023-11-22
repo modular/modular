@@ -129,6 +129,19 @@ struct DenseMapInfo<PotentialValue> {
 };
 } // namespace llvm
 
+namespace {
+struct PassInfo {
+  mlir::DominanceInfo &domInfo;
+  unsigned numErasedOps = 0;
+  unsigned numElidedVars = 0;
+};
+} // namespace
+
+/// The stack reuse optimization operates over single function regions. This is
+/// the entry point into the optimization pass that should be invoked for every
+/// function body.
+static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass);
+
 /// This is an analysis pass over the function body that determines:
 ///
 /// 1. The stack allocations that are eligible to be elided. These are stack
@@ -140,13 +153,26 @@ struct DenseMapInfo<PotentialValue> {
 ///    region of the operation.
 ///
 static std::vector<StackAllocationOp>
-runAnalysis(Region &top, DenseMap<Value, StackAllocationOp> &aliases,
+runAnalysis(Region &top, PassInfo &pass,
+            DenseMap<Value, StackAllocationOp> &aliases,
             DenseMap<Operation *, std::vector<StackAllocationOp>> &variant) {
   TimeTraceScope<> traceScope("runAnalysis");
   // These are the stack allocations that are eligible for elision by this pass.
   std::vector<StackAllocationOp> allocs;
 
-  top.walk([&](StackAllocationOp alloc) {
+  top.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    // Visit all stack allocations.
+    auto alloc = dyn_cast<StackAllocationOp>(op);
+    if (!alloc) {
+      if (!op->getNumRegions() || isa<HLCF::ControlFlowNode>(op))
+        return WalkResult::advance();
+      // Skip over nested regions that aren't part of the CFG in this analysis,
+      // but recurse the entire pass.
+      for (Region &region : op->getRegions())
+        runStackReuseOnRegion(region, pass);
+      return WalkResult::skip();
+    }
+
     // This set contains the parent operations of all users of the projection of
     // the stack allocation.
     DenseSet<Operation *> touchedParents;
@@ -166,7 +192,7 @@ runAnalysis(Region &top, DenseMap<Value, StackAllocationOp> &aliases,
           // If the pointer is the argument of a store or the store leaves the
           // CFG, then it escapes.
           if (store.getArg() == ptr || userCrossesFunctionCFG(op, user))
-            return;
+            return WalkResult::advance();
           // Indicate that this stack allocation was modified in this parent
           // operation.
           touchedParents.insert(user->getParentOp());
@@ -176,7 +202,7 @@ runAnalysis(Region &top, DenseMap<Value, StackAllocationOp> &aliases,
         if (isa<LoadOp>(user)) {
           // If the load leaves the CFG, then it escapes.
           if (userCrossesFunctionCFG(op, user))
-            return;
+            return WalkResult::advance();
           // Loads are terminals.
           continue;
         }
@@ -186,7 +212,7 @@ runAnalysis(Region &top, DenseMap<Value, StackAllocationOp> &aliases,
           continue;
         }
         // Any other using operation conservatively is an escape.
-        return;
+        return WalkResult::advance();
       }
     }
     // The projection of the pointer does not escape.
@@ -202,6 +228,8 @@ runAnalysis(Region &top, DenseMap<Value, StackAllocationOp> &aliases,
     // The stack allocation is marked as variant in the union of all these ops.
     for (Operation *parent : allParentOps)
       variant[parent].push_back(alloc);
+
+    return WalkResult::advance();
   });
 
   return allocs;
@@ -324,7 +352,7 @@ static void scanRegion(
     }
 
     // If the operation has regions, it must be a control-flow operation.
-    if (!op.getNumRegions())
+    if (!op.getNumRegions() || !isa<HLCF::ControlFlowNode>(op))
       continue;
 
     // Don't do anything too fancy here. Mark all stack allocations variant in
@@ -438,7 +466,7 @@ static void processRegion(
     }
 
     // If the operation has regions, it must be a control-flow operation.
-    if (!op.getNumRegions())
+    if (!op.getNumRegions() || !isa<HLCF::ControlFlowNode>(op))
       continue;
 
     // Don't do anything too fancy here. Mark all stack allocations as having
@@ -455,17 +483,15 @@ static void processRegion(
   }
 }
 
-void StackReuse::runOnOperation() {
-  TimeTraceScope<> traceScope("StackReuse::runOnOperation");
-
-  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
+static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
+  TimeTraceScope<> traceScope("runStackReuseOnRegion");
 
   // Determine the eligible stack allocations, the region variant allocations,
   // and the aliases.
   DenseMap<Value, StackAllocationOp> aliases;
   DenseMap<Operation *, std::vector<StackAllocationOp>> regionVariants;
   std::vector<StackAllocationOp> allocs =
-      runAnalysis(getOperation().getBodyRegion(), aliases, regionVariants);
+      runAnalysis(funcBody, pass, aliases, regionVariants);
 
   DenseMap<StackAllocationOp, PotentialValue> pvs;
   DenseMap<PotentialValue, DenseSet<StackAllocationOp>> rmap;
@@ -486,8 +512,8 @@ void StackReuse::runOnOperation() {
       // Assume it can be elided.
       canElide.insert({alloc, {}});
     }
-    scanRegion(getOperation().getBodyRegion(), pvs, loadValues, rmap, aliases,
-               regionVariants, canElide, domInfo, opaqueCounter);
+    scanRegion(funcBody, pvs, loadValues, rmap, aliases, regionVariants,
+               canElide, pass.domInfo, opaqueCounter);
   }
 
   {
@@ -521,15 +547,15 @@ void StackReuse::runOnOperation() {
       rmap[Value()].insert(alloc);
       continue;
     }
-    processRegion(getOperation().getBodyRegion(), pvs, loadValues, rmap,
-                  aliases, regionVariants, canElide, domInfo, opaqueCounter);
+    processRegion(funcBody, pvs, loadValues, rmap, aliases, regionVariants,
+                  canElide, pass.domInfo, opaqueCounter);
   }
 
   // Now start deleting ops.
   TimeTraceScope<> deleteScope("deleteOps");
   std::vector<Operation *> worklist;
   llvm::append_range(worklist, llvm::make_first_range(canElide));
-  numElidedVars = canElide.size();
+  pass.numElidedVars += canElide.size();
   unsigned numErasedOps = 0;
   while (!worklist.empty()) {
     Operation *op = worklist.back();
@@ -541,5 +567,14 @@ void StackReuse::runOnOperation() {
     op->erase();
     ++numErasedOps;
   }
-  this->numErasedOps = numErasedOps;
+  pass.numErasedOps += numErasedOps;
+}
+
+void StackReuse::runOnOperation() {
+  TimeTraceScope<> traceScope("StackReuse::runOnOperation");
+
+  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
+  PassInfo info{domInfo};
+
+  runStackReuseOnRegion(getOperation().getBodyRegion(), info);
 }
