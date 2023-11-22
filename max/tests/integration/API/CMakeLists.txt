@@ -21,6 +21,7 @@ add_modular_testsuite(check-api-integration-tests
   c-api-validator
   modular-api-executor
   mojo
+  mt
 
   DEPENDS
   tf
