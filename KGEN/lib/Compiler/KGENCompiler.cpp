@@ -66,8 +66,8 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
   // Create the set of symbols to export.
   ExportMap exportedSymbols;
   for (FuncOp func : funcsToCompile) {
-    StringAttr symName = func.getSymNameAttr();
-    exportedSymbols.insert({symName, ExportedSymbol(ExportKind::Weak)});
+    exportedSymbols.insert(
+        {func.getSymNameAttr(), ExportedSymbol(ExportKind::Exported)});
   }
 
   // Add the exported symbols to the ObjectCompilerLayer. This will not actually

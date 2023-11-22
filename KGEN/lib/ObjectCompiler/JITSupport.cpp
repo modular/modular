@@ -14,9 +14,7 @@ llvm::JITSymbolFlags
 KGEN::getFlagsForExportedSymbol(const ExportedSymbol &symbol) {
   return (symbol.isData ? llvm::JITSymbolFlags::None
                         : llvm::JITSymbolFlags::Callable) |
-         llvm::JITSymbolFlags::Exported |
-         (symbol.kind == ExportKind::Weak ? llvm::JITSymbolFlags::Weak
-                                          : llvm::JITSymbolFlags::None);
+         llvm::JITSymbolFlags::Exported;
 }
 
 llvm::JITSymbolFlags KGEN::getGlobalFnSymbolFlags() {
