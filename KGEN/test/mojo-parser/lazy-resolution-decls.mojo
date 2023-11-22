@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Run parsing twice to ensure the cache is populated.
-# RUN: kgen-translate -import-mojo -I=%S %s
+# RUN: kgen-translate -import-mojo -I=%S %s -o /dev/null
 # RUN: kgen-translate -import-mojo -I=%S %s | FileCheck %s
 
 from imported_cached_module import StringLiteralAlias, global_variable, Trait
@@ -19,6 +19,6 @@ fn assign_from():
     let bar = global_variable
 
 
-# CHECK-LABEL: lit.struct.decl @Struct(trait<@"$imported_cached_module"::@Trait>)
+# CHECK-LABEL: lit.struct.decl @Struct(trait<@"$imported_cached_module"::@Trait>, trait<{{.*}}@Destructable>[{{.*}}])
 struct Struct(Trait):
     pass

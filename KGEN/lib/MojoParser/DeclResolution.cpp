@@ -2718,6 +2718,19 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();
 
+  // Make every trait inherit from Destructable, except itself.
+  if (parentTypes.empty() && traitOp.getSymName() != "Destructable") {
+    LookupResult lookup = shared.lookupAndResolveDecl(
+        "Destructable", decl.getLoc(), *decl.getParentDecl(),
+        /*searchParentScopes=*/true);
+    if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
+      parentTypes.push_back(TypeLineageAttr::get(
+          cast<TraitDeclOp>(lookup.getIfSuccess().front()).bindReference()));
+    } else {
+      emitError(decl.getLoc(), "could not find builtin 'Destructable' trait");
+    }
+  }
+
   // Insert the implicit trait parameters:
   // - MT: an AnyRegTypeType which points to the struct that implements this
   // trait.
@@ -2798,8 +2811,8 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
       if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
         continue;
       for (ASTDecl *decl : decls) {
-        // The function decls are fully resolved because we do so when resolving
-        // the inherited trait.
+        if (failed(resolveFully(*decl, traitDecl.getLoc())))
+          continue;
         auto func = cast<LIT::FuncOp>(decl);
         // Ensure that a function with the same name and signature hasn't
         // already been declared.

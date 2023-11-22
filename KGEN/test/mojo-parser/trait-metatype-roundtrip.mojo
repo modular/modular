@@ -12,6 +12,10 @@
 alias int = __mlir_type.index
 
 
+trait Destructable:
+    pass
+
+
 trait Trait:
     fn method(self) -> int:
         pass
