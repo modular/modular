@@ -2,8 +2,14 @@
 // RUN: support-dialect-opt -emit-bytecode %s | support-dialect-opt | FileCheck %s
 
 // CHECK: ![[SUBROUTINE:.*]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
-// CHECK: ![[UNRESOLVED:.*]] = !debuginfo.unresolved<index>
-// CHECK: #[[FILE:.*]] = #debuginfo.file<"foo.c" in "/mlir/">
+// CHECK-DAG: ![[UNRESOLVED_INDEX:.*]] = !debuginfo.unresolved<index>
+!unresolved_index = !debuginfo.unresolved<index>
+// The "unresolved" wrapper below will be erased by the custom printer.
+// CHECK-DAG: ![[PTR2INDEX:.*]] = !debuginfo.ti.ptr<index>
+!ptr2index = !debuginfo.ti.ptr<!debuginfo.unresolved<index>>
+// CHECK-DAG: ![[PTR2PTR2INDEX:.*]] = !debuginfo.ti.ptr<![[PTR2INDEX]]>
+!ptr2ptr2index = !debuginfo.ti.ptr<!ptr2index>
+// CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"foo.c" in "/mlir/">
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 
 // CHECK: #[[CU:.*]] = #debuginfo.compile_unit<
@@ -20,6 +26,13 @@
   isOptimized = true,
   emissionKind = Full
 >
+
+// CHECK-DAG: #[[IRVALUE:.*]] = #debuginfo.expr.irvalue : ![[PTR2INDEX]]
+#irvalue = #debuginfo.expr.irvalue : !ptr2index
+// CHECK-DAG: #[[DEREF:.*]] = #debuginfo.expr.deref<#[[IRVALUE]]> : ![[UNRESOLVED_INDEX]]
+#deref = #debuginfo.expr.deref<#irvalue> : !unresolved_index
+// CHECK-DAG: #[[REF:.*]] = #debuginfo.expr.refof<#[[IRVALUE]]> : ![[PTR2PTR2INDEX]]
+#ref = #debuginfo.expr.refof<#irvalue> : !ptr2ptr2index
 
 // CHECK: #[[SP:.*]] = #debuginfo.subprogram<
 // CHECK-SAME:   compileUnit = #[[CU]],
@@ -62,7 +75,7 @@
 // CHECK-SAME:   line = 10,
 // CHECK-SAME:   arg = 1,
 // CHECK-SAME:   alignInBits = 32
-// CHECK-SAME: > : ![[UNRESOLVED]]
+// CHECK-SAME: > : ![[UNRESOLVED_INDEX]]
 #local_variable = #debuginfo.local_variable<
   scope = #lex_block,
   name = "foo",
@@ -70,7 +83,7 @@
   line = 10,
   arg = 1,
   alignInBits = 32
-> : !debuginfo.unresolved<index>
+> : !unresolved_index
 
-// CHECK: module attributes {test.loc = #[[VAR]]}
-module attributes { test.loc = #local_variable } {}
+// CHECK: module attributes {test.expr1 = #[[REF]], test.expr2 = #[[DEREF]], test.loc = #[[VAR]]}
+module attributes {test.expr1 = #ref, test.expr2 = #deref, test.loc = #local_variable} {}

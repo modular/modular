@@ -6,6 +6,7 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
@@ -250,6 +251,7 @@ ErrorOr<SourceNameAttr> SourceNameAttr::decode(MLIRContext *ctx,
 //===----------------------------------------------------------------------===//
 
 #include "Support/DebugInfoDialect/IR/DebugInfoEnums.cpp.inc"
+#include "Support/DebugInfoDialect/IR/DebugInfoExprAttrInterfaces.cpp.inc"
 
 #define GET_ATTRDEF_CLASSES
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.cpp.inc"
@@ -276,6 +278,44 @@ bool DIScopeAttr::classof(Attribute attr) {
 
 bool DILocalScopeAttr::classof(Attribute attr) {
   return llvm::isa<DILexicalBlockAttr, DISubprogramAttr>(attr);
+}
+
+//===----------------------------------------------------------------------===//
+// DIDerefExprAttr
+//===----------------------------------------------------------------------===//
+
+DIExprAttr DIDerefExprAttr::get(DIExprAttr ptrExpr) {
+  if (auto refExpr = ::dyn_cast<DIRefOfExprAttr>(ptrExpr))
+    return refExpr.getValueExpr();
+  return DIDerefExprAttr::get(ptrExpr.getContext(), ptrExpr);
+}
+
+DIType DIDerefExprAttr::getDIType() const {
+  auto operandType = getPtrExpr().getDIType();
+  if (auto tiPtr = ::dyn_cast<DITargetIndependentPointerType>(operandType))
+    return tiPtr.getElementType();
+  return ::cast<DIPointerType>(operandType).getElementType();
+}
+
+LogicalResult
+DIDerefExprAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                        DIExprAttr ptrExpr) {
+  if (!::isa<DIPointerType, DITargetIndependentPointerType>(
+          ptrExpr.getDIType())) {
+    return emitError()
+           << "attribute operand must be one of the DI pointer types.";
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// DIRefOfExprAttr
+//===----------------------------------------------------------------------===//
+
+DIExprAttr DIRefOfExprAttr::get(DIExprAttr valueExpr, DIType type) {
+  if (auto derefExpr = ::dyn_cast<DIDerefExprAttr>(valueExpr))
+    return derefExpr.getPtrExpr();
+  return DIRefOfExprAttr::get(valueExpr.getContext(), valueExpr, type);
 }
 
 //===----------------------------------------------------------------------===//
