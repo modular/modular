@@ -12,6 +12,7 @@
 #include "MojoDiagnostic.h"
 #include "MojoExpressionVariable.h"
 
+#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -148,7 +149,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
   buildGenerateLibraryPipeline(*fullCompilationPM, typeSystem->getRuntime(),
                                *compilationOptions);
-  buildElaborateModulePipeline(
+  populateElaborateModulePasses(
       *fullCompilationPM, typeSystem->getRuntime(), targetInfo, buildInfo,
       compilationOptions,
       /*evaluatorExecutorFn=*/
@@ -157,7 +158,6 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
         return evaluateSpecializations(evaluator, symtab, target,
                                        specializations);
       },
-      /*compileAsmFn=*/{},
       /*packageLinkHandlerFn=*/
       [](PackageLinkOp packageLink, TargetInfoAttr, BuildInfoAttr) {
         // FIXME(#22766): MCJIT crashes when using precompiled archives. So,
@@ -168,8 +168,6 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
         // significance in the REPL.
         return packageLink.getPreElaborationModuleAttr();
       });
-  buildPostElaborationPipeline(*fullCompilationPM, typeSystem->getRuntime(),
-                               compilationOptions);
 
   // Create the compiler instance.
   auto compilerOr = ObjectCompiler::create(typeSystem->getRuntime(),
