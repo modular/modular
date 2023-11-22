@@ -54,13 +54,6 @@ def test_execute_success(mo_model_path: Path):
     )
 
 
-# TODO: Move to an experimental modular engine package
-@dataclass
-class CustomOptions(me.ExperimentalLoadOptions):
-    type: str = "experimental"
-    custom_ops_path: str = field(default="")
-
-
 def test_custom_ops(
     mo_custom_ops_model_path: Path, custom_ops_package_path: Path
 ):
@@ -74,7 +67,7 @@ def test_custom_ops(
         np.array([2.0]).astype(np.float32),
     )
 
-    options = CustomOptions()
+    options = me.CommonLoadOptions()
     options.custom_ops_path = str(custom_ops_package_path)
     model_with_custom_op = session.load(mo_custom_ops_model_path, options)
     inputs = np.ones((1)) * 4
