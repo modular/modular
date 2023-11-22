@@ -3241,3 +3241,178 @@ fn no_mask_fused_attention_cpu[
         False,  # add_attn_mask
         False,  # add_causal_mask
     ](output, q, k, v, mask, scale_f32, causal_mask, out_chain)
+
+
+# # ===----------------------------------------------------------------------===#
+# # INT4/5/6 packing format
+# # ===----------------------------------------------------------------------===#
+from quantization import Q4sym
+
+
+# TODO: closures to make this simpler
+######
+# Q4 -- group size 8
+######
+@mogg_register("quantize_Q4symG8")
+@always_inline
+@export
+fn quantize_Q4sym_g8[
+    input_type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    out_chain: OutputChainPtr,
+):
+    Q4sym[8, input_type].quantize_and_write_to_tensor(
+        input, output, input.dynamic_shape
+    )
+
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
+
+
+@mogg_register_shape_func("quantize_Q4symG8")
+@always_inline
+@export
+fn quantize_Q4sym_g8_shape_func[
+    type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+) -> StaticIntTuple[rank]:
+    var new_shape = data.get_shape()
+    new_shape[rank - 1] = (
+        div_ceil(new_shape[rank - 1], 8) * sizeof[Q4sym[8, type]]()
+    )
+    return new_shape
+
+
+@mogg_register("dequantize_Q4symG8")
+@always_inline
+@export
+fn dequantize_Q4sym_g8[
+    output_type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    out_chain: OutputChainPtr,
+):
+    Q4sym[8, output_type].dequantize_and_write_to_tensor(
+        input, output, output.dynamic_shape
+    )
+
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
+
+
+######
+# Q4 -- group size 16
+######
+@mogg_register("quantize_Q4symG16")
+@always_inline
+@export
+fn quantize_Q4sym_g16[
+    input_type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    out_chain: OutputChainPtr,
+):
+    Q4sym[16, input_type].quantize_and_write_to_tensor(
+        input, output, input.dynamic_shape
+    )
+
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
+
+
+@mogg_register_shape_func("quantize_Q4symG16")
+@always_inline
+@export
+fn quantize_Q4sym_g16_shape_func[
+    type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+) -> StaticIntTuple[rank]:
+    var new_shape = data.get_shape()
+    new_shape[rank - 1] = (
+        div_ceil(new_shape[rank - 1], 16) * sizeof[Q4sym[16, type]]()
+    )
+    return new_shape
+
+
+@mogg_register("dequantize_Q4symG16")
+@always_inline
+@export
+fn dequantize_Q4sym_g16[
+    output_type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    out_chain: OutputChainPtr,
+):
+    Q4sym[16, output_type].dequantize_and_write_to_tensor(
+        input, output, output.dynamic_shape
+    )
+
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
+
+
+######
+# Q4 -- group size 32
+######
+@mogg_register("quantize_Q4symG32")
+@always_inline
+@export
+fn quantize_Q4sym_g32[
+    input_type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    out_chain: OutputChainPtr,
+):
+    Q4sym[32, input_type].quantize_and_write_to_tensor(
+        input, output, input.dynamic_shape
+    )
+
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
+
+
+@mogg_register_shape_func("quantize_Q4symG32")
+@always_inline
+@export
+fn quantize_Q4sym_g32_shape_func[
+    type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    data: NDBuffer[rank, DimList.create_unknown[rank](), type],
+) -> StaticIntTuple[rank]:
+    var new_shape = data.get_shape()
+    new_shape[rank - 1] = (
+        div_ceil(new_shape[rank - 1], 32) * sizeof[Q4sym[32, type]]()
+    )
+    return new_shape
+
+
+@mogg_register("dequantize_Q4symG32")
+@always_inline
+@export
+fn dequantize_Q4sym_g32[
+    output_type: DType, rank: Int, single_thread_blocking_override: Bool
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), DType.uint8],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    out_chain: OutputChainPtr,
+):
+    Q4sym[32, output_type].dequantize_and_write_to_tensor(
+        input, output, output.dynamic_shape
+    )
+
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
