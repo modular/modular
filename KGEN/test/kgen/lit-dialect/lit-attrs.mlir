@@ -105,3 +105,10 @@ kgen.generator @bind_type<T: metatype<@Bar<?, :dtype ?>, <index, dtype>>>() {
 
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @unpacked
+kgen.generator @unpacked<T: type>() {
+  // CHECK: kgen.param.constant: !lit.unpacked<:type T> = <#lit.unpacked<?>>
+  %c = kgen.param.constant: !lit.unpacked<:type T> = <#lit.unpacked<?>>
+  kgen.return
+}

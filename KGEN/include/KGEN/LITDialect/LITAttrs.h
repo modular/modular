@@ -20,6 +20,7 @@ namespace LIT {
 class LifetimeType;
 class MetaTypeType;
 class StructFieldOp;
+class UnpackedType;
 } // namespace LIT
 } // namespace M::KGEN
 
