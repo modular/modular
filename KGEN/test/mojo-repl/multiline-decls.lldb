@@ -13,10 +13,14 @@
 print(12
 )
 
+# Will test a trait with multiline declaration
+trait TestTrait:
+  pass
+
 # Will test a struct with multiline declaration
 struct Foo[
     *Ts: AnyRegType
-    ]:
+    ](TestTrait):
   fn __init__(inout self):
     pass
   fn foo(self):
