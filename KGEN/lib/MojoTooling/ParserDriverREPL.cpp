@@ -714,6 +714,10 @@ static ASTDecl &buildAndResolveREPLModule(const llvm::MemoryBuffer *sourceBuf,
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
   sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+
+  // Resolve any imported wildcard decls, this ensures those decls will be
+  // available for future cells.
+  (void)sharedState.declResolver->resolveAllWildcardImports(moduleDecl);
   return moduleDecl;
 }
 
