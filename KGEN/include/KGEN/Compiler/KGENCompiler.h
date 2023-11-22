@@ -33,6 +33,12 @@ void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
                                    TargetInfoAttr target, BuildInfoAttr build,
                                    const CompilationOptions &options,
+                                   EvaluatorExecutorFn evaluatorExecutorFn,
+                                   PackageLinkHandlerFn packageLinkHandlerFn);
+void populateElaborateModulePasses(mlir::PassManager &pm,
+                                   LLCL::Runtime &runtime,
+                                   TargetInfoAttr target, BuildInfoAttr build,
+                                   const CompilationOptions &options,
                                    PackageLinkHandlerFn packageLinkHandlerFn);
 
 //===----------------------------------------------------------------------===//

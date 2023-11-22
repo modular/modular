@@ -424,15 +424,10 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     BuildInfoAttr build, const CompilationOptions &options,
+    EvaluatorExecutorFn evaluatorExecutorFn,
     PackageLinkHandlerFn packageLinkHandlerFn) {
   buildElaborateModulePipeline(
-      pm, runtime, target, build, options,
-      /*evaluatorExecutorFn=*/
-      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
-        return evaluateSpecializations(evaluator, symtab, runtime, target,
-                                       options, specializations);
-      },
+      pm, runtime, target, build, options, std::move(evaluatorExecutorFn),
       /*compileAsmFn=*/
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
@@ -440,8 +435,23 @@ void KGEN::populateElaborateModulePasses(
         return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
                                     emissionKind, options);
       },
-      packageLinkHandlerFn);
+      std::move(packageLinkHandlerFn));
   buildPostElaborationPipeline(pm, runtime, options);
+}
+
+void KGEN::populateElaborateModulePasses(
+    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
+    BuildInfoAttr build, const CompilationOptions &options,
+    PackageLinkHandlerFn packageLinkHandlerFn) {
+  populateElaborateModulePasses(
+      pm, runtime, target, build, options,
+      /*evaluatorExecutorFn=*/
+      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
+                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, runtime, target,
+                                       options, specializations);
+      },
+      std::move(packageLinkHandlerFn));
 }
 
 //===----------------------------------------------------------------------===//
