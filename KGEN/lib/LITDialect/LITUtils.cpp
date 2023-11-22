@@ -291,6 +291,13 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
+size_t LIT::countNumPosOnly(ArrayRef<PassingKind> kinds) {
+  for (auto [idx, kind] : llvm::enumerate(kinds))
+    if (kind != PassingKind::PosOnly)
+      return idx;
+  return kinds.size();
+}
+
 size_t LIT::countNumImplicitKinds(ArrayRef<PassingKind> kinds) {
   size_t num = 0;
   for (PassingKind kind : llvm::reverse(kinds)) {

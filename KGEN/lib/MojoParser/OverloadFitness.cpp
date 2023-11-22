@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/OverloadFitness.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
@@ -793,22 +794,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // Check that the signature can be rebound with this set of bindings. We use
   // diagnostic handlers to capture any issues.
-  const InputParamBindings &inputParamBindings = callable.inputParamBindings;
-  ArrayRef<InputParamBindings::Binding> posBindings =
-      inputParamBindings.posBindings;
-
   InflightDiag diag = emitter.emitError(callLoc);
   InputParamBindings::DiagEmitter bindingDiag{
       /*emitParamCount=*/
-      [&](bool posOnly) {
+      [&](size_t numActual, bool posOnly) {
         if (posOnly) {
-          auto isPosOnly = [](PassingKind kind) {
-            return kind == PassingKind::PosOnly;
-          };
-          size_t numPosOnly =
-              llvm::count_if(signature.getParamPassingKinds(), isPosOnly);
-
-          diag = emitDiagFor.wrongPosOnlyCount(numPosOnly, posBindings.size(),
+          size_t numPosOnly = countNumPosOnly(signature.getParamPassingKinds());
+          diag = emitDiagFor.wrongPosOnlyCount(numPosOnly, numActual,
                                                "input parameter");
         } else {
           // Hide the implicit trait parameters from the diagnostic.
@@ -817,9 +809,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           if (ASTType type = callable.baseType)
             if (isa_and_nonnull<TraitType>(type.getMetaType()))
               hidden = 2;
-          diag = emitDiagFor.wrongParamCount(
-              signature.getNumInputParams() - hidden,
-              posBindings.size() - hidden, "input");
+          size_t numExpected = signature.getNumInputParams() - hidden;
+          diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden,
+                                             "input");
         }
       },
       /*emitPosType=*/
@@ -867,9 +859,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       return inferred;
     return PValue(defaultParam);
   };
-  auto [newBindings, bindingFitness] = inputParamBindings.verifyBindings(
-      signature, emitter, bindingDiag, parameterInferenceHook,
-      /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
+  auto [newBindings, bindingFitness] =
+      callable.inputParamBindings.verifyBindings(
+          signature, emitter, bindingDiag, parameterInferenceHook,
+          /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
 
   // If there is an error, we just forward the diagnostics.
   if (!newBindings)
