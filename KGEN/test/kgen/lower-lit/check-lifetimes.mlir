@@ -659,3 +659,13 @@ lit.func @sbvalue_to_mbvalue(%arg0: !RegType owned) {
   lit.call @use_value(%x) : !lit.signature<(!RegType) -> ()>
   kgen.return
 }
+
+lit.trait.decl @Destructable attributes {
+  dtorSig = !lit.signature<<regtype, !kgen.paramref<*(0,0)>>(!kgen.pointer<:!kgen.paramref<*(0,0)> *(0,1)>) -> !kgen.none>
+} {}
+
+// CHECK-LABEL: lit.func @destroy_generic
+lit.func @destroy_generic<T: trait<@Destructable>>(%x: !kgen.pointer<:trait<@Destructable> T> owned_in_mem) {
+  // CHECK: lit.call_param[!lit.signature<(!kgen.pointer<:trait<@Destructable> T>) -> !kgen.none>: get_type_method(:trait<@Destructable> T, "__del__")](%x)
+  kgen.return
+}

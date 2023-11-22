@@ -1004,8 +1004,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
   } else {
     // Otherwise, we are converting from a trait. Just rebind the types.
     selfType = ParamRefType::get(typeValue);
-    selfParams.assign({TypeConstantAttr::get(type, anyRegTypeType),
-                       TypeConstantAttr::get(selfType, anyRegTypeType)});
+    selfParams.assign({TypeConstantAttr::get(type, anyRegTypeType), typeValue});
   }
 
   SmallVector<VTableEntryAttr> vtable;
