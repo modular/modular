@@ -1683,31 +1683,12 @@ fn _argn[
         out_chain.mark_error("axis other than innermost not supported yet")
         return
 
-    @unroll
-    for subaxis in range(rank):
-        if subaxis == canonical_axis:
-            if output.dim(subaxis) != 1:
-                out_chain.mark_error("expected axis to have size 1 in output")
-                return
-        elif input.dim(subaxis) != output.dim(subaxis):
-            out_chain.mark_error(
-                "input and output dims must match aside from 'axis'"
-            )
-            return
+    let d0 = input.dim(0) if rank == 2 else 1
+    let d1 = input.dim(1) if rank == 2 else input.dim(0)
 
-    let axis_size = input.dim(canonical_axis)
-    let input_start_ptr = input.data
-    let output_start_ptr = output.data
-    let input_stride: Int
-    let output_stride: Int
-
-    @parameter
-    if rank == 1:
-        input_stride = input.num_elements()
-        output_stride = output.num_elements()
-    else:
-        input_stride = input.dynamic_stride[canonical_axis - 1]
-        output_stride = output.dynamic_stride[canonical_axis - 1]
+    if output.dim(0) != d0:
+        out_chain.mark_error("input and output dims[0] must match")
+        return
 
     @always_inline
     @parameter
@@ -1736,11 +1717,22 @@ fn _argn[
             else:
                 return a > b
 
-        var curr_input_offset = 0
-        var curr_output_offset = 0
-        while curr_input_offset < input.num_elements():
-            let input_dim_ptr = input_start_ptr.offset(curr_input_offset)
-            let output_dim_ptr = output_start_ptr.offset(curr_output_offset)
+        @parameter
+        @always_inline
+        fn get_input[
+            type: DType, simd_width: Int
+        ](i: Int, j: Int) -> SIMD[type, simd_width]:
+            @parameter
+            if rank == 2:
+                return rebind[SIMD[type, simd_width]](
+                    input.simd_load[simd_width](i, j)
+                )
+            else:
+                return rebind[SIMD[type, simd_width]](
+                    input.simd_load[simd_width](j)
+                )
+
+        for i in range(d0):
             var global_val: SIMD[type, 1]
 
             @parameter
@@ -1749,48 +1741,62 @@ fn _argn[
             else:
                 global_val = max_or_inf[type]()
 
-            var global_values: SIMD[type, simd_width]
-            if axis_size < simd_width:
-                global_values = global_val
+            var idx = SIMD[out_type, 1](0)
+            if d1 < simd_width:
+                for j in range(d1):
+                    let elem = get_input[type, 1](i, j)
+                    if cmp(global_val, elem):
+                        global_val = elem
+                        idx = j
             else:
-                global_values = input_dim_ptr.simd_load[simd_width]()
+                var global_values = get_input[type, simd_width](i, 0)
+                var indices = iota[out_type, simd_width]()
+                var global_indices = indices
 
-            var indices = iota[out_type, simd_width]()
-            var global_indices = indices
+                let last_simd_index = (d1 // simd_width) * simd_width
+                for j in range(simd_width, last_simd_index, simd_width):
+                    let curr_values = get_input[type, simd_width](i, j)
+                    indices += simd_width
 
-            let last_simd_index = (axis_size // simd_width) * simd_width
-            for j in range(simd_width, last_simd_index, simd_width):
-                let curr_values = input_dim_ptr.simd_load[simd_width](j)
-                indices += simd_width
+                    let mask = cmpeq(curr_values, global_values)
+                    global_indices = mask.select(global_indices, indices)
+                    global_values = mask.select(global_values, curr_values)
 
-                let mask = cmpeq(curr_values, global_values)
-                global_indices = mask.select(global_indices, indices)
-                global_values = mask.select(global_values, curr_values)
+                var global_val: SIMD[type, 1]
+
+                @parameter
+                if is_max:
+                    global_val = global_values.reduce_max()
+                else:
+                    global_val = global_values.reduce_min()
+
+                # Check trailing values.
+                for j in range(last_simd_index, d1, 1):
+                    let elem = get_input[type, 1](i, j)
+                    if cmp(global_val, elem):
+                        global_val = elem
+
+                var matching = global_values == global_val
+
+                idx = Int__(global_indices[_index_of_first_one(matching)])
+
+                # Check that no match was found on lower indices.
+                if matching == 0:
+                    # Check trailing indices.
+                    for j in range(last_simd_index, d1, 1):
+                        let elem = get_input[type, 1](i, j)
+                        if elem == global_val:
+                            idx = j
 
             @parameter
-            if is_max:
-                global_val = global_values.reduce_max()
+            if rank == 1:
+                output[0] = idx
             else:
-                global_val = global_values.reduce_min()
-
-            var matching = global_values == global_val
-            var idx = Int__(global_indices[_index_of_first_one(matching)])
-
-            # Check trailing indices.
-            for j in range(last_simd_index, axis_size, 1):
-                let elem = input_dim_ptr.load(j)
-                if cmp(global_val, elem):
-                    global_val = elem
-                    idx = j
-
-            output_dim_ptr.store(idx)
-            curr_output_offset += output_stride
-            curr_input_offset += input_stride
+                let outIndices = StaticIntTuple[rank](i, 0)
+                output[outIndices] = idx
 
     # TODO: Shard by dim 0.
     async_parallelize[task_func](out_chain, 1)
-    # TODO: Remove after #26325
-    out_chain.wait()
 
 
 # ===----------------------------------------------------------------------===#
@@ -1824,6 +1830,8 @@ fn argmax[
         out_chain: The chain to attach results to.
     """
 
+    constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
+
     _argn[type, out_type, rank, True](input, axis, output, out_chain)
 
 
@@ -1855,6 +1863,8 @@ fn argmax[
         output: The axis tensor.
         out_chain: The chain to attach results to.
     """
+
+    constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
 
     argmax(input, Int__(axis_buf[0]), output, out_chain)
 
@@ -1890,6 +1900,8 @@ fn argmin[
         out_chain: The chain to attach results to.
     """
 
+    constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
+
     _argn[type, out_type, rank, False](input, axis, output, out_chain)
 
 
@@ -1921,6 +1933,8 @@ fn argmin[
         output: The axis tensor.
         out_chain: The chain to attach results to.
     """
+
+    constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
 
     argmin(input, Int__(axis_buf[0]), output, out_chain)
 
