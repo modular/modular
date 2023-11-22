@@ -114,3 +114,21 @@ fn function():
         item.label == "value" and item.kind == CompletionItemKind.Field
         for item in items
     )
+
+
+async def test_codeblock_end_completion(client: LanguageClient):
+    doc = Document.from_file("doc_strings.mojo")
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    items = fail_if_none(
+        await requests.completion(
+            doc, doc.find_first_range("test_completions.").end
+        )
+    )
+
+    assert any(
+        item.label == "completion_test"
+        and item.kind == CompletionItemKind.Function
+        for item in items
+    )

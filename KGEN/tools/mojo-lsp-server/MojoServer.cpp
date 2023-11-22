@@ -1381,8 +1381,13 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
     if (exprFnDecl)
       mainDoc.checkModuleSemantics(codeBlock->decl);
 
+    // For the range of the code block, consume past the end to also include the
+    // newline. This allows for more easily using the end of the last line for
+    // different requests (like code completion).
+    SMLoc docRangeEndLoc = SMLoc::getFromPointer(docEndLoc.getPointer() + 1);
+
     // Map the code block location to the main buffer.
-    rangeToCodeBlock.insert(docStartLoc, docEndLoc, codeBlock);
+    rangeToCodeBlock.insert(docStartLoc, docRangeEndLoc, codeBlock);
 
     // Add inlay hints for the code block.
     codeBlock->onInlayHint(inlayHints);

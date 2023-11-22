@@ -777,11 +777,12 @@ MojoParserContext::ParsedREPLExpr MojoParserContext::parseREPLExpression(
   // information attached.
   size_t exprTextOffset = exprText.data() - exprFileBuf->getBufferStart();
   std::string replModuleName =
-      ((exprTextOffset ? ("at(" + Twine(exprTextOffset) + ") ") : Twine()) +
-       exprFileBuf->getBufferIdentifier())
+      (exprFileBuf->getBufferIdentifier() +
+       (exprTextOffset ? (" wrapper_at(" + Twine(exprTextOffset) + ") ")
+                       : Twine(" wrapper")))
           .str();
-  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(
-      wrappedExprText, Twine("wrapped " + replModuleName).str());
+  auto buffer =
+      llvm::MemoryBuffer::getMemBufferCopy(wrappedExprText, replModuleName);
   const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(
       sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc()));
   exprLocMapper.setWrappedExpr(sourceBuf->getBuffer());
@@ -921,10 +922,18 @@ MojoParserContext::codeCompleteREPLExpression(
       replDecl.decl, impl->sharedState,
       [&](StringRef wrappedExprText,
           function_ref<void(MojoParserContext &, int)> parserCallback) {
+        StringRef identifier;
+        if (replDecl) {
+          const llvm::MemoryBuffer *origSourceBuf =
+              getSourceMgr().getMemoryBuffer(
+                  getSourceMgr().FindBufferContainingLoc(replDecl->getLoc()));
+          identifier = origSourceBuf->getBufferIdentifier();
+        }
         results = MojoParserContext::codeComplete(
-            llvm::MemoryBufferRef(wrappedExprText, ""), completionPosition,
-            impl->sharedState.getContext(), impl->sharedState.runtime,
-            impl->sharedState.options, parserCallback,
+            llvm::MemoryBufferRef(wrappedExprText, identifier),
+            completionPosition, impl->sharedState.getContext(),
+            impl->sharedState.runtime, impl->sharedState.options,
+            parserCallback,
             /*disableModuleCaching=*/true);
       });
 
