@@ -1432,7 +1432,7 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), TypeLineageArrayAttr::get(ctx, {}),
-        /*docString=*/nullptr);
+        /*dtorSig=*/nullptr, /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
 }
 

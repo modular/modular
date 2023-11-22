@@ -1674,7 +1674,7 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 }
 
 //===----------------------------------------------------------------------===//
-// Trait Decl implementation
+// Struct Decl implementation
 //===----------------------------------------------------------------------===//
 
 /// For a struct or trait declaration, parse an optional list of parent types to
@@ -1751,138 +1751,6 @@ parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
     parentTypes.push_back(type);
   return success();
 }
-
-LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
-                                             ASTDecl &decl) {
-  ParserBase p(shared, lexer);
-  auto decoratorExprs = p.parseDecorators(decl);
-
-  SMLoc identifierLoc;
-  if (p.parseToken(Token::kw_trait, "internal error: checked by stmt parser") ||
-      p.parseIdentifier("internal error: checked by trait parser",
-                        &identifierLoc))
-    return failure();
-
-  if (p.consumeIf(Token::l_square)) {
-    // If the current token is on a new line, report the error on the end of
-    // the previous line, this is probably where the punctuation was omitted.
-    auto diagLoc = p.getTokenLocOrEndOfPreviousLineIfOnNewLine();
-    // Report the error.
-    emitError(diagLoc,
-              "TODO: trait declarations do not support parameters yet");
-    return failure();
-  }
-  SmallVector<TypeLineageAttr> parentTypes;
-  if (parseOptionalParentList(p, *decl.getParentDecl(), traitOp.getSymName(),
-                              parentTypes, shared))
-    return failure();
-
-  if (p.parseToken(Token::colon, "expected ':' in trait definition"))
-    return failure();
-
-  // Insert the implicit trait parameters:
-  // - MT: an AnyRegTypeType which points to the struct that implements this
-  // trait.
-  // - T: a ParamRef to MT which is the type of MT.
-  // TODO: build AnyType instead
-  auto mt = ParamDeclAttr::get("MT", AnyRegTypeType::get(decl.getContext()));
-  auto mtRef = ParamDeclAttr::get(
-      "T", KGEN::ParamRefType::get(KGEN::ParamDeclRefAttr::get(mt)));
-
-  auto inputParams = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});
-  traitOp.setInputParams(inputParams);
-  SmallVector<StringAttr> paramNames{StringAttr::get(decl.getContext(), ""),
-                                     StringAttr::get(decl.getContext(), "")};
-  SmallVector<PassingKind> paramPassingKinds{PassingKind::Implicit,
-                                             PassingKind::Implicit};
-  SmallVector<TypedAttr> paramDefaults;
-  auto sig = TypeSignatureType::remapToSignature(
-      silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
-      paramDefaults, false);
-  if (!sig)
-    return failure();
-  traitOp.setSignature(sig);
-  traitOp.setParentTypes(parentTypes);
-
-  decl.setSelfType(ASTDecl::computeSelfTypeForTrait(traitOp));
-
-  shared.notifyListenerOnTraitDecl(decl, identifierLoc);
-
-  return success();
-}
-
-ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
-                                      ASTDecl &traitDecl) {
-  // Push the debug scope for this trait if necessary so that nested operations
-  // have proper debug info.
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = traitOp.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-
-  if (ParserBase(shared, lexer).parseSuite(traitDecl))
-    return failure();
-
-  // Resolve functions in the body here so that we can diagnose them.
-  // Deduplicate inherited functions based on their name and mangled name, since
-  // the mangled name contains the required information for distinguishing
-  // overload candidates.
-  DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
-  for (auto &[name, decls] : traitDecl.declsInScope) {
-    if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
-      continue;
-    for (ASTDecl *decl : decls) {
-      auto func = cast<LIT::FuncOp>(*decl);
-      if (failed(resolveFully(*decl, decl->getLoc())))
-        return failure();
-
-      existingFns.insert({name, func.getSymNameAttr()});
-      if (!func.getBody()->empty()) {
-        shared.emitError(decl->getLoc(),
-                         "unexpected function body in trait function "
-                         "declaration, use `...` or `pass`");
-      }
-      auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
-      b.create<TraitFuncOp>();
-    }
-  }
-
-  // Now just pull in the functions in the bodies of all parents.
-  Block &body = *traitOp.getBody();
-  for (TypeLineageAttr parent : traitOp.getParentTypes()) {
-    ASTDecl &parentDecl =
-        getDeclForTypeSymbol(cast<TraitType>(parent.getType()).getSymbol());
-    if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
-      continue;
-
-    // Inherit function members, which we can override without worry because
-    // they are all just declarations.
-    for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
-      if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
-        continue;
-      for (ASTDecl *decl : decls) {
-        // The function decls are fully resolved because we do so when resolving
-        // the inherited trait.
-        auto func = cast<LIT::FuncOp>(decl);
-        // Ensure that a function with the same name and signature hasn't
-        // already been declared.
-        if (!existingFns.insert({name, func.getSymNameAttr()}).second)
-          continue;
-        func = func.clone();
-        // Mark the function as inherited so that conformance checking won't
-        // give duplicate errors if it is not provided.
-        func.setIsInherited(true);
-        body.push_back(func);
-        finalizeFuncSignature(func, traitDecl);
-        addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
-      }
-    }
-  }
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// Struct Decl implementation
-//===----------------------------------------------------------------------===//
 
 /// Process a decorator that is resolved at the signature phase of resolution
 /// and return success, otherwise failure if it is handled later.
@@ -2815,6 +2683,142 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
 ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
                                       ASTDecl &decl) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Trait Decl implementation
+//===----------------------------------------------------------------------===//
+
+LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
+                                             ASTDecl &decl) {
+  ParserBase p(shared, lexer);
+  auto decoratorExprs = p.parseDecorators(decl);
+
+  SMLoc identifierLoc;
+  if (p.parseToken(Token::kw_trait, "internal error: checked by stmt parser") ||
+      p.parseIdentifier("internal error: checked by trait parser",
+                        &identifierLoc))
+    return failure();
+
+  if (p.consumeIf(Token::l_square)) {
+    // If the current token is on a new line, report the error on the end of
+    // the previous line, this is probably where the punctuation was omitted.
+    auto diagLoc = p.getTokenLocOrEndOfPreviousLineIfOnNewLine();
+    // Report the error.
+    emitError(diagLoc,
+              "TODO: trait declarations do not support parameters yet");
+    return failure();
+  }
+  SmallVector<TypeLineageAttr> parentTypes;
+  if (parseOptionalParentList(p, *decl.getParentDecl(), traitOp.getSymName(),
+                              parentTypes, shared))
+    return failure();
+
+  if (p.parseToken(Token::colon, "expected ':' in trait definition"))
+    return failure();
+
+  // Insert the implicit trait parameters:
+  // - MT: an AnyRegTypeType which points to the struct that implements this
+  // trait.
+  // - T: a ParamRef to MT which is the type of MT.
+  // TODO: build AnyType instead
+  auto mt = ParamDeclAttr::get("MT", AnyRegTypeType::get(decl.getContext()));
+  auto mtRef = ParamDeclAttr::get(
+      "T", KGEN::ParamRefType::get(KGEN::ParamDeclRefAttr::get(mt)));
+
+  auto inputParams = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});
+  traitOp.setInputParams(inputParams);
+  SmallVector<StringAttr> paramNames{StringAttr::get(decl.getContext(), ""),
+                                     StringAttr::get(decl.getContext(), "")};
+  SmallVector<PassingKind> paramPassingKinds{PassingKind::Implicit,
+                                             PassingKind::Implicit};
+  SmallVector<TypedAttr> paramDefaults;
+  auto sig = TypeSignatureType::remapToSignature(
+      silenceErrors(getContext()), inputParams, paramNames, paramPassingKinds,
+      paramDefaults, false);
+  if (!sig)
+    return failure();
+  traitOp.setSignature(sig);
+  traitOp.setParentTypes(parentTypes);
+
+  decl.setSelfType(ASTDecl::computeSelfTypeForTrait(traitOp));
+
+  shared.notifyListenerOnTraitDecl(decl, identifierLoc);
+
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
+                                      ASTDecl &traitDecl) {
+  // Push the debug scope for this trait if necessary so that nested operations
+  // have proper debug info.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = traitOp.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+  if (ParserBase(shared, lexer).parseSuite(traitDecl))
+    return failure();
+
+  // Resolve functions in the body here so that we can diagnose them.
+  // Deduplicate inherited functions based on their name and mangled name, since
+  // the mangled name contains the required information for distinguishing
+  // overload candidates.
+  DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
+  for (auto &[name, decls] : traitDecl.declsInScope) {
+    if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+      continue;
+    for (ASTDecl *decl : decls) {
+      auto func = cast<LIT::FuncOp>(*decl);
+      if (failed(resolveFully(*decl, decl->getLoc())))
+        return failure();
+
+      existingFns.insert({name, func.getSymNameAttr()});
+      if (!func.getBody()->empty()) {
+        shared.emitError(decl->getLoc(),
+                         "unexpected function body in trait function "
+                         "declaration, use `...` or `pass`");
+      }
+      auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
+      b.create<TraitFuncOp>();
+    }
+  }
+
+  // Now just pull in the functions in the bodies of all parents.
+  Block &body = *traitOp.getBody();
+  for (TypeLineageAttr parent : traitOp.getParentTypes()) {
+    ASTDecl &parentDecl =
+        getDeclForTypeSymbol(cast<TraitType>(parent.getType()).getSymbol());
+    if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
+      continue;
+
+    // Inherit function members, which we can override without worry because
+    // they are all just declarations.
+    for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
+      if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+        continue;
+      for (ASTDecl *decl : decls) {
+        // The function decls are fully resolved because we do so when resolving
+        // the inherited trait.
+        auto func = cast<LIT::FuncOp>(decl);
+        // Ensure that a function with the same name and signature hasn't
+        // already been declared.
+        if (!existingFns.insert({name, func.getSymNameAttr()}).second)
+          continue;
+        func = func.clone();
+        // Mark the function as inherited so that conformance checking won't
+        // give duplicate errors if it is not provided.
+        func.setIsInherited(true);
+        body.push_back(func);
+        finalizeFuncSignature(func, traitDecl);
+        addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
+      }
+    }
+  }
+
+  if (SymbolConstantAttr dtor = lookupDestructor(traitDecl, shared))
+    traitOp.setDtorSig(dtor.getType());
+
   return success();
 }
 

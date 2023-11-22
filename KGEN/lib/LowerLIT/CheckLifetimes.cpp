@@ -30,11 +30,13 @@ using llvm::BitVector;
 /// Find all the functions and types in the module.
 static std::tuple<std::vector<LIT::FuncOp>,
                   DenseMap<SymbolRefAttr, LIT::FuncOp>,
-                  DenseMap<SymbolRefAttr, LIT::StructDeclOp>>
+                  DenseMap<SymbolRefAttr, LIT::StructDeclOp>,
+                  DenseMap<SymbolRefAttr, LIT::TraitDeclOp>>
 collectFunctionsAndTypes(Operation *module) {
   std::vector<LIT::FuncOp> funcList;
   DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
+  DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
     if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
@@ -46,10 +48,14 @@ collectFunctionsAndTypes(Operation *module) {
       funcList.push_back(funcOp);
     }
     // Collect structs.
-    if (auto structOp = dyn_cast<LIT::StructDeclOp>(op))
+    else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
       structMap[getFullyResolvedSymbolRef(structOp)] = structOp;
+    } else if (auto traitOp = dyn_cast<LIT::TraitDeclOp>(op)) {
+      traitMap[getFullyResolvedSymbolRef(traitOp)] = traitOp;
+    }
   });
-  return {std::move(funcList), std::move(funcMap), std::move(structMap)};
+  return {std::move(funcList), std::move(funcMap), std::move(structMap),
+          std::move(traitMap)};
 }
 
 //===----------------------------------------------------------------------===//
@@ -63,8 +69,10 @@ collectFunctionsAndTypes(Operation *module) {
 /// struct.
 struct TypeDeclInfo {
   TypeDeclInfo(DenseMap<SymbolRefAttr, LIT::StructDeclOp> &&structMap,
-               DenseMap<SymbolRefAttr, LIT::FuncOp> &&funcMap)
-      : structMap(std::move(structMap)), funcMap(std::move(funcMap)) {}
+               DenseMap<SymbolRefAttr, LIT::FuncOp> &&funcMap,
+               DenseMap<SymbolRefAttr, LIT::TraitDeclOp> &&traitMap)
+      : structMap(std::move(structMap)), funcMap(std::move(funcMap)),
+        traitMap(std::move(traitMap)) {}
 
   /// Return the total number of flattened fields in the specified type.
   unsigned getNumFieldsInType(Type type);
@@ -81,10 +89,15 @@ struct TypeDeclInfo {
 
   /// Return the struct decl for the specified DeclRefType.
   LIT::StructDeclOp getStructDeclForType(DeclRefType type) const {
-    // If not, we compute it recursively.  Structs cannot be infinitely deep, so
-    // we can just do this recursively.
     auto it = structMap.find(type.getSymbol());
     assert(it != structMap.end() && "reference to struct that wasn't declared");
+    return it->second;
+  }
+
+  /// Return the trait decl for the specified TraitType.
+  LIT::TraitDeclOp getTraitDeclForType(TraitType type) const {
+    auto it = traitMap.find(type.getSymbol());
+    assert(it != traitMap.end() && "reference to trait that wasn't declared");
     return it->second;
   }
 
@@ -94,7 +107,7 @@ struct TypeDeclInfo {
 
   /// Given the RValue type for a value that needs to be destroyed, return the
   /// destructor the invoke, or null if there is none.
-  SymbolConstantAttr getDestructorForType(Type type) const;
+  TypedAttr getDestructorForType(Type type) const;
   SymbolConstantAttr getMoveInitForType(Type type) const;
 
   /// Return the function for a given symbol name if known.
@@ -106,6 +119,7 @@ struct TypeDeclInfo {
 private:
   DenseMap<SymbolRefAttr, StructDeclOp> structMap;
   DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
+  DenseMap<SymbolRefAttr, TraitDeclOp> traitMap;
 
   /// This keeps track of the number of fields in the struct specified by the
   /// (fully flattened) symbol.
@@ -128,8 +142,8 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
 
 static SymbolConstantAttr getSpecialMemberForType(
     Type type, const TypeDeclInfo *typeDecls,
-    std::function<SymbolConstantAttr(StructDeclOp)> getMember) {
-  DeclRefType valueType = dyn_cast<DeclRefType>(type);
+    llvm::function_ref<SymbolConstantAttr(StructDeclOp)> getMember) {
+  auto valueType = dyn_cast<DeclRefType>(type);
   if (!valueType) // Values of raw MLIR type don't have destructors.
     return {};
   SymbolConstantAttr attr =
@@ -144,16 +158,31 @@ static SymbolConstantAttr getSpecialMemberForType(
     return attr;
 
   ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
-  auto newSig = attr.getType().getSpecializedSignature(
-      paramValues, []() -> InFlightDiagnostic {
-        llvm_unreachable("incorrect parameters to dtor when inserting");
-      });
+  auto newSig = attr.getType().getSpecializedSignature(paramValues);
   return SymbolConstantAttr::get(attr.getSymbol(), paramValues, newSig);
 }
 
 /// Given the RValue type for a value that needs to be destroyed, return the
 /// destructor the invoke, or null if there is none.
-SymbolConstantAttr TypeDeclInfo::getDestructorForType(Type type) const {
+TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
+  if (auto generic = dyn_cast<ParamRefType>(type)) {
+    if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
+      SignatureType dtorSig = TraitDeclOp(traitMap.at(trait.getSymbol()))
+                                  .getDtorSig()
+                                  .value_or(SignatureType());
+      if (dtorSig) {
+        return ParamOperatorAttr::get(
+            POC::GetTypeMethod,
+            {generic.getParam(),
+             StringAttr::get("__del__", StringType::get(type.getContext()))},
+            dtorSig.getSpecializedSignature(
+                {TypeConstantAttr::get(trait,
+                                       AnyRegTypeType::get(type.getContext())),
+                 generic.getParam()}));
+      }
+    }
+  }
+
   return getSpecialMemberForType(type, this, [](StructDeclOp structOp) {
     return structOp.getDestructorAttr();
   });
@@ -1878,9 +1907,21 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   if (valueRef.isAllPresent(consumedValues))
     return;
 
-  // Get the type for the value so we can poke at it.  If trivial, then we don't
-  // have any work to do.
-  DeclRefType valueType = dyn_cast<DeclRefType>(valueRef.getValueType(value));
+  // Get the type for the value so we can poke at it.
+  Type type = valueRef.getValueType(value);
+
+  // If this is a generic type, then emit a generic destructor call. The
+  // language guarantees that a destructor is generic for every generic type.
+  if (auto generic = dyn_cast<ParamRefType>(type)) {
+    if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
+      emitDestructorCallAt(value, valueRef, builder, opWithUse);
+      valueRef.markBits(consumedValues, true);
+      return;
+    }
+  }
+
+  // If trivial, then we don't have any work to do.
+  auto valueType = dyn_cast<DeclRefType>(type);
   if (!valueType) {
     valueRef.markBits(consumedValues, true);
     return;
@@ -2202,8 +2243,7 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
          "cannot have partially consumed object");
 
   Type destroyedType = valueRef.getValueType(value);
-  SymbolConstantAttr dtor =
-      valueSet.typeDeclInfo.getDestructorForType(destroyedType);
+  TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
   if (!dtor) // Trivial types don't have destructors, so nothing to do.
     return;
 
@@ -2214,7 +2254,7 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   if (succeeded(elideCopyDestroyPair(value, destroyedType, opWithUse)))
     return;
 
-  SignatureType signature = cast<SignatureType>(dtor.getType());
+  auto signature = cast<SignatureType>(dtor.getType());
   assert(signature.getNumResults() == 1 &&
          "dtor should have one result (none type)");
   assert(signature.getNumInputs() == 1 && "dtor should have one operand");
@@ -2238,8 +2278,14 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   assert(signature.getValueInputs()[0] == valueToDestroy.getType());
 
   // Emit the call to the destructor.
-  builder.create<LIT::CallOp>(signature.getValueResults()[0], dtor,
-                              valueToDestroy);
+  if (auto directDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
+    builder.create<LIT::CallOp>(signature.getValueResults()[0], directDtor,
+                                valueToDestroy);
+  } else {
+    builder.create<LIT::CallParamOp>(signature.getValueResults()[0], dtor,
+                                     std::nullopt, std::nullopt,
+                                     valueToDestroy);
+  }
 }
 
 /// Destroy any values whose bits are indicated in the specified set.  Insert
@@ -2306,11 +2352,12 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
 
   void runOnOperation() override {
     // Find all the functions and structs in the module.
-    auto [functionVector, funcMap, structMap] =
+    auto [functionVector, funcMap, structMap, traitMap] =
         collectFunctionsAndTypes(getOperation());
 
     // Process all the structs into TypeDeclInfo.
-    TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap));
+    TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap),
+                              std::move(traitMap));
 
     // TODO: Do in parallel, watch out for mutations of TypeDeclInfo though!
     bool hadError = false;

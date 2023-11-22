@@ -695,6 +695,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$inputParams,
     TypeLineageArrayAttr:$parentTypes,
+    OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
 
