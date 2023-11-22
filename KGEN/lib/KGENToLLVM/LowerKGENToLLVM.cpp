@@ -34,12 +34,10 @@ namespace LLVM = mlir::LLVM;
 static LLVM::Linkage getLinkageKind(ExportKind exportKind, bool isExternFunc) {
   switch (exportKind) {
   case ExportKind::NotExported:
-    return isExternFunc ? LLVM::Linkage::ExternWeak : LLVM::Linkage::Internal;
+    return isExternFunc ? LLVM::Linkage::External : LLVM::Linkage::Internal;
   case ExportKind::Exported:
   case ExportKind::CExported:
     return LLVM::Linkage::External;
-  case ExportKind::Weak:
-    return isExternFunc ? LLVM::Linkage::External : LLVM::Linkage::Weak;
   }
   llvm_unreachable("invalid export kind");
 }

@@ -375,12 +375,10 @@ def ExportInterface : OpInterface<"ExportInterface"> {
 
   let extraSharedClassDeclaration = [{
     bool isExported() { return $_op.getExportKind() != ExportKind::NotExported; }
-    bool isWeakExported() { return $_op.getExportKind() == ExportKind::Weak; }
     bool isCExported() { return $_op.getExportKind() == ExportKind::CExported; }
 
     void setNotExported() { $_op.setExportKind(ExportKind::NotExported); }
     void setExported() { $_op.setExportKind(ExportKind::Exported); }
-    void setWeakExported() { $_op.setExportKind(ExportKind::Weak); }
     void setCExported() { $_op.setExportKind(ExportKind::CExported); }
   }];
 }

@@ -230,7 +230,7 @@ kgen.func @used_func() {
   kgen.return
 }
 
-// CHECK: llvm.func extern_weak @external_func()
+// CHECK: llvm.func @external_func()
 kgen.link dense_resource<imaginary_ffmpeg> : tensor<1xui8> as @ffmpeg
 kgen.extern.func @external_func() -> () from @ffmpeg
 

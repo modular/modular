@@ -1538,9 +1538,7 @@ ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {
   ExportKind value = ExportKind::NotExported;
   if (succeeded(p.parseOptionalKeyword("export"))) {
     value = ExportKind::Exported;
-    if (succeeded(p.parseOptionalKeyword("weak")))
-      value = ExportKind::Weak;
-    else if (succeeded(p.parseOptionalKeyword("C")))
+    if (succeeded(p.parseOptionalKeyword("C")))
       value = ExportKind::CExported;
   }
   exportKind = ExportKindAttr::get(p.getContext(), value);
@@ -1552,9 +1550,6 @@ void KGEN::printSymbolExport(AsmPrinter &p, Operation *op,
   if (exportKind.getValue() != ExportKind::NotExported) {
     p << " export";
     switch (exportKind.getValue()) {
-    case ExportKind::Weak:
-      p << " weak";
-      break;
     case ExportKind::CExported:
       p << " C";
       break;
