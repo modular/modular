@@ -620,6 +620,135 @@ fn test_argn_test_identity():
             print("argmin = ", output[Index(i, 0)])
 
 
+# CHECK-LABEL: test_argn_3d_identity
+fn test_argn_3d_identity():
+    print("== test_argn_3d_identity")
+
+    alias batch_size = 2
+    alias seq_len = 2
+    alias hidden_dim = 5
+
+    let vector = NDBuffer[
+        3, DimList(batch_size, seq_len, hidden_dim), DType.int64
+    ].stack_allocation()
+    vector.fill(0)
+
+    let output = NDBuffer[
+        3, DimList(batch_size, seq_len, 1), DType.index
+    ].stack_allocation()
+    output.fill(0)
+
+    vector[Index(0, 1, 4)] = 1
+    vector[Index(1, 0, 1)] = 1
+    vector[Index(1, 0, 2)] = 1
+    vector[Index(1, 1, 3)] = 1
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[3, DimList.create_unknown[3](), DType.int64]](
+                vector
+            ),
+            2,
+            rebind[NDBuffer[3, DimList.create_unknown[3](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+
+        # CHECK: argmax = 0
+        print("argmax = ", output[Index(0, 0, 0)])
+        # CHECK: argmax = 4
+        print("argmax = ", output[Index(0, 1, 0)])
+        # CHECK: argmax = 1
+        print("argmax = ", output[Index(1, 0, 0)])
+        # CHECK: argmax = 3
+        print("argmax = ", output[Index(1, 1, 0)])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[3, DimList.create_unknown[3](), DType.int64]](
+                vector
+            ),
+            2,
+            rebind[NDBuffer[3, DimList.create_unknown[3](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+
+        # CHECK: argmin = 0
+        # CHECK: argmin = 0
+        # CHECK: argmin = 0
+        # CHECK: argmin = 0
+        for i in range(batch_size):
+            for j in range(seq_len):
+                print("argmin = ", output[Index(i, j, 0)])
+
+
+fn test_argn_less_than_simd():
+    print("== test_argn_less_than_simd")
+
+    alias batch_size = 2
+    alias hidden_dim = 3  # assumes simd_width of 4
+
+    let vector = NDBuffer[
+        2, DimList(batch_size, hidden_dim), DType.int64
+    ].stack_allocation()
+    vector.fill(0)
+
+    let output = NDBuffer[
+        2, DimList(batch_size, 1), DType.index
+    ].stack_allocation()
+    output.fill(0)
+
+    vector[Index(0, 0)] = 0
+    vector[Index(0, 1)] = 1
+    vector[Index(0, 2)] = 2
+    vector[Index(1, 0)] = 5
+    vector[Index(1, 1)] = 4
+    vector[Index(1, 2)] = 3
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.int64]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+
+        # CHECK: argmax = 2
+        print("argmax = ", output[Index(0, 0)])
+        # CHECK: argmax = 0
+        print("argmax = ", output[Index(1, 0)])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.int64]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+
+        # CHECK: argmin = 0
+        print("argmin = ", output[Index(0, 0)])
+        # CHECK: argmin = 2
+        print("argmin = ", output[Index(1, 0)])
+
+
 # CHECK-LABEL: test_cumsum
 fn test_cumsum():
     print("== test_cumsum")
@@ -685,4 +814,6 @@ fn main():
     test_argn_2_neg_axis()
     test_argn_test_zeros()
     test_argn_test_identity()
+    test_argn_3d_identity()
+    test_argn_less_than_simd()
     test_cumsum()
