@@ -35,6 +35,9 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   // forbid this when traits are fully operational.
   if (isa<MetaTypeType>(fromType) && isa<AnyTypeType, AnyRegTypeType>(toType))
     return true;
+  // Permit upcasting from generic types to any type.
+  if (isa<TraitType>(fromType) && isa<AnyTypeType>(toType))
+    return true;
   // Register-passable types can bind to any types.
   if (isa<AnyRegTypeType>(fromType) && isa<AnyTypeType>(toType))
     return true;
