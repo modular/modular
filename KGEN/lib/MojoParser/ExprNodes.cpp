@@ -346,6 +346,10 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
     return {};
   }
 
+  // Notify the listener that the Self is a reference of the parent
+  // struct.
+  emitter.shared.notifyListenerOnRef(astDecl, "Self", getRange());
+
   // Once we have the type in question we can just return its Self type as an
   // PValue.  This already includes bound parameters etc.
   assert(astDecl->resolvedness >= DeclResolvedness::signature);

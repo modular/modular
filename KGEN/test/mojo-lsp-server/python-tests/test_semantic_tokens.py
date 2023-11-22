@@ -48,7 +48,7 @@ fn foo():
 alias int_alias = 10
 
 trait ATrait:
-  fn foo(owned self, i: Int):
+  fn foo(owned self, i: Self):
      ...
 """,
     )
@@ -103,6 +103,12 @@ trait ATrait:
 
     assert any(
         token.range == doc.find_first_range("ATrait")
+        and token.token_type == "interface"
+        for token in tokens
+    )
+
+    assert any(
+        token.range == doc.find_first_range("Self")
         and token.token_type == "interface"
         for token in tokens
     )
