@@ -349,7 +349,7 @@ fn _convert_int_to_index_variadic_list[
     """Converts VariadicList[Int] to VariadicList[__mlir_type.`index`].
 
     Constraints:
-        Maximum supported list length is 15.
+        Maximum supported list length is 15. Also supports 32 length lists.
 
     Parameters:
         sz: The length of the list.
@@ -514,6 +514,41 @@ fn _convert_int_to_index_variadic_list[
             l[12].value,
             l[13].value,
             l[14].value,
+        )
+    elif sz == 32:
+        return VariadicList[__mlir_type.`index`](
+            l[0].value,
+            l[1].value,
+            l[2].value,
+            l[3].value,
+            l[4].value,
+            l[5].value,
+            l[6].value,
+            l[7].value,
+            l[8].value,
+            l[9].value,
+            l[10].value,
+            l[11].value,
+            l[12].value,
+            l[13].value,
+            l[14].value,
+            l[15].value,
+            l[16].value,
+            l[17].value,
+            l[18].value,
+            l[19].value,
+            l[20].value,
+            l[21].value,
+            l[22].value,
+            l[23].value,
+            l[24].value,
+            l[25].value,
+            l[26].value,
+            l[27].value,
+            l[28].value,
+            l[29].value,
+            l[30].value,
+            l[31].value,
         )
     constrained[sz == 16]()
     return VariadicList[__mlir_type.`index`](
