@@ -51,7 +51,7 @@ fn test_benchmark():
     # # sanity check that unary benchmark_function() with defaults works.
     @parameter
     fn timer3():
-        let b5 = run[time_me]()
+        let b5 = run[time_me](min_runtime_secs=0.1, max_runtime_secs=0.3)
         # CHECK: True
         print(b5.mean() > 0)
 
@@ -109,7 +109,7 @@ fn sleeper():
 # CHECK-LABEL: test_non_capturing
 fn test_non_capturing():
     print("== test_non_capturing")
-    let report = run[sleeper]()
+    let report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     # CHECK: True
     print(report.mean() > 0.001)
 
@@ -117,11 +117,20 @@ fn test_non_capturing():
 # CHECK-LABEL: test_change_units
 fn test_change_units():
     print("== test_change_units")
-    let report = run[sleeper]()
+    let report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     # CHECK: True
     print(report.mean("ms") > 1.0)
     # CHECK: True
     print(report.mean("ns") > 1_000_000.0)
+
+
+# CHECK-LABEL: test_report
+fn test_report():
+    print("== test_report")
+    let report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+
+    # CHECK: Benchmark Report (s)
+    report.print()
 
 
 def main():
@@ -129,3 +138,4 @@ def main():
     test_keep()
     test_non_capturing()
     test_change_units()
+    test_report()
