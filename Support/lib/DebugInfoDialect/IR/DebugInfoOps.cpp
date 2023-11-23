@@ -61,15 +61,64 @@ static ErrorOr<DIScopeAttr> getValueOpLocationScope(Location loc) {
 /// The local variable type must match the value type. Compare the types while
 /// unwrapping debuginfo types.
 static LogicalResult verifyValueOpType(ValueOp op) {
-  Type type = op.getValue().getType();
-  auto unresolved = dyn_cast<DIUnresolvedMLIRType>(op.getValueInfo().getType());
-  // If the variable debuginfo type has been lowered, we can't check the types.
-  if (!unresolved)
-    return success();
-  if (unresolved.getType() == type)
-    return success();
-  return op.emitOpError("local variable type '")
-         << unresolved.getType() << "' does not match value type: " << type;
+  Type inputType = op.getValue().getType();
+
+  // All occurrences of debuginfo.expr.irvalue in the location conversion
+  // expression must have types that match the ir (input) type.
+  auto conversionExpr = op.getConversionExprAttr();
+  auto walkResult = conversionExpr.walk([&](DIIRValueExprAttr irValue) {
+    // We can only compare types if the irValue type is not yet resolved.
+    if (auto unresolved = dyn_cast<DIUnresolvedMLIRType>(irValue.getDIType())) {
+      if (unresolved.getType() != inputType) {
+        op->emitOpError("conversion expression input expr.irvalue type ")
+            << unresolved.getType() << " does not match actual IR Value type "
+            << inputType;
+        return WalkResult::interrupt();
+      }
+    }
+    return WalkResult::advance();
+  });
+  if (walkResult.wasInterrupted())
+    return failure();
+
+  DIType outputType = conversionExpr.getDIType();
+  DIType declaredType = op.getValueInfo().getType();
+  if (declaredType != outputType) {
+    return op.emitOpError("conversion expression output type ")
+           << outputType << " does not match variable declared type "
+           << declaredType;
+  }
+  return success();
+}
+
+static ParseResult parseValueOpAttrs(OpAsmParser &p,
+                                     DILocalVariableAttr &varInfo,
+                                     DIExprAttr &conversionExpr) {
+  if (p.parseAttribute(varInfo))
+    return failure();
+
+  auto parseResult = p.parseOptionalAttribute(conversionExpr);
+  if (parseResult.has_value())
+    return *parseResult;
+
+  // Does not contain a parseResult. Create an "identity" conversion.
+  conversionExpr = DIIRValueExprAttr::get(varInfo.getType());
+  return success();
+}
+
+static void printValueOpAttrs(OpAsmPrinter &p, ValueOp value,
+                              DILocalVariableAttr varInfo,
+                              DIExprAttr conversionExpr) {
+  p.printAttribute(varInfo);
+
+  if (auto irValue = llvm::dyn_cast<DIIRValueExprAttr>(conversionExpr)) {
+    if (irValue.getDIType() == varInfo.getType()) {
+      // Omit identity conversion.
+      return;
+    }
+  }
+  p << ' ';
+  p.printAttribute(conversionExpr);
 }
 
 LogicalResult ValueOp::verify() {

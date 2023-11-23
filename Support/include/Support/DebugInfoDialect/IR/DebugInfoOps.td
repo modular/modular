@@ -8,6 +8,7 @@
 #define DEBUGINFOOPS_TD
 
 include "Support/DebugInfoDialect/IR/DebugInfoAttrs.td"
+include "Support/DebugInfoDialect/IR/DebugInfoExprAttrs.td"
 include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
@@ -29,18 +30,38 @@ def DebugInfo_ValueOp : DebugInfoOp<"value"> {
     variable is set to a new value. Note that this operation decribes the value
     of a variable directly, not its address.
 
+    The location expression specifies how this value relates to a source
+    language variable by specifying a DI Expression that can convert the operand
+    IR value into the source language variable.
+
     Example:
 
     ```mlir
+    #location_expr = #debuginfo.expr.ir_value : i32
+
     %0 = constant 0 : i32
-    debuginfo.value #debuginfo.local_variable<...> = %0 : i32
+    debuginfo.value #debuginfo.local_variable<...> #location_expr = %0 : i32
     ```
   }];
 
-  let arguments = (ins AnyType:$value, DebugInfo_DILocalVariableAttr:$valueInfo);
+  let arguments = (ins
+    AnyType:$value,
+    DebugInfo_DILocalVariableAttr:$valueInfo,
+    DebugInfo_DIExprAttrInterface:$conversionExpr
+  );
+
+  let builders = [
+    OpBuilder<(ins "mlir::Value":$value, "DILocalVariableAttr":$valueInfo), [{
+      build($_builder, $_state, value, valueInfo,
+            DIIRValueExprAttr::get(valueInfo.getType()));
+    }]>
+  ];
+
   let assemblyFormat = [{
-    qualified($valueInfo) `=` $value `:` type($value) attr-dict
+    custom<ValueOpAttrs>($valueInfo, $conversionExpr)
+      `=` $value `:` type($value) attr-dict
   }];
+
   let hasVerifier = 1;
 }
 
