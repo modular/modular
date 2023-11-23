@@ -800,8 +800,10 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
     LLDB_LOGF(log, "Symbol table being sent to JIT: \n%s", s.c_str());
   }
 
-  llvm::EngineBuilder builder(std::make_unique<llvm::Module>(
-      "Dummy JIT LLVM module", *impl->context.get()));
+  auto ownedModule =
+      std::make_unique<llvm::Module>("Dummy JIT LLVM module", *impl->context);
+  llvm::Module *module = &*ownedModule;
+  llvm::EngineBuilder builder(std::move(ownedModule));
 
   std::string errorString;
   builder.setEngineKind(llvm::EngineKind::JIT)
@@ -825,6 +827,7 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   impl->executionEngine.reset(builder.create(target_machine));
   impl->executionEngine->UnregisterJITEventListener(
       llvm::JITEventListener::createGDBRegistrationListener());
+  impl->executionEngine->removeModule(module);
 
   if (!impl->executionEngine) {
     error.SetErrorToGenericError();
@@ -845,12 +848,34 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   impl->executionEngine->setProcessAllSections(true);
   impl->executionEngine->DisableLazyCompilation();
 
-  std::unique_ptr<llvm::MemoryBuffer> buffer =
-      llvm::MemoryBuffer::getMemBuffer(impl->archiveBuffer->getMemBufferRef(),
-                                       /*RequiresNullTerminator=*/false);
-  impl->executionEngine->addArchive(
-      llvm::object::OwningBinary<llvm::object::Archive>(
-          std::move(impl->archive), std::move(buffer)));
+  llvm::Error err = llvm::Error::success();
+  SmallVector<std::unique_ptr<llvm::object::ObjectFile>> objFiles;
+  for (auto &child : impl->archive->children(err)) {
+    if (err)
+      return Status(std::move(err));
+    auto binOrErr = child.getAsBinary();
+    if (!binOrErr)
+      return Status(binOrErr.takeError());
+    auto objectFile = dyn_cast<llvm::object::ObjectFile>(*binOrErr);
+    if (!objectFile)
+      return Status("archive member was not an object file");
+    objFiles.push_back(std::move(objectFile));
+  }
+
+  // If this is arm elf, we need to add the object files in reverse order. This
+  // works around relocation issues related to using MCJIT.
+  if (!impl->archive->isMachO() &&
+      GetArchitecture().GetMachine() >= llvm::Triple::arm &&
+      GetArchitecture().GetMachine() <= llvm::Triple::aarch64_32) {
+    for (auto &it : llvm::reverse(objFiles))
+      impl->executionEngine->addObjectFile(std::move(it));
+  } else {
+    for (auto &it : objFiles)
+      impl->executionEngine->addObjectFile(std::move(it));
+  }
+
+  // Handle all errors - we didn't hit anything.
+  llvm::handleAllErrors(std::move(err));
 
   // Register each function in the module.
   for (auto &[sym, exportVal] : impl->exportedSymbols) {
