@@ -168,6 +168,15 @@ kgen.generator @borrowed_variadic(%arg0: !kgen.pointer<variadic<i32>>, %arg1: in
   kgen.return %1 : i32
 }
 
+kgen.generator @malloc_and_free(%arg0: i16) -> i16 {
+  %idx4 = index.constant 4
+  %0 = pop.external_call @malloc(%idx4) : (index) -> (!kgen.pointer<i16>)
+  pop.store %arg0, %0 : !kgen.pointer<i16>
+  %2 = pop.load %0 : !kgen.pointer<i16>
+  pop.external_call @free(%0) : (!kgen.pointer<i16>) -> ()
+  kgen.return %2 : i16
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -318,6 +327,9 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: <[index, {"f" : (i32) -> i32 = @store_load_pointer}]>
   kgen.param.constant: regtype = <apply(
     :(!kgen.anyregtype) -> !kgen.anyregtype @store_load<:regtype regtype>, [index, {"f" : (i32) -> (i32) = @store_load_pointer}])>
+
+  // CHECK-NEXT: <7>
+  kgen.param.constant: i16 = <apply(:(i16) -> i16 @malloc_and_free, 7)>
 
   kgen.return
 }

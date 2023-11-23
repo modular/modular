@@ -961,10 +961,10 @@ ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
 // AlignedAllocOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
-                                             InterpreterState &state) {
-  int64_t align = cast<IntegerAttr>(operands.front()).getInt();
-  int64_t size = cast<IntegerAttr>(operands.back()).getInt();
+/// Interpret an aligned allocation.
+static ErrorTreeOrSuccess interpretAllocation(int64_t size, int64_t align,
+                                              Location loc, Type type,
+                                              InterpreterState &state) {
   // The default "system" alignment technically has no guarantees and varies
   // depending on the underlying allocator implementation. Just use 64 for
   // consistency.
@@ -973,9 +973,16 @@ ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
 
   ErrorOr<int64_t> addr = state.allocateHeapMemory(size, align);
   if (addr.isError())
-    return ErrorTree(getLoc(), addr.takeError());
-  state.mapResults(PointerAttr::get(addr.takeValue(), getType()));
+    return ErrorTree(loc, addr.takeError());
+  state.mapResults(PointerAttr::get(addr.takeValue(), type));
   return success();
+}
+
+ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  int64_t align = cast<IntegerAttr>(operands.front()).getInt();
+  int64_t size = cast<IntegerAttr>(operands.back()).getInt();
+  return interpretAllocation(size, align, getLoc(), getType(), state);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1408,4 +1415,53 @@ OpFoldResult DTypeFromUI8::fold(FoldAdaptor adaptor) {
     return KGEN::DTypeConstantAttr::get(getContext(), KGENDType(val.getUInt()));
 
   return {};
+}
+
+//===----------------------------------------------------------------------===//
+// ExternalCallOp
+//===----------------------------------------------------------------------===//
+
+static ErrorTreeOrSuccess interpretMalloc(ExternalCallOp op,
+                                          ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  if (operands.size() != 1 || op->getNumResults() != 1) {
+    return ErrorTree(op.getLoc(), "unable to interpret call to 'malloc', "
+                                  "expected 1 operand and 1 result");
+  }
+  size_t size = dyn_cast_or_null<IntegerAttr>(operands.front()).getInt();
+  return interpretAllocation(size, /*align=*/0, op.getLoc(),
+                             op->getResultTypes()[0], state);
+}
+
+static ErrorTreeOrSuccess interpretFree(ExternalCallOp op,
+                                        ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
+  if (operands.size() != 1 || op.getNumResults() != 0) {
+    return ErrorTree(
+        op.getLoc(),
+        "unable to interpret call to 'free', expected 1 operand and 0 results");
+  }
+
+  auto ptr = cast<PointerAttr>(operands.front());
+  if (ErrorOrSuccess err = state.freeHeapMemory(ptr.getAddr()); err.isError())
+    return ErrorTree(op.getLoc(), err.takeError());
+  return success();
+}
+
+/// FIXME(#26342): We shouldn't implement interpreter support for external_call,
+/// this bakes assumptions about the functions. This is a temporary workaround
+/// because of the fact that the gpu path does not use the dedicated pop memory
+/// operations.
+ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  StringRef callee = getCallee();
+  if (callee == "malloc")
+    return interpretMalloc(*this, operands, state);
+  if (callee == "free")
+    return interpretFree(*this, operands, state);
+
+  return ErrorTree(
+      getLoc(),
+      Twine("unable to interpret call to unknown external function: " + callee)
+          .str());
 }
