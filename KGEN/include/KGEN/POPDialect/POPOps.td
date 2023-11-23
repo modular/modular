@@ -1239,8 +1239,10 @@ def POP_MemcpyOp : POPOp<"memcpy"> {
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
 
-def POP_ExternalCallOp : POPOp<"external_call",
-    [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+def POP_ExternalCallOp : POPOp<"external_call", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>
+  ]> {
   let summary = "call an external function";
   let description = [{
     The `pop.external_call` operation invokes an externally-defined function,
