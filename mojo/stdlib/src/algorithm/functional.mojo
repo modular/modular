@@ -958,14 +958,16 @@ fn _get_start_indices_of_nth_subvolume[
     var out = StaticIntTuple[rank](0)
     var curr_index = n
 
-    @always_inline
-    @parameter
-    fn compute_shape[idx: Int]():
-        alias i = rank - 1 - idx - subvolume_rank
-        out[i] = curr_index._positive_rem(shape[i])
-        curr_index = curr_index._positive_div(shape[i])
+    if triple_is_nvidia_cuda():
+        for i in range(rank - subvolume_rank - 1, -1, -1):
+            out[i] = curr_index._positive_rem(shape[i])
+            curr_index = curr_index._positive_div(shape[i])
+    else:
 
-    unroll[rank - subvolume_rank, compute_shape]()
+        @unroll
+        for i in range(rank - subvolume_rank - 1, -1, -1):
+            out[i] = curr_index._positive_rem(shape[i])
+            curr_index = curr_index._positive_div(shape[i])
 
     return out
 
