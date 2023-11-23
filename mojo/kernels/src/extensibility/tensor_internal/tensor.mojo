@@ -117,6 +117,62 @@ fn _elementwise[
     return result
 
 
+@always_inline
+fn _elementwise[
+    op: fn[dtype: DType, simd_width: Int] (
+        x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]
+    ) -> SIMD[dtype, simd_width],
+    dtype: DType,
+](a: Tensor[dtype], b: SIMD[dtype, 1]) -> Tensor[dtype]:
+    let result = Tensor[a.dtype](a._spec)
+    let a_buffer = a._to_buffer()
+    let result_buffer = result._to_buffer()
+
+    @parameter
+    fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+        let idx = indices[0]
+        result_buffer.simd_store(
+            idx,
+            op[dtype, width](
+                a_buffer.simd_load[width](idx), SIMD[dtype, width](b)
+            ),
+        )
+
+    elementwise[rank=1, simd_width = simdwidthof[dtype](), func=func](
+        Index(len(a_buffer))
+    )
+
+    return result
+
+
+@always_inline
+fn _elementwise[
+    op: fn[dtype: DType, simd_width: Int] (
+        x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]
+    ) -> SIMD[dtype, simd_width],
+    dtype: DType,
+](a: SIMD[dtype, 1], b: Tensor[dtype]) -> Tensor[dtype]:
+    let result = Tensor[b.dtype](b._spec)
+    let b_buffer = b._to_buffer()
+    let result_buffer = result._to_buffer()
+
+    @parameter
+    fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+        let idx = indices[0]
+        result_buffer.simd_store(
+            idx,
+            op[dtype, width](
+                SIMD[dtype, width](a), b_buffer.simd_load[width](idx)
+            ),
+        )
+
+    elementwise[rank=1, simd_width = simdwidthof[dtype](), func=func](
+        Index(len(b_buffer))
+    )
+
+    return result
+
+
 struct Tensor[dtype: DType]:
     """A tensor type which owns its underlying data and is parameterized on
     DType.
@@ -283,6 +339,30 @@ struct Tensor[dtype: DType]:
         return _elementwise[math.add](self, other)
 
     @always_inline
+    fn __add__(self, other: SIMD[dtype, 1]) -> Self:
+        """Adds this tensor with a scalar.
+
+        Args:
+            other: The RHS of the add operation.
+
+        Returns:
+            The addition result.
+        """
+        return _elementwise[math.add](self, other)
+
+    @always_inline
+    fn __radd__(self, other: SIMD[dtype, 1]) -> Self:
+        """Adds this tensor with a scalar.
+
+        Args:
+            other: The LHS of the add operation.
+
+        Returns:
+            The addition result.
+        """
+        return _elementwise[math.add](other, self)
+
+    @always_inline
     fn __sub__(self, other: Self) raises -> Self:
         """Subtracts a tensor from this tensor.
 
@@ -299,6 +379,30 @@ struct Tensor[dtype: DType]:
             raise "shape mismatch during tensor subtraction"
 
         return _elementwise[math.sub](self, other)
+
+    @always_inline
+    fn __sub__(self, other: SIMD[dtype, 1]) -> Self:
+        """Subtracts a scalar from this tensor.
+
+        Args:
+            other: The RHS of the sub operation.
+
+        Returns:
+            The subtraction result.
+        """
+        return _elementwise[math.sub](self, other)
+
+    @always_inline
+    fn __rsub__(self, other: SIMD[dtype, 1]) -> Self:
+        """Subtracts this tensor from a scalar.
+
+        Args:
+            other: The LHS of the sub operation.
+
+        Returns:
+            The addition result.
+        """
+        return _elementwise[math.sub](other, self)
 
     @always_inline
     fn __mul__(self, other: Self) raises -> Self:
@@ -319,6 +423,30 @@ struct Tensor[dtype: DType]:
         return _elementwise[math.mul](self, other)
 
     @always_inline
+    fn __mul__(self, other: SIMD[dtype, 1]) -> Self:
+        """Multiplies this tensor with a scalar.
+
+        Args:
+            other: The RHS of the mul operation.
+
+        Returns:
+            The multiplication result.
+        """
+        return _elementwise[math.mul](self, other)
+
+    @always_inline
+    fn __rmul__(self, other: SIMD[dtype, 1]) -> Self:
+        """Multiplies this tensor with a scalar.
+
+        Args:
+            other: The LHS of the mul operation.
+
+        Returns:
+            The multiplication result.
+        """
+        return _elementwise[math.mul](other, self)
+
+    @always_inline
     fn __truediv__(self, other: Self) raises -> Self:
         """Divides this tensor by another tensor.
 
@@ -337,6 +465,30 @@ struct Tensor[dtype: DType]:
             raise "shape mismatch during tensor multiplication"
 
         return _elementwise[math.div](self, other)
+
+    @always_inline
+    fn __truediv__(self, other: SIMD[dtype, 1]) -> Self:
+        """Divides this tensor by a scalar.
+
+        Args:
+            other: The RHS of the div operation.
+
+        Returns:
+            The division result.
+        """
+        return _elementwise[math.div](self, other)
+
+    @always_inline
+    fn __rtruediv__(self, other: SIMD[dtype, 1]) -> Self:
+        """Divides a scalar by this tensor, broadcasting elementwise.
+
+        Args:
+            other: The LHS of the div operation.
+
+        Returns:
+            The division result.
+        """
+        return _elementwise[math.div](other, self)
 
     @always_inline
     fn __ipow__(inout self, exponent: Int) -> None:
@@ -381,6 +533,33 @@ struct Tensor[dtype: DType]:
         alias dtype_simd_width = simdwidthof[dtype]()
 
         elementwise[rank=1, simd_width=dtype_simd_width, func=_pow](
+            Index(len(buffer))
+        )
+
+        return result
+
+    @always_inline
+    fn astype[new_dtype: DType](self) -> Tensor[new_dtype]:
+        """Copy the Tensor with elements cast to the new type.
+
+        Parameters:
+            new_dtype: The type to cast the values to.
+
+        Returns:
+            A new tensor with the same values but the new type.
+        """
+        let result = Tensor[new_dtype](self._spec)
+        let buffer = self._to_buffer()
+        let result_buffer = result._to_buffer()
+
+        @parameter
+        fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+            let idx = indices[0]
+            result_buffer.simd_store(
+                idx, buffer.simd_load[width](idx).cast[new_dtype]()
+            )
+
+        elementwise[rank=1, simd_width = simdwidthof[dtype](), func=func](
             Index(len(buffer))
         )
 
