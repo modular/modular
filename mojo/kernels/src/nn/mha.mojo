@@ -132,12 +132,10 @@ fn fused_attention[
     @parameter
     if rank == 4:
         score_shape = rebind[StaticIntTuple[rank]](
-            Index(q.dim[0](), q.dim[1](), q.dim[2](), k.dim[3]())
+            Index(q.dim[0](), q.dim[1](), M, N)
         )
     else:
-        score_shape = rebind[StaticIntTuple[rank]](
-            Index(q.dim[0](), q.dim[1](), k.dim[2]())
-        )
+        score_shape = rebind[StaticIntTuple[rank]](Index(q.dim[0](), M, N))
     # fmt: on
     let score = NDBuffer[rank, DimList.create_unknown[rank](), score_type](
         score_ptr, score_shape

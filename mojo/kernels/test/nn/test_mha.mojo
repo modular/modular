@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
 from math import div_ceil, min, abs, rsqrt, isclose
@@ -116,7 +115,6 @@ fn test():
 
     # Contruct buffers.
     let q = NDBuffer[4, BHSD, type](q_ptr)
-    let k = NDBuffer[4, DimList.create_unknown[4](), type](k_ptr, BHDS)
     let v = NDBuffer[4, BHSD, type](v_ptr)
     let mask = NDBuffer[2, DimList.create_unknown[2](), type](
         mask_ptr, Index(seq_len, seq_len)
@@ -127,7 +125,11 @@ fn test():
     @parameter
     @always_inline
     fn test_body[transpose_key: Bool]():
-        # Test with causal;
+        let k_shape = Index(
+            batch_size, num_heads, seq_len, depth
+        ) if transpose_key else Index(batch_size, num_heads, depth, seq_len)
+        let k = NDBuffer[4, DimList.create_unknown[4](), type](k_ptr, k_shape)
+
         with Runtime() as rt:
             var chain = OwningOutputChainPtr(rt)
             _naive_attention[type, transpose_key](
