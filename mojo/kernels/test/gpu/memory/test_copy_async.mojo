@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen -disable-prebuilt-packages -O0 -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_90 --target-features="" %s | FileCheck %s
+# RUN: kgen -O0 -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_90 --target-features="" %s | FileCheck %s
 
 from memory.unsafe import Pointer, DTypePointer
 from gpu.memory import AddressSpace, async_copy

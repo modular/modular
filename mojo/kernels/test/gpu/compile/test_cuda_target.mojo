@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen -disable-prebuilt-packages -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_90 --target-features="" %s | FileCheck %s
+# RUN: kgen -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_90 --target-features="" %s | FileCheck %s
 
 from sys.info import simdwidthof, triple_is_nvidia_cuda
 
@@ -64,7 +64,7 @@ fn parameterized_on_cuda() -> Int:
 # CHECK: hello_mojo
 @export
 fn hello_mojo():
-    # CHECK: vprintf
+    # CHECK: builtin_io_print
     print("Hello")
 
 
