@@ -18,9 +18,10 @@ fn run[
     func: fn () -> None
 ](
     num_warmup: Int = 2,
-    max_iters: Int = 100_000,
-    min_time_secs: Float64 = 0.5,
-    max_time_secs: Float64 = 1,
+    max_iters: Int = 1_000_000_000,
+    min_runtime_secs: Float64 = 2,
+    max_runtime_secs: Float64 = 60,
+    max_batch_size: Int = 0,
 ) -> Report:
     """Benchmarks the function passed in as a parameter.
 
@@ -33,9 +34,11 @@ fn run[
     Args:
         num_warmup: Number of warmup iterations to run before starting
             benchmarking (default 2).
-        max_iters: Max number of iterations to run (default `100_000`).
-        min_time_secs: Upper bound on benchmarking time in secs (default `0.5`).
-        max_time_secs: Lower bound on benchmarking time in secs (default `1`).
+        max_iters: Max number of iterations to run (default `1_000_000_000`).
+        min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
+        max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
+        max_batch_size: The maximum number of iterations to perform per time
+            measurement.
 
     Returns:
         Average execution time of func in ns.
@@ -54,7 +57,11 @@ fn run[
 
     return _run_impl(
         _RunOptions[benchmark_fn](
-            num_warmup, max_iters, min_time_secs, max_time_secs
+            max_batch_size=max_batch_size,
+            num_warmup=num_warmup,
+            max_iters=max_iters,
+            min_runtime_secs=min_runtime_secs,
+            max_runtime_secs=max_runtime_secs,
         )
     )
 
@@ -64,9 +71,10 @@ fn run[
     func: fn () capturing -> None
 ](
     num_warmup: Int = 2,
-    max_iters: Int = 100_000,
-    min_time_secs: Float64 = 0.5,
-    max_time_secs: Float64 = 1,
+    max_iters: Int = 1_000_000_000,
+    min_runtime_secs: Float64 = 2,
+    max_runtime_secs: Float64 = 60,
+    max_batch_size: Int = 0,
 ) -> Report:
     """Benchmarks the function passed in as a parameter.
 
@@ -79,9 +87,11 @@ fn run[
     Args:
         num_warmup: Number of warmup iterations to run before starting
             benchmarking (default 2).
-        max_iters: Max number of iterations to run (default `100_000`).
-        min_time_secs: Upper bound on benchmarking time in secs (default `0.5`).
-        max_time_secs: Lower bound on benchmarking time in secs (default `1`).
+        max_iters: Max number of iterations to run (default `1_000_000_000`).
+        min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
+        max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
+        max_batch_size: The maximum number of iterations to perform per time
+            measurement.
 
     Returns:
         Average execution time of func in ns.
@@ -100,7 +110,11 @@ fn run[
 
     return _run_impl(
         _RunOptions[benchmark_fn](
-            num_warmup, max_iters, min_time_secs, max_time_secs
+            max_batch_size=max_batch_size,
+            num_warmup=num_warmup,
+            max_iters=max_iters,
+            min_runtime_secs=min_runtime_secs,
+            max_runtime_secs=max_runtime_secs,
         )
     )
 
@@ -110,9 +124,10 @@ fn run[
     func: fn () raises capturing -> None
 ](
     num_warmup: Int = 2,
-    max_iters: Int = 100_000,
-    min_time_secs: Float64 = 0.5,
-    max_time_secs: Float64 = 1,
+    max_iters: Int = 1_000_000_000,
+    min_runtime_secs: Float64 = 2,
+    max_runtime_secs: Float64 = 60,
+    max_batch_size: Int = 0,
 ) -> Report:
     """Benchmarks the function passed in as a parameter.
 
@@ -125,9 +140,11 @@ fn run[
     Args:
         num_warmup: Number of warmup iterations to run before starting
             benchmarking (default 2).
-        max_iters: Max number of iterations to run (default `100_000`).
-        min_time_secs: Upper bound on benchmarking time in secs (default `0.5`).
-        max_time_secs: Lower bound on benchmarking time in secs (default `1`).
+        max_iters: Max number of iterations to run (default `1_000_000_000`).
+        min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
+        max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
+        max_batch_size: The maximum number of iterations to perform per time
+            measurement.
 
     Returns:
         Average execution time of func in ns.
@@ -149,6 +166,10 @@ fn run[
 
     return _run_impl(
         _RunOptions[benchmark_fn](
-            num_warmup, max_iters, min_time_secs, max_time_secs
+            max_batch_size=max_batch_size,
+            num_warmup=num_warmup,
+            max_iters=max_iters,
+            min_runtime_secs=min_runtime_secs,
+            max_runtime_secs=max_runtime_secs,
         )
     )
