@@ -4,49 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import _elementwise_impl, vectorize_unroll
-from memory.buffer import NDBuffer
-from MOGG import simd_load, simd_store
+from algorithm.functional import _elementwise_impl
+from utils._annotations import *
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
-from utils.index import StaticIntTuple
-from utils._annotations import *
-
-
-fn _get_start_indices_of_nth_subvolume[
-    subvolume_rank: Int, static_shape: DimList
-](n: Int, shape: IntList[static_shape]) -> IntList[shape._size_but_unknown]:
-    """
-    Converts from a flat 1D index into an ND index for the given shape. The
-    `subvolume_rank` parameter is used to skip some of the ND dimension so we
-    can calculate an index over a subset of the shape. I.E subvolume_rank=1
-    will calcualte over (N, B, C, 0) with the last dimension being 0.
-    """
-    var out = IntList[shape._size_but_unknown].empty(shape.length)
-    var curr_index = n
-
-    @parameter
-    if shape.has_static_length():
-        alias rank = shape._length
-
-        @always_inline
-        @parameter
-        fn compute_shape[idx: Int]():
-            alias i = rank - 1 - idx - subvolume_rank
-            out._unsafe_set_dim(i, curr_index % shape[i])
-            curr_index //= shape[i]
-
-        unroll[rank - subvolume_rank, compute_shape]()
-    else:
-        let rank = len(out)
-        for i in range(rank - subvolume_rank - 1, -1, -1):
-            out._unsafe_set_dim(i, curr_index % shape[i])
-            curr_index //= shape[i]
-
-    return out ^
 
 
 @mogg_tensor_allocator()
+@no_inline
 @export
 fn empty_tensor[
     type: DType,
@@ -66,40 +31,6 @@ fn empty_tensor[
 fn _dealloc_tensor(t: Tensor):
     if t.data:
         t.data.free()
-
-
-# Stand in for elementwise while we experiment with the new tensor api
-@always_inline
-fn apply_per_element[
-    simd_width: Int,
-    func: fn[width: Int] (IntList) capturing -> None,
-](shape: IntList):
-    let rank = len(shape)
-    let total_size: Int = shape.nelems()
-    let inner_loop = shape[len(shape) - 1]
-    let outer_loop = total_size // inner_loop
-
-    for outer_i in range(outer_loop):
-        var indices = _get_start_indices_of_nth_subvolume[1](outer_i, shape)
-
-        @always_inline
-        @parameter
-        fn func_wrapper[simd_width: Int](idx: Int):
-            # The inner most dimension is vectorized, so we set it
-            # to the index offset.
-            indices._unsafe_set_dim(rank - 1, idx)
-            func[simd_width, indices.static_values](indices)
-
-        # We vectorize over the innermost dimension.
-        vectorize_unroll[
-            simd_width,
-            1,
-            func_wrapper,
-        ](inner_loop)
-
-        # We have to extend the lifetime of the indices as the above parameter
-        # capture and use does not extend the lifetime of the object.
-        _ = indices
 
 
 @mogg_register("to_tensor")
@@ -155,13 +86,17 @@ fn my_add(
 ) -> Tensor[x.type, x.static_shape, x.static_strides]:
     var out = empty_tensor[x.type](x.shape, x.strides)
 
+    x.enable_fusion()
+    y.enable_fusion()
+    out.enable_fusion()
+
     @parameter
     @always_inline
     fn func[width: Int](i: IntList):
         let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         out.simd_store[width](i, x.simd_load[width](i) + i2)
 
-    apply_per_element[1, func](out.shape)
+    out.for_each[1, func]()
     return out ^
 
 
@@ -179,5 +114,5 @@ fn my_sub(
         let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         out.simd_store[width](i, x.simd_load[width](i) - i2)
 
-    apply_per_element[1, func](out.shape)
+    out.for_each[1, func]()
     return out ^

@@ -13,7 +13,7 @@ from math import max
 struct IntList[static_values: DimList = DimList()](Sized):
     # Array must be >= 1 length, so we clamp to that if we have unknown
     # length shape. DimList of size 0 represents a dynamically ranked list.
-    alias _length = len(static_values)
+    alias _length = static_values.__len__()
     alias _safe_len = max(1, Self._length)
 
     # An alias to a parameter of the same sized shape as this but with the values unknown.
