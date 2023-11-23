@@ -101,3 +101,31 @@ fn mogg_tensor_move_constructor():
     Marks this function as being the move constructor of a tensor.
     """
     return
+
+
+fn mogg_enable_fusion():
+    """
+    Marks this function as the trigger which enables fusion.
+    """
+    return
+
+
+fn mogg_input_fusion_hook():
+    """
+    A hint that this is the template to look at to create the fusion lambda.
+    """
+    return
+
+
+fn mogg_output_fusion_hook():
+    """
+    A hint that this is the template to look at to create the fusion lambda.
+    """
+    return
+
+
+fn mogg_elementwise_hook():
+    """
+    A hint that this is the elementwise function.
+    """
+    return
