@@ -130,11 +130,11 @@ fn test():
         # Test with causal;
         with Runtime() as rt:
             var chain = OwningOutputChainPtr(rt)
-            _naive_attention[type, BSHD, BHSD, BHDS, transpose_key](
-                output,
-                q,
+            _naive_attention[type, transpose_key](
+                rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
+                rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
                 rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
-                v,
+                rebind[NDBuffer[4, DimList.create_unknown[4](), type]](v),
                 mask,
                 scale,
                 chain.borrow(),
