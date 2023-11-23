@@ -1847,8 +1847,8 @@ static AttrType concretizeAttr(AttrType attr, mlir::Location loc,
     return {};
   }
   if (LLVM_UNLIKELY(!*exprResult)) {
-    inode->setToError(
-        ErrorTree(loc, "conretized parameter expression in attribute is null"));
+    inode->setToError(ErrorTree(
+        loc, "concretized parameter expression in attribute is null"));
     return {};
   }
   return cast<AttrType>(*exprResult);
@@ -2092,13 +2092,8 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 
         // Update the ValueInfo attr since they contain types.
         if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
-          auto concretizedAttr = concretizeAttr<DebugInfo::DILocalVariableAttr>(
-              value.getValueInfoAttr(), op->getLoc(), inode);
-          if (!concretizedAttr)
-            return WalkResult::interrupt();
-
-          value.setValueInfoAttr(
-              cast<DebugInfo::DILocalVariableAttr>(concretizedAttr));
+          value->setAttrs(
+              concretizeAttr(value->getAttrDictionary(), op->getLoc(), inode));
         }
 
         // To be defensive, we only concretize location attributes if we know
