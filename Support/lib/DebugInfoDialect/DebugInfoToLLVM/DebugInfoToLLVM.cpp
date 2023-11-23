@@ -57,6 +57,10 @@ private:
   LLVM::DIScopeAttr convertAttrImpl(DIScopeAttr attr);
   LLVM::DISubprogramAttr convertAttrImpl(DISubprogramAttr attr);
 
+  LLVM::DIExpressionAttr convertAttrImpl(DIRefOfExprAttr attr);
+  LLVM::DIExpressionAttr convertAttrImpl(DIDerefExprAttr attr);
+  LLVM::DIExpressionAttr convertAttrImpl(DIIRValueExprAttr attr);
+
   LLVM::DITypeAttr convertTypeImpl(DIType type);
   LLVM::DITypeAttr convertTypeImpl(DIArrayType type);
   LLVM::DIBasicTypeAttr convertTypeImpl(DIBasicType type);
@@ -84,8 +88,9 @@ Attribute MetadataConverter::convertAttrImpl(DIAttr attr) {
 
   Attribute result =
       TypeSwitch<DIAttr, Attribute>(attr)
-          .Case<DICompileUnitAttr, DIFileAttr, DILexicalBlockAttr,
-                DILocalVariableAttr, DISubprogramAttr>(
+          .Case<DICompileUnitAttr, DIDerefExprAttr, DIFileAttr,
+                DIIRValueExprAttr, DILexicalBlockAttr, DILocalVariableAttr,
+                DIRefOfExprAttr, DISubprogramAttr>(
               [&](auto attr) { return convertAttrImpl(attr); });
   return convertedAttrs[attr] = result;
 }
@@ -127,6 +132,39 @@ MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
       attr.getScopeLine(),
       static_cast<LLVM::DISubprogramFlags>(attr.getSubprogramFlags()),
       convertType(attr.getType()));
+}
+
+//===----------------------------------------------------------------------===//
+// DIExpression Attributes
+
+LLVM::DIExpressionAttr
+MetadataConverter::convertAttrImpl(DIRefOfExprAttr attr) {
+  auto prefix = dyn_cast_or_null<LLVM::DIExpressionAttr>(
+      convertAttr(cast<DIAttr>(attr.getValueExpr())));
+  if (!prefix)
+    return {};
+
+  SmallVector<uint64_t> expr(prefix.getValue());
+  expr.push_back(llvm::dwarf::DW_OP_LLVM_implicit_pointer);
+  return LLVM::DIExpressionAttr::get(attr.getContext(), expr);
+}
+
+LLVM::DIExpressionAttr
+MetadataConverter::convertAttrImpl(DIDerefExprAttr attr) {
+  auto prefix = dyn_cast_or_null<LLVM::DIExpressionAttr>(
+      convertAttr(cast<DIAttr>(attr.getPtrExpr())));
+  if (!prefix)
+    return {};
+
+  SmallVector<uint64_t> expr(prefix.getValue());
+  expr.push_back(llvm::dwarf::DW_OP_deref);
+  return LLVM::DIExpressionAttr::get(attr.getContext(), expr);
+}
+
+LLVM::DIExpressionAttr
+MetadataConverter::convertAttrImpl(DIIRValueExprAttr attr) {
+  // The base case is just an empty/trivial location list.
+  return LLVM::DIExpressionAttr::get(attr.getContext(), {});
 }
 
 //===----------------------------------------------------------------------===//
@@ -263,7 +301,8 @@ struct ConvertValueOp : public OpRewritePattern<ValueOp> {
                                 PatternRewriter &rewriter) const override {
     rewriter.create<LLVM::DbgValueOp>(
         replacer.replace<mlir::LocationAttr>(op.getLoc()), op.getValue(),
-        replacer.replace<LLVM::DILocalVariableAttr>(op.getValueInfo()));
+        replacer.replace<LLVM::DILocalVariableAttr>(op.getValueInfo()),
+        replacer.replace<LLVM::DIExpressionAttr>(op.getConversionExpr()));
     rewriter.eraseOp(op);
     return success();
   }
@@ -419,8 +458,8 @@ static void convertDbgValueToAddr(Operation *op) {
         allocSize, 0);
 
     // Replace the old dbg.value with a dbg.declare.
-    OpBuilder(op).create<LLVM::DbgDeclareOp>(op.getLoc(), allocaOp,
-                                             op.getVarInfo());
+    OpBuilder(op).create<LLVM::DbgDeclareOp>(
+        op.getLoc(), allocaOp, op.getVarInfo(), op.getLocationExpr());
     op->erase();
 
     // Update all of the old value uses to route through the alloca instead of
@@ -452,6 +491,19 @@ static void convertDbgValueToAddr(Operation *op) {
       storeBuilder.create<LLVM::StoreOp>(
           value.getParentRegion()->getParentOp()->getLoc(), value, allocaOp);
     }
+  });
+}
+
+/// LLVM does not yet support emitting DW_OP_LLVM_implicit_pointer to asm. If it
+/// is not yet optimized out by the time we emit to LLVM, it has to be removed.
+static void removeImplicitPointerDIExpr(Operation *op) {
+  op->walk([](DebugInfo::ValueOp op) {
+    auto walkResult =
+        op.getConversionExprAttr().walk([](DebugInfo::DIRefOfExprAttr refof) {
+          return WalkResult::interrupt();
+        });
+    if (walkResult.wasInterrupted())
+      op->erase();
   });
 }
 
@@ -490,6 +542,9 @@ void DebugInfoToLLVMPass::runOnOperation() {
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populateDebugInfoToLLVMPatterns(replacer, patterns);
+
+  // Remove unsupported cases.
+  removeImplicitPointerDIExpr(getOperation());
 
   if (failed(mlir::applyPartialConversion(getOperation(), target,
                                           std::move(patterns))))
