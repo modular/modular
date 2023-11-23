@@ -196,7 +196,7 @@ struct MicroBenchmark {
   struct Measurement {
     size_t iterations;
     std::chrono::nanoseconds duration;
-    bool isStatisticallySignificant = false;
+    bool isSignificant = false;
   };
 
   /// The clock type used for the benchmark. We ue the high_resolution_clock to

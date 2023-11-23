@@ -168,8 +168,7 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
   // significant.
   size_t idx = 0;
   for (Measurement &measurement : measurements)
-    measurement.isStatisticallySignificant =
-        isSignificantMeasurement(measurement, idx++);
+    measurement.isSignificant = isSignificantMeasurement(measurement, idx++);
 
   return success();
 }
@@ -188,7 +187,7 @@ bool MicroBenchmark::isSignificantMeasurement(const Measurement &measurement,
   if ((idx + 1) >= 0.9 * measurements.size())
     return true;
 
-  // Otherwise the result is not statically significant.
+  // Otherwise the result is not significant.
   return false;
 }
 
@@ -291,10 +290,9 @@ static void printCSVHeader(raw_ostream &os,
 static SmallVector<std::chrono::nanoseconds>
 getTimings(ArrayRef<MicroBenchmark::Measurement> measurements) {
   return llvm::map_to_vector(
-      llvm::make_filter_range(measurements,
-                              [](auto &measurement) {
-                                return measurement.isStatisticallySignificant;
-                              }),
+      llvm::make_filter_range(
+          measurements,
+          [](auto &measurement) { return measurement.isSignificant; }),
       [](auto &measurement) -> std::chrono::nanoseconds {
         return measurement.duration / measurement.iterations;
       });
