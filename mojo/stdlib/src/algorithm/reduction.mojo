@@ -20,7 +20,12 @@ from math import none_true as _none_true
 from math import align_down
 from math.bit import cttz
 from math.limit import max_or_inf, min_or_neginf
-from sys.info import is_little_endian, simdwidthof, sizeof
+from sys.info import (
+    is_little_endian,
+    simdwidthof,
+    sizeof,
+    triple_is_nvidia_cuda,
+)
 from runtime.tracing import TraceLevel
 
 from algorithm import async_parallelize, unroll, vectorize
@@ -136,19 +141,27 @@ fn _get_nd_indices_from_flat_index[
     var out = StaticIntTuple[rank]()
     var curr_index = flat_index
 
-    @always_inline
     @parameter
-    fn compute_shape[idx: Int]():
-        alias i = rank - idx - 1
-        # There is one dimension we skip, this represents the inner loop that
-        # is being traversed.
-        if i == skip_dim:
-            out[i] = 0
-        else:
-            out[i] = curr_index % shape[i]
-            curr_index //= shape[i]
+    if triple_is_nvidia_cuda():
+        for i in range(rank - 1, -1, -1):
+            # There is one dimension we skip, this represents the inner loop that
+            # is being traversed.
+            if i == skip_dim:
+                out[i] = 0
+            else:
+                out[i] = curr_index._positive_rem(shape[i])
+                curr_index = curr_index._positive_div(shape[i])
+    else:
 
-    unroll[rank, compute_shape]()
+        @unroll
+        for i in range(rank - 1, -1, -1):
+            # There is one dimension we skip, this represents the inner loop that
+            # is being traversed.
+            if i == skip_dim:
+                out[i] = 0
+            else:
+                out[i] = curr_index._positive_rem(shape[i])
+                curr_index = curr_index._positive_div(shape[i])
 
     return out
 
