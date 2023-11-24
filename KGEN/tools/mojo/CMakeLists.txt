@@ -38,6 +38,7 @@ add_modular_tool(mojo
   compiler-rt-cas
   KGENCompilerRT-static
   modular-crashpad-handler
+  MojoLLDB
 
   LINK_COMPONENTS
   AllTargetsAsmParsers

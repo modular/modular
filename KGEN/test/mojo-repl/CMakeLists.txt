@@ -17,7 +17,3 @@ add_modular_testsuite(check-mojo-repl
   mojo-sdk
   mojo
 )
-
-if(LLDB_FOUND)
-  add_dependencies(check-mojo-repl MojoLLDB)
-endif()

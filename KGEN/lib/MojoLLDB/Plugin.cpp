@@ -96,3 +96,12 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   return true;
 }
 } // namespace lldb
+
+// FIXME: This is a workaround for LLDB's plugin detection mechanism, which
+// currently hardcodes the unix mangling of the function name.
+#if defined(_WIN32)
+MODULAR_EXPORT bool
+_ZN4lldb16PluginInitializeENS_10SBDebuggerE(lldb::SBDebugger debugger) {
+  return lldb::PluginInitialize(debugger);
+}
+#endif
