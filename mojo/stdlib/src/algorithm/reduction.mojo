@@ -30,7 +30,7 @@ from runtime.tracing import TraceLevel
 
 from algorithm import async_parallelize, unroll, vectorize
 from algorithm.functional import _get_num_workers
-from algorithm.gpu.reduction import reduce_launch
+from algorithm._gpu.reduction import reduce_launch
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from memory.unsafe import Pointer
 from runtime.llcl import OutputChainPtr
