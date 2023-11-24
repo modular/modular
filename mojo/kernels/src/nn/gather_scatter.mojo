@@ -24,8 +24,8 @@ from runtime.tracing import TraceLevel
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
-from utils.optional_param import OptionalParamInt
-from utils.optional import Optional
+from utils._optional_param import OptionalParamInt
+from utils._optional import Optional
 from gpu.memory import _copy_device_to_device_async
 
 

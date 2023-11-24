@@ -6,7 +6,7 @@
 
 from math import align_down, align_up, div_ceil, max, min
 from sys import external_call
-from sys.build import is_kernels_debug_build
+from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
 
 from algorithm import sync_parallelize

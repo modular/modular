@@ -22,7 +22,7 @@ from utils.static_tuple import StaticTuple
 
 from math import align_up
 
-from algorithm.gpu.reduction import row_reduce, block_reduce
+from algorithm._gpu.reduction import row_reduce, block_reduce
 
 from gpu import (
     ThreadIdx,

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, clamp, div_ceil, max, min, sqrt
-from sys.build import is_debug_build
+from sys._build import is_debug_build
 from sys.info import (
     has_avx2,
     has_avx512f,
@@ -22,7 +22,7 @@ from memory.buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList, Dim
-from utils.optional_param import OptionalParamInt, OptionalParamInts
+from utils._optional_param import OptionalParamInt, OptionalParamInts
 
 
 # conv uses a different kernel than matmul
