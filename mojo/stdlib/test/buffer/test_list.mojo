@@ -7,7 +7,7 @@
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
-from utils.optional_param import OptionalParamInt, OptionalParamInts
+from utils._optional_param import OptionalParamInt, OptionalParamInts
 
 
 # CHECK-LABEL: test_dim_list
