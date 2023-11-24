@@ -292,7 +292,7 @@ fn test_print():
 
     let buffer = NDBuffer[3, DimList(2, 2, 3), DType.index](tensor.data())
 
-    print(buffer.__str__())
+    print(str(buffer))
     _ = tensor ^
 
 
