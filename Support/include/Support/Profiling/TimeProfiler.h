@@ -275,6 +275,7 @@ struct ProfilerEntry<false> {
 
   ProfilerEntry() = default;
 
+  static constexpr bool isEnabled() { return false; }
   static ProfilerEntry create(StringRef name,
                               llvm::function_ref<std::string()> detailFn) {
     return {};
@@ -351,6 +352,8 @@ struct ProfilerEntry<true> {
 #else
 #define TRACE(X)
 #endif
+
+  static constexpr bool isEnabled() { return true; }
 
   static ProfilerEntry create(StringRef name,
                               llvm::function_ref<std::string()> detailFn) {

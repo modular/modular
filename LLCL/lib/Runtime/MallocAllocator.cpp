@@ -17,7 +17,7 @@ class MallocAllocator : public Allocator {
   // Allocate the specified number of bytes with the specified alignment.
   void *allocateBytes(size_t size, size_t alignment) override {
     TimeTraceScope scope(
-        MemAllocFreeCopyProfilerEntry::create("mem.alloc", [alignment, size]() {
+        MemAllocFreeProfilerEntry::create("mem.alloc", [alignment, size]() {
           return ("size:" + Twine(size) + "B, align:" + Twine(alignment) + "B")
               .str();
         }));
@@ -27,7 +27,7 @@ class MallocAllocator : public Allocator {
 
   // Deallocate the specified pointer that has the specified size.
   void deallocateBytes(void *ptr, size_t size) override {
-    TimeTraceScope scope(MemAllocFreeCopyProfilerEntry::create(
+    TimeTraceScope scope(MemAllocFreeProfilerEntry::create(
         "mem.free", [size]() { return ("size:" + Twine(size) + "B").str(); }));
     alignedFree(ptr);
   }
@@ -39,7 +39,8 @@ std::unique_ptr<Allocator> M::LLCL::createMallocAllocator() {
 }
 
 void M::LLCL::profiledMemcpy(void *dst, const void *src, size_t size) {
-  TimeTraceScope scope(MemAllocFreeCopyProfilerEntry::create(
-      "mem.copy", [size]() { return ("size:" + Twine(size) + "B").str(); }));
+  // Since this profiling entry is on by default we don't include the size to
+  // avoid string manipulation.
+  TimeTraceScope scope(MemCopyProfilerEntry::create("mem.copy"));
   std::memcpy(dst, src, size);
 }

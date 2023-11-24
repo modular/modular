@@ -620,8 +620,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     {
       // Ok, finally block.
-      TimeTraceScope scope(
-          WorkProfilerEntry::create(sleepingLabel, printWorkerId(workerID)));
+      TimeTraceScope scope(InternalProfilerEntry::create(
+          sleepingLabel, printWorkerId(workerID)));
       sema.wait();
     }
 

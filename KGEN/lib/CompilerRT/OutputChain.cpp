@@ -22,7 +22,7 @@ OutputChain OutputChain::fork() {
 #if MODULAR_PARANOID
   result.uses = std::move(uses);
 #endif
-  // The actual profiler entry is left alone.
+  // The actual profiler entries are left alone.
   return result;
 }
 
@@ -47,37 +47,24 @@ void OutputChain::transfer(LLCL::GenericUniquePtr extra) {
 }
 
 void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
-  if (profilerEntry.empty()) {
-    // Establish the profiling entry for this Mojo kernel call.
-    profilerEntry = detail ? MojoProfilerEntry::create(name, *detail)
-                           : MojoProfilerEntry::create(name);
-  } else {
-    // Merge the given details into the existing profile entry. This is useful
-    // when we need to combine profile data contributed from both the C++
-    // and Mojo sides.
-    profilerEntry = detail ? profilerEntry.withNameDetailSuffix(
-                                 name, [&]() { return detail->str(); })
-                           : profilerEntry.withNameSuffix(name);
+  if constexpr (MojoProfilerEntry::isEnabled()) {
+    profilerEntries.emplace_back(detail
+                                     ? MojoProfilerEntry ::create(name, *detail)
+                                     : MojoProfilerEntry ::create(name));
+    if (prototypeProfilerEntry.empty())
+      prototypeProfilerEntry =
+          profilerEntries.front().copy<MojoProfilerEntry>();
   }
-  // (Re)establish the 'prototype' profile entry, which is only used
-  // by executeAsTask() below.
-  prototypeProfilerEntry = profilerEntry.copy<MojoProfilerEntry>();
 }
 
 void OutputChain::trace(StringRef name,
                         llvm::function_ref<std::string()> detailFn) {
-  if (profilerEntry.empty()) {
-    // Establish the profiling entry for this Mojo kernel call.
-    profilerEntry = MojoProfilerEntry::create(name, detailFn);
-  } else {
-    // Merge the given details into the existing profile entry. This is useful
-    // when we need to combine profile data contributed from both the C++
-    // and Mojo sides.
-    profilerEntry = profilerEntry.withNameDetailSuffix(name, detailFn);
+  if constexpr (MojoProfilerEntry ::isEnabled()) {
+    profilerEntries.emplace_back(MojoProfilerEntry ::create(name, detailFn));
+    if (prototypeProfilerEntry.empty())
+      prototypeProfilerEntry =
+          profilerEntries.front().copy<MojoProfilerEntry>();
   }
-  // (Re)establish the 'prototype' profile entry, which is only used
-  // by executeAsTask() below.
-  prototypeProfilerEntry = profilerEntry.copy<MojoProfilerEntry>();
 }
 
 void OutputChain::markReady() {
@@ -123,16 +110,20 @@ void OutputChain::setToError(Error &&error) {
   chain.copy().setToError({std::move(error), std::move(loc)});
 }
 
-void OutputChain::recordProfilerEntry() && {
-  std::move(profilerEntry).record();
+void OutputChain::recordProfilerEntries() && {
+  for (auto &entry : profilerEntries)
+    std::move(entry).record();
+  profilerEntries.clear();
 }
 
 void OutputChain::complete() {
-  // IMPORTANT: Stop the profiling enry before doing any other work.
+  // IMPORTANT: Stop the profiling entries before doing any other work.
   // Even the innocent looking refs.clear() may trigger frees which can
   // be surprisingly expensive, and we don't want that to be included in
   // the kernel's time.
-  std::move(profilerEntry).record();
+  for (auto &entry : profilerEntries)
+    std::move(entry).record();
+  profilerEntries.clear();
 #if MODULAR_PARANOID
   // IMPORTANT: Release uses before the refs are cleared since those refs
   // may trigger frees.
