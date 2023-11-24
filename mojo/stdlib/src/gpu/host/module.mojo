@@ -9,7 +9,7 @@ from pathlib import Path
 
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, Pointer, bitcast
-from utils.optional import Optional
+from utils._optional import Optional
 
 from ._utils import _check_error, _get_dylib_function
 

@@ -9,7 +9,7 @@ from memory import stack_allocation
 from memory.unsafe import DTypePointer, Pointer
 
 from sys.ffi import _get_global
-from utils.optional import Optional
+from utils._optional import Optional
 
 from pathlib import Path
 from ._compile import _compile_nvptx, _get_nvptx_fn_name
