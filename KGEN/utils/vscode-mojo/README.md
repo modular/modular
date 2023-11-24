@@ -8,10 +8,11 @@ This VS Code extension from the Modular team adds support for the
 - Syntax highlighting for `.mojo` and `.🔥` files
 - Code completion
 - Code diagnostics and quick fixes
+- Full LSP experience for doc string code blocks
+- Go to symbol
 - API docs on hover
 - Code formatting
 - Run or debug Mojo file
-- Mojo debug
 
 ## Get started
 
@@ -52,6 +53,17 @@ and Windows:
 Rebind the hotkey in Preferences: Open Keyboard Shortcuts >
 `Show or Focus Hover`
 
+## Signature Help
+
+Mojo provides function overloading, so you need a way to scroll through the
+multiple signatures available. You can bring this up with the hotkey
+`⌘ + shift + space` in macOS or `ctrl + shift + space` in Linux or Windows.
+
+![signature-help](https://github.com/modularml/mojo/assets/77730378/3994ab6d-ae4b-43af-9ddf-0d979c51330f)
+
+Rebind related hotkeys in Preferences: Open Keyboard Shortcuts >
+`Trigger Parameter Hints`
+
 ## Code Diagnostics
 
 Code diagnostics are indicated with an underline on the code and details appear
@@ -66,6 +78,26 @@ Rebind related hotkeys in Preferences: Open Keyboard Shortcuts >
 **Tip:** Also try the `Error Lens` extension (not associated with Modular),
 which will display the first line of the diagnostic inline, making it easier
 to quickly fix problems.
+
+## Doc String Code Blocks
+
+Unique to Mojo, you get a full LSP experience for code blocks inside doc
+strings, with all the features mentioned here including completions and
+diagnostics:
+
+![doc-lsp](https://github.com/modularml/mojo/assets/77730378/c2d73fd0-66de-44e7-8125-511bf0237396)
+
+## Go to Symbol
+
+You can quickly jump to a symbol in the file with `⌘ + shift + o` in macOS or
+`ctrl + shift + o` in Linux and Windows.
+
+![go-to-symbol](https://github.com/modularml/mojo/assets/77730378/1972e611-4a01-4a7f-945d-a3b5f10034a9)
+
+This also enables the outline view in the explorer window.
+
+Rebind the hotkey in Preferences: Open Keyboard Shortcuts >
+`Go to Symbol in Editor`
 
 ## Quick Fix
 
@@ -86,7 +118,9 @@ top-right of the editor:
 ![run-file](https://github.com/modularml/mojo/assets/77730378/22ef37cf-154a-430b-9ef3-427dbab411fc)
 
 These actions are also available in the command palette and under the `Mojo`
-submenu in the File Explorer when right-clicking on Mojo files.
+submenu in the File Explorer when right-clicking on Mojo files:
+
+![right-click-menu](https://github.com/modularml/mojo/assets/77730378/b267a44c-fa2c-425d-bada-7360cd338351)
 
 You may bind hotkeys to any of the actions listed here. For example, to bind a
 hotkey for the "Run Mojo File in Terminal" action, open preferences, then select
