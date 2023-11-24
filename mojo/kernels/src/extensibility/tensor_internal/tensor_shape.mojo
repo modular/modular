@@ -76,7 +76,7 @@ struct _RepKind:
 
 
 @register_passable("trivial")
-struct _Rep16:
+struct _Rep16(StringTrait):
     """A representation which can hold up to 6 dimensions with each dim
     occupying at most 16-bits."""
 
@@ -697,7 +697,7 @@ fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
 # ===----------------------------------------------------------------------===#
 
 
-struct TensorShape:
+struct TensorShape(StringTrait):
     """A space efficient representation of a tensor shape. This struct
     implements value semantics and owns its underlying data."""
 
