@@ -12,7 +12,7 @@
 
 @value
 @register_passable("trivial")
-struct Result:
+struct Result(StringTrait):
     var code: Int32
 
     alias SUCCESS = Result(0)
@@ -551,7 +551,7 @@ struct Result:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) -> StringRef:
+    fn __str__(self) -> String:
         if self == Result.SUCCESS:
             return "SUCCESS"
         elif self == Result.INVALID_VALUE:
