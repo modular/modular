@@ -48,10 +48,8 @@ add_subdirectory(lib/Package)
 add_subdirectory(lib/MojoParser)
 add_subdirectory(lib/MojoTooling)
 
-if(LLDB_FOUND)
-  add_subdirectory(lib/MojoLLDB)
-  add_subdirectory(lib/MojoJupyter)
-endif()
+add_subdirectory(lib/MojoLLDB)
+add_subdirectory(lib/MojoJupyter)
 
 add_subdirectory(tools/hash-mlir)
 add_subdirectory(tools/kgen)
@@ -59,10 +57,8 @@ add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/mojo-lsp-server)
 
-if(LLDB_FOUND)
-  add_subdirectory(tools/mojo-jupyter-executor)
-  add_subdirectory(tools/mojo-repl-entry-point)
-endif()
+add_subdirectory(tools/mojo-jupyter-executor)
+add_subdirectory(tools/mojo-repl-entry-point)
 
 add_subdirectory(tools/mojo)
 
@@ -147,10 +143,7 @@ macro(_setup_defines)
 endmacro()
 
 # Add the necessary tool dependencies to the mojo-sdk target.
-add_dependencies(mojo-sdk mojo mojo-lsp-server)
-if(LLDB_FOUND)
-  add_dependencies(mojo-sdk MojoJupyter)
-endif()
+add_dependencies(mojo-sdk mojo mojo-lsp-server MojoJupyter)
 
 # This function will generate the CMake targets needed to build a Mojo package
 # for the current source directory, or directory specified by PACKAGE_DIR.

@@ -15,8 +15,5 @@ add_modular_testsuite(check-mojo-jupyter
   TOP_LEVEL_CHECK check-mojo
   TOOLS
   mojo-sdk
+  mojo-jupyter-executor
 )
-
-if(LLDB_FOUND)
-  add_dependencies(check-mojo-jupyter MojoLLDB mojo-jupyter-executor)
-endif()

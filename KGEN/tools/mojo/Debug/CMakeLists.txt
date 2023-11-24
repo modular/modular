@@ -12,8 +12,3 @@ add_driver_option_tablegen(Mojo DebugOptions.td
   MANUAL_NAME mojo-debug
   MARKDOWN_NAME debug
   EXTRA_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/..")
-
-# The `debug` subcommand depends on Mojo's LLDB plugin.
-if(LLDB_FOUND)
-  add_dependencies(mojo MojoLLDB)
-endif()

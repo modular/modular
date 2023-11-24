@@ -79,7 +79,7 @@ file(GLOB StaticDepObjects ${CMAKE_CURRENT_BINARY_DIR}/static_deps/*)
 # Collect the various system libraries required by llvm support that we need to
 # link against. We can extract this using llvm-config.
 execute_process(
-  COMMAND ${LLVM_BUILD_DIR}/bin/llvm-config${CMAKE_EXECUTABLE_SUFFIX} --libs support --system-libs
+  COMMAND ${LLVM_TOOLS_BINARY_DIR}/llvm-config${CMAKE_EXECUTABLE_SUFFIX} --libs support --system-libs
   OUTPUT_VARIABLE config_output
 )
 # The system libs are on the second line of the output, so we need to split it
