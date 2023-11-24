@@ -10,7 +10,7 @@ from math import div_ceil, exp, align_up, min, max
 from math.limit import min_or_neginf
 from pathlib import Path
 from memory.buffer import NDBuffer
-from algorithm.gpu.reduction import reduce_launch
+from algorithm._gpu.reduction import reduce_launch
 
 from builtin.io import _printf
 from gpu.host import Context, Stream
