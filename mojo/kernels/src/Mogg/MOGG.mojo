@@ -124,7 +124,7 @@ from TopK import top_k_shape
 from utils._annotations import *
 from utils.index import Index, StaticIntTuple, product
 from utils.list import Dim, DimList
-from utils.optional_param import OptionalParamInt
+from utils._optional_param import OptionalParamInt
 from utils.vector import InlinedFixedVector
 
 

@@ -9,7 +9,7 @@ from algorithm.functional import vectorize_unroll
 from math import fma
 from MOGGIntList import IntList
 from sys.intrinsics import strided_load
-from utils.optional import Optional
+from utils._optional import Optional
 from utils._annotations import *
 
 
