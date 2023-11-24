@@ -53,7 +53,7 @@ from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
-from utils.optional import Optional
+from utils._optional import Optional
 from algorithm.functional import tile_and_unswitch
 
 

@@ -29,7 +29,7 @@ from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
-from utils.optional import Optional
+from utils._optional import Optional
 
 
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
