@@ -19,6 +19,10 @@
 
 namespace M::LLCL {
 
+/// Profiling entry for sub-tasks launched by the parallelization helpers.
+using AlgorithmProfilerEntry =
+    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
+
 //===----------------------------------------------------------------------===//
 // Helpers that wait for values.
 //===----------------------------------------------------------------------===//
@@ -369,9 +373,8 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
   // Enqueue each element of work!
   for (size_t elementIdx = 0; elementIdx != totalCount; ++elementIdx) {
     addTask(runtime, [state, elementIdx]() {
-      TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "llcl.parallelForEach", [&]() {
-        return Twine("subtask:").concat(Twine(elementIdx)).str();
-      });
+      TimeTraceScope scope(
+          AlgorithmProfilerEntry::create("llcl.parallelForEach"));
       // Invoke the per-element function with the index and all of the captured
       // state.
       std::apply(
@@ -489,9 +492,8 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
   // said, there is a reasonable likelihood that the last element will be
   // smaller than the rest, so this thread can catch up with the others.
   {
-    TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "llcl.parallelForEach", [&]() {
-      return Twine("subtask:").concat(Twine(totalCount - 1)).str();
-    });
+    TimeTraceScope scope(
+        AlgorithmProfilerEntry::create("llcl.parallelForEach"));
     elementFn(totalCount - 1, captures...);
   }
 

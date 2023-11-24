@@ -56,20 +56,12 @@ using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
 /// Functions to execute for a 'task'.
 using TaskFunction = llvm::unique_function<void()>;
 
-/// Time profiling entries for internal primitives.
-using WorkProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 1)>;
-
-/// Time profiling entries for capturing the waiting time of tasks and
-/// other internal LLCL measurements.
-/// Names: "llcl.shutdown", "llcl.shutdown.spinning", "llcl.shutdown.sleeping",
-///        "llcl.runOnThread.spinning", "llcl.runOnThread.sleeping",
-///        "llcl.await.spinning", "llcl.await.sleeping"
+/// Profiling entries for capturing the waiting time of tasks and other
+/// internal LLCL measurements.
 using InternalProfilerEntry =
     ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
 
-/// Time profiling entries for capturing every execution of a task or
-/// local task.
-/// Names: "llcl.doWork", "llcl.waiter"
+/// Profiling entries for capturing every execution of a task or local task.
 using AllWorkItemsProfilerEntry =
     ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3)>;
 

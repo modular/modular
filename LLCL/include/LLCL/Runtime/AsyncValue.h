@@ -39,7 +39,7 @@ std::string addrToHex(void *p);
 
 } // namespace Detail
 
-/// Profiling entry for 'interesting' AsyncValue events. Useful for tracking
+/// Profiling entry for AsyncValue allocation and frees. Useful for tracking
 /// down the root cause of "destroying a non-available AsyncValue" errors.
 using AsyncProfilerEntry =
     M::ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3)>;

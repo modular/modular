@@ -15,11 +15,12 @@
 
 namespace M::KGEN {
 
-/// Type of profiling entries for Mojo trace events.
+/// Profiling entry for all Mojo tracing.
 ///
 /// Note that the Mojo tracing code does its own filtering based on the
 /// kMojo level in MODULAR_LLCL_MAX_PROFILING_LEVEL. However, the level must
-/// be at least 1 for any such events to be captured.
+/// be at least 1 for any such events to be captured since they are all
+/// funneled through this entry.
 using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 
 /// An OutputChain represents the context for a call from the C++ runtime into
@@ -78,7 +79,7 @@ struct OutputChain {
   /// For asynchronous kernels, this profiler entry will live only while the
   /// kernel establishes its sub-tasks, and will be recorded when the kernel
   /// returns to the C++ runtime.
-  MojoProfilerEntry profilerEntry;
+  SmallVector<MojoProfilerEntry> profilerEntries;
   /// The 'prototype' profiler entry to be used when the Mojo kernel calls
   /// executeAsTask. Each task will append '.task' to the profile name,
   /// and some task id details to the profile details. This entry, however,
@@ -194,14 +195,14 @@ struct OutputChain {
   /// whether the Mojo kernel is asynchronous or synchronous.
   void setToError(Error &&error);
 
-  /// Record any profiling entry if it has not been recorded already.
+  /// Record any profiling entries if they have not been recorded already.
   ///
   /// Called from the C++ runtime when control returns from a Mojo kernel. If
   /// the kernel is asynchronous then it's launched sub-tasks will continue, but
   /// we'll stop the profiling entry now to avoid confusing traces. If the
   /// kernel is synchronous then hopefully it's profiling entry was already
   /// stopped, and this call is a no-op.
-  void recordProfilerEntry() &&;
+  void recordProfilerEntries() &&;
 
   /// Begin executing the Mojo coroutine pointed to by hdl using the resumption
   /// pointer to by resume.

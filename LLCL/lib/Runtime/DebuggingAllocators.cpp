@@ -96,9 +96,10 @@ M::LLCL::createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// If enabled, the ProfilingAllocator will sample outstanding bytes allocated
-/// on every alloc and free.
-using MemProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 1)>;
+
+/// Profiling entry for sampling outstanding bytes allocated on every alloc
+/// and free.
+using MemProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kMem, 3)>;
 
 class ProfilingAllocator : public LeakCheckAllocator {
 public:
