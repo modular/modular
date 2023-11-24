@@ -183,10 +183,6 @@ public:
       // elementwise generator.
       KGEN::CallOp elementwiseOp;
 
-      // If there is any other call we can't understand then it shouldn't be
-      // regarded as elementwise.
-      bool isSolelyElementwise = true;
-
       // If the user has any call to enable fusion then we turn on fusion for
       // that tensor.
       SmallVector<KGEN::CallOp> enableFusionFuncs;
@@ -200,27 +196,19 @@ public:
         if (!func)
           continue;
 
-        bool isKnownCall = false;
         auto identifyCalls = [&](TypedAttr decorator, StringRef decoratorName,
                                  SmallVector<TypedAttr> &attrsToCopy) {
           if (decoratorName.startswith(tensorAllocDecorator)) {
             allocationFunc = call;
-            isKnownCall = true;
           } else if (decoratorName.startswith(tensorMoveDecorator)) {
             moveConstructor = call;
-            isKnownCall = true;
           } else if (decoratorName.startswith(tensorEnableFusion)) {
             enableFusionFuncs.push_back(call);
-            isKnownCall = true;
           } else if (decoratorName.startswith(elementwiseHook)) {
             elementwiseOp = call;
-            isKnownCall = true;
           }
         };
         forEachDecorator(func, identifyCalls);
-
-        if (!isKnownCall)
-          isSolelyElementwise = false;
       }
 
       // Exit and clean up if the kernel is not what we expect.
