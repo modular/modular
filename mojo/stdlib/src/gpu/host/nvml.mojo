@@ -57,7 +57,7 @@ fn _get_dylib_function[
 
 @value
 @register_passable("trivial")
-struct Result:
+struct Result(StringTrait):
     var code: Int32
 
     alias SUCCESS = Result(0)
