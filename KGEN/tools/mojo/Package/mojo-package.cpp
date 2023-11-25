@@ -560,10 +560,6 @@ static int package(const State &state) {
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_parsing_stdlib,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        // TODO: We allow naming the package but parser caching doesn't
-        // currently take this into account.
-        parserConfig.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
-
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) =
             LIT::importMojoPackage(packageArgs.inputPath, packageArgs.name,
