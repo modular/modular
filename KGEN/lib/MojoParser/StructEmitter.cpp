@@ -497,6 +497,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     init = synthesizeMemberwiseInit(structDecl, argTypes, argConventions,
                                     argNames, argPassingKinds);
   }
+
   if (!valueInfo.hasDestructor()) {
     ASTDecl &structDecl = shared.declResolver->getDeclForTypeSymbol(
         cast<DeclRefType>(selfType).getSymbol());
@@ -518,12 +519,22 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       }
     }
 
-    if (needsDtor) {
+    // FIXME: This isn't using the logic for synthesizeEmptyDtor, not handling
+    // register passable correctly.  We just decline to generate this for now,
+    // which threads the needle between closure emission (which expects us to
+    // synthesize all members but only generates memory only members) and
+    // @value generation which doesn't need a del method because struct type
+    // checking will add it.
+    //
+    // We should probably move synthesizeEmptyDtor into this code and use it
+    // from the type checking logic.
+    if (needsDtor && isMemoryOnly) {
       destructorFunc = addVoidMethod(
           structDecl, "__del__", ptrToSelf, ValueInputConvention::OwnedInMem,
           selfName, PassingKind::PosOnly, SpecialFunctionKind::kDel);
     }
   }
+
   LIT::FuncOp copyFunc;
   if (!valueInfo.hasCopy() && !declOp.isRegisterPassableTrivial()) {
     if (isMemoryOnly) {
