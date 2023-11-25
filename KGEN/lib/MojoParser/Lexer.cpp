@@ -375,6 +375,9 @@ void Lexer::lexBacktickIdentifier(const char *tokStart, ssize_t indentation) {
     switch (*curPtr++) {
     case '`':
       // Found the end character.
+      if (curPtr - tokStart - 2 == 0)
+        emitErrorAt(tokStart, "empty backtick identifier isn't allowed");
+
       formToken(Token::escaped_identifier,
                 StringRef(tokStart + 1, curPtr - tokStart - 2), indentation,
                 /*tokenOffset*/ 1);
