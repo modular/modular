@@ -561,7 +561,7 @@ public:
   ///   "description": string,
   ///   "functions": FunctionDeclOverloadSetView[],
   ///   "parameters": ParameterDeclView[],
-  ///   "structs": StructDeclView[],
+  ///   "fields": StructFieldDeclView[],
   ///   "summary": string
   /// }
   llvm::json::Object toJSON() const override;
@@ -624,6 +624,7 @@ public:
   ///   "description": string,
   ///   "functions": FunctionDeclOverloadSetView[],
   ///   "structs": StructDeclView[],
+  ///   "traits": TraitDeclView[],
   ///   "summary": string
   /// }
   llvm::json::Object toJSON() const override;
@@ -644,6 +645,7 @@ private:
 
   SmallVector<AliasDeclView> aliases;
   SmallVector<StructDeclView, 2> structs;
+  SmallVector<TraitDeclView, 2> traits;
   SmallVector<FunctionDeclOverloadSetView, 2> functionOverloads;
 
   //===----------------------------------------------------------------------===//
