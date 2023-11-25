@@ -669,3 +669,23 @@ lit.func @destroy_generic<T: trait<@Destructable>>(%x: !kgen.pointer<:trait<@Des
   // CHECK: lit.call_param[!lit.signature<(!kgen.pointer<:trait<@Destructable> T>) -> !kgen.none>: get_type_method(:trait<@Destructable> T, "__del__")](%x)
   kgen.return
 }
+
+// -----
+
+// https://github.com/modularml/modular/issues/25211
+lit.struct.decl @Int register_passable attributes {destructor = #kgen.symbol.constant<@Int::@__del__ > : !kgen.signature<!lit.signature<(!kgen.declref<@Int>) -> !kgen.none>>}  {
+}
+lit.func @y(%arg1[arg1]: !kgen.declref<@Int> borrow) {
+  kgen.return
+}
+lit.func @x(%arg0[arg0]: !kgen.declref<@Int>) {
+  // expected-warning @+1 {{'x' was declared as a 'var' but never mutated, consider switching to a 'let'}}
+  %x = lit.varlet.decl "x"  var : !lit.ref<mut @Int, a>
+  %0 = lit.ref.to_pointer %x : <mut @Int, a>
+  // expected-error @+1 {{value 'arg0' cannot be consumed, because it is used later}}
+  pop.store %arg0, %0 : !kgen.pointer<@Int>
+  %1 = lit.ref.load %x : <mut @Int, a>
+  %2 = kgen.call @Int::@__del__(%1) : !lit.signature<(!kgen.declref<@Int>) -> !kgen.none>
+  kgen.call @y(%arg0) : (!kgen.declref<@Int> borrow) -> ()
+  kgen.return
+}
