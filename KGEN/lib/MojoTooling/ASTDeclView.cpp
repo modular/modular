@@ -756,6 +756,7 @@ std::string TraitDeclView::getMarkdownDocString() const {
 llvm::json::Object TraitDeclView::toJSON() const {
   return llvm::json::Object{
       {"description", description},
+      {"fields", llvm::json::Array()},
       {"functions", toJSONArray(functionOverloads)},
       {"kind", getKindAsString()},
       {"name", getName()},
@@ -888,6 +889,7 @@ llvm::json::Object ModuleDeclView::toJSON() const {
                             {"kind", getKindAsString()},
                             {"name", getName()},
                             {"structs", toJSONArray(structs)},
+                            {"traits", toJSONArray(traits)},
                             {"summary", summary}};
 }
 
@@ -898,6 +900,7 @@ ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
 
   aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
   structs = extractChildDecls<StructDeclView, StructDeclOp>(decl);
+  traits = extractChildDecls<TraitDeclView, TraitDeclOp>(decl);
   functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
       extractChildDecls<FunctionDeclView, FuncOp>(decl));
 

@@ -359,3 +359,28 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
 
 
 # CHECK:  "summary": "This is a module summary, that spills over to the next line."
+
+##===----------------------------------------------------------------------===##
+# Traits
+##===----------------------------------------------------------------------===##
+
+# CHECK:  "traits": [
+# CHECK:    "description": "The is some kind of description.",
+# CHECK:    "functions":
+# CHECK:      "kind": "function",
+# CHECK:      "name": "f",
+# CHECK:      "summary": "This is a trait function doc."
+# CHECK:    "kind": "trait",
+# CHECK:    "name": "Trait",
+# CHECK:    "summary": "This is a trait doc."
+
+
+trait Trait:
+    """This is a trait doc.
+
+    The is some kind of description.
+    """
+
+    fn f(self: Self):
+        """This is a trait function doc."""
+        ...
