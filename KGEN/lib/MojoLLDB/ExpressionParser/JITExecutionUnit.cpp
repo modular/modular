@@ -827,7 +827,17 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   impl->executionEngine.reset(builder.create(target_machine));
   impl->executionEngine->UnregisterJITEventListener(
       llvm::JITEventListener::createGDBRegistrationListener());
-  impl->executionEngine->removeModule(module);
+
+  // Declare __dso_local.
+  llvm::Type *dsoHandleTy = llvm::Type::getInt64Ty(*impl->context);
+  module->getOrInsertGlobal("__dso_handle", dsoHandleTy, [&] {
+    auto *gv = new llvm::GlobalVariable(
+        *module, dsoHandleTy, /*isConstant=*/true,
+        llvm::GlobalVariable::ExternalLinkage,
+        llvm::ConstantInt::get(dsoHandleTy, 0), "__dso_handle");
+    gv->setVisibility(llvm::GlobalVariable::DefaultVisibility);
+    return gv;
+  });
 
   if (!impl->executionEngine) {
     error.SetErrorToGenericError();
