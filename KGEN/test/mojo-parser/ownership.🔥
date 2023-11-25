@@ -1221,3 +1221,21 @@ fn do_not_call_synth_dtors(owned x: RegisterNoDtor, owned y: MemoryNoDtor):
     # CHECK-NOT: call {{.*}}@"__del__
     # CHECK-LABEL: kgen.return
     pass
+
+# CHECK-LABEL: lit.struct.decl @RegExampleValue register_passable
+# Compiler crashes trying to insert a destructor call
+# https://github.com/modularml/modular/issues/26410
+@value
+@register_passable
+struct RegExampleValue:
+  var x: RegExample
+  fn __init__() -> Self:
+    return Self {x: RegExample()}
+
+  # Make sure the synthesized dtor is taken register style.
+  # CHECK: lit.func @"__del__{{.*}}(%self[self]: !RegExampleValue, |)
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self"
+  # CHECK-NEXT: lit.ref.store %self, %self_0
+  # CHECK: kgen.param.constant: none
+  # CHECK: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
+  # CHECK: lit.ownership.mark_destroyed [[SELFPTR]]

@@ -1687,6 +1687,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
           storedMem = MLValue(builder.create<RefToPointerOp>(store.getRef()));
         }
       }
+      assert(storedMem && "local value box for OwnedInReg self not found");
       selfArg = storedMem;
     }
     builder.create<LIT::OwnershipMarkDestroyedOp>(selfArg);
