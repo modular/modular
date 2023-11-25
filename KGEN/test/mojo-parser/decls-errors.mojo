@@ -98,6 +98,12 @@ fn self_reference():
     # expected-error @+1 {{use of unknown declaration 'num', 'fn' declarations require explicit variable declarations}}
     let num: Int = num + 2
 
+# Doesn't reject empty identifier name
+# https://github.com/modularml/mojo/issues/1232
+fn empty_name():
+  # expected-error @+1 {{empty backtick identifier isn't allowed}}
+  let `` = 1
+
 ##===----------------------------------------------------------------------===##
 # Functions
 ##===----------------------------------------------------------------------===##
@@ -880,8 +886,6 @@ struct Outer: # expected-error {{all members of '@register_passable' struct must
 # 'main' Function
 ##===----------------------------------------------------------------------===##
 
-# // -----
-
 # expected-error @below {{expected 'main' function to have no arguments}}
 fn main(arg: Int):
   return
@@ -921,10 +925,8 @@ fn main():
 
 # expected-error @below {{only 'main' can be exported as 'main'}}
 @export("main")
-fn foo():
+fn fooMain():
   return
-
-# // -----
 
 ##===----------------------------------------------------------------------===##
 # Top Level Code
