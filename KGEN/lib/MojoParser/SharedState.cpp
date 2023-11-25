@@ -394,10 +394,12 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators,
 //===----------------------------------------------------------------------===//
 
 struct SharedState::ModuleState {
-  ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
+  ModuleState(ASTDecl *decl = nullptr) : decl(decl) { contentHash.fill(0); }
   ModuleState(ASTDecl *decl, StringRef sourcePath, bool enableCaching = false)
       : decl(decl), sourcePath(sourcePath.str()),
-        canCacheModule(enableCaching) {}
+        canCacheModule(enableCaching) {
+    contentHash.fill(0);
+  }
   ~ModuleState() {
     // Drop any remaining operations in the reader to avoid dangling
     // unmaterialized operations. If these were neded, they would have been
@@ -421,6 +423,12 @@ struct SharedState::ModuleState {
   /// Build the cache key for this module.
   WriteableBufferRef buildCacheKey(const CompilationOptions &options) {
     auto keyBuf = WriteableBuffer::get();
+
+    // Add the full module name to the cache key, this ensures proper caching
+    // when the same module is in different packages.
+    std::string moduleName = getFlattenedSymbolName(
+        getFullyResolvedSymbolRef(cast<mlir::SymbolOpInterface>(*decl)));
+    keyBuf->write(moduleName.data(), moduleName.size());
 
     // Add the module contents to the cache key.
     keyBuf->write((const char *)contentHash.data(), contentHash.size());
