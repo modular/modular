@@ -1667,9 +1667,12 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
     ```mlir
     lit.ownership.mark_destroyed %0 : !somestring
     ```
+
+    The argument must be an indirectly lifetime-tracked value, because
+    CheckLifetimes isn't field sensitive for register passable values.
   }];
 
-  let arguments = (ins AnyType:$value);
+  let arguments = (ins PointerType:$value);
   let results = (outs);
   let assemblyFormat = "$value `:` type($value) attr-dict";
 }

@@ -1669,8 +1669,10 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
            "__del__ should have one argument");
     Value selfArg = func.getBody()->getArgument(0);
 
-    // If this is a @register_passable type, the value will be stored in a
-    // box and we want to treat the box as the thing that we track.
+    // If this is a @register_passable type, the value must be stored
+    // in a box and we want to treat the box as the thing that we track.
+    // CheckLifetimes doesn't track register values field sensitively, so there
+    // is no way to say that the full object bit is dead in a SRValue.
     if (func.getSignature().getInputConvention(0) ==
         ValueInputConvention::OwnedInReg) {
       // Find the single thing that got stored to, ignoring debug.value ops.
@@ -1687,6 +1689,8 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
           storedMem = MLValue(builder.create<RefToPointerOp>(store.getRef()));
         }
       }
+      // If we found it, then ownership has already transfered to the memory
+      // object, so track it instead of the argument.
       assert(storedMem && "local value box for OwnedInReg self not found");
       selfArg = storedMem;
     }
@@ -1698,7 +1702,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   /// being destroyed before any return operation if it is owned convention.
   case SpecialFunctionKind::kMoveInit: {
     assert(func.getBody()->getNumArguments() == 2 &&
-           "__moveinit__ should have to arguments");
+           "__moveinit__ should have two arguments");
     Value existingArg = func.getBody()->getArgument(1);
     builder.create<LIT::OwnershipMarkDestroyedOp>(existingArg);
     break;

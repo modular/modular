@@ -115,9 +115,8 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getInputConvention(argIdx)) {
-  case ValueInputConvention::OwnedInReg: // This gets an LValue slot.
   case ValueInputConvention::BorrowedInReg:
-    // These are immutable so don't need to be tracked.
+    // This is immutable so don't need to be tracked.
     return;
 
   case ValueInputConvention::BorrowedInMem:
@@ -135,6 +134,11 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endsUninit = false;
     break;
 
+  case ValueInputConvention::OwnedInReg:
+    isIndirect = false;
+    startsUninit = false;
+    endsUninit = true;
+    break;
   case ValueInputConvention::OwnedInMem:
     // TODO(#21861): support variadic arguments
     if (isa<VariadicType>(bbArg.getType())) {
