@@ -606,7 +606,7 @@ fn device_count() raises -> Int:
 
 @value
 @register_passable("trivial")
-struct Device(StringTraitRaising):
+struct Device(StringableRaising):
     var id: Int32
 
     fn __init__(id: Int = 0) -> Self:
