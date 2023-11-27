@@ -776,15 +776,18 @@ fn flash_attention_kernel[
         for i in range(TM.to_int()):
             var curr_rowmax = rowmax.load(i)
 
-            # Shuffle TN elemnents per thread and choose the max among them.
+            # Find thread register tile's max at i-th row.
             @unroll
             for j in range(TN.to_int()):
                 curr_rowmax = max(
-                    warp_reduce[DType.float32, shuffle_xor, _max_capturing](
-                        reg_result.load((i * TN + j).to_int())
-                    ),
+                    reg_result.load((i * TN + j).to_int()),
                     curr_rowmax,
                 )
+            # Reduce the max of block tile's row.
+            curr_rowmax = warp_reduce[
+                DType.float32, shuffle_xor, _max_capturing
+            ](curr_rowmax)
+
             correction.store(i, exp(rowmax.load(i) - curr_rowmax))
 
             @unroll
@@ -794,11 +797,14 @@ fn flash_attention_kernel[
 
             var curr_rowsum = Float32(0.0)
 
+            # Sum thread register tile at the i-th row.
             @unroll
             for j in range(TN.to_int()):
-                curr_rowsum += warp_reduce[
-                    DType.float32, shuffle_xor, _add_capturing
-                ](reg_result.load((i * TN + j).to_int()))
+                curr_rowsum += reg_result.load((i * TN + j).to_int())
+            # Reduce the sum of block tile's row.
+            curr_rowsum = warp_reduce[
+                DType.float32, shuffle_xor, _add_capturing
+            ](curr_rowsum)
 
             rowmax.store(i, curr_rowmax)
             rowsum.store(i, rowsum.load(i) * correction.load(i) + curr_rowsum)
