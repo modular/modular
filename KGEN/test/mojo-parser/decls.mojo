@@ -2185,3 +2185,30 @@ fn trait_to_anytype[T: Father]():
 
     # CHECK: call {{.*}}take_anytype{{.*}}<:type rebind(:trait<{{.*}}> [[T]])>
     take_anytype[T]()
+
+@register_passable("trivial")
+struct MovableType[T: Movable]:
+    pass
+
+
+trait InCollection(Movable):
+    pass
+
+
+struct Collection[T: InCollection]:
+    var x: MovableType[T]
+
+
+@register_passable("trivial")
+struct Item(InCollection):
+    pass
+
+
+fn take_movable(x: MovableType[Item]):
+    pass
+
+
+# CHECK-LABEL: lit.func @"converted_metatype_struct_element
+fn converted_metatype_struct_element(x: Collection[Item]):
+    # CHECK: call {{.*}}take_movable{{.*}}"__moveinit__" : {{.*}} = rebind({{.*}}`thunk___moveinit__
+    take_movable(x.x)

@@ -1043,6 +1043,8 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
         dest.resetForError();
         return {};
       }
+      if (result.getType().mlirType != sig)
+        result = ParamOperatorAttr::get(POC::Rebind, result.get(), sig);
       vtable.push_back(VTableEntryAttr::get(name, result));
     }
   }
