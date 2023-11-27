@@ -230,7 +230,7 @@ struct Runtime:
 
     fn parallelism_level(self) -> Int:
         """Gets the parallelism level of the Runtime."""
-        return Int__(
+        return int(
             external_call[
                 "KGEN_CompilerRT_LLCL_ParallelismLevel",
                 Int32,
