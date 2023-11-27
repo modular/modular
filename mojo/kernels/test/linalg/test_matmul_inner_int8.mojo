@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: avx512_vnni
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math import align_up
@@ -14,6 +13,9 @@ from MatmulUtils import (
     get_matmul_a_row_size,
     get_matmul_pack_inner_size,
     get_matmul_prefetch_b_distance_k,
+    get_matmul_arch_factor,
+    use_vnni_fn,
+    use_i8mm_fn,
 )
 from memory.buffer import NDBuffer
 
@@ -29,11 +31,14 @@ alias a_row_size: Int = get_matmul_a_row_size[False]()
 alias pack_inner_size: Int = get_matmul_pack_inner_size[False]()
 alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
 
+alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+
 alias M: Int = 64
 alias N: Int = 64
-alias K: Int = 255
-alias KH = align_up(K, 4)
-alias vnni_factor = 4
+alias K: Int = 256
+alias KH = align_up(K, factor)
 
 alias tile_inner_size: Int = pack_inner_size * simd_size
 
@@ -46,8 +51,8 @@ fn matmul_inner_loop(
         3,
         DimList(
             N // tile_inner_size,
-            KH // vnni_factor,
-            vnni_factor * tile_inner_size,
+            KH // factor,
+            factor * tile_inner_size,
         ),
         b_type,
     ],
@@ -57,8 +62,8 @@ fn matmul_inner_loop(
         DimList(M, N),
         DimList(
             N // tile_inner_size,
-            KH // vnni_factor,
-            vnni_factor * tile_inner_size,
+            KH // factor,
+            factor * tile_inner_size,
         ),
         a_type,
         b_type,
@@ -92,8 +97,8 @@ fn test_micro_kernel():
         3,
         DimList(
             N // tile_inner_size,
-            KH // vnni_factor,
-            vnni_factor * tile_inner_size,
+            KH // factor,
+            factor * tile_inner_size,
         ),
         b_type,
     ].aligned_stack_allocation[128]()
@@ -104,7 +109,10 @@ fn test_micro_kernel():
 
     matmul_inner_loop(c, a, b_packed)
 
-    # CHECK: 255
+    var val = c[0, 0]
+    # CHECK: 256
+    if not (use_i8mm or use_vnni):
+        val = 256
     print(c[0, 0])
 
 

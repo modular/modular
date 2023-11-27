@@ -310,7 +310,7 @@ fn get_matmul_a_row_size[critical_stride: Bool]() -> Int:
     @parameter
     if has_neon():
         if has_neon_int8_matmul():
-            return 6
+            return 4
         if critical_stride:
             return 4
         else:
@@ -324,7 +324,7 @@ fn get_matmul_pack_inner_size[critical_stride: Bool]() -> Int:
     @parameter
     if has_neon():
         if has_neon_int8_matmul():
-            return 4
+            return 6
         if critical_stride:
             return 4
         else:
@@ -776,7 +776,6 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
             or (a_type == DType.uint8 and b_type == DType.int8)
             or (a_type == DType.int8 and b_type == DType.int8)
         )
-        and False
     )
 
 
@@ -892,5 +891,7 @@ fn _get_tile_n_k[
         ](b.dim(0), b.dim(1))
 
     alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    tile_n_k[1] = align_up(tile_n_k[1], 4) if use_vnni else tile_n_k[1]
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+    tile_n_k[1] = align_up(tile_n_k[1], factor)
     return tile_n_k

@@ -157,9 +157,9 @@ fn test_matmul[
     return errors
 
 
-alias M = 2 * 123
-alias N = 8 * 31
-alias K = 16 * 23
+alias M = 123
+alias N = 143
+alias K = 71
 
 
 fn test_matmul_vnni():
@@ -175,7 +175,7 @@ fn test_matmul_vnni():
         DType.int8,
         DType.int32,
         saturated=False,
-    ]() if not has_neon_int8_matmul() else 0
+    ]()
     # CHECK: 0
     print(errors)
 
