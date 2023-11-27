@@ -8,6 +8,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from subprocess import run
 
 import numpy as np
 import pytest
@@ -46,6 +47,22 @@ def custom_ops_package_path(request) -> Path:
 def test_execute_success(mo_model_path: Path):
     session = me.InferenceSession()
     model = session.load(mo_model_path)
+    output = model.execute(input=np.ones((5)))
+    assert "output" in output.keys()
+    assert np.allclose(
+        output["output"],
+        np.array([4.0, 2.0, -5.0, 3.0, 6.0]).astype(np.float32),
+    )
+
+
+def test_execute_gpu(mo_model_path: Path):
+    output = run("is-cuda-available")
+    if output.returncode != 0:
+        return
+    session = me.InferenceSession()
+    options = me.CommonLoadOptions()
+    options.device = "cuda"
+    model = session.load(mo_model_path, options)
     output = model.execute(input=np.ones((5)))
     assert "output" in output.keys()
     assert np.allclose(

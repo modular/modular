@@ -39,6 +39,7 @@ add_custom_target(check-ModularEnginePythonApiTests
 
   DEPENDS
   mof
+  is-cuda-available
 )
 
 if(TARGET modular-pybind-ext)
