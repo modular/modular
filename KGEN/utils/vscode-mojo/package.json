@@ -300,9 +300,7 @@
         "label": "Mojo LLDB Debugger",
         "configurationAttributes": {
           "launch": {
-            "required": [
-              "program"
-            ],
+            "unevaluatedProperties": false,
             "properties": {
               "program": {
                 "type": "string",
@@ -437,10 +435,11 @@
             }
           },
           "attach": {
+            "unevaluatedProperties": false,
             "properties": {
               "program": {
                 "type": "string",
-                "description": "Path to the program to attach to."
+                "description": "Path or name to the program to attach to."
               },
               "pid": {
                 "type": [
