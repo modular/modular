@@ -26,9 +26,9 @@ fn _arange_get_numelems[
 ](start: SIMD[type, 1], stop: SIMD[type, 1], step: SIMD[type, 1]) -> Int:
     @parameter
     if type.is_integral():
-        return len(range(Int__(start), Int__(stop), Int__(step)))
+        return len(range(int(start), int(stop), int(step)))
     else:
-        return Int__(ceil(abs(stop - start) / abs(step)))
+        return int(ceil(abs(stop - start) / abs(step)))
 
 
 @mogg_register("mo.range")

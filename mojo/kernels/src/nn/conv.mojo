@@ -4739,7 +4739,7 @@ fn conv_shape[
     let input_channels = input_buf.dim(3)
     # Assume filter has layout RSCF
     let filter_channels = filter_buf.dim(2)
-    let num_groups = Int__(num_groups_buf[0])
+    let num_groups = int(num_groups_buf[0])
     let output_channels = filter_buf.dim(3)
 
     # TODO(#17512)
@@ -4758,16 +4758,16 @@ fn conv_shape[
     output_shape[1] = get_sliding_window_out_dim(
         input_buf.dim(1),
         filter_buf.dim(0),
-        Int__(dilations_buf[0]),
-        Int__(strides_buf[0]),
-        Int__(paddings_buf[0] + paddings_buf[1]),
+        int(dilations_buf[0]),
+        int(strides_buf[0]),
+        int(paddings_buf[0] + paddings_buf[1]),
     )
     output_shape[2] = get_sliding_window_out_dim(
         input_buf.dim(2),
         filter_buf.dim(1),
-        Int__(dilations_buf[1]),
-        Int__(strides_buf[1]),
-        Int__(paddings_buf[2] + paddings_buf[3]),
+        int(dilations_buf[1]),
+        int(strides_buf[1]),
+        int(paddings_buf[2] + paddings_buf[3]),
     )
     output_shape[3] = output_channels
 

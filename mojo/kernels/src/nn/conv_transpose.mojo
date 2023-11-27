@@ -99,17 +99,15 @@ fn conv_transpose[
         for c in range(C):
             for f in range(C_filter):
                 for i in range(H):
-                    let indX_out = i * Int__(strides[0]) - Int__(
-                        pads[PADS_H_START]
-                    )
+                    let indX_out = i * int(strides[0]) - int(pads[PADS_H_START])
                     for j in range(W):
-                        let indY_out = j * Int__(strides[1]) - Int__(
+                        let indY_out = j * int(strides[1]) - int(
                             pads[PADS_W_START]
                         )
                         for r in range(R):
                             for s in range(S):
-                                let x_out = indX_out + r * Int__(dilations[0])
-                                let y_out = indY_out + s * Int__(dilations[1])
+                                let x_out = indX_out + r * int(dilations[0])
+                                let y_out = indY_out + s * int(dilations[1])
                                 if (
                                     x_out >= 0
                                     and x_out < HO
@@ -200,18 +198,18 @@ fn conv_transpose_shape[
 
     # compute and return the output shape
     let output_height = (
-        Int__(strides[0]) * (input.dim(1) - 1)
-        + Int__(output_pads[0])
-        + ((kernel.dim(0) - 1) * Int__(dilations[0]) + 1)
-        - Int__(pads[PADS_H_START])
-        - Int__(pads[PADS_H_END])
+        int(strides[0]) * (input.dim(1) - 1)
+        + int(output_pads[0])
+        + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
+        - int(pads[PADS_H_START])
+        - int(pads[PADS_H_END])
     )
     let output_width = (
-        Int__(strides[1]) * (input.dim(2) - 1)
-        + Int__(output_pads[1])
-        + ((kernel.dim(1) - 1) * Int__(dilations[1]) + 1)
-        - Int__(pads[PADS_W_START])
-        - Int__(pads[PADS_W_END])
+        int(strides[1]) * (input.dim(2) - 1)
+        + int(output_pads[1])
+        + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
+        - int(pads[PADS_W_START])
+        - int(pads[PADS_W_END])
     )
 
     var output_shape = StaticIntTuple[input_rank]()

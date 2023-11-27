@@ -390,9 +390,9 @@ fn flash_attention[
             func(
                 # grid
                 (
-                    div_ceil(Int__(seq_len), 32),
-                    Int__(num_heads),
-                    Int__(batch_size),
+                    div_ceil(int(seq_len), 32),
+                    int(num_heads),
+                    int(batch_size),
                 ),
                 # block
                 (128, 1, 1),
@@ -435,9 +435,9 @@ fn flash_attention[
             func(
                 # grid
                 (
-                    div_ceil(Int__(seq_len), 32),
-                    Int__(num_heads),
-                    Int__(batch_size),
+                    div_ceil(int(seq_len), 32),
+                    int(num_heads),
+                    int(batch_size),
                 ),
                 # block
                 (128, 1, 1),
@@ -503,7 +503,7 @@ fn _mm[
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
 
     @unroll
-    for k in range(Int__(K)):
+    for k in range(int(K)):
         # load a element starting from (row, k) or (k, row) if transposed.
         @parameter
         if transpose_a:
@@ -513,13 +513,13 @@ fn _mm[
                 reg_m.simd_store[simd_size](
                     offset,
                     a.aligned_simd_load[simd_size, alignment](
-                        Int__(k * M + row + offset)
+                        int(k * M + row + offset)
                     ),
                 )
         else:
             # scalar load
             @unroll
-            for i in range(Int__(TM)):
+            for i in range(int(TM)):
                 reg_m.store(i, a.load(((row + i) * leading_dim_a + k).to_int()))
 
         @unroll
@@ -557,7 +557,7 @@ fn _fill[
         ptr.store(i, val)
 
 
-@__llvm_metadata(`nvvm.maxntid`=[Int__(num_threads)])
+@__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
 fn flash_attention_kernel[
     BM: _uint32,  # number of queries per block
     BN: _uint32,  # number of keys per block
@@ -692,10 +692,10 @@ fn flash_attention_kernel[
         )
 
     # Clear thread's register tile for output.
-    _fill[Int__(TM * TN)](o_thread_tile, 0)
+    _fill[int(TM * TN)](o_thread_tile, 0)
 
-    _fill[Int__(TM)](rowmax, neginf[DType.float32]())
-    _fill[Int__(TM)](rowsum, 0)
+    _fill[int(TM)](rowmax, neginf[DType.float32]())
+    _fill[int(TM)](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
     var global_kv_offset: _uint32 = depth * (
@@ -712,16 +712,16 @@ fn flash_attention_kernel[
     let loadv_row: _uint32 = (tid * simd_size) // depth
     let loadv_col: _uint32 = (tid * simd_size) % depth
 
-    for kv_tile_start_row in range(0, Int__(seq_len), Int__(BN)):
+    for kv_tile_start_row in range(0, int(seq_len), int(BN)):
         # Clear thread tile results.
-        _fill[Int__(TM * TN)](reg_result, 0)
+        _fill[int(TM * TN)](reg_result, 0)
 
         # K tile has shape [BN, depth]. Load sub-tile [BN, BK] each time and
         # multiply with the corresponding Q slice of shape [BM, BK].
         alias loadk_num_rows_per_iter = (num_threads * simd_size) // BK
         alias loadk_num_iters = BN // loadk_num_rows_per_iter
         alias BN_padded = BN + smem_pad
-        for subtile_start_col in range(0, Int__(depth), Int__(BK)):
+        for subtile_start_col in range(0, int(depth), int(BK)):
 
             @unroll
             for i in range(loadk_num_iters.to_int()):
@@ -836,7 +836,7 @@ fn flash_attention_kernel[
 
                     @unroll
                     for j in range(0, TN.to_int(), simd_size):
-                        let p_idx = Int__(
+                        let p_idx = int(
                             (mm_row + i) * BK + mm_col - storep_col_start + j
                         )
                         p_tile.aligned_simd_store[simd_size, alignment](
@@ -891,16 +891,16 @@ fn flash_attention_kernel[
         for offset in range(0, TN.to_int(), simd_size):
             # Apply the denominator of softmax.
             let vec = o_thread_tile.simd_load[simd_size](
-                Int__(i * TN + offset)
+                int(i * TN + offset)
             ) / rowsum.load(i)
 
             output_ptr.aligned_simd_store[simd_size, alignment](
-                Int__(o_global_row_offset + mm_col + offset), vec
+                int(o_global_row_offset + mm_col + offset), vec
             )
         o_global_row_offset += row_stride
 
 
-@__llvm_metadata(`nvvm.maxntid`=[Int__(num_threads)])
+@__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
 fn flash_attention_kernel_flexible_seqlen[
     BM: _uint32,  # number of queries per block
     BN: _uint32,  # number of keys per block
@@ -1019,7 +1019,7 @@ fn flash_attention_kernel_flexible_seqlen[
     alias loadq_num_rows_per_iter = (num_threads * simd_size) // depth
     let loadq_num_rows = min(BM, seq_len - global_q_start_row)
     let loadq_num_iters: _uint32 = div_ceil(
-        Int__(loadq_num_rows), Int__(loadq_num_rows_per_iter)
+        int(loadq_num_rows), int(loadq_num_rows_per_iter)
     )
     # alias loadq_num_iters = BM // loadq_num_rows_per_iter
     # We transpose Q BSHD -> BHSD. 2 subsequenet rows in q tile have stride
@@ -1050,10 +1050,10 @@ fn flash_attention_kernel_flexible_seqlen[
     ##
 
     # Clear thread's register tile for output.
-    _fill[Int__(TM * TN)](o_thread_tile, 0)
+    _fill[int(TM * TN)](o_thread_tile, 0)
 
-    _fill[Int__(TM)](rowmax, neginf[DType.float32]())
-    _fill[Int__(TM)](rowsum, 0)
+    _fill[int(TM)](rowmax, neginf[DType.float32]())
+    _fill[int(TM)](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
     var global_kv_offset: _uint32 = depth * (
@@ -1070,19 +1070,19 @@ fn flash_attention_kernel_flexible_seqlen[
     let loadv_row: _uint32 = (tid * simd_size) // depth
     let loadv_col: _uint32 = (tid * simd_size) % depth
 
-    for kv_tile_start_row in range(0, Int__(num_keys), Int__(BN)):
+    for kv_tile_start_row in range(0, int(num_keys), int(BN)):
         # Clear thread tile results.
-        _fill[Int__(TM * TN)](reg_result, 0)
+        _fill[int(TM * TN)](reg_result, 0)
 
         # K tile has shape [BN, depth]. Load sub-tile [BN, BK] each time and
         # multiply with the corresponding Q slice of shape [BM, BK].
         alias loadk_num_rows_per_iter = (num_threads * simd_size) // BK
         let loadk_num_rows = min(BN, num_keys - kv_tile_start_row)
         let loadk_num_iters: _uint32 = div_ceil(
-            Int__(loadk_num_rows), Int__(loadk_num_rows_per_iter)
+            int(loadk_num_rows), int(loadk_num_rows_per_iter)
         )
         alias BN_padded = BN + smem_pad
-        for subtile_start_col in range(0, Int__(depth), Int__(BK)):
+        for subtile_start_col in range(0, int(depth), int(BK)):
             ##
             for i in range(loadk_num_iters.to_int()):
                 let row_in_tile: _uint32 = loadk_row + i * loadk_num_rows_per_iter
@@ -1147,14 +1147,14 @@ fn flash_attention_kernel_flexible_seqlen[
                 if mask_row + i < seq_len:
 
                     @unroll
-                    for j in range(Int__(TN)):
+                    for j in range(int(TN)):
                         if mask_col + j < num_keys:
                             let idx = (i * TN + j).to_int()
                             let val = reg_result.load(idx)
                             let mask_idx = global_mask_offset + (
                                 mask_row + i
                             ) * num_keys + mask_col + j
-                            let mask_val = mask_ptr.load(Int__(mask_idx))
+                            let mask_val = mask_ptr.load(int(mask_idx))
                             reg_result.store(idx, val * scale + mask_val)
         ##
 
@@ -1164,12 +1164,10 @@ fn flash_attention_kernel_flexible_seqlen[
             var curr_rowmax = rowmax.load(i)
 
             # Reset result that exceeds num_keys
-            let exceed = Int__(kv_tile_start_row + mm_col + TN) - Int__(
-                num_keys
-            )
+            let exceed = int(kv_tile_start_row + mm_col + TN) - int(num_keys)
             if exceed > 0:
-                for j in range(Int__(TN) - Int__(exceed), Int__(TN)):
-                    reg_result.store(Int__(i * TN + j), neginf[DType.float32]())
+                for j in range(int(TN) - int(exceed), int(TN)):
+                    reg_result.store(int(i * TN + j), neginf[DType.float32]())
 
             # Shuffle TN elemnents per thread and choose the max among them.
             @unroll
@@ -1188,8 +1186,8 @@ fn flash_attention_kernel_flexible_seqlen[
                 reg_result.store(idx, exp(reg_result.load(idx) - curr_rowmax))
 
             if exceed > 0:
-                for j in range(Int__(TN) - Int__(exceed), Int__(TN)):
-                    reg_result.store(Int__(i * TN + j), 0.0)
+                for j in range(int(TN) - int(exceed), int(TN)):
+                    reg_result.store(int(i * TN + j), 0.0)
 
             var curr_rowsum = Float32(0.0)
 
@@ -1289,11 +1287,11 @@ fn flash_attention_kernel_flexible_seqlen[
             for offset in range(0, TN.to_int(), simd_size):
                 # Apply the denominator of softmax.
                 let vec = o_thread_tile.simd_load[simd_size](
-                    Int__(i * TN + offset)
+                    int(i * TN + offset)
                 ) / rowsum.load(i)
 
                 output_ptr.aligned_simd_store[simd_size, alignment](
-                    Int__(o_global_row_offset + mm_col + offset), vec
+                    int(o_global_row_offset + mm_col + offset), vec
                 )
         o_global_row_offset += row_stride
 
