@@ -85,7 +85,7 @@ fn matmul(
         let j = ThreadIdx.x() % TILE_SZ_B
 
         # Load the B matrix into shared memory.
-        let b_val = Int__(b[tile_idx * TILE_SZ_RATIO + i, col + j])
+        let b_val = int(b[tile_idx * TILE_SZ_RATIO + i, col + j])
         b_shared.store(i * TILE_SZ_B + j, b_val)
 
         barrier()
@@ -95,7 +95,7 @@ fn matmul(
             # Load the A tile into the register.
             let a_reg: Int
             if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
-                a_reg = Int__(a[row, tile_idx * TILE_SZ_RATIO + idx])
+                a_reg = int(a[row, tile_idx * TILE_SZ_RATIO + idx])
             else:
                 a_reg = 0
 
