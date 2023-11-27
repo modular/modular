@@ -10,7 +10,7 @@ from utils.index import Index, StaticIntTuple
 
 @value
 @register_passable("trivial")
-struct Dim(StringTrait):
+struct Dim(Stringable):
     var _value: StaticIntTuple[3]
 
     fn __init__(dims: Tuple[Int]) -> Self:

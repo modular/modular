@@ -12,7 +12,7 @@
 
 @value
 @register_passable("trivial")
-struct Result(StringTrait):
+struct Result(Stringable):
     var code: Int32
 
     alias SUCCESS = Result(0)
