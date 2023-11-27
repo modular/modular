@@ -141,8 +141,8 @@ struct _Rep16(StringTrait):
         Returns:
           The rank of the representation.
         """
-        debug_assert(Int__(self.rank) <= 6, "index out of range")
-        return Int__(self.rank)
+        debug_assert(int(self.rank) <= 6, "index out of range")
+        return int(self.rank)
 
     @always_inline
     fn get_num_elements(self) -> Int:
@@ -154,7 +154,7 @@ struct _Rep16(StringTrait):
         let rank = self.get_rank()
         var product: Int = 1
         for i in range(rank):
-            product *= Int__(self.dims[i])
+            product *= int(self.dims[i])
         return product
 
     @always_inline
@@ -167,7 +167,7 @@ struct _Rep16(StringTrait):
         Returns:
           The value at the specified dimension.
         """
-        return Int__(self.dims[index])
+        return int(self.dims[index])
 
     @always_inline
     fn __setitem__(inout self, index: Int, val: Int):
@@ -273,8 +273,8 @@ struct _Rep32:
         Returns:
           The rank of the representation.
         """
-        debug_assert(Int__(self.rank) <= 4, "index out of range")
-        return Int__(self.rank)
+        debug_assert(int(self.rank) <= 4, "index out of range")
+        return int(self.rank)
 
     @always_inline
     fn get_num_elements(self) -> Int:
@@ -286,10 +286,10 @@ struct _Rep32:
         var rank = self.get_rank()
         var product: Int = 1
         if rank == 4:
-            product = Int__(self.dim3)
+            product = int(self.dim3)
             rank -= 1
         for i in range(rank):
-            product *= Int__(self.dims012[i])
+            product *= int(self.dims012[i])
         return product
 
     @always_inline
@@ -304,9 +304,9 @@ struct _Rep32:
         """
         debug_assert(index <= 3, "index out of range")
         if index == 3:
-            return Int__(self.dim3)
+            return int(self.dim3)
         else:
-            return Int__(self.dims012[index])
+            return int(self.dims012[index])
 
     @always_inline
     fn __setitem__(inout self, index: Int, val: Int):
@@ -419,7 +419,7 @@ struct _RepOutOfLine:
         Returns:
           The rank of the representation.
         """
-        return Int__(self.rank)
+        return int(self.rank)
 
     @always_inline
     fn __getitem__(self, index: Int) -> Int:
@@ -431,7 +431,7 @@ struct _RepOutOfLine:
         Returns:
           The value at the specified dimension.
         """
-        return Int__(self.dims.load(index))
+        return int(self.dims.load(index))
 
     @always_inline
     fn __setitem__(inout self, index: Int, val: Int):
