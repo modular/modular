@@ -75,12 +75,23 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
+  // HandleVariantOp is currently always idiomatically for throwing function
+  // results and owns the result.  When it is generalized for pattern matching
+  // etc, it should take a discriminator to indicate what the result is.
+  if (v.getDefiningOp<HandleVariantOp>()) {
+    name = StringAttr::get(v.getContext(), "(call result)");
+    isIndirect = false;
+    startsUninit = true;
+    endsUninit = true;
+    return;
+  }
+
   /// Owned results of function calls are tracked as being initialized when
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {
     if (auto call = dyn_cast<KGENCallOpInterface>(res.getOwner())) {
       if (call.getCalleeType().hasOwnedRegisterResult()) {
-        name = StringAttr::get(v.getContext(), "<call result>");
+        name = StringAttr::get(v.getContext(), "(call result)");
         isIndirect = false;
         startsUninit = true;
         endsUninit = true;

@@ -1690,6 +1690,9 @@ def LIT_HandleVariantOp : LITOp<"handle_variant",
     `lit.handle_variant` op is executed upon a successful initialization of all
     values. The error region of the `lit.handle_variant` is executed otherwise.
 
+    The result value is an owned value that is consumed by the enclosing
+    lit.yield operation.
+
     Example:
 
     ```mlir
@@ -1737,6 +1740,9 @@ def LIT_YieldOp : LITOp<"yield", [Pure,
     control-flow to after the parent `handle_variant` operation. The operation
     expects its operand types to match the types of the results of that
     operation, if there are any.
+
+    This operation consumes ownership of the SSA value, which is returned
+    through the enclosing HandleVariantOp.
 
     Example:
 
