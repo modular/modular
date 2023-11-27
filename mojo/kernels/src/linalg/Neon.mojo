@@ -78,3 +78,36 @@ fn _neon_matmul(
     return llvm_intrinsic[
         "llvm.aarch64.neon.usmmla.v4i32.v16i8", SIMD[DType.int32, 4]
     ](r, a, b)
+
+
+fn _neon_matmul[
+    a_type: DType, b_type: DType, c_type: DType, simd_size: Int
+](r: SIMD[c_type, simd_size], a: SIMD[a_type, 16], b: SIMD[b_type, 16]) -> SIMD[
+    c_type, simd_size
+]:
+    @parameter
+    if a_type == DType.uint8 and b_type == DType.uint8:
+        return rebind[SIMD[c_type, simd_size]](
+            _neon_matmul(
+                rebind[SIMD[DType.int32, 4]](r),
+                rebind[SIMD[DType.uint8, 16]](a),
+                rebind[SIMD[DType.uint8, 16]](b),
+            )
+        )
+    elif a_type == DType.uint8 and b_type == DType.int8:
+        return rebind[SIMD[c_type, simd_size]](
+            _neon_matmul(
+                rebind[SIMD[DType.int32, 4]](r),
+                rebind[SIMD[DType.uint8, 16]](a),
+                rebind[SIMD[DType.int8, 16]](b),
+            )
+        )
+    else:
+        return rebind[SIMD[c_type, simd_size]](
+            _neon_matmul(
+                rebind[SIMD[DType.int32, 4]](r),
+                rebind[SIMD[DType.int8, 16]](a),
+                rebind[SIMD[DType.int8, 16]](b),
+            )
+        )
+    # FIXME should throw an error if s8u8

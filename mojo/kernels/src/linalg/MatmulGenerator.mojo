@@ -689,6 +689,8 @@ struct PackInterface[
                 inner_size,
                 # use VNNI
                 False,
+                # use I8MM,
+                False,
             ].run(
                 # Input is [K, N]:
                 b_packed_buffer,

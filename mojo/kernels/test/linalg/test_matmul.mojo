@@ -15,6 +15,9 @@ from Matrix import Matrix
 from memory.buffer import NDBuffer
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
+from sys.info import has_avx2, has_neon_int8_matmul
+
+
 from utils.index import Index, StaticIntTuple
 
 alias alignment = 64
@@ -48,7 +51,7 @@ fn test_matmul[
     b_type: DType,
     c_type: DType,
     saturated: Bool,
-]():
+]() -> Int:
     let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
     let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
@@ -120,6 +123,7 @@ fn test_matmul[
             pack_b_ndbuffer[a_type, b_type, c_type](b, bp, out_chain.borrow())
             out_chain.wait()
         let out_chain = OwningOutputChainPtr(runtime)
+
         matmul[
             a_type,
             DimList.create_unknown[2](),
@@ -141,8 +145,7 @@ fn test_matmul[
         for j in range(n):
             if cm0[i, j] != cm1[i, j]:
                 errors += 1
-    # CHECK: 0
-    print(errors)
+
     if errors != 0:
         print("\nMatrices don't agree!")
 
@@ -151,18 +154,20 @@ fn test_matmul[
     bp_ptr.free()
     c0_ptr.free()
     c1_ptr.free()
+    return errors
 
 
-alias N = 257
-alias M = 1023
-alias K = 513
+alias M = 2 * 123
+alias N = 8 * 31
+alias K = 16 * 23
 
 
 fn test_matmul_vnni():
     print("== test_matmul_vnni")
-    test_matmul[
-        N,
+    # b_packed = False is not supported with i8mm yet
+    let errors = test_matmul[
         M,
+        N,
         K,
         False,  # transpose_b
         False,  # b_packed
@@ -170,14 +175,16 @@ fn test_matmul_vnni():
         DType.int8,
         DType.int32,
         saturated=False,
-    ]()
+    ]() if not has_neon_int8_matmul() else 0
+    # CHECK: 0
+    print(errors)
 
 
 fn test_matmul_vnni_bpacked():
     print("== test_matmul_vnni_bpacked")
-    test_matmul[
-        N,
+    let errors = test_matmul[
         M,
+        N,
         K,
         False,  # transpose_b
         True,  # b_packed
@@ -186,36 +193,42 @@ fn test_matmul_vnni_bpacked():
         DType.int32,
         saturated=False,
     ]()
+    # CHECK: 0
+    print(errors)
 
 
 fn test_matmul_vnni_saturated():
     print("== test_matmul_vnni_saturated")
-    test_matmul[
-        N,
+    let errors = test_matmul[
         M,
+        N,
         K,
         False,  # transpose_b
         False,  # b_packed
         DType.uint8,
         DType.int8,
         DType.int32,
-        True,
-    ]()
+        saturated=True,
+    ]() if has_avx2() else 0
+    # CHECK: 0
+    print(errors)
 
 
 fn test_matmul_vnni_bpacked_saturated():
     print("== test_matmul_vnni_bpacked_saturated")
-    test_matmul[
-        N,
+    let errors = test_matmul[
         M,
+        N,
         K,
         False,  # transpose_b
         True,  # b_packed
         DType.uint8,
         DType.int8,
         DType.int32,
-        True,
-    ]()
+        saturated=True,
+    ]() if has_avx2() else 0
+    # CHECK: 0
+    print(errors)
 
 
 fn main():

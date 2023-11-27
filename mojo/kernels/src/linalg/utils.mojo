@@ -10,6 +10,7 @@ from sys.info import (
     has_avx2,
     has_avx512f,
     has_neon,
+    has_neon_int8_matmul,
     os_is_macos,
     simdwidthof,
     sizeof,
@@ -59,8 +60,11 @@ struct MatmulConfig:
     # Prefetch distance for packed b vectors in micro kernels.
     var prefetch_b_distance_k: Int
 
-    # use VNNI
+    # use AVX_VNNI or AVX512_VNNI
     var use_vnni: Bool
+
+    # use neon_int8_matmul (I8MM)
+    var use_i8mm: Bool
 
     # If true, then perform saturated matmul
     var saturated_vnni: Bool
@@ -305,6 +309,8 @@ fn calculate_tile_n_k[
 fn get_matmul_a_row_size[critical_stride: Bool]() -> Int:
     @parameter
     if has_neon():
+        if has_neon_int8_matmul():
+            return 6
         if critical_stride:
             return 4
         else:
@@ -317,6 +323,8 @@ fn get_matmul_a_row_size[critical_stride: Bool]() -> Int:
 fn get_matmul_pack_inner_size[critical_stride: Bool]() -> Int:
     @parameter
     if has_neon():
+        if has_neon_int8_matmul():
+            return 4
         if critical_stride:
             return 4
         else:
@@ -324,6 +332,15 @@ fn get_matmul_pack_inner_size[critical_stride: Bool]() -> Int:
     elif has_avx512f():
         return 4
     return 3
+
+
+fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
+    if use_i8mm:
+        return 8
+    elif use_vnni:
+        return 4
+    else:
+        return 1
 
 
 # prefetching at least on the Graviton 2 performs worse than without.
@@ -748,6 +765,21 @@ fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     )
 
 
+@always_inline
+fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
+    # u8u8, u8s8, s8s8, but not s8u8
+    return (
+        # Return False for now until i8mm is fully ready.
+        has_neon_int8_matmul()
+        and (
+            (a_type == DType.uint8 and b_type == DType.uint8)
+            or (a_type == DType.uint8 and b_type == DType.int8)
+            or (a_type == DType.int8 and b_type == DType.int8)
+        )
+        and False
+    )
+
+
 fn get_matmul_config[
     a_type: DType,
     b_type: DType,
@@ -765,6 +797,7 @@ fn get_matmul_config[
     # number of k iterations to prefetch ahead on the
     #   inner micro kernel loop.
     alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
+    alias factor = 4 if use_i8mm_fn[a_type, b_type, c_type]() else simd_size
 
     return MatmulConfig {
         shape_a: DimList.create_unknown[2](),
@@ -774,10 +807,11 @@ fn get_matmul_config[
         shape_bias: DimList.create_unknown[1](),
         simd_size: simd_size,
         a_row_size: a_row_size,
-        pack_inner_size: pack_inner_size * simd_size,
+        pack_inner_size: pack_inner_size * factor,
         pack_data_size: get_pack_data_size[b_type](),
         prefetch_b_distance_k: prefetch_b_distance_k,
         use_vnni: use_vnni_fn[a_type, b_type, c_type](),
+        use_i8mm: use_i8mm_fn[a_type, b_type, c_type](),
         saturated_vnni: saturated,
     }
 

@@ -37,7 +37,8 @@ fn pack_b(
         type,
         simd_size,
         tile_inner_size,
-        False,
+        False,  # use_vnni
+        False,  # use_i8mm
     ].run(
         packed_b,
         b,
