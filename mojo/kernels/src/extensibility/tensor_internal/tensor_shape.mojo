@@ -22,7 +22,7 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils.index import StaticIntTuple
 from utils.static_tuple import StaticTuple
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 
 # These representation must be kept in sync with the TensorShape file in
 # Support/include/Support/ML/TensorShape.h
