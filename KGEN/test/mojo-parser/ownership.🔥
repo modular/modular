@@ -1239,3 +1239,24 @@ struct RegExampleValue:
   # CHECK: kgen.param.constant: none
   # CHECK: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
   # CHECK: lit.ownership.mark_destroyed [[SELFPTR]]
+
+
+
+fn may_throw() raises -> RegExample:
+  return RegExample()
+
+# CHECK-LABEL: lit.func @"propagate_reg_error
+fn propagate_reg_error() raises:
+   # CHECK-NEXT: %0 = lit.call {{.*}}may_throw
+   # CHECK-NEXT: %1 = lit.handle_variant %0
+   # CHECK-NEXT:   [[REG:%.*]] = kgen.variant.get %0, 1 : <!Error, !RegExample>
+   # CHECK-NEXT:   lit.yield [[REG]]
+   # CHECK-NEXT: } else {
+   #               .. stuff ..
+   # CHECK:        lit.error_return
+   # CHECK-NEXT: }
+   # CHECK-NEXT: %2 = lit.call {{.*}}@RegExample::@"__del__{{.*}}(%1)
+   # CHECK-NEXT: kgen.param.constant: none
+   # CHECK-NEXT: kgen.variant.create %none, 1
+   # CHECK-NEXT: kgen.return
+    _ = may_throw()

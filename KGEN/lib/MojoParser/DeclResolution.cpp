@@ -1091,9 +1091,7 @@ static LetRegDeclOp makeVarArgLValueVarSlot(const CValue &argValue,
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
   SRValue val = emitter.emitSRValue({argValue, &srcExpr}, EC_DefArgumentShadow,
                                     varListType);
-  LetRegDeclOp declOp = builder.create<LetRegDeclOp>(mloc, argName, val);
-
-  return declOp;
+  return builder.create<LetRegDeclOp>(mloc, argName, val);
 }
 
 /// Create a mutable VarDecl for a function argument that captures its value.
