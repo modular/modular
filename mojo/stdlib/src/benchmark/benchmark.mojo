@@ -142,7 +142,7 @@ from time import time_function
 from math.limit import min_finite, max_finite
 
 from memory.unsafe import DTypePointer, Pointer
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 
 
 # ===----------------------------------------------------------------------===#
@@ -150,7 +150,7 @@ from utils.vector import DynamicVector
 # ===----------------------------------------------------------------------===#
 @value
 @register_passable("trivial")
-struct Batch:
+struct Batch(CollectionElement):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -228,10 +228,6 @@ struct Report:
         self.warmup_duration = 0
         self.runs = DynamicVector[Batch]()
 
-    fn __del__(owned self):
-        """Delets the Report object."""
-        self.runs._del_old()
-
     fn __copyinit__(inout self, existing: Self):
         """
         Creates a shallow copy (it doesn't copy the data).
@@ -241,7 +237,7 @@ struct Report:
         """
         self.warmup_iters = existing.warmup_iters
         self.warmup_duration = existing.warmup_duration
-        self.runs = existing.runs.deepcopy()
+        self.runs = existing.runs
 
     fn iters(self) -> Int:
         """
