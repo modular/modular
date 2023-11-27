@@ -6,9 +6,9 @@
 
 # RUN: mojo build --debug-level full -O0 '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %lldb %t -o 'b builtin-types.mojo:88' -o 'r' -o 'frame var' -o 'v *a_var_index' -o 'v *a_struct' | FileCheck %s
+# RUN: %lldb %t -o 'b builtin-types.mojo:88' -o 'r' -o 'frame var' | FileCheck %s
 
-# CHECK: (pointer<si64>) a_var_index = 0x
+# CHECK: (si64) a_var_index = 48
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101
 # CHECK:   f32 = 24.125
@@ -25,7 +25,14 @@
 # CHECK:   uint16 = 123
 # CHECK:   int32 = 485
 # CHECK: }
-# CHECK: (pointer<!kgen.declref<_"$builtin-types"::_AStruct, !lit.metatype<_"$builtin-types"::_AStruct>>>) a_struct = 0x
+# CHECK: (AStruct) a_struct = {
+# CHECK:   int = 12
+# CHECK:   tuple = {
+# CHECK:     m0 = 1
+# CHECK:     m1 = 87
+# CHECK:     m2 = 123.125
+# CHECK:   }
+# CHECK: }
 # CHECK: (f32) another_float = 4.125
 # CHECK: (string) a_string_literal = "fofofo"
 # CHECK: (pack) a_list = {
@@ -69,14 +76,3 @@
 # CHECK: (f64) a_literal_float = 3.125
 # CHECK: (f32) a_float = 3.125
 # CHECK: (si64) ^ uncommon name = 1123123
-
-# CHECK: (si64) *a_var_index = 48
-
-# CHECK: (AStruct) *a_struct = {
-# CHECK:   int = 12
-# CHECK:   tuple = {
-# CHECK:     m0 = 1
-# CHECK:     m1 = 87
-# CHECK:     m2 = 123.125
-# CHECK:   }
-# CHECK: }

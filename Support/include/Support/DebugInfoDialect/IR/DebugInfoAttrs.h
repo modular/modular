@@ -66,10 +66,36 @@ public:
 //===----------------------------------------------------------------------===//
 
 namespace M::DebugInfo {
-/// Extract the scope from the location of a function. Functions either have a
-/// subprogram scope fused directly to the location, or we consider them as not
-/// having any. Therefore this never requires a recursion, and therefore can be
-/// done without a location cache.
+
+/// This class provides utilities for prepending conversion expressions to an
+/// existing conversion expression. As optimizations accumulate in the IR,
+/// the conversion expression of a debuginfo needs to track new optimizations
+/// by prepending conversions, i.e. replacing the leaves of expressions with
+/// new subtrees.
+/// All conversion thru the same prepender instance goes thru a shared attr/type
+/// replacer cache.
+class DIExprLeafReplacer {
+public:
+  DIExprLeafReplacer(std::function<ErrorOr<DIExprAttr>(DIType)> conversionFunc);
+
+  // Apply the leafReplacer to the input expression.
+  // In practice, this means replacing the leaves of expr with the result of the
+  // leafReplacer.
+  ErrorOr<DIExprAttr> apply(DIExprAttr expr);
+
+private:
+  // Records any error message emitted during an `apply` call.
+  // Always cleared before running the replacer.
+  std::string currErrorMsg;
+
+  std::function<ErrorOr<DIExprAttr>(DIType)> leafReplacer;
+  mlir::AttrTypeReplacer replacer;
+};
+
+/// Extract the scope from the location of a function. Functions either have
+/// a subprogram scope fused directly to the location, or we consider them
+/// as not having any. Therefore this never requires a recursion, and
+/// therefore can be done without a location cache.
 DISubprogramAttr extractScope(mlir::FunctionOpInterface funcOp);
 
 /// Extract the debug info scope from the location of the given operation.

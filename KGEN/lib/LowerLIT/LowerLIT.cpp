@@ -41,7 +41,8 @@ namespace M::KGEN {
 
 static void buildDebugInfoValue(OpBuilder &b, Operation *op, StringRef varName,
                                 DebugInfo::DIFileAttr fileAttr, Value value,
-                                Type type) {
+                                Type type,
+                                DebugInfo::DIExprAttr conversion = {}) {
   Location loc = op->getLoc();
   auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
   if (!fileLoc)
@@ -50,10 +51,13 @@ static void buildDebugInfoValue(OpBuilder &b, Operation *op, StringRef varName,
   if (!varScope)
     return;
 
+  auto sourceType = DebugInfo::DIUnresolvedMLIRType::get(type);
   auto varAttr = DebugInfo::DILocalVariableAttr::get(
       varScope, varName, fileAttr, fileLoc.getLine(), /*arg=*/0,
-      /*alignInBits=*/0, DebugInfo::DIUnresolvedMLIRType::get(type));
-  b.create<DebugInfo::ValueOp>(loc, value, varAttr);
+      /*alignInBits=*/0, sourceType);
+  if (!conversion)
+    conversion = DebugInfo::DIIRValueExprAttr::get(sourceType);
+  b.create<DebugInfo::ValueOp>(loc, value, varAttr, conversion);
 }
 
 /// Flatten the given symbol reference, collapsing all nested scopes into one
@@ -194,11 +198,14 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
 
       // Build information for this variable if necessary.
       if (buildingDebugVars && !isSynth) {
-        // TODO: Mark the value op as describing the "address" of the
-        // variable, instead of claiming to describe the variable itself.
         b.setInsertionPointAfter(allocOp);
-        buildDebugInfoValue(b, allocOp, varName, funcSpAttr.getFile(), allocOp,
-                            varType);
+        auto diPointerType = DebugInfo::DITargetIndependentPointerType::get(
+            DebugInfo::DIUnresolvedMLIRType::get(varType.getElementType()));
+        buildDebugInfoValue(
+            b, allocOp, varName, funcSpAttr.getFile(), allocOp,
+            varType.getElementType(),
+            DebugInfo::DIDerefExprAttr::get(
+                DebugInfo::DIIRValueExprAttr::get(diPointerType)));
       }
     } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
       lowerHandleVariant(handleVariant);

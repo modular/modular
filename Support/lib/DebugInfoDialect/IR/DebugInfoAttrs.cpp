@@ -331,7 +331,41 @@ DISubprogramAttr DISubprogramAttr::cloneWith(SourceNameAttr name,
 };
 
 //===----------------------------------------------------------------------===//
-// Support
+// DI Expression Support
+//===----------------------------------------------------------------------===//
+DebugInfo::DIExprLeafReplacer::DIExprLeafReplacer(
+    std::function<ErrorOr<DIExprAttr>(DIType)> conversionFunc)
+    : leafReplacer(std::move(conversionFunc)) {
+  replacer.addReplacement(
+      [&](DIIRValueExprAttr irValue)
+          -> std::optional<std::pair<Attribute, WalkResult>> {
+        auto result = leafReplacer(irValue.getDIType());
+        if (failed(result)) {
+          currErrorMsg = result.getError();
+          return std::make_pair(nullptr, WalkResult::skip());
+        }
+
+        auto conversionResult = result.get();
+        if (conversionResult.getDIType() != irValue.getDIType()) {
+          currErrorMsg = "Converter result type differs from input type.";
+          return std::make_pair(nullptr, WalkResult::skip());
+        }
+        return std::make_pair(conversionResult, WalkResult::skip());
+      });
+}
+
+ErrorOr<DIExprAttr> DebugInfo::DIExprLeafReplacer::apply(DIExprAttr expr) {
+  currErrorMsg = {};
+  auto newExpr = replacer.replace(expr).dyn_cast_or_null<DIExprAttr>();
+  if (!currErrorMsg.empty())
+    return Error(currErrorMsg);
+  if (!newExpr)
+    return Error("LeafReplacer failed to replace.");
+  return newExpr;
+}
+
+//===----------------------------------------------------------------------===//
+// DI Scope Support
 //===----------------------------------------------------------------------===//
 
 DISubprogramAttr DebugInfo::extractScope(mlir::FunctionOpInterface funcOp) {
