@@ -173,7 +173,7 @@ fn _elementwise[
     return result
 
 
-struct Tensor[dtype: DType](StringTrait):
+struct Tensor[dtype: DType](Stringable):
     """A tensor type which owns its underlying data and is parameterized on
     DType.
 
