@@ -622,7 +622,7 @@ struct NDBuffer[
     type: DType,
     /,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Sized, StringTrait):
+](Sized, Stringable):
     """An N-dimensional Buffer.
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does
