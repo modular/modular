@@ -55,30 +55,24 @@ static bool canPromote(StackAllocationOp alloc) {
   return true;
 }
 
-/// Given a type in a DILocalVariableAttr, unwrap one level of
-/// KGEN::PointerType or DIPointerType. This does not perform any other
-/// replacements.
-/// TODO(#23914): Track this optimization with DWARF expressions.
-static DebugInfo::DILocalVariableAttr
-unwrapPointer(DebugInfo::DILocalVariableAttr diVarAttr) {
-  DebugInfo::DIType type = diVarAttr.getType();
-  DebugInfo::DIType newType = type;
-
-  // Unwrap the DIUnresolvedMLIRType (if there is one) and return the new type.
-  if (auto unresolved = dyn_cast<DebugInfo::DIUnresolvedMLIRType>(type))
-    if (auto ptr = dyn_cast<KGEN::PointerType>(unresolved.getType()))
-      newType = DebugInfo::DIUnresolvedMLIRType::get(ptr.getElementType());
-
+static ErrorOr<DebugInfo::DIExprAttr>
+mem2RegLeafConversion(DebugInfo::DIType irType) {
   // Unwrap the DIPointerType if there is one and use the new type.
-  if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(type))
-    newType = ptr.getElementType();
-  else if (auto ptr = dyn_cast<DebugInfo::DITargetIndependentPointerType>(type))
-    newType = ptr.getElementType();
+  DebugInfo::DIType valueType;
+  if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(irType))
+    valueType = ptr.getElementType();
+  else if (auto ptr =
+               dyn_cast<DebugInfo::DITargetIndependentPointerType>(irType))
+    valueType = ptr.getElementType();
+  else if (auto unresolved = dyn_cast<DebugInfo::DIUnresolvedMLIRType>(irType))
+    if (auto ptr = dyn_cast<PointerType>(unresolved.getType()))
+      valueType = DebugInfo::DIUnresolvedMLIRType::get(ptr.getElementType());
 
-  return DebugInfo::DILocalVariableAttr::get(
-      diVarAttr.getScope(), diVarAttr.getName(), diVarAttr.getFile(),
-      diVarAttr.getLine(), diVarAttr.getArg(), newType.getAlignInBits(),
-      newType);
+  if (!valueType)
+    return Error("Unexpected non-pointer type being unwrapped.");
+
+  auto newIrValue = DebugInfo::DIIRValueExprAttr::get(valueType);
+  return DebugInfo::DIRefOfExprAttr::get(newIrValue, irType);
 }
 
 static LogicalResult
@@ -86,6 +80,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
               llvm::MapVector<StackAllocationOp, Value> &state,
               DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
                   &termVariants,
+              DebugInfo::DIExprLeafReplacer &exprLeafReplacer,
               PassStats &stats) {
   // This analysis only works on single-block regions.
   if (!llvm::hasSingleElement(region)) {
@@ -127,9 +122,14 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       if (auto alloc = value.getValue().getDefiningOp<StackAllocationOp>()) {
         if (auto it = state.find(alloc); it != state.end()) {
           OpBuilder b(value);
-          b.create<DebugInfo::ValueOp>(value.getLoc(),
-                                       valueOrUndef(alloc, value, it->second),
-                                       unwrapPointer(value.getValueInfo()));
+          auto operand = valueOrUndef(alloc, value, it->second);
+          auto newConversionExpr =
+              exprLeafReplacer.apply(value.getConversionExprAttr());
+          if (failed(newConversionExpr))
+            return op.emitOpError() << newConversionExpr.getError();
+          b.create<DebugInfo::ValueOp>(value.getLoc(), operand,
+                                       value.getValueInfo(),
+                                       newConversionExpr.get());
           value.erase();
         }
       }
@@ -171,7 +171,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
     if (!node) {
       // This is an unknown operation. Process it as if it were isolated.
       for (Region &region : op.getRegions())
-        if (failed(processRegion(region, cfg, state, termVariants, stats)))
+        if (failed(processRegion(region, cfg, state, termVariants,
+                                 exprLeafReplacer, stats)))
           return failure();
       continue;
     }
@@ -248,7 +249,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
         }
       }
       // Okay, now recurse into the region.
-      if (failed(processRegion(region, cfg, nestedState, termVariants, stats)))
+      if (failed(processRegion(region, cfg, nestedState, termVariants,
+                               exprLeafReplacer, stats)))
         return failure();
 
       // Erase elided allocations in the nested region.
@@ -301,7 +303,9 @@ void Mem2RegPass::runOnOperation() {
     llvm::MapVector<StackAllocationOp, Value> entryState;
     DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
         termVariants;
-    if (failed(processRegion(region, cfg, entryState, termVariants, stats)))
+    DebugInfo::DIExprLeafReplacer exprLeafReplacer(mem2RegLeafConversion);
+    if (failed(processRegion(region, cfg, entryState, termVariants,
+                             exprLeafReplacer, stats)))
       return signalPassFailure();
     // Erase elided allocations.
     for (StackAllocationOp alloc : llvm::make_first_range(entryState)) {

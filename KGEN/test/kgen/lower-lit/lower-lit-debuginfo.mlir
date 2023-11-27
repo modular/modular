@@ -1,17 +1,20 @@
 // RUN: kgen-opt -lower-lit -split-input-file -mlir-print-debuginfo %s | FileCheck %s
 
-// CHECK: ![[DIVAR_TYPE:.*]] = !debuginfo.unresolved<!kgen.pointer<index>>
-// CHECK: ![[DILETVAR_TYPE:.*]] = !debuginfo.unresolved<index>
+// CHECK: ![[DI_PTR_TYPE:.*]] = !debuginfo.ti.ptr<index>
+// CHECK: ![[DI_INDEX_TYPE:.*]] = !debuginfo.unresolved<index>
+// CHECK: #[[DIEXPR_IRVALUE:.*]] = #debuginfo.expr.irvalue : ![[DI_PTR_TYPE]]
+// CHECK: #[[DIEXPR_DEREF:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE]]> : ![[DI_INDEX_TYPE]]
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"varDecl">, linkageName = "Int::varDecl", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
-// CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10> : ![[DIVAR_TYPE]]
-// CHECK-NOT: #debuginfo.local_variable<scope = #[[DISP]], name = "b", file = #{{.*}}, line = 12> : ![[DIVAR_TYPE]]
-// CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11> : ![[DILETVAR_TYPE]]
+// CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10> : ![[DI_INDEX_TYPE]]
+
+// CHECK-NOT: #debuginfo.local_variable<scope = #[[DISP]], name = "b", file = #{{.*}}, line = 12> : ![[DI_PTR_TYPE]]
+// CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11> : ![[DI_INDEX_TYPE]]
 
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
 // CHECK-SAME: (%[[ARG0:.*]]: index
 // CHECK-NEXT:    kgen.param.declare life_a: lifetime
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
-// CHECK-NEXT:    debuginfo.value #[[DIVAR]] = %[[VAR_A]] : !kgen.pointer<index>
+// CHECK-NEXT:    debuginfo.value #[[DIVAR]] #[[DIEXPR_DEREF]] = %[[VAR_A]] : !kgen.pointer<index>
 // CHECK-NEXT:    builtin.unrealized_conversion_cast %[[VAR_A]]
 // CHECK-NEXT:    kgen.param.declare life_b: lifetime
 // CHECK-NEXT:    %[[VAR_B:.*]] = pop.stack_allocation 1 x index
