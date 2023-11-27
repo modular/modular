@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 from algorithm.sort import _small_sort, partition, sort, _quicksort
 from random import random_si64, seed
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 
 
 # CHECK-LABEL: test_sort_small_3
@@ -24,15 +24,14 @@ fn test_sort_small_3():
     fn _less_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) <= rebind[Int](rhs)
 
-    _small_sort[length, Int, _less_than_equal](vector.data)
+    var ptr = rebind[Pointer[Int]](vector.data)
+    _small_sort[length, Int, _less_than_equal](ptr)
 
     # CHECK: 1
     # CHECK: 2
     # CHECK: 9
     for i in range(length):
         print(vector[i])
-
-    vector._del_old()
 
 
 # CHECK-LABEL: test_sort_small_5
@@ -52,7 +51,8 @@ fn test_sort_small_5():
     fn _less_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Int](lhs) <= rebind[Int](rhs)
 
-    _small_sort[length, Int, _less_than_equal](vector.data)
+    var ptr = rebind[Pointer[Int]](vector.data)
+    _small_sort[length, Int, _less_than_equal](ptr)
 
     # CHECK: 1
     # CHECK: 2
@@ -62,8 +62,6 @@ fn test_sort_small_5():
     for i in range(length):
         print(vector[i])
 
-    vector._del_old()
-
 
 # CHECK-LABEL: test_sort0
 fn test_sort0():
@@ -72,8 +70,6 @@ fn test_sort0():
     var vector = DynamicVector[Int]()
 
     sort(vector)
-
-    vector._del_old()
 
 
 # CHECK-LABEL: test_sort2
@@ -102,8 +98,6 @@ fn test_sort2():
     # CHECK: 2
     for i in range(length):
         print(vector[i])
-
-    vector._del_old()
 
 
 # CHECK-LABEL: test_sort3
@@ -137,8 +131,6 @@ fn test_sort3():
     for i in range(length):
         print(vector[i])
 
-    vector._del_old()
-
 
 # CHECK-LABEL test_sort3_dupe_elements
 fn test_sort3_dupe_elements():
@@ -154,15 +146,14 @@ fn test_sort3_dupe_elements():
         vector.push_back(3)
         vector.push_back(3)
 
-        _quicksort[Int, cmp_fn](vector.data, len(vector))
+        var ptr = rebind[Pointer[Int]](vector.data)
+        _quicksort[Int, cmp_fn](ptr, len(vector))
 
         # CHECK: 3
         # CHECK: 3
         # CHECK: 5
         for i in range(length):
             print(vector[i])
-
-        vector._del_old()
 
     @parameter
     fn _lt[type: AnyRegType](lhs: type, rhs: type) -> Bool:
@@ -211,8 +202,6 @@ fn test_sort4():
     for i in range(length):
         print(vector[i])
 
-    vector._del_old()
-
 
 # CHECK-LABEL: test_sort5
 fn test_sort5():
@@ -250,8 +239,6 @@ fn test_sort5():
     for i in range(length):
         print(vector[i])
 
-    vector._del_old()
-
 
 # CHECK-LABEL: test_sort_reverse
 fn test_sort_reverse():
@@ -272,8 +259,6 @@ fn test_sort_reverse():
     # CHECK: 4
     for i in range(length):
         print(vector[i])
-
-    vector._del_old()
 
 
 # CHECK-LABEL: test_sort_semi_random
@@ -302,8 +287,6 @@ fn test_sort_semi_random():
     for i in range(length):
         print(vector[i])
 
-    vector._del_old()
-
 
 # CHECK-LABEL: test_sort9
 fn test_sort9():
@@ -329,8 +312,6 @@ fn test_sort9():
     for i in range(length):
         print(vector[i])
 
-    vector._del_old()
-
 
 # CHECK-LABEL: test_sort103
 fn test_sort103():
@@ -348,8 +329,6 @@ fn test_sort103():
     for i in range(1, length):
         if vector[i - 1] > vector[i]:
             print("error: unsorted")
-
-    vector._del_old()
 
 
 # CHECK-LABEL: test_sort_any_103
@@ -369,8 +348,6 @@ fn test_sort_any_103():
         if vector[i - 1] > vector[i]:
             print("error: unsorted")
 
-    vector._del_old()
-
 
 fn test_quick_sort_repeated_val():
     print("==  test_quick_sort_repeated_val")
@@ -388,7 +365,8 @@ fn test_quick_sort_repeated_val():
     fn _greater_than[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Float32](lhs) > rebind[Float32](rhs)
 
-    _quicksort[Float32, _greater_than](vector.data, len(vector))
+    var ptr = rebind[Pointer[Float32]](vector.data)
+    _quicksort[Float32, _greater_than](ptr, len(vector))
 
     # CHECK: 9.0
     # CHECK: 9.0
@@ -469,11 +447,10 @@ fn test_quick_sort_repeated_val():
     # CHECK: 9.0
     # CHECK: 9.0
     # CHECK: 9.0
-    _quicksort[Float32, _less_than](vector.data, len(vector))
+    var sptr = rebind[Pointer[Float32]](vector.data)
+    _quicksort[Float32, _less_than](sptr, len(vector))
     for i in range(0, length):
         print(vector[i])
-
-    vector._del_old()
 
 
 fn test_partition_top_k(length: Int, k: Int):
@@ -492,12 +469,12 @@ fn test_partition_top_k(length: Int, k: Int):
     fn _great_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
         return rebind[Float32](lhs) >= rebind[Float32](rhs)
 
-    partition[Float32, _great_than_equal](vector.data, k, len(vector))
+    var ptr = rebind[Pointer[Float32]](vector.data)
+    partition[Float32, _great_than_equal](ptr, k, len(vector))
 
     for i in range(0, k):
         if vector[i] < length - k:
             print("error: incorrect top-k element", vector[i])
-    vector._del_old()
 
 
 # CHECK-LABEL: test_sort_stress
@@ -516,15 +493,14 @@ fn test_sort_stress():
         for i in range(length):
             vector.push_back(Int__(random_si64(-length, length)))
 
-        _quicksort[Int, cmp_fn](vector.data, len(vector))
+        var ptr = rebind[Pointer[Int]](vector.data)
+        _quicksort[Int, cmp_fn](ptr, len(vector))
 
         # CHECK-NOT: error
         for i in range(length - 1):
             if not check_fn[Int](vector[i], vector[i + 1]):
                 print("error: unsorted, seed is", random_seed)
                 return
-
-        vector._del_old()
 
     @parameter
     @always_inline

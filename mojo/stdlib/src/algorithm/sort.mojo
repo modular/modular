@@ -17,7 +17,7 @@ from sys.info import bitwidthof
 
 from memory.unsafe import DTypePointer, Pointer
 
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 
 # ===----------------------------------------------------------------------===#
 # Utilities
@@ -135,7 +135,6 @@ fn _quicksort[
 
         stack.push_back(start)
         stack.push_back(pivot)
-    stack._del_old()
 
 
 # ===----------------------------------------------------------------------===#
@@ -172,7 +171,6 @@ fn partition[
         else:
             stack.push_back(pivot + 1)
             stack.push_back(end)
-    stack._del_old()
 
 
 # ===----------------------------------------------------------------------===#
@@ -197,7 +195,7 @@ fn sort(inout buff: Pointer[Int], len: Int):
     _quicksort[Int, _less_than_equal](buff, len)
 
 
-fn sort[type: DType](inout buff: Pointer[SIMD[type, 1]], len: Int):
+fn sort[type: DType](inout buff: Pointer[Scalar[type]], len: Int):
     """Sort the vector inplace.
 
     The function doesn't return anything, the vector is updated inplace.
@@ -212,9 +210,9 @@ fn sort[type: DType](inout buff: Pointer[SIMD[type, 1]], len: Int):
 
     @parameter
     fn _less_than_equal[ty: AnyRegType](lhs: ty, rhs: ty) -> Bool:
-        return rebind[SIMD[type, 1]](lhs) <= rebind[SIMD[type, 1]](rhs)
+        return rebind[Scalar[type]](lhs) <= rebind[Scalar[type]](rhs)
 
-    _quicksort[SIMD[type, 1], _less_than_equal](buff, len)
+    _quicksort[Scalar[type], _less_than_equal](buff, len)
 
 
 fn sort(inout v: DynamicVector[Int]):
@@ -225,10 +223,12 @@ fn sort(inout v: DynamicVector[Int]):
     Args:
         v: Input integer vector to sort.
     """
-    sort(v.data, len(v))
+    # Downcast any pointer to register-passable pointer.
+    var ptr = rebind[Pointer[Int]](v.data)
+    sort(ptr, len(v))
 
 
-fn sort[type: DType](inout v: DynamicVector[SIMD[type, 1]]):
+fn sort[type: DType](inout v: DynamicVector[Scalar[type]]):
     """Sort the vector inplace.
 
     The function doesn't return anything, the vector is updated inplace.
@@ -240,7 +240,8 @@ fn sort[type: DType](inout v: DynamicVector[SIMD[type, 1]]):
         v: Input vector to sort.
     """
 
-    sort[type](v.data, len(v))
+    var ptr = rebind[Pointer[Scalar[type]]](v.data)
+    sort[type](ptr, len(v))
 
 
 # ===----------------------------------------------------------------------===#
