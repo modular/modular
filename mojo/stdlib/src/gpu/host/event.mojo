@@ -147,7 +147,7 @@ fn time_function[func: fn () capturing -> None]() -> Int:
 
         let msec = start.elapsed(end)
 
-        return Int__(msec * 1_000_000)
+        return int(msec * 1_000_000)
     except e:
         print("CUDA timing error:", e)
         return -1
@@ -166,4 +166,4 @@ fn time_function[func: fn () raises capturing -> None]() raises -> Int:
 
     let msec = start.elapsed(end)
 
-    return Int__(msec * 1_000_000)
+    return int(msec * 1_000_000)

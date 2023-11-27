@@ -686,9 +686,9 @@ fn _init_fn[
             debug=payload.debug,
             verbose=payload.verbose or payload.debug,
             max_registers=Optional[Int]() if payload.max_registers
-            <= 0 else Optional[Int](Int__(payload.max_registers)),
+            <= 0 else Optional[Int](int(payload.max_registers)),
             threads_per_block=Optional[Int]() if payload.threads_per_block
-            <= 0 else Optional[Int](Int__(payload.threads_per_block)),
+            <= 0 else Optional[Int](int(payload.threads_per_block)),
         )
         let func_handle = mod_handle.load(fn_name)
 
