@@ -293,6 +293,34 @@ struct Tensor[dtype: DType](Stringable):
         existing._ptr = DTypePointer[dtype]()
 
     @always_inline
+    fn ireshape(inout self, new_shape: TensorShape) raises -> None:
+        """(Inplace) Reshapes the tensor by assigning it a new shape.
+
+        Args:
+            new_shape: The new shape.
+        """
+        if new_shape.num_elements() != self.num_elements():
+            raise "Number of elements must match in reshape"
+
+        self._spec = TensorSpec(dtype, new_shape)
+
+    @always_inline
+    fn reshape(inout self, new_shape: TensorShape) raises -> Tensor[dtype]:
+        """Returns a reshaped tensor.
+
+        Args:
+            new_shape: The new shape.
+
+        Returns:
+            A Tensor that is a reshaped version of the original tensor.
+        """
+        self._spec = TensorSpec(dtype, new_shape)
+        var result = self
+        result.ireshape(new_shape)
+
+        return result
+
+    @always_inline
     fn __eq__(self, other: Self) -> Bool:
         """Returns True if the two tensors are the same and False otherwise.
 
