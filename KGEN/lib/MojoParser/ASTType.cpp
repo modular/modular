@@ -179,6 +179,10 @@ bool ASTType::hasDestructor(llvm::SMLoc loc, SharedState &shared) const {
   if (failed(shared.declResolver->resolveFully(*decl, loc)))
     return false;
 
+  // Generic types are always destructable.
+  if (isa<TraitDeclOp>(decl))
+    return true;
+
   auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");
   return structOp.getDestructorAttr() != TypedAttr();

@@ -2212,3 +2212,9 @@ fn take_movable(x: MovableType[Item]):
 fn converted_metatype_struct_element(x: Collection[Item]):
     # CHECK: call {{.*}}take_movable{{.*}}"__moveinit__" : {{.*}} = rebind({{.*}}`thunk___moveinit__
     take_movable(x.x)
+
+# CHECK-LABEL: lit.struct.decl @TraitMember
+# CHECK-SAME: destructor =
+struct TraitMember[T: Movable]:
+    # CHECK: lit.func @"__del__
+    var value: T
