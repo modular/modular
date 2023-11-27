@@ -2275,6 +2275,8 @@ struct ConvIm2ColNHWC[
                 m_loop_pack_inner_size,
                 # use VNNI
                 False,
+                # use I8MM
+                False,
             ].run(
                 b_packed,
                 self.b,
