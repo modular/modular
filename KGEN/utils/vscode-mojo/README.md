@@ -12,7 +12,7 @@ This VS Code extension from the Modular team adds support for the
 - Go to symbol
 - API docs on hover
 - Code formatting
-- Run or debug Mojo file
+- Run Mojo file
 
 ## Get started
 
@@ -109,10 +109,10 @@ the lightbulb icon or use the default hotkey `ctrl + .` for a list of options:
 Rebind the hotkey in Preferences: Open Keyboard Shortcuts >
 `Quick Fix...`
 
-## Run or Debug Mojo File
+## Run Mojo File
 
 The extension provides a set of actions on the top-right of a Mojo file to run
-or debug the active file, which by default are under a small `▶️` button up the
+the active file, which by default are under a small `▶️` button up the
 top-right of the editor:
 
 ![run-file](https://github.com/modularml/mojo/assets/77730378/22ef37cf-154a-430b-9ef3-427dbab411fc)
@@ -135,18 +135,6 @@ invocations of this same action, even if they run a different file.
 
 This executes the current Mojo file in a dedicated terminal that is reused only
 by subsequent runs of this very same file.
-
-### Debug Mojo File
-
-This debugs the current Mojo file without creating a new terminal. The stdin and
-stdout of the new process are managed by the debugger in the Debug Console.
-
-### Debug Mojo File in Terminal
-
-This launches the current Mojo file in a new terminal and attaches the debugger
-to it, without the debugger interfering with the stdin and stdout of the
-process. This terminal may be reused by subsequent invocations of this action,
-as the editor controls this behavior.
 
 ## Code Formatting
 
