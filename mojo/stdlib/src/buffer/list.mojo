@@ -22,7 +22,7 @@ from utils._optional import Optional
 
 @value
 @register_passable("trivial")
-struct Dim:
+struct Dim(Intable):
     """A static or dynamic dimension modeled with an optional integer.
 
     This class is meant to represent an optional static dimension. When a value
@@ -132,6 +132,9 @@ struct Dim:
             return Dim()
         return Dim(self.get() * rhs.get())
 
+    fn __int__(self) -> Int:
+        return self.value.value()
+
     @always_inline
     fn __eq__(self, rhs: Dim) -> Bool:
         """Compares two dimensions for equality.
@@ -145,6 +148,18 @@ struct Dim:
         if self and rhs:
             return self.get() == rhs.get()
         return (not self) == (not rhs)
+
+    @always_inline
+    fn __ne__(self, rhs: Dim) -> Bool:
+        """Compare two dimensions for inequality.
+
+        Args:
+            rhs: The dimension to compare.
+
+        Returns:
+            True if they are not equal.
+        """
+        return not self == rhs
 
 
 # ===----------------------------------------------------------------------===#
