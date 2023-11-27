@@ -617,7 +617,7 @@ fn flash_attention_kernel[
     ]()
 
     let p_tile = stack_allocation[
-        (BM * BN).to_int(),
+        (BM * BK).to_int(),
         DType.float32,
         address_space = AddressSpace.SHARED,
     ]()
@@ -809,26 +809,45 @@ fn flash_attention_kernel[
             rowmax.store(i, curr_rowmax)
             rowsum.store(i, rowsum.load(i) * correction.load(i) + curr_rowsum)
 
+        # Correct previous output.
         @unroll
         for i in range(TM.to_int()):
 
             @unroll
-            for j in range(0, TN.to_int(), simd_size):
-                p_tile.aligned_simd_store[simd_size, alignment](
-                    ((mm_row + i) * BN + mm_col + j).to_int(),
-                    reg_result.simd_load[simd_size]((i * TN + j).to_int()),
+            for j in range(TN.to_int()):
+                let idx = (i * TN + j).to_int()
+                o_thread_tile.store(
+                    idx, o_thread_tile.load(idx) * correction.load(i)
                 )
 
-        # Clear thread register results for P * V.
-        _fill[(TM * TN).to_int()](reg_result, 0)
-
-        # V tile has shape [BN, depth]. Load sub-tile [BK, depth] each time and
-        # multiply with the corresponding P slice of shape [BM, BK].
+        # V tile has shape [BN, depth]. P tile has shape [BM, BN]. Each itertion
+        # loads V sub-tile [BK, depth] from global memory to shared memory and
+        # stages p sub-tile [BM, BK] from thread register tile to shared memory.
         alias loadv_num_rows_per_iter = (num_threads * simd_size) // depth
         alias loadv_num_iters = BK // loadv_num_rows_per_iter
         alias loadv_iter_stride = loadv_num_rows_per_iter * row_stride
+        var storep_col_start: _uint32 = 0
         for subtile_start_row in range(0, BN.to_int(), BK.to_int()):
+            # Store thread register tile to p sub-tile.
+            if mm_col >= storep_col_start and mm_col < storep_col_start + BK:
 
+                @unroll
+                for i in range(TM.to_int()):
+
+                    @unroll
+                    for j in range(0, TN.to_int(), simd_size):
+                        let p_idx = Int__(
+                            (mm_row + i) * BK + mm_col - storep_col_start + j
+                        )
+                        p_tile.aligned_simd_store[simd_size, alignment](
+                            p_idx,
+                            reg_result.simd_load[simd_size](
+                                (i * TN + j).to_int()
+                            ),
+                        )
+            storep_col_start += BK
+
+            # Load v sub-tile.
             @unroll
             for i in range(loadv_num_iters.to_int()):
                 let row_in_tile: _uint32 = loadv_row + i * loadv_num_rows_per_iter
@@ -844,31 +863,18 @@ fn flash_attention_kernel[
             # Guard writing to p_tile and kv_tile.
             barrier()
 
-            let p_ptr = p_tile.offset(subtile_start_row)
-            _mm[BM, depth, BK, BN, TM, TN, transpose_a=False](
-                p_ptr,
+            # let p_ptr = p_tile.offset(subtile_start_row)
+            _mm[BM, depth, BK, BK, TM, TN, transpose_a=False](
+                p_tile,
                 kv_tile,
                 mm_row,
                 mm_col,
                 reg_m,
                 reg_n,
-                reg_result,
+                o_thread_tile,
             )
             # Guard reading kv_tile.
             barrier()
-
-        # Update output tile
-        @unroll
-        for i in range(TM.to_int()):
-
-            @unroll
-            for j in range(TN.to_int()):
-                let idx = (i * TN + j).to_int()
-                o_thread_tile.store(
-                    idx,
-                    o_thread_tile.load(idx) * correction.load(i)
-                    + reg_result.load(idx),
-                )
 
         # Point to  next tile
         global_kv_offset += BN * num_heads * depth
