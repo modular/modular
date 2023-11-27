@@ -67,28 +67,76 @@ void ParserBase::parseDocString(ASTDecl &decl) {
 // Decorator support logic
 //===----------------------------------------------------------------------===//
 
-SmallVector<std::pair<ExprNode *, LexerCursor>>
-ParserBase::parseDecorators(ASTDecl &decl) {
-  return parseDecorators(decl.getParentDecl()->getIndentation());
+/// Return true if this token is the start of a statement that should not exist
+/// on the same line as a @decorator specification. This is used to improve
+/// error recovery.
+static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
+  switch (tokenKind) {
+  case Token::kw_if:
+  case Token::kw_for:
+  case Token::kw_while:
+  case Token::kw_try:
+  case Token::kw_with:
+  case Token::kw_async:
+  case Token::kw_def:
+  case Token::kw_fn:
+  case Token::kw_struct:
+  case Token::kw_class:
+  case Token::kw_from:
+  case Token::kw_import:
+  case Token::kw_pass:
+  case Token::kw_let:
+  case Token::kw_var:
+  case Token::kw_alias:
+  case Token::kw___mlir_region:
+  case Token::kw_return:
+  case Token::kw_param_return:
+  case Token::kw_raise:
+  case Token::kw_continue:
+  case Token::kw_break:
+    return true;
+  default:
+    return false;
+  }
 }
 
 SmallVector<std::pair<ExprNode *, LexerCursor>>
+ParserBase::parseDecorators(ASTDecl &decl) {
+  return parseDecorators(decl.getIndentation());
+}
+
+/// Parse any decorators that may be present for a statement at the specified
+/// indentation level.  Note that this must be kept in sync with the logic in
+/// parseStmt which skips over things until the right indentation level.
+SmallVector<std::pair<ExprNode *, LexerCursor>>
 ParserBase::parseDecorators(ssize_t indentation) {
   SmallVector<std::pair<ExprNode *, LexerCursor>> result;
-  if (getToken().getIndentation())
-    indentation = getToken().getIndentation().value();
-  while (consumeIf(Token::at)) {
+
+  auto stopOnStatement = [&]() -> bool {
+    return isStatementThatMightHaveDecorators(getToken().getKind());
+  };
+
+  llvm::SMLoc atLoc;
+  while (consumeIf(Token::at, &atLoc)) {
+    if (getToken().getIndentation().has_value()) {
+      emitError(atLoc, "missing decorator expression after '@'");
+      skipUntilIndentation(indentation, /*stopOnSemicolon=*/false,
+                           stopOnStatement);
+      continue;
+    }
+
     ExprNode *decoratorExpr;
     LexerCursor cursor = lexer.getCursor();
     if (parseExpression(decoratorExpr, indentation))
       break;
     result.push_back({decoratorExpr, cursor});
 
-    if (!getToken().getIndentation() ||
+    if (!getToken().getIndentation().has_value() ||
         ssize_t(getToken().getIndentation().value()) > indentation) {
       emitTokenError("unexpected tokens after decorator, each need to be on "
                      "their own line");
-      skipUntilIndentation(indentation);
+      skipUntilIndentation(indentation, /*stopOnSemicolon=*/false,
+                           stopOnStatement);
     }
   }
   // Decorators are applied to a decl starting from the one closest to it, so
@@ -398,39 +446,6 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   shared.emitWarning(expr->getLoc())
       << valueType << " value is unused" << expr->getRange()
       << FixIt::insertBeforeToken(startLoc, "_ = ");
-}
-
-/// Return true if this token is the start of a statement that should not exist
-/// on the same line as a @decorator specification. This is used to improve
-/// error recovery.
-static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
-  switch (tokenKind) {
-  case Token::kw_if:
-  case Token::kw_for:
-  case Token::kw_while:
-  case Token::kw_try:
-  case Token::kw_with:
-  case Token::kw_async:
-  case Token::kw_def:
-  case Token::kw_fn:
-  case Token::kw_struct:
-  case Token::kw_class:
-  case Token::kw_from:
-  case Token::kw_import:
-  case Token::kw_pass:
-  case Token::kw_let:
-  case Token::kw_var:
-  case Token::kw_alias:
-  case Token::kw___mlir_region:
-  case Token::kw_return:
-  case Token::kw_param_return:
-  case Token::kw_raise:
-  case Token::kw_continue:
-  case Token::kw_break:
-    return true;
-  default:
-    return false;
-  }
 }
 
 /// When `onlySimpleStmt` is true, this parses the simple_stmt production,

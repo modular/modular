@@ -240,6 +240,12 @@ fn cannotRaise(err: Error):
 fn raise_bad_type() raises:
     raise 42  # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Error' in raised value}}
 
+# https://github.com/modularml/mojo/issues/1230
+# Parser crashes on incomplete decorator
+@ # expected-error {{missing decorator expression after '@'}}
+fn m # expected-error {{expected '(' for argument list}}
+#expected-error @-1 {{expected body statements; use 'pass' if none is required}}
+
 # Issue #6909
 # expected-error @below {{expected name for 'alias' declaration}}
 # expected-note @below {{escape keyword 'True' with backticks to use it as an identifier}}
