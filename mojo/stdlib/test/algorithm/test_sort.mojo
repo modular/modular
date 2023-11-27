@@ -491,7 +491,7 @@ fn test_sort_stress():
     ](length: Int):
         var vector = DynamicVector[Int](length)
         for i in range(length):
-            vector.push_back(Int__(random_si64(-length, length)))
+            vector.push_back(int(random_si64(-length, length)))
 
         var ptr = rebind[Pointer[Int]](vector.data)
         _quicksort[Int, cmp_fn](ptr, len(vector))

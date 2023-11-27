@@ -75,17 +75,17 @@ fn _index_of_first_one[width: Int](val: SIMD[DType.bool, width]) -> Int:
         # Cast to int8 and count the number of trailing zeros.
         var local_val = val
         let i8_ptr = Pointer.address_of(local_val).bitcast[Int8]()
-        return cttz(Int__(i8_ptr.load()))
+        return cttz(int(i8_ptr.load()))
     elif width == 16:
         # Cast to int16 and count the number of trailing zeros.
         var local_val = val
         let i16_ptr = Pointer.address_of(local_val).bitcast[Int16]()
-        return cttz(Int__(i16_ptr.load()))
+        return cttz(int(i16_ptr.load()))
     elif width == 32:
         # Cast to int32 and count the number of trailing zeros.
         var local_val = val
         let i32_ptr = Pointer.address_of(local_val).bitcast[Int32]()
-        return cttz(Int__(i32_ptr.load()))
+        return cttz(int(i32_ptr.load()))
     else:
         alias half_width: Int = width // 2
         let lhs = val.slice[half_width](0)
@@ -1880,7 +1880,7 @@ fn argmax[
         out_chain: The chain to attach results to.
     """
 
-    argmax(input, Int__(axis_buf[0]), output, out_chain)
+    argmax(input, int(axis_buf[0]), output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1946,7 +1946,7 @@ fn argmin[
         out_chain: The chain to attach results to.
     """
 
-    argmin(input, Int__(axis_buf[0]), output, out_chain)
+    argmin(input, int(axis_buf[0]), output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1985,7 +1985,7 @@ fn reduce_shape[
     """
 
     # extract hyper parameter
-    var axis = Int__(axis_buf[0])
+    var axis = int(axis_buf[0])
     if axis < 0:
         axis += input_rank
     # TODO(#17512)
