@@ -30,6 +30,7 @@ add_modular_testsuite(check-api-integration-tests
   mof
   modular-framework-common
   modular-framework-tf-ext
+  is-cuda-available
   )
 
 add_subdirectory(python)

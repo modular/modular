@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,7 +34,7 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["modular-api-executor", "mojo", "mt"]
+tools = ["modular-api-executor", "mojo", "mt", "is-cuda-available"]
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
 multi_tenancy_api_models_dir = (
@@ -117,3 +118,7 @@ if "numpy" in sys.modules:
     config.available_features.add("numpy")
 
 config.excludes.update(["test_user_op"])
+
+output = subprocess.run("is-cuda-available")
+if output.returncode == 0:
+    config.available_features.add("cuda")
