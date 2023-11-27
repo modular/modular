@@ -45,6 +45,9 @@ class CommonLoadOptions:
     custom_ops_path: str = field(default="")
     """The path from which to load custom ops."""
 
+    device: str = field(default="cpu")
+    """The default device to use for executing models."""
+
 
 class Model:
     """A loaded model that you can execute.
@@ -283,7 +286,7 @@ def _unwrap_pybind_objects_dict_factory(
             return value._impl
         return value
 
-    return {field: convert(value) for field, value in data}
+    return {field: convert(value) for field, value in data if value}
 
 
 class InferenceSession:
