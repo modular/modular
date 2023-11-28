@@ -8,6 +8,7 @@
 from memory.unsafe import DTypePointer, Pointer
 
 from ._utils import _check_error, _get_dylib_function
+from gpu.host.stream import Stream, _StreamImpl
 
 
 # ===----------------------------------------------------------------------===#
@@ -108,11 +109,11 @@ struct Event:
         )
 
     @always_inline
-    fn record(self) raises:
+    fn record(self, stream: Stream) raises:
         _check_error(
-            _get_dylib_function[fn (_EventImpl) -> Result]("cuEventRecord")(
-                self._event
-            )
+            _get_dylib_function[fn (_EventImpl, _StreamImpl) -> Result](
+                "cuEventRecord"
+            )(self._event, stream.stream)
         )
 
     @always_inline
@@ -135,14 +136,14 @@ struct Event:
 
 @always_inline
 @parameter
-fn time_function[func: fn () capturing -> None]() -> Int:
+fn time_function[func: fn (Stream) capturing -> None](stream: Stream) -> Int:
     try:
         let start = Event()
         let end = Event()
 
-        start.record()
-        func()
-        end.record()
+        start.record(stream)
+        func(stream)
+        end.record(stream)
         end.sync()
 
         let msec = start.elapsed(end)
@@ -155,13 +156,15 @@ fn time_function[func: fn () capturing -> None]() -> Int:
 
 @always_inline
 @parameter
-fn time_function[func: fn () raises capturing -> None]() raises -> Int:
+fn time_function[
+    func: fn (Stream) raises capturing -> None
+](stream: Stream) raises -> Int:
     let start = Event()
     let end = Event()
 
-    start.record()
-    func()
-    end.record()
+    start.record(stream)
+    func(stream)
+    end.record(stream)
     end.sync()
 
     let msec = start.elapsed(end)
