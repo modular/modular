@@ -5,10 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import platform
 
 from lit.llvm import llvm_config
-
 
 # name: The name of this test suite.
 config.name = "mojo-parser"
@@ -23,8 +21,14 @@ config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
 # These files/directories are only used as part of other tests.
-config.excludes = ['test_package', 'test_bad_package', 'test_package_user',
-                   'imported_module.mojo', 'imported_cached_module.mojo']
+config.excludes = [
+    "test_package",
+    "test_bad_package",
+    "test_package_user",
+    "docs_package",
+    "imported_module.mojo",
+    "imported_cached_module.mojo",
+]
 
 tool_dirs = [
     config.modular_tools_dir,

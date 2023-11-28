@@ -7,7 +7,6 @@
 # RUN: kgen-translate -import-mojo -o /dev/null -mojo-warn-missing-doc-strings -verify-diagnostics %s
 
 
-
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
 struct ArgStruct:
     pass
