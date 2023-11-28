@@ -350,16 +350,9 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       assert(argIdx >= defaultStartIdx);
 
       TypedAttr defaultArg = defaultArgs[argIdx - defaultStartIdx];
-      if (convention == ValueInputConvention::ByRef) {
-        VarLetDeclOp varOp = emitter.emitVarLetDecl(
-            "__default_arg_" + Twine(argIdx) + "__", defaultArg.getType(), loc);
-        if (!emitter.emitPValueToXLValue({PValue(defaultArg), callExpr},
-                                         MLValue(varOp), EC_CallArgValue))
-          return failure();
-        argumentValues.push_back({XLValue(varOp), callExpr});
-      } else {
-        argumentValues.push_back({PValue(defaultArg), callExpr});
-      }
+      assert(convention != ValueInputConvention::ByRef &&
+             "by_ref argument cannot have defaults");
+      argumentValues.push_back({PValue(defaultArg), callExpr});
       continue;
     }
 
