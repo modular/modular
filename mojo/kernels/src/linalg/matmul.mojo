@@ -2636,7 +2636,7 @@ fn gemv_kernel[
             ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
                 return x + y
 
-            val = warp_reduce[c_type, shuffle_down, reduce_add](val)
+            val = warp_reduce[shuffle_down, reduce_add](val)
             if lane_id() == 0:
                 accum += val
 
