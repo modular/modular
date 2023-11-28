@@ -17,6 +17,9 @@
 - Added a `Mojo` submenu for Mojo files in the File Explorer that exposes the
   `Run or Debug Mojo File` actions.
 
+- Added dynamic debug configurations for Mojo files, which can be accessed by
+  selecting `Mojo...` in the Run and Debug Tab selector.
+
 ## Changed
 
 - Enhanced the `Run or Debug Mojo File` actions, fixing bugs, improving icons
