@@ -1232,30 +1232,81 @@ fn _elementwise_impl[
 
     constrained[target == "cuda", "Target must be cuda"]()
 
-    alias block_dim = 32
+    # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
+    alias registers_per_thread = 255
+    alias num_waves = 32
+    alias registers_per_block = 65536
+
+    # optimize based on device attributes
+    let sm_count: Int
+    let threads_per_sm: Int
+    try:
+        sm_count = Device().multiprocessor_count()
+        threads_per_sm = Device().max_threads_per_sm()
+    except e:
+        if out_chain:
+            out_chain.mark_error(e)
+        else:
+            print(e)
+        return
+
+    # split between packed and tail regions of input
     let length = shape.flattened_length()
+    let num_packed_elems = length // simd_width
+    let unpacked_tail_length = length % simd_width
+    let packed_region_length = length - unpacked_tail_length
+
+    alias block_size_unrounded = registers_per_block // registers_per_thread
+    alias block_size = block_size_unrounded - (block_size_unrounded % 2)
+    let num_blocks = max(
+        1,
+        min(
+            div_ceil(num_packed_elems, block_size),
+            sm_count * threads_per_sm // block_size * num_waves,
+        ),
+    )
 
     @parameter
-    fn _elementwise_gpu_kernel(shape: StaticIntTuple[rank]):
+    @__llvm_metadata(`nvvm.maxntid`=[int(block_size)])
+    fn _elementwise_gpu_kernel():
         @parameter
         if not triple_is_nvidia_cuda():
             return
 
-        let tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
-        if tid >= length:
-            return
+        # process the packed region
+        let tid = ThreadIdx.x() + block_size * BlockIdx.x()
+        for idx in range(tid, num_packed_elems, block_size * GridDim.x()):
+            let start_indices = _get_start_indices_of_nth_subvolume[rank, 0](
+                idx * simd_width, shape
+            )
 
-        func[1, rank](_get_start_indices_of_nth_subvolume[rank, 0](tid, shape))
+            if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
+
+                @unroll
+                for off in range(simd_width):
+                    func[1, rank](
+                        _get_start_indices_of_nth_subvolume[rank, 0](
+                            idx * simd_width + off, shape
+                        )
+                    )
+            else:
+                func[simd_width, rank](start_indices)
+
+        # process the tail region
+        if tid < unpacked_tail_length:
+            let index_tup = _get_start_indices_of_nth_subvolume[rank, 0](
+                packed_region_length + tid, shape
+            )
+            func[1, rank](index_tup)
 
     try:
-        alias func_type = fn (StaticIntTuple[rank]) capturing -> None
+        alias func_type = fn () capturing -> None
         let gpu_func = Function[
             func_type, rebind[func_type](_elementwise_gpu_kernel)
         ]()
         gpu_func(
-            (div_ceil(length, block_dim),),
-            (block_dim,),
-            shape,
+            num_blocks,
+            block_size,
             stream=out_chain.get_cuda_stream() if out_chain else Stream[
                 is_borrowed=True
             ](),
