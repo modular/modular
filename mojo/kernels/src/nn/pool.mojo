@@ -284,7 +284,10 @@ fn max_pool[
 
 @always_inline
 fn avg_pool[
-    type: DType, int_type: DType, rank: Int = 4
+    type: DType,
+    int_type: DType,
+    rank: Int = 4,
+    count_boundary: Bool = False,
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
@@ -292,10 +295,12 @@ fn avg_pool[
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
     paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    count_boundary: Bool,
     out_chain: OutputChainPtr,
 ):
     """Computes the average pool.
+
+    Params:
+        count_boundary: Whether to count the boundary in the average computation.
 
     Args:
         input: Batched image input to the pool2d operator.
@@ -308,7 +313,6 @@ fn avg_pool[
         paddings: Paddings on height and width dimensions with assumed
             tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
-        count_boundary: Whether to count the boundary in the average computation.
         out_chain: OutputChain.
     """
 
@@ -492,6 +496,8 @@ fn avg_pool[
     if empty_padding:
         return stencil_empty_padding(output.get_shape(), out_chain)
     else:
+
+        @parameter
         if count_boundary:
             return stencil_with_padding(output.get_shape(), out_chain)
         else:

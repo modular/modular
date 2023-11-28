@@ -83,14 +83,13 @@ fn pool[count_boundary: Bool = False](pool_method: PoolMethod):
                 out_chain.borrow(),
             )
         else:
-            avg_pool[int_type = DType.int32](
+            avg_pool[int_type = DType.int32, count_boundary=count_boundary](
                 input_tensor._to_ndbuffer[4](),
                 filter_tensor._to_ndbuffer[1](),
                 stride_tensor._to_ndbuffer[1](),
                 dilation_tensor._to_ndbuffer[1](),
                 paddings_tensor._to_ndbuffer[1](),
                 output_tensor._to_ndbuffer[4](),
-                False,
                 out_chain.borrow(),
             )
         out_chain.wait()
@@ -171,7 +170,7 @@ fn test_avg_pool_2d():
     pool(PoolMethod.AVG)
 
 
-fn test_avg_pool_2d_with_padding(count_boundary: Bool = False):
+fn test_avg_pool_2d_with_padding[count_boundary: Bool = False]():
     print("== test_avg_pool_2d_count_boundary:", count_boundary)
     alias in_shape = DimList(1, 7, 7, 1)
     alias out_shape = DimList(1, 7, 7, 1)
@@ -195,14 +194,13 @@ fn test_avg_pool_2d_with_padding(count_boundary: Bool = False):
 
     with Runtime() as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
-        avg_pool[int_type = DType.int32](
+        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
             input_tensor._to_ndbuffer[4](),
             filter_tensor._to_ndbuffer[1](),
             stride_tensor._to_ndbuffer[1](),
             dilation_tensor._to_ndbuffer[1](),
             paddings_tensor._to_ndbuffer[1](),
             output_tensor._to_ndbuffer[4](),
-            count_boundary,
             out_chain.borrow(),
         )
         out_chain.wait()
@@ -272,7 +270,7 @@ fn main():
     # CHECK: 29.0000
     # CHECK: 19.5556
 
-    test_avg_pool_2d_with_padding(True)
+    test_avg_pool_2d_with_padding[True]()
 
     # CHECK: test_avg_pool_2d_count_boundary: False
     # CHECK: 4.0000
@@ -324,4 +322,4 @@ fn main():
     # CHECK: 42.5000
     # CHECK: 43.5000
     # CHECK: 44.0000
-    test_avg_pool_2d_with_padding(False)
+    test_avg_pool_2d_with_padding[False]()
