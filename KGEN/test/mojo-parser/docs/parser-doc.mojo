@@ -7,7 +7,7 @@
 
 # RUN: kgen-translate -import-mojo %s | FileCheck %s
 
-from test_package import method_defined_in_init
+from docs_package import documented_method_defined_in_init
 
 # CHECK: #[[MODULE_DOC:.*]] = #lit.doc.string<"This is a module doc."
 # CHECK: #[[ALIAS_DOC:.*]] = #lit.doc.string<"This is an alias doc."
@@ -18,6 +18,7 @@ from test_package import method_defined_in_init
 # CHECK: #[[TRAIT_DOC:.*]] = #lit.doc.string<"This is a trait doc."
 # CHECK: #[[TRAIT_FUNCTION_DOC:.*]] = #lit.doc.string<"This is a trait function doc."
 # CHECK: #[[PACKAGE_DOC:.*]] = #lit.doc.string<"This is a test package."
+# CHECK: #[[IMPORTED_FUNC_DOC:.*]] = #lit.doc.string<"This is an imported method."
 
 # CHECK: lit.file_module @"$parser-doc"{{.*}}docString = #[[MODULE_DOC]]
 # CHECK: lit.alias.decl {{.*}}AliasType{{.*}}docString = #[[ALIAS_DOC]]
@@ -26,7 +27,8 @@ from test_package import method_defined_in_init
 # CHECK: lit.struct.field value{{.*}}docString = #[[STRUCT_FIELD_DOC]]
 # CHECK: lit.func @"foo()"{{.*}}docString = #[[FUNCTION_DOC]]
 
-# CHECK: lit.package @"$test_package"{{.*}}docString = #[[PACKAGE_DOC]]
+# CHECK: lit.package @"$docs_package"{{.*}}docString = #[[PACKAGE_DOC]]
+# CHECK: lit.func @"documented_method_defined_in_init()"{{.*}}docString = #[[IMPORTED_FUNC_DOC]]
 
 alias AliasType = __mlir_type.`!kgen.anyregtype`
 """This is an alias doc."""
@@ -42,12 +44,8 @@ struct Struct:
 
 fn foo():
   """This is a function doc."""
-  method_defined_in_init()
+  documented_method_defined_in_init()
   return
-
-##===----------------------------------------------------------------------===##
-# Traits
-##===----------------------------------------------------------------------===##
 
 trait Trait:
   """This is a trait doc."""
