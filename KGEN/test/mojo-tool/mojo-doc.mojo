@@ -289,6 +289,9 @@ fn pos_only_print(obj: object, /, sep: StringLiteral):
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "InMemoryStruct",
+# CHECK:  "parentTraits": [
+# CHECK-NEXT:   "Destructable"
+# CHECK-NEXT:   "Sized"
 
 
 struct InMemoryStruct(Sized):

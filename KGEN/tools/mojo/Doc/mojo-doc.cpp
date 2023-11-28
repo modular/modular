@@ -130,7 +130,7 @@ static int doc(const State &state) {
     return state.reportError("could not generate documentation");
 
   llvm::json::OStream jsonOS(out->os(), /*IndentSize=*/2);
-  jsonOS.value(declView->toJSON());
+  jsonOS.value(declView->toJSON(parserContext));
   out->keep();
   return EXIT_SUCCESS;
 }
