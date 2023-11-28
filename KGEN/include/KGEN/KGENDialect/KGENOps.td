@@ -1368,6 +1368,7 @@ def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure]> {
   }];
 
   let hasFolder = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

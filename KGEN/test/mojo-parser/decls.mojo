@@ -344,8 +344,19 @@ fn packOverload():
     pass
 
 
+fn directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
+    pass
+
+
+# CHECK-LABEL: lit.func @"trait_pack
+# CHECK-SAME: <{{.*}}, [[TS:.*]][Ts]:
+# CHECK-SAME: !kgen.pack<:variadic<trait<{{.*}}Intable>> [[TS]]> borrow
+fn trait_pack[T: Intable, *Ts: Intable](first: T, *rest: *Ts):
+    pass
+
+
 # CHECK-LABEL: lit.func @"callOverload
-fn callOverload(a: Int):
+fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     # CHECK: lit.call @"$decls"::@"testThing({{.*}}$int::Int)"(%a)
     _ = testThing(a)
     # CHECK: lit.call @"$decls"::@"testThing({{.*}}$int::Int,{{.*}}$int::Int)"(%a, %a)
@@ -382,6 +393,14 @@ fn callOverload(a: Int):
     packOverload(3)
     # CHECK:  lit.call @"$decls"::@"packOverload()"()
     packOverload()
+
+    # CHECK-NOT: pack.create
+    # CHECK: call {{.*}}directly_pass_pack{{.*}}(%pack)
+    directly_pass_pack(pack)
+
+    # CHECK: call {{.*}}trait_pack
+    # CHECK-SAME: [!Int, {"__int__"
+    trait_pack(1, 2, 3)
 
 
 @register_passable("trivial")

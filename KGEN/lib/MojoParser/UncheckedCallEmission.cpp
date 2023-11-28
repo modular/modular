@@ -359,7 +359,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // Otherwise, we're applying one or more arguments to this.
     // For a normal (not a vararg or a pack) argument, we just emit it and add
     // it to our list.
-    if (!calleeSig.isVarArg(argIdx) && !isa<PackType>(expectedType)) {
+    if (!calleeSig.isVarArg(argIdx) && !calleeSig.isPackVarArg(argIdx)) {
       ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
       AnyValue argVal =
           emitOneArgVal(operand, argIdx, convention, expectedType);
@@ -818,7 +818,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
-    if (calleeSig.isVarArg(argIdx) || isa<PackType>(calleeArgType))
+    if (calleeSig.isVarArg(argIdx) || calleeSig.isPackVarArg(argIdx))
       convention = ValueInputConvention::OwnedInReg;
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(

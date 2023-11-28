@@ -127,10 +127,15 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
     if (auto expected = dyn_cast<PointerType>(expectedType))
       return matchTypes(actual.getElementType(), expected.getElementType());
 
-  // Handle VariadicType
+  // Handle VariadicType.
   if (auto actual = dyn_cast<VariadicType>(actualType))
     if (auto expected = dyn_cast<VariadicType>(expectedType))
       return matchParams(actual.getElementType(), expected.getElementType());
+
+  // Handle PackType.
+  if (auto actual = dyn_cast<PackType>(actualType))
+    if (auto expected = dyn_cast<PackType>(expectedType))
+      return matchParams(actual.getVariadic(), expected.getVariadic());
 
   // TODO: Could do StructType?
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCH TYPES:\n";
@@ -281,17 +286,9 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
     if (posOperandIdx == numPosOperands) {
       // If the argument is a varargs argument list, then it can be initialized
       // with zero values no problem.
-      if (signature.isVarArg(expectedArgIdx))
+      if (signature.isVarArg(expectedArgIdx) ||
+          signature.isPackVarArg(expectedArgIdx))
         break;
-
-      // If we have a pack argument, then we're binding zero type values to it.
-      if (PackType packType = getIfPackType(signature, expectedArgIdx)) {
-        if (!inferredValues.empty())
-          break;
-        inferredValues.push_back(VariadicAttr::get(
-            {}, cast<VariadicType>(packType.getVariadic().getType())));
-        continue;
-      }
 
       // Check if a keyword operand was provided for this argument
       if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
@@ -340,9 +337,11 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
     // multiple type values.  We need to consume all remaining arguments and use
     // their types as bindings.
     if (auto packType = getIfPackType(signature, expectedArgIdx)) {
-      if (!inferredValues.empty())
-        break;
       SmallVector<TypedAttr> types;
+      auto variadicType = cast<VariadicType>(packType.getVariadic().getType());
+      Type elementType = variadicType.getElementAsType();
+      ExprEmitter emitter(shared, shared.getTopLevelDecl(), EC_TypeParamValue);
+      SyntheticNode node(shared.getTopLevelDecl().getLoc());
       while (posOperandIdx != numPosOperands) {
         ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
         CValue value = operand.ir.getIfCValue();
@@ -356,12 +355,22 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
         // Infer nonmaterializable types as their materialization target.
         if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
           toPush = nmTarget;
-        types.push_back(TypeConstantAttr::get(
-            toPush, AnyRegTypeType::get(shared.getContext())));
+        Type metatype = toPush.getMetaType();
+        TypedAttr actualAttr = TypeConstantAttr::get(
+            toPush,
+            metatype ? metatype : AnyRegTypeType::get(shared.getContext()));
+        if (!emitter.canImplicitlyConvertToType({actualAttr, &node},
+                                                elementType))
+          return {};
+        PValue result = emitter.emitPValue({actualAttr, &node},
+                                           EC_TypeParamValue, elementType);
+        if (!result)
+          return {};
+        types.push_back(result);
       }
 
-      inferredValues.push_back(VariadicAttr::get(
-          types, cast<VariadicType>(packType.getVariadic().getType())));
+      matchTypes(PackType::get(VariadicAttr::get(types, variadicType)),
+                 expectedType);
       continue;
     }
 

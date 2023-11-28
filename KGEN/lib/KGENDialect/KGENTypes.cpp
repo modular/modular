@@ -1138,32 +1138,33 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
 //===----------------------------------------------------------------------===//
 
 static void printPackType(AsmPrinter &p, TypedAttr value) {
-  printParamValue(p, value);
+  if (auto variadic = dyn_cast<VariadicType>(value.getType())) {
+    if (isa<AnyRegTypeType>(variadic.getElementAsType()) &&
+        isa<AnyRegTypeType>(variadic.getElementType().getType())) {
+      printParamValue(p, value);
+      return;
+    }
+  }
+  printColonTypeParamValue(p, value);
 }
 
 static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
   auto anyRegTypeType = AnyRegTypeType::get(p.getContext());
-  return parseParamValue(p, value,
-                         VariadicType::get(anyRegTypeType, anyRegTypeType));
+  Type type = VariadicType::get(anyRegTypeType, anyRegTypeType);
+  if (succeeded(p.parseOptionalColon()))
+    if (parseKGENType(p, type))
+      return failure();
+  return parseParamValue(p, value, type);
 }
 
 /// Verify that the element type of the variadic attribute or expression is a
 /// type expression.
 LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr variadic) {
-  VariadicType type = ::dyn_cast<VariadicType>(variadic.getType());
-  if (!type)
-    return emitError() << "expected an operand of variadic type, but got "
-                       << variadic.getType();
-
-  Type elementType = type.getElementAsType();
-  if (!isTypeExprType(elementType)) {
-    return emitError() << "expected a variadic type with a type expression "
-                          "element type, but got "
-                       << elementType;
-  }
-
-  return success();
+  if (::isa<VariadicType>(variadic.getType()))
+    return success();
+  return emitError() << "expected an operand of variadic type, but got "
+                     << variadic.getType();
 }
 
 std::optional<int64_t> PackType::getTypeSize(TargetInfoAttr target) const {

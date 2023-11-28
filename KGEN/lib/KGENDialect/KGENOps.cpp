@@ -1315,6 +1315,26 @@ static void printPackCreateType(OpAsmPrinter &p, Operation *op, Type resultType,
   p << resultType;
 }
 
+LogicalResult PackCreateOp::verify() {
+  VariadicAttr elementTypesAttr = getType().getVariadicAttr();
+  if (!elementTypesAttr)
+    return emitOpError() << "cannot create pack with parametric element types";
+  ArrayRef<TypedAttr> elementTypes = elementTypesAttr.getValues();
+  if (elementTypes.size() != getNumOperands()) {
+    return emitOpError() << "expected " << elementTypes.size()
+                         << " operands, but got " << getNumOperands();
+  }
+  for (auto [i, expected, provided] :
+       llvm::enumerate(elementTypes, getOperandTypes())) {
+    Type type = ParamRefType::get(expected);
+    if (type == provided)
+      continue;
+    return emitOpError() << "operand #" << i << " should have type " << type
+                         << " but got " << provided;
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // PackGetOp
 //===----------------------------------------------------------------------===//
