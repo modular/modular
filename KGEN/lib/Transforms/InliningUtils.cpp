@@ -225,3 +225,12 @@ mlir::PassManager &PerThreadPassManagers::getPassManager() {
   pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   return pm;
 }
+
+uint64_t KGEN::getNumOperations(Operation *op) {
+  if (!op)
+    return 0;
+
+  uint64_t result = 0;
+  op->walk([&](Operation *) { ++result; });
+  return result;
+}

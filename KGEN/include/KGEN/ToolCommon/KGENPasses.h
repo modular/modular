@@ -120,8 +120,8 @@ createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
 
 /// Create a ForceInline pass with an LLCL runtime.
 std::unique_ptr<mlir::Pass>
-createAlwaysInlineParametric(LLCL::Runtime &runtime,
-                             const AlwaysInlineParametricOptions &options = {});
+createInlineParametric(LLCL::Runtime &runtime,
+                       const InlineParametricOptions &options = {});
 
 /// Create a ForceInline pass with an LLCL runtime instance and a
 /// function pass pipeline to run.
