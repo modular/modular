@@ -2817,13 +2817,13 @@ fn conv[
     let dilation_flat = dilation.flatten()
     let paddings_flat = paddings.flatten()
 
-    let strides_tuple = Index(int(strides_flat[0]), int(strides_flat[1]))
-    let dilation_tuple = Index(int(dilation_flat[0]), int(dilation_flat[1]))
+    let strides_tuple = Index(strides_flat[0], strides_flat[1])
+    let dilation_tuple = Index(dilation_flat[0], dilation_flat[1])
     if dilation_tuple != Index(1, 1):
         return out_chain.mark_error("Non-unit dilation is not supported yet.")
 
-    let pad_h_tuple = Index(int(paddings_flat[0]), int(paddings_flat[1]))
-    let pad_w_tuple = Index(int(paddings_flat[2]), int(paddings_flat[3]))
+    let pad_h_tuple = Index(paddings_flat[0], paddings_flat[1])
+    let pad_w_tuple = Index(paddings_flat[2], paddings_flat[3])
 
     # TODO: eventually padding, strides and dilation will be passed in as
     # parameters here when they are constant in the graph
