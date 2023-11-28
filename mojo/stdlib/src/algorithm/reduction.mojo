@@ -2017,16 +2017,16 @@ fn _static_log2[n: Int]() -> Int:
 
 @always_inline
 fn _cumsum[
-    size: Int, type: DType
+    size: Dim, type: DType
 ](dst: Buffer[size, type], src: Buffer[size, type]):
     dst[0] = src[0]
-    for i in range(1, size):
+    for i in range(1, len(dst)):
         dst[i] = src[i] + dst[i - 1]
 
 
 @always_inline
 fn cumsum[
-    size: Int, type: DType
+    size: Dim, type: DType
 ](dst: Buffer[size, type], src: Buffer[size, type]):
     """Computes the cumulative sum of all elements in a buffer.
        dst[i] = src[i] + src[i-1] + ... + src[0].
@@ -2047,7 +2047,7 @@ fn cumsum[
 
     # For length less than simd_width do serial cumulative sum.
     # Similarly, for the case when simd_width == 2 serial should be faster.
-    if size < simd_width or simd_width == 2:
+    if len(dst) < simd_width or simd_width == 2:
         return _cumsum[size, type](dst, src)
 
     # Stores the offset (i.e., last value of previous simd_width-elements chunk,
@@ -2057,7 +2057,7 @@ fn cumsum[
 
     # Divide the buffer size to div_size chunks of simd_width elements,
     # to calculate using SIMD and do remaining (tail) serially.
-    let div_size = (size // simd_width) * simd_width
+    let div_size = (len(dst) // simd_width) * simd_width
 
     # Number of inner-loop iterations (for shift previous result and add).
     alias rep = _static_log2[simd_width]()
@@ -2100,5 +2100,5 @@ fn cumsum[
 
     # Handles the tail, i.e., num of elements at the end that don't
     # fit within a simd_width-elements vector.
-    for i in range(div_size, size):
+    for i in range(div_size, len(dst)):
         dst[i] = dst[i - 1] + src[i]
