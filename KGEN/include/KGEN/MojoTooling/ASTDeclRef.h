@@ -45,6 +45,8 @@ public:
   /// Access the underlying AST decl.
   KGEN::LIT::ASTDecl &operator*() { return *decl; }
   KGEN::LIT::ASTDecl *operator->() { return decl; }
+  const KGEN::LIT::ASTDecl &operator*() const { return *decl; }
+  const KGEN::LIT::ASTDecl *operator->() const { return decl; }
 
   /// Returns the type corresponding to this declaration. If not available, this
   /// returns an invalid `MojoASTTypeRef`.
