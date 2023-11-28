@@ -69,23 +69,21 @@ struct OutputChain {
   AnyAsyncValueRef chain;
   /// Location to use for any errors.
   LLCL::EncodedLocation loc;
-  /// The profiler entry for the kernel execution. Begins when the
-  /// kernel is called, and ends when either the kernel calls markReady()/
-  /// markError(), or the kernel returns to the C++ runtime.
+  /// Profiler entries for the kernel execution. Each begins when trace() is
+  /// called (by the kernel.execute primitive or by Mojo trace calls), and ends
+  /// when markReady()/markError() is called by Mojo or recordProfilerEntries()
+  /// is called by the kernel.execute primitive.
   ///
-  /// For synchronous kernels, this profiler entry will capture the true
-  /// work of the kernel. The kernel will not have launched any sub-tasks.
+  /// For synchronous kernels, profiling entries will capture the true
+  /// work of the kernel.
   ///
-  /// For asynchronous kernels, this profiler entry will live only while the
-  /// kernel establishes its sub-tasks, and will be recorded when the kernel
-  /// returns to the C++ runtime.
+  /// For asynchronous kernels, profiling entries will only capture the
+  /// kernel setup.
   SmallVector<MojoProfilerEntry> profilerEntries;
-  /// The 'prototype' profiler entry to be used when the Mojo kernel calls
-  /// executeAsTask. Each task will append '.task' to the profile name,
-  /// and some task id details to the profile details. This entry, however,
-  /// is never recorded.
-  MojoProfilerEntry prototypeProfilerEntry;
-
+  /// The event id of the last profiling entry begun. This may be used as
+  /// the 'parent' event for profiling entries created for executeAsTask()
+  /// sub-tasks launched from Mojo.
+  ProfilerEventId parentEventId = 0;
 #if MODULAR_PARANOID
   /// All 'uses' of 'resources' needed by this call which should be considered
   /// active while the call is in flight. This can be used to capture which
@@ -117,13 +115,13 @@ struct OutputChain {
   OutputChain &operator=(OutputChain &&) = default;
 
   /// Return a 'fork' of this output chain:
-  ///  - The chain and location are copied, so are valid in both this and the
-  ///    result.
-  ///  - The prototypeProfilerEntry, refs, and extras are moved into the result,
-  ///    on the assumption the caller will create sub-tasks and take
-  ///    responsibility for calling markReady/markError when they complete.
-  ///  - The profilerEntry is not moved or copied, on the assumption it
-  ///    will be recorded by recordProfilerEntry.
+  ///  - The chain, location and parentId are copied, so are valid in both
+  ///    this and the result.
+  ///  - The refs and extras are moved into the result, on the assumption the
+  ///    caller will create sub-tasks and take responsibility for calling
+  ///    markReady/markError when they complete.
+  ///  - The profilerEntries are not moved or copied, on the assumption they
+  ///    will be recorded by recordProfilerEntries.
   ///
   /// Called from Mojo asynchronous kernels to prepare for executing sub-tasks.
   /// The fork result will constructed into a heap allocated object, and
@@ -160,6 +158,7 @@ struct OutputChain {
   /// Called from the Mojo side.
   void trace(StringRef name, std::optional<StringRef> detail = std::nullopt);
   void trace(StringRef name, llvm::function_ref<std::string()> detailFn);
+  void trace(InternableString name);
 
   /// Indicate the Mojo call is complete.
   ///

@@ -143,17 +143,14 @@ public:
   }
 
   void recordProfilingSamples() {
-    MemProfilerEntry::create("mem.outstanding", numBytesAllocated.load())
-        .record();
+    MemProfilerEntry::sample(numBytesAllocated.load(), "mem.outstanding");
     if constexpr (kCaptureMalloc) {
-      MemProfilerEntry::create("mem.malloc_outstanding", []() {
-        return llvm::sys::Process::GetMallocUsage();
-      }).record();
+      MemProfilerEntry::sample(llvm::sys::Process::GetMallocUsage(),
+                               "mem.malloc_outstanding");
     }
     if constexpr (kCaptureSysMem) {
-      MemProfilerEntry::create("mem.sys_resident", []() {
-        return getProcessPhysicalMemUsage();
-      }).record();
+      MemProfilerEntry::sample(getProcessPhysicalMemUsage(),
+                               "mem.sys_resident");
     }
   }
 

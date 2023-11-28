@@ -69,7 +69,8 @@ enum WorkQueueState : uint8_t { kReady = 0, kShuttingDown = 1, kShutdown = 2 };
 static void randomSleep() {
   std::chrono::milliseconds delay{(rand() % 4) * 2000};
   if (delay.count() > 0) {
-    TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.randomSleep"));
+    TimeTraceScope scope(
+        AllWorkItemsProfilerEntry::create(StringLiteral("llcl.randomSleep")));
     std::this_thread::sleep_for(delay);
   }
 }
@@ -379,7 +380,7 @@ struct WorkQueueThread {
     // Do the work.
     {
       TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
-          IsWaiter ? "llcl.waiter" : "llcl.doWork"));
+          StringLiteral(IsWaiter ? "llcl.waiter" : "llcl.doWork")));
       workItem.task();
     }
 
@@ -408,15 +409,15 @@ struct WorkQueueThread {
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
   void runItemsOnOwningThread(EarlyStopPredicateFn earlyStopPredicate,
                               LateStopPredicateFn lateStopPredicate,
-                              bool waitForTasks, StringRef spinningLabel,
-                              StringRef sleepingLabel);
+                              bool waitForTasks, StringLiteral spinningLabel,
+                              StringLiteral sleepingLabel);
 
   /// As above, but without setting thread affinity for calls from the 'main'
   /// thread.
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
   void runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
-                    StringRef spinningLabel, StringRef sleepingLabel);
+                    StringLiteral spinningLabel, StringLiteral sleepingLabel);
 
 private:
   /// The main function invoked by std::thread.
@@ -462,7 +463,7 @@ template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
 void WorkQueueThread::runItemsOnOwningThread(
     EarlyStopPredicateFn earlyStopPredicate,
     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
-    StringRef spinningLabel, StringRef sleepingLabel) {
+    StringLiteral spinningLabel, StringLiteral sleepingLabel) {
   if (sharedState.mainWillDonate && workerID == 0) {
     // Temporarily set the main thread's affinity while it is processing work.
     LLCL::runWithThreadAffinity(cpuID, [&]() {
@@ -480,8 +481,9 @@ void WorkQueueThread::runItemsOnOwningThread(
 template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
 void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                                    LateStopPredicateFn lateStopPredicate,
-                                   bool waitForTasks, StringRef spinningLabel,
-                                   StringRef sleepingLabel) {
+                                   bool waitForTasks,
+                                   StringLiteral spinningLabel,
+                                   StringLiteral sleepingLabel) {
   while (true) {
   KeepRunning:
     // Stop immediately if there is nothing to do.
@@ -804,7 +806,8 @@ void ThreadPoolWorkQueue::shutdown() {
          "work pool is not ready");
 #endif
 
-  TimeTraceScope scope(InternalProfilerEntry::create("llcl.shutdown"));
+  TimeTraceScope scope(
+      InternalProfilerEntry::create(StringLiteral("llcl.shutdown")));
 
   WorkQueueThread *callingWorker = getOwningWorkQueueThread();
 

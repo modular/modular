@@ -114,7 +114,8 @@ private:
 
     // Do the work.
     {
-      TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.doWork"));
+      TimeTraceScope scope(
+          AllWorkItemsProfilerEntry::create(StringLiteral("llcl.doWork")));
       workItem.task();
     }
 

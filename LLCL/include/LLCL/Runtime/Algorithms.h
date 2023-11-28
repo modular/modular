@@ -373,8 +373,8 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
   // Enqueue each element of work!
   for (size_t elementIdx = 0; elementIdx != totalCount; ++elementIdx) {
     addTask(runtime, [state, elementIdx]() {
-      TimeTraceScope scope(
-          AlgorithmProfilerEntry::create("llcl.parallelForEach"));
+      TimeTraceScope scope(AlgorithmProfilerEntry::create(
+          StringLiteral("llcl.parallelForEach")));
       // Invoke the per-element function with the index and all of the captured
       // state.
       std::apply(
@@ -493,7 +493,7 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
   // smaller than the rest, so this thread can catch up with the others.
   {
     TimeTraceScope scope(
-        AlgorithmProfilerEntry::create("llcl.parallelForEach"));
+        AlgorithmProfilerEntry::create(StringLiteral("llcl.parallelForEach")));
     elementFn(totalCount - 1, captures...);
   }
 

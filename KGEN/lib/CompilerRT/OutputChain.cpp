@@ -13,16 +13,16 @@ using namespace M;
 using namespace KGEN;
 
 OutputChain OutputChain::fork() {
-  // Chain and location are copied.
+  // Chain, location and parent are copied.
   OutputChain result(chain.copy(), loc.copy());
-  // The 'prototype' profiler entry, references and extras can be moved.
-  result.prototypeProfilerEntry = std::move(prototypeProfilerEntry);
+  result.parentEventId = parentEventId;
+  // References and extras are moved.
   result.refs = std::move(refs);
   result.extras = std::move(extras);
 #if MODULAR_PARANOID
   result.uses = std::move(uses);
 #endif
-  // The actual profiler entries are left alone.
+  // The profiler entries are left alone.
   return result;
 }
 
@@ -48,22 +48,27 @@ void OutputChain::transfer(LLCL::GenericUniquePtr extra) {
 
 void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
   if constexpr (MojoProfilerEntry::isEnabled()) {
-    profilerEntries.emplace_back(detail
-                                     ? MojoProfilerEntry ::create(name, *detail)
-                                     : MojoProfilerEntry ::create(name));
-    if (prototypeProfilerEntry.empty())
-      prototypeProfilerEntry =
-          profilerEntries.front().copy<MojoProfilerEntry>();
+    const auto &entry = profilerEntries.emplace_back(
+        detail ? MojoProfilerEntry::create(name, *detail)
+               : MojoProfilerEntry::create(name));
+    parentEventId = entry.getId();
   }
 }
 
 void OutputChain::trace(StringRef name,
                         llvm::function_ref<std::string()> detailFn) {
-  if constexpr (MojoProfilerEntry ::isEnabled()) {
-    profilerEntries.emplace_back(MojoProfilerEntry ::create(name, detailFn));
-    if (prototypeProfilerEntry.empty())
-      prototypeProfilerEntry =
-          profilerEntries.front().copy<MojoProfilerEntry>();
+  if constexpr (MojoProfilerEntry::isEnabled()) {
+    const auto &entry =
+        profilerEntries.emplace_back(MojoProfilerEntry::create(name, detailFn));
+    parentEventId = entry.getId();
+  }
+}
+
+void OutputChain::trace(InternableString name) {
+  if constexpr (MojoProfilerEntry::isEnabled()) {
+    const auto &entry =
+        profilerEntries.emplace_back(MojoProfilerEntry::create(name));
+    parentEventId = entry.getId();
   }
 }
 
@@ -141,16 +146,12 @@ void OutputChain::complete() {
 
 void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
                                 size_t taskId, bool useGlobalQueue) {
-  // If it is present, copy the profiling entry for use by the task.
-  MojoProfilerEntry taskProfilerEntry =
-      prototypeProfilerEntry.withNameSuffix(".task").withDetailSuffix(
-          [=]() { return (Twine(" (task_id ") + Twine(taskId) + ")").str(); });
   chain.getRuntime()->getWorkQueue()->addTask(
-      [taskProfilerEntry = std::move(taskProfilerEntry), resume,
-       hdl]() mutable {
-        taskProfilerEntry.restart();
+      [parentId = this->parentEventId, taskId, resume, hdl]() mutable {
+        // Use the 'prototype' profiling entry, but augment with the task id.
+        TimeTraceScope scope(MojoProfilerEntry::createWithParent(
+            parentId, StringLiteral("task"), taskId));
         resume(hdl);
-        std::move(taskProfilerEntry).record();
 #if MODULAR_PARANOID
         // Sleeping here gives any await loop the chance to exit and
         // proceed while this task is still 'active'. This can trigger
