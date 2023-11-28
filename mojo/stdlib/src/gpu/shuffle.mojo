@@ -205,11 +205,11 @@ fn _static_log2[n: Int]() -> Int:
 
 @always_inline
 fn warp_reduce[
-    val_type: DType,
     shuffle: fn[type: DType] (val: SIMD[type, 1], offset: Int) -> SIMD[type, 1],
     func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
+    val_type: DType,
 ](val: SIMD[val_type, 1]) -> SIMD[val_type, 1]:
     var res = val
 
