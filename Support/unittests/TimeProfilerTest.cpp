@@ -22,10 +22,10 @@
 
 using namespace M;
 
-static std::string teardownTrace() {
+static std::string teardownTrace(TimeTraceProfiler &profiler) {
   SmallVector<char, 1024> smallVector;
   llvm::raw_svector_ostream os(smallVector);
-  Detail::timeTraceProfilerWriteTrace(os);
+  profiler.writeJSONForTesting(os);
   return os.str().str();
 }
 
@@ -36,7 +36,7 @@ TEST(TimeProfiler, Scope_Smoke) {
 
   { TimeTraceScope</*Enabled=*/true> scope("event", "detail"); }
 
-  std::string json = teardownTrace();
+  std::string json = teardownTrace(profiler);
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
 }
@@ -47,7 +47,7 @@ TEST(TimeProfiler, Begin_End_Smoke) {
   timeTraceProfilerBegin("event", "detail");
   timeTraceProfilerEnd();
 
-  std::string json = teardownTrace();
+  std::string json = teardownTrace(profiler);
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
 }
@@ -62,23 +62,20 @@ TEST(TimeProfiler, Begin_End_Disabled) {
 TEST(TimeProfiler, Entry_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
-  auto entry = ProfilerEntry<true>::create("event", "detail");
-  entry.restart();
+  auto entry = ProfilerEntry<true>::create(StringLiteral("event"),
+                                           StringLiteral("detail"));
   std::move(entry).record();
 
-  std::string json = teardownTrace();
+  std::string json = teardownTrace(profiler);
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
 }
 
 TEST(TimeProfiler, Entry_Disabled) {
   // Only get the default entry if tracing is not setup.
-  auto entry = ProfilerEntry<true>::create("event", "detail");
-  entry.restart();
-  ASSERT_TRUE(entry.name.empty());
-  ASSERT_TRUE(entry.getDetail().empty());
-  ASSERT_EQ(entry.start, ProfilerEntry<true>::TimePointType());
-  ASSERT_EQ(entry.end, ProfilerEntry<true>::TimePointType());
+  auto entry = ProfilerEntry<true>::create(StringLiteral("event"),
+                                           StringLiteral("detail"));
+  ASSERT_TRUE(entry.empty());
   std::move(entry).record();
 }
 

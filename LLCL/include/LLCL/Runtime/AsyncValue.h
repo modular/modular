@@ -602,7 +602,7 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
     auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
         alignof(ConcreteAsyncValue<T>), sizeof(ConcreteAsyncValue<T>));
 #if MODULAR_PARANOID
-    AsyncProfilerEntry::create("AsyncValue::allocate", [ptr]() {
+    AsyncProfilerEntry::create(StringLiteral("AsyncValue::allocate"), [ptr]() {
       return (Twine(TypeID::get<T>().getTypeName()) + ", " +
               Detail::addrToHex(ptr))
           .str();

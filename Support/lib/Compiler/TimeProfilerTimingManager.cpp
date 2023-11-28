@@ -61,7 +61,7 @@ std::optional<void *> TimeProfilerTimingManager::rootTimer() {
 void TimeProfilerTimingManager::startTimer(void *handle) {
   auto *timer = reinterpret_cast<Timer *>(handle);
   if (!timer->isHidden())
-    timeTraceProfilerBegin(timer->name, "");
+    timeTraceProfilerBegin(timer->name);
 }
 
 void TimeProfilerTimingManager::stopTimer(void *handle) {
