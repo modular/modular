@@ -91,10 +91,11 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSynthetic(mojoCategorySP, mojoREPLResultRefTypeSyntheticFrontEndCreator,
                   "REPLResultRefType synthetic children",
                   "^!lit.replresultref<.*>$", synthFlags, /*regex=*/true);
+  // FIXME(#26559): Migrate to DynamicVector
   AddCXXSynthetic(
       mojoCategorySP, MojoDynamicVectorSyntheticFrontEndCreator,
       "Mojo DynamicVector synthetic children",
-      R"(^!kgen.declref<@"\$utils"::@"\$vector"::@DynamicVector<.*>>$)",
+      R"(^!kgen.declref<@"\$utils"::@"\$vector"::@_OldDynamicVector<.*>>$)",
       synthFlags, /*regex=*/true);
 
   // These settings are the same as the C++ ones.

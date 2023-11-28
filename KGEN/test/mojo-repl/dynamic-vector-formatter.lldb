@@ -8,9 +8,10 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-from utils.vector import DynamicVector as Vector
+# FIXME(#26559): Migrate to DynamicVector
+from utils.vector import _OldDynamicVector as Vector
 
-# CHECK: (DynamicVector[Int]) vec = {
+# CHECK: (_OldDynamicVector[Int]) vec = {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
@@ -24,7 +25,7 @@ vec.push_back(3)
 vec.push_back(4)
 vec.push_back(5)
 
-# CHECK: (DynamicVector[SIMD[f32, 1]]) vec = {
+# CHECK: (_OldDynamicVector[SIMD[f32, 1]]) vec = {
 # CHECK:   (SIMD[f32, 1]) [0] = {
 # CHECK:     (scalar<f32>) value = {
 # CHECK:       (f32) [0] = 4.3{{[0-9]*}}
@@ -52,7 +53,7 @@ vec.push_back(8.8)
 # CHECK:   (Int) x = 3
 # CHECK:   (Int) y = 3
 # CHECK: }
-# CHECK: (DynamicVector[Point]) pointVec =
+# CHECK: (_OldDynamicVector[Point]) pointVec =
 # CHECK:  {
 # CHECK:   (Point) [0] = {
 # CHECK:     (Int) x = 1
