@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from utils.vector import DynamicVector2 as DynamicVector
+from utils.vector import DynamicVector
 from math import iota
 
 
