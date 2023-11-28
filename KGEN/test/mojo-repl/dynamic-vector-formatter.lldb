@@ -8,6 +8,8 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
+from utils.vector import DynamicVector as Vector
+
 # CHECK: (DynamicVector[Int]) vec = {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
@@ -15,7 +17,7 @@
 # CHECK:   (Int) [3] = 4
 # CHECK:   (Int) [4] = 5
 # CHECK: }
-let vec = DynamicVector[Int](5)
+let vec = Vector[Int](5)
 vec.push_back(1)
 vec.push_back(2)
 vec.push_back(3)
@@ -34,7 +36,7 @@ vec.push_back(5)
 # CHECK:     }
 # CHECK:   }
 # CHECK: }
-let vec = DynamicVector[Float32](2)
+let vec = Vector[Float32](2)
 vec.push_back(4.3)
 vec.push_back(8.8)
 
@@ -74,7 +76,7 @@ struct Point:
       x: x,
       y: y,
     }
-let pointVec = DynamicVector[Point](3)
+let pointVec = Vector[Point](3)
 let p1 = Point(1, 1)
 let p2 = Point(2, 2)
 let p3 = Point(3, 3)
