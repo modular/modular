@@ -53,9 +53,10 @@ let v = -101
 # CHECK: }
 let w = SIMD[DType.int8, 2](-50, 31)
 
-from utils.vector import DynamicVector as Vector
+# FIXME(#26559): Migrate to DynamicVector
+from utils.vector import _OldDynamicVector as Vector
 
-# CHECK: (DynamicVector[Int]) z = {
+# CHECK: (_OldDynamicVector[Int]) z = {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
