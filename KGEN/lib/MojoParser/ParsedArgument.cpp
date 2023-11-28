@@ -107,6 +107,12 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (p.parseExpression(initExpr))
       return failure();
 
+    if (convention == kConventionInOut) {
+      p.emitError(equalLoc, "inout arguments may not have defaults")
+          << initExpr->getRange();
+      initExpr = nullptr;
+    }
+
     // Default args and varargs don't mix.
     if (vararg != VarArgKind::None) {
       p.emitError(equalLoc, "variadic arguments may not have defaults")

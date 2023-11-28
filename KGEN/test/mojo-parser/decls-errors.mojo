@@ -252,6 +252,9 @@ fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in default argument}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
 
+# expected-error @+1 {{inout arguments may not have defaults}}
+fn byref_default(inout x: Int = 2): pass
+
 # expected-error @+1 {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int): pass
 
