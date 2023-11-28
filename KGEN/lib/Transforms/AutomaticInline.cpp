@@ -283,8 +283,7 @@ bool CallGraphNode::shouldInlineCallee(CallGraphNode *callee,
 
   // TODO: Add more sophisticated heuristics for cost model based inlining
   // strategy.
-  return callee->numProcessedCalls * KGEN::getNumOperations(callee->func) <
-         threshold;
+  return KGEN::getNumOperations(callee->func) < threshold;
 }
 
 bool CallGraphNode::isAllInlined() {
