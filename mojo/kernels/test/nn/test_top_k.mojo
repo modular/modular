@@ -7,7 +7,7 @@
 
 
 from math import iota
-from utils.vector import DynamicVector2 as DynamicVector
+from utils.vector import DynamicVector
 
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from memory.buffer import NDBuffer

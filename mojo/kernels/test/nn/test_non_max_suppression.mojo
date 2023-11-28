@@ -12,7 +12,7 @@ from NonMaxSuppression import (
 from tensor import Tensor, TensorShape
 
 from utils.index import Index
-from utils.vector import DynamicVector2 as DynamicVector
+from utils.vector import DynamicVector
 
 
 @register_passable("trivial")
