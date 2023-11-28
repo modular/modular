@@ -3248,7 +3248,7 @@ fn no_mask_fused_attention_cpu[
 # # ===----------------------------------------------------------------------===#
 # # INT4/5/6 packing format
 # # ===----------------------------------------------------------------------===#
-from quantization import Q4sym
+from quantization import Q4sym, matmul_int4
 
 
 # TODO: closures to make this simpler
@@ -3418,3 +3418,30 @@ fn dequantize_Q4sym_g32[
     @parameter
     if not single_thread_blocking_override:
         out_chain.mark_ready()
+
+
+@mogg_register("qmatmul_Af32_BTQ4symG32_Cf32")
+@always_inline
+@export
+fn qmatmul_Af32_BTQ4symG32_Cf32[
+    type: DType
+](
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
+    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
+):
+    return matmul_int4[32](a, b, c, out_chain)
+
+
+@mogg_register_shape_func("qmatmul_Af32_BTQ4symG32_Cf32")
+@always_inline
+@export
+fn qmatmul_Af32_BTQ4symG32_Cf32_shape_func[
+    type: DType,
+    single_thread_blocking_override: Bool,
+](
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
+) -> StaticIntTuple[2]:
+    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
