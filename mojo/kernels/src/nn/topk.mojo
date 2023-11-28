@@ -6,7 +6,7 @@
 
 
 from math import iota
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
@@ -122,7 +122,7 @@ fn _top_k[
     @parameter
     fn process_rows(start_row: Int, end_row: Int):
         var idxs = DynamicVector[Int64](shape[axis])
-        idxs.resize(shape[axis])
+        idxs.resize(shape[axis], 0)
         for row_idx in range(start_row, end_row):
             var indices = _get_nd_indices_from_flat_index[rank](
                 row_idx, shape, axis
@@ -148,11 +148,11 @@ fn _top_k[
 
                 if sorted:
                     _quicksort[Int64, _val_greater_than_eq](
-                        idxs.data, len(idxs)
+                        rebind[Pointer[Int64]](idxs.data), len(idxs)
                     )
                 else:
                     partition[Int64, _val_greater_than_eq](
-                        idxs.data, k, len(idxs)
+                        rebind[Pointer[Int64]](idxs.data), k, len(idxs)
                     )
             else:
 
@@ -164,9 +164,13 @@ fn _top_k[
                     )
 
                 if sorted:
-                    _quicksort[Int64, _val_less_than_eq](idxs.data, len(idxs))
+                    _quicksort[Int64, _val_less_than_eq](
+                        rebind[Pointer[Int64]](idxs.data), len(idxs)
+                    )
                 else:
-                    partition[Int64, _val_less_than_eq](idxs.data, k, len(idxs))
+                    partition[Int64, _val_less_than_eq](
+                        rebind[Pointer[Int64]](idxs.data), k, len(idxs)
+                    )
 
             if sorted:
                 # for duplicate vals, the smaller index needs to appear first
@@ -186,7 +190,7 @@ fn _top_k[
                             break
                         num_equal += 1
                     if num_equal > 1:
-                        var ptr = rebind[Pointer[Int64]](idxs.data.offset(i))
+                        var ptr = rebind[Pointer[Int64]](idxs.data + i)
                         sort[DType.int64](ptr, num_equal)
                     i += num_equal
 
@@ -196,8 +200,6 @@ fn _top_k[
                 indices[axis] = i
                 out_vals[indices] = val
                 out_idxs[indices] = idxs[i]
-
-        idxs._del_old()
 
     parallelize_over_rows[rank, process_rows](
         shape, axis, out_chain, parallelism_grain_size

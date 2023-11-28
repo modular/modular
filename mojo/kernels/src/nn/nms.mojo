@@ -12,7 +12,7 @@ from memory.buffer import NDBuffer
 from tensor import Tensor, TensorShape
 
 from utils.index import Index
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 
 
 @value
@@ -97,7 +97,8 @@ fn non_max_suppression[
     # by the shape, but that is OK since the tensor.__del__() frees the pointer
     let output_shape = TensorShape(len(output_predictions) // 3, 3)
     return Tensor[DType.int64](
-        rebind[DTypePointer[DType.int64]](output_predictions.data), output_shape
+        rebind[DTypePointer[DType.int64]](output_predictions.steal_data()),
+        output_shape,
     )
 
 
@@ -196,10 +197,10 @@ fn non_max_suppression[
         return
 
     var box_idxs = DynamicVector[Int64](num_boxes)
-    box_idxs.resize(num_boxes)
+    box_idxs.resize(num_boxes, 0)
 
     var per_class_scores = DynamicVector[SIMD[type, 1]](num_boxes)
-    per_class_scores.resize(num_boxes)
+    per_class_scores.resize(num_boxes, 0)
 
     for b in range(batch_size):
         for c in range(num_classes):
@@ -232,7 +233,9 @@ fn non_max_suppression[
                 )
 
             # sort box_idxs based on corresponding scores
-            _quicksort[Int64, _greater_than](box_idxs.data, len(box_idxs))
+            _quicksort[Int64, _greater_than](
+                rebind[Pointer[Int64]](box_idxs.data), len(box_idxs)
+            )
 
             var pred_idx = 0
             while (
@@ -266,7 +269,8 @@ fn non_max_suppression[
                 # note we need to use num_boxes_curr_pred instead of num_boxes_remainig
                 # because num_boxes_remaining has been adjusted for the high IOU boxes above
                 _quicksort[Int64, _greater_than](
-                    box_idxs.data + pred_idx, num_boxes_curr_pred
+                    rebind[Pointer[Int64]](box_idxs.data + pred_idx),
+                    num_boxes_curr_pred,
                 )
 
             @always_inline
@@ -282,6 +286,3 @@ fn non_max_suppression[
             debug_assert(
                 sorted(), "NonMaxSuppression boxes not sorted correctly"
             )
-
-    box_idxs._del_old()
-    per_class_scores._del_old()
