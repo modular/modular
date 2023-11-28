@@ -613,6 +613,18 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       doWork</*IsWaiter=*/false>(std::move(labelledTask));
       goto KeepRunning;
     }
+    // The same ordering explanation as above holds for the taskList too.
+    // Let's say there are 2 threads in the pool with both threads busy waiting
+    // on their way to sleep. The addTask() sees them as busy and does not post
+    // any semaphores. However they both go to sleep not to be woken up by
+    // anyone. We prefer checking for a dequeue here rather than always posting
+    // a semaphore after enqueue in the addTask(). Also scenario is highly
+    // unlikely for numThreads > 1.
+
+    if (auto labelledTask = taskList.dequeue()) {
+      doWork</*IsWaiter=*/false>(std::move(labelledTask));
+      goto KeepRunning;
+    }
 
     if (earlyStopPredicate()) {
       return;
