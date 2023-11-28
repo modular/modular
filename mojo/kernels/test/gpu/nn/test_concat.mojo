@@ -125,8 +125,7 @@ fn test_concat_4_inputs_rank5() raises:
 
     @always_inline
     @parameter
-    fn run_concat_inner_most_single_dim() raises:
-        let stream = Stream()
+    fn run_concat_inner_most_single_dim(stream: Stream) raises:
         func(
             (d0 * d1 * d2 * d3 * d4 // B_SIZE),
             (B_SIZE),
@@ -139,9 +138,8 @@ fn test_concat_4_inputs_rank5() raises:
             ),
             stream=stream,
         )
-        synchronize()
 
-    var nstime_kernel = time_function[run_concat_inner_most_single_dim]()
+    var nstime_kernel = time_function[run_concat_inner_most_single_dim](stream)
     print("concat_inner_most_single_dim time = ", nstime_kernel * 1e-6, " ms")
     print(
         "transfer rate = ",
@@ -190,7 +188,7 @@ fn test_concat_4_inputs_rank5() raises:
 
     @always_inline
     @parameter
-    fn run_concat_gpu() raises:
+    fn run_concat_gpu(unused: Stream) raises:
         _concat_gpu(
             output_device,
             4,
@@ -204,7 +202,7 @@ fn test_concat_4_inputs_rank5() raises:
         )
         synchronize()
 
-    var nstime = time_function[run_concat_gpu]()
+    var nstime = time_function[run_concat_gpu](Stream())
     print("concat_gpu time = ", nstime * 1e-6, " ms")
     print(
         "transfer rate = ",

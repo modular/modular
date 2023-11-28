@@ -13,7 +13,6 @@ from sys.param_env import env_get_string
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
 import gpu.host.benchmark
-from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -70,7 +69,7 @@ fn run_vec_add() raises:
 
     @always_inline
     @parameter
-    fn run_func() raises:
+    fn run_func(stream: Stream) raises:
         func(
             (length // block_dim),
             (block_dim),
@@ -78,10 +77,10 @@ fn run_vec_add() raises:
             in1_device,
             out_device,
             length,
-            stream=Stream(),
+            stream,
         )
 
-    let report = benchmark.run[run_func]()
+    let report = benchmark.run[run_func](max_iters=1000)
     # CHECK: Benchmark Report (s)
     report.print()
 

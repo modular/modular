@@ -75,7 +75,7 @@ fn run_gemv() raises:
 
     @always_inline
     @parameter
-    fn run_func_gemv() raises:
+    fn run_func_gemv(stream: Stream) raises:
         func_gemv(
             div_ceil(M, WARPS_PER_BLOCK),
             WARP_SIZE * WARPS_PER_BLOCK,
@@ -88,7 +88,7 @@ fn run_gemv() raises:
             stream=stream,
         )
 
-    var nstime = time_function[run_func_gemv]()
+    var nstime = time_function[run_func_gemv](stream)
     let flops = 2 * M * N * K
     let sectime = nstime / 1000000000
     print("GEMV KERNEL:")
@@ -121,7 +121,7 @@ fn run_gemv() raises:
 
     @always_inline
     @parameter
-    fn run_func_naive() raises:
+    fn run_func_naive(stream: Stream) raises:
         func_naive(
             (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
             (BLOCK_DIM, BLOCK_DIM),
@@ -134,7 +134,7 @@ fn run_gemv() raises:
             stream=stream,
         )
 
-    nstime = time_function[run_func_naive]()
+    nstime = time_function[run_func_naive](stream)
     let sectime2 = nstime / 1000000000
     print("NAIVE MATMUL:")
     print(sectime2, "sec")

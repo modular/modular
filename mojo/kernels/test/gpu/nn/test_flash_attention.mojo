@@ -144,7 +144,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
 
             @always_inline
             @parameter
-            fn run_func() raises:
+            fn run_func(stream: Stream) raises:
                 for i in range(nrun):
                     func(
                         # grid
@@ -167,9 +167,9 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                     )
 
             # Warmup
-            run_func()
+            run_func(stream)
 
-            var nstime = time_function[run_func]() / nrun
+            var nstime = time_function[run_func](stream) / nrun
             let sectime = nstime / 1000000
             print(nrun, "runs avg", sectime, "ms")
 

@@ -209,7 +209,7 @@ fn run_matmul_kernel_10() raises:
 
     @always_inline
     @parameter
-    fn run_func() raises:
+    fn run_func(stream: Stream) raises:
         func(
             (div_ceil(N, K10_BN), div_ceil(M, K10_BM)),
             (K10_NUM_THREADS,),
@@ -219,7 +219,7 @@ fn run_matmul_kernel_10() raises:
             stream=stream,
         )
 
-    var nstime = time_function[run_func]()
+    var nstime = time_function[run_func](stream)
     let flops = 2 * M * N * K
     let sectime = nstime / 1000000000
     print("WARP-TILING MATMUL:")
@@ -247,7 +247,7 @@ fn run_matmul_kernel_10() raises:
 
     @always_inline
     @parameter
-    fn run_func_naive() raises:
+    fn run_func_naive(stream: Stream) raises:
         func_naive(
             (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
             (BLOCK_DIM, BLOCK_DIM),
@@ -260,7 +260,7 @@ fn run_matmul_kernel_10() raises:
             stream=stream,
         )
 
-    nstime = time_function[run_func_naive]()
+    nstime = time_function[run_func_naive](stream)
     let sectime2 = nstime / 1000000000
     print("NAIVE MATMUL:")
     print(sectime2, "sec")
