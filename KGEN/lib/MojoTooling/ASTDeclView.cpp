@@ -181,9 +181,17 @@ static SmallVector<DeclViewType, 2> extractChildDecls(ASTDecl &decl) {
 
     for (auto &child : decls) {
       // Skip declarations that were imported from other scopes.
-      if (child->getParentDecl() == &decl)
-        children.push_back(
-            cast<DeclViewType>(*MojoASTDeclRef(child).getView()));
+      if (child->getParentDecl() != &decl)
+        continue;
+      // Skip synthetic declarations that don't have accompanying documentation
+      // generated with them.
+      // FIXME(#26535): Use a proper API to check if a decl is synthetic.
+      if (child->getIfOperation()->getLoc() ==
+              decl.getIfOperation()->getLoc() &&
+          !child->getDocString())
+        continue;
+
+      children.push_back(cast<DeclViewType>(*MojoASTDeclRef(child).getView()));
     }
   }
 

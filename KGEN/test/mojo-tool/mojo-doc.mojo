@@ -251,6 +251,11 @@ fn pos_only_print(obj: object, /, sep: StringLiteral):
 # CHECK:  "name": "mojo-doc",
 
 # CHECK:  "structs": [
+
+# Check that we don't generate any synthesized thunk methods
+# from the trait usage.
+# CHECK-NOT: "name": "thunk_
+
 # Check that special functions are ordered first, and with the correct
 # prioritization (i.e. not just name based).
 # CHECK:  "kind": "function",
@@ -286,7 +291,7 @@ fn pos_only_print(obj: object, /, sep: StringLiteral):
 # CHECK:  "name": "InMemoryStruct",
 
 
-struct InMemoryStruct:
+struct InMemoryStruct(Sized):
     fn __init__(inout self):
         pass
 
@@ -298,6 +303,9 @@ struct InMemoryStruct:
 
     fn __add__(self, other: Self) -> Self:
         return other
+
+    fn __len__(self) -> Int:
+        return 0
 
     fn fn_with_by_conventions(
         inout self, inout arg: InMemoryStruct, inout *args: InMemoryStruct
