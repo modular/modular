@@ -17,7 +17,6 @@ from algorithm.functional import (
 from memory import memcpy
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
-from MOGG import simd_load, simd_store
 from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple, product
@@ -390,19 +389,12 @@ fn _concat_small[
             if target_dim < input.dynamic_shape[axis]:
                 var in_index = out_index
                 in_index[axis] = target_dim
-                let load = simd_load[type, simd_width, rank](
-                    rebind[
-                        NDBuffer[rank, DimList.create_unknown[rank](), type]
-                    ](input),
-                    in_index,
-                )
-                simd_store[type, simd_width, rank](
-                    rebind[
-                        NDBuffer[rank, DimList.create_unknown[rank](), type]
-                    ](output),
-                    out_index,
-                    load,
-                )
+                let load = rebind[
+                    NDBuffer[rank, DimList.create_unknown[rank](), type]
+                ](input).simd_load[simd_width](in_index)
+                rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](
+                    output
+                ).simd_store[simd_width](out_index, load)
                 return
             else:
                 # Keep looking...
