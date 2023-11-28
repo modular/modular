@@ -29,8 +29,9 @@
 namespace {
 
 void adjustForCpuLimits(std::vector<size_t> &cpuIDs) {
-#if defined(HAVE_LINUX_x86_SYSTEM_INFO)
-  Detail::adjustForLinuxCpuLimits(M::Detail::getLinuxCPULimits(), cpuIDs);
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+  M::LLCL::Detail::adjustForLinuxCpuLimits(M::Detail::getLinuxCPULimits(),
+                                           cpuIDs);
 #endif
 }
 
@@ -148,8 +149,7 @@ void M::LLCL::Detail::adjustForLinuxCpuLimits(
   if (limits.quota_us != -1) {
     // Limit thread count to the below to prevent inadvertent CFS scheduler
     // throttling when CPU limits are in use. Also disables thread affinity.
-    size_t maxProcessors =
-        (limits.quota_us + limits.period_us - 1) / limits.period_us;
+    const size_t maxProcessors = limits.maxProcessors();
     if (maxProcessors < cpuIDs.size()) {
       cpuIDs.resize(maxProcessors);
       cpuIDs.assign(maxProcessors, kNoAffinity);

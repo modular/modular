@@ -95,6 +95,12 @@ namespace Detail {
 struct CPULimits {
   int quota_us = -1;
   int period_us = 100000;
+  /// Returns the effective maximum processor count or -1 if unrestricted.
+  int maxProcessors() const {
+    if (quota_us < 0 || period_us <= 0)
+      return -1;
+    return std::max(1, (quota_us - 1) / period_us + 1);
+  }
 };
 ErrorOr<std::string> parseV1CpuCgroup(const llvm::MemoryBuffer &buf);
 ErrorOr<CPULimits> parseV1CpuLimits(const llvm::MemoryBuffer &quotaBuf,
