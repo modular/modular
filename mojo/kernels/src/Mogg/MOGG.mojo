@@ -1031,7 +1031,9 @@ fn concat_shape[
 
 @always_inline
 fn avg_pool[
-    type: DType, int_type: DType
+    type: DType,
+    int_type: DType,
+    count_boundary: Bool,
 ](
     input: NDBuffer[4, DimList.create_unknown[4](), type],
     filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
@@ -1041,8 +1043,8 @@ fn avg_pool[
     output: NDBuffer[4, DimList.create_unknown[4](), type],
     out_chain: OutputChainPtr,
 ):
-    return _avg_pool(
-        input, filter, strides, dilations, paddings, output, False, out_chain
+    return _avg_pool[count_boundary=count_boundary](
+        input, filter, strides, dilations, paddings, output, out_chain
     )
 
 
