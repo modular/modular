@@ -1940,6 +1940,11 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   // Set up the body.
   Block *body = funcOp.getBody();
   BlockArgument arg = body->getArgument(0);
+
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
   // We need to make a var box + store for register_passable values since that
   // is what lifetime tracking expects.  It does not track the individual fields
   // of register passable values since they cannot be transfered and cannot be
