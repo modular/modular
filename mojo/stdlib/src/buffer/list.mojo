@@ -34,8 +34,11 @@ struct Dim(Intable):
     """An optional value for the dimension."""
 
     @always_inline
-    fn __init__(value: Int) -> Dim:
+    fn __init__[type: Intable](value: type) -> Dim:
         """Creates a statically-known dimension.
+
+        Parameters:
+            type: The Intable type.
 
         Args:
             value: The static dimension value.
@@ -43,7 +46,7 @@ struct Dim(Intable):
         Returns:
             A dimension with a static value.
         """
-        return Self {value: value}
+        return Self {value: int(value)}
 
     @always_inline
     fn __init__(value: __mlir_type.index) -> Dim:
@@ -55,7 +58,7 @@ struct Dim(Intable):
         Returns:
             A dimension with a static value.
         """
-        return Int(value)
+        return Self {value: Int(value)}
 
     @always_inline
     fn __init__() -> Dim:
@@ -225,7 +228,7 @@ struct DimList(Sized):
     fn _product_impl[i: Int, end: Int](self) -> Dim:
         @parameter
         if i >= end:
-            return 1
+            return Dim(1)
         else:
             return self.at[i]() * self._product_impl[i + 1, end]()
 
