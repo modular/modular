@@ -7,7 +7,7 @@
 
 
 from math import iota
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from memory.buffer import NDBuffer
@@ -21,7 +21,7 @@ struct TestTensor[rank: Int, type: DType]:
 
     fn __init__(inout self, shape: StaticIntTuple[rank]):
         self.storage = DynamicVector[SIMD[type, 1]](shape.flattened_length())
-        self.storage.resize(shape.flattened_length())
+        self.storage.resize(shape.flattened_length(), 0)
         self.shape = shape
 
     fn __moveinit__(inout self, owned existing: Self):
@@ -34,9 +34,6 @@ struct TestTensor[rank: Int, type: DType]:
         return NDBuffer[rank, DimList.create_unknown[rank](), type](
             rebind[DTypePointer[type]](self.storage.data), self.shape
         )
-
-    fn __del__(owned self):
-        self.storage._del_old()
 
 
 fn test_case[
