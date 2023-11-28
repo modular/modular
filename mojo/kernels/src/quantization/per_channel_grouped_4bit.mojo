@@ -520,3 +520,201 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
                 output_tensor.data.simd_store[group_size](
                     flat_index_output, encoded.decode_fully()
                 )
+
+
+from math import min
+from Neon import _neon_dotprod
+from VNNI import dot_i8_to_i32_saturated_x86
+from algorithm import sync_parallelize
+from utils.index import Index
+from sys.info import has_avx2, has_neon_int8_dotprod
+
+
+fn _block_quantize_a[
+    group_size: Int,
+    type: DType,
+    scale_type: DType,
+](
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    a_quant: NDBuffer[2, DimList.create_unknown[2](), DType.int8],
+    a_scale: NDBuffer[1, DimList.create_unknown[1](), scale_type],
+):
+    let M = a.dim[0]()
+    let K = a.dim[1]()
+
+    var a_ptr = a.data
+    var a_quant_ptr = a_quant.data
+    var a_scale_ptr = a_scale.data
+
+    # Dynamically quantize the input in blocks of 32 bytes. Uses symmetric
+    # quantization.
+    for m in range(M):
+        for k in range(0, K, group_size):
+            let fp_data = a_ptr.simd_load[group_size]()
+            let max_value = abs(fp_data).reduce_max()
+            let scale = max_value / 127.0
+            let multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
+
+            let quant_data = roundeven(fp_data * multiplier).cast[DType.int8]()
+            a_quant_ptr.simd_store(quant_data)
+            a_scale_ptr.simd_store(scale.cast[scale_type]())
+
+            a_ptr = a_ptr.offset(group_size)
+            a_quant_ptr = a_quant_ptr.offset(group_size)
+            a_scale_ptr = a_scale_ptr.offset(1)
+
+
+@always_inline
+fn _matmul_int4_dotprod[
+    simd_width: Int,
+    group_size: Int,
+](
+    a: SIMD[DType.int8, group_size],
+    b: SIMD[DType.int8, group_size],
+) -> SIMD[
+    DType.int32, simd_width
+]:
+    @always_inline
+    @parameter
+    fn dotprod[
+        simd_width: Int
+    ](
+        a: SIMD[DType.int8, simd_width * 4],
+        b: SIMD[DType.int8, simd_width * 4],
+        c: SIMD[DType.int32, simd_width],
+    ) -> SIMD[DType.int32, simd_width]:
+        var c_local = c
+
+        @parameter
+        if has_avx2():
+            c_local = dot_i8_to_i32_saturated_x86(
+                c_local,
+                bitcast[DType.int32, simd_width](b),
+                bitcast[DType.int32, simd_width](a),
+            )
+            c_local = dot_i8_to_i32_saturated_x86(
+                c_local,
+                bitcast[DType.int32, simd_width](
+                    SIMD[DType.uint8, simd_width * 4](8)
+                ),
+                bitcast[DType.int32, simd_width](-a),
+            )
+            return c_local
+
+        # Adjust the `b` unpacked weights from values in the unsigned range
+        # [0:15] to the signed range [-8:7].
+        let b_s8 = b - 8
+
+        @parameter
+        if has_neon_int8_dotprod() and simd_width == 4:
+            c_local = rebind[SIMD[DType.int32, simd_width]](
+                _neon_dotprod(
+                    rebind[SIMD[DType.int32, 4]](c_local),
+                    rebind[SIMD[DType.int8, 16]](a),
+                    rebind[SIMD[DType.int8, 16]](b_s8),
+                )
+            )
+            return c_local
+
+        @unroll
+        for idx in range(4):
+            c_local += (
+                a.slice[simd_width](idx * simd_width).cast[DType.int32]()
+                * b_s8.slice[simd_width](idx * simd_width).cast[DType.int32]()
+            )
+        return c_local
+
+    var c = SIMD[DType.int32, simd_width](0)
+
+    @unroll
+    for idx in range(0, group_size, simd_width * 4):
+        let a_slice = a.slice[simd_width * 4](idx)
+        let b_slice = b.slice[simd_width * 4](idx)
+        c = dotprod(a_slice, b_slice, c)
+
+    return c
+
+
+fn matmul_int4[
+    group_size: Int,
+    type: DType,
+](
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
+    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
+):
+    let M = a.dim[0]()
+    let N = b.dim[0]()
+    let K = a.dim[1]()
+
+    alias block_size = sizeof[Q4sym[group_size, type]]()
+
+    let k_groups = K // group_size
+
+    if b.dim[1]() % block_size != 0:
+        return out_chain.mark_error("unexpected b shape")
+
+    let a_quant_base_ptr = DTypePointer[DType.int8].alloc(M * K)
+    let a_scale_base_ptr = DTypePointer[DType.float32].alloc(M * k_groups)
+
+    let a_quant = NDBuffer[2, DimList.create_unknown[2](), DType.int8](
+        a_quant_base_ptr, Index(M, K)
+    )
+    let a_scale = NDBuffer[1, DimList.create_unknown[1](), DType.float32](
+        a_scale_base_ptr, Index(M * k_groups)
+    )
+
+    _block_quantize_a[group_size](a, a_quant, a_scale)
+
+    alias grain_size = 256
+    let total_work = M * N
+    let num_workers = div_ceil(total_work, grain_size)
+
+    @parameter
+    @always_inline
+    fn task_func(task_id: Int):
+        let start_item = task_id * grain_size
+        let end_item = min(total_work, start_item + grain_size)
+
+        alias simd_width = min(simdwidthof[DType.int32](), group_size // 4)
+
+        for i in range(start_item, end_item):
+            let m = i // N
+            let n = i % N
+
+            var a_quant_ptr = a_quant._offset(Index(m, 0))
+            var a_scale_ptr = a_scale._offset(Index(m * k_groups))
+            var b_ptr = b._offset(Index(n, 0))
+            var accum_fp = SIMD[type, simd_width]()
+
+            for k in range(0, k_groups):
+                let a_data_i8 = a_quant_ptr.simd_load[group_size]()
+                let b_data_i4 = b_ptr.offset(2).simd_load[group_size // 2]()
+
+                let a_scale = a_scale_ptr[0].cast[type]()
+                let b_scale = bitcast[DType.float16, 1](
+                    b_ptr.offset(0).simd_load[2]()
+                ).cast[type]()
+
+                let b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
+                let b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
+
+                let b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
+
+                let c_data_i32 = _matmul_int4_dotprod[simd_width, group_size](
+                    a_data_i8, rebind[SIMD[DType.int8, group_size]](b_data_i8)
+                )
+
+                accum_fp += c_data_i32.cast[type]() * a_scale * b_scale
+
+                a_quant_ptr = a_quant_ptr.offset(group_size)
+                a_scale_ptr = a_scale_ptr.offset(1)
+                b_ptr = b_ptr.offset(block_size)
+
+            c.simd_store(Index(m, n), accum_fp.reduce_add())
+
+    sync_parallelize[task_func](out_chain, num_workers)
+
+    a_quant_base_ptr.free()
+    a_scale_base_ptr.free()
