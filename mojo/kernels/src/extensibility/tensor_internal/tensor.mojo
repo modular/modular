@@ -39,7 +39,6 @@ print(gray_scale_image.shape().__str__())
 
 import math
 from algorithm.functional import elementwise
-from builtin.io import _Printable
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import bitcast
@@ -678,7 +677,7 @@ struct Tensor[dtype: DType](Stringable):
         var res = String("Tensor(")
 
         @parameter
-        fn serialize(val: _Printable):
+        fn serialize[T: Stringable](val: T):
             res += val.__str__()
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
