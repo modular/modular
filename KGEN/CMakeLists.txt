@@ -9,6 +9,11 @@ set(KGEN_BINARY_DIR ${MODULAR_BINARY_DIR}/KGEN)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
+# On MSVC compile with unicode sources so that we display 🔥 correctly.
+if (MSVC)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /utf-8")
+endif ()
+
 # This target represents the full mojo-stdlib which contains all the standard
 # library packages.
 add_custom_target(mojo-stdlib)

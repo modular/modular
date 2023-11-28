@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# FIXME(#26472): Mojo on windows doesn't support emoji file extensions.
+# UNSUPPORTED: windows
+
 # Test the various error cases of imports. The run line also checks that we
 # properly handle the case of an invald import directory.
 

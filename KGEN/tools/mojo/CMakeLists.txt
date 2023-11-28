@@ -14,11 +14,6 @@ find_package(Python3 COMPONENTS Development)
 include(AddPython)
 modular_find_python3_development()
 
-# On MSVC compile with unicode sources so that we display 🔥 correctly.
-if (MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /utf-8")
-endif ()
-
 add_modular_tool(mojo
   mojo.cpp
   Build/mojo-build.cpp
