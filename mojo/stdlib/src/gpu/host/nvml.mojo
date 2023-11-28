@@ -10,7 +10,7 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from memory.unsafe import Pointer
 from ._utils import _check_error
 from pathlib import Path
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 from debug import trap
 
 # ===----------------------------------------------------------------------===#
@@ -331,21 +331,19 @@ struct Device:
             _check_error(result)
 
         var clocks = DynamicVector[UInt32]()
-        clocks.resize(int(num_clocks))
+        clocks.resize(int(num_clocks), 0)
 
         _check_error(
             _get_dylib_function[
-                fn (_DeviceImpl, Pointer[UInt32], Pointer[UInt32]) -> Result
+                fn (_DeviceImpl, Pointer[UInt32], AnyPointer[UInt32]) -> Result
             ]("nvmlDeviceGetSupportedMemoryClocks")(
                 self.device, Pointer.address_of(num_clocks), clocks.data
             )
         )
 
         var res = DynamicVector[Int]()
-        res.resize(int(num_clocks))
+        res.resize(int(num_clocks), 0)
         for i in range(int(num_clocks)):
             res[i] = int(clocks[i])
-
-        clocks._del_old()
 
         return res
