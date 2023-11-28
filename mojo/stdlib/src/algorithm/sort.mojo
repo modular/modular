@@ -17,7 +17,7 @@ from sys.info import bitwidthof
 
 from memory.unsafe import DTypePointer, Pointer
 
-from utils.vector import DynamicVector2 as DynamicVector
+from utils.vector import DynamicVector
 
 # ===----------------------------------------------------------------------===#
 # Utilities

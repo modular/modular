@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 from algorithm.sort import _small_sort, partition, sort, _quicksort
 from random import random_si64, seed
-from utils.vector import DynamicVector2 as DynamicVector
+from utils.vector import DynamicVector
 
 
 # CHECK-LABEL: test_sort_small_3
