@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import {MOJOContext} from '../mojoContext';
 import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
+import {getAllOpenMojoFiles, WorkspaceAwareFile} from '../utils/files';
 
 import {RpcLaunchServer, UriLaunchServer} from './externalDebugLauncher';
 
@@ -30,6 +31,11 @@ type MojoDebugConfiguration = {
   timeout?: number;
   initCommands?: string[];
 }
+
+/**
+ * The "type" for debug configurations.
+ */
+const DEBUG_TYPE: string = "mojo-lldb";
 
 /**
  * This class defines a factory used to find the lldb-vscode binary to use
@@ -66,10 +72,9 @@ class MojoDebugAdapterDescriptorFactory implements
  * This class modifies the debug configuration right before the debug adapter is
  * launched. In other words, this is where we configure lldb-vscode.
  */
-class MojoDebugConfigurationProvider implements
+class MojoDebugConfigurationResolver implements
     vscode.DebugConfigurationProvider {
   private context: MOJOContext|undefined;
-  public static DEBUG_TYPE: string = "mojo-lldb";
 
   constructor(context: MOJOContext) { this.context = context; }
 
@@ -169,13 +174,112 @@ class MojoDebugConfigurationProvider implements
     // button if no launch.json files are present), invoke this method with a
     // totally empty debugConfiguration, so we have to fill it in.
     if (!debugConfiguration.request) {
-      debugConfiguration.type = MojoDebugConfigurationProvider.DEBUG_TYPE;
+      debugConfiguration.type = DEBUG_TYPE;
       debugConfiguration.request = "launch";
       // This will get replaced with the currently active document.
       debugConfiguration.mojoFile = "${file}";
     }
 
     return debugConfiguration as vscode.DebugConfiguration;
+  }
+}
+
+/**
+ * Provides debug configurations dynamically depending on the currently open
+ * workspaces and files.
+ */
+class MojoDebugDynamicConfigurationProvider implements
+    vscode.DebugConfigurationProvider {
+  async provideDebugConfigurations(
+      _folder: vscode.WorkspaceFolder|undefined,
+      _token?: vscode.CancellationToken|undefined,
+      ): Promise<vscode.DebugConfiguration[]|undefined> {
+    // We let the user choose pick a Mojo file from the list of open files or
+    // open the system dialog for them to pick one. Then, we let the user pick
+    // between run normally or run in terminal.
+
+    type QuickPickItem = vscode.QuickPickItem&({
+      type : "file",
+      file : WorkspaceAwareFile,
+    }|{type : "action", action : "open-system-dialog"}|{type?: undefined});
+
+    const createFileItem = (file: WorkspaceAwareFile): QuickPickItem => {
+      return {
+        type : "file",
+        label : file.baseName,
+        file : file,
+        description : file.relativePath
+      };
+    };
+
+    const quickPickItems: QuickPickItem[] = [];
+    const [activeFile, otherOpenFiles] = getAllOpenMojoFiles();
+    if (activeFile) {
+      quickPickItems.push(
+          {label : 'active file', kind : vscode.QuickPickItemKind.Separator});
+      quickPickItems.push(createFileItem(activeFile));
+      quickPickItems.push(
+          {label : "", kind : vscode.QuickPickItemKind.Separator});
+    }
+
+    quickPickItems.push({
+      label : "Select a Mojo file using the System Dialog",
+      type : "action",
+      action : "open-system-dialog"
+    });
+
+    if (otherOpenFiles.length > 0) {
+      quickPickItems.push(
+          {label : 'open files', kind : vscode.QuickPickItemKind.Separator});
+      quickPickItems.push(
+          ...otherOpenFiles
+              .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+              .map(createFileItem));
+    }
+
+    const selection = await vscode.window.showQuickPick(quickPickItems, {
+      title : "Select a Mojo file to debug",
+      placeHolder :
+          "Select an active Mojo file or pick one using the System Dialog"
+    });
+    let file: WorkspaceAwareFile|undefined;
+
+    if (!selection) {
+      return undefined;
+    }
+    if (selection.type == "action" &&
+        selection.action === "open-system-dialog") {
+      const mojoFiles = await vscode.window.showOpenDialog({
+        title : "Select a Mojo file to debug",
+        canSelectMany : false,
+        openLabel : "Select",
+        filters : {Mojo : [ ".mojo", ".🔥" ]}
+      });
+      if (!mojoFiles || mojoFiles.length === 0)
+        return undefined;
+      file = new WorkspaceAwareFile(mojoFiles[0]);
+    } else if (selection.type == "file") {
+      file = selection.file;
+    } else {
+      return undefined;
+    }
+
+    return [
+      {
+        type : DEBUG_TYPE,
+        request : "launch",
+        name : `Mojo: Debug ${file.baseName} ⸱ ${file.relativePath}`,
+        mojoFile : file.uri.fsPath,
+      },
+      {
+        type : DEBUG_TYPE,
+        request : "launch",
+        name :
+            `Mojo: Debug in Terminal ${file.baseName} ⸱ ${file.relativePath}`,
+        mojoFile : file.uri.fsPath,
+        runInTerminal : true,
+      },
+    ];
   }
 }
 
@@ -206,7 +310,16 @@ export class MojoDebugContext extends DisposableContext {
 
     this.pushSubscription(vscode.debug.registerDebugConfigurationProvider(
         MojoDebugAdapterDescriptorFactory.DEBUG_TYPE,
-        new MojoDebugConfigurationProvider(context)));
+        new MojoDebugConfigurationResolver(context),
+        ));
+
+    this.pushSubscription(
+        vscode.debug.registerDebugConfigurationProvider(
+            MojoDebugAdapterDescriptorFactory.DEBUG_TYPE,
+            new MojoDebugDynamicConfigurationProvider(),
+            vscode.DebugConfigurationProviderTriggerKind.Dynamic,
+            ),
+    );
 
     // Register the URI-based debug launcher.
     this.pushSubscription(vscode.window.registerUriHandler(

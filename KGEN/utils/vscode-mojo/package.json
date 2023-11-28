@@ -18,6 +18,8 @@
     "🔥"
   ],
   "activationEvents": [
+    "onDebugInitialConfigurations:mojo-lldb",
+    "onDebugDynamicConfigurations:mojo-lldb",
     "onDebugResolve:mojo-lldb",
     "onUri",
     "onStartupFinished"
@@ -297,7 +299,7 @@
     "debuggers": [
       {
         "type": "mojo-lldb",
-        "label": "Mojo LLDB Debugger",
+        "label": "Mojo",
         "configurationAttributes": {
           "launch": {
             "unevaluatedProperties": false,
@@ -588,7 +590,7 @@
             }
           },
           {
-            "label": "Mojo: Attach to process",
+            "label": "Mojo: Attach to process by pid",
             "description": "A new configuration for attaching to a process",
             "body": {
               "type": "mojo-lldb",
