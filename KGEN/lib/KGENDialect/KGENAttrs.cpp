@@ -242,7 +242,8 @@ TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type,
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
   if (auto refType = ::dyn_cast<ParamRefType>(value))
-    return refType.getParam();
+    if (vtable.getEntries().empty())
+      return refType.getParam();
 
   return Base::get(ctx, value, type, vtable);
 }
@@ -262,9 +263,9 @@ TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type value,
                                              Type type, VTableAttr vtable) {
   // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
   // keep the types canonical.
-  if (auto refType = ::dyn_cast<ParamRefType>(value);
-      refType && vtable.getEntries().empty())
-    return refType.getParam();
+  if (auto refType = ::dyn_cast<ParamRefType>(value))
+    if (vtable.getEntries().empty())
+      return refType.getParam();
 
   if (isParameterizedType(value))
     return Base::get(ctx, value, type, vtable);
