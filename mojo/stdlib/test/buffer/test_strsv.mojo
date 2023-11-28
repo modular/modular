@@ -10,8 +10,6 @@ from math import abs
 from memory.buffer import Buffer
 from memory.unsafe import DTypePointer
 
-from utils.vector import DynamicVector
-
 alias simd_width = 8
 
 
@@ -96,13 +94,9 @@ fn test_strsv():
     print("== test_strsv")
 
     alias size: Int = 64
-    let L_data = DynamicVector[Float32](size * size)
-    let x0_data = DynamicVector[Float32](size)
-    let x1_data = DynamicVector[Float32](size)
-
-    let L = Buffer[size * size, DType.float32](L_data.data)
-    let x0 = Buffer[size, DType.float32](x0_data.data)
-    let x1 = Buffer[size, DType.float32](x1_data.data)
+    let L = Buffer[size * size, DType.float32].stack_allocation()
+    let x0 = Buffer[size, DType.float32].stack_allocation()
+    let x1 = Buffer[size, DType.float32].stack_allocation()
 
     fill_L[size](L)
     fill_x[size](x0)
@@ -116,10 +110,6 @@ fn test_strsv():
 
     # CHECK: 0.0
     print(err)
-
-    x0_data._del_old()
-    x1_data._del_old()
-    L_data._del_old()
 
 
 fn main():
