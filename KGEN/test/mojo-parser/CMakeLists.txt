@@ -12,12 +12,12 @@ configure_lit_site_cfg(
 )
 
 add_custom_command(
-  OUTPUT mojo_warmup_parser_cache.mlir
+  OUTPUT mojo_warmup_parser_cache.mlir mojo_warmup_parser_cache.input.mlir
   DEPENDS kgen-translate
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-  COMMAND
-    echo "" |
-    $<TARGET_FILE:kgen-translate> -import-mojo -o mojo_warmup_parser_cache.mlir
+  COMMAND echo "" > mojo_warmup_parser_cache.input.mlir
+  COMMAND $<TARGET_FILE:kgen-translate> -import-mojo
+                                        -o mojo_warmup_parser_cache.input.mlir
 )
 add_custom_target(warmup-mojo-parser-cache DEPENDS mojo_warmup_parser_cache.mlir)
 

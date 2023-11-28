@@ -4,11 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-# On MSVC compile with unicode sources so that we display 🔥 correctly.
-if (MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /utf-8")
-endif ()
-
 add_modular_library(MojoLLDB SHARED
   Plugin.cpp
 
