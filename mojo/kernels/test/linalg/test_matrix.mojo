@@ -13,7 +13,6 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils.index import Index
 from utils.list import DimList
-from utils.vector import DynamicVector
 
 
 fn test(m: Matrix[DimList(4, 4), DType.int32, False]):
@@ -61,27 +60,23 @@ fn test_matrix_static():
 
 fn test_matrix_dynamic():
     print("== test_matrix_dynamic")
-    let vec = DynamicVector[Int32](16)
-    let a = Buffer[16, DType.int32](vec.data)
-    let m = Matrix[DimList(4, 4), DType.int32, False](vec.data)
+    let a = Buffer[16, DType.int32].stack_allocation()
+    let m = Matrix[DimList(4, 4), DType.int32, False](a.data)
     for i in range(16):
         a[i] = i
     test(m)
-    vec._del_old()
 
 
 fn test_matrix_dynamic_shape():
     print("== test_matrix_dynamic_shape")
-    let vec = DynamicVector[Int32](16)
-    let a = Buffer[16, DType.int32](vec.data)
-    # let m = Matrix[DimList(4, 4), DType.int32, False](vec.data, Index(4,4), DType.int32)
+    let a = Buffer[16, DType.int32].stack_allocation()
+    # let m = Matrix[DimList(4, 4), DType.int32, False](a.data, Index(4,4), DType.int32)
     let m = Matrix[DimList.create_unknown[2](), DType.int32, False](
-        vec.data, Index(4, 4)
+        a.data, Index(4, 4)
     )
     for i in range(16):
         a[i] = i
     test_dynamic_shape(m)
-    vec._del_old()
 
 
 fn main():
