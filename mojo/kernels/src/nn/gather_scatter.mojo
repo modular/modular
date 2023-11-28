@@ -303,7 +303,7 @@ fn gather[
         Dim(axis),
         target,
     ](
-        OptionalParamInt[axis](axis),
+        OptionalParamInt[Dim(axis)](axis),
         input.dynamic_shape,
         indices.dynamic_shape,
         output.dynamic_shape,
