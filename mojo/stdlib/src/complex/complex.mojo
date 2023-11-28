@@ -20,7 +20,7 @@ alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
 @value
 @register_passable("trivial")
-struct ComplexSIMD[type: DType, size: Int]:
+struct ComplexSIMD[type: DType, size: Int](Stringable):
     """Represents a complex SIMD value.
 
     The class provides basic methods for manipulating complex values.
@@ -34,6 +34,14 @@ struct ComplexSIMD[type: DType, size: Int]:
     """The real part of the complex SIMD value."""
     var im: SIMD[type, size]
     """The imaginary part of the complex SIMD value."""
+
+    fn __str__(self) -> String:
+        """Get the complex as a string.
+
+        Returns:
+            A string representation.
+        """
+        return self
 
     @always_inline
     fn __add__(self, rhs: Self) -> Self:
