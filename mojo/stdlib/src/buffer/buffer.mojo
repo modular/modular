@@ -18,7 +18,6 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import unroll, vectorize
-from builtin.io import _Printable
 from runtime.llcl import OutputChainPtr
 
 from utils._serialize import _serialize
@@ -934,7 +933,7 @@ struct NDBuffer[
         var res = String("NDBuffer(")
 
         @parameter
-        fn serialize(val: _Printable):
+        fn serialize[T: Stringable](val: T):
             res += val.__str__()
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
