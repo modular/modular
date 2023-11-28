@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from utils.vector import DynamicVector
+from utils.vector import DynamicVector2 as DynamicVector
 from math import iota
 
 
@@ -13,7 +13,7 @@ fn test_iota():
     alias length = 103
     let offset = 2
     var vector = DynamicVector[Int32]()
-    vector.resize(length)
+    vector.resize(length, 0)
     var buff = rebind[DTypePointer[DType.int32]](vector.data)
     iota[DType.int32](buff, length, offset)
 
@@ -36,7 +36,7 @@ fn test_iota():
     print(passed)
 
     var vector2 = DynamicVector[Int]()
-    vector2.resize(length)
+    vector2.resize(length, 0)
     iota(vector2, offset)
 
     passed = True
@@ -46,9 +46,6 @@ fn test_iota():
 
     # CHECK: True
     print(passed)
-
-    vector._del_old()
-    vector2._del_old()
 
 
 fn main():
