@@ -15,4 +15,3 @@ def main():
     for i in range(len(clocks)):
         # CHECK: Clock =
         print("Clock =", clocks[i])
-    clocks._del_old()
