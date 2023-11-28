@@ -2416,14 +2416,11 @@ fn sgemm_warp_tiling_kernel[
     ].stack_allocation()
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a._offset(Index(int(c_row * BM), 0))
-    var bb_ptr = mat_b._offset(Index(0, int(c_col * BN)))
+    var aa_ptr = mat_a._offset(Index(c_row * BM, 0))
+    var bb_ptr = mat_b._offset(Index(0, c_col * BN))
     # Move C_ptr to warp's output tile
     let cc_ptr = mat_c._offset(
-        Index(
-            int(c_row * BM + warp_row * WM),
-            int(c_col * BN + warp_col * WN),
-        )
+        Index(c_row * BM + warp_row * WM, c_col * BN + warp_col * WN)
     )
 
     # Calculate the indices that this thread will load into SMEM.
@@ -2481,7 +2478,7 @@ fn sgemm_warp_tiling_kernel[
                 bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
             )
             b_sram.aligned_simd_store[4, 16](
-                Index(int((inner_row_b + offset) * BN + inner_co_ib * 4)),
+                Index((inner_row_b + offset) * BN + inner_co_ib * 4),
                 tmp,
             )
 
