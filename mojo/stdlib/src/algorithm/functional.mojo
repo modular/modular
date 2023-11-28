@@ -1268,7 +1268,7 @@ fn _elementwise_impl[
 
     @parameter
     @__llvm_metadata(`nvvm.maxntid`=[int(block_size)])
-    fn _elementwise_gpu_kernel():
+    fn _elementwise_gpu_kernel[handle_uneven_simd: Bool]():
         @parameter
         if not triple_is_nvidia_cuda():
             return
@@ -1280,15 +1280,19 @@ fn _elementwise_impl[
                 idx * simd_width, shape
             )
 
-            if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
+            @parameter
+            if handle_uneven_simd:
+                if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
 
-                @unroll
-                for off in range(simd_width):
-                    func[1, rank](
-                        _get_start_indices_of_nth_subvolume[rank, 0](
-                            idx * simd_width + off, shape
+                    @unroll
+                    for off in range(simd_width):
+                        func[1, rank](
+                            _get_start_indices_of_nth_subvolume[rank, 0](
+                                idx * simd_width + off, shape
+                            )
                         )
-                    )
+                else:
+                    func[simd_width, rank](start_indices)
             else:
                 func[simd_width, rank](start_indices)
 
@@ -1299,18 +1303,42 @@ fn _elementwise_impl[
             )
             func[1, rank](index_tup)
 
+    @always_inline
+    @parameter
+    fn _invoke_with_edge_case():
+        _elementwise_gpu_kernel[True]()
+
+    @always_inline
+    @parameter
+    fn _invoke_without_edge_case():
+        _elementwise_gpu_kernel[False]()
+
     try:
+        # TODO cleanup after #26672
         alias func_type = fn () capturing -> None
-        let gpu_func = Function[
-            func_type, rebind[func_type](_elementwise_gpu_kernel)
-        ]()
-        gpu_func(
-            num_blocks,
-            block_size,
-            stream=out_chain.get_cuda_stream() if out_chain else Stream[
-                is_borrowed=True
-            ](),
-        )
+        if shape[rank - 1] % simd_width == 0:
+            let gpu_func = Function[
+                func_type, rebind[func_type](_invoke_without_edge_case)
+            ]()
+            gpu_func(
+                num_blocks,
+                block_size,
+                stream=out_chain.get_cuda_stream() if out_chain else Stream[
+                    is_borrowed=True
+                ](),
+            )
+        else:
+            let gpu_func = Function[
+                func_type, rebind[func_type](_invoke_with_edge_case)
+            ]()
+            gpu_func(
+                num_blocks,
+                block_size,
+                stream=out_chain.get_cuda_stream() if out_chain else Stream[
+                    is_borrowed=True
+                ](),
+            )
+
     except e:
         if out_chain:
             out_chain.mark_error(e)
