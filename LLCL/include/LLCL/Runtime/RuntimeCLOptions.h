@@ -29,6 +29,10 @@ class Runtime;
 /// that use the LLCL Runtime and want configurability of Allocator, WorkQueue,
 /// etc.
 class RuntimeWorkQueueCLOptions {
+private:
+  llvm::cl::OptionCategory RuntimeWorkQueueOptionsCategory{
+      "Runtime work queue command line options"};
+
   //===--------------------------------------------------------------------===//
   // Core Runtime configuration.
   //===--------------------------------------------------------------------===//
@@ -65,7 +69,8 @@ protected:
                      "Work queue that only ever uses one thread"),
           clEnumValN(WorkQueueType::kThreadPool, "thread-pool",
                      "Default threaded work queue based on std::thread")),
-      llvm::cl::init(WorkQueueType::kDefault)};
+      llvm::cl::init(WorkQueueType::kDefault),
+      llvm::cl::cat(RuntimeWorkQueueOptionsCategory)};
 
   // Enable HostAllocator types to be specified on the command line.
   llvm::cl::opt<AllocatorType> allocatorType{
@@ -85,7 +90,8 @@ protected:
 #else
           AllocatorType::kMalloc
 #endif
-          )};
+          ),
+      llvm::cl::cat(RuntimeWorkQueueOptionsCategory)};
 
   // Specify the number of threads. If `thread==1`, then we automatically set
   // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume the
@@ -96,7 +102,7 @@ protected:
       llvm::cl::desc(
           "Specify the number of threads to run the work queue items. If zero "
           "(default), will be chosen by heuristics."),
-      llvm::cl::init(0)};
+      llvm::cl::init(0), llvm::cl::cat(RuntimeWorkQueueOptionsCategory)};
 
   // Specify the amount of time a worker thread should spin for before sleeping.
   // The optimal value here depends on the system latency for thread sleep and
@@ -107,7 +113,7 @@ protected:
       llvm::cl::desc(
           "Specify the number of microseconds for threads to spin before "
           "locking. Zero indicates that threads should never spin."),
-      llvm::cl::init(200)};
+      llvm::cl::init(200), llvm::cl::cat(RuntimeWorkQueueOptionsCategory)};
 
   // Return the workqueue type to use, resolving kDefault into a concrete kind.
   WorkQueueType getWorkQueueType() const {
@@ -128,9 +134,9 @@ protected:
   /// If true, and in a MODULAR_PARANOID build, perform additional (and
   /// very expensive!) runtime actions to make race conditions and other
   /// undefined behaviour more likely to be observed by unit tests.
-  llvm::cl::opt<bool> paranoid{"paranoid",
-                               llvm::cl::desc("Turn on paranoid mode"),
-                               llvm::cl::init(false)};
+  llvm::cl::opt<bool> paranoid{
+      "paranoid", llvm::cl::desc("Turn on paranoid mode"),
+      llvm::cl::init(false), llvm::cl::cat(RuntimeWorkQueueOptionsCategory)};
 #endif
 
   /// Constructor allows to specify default work queue (e.g. to force always
@@ -170,6 +176,9 @@ class RuntimeCLOptions : public RuntimeWorkQueueCLOptions {
   // Core Runtime configuration.
   //===--------------------------------------------------------------------===//
 private:
+  llvm::cl::OptionCategory RuntimeOptionsCategory{
+      "Runtime command line options"};
+
   // Filename to hold the time profiling output (as JSON text).
   llvm::cl::opt<std::string> profileFilename{
       "time-profile",
@@ -185,7 +194,7 @@ private:
                 "option is ignored in this build. Rebuild with "
                 "MODULAR_LLCL_MAX_PROFILING_LEVEL greater than 0 to enable "
                 "it."),
-      llvm::cl::init("")};
+      llvm::cl::init(""), llvm::cl::cat(RuntimeOptionsCategory)};
 
   // Returns the filename to hold the time profiling output (as JSON text).
   // Returns empty string if profiling is disabled.
