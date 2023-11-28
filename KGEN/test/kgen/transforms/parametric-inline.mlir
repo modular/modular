@@ -1,15 +1,15 @@
-// RUN: kgen-opt -always-inline-param -verify-parameters -split-input-file -allow-unregistered-dialect %s -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt -inline-param=optimization-level=3 -verify-parameters -split-input-file -allow-unregistered-dialect %s -mlir-print-debuginfo | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() -> index {
   // CHECK: %[[RES:.*]] = hlcf.loop "[[LABEL:.*]]" () -> index
     // CHECK-NEXT: index.constant 0 loc(#[[INLINED_LOC:.*]])
     // CHECK: hlcf.if
-      // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index
+      // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index loc(#[[BREAK_LOC0:.*]])
     // CHECK: kgen.param.declare.region SomeClosure = () {
       // CHECK-NEXT: kgen.return loc(#[[CL_RET_LOC:.*]])
     // CHECK-NEXT: } {{.*}} loc(#[[CL_LOC:.*]])
-    // CHECK: hlcf.break "[[LABEL]]" %idx0 : index
+    // CHECK: hlcf.break "[[LABEL]]" %idx0 : index loc(#[[BREAK_LOC1:.*]])
   // CHECK-NEXT: } loc(#[[CALL_LOC:.*]])
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee() : () -> index
@@ -23,6 +23,7 @@ kgen.generator @callee() -> index always_inline {
   %0 = index.constant 0
   %false = index.bool.constant false
   hlcf.if %false {
+    // CHECK: kgen.return %idx0 : index loc(#[[RET_LOC0:.*]])
     kgen.return %0 : index
   } else {
     hlcf.yield
@@ -33,10 +34,15 @@ kgen.generator @callee() -> index always_inline {
   kgen.param.declare.region SomeClosure = () -> () {
     kgen.return
   }
+  // CHECK: kgen.return %idx0 : index loc(#[[RET_LOC1:.*]])
   kgen.return %0 : index
 }
 
 // CHECK: #[[INLINED_LOC]] = loc(callsite(#[[CALLEE_LOC]] at #[[CALL_LOC]]))
+// CHECK: #[[LOC0:.*]] = loc(callsite(#[[RET_LOC0]] at #[[CALL_LOC]]))
+// CHECK: #[[LOC1:.*]] = loc(callsite(#[[RET_LOC1]] at #[[CALL_LOC]]))
+// CHECK: #[[BREAK_LOC0:.*]] = loc(callsite(#[[LOC0]] at #[[CALL_LOC]]))
+// CHECK: #[[BREAK_LOC1:.*]] = loc(callsite(#[[LOC1]] at #[[CALL_LOC]]))
 
 // -----
 
@@ -287,7 +293,7 @@ kgen.generator @callee<B>() always_inline {
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
   // CHECK-NEXT: declare B0 = <A>
-  // CHECK-NEXT: call @result_params<[] -> A0>()
+  // CHECK-NEXT: declare A0 = <0>
   // CHECK-NEXT: constant = <A0>
   // CHECK-NOT: kgen.call @callee
   kgen.call @callee<A>() : () -> ()
@@ -691,10 +697,11 @@ kgen.generator @callee<width>() always_inline {
 kgen.generator @dependent_types() {
   // CHECK-NEXT: declare rank = <4>
   kgen.param.declare rank = <4>
-  // CHECK: declare rank0 = <1>
-  // CHECK-NEXT: declare shape0: array<rank0, index> = <rebind(:array<1, index> [2])>
-  // CHECK-NEXT: call @call_me<rank0, :array<rank0, index> shape0>
-  // CHECK-NEXT: declare output: array<1, index> = <rebind(:array<rank0, index> shape0)>
+  // CHECK: declare rank1 = <1>
+  // CHECK-NEXT: declare shape1: array<rank1, index> = <rebind(:array<1, index> [2])>
+  // CHECK: declare rank0 = <rank1>
+  // CHECK-NEXT: declare shape0: array<rank0, index> = <rebind(:array<rank1, index> shape1)>
+  // CHECK-NEXT: declare output: array<1, index> = <rebind(:array<rank1, index> shape1)>
   kgen.call @callee<1, :array<1, index> [2] -> output: array<1, index>>() : () -> ()
   kgen.return
 }
@@ -1221,3 +1228,21 @@ kgen.generator @trivial_exprs() {
   kgen.param.constant = <apply(:(index) -> index @trivial<:regtype index>, 2)>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.generator @inline_heuristic
+kgen.generator @inline_heuristic<A>() {
+  // CHECK: %[[V:.*]] = "some.producer"
+  // CHECK: %[[R0:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
+  // CHECK-NOT: kgen.call @callee
+  %0 = kgen.call @callee<:type index>() : () -> index
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<T: regtype>() -> !kgen.paramref<T> always_inline {
+  %0 = "some.producer"() : () -> !kgen.paramref<T>
+  kgen.return %0 : !kgen.paramref<T>
+}
+

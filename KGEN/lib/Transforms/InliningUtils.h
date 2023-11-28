@@ -58,6 +58,9 @@ private:
   llvm::sys::SmartRWMutex<true> mutex;
 };
 
+/// Get number of operations in this function.
+uint64_t getNumOperations(Operation *op);
+
 } // namespace M::KGEN
 
 #endif // KGEN_LIB_TRANSFORMS_INLININGUTILS_H

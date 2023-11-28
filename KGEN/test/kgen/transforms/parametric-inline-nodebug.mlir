@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -always-inline-param=nodebug-only=true -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -inline-param=nodebug-only=true -mlir-print-debuginfo | FileCheck %s
 
 kgen.generator @nodebug_inline_me() always_inline_no_debug {
   kgen.param.constant = <1>

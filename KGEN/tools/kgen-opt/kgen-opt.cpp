@@ -320,8 +320,7 @@ int main(int argc, char **argv) {
   mlir::registerPass(
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
   mlir::registerPass([&] { return KGEN::createForceInline(runtime); });
-  mlir::registerPass(
-      [&] { return KGEN::createAlwaysInlineParametric(runtime); });
+  mlir::registerPass([&] { return KGEN::createInlineParametric(runtime); });
   mlir::registerPass([&] { return KGEN::createAutomaticInline(runtime); });
   mlir::registerPass(
       [&] { return KGEN::createResolveCompilerPromises(runtime); });

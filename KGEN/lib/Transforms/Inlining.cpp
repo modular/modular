@@ -236,7 +236,6 @@ ParamDeclAttr AttrTypeMangler::mangleDecl(ParamDeclAttr decl,
 
 void AttrTypeMangler::mangleElementsIn(Operation *op, bool mangleLocs) {
   TimeTraceScope<> traceScope("AttrTypeMangler::mangleElementsIn");
-
   op->setAttrs(cast<DictionaryAttr>(mangleRefsIn(op->getAttrDictionary())));
   if (mangleLocs) {
     op->setLoc(cast<mlir::LocationAttr>(
@@ -381,7 +380,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
                                 ParameterUseDefGraph &topLevelGraph,
                                 const ParameterUseDefGraph &calleeParams,
                                 const llvm::SetVector<StringAttr> &calleeDecls,
-                                AttrTypeMangler::Cache &manglerCache) {
+                                AttrTypeMangler::Cache &manglerCache,
+                                bool updateDebugInfo) {
   TimeTraceScope<> traceScope("inlineGeneratorCall",
                               [&] { return callee.getSymName().str(); });
 
@@ -547,16 +547,23 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   // Nuke debuginfo if inlining an `always_inline_no_debug` function, or if the
   // callee lacks debuginfo but the caller does not.
   bool stripDebugInfo = level == InlineLevel::AlwaysNoDebug ||
-                        (!callee.getLocScope() && caller.getLocScope());
+                        (!callee.getLocScope() && caller.getLocScope()) ||
+                        !updateDebugInfo;
+
   scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Erase `debuginfo.value` operations when inlining without debug info.
     if (stripDebugInfo && isa<DebugInfo::ValueOp>(op)) {
       op->erase();
       return WalkResult::skip();
     }
-
+    if (updateDebugInfo && needsMangling) {
+      // Mangle locations.
+      op->setLoc(cast<mlir::LocationAttr>(
+          mangler.mangleRefsIn(mlir::LocationAttr(op->getLoc()))));
+    }
     // Inline the location, and recurse into the body if allowed.
     DebugInfo::updateInlinedLoc(op, call.getLoc(), stripDebugInfo);
+
     if (isa<DebugInfo::SubprogramScoped>(op))
       return WalkResult::skip();
     return WalkResult::advance();
@@ -578,12 +585,25 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
            llvm::zip(call.getParamDecls(), bind.getParameters())) {
         auto rebound = ParamOperatorAttr::get(b.getContext(), POC::Rebind,
                                               value, decl.getType());
-        b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
+        auto declOp = b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
+        if (updateDebugInfo && needsMangling) {
+          // Mangle locations.
+          declOp->setLoc(cast<mlir::LocationAttr>(
+              mangler.mangleRefsIn(mlir::LocationAttr(declOp->getLoc()))));
+        }
+        DebugInfo::updateInlinedLoc(declOp, call.getLoc(), stripDebugInfo);
       }
     } else {
       ++numReturns;
-      b.create<HLCF::BreakOp>(cloned->getLoc(),
-                              rebindReturnOperands(b, cloned, call), label);
+      auto breakOp = b.create<HLCF::BreakOp>(
+          cloned->getLoc(), rebindReturnOperands(b, cloned, call), label);
+
+      if (updateDebugInfo && needsMangling) {
+        // Mangle locations.
+        breakOp->setLoc(cast<mlir::LocationAttr>(
+            mangler.mangleRefsIn(mlir::LocationAttr(breakOp->getLoc()))));
+      }
+      DebugInfo::updateInlinedLoc(breakOp, call.getLoc(), stripDebugInfo);
     }
     cloned->erase();
     return WalkResult::advance();
@@ -718,16 +738,27 @@ struct ParametricInliningGraph
     : public InliningGraphBase<ParametricInliningGraph,
                                ParametricInliningGraphNode> {
   explicit ParametricInliningGraph(InlineLevel level, LLCL::Runtime &runtime,
-                                   ParameterCollector::Analysis &paramCache)
+                                   ParameterCollector::Analysis &paramCache,
+                                   unsigned optimizationLevel,
+                                   bool updateDebugInfo)
       : InliningGraphBase(runtime), level(level),
         paramCaches(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
         manglerCaches(baseManglerCache,
-                      runtime.getWorkQueue()->getParallelismLevel()) {}
+                      runtime.getWorkQueue()->getParallelismLevel()),
+        optimizationLevel(optimizationLevel), updateDebugInfo(updateDebugInfo) {
+  }
 
   /// Only inline functions that satisfy the inlining level.
   bool shouldInline(ParametricInliningGraphNode *node) const {
     assert(node->level == node->func.getInlineLevel());
-    return node->level >= level && node->level != InlineLevel::Never;
+
+    bool shouldInlineAutomatically =
+        node->level == InlineLevel::Automatic &&
+        getNumOperations(node->func) < getInlineThreshold();
+
+    bool shouldAlwaysInline =
+        (node->level >= level && node->level != InlineLevel::Never);
+    return shouldInlineAutomatically || shouldAlwaysInline;
   }
   /// When a function is finished processing and will be inlined, compute is
   /// callee parameter graph.
@@ -743,6 +774,15 @@ struct ParametricInliningGraph
   ThreadLocalCache<ParameterCollector::Analysis> paramCaches;
   /// Thread local mangler caches.
   ThreadLocalCache<AttrTypeMangler::Cache> manglerCaches;
+
+  /// Get inlining threshold based optimization level.
+  uint64_t getInlineThreshold() const;
+
+  /// Compiler optimization level.
+  unsigned optimizationLevel;
+
+  /// Whether DebugInfo should be updated or not.
+  bool updateDebugInfo;
 };
 } // namespace
 
@@ -771,6 +811,22 @@ bool ParametricInliningGraph::prepareForInlining(
   return true;
 }
 
+uint64_t ParametricInliningGraph::getInlineThreshold() const {
+  // TODO: add better heuristics
+  switch (optimizationLevel) {
+  case 0:
+    return 0;
+  case 1:
+    return 2;
+  case 2:
+    return 3;
+  case 3:
+    return 5;
+  default:
+    return 0;
+  }
+}
+
 void ParametricInliningGraph::performInlining(
     ParametricInliningGraphNode *caller) {
   ParameterUseDefGraph callerParams(caller->func.getBodyRegion());
@@ -778,26 +834,25 @@ void ParametricInliningGraph::performInlining(
   for (auto [call, callee] : caller->callsites) {
     inlineGeneratorCall(caller->func, call, callee->func, callee->level,
                         callerParams, callee->calleeParamGraph,
-                        callee->allDecls, manglerCaches.getThreadLocalCache());
+                        callee->allDecls, manglerCaches.getThreadLocalCache(),
+                        updateDebugInfo);
   }
 }
 
 //===----------------------------------------------------------------------===//
-// AlwaysInlineParametricPass
+// InlineParametricPass
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-#define GEN_PASS_DEF_ALWAYSINLINEPARAMETRIC
+#define GEN_PASS_DEF_INLINEPARAMETRIC
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
 namespace {
-struct AlwaysInlineParametricPass
-    : impl::AlwaysInlineParametricBase<AlwaysInlineParametricPass> {
-  explicit AlwaysInlineParametricPass(
-      const AlwaysInlineParametricOptions &options = {},
-      LLCL::Runtime *runtime = nullptr)
-      : AlwaysInlineParametricBase(options), runtime(runtime) {}
+struct InlineParametricPass : impl::InlineParametricBase<InlineParametricPass> {
+  explicit InlineParametricPass(const InlineParametricOptions &options = {},
+                                LLCL::Runtime *runtime = nullptr)
+      : InlineParametricBase(options), runtime(runtime) {}
 
   void runOnOperation() override;
 
@@ -805,7 +860,7 @@ struct AlwaysInlineParametricPass
 };
 } // namespace
 
-void AlwaysInlineParametricPass::runOnOperation() {
+void InlineParametricPass::runOnOperation() {
   // Inline "trivial" functions inside parameter expressions in the form of
   //
   // ```mlir
@@ -855,9 +910,9 @@ void AlwaysInlineParametricPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-  ParametricInliningGraph graph(nodebugOnly ? InlineLevel::AlwaysNoDebug
-                                            : InlineLevel::Always,
-                                *rt, paramCache);
+  ParametricInliningGraph graph(
+      nodebugOnly ? InlineLevel::AlwaysNoDebug : InlineLevel::Always, *rt,
+      paramCache, optimizationLevel, updateDebugInfo);
   graph.build(getOperation(), symtab);
   graph.process();
 
@@ -866,7 +921,8 @@ void AlwaysInlineParametricPass::runOnOperation() {
   //
   // Note: we choose not to iterate because most nodebug inline functions should
   // be trivial and not have calls to recursive functions.
-  auto inlineReadyFn = [&graph](ParametricInliningGraphNode &caller) {
+  auto inlineReadyFn = [&graph, updateDebugInfo = updateDebugInfo.getValue()](
+                           ParametricInliningGraphNode &caller) {
     // Skip nodes that are completely processed.
     if (caller.numProcessedCalls == caller.callsites.size())
       return;
@@ -876,10 +932,10 @@ void AlwaysInlineParametricPass::runOnOperation() {
       // Skip nodes that are not complete.
       if (callee->numProcessedCalls != callee->callsites.size())
         continue;
-      inlineGeneratorCall(caller.func, call, callee->func, callee->level,
-                          callerParams, callee->calleeParamGraph,
-                          callee->allDecls,
-                          graph.manglerCaches.getThreadLocalCache());
+      inlineGeneratorCall(
+          caller.func, call, callee->func, callee->level, callerParams,
+          callee->calleeParamGraph, callee->allDecls,
+          graph.manglerCaches.getThreadLocalCache(), updateDebugInfo);
     }
   };
 
@@ -892,9 +948,10 @@ void AlwaysInlineParametricPass::runOnOperation() {
   state.join();
 }
 
-std::unique_ptr<mlir::Pass> KGEN::createAlwaysInlineParametric(
-    LLCL::Runtime &runtime, const AlwaysInlineParametricOptions &options) {
-  return std::make_unique<AlwaysInlineParametricPass>(options, &runtime);
+std::unique_ptr<mlir::Pass>
+KGEN::createInlineParametric(LLCL::Runtime &runtime,
+                             const InlineParametricOptions &options) {
+  return std::make_unique<InlineParametricPass>(options, &runtime);
 }
 
 //===----------------------------------------------------------------------===//

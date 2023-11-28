@@ -50,9 +50,12 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   // Too much inlining pre-elaboration increases pressure on the elaborator and
   // reduces cache granularity. By restricting inlining to `nodebug` functions,
   // we still maintain the zero-cost abstraction.
-  AlwaysInlineParametricOptions inlinerOpts;
+  InlineParametricOptions inlinerOpts;
   inlinerOpts.nodebugOnly = true;
-  pm.addPass(createAlwaysInlineParametric(runtime, inlinerOpts));
+  inlinerOpts.optimizationLevel = options.optimizationLevel;
+  inlinerOpts.updateDebugInfo =
+      options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug;
+  pm.addPass(createInlineParametric(runtime, inlinerOpts));
   if (options.optimizationLevel >= 1) {
     pm.addPass(createVerifyParameters(
         VerifyParametersOptions{/*simplifyParameters=*/true}));

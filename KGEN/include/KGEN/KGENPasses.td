@@ -447,16 +447,17 @@ def PruneImpossibleVariants: Pass<"prune-impossible-variants",
 }
 
 //===----------------------------------------------------------------------===//
-// AlwaysInlineParametric
+// InlineParametric
 //===----------------------------------------------------------------------===//
 
-def AlwaysInlineParametric : Pass<"always-inline-param", "mlir::ModuleOp"> {
-  let summary = "Process concrete 'always_inline' operations";
+def InlineParametric : Pass<"inline-param", "mlir::ModuleOp"> {
+  let summary = "Process concrete 'always_inline' operations and heuristics";
   let description = [{
-    The `always-inline-param` pass will process all concrete calls to
-    'always_inline' generators and inline them. If a cycle is encountered during
-    inlining, the pass emits an error and fails to inline the cycle. This pass
-    will strip debug info as appropriate for functions marked
+    The `inline-param` pass will process all concrete calls to
+    'always_inline' generators and inline them. This pass also uses
+    a heuristic to automatic inline concrete calls. If a cycle is encountered
+    during inlining, the pass emits an error and fails to inline the cycle.
+    This pass will strip debug info as appropriate for functions marked
     'always_inline(nodebug)'. This pass can only run on parametric KGEN IR.
   }];
 
@@ -464,7 +465,11 @@ def AlwaysInlineParametric : Pass<"always-inline-param", "mlir::ModuleOp"> {
 
   let options = [
     Option<"nodebugOnly", "nodebug-only", "bool", "false",
-           "If true, only `always_inline_no_debug` functions are inlined.">
+           "If true, only `always_inline_no_debug` functions are inlined.">,
+    Option<"optimizationLevel", "optimization-level", "unsigned", "1",
+           "Specify the compilation optimization level.">,
+    Option<"updateDebugInfo", "update-debug-info", "bool", "true",
+           "If true, debug info of inlined functions are updated accordingly.">
   ];
 }
 

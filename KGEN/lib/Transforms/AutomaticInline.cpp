@@ -72,9 +72,6 @@ struct CallGraphNode {
   /// if so the operation can be erased.
   bool isAllInlined();
 
-  /// Get number of operations in this function.
-  uint64_t getNumOperations();
-
   /// The function represented by the node.
   FuncOp func;
 
@@ -286,20 +283,12 @@ bool CallGraphNode::shouldInlineCallee(CallGraphNode *callee,
 
   // TODO: Add more sophisticated heuristics for cost model based inlining
   // strategy.
-  return callee->numProcessedCalls * callee->getNumOperations() < threshold;
+  return callee->numProcessedCalls * KGEN::getNumOperations(callee->func) <
+         threshold;
 }
 
 bool CallGraphNode::isAllInlined() {
   return numProcessedCalls == numTimesInlined && numTimesInlined > 0;
-}
-
-uint64_t CallGraphNode::getNumOperations() {
-  if (!func)
-    return 0;
-
-  uint64_t result = 0;
-  func->walk([&](Operation *) { ++result; });
-  return result;
 }
 
 void CallGraph::endWork() {
@@ -493,6 +482,7 @@ struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
   /// The function pass pipeline builder.
   std::function<void(mlir::OpPassManager &)> buildFuncPasses;
 
+  /// Get inlining threshold based optimization level.
   uint64_t getInlineThreshold();
 };
 } // namespace
