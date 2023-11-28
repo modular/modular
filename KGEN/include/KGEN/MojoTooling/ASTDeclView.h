@@ -23,6 +23,7 @@ enum class PassingKind : uint32_t;
 } // namespace KGEN::LIT
 
 class MojoASTDeclRef;
+class MojoParserContext;
 
 //===----------------------------------------------------------------------===//
 // MojoASTDecl Views
@@ -63,7 +64,7 @@ public:
   StringRef getKindAsString() const;
 
   /// Serialize the fields in this view to JSON.
-  virtual llvm::json::Object toJSON() const = 0;
+  virtual llvm::json::Object toJSON(MojoParserContext &ctx) const = 0;
 
   /// Return a nicely formatted markdown docstring of this declaration. It might
   /// be empty if no docstring is available.
@@ -110,7 +111,7 @@ public:
   ///    "isVar": boolean,
   ///    "type": string
   ///  }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
@@ -155,7 +156,7 @@ public:
   ///    "name": string,
   ///    "type": string
   ///  }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
@@ -211,7 +212,7 @@ public:
   ///    "type": string
   ///    "passingKind": string
   ///  }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
 public:
   //===----------------------------------------------------------------------===//
@@ -256,7 +257,7 @@ public:
   ///    "summary": string,
   ///    "value": string
   ///  }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
 public:
   //===----------------------------------------------------------------------===//
@@ -358,7 +359,7 @@ public:
   ///   "signature": string, // E.g., "baz() -> Int"
   ///   "summary": string
   /// }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
 public:
   //===----------------------------------------------------------------------===//
@@ -425,7 +426,7 @@ public:
   ///   "summary": string,
   ///   "type": string
   /// }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
 public:
   //===----------------------------------------------------------------------===//
@@ -473,7 +474,7 @@ public:
   ///   "name": string,
   ///   "overloads": FunctionDeclView[]
   /// }
-  llvm::json::Object toJSON() const;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const;
 
 private:
   FunctionDeclOverloadSetView(StringRef baseName) : baseName(baseName) {}
@@ -500,9 +501,10 @@ public:
   ///   "name": string,
   ///   "description": string,
   ///   "functions": FunctionDeclOverloadSetView[],
+  ///   "parentTraits": string[],
   ///   "summary": string
   /// }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
@@ -551,10 +553,11 @@ public:
   ///   "description": string,
   ///   "functions": FunctionDeclOverloadSetView[],
   ///   "parameters": ParameterDeclView[],
+  ///   "parentTraits": string[],
   ///   "fields": StructFieldDeclView[],
   ///   "summary": string
   /// }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
 public:
   //===----------------------------------------------------------------------===//
@@ -609,7 +612,7 @@ public:
   ///   "traits": TraitDeclView[],
   ///   "summary": string
   /// }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
 public:
   //===----------------------------------------------------------------------===//
@@ -652,7 +655,7 @@ public:
   ///   "description": string,
   ///   "summary": string
   /// }
-  llvm::json::Object toJSON() const override;
+  llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
 public:
   //===----------------------------------------------------------------------===//
