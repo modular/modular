@@ -7,10 +7,7 @@
 #ifndef KGEN_MOJOTOOLING_ASTDECLVIEW_H
 #define KGEN_MOJOTOOLING_ASTDECLVIEW_H
 
-#include "Support/LLVMCompilerForwardDecls.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
+#include "KGEN/MojoTooling/ASTDeclRef.h"
 #include <string>
 
 namespace llvm {
@@ -520,25 +517,18 @@ private:
 
   TraitDeclView(MojoASTDeclRef declRef);
 
-  SmallVector<FunctionDeclOverloadSetView, 2> functionOverloads;
-
   //===----------------------------------------------------------------------===//
   // Parsed DocString
   //===----------------------------------------------------------------------===//
 
   std::string description;
   std::string summary;
+  MojoASTDeclRef decl;
 };
 
 /// View for struct decls.
 class StructDeclView : public DeclView {
 public:
-  /// Return the aliases defined at the top-level of this module.
-  llvm::ArrayRef<AliasDeclView> getAliases() const { return aliases; }
-
-  /// Return the fields of this struct.
-  ArrayRef<StructFieldDeclView> getFields() const { return fields; }
-
   std::string getDeclarationSnippet() const override;
 
   /// Get the declaration snippet for the struct. The positions of parameters
@@ -584,10 +574,7 @@ private:
   /// parameters.
   void augmentWithDocumentation(ArrayRef<StringRef> description);
 
-  SmallVector<AliasDeclView> aliases;
-  SmallVector<StructFieldDeclView> fields;
   SmallVector<ParameterDeclView> parameters;
-  SmallVector<FunctionDeclOverloadSetView, 2> functionOverloads;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
@@ -596,14 +583,12 @@ private:
   std::string constraints;
   std::string description;
   std::string summary;
+  MojoASTDeclRef decl;
 };
 
 /// View for module decls.
 class ModuleDeclView : public DeclView {
 public:
-  /// Return the aliases defined at the top-level of this module.
-  llvm::ArrayRef<AliasDeclView> getAliases() const { return aliases; }
-
   std::string getDeclarationSnippet() const override;
 
   /// Get the description of this decl extracted from its docstring. It might be
@@ -611,9 +596,6 @@ public:
   StringRef getDescription() const { return description; }
 
   std::string getMarkdownDocString() const override;
-
-  /// Return the structs defined at the top-level of this module.
-  llvm::ArrayRef<StructDeclView> getStructs() const { return structs; }
 
   /// The output of the generation is defined in the following schema:
   ///
@@ -643,17 +625,13 @@ private:
 
   ModuleDeclView(MojoASTDeclRef declRef);
 
-  SmallVector<AliasDeclView> aliases;
-  SmallVector<StructDeclView, 2> structs;
-  SmallVector<TraitDeclView, 2> traits;
-  SmallVector<FunctionDeclOverloadSetView, 2> functionOverloads;
-
   //===----------------------------------------------------------------------===//
   // Parsed DocString
   //===----------------------------------------------------------------------===//
 
   std::string description;
   std::string summary;
+  MojoASTDeclRef decl;
 };
 
 class PackageDeclView : public DeclView {
@@ -696,6 +674,7 @@ private:
 
   std::string description;
   std::string summary;
+  MojoASTDeclRef decl;
 };
 
 } // namespace M

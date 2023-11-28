@@ -170,7 +170,7 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
 /// children whose name start with _, except for special functions that start
 /// and end with __.
 template <typename DeclViewType, typename OpType>
-static SmallVector<DeclViewType, 2> extractChildDecls(ASTDecl &decl) {
+static SmallVector<DeclViewType, 2> extractChildDecls(const ASTDecl &decl) {
   SmallVector<DeclViewType, 2> children;
 
   for (const auto &[name, decls] : decl.getDeclsInScope()) {
@@ -342,7 +342,7 @@ std::string VariableDeclView::getDeclarationSnippet() const {
 llvm::json::Object VariableDeclView::toJSON() const {
   return llvm::json::Object{{"isVar", isVar()},
                             {"kind", getKindAsString()},
-                            {"name", getName()},
+                            {"name", getName().str()},
                             {"type", type}};
 }
 
@@ -379,7 +379,7 @@ std::string ParameterDeclView::getMarkdownDocString() const {
 
 llvm::json::Object ParameterDeclView::toJSON() const {
   return llvm::json::Object{{"kind", getKindAsString()},
-                            {"name", getName()},
+                            {"name", getName().str()},
                             {"type", type},
                             {"description", description}};
 }
@@ -415,7 +415,7 @@ llvm::json::Object ArgumentDeclView::toJSON() const {
       {"description", description},
       {"inout", inout},
       {"kind", getKindAsString()},
-      {"name", getName()},
+      {"name", getName().str()},
       {"owned", owned},
       {"type", type},
       {"passingKind", stringifyPassingKind(passingKind)},
@@ -445,7 +445,7 @@ std::string AliasDeclView::getMarkdownDocString() const {
 llvm::json::Object AliasDeclView::toJSON() const {
   return llvm::json::Object{{"description", description},
                             {"kind", getKindAsString()},
-                            {"name", getName()},
+                            {"name", getName().str()},
                             {"summary", summary},
                             {"value", value}};
 }
@@ -604,11 +604,11 @@ llvm::json::Object FunctionDeclView::toJSON() const {
       {"args", toJSONArray(args)},
       {"async", isAsync()},
       {"constraints", constraints},
-      {"description", getDescription()},
+      {"description", description},
       {"isDef", isDef()},
       {"isStatic", isStatic()},
       {"kind", getKindAsString()},
-      {"name", getName()},
+      {"name", getName().str()},
       {"parameters", toJSONArray(parameters)},
       {"raises", raises()},
       {"returns", returns},
@@ -703,7 +703,7 @@ llvm::json::Object StructFieldDeclView::toJSON() const {
   return llvm::json::Object{
       {"description", description},
       {"kind", getKindAsString()},
-      {"name", getName()},
+      {"name", getName().str()},
       {"summary", summary},
       {"type", type},
   };
@@ -762,25 +762,23 @@ std::string TraitDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object TraitDeclView::toJSON() const {
+  auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
+      extractChildDecls<FunctionDeclView, FuncOp>(*decl));
   return llvm::json::Object{
       {"description", description},
       {"fields", llvm::json::Array()},
       {"functions", toJSONArray(functionOverloads)},
       {"kind", getKindAsString()},
-      {"name", getName()},
+      {"name", getName().str()},
       {"summary", summary},
   };
 }
 
 TraitDeclView::TraitDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_TraitDeclView,
-               declRef.getName().value_or(StringRef())) {
-  ASTDecl &decl = *declRef;
-
-  functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, FuncOp>(decl));
-
-  if (auto docStr = decl.getParsedDocString()) {
+               declRef.getName().value_or(StringRef())),
+      decl(declRef) {
+  if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
     description = llvm::join(docStr->getDescription(), "\n");
   }
@@ -841,6 +839,11 @@ std::string StructDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object StructDeclView::toJSON() const {
+  auto aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(*decl);
+  auto fields = extractChildDecls<StructFieldDeclView, StructFieldOp>(*decl);
+  auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
+      extractChildDecls<FunctionDeclView, FuncOp>(*decl));
+
   return llvm::json::Object{
       {"aliases", toJSONArray(aliases)},
       {"constraints", constraints},
@@ -848,7 +851,7 @@ llvm::json::Object StructDeclView::toJSON() const {
       {"fields", toJSONArray(fields)},
       {"functions", toJSONArray(functionOverloads)},
       {"kind", getKindAsString()},
-      {"name", getName()},
+      {"name", getName().str()},
       {"parameters", toJSONArray(parameters)},
       {"summary", summary},
   };
@@ -856,14 +859,9 @@ llvm::json::Object StructDeclView::toJSON() const {
 
 StructDeclView::StructDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_StructDeclView,
-               declRef.getName().value_or(StringRef())) {
-  ASTDecl &decl = *declRef;
+               declRef.getName().value_or(StringRef())),
+      decl(declRef) {
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
-
-  aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
-  fields = extractChildDecls<StructFieldDeclView, StructFieldOp>(decl);
-  functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, FuncOp>(decl));
 
   // Grab the types of the parameters to the struct.
   for (ParamDeclAttr param : structOp.getInputParams())
@@ -871,7 +869,7 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
                           generateTypeString(param.getType())));
 
-  if (auto docStr = decl.getParsedDocString()) {
+  if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
     augmentWithDocumentation(docStr->getDescription());
   }
@@ -891,11 +889,17 @@ std::string ModuleDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object ModuleDeclView::toJSON() const {
+  auto aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(*decl);
+  auto structs = extractChildDecls<StructDeclView, StructDeclOp>(*decl);
+  auto traits = extractChildDecls<TraitDeclView, TraitDeclOp>(*decl);
+  auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
+      extractChildDecls<FunctionDeclView, FuncOp>(*decl));
+
   return llvm::json::Object{{"aliases", toJSONArray(aliases)},
                             {"description", description},
                             {"functions", toJSONArray(functionOverloads)},
                             {"kind", getKindAsString()},
-                            {"name", getName()},
+                            {"name", getName().str()},
                             {"structs", toJSONArray(structs)},
                             {"traits", toJSONArray(traits)},
                             {"summary", summary}};
@@ -903,16 +907,9 @@ llvm::json::Object ModuleDeclView::toJSON() const {
 
 ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_ModuleDeclView,
-               declRef.getName().value_or(StringRef())) {
-  ASTDecl &decl = *declRef;
-
-  aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
-  structs = extractChildDecls<StructDeclView, StructDeclOp>(decl);
-  traits = extractChildDecls<TraitDeclView, TraitDeclOp>(decl);
-  functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, FuncOp>(decl));
-
-  if (auto docStr = decl.getParsedDocString()) {
+               declRef.getName().value_or(StringRef())),
+      decl(declRef) {
+  if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
     description = llvm::join(docStr->getDescription(), "\n");
   }
@@ -934,13 +931,14 @@ std::string PackageDeclView::getMarkdownDocString() const {
 llvm::json::Object PackageDeclView::toJSON() const {
   return llvm::json::Object{{"description", description},
                             {"kind", getKindAsString()},
-                            {"name", getName()},
+                            {"name", getName().str()},
                             {"summary", summary}};
 }
 
 PackageDeclView::PackageDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_PackageDeclView,
-               declRef.getName().value_or(StringRef())) {
+               declRef.getName().value_or(StringRef())),
+      decl(declRef) {
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
     description = llvm::join(docStr->getDescription(), "\n");
