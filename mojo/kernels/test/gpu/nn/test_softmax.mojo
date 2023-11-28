@@ -11,6 +11,7 @@ from sys.info import simdwidthof
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OwningOutputChainPtr, Runtime
 from Softmax import softmax_2_pass, softmax
+from random import rand
 
 from utils.list import Dim, DimList
 
@@ -31,7 +32,7 @@ fn test_gpu_softmax() raises:
 
     alias type = DType.float32
     alias rank = 3
-    let shape = StaticIntTuple[rank](3, 5, 259)
+    let shape = StaticIntTuple[rank](3, 5, 515)
     let in_host_ptr = DTypePointer[type].alloc(shape.flattened_length())
     let in_device_ptr = _malloc[type](shape.flattened_length())
     let in_host = NDBuffer[rank, DimList.create_unknown[rank](), type](
@@ -53,7 +54,7 @@ fn test_gpu_softmax() raises:
         out_device_ptr, shape
     )
 
-    iota(in_host_ptr, shape.flattened_length())
+    rand[type](in_host_ptr, shape.flattened_length())
     _copy_host_to_device(in_device_ptr, in_host_ptr, shape.flattened_length())
 
     @parameter
