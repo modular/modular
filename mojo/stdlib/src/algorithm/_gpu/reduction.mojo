@@ -45,7 +45,7 @@ fn block_reduce[
     let lane = lane_id()
     let warp = ThreadIdx.x() // WARP_SIZE
 
-    let warp_accum = warp_reduce[type, shuffle_down, reduce_fn](val)
+    let warp_accum = warp_reduce[shuffle_down, reduce_fn](val)
 
     if lane == 0:
         shared.store(
@@ -54,7 +54,7 @@ fn block_reduce[
 
     barrier()
 
-    return warp_reduce[type, shuffle_down, reduce_fn](
+    return warp_reduce[shuffle_down, reduce_fn](
         shared.load(lane) if ThreadIdx.x()
         < (BlockDim.x() // WARP_SIZE) else init
     )
