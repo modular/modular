@@ -2197,3 +2197,15 @@ fn converted_metatype_struct_element(x: Collection[Item]):
 struct TraitMember[T: Movable]:
     # CHECK: lit.func @"__del__
     var value: T
+
+fn take_intable[T: Intable](x: T):
+    pass
+
+# CHECK-LABEL: lit.func @"nonmaterializable_trait
+fn nonmaterializable_trait():
+    # CHECK-NEXT: [[SLOT:%.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut !Int,
+    # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
+    # CHECK-NEXT: store [[VAL]], [[SLOT]]
+    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[SLOT]]
+    # CHECK-NEXT: call {{.*}}take_intable{{.*}}<:trait<{{.*}}Intable> [!Int, {"__int__"
+    take_intable(1)
