@@ -66,8 +66,11 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType)) {
-    if (Type metatype = ASTType(actualType).getMetaType()) {
-      matchParams(TypeConstantAttr::get(actualType, metatype),
+    ASTType type = actualType;
+    if (ASTType nmTarget = type.getNonmaterializableTarget(shared))
+      type = nmTarget;
+    if (Type metatype = type.getMetaType()) {
+      matchParams(TypeConstantAttr::get(type, metatype),
                   expectedParamRef.getParam());
     } else {
       // Otherwise, this is an MLIR type.
@@ -378,18 +381,8 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
   if (!inferredValues.empty()) {
     PValue first = inferredValues.front();
     auto sameAsFirst = [&](PValue v) { return v.get() == first.get(); };
-    if (llvm::all_of(inferredValues, sameAsFirst)) {
-      // Infer nonmaterializable types as their materialization target.
-      if (ASTType typeVal = first.getIfTypeValue()) {
-        if (ASTType nmTarget = typeVal.getNonmaterializableTarget(shared)) {
-          // The metatype of the non-materializable target type will not match,
-          // so emit a rebind to ensure they match.
-          return ParamOperatorAttr::get(POC::Rebind, {PValue(nmTarget)},
-                                        first.getType());
-        }
-      }
+    if (llvm::all_of(inferredValues, sameAsFirst))
       return first;
-    }
   }
 
   return {};
