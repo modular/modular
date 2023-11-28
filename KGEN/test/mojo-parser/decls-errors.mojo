@@ -368,7 +368,14 @@ fn packArgOverload():
 fn packArgOverload(x: Int):
   pass
 
-fn badPackCalls():
+fn directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
+  pass
+
+# expected-note @+1 {{function declared here}}
+fn first_and_rest[T: AnyRegType, *Ts: AnyRegType](*values: *Ts):
+    pass
+
+fn badPackCalls(value: Int):
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 argument, but 2 were specified}}
   examplePack[Int](1, 2)
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
@@ -376,8 +383,10 @@ fn badPackCalls():
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
   examplePack[Int, Float32](1, Int(2).value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
-  # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter, but 0 were specified}}
+  # expected-error @below {{invalid call to 'examplePack': callee expects 0 arguments, but 1 was specified}}
   examplePack(packArgOverload)
+  # expected-error @below {{invalid call to 'first_and_rest': callee expects 2 input parameters, but 0 were specified}}
+  first_and_rest(value)
 
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments

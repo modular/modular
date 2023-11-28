@@ -866,3 +866,21 @@ kgen.generator @variant_constant<value: i32>() {
   <dense_resource<avcodec_1> : tensor<8xui8> as "libavcodec">,
   <dense_resource<avcodec_2> : tensor<9xui8> as "libavcodec">
 ]>} : () -> ()
+
+// -----
+
+// expected-error @below {{cannot create pack with parametric element types}}
+"kgen.pack.create"() : () -> !kgen.pack<T>
+
+// -----
+
+// expected-error @below {{expected 1 operands, but got 0}}
+"kgen.pack.create"() : () -> !kgen.pack<[index]>
+
+// -----
+
+kgen.func @pack(%arg0: i32) {
+  // expected-error @below {{operand #0 should have type 'index' but got 'i32'}}
+  "kgen.pack.create"(%arg0) : (i32) -> !kgen.pack<[index]>
+  kgen.return
+}

@@ -265,7 +265,7 @@ InputParamBindings::verifyBindings(
       // fulfill it with an empty list.  We know it must be the last parameter
       // decl. If this isn't actually a variadic type, then we simply reached
       // the end of the parameter list.
-      if (isVarArg(idx) && !isPackVarArg) {
+      if (isVarArg(idx)) {
         if (auto varType = dyn_cast<VariadicType>(type)) {
           setParamValue(VariadicAttr::get({}, varType));
           fitness.lastExpectedType = expectedType;
@@ -324,7 +324,7 @@ InputParamBindings::verifyBindings(
 
         // If this parameter is a variadic, allow binding an empty list if a
         // value is not provided and it will not be inferred from a pack vararg.
-        if (isVarArg(idx) && !isPackVarArg) {
+        if (isVarArg(idx)) {
           if (auto varType = dyn_cast<VariadicType>(type)) {
             setParamValue(VariadicAttr::get({}, varType));
             ++posBindingIdx;
