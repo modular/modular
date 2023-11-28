@@ -64,6 +64,9 @@ private:
 
 /// Contains command-line options that are shared among most of our binaries.
 class CommonCLOptions : public CLOptionsBase {
+private:
+  llvm::cl::OptionCategory CommonOptionsCategory{"Common command line options"};
+
 public:
   using CLOptionsBase::CLOptionsBase;
 
@@ -71,15 +74,17 @@ public:
       "verify-diagnostics",
       cl::desc("Check that emitted diagnostics match "
                "expected-* lines on the corresponding line"),
-      cl::init(false)};
+      cl::init(false), llvm::cl::cat(CommonOptionsCategory)};
 
   // Specify the input file for a given binary
   cl::opt<std::string> inputFilename{llvm::cl::Positional,
-                                     cl::desc("<input file>"), cl::init("-")};
+                                     cl::desc("<input file>"), cl::init("-"),
+                                     llvm::cl::cat(CommonOptionsCategory)};
 
   // Specify the alignment for a given binary file.
   cl::opt<int> inputFileAlignment{"input-file-alignment",
-                                  cl::desc("Alignment for opening input file")};
+                                  cl::desc("Alignment for opening input file"),
+                                  llvm::cl::cat(CommonOptionsCategory)};
 
   /// Open the filename specified on the command line and return a memory
   /// buffer, or an error message on failure.
@@ -113,8 +118,8 @@ public:
   //===--------------------------------------------------------------------===//
 
   cl::opt<std::string> outputFilename{"o", cl::desc("Output filename"),
-                                      cl::value_desc("filename"),
-                                      cl::init("-")};
+                                      cl::value_desc("filename"), cl::init("-"),
+                                      llvm::cl::cat(CommonOptionsCategory)};
 
   /// Determine an output file name and open it.
   std::unique_ptr<llvm::ToolOutputFile>
@@ -180,14 +185,14 @@ public:
       cl::desc("Store the usual 'temporary' intermediate files permanently in "
                "the directory specified by -temps-dir (defaults to the output "
                "directory); name them as auxiliary output files."),
-      llvm::cl::Optional};
+      llvm::cl::Optional, llvm::cl::cat(CommonOptionsCategory)};
 
   cl::opt<std::string> tempsDir{
       "temps-dir", cl::init(""),
       cl::desc(
           "The directory in which to store 'temporary' intermediate files. No "
           "files will be saved here unless `-save-temps` is also specified."),
-      llvm::cl::Optional};
+      llvm::cl::Optional, llvm::cl::cat(CommonOptionsCategory)};
 
   /// Determine an intermediate file with extension `ext` and open it.
   std::unique_ptr<llvm::ToolOutputFile>
@@ -204,7 +209,8 @@ public:
   // tf eager C API.
   cl::opt<bool> disableTFOneDNN{
       "disable-tf-onednn",
-      cl::desc("Disable the stock TF oneDNN optimizations."), cl::init(false)};
+      cl::desc("Disable the stock TF oneDNN optimizations."), cl::init(false),
+      llvm::cl::cat(CommonOptionsCategory)};
 
 private:
   /// Default alignment for input files.
