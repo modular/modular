@@ -151,17 +151,30 @@ fn _fill[
 
 
 @always_inline
-fn _slice_ndbuffer(
-    dst: NDBuffer,
+fn _load_ndbuffer_slice[
+    rows: _uint32, cols: _uint32
+](
     src: NDBuffer,
     offset: StaticIntTuple,  # BSHD
     stride: StaticIntTuple,  # unused for now
-):
+) -> NDBuffer[
+    2,
+    DimList(int(rows), int(cols)),
+    DType.float32,
+    address_space = AddressSpace.SHARED,
+]:
+    let sram_tile = NDBuffer[
+        2,
+        DimList(int(rows), int(cols)),
+        DType.float32,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
     alias simd_size = simdwidthof[DType.float32]()
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
 
-    alias BM = dst.shape.at[0]().get()
-    alias depth = dst.shape.at[1]().get()
+    alias BM = sram_tile.shape.at[0]().get()
+    alias depth = sram_tile.shape.at[1]().get()
 
     let seq_len = src.dim[1]()
     let num_heads = src.dim[2]()
@@ -195,9 +208,11 @@ fn _slice_ndbuffer(
         let vec = src.data.aligned_simd_load[simd_size, alignment](
             global_q_idx.to_int(),
         )
-        dst.data.aligned_simd_store[simd_size, alignment](
-            (row_in_tile * depth + loadq_col).to_int(), vec.cast[dst.type]()
+        sram_tile.data.aligned_simd_store[simd_size, alignment](
+            (row_in_tile * depth + loadq_col).to_int(),
+            vec.cast[sram_tile.type](),
         )
+    return sram_tile
 
 
 @always_inline
@@ -524,6 +539,23 @@ fn scatter_update(
         o_global_row_offset += row_stride
 
 
+fn _buffer_view[
+    rows: _uint32, cols: _uint32, heads: _uint32, buffer_shape: DimList
+](
+    buff: NDBuffer[4, buffer_shape, DType.float32],
+    dim_0: _uint32,
+    dim_1: _uint32,
+    dim_2: _uint32,
+    dim_3: _uint32,
+) -> NDBuffer[2, DimList(rows, cols), DType.float32]:
+    let view = NDBuffer[2, DimList(rows, cols), DType.float32](
+        buff._offset(StaticIntTuple[4](int(dim_0), int(dim_1), int(dim_2), 0)),
+        dynamic_shape=Index(rows, cols),
+        dynamic_stride=Index(heads * cols, 1),
+    )
+    return view
+
+
 @__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
 fn flash_attention_kernel[
     BM: _uint32,  # number of queries per block
@@ -556,13 +588,6 @@ fn flash_attention_kernel[
     ]()
     constrained[BN == TN * WARP_SIZE, "Incompatible block size"]()
 
-    let q_tile = NDBuffer[
-        2,
-        DimList(BM, depth),
-        DType.float32,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation()
-
     let rowmax = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
 
     var rowsum = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
@@ -583,8 +608,7 @@ fn flash_attention_kernel[
     let head_idx: _uint32 = BlockIdx.y()
     let q_tile_idx: _uint32 = BlockIdx.x()
 
-    _slice_ndbuffer(
-        q_tile,
+    let q_tile = _load_ndbuffer_slice[BM, depth](
         query,
         Index(0, q_tile_idx * BM, head_idx, 0),
         Index(0, 1, 0, 1),
@@ -615,10 +639,8 @@ fn flash_attention_kernel[
         # Clear thread tile results.
         reg_result.zero()
 
-        let k_view = NDBuffer[2, DimList(BN, depth), DType.float32](
-            key.data.offset(int(global_kv_offset)),
-            dynamic_shape=Index(BN, depth),
-            dynamic_stride=Index(num_heads * depth, 1),
+        let k_view = _buffer_view[BN, depth, num_heads](
+            key, batch_idx, kv_tile_start_row, head_idx, 0
         )
         _mma[transpose_b=True](q_tile, k_view, reg_result)
 
@@ -638,15 +660,11 @@ fn flash_attention_kernel[
 
         o_thread_tile *= correction
 
-        let v_view = NDBuffer[2, DimList(BN, depth), DType.float32](
-            value.data.offset(int(global_kv_offset)),
-            dynamic_shape=Index(BN, depth),
-            dynamic_stride=Index(num_heads * depth, 1),
+        let v_view = _buffer_view[BN, depth, num_heads](
+            value, batch_idx, kv_tile_start_row, head_idx, 0
         )
-        _mma[transpose_b=False](reg_result, v_view, o_thread_tile)
 
-        # Point to  next tile
-        global_kv_offset += BN * num_heads * depth
+        _mma[transpose_b=False](reg_result, v_view, o_thread_tile)
 
     o_thread_tile /= rowsum
 
