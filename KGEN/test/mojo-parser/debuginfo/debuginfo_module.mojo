@@ -1,0 +1,23 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# This file is imported by 'import-debuginfo.mojo' and does not include any
+# tests itself.
+
+
+fn imported_fn():
+    return
+
+@value
+@register_passable("trivial")
+struct VeryUniqueStruct:
+    var very_unique_field: __mlir_type.index
+
+    # C-3PO is a short and very unique argument name. We use it to make
+    # FileCheck matching easier.
+    @staticmethod
+    fn very_unique_func(`C-3PO`: Int) -> VeryUniqueStruct:
+        return Self {very_unique_field: `C-3PO`.__mlir_index__()}
