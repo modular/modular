@@ -26,7 +26,7 @@ def var_decl():
   var x : Int  # expected-error {{invalid redefinition of 'x'}}
   x+4   # no follow-on error.
 
-def badTypeErrorMessage():
+def err():
   var localVar = 42
   var y : localVar  # expected-error {{cannot use a dynamic value in type specification}}
 
