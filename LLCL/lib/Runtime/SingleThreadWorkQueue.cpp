@@ -33,7 +33,9 @@ public:
 #endif
 
     // Complete any work that's still in-flight.
-    runUntil([]() -> bool { return false; });
+    while (auto workItem = workItems.dequeue()) {
+      doWork(std::move(workItem));
+    }
 
 #if MODULAR_PARANOID
     expected = kShuttingDown;
@@ -183,12 +185,33 @@ void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
   runUntilImpl(stopPredicate);
 }
 
+/// Time to sleep while waiting for work in the work queue.
+static const std::chrono::microseconds sleepTime(100);
+
 template <typename StopPredicateFn>
 void SingleThreadWorkQueue::runUntilImpl(StopPredicateFn stopPredicate) {
-  while (auto workItem = workItems.dequeue()) {
-    doWork(std::move(workItem));
+  std::chrono::microseconds totalSlept(0);
+  while (true) {
+    totalSlept += sleepTime;
+    assert(
+        totalSlept < std::chrono::duration_cast<std::chrono::microseconds>(
+                         std::chrono::seconds(5)) &&
+        "SingleThreadWorkQueue has slept for more than 5 seconds while "
+        "waiting for callbacks. Some AsyncValues are not ready yet no further "
+        "tasks are available to run. Are all input AsyncValues ready?");
+
+    while (auto workItem = workItems.dequeue()) {
+      totalSlept = std::chrono::microseconds(0);
+      doWork(std::move(workItem));
+      if (stopPredicate())
+        return;
+    }
+    // If no work was done, still check if we are done.
     if (stopPredicate())
-      break;
+      return;
+
+    // wait for any callbacks to fire
+    std::this_thread::sleep_for(sleepTime);
   }
 }
 
