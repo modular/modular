@@ -20,6 +20,8 @@
 - Added dynamic debug configurations for Mojo files, which can be accessed by
   selecting `Mojo...` in the Run and Debug Tab selector.
 
+- Show local variables on the documents when debugging.
+
 ## Changed
 
 - Enhanced the `Run or Debug Mojo File` actions, fixing bugs, improving icons
