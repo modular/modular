@@ -78,3 +78,106 @@ TEST_F(SourceNameAttrTest, TestEncodeDecode) {
     EXPECT_EQ(decoded.takeValue(), sourceName);
   }
 }
+
+//===----------------------------------------------------------------------===//
+// DIScopeAttrUtilTest
+//===----------------------------------------------------------------------===//
+
+namespace {
+class DIScopeAttrUtilTest : public Test {
+protected:
+  MLIRContext ctx;
+
+  DIScopeAttrUtilTest() { ctx.loadDialect<DebugInfoDialect>(); }
+
+  DISubprogramAttr getSimpleSubprogram(StringRef name) {
+    return DISubprogramAttr::get(
+        &ctx, {}, {}, SourceNameAttr::get(StringAttr::get(&ctx, name)), {}, {},
+        {}, {}, {}, {});
+  }
+};
+} // namespace
+
+TEST_F(DIScopeAttrUtilTest, TestScopeWalk) {
+  std::vector<DISubprogramAttr> sp;
+  std::vector<Location> fused;
+  for (int64_t i = 0; i < 3; i++) {
+    std::string suffix = std::to_string(i);
+    sp.push_back(getSimpleSubprogram("func" + suffix));
+    Location loc =
+        FileLineColLoc::get(StringAttr::get(&ctx, "foo" + suffix), 1, 1);
+    fused.emplace_back(
+        FusedLocWith<DISubprogramAttr>::get(&ctx, {loc}, sp.back()));
+  }
+
+  auto getVisitedScopes =
+      [](Location loc, ScopeWalkPolicy policy) -> std::vector<DIScopeAttr> {
+    std::vector<DIScopeAttr> visitedScopes;
+    walkScope(loc, policy, [&](DIScopeAttr scope) {
+      visitedScopes.push_back(scope);
+      return WalkResult::advance();
+    });
+    return visitedScopes;
+  };
+
+  // Call tree:
+  // 2 -> 1 -> 0
+  Location innerCallsite = CallSiteLoc::get(fused[0], fused[1]);
+  Location callsite = CallSiteLoc::get(innerCallsite, fused[2]);
+  EXPECT_THAT(getVisitedScopes(callsite, ScopeWalkPolicy::CalleeOnly),
+              ElementsAre(sp[0]));
+  EXPECT_THAT(getVisitedScopes(callsite, ScopeWalkPolicy::CallerOnly),
+              ElementsAre(sp[2]));
+  EXPECT_THAT(getVisitedScopes(callsite, ScopeWalkPolicy::CalleePriority),
+              ElementsAre(sp[0], sp[1], sp[2]));
+  EXPECT_THAT(getVisitedScopes(callsite, ScopeWalkPolicy::CallerPriority),
+              ElementsAre(sp[2], sp[1], sp[0]));
+}
+
+TEST_F(DIScopeAttrUtilTest, TestExtractScopeFrom) {
+  std::vector<DISubprogramAttr> sp;
+  std::vector<DILexicalBlockAttr> block;
+  std::vector<Location> fused;
+  for (int64_t i = 0; i < 3; i++) {
+    std::string suffix = std::to_string(i);
+    sp.push_back(getSimpleSubprogram("func" + suffix));
+    block.push_back(DILexicalBlockAttr::get(&ctx, sp.back(), {}, {}, {}));
+    Location loc =
+        FileLineColLoc::get(StringAttr::get(&ctx, "foo" + suffix), 1, 1);
+    fused.emplace_back(
+        FusedLocWith<DISubprogramAttr>::get(&ctx, {loc}, block.back()));
+  }
+
+  // Call tree:
+  // 2 -> 1 -> 0
+  Location innerCallsite = CallSiteLoc::get(fused[0], fused[1]);
+  Location callsite = CallSiteLoc::get(innerCallsite, fused[2]);
+
+  // Find top scope.
+  EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(callsite,
+                                                 ScopeWalkPolicy::CalleeOnly),
+            block[0]);
+  EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(callsite,
+                                                 ScopeWalkPolicy::CallerOnly),
+            block[2]);
+  EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(
+                callsite, ScopeWalkPolicy::CalleePriority),
+            block[0]);
+  EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(
+                callsite, ScopeWalkPolicy::CallerPriority),
+            block[2]);
+
+  // Find nested scope.
+  EXPECT_EQ(
+      extractScopeFrom<DISubprogramAttr>(callsite, ScopeWalkPolicy::CalleeOnly),
+      sp[0]);
+  EXPECT_EQ(
+      extractScopeFrom<DISubprogramAttr>(callsite, ScopeWalkPolicy::CallerOnly),
+      sp[2]);
+  EXPECT_EQ(extractScopeFrom<DISubprogramAttr>(callsite,
+                                               ScopeWalkPolicy::CalleePriority),
+            sp[0]);
+  EXPECT_EQ(extractScopeFrom<DISubprogramAttr>(callsite,
+                                               ScopeWalkPolicy::CallerPriority),
+            sp[2]);
+}

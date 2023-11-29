@@ -47,7 +47,8 @@ static void buildDebugInfoValue(OpBuilder &b, Operation *op, StringRef varName,
   auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
   if (!fileLoc)
     return;
-  auto varScope = DebugInfo::extractScopeFrom<DebugInfo::DILocalScopeAttr>(loc);
+  auto varScope = DebugInfo::extractScopeFrom<DebugInfo::DILocalScopeAttr>(
+      loc, DebugInfo::ScopeWalkPolicy::CalleePriority);
   if (!varScope)
     return;
 

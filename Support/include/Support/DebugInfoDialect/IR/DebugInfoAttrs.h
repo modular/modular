@@ -92,6 +92,29 @@ private:
   mlir::AttrTypeReplacer replacer;
 };
 
+enum class ScopeWalkPolicy {
+  CalleeOnly,     // Walk only to the innermost callee.
+  CallerOnly,     // Walk only to the outermost caller.
+  CalleePriority, // Walk call-chain inside-out.
+  CallerPriority  // Walk call-chain outside-in.
+};
+
+WalkResult walkScope(Location loc, ScopeWalkPolicy policy,
+                     function_ref<WalkResult(DIScopeAttr)> walkFn);
+
+/// Extract the first scope found in a location based on a ScopeWalkPolicy.
+template <typename ScopeT>
+ScopeT extractScopeFrom(Location loc, ScopeWalkPolicy policy) {
+  ScopeT result;
+  walkScope(loc, policy, [&result](DIScopeAttr scope) {
+    return scope.walk<mlir::WalkOrder::PreOrder>([&result](ScopeT innerScope) {
+      result = innerScope;
+      return WalkResult::interrupt();
+    });
+  });
+  return result;
+}
+
 /// Extract the scope from the location of a function. Functions either have
 /// a subprogram scope fused directly to the location, or we consider them
 /// as not having any. Therefore this never requires a recursion, and
@@ -124,16 +147,6 @@ public:
 /// the scope recursively within the body.
 void updateSubprogram(mlir::FunctionOpInterface op, StringAttr linkageName,
                       SourceNameAttr name = {});
-
-/// Return the scope from a location of an op within a function's body,
-/// recursively walking up through a chain of inlined locations if needed,
-/// always following the caller location.
-template <typename ScopeT>
-ScopeT extractScopeFrom(Location loc) {
-  if (auto fused = loc->findInstanceOf<mlir::FusedLocWith<ScopeT>>())
-    return fused.getMetadata();
-  return {};
-}
 
 /// Update the location of the op as if it was inlined at the given caller
 /// location, handling special location interfaces. An optional flag can be
