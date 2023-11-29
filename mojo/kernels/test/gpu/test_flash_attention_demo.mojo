@@ -48,26 +48,6 @@ fn is_benchmark() -> Bool:
 alias _uint32 = Scalar[DType.uint32]
 
 
-@parameter
-@closure
-@always_inline
-fn _add_capturing[
-    type: DType,
-    width: Int,
-](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-    return x + y
-
-
-@parameter
-@closure
-@always_inline
-fn _max_capturing[
-    type: DType,
-    width: Int,
-](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-    return max(x, y)
-
-
 # Helper function for the gemm in attention block.
 @always_inline
 fn _mm[
@@ -404,6 +384,13 @@ fn _rowmax[
 
     let rowmax = NDBuffer[1, b_shape, DType.float32].stack_allocation()
 
+    @always_inline
+    fn _max_capturing[
+        type: DType,
+        width: Int,
+    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        return max(x, y)
+
     @unroll
     for i in range(TM):
         var val = neginf[DType.float32]()
@@ -427,6 +414,14 @@ fn _rowsum[
     alias TN = a.shape.at[1]().get()
 
     let rowsum = NDBuffer[1, b_shape, DType.float32].stack_allocation()
+
+    @parameter
+    @always_inline
+    fn _add_capturing[
+        type: DType,
+        width: Int,
+    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        return x + y
 
     @unroll
     for i in range(TM):
