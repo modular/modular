@@ -592,6 +592,41 @@ struct Tensor[dtype: DType](Stringable):
         return result
 
     @always_inline
+    fn clip(
+        self,
+        lower_bound: SIMD[dtype, 1],
+        upper_bound: SIMD[dtype, 1],
+    ) -> Self:
+        """Clips the values of the tensor.
+
+        Args:
+            lower_bound: The lower bound.
+            upper_bound: The upper bound.
+
+        Returns:
+            A clipped version of the tensor.
+        """
+        let result = Self(self._spec)
+        let buffer = self._to_buffer()
+        let result_buffer = result._to_buffer()
+
+        @parameter
+        fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
+            let idx = indices[0]
+            result_buffer.simd_store(
+                idx,
+                math.clamp[dtype, width](
+                    buffer.simd_load[width](idx), lower_bound, upper_bound
+                ),
+            )
+
+        elementwise[rank=1, simd_width = simdwidthof[dtype](), func=func](
+            Index(len(buffer))
+        )
+
+        return result
+
+    @always_inline
     fn data(self) -> DTypePointer[dtype]:
         """Gets the underlying Data pointer to the Tensor.
 
