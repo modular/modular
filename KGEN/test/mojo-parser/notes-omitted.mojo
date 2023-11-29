@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not kgen-translate --max-notes-per-diagnostic=2 --use-mlir-diagnostics=false -import-mojo %s 2>&1 | FileCheck %s
+# RUN: not %parse-mojo-isolated --max-notes-per-diagnostic=2 --use-mlir-diagnostics=false %s 2>&1 | FileCheck %s
 
 # fmt: off
 struct s1: pass
@@ -42,8 +42,10 @@ fn go11(x: s9): pass
 fn go11(x: s10): pass
 fn go11(x: s11): pass
 
-fn main():
+alias `0` = __mlir_attr.`0 : index`
+
+fn foo():
   # CHECK: 8 more notes omitted
-  go10(0)
+  go10(`0`)
   # CHECK: 9 more notes omitted
-  go11(0)
+  go11(`0`)

@@ -3,11 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen-translate -import-mojo --mojo-disable-builtins %s | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 
 alias int = __mlir_type.index
-alias one = __mlir_attr.`1:index`
-alias two = __mlir_attr.`2:index`
+alias `1` = __mlir_attr.`1 : index`
+alias `2` = __mlir_attr.`2 : index`
 
 
 # CHECK-LABEL: lit.struct.decl @Param
@@ -44,7 +44,7 @@ struct TwoParam[x: int, y: int]:
 fn fully_bound_alias():
     # COM: Test alias to a fully bound parametric type.
     # CHECK: BoundType: metatype<{{.*}}@Param<1>> = <{{.*}}@Param<1>>
-    alias BoundType = Param[one]
+    alias BoundType = Param[`1`]
     # CHECK: alias_value = <1>
     alias alias_value = BoundType.value
     # CHECK: call {{.*}}@Param::@"foo()"<1>
@@ -59,34 +59,34 @@ fn unbound_alias():
     # CHECK: Unbound: metatype<{{.*}}@Param<?>, <"x": index>> = <{{.*}}@Param<?>>
     alias Unbound = Param
     # CHECK: unbound_value = <2>
-    alias unbound_value = Unbound[two].value
+    alias unbound_value = Unbound[`2`].value
     # CHECK: call {{.*}}@Param::@"foo()"<2>
-    Unbound[two].foo()
+    Unbound[`2`].foo()
     # CHECK: unbound_function: !lit.signature<<index, |>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<?>>
     alias unbound_function = Unbound.foo
 
     # COM: Test fully unbound alias can be fully bound.
     # CHECK: BoundFromUnbound: metatype<{{.*}}@Param<1>> =
     # CHECK-SAME: #lit.bind_type<:metatype<{{.*}}@Param<?>, <"x": index>> {{.*}}Unbound, [1]>
-    alias BoundFromUnbound = Unbound[one]
+    alias BoundFromUnbound = Unbound[`1`]
 
 
 # CHECK-LABEL: partially_bound_alias
 fn partially_bound_alias():
     # COM: Test partially binding a type.
     # CHECK: PartiallyBound: metatype<{{.*}}@TwoParam<1, ?>, <"y": index>> = <{{.*}}@TwoParam<1, ?>>
-    alias PartiallyBound = TwoParam[one]
+    alias PartiallyBound = TwoParam[`1`]
 
     # COM: Test taking a function from a partially bound type.
     # CHECK: PartiallyBoundFn: !lit.signature<<index, |>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<1, ?>>
     alias PartiallyBoundFn = PartiallyBound.foo
     # CHECK: FullyBoundFn: {{.*}} = <bind_signature({{.*}}PartiallyBoundFn, 2)>
-    alias FullyBoundFn = PartiallyBoundFn[two]
+    alias FullyBoundFn = PartiallyBoundFn[`2`]
 
     # COM: Test fully binding a partially bound type.
     # CHECK: BoundFromPartial: metatype<{{.*}}@TwoParam<1, 2>> =
     # CHECK-SAME: #lit.bind_type<:metatype<{{.*}}@TwoParam<1, ?>, <"y": index>> {{.*}}PartiallyBound, [2]>
-    alias BoundFromPartial = PartiallyBound[two]
+    alias BoundFromPartial = PartiallyBound[`2`]
     # CHECK: first = <1>
     alias first = BoundFromPartial.first
     # CHECK: second = <2>
@@ -99,9 +99,9 @@ fn partially_bound_alias():
 fn partially_bound_kw():
     # COM: Test partially binding the parameters out-of-order with keywords.
     # CHECK: TwoParam<?, 1>
-    alias PartiallyBound = TwoParam[y=one]
+    alias PartiallyBound = TwoParam[y=`1`]
     # CHECK: TwoParam<2, 1>
-    alias FullyBound = PartiallyBound[x=two]
+    alias FullyBound = PartiallyBound[x=`2`]
 
     # COM: Test emission of fully bound type.
     # CHECK: :metatype<{{.*}}@TwoParam<2, 1>> {{.*}}FullyBound
@@ -110,7 +110,7 @@ fn partially_bound_kw():
 
 # CHECK-LABEL: lit.func @"partial_autoparam
 # CHECK-SAME: <?, [[X:.*]]>(%value[value]: !kgen.declref<{{.*}}@TwoParam<[[X]], 1>
-fn partial_autoparam(value: TwoParam[y=one]):
+fn partial_autoparam(value: TwoParam[y=`1`]):
     alias first = value.x
     alias second = value.y
 
@@ -128,5 +128,5 @@ struct ParamVarArg[F: int, *I: int]:
         alias Unbound = ParamVarArg
         # CHECK: BoundSome: {{.*}}@ParamVarArg<1, :variadic<index> []>
         # CHECK: BoundMore: {{.*}}@ParamVarArg<1, :variadic<index> [2, 1]>
-        alias BoundSome = Unbound[one]
-        alias BoundMore = Unbound[one, two, one]
+        alias BoundSome = Unbound[`1`]
+        alias BoundMore = Unbound[`1`, `2`, `1`]

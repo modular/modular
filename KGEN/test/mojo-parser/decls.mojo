@@ -1023,6 +1023,10 @@ fn test_raising_computed_getter() raises:
 # Structs
 ##===----------------------------------------------------------------------===##
 
+fn forward_ref(x: EmptyStruct):
+  pass
+
+
 # CHECK-LABEL: lit.struct.decl @EmptyStruct register_passable {
 @register_passable
 struct EmptyStruct:

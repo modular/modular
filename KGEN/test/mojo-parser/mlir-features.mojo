@@ -4,15 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate --allow-unregistered-dialect -import-mojo %s -verify-diagnostics | FileCheck %s
+# RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 
+alias `1` = __mlir_attr.`1 : index`
+alias `42` = __mlir_attr.`42 : index`
 
 # CHECK: lit.func @"mlirMagicTest{{.*}}(%x[x]: bf16 borrow, %y[y]: f8E5M2 borrow)
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
     # CHECK: lit.alias.decl [[A:.*]] = <1>
-    alias a: __mlir_type.index = Int(1).value
+    alias a: __mlir_type.index = `1`
     # CHECK: %b = lit.varlet.decl "b" var : !lit.ref<mut f64,
     var b: __mlir_type.f64
     # CHECK: %c = lit.varlet.decl "c" var : !lit.ref<mut pointer<pointer<float32>>,
@@ -30,7 +32,7 @@ fn mlirMagicTest(
 
     # CHECK-NEXT: %idxConstant = lit.varlet.decl
     # CHECK: kgen.param.constant = <42>
-    var idxConstant = __mlir_op.`index.constant`[value = Int(42).value]()
+    var idxConstant = __mlir_op.`index.constant`[value = `42`]()
 
     # CHECK: [[TMP:%.*]] = lit.ref.load %idxConstant
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
@@ -38,14 +40,14 @@ fn mlirMagicTest(
 
     # CHECK: lit.alias.decl [[NEW_LOWER:.*]] = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
-        `#kgen.param.expr<max, `, a, `, `, Int(42).value, `> : index`
+        `#kgen.param.expr<max, `, a, `, `, (`42`), `> : index`
     ]
 
     # CHECK: [[TMP1:%.*]] = kgen.param.constant = <[[NEW_LOWER]]>
     # CHECK: [[TMP2:%.*]] = kgen.param.constant = <1>
     # CHECK: [[SHRU:%.*]] = index.shru [[TMP1]], [[TMP2]]
     # CHECK: lit.return [[SHRU]] : index
-    return __mlir_op.`index.shru`(new_lower, Int(1).value)
+    return __mlir_op.`index.shru`(new_lower, `1`)
 
 
 # CHECK-LABEL: lit.func @"mlirTypesAndAttrs{{.*}}()"<
@@ -78,10 +80,10 @@ fn fancierSubstitutions():
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
     # CHECK: lit.alias.decl [[A:.*]] = <1>
-    alias a: __mlir_type.index = Int(1).value
+    alias a: __mlir_type.index = `1`
     # CHECK: lit.alias.decl {{.*}}new_lower = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
-        `#kgen.param.expr<max,`, a, `, `, Int(42).value, `> : index`
+        `#kgen.param.expr<max,`, a, `, `, (`42`), `> : index`
     ]
 
 
@@ -94,11 +96,7 @@ fn testAttrConcatWithoutType[
 ]():
     # CHECK: lit.alias.decl {{.*}}x: variadic<index> = <[1, [[LENGTH]]]>
     alias x = __mlir_attr[
-        `#kgen.variadic<`,
-        +Int(1).value,
-        `,`,
-        length,
-        `> : !kgen.variadic<index>`,
+        `#kgen.variadic<`, +`1`, `,`, length, `> : !kgen.variadic<index>`
     ]
 
 
@@ -138,19 +136,9 @@ fn structured_for_loop() -> __mlir_type.index:
         # CHECK-NEXT: %index1 = kgen.param.constant = <1>
         # CHECK-NEXT: %1 = index.add %arg0, %index1
         # CHECK-NEXT: hlcf.continue %1 : index
-        __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, Int(1).value))
+        __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, `1`))
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[
-        _type = __mlir_type.index, _region = "loop_body".value
-    ](Int(0).value)
-
-
-# Test multi-return __mlir_op
-# https://github.com/modularml/modular/issues/24227
-fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
-    # CHECK: [[MULTIRET:%.*]]:2 = "op_that_has_multiple_returns"() : () -> (!Int, !Int)
-    # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[MULTIRET]]#0, [[MULTIRET]]#1)
-    # CHECK-NEXT: [[TUPLE:%.*]] = lit.call @"$builtin"::@"$tuple"::@Tuple::@"__init__{{.*}}[!Int, !Int]{{.*}}[[PACK]]
-    let r = __mlir_op.`op_that_has_multiple_returns`[_type= (Int, Int),]()
-    return r
+        _type = __mlir_type.index, _region = __mlir_attr.`"loop_body"`
+    ](__mlir_attr.`0 : index`)

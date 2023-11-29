@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
+
+alias `42` = __mlir_attr.`42 : index`
 
 fn test_mlir():
   var x: __mlir_type.index
@@ -17,10 +19,10 @@ fn test_mlir():
   __mlir_op.`index.add`(x, x).x
 
   # expected-error @+1 {{operation already has attributes}}
-  __mlir_op.`op`[value1=42][value2=42]
+  __mlir_op.`op`[value1=`42`][value2=`42`]
 
   # expected-error @+1 {{duplicate keyword parameter 'value'}}
-  __mlir_op.`op`[value=42, value=42]
+  __mlir_op.`op`[value=`42`, value=`42`]
 
 fn test_mlir2():
   # expected-error @below {{invalid MLIR type: kgen.dtype}}
@@ -38,8 +40,8 @@ fn test_mlir2():
   __mlir_op.`index.castu`[_type=__mlir_type.f32](x)
 
   # expected-error @+1 {{'index.constant' op MLIR verification error: 'index.constant' op requires attribute 'value'}}
-  var c42e = __mlir_op.`index.constant`[value=42.0]()
-  var c42 = __mlir_op.`index.constant`[value=Int(42).value]() # Good
+  var c42e = __mlir_op.`index.constant`[value=__mlir_attr.`42.0 : f32`]()
+  var c42 = __mlir_op.`index.constant`[value=`42`]() # Good
 
   # expected-error @+1 {{invalid MLIR attribute:}}
   __mlir_attr.`#index<cmp_predicate xeq>`
@@ -56,20 +58,24 @@ fn test_mlir2():
   _ = __mlir_op.`test.op`[__mlir_attr.]
 
   # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
-  _ = __mlir_type.index(42)
+  _ = __mlir_type.index(`42`)
 
 fn colon_instead_of_equal():
   # expected-error @below {{attribute spec requires a keyword parameter; did you mean 'value=...'?}}
-  _ = __mlir_op.`lit.crazy`[value:42]()
+  _ = __mlir_op.`lit.crazy`[value:`42`]()
+
+@register_passable("trivial")
+struct Int:
+  var value : __mlir_type.index
 
 # Issue #7307: Error message can be improved when a user accidentally uses = instead of :
 fn equal_instead_of_colon():
   # expected-error @+1 {{expected ':' after dictionary key, not '='}}
-  _ = Int{value = Int(42).value}
+  _ = Int{value = `42`}
 
   var someInt : Int
   # expected-error @+1 {{unable to infer result type from MLIR operation 'pop.array.gep'}}
-  let ptr = __mlir_op.`pop.array.gep`((((someInt))), 4)
+  let ptr = __mlir_op.`pop.array.gep`((((someInt))), `42`)
 
 fn crash_on_invalid():
   # expected-error @+1 {{use of unregistered MLIR operation 'invalid_op'}}

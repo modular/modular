@@ -568,6 +568,9 @@ struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
   return 42
 
+struct ReDef: pass # expected-note {{previous definition here}}
+struct ReDef: pass # expected-error {{invalid redefinition of 'ReDef'}}
+
 struct StructMemberRedefinition:
   var x : __mlir_type.index  # expected-note {{previous definition here}}
   var x : __mlir_type.index  # expected-error {{invalid redefinition of 'x'}}
@@ -614,7 +617,7 @@ struct WrongType:
 
 
 struct WrongSelfType[a: Int]:
-  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
+  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]' but actually has type 'Int'}}
   fn badMethod(self: Int): pass
   fn goodMethod(inout self: WrongSelfType[a]): pass
 

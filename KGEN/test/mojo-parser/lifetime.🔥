@@ -1,5 +1,7 @@
-# RUN: kgen-translate -import-mojo -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
+# RUN: %parse-mojo-isolated -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
+
+alias Lifetime = __mlir_type.`!lit.lifetime`
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
