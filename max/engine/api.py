@@ -45,9 +45,6 @@ class CommonLoadOptions:
     custom_ops_path: str = field(default="")
     """The path from which to load custom ops."""
 
-    device: str = field(default="cpu")
-    """The default device to use for executing models."""
-
 
 class Model:
     """A loaded model that you can execute.
@@ -310,11 +307,15 @@ class InferenceSession:
 
     _impl: _InferenceSession
 
-    def __init__(self, num_threads: Optional[int] = None):
+    def __init__(
+        self, num_threads: Optional[int] = None, device: Optional[str] = None
+    ):
         config = {}
         self.num_threads = num_threads
         if num_threads:
-            config = {"num_threads": num_threads}
+            config["num_threads"] = num_threads
+        if device:
+            config["device"] = device
         self._impl = _InferenceSession(config)
 
     def __repr__(self) -> str:
