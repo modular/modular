@@ -4,18 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -verify-diagnostics
+# RUN: kgen-translate -import-mojo %s -verify-diagnostics -mojo-disable-builtins -mojo-disable-parser-caching
 
+alias Int = __mlir_type.index
 
 @adaptive
 fn foo():
-    let b = 3
     return
 
 
 # expected-note @below {{non-adaptive candidate here}}
 fn foo():
-    let b = 5
     return
 
 
@@ -52,7 +51,6 @@ fn waldo[c: Int]() -> TrivialStuff[c, c]:
     pass
 
 
-fn main():
+fn bar():
     # expected-error @below {{ambiguous call to 'foo', multiple implementations detected but not all are marked adaptive}}
     foo()
-    return
