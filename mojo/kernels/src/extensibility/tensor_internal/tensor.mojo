@@ -313,7 +313,6 @@ struct Tensor[dtype: DType](Stringable):
         Returns:
             A Tensor that is a reshaped version of the original tensor.
         """
-        self._spec = TensorSpec(dtype, new_shape)
         var result = self
         result.ireshape(new_shape)
 
