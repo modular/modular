@@ -49,8 +49,6 @@ fn main():
     var a_var_index = __mlir_op.`index.constant`[
         value = __mlir_attr.`48:index`
     ]()
-    # FIXME(22592): We need to print the address, otherwise the var has wrong DI.
-    print(Pointer(__get_lvalue_as_address(a_var_index)).__as_index())
 
     let a_let_index = __mlir_op.`index.constant`[
         value = __mlir_attr.`48:index`

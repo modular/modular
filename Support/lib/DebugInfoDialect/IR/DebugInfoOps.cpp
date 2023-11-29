@@ -58,6 +58,20 @@ static ErrorOr<DIScopeAttr> getValueOpLocationScope(Location loc) {
   return getValueOpLocationScope(callSiteLoc.getCallee());
 }
 
+/// Returns whether the child scope is nested inside the ancestor scope.
+static bool IsSubScope(DIScopeAttr child, DIScopeAttr ancestor) {
+  if (child == ancestor) // short-circuit for common case.
+    return true;
+
+  return child
+      .walk([&](DIScopeAttr scope) {
+        if (scope == ancestor)
+          return WalkResult::interrupt();
+        return WalkResult::advance();
+      })
+      .wasInterrupted();
+}
+
 /// The local variable type must match the value type. Compare the types while
 /// unwrapping debuginfo types.
 static LogicalResult verifyValueOpType(ValueOp op) {
@@ -125,15 +139,16 @@ LogicalResult ValueOp::verify() {
   if (failed(verifyValueOpType(*this)))
     return failure();
 
-  ErrorOr<DIScopeAttr> scopeOr = getValueOpLocationScope(getLoc());
-  if (scopeOr.isError())
-    return emitOpError(scopeOr.getError());
+  ErrorOr<DIScopeAttr> locationScopeOr = getValueOpLocationScope(getLoc());
+  if (locationScopeOr.isError())
+    return emitOpError(locationScopeOr.getError());
 
   DILocalVariableAttr varAttr = getValueInfo();
-  if (DIScopeAttr scope = *scopeOr) {
-    if (varAttr.getScope() != scope) {
-      return emitOpError("location scope must match variable scope: ")
-             << scope << " vs. " << varAttr.getScope();
+  if (DIScopeAttr locationScope = *locationScopeOr) {
+    if (!IsSubScope(locationScope, varAttr.getScope())) {
+      return emitOpError(
+                 "location scope must be a child scope of the variable scope: ")
+             << locationScope << " vs. " << varAttr.getScope();
     }
   }
 

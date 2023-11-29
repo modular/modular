@@ -393,7 +393,8 @@ WalkResult DebugInfo::walkScope(Location loc, ScopeWalkPolicy policy,
         return WalkResult::advance();
       })
       .Case([&](FusedLoc fusedLoc) -> WalkResult {
-        if (auto metadata = dyn_cast<DIScopeAttr>(fusedLoc.getMetadata()))
+        if (auto metadata =
+                dyn_cast_or_null<DIScopeAttr>(fusedLoc.getMetadata()))
           if (walkFn(metadata).wasInterrupted())
             return WalkResult::interrupt();
 

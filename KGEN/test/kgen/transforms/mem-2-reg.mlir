@@ -288,29 +288,6 @@ kgen.generator @unknown_region_op() {
 
 // -----
 
-#callerSp = #debuginfo.subprogram<name = <"mem2reg_valueop">> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
-
-#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0"> : !debuginfo.ti.ptr<index>
-
-#fileLoc = loc("foo.mlir":0:0)
-#loc = loc(fused<#callerSp>[#fileLoc])
-// CHECK-DAG: ![[INDEX_TYPE:.*]] = !debuginfo.unresolved<index>
-// CHECK-DAG: ![[PTR_TYPE:.*]] = !debuginfo.ti.ptr<index>
-// CHECK: #[[IRVALUE_EXPR:.*]] = #debuginfo.expr.irvalue : ![[INDEX_TYPE]]
-// CHECK: #[[REFOF_EXPR:.*]] = #debuginfo.expr.refof<#[[IRVALUE_EXPR]]> : ![[PTR_TYPE]]
-
-// CHECK-LABEL: @mem2reg_valueop
-kgen.func @mem2reg_valueop(%arg0: index) {
-  // CHECK-NEXT: debuginfo.value #local_variable #[[REFOF_EXPR]] = %arg0 : index
-  %0 = pop.stack_allocation 1 x index loc(#loc)
-  pop.store %arg0, %0 : !kgen.pointer<index> loc(#loc)
-  debuginfo.value #local_variable = %0 : !kgen.pointer<index> loc(#loc)
-  kgen.return loc(#loc)
-} loc(#loc)
-
-
-// -----
-
 // CHECK-LABEL: @for_variant
 kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !pop.scalar<f32>, %arg5: !pop.scalar<f32>) -> (index, index, index, !pop.scalar<f32>) {
   %var0 = pop.stack_allocation 1 x index
