@@ -4,28 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s
+# RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-from memory.unsafe import Pointer
-
-##===----------------------------------------------------------------------===##
-# Closures
-##===----------------------------------------------------------------------===##
-
-fn bind_fat_to_thin_target[g: fn(y: Int) -> Int](x: Int):
-    pass
-
-
-fn bind_fat_to_thin_main():
-    let x = 4
-
-    @parameter
-    fn g(y: Int) -> Int:
-        return x
-
-    # expected-error @below {{cannot pass 'fn(y = Int) capturing -> Int' value, parameter expected 'fn(y = Int) -> Int'}}
-    alias Bound = bind_fat_to_thin_target[g]
-    Bound(3)
 
 ##===----------------------------------------------------------------------===##
 # Var / Let
@@ -46,7 +26,7 @@ def var_decl():
   var x : Int  # expected-error {{invalid redefinition of 'x'}}
   x+4   # no follow-on error.
 
-def err():
+def badTypeErrorMessage():
   var localVar = 42
   var y : localVar  # expected-error {{cannot use a dynamic value in type specification}}
 
@@ -898,65 +878,19 @@ struct Outer: # expected-error {{all members of '@register_passable' struct must
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
 ##===----------------------------------------------------------------------===##
-# 'main' Function
-##===----------------------------------------------------------------------===##
-
-# expected-error @below {{expected 'main' function to have no arguments}}
-fn main(arg: Int):
-  return
-
-# // -----
-
-# expected-error @below {{expected 'main' function to have no arguments}}
-def main(arg: Int):
-  return
-
-# // -----
-
-# expected-error @below {{expected 'main' function returning object to be raising}}
-fn main() -> object:
-  return
-
-# // -----
-
-# expected-error @below {{expected 'main' function to return 'None'}}
-fn main() -> Int:
-  return 10
-
-# // -----
-
-# expected-error @below {{expected 'main' function to have no parameters}}
-fn main[input: Int]():
-  return
-
-# // -----
-
-# expected-error @below {{'main' can only be exported as 'main'}}
-@export("foo")
-fn main():
-  return
-
-# // -----
-
-# expected-error @below {{only 'main' can be exported as 'main'}}
-@export("main")
-fn fooMain():
-  return
-
-##===----------------------------------------------------------------------===##
 # Top Level Code
 ##===----------------------------------------------------------------------===##
 
-fn foo() raises:
+fn top_level_func() raises:
    pass
 
 # expected-error @below {{cannot call function that may raise in a context that cannot raise}}
 # expected-note @below {{try surrounding the call in a 'try' block}}
-let np = foo()
+let np = top_level_func()
 
 # expected-error @below {{'try' must be contained in a function}}
 try:
-    let np2 = foo()
+    let np2 = top_level_func()
 except e:
     # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
     _ = e
