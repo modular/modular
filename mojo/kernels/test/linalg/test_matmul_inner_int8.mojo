@@ -27,8 +27,10 @@ alias b_type = DType.int8
 alias c_type = DType.int32
 
 alias simd_size: Int = simdwidthof[c_type]()
-alias a_row_size: Int = get_matmul_a_row_size[False]()
-alias pack_inner_size: Int = get_matmul_pack_inner_size[False]()
+alias a_row_size: Int = get_matmul_a_row_size[a_type, b_type, c_type, False]()
+alias pack_inner_size: Int = get_matmul_pack_inner_size[
+    a_type, b_type, c_type, False
+]()
 alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
 
 alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()

@@ -306,10 +306,14 @@ fn calculate_tile_n_k[
 # The largest kernel for AVX is 4x3 which needs 16 registers and gives the best result.
 # For AVX512 a 5x4, 5x5, or 6x4 kernel can be used, 5x4 gives the best result.
 # For the Graviton 2 a 5x3 kernel gives the best result.
-fn get_matmul_a_row_size[critical_stride: Bool]() -> Int:
+fn get_matmul_a_row_size[
+    a_type: DType, b_type: DType, c_type: DType, critical_stride: Bool
+]() -> Int:
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+
     @parameter
     if has_neon():
-        if has_neon_int8_matmul():
+        if use_i8mm:
             return 4
         if critical_stride:
             return 4
@@ -320,10 +324,14 @@ fn get_matmul_a_row_size[critical_stride: Bool]() -> Int:
     return 4
 
 
-fn get_matmul_pack_inner_size[critical_stride: Bool]() -> Int:
+fn get_matmul_pack_inner_size[
+    a_type: DType, b_type: DType, c_type: DType, critical_stride: Bool
+]() -> Int:
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+
     @parameter
     if has_neon():
-        if has_neon_int8_matmul():
+        if use_i8mm:
             return 6
         if critical_stride:
             return 4
@@ -369,7 +377,11 @@ fn get_packB_unroll_factor() -> Int:
 
 @always_inline
 fn get_matmul_num_tasks[
-    simd_size: Int, critical_stride: Bool
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    simd_size: Int,
+    critical_stride: Bool,
 ](m: Int, n: Int, k: Int, max_num_tasks: Int) -> Int:
     """Compute the number of tasks for parallel matmul.
     The max number of tasks is typically the number of threads/cores."""
@@ -384,10 +396,12 @@ fn get_matmul_num_tasks[
     # task complexity but we only want it to use <= 4 threads for now since
     # M and N are very small.
     let max_row_tasks = div_ceil(
-        m, 2 * get_matmul_a_row_size[critical_stride]()
+        m, 2 * get_matmul_a_row_size[a_type, b_type, c_type, critical_stride]()
     )
     let max_col_tasks = div_ceil(
-        n, get_matmul_pack_inner_size[critical_stride]() * simd_size
+        n,
+        get_matmul_pack_inner_size[a_type, b_type, c_type, critical_stride]()
+        * simd_size,
     )
     num_tasks = min(num_tasks, max_row_tasks * max_col_tasks)
 
@@ -449,33 +463,41 @@ fn partition_work(
 
 
 fn get_partitioned_matmul[
-    heuristic: PartitionHeuristic
+    a_type: DType, b_type: DType, c_type: DType, heuristic: PartitionHeuristic
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     if is_critical_stride(k):
-        return get_partitioned_matmul[heuristic, True](
+        return get_partitioned_matmul[a_type, b_type, c_type, heuristic, True](
             m, n, k, task_id, num_tasks
         )
     else:
-        return get_partitioned_matmul[heuristic, False](
+        return get_partitioned_matmul[a_type, b_type, c_type, heuristic, False](
             m, n, k, task_id, num_tasks
         )
 
 
 fn get_partitioned_matmul[
-    heuristic: PartitionHeuristic, critical_stride: Bool
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    heuristic: PartitionHeuristic,
+    critical_stride: Bool,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     # TODO: Add oneDNN/MLAS partition heuristic and use the parameter if below.
     @parameter
     if heuristic == PartitionHeuristic.MOJO:
         return get_partitioned_matmul_mojo[
-            get_matmul_a_row_size[critical_stride](),
-            get_matmul_pack_inner_size[critical_stride]()
+            get_matmul_a_row_size[a_type, b_type, c_type, critical_stride](),
+            get_matmul_pack_inner_size[
+                a_type, b_type, c_type, critical_stride
+            ]()
             * simdwidthof[DType.float32](),
         ](m, n, k, task_id, num_tasks)
     else:
         return get_partitioned_matmul_im2col[
-            get_matmul_a_row_size[critical_stride](),
-            get_matmul_pack_inner_size[critical_stride]()
+            get_matmul_a_row_size[a_type, b_type, c_type, critical_stride](),
+            get_matmul_pack_inner_size[
+                a_type, b_type, c_type, critical_stride
+            ]()
             * simdwidthof[DType.float32](),
         ](m, n, k, task_id, num_tasks)
 
@@ -696,8 +718,12 @@ fn search_mm_config[
     critical_stride: Bool,
     saturated_vnni: Bool,
 ]() -> MatmulConfig:
-    alias a_row_size = get_matmul_a_row_size[critical_stride]()
-    alias pack_inner_size = get_matmul_pack_inner_size[critical_stride]()
+    alias a_row_size = get_matmul_a_row_size[
+        a_type, b_type, c_type, critical_stride
+    ]()
+    alias pack_inner_size = get_matmul_pack_inner_size[
+        a_type, b_type, c_type, critical_stride
+    ]()
 
     # We can fork on a_row_size and pack_inner_size independently to get a cross-product:
     #     __mlir_op.`kgen.param.fork`[

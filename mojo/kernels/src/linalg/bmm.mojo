@@ -376,9 +376,9 @@ fn batched_matmul[
     )
     # Prevent parallelizing matmul with too many threads.
     let max_num_tasks_matmul = get_matmul_num_tasks[
-        simdwidthof[c_type](), True
+        a_type, b_type, c_type, simdwidthof[c_type](), True
     ](m, n, k, num_threads) if is_critical_stride(k) else get_matmul_num_tasks[
-        simdwidthof[c_type](), False
+        a_type, b_type, c_type, simdwidthof[c_type](), False
     ](
         m, n, k, num_threads
     )
@@ -467,7 +467,7 @@ fn batched_matmul[
                 rowwise_epilogue(start_row, num_rows, c_view)
 
             let sub_matmul_config = get_partitioned_matmul[
-                PartitionHeuristic.MOJO
+                a_type, b_type, c_type, PartitionHeuristic.MOJO
             ](m, n, k, matmul_task_id, num_tasks_matmul)
             if (
                 sub_matmul_config.shape[0] <= 0

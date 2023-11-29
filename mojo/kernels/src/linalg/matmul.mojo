@@ -3276,9 +3276,9 @@ fn matmul[
     @always_inline
     @parameter
     fn task_func(task_id: Int):
-        let sub_matmul_config = get_partitioned_matmul[PartitionHeuristic.MOJO](
-            m, n, k, task_id, num_tasks
-        )
+        let sub_matmul_config = get_partitioned_matmul[
+            a_type, b_type, c_type, PartitionHeuristic.MOJO
+        ](m, n, k, task_id, num_tasks)
 
         if sub_matmul_config.shape[0] <= 0 or sub_matmul_config.shape[1] <= 0:
             return
