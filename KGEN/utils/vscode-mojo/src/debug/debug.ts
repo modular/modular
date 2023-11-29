@@ -12,6 +12,9 @@ import {DisposableContext} from '../utils/disposableContext';
 import {getAllOpenMojoFiles, WorkspaceAwareFile} from '../utils/files';
 
 import {RpcLaunchServer, UriLaunchServer} from './externalDebugLauncher';
+import {
+  initializeInlineLocalVariablesProvider,
+} from './inlineVariables';
 
 /**
  * Stricter version of vscode.DebugConfiguration intended to reduce the chances
@@ -44,7 +47,6 @@ const DEBUG_TYPE: string = "mojo-lldb";
 class MojoDebugAdapterDescriptorFactory implements
     vscode.DebugAdapterDescriptorFactory {
   private context: MOJOContext|undefined;
-  public static DEBUG_TYPE: string = "mojo-lldb";
 
   constructor(context: MOJOContext) { this.context = context; }
 
@@ -297,25 +299,25 @@ export class MojoDebugContext extends DisposableContext {
 
     // Register the lldb-vscode debug adapter.
     this.pushSubscription(vscode.debug.registerDebugAdapterDescriptorFactory(
-        MojoDebugAdapterDescriptorFactory.DEBUG_TYPE,
-        new MojoDebugAdapterDescriptorFactory(context)));
+        DEBUG_TYPE, new MojoDebugAdapterDescriptorFactory(context)));
 
     this.pushSubscription(vscode.debug.onDidStartDebugSession(listener => {
-      if (listener.configuration.type !=
-          MojoDebugAdapterDescriptorFactory.DEBUG_TYPE)
+      if (listener.configuration.type != DEBUG_TYPE)
         return;
       if (!listener.configuration.runInTerminal)
         vscode.commands.executeCommand("workbench.debug.action.focusRepl");
     }));
 
+    this.pushSubscription(initializeInlineLocalVariablesProvider(context));
+
     this.pushSubscription(vscode.debug.registerDebugConfigurationProvider(
-        MojoDebugAdapterDescriptorFactory.DEBUG_TYPE,
+        DEBUG_TYPE,
         new MojoDebugConfigurationResolver(context),
         ));
 
     this.pushSubscription(
         vscode.debug.registerDebugConfigurationProvider(
-            MojoDebugAdapterDescriptorFactory.DEBUG_TYPE,
+            DEBUG_TYPE,
             new MojoDebugDynamicConfigurationProvider(),
             vscode.DebugConfigurationProviderTriggerKind.Dynamic,
             ),
