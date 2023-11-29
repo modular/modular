@@ -431,67 +431,90 @@ struct DebugInfoToLLVMPass
 ///
 /// TODO: As we grow support we may want to consider making this optional
 /// depending on the debug mode.
-static void convertDbgValueToAddr(Operation *op) {
-  op->walk([](LLVM::DbgValueOp op) {
-    auto value = op.getValue();
+static void convertDbgValueToAddr(ModuleOp module) {
+  // A lot more logic is required to make this reverse-mem2reg work when
+  // multiple DbgValueOps for one variable exists. Going with the simplest
+  // solution for now until we decide to retire this altogether.
+  //
+  // We perform variable-uniqueness check per-function to reduce the memory
+  // footprint of uniqueness tracking.
+  for (auto func : module.getOps<mlir::FunctionOpInterface>()) {
+    // A map from each LocalVariable to a unique DbgValueOp.
+    // If a LocalVariable maps to a nullptr DbgValueOp, that means this variable
+    // had more than one DbgValueOp for it, and cannot be trivially converted
+    // into a declare.
+    llvm::MapVector<LLVM::DILocalVariableAttr, LLVM::DbgValueOp> dbgValueCount;
+    func->walk([&](LLVM::DbgValueOp op) {
+      auto [iter, inserted] =
+          dbgValueCount.try_emplace(op.getVarInfoAttr(), op);
+      // If this variable was seen before, invalidate the current op.
+      if (!inserted)
+        iter->second = nullptr;
+    });
 
-    // Don't build debug information for simple constants.
-    if (value.getDefiningOp<LLVM::ConstantOp>() &&
-        isa<IntegerType, FloatType>(value.getType()))
-      return;
+    for (auto [varInfo, op] : dbgValueCount) {
+      // Skip conversion for variables with multiple DbgValueOps.
+      if (!op)
+        continue;
 
-    // Don't build debug info for token values.
-    if (isa<LLVM::LLVMTokenType>(value.getType())) {
+      Value value = op.getValue();
+
+      // Don't build debug information for simple constants.
+      if (value.getDefiningOp<LLVM::ConstantOp>() &&
+          isa<IntegerType, FloatType>(value.getType()))
+        continue;
+
+      // Don't build debug info for token values.
+      if (isa<LLVM::LLVMTokenType>(value.getType())) {
+        op->erase();
+        continue;
+      }
+
+      // Build a new allocation to store the intermediate value.
+      OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
+      auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
+          op.getLoc(), allocBuilder.getI32Type(), 1);
+
+      auto allocaOp = allocBuilder.create<LLVM::AllocaOp>(
+          op.getLoc(), LLVM::LLVMPointerType::get(value.getContext()),
+          value.getType(), allocSize, 0);
+
+      // Replace the old dbg.value with a dbg.declare.
+      OpBuilder(op).create<LLVM::DbgDeclareOp>(
+          op.getLoc(), allocaOp, op.getVarInfo(), op.getLocationExpr());
       op->erase();
-      return;
+
+      // Update all of the old value uses to route through the alloca instead of
+      // using the value directly.
+      while (!value.use_empty()) {
+        auto *user = *value.user_begin();
+        OpBuilder loadBuilder(user);
+        user->replaceUsesOfWith(
+            value, loadBuilder.create<LLVM::LoadOp>(user->getLoc(),
+                                                    value.getType(), allocaOp));
+      }
+
+      // Store into the alloca at the place where the value was defined.
+      if (auto *valueOp = value.getDefiningOp()) {
+        OpBuilder storeBuilder(valueOp->getNextNode());
+        storeBuilder.create<LLVM::StoreOp>(value.getLoc(), value, allocaOp);
+      } else {
+        // If the value is a block argument, we need to search for an insertion
+        // point after the start of the block.
+        auto insertPt = value.getParentBlock()->begin();
+        while (isa<LLVM::DbgValueOp, LLVM::DbgDeclareOp, LLVM::AllocaOp,
+                   LLVM::ConstantOp>(*insertPt))
+          ++insertPt;
+
+        // Block arguments might not contain debuginfo scope (which can trip up
+        // verifiers later), so to keep it simple, we can just use the location
+        // of containing op.
+        OpBuilder storeBuilder(&*insertPt);
+        storeBuilder.create<LLVM::StoreOp>(
+            value.getParentRegion()->getParentOp()->getLoc(), value, allocaOp);
+      }
     }
-
-    // Build a new allocation to store the intermediate value.
-    OpBuilder allocBuilder = OpBuilder::atBlockBegin(
-        &op->getParentOfType<mlir::FunctionOpInterface>().front());
-    auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
-        allocBuilder.getUnknownLoc(), allocBuilder.getI32Type(), 1);
-
-    auto allocaOp = allocBuilder.create<LLVM::AllocaOp>(
-        allocBuilder.getUnknownLoc(),
-        LLVM::LLVMPointerType::get(value.getContext()), value.getType(),
-        allocSize, 0);
-
-    // Replace the old dbg.value with a dbg.declare.
-    OpBuilder(op).create<LLVM::DbgDeclareOp>(
-        op.getLoc(), allocaOp, op.getVarInfo(), op.getLocationExpr());
-    op->erase();
-
-    // Update all of the old value uses to route through the alloca instead of
-    // using the value directly.
-    while (!value.use_empty()) {
-      auto *user = *value.user_begin();
-      OpBuilder loadBuilder(user);
-      user->replaceUsesOfWith(
-          value, loadBuilder.create<LLVM::LoadOp>(user->getLoc(),
-                                                  value.getType(), allocaOp));
-    }
-
-    // Store into the alloca at the place where the value was defined.
-    if (auto *valueOp = value.getDefiningOp()) {
-      OpBuilder storeBuilder(valueOp->getNextNode());
-      storeBuilder.create<LLVM::StoreOp>(value.getLoc(), value, allocaOp);
-    } else {
-      // If the value is a block argument, we need to search for an insertion
-      // point after the start of the block.
-      auto insertPt = value.getParentBlock()->begin();
-      while (isa<LLVM::DbgValueOp, LLVM::DbgDeclareOp, LLVM::AllocaOp,
-                 LLVM::ConstantOp>(*insertPt))
-        ++insertPt;
-
-      // Block arguments might not contain debuginfo scope (which can trip up
-      // verifiers later), so to keep it simple, we can just use the location of
-      // containing op.
-      OpBuilder storeBuilder(&*insertPt);
-      storeBuilder.create<LLVM::StoreOp>(
-          value.getParentRegion()->getParentOp()->getLoc(), value, allocaOp);
-    }
-  });
+  }
 }
 
 /// LLVM does not yet support emitting DW_OP_LLVM_implicit_pointer to asm. If it
