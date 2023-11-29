@@ -57,4 +57,4 @@ protected:
 
 } // namespace M
 
-#endif // GENERICML_SUPPORT_TENSORBASE_H
+#endif // SUPPORT_ML_TENSORBASE_H
