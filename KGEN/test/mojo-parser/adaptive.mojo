@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -mojo-disable-builtins -mojo-disable-parser-caching | kgen-opt -verify-parameters | FileCheck %s
+# RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 
 alias Int = __mlir_type.index
 

@@ -42,4 +42,12 @@ tools = [
     "hash-mlir",
 ]
 
+parse_isolated = (
+    "kgen-translate -import-mojo -mojo-disable-builtins"
+    " -mojo-disable-parser-caching"
+)
+
+config.substitutions.append(("%parse-mojo-isolated", parse_isolated))
+
+
 llvm_config.add_tool_substitutions(tools, tool_dirs)

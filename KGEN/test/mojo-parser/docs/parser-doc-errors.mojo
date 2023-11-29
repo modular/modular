@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -o /dev/null -mojo-warn-missing-doc-strings -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -o /dev/null -mojo-warn-missing-doc-strings -verify-diagnostics %s
 
+alias Int = __mlir_type.index
+alias `0` = __mlir_attr.`0 : index`
 
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
 struct ArgStruct:
@@ -206,7 +208,7 @@ fn fn_args_return():
 # expected-warning @below {{function has results, but no 'Returns' in doc string}}
 fn fn_args_missing_return() -> Int:
     """This doc string is missing a `Returns:` section."""
-    return 0;
+    return `0`
 
 
 fn fn_returns_section_empty() -> Int:
@@ -215,7 +217,7 @@ fn fn_returns_section_empty() -> Int:
     # expected-warning @below {{'Returns' section is empty}}
     Returns:
     """
-    return 0
+    return `0`
 
 
 fn fn_returns_section_poor_style() -> Int:
@@ -226,7 +228,7 @@ fn fn_returns_section_poor_style() -> Int:
     """
     # expected-warning @-2 {{section body should begin with a capital letter or non-alpha character, but this begins with 'd'}}
     # expected-warning @-3 {{section body should end with a period '.', but this ends with '!'}}
-    return 0
+    return `0`
 
 
 fn fn_nested_fn():
@@ -241,6 +243,10 @@ fn fn_nested_fn():
 
     return
 
+struct Error:
+    """Error type stub to allow decoupling from the builtins."""
+    pass
+
 
 fn fn_raises_with_return_type(x: Int) raises -> Int:
     """This is a function that raises, with an explicit return type.
@@ -254,8 +260,12 @@ fn fn_raises_with_return_type(x: Int) raises -> Int:
     Returns:
         `0`.
     """
-    return 0
+    return `0`
 
+@value
+struct object:
+    """Object type stub to allow decoupling from the builtins."""
+    pass
 
 def def_implicit_object_return_type(x: Int):
     """This is a `def` function with no explicit return type.

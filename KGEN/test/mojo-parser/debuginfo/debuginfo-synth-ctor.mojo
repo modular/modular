@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -debug-level full -mlir-print-debuginfo %s | FileCheck %s
+# RUN: %parse-mojo-isolated -debug-level full -mlir-print-debuginfo %s | FileCheck %s
 
 
 # COM: These test the locations in the body of synthesized constructors. Because

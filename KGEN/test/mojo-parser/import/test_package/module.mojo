@@ -7,8 +7,9 @@
 
 from .test_nested_package.module import nested_function
 
+alias Int = __mlir_type.index
 
-alias top_level_alias = 2
+alias top_level_alias = __mlir_attr.`2 : index`
 
 
 fn function():
@@ -44,7 +45,7 @@ struct ParameterizedType[value: Int]:
 struct Wrapper:
     var data: Int
 
-    alias MyType = ParameterizedType[42]
+    alias MyType = ParameterizedType[__mlir_attr.`42 : index`]
 
     fn unused_method(inout self) -> Self.MyType:
         return Self.MyType()

@@ -4,18 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics -I=%S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I=%S %s | FileCheck %s
 
 # Test import of a module, and we properly allow import of an imported decl.
 
 from imported_module import *
-
-
-# CHECK-LABEL: lit.func @"import_of_import
-# CHECK-SAME: @"$builtin"::@"$simd"::@SIMD<
-fn import_of_import(arg: Float64):
-    pass
-
 
 from test_package.module import top_level_alias
 
@@ -42,9 +35,8 @@ fn test_package_user():
 from test_package.module import function
 from test_package.test_nested_package.module import nested_function
 from test_package import *
-import builtin
 
-# CHECK-LABEL: lit.func @"test_function_calls($builtin::$int::Int)"
+# CHECK-LABEL: lit.func @"test_function_calls
 # CHECK:  lit.call @"$test_package"::@"$module"::@"function()"
 # CHECK:  lit.call @"$test_package"::@"$test_nested_package"::@"$module"::@"nested_function()"
 # CHECK:  lit.call @"$test_package"::@"$__init__"::@"method_defined_in_init()"()
@@ -61,7 +53,7 @@ import builtin
 # CHECK:      lit.func @"nested_function()"
 
 
-fn test_function_calls(arg: builtin.int.Int):
+fn test_function_calls():
     function()
     nested_function()
     method_defined_in_init()

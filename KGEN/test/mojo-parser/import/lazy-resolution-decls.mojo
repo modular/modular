@@ -5,15 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Run parsing twice to ensure the cache is populated.
-# RUN: kgen-translate -import-mojo -I=%S %s -o /dev/null
-# RUN: kgen-translate -import-mojo -I=%S %s | FileCheck %s
+# RUN: kgen-translate -mojo-disable-builtins -import-mojo -I=%S %s -o /dev/null
+# RUN: kgen-translate -mojo-disable-builtins -import-mojo -I=%S %s | FileCheck %s
 
 from imported_cached_module import StringLiteralAlias, global_variable, Trait
 
 
 # CHECK-LABEL: lit.func @"assign_from()"
 fn assign_from():
-    # CHECK: !StringLiteral = <{{.*}}"foobar"
+    # CHECK: string = <"foobar">
     let foo = StringLiteralAlias
     # CHECK: lit.globalvar.ref {{.*}}@global_variable
     let bar = global_variable

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -I %S -debug-level full -mlir-print-debuginfo %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I %S -debug-level full -mlir-print-debuginfo %s | FileCheck %s
 
 from debuginfo_module import imported_fn
 

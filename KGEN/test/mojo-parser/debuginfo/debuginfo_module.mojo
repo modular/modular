@@ -19,5 +19,5 @@ struct VeryUniqueStruct:
     # C-3PO is a short and very unique argument name. We use it to make
     # FileCheck matching easier.
     @staticmethod
-    fn very_unique_func(`C-3PO`: Int) -> VeryUniqueStruct:
-        return Self {very_unique_field: `C-3PO`.__mlir_index__()}
+    fn very_unique_func(`C-3PO`: __mlir_type.index) -> VeryUniqueStruct:
+        return Self {very_unique_field: `C-3PO`}

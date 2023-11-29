@@ -8,7 +8,7 @@
 # COM: issues when a diagnostic is emitted. We cannot use -verify-diagnostics in
 # COM: conjunction with setting -use-mlir-diagnostics=false. The latter is
 # COM: needed because mlir diagnostics ignore source ranges.
-# RUN: not kgen-translate -mojo-disable-builtins -mojo-disable-parser-caching -use-mlir-diagnostics=false -import-mojo %s 2>&1 | FileCheck %s
+# RUN: not %parse-mojo-isolated -use-mlir-diagnostics=false %s 2>&1 | FileCheck %s
 
 fn foo(x: __mlir_type.index):
     pass
