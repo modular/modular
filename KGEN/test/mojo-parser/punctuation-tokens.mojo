@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -verify-diagnostics
+# RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 # CHECK: module {
 # CHECK-NEXT: }

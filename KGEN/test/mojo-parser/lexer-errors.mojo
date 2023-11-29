@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file %s
 
 # expected-error @+1 {{unterminated backtick identifier}}
 `
@@ -83,5 +83,5 @@ r"AB\"
 
 # Issue #12818
 fn inconsistent_indent():
-    let x = 1
-   	let y = 2  # expected-error {{leading indentation uses inconsistent whitespace (tabs and spaces) than previous line}}
+    let x = __mlir_attr.`1 : index`
+   	let y = __mlir_attr.`2 : index`  # expected-error {{leading indentation uses inconsistent whitespace (tabs and spaces) than previous line}}

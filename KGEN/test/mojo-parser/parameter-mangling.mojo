@@ -10,14 +10,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# COM: This file
-
-# CHECK: lit.alias.decl _18x1_MY_NUMBER: !IntLiteral =
-alias MY_NUMBER = 42
+# CHECK: lit.alias.decl _16x1_MY_NUMBER
+alias MY_NUMBER = __mlir_attr.`42 : index`
 
 
 fn foo():
-    # CHECK: lit.alias.decl _23x5_value: !IntLiteral =
+    # CHECK: lit.alias.decl _21x5_value
     alias value = MY_NUMBER
