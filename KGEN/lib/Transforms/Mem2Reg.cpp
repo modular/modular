@@ -13,6 +13,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -75,9 +76,77 @@ mem2RegLeafConversion(DebugInfo::DIType irType) {
   return DebugInfo::DIRefOfExprAttr::get(newIrValue, irType);
 }
 
+namespace {
+/// Current state of a promoted stack allocation.
+struct PromotedStackAlloc {
+  /// The latest value that the alloc'd value has.
+  Value currValue;
+  /// The initial DebugInfo ValueOp that was created for the promoted
+  /// StackAllocation. One alloc may be mapped to multiple source variables
+  /// (each via a DebugInfo ValueOp) after inlining. This map allows tracking
+  /// stores to them separately.
+  DenseMap<DebugInfo::DISubprogramAttr, DebugInfo::ValueOp> debugValues;
+
+  /// Create a new DebugInfo ValueOp for a StackAllocation that was promoted.
+  /// By default, an undef value is set as the DI value if no previous stores
+  /// were observed.
+  ErrorOr<DebugInfo::ValueOp>
+  createDebugValue(StackAllocationOp alloc, DebugInfo::ValueOp value,
+                   DebugInfo::DIExprLeafReplacer &exprLeafReplacer) {
+    ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
+        exprLeafReplacer.apply(value.getConversionExprAttr());
+    if (failed(newConversionExpr))
+      return newConversionExpr.takeError();
+
+    OpBuilder b(value);
+    if (!currValue)
+      currValue = b.create<UndefOp>(alloc->getLoc(), getAllocType(alloc));
+    auto debugValue = b.create<DebugInfo::ValueOp>(value.getLoc(), currValue,
+                                                   value.getValueInfo(),
+                                                   newConversionExpr.get());
+    DebugInfo::DISubprogramAttr scope =
+        extractPreInlineSubprogramScope(value->getLoc());
+    if (!scope)
+      return Error(
+          "location of debug value does not contain a subprogram scope");
+    debugValues.try_emplace(scope, debugValue);
+    return debugValue;
+  }
+
+  /// Update the current value of this promoted alloc.
+  /// Also creates a new DebugInfo ValueOp with this new value if a DebugInfo
+  /// ValueOp existed previously for this scope.
+  void updateValue(Operation *mutator, Value newValue) {
+    currValue = newValue;
+
+    // Duplicate a DebugInfo::ValueOp for `newValue` if one existed before.
+    // The new op is created after `op`.
+    auto mutatorScope = extractPreInlineSubprogramScope(mutator->getLoc());
+    if (!mutatorScope)
+      return;
+
+    if (auto it = debugValues.find(mutatorScope); it != debugValues.end()) {
+      OpBuilder b(mutator->getContext());
+      b.setInsertionPointAfter(mutator);
+      auto newDebugValueOp = cast<DebugInfo::ValueOp>(b.clone(*it->second));
+      newDebugValueOp.setOperand(newValue);
+      newDebugValueOp->setLoc(mutator->getLoc());
+    }
+  }
+
+private:
+  /// Attempt to get the source subprogram scope from a Location.
+  static DebugInfo::DISubprogramAttr
+  extractPreInlineSubprogramScope(Location loc) {
+    return DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
+        loc, DebugInfo::ScopeWalkPolicy::CalleeOnly);
+  }
+};
+} // namespace
+
 static LogicalResult
 processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
-              llvm::MapVector<StackAllocationOp, Value> &state,
+              llvm::MapVector<StackAllocationOp, PromotedStackAlloc> &state,
               DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
                   &termVariants,
               DebugInfo::DIExprLeafReplacer &exprLeafReplacer,
@@ -102,7 +171,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       // If we can promote this stack allocation, initialize its state with an
       // undefined value.
       if (canPromote(alloc))
-        state.insert({alloc, {}});
+        state.try_emplace(alloc);
       continue;
     }
     if (auto load = dyn_cast<LoadOp>(op)) {
@@ -110,7 +179,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       // value of the stack allocation.
       if (auto alloc = load.getPtr().getDefiningOp<StackAllocationOp>()) {
         if (auto it = state.find(alloc); it != state.end()) {
-          load.replaceAllUsesWith(valueOrUndef(alloc, load, it->second));
+          load.replaceAllUsesWith(
+              valueOrUndef(alloc, load, it->second.currValue));
           load.erase();
           ++stats.numLoadsElided;
         }
@@ -118,18 +188,13 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       continue;
     }
     if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
-      // Replace the variable with its current value.
+      // Delete stale debuginfo for the old stack allocation op.
       if (auto alloc = value.getValue().getDefiningOp<StackAllocationOp>()) {
         if (auto it = state.find(alloc); it != state.end()) {
-          OpBuilder b(value);
-          auto operand = valueOrUndef(alloc, value, it->second);
-          auto newConversionExpr =
-              exprLeafReplacer.apply(value.getConversionExprAttr());
-          if (failed(newConversionExpr))
-            return op.emitOpError() << newConversionExpr.getError();
-          b.create<DebugInfo::ValueOp>(value.getLoc(), operand,
-                                       value.getValueInfo(),
-                                       newConversionExpr.get());
+          auto newValue =
+              it->second.createDebugValue(alloc, value, exprLeafReplacer);
+          if (failed(newValue))
+            return value.emitError() << newValue.getError();
           value.erase();
         }
       }
@@ -140,7 +205,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       // the operation.
       if (auto alloc = store.getPtr().getDefiningOp<StackAllocationOp>()) {
         if (auto it = state.find(alloc); it != state.end()) {
-          it->second = store.getArg();
+          it->second.updateValue(store, store.getArg());
           store.erase();
           ++stats.numStoresElided;
         }
@@ -156,7 +221,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       SmallVector<Value> newOperands;
       for (StackAllocationOp alloc : it->second) {
         newOperands.push_back(
-            valueOrUndef(alloc, &op, state.find(alloc)->second));
+            valueOrUndef(alloc, &op, state.find(alloc)->second.currValue));
       }
       term.insertVariants(newOperands);
       continue;
@@ -223,7 +288,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
     bool parentHasInit = false;
     for (Region &region : op.getRegions()) {
       // Copy the current state.
-      llvm::MapVector<StackAllocationOp, Value> nestedState = state;
+      llvm::MapVector<StackAllocationOp, PromotedStackAlloc> nestedState =
+          state;
 
       if (!variant.empty()) {
         // Determine if there are any region predecessors.
@@ -231,8 +297,9 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
           for (auto [i, alloc] : llvm::enumerate(variant)) {
             Type allocType = getAllocType(alloc);
             // Bind the block argument to the value of the variant allocation.
-            nestedState[alloc] =
-                node.insertArgumentToRegion(op.getLoc(), allocType, i, region);
+            nestedState[alloc] = {
+                node.insertArgumentToRegion(op.getLoc(), allocType, i, region),
+                state.find(alloc)->second.debugValues};
           }
           // If one of the predecessors is the parent operation, we need to
           // add initializer operands to it if this hasn't already been done.
@@ -240,8 +307,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
             parentHasInit = true;
             SmallVector<Value> initOperands;
             for (StackAllocationOp alloc : variant) {
-              initOperands.push_back(
-                  valueOrUndef(alloc, &op, state.find(alloc)->second));
+              initOperands.push_back(valueOrUndef(
+                  alloc, &op, state.find(alloc)->second.currValue));
             }
 
             node.insertVariants(initOperands);
@@ -280,8 +347,12 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       for (unsigned i = 0, e = op.getNumRegions(); i != e; ++i)
         newOp->getRegion(i).takeBody(op.getRegion(i));
       unsigned iterStart = op.getNumResults();
-      for (auto [i, alloc] : llvm::enumerate(variant))
-        state.find(alloc)->second = newOp->getResult(iterStart + i);
+      for (auto [i, alloc] : llvm::enumerate(variant)) {
+        // Update currValue without creating a new debug value, since the
+        // mutator inside the nested scope will have noted when the value was
+        // updated.
+        state.find(alloc)->second.currValue = newOp->getResult(iterStart + i);
+      }
       op.replaceAllUsesWith(newOp->getResults().slice(0, iterStart));
       op.erase();
     }
@@ -300,7 +371,7 @@ void Mem2RegPass::runOnOperation() {
   auto &cfg = getAnalysis<HLCF::CFGAnalysis>();
   PassStats stats;
   for (Region &region : getOperation()->getRegions()) {
-    llvm::MapVector<StackAllocationOp, Value> entryState;
+    llvm::MapVector<StackAllocationOp, PromotedStackAlloc> entryState;
     DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
         termVariants;
     DebugInfo::DIExprLeafReplacer exprLeafReplacer(mem2RegLeafConversion);

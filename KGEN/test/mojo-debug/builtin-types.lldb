@@ -8,7 +8,6 @@
 
 # RUN: %lldb %t -o 'b builtin-types.mojo:88' -o 'r' -o 'frame var' | FileCheck %s
 
-# CHECK: (si64) a_var_index = 48
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101
 # CHECK:   f32 = 24.125
@@ -71,6 +70,7 @@
 # CHECK:   [1] = 6
 # CHECK: }
 # CHECK: (None) none = None
+# CHECK: (si64) a_var_index = 48
 # CHECK: (si64) a_let_index = 48
 # CHECK: (si64) an_int = 123
 # CHECK: (f64) a_literal_float = 3.125
