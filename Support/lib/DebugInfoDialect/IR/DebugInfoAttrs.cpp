@@ -368,6 +368,50 @@ ErrorOr<DIExprAttr> DebugInfo::DIExprLeafReplacer::apply(DIExprAttr expr) {
 // DI Scope Support
 //===----------------------------------------------------------------------===//
 
+WalkResult DebugInfo::walkScope(Location loc, ScopeWalkPolicy policy,
+                                function_ref<WalkResult(DIScopeAttr)> walkFn) {
+  return TypeSwitch<Location, WalkResult>(loc)
+      .Case([&](mlir::CallSiteLoc callLoc) -> WalkResult {
+        mlir::LocationAttr firstChoice, secondChoice;
+        switch (policy) {
+        case ScopeWalkPolicy::CalleePriority:
+          secondChoice = callLoc.getCaller();
+          LLVM_FALLTHROUGH;
+        case ScopeWalkPolicy::CalleeOnly:
+          firstChoice = callLoc.getCallee();
+          break;
+        case ScopeWalkPolicy::CallerPriority:
+          secondChoice = callLoc.getCallee();
+          LLVM_FALLTHROUGH;
+        case ScopeWalkPolicy::CallerOnly:
+          firstChoice = callLoc.getCaller();
+        }
+        if (walkScope(firstChoice, policy, walkFn).wasInterrupted())
+          return WalkResult::interrupt();
+        if (secondChoice)
+          return walkScope(secondChoice, policy, walkFn);
+        return WalkResult::advance();
+      })
+      .Case([&](FusedLoc fusedLoc) -> WalkResult {
+        if (auto metadata = dyn_cast<DIScopeAttr>(fusedLoc.getMetadata()))
+          if (walkFn(metadata).wasInterrupted())
+            return WalkResult::interrupt();
+
+        for (Location subLoc : fusedLoc.getLocations())
+          if (walkScope(subLoc, policy, walkFn).wasInterrupted())
+            return WalkResult::interrupt();
+
+        return WalkResult::advance();
+      })
+      .Case([&](mlir::NameLoc nameLoc) -> WalkResult {
+        return walkScope(nameLoc.getChildLoc(), policy, walkFn);
+      })
+      .Case([&](mlir::OpaqueLoc opaqueLoc) -> WalkResult {
+        return walkScope(opaqueLoc.getFallbackLocation(), policy, walkFn);
+      })
+      .Default(WalkResult::advance());
+}
+
 DISubprogramAttr DebugInfo::extractScope(mlir::FunctionOpInterface funcOp) {
   if (auto fusedLoc =
           dyn_cast<mlir::FusedLocWith<DISubprogramAttr>>(funcOp->getLoc()))
@@ -380,7 +424,8 @@ DIScopeAttr DebugInfo::extractScope(Operation *op) {
     return scopedOp.getLocScope();
 
   // For other ops, we look for the scope recursively.
-  return extractScopeFrom<DIScopeAttr>(op->getLoc());
+  return extractScopeFrom<DIScopeAttr>(op->getLoc(),
+                                       ScopeWalkPolicy::CalleePriority);
 }
 
 void DIAttrTypeReplacer::replaceElementsIn(Operation *op) {

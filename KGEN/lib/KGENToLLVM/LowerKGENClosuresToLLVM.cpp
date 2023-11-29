@@ -137,8 +137,8 @@ private:
         wrapperFnType, LLVM::Linkage::Internal);
 
     // If possible, we need to add a subprogram scope to the new function.
-    auto scope =
-        DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(op.getLoc());
+    auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
+        op.getLoc(), DebugInfo::ScopeWalkPolicy::CalleePriority);
     if (scope) {
       // Use unresolved types now for simplicity, these will get resolved during
       // compilation.
