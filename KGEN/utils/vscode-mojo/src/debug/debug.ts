@@ -135,7 +135,9 @@ class MojoDebugConfigurationResolver implements
 
     // This setting shortens the length of address strings.
     const initCommands = [
-      "settings set target.show-hex-variable-values-with-leading-zeroes false"
+      "settings set target.show-hex-variable-values-with-leading-zeroes false",
+      // FIXME(#23274): remove this when we properly emit the opt flag.
+      "settings set target.process.optimization-warnings false",
     ];
 
     initCommands.push(`plugin load '${config.mojoLLDBPluginPath}'`);
