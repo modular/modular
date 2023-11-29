@@ -2011,7 +2011,7 @@ struct ConvIm2ColNHWC[
             )
 
         let sub_matmul_config = get_partitioned_matmul[
-            PartitionHeuristic.Im2col, False
+            type, type, type, PartitionHeuristic.Im2col, False
         ](gemm_shape.M, gemm_shape.N, gemm_shape.K, task_id, num_tasks)
         let row_start_idx = sub_matmul_config.offset[0]
         let total_row_count = sub_matmul_config.shape[0]
