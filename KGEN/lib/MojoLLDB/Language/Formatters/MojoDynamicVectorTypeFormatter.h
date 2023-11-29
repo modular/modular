@@ -14,7 +14,7 @@ namespace M::KGEN::Mojo {
 class MojoDynamicVectorSyntheticFrontEnd
     : public lldb_private::SyntheticChildrenFrontEnd {
 public:
-  MojoDynamicVectorSyntheticFrontEnd(lldb::ValueObjectSP backend);
+  MojoDynamicVectorSyntheticFrontEnd(const lldb::ValueObjectSP &backend);
 
   ~MojoDynamicVectorSyntheticFrontEnd() override = default;
 
@@ -36,7 +36,7 @@ private:
 };
 
 lldb_private::SyntheticChildrenFrontEnd *
-MojoDynamicVectorSyntheticFrontEndCreator(lldb_private::CXXSyntheticChildren *,
+mojoDynamicVectorSyntheticFrontEndCreator(lldb_private::CXXSyntheticChildren *,
                                           const lldb::ValueObjectSP &valobjSP);
 } // namespace M::KGEN::Mojo
 

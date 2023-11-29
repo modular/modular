@@ -1,0 +1,33 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+
+@register_passable("trivial")
+struct Point(CollectionElement):
+    var x: Int
+    var y: Int
+
+    fn __init__(x: Int, y: Int) -> Self:
+        return Point {x: x, y: y}
+
+
+fn main():
+    var point_vec = DynamicVector[Point](3)
+    let p1 = Point(1, -1)
+    let p2 = Point(2, -2)
+    let p3 = Point(3, -3)
+    point_vec.push_back(p1)
+    point_vec.push_back(p2)
+    point_vec.push_back(p3)  # breakpoint
+
+    var int_vec = DynamicVector[Int](3)
+    int_vec.push_back(1)
+    int_vec.push_back(2)
+    int_vec.push_back(3)  # breakpoint
+
+    for i in range(0, 100):
+        int_vec.push_back(i)
+    print(int_vec[0])  # breakpoint

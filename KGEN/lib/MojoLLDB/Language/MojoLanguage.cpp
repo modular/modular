@@ -13,6 +13,7 @@
 #include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/DataFormatters/VectorType.h"
+#include <lldb/API/SBValue.h>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -69,6 +70,57 @@ popScalarBoolSummaryProvider(ValueObject &valobj, Stream &stream,
   return false;
 }
 
+/// Create a short summary for a vector-like object. It includes the size of the
+/// container and, if the children are scalars or have summaries of their own,
+/// they will be displayed as well.
+static bool
+vectorLikeSummaryProvider(ValueObject &valobj, Stream &stream,
+                          const TypeSummaryOptions &summaryOptions) {
+  size_t numChildren = valobj.GetNumChildren();
+  stream.Format("(size {0})", numChildren);
+
+  // We'll limit the amount of characters to use when displaying children.
+  // In practice we can go beyond this limit by a few characters.
+  const size_t maxChildrenSummaryLength = 32;
+  std::string childrenSummary = "[";
+
+  size_t i = 0;
+  for (; i < numChildren; ++i) {
+    // If we exceeded the number of characters, we break;
+    if (childrenSummary.size() > maxChildrenSummaryLength)
+      break;
+
+    ValueObjectSP child = valobj.GetChildAtIndex(i);
+
+    llvm::StringRef childText;
+    std::string childSummary;
+    child->GetSummaryAsCString(childSummary, summaryOptions);
+    if (childSummary.empty())
+      childText = child->GetValueAsCString();
+    else
+      childText = childSummary;
+
+    // If we can't generate some text for the current child, we stop.
+    if (childText.empty())
+      break;
+
+    if (i > 0)
+      childrenSummary += ", ";
+    childrenSummary += childText;
+  }
+
+  // If we printed some children, we include them in the output stream.
+  if (i > 0) {
+    // If we stopped early, we add `...` to show that there are more elements.
+    if (i < numChildren)
+      childrenSummary += ", ...";
+
+    childrenSummary += "]";
+    stream << childrenSummary;
+  }
+  return true;
+}
+
 static void
 LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   if (!mojoCategorySP)
@@ -91,11 +143,10 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSynthetic(mojoCategorySP, mojoREPLResultRefTypeSyntheticFrontEndCreator,
                   "REPLResultRefType synthetic children",
                   "^!lit.replresultref<.*>$", synthFlags, /*regex=*/true);
-  // FIXME(#26559): Migrate to DynamicVector
   AddCXXSynthetic(
-      mojoCategorySP, MojoDynamicVectorSyntheticFrontEndCreator,
+      mojoCategorySP, mojoDynamicVectorSyntheticFrontEndCreator,
       "Mojo DynamicVector synthetic children",
-      R"(^!kgen.declref<@"\$utils"::@"\$vector"::@_OldDynamicVector<.*>>$)",
+      R"(^!kgen.declref<@"\$utils"::@"\$vector"::@"?DynamicVector[\[<].*$)",
       synthFlags, /*regex=*/true);
 
   // These settings are the same as the C++ ones.
@@ -115,15 +166,25 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, mojoDecoratorBasedSummaryProvider,
                 "Mojo decorator-based summary provider", ".*", summaryFlags,
                 /*regex=*/true);
-  AddCXXSummary(mojoCategorySP, mojoREPLResultRefTypeSummaryProvider,
-                "REPLResultRefType summary provider",
-                "^!lit.replresultref<.*>$", summaryFlags, /*regex=*/true);
   AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
                 "!kgen.none summary provider", "!kgen.none", summaryFlags,
                 /*regex=*/false);
   AddCXXSummary(mojoCategorySP, popScalarBoolSummaryProvider,
                 "!pop.scalar<bool> summary provider", "!pop.scalar<bool>",
                 summaryFlags, /*regex=*/false);
+  AddCXXSummary(mojoCategorySP, mojoREPLResultRefTypeSummaryProvider,
+                "REPLResultRefType summary provider",
+                "^!lit.replresultref<.*>$", summaryFlags, /*regex=*/true);
+
+  summaryFlags.SetDontShowChildren(false);
+  summaryFlags.SetDontShowValue(false);
+  // FIXME(26722): add support for this summary provider in the REPL. Right now
+  // the regex only includes the DWARF version of this type.
+  AddCXXSummary(
+      mojoCategorySP, vectorLikeSummaryProvider,
+      "$utils::vector::DynamicVector summary provider",
+      R"(^!kgen.declref<@"\$utils"::@"\$vector"::@"DynamicVector\[.*$)",
+      summaryFlags, /*regex=*/true);
 }
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {
