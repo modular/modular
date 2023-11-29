@@ -19,6 +19,7 @@ set_target_properties(check-mojo PROPERTIES FOLDER "Tests")
 add_dependencies(check-all check-mojo)
 
 add_subdirectory(kgen)
+add_subdirectory(mojo-builtins)
 add_subdirectory(mojo-debug)
 add_subdirectory(mojo-integration)
 add_subdirectory(mojo-jupyter)

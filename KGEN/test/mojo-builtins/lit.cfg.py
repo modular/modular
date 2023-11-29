@@ -9,10 +9,10 @@ import os
 from lit.llvm import llvm_config
 
 # name: The name of this test suite.
-config.name = "mojo-integration"
+config.name = "mojo-builtins"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".mojo", ".mlir"]
+config.suffixes = [".mojo", ".🔥"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
@@ -21,7 +21,7 @@ config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
 # These files/directories are only used as part of other tests.
-config.excludes = ["inputs"]
+config.excludes = []
 
 tool_dirs = [
     config.modular_tools_dir,
@@ -29,9 +29,8 @@ tool_dirs = [
     config.llvm_tools_dir,
 ]
 tools = [
-    "mojo",
-    "kgen",
     "kgen-translate",
+    "kgen-opt",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
