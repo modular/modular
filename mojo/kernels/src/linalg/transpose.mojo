@@ -320,7 +320,7 @@ fn _permute_data[
 
     @unroll
     for idx in range(size):
-        let perm_axis = perms.load(idx)[0].value
+        let perm_axis = perms.load(idx)[0]
         let perm_data = input.load(perm_axis)
         output.store(idx, perm_data)
 
