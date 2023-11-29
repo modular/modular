@@ -6,8 +6,12 @@
 
 # COM: This file is used to test imported from cached bytecode modules.
 
-alias StringLiteralAlias = "foobar"
-var global_variable = 1234
+alias StringLiteralAlias = __mlir_attr.`"foobar" : !kgen.string`
+var global_variable = __mlir_attr.`1234 : index`
+
+# COM: Destructable stub to allow testing without builtins.
+trait Destructable:
+    pass
 
 trait Trait:
     pass

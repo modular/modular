@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This is a module doc."""
 
-# RUN: kgen-translate -import-mojo %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 from docs_package import documented_method_defined_in_init
 
@@ -33,19 +33,23 @@ from docs_package import documented_method_defined_in_init
 alias AliasType = __mlir_type.`!kgen.anyregtype`
 """This is an alias doc."""
 
-let value = 10
+let value = __mlir_attr.`10 : index`
 """This is a global variable doc."""
 
 struct Struct:
   """This is a struct doc."""
 
-    var value: Int
+    var value: __mlir_type.index
     """This is a struct field doc."""
 
 fn foo():
   """This is a function doc."""
   documented_method_defined_in_init()
   return
+
+trait Destructable:
+  """A stub for the Destructable trait to allow decoupling from the builtins."""
+  pass
 
 trait Trait:
   """This is a trait doc."""

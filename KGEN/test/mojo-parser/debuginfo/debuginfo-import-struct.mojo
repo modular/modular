@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -I %S -debug-level full -mlir-print-debuginfo %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I %S -debug-level full -mlir-print-debuginfo %s | FileCheck %s
 
 from debuginfo_module import VeryUniqueStruct
 
@@ -16,12 +16,12 @@ from debuginfo_module import VeryUniqueStruct
 
 # CHECK-DAG: lit.struct.decl @VeryUniqueStruct
 # CHECK-DAG: lit.struct.field very_unique_field : index loc(#[[LOC:loc[0-9]+]])
-# CHECK-DAG: lit.func @"very_unique_func{{.*}}"(%C-3PO[*"C-3PO"]: !Int loc(#[[LINE_LOC]]
-# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %C-3PO : !Int loc(#[[VALUE_LOC:loc[0-9]+]])
+# CHECK-DAG: lit.func @"very_unique_func{{.*}}"(%C-3PO[*"C-3PO"]: index loc(#[[LINE_LOC]]
+# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %C-3PO : index loc(#[[VALUE_LOC:loc[0-9]+]])
 
 # CHECK-DAG: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
 # CHECK-DAG: #[[VALUE_LOC]] = loc(fused<#[[SP]]>[#[[LINE_LOC]]])
 
 
 fn caller():
-    let y = VeryUniqueStruct.very_unique_func(0)
+    let y = VeryUniqueStruct.very_unique_func(__mlir_attr.`0 : index`)

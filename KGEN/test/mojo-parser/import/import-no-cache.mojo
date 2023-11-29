@@ -4,15 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file --mojo-disable-parser-caching=true -I=%S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -verify-diagnostics --mojo-disable-parser-caching=true -I=%S %s | FileCheck %s
 
 from test_package.module import *
 
 
 # CHECK-LABEL: lit.func @"foo
 fn foo():
-    let x = Wrapper(33)
-    print(x.data)
+    let x = Wrapper(__mlir_attr.`33 : index`)
+    let y = x.data
 
 
 # Even though ParameterizedType is referenced in an alias in Wrapper, the alias

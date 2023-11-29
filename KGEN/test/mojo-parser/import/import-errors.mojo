@@ -10,7 +10,7 @@
 # Test the various error cases of imports. The run line also checks that we
 # properly handle the case of an invald import directory.
 
-# RUN: kgen-translate -import-mojo -split-input-file -verify-diagnostics -I=unknownincludedir -I=%S -I=%S/test_package %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=unknownincludedir -I=%S -I=%S/test_package %s
 
 # expected-error @+1 {{expected module name}}
 import --
