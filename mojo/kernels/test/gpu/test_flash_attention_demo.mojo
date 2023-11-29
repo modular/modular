@@ -556,6 +556,41 @@ fn _buffer_view[
     return view
 
 
+@always_inline
+fn float32[size: _uint32]() -> NDBuffer[1, DimList(size), DType.float32]:
+    return NDBuffer[1, DimList(size), DType.float32].stack_allocation()
+
+
+@always_inline
+fn float32[
+    size: _uint32
+](val: Float32) -> NDBuffer[1, DimList(size), DType.float32]:
+    let buff = NDBuffer[1, DimList(size), DType.float32].stack_allocation()
+    buff.fill(val)
+    return buff
+
+
+@always_inline
+fn float32[
+    rows: _uint32, cols: _uint32
+]() -> NDBuffer[2, DimList(rows, cols), DType.float32]:
+    return NDBuffer[2, DimList(rows, cols), DType.float32].stack_allocation()
+
+
+@always_inline
+fn float32[
+    rows: _uint32, cols: _uint32
+](val: Float32) -> NDBuffer[2, DimList(rows, cols), DType.float32]:
+    let buff = NDBuffer[
+        2, DimList(rows, cols), DType.float32
+    ].stack_allocation()
+    buff.fill(val)
+    return buff
+
+
+alias neginf_f32 = neginf[DType.float32]()
+
+
 @__llvm_metadata(`nvvm.maxntid`=[int(num_threads)])
 fn flash_attention_kernel[
     BM: _uint32,  # number of queries per block
@@ -588,21 +623,11 @@ fn flash_attention_kernel[
     ]()
     constrained[BN == TN * WARP_SIZE, "Incompatible block size"]()
 
-    let rowmax = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
-
-    var rowsum = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
-    rowsum.zero()
-
-    var reg_result = NDBuffer[
-        2, DimList(TM, TN), DType.float32
-    ].stack_allocation()
-
-    var o_thread_tile = NDBuffer[
-        2, DimList(TM, TN), DType.float32
-    ].stack_allocation()
-    o_thread_tile.zero()
-
-    var correction = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
+    let rowmax = float32[TM](neginf_f32)
+    var rowsum = float32[TM](0)
+    var reg_result = float32[TM, TN]()
+    var o_thread_tile = float32[TM, TN](0)
+    var correction = float32[TM]()
 
     let batch_idx: _uint32 = BlockIdx.z()
     let head_idx: _uint32 = BlockIdx.y()
@@ -612,13 +637,6 @@ fn flash_attention_kernel[
         query,
         Index(0, q_tile_idx * BM, head_idx, 0),
         Index(0, 1, 0, 1),
-    )
-
-    _fill[TM](rowmax.data, neginf[DType.float32]())
-
-    # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
-    var global_kv_offset: _uint32 = depth * (
-        head_idx + num_heads * seq_len * batch_idx
     )
 
     # Idealy the main loop is as follow (with names changed to match the paper)
