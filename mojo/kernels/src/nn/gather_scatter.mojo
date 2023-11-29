@@ -18,7 +18,7 @@ from algorithm import (
 from algorithm.functional import _elementwise_impl, tile
 from memory import memset_zero, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
-from MOGG import reshape
+from Reshape import reshape
 from runtime.llcl import OutputChainPtr
 from runtime.tracing import TraceLevel
 
