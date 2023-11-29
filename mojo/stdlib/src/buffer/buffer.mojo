@@ -1523,6 +1523,220 @@ struct NDBuffer[
         """
         self._offset(indices).prefetch[params]()
 
+    @always_inline
+    fn __imul__(self, rhs: Float32):
+        """In-place multiplies a scalar.
+
+        Args:
+            rhs: The RHS of the mul operation.
+        """
+        constrained[rank == 2]()
+        constrained[shape.all_known[2]()]()
+        constrained[type == DType.float32]()
+
+        alias TM = shape.at[0]().get()
+        alias TN = shape.at[1]().get()
+
+        alias simd_size = simdwidthof[DType.float32]()
+
+        @unroll
+        for i in range(TM):
+
+            @unroll
+            for j in range(0, TN, simd_size):
+                let idx = i * TN + j
+                let vec = self.data.simd_load[simd_size](i * TN + j)
+                self.data.simd_store[simd_size](idx, vec * rhs.cast[type]())
+
+    @always_inline
+    fn __imul__(self, rhs: NDBuffer):
+        """In-place multiplies a NDBuffer.
+
+        Args:
+            rhs: The RHS of the mul operation.
+        """
+        constrained[rank == 2]()
+        constrained[shape.all_known[2]()]()
+        constrained[type == DType.float32]()
+
+        alias TM = shape.at[0]().get()
+        alias TN = shape.at[1]().get()
+
+        alias simd_size = simdwidthof[type]()
+
+        @unroll
+        for i in range(TM):
+
+            @unroll
+            for j in range(0, TN, simd_size):
+                let idx = i * TN + j
+                let vec = self.data.simd_load[simd_size](idx)
+                let rhs_vec = SIMD[type, simd_size](
+                    rhs.data.load(i).cast[type]()
+                )
+                self.data.simd_store[simd_size](idx, vec * rhs_vec)
+
+    @always_inline
+    fn __itruediv__(self, rhs: NDBuffer):
+        """In-place divides a NDBuffer.
+
+        Args:
+            rhs: The RHS of the div operation.
+        """
+        constrained[rank == 2]()
+        constrained[shape.all_known[2]()]()
+        constrained[type == DType.float32]()
+
+        alias TM = shape.at[0]().get()
+        alias TN = shape.at[1]().get()
+
+        alias simd_size = simdwidthof[type]()
+
+        @unroll
+        for i in range(TM):
+
+            @unroll
+            for j in range(0, TN, simd_size):
+                let idx = i * TN + j
+                let vec = self.data.simd_load[simd_size](idx)
+                let rhs_vec = SIMD[type, simd_size](
+                    rhs.data.load(i).cast[type]()
+                )
+                self.data.simd_store[simd_size](idx, vec / rhs_vec)
+
+    @always_inline
+    fn __mul__(self, rhs: Self) -> Self:
+        """Multiplies a NDBuffer.
+
+        Args:
+            rhs: The RHS of the mul operation.
+
+        Returns:
+            The division result.
+        """
+        constrained[rank == 1]()
+        constrained[shape.all_known[1]()]()
+        constrained[type == DType.float32]()
+
+        alias m = shape.at[0]().get()
+
+        alias simd_size = simdwidthof[type]()
+
+        let res = Self.stack_allocation()
+
+        @unroll
+        for i in range(m):
+            res.data.store(i, self.data.load(i) * rhs.data.load(i))
+
+        return res
+
+    @always_inline
+    fn __add__(self, rhs: Self) -> Self:
+        """Adds a NDBuffer.
+
+        Args:
+            rhs: The RHS of the add operation.
+
+        Returns:
+            The addition result.
+        """
+        constrained[rank == 1]()
+        constrained[shape.all_known[1]()]()
+        constrained[type == DType.float32]()
+
+        alias m = shape.at[0]().get()
+
+        alias simd_size = simdwidthof[type]()
+
+        let res = Self.stack_allocation()
+
+        @unroll
+        for i in range(m):
+            res.data.store(i, self.data.load(i) + rhs.data.load(i))
+
+        return res
+
+    @always_inline
+    fn __sub__(self, rhs: Self) -> Self:
+        """Subtracts a scalar.
+
+        Args:
+            rhs: The RHS of the sub operation.
+
+        Returns:
+            The subtraction result.
+        """
+        constrained[rank == 1]()
+        constrained[shape.all_known[1]()]()
+        constrained[type == DType.float32]()
+
+        alias simd_size = simdwidthof[type]()
+
+        alias m = shape.at[0]().get()
+
+        let res = Self.stack_allocation()
+
+        @unroll
+        for i in range(m):
+            res.data.simd_store[simd_size](
+                i, self.data.load(i) - rhs.data.load(i)
+            )
+
+        return res
+
+    @always_inline
+    fn __sub__[
+        rhs_shape: DimList
+    ](self, rhs: NDBuffer[1, rhs_shape, type]) -> Self:
+        """Subtracts a NDBuffer.
+
+        Args:
+            rhs: The RHS of the sub operation.
+
+        Returns:
+            The subtraction result.
+        """
+        constrained[rank == 2]()
+        constrained[shape.all_known[2]()]()
+        constrained[type == DType.float32]()
+
+        alias m = shape.at[0]().get()
+        alias n = shape.at[1]().get()
+        alias simd_size = simdwidthof[type]()
+
+        let res = Self.stack_allocation()
+
+        @unroll
+        for i in range(m):
+
+            @unroll
+            for j in range(0, n, simd_size):
+                let idx = i * n + j
+                res.data.simd_store[simd_size](
+                    idx, self.data.simd_load[simd_size](idx) - rhs.data.load(i)
+                )
+
+        return res
+
+    @always_inline
+    fn max(self, rhs: Self):
+        """The elementwise maximum between a NDBuffer and itself.
+
+        Args:
+            rhs: The input NDBuffer.
+        """
+        constrained[rank == 1]()
+        constrained[shape.all_known[1]()]()
+        constrained[type == DType.float32]()
+
+        alias simd_size = simdwidthof[type]()
+
+        alias m = shape.at[0]().get()
+
+        @unroll
+        for i in range(m):
+            self.data.store(i, max(self.data.load(i), rhs.data.load(i)))
+
 
 fn partial_simd_load[
     type: DType, width: Int
