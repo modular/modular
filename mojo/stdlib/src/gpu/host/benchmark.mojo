@@ -182,8 +182,6 @@ fn run[
     @parameter
     @always_inline
     fn benchmark_fn(num_iters: Int) -> Int:
-        print(num_iters)
-
         @parameter
         @always_inline
         fn iter_fn(stream: Stream):
