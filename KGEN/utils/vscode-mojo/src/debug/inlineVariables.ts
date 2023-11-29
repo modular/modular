@@ -172,7 +172,8 @@ export class InlineLocalVariablesProvider implements
 
       // This list is sorted decrementally in terms of line number
       for (const variable of variables) {
-        if (variable.declaration?.line === undefined)
+        if (variable.declaration?.line === undefined ||
+            variable.failedValueError !== undefined)
           continue;
         // We perform a text search of the variable name within a range that
         // goes from the declaration line up to where the previous shadowed

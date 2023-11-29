@@ -23,6 +23,10 @@ type Variable = {
    * This is an extension to the protocol.
    */
   declaration?: {path : string; line?: number; column?: number;};
+  /**
+   * This is an extension to the protocol.
+   */
+  failedValueError?: string;
 };
 
 type DAPScopesRequest = {
