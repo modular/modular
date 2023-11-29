@@ -37,13 +37,30 @@ using std::chrono::time_point_cast;
 //===----------------------------------------------------------------------===//
 
 void ProfilingDetail::Label::intern() {
-  if (tag != kInternable)
-    return;
-  stringPayload.ownedString = stringPayload.internableString.str();
-  tag = kOwned;
+  switch (tag) {
+  case Label::kLiteral: {
+    // Protect against dynamic library unloading.
+    std::string str = stringPayload.stringLiteral.str();
+    stringPayload.stringLiteral.~StringLiteral();
+    tag = kOwned;
+    new (&stringPayload.ownedString) std::string(std::move(str));
+    break;
+  }
+  case Label::kInternable: {
+    std::string str = stringPayload.internableString.str();
+    stringPayload.internableString.~InternableString();
+    tag = kOwned;
+    new (&stringPayload.ownedString) std::string(std::move(str));
+    break;
+  }
+  case Label::kOwned:
+    break;
+  }
 }
 
 bool ProfilingDetail::Label::empty() const {
+  if (intPayload != kNoIntPayload)
+    return false;
   switch (tag) {
   case Label::kLiteral:
     return stringPayload.stringLiteral.empty();
@@ -99,6 +116,7 @@ void ProfilingDetail::Label::reset() {
 
 void ProfilingDetail::Label::moveFrom(Label &that) {
   assert(tag == kLiteral && stringPayload.stringLiteral.empty());
+  stringPayload.stringLiteral.~StringLiteral();
   tag = that.tag;
   intPayload = that.intPayload;
   switch (that.tag) {
@@ -109,12 +127,11 @@ void ProfilingDetail::Label::moveFrom(Label &that) {
     stringPayload.internableString = that.stringPayload.internableString;
     break;
   case Label::kOwned:
-    stringPayload.ownedString = std::move(that.stringPayload.ownedString);
+    new (&stringPayload.ownedString)
+        std::string(std::move(that.stringPayload.ownedString));
     break;
   }
-  that.tag = kLiteral;
-  that.stringPayload.stringLiteral = "";
-  that.intPayload = kNoIntPayload;
+  that.reset();
 }
 
 //===----------------------------------------------------------------------===//
@@ -497,7 +514,7 @@ void ProfilingDetail::GlobalProfilerContext::writeTextTrace(
 
 TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
                                      StringRef procName) {
-  if constexpr (ProfilingDetail::kProfilingEnabled) {
+  if constexpr (!ProfilingDetail::kProfilingEnabled) {
     llvm::dbgs() << "PROFILE: INFO: Profiling is not enabled at compile time, "
                     "only direct profiling entries will be catpured\n";
   } else {
