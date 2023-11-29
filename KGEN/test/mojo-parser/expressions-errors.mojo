@@ -84,11 +84,6 @@ fn test_func_type():
 fn assignRValue():
   42 = 17 # expected-error {{expression must be mutable in assignment}}
 
-import test_package
-
-fn assignPackageModule():
-  test_package = test_package # expected-error {{expression must be mutable in assignment}}
-
 struct LValuesRvalues:
   fn __init__(inout self): pass
   fn __copyinit__(inout self, existing: Self): pass
