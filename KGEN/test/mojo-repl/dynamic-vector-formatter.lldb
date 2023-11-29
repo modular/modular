@@ -8,24 +8,26 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-# FIXME(#26559): Migrate to DynamicVector
-from utils.vector import _OldDynamicVector as Vector
+# FIXME(26700): split this single long expression into smaller ones. Right now
+# the REPL breaks after using DynamicVector.
 
-# CHECK: (_OldDynamicVector[Int]) vec = {
+from utils.vector import DynamicVector
+
+@register_passable("trivial")
+struct Point(CollectionElement):
+  var x: Int
+  var y: Int
+  fn __init__(x: Int, y:Int) -> Self:
+    return Point {x: x, y: y}
+
+# CHECK: (DynamicVector[Int]) vec = {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
 # CHECK:   (Int) [3] = 4
 # CHECK:   (Int) [4] = 5
 # CHECK: }
-let vec = Vector[Int](5)
-vec.push_back(1)
-vec.push_back(2)
-vec.push_back(3)
-vec.push_back(4)
-vec.push_back(5)
-
-# CHECK: (_OldDynamicVector[SIMD[f32, 1]]) vec = {
+# CHECK: (DynamicVector[SIMD[f32, 1]]) vec2 = {
 # CHECK:   (SIMD[f32, 1]) [0] = {
 # CHECK:     (scalar<f32>) value = {
 # CHECK:       (f32) [0] = 4.3{{[0-9]*}}
@@ -37,23 +39,7 @@ vec.push_back(5)
 # CHECK:     }
 # CHECK:   }
 # CHECK: }
-let vec = Vector[Float32](2)
-vec.push_back(4.3)
-vec.push_back(8.8)
-
-# CHECK: (Point) p1 = {
-# CHECK:   (Int) x = 1
-# CHECK:   (Int) y = 1
-# CHECK: }
-# CHECK: (Point) p2 = {
-# CHECK:   (Int) x = 2
-# CHECK:   (Int) y = 2
-# CHECK: }
-# CHECK: (Point) p3 = {
-# CHECK:   (Int) x = 3
-# CHECK:   (Int) y = 3
-# CHECK: }
-# CHECK: (_OldDynamicVector[Point]) pointVec =
+# CHECK: (DynamicVector[Point]) vec3 =
 # CHECK:  {
 # CHECK:   (Point) [0] = {
 # CHECK:     (Int) x = 1
@@ -68,19 +54,20 @@ vec.push_back(8.8)
 # CHECK:     (Int) y = 3
 # CHECK:   }
 # CHECK: }
-@register_passable("trivial")
-struct Point:
-  var x: Int
-  var y: Int
-  fn __init__(x: Int, y:Int) -> Self:
-    return Self {
-      x: x,
-      y: y,
-    }
-let pointVec = Vector[Point](3)
+
+let vec = DynamicVector[Int](5)
+vec.push_back(1)
+vec.push_back(2)
+vec.push_back(3)
+vec.push_back(4)
+vec.push_back(5)
+let vec2 = DynamicVector[Float32](2)
+vec2.push_back(4.3)
+vec2.push_back(8.8)
+let vec3 = DynamicVector[Point](3)
 let p1 = Point(1, 1)
 let p2 = Point(2, 2)
 let p3 = Point(3, 3)
-pointVec.push_back(p1)
-pointVec.push_back(p2)
-pointVec.push_back(p3)
+vec3.push_back(p1)
+vec3.push_back(p2)
+vec3.push_back(p3)

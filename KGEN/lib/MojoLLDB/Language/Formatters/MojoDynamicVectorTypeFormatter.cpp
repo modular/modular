@@ -14,7 +14,7 @@ using namespace lldb_private::formatters;
 using namespace M::KGEN::Mojo;
 
 MojoDynamicVectorSyntheticFrontEnd::MojoDynamicVectorSyntheticFrontEnd(
-    lldb::ValueObjectSP backend)
+    const lldb::ValueObjectSP &backend)
     : SyntheticChildrenFrontEnd(*backend), start(0), size(0), elementType(),
       elementSize(0) {
   if (backend)
@@ -41,8 +41,11 @@ bool MojoDynamicVectorSyntheticFrontEnd::Update() {
   if (!dataField)
     return false;
 
+  // The REPL sees a struct around a pointer, but DWARF shows directly the
+  // pointer.
   lldb::ValueObjectSP kgenPointer =
-      dataField->GetChildMemberWithName("address");
+      dataField->IsPointerType() ? dataField
+                                 : dataField->GetChildMemberWithName("value");
 
   if (!kgenPointer || !kgenPointer->IsPointerType())
     return false;
@@ -60,20 +63,19 @@ bool MojoDynamicVectorSyntheticFrontEnd::Update() {
   else
     return false;
 
-  // Get the size.value field.
+  // Get the size of the collection.
   lldb::ValueObjectSP sizeField = m_backend.GetChildMemberWithName("size");
   if (!sizeField)
     return false;
 
-  lldb::ValueObjectSP sizeVal = sizeField->GetChildMemberWithName("value");
+  // The REPL sees a struct around an int, but DWARF shows directly the int.
+  lldb::ValueObjectSP sizeVal =
+      sizeField->IsScalarType() ? sizeField
+                                : sizeField->GetChildMemberWithName("value");
   if (!sizeVal)
     return false;
 
-  bool success = false;
-  uint64_t maybeSize = sizeVal->GetValueAsUnsigned(0, &success);
-
-  if (success)
-    size = maybeSize;
+  size = sizeVal->GetValueAsUnsigned(0);
   return false;
 }
 
@@ -87,7 +89,7 @@ size_t MojoDynamicVectorSyntheticFrontEnd::GetIndexOfChildWithName(
 }
 
 SyntheticChildrenFrontEnd *
-M::KGEN::Mojo::MojoDynamicVectorSyntheticFrontEndCreator(
+M::KGEN::Mojo::mojoDynamicVectorSyntheticFrontEndCreator(
     CXXSyntheticChildren *, const ValueObjectSP &valobjSP) {
   if (!valobjSP)
     return nullptr;
