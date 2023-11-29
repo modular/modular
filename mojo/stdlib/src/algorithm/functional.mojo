@@ -973,6 +973,35 @@ fn _get_start_indices_of_nth_subvolume[
 
 
 @always_inline
+fn _elementwise[
+    rank: Int,
+    simd_width: Int,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    target: StringLiteral = "cpu",
+](shape: StaticIntTuple[rank]):
+    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
+    combination of width and indices so as to cover shape.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        func: The body function.
+        target: The target to run on.
+
+    Args:
+        shape: The shape of the buffer.
+    """
+
+    @parameter
+    if target == "cuda":
+        _elementwise_impl[rank, simd_width, False, func, target](
+            shape, OutputChainPtr()
+        )
+    else:
+        elementwise[rank, simd_width, func](shape)
+
+
+@always_inline
 fn elementwise[
     rank: Int,
     simd_width: Int,
