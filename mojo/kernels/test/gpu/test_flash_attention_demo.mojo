@@ -94,13 +94,13 @@ fn _mm[
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
 
     @unroll
-    for k in range(int(K)):
+    for k in range(K):
         # load a element starting from (row, k) or (k, row) if transposed.
         @parameter
         if transpose_a:
             # vector load
             @unroll
-            for offset in range(0, TM.to_int(), simd_size):
+            for offset in range(0, TM, simd_size):
                 reg_m.simd_store[simd_size](
                     offset,
                     a.aligned_simd_load[simd_size, alignment](
@@ -110,21 +110,21 @@ fn _mm[
         else:
             # scalar load
             @unroll
-            for i in range(int(TM)):
+            for i in range(TM):
                 reg_m.store(i, a.load(((row + i) * leading_dim_a + k).to_int()))
 
         @unroll
-        for offset in range(0, TN.to_int(), simd_size):
+        for offset in range(0, TN, simd_size):
             let vec = b.aligned_simd_load[simd_size, alignment](
                 (k * N + col + offset).to_int()
             )
             reg_n.simd_store(offset, vec)
 
         @unroll
-        for i in range(TM.to_int()):
+        for i in range(TM):
 
             @unroll
-            for j in range(TN.to_int()):
+            for j in range(TN):
                 reg_res.store(
                     (i * TN + j).to_int(),
                     reg_res.load((i * TN + j).to_int())
@@ -134,10 +134,12 @@ fn _mm[
 
 @always_inline
 fn _fill[
-    len: Int, type: DType, address_space: _AddressSpace
+    len: _uint32,
+    type: DType,
+    address_space: _AddressSpace,
 ](ptr: DTypePointer[type, address_space], val: Scalar[type]):
     alias simd_width = simdwidthof[val.type]()
-    alias vector_end = (len // simd_width) * simd_width
+    alias vector_end = (int(len) // simd_width) * simd_width
 
     @unroll
     for i in range(0, vector_end, simd_width):
@@ -218,9 +220,9 @@ fn _mma[
 
     alias TM: _uint32 = c.shape.at[0]().get()
     alias TN: _uint32 = c.shape.at[1]().get()
-    let reg_m = NDBuffer[1, DimList(int(TM)), DType.float32].stack_allocation()
+    let reg_m = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
 
-    let reg_n = NDBuffer[1, DimList(int(TN)), DType.float32].stack_allocation()
+    let reg_n = NDBuffer[1, DimList(TN), DType.float32].stack_allocation()
 
     alias num_warps: _uint32 = num_threads // WARP_SIZE
 
@@ -247,7 +249,7 @@ fn _mma[
     alias BN_padded: _uint32 = BN + smem_pad
     let kv_tile = NDBuffer[
         2,
-        DimList(int(BN + smem_pad), int(BK)),
+        DimList(BN + smem_pad, BK),
         DType.float32,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
@@ -261,10 +263,10 @@ fn _mma[
         alias loadk_num_rows_per_iter: _uint32 = (num_threads * simd_size) // BK
         alias loadk_num_iters: _uint32 = BN // loadk_num_rows_per_iter
 
-        for subtile_start_col in range(0, int(depth), int(BK)):
+        for subtile_start_col in range(0, depth, BK):
 
             @unroll
-            for i in range(int(loadk_num_iters)):
+            for i in range(loadk_num_iters):
                 let row_in_tile: _uint32 = loadk_row + i * loadk_num_rows_per_iter
                 let global_idx: _uint32 = row_in_tile * row_stride + subtile_start_col + loadk_col
                 let vec = b.data.aligned_simd_load[simd_size, alignment](
@@ -309,7 +311,7 @@ fn _mma[
         if a_addr_space == AddressSpace.GENERIC:
             let p_tile = NDBuffer[
                 2,
-                DimList(int(BM), int(BK)),
+                DimList(BM, BK),
                 DType.float32,
                 address_space = AddressSpace.SHARED,
             ].stack_allocation()
@@ -318,7 +320,7 @@ fn _mma[
             alias loadv_num_iters = BK // loadv_num_rows_per_iter
             var storep_col_start: _uint32 = 0
 
-            for subtile_start_row in range(0, BN.to_int(), BK.to_int()):
+            for subtile_start_row in range(0, BN, BK):
                 # Store thread register tile to p sub-tile.
                 if (
                     mm_col >= storep_col_start
@@ -326,10 +328,10 @@ fn _mma[
                 ):
 
                     @unroll
-                    for i in range(TM.to_int()):
+                    for i in range(TM):
 
                         @unroll
-                        for j in range(0, TN.to_int(), simd_size):
+                        for j in range(0, TN, simd_size):
                             let p_idx = int(
                                 (mm_row + i) * BK
                                 + mm_col
@@ -347,7 +349,7 @@ fn _mma[
 
                 # Load v sub-tile.
                 @unroll
-                for i in range(loadv_num_iters.to_int()):
+                for i in range(loadv_num_iters):
                     let row_in_tile: _uint32 = loadv_row + i * loadv_num_rows_per_iter
                     let global_idx: _uint32 = (
                         subtile_start_row + row_in_tile
@@ -509,10 +511,10 @@ fn scatter_update(
     var o_global_row_offset = global_q_offset + mm_row * row_stride
 
     @unroll
-    for i in range(TM.to_int()):
+    for i in range(TM):
 
         @unroll
-        for offset in range(0, TN.to_int(), simd_size):
+        for offset in range(0, TN, simd_size):
             # Apply the denominator of softmax.
             let vec = b.data.simd_load[simd_size](int(i * TN + offset))
 
@@ -556,28 +558,26 @@ fn flash_attention_kernel[
 
     let q_tile = NDBuffer[
         2,
-        DimList(int(BM), int(depth)),
+        DimList(BM, depth),
         DType.float32,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    let rowmax = NDBuffer[1, DimList(int(TM)), DType.float32].stack_allocation()
+    let rowmax = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
 
-    var rowsum = NDBuffer[1, DimList(int(TM)), DType.float32].stack_allocation()
+    var rowsum = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
     rowsum.zero()
 
     var reg_result = NDBuffer[
-        2, DimList(int(TM), int(TN)), DType.float32
+        2, DimList(TM, TN), DType.float32
     ].stack_allocation()
 
     var o_thread_tile = NDBuffer[
-        2, DimList(int(TM), int(TN)), DType.float32
+        2, DimList(TM, TN), DType.float32
     ].stack_allocation()
     o_thread_tile.zero()
 
-    var correction = NDBuffer[
-        1, DimList(int(TM)), DType.float32
-    ].stack_allocation()
+    var correction = NDBuffer[1, DimList(TM), DType.float32].stack_allocation()
 
     let batch_idx: _uint32 = BlockIdx.z()
     let head_idx: _uint32 = BlockIdx.y()
@@ -586,11 +586,11 @@ fn flash_attention_kernel[
     _slice_ndbuffer(
         q_tile,
         query,
-        Index(0, int(q_tile_idx * BM), int(head_idx), 0),
+        Index(0, q_tile_idx * BM, head_idx, 0),
         Index(0, 1, 0, 1),
     )
 
-    _fill[int(TM)](rowmax.data, neginf[DType.float32]())
+    _fill[TM](rowmax.data, neginf[DType.float32]())
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
     var global_kv_offset: _uint32 = depth * (
@@ -611,22 +611,20 @@ fn flash_attention_kernel[
     # let v_view = slice_view(value, ...)
     # mma(reg_result, v_view, o_thread_tile, ...)
 
-    for kv_tile_start_row in range(0, int(seq_len), int(BN)):
+    for kv_tile_start_row in range(0, seq_len, BN):
         # Clear thread tile results.
         reg_result.zero()
 
-        let k_view = NDBuffer[2, DimList(int(BN), int(depth)), DType.float32](
+        let k_view = NDBuffer[2, DimList(BN, depth), DType.float32](
             key.data.offset(int(global_kv_offset)),
-            dynamic_shape=Index(int(BN), int(depth)),
-            dynamic_stride=Index(int(num_heads * depth), 1),
+            dynamic_shape=Index(BN, depth),
+            dynamic_stride=Index(num_heads * depth, 1),
         )
         _mma[transpose_b=True](q_tile, k_view, reg_result)
 
         reg_result *= scale
 
-        var curr_rowmax: NDBuffer[1, DimList(int(TM)), DType.float32] = _rowmax[
-            DimList(int(TM))
-        ](reg_result)
+        var curr_rowmax = _rowmax[DimList(TM)](reg_result)
 
         curr_rowmax.max(rowmax)
 
@@ -634,18 +632,16 @@ fn flash_attention_kernel[
 
         reg_result = _exp(reg_result - curr_rowmax)
 
-        let curr_rowsum: NDBuffer[1, DimList(int(TM)), DType.float32] = _rowsum[
-            DimList(int(TM))
-        ](reg_result)
+        let curr_rowsum = _rowsum[DimList(TM)](reg_result)
 
         rowsum = rowsum * correction + curr_rowsum
 
         o_thread_tile *= correction
 
-        let v_view = NDBuffer[2, DimList(int(BN), int(depth)), DType.float32](
+        let v_view = NDBuffer[2, DimList(BN, depth), DType.float32](
             value.data.offset(int(global_kv_offset)),
-            dynamic_shape=Index(int(BN), int(depth)),
-            dynamic_stride=Index(int(num_heads * depth), 1),
+            dynamic_shape=Index(BN, depth),
+            dynamic_stride=Index(num_heads * depth, 1),
         )
         _mma[transpose_b=False](reg_result, v_view, o_thread_tile)
 
@@ -656,7 +652,7 @@ fn flash_attention_kernel[
 
     scatter_update(
         output,
-        Index(0, int(q_tile_idx * BM), int(head_idx), 0),
+        Index(0, q_tile_idx * BM, head_idx, 0),
         Index(0, 1, 0, 1),
         o_thread_tile,
     )
