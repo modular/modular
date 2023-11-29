@@ -70,6 +70,13 @@ from test_package.unknown_nested_module import bar
 
 # // -----
 
+import test_package
+
+fn assignPackageModule():
+  test_package = test_package # expected-error {{expression must be mutable in assignment}}
+
+# // -----
+
 # Check that we can't directly import `test_package.module_in_package` just
 # because `test_package` is in the path.
 
