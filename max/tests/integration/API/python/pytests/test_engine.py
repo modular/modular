@@ -59,10 +59,8 @@ def test_execute_gpu(mo_model_path: Path):
     output = run("is-cuda-available")
     if output.returncode != 0:
         return
-    session = me.InferenceSession()
-    options = me.CommonLoadOptions()
-    options.device = "cuda"
-    model = session.load(mo_model_path, options)
+    session = me.InferenceSession(device="cuda")
+    model = session.load(mo_model_path)
     output = model.execute(input=np.ones((5)))
     assert "output" in output.keys()
     assert np.allclose(

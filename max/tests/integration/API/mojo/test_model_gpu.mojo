@@ -31,8 +31,8 @@ fn test_model_compilation() raises:
 
     let model_path = args[1]
 
-    let session = InferenceSession()
-    let compiled_model = session.compile_model(model_path, device="cuda")
+    let session = InferenceSession(device="cuda")
+    let compiled_model = session.compile_model(model_path)
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
@@ -70,8 +70,8 @@ fn test_model() raises:
 
     let model_path = args[1]
 
-    let session = InferenceSession()
-    let model = session.load_model(model_path, device="cuda")
+    let session = InferenceSession(device="cuda")
+    let model = session.load_model(model_path)
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
