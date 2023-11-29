@@ -9,6 +9,7 @@ from memory.unsafe import DTypePointer, Pointer
 
 from ._utils import _check_error, _get_dylib_function
 from gpu.host.stream import Stream, _StreamImpl
+from time import now
 
 
 # ===----------------------------------------------------------------------===#
@@ -170,3 +171,11 @@ fn time_function[
     let msec = start.elapsed(end)
 
     return int(msec * 1_000_000)
+
+
+@always_inline
+@parameter
+fn time_function[func: fn () capturing -> None]() -> Int:
+    let start = now()
+    func()
+    return now() - start
