@@ -130,6 +130,28 @@ fn make_closure[c_type: DType]() -> fn (z: C[c_type]) escaping -> None:
     return foo
 
 
+fn deep_runtime_capture(
+    m: Int, flag: Bool
+) raises -> fn (n: Int) escaping -> fn (o: Int) escaping -> Int:
+    if flag:
+        let q = m + m
+
+        fn myclosure2(
+            n: Int,
+        ) escaping -> fn (o: Int) escaping -> Int:
+            fn my_inner_closure(
+                o: Int,
+            ) escaping -> Int:
+                let x = o + q
+                return x + n
+
+            return my_inner_closure
+
+        return myclosure2
+    else:
+        raise Error("unreachable")
+
+
 fn main():
     let x = 2
     let c = makes_escaping_closure(x.value)
@@ -163,3 +185,12 @@ fn main():
     alias a = DType.int8
     # CHECK: 3
     take_closure[a](C[a](3), make_closure[a]())
+
+    let v1 = 2
+    let v2 = 3
+    let v3 = 7
+    try:
+        # CHECK: 14
+        print(deep_runtime_capture(v1, True)(v2)(v3))
+    except:
+        pass
