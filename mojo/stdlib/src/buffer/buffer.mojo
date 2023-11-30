@@ -1524,7 +1524,7 @@ struct NDBuffer[
         self._offset(indices).prefetch[params]()
 
     @always_inline
-    fn __imul__(self, rhs: Float32):
+    fn __imul__(inout self, rhs: Float32):
         """In-place multiplies a scalar.
 
         Args:
@@ -1549,7 +1549,7 @@ struct NDBuffer[
                 self.data.simd_store[simd_size](idx, vec * rhs.cast[type]())
 
     @always_inline
-    fn __imul__(self, rhs: NDBuffer):
+    fn __imul__(inout self, rhs: NDBuffer):
         """In-place multiplies a NDBuffer.
 
         Args:
@@ -1577,7 +1577,7 @@ struct NDBuffer[
                 self.data.simd_store[simd_size](idx, vec * rhs_vec)
 
     @always_inline
-    fn __itruediv__(self, rhs: NDBuffer):
+    fn __itruediv__(inout self, rhs: NDBuffer):
         """In-place divides a NDBuffer.
 
         Args:
