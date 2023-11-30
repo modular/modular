@@ -33,7 +33,7 @@ fn mma(
             " $3},{$4},{$5, $6};"
         ),
         (UInt32, UInt32),
-        constraints="=f,=f,r,r,r,r,r",
+        constraints="=f,=f,r,r,r,f,f",
     ](
         bitcast[DType.uint32, 1](a0),
         bitcast[DType.uint32, 1](a1),
@@ -65,15 +65,15 @@ fn mma(
 
     let a_ptr = Pointer.address_of(a0).bitcast[UInt32]()
     let b_ptr = Pointer.address_of(b0).bitcast[UInt32]()
-    let c_ptr = Pointer.address_of(c0).bitcast[UInt32]()
+    let c_ptr = Pointer.address_of(c0).bitcast[Float32]()
 
     let r = ptx_assembly[
         (
             "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32 {$0,$1,$2,$3},"
             " {$4,$5}, {$6}, {$7,$8,$9,$10};"
         ),
-        (UInt32, UInt32, UInt32, UInt32),
-        constraints="=f,=f,=f,=f,r,r,r,r,r,r,r",
+        (Float32, Float32, Float32, Float32),
+        constraints="=f,=f,=f,=f,r,r,r,f,f,f,f",
     ](
         a_ptr[0],
         a_ptr[1],
@@ -85,10 +85,10 @@ fn mma(
     )
 
     d = SIMD[DType.float32, 4](
-        bitcast[DType.float32](r.get[0, UInt32]()),
-        bitcast[DType.float32](r.get[1, UInt32]()),
-        bitcast[DType.float32](r.get[2, UInt32]()),
-        bitcast[DType.float32](r.get[3, UInt32]()),
+        r.get[0, Float32](),
+        r.get[1, Float32](),
+        r.get[2, Float32](),
+        r.get[3, Float32](),
     )
 
 
@@ -105,15 +105,15 @@ fn mma(
 
     let a_ptr = Pointer.address_of(a0).bitcast[UInt32]()
     let b_ptr = Pointer.address_of(b0).bitcast[UInt32]()
-    let c_ptr = Pointer.address_of(c0).bitcast[UInt32]()
+    let c_ptr = Pointer.address_of(c0).bitcast[Float32]()
 
     let r = ptx_assembly[
         (
             "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {$0,$1,$2,$3},"
             " {$4,$5,$6,$7}, {$8,$9}, {$10,$11,$12,$13};"
         ),
-        (UInt32, UInt32, UInt32, UInt32),
-        constraints="=f,=f,=f,=f,r,r,r,r,r,r,r,r,r,r",
+        (Float32, Float32, Float32, Float32),
+        constraints="=f,=f,=f,=f,r,r,r,r,r,r,f,f,f,f",
     ](
         a_ptr[0],
         a_ptr[1],
@@ -128,8 +128,8 @@ fn mma(
     )
 
     d = SIMD[DType.float32, 4](
-        bitcast[DType.float32](r.get[0, UInt32]()),
-        bitcast[DType.float32](r.get[1, UInt32]()),
-        bitcast[DType.float32](r.get[2, UInt32]()),
-        bitcast[DType.float32](r.get[3, UInt32]()),
+        r.get[0, Float32](),
+        r.get[1, Float32](),
+        r.get[2, Float32](),
+        r.get[3, Float32](),
     )
