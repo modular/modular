@@ -33,6 +33,7 @@ type MojoDebugConfiguration = {
   commandEscapePrefix?: string;
   timeout?: number;
   initCommands?: string[];
+  customFrameFormat?: string;
 }
 
 /**
@@ -117,6 +118,13 @@ class MojoDebugConfigurationResolver implements
     // different scenarios. We use 5 minutes as a very conservative timeout when
     // debugging massive LLVM targets.
     const initializationTimeoutSec = 5 * 60;
+
+    if (debugConfiguration.customFrameFormat === undefined) {
+      // FIXME(#23274): include {${function.is-optimized} [opt]} when we don't
+      // emit opt for -O0.
+      debugConfiguration.customFrameFormat =
+          "${function.name-with-args}{${frame.is-artificial} [artificial]}";
+    }
 
     // This setting indicates LLDB to generate a useful summary for each
     // non-primitive type that is displayed right away in the IDE.
