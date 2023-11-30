@@ -357,18 +357,28 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
                  "' does not correspond to a Mojo package");
   }
 
-  pkgArgs.outputPath = args.getLastArgValue(options::OPT_o, "-");
-  if (pkgArgs.outputPath == "-") {
-    // If we're outputting to stdout, use the input directory name as the
-    // package name.
-    pkgArgs.name = std::filesystem::path(pkgArgs.inputPath).filename().string();
-  } else {
-    std::filesystem::path outputPath(pkgArgs.outputPath);
-    if (outputPath.extension() != ".mojopkg" && outputPath.extension() != ".📦")
-      return Error("output path must have a '.mojopkg' or '.📦' extension");
+  // Use the output path the user specified, or if none was specified, output
+  // "directory-name.mojopkg".
+  std::string inputDirName =
+      std::filesystem::path(pkgArgs.inputPath).filename().string();
+  if (args.hasArg(options::OPT_o)) {
+    pkgArgs.outputPath = args.getLastArgValue(options::OPT_o);
+    if (pkgArgs.outputPath == "-") {
+      // If we're outputting to stdout, use the input directory name as the
+      // package name.
+      pkgArgs.name = inputDirName;
+    } else {
+      // Otherwise, validate the output path and infer the package name from it.
+      std::filesystem::path outputPath(pkgArgs.outputPath);
+      if (outputPath.extension() != ".mojopkg" &&
+          outputPath.extension() != ".📦")
+        return Error("output path must have a '.mojopkg' or '.📦' extension");
 
-    // Otherwise, infer from the output path.
-    pkgArgs.name = outputPath.stem().string();
+      pkgArgs.name = outputPath.stem().string();
+    }
+  } else {
+    pkgArgs.outputPath = inputDirName + ".mojopkg";
+    pkgArgs.name = inputDirName;
   }
 
   // Set up the compilation options now, so we can use them as a single source
