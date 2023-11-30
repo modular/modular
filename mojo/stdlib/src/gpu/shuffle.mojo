@@ -203,7 +203,7 @@ fn _static_log2[n: Int]() -> Int:
     return 0 if n <= 1 else _floorlog2[n - 1]() + 1
 
 
-@always_inline
+@always_inline("nodebug")
 fn warp_reduce[
     shuffle: fn[type: DType] (val: SIMD[type, 1], offset: Int) -> SIMD[type, 1],
     func: fn[type: DType, width: Int] (
