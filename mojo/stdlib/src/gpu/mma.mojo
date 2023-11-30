@@ -69,8 +69,8 @@ fn mma(
 
     let r = ptx_assembly[
         (
-            "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32 {%0,%1,%2,%3},"
-            " {%4,%5}, {%6}, {%7,%8,%9,%10};"
+            "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32 {$0,$1,$2,$3},"
+            " {$4,$5}, {$6}, {$7,$8,$9,$10};"
         ),
         (UInt32, UInt32, UInt32, UInt32),
         constraints="=f,=f,=f,=f,r,r,r,r,r,r,r",
@@ -95,7 +95,7 @@ fn mma(
 @always_inline
 fn mma(
     inout d: SIMD[DType.float32, 4],
-    a: SIMD[DType.float32, 2],
+    a: SIMD[DType.float32, 4],
     b: SIMD[DType.float32, 2],
     c: SIMD[DType.float32, 4],
 ):
@@ -109,14 +109,16 @@ fn mma(
 
     let r = ptx_assembly[
         (
-            "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {%0,%1,%2,%3},"
-            " {%4,%5,%6,%7}, {%8,%9}, {%10,%11,%12,%13};"
+            "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {$0,$1,$2,$3},"
+            " {$4,$5,$6,$7}, {$8,$9}, {$10,$11,$12,$13};"
         ),
         (UInt32, UInt32, UInt32, UInt32),
-        constraints="=f,=f,=f,=f,r,r,r,r,r,r,r,r",
+        constraints="=f,=f,=f,=f,r,r,r,r,r,r,r,r,r,r",
     ](
         a_ptr[0],
         a_ptr[1],
+        a_ptr[2],
+        a_ptr[3],
         b_ptr[0],
         b_ptr[1],
         c_ptr[0],

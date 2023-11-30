@@ -515,3 +515,141 @@ fn ptx_assembly[
                 assembly = asm.value,
                 constraints = constraints.value,
             ](arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+
+
+# ===----------------------------------------------------------------------===#
+# 9-arg
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn ptx_assembly[
+    asm: StringLiteral,
+    result_type: AnyRegType,
+    arg0_type: AnyRegType,
+    arg1_type: AnyRegType,
+    arg2_type: AnyRegType,
+    arg3_type: AnyRegType,
+    arg4_type: AnyRegType,
+    arg5_type: AnyRegType,
+    arg6_type: AnyRegType,
+    arg7_type: AnyRegType,
+    arg8_type: AnyRegType,
+    /,
+    constraints: StringLiteral = "r,r,r,r,r,r,r,r,r",
+    has_side_effect: Bool = True,
+](
+    arg0: arg0_type,
+    arg1: arg1_type,
+    arg2: arg2_type,
+    arg3: arg3_type,
+    arg4: arg4_type,
+    arg5: arg5_type,
+    arg6: arg6_type,
+    arg7: arg7_type,
+    arg8: arg8_type,
+) -> result_type:
+    @parameter
+    if _mlirtype_is_eq[result_type, NoneType]():
+
+        @parameter
+        if has_side_effect:
+            __mlir_op.`pop.inline_asm`[
+                _type=None,
+                assembly = asm.value,
+                constraints = constraints.value,
+                hasSideEffects = __mlir_attr.unit,
+            ](arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+        else:
+            __mlir_op.`pop.inline_asm`[
+                _type=None,
+                assembly = asm.value,
+                constraints = constraints.value,
+            ](arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+        return rebind[result_type](None)
+    else:
+
+        @parameter
+        if has_side_effect:
+            return __mlir_op.`pop.inline_asm`[
+                _type=result_type,
+                assembly = asm.value,
+                constraints = constraints.value,
+                hasSideEffects = __mlir_attr.unit,
+            ](arg0, arg1, arg2, arg3, arg3, arg5, arg6, arg7, arg8)
+        else:
+            return __mlir_op.`pop.inline_asm`[
+                _type=result_type,
+                assembly = asm.value,
+                constraints = constraints.value,
+            ](arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+
+
+# ===----------------------------------------------------------------------===#
+# 10-arg
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn ptx_assembly[
+    asm: StringLiteral,
+    result_type: AnyRegType,
+    arg0_type: AnyRegType,
+    arg1_type: AnyRegType,
+    arg2_type: AnyRegType,
+    arg3_type: AnyRegType,
+    arg4_type: AnyRegType,
+    arg5_type: AnyRegType,
+    arg6_type: AnyRegType,
+    arg7_type: AnyRegType,
+    arg8_type: AnyRegType,
+    arg9_type: AnyRegType,
+    /,
+    constraints: StringLiteral = "r,r,r,r,r,r,r,r,r,r",
+    has_side_effect: Bool = True,
+](
+    arg0: arg0_type,
+    arg1: arg1_type,
+    arg2: arg2_type,
+    arg3: arg3_type,
+    arg4: arg4_type,
+    arg5: arg5_type,
+    arg6: arg6_type,
+    arg7: arg7_type,
+    arg8: arg8_type,
+    arg9: arg9_type,
+) -> result_type:
+    @parameter
+    if _mlirtype_is_eq[result_type, NoneType]():
+
+        @parameter
+        if has_side_effect:
+            __mlir_op.`pop.inline_asm`[
+                _type=None,
+                assembly = asm.value,
+                constraints = constraints.value,
+                hasSideEffects = __mlir_attr.unit,
+            ](arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+        else:
+            __mlir_op.`pop.inline_asm`[
+                _type=None,
+                assembly = asm.value,
+                constraints = constraints.value,
+            ](arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+        return rebind[result_type](None)
+    else:
+
+        @parameter
+        if has_side_effect:
+            return __mlir_op.`pop.inline_asm`[
+                _type=result_type,
+                assembly = asm.value,
+                constraints = constraints.value,
+                hasSideEffects = __mlir_attr.unit,
+            ](arg0, arg1, arg2, arg3, arg3, arg5, arg6, arg7, arg8, arg9)
+        else:
+            return __mlir_op.`pop.inline_asm`[
+                _type=result_type,
+                assembly = asm.value,
+                constraints = constraints.value,
+            ](arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
