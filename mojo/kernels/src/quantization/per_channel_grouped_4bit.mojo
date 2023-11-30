@@ -522,7 +522,7 @@ struct Q4sym[group_size: Int, float_dtype: DType = DType.float32]:
                 )
 
 
-from math import min
+from math import min, align_down
 from Neon import _neon_dotprod
 from VNNI import dot_i8_to_i32_saturated_x86
 from algorithm import sync_parallelize
@@ -537,7 +537,7 @@ fn _block_quantize_a[
 ](
     a: NDBuffer[2, DimList.create_unknown[2](), type],
     a_quant: NDBuffer[2, DimList.create_unknown[2](), DType.int8],
-    a_scale: NDBuffer[1, DimList.create_unknown[1](), scale_type],
+    a_scale: NDBuffer[2, DimList.create_unknown[2](), scale_type],
 ):
     let M = a.dim[0]()
     let K = a.dim[1]()
@@ -635,6 +635,73 @@ fn _matmul_int4_dotprod[
     return c
 
 
+@always_inline
+fn _process_rows[
+    group_size: Int,
+    row_count: Int,
+    type: DType,
+](
+    a_quant: NDBuffer[2, DimList.create_unknown[2](), DType.int8],
+    a_scale: NDBuffer[2, DimList.create_unknown[2](), DType.float32],
+    b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
+    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    m: Int,
+):
+    alias block_size = sizeof[Q4sym[group_size, type]]()
+    alias simd_width = min(simdwidthof[DType.int32](), group_size // 4)
+
+    let N = b.dim[0]()
+    let K = a_quant.dim[1]()
+    let k_groups = K // group_size
+
+    let accum_fp_tile = NDBuffer[
+        2, DimList(row_count, simd_width), type
+    ].stack_allocation()
+
+    for n in range(N):
+        var a_quant_ptr = a_quant._offset(Index(m, 0))
+        var a_scale_ptr = a_scale._offset(Index(m, 0))
+        var b_ptr = b._offset(Index(n, 0))
+
+        @unroll
+        for row in range(row_count):
+            accum_fp_tile.simd_store(Index(row, 0), SIMD[type, simd_width](0))
+
+        for k in range(0, k_groups):
+            let b_data_i4 = b_ptr.offset(2).simd_load[group_size // 2]()
+            let b_scale = bitcast[DType.float16, 1](
+                b_ptr.offset(0).simd_load[2]()
+            ).cast[type]()
+            let b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
+            let b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
+            let b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
+
+            @unroll
+            for row in range(row_count):
+                let a_data_i8 = a_quant_ptr.offset(row * K).simd_load[
+                    group_size
+                ]()
+                let a_scale = a_scale_ptr.offset(row * k_groups)[0].cast[type]()
+
+                let c_data_i32 = _matmul_int4_dotprod[simd_width, group_size](
+                    a_data_i8, rebind[SIMD[DType.int8, group_size]](b_data_i8)
+                )
+                var accum_fp = accum_fp_tile.simd_load[simd_width](
+                    Index(row, 0)
+                )
+                accum_fp += c_data_i32.cast[type]() * a_scale * b_scale
+                accum_fp_tile.simd_store(Index(row, 0), accum_fp)
+
+            a_quant_ptr = a_quant_ptr.offset(group_size)
+            a_scale_ptr = a_scale_ptr.offset(1)
+            b_ptr = b_ptr.offset(block_size)
+
+        @unroll
+        for row in range(row_count):
+            let accum_fp = accum_fp_tile.simd_load[simd_width](Index(row, 0))
+            c.simd_store(Index(row + m, n), accum_fp.reduce_add())
+
+
 fn matmul_int4[
     group_size: Int,
     type: DType,
@@ -644,12 +711,11 @@ fn matmul_int4[
     c: NDBuffer[2, DimList.create_unknown[2](), type],
     out_chain: OutputChainPtr,
 ):
+    alias block_size = sizeof[Q4sym[group_size, type]]()
+
     let M = a.dim[0]()
     let N = b.dim[0]()
     let K = a.dim[1]()
-
-    alias block_size = sizeof[Q4sym[group_size, type]]()
-
     let k_groups = K // group_size
 
     if b.dim[1]() % block_size != 0:
@@ -661,58 +727,31 @@ fn matmul_int4[
     let a_quant = NDBuffer[2, DimList.create_unknown[2](), DType.int8](
         a_quant_base_ptr, Index(M, K)
     )
-    let a_scale = NDBuffer[1, DimList.create_unknown[1](), DType.float32](
-        a_scale_base_ptr, Index(M * k_groups)
+    let a_scale = NDBuffer[2, DimList.create_unknown[2](), DType.float32](
+        a_scale_base_ptr, Index(M, k_groups)
     )
 
     _block_quantize_a[group_size](a, a_quant, a_scale)
 
-    alias grain_size = 256
-    let total_work = M * N
-    let num_workers = div_ceil(total_work, grain_size)
+    alias grain_size = 8
+    let num_workers = div_ceil(M, grain_size)
 
     @parameter
     @always_inline
     fn task_func(task_id: Int):
+        alias row_batch_count = 4
+
         let start_item = task_id * grain_size
-        let end_item = min(total_work, start_item + grain_size)
+        let end_item = min(M, start_item + grain_size)
+        let end_batch_item = align_down(end_item, row_batch_count)
 
-        alias simd_width = min(simdwidthof[DType.int32](), group_size // 4)
+        for m in range(start_item, end_batch_item, row_batch_count):
+            _process_rows[group_size, row_batch_count](
+                a_quant, a_scale, b, c, m
+            )
 
-        for i in range(start_item, end_item):
-            let m = i // N
-            let n = i % N
-
-            var a_quant_ptr = a_quant._offset(Index(m, 0))
-            var a_scale_ptr = a_scale._offset(Index(m * k_groups))
-            var b_ptr = b._offset(Index(n, 0))
-            var accum_fp = SIMD[type, simd_width]()
-
-            for k in range(0, k_groups):
-                let a_data_i8 = a_quant_ptr.simd_load[group_size]()
-                let b_data_i4 = b_ptr.offset(2).simd_load[group_size // 2]()
-
-                let a_scale = a_scale_ptr[0].cast[type]()
-                let b_scale = bitcast[DType.float16, 1](
-                    b_ptr.offset(0).simd_load[2]()
-                ).cast[type]()
-
-                let b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
-                let b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
-
-                let b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
-
-                let c_data_i32 = _matmul_int4_dotprod[simd_width, group_size](
-                    a_data_i8, rebind[SIMD[DType.int8, group_size]](b_data_i8)
-                )
-
-                accum_fp += c_data_i32.cast[type]() * a_scale * b_scale
-
-                a_quant_ptr = a_quant_ptr.offset(group_size)
-                a_scale_ptr = a_scale_ptr.offset(1)
-                b_ptr = b_ptr.offset(block_size)
-
-            c.simd_store(Index(m, n), accum_fp.reduce_add())
+        for m in range(end_batch_item, end_item):
+            _process_rows[group_size, 1](a_quant, a_scale, b, c, m)
 
     sync_parallelize[task_func](out_chain, num_workers)
 
