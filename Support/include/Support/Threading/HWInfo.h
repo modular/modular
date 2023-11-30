@@ -102,9 +102,16 @@ struct CPULimits {
     return std::max(1, (quota_us - 1) / period_us + 1);
   }
 };
-ErrorOr<std::string> parseV1CpuCgroup(const llvm::MemoryBuffer &buf);
-ErrorOr<CPULimits> parseV1CpuLimits(const llvm::MemoryBuffer &quotaBuf,
+/// Returns the cgroup v1 CPU membership from |buf|.
+ErrorOr<std::string> parseV1CPUCgroupFile(const llvm::MemoryBuffer &buf);
+ErrorOr<CPULimits> parseV1CPULimits(const llvm::MemoryBuffer &quotaBuf,
                                     const llvm::MemoryBuffer &periodBuf);
+/// Returns the effective cgroup v2 CPU membership from |buf|. This is
+/// determined by searching /sys/fs/cgroup/ until a cpu.max file is found.
+ErrorOr<std::string>
+parseV2CPUCgroupFile(const llvm::MemoryBuffer &buf,
+                     const std::function<bool(StringRef)> &exists);
+ErrorOr<CPULimits> parseV2CPULimits(const llvm::MemoryBuffer &maxBuf);
 CPULimits getLinuxCPULimits();
 
 ErrorOr<CPUSystemInfo>
