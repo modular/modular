@@ -1718,25 +1718,6 @@ struct NDBuffer[
 
         return res
 
-    @always_inline
-    fn max(self, rhs: Self):
-        """The elementwise maximum between a NDBuffer and itself.
-
-        Args:
-            rhs: The input NDBuffer.
-        """
-        constrained[rank == 1]()
-        constrained[shape.all_known[1]()]()
-        constrained[type == DType.float32]()
-
-        alias simd_size = simdwidthof[type]()
-
-        alias m = shape.at[0]().get()
-
-        @unroll
-        for i in range(m):
-            self.data.store(i, max(self.data.load(i), rhs.data.load(i)))
-
 
 fn partial_simd_load[
     type: DType, width: Int
