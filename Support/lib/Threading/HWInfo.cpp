@@ -4,8 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Threading/HWInfo.h"
+#include <filesystem>
+
 #include "Support/ErrorOr.h"
+#include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
@@ -68,11 +70,11 @@ std::optional<size_t> getNumPerformanceCores() {
 } // namespace
 
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
-ErrorOr<std::string> Detail::parseV1CpuCgroup(const llvm::MemoryBuffer &buf) {
+ErrorOr<std::string>
+Detail::parseV1CPUCgroupFile(const llvm::MemoryBuffer &buf) {
   std::string cgroup;
   SmallVector<StringRef> strs;
-  buf.getBuffer().split(strs, "\n", /*MaxSplit=*/-1,
-                        /*KeepEmpty=*/false);
+  buf.getBuffer().split(strs, "\n", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
   for (StringRef line : strs) {
     SmallVector<StringRef> frags;
     line.split(frags, ":");
@@ -86,12 +88,12 @@ ErrorOr<std::string> Detail::parseV1CpuCgroup(const llvm::MemoryBuffer &buf) {
     }
   }
   if (cgroup.empty())
-    return Error("could not parse CPU cgroup");
+    return Error("could not parse v1 CPU cgroup");
   return cgroup;
 }
 
 ErrorOr<Detail::CPULimits>
-Detail::parseV1CpuLimits(const llvm::MemoryBuffer &quotaBuf,
+Detail::parseV1CPULimits(const llvm::MemoryBuffer &quotaBuf,
                          const llvm::MemoryBuffer &periodBuf) {
   Detail::CPULimits limits;
   if (quotaBuf.getBuffer().trim().getAsInteger(10, limits.quota_us))
@@ -101,26 +103,88 @@ Detail::parseV1CpuLimits(const llvm::MemoryBuffer &quotaBuf,
   return limits;
 }
 
+ErrorOr<std::string>
+Detail::parseV2CPUCgroupFile(const llvm::MemoryBuffer &buf,
+                             const std::function<bool(StringRef)> &exists) {
+  StringRef cgroup;
+  SmallVector<StringRef> strs;
+  buf.getBuffer().split(strs, "\n", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  for (StringRef line : strs) {
+    if (line.consume_front("0::")) {
+      cgroup = line;
+      break;
+    }
+  }
+  if (cgroup.empty())
+    return Error("could not parse v2 CPU cgroup");
+
+  StringRef curr = cgroup.trim();
+  const size_t n = curr.count('/');
+  // Check each level of the v2 filesystem to find the right file.
+  for (size_t i = 0; i <= n; ++i) {
+    const auto path = ("/sys/fs/cgroup/" + curr + "/cpu.max").str();
+    if (!exists(path)) {
+      auto pos = curr.rfind('/');
+      if (pos != StringRef::npos) {
+        curr = curr.slice(0, pos);
+        continue;
+      } else
+        return Error("could not resolve CPU max file");
+    }
+    break;
+  }
+  return curr.str();
+}
+
+ErrorOr<Detail::CPULimits>
+Detail::parseV2CPULimits(const llvm::MemoryBuffer &maxBuf) {
+  Detail::CPULimits limits;
+  SmallVector<StringRef> strs;
+  maxBuf.getBuffer().split(strs, " ", /*MaxSplit=*/2, /*KeepEmpty=*/false);
+  if (strs.empty())
+    return Error("can't parse empty CPU max and period");
+  if (strs[0] != "max" && strs[0].trim().getAsInteger(10, limits.quota_us))
+    return Error("can't parse CPU max as an int");
+  if (strs.size() == 2 && strs[1].trim().getAsInteger(10, limits.period_us))
+    return Error("can't parse CPU period as an int");
+  return limits;
+}
+
 /// Looks up various cgroup CPU limits for the current process.
 Detail::CPULimits Detail::getLinuxCPULimits() {
   // Detect cgroup version.
   auto errOrControllers =
       llvm::MemoryBuffer::getFileAsStream("/sys/fs/cgroup/cgroup.controllers");
-  const bool isV1 = errOrControllers.getError().value() != 0;
-  if (isV1) {
-    // Read and parse /proc/self/cgroup
-    auto cgroupBuf = fileBuffer("/proc/self/cgroup");
-    if (!cgroupBuf)
-      return {};
+  bool isV1 = true;
+  if (errOrControllers.getError().value() == 0) {
+    SmallVector<StringRef> strs;
+    (*errOrControllers)
+        ->getBuffer()
+        .split(strs, " ", /*MaxSplit=*/2, /*KeepEmpty=*/false);
+    for (const auto str : strs) {
+      // When using the hybrid layout, the cpu controller might not be mounted
+      // as v2; in which case we fallback to locating the v1 filesystem.
+      if (str == "cpu") {
+        isV1 = false;
+        break;
+      }
+    }
+  }
 
-    const auto errOrCgroup = parseV1CpuCgroup(*cgroupBuf);
+  // Read and parse /proc/self/cgroup
+  auto cgroupBuf = fileBuffer("/proc/self/cgroup");
+  if (!cgroupBuf)
+    return {};
+  Detail::CPULimits limits;
+  if (isV1) {
+    const auto errOrCgroup = parseV1CPUCgroupFile(*cgroupBuf);
     if (errOrCgroup.isError()) {
       LLVM_DEBUG(llvm::dbgs()
-                 << "getLinuxCPULimits: Could not parse CPU cgroup\n");
+                 << "getLinuxCPULimits: " << errOrCgroup.getError() << "\n");
       return {};
     }
-    const auto &cgroup = errOrCgroup.get();
-
+    const std::string &cgroup = *errOrCgroup;
+    // Quota and period files found in membership-specific filesystems.
     const auto quotaBuf =
         fileBuffer("/sys/fs/cgroup/cpu/" + cgroup + "/cpu.cfs_quota_us");
     if (!quotaBuf)
@@ -129,17 +193,51 @@ Detail::CPULimits Detail::getLinuxCPULimits() {
         fileBuffer("/sys/fs/cgroup/cpu/" + cgroup + "/cpu.cfs_period_us");
     if (!periodBuf)
       return {};
-    const auto errOrLimits = parseV1CpuLimits(*quotaBuf, *periodBuf);
+    const auto errOrLimits = parseV1CPULimits(*quotaBuf, *periodBuf);
     if (errOrLimits.isError()) {
       LLVM_DEBUG(llvm::dbgs()
-                 << "getLinuxCPULimits: Could not parse CPU limits for "
-                 << cgroup << "\n");
+                 << "getLinuxCPULimits: " << errOrLimits.getError() << "\n");
       return {};
     }
-    return errOrLimits.get();
+    limits = *errOrLimits;
+  } else {
+    const auto errOrCgroup =
+        parseV2CPUCgroupFile(*cgroupBuf, [](StringRef path) {
+          return std::filesystem::exists(path.str());
+        });
+    if (errOrCgroup.isError()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "getLinuxCPULimits: " << errOrCgroup.getError() << "\n");
+      return {};
+    }
+    const std::string &cgroup = *errOrCgroup;
+    // Lives at some level of the cgroup v2 unified filesystem as a combined
+    // file.
+    const auto maxBuf = fileBuffer("/sys/fs/cgroup/" + cgroup + "/cpu.max");
+    if (!maxBuf)
+      return {};
+    const auto errOrLimits = parseV2CPULimits(*maxBuf);
+    if (errOrLimits.isError()) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "getLinuxCPULimits: " << errOrLimits.getError() << "\n");
+      return {};
+    }
+    limits = *errOrLimits;
   }
-  // TODO(yihualou): Update with v2 cpu.max reading.
-  return {};
+  // The bounds and explanations for these values can be found at:
+  // https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.rst
+  if (limits.quota_us != -1 && limits.quota_us < 1000) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "getLinuxCPULimits: Expected cpu quota above 1ms\n");
+    return {};
+  }
+  if (limits.period_us < 1000 || limits.period_us > 1000000) {
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << "getLinuxCPULimits: Expected cpu period between 1ms and 1s\n");
+    return {};
+  }
+  return limits;
 }
 
 /// Given contents of /proc/cpuinfo and the thread affinity mask describing

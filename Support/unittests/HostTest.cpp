@@ -132,25 +132,88 @@ constexpr static std::string_view kCgroup = R"(
 3:net_cls,net_prio:/
 2:cpu,cpuacct:/user.slice
 1:name=systemd:/user.slice/user-1000.slice/session-1.scope
-0::/user.slice/user-1000.slice/session-1.scope
 )";
-constexpr static std::string_view kCgroupQuota = "-1\n";
-constexpr static std::string_view kCgroupPeriod = "100000\n";
 
-TEST(Host, ParseV1CpuCgroup) {
+TEST(Host, ParseV1CPUCgroup) {
   auto buf = llvm::MemoryBuffer::getMemBuffer(kCgroup);
-  auto errOrCgroup = Detail::parseV1CpuCgroup(*buf);
+  auto errOrCgroup = Detail::parseV1CPUCgroupFile(*buf);
   EXPECT_FALSE(errOrCgroup.isError());
-  EXPECT_EQ(errOrCgroup.get(), "/user.slice");
+  EXPECT_EQ(*errOrCgroup, "/user.slice");
 }
 
-TEST(Host, ParseV1CpuLimits) {
-  auto quotaBuf = llvm::MemoryBuffer::getMemBuffer(kCgroupQuota);
-  auto periodBuf = llvm::MemoryBuffer::getMemBuffer(kCgroupPeriod);
-  auto errOrLimits = Detail::parseV1CpuLimits(*quotaBuf, *periodBuf);
+TEST(Host, ParseV1CPULimits) {
+  auto quotaBuf = llvm::MemoryBuffer::getMemBuffer("-1\n");
+  auto periodBuf = llvm::MemoryBuffer::getMemBuffer("100001\n");
+  auto errOrLimits = Detail::parseV1CPULimits(*quotaBuf, *periodBuf);
   EXPECT_FALSE(errOrLimits.isError());
-  EXPECT_EQ(errOrLimits.get().quota_us, -1);
-  EXPECT_EQ(errOrLimits.get().period_us, 100000);
+  EXPECT_EQ(errOrLimits->quota_us, -1);
+  EXPECT_EQ(errOrLimits->period_us, 100001);
+}
+
+constexpr static StringRef kCgroupV2 = R"(
+0::/user.slice/user-1000.slice/session-1.scope
+)";
+
+TEST(Host, ParseV2CPUCgroup) {
+  auto buf = llvm::MemoryBuffer::getMemBuffer(kCgroupV2);
+  {
+    auto errOrCgroup =
+        Detail::parseV2CPUCgroupFile(*buf, [](StringRef path) { return true; });
+    EXPECT_FALSE(errOrCgroup.isError());
+    EXPECT_EQ(*errOrCgroup, "/user.slice/user-1000.slice/session-1.scope");
+  }
+  {
+    // Ancestor membership
+    size_t i{0};
+    auto errOrCgroup = Detail::parseV2CPUCgroupFile(
+        *buf, [&](StringRef path) { return ++i == 3; });
+    EXPECT_FALSE(errOrCgroup.isError());
+    EXPECT_EQ(*errOrCgroup, "/user.slice");
+  }
+  {
+    // Root membership
+    size_t i{0};
+    auto errOrCgroup = Detail::parseV2CPUCgroupFile(
+        *buf, [&](StringRef path) { return ++i == 4; });
+    EXPECT_FALSE(errOrCgroup.isError());
+    EXPECT_EQ(*errOrCgroup, "");
+  }
+}
+
+TEST(Host, ParseV2CPUCgroupMissing) {
+  auto buf = llvm::MemoryBuffer::getMemBuffer(kCgroupV2);
+  auto errOrCgroup =
+      Detail::parseV2CPUCgroupFile(*buf, [](StringRef path) { return false; });
+  EXPECT_TRUE(errOrCgroup.isError());
+}
+
+TEST(Host, ParseV2CPULimits) {
+  auto maxBuf = llvm::MemoryBuffer::getMemBuffer("max 100001\n");
+  auto errOrLimits = Detail::parseV2CPULimits(*maxBuf);
+  EXPECT_FALSE(errOrLimits.isError());
+  EXPECT_EQ(errOrLimits->quota_us, -1);
+  EXPECT_EQ(errOrLimits->period_us, 100001);
+}
+
+constexpr static StringRef kCgroupHybrid = R"(
+13:pids:/user.slice/user-1000.slice/session-1.scope
+12:rdma:/
+0::/user.slice/user-1000.slice/session-1.scope
+)";
+
+TEST(Host, ParseV1CPUCgroupHybridMissing) {
+  auto buf = llvm::MemoryBuffer::getMemBuffer(kCgroupHybrid);
+  auto errOrCgroup = Detail::parseV1CPUCgroupFile(*buf);
+  // CPU controller not mounted as v1.
+  EXPECT_TRUE(errOrCgroup.isError());
+}
+
+TEST(Host, ParseV2CPUCgroupHybrid) {
+  auto buf = llvm::MemoryBuffer::getMemBuffer(kCgroupHybrid);
+  auto errOrCgroup =
+      Detail::parseV2CPUCgroupFile(*buf, [](StringRef path) { return true; });
+  EXPECT_FALSE(errOrCgroup.isError());
+  EXPECT_EQ(*errOrCgroup, "/user.slice/user-1000.slice/session-1.scope");
 }
 
 #endif
