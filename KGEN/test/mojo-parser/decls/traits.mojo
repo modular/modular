@@ -6,6 +6,10 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+# ===----------------------------------------------------------------------=== #
+# Stubs to allow testing without builtins
+# ===----------------------------------------------------------------------=== #
+
 alias Int = __mlir_type.index
 alias AnyType = __mlir_type.`!kgen.anytype`
 alias AnyRegType = __mlir_type.`!kgen.anyregtype`
@@ -13,14 +17,15 @@ alias StringLiteral = __mlir_type.`!kgen.string`
 
 alias `1` = __mlir_attr.`1 : index`
 
-
-# COM: Stubs to allow testing without builtins.
 struct object: pass
 struct Error: pass
 
-
 trait Destructable:
     fn __del__(owned self, /): ...
+
+# ===----------------------------------------------------------------------=== #
+# Actual tests
+# ===----------------------------------------------------------------------=== #
 
 # CHECK-LABEL: lit.trait.decl @Trait<?, MT: regtype, T: !kgen.paramref<MT>>
 trait Trait:

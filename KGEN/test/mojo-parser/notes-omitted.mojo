@@ -42,10 +42,8 @@ fn go11(x: s9): pass
 fn go11(x: s10): pass
 fn go11(x: s11): pass
 
-alias `0` = __mlir_attr.`0 : index`
-
 fn foo():
   # CHECK: 8 more notes omitted
-  go10(`0`)
+  go10(__mlir_attr.`0 : index`)
   # CHECK: 9 more notes omitted
-  go11(`0`)
+  go11(__mlir_attr.`0 : index`)

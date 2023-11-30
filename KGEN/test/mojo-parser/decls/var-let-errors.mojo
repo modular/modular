@@ -6,11 +6,18 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
+# ===----------------------------------------------------------------------=== #
+# Stubs to allow testing without builtins
+# ===----------------------------------------------------------------------=== #
+
+alias AnyRegType = __mlir_type.`!kgen.anyregtype`
 alias Int = __mlir_type.index
 
 alias `42` = __mlir_attr.`42 : index`
 
-alias AnyRegType = __mlir_type.`!kgen.anyregtype`
+# ===----------------------------------------------------------------------=== #
+# Actual tests
+# ===----------------------------------------------------------------------=== #
 
 # COM: Stubs to allow testing without builtins
 @register_passable("trivial")
