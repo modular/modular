@@ -18,6 +18,16 @@ add_custom_target(check-mojo)
 set_target_properties(check-mojo PROPERTIES FOLDER "Tests")
 add_dependencies(check-all check-mojo)
 
+add_custom_command(
+  OUTPUT mojo_warmup_parser_cache.mlir mojo_warmup_parser_cache.input.mlir
+  DEPENDS kgen-translate
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  COMMAND echo "" > mojo_warmup_parser_cache.input.mlir
+  COMMAND $<TARGET_FILE:kgen-translate> -import-mojo
+                                        -o mojo_warmup_parser_cache.input.mlir
+)
+add_custom_target(warmup-mojo-parser-cache DEPENDS mojo_warmup_parser_cache.mlir)
+
 add_subdirectory(kgen)
 add_subdirectory(mojo-builtins)
 add_subdirectory(mojo-debug)

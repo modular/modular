@@ -12,7 +12,7 @@ from lit.llvm import llvm_config
 config.name = "mojo-parser"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".mojo", ".🔥", ".test"]
+config.suffixes = [".mojo", ".🔥"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
