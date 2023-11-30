@@ -3133,6 +3133,71 @@ fn no_mask_fused_attention_cpu[
     ](output, q, k, v, mask, scale_f32, causal_mask, out_chain)
 
 
+@mogg_register("with_mask_fused_attention_cpu")
+@always_inline
+@export
+fn with_mask_fused_attention_cpu[
+    rank: Int,
+    input_0_static_shape: DimList,
+    input_1_static_shape: DimList,
+    input_2_static_shape: DimList,
+    input_3_static_shape: DimList,
+    input_4_static_shape: DimList,
+    output_type: DType,
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    attn_mask_type: DType,
+    scale_type: DType,
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[rank, input_0_static_shape, q_type],
+    k: NDBuffer[rank, input_1_static_shape, k_type],
+    v: NDBuffer[rank, input_2_static_shape, v_type],
+    attn_mask: NDBuffer[2, input_3_static_shape, attn_mask_type],
+    scale: NDBuffer[0, input_4_static_shape, scale_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
+    out_chain: OutputChainPtr,
+):
+    # TODO:
+    # - no attention mask
+    # - no causaul mask
+
+    # Dimension names:
+    #     - (B)atch
+    #     - Attention (H)ead
+    #     - (S)equence
+    #     - Embedding (D)imension
+    #
+    # layouts:
+    # q -- BHSD
+    # k -- BHDS (we assume transpose = true for now)
+    # v -- BHSD
+    # output: BHSD
+    constrained[target == "cpu"]()
+
+    # TODO: Unimplemented and not used
+    let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
+    let causal_mask: Float32 = 0
+    cpu_fused_attention_impl[
+        rank,
+        input_0_static_shape,
+        input_1_static_shape,
+        input_2_static_shape,
+        input_3_static_shape,
+        DimList.create_unknown[rank](),
+        q_type,
+        k_type,
+        v_type,
+        attn_mask_type,
+        output_type,
+        False,  # transpose_k
+        True,  # add_attn_mask
+        False,  # add_causal_mask
+    ](output, q, k, v, attn_mask, scale_f32, causal_mask, out_chain)
+
+
 # # ===----------------------------------------------------------------------===#
 # # INT4/5/6 packing format
 # # ===----------------------------------------------------------------------===#
