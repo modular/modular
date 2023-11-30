@@ -6,7 +6,15 @@
 
 # RUN: %parse-mojo-isolated %s | kgen-opt -verify-parameters | FileCheck %s
 
+# ===----------------------------------------------------------------------=== #
+# Stubs to allow testing without builtins
+# ===----------------------------------------------------------------------=== #
+
 alias Int = __mlir_type.index
+
+# ===----------------------------------------------------------------------=== #
+# Actual tests
+# ===----------------------------------------------------------------------=== #
 
 @adaptive
 # CHECK: lit.func @"foo()"() -> !kgen.none attributes {isAdaptive

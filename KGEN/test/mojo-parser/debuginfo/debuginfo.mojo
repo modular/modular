@@ -6,6 +6,16 @@
 
 # RUN: %parse-mojo-isolated -debug-level full -mlir-print-debuginfo %s | FileCheck %s
 
+# ===----------------------------------------------------------------------=== #
+# Stubs to allow testing without builtins
+# ===----------------------------------------------------------------------=== #
+
+alias Int = __mlir_type.index
+
+# ===----------------------------------------------------------------------=== #
+# Actual tests
+# ===----------------------------------------------------------------------=== #
+
 # Check single file debug info generation.
 
 # CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<index>
@@ -14,9 +24,6 @@
 # CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = #power_name, linkageName = "power{{.*}}", file = #{{.*}}, line = [[LN:[0-9]+]], scopeLine = [[LN]], subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
 # CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = [[LN]], arg = 1> : ![[INT_TYPE]]
 # CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = [[LN]], arg = 2> : ![[INT_TYPE]]
-
-
-alias Int = __mlir_type.index
 
 # CHECK-LABEL: lit.func @"power
 fn power(lhs: Int, rhs: Int) -> Int:

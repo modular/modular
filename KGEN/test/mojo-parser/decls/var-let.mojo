@@ -6,6 +6,10 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+# ===----------------------------------------------------------------------=== #
+# Stubs to allow testing without builtins
+# ===----------------------------------------------------------------------=== #
+
 alias AnyType = __mlir_type.`!kgen.anytype`
 alias Int = __mlir_type.index
 
@@ -19,6 +23,10 @@ struct Error: pass
 struct Bool:
     fn __mlir_i1__(self) -> __mlir_type.i1:
         pass
+
+# ===----------------------------------------------------------------------=== #
+# Actual tests
+# ===----------------------------------------------------------------------=== #
 
 fn return_generic_memory_only[T: AnyType]() -> T:
     pass

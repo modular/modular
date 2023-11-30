@@ -1,7 +1,15 @@
 # RUN: %parse-mojo-isolated -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
+# ===----------------------------------------------------------------------=== #
+# Stubs to allow testing without builtins
+# ===----------------------------------------------------------------------=== #
+
 alias Lifetime = __mlir_type.`!lit.lifetime`
+
+# ===----------------------------------------------------------------------=== #
+# Actual tests
+# ===----------------------------------------------------------------------=== #
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:

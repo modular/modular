@@ -6,6 +6,10 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+# ===----------------------------------------------------------------------=== #
+# Stubs to allow testing without builtins
+# ===----------------------------------------------------------------------=== #
+
 alias Int = __mlir_type.index
 alias AnyRegType = __mlir_type.`!kgen.anyregtype`
 
@@ -15,10 +19,12 @@ alias `3` = __mlir_attr.`3 : index`
 alias `4` = __mlir_attr.`4 : index`
 alias `5` = __mlir_attr.`5 : index`
 
-# COM: Stubs to allow testing without builtins.
 @register_passable
 struct Error: pass
 
+# ===----------------------------------------------------------------------=== #
+# Actual tests
+# ===----------------------------------------------------------------------=== #
 
 fn fat_signature_types():
     let x = `4`
