@@ -7,6 +7,7 @@
 
 from algorithm.functional import vectorize_unroll
 from math import fma
+from memory.buffer import NDBuffer
 from MOGGIntList import IntList
 from sys.intrinsics import strided_load
 from utils._optional import Optional
@@ -234,6 +235,23 @@ struct Tensor[
             return v.cast[type]()
         else:
             return self.data.simd_load[simd_width](flat_index)
+
+    @always_inline
+    fn to_buffer[
+        rank: Int
+    ](self) -> NDBuffer[rank, Self.static_shape, Self.type]:
+        var shape = StaticIntTuple[rank]()
+        var strides = StaticIntTuple[rank]()
+
+        @unroll
+        for i in range(rank):
+            shape[i] = self.shape[i]
+            strides[i] = self.strides[i]
+
+        let buffer = NDBuffer[rank, Self.static_shape, Self.type](
+            self.data, shape, strides
+        )
+        return buffer
 
     # Stand in for elementwise while we experiment with the new tensor api
     @mogg_elementwise_hook()
