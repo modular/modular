@@ -15,6 +15,8 @@ add_modular_testsuite(check-mojo-builtins
   TOP_LEVEL_CHECK check-mojo
 
   TOOLS
+  hash-mlir
   kgen-opt
   kgen-translate
+  warmup-mojo-parser-cache
 )
