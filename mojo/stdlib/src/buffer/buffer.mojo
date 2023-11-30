@@ -1631,7 +1631,7 @@ struct NDBuffer[
         return res
 
     @always_inline
-    fn __add__(self, rhs: Self) -> Self:
+    fn __add__(self, rhs: NDBuffer) -> Self:
         """Adds a NDBuffer.
 
         Args:
@@ -1652,7 +1652,7 @@ struct NDBuffer[
 
         @unroll
         for i in range(m):
-            res.data.store(i, self.data.load(i) + rhs.data.load(i))
+            res.data.store(i, self.data.load(i) + rhs.data.load(i).cast[type]())
 
         return res
 
