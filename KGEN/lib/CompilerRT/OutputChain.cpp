@@ -150,7 +150,7 @@ void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
       [parentId = this->parentEventId, taskId, resume, hdl]() mutable {
         // Use the 'prototype' profiling entry, but augment with the task id.
         TimeTraceScope scope(MojoProfilerEntry::createWithParent(
-            parentId, StringLiteral("task"), taskId));
+            parentId, StringLiteral("task"), (uint64_t)taskId));
         resume(hdl);
 #if MODULAR_PARANOID
         // Sleeping here gives any await loop the chance to exit and
