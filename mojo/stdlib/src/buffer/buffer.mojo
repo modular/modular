@@ -377,7 +377,7 @@ struct Buffer[
             f._write(self.data.bitcast[DType.int8](), self.bytecount())
 
     @staticmethod
-    @always_inline
+    @always_inline("nodebug")
     fn aligned_stack_allocation[alignment: Int]() -> Self:
         """Constructs a buffer instance backed by stack allocated memory space.
 
@@ -394,7 +394,7 @@ struct Buffer[
         return Self(data_pointer)
 
     @staticmethod
-    @always_inline
+    @always_inline("nodebug")
     fn stack_allocation() -> Self:
         """Constructs a buffer instance backed by stack allocated memory space.
 
@@ -1471,7 +1471,7 @@ struct NDBuffer[
         self.simd_fill[simdwidthof[type]()](val)
 
     @staticmethod
-    @always_inline
+    @always_inline("nodebug")
     fn aligned_stack_allocation[alignment: Int]() -> Self:
         """Constructs an NDBuffer instance backed by stack allocated memory space.
 
@@ -1490,7 +1490,7 @@ struct NDBuffer[
         return Self(data_pointer)
 
     @staticmethod
-    @always_inline
+    @always_inline("nodebug")
     fn stack_allocation() -> Self:
         """Constructs an NDBuffer instance backed by stack allocated memory space.
 

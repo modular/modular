@@ -33,7 +33,7 @@ struct Dim(Intable):
     var value: Optional[Int]
     """An optional value for the dimension."""
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__[type: Intable](value: type) -> Dim:
         """Creates a statically-known dimension.
 
@@ -48,7 +48,7 @@ struct Dim(Intable):
         """
         return Self {value: int(value)}
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(value: __mlir_type.index) -> Dim:
         """Creates a statically-known dimension.
 
@@ -60,7 +60,7 @@ struct Dim(Intable):
         """
         return Self {value: Int(value)}
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__() -> Dim:
         """Creates a dynamic dimension.
 
@@ -69,7 +69,7 @@ struct Dim(Intable):
         """
         return Self {value: None}
 
-    @always_inline
+    @always_inline("nodebug")
     fn __bool__(self) -> Bool:
         """Returns True if the dimension has a static value.
 
@@ -78,7 +78,7 @@ struct Dim(Intable):
         """
         return self.value.__bool__()
 
-    @always_inline
+    @always_inline("nodebug")
     fn has_value(self) -> Bool:
         """Returns True if the dimension has a static value.
 
@@ -87,7 +87,7 @@ struct Dim(Intable):
         """
         return self.__bool__()
 
-    @always_inline
+    @always_inline("nodebug")
     fn is_dynamic(self) -> Bool:
         """Returns True if the dimension has a dynamic value.
 
@@ -96,7 +96,7 @@ struct Dim(Intable):
         """
         return not self.has_value()
 
-    @always_inline
+    @always_inline("nodebug")
     fn get(self) -> Int:
         """Gets the static dimension value.
 
@@ -119,7 +119,7 @@ struct Dim(Intable):
             return False
         return self.get() % alignment == 0
 
-    @always_inline
+    @always_inline("nodebug")
     fn __mul__(self, rhs: Dim) -> Dim:
         """Multiplies two dimensions.
 
@@ -135,10 +135,11 @@ struct Dim(Intable):
             return Dim()
         return Dim(self.get() * rhs.get())
 
+    @always_inline("nodebug")
     fn __int__(self) -> Int:
         return self.value.value()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __eq__(self, rhs: Dim) -> Bool:
         """Compares two dimensions for equality.
 
@@ -152,7 +153,7 @@ struct Dim(Intable):
             return self.get() == rhs.get()
         return (not self) == (not rhs)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ne__(self, rhs: Dim) -> Bool:
         """Compare two dimensions for inequality.
 
