@@ -358,7 +358,9 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe,
   // Initialize a new debugger instance.
   // We need to initialize with SBDebugger because that's the only way we can
   // support loading public plugins like MojoLLDB.
-  SBDebugger::Initialize();
+  if (SBError err = SBDebugger::InitializeWithErrorHandling(); err.Fail())
+    return reportKernelError(err.GetCString());
+
   debugger = Debugger::CreateInstance();
   debugger->SetAsyncExecution(false);
 
