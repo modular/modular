@@ -26,8 +26,7 @@ using MetricAttributeValue =
     std::variant<bool, int32_t, int64_t, uint32_t, double, const char *,
                  std::string, uint64_t, llvm::StringRef>;
 
-using AttributeMap =
-    std::unordered_map<class Key, class Tp><std::string, MetricAttributeValue>;
+using AttributeMap = std::unordered_map<std::string, MetricAttributeValue>;
 
 template <typename T>
 class Counter {
