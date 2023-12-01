@@ -94,6 +94,9 @@ const char *Buffer::getBufferStart() const {
   if (isa<MemoryBufferStorage>(storage))
     return cast<MemoryBufferStorage>(storage).memBuffer->getBufferStart();
 
+  if (isa<AliasedBufferStorage>(storage))
+    return cast<AliasedBufferStorage>(storage).aliasContents.begin();
+
   llvm_unreachable("unknown storage type");
 }
 
@@ -111,6 +114,9 @@ const char *Buffer::getBufferEnd() const {
   if (isa<MemoryBufferStorage>(storage))
     return cast<MemoryBufferStorage>(storage).memBuffer->getBufferEnd();
 
+  if (isa<AliasedBufferStorage>(storage))
+    return cast<AliasedBufferStorage>(storage).aliasContents.end();
+
   llvm_unreachable("unknown storage type");
 }
 
@@ -123,6 +129,9 @@ size_t Buffer::getBufferSize() const {
 
   if (isa<MemoryBufferStorage>(storage))
     return cast<MemoryBufferStorage>(storage).memBuffer->getBufferSize();
+
+  if (isa<AliasedBufferStorage>(storage))
+    return cast<AliasedBufferStorage>(storage).aliasContents.size();
 
   llvm_unreachable("unknown storage type");
 }
@@ -181,7 +190,8 @@ WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
 //===----------------------------------------------------------------------===//
 
 void WriteableBuffer::write_impl(const char *ptr, size_t size) {
-  assert(isa<AllocatedBuffer>(storage) && "cannot write to an mmap'd file");
+  assert(isa<AllocatedBuffer>(storage) &&
+         "cannot `write` to anything other than a heap-allocated buffer");
 
   auto &allocStorage = cast<AllocatedBuffer>(storage);
   allocStorage.data.append(ptr, size);
@@ -191,6 +201,9 @@ void WriteableBuffer::write_impl(const char *ptr, size_t size) {
 // llvm::raw_svector_ostream.
 void WriteableBuffer::pwrite_impl(const char *ptr, size_t size,
                                   uint64_t offset) {
+  assert(!isa<AliasedBufferStorage>(storage) &&
+         "cannot `pwrite` to an aliased buffer");
+
   // TODO: currently we don't resize the mmap'd buffer.
   assert(getBufferStart() + offset + size <= getBufferEnd() ||
          isa<AllocatedBuffer>(storage));

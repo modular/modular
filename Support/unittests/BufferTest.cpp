@@ -115,3 +115,18 @@ TEST(BufferTest, MemoryBufferConversion) {
                             "expected a non-null memory buffer");
 #endif // MODULAR_DEBUG
 }
+
+TEST(BufferTest, AliasedBuffer) {
+  BufferRef alias;
+  {
+    auto buffer = Buffer::get("hello, world");
+    alias = Buffer::getAlias(buffer.copy(), 0, 5);
+  }
+  // Check that the alias extends the original buffer's lifetime.
+  EXPECT_EQ(alias->getBuffer(), "hello");
+  auto aliasOfAlias = Buffer::getAlias(alias.copy());
+  EXPECT_EQ(aliasOfAlias->getBuffer(), "hello");
+
+  ASSERT_DEATH_IF_SUPPORTED(Buffer::getAlias(alias.copy(), 12, 348),
+                            "too many bytes");
+}
