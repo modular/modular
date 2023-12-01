@@ -1002,17 +1002,6 @@ static ParseResult parseIsMemoryOnly(AsmParser &p, bool &isMemoryOnly) {
   return success();
 }
 
-LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 ArrayRef<TypedAttr> elementTypes,
-                                 bool isMemoryOnly) {
-  for (auto [index, elementType] : llvm::enumerate(elementTypes)) {
-    if (!isTypeExpr(elementType))
-      return emitError() << "struct element type at index " << index
-                         << " is not a type expression";
-  }
-  return success();
-}
-
 /// Try to narrow all the given type expressions to MLIR types.
 static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
                                   SmallVectorImpl<Type> &resolvedTypes) {
@@ -1025,40 +1014,11 @@ static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
   return success();
 }
 
-LogicalResult
-StructType::resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const {
-  return resolveTypes(getElementTypes(), elementTypes);
-}
-
-SmallVector<Type> StructType::getParameterizedElementTypes() const {
-  SmallVector<Type> elementTypes;
-  elementTypes.reserve(getNumElements());
-  for (TypedAttr elementType : getElementTypes())
-    elementTypes.push_back(ParamRefType::get(elementType));
-  return elementTypes;
-}
-
-Type StructType::getConcreteElementType(unsigned i) const {
-  return llvm::cast<ConcreteTypeConstantAttr>(getElementTypes()[i]).getValue();
-}
-
-StructType StructType::get(ArrayRef<Type> elementTypes, Type metaType,
-                           bool isMemoryOnly) {
-  SmallVector<TypedAttr> elementTypeExprs;
-  elementTypeExprs.reserve(elementTypes.size());
-  for (Type elementType : elementTypes)
-    elementTypeExprs.push_back(TypeConstantAttr::get(elementType, metaType));
-  return get(metaType.getContext(), elementTypeExprs, isMemoryOnly);
-}
-
-static std::optional<int64_t>
-getPackedElementsTypeSize(ArrayRef<TypedAttr> types, TargetInfoAttr target) {
-  SmallVector<Type> resolvedTypes;
-  if (failed(resolveTypes(types, resolvedTypes)))
-    return {};
+static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
+                                                        TargetInfoAttr target) {
   int64_t size = 0;
   int64_t strictest = 1;
-  for (Type type : resolvedTypes) {
+  for (Type type : types) {
     std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeABIAlign(target, type);
     std::optional<int64_t> typeSize =
@@ -1076,12 +1036,9 @@ std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
 }
 
 static std::optional<int64_t>
-getPackedElementsTypeAlign(ArrayRef<TypedAttr> types, TargetInfoAttr target) {
-  SmallVector<Type> resolvedTypes;
-  if (failed(resolveTypes(types, resolvedTypes)))
-    return {};
+getPackedElementsTypeAlign(ArrayRef<Type> types, TargetInfoAttr target) {
   int64_t strictest = 1;
-  for (Type type : resolvedTypes) {
+  for (Type type : types) {
     std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeABIAlign(target, type);
     if (!typeAlign)
@@ -1116,11 +1073,9 @@ ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
 
 ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
                                         InterpreterState &state) const {
-  SmallVector<Type> elTypes;
-  (void)resolveElementTypes(elTypes);
   SmallVector<TypedAttr> values;
   int64_t offset = 0;
-  for (Type elType : elTypes) {
+  for (Type elType : getElementTypes()) {
     auto dl = elType.cast<DataLayoutInterface>();
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     ErrorOr<TypedAttr> value =
@@ -1170,8 +1125,12 @@ LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
 std::optional<int64_t> PackType::getTypeSize(TargetInfoAttr target) const {
   // A pack backed by an attribute has a size equivalent to a struct composed
   // of the elements in the sequence.
-  if (auto attr = getVariadicAttr())
-    return getPackedElementsTypeSize(attr.getValues(), target);
+  if (VariadicAttr attr = getVariadicAttr()) {
+    SmallVector<Type> types;
+    if (failed(resolveTypes(attr.getValues(), types)))
+      return {};
+    return getPackedElementsTypeSize(types, target);
+  }
 
   // We can't know the size of a variadic expression, since we don't know how
   // many elements are in the backing sequence.
@@ -1180,10 +1139,16 @@ std::optional<int64_t> PackType::getTypeSize(TargetInfoAttr target) const {
 
 std::optional<int64_t> PackType::getTypeAlign(TargetInfoAttr target) const {
   TypedAttr variadic = getVariadic();
+
   // A pack backed by an attribute has alignment equivalent to a struct
   // composed of the elements in the sequence.
-  if (auto attr = ::dyn_cast<VariadicAttr>(variadic))
-    return getPackedElementsTypeAlign(attr.getValues(), target);
+  if (auto attr = ::dyn_cast<VariadicAttr>(variadic)) {
+    SmallVector<Type> types;
+    if (failed(resolveTypes(attr.getValues(), types)))
+      return {};
+    return getPackedElementsTypeAlign(types, target);
+  }
+
   // A pack backed by an expression has alignment equivalent to the variadic
   // type's element type.
   auto variadicType = ::dyn_cast<VariadicType>(variadic.getType());

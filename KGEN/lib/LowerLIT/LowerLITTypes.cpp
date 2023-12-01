@@ -165,7 +165,7 @@ StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
       anyRegTypeType(AnyRegTypeType::get(ctx)) {
 
   // Get the empty `#kgen.struct<>` attribute, which has empty struct type.
-  auto emptyStructType = KGEN::StructType::get({}, anyRegTypeType);
+  auto emptyStructType = StructType::get(ctx, {});
   emptyStructAttr = KGEN::StructAttr::get({}, emptyStructType);
 
   // Build a converter to handle updating converted types within debug info
@@ -488,8 +488,8 @@ StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   // Flatten register-passable, single-element structs.
   if (elementTypes.size() == 1 && decl.isRegisterPassable)
     return elementTypes[0];
-  return KGEN::StructType::get(elementTypes, anyRegTypeType,
-                               !decl.isRegisterPassable);
+  return StructType::get(ref.getContext(), elementTypes,
+                         !decl.isRegisterPassable);
 }
 
 DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
@@ -568,20 +568,17 @@ static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
       lowerer.getIndexAttr(index));
 
   auto structType = cast<KGEN::StructType>(result.getResult().getType());
-  TypedAttr fieldTypedAttr = structType.getElementTypes()[index];
+  Type fieldType = structType.getElementTypes()[index];
 
-  if (auto attr = dyn_cast<TypeConstantAttr>(fieldTypedAttr)) {
-    if (result->getOperand(0).getType() != attr.getValue()) {
-      // If a Pointer type of the struct field is erased to NoneType
-      // because of recursive nested type,
-      // when inserting the new value to the field, a PointerBitcast is needed
-      // here so that the created StructReplaceOp won't complain about the
-      // types.
-      OpBuilder builder(result);
-      auto cast = builder.create<POP::PointerBitcastOp>(
-          result.getLoc(), attr.getValue(), result->getOperand(0));
-      result.setOperand(0, cast.getResult());
-    }
+  if (result->getOperand(0).getType() != fieldType) {
+    // If a Pointer type of the struct field is erased to NoneType because of
+    // recursive nested type, when inserting the new value to the field, a
+    // PointerBitcast is needed here so that the created StructReplaceOp won't
+    // complain about the types.
+    OpBuilder builder(result);
+    auto cast = builder.create<POP::PointerBitcastOp>(
+        result.getLoc(), fieldType, result->getOperand(0));
+    result.setOperand(0, cast.getResult());
   }
 
   return result;

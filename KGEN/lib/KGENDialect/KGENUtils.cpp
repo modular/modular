@@ -341,6 +341,15 @@ void KGEN::printParamType(AsmPrinter &p, Type type) {
       p, TypeConstantAttr::get(type, AnyRegTypeType::get(type.getContext())));
 }
 
+ParseResult KGEN::parseParamTypes(AsmParser &p, SmallVectorImpl<Type> &types) {
+  return p.parseCommaSeparatedList(
+      [&] { return parseParamType(p, types.emplace_back()); });
+}
+
+void KGEN::printParamTypes(AsmPrinter &p, ArrayRef<Type> types) {
+  llvm::interleaveComma(types, p, [&](Type type) { printParamType(p, type); });
+}
+
 void KGEN::printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
   llvm::interleaveComma(
       values, p, [&](TypedAttr value) { printTypeParamValue(p, value); });

@@ -237,7 +237,13 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   };
 
   addConversion([=](StructType structType) -> std::optional<Type> {
-    return convertElementTypesToStruct(structType.getElementTypes());
+    SmallVector<Type> types;
+    for (Type type : structType.getElementTypes()) {
+      types.push_back(convertType(type));
+      if (!types.back())
+        return {};
+    }
+    return LLVM::LLVMStructType::getLiteral(&getContext(), types);
   });
 
   // Packs are essentially identical to structs.

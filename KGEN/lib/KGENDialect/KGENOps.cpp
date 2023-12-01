@@ -1436,16 +1436,17 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
                                            IntegerAttr indexAttr,
                                            Type valueType,
                                            StringRef valueKind) {
-  ArrayRef<TypedAttr> elementTypes = container.getElementTypes();
+  ArrayRef<Type> elementTypes = container.getElementTypes();
   size_t index = indexAttr.getInt();
   if (index >= elementTypes.size())
     return op->emitOpError("element index ")
            << index << " out of bounds (>=" << elementTypes.size() << ")";
-  if (ParamRefType::get(elementTypes[index]) != valueType)
+  if (elementTypes[index] != valueType) {
     return op->emitOpError(valueKind)
            << " type " << valueType
            << " does not match struct element type at index " << index << ": "
-           << ParamRefType::get(elementTypes[index]);
+           << elementTypes[index];
+  }
   return success();
 }
 
@@ -1455,7 +1456,7 @@ LogicalResult StructExtractOp::verify() {
 }
 
 template <typename OpT>
-static FailureOr<TypedAttr>
+static FailureOr<Type>
 inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
                        StructType structType, DictionaryAttr attrs) {
   if (!structType)
@@ -1481,10 +1482,10 @@ LogicalResult StructExtractOp::inferReturnTypes(
   if (operands.size() != 1)
     return emitError("expected 1 operand");
   auto structType = dyn_cast<StructType>(operands.front().getType());
-  FailureOr<TypedAttr> type = inferStructElementType<StructExtractOp>(
+  FailureOr<Type> type = inferStructElementType<StructExtractOp>(
       emitError, structType, attributes);
   if (succeeded(type))
-    inferredReturnTypes.push_back(ParamRefType::get(*type));
+    inferredReturnTypes.push_back(*type);
   return type;
 }
 
@@ -1503,13 +1504,12 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
 
 static ParseResult parseStructValueType(AsmParser &p, Type &valueType,
                                         Type structType, IntegerAttr index) {
-  ArrayRef<TypedAttr> elementTypes =
-      structType.cast<StructType>().getElementTypes();
+  ArrayRef<Type> elementTypes = structType.cast<StructType>().getElementTypes();
   if (index.getInt() > static_cast<int64_t>(elementTypes.size()))
     return p.emitError(p.getCurrentLocation(), "element index out of bounds (")
            << index.getInt() << " >= " << elementTypes.size() << ")";
   // Infer the value type from the struct type and index.
-  valueType = ParamRefType::get(elementTypes[index.getInt()]);
+  valueType = elementTypes[index.getInt()];
   return success();
 }
 
@@ -1554,7 +1554,7 @@ LogicalResult StructGEPOp::inferReturnTypes(
   if (!pointerType)
     return emitError("expected pointer operand");
   auto structType = dyn_cast<StructType>(pointerType.getElementType());
-  FailureOr<TypedAttr> type = inferStructElementType<StructExtractOp>(
+  FailureOr<Type> type = inferStructElementType<StructExtractOp>(
       emitError, structType, attributes);
   if (succeeded(type))
     inferredReturnTypes.push_back(PointerType::get(*type));
@@ -1573,13 +1573,13 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
   // Move the address over the elements before the one we are reading.
   unsigned index = getIndexAttr().getInt();
   for (unsigned i = 0; i != index; ++i) {
-    auto dl = cast<DataLayoutInterface>(structType.getConcreteElementType(i));
+    auto dl = cast<DataLayoutInterface>(structType.getElementTypes()[i]);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     offset += *dl.getTypeSize(state.getTarget());
   }
 
   // Align the address to the target element.
-  Type targetType = structType.getConcreteElementType(index);
+  Type targetType = structType.getElementTypes()[index];
   offset = llvm::alignTo(
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));

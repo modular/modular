@@ -103,10 +103,10 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype,
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugStructTypeFromTypeAttrs(
-    ArrayRef<TypedAttr> attrs, StringAttr name) {
+    ArrayRef<Type> types, StringAttr name) {
   SmallVector<DIMemberType> elementTypes;
-  for (auto [idx, attr] : llvm::enumerate(attrs)) {
-    DIType mDIType = convertDebugType(cast<TypeConstantAttr>(attr).getValue());
+  for (auto [idx, type] : llvm::enumerate(types)) {
+    DIType mDIType = convertDebugType(type);
     DIMemberType mMemberDIType = DIMemberType::get(
         StringAttr::get(name.getContext(), "m" + Twine(idx)), mDIType);
     elementTypes.push_back(mMemberDIType);
@@ -169,9 +169,11 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::CoroutineType type) {
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PackType type) {
+  SmallVector<Type> types;
+  for (TypedAttr attr : type.getVariadicAttr().getValues())
+    types.push_back(cast<ConcreteTypeConstantAttr>(attr).getValue());
   return buildDebugStructTypeFromTypeAttrs(
-      type.getVariadicAttr().getValues(),
-      StringAttr::get(type.getContext(), "pack"));
+      types, StringAttr::get(type.getContext(), "pack"));
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PointerType type) {

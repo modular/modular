@@ -118,11 +118,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
   }
 
   if (auto structType = dyn_cast<StructType>(t)) {
-    SmallVector<Type> elementTypes;
-    elementTypes.reserve(structType.getElementTypes().size());
-    if (failed(structType.resolveElementTypes(elementTypes)))
-      return failure();
-    for (Type elTy : elementTypes)
+    for (Type elTy : structType.getElementTypes())
       if (failed(getCTypeForType(func, elTy, types)))
         return failure();
     return success();
