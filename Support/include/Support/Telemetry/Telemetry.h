@@ -85,69 +85,84 @@ public:
   }
 
   /// Create a Counter<uint64_t>.
-  Counter<uint64_t> createUInt64Counter(StringRef name, Level instrumentLevel,
-                                        StringRef description = "",
-                                        StringRef unit = "") {
+  Counter<uint64_t> createUInt64Counter(
+      StringRef name, Level instrumentLevel,
+      const llvm::StringMap<MetricAttributeValue> &attributes = {},
+      StringRef description = "", StringRef unit = "") {
     // TODO: If the name is invalid, it looks like OTel logs the error and
     // returns a NOOP counter. Instead, we should probably try to assert that
     // the name is valid or that the returned counter is not NOOP. Same for
     // other instruments.
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (isInstrumentEnabled(instrumentLevel))
-      return Counter<uint64_t>(meter->CreateUInt64Counter(
-          name.data(), description.data(), unit.data()));
+      return Counter<uint64_t>(meter->CreateUInt64Counter(name.data(),
+                                                          description.data(),
+                                                          unit.data()),
+                               attributes);
     else
-      return Counter<uint64_t>(noopMeter->CreateUInt64Counter(
-          name.data(), description.data(), unit.data()));
+      return Counter<uint64_t>(
+          noopMeter->CreateUInt64Counter(name.data(), description.data(),
+                                         unit.data()),
+          attributes);
+    ;
 #else
     return Counter<uint64_t>();
 #endif
   }
 
   /// Create a Counter<double>.
-  Counter<double> createDoubleCounter(StringRef name, Level instrumentLevel,
-                                      StringRef description = "",
-                                      StringRef unit = "") {
+  Counter<double> createDoubleCounter(
+      StringRef name, Level instrumentLevel,
+      const llvm::StringMap<MetricAttributeValue> &attributes = {},
+      StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (isInstrumentEnabled(instrumentLevel))
       return Counter<double>(meter->CreateDoubleCounter(
-          name.data(), description.data(), unit.data()));
+                                 name.data(), description.data(), unit.data()),
+                             attributes);
     else
       return Counter<double>(noopMeter->CreateDoubleCounter(
-          name.data(), description.data(), unit.data()));
+                                 name.data(), description.data(), unit.data()),
+                             attributes);
 #else
     return Counter<double>();
 #endif
   }
 
   /// Create a Histogram<uint64_t>.
-  Histogram<uint64_t> createUInt64Histogram(StringRef name,
-                                            Level instrumentLevel,
-                                            StringRef description = "",
-                                            StringRef unit = "") {
+  Histogram<uint64_t> createUInt64Histogram(
+      StringRef name, Level instrumentLevel,
+      const llvm::StringMap<MetricAttributeValue> &attributes = {},
+      StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (isInstrumentEnabled(instrumentLevel))
-      return Histogram<uint64_t>(meter->CreateUInt64Histogram(
-          name.data(), description.data(), unit.data()));
+      return Histogram<uint64_t>(
+          meter->CreateUInt64Histogram(name.data(), description.data(),
+                                       unit.data()),
+          attributes);
     else
-      return Histogram<uint64_t>(noopMeter->CreateUInt64Histogram(
-          name.data(), description.data(), unit.data()));
+      return Histogram<uint64_t>(
+          noopMeter->CreateUInt64Histogram(name.data(), description.data(),
+                                           unit.data()),
+          attributes);
 #else
     return Histogram<uint64_t>();
 #endif
   }
 
   /// Create a Histogram<double>.
-  Histogram<double> createDoubleHistogram(StringRef name, Level instrumentLevel,
-                                          StringRef description = "",
-                                          StringRef unit = "") {
+  Histogram<double> createDoubleHistogram(
+      StringRef name, Level instrumentLevel,
+      const llvm::StringMap<MetricAttributeValue> &attributes = {},
+      StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (isInstrumentEnabled(instrumentLevel))
       return Histogram<double>(
-          meter->CreateDoubleHistogram(name, description, unit));
+          meter->CreateDoubleHistogram(name, description, unit), attributes);
     else
       return Histogram<double>(
-          noopMeter->CreateDoubleHistogram(name, description, unit));
+          noopMeter->CreateDoubleHistogram(name, description, unit),
+          attributes);
 #else
     return Histogram<double>();
 #endif
@@ -157,9 +172,10 @@ public:
   /// it to one of {"ns", "us", "ms", "s"} based on the DurationT template
   /// parameter (e.g. std::chrono::microseconds).
   template <typename DurationT>
-  Timer<uint64_t, DurationT>
-  createUInt64Timer(StringRef name, Level instrumentLevel,
-                    StringRef description = "", StringRef unit = "") {
+  Timer<uint64_t, DurationT> createUInt64Timer(
+      StringRef name, Level instrumentLevel,
+      const llvm::StringMap<MetricAttributeValue> &attributes = {},
+      StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (unit.empty()) {
       if constexpr (std::is_same_v<DurationT, std::chrono::nanoseconds>)
@@ -173,10 +189,11 @@ public:
     }
     if (isInstrumentEnabled(instrumentLevel))
       return Timer<uint64_t, DurationT>(
-          meter->CreateUInt64Histogram(name, description, unit));
+          meter->CreateUInt64Histogram(name, description, unit), attributes);
     else
       return Timer<uint64_t, DurationT>(
-          noopMeter->CreateUInt64Histogram(name, description, unit));
+          noopMeter->CreateUInt64Histogram(name, description, unit),
+          attributes);
 #else
     return Timer<uint64_t, DurationT>();
 #endif
