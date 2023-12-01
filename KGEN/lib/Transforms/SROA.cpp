@@ -155,7 +155,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
   // Allocate the scalars which should replace the main alloc.
   void createScalarAllocs() {
     newAllocas.reserve(containerTy.getNumElements());
-    for (Type elem : containerTy.getParameterizedElementTypes()) {
+    for (Type elem : containerTy.getElementTypes()) {
       auto asPtr = PointerType::get(elem);
       Value v = builder.create<StackAllocationOp>(alloc.getLoc(), asPtr, 1);
       newAllocas.push_back(v);

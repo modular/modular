@@ -1913,10 +1913,10 @@ def POP_AtomicCmpXchgResultType : Type<And<[
   KGEN_StructType.predicate,
   CPred<"$_self.cast<StructType>().getNumElements() == 2">,
   SubstLeaves<"$_self",
-              "$_self.cast<StructType>().getParameterizedElementTypes()[0]",
+              "$_self.cast<StructType>().getElementTypes()[0]",
               UnboundOrIndexOrInt.predicate>,
   SubstLeaves<"$_self",
-              "$_self.cast<StructType>().getParameterizedElementTypes()[1]",
+              "$_self.cast<StructType>().getElementTypes()[1]",
               BoolScalar.predicate>]>,
  "an KGEN struct type with any integer or pointer followed by a boolean">;
 

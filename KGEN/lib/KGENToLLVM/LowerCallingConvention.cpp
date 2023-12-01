@@ -139,15 +139,14 @@ static void rewriteCallingConventions(Operation &op) {
     if (auto promise = dyn_cast<POP::CoroutinePromiseOp>(op)) {
       auto [anyNone, newResults] =
           removeNoneTypes(cast<StructType>(promise.getType().getElementType())
-                              .getParameterizedElementTypes());
+                              .getElementTypes());
       if (!anyNone)
         return;
 
       OpBuilder b(promise);
       Value newPromise = b.create<POP::CoroutinePromiseOp>(
           promise.getLoc(),
-          PointerType::get(
-              StructType::get(newResults, b.getType<AnyRegTypeType>())),
+          PointerType::get(StructType::get(b.getContext(), newResults)),
           promise.getCoroutine());
       Value casted = b.create<POP::PointerBitcastOp>(
           promise.getLoc(), promise.getType(), newPromise);

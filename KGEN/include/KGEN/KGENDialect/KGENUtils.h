@@ -135,8 +135,10 @@ void printTypeParamValue(AsmPrinter &p, TypedAttr value);
 ParseResult parseTypeParamValue(AsmParser &p, TypedAttr &value);
 
 /// Parse or print a parametric type expression and convert it to a type.
-ParseResult parseParamType(AsmParser &p, Type &elementType);
-void printParamType(AsmPrinter &p, Type elementType);
+ParseResult parseParamType(AsmParser &p, Type &type);
+void printParamType(AsmPrinter &p, Type type);
+ParseResult parseParamTypes(AsmParser &p, SmallVectorImpl<Type> &types);
+void printParamTypes(AsmPrinter &p, ArrayRef<Type> types);
 
 /// Print an array of parameter type values.
 void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);

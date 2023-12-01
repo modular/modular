@@ -1460,7 +1460,7 @@ def KGEN_PackSizeOp : KGENOp<"pack.size", [Pure]> {
 def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
     TypesMatchWith<"operand types match struct element types",
                    "result", "elements",
-                   "$_self.cast<StructType>().getParameterizedElementTypes()">
+                   "$_self.cast<StructType>().getElementTypes()">
 ]> {
   let summary = "create an instance of a struct";
   let description = [{

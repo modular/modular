@@ -287,7 +287,7 @@ private:
   POPToLLVMTypeConverter &tc;
 
   /// Build the debug type for a struct-like type.
-  DebugInfo::DIType buildDebugStructTypeFromTypeAttrs(ArrayRef<TypedAttr> attrs,
+  DebugInfo::DIType buildDebugStructTypeFromTypeAttrs(ArrayRef<Type> attrs,
                                                       StringAttr name);
   /// Build the debug type for a function type.
   DebugInfo::DIType buildDebugSubroutineType(FunctionType type);

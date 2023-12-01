@@ -567,9 +567,8 @@ static ParseResult parseStructElements(AsmParser &p,
                                        StructType type) {
   return failableInterleave(
       type.getElementTypes(),
-      [&](TypedAttr type) {
-        return parseParamValue(p, values.emplace_back(),
-                               ParamRefType::get(type));
+      [&](Type type) {
+        return parseParamValue(p, values.emplace_back(), type);
       },
       [&] { return p.parseComma(); });
 }
@@ -607,27 +606,19 @@ bool StructAttr::isConstant() const {
   return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
 }
 
-/// Compare a type between value domains.
-static bool compareTypeToTypeExpr(Type type, TypedAttr expr) {
-  if (auto refType = dyn_cast<ParamRefType>(type))
-    return refType.getParam() == expr;
-  if (auto typeCst = dyn_cast<TypeConstantAttr>(expr))
-    return typeCst.getValue() == type;
-  // `expr` is a parameter expression but `type` is not.
-  return false;
-}
-
 LogicalResult StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<TypedAttr> values, StructType type) {
-  ArrayRef<TypedAttr> types = type.getElementTypes();
+  ArrayRef<Type> types = type.getElementTypes();
   if (types.size() != values.size())
     return emitError() << "struct attribute type requires " << types.size()
                        << " elements but value has " << values.size();
   for (auto [idx, value, type] :
-       llvm::zip(llvm::seq<unsigned>(0, types.size()), values, types))
-    if (!compareTypeToTypeExpr(value.getType(), type))
+       llvm::zip(llvm::seq<unsigned>(0, types.size()), values, types)) {
+    if (value.getType() != type) {
       return emitError() << "struct element #" << idx << " has type "
                          << value.getType() << " but expected " << type;
+    }
+  }
   return success();
 }
 
@@ -640,7 +631,7 @@ TypedAttr StructExtractAttr::get(TypedAttr structValue, unsigned fieldNo) {
   assert(fieldNo < structType.getElementTypes().size() &&
          "struct extract index out of range");
   return get(structValue.getContext(), structValue, fieldNo,
-             ParamRefType::get(structType.getElementTypes()[fieldNo]));
+             structType.getElementTypes()[fieldNo]);
 }
 
 TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
@@ -698,6 +689,16 @@ LogicalResult PackType::printValue(AsmPrinter &p, TypedAttr value) const {
   printPackElements(p, packAttr.getValues(), *this);
   p << ">";
   return success();
+}
+
+/// Compare a type between value domains.
+static bool compareTypeToTypeExpr(Type type, TypedAttr expr) {
+  if (auto refType = dyn_cast<ParamRefType>(type))
+    return refType.getParam() == expr;
+  if (auto typeCst = dyn_cast<TypeConstantAttr>(expr))
+    return typeCst.getValue() == type;
+  // `expr` is a parameter expression but `type` is not.
+  return false;
 }
 
 LogicalResult PackAttr::verify(function_ref<InFlightDiagnostic()> emitError,

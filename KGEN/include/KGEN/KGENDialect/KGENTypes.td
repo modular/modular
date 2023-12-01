@@ -561,34 +561,23 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
   }];
 
   let parameters = (ins
-    OptionalArrayRefParameter<"TypedAttr">:$elementTypes,
+    OptionalArrayRefParameter<"Type">:$elementTypes,
     "bool":$isMemoryOnly
   );
   let assemblyFormat = [{
-    `<` `(` (`)`) : (custom<TypeParamValues>($elementTypes)^ `)`)?
+    `<` `(` (`)`) : (custom<ParamTypes>($elementTypes)^ `)`)?
     `` custom<IsMemoryOnly>($isMemoryOnly) `>`
   }];
-  let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$elementTypes,
-                                        "Type":$metaType,
-                                        CArg<"bool", "false">:$isMemoryOnly)>,
+    TypeBuilder<(ins "ArrayRef<Type>":$types), [{
+      return $_get($_ctxt, types, /*isMemoryOnly=*/false);
+    }]>
   ];
 
   let extraClassDeclaration = [{
-    /// Try to narrow all the element type expressions to MLIR types.
-    LogicalResult
-    resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const;
-
     /// Get the number of struct elements.
     unsigned getNumElements() const { return getElementTypes().size(); }
-
-    /// Get the element types as parameterized types.
-    SmallVector<Type> getParameterizedElementTypes() const;
-
-    /// Get a concrete element type.
-    Type getConcreteElementType(unsigned i) const;
   }];
 }
 
