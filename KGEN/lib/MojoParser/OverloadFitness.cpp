@@ -417,7 +417,7 @@ struct DiagEmitter {
   InflightDiag wrongArgCount(size_t minRequiredArgs, size_t maxAllowedArgs,
                              size_t numOperands) const;
   InflightDiag wrongPosOnlyCount(size_t minRequiredArgs, size_t numOperands,
-                                 Twine argOrParam) const;
+                                 const Twine &argOrParam) const;
   InflightDiag resultGenericMemType(Type outputType) const;
   InflightDiag argGenericMemType(size_t expectedArgIdx,
                                  Type expectedType) const;
@@ -425,6 +425,7 @@ struct DiagEmitter {
   InflightDiag argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
                                ASTType ty, ASTExprAnd<AnyValue> operand,
                                size_t argIdx) const;
+  InflightDiag missingArgs(ArrayRef<StringAttr> missingArgs) const;
 
 private:
   SMLoc callLoc;
@@ -501,7 +502,7 @@ InflightDiag DiagEmitter::wrongArgCount(size_t minRequiredArgs,
 
 InflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
                                             size_t numOperands,
-                                            Twine argOrParam) const {
+                                            const Twine &argOrParam) const {
   InflightDiag diag = initDiag() << "callee";
   emitWrongArgOrParamCount(diag, minRequiredArgs,
                            /*maxAllowed=*/numOperands, numOperands,
@@ -611,6 +612,16 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
   default:
     llvm_unreachable("");
   }
+}
+
+InflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs) const {
+  InflightDiag diag = initDiag() << "missing " << missingArgs.size()
+                                 << " required positional argument"
+                                 << plural(missingArgs.size()) << ": ";
+  llvm::interleave(
+      missingArgs, [&](StringAttr str) { diag << str; },
+      [&]() { diag << ", "; });
+  return diag;
 }
 
 //===----------------------------------------------------------------------===//
@@ -960,6 +971,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         allowImplicitConversions, emitter, loc, emitter.shared);
   };
 
+  // We collect missing arguments (in case the argument count check didn't catch
+  // this).
+  SmallVector<StringAttr> missingArgs;
+
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
@@ -987,7 +1002,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (!ASTType(expectedType).isRegisterPassable(callLoc, emitter.shared))
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
 
-    // Handle case when there are no more provided positional arguments.
+    // Handle case when there are no more provided positional operands.
     if (posOperandIdx == numPosOperands) {
       // If the argument is a varargs argument list or pack, then it can be
       // initialized with zero values no problem.
@@ -1012,16 +1027,17 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         continue;
       }
 
-      // We don't need to provide value for this argument if it has a default
-      // value.
+      // We don't need to provide a value for this argument if it has a default.
       if (expectedArgIdx >=
           signature.getNumInputs() - signature.getDefaultArguments().size()) {
         // Arguments with default values must be followed only by other
-        // arguments with default values, or by keyword argument.
+        // arguments with default values, or by keyword arguments.
         continue;
       }
 
-      llvm_unreachable("argument had no corresponding operand");
+      // We have an argument that was not passed a value. We collect these.
+      missingArgs.push_back(argName);
+      continue;
     }
 
     /// Check and process a single positional operand and advance the operand
@@ -1072,6 +1088,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (auto result = processPositionalOperand(expectedType))
       return std::move(*result);
   }
+
+  // If any arguments were missing, we emit diagnostics.
+  if (!missingArgs.empty())
+    return emitDiagFor.missingArgs(missingArgs);
 
   assert(posOperandIdx == numPosOperands &&
          "should handle argument mismatch above");

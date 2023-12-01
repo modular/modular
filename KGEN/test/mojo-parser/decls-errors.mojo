@@ -395,6 +395,20 @@ fn test_too_few_pos_only(a: Int, msg: Int = 3):
   too_few_pos_only(a, msg=msg)
 
 
+alias int = __mlir_type.index
+
+alias `1` = __mlir_attr.`1 : index`
+alias `2` = __mlir_attr.`2 : index`
+
+# COM: Issue #23007
+# expected-note @+1 {{function declared here}}
+fn missing_args(a: int, b: int, c: int = `2`, d: int = `2`): pass
+
+fn test_missing_args():
+  # expected-error @+1 {{invalid call to 'missing_args': missing 2 required positional arguments: 'a', 'b'}}
+  _ = missing_args(c=`1`, d=`1`)
+
+
 struct ConvertibleFromInt:
   fn __init__(inout self, value: Int):
     pass
