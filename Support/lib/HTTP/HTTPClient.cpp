@@ -233,6 +233,8 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &streamWriter);
   // Set our user data object for our callback.
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ret);
+  // Allow transport compression. Empty string means all supported.
+  curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
   // Verify SSL certificate against peers
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,
                    context->verifyTLSPeer ? 1 : 0);
