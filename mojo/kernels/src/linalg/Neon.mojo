@@ -29,6 +29,30 @@ fn _neon_dotprod(
     ](r, a, b)
 
 
+fn _neon_dotprod[
+    a_type: DType, b_type: DType, c_type: DType, simd_size: Int
+](r: SIMD[c_type, simd_size], a: SIMD[a_type, 16], b: SIMD[b_type, 16]) -> SIMD[
+    c_type, simd_size
+]:
+    @parameter
+    if a_type == DType.uint8 and b_type == DType.uint8:
+        return rebind[SIMD[c_type, simd_size]](
+            _neon_dotprod(
+                rebind[SIMD[DType.int32, 4]](r),
+                rebind[SIMD[DType.uint8, 16]](a),
+                rebind[SIMD[DType.uint8, 16]](b),
+            )
+        )
+    else:
+        return rebind[SIMD[c_type, simd_size]](
+            _neon_dotprod(
+                rebind[SIMD[DType.int32, 4]](r),
+                rebind[SIMD[DType.int8, 16]](a),
+                rebind[SIMD[DType.int8, 16]](b),
+            )
+        )
+
+
 fn _neon_dotprod_lane[
     lane: Int
 ](

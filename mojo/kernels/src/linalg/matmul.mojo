@@ -5,7 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, div_ceil, fma, min
-from sys.info import alignof, has_avx2, has_neon, simdwidthof
+from sys.info import (
+    alignof,
+    has_avx2,
+    has_neon,
+    simdwidthof,
+    has_neon_int8_dotprod,
+)
 from sys.intrinsics import PrefetchOptions, external_call
 
 from algorithm import (
@@ -53,7 +59,7 @@ from memory.unsafe import DTypePointer, bitcast
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from Transpose import transpose_inplace
 from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
-from Neon import _neon_matmul
+from Neon import _neon_matmul, _neon_dotprod
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
@@ -1094,7 +1100,7 @@ struct MatmulInnerLoopBPacked[
         let global_k = self.global_offset.K + kl
         let b_ptr = self.b_packed._offset(
             Index(n_outer_idx, kl // 4, 0)
-        ).bitcast[DType.int32]()
+        ).bitcast[c_type]()
 
         @parameter
         if not is_tail:
@@ -1147,22 +1153,28 @@ struct MatmulInnerLoopBPacked[
                 ) if (is_tail and has_avx512f()) else a_ptr.offset(
                     idx0 * a_ptr_stride
                 ).bitcast[
-                    DType.int32
-                ]().load().cast[
                     c_type
-                ]()
+                ]().load()
 
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 let c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local.aligned_simd_load[simd_size, alignment](
                     c_idx
                 )
+
                 let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
                     simd_size, alignment
-                ]().cast[c_type]()
+                ]()
 
                 @parameter
-                if saturated_vnni:
+                if has_neon_int8_dotprod():
+                    let a_val2 = SIMD[c_type, simd_size].splat(a_val)
+                    c_val = _neon_dotprod[a_type, b_type, c_type, simd_size](
+                        c_val,
+                        bitcast[a_type, 16](a_val2),
+                        bitcast[b_type, 16](b_val),
+                    )
+                elif saturated_vnni:
                     c_val = dot_i8_to_i32_saturated_x86[simd_size](
                         c_val, a_val, b_val
                     )
@@ -1298,7 +1310,7 @@ struct MatmulInnerLoopBPacked[
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        constrained[has_neon() and not Self.use_i8mm]()
+        constrained[has_neon() and not Self.use_vnni and not Self.use_i8mm]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,

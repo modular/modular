@@ -10,6 +10,7 @@ from sys.info import (
     has_avx2,
     has_avx512f,
     has_neon,
+    has_neon_int8_dotprod,
     has_neon_int8_matmul,
     os_is_macos,
     simdwidthof,
@@ -787,12 +788,20 @@ fn search_mm_config[
 
 @always_inline
 fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
-    return (
-        has_avx2()
-        and a_type == DType.uint8
-        and b_type == DType.int8
-        and c_type == DType.int32
-    )
+    @parameter
+    if has_neon_int8_dotprod() and not has_neon_int8_matmul():
+        return (
+            (a_type == DType.int8 and b_type == DType.int8)
+            or (a_type == DType.uint8 and b_type == DType.uint8)
+        ) and c_type == DType.int32
+    elif has_avx2():
+        return (
+            a_type == DType.uint8
+            and b_type == DType.int8
+            and c_type == DType.int32
+        )
+    else:
+        return False
 
 
 @always_inline
