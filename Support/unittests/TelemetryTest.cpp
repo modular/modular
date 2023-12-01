@@ -8,6 +8,7 @@
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include <thread>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -207,9 +208,13 @@ TEST(Telemetry, Histogram) {
 
   TelemetryContext ctx({}, logFileSetup.getConfig());
 
-  auto hist = ctx.createUInt64Histogram("basic.test.histogram", Level::L0);
+  llvm::StringMap<MetricAttributeValue> attributes = {
+      {"TEST_ATTRIBUTE", "TEST"}};
+  auto hist =
+      ctx.createUInt64Histogram("basic.test.histogram", Level::L0, attributes);
   hist.record(32);
   hist.record(10);
+
   ctx.flush();
 
   auto err = readFileUnderLock(
@@ -255,6 +260,10 @@ TEST(Telemetry, Histogram) {
           StringRef countsLine = getLineStartingAt(countsPos);
           EXPECT_EQ(countsLine.split(':').second.trim(),
                     "[0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ]");
+
+          auto attributesPos = message.find("TEST_ATTRIBUTE: TEST");
+          EXPECT_GT(attributesPos, 0);
+          EXPECT_LT(attributesPos, message.size());
         });
 
         EXPECT_TRUE(instrumentFound) << "expected to find histogram in file";
@@ -290,6 +299,60 @@ TEST(Telemetry, HistogramL1) {
 
         EXPECT_FALSE(instrumentFound)
             << "expected not to find histogram in file";
+      });
+  EXPECT_FALSE(err.isError()) << err.getError();
+}
+
+// This check tests that our Timer object works, and properly tags attributes
+// when it goes out of scope
+TEST(Telemetry, Timer) {
+  LogFileSetup logFileSetup("metrics");
+  TempFile tmpFile = logFileSetup.getLogFile("timer", "0");
+  TelemetryContext ctx({}, logFileSetup.getConfig());
+
+  auto lambda_test = [&]() {
+    llvm::StringMap<MetricAttributeValue> attrs = {{"TELEMETRY", "ATTRIBUTE"}};
+    auto timer = ctx.createUInt64Timer<std::chrono::milliseconds>(
+        "basic.test.timer", Level::L0, attrs);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  };
+
+  lambda_test();
+  ctx.flush();
+
+  auto err = readFileUnderLock(
+      tmpFile.getPath(), [&](const std::filesystem::path &path) {
+        auto mbufOr = llvm::MemoryBuffer::getFile(path.string(),
+                                                  /*IsText=*/true);
+        EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
+        std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+
+        auto getLineStartingAt = [&](auto pos) {
+          StringRef str = mbuf->getBuffer().substr(pos);
+          return str.take_until([](char c) { return c == '\n'; });
+        };
+
+        bool instrumentFound = false;
+        std::cerr << mbuf->getBuffer().str() << "\n";
+        iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
+          auto instrumentPos = message.find("instrument name");
+          StringRef instrumentLine = getLineStartingAt(instrumentPos);
+          if (instrumentLine.split(':').second.trim() != "basic.test.timer")
+            return;
+
+          instrumentFound = true;
+
+          auto maxPos = message.find("max");
+          StringRef maxLine = getLineStartingAt(maxPos);
+          EXPECT_NE(maxLine.split(':').second.trim().compare_numeric("100"),
+                    -1);
+
+          auto attributesPos = message.find("TELEMETRY: ATTRIBUTE");
+          EXPECT_GT(attributesPos, 0);
+          EXPECT_LT(attributesPos, message.size());
+        });
+
+        EXPECT_TRUE(instrumentFound) << "expected to find timer in file";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
