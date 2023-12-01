@@ -1523,7 +1523,7 @@ struct NDBuffer[
         """
         self._offset(indices).prefetch[params]()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __imul__(inout self, rhs: Float32):
         """In-place multiplies a scalar.
 
@@ -1548,7 +1548,7 @@ struct NDBuffer[
                 let vec = self.data.simd_load[simd_size](i * TN + j)
                 self.data.simd_store[simd_size](idx, vec * rhs.cast[type]())
 
-    @always_inline
+    @always_inline("nodebug")
     fn __imul__(inout self, rhs: NDBuffer):
         """In-place multiplies a NDBuffer.
 
@@ -1576,7 +1576,7 @@ struct NDBuffer[
                 )
                 self.data.simd_store[simd_size](idx, vec * rhs_vec)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __itruediv__(inout self, rhs: NDBuffer):
         """In-place divides a NDBuffer.
 
@@ -1604,7 +1604,7 @@ struct NDBuffer[
                 )
                 self.data.simd_store[simd_size](idx, vec / rhs_vec)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __mul__(self, rhs: Self) -> Self:
         """Multiplies a NDBuffer.
 
@@ -1630,7 +1630,7 @@ struct NDBuffer[
 
         return res
 
-    @always_inline
+    @always_inline("nodebug")
     fn __add__(self, rhs: NDBuffer) -> Self:
         """Adds a NDBuffer.
 
@@ -1656,7 +1656,7 @@ struct NDBuffer[
 
         return res
 
-    @always_inline
+    @always_inline("nodebug")
     fn __sub__(self, rhs: Self) -> Self:
         """Subtracts a scalar.
 
@@ -1684,7 +1684,7 @@ struct NDBuffer[
 
         return res
 
-    @always_inline
+    @always_inline("nodebug")
     fn __sub__[
         rhs_shape: DimList
     ](self, rhs: NDBuffer[1, rhs_shape, type]) -> Self:
