@@ -7,7 +7,7 @@
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
 from memory.unsafe import bitcast, Pointer
-from .ptx_assembly import ptx_assembly
+from sys import llvm_intrinsic
 
 
 # ===----------------------------------------------------------------------===#
@@ -27,22 +27,19 @@ fn mma(
     let c0 = c.slice[2]()
     let c1 = c.slice[2](2)
 
-    let r = ptx_assembly[
-        (
-            "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 {$0, $1}, {$2,"
-            " $3},{$4},{$5, $6};"
-        ),
-        (UInt32, UInt32),
-        constraints="=f,=f,r,r,r,f,f",
+    let r = llvm_intrinsic[
+        "llvm.nvvm.mma.m16n8k8.row.col.f16.f16",
+        (SIMD[DType.float16, 2], SIMD[DType.float16, 2]),
     ](
-        bitcast[DType.uint32, 1](a0),
-        bitcast[DType.uint32, 1](a1),
-        bitcast[DType.uint32, 1](b),
-        bitcast[DType.uint32, 1](c0),
-        bitcast[DType.uint32, 1](c1),
+        a0,
+        a1,
+        b,
+        c0,
+        c1,
     )
-    let d0 = bitcast[DType.float16, 2](r.get[0, UInt32]())
-    let d1 = bitcast[DType.float16, 2](r.get[0, UInt32]())
+
+    let d0 = r.get[0, SIMD[DType.float16, 2]]()
+    let d1 = r.get[1, SIMD[DType.float16, 2]]()
 
     d = d0.join(d1)
 
@@ -67,13 +64,9 @@ fn mma(
     let b_ptr = Pointer.address_of(b0).bitcast[UInt32]()
     let c_ptr = Pointer.address_of(c0).bitcast[Float32]()
 
-    let r = ptx_assembly[
-        (
-            "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32 {$0,$1,$2,$3},"
-            " {$4,$5}, {$6}, {$7,$8,$9,$10};"
-        ),
+    let r = llvm_intrinsic[
+        "llvm.nvvm.mma.m16n8k4.row.col.tf32",
         (Float32, Float32, Float32, Float32),
-        constraints="=f,=f,=f,=f,r,r,r,f,f,f,f",
     ](
         a_ptr[0],
         a_ptr[1],
@@ -107,13 +100,9 @@ fn mma(
     let b_ptr = Pointer.address_of(b0).bitcast[UInt32]()
     let c_ptr = Pointer.address_of(c0).bitcast[Float32]()
 
-    let r = ptx_assembly[
-        (
-            "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {$0,$1,$2,$3},"
-            " {$4,$5,$6,$7}, {$8,$9}, {$10,$11,$12,$13};"
-        ),
+    let r = llvm_intrinsic[
+        "llvm.nvvm.mma.m16n8k8.row.col.tf32",
         (Float32, Float32, Float32, Float32),
-        constraints="=f,=f,=f,=f,r,r,r,r,r,r,f,f,f,f",
     ](
         a_ptr[0],
         a_ptr[1],
