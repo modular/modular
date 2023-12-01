@@ -40,6 +40,15 @@ public:
   /// resulting BufferRef.
   static BufferRef get(StringRef data) { return BufferRef::create(data); }
 
+  /// Create a buffer that is an alias of `other`, starting at `begin` with size
+  /// `size`. Providing the default (0) for both parameters results in a full
+  /// alias of the entire buffer. This will store a ref to `other` inside this
+  /// buffer to ensure the lifetimes overlap sufficiently.
+  static BufferRef getAlias(BufferRef other, size_t begin = 0,
+                            size_t size = 0) {
+    return BufferRef::create(std::move(other), begin, size);
+  }
+
   /// Map in a file and use it as the backing storage for the BufferRef. If size
   /// and offset are provided, then a sub-range of the file is mapped in. This
   /// file is mapped read-only.
@@ -87,6 +96,11 @@ protected:
   Buffer(std::unique_ptr<llvm::MemoryBuffer> buffer)
       : storage{std::move(buffer)} {}
 
+  /// Given an offset and a size, construct an AliasedBufferStorage from
+  /// the bytes of `other`.
+  Buffer(BufferRef other, size_t begin, size_t size)
+      : storage{AliasedBufferStorage(std::move(other), begin, size)} {}
+
   /// Buffers are not copy-constructible.
   Buffer(const Buffer &other) = delete;
   Buffer &operator=(const Buffer &other) = delete;
@@ -123,11 +137,35 @@ protected:
     std::unique_ptr<llvm::MemoryBuffer> memBuffer;
   };
 
+  /// A Buffer storage that aliases another buffer. This is a read-only slice -
+  /// WriteableBuffer cannot use this storage kind (enforced with asserts, as
+  /// well as not having a constructor that could result in an
+  /// AliasedBufferStorage kind).
+  struct AliasedBufferStorage {
+    /// The parent buffer - this ensures we don't delete a buffer while it has
+    /// live aliases.
+    BufferRef parent;
+    /// The alias to the bytes of `parent` that we care about here.
+    StringRef aliasContents;
+
+    /// Construct the storage object and build the alias StringRef.
+    AliasedBufferStorage(BufferRef other, size_t begin, size_t size)
+        : parent(std::move(other)) {
+      // `size` == 0 implies we want the full buffer.
+      if (size == 0)
+        size = parent->getBufferSize();
+      assert(begin + size <= parent->getBufferSize() &&
+             "too many bytes selected");
+
+      aliasContents = StringRef(parent->getBufferStart() + begin, size);
+    }
+  };
+
   /// The data owned by this buffer.
   /// AllocatedBuffer is the first type so that the default constructor is an
   /// empty AllocatedBuffer.
   SmartVariant<AllocatedBuffer, llvm::sys::fs::mapped_file_region,
-               MemoryBufferStorage>
+               MemoryBufferStorage, AliasedBufferStorage>
       storage;
 };
 
