@@ -189,7 +189,7 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   curl_slist *list = nullptr;
   auto freeList = llvm::make_scope_exit([&] { curl_slist_free_all(list); });
   for (const auto &h : request.headers) {
-    curl_slist_append(
+    list = curl_slist_append(
         list, llvm::formatv("{0}: {1}", h.first(), h.second).str().c_str());
   }
 
@@ -204,10 +204,16 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
 
   // Set the method.
-  if (request.method == HTTPRequest::GET)
+  switch (request.method) {
+  case HTTPRequest::GET:
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
-  else
+    break;
+  case HTTPRequest::PUT:
+    curl_easy_setopt(curl, CURLOPT_PUT, 1);
+    break;
+  case HTTPRequest::POST:
     curl_easy_setopt(curl, CURLOPT_POST, 1);
+  }
 
   // We can set the read data as a callback.
   if (request.body) {

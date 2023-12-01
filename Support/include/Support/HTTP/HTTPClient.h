@@ -60,6 +60,7 @@ struct HTTPRequest {
   /// Method to use.
   enum Method {
     POST,
+    PUT,
     GET,
   };
   Method method = Method::GET;
