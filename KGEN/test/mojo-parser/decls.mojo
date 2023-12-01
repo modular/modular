@@ -956,6 +956,15 @@ struct ParamVarArg[*I: Int]:
     # CHECK-SAME: param_vararg
     pass
 
+# CHECK-LABEL: lit.struct.decl @TraitMember
+@value
+struct TraitMember[T: Copyable]:
+    var value: T
+    # CHECK: lit.func @"__copyinit__
+    # CHECK: call_param{{.*}}__copyinit__
+    # CHECK: lit.func @"__moveinit__
+    # CHECK: call_param{{.*}}__copyinit__
+
 ##===----------------------------------------------------------------------===##
 # async/await
 ##===----------------------------------------------------------------------===##
