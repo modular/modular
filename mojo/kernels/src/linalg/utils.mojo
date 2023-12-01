@@ -313,9 +313,11 @@ fn get_matmul_a_row_size[
 
     @parameter
     if has_neon():
+
+        @parameter
         if use_i8mm:
             return 4
-        if critical_stride:
+        elif critical_stride:
             return 4
         else:
             return 8
@@ -331,9 +333,11 @@ fn get_matmul_pack_inner_size[
 
     @parameter
     if has_neon():
+
+        @parameter
         if use_i8mm:
             return 6
-        if critical_stride:
+        elif critical_stride:
             return 4
         else:
             return 2
