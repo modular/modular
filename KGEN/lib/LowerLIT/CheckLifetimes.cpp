@@ -12,6 +12,7 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -122,8 +123,8 @@ private:
   DenseMap<SymbolRefAttr, TraitDeclOp> traitMap;
 
   /// This keeps track of the number of fields in the struct specified by the
-  /// (fully flattened) symbol.
-  DenseMap<SymbolRefAttr, unsigned> numFields;
+  /// (fully flattened) symbol and parameters.
+  DenseMap<DeclRefType, unsigned> numFields;
 
   /// A map from struct name and field name to index within the struct.  This
   /// isn't the field number, this is the number of recursively flattened
@@ -203,22 +204,30 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
     return 1;
 
   // See if we've already looked this up, if so, just return the known value.
-  SymbolRefAttr structSymbol = declRef.getSymbol();
-  auto it = numFields.find(structSymbol);
+  auto it = numFields.find(declRef);
   if (it != numFields.end())
     return it->second;
 
   // If not, we compute it recursively.  Structs cannot be infinitely deep, so
   // we can just do this recursively.
+  SymbolRefAttr structSymbol = declRef.getSymbol();
   auto smIt = structMap.find(structSymbol);
   assert(smIt != structMap.end() && smIt->second &&
          "reference to struct that wasn't declared");
   LIT::StructDeclOp decl = smIt->second;
 
+  // Initialize a parameter evaluator. We need to compute the resolved field
+  // types to recursively compute the number of fields.
+  ParameterEvaluator evaluator;
+  for (auto [decl, value] :
+       llvm::zip(decl.getInputParams(), declRef.getParamValues()))
+    evaluator.setParameterValue(decl, value);
+
   size_t totalFields = 0;
   for (auto field : decl.getFieldDecls()) {
     fieldIndices[{structSymbol, field.getNameAttr()}] = totalFields;
-    totalFields += getNumFieldsInType(field.getType());
+    totalFields +=
+        getNumFieldsInType(evaluator.getReboundType(field.getType()));
   }
 
   // We always track an extra bit per struct.  On the outer level of a value
@@ -228,7 +237,7 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) {
   // to support (sub)fields that have zero members soundly.
   ++totalFields;
 
-  return numFields[structSymbol] = totalFields;
+  return numFields[declRef] = totalFields;
 }
 
 /// Return the start bit for a field with the specified name in the specified

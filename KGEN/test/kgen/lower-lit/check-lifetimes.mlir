@@ -689,3 +689,25 @@ lit.func @x(%arg0[arg0]: !kgen.declref<@Int>) {
   kgen.call @y(%arg0) : (!kgen.declref<@Int> borrow) -> ()
   kgen.return
 }
+
+// -----
+
+!Thing = !kgen.declref<@Thing>
+lit.struct.decl @Box<T: trait<@Destructable>>  {
+  lit.struct.field x : !kgen.paramref<:trait<@Destructable> T>
+}
+
+lit.struct.decl @Thing {
+  lit.struct.field x : index
+  lit.struct.field y : index
+  lit.struct.field z : index
+  lit.func @get(%self[self]: !kgen.pointer<!Thing> borrow_in_mem) {
+    kgen.return
+  }
+}
+
+lit.func @top(%c[c]: !kgen.pointer<@Box<:trait<@Destructable> !Thing>> borrow_in_mem) {
+  %0 = lit.struct.gep %c[x] : <!Thing> from <@Box<:trait<@Destructable> !Thing>>
+  lit.call @Thing::@get(%0) : !lit.signature<("self": !kgen.pointer<!Thing> borrow_in_mem) -> ()>
+  kgen.return
+}
