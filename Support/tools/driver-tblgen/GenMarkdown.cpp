@@ -26,6 +26,7 @@ static void genFrontMatter(raw_ostream &os, const CommandDescription &cmd) {
   os << "---\n"
      << "title: " << cmd.getName(/*join=*/" ") << "\n"
      << "description: " << cmd.getSummary() << "\n"
+     << "css: /static/styles/hide-github-actions.css\n"
      << "---\n\n";
 }
 
