@@ -8,9 +8,9 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Support/ForkJoin.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -97,7 +97,7 @@ static void reversePostOrderWalk(Operation *op,
 
 void CallGraph::resolvePromises(CallGraphNode *node) {
   FuncOp func = node->func;
-  TimeTraceScope traceScope("resolvePromises", [func]() mutable {
+  CompilerTimeTraceScope traceScope("resolvePromises", [func]() mutable {
     return func.getSymNameAttr().str();
   });
 
@@ -260,7 +260,8 @@ void CallGraph::run() {
 }
 
 void ResolveCompilerPromisesPass::runOnOperation() {
-  TimeTraceScope traceScope("ResolveCompilerPromisesPass::runOnOperation");
+  CompilerTimeTraceScope traceScope(
+      "ResolveCompilerPromisesPass::runOnOperation");
   auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
       runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createSingleThreadWorkQueue());

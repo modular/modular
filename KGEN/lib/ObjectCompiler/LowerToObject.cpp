@@ -8,12 +8,12 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLVMPassesPipeline.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Support/FileUtilities.h"
@@ -128,7 +128,7 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
                                      llvm::TargetMachine &targetMachine,
                                      const CompilationOptions &options,
                                      LLCL::Runtime &runtime) {
-  TimeTraceScope<> traceScope("llvm-optimize", module.getName());
+  CompilerTimeTraceScope traceScope("llvm-optimize", module.getName());
   [[maybe_unused]] auto timeScope =
       runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
           .createUInt64Timer<std::chrono::milliseconds>(
@@ -187,7 +187,7 @@ static LogicalResult
 runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
              llvm::raw_pwrite_stream &os, llvm::CodeGenFileType fileType,
              M::Telemetry::TelemetryContext *telemetryCtx = nullptr) {
-  TimeTraceScope<> traceScope("llvm-codegen", module.getName());
+  CompilerTimeTraceScope traceScope("llvm-codegen", module.getName());
   std::optional<M::Telemetry::Timer<uint64_t, std::chrono::milliseconds>>
       timeScope;
   if (telemetryCtx)
@@ -231,7 +231,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         CompilationOptions &options,
                                         LLCL::Runtime &runtime,
                                         bool emitAssembly) {
-  TimeTraceScope<> traceScope("compile-llvm-to-object", module.getName());
+  CompilerTimeTraceScope traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
 
   if (!options.saveTempsPrefix.empty()) {

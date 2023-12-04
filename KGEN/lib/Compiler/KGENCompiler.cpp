@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
@@ -78,7 +79,7 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 
   SmallVector<void *> candidatePtrs;
   {
-    TimeTraceScope<> traceScope("compile-specializations");
+    CompilerTimeTraceScope traceScope("compile-specializations");
     // Get pointers to all the candidates.
     for (FuncOp candidate : specializations) {
       auto funcOr = engine->lookup(candidate.getNameAttr());
@@ -97,7 +98,7 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
   return
       [engine = std::move(engine), evaluatorFunc = std::move(evaluatorFunc),
        candidatePtrs = std::move(candidatePtrs)]() mutable -> ErrorOr<ssize_t> {
-        TimeTraceScope<> traceScope("execute-specializations");
+        CompilerTimeTraceScope traceScope("execute-specializations");
         return evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
             candidatePtrs.data(), candidatePtrs.size());
       };
@@ -552,7 +553,8 @@ KGENCompilerLayer::KGENCompilerLayer(
 ErrorOrSuccess
 KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
                        PackageLinkHandlerFn packageLinkHandlerFn) {
-  TimeTraceScope<> traceScope("KGENCompilerLayer::add(" + libName.str() + ")");
+  CompilerTimeTraceScope traceScope("KGENCompilerLayer::add(" + libName.str() +
+                                    ")");
   auto dylibOr = getOrCreateDylib(libName);
   if (dylibOr.isError())
     return dylibOr.takeError();

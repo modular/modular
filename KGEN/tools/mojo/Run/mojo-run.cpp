@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Package/Package.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -232,7 +233,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
     return state.reportError(funcOr.getError());
 
   // Finally, execute the 'main' function of the Mojo program.
-  TimeTraceScope<> traceScope("execute-main");
+  CompilerTimeTraceScope traceScope("execute-main");
   ErrorOrSuccess result =
       executeMain(moduleOp, symtab, engine.get(), runtime, arguments);
   if (failed(result))

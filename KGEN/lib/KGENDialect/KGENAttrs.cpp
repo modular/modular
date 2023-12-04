@@ -11,9 +11,9 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MTypeInterfaces.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "Support/STLExtras.h"
 #include "mlir/Dialect/PDL/IR/PDLOps.h"
 #include "mlir/IR/Builders.h"
@@ -432,13 +432,13 @@ LogicalResult
 SymbolConstantAttr::verifySymbolUses(Operation *module,
                                      mlir::LockedSymbolTableCollection &symtab,
                                      Location loc) const {
-  TimeTraceScope<> traceScope("SymbolConstantAttr::verifySymbolUses");
+  CompilerTimeTraceScope traceScope("SymbolConstantAttr::verifySymbolUses");
 
   // Build the signature of the referenced symbol.
   SymbolRefAttr symbol = getSymbol();
   SmallVector<Operation *> symbolOps;
   {
-    TimeTraceScope<> traceScope("lookupSymbolIn");
+    CompilerTimeTraceScope traceScope("lookupSymbolIn");
     if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps)))
       return emitError(loc)
              << symbol << " does not reference a KGEN declaration";

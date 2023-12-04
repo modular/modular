@@ -8,8 +8,8 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/Encoding.h"
 #include "mlir/IR/IRMapping.h"
@@ -106,7 +106,7 @@ static void sortValueUses(Operation *topLevelOp) {
 /// for instance, ensures the cache key computed on parser output does not
 /// depend on whether the parser has cache hits for lazy loading.
 static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
-  TimeTraceScope traceScope("eraseUnreachableDecls");
+  CompilerTimeTraceScope traceScope("eraseUnreachableDecls");
 
   // Start by erasing unresolved imports. This puts the module in a
   // canonical form.

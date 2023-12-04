@@ -32,7 +32,8 @@ AnyAsyncValueRef Cache::cachedTransform(EncodedLocation loc,
                                         WriteableBufferRef transformKey,
                                         TransformFn transformFn,
                                         CacheHitFn cacheHitFn) {
-  TimeTraceScope<> traceScope("Cache::cachedTransform");
+  TimeTraceScope traceScope(
+      RuntimeCacheProfilerEntry::create("Cache::cachedTransform"));
   BufferRef keyBuffer = std::move(transformKey);
 
   // Try to find the key in the cache. The cache hit function should chain off

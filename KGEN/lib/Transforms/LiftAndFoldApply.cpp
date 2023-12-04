@@ -6,8 +6,8 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -67,7 +67,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     SmallVector<ParamDeclRefAttr> uses;
     bool hasConstExpr;
     {
-      TimeTraceScope traceScope("collectParameters");
+      CompilerTimeTraceScope traceScope("collectParameters");
       collector.collectUsesFromAttr(op, uses, hasConstExpr);
     }
 

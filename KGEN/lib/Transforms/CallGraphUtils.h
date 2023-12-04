@@ -8,8 +8,8 @@
 #define KGEN_LIB_TRANSFORMS_CALLGRAPHUTILS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Threading.h"
 #include "llvm/Support/RWMutex.h"
@@ -75,7 +75,7 @@ struct CallGraphBase {
 template <typename DerivedT, typename NodeT>
 void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
                                            const SymbolTable &symtab) {
-  TimeTraceScope traceScope("CallGraphBase::build");
+  CompilerTimeTraceScope traceScope("CallGraphBase::build");
 
   // Instantiate the nodes for each generator first.
   for (auto func : llvm::make_early_inc_range(module.getOps<FuncOpT>()))

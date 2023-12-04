@@ -9,9 +9,9 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -120,7 +120,7 @@ void OutlineClosuresPass::runOnOperation() {
         capturedUses.clear();
         bool unused;
         {
-          TimeTraceScope traceScope("collectParameters");
+          CompilerTimeTraceScope traceScope("collectParameters");
           collector.collectUsesFromType(capture.getType(), capturedUses,
                                         unused);
         }

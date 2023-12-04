@@ -8,7 +8,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "Support/Profiling/TimeProfiler.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/Pass.h"
@@ -156,7 +156,7 @@ static std::vector<StackAllocationOp>
 runAnalysis(Region &top, PassInfo &pass,
             DenseMap<Value, StackAllocationOp> &aliases,
             DenseMap<Operation *, std::vector<StackAllocationOp>> &variant) {
-  TimeTraceScope<> traceScope("runAnalysis");
+  CompilerTimeTraceScope traceScope("runAnalysis");
   // These are the stack allocations that are eligible for elision by this pass.
   std::vector<StackAllocationOp> allocs;
 
@@ -241,7 +241,7 @@ runAnalysis(Region &top, PassInfo &pass,
 static StackAllocationOp
 mostDominatingAlloc(mlir::DominanceInfo &domInfo, StackAllocationOp alloc,
                     const DenseSet<StackAllocationOp> &others) {
-  TimeTraceScope<> traceScope("mostDominatingAlloc");
+  CompilerTimeTraceScope traceScope("mostDominatingAlloc");
   for (StackAllocationOp other : others)
     if (domInfo.properlyDominates(&*other, alloc))
       alloc = other;
@@ -254,7 +254,7 @@ static void markVariantPvsOpaque(
     DenseMap<StackAllocationOp, PotentialValue> &pvs,
     DenseMap<PotentialValue, DenseSet<StackAllocationOp>> &rmap,
     unsigned &opaqueCounter) {
-  TimeTraceScope<> traceScope("markAllPvsOpaque");
+  CompilerTimeTraceScope traceScope("markAllPvsOpaque");
   for (StackAllocationOp alloc : variant) {
     auto it = pvs.find(alloc);
     rmap[it->second].erase(alloc);
@@ -484,7 +484,7 @@ static void processRegion(
 }
 
 static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
-  TimeTraceScope<> traceScope("runStackReuseOnRegion");
+  CompilerTimeTraceScope traceScope("runStackReuseOnRegion");
 
   // Determine the eligible stack allocations, the region variant allocations,
   // and the aliases.
@@ -501,7 +501,7 @@ static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
 
   // Run the first pass.
   {
-    TimeTraceScope traceScope("scanRegion");
+    CompilerTimeTraceScope traceScope("scanRegion");
     for (StackAllocationOp alloc : allocs) {
       // Set the current value to uninitialized.
       pvs.try_emplace(alloc, Value());
@@ -517,7 +517,7 @@ static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
   }
 
   {
-    TimeTraceScope traceScope("cantElide");
+    CompilerTimeTraceScope traceScope("cantElide");
     // `canElide` now contains the set of stack allocations that *could* be
     // elided map to the stack allocations that would be used to elide it. This
     // forms a kind of DAG where only the roots can actually be elided. Because
@@ -539,7 +539,7 @@ static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
 
   // Now process the regions.
   {
-    TimeTraceScope traceScope("processRegion");
+    CompilerTimeTraceScope traceScope("processRegion");
     for (StackAllocationOp alloc : allocs) {
       // Set the current value to uninitialized.
       pvs.try_emplace(alloc, Value());
@@ -552,7 +552,7 @@ static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
   }
 
   // Now start deleting ops.
-  TimeTraceScope<> deleteScope("deleteOps");
+  CompilerTimeTraceScope deleteScope("deleteOps");
   std::vector<Operation *> worklist;
   llvm::append_range(worklist, llvm::make_first_range(canElide));
   pass.numElidedVars += canElide.size();
@@ -571,7 +571,7 @@ static void runStackReuseOnRegion(Region &funcBody, PassInfo &pass) {
 }
 
 void StackReuse::runOnOperation() {
-  TimeTraceScope<> traceScope("StackReuse::runOnOperation");
+  CompilerTimeTraceScope traceScope("StackReuse::runOnOperation");
 
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
   PassInfo info{domInfo};

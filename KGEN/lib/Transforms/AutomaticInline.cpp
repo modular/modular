@@ -8,6 +8,7 @@
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
@@ -296,7 +297,7 @@ void CallGraph::endWork() {
 }
 
 void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
-  TimeTraceScope traceScope("CallGraphBase::build");
+  CompilerTimeTraceScope traceScope("CallGraphBase::build");
 
   // Instantiate the nodes for the graph first.
   for (auto func : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
@@ -524,7 +525,7 @@ void AutomaticInline::runOnOperation() {
 
   // If we need to handle debug info, do that now.
   if (updateAttrName) {
-    TimeTraceScope traceScope("updateDebugInfo");
+    CompilerTimeTraceScope traceScope("updateDebugInfo");
     LLCL::ForkJoin state(*rt);
     std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
@@ -536,7 +537,7 @@ void AutomaticInline::runOnOperation() {
       state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
         updateScopeDebugInfo(func, updateAttrName);
         // Run the function pipeline here.
-        TimeTraceScope traceScope("optimizeFunction");
+        CompilerTimeTraceScope traceScope("optimizeFunction");
         if (failed(pms.getPassManager().run(func)))
           innerPipelineFailed = true;
       });

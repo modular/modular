@@ -8,8 +8,8 @@
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "Support/ErrorOr.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 
@@ -27,7 +27,7 @@ void KGEN::collectParameterReferences(
     bool &hasConstExpr) {
   ParameterCollector::Analysis cache;
   ParameterCollector c(cache);
-  TimeTraceScope traceScope("collectParameters");
+  CompilerTimeTraceScope traceScope("collectParameters");
   c.collectUsesFromAttr(attr, results, hasConstExpr);
 }
 
@@ -37,7 +37,7 @@ void KGEN::collectParameterReferences(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasConstExpr) {
   ParameterCollector::Analysis cache;
   ParameterCollector c(cache);
-  TimeTraceScope traceScope("collectParameters");
+  CompilerTimeTraceScope traceScope("collectParameters");
   c.collectUsesFromType(type, results, hasConstExpr);
 }
 

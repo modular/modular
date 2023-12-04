@@ -9,11 +9,11 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/FileSystemExtras.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
@@ -108,7 +108,7 @@ OwningOpRef<ModuleOp>
 ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
                                         const ExportMap &exportedSymbols,
                                         IRMapping &mapping) {
-  TimeTraceScope traceScope("produceStandaloneModule");
+  CompilerTimeTraceScope traceScope("produceStandaloneModule");
   auto module = cast<ModuleOp>(symtab.getOp());
   // Create a new module for these funcs. This will go away at the end
   // of this function.
@@ -436,7 +436,7 @@ ErrorOr<BufferRef>
 ObjectCompiler::produceArchive(const SymbolTable &symtab,
                                const ExportMap &exportedSymbols,
                                bool standalone) {
-  TimeTraceScope<> traceScope("produce-archive");
+  CompilerTimeTraceScope traceScope("produce-archive");
 
   // Slice out a standalone module for the exported symbols.
   OwningOpRef<ModuleOp> slicedModule =
@@ -474,7 +474,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
             "failed to lower module to LLVM IR for archive compilation",
             op->getLoc()));
       }
-      TimeTraceScope<> traceScope("split-input-module");
+      CompilerTimeTraceScope traceScope("split-input-module");
       StringRef moduleName = llvmModule->getName();
 
       // If we are saving the temp files we don't want to split.
@@ -511,7 +511,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
               if (result.isError())
                 return std::move(output).setToError(result.takeDiagnostic());
             }
-            TimeTraceScope<> traceScope("concatenate-object-files");
+            CompilerTimeTraceScope traceScope("concatenate-object-files");
 
             if (generatingPtx) {
               // If we're not splitting just copy directly to the output buffer.
@@ -601,7 +601,7 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
   // Serialize the module to bitcode to both allow for transferring to a new
   // context (LLVM isn't threadsafe), and to use in the cachedTransform key.
   {
-    TimeTraceScope<> traceScope("serialize-input-module");
+    CompilerTimeTraceScope traceScope("serialize-input-module");
     llvm::WriteBitcodeToFile(module, *keyBuf);
   }
 
@@ -718,7 +718,7 @@ ErrorOrSuccess
 ObjectCompiler::produceStandaloneAssembly(const SymbolTable &symtab,
                                           const ExportMap &exportedSymbols,
                                           llvm::raw_pwrite_stream &os) {
-  TimeTraceScope<> traceScope("produce-standalone-assembly");
+  CompilerTimeTraceScope traceScope("produce-standalone-assembly");
 
   OwningOpRef<ModuleOp> slicedModule =
       produceStandaloneModule(symtab, exportedSymbols);

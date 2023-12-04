@@ -7,8 +7,8 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -167,7 +167,7 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
               graph.verify(sharedSymtabs, threadCaches.getThreadLocalCache())))
         return failure();
       if (simplify) {
-        TimeTraceScope<> traceScope("propagateTrivialParameters");
+        CompilerTimeTraceScope traceScope("propagateTrivialParameters");
         propagateTrivialParameters(declRegion, graph, graph,
                                    ParameterEvaluator());
       }

@@ -17,10 +17,10 @@
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "Support/Compiler/ParserUtils.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/ML/DType.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "Support/STLExtras.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "llvm/ADT/StringExtras.h"
@@ -1902,7 +1902,7 @@ LogicalResult
 KGEN::verifyDeclSignaturesMatch(StringRef lhsName, SignatureType lhsSig,
                                 Location lhsLoc, StringRef rhsName,
                                 SignatureType rhsSig, Location rhsLoc) {
-  TimeTraceScope<> traceScope("verifyDeclSignaturesMatch");
+  CompilerTimeTraceScope traceScope("verifyDeclSignaturesMatch");
 
   FunctionType lhsType = lhsSig.getValues();
   FunctionType rhsType = rhsSig.getValues();
