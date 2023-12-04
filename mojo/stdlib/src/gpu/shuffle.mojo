@@ -13,6 +13,66 @@ from .globals import WARP_SIZE
 alias _WIDTH_MASK = WARP_SIZE - 1
 
 # ===----------------------------------------------------------------------===#
+# shuffle_idx
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn shuffle_idx[type: DType](val: SIMD[type, 1], srcLane: Int) -> SIMD[type, 1]:
+    """Copies a value from a source lane to other lanes in a warp.
+
+    Broadcasts a value from a source thread in a warp to all the participating
+    threads without the use of shared memory
+
+    Parameters:
+      type: The type of the scalar value.
+
+    Args:
+      val: The value to be shuffled.
+      srcLane: The offset warp lane ID.
+
+    Returns:
+      The value from the srcLane.
+    """
+    return shuffle_idx(0xFFFFFFFF, val, srcLane)
+
+
+@always_inline("nodebug")
+fn shuffle_idx[
+    type: DType
+](
+    mask: Int, val: SIMD[type, 1], srcLane: Int, width: Int = WARP_SIZE - 1
+) -> SIMD[type, 1]:
+    """Copies a value from a source lane to other lanes in a warp.
+
+    Broadcasts a value from a source thread in a warp to all the participating
+    threads without the use of shared memory
+
+    Parameters:
+      type: The type of the scalar value.
+
+    Args:
+      mask: The mask of the warp lanes.
+      val: The value to be shuffled.
+      srcLane: The source warp lane ID.
+      width: The warp width which must be a power of 2.
+
+    Returns:
+      The value from the srcLane.
+    """
+
+    @parameter
+    if type.is_float32():
+        return llvm_intrinsic["llvm.nvvm.shfl.sync.idx.f32", SIMD[type, 1]](
+            Int32(mask), val, UInt32(srcLane), Int32(_WIDTH_MASK)
+        )
+    else:
+        return llvm_intrinsic["llvm.nvvm.shfl.sync.idx.i32", SIMD[type, 1]](
+            Int32(mask), val, UInt32(srcLane), Int32(_WIDTH_MASK)
+        )
+
+
+# ===----------------------------------------------------------------------===#
 # shuffle_up
 # ===----------------------------------------------------------------------===#
 
