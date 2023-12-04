@@ -40,9 +40,9 @@ Detail::SomeConcreteAsyncValue::~SomeConcreteAsyncValue() {
     // TODO: If unconstructed this will leak the waiters list.  We should signal
     // this as an error (checking for resurrection) etc.
 #if MODULAR_PARANOID
-    AsyncProfilerEntry::create(StringLiteral("AsyncValue::destroy unavailable"),
-                               [this]() { return Detail::addrToHex(this); })
-        .record();
+    AsyncProfilerEntry::create("AsyncValue::destroy unavailable", [this]() {
+      return Detail::addrToHex(this);
+    }).record();
 #endif
     llvm::report_fatal_error(
         "destroying a non-available AsyncValue isn't implemented");

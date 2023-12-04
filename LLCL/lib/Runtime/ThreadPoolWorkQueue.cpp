@@ -69,8 +69,7 @@ enum WorkQueueState : uint8_t { kReady = 0, kShuttingDown = 1, kShutdown = 2 };
 static void randomSleep() {
   std::chrono::milliseconds delay{(rand() % 4) * 2000};
   if (delay.count() > 0) {
-    TimeTraceScope scope(
-        AllWorkItemsProfilerEntry::create(StringLiteral("llcl.randomSleep")));
+    TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.randomSleep"));
     std::this_thread::sleep_for(delay);
   }
 }
@@ -103,15 +102,6 @@ constexpr size_t bitVectorWidth = sizeof(SuspendedThreadsBitvec) * 8;
 constexpr SuspendedThreadsBitvec
 getSuspendedThreadIdMask(size_t workerGroupID) {
   return UINT64_C(1) << workerGroupID;
-}
-
-static constexpr auto printWorkerId(size_t workerGroupID) {
-  return [workerGroupID]() {
-    return Twine("(workerGroupID:")
-        .concat(Twine(workerGroupID))
-        .concat(Twine(")"))
-        .str();
-  };
 }
 
 struct SharedThreadState {
@@ -380,7 +370,7 @@ struct WorkQueueThread {
     // Do the work.
     {
       TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
-          StringLiteral(IsWaiter ? "llcl.waiter" : "llcl.doWork")));
+          IsWaiter ? "llcl.waiter" : "llcl.doWork"));
       workItem.task();
     }
 
@@ -525,7 +515,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     {
       auto spinning =
-          InternalProfilerEntry::create(spinningLabel, printWorkerId(workerID));
+          InternalProfilerEntry::create(spinningLabel, (uint64_t)workerID);
 
       // If we've run out of work to do, we need to quiesce and ultimately block
       // in the kernel on the semaphore.  However, we don't want to immediately
@@ -634,8 +624,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     {
       // Ok, finally block.
-      TimeTraceScope scope(InternalProfilerEntry::create(
-          sleepingLabel, printWorkerId(workerID)));
+      TimeTraceScope scope(
+          InternalProfilerEntry::create(sleepingLabel, (uint64_t)workerID));
       sema.wait();
     }
 
@@ -806,8 +796,7 @@ void ThreadPoolWorkQueue::shutdown() {
          "work pool is not ready");
 #endif
 
-  TimeTraceScope scope(
-      InternalProfilerEntry::create(StringLiteral("llcl.shutdown")));
+  TimeTraceScope scope(InternalProfilerEntry::create("llcl.shutdown"));
 
   WorkQueueThread *callingWorker = getOwningWorkQueueThread();
 

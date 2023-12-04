@@ -32,7 +32,7 @@
 // thread as the creating context:
 //
 // \code
-//   auto entry = ProfilerEntry<true>::create(StringLiteral("my_event_name"));
+//   auto entry = ProfilerEntry<true>::create("my_event_name");
 //   ...
 //   // Possibly on a different thread
 //   ...my code...
@@ -86,8 +86,13 @@ class OStream;
 
 /// Define to 1 to have all enabled profiling events dumped to stderr as they
 /// are created. The profiling entry type must be enabled, and profiling must
-/// be active.
+/// be active. This can help track down hangs/crashes.
 #define TRACE_IN_REAL_TIME 0
+
+/// Define to 1 to dump strings which are copied/moved during profiling.
+/// These can cause the profiling entries to be slower than the code being
+/// profiled!
+#define WARN_ABOUT_TRACE_COPIES 0
 
 namespace M {
 
@@ -100,12 +105,16 @@ using ProfilerEventId = size_t;
 
 /// An InternableString is a StringRef with underlying lifetime guaranteed
 /// at least up until the next call to TimeTraceProfiler::intern(). A typical
-/// example would be a string literal from a MEFFile.
+/// example would be a string attribute from a MEFFile.
 struct InternableString : StringRef {
   using StringRef::StringRef;
 };
 
 namespace ProfilingDetail {
+
+// Make sure there's no struct slicing with our internal representation.
+static_assert(sizeof(StringLiteral) == sizeof(StringRef));
+static_assert(sizeof(InternableString) == sizeof(StringRef));
 
 constexpr bool kProfilingEnabled = MODULAR_LLCL_MAX_PROFILING_LEVEL > 0;
 
@@ -124,8 +133,64 @@ using FloatUsType = std::chrono::duration<double, std::micro>;
 using DurationType = std::chrono::duration<ClockType::rep, ClockType::period>;
 
 //===----------------------------------------------------------------------===//
+// ProfilingDetail::BlockList
+//===----------------------------------------------------------------------===//
+
+constexpr size_t kBlockListBlockSize = 1024;
+
+template <typename T>
+struct BlockListEntry {
+  std::unique_ptr<BlockListEntry> tail;
+  SmallVector<T, kBlockListBlockSize> entries;
+};
+
+/// Storage for recorded events and strings owned by a per-thread profiler.
+template <typename T>
+struct BlockList {
+  std::unique_ptr<BlockListEntry<T>> head;
+  BlockListEntry<T> *last = nullptr;
+  size_t totalSize = 0;
+
+  size_t size() const { return totalSize; }
+
+  template <typename... Args>
+  const T &emplace_back(Args &&...args) {
+    if (head == nullptr) {
+      assert(last == nullptr);
+      head = std::make_unique<BlockListEntry<T>>();
+      last = head.get();
+    }
+    if (last->entries.size() >= kBlockListBlockSize) {
+      assert(last->tail == nullptr);
+      last->tail = std::make_unique<BlockListEntry<T>>();
+      last = last->tail.get();
+    }
+    ++totalSize;
+    return last->entries.emplace_back(std::forward<Args>(args)...);
+  }
+
+  void enumerate(llvm::function_ref<void(const T &)> func) const {
+    BlockListEntry<T> *curr = head.get();
+    while (curr) {
+      llvm::for_each(curr->entries, func);
+      curr = curr->tail.get();
+    }
+  }
+
+  void enumerate(llvm::function_ref<void(T &)> func) {
+    BlockListEntry<T> *curr = head.get();
+    while (curr) {
+      llvm::for_each(curr->entries, func);
+      curr = curr->tail.get();
+    }
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ProfilingDetail::Label
 //===----------------------------------------------------------------------===//
+
+using StringArena = BlockList<std::string>;
 
 /// A way to derive the name or detail string for a profiling entry. When safe,
 /// allows string copies to be avoided until either the final profile is being
@@ -134,6 +199,13 @@ using DurationType = std::chrono::duration<ClockType::rep, ClockType::period>;
 /// Since it is so common, also allows the combination of a string and a
 /// single uint64_t value, rendered as "name:42", without requiring the caller
 /// to do any string manipulation.
+///
+/// The following forms of 'strings' are supported:
+///   - StringLiteral (subclass of StringRef): Assume the reference will remain
+///     valid up to the next call to TimeTraceProfiler::intern().
+///   - InternableString (subclass of StringRef): As for StringLiteral.
+///   - StringRef: Copy the string reference data into the string arena.
+///   - std::string: Move the string into the string arena.
 class Label {
 public:
   static constexpr int kIntPayloadBits = 62;
@@ -145,52 +217,77 @@ public:
     assert(intPayload == value && "overflow for int payload");
   }
 
-  // No string copy, no interning.
+  // CAUTION: No string copy, but may need to be interned.
+  // Note we don't treat StringLiteral any differently from InternableString
+  // since it is possible for a literal to point to the data segment of a dylib
+  // which can be unloaded.
   /*implicit*/
-  constexpr Label(StringLiteral stringLiteral, uint64_t value = kNoIntPayload)
-      : stringPayload(stringLiteral), tag(kLiteral), intPayload(value) {
+  constexpr Label(StringArena &stringArena, StringLiteral stringLiteral,
+                  uint64_t value = kNoIntPayload)
+      : stringRef(stringLiteral), tag(kLiteral), intPayload(value) {
     assert(intPayload == value && "overflow for int payload");
   }
 
   // CAUTION: No string copy, but may need to be interned.
   /*implicit*/
-  constexpr Label(InternableString internableString,
+  constexpr Label(StringArena &stringArena, InternableString internableString,
                   uint64_t value = kNoIntPayload)
-      : stringPayload(internableString), tag(kLiteral), intPayload(value) {
+      : stringRef(internableString), tag(kInternable), intPayload(value) {
+    assert(intPayload == value && "overflow for int payload");
+  }
+
+  // CAUTION: Copies string into arena.
+  /*implicit*/
+  Label(StringArena &stringArena, StringRef stringRef,
+        uint64_t value = kNoIntPayload)
+      : stringRef(intern(stringArena, stringRef)), tag(kOwned),
+        intPayload(value) {
+#if WARN_ABOUT_TRACE_COPIES
+    llvm::errs() << "PROFILE: WARNING: Copied profiling string: "
+                 << this->stringRef << "\n";
+#endif
     assert(intPayload == value && "overflow for int payload");
   }
 
   // Moves string.
-  /*implicit*/
-  Label(std::string string, uint64_t value = kNoIntPayload)
-      : stringPayload(std::move(string)), tag(kOwned), intPayload(value) {
+  Label(StringArena &stringArena, std::string string,
+        uint64_t value = kNoIntPayload)
+      : stringRef(intern(stringArena, std::move(string))), tag(kOwned),
+        intPayload(value) {
+#if WARN_ABOUT_TRACE_COPIES
+    llvm::errs() << "PROFILE: WARNING: Moved profiling string: "
+                 << this->stringRef << "\n";
+#endif
     assert(intPayload == value && "overflow for int payload");
   }
 
-  // CAUTION: Copies string.
+  // Calls function and moves string.
   /*implicit*/
-  Label(StringRef stringRef, uint64_t value = kNoIntPayload)
-      : stringPayload(stringRef.str()), tag(kOwned), intPayload(value) {
+  Label(StringArena &stringArena, ProfilerPrintFn printFn,
+        uint64_t value = kNoIntPayload)
+      : stringRef(intern(stringArena, printFn())), tag(kOwned),
+        intPayload(value) {
+#if WARN_ABOUT_TRACE_COPIES
+    llvm::errs()
+        << "PROFILE: WARNING: Moved profiling string from detail function: "
+        << this->stringRef << "\n";
+#endif
     assert(intPayload == value && "overflow for int payload");
   }
 
-  // CAUTION: Calls function and moves result string.
-  /*implicit*/
-  Label(ProfilerPrintFn printFn, uint64_t value = kNoIntPayload)
-      : stringPayload(printFn()), tag(kOwned), intPayload(value) {
-    assert(intPayload == value && "overflow for int payload");
-  }
-
-  ~Label() { reset(); }
+  ~Label() = default;
 
   /// If the label possibly contains a borrow, evaluate it to its owning
   /// std::string form.
-  void intern();
+  void intern(StringArena &stringArena);
 
   /// Returns the label in string form.
   std::string toString() const;
 
-  bool empty() const;
+  bool empty() const {
+    return intPayload == kNoIntPayload && stringRef.empty();
+  }
+
   std::optional<uint64_t> getInt() const {
     return intPayload < kNoIntPayload ? intPayload : std::optional<uint64_t>();
   }
@@ -198,38 +295,25 @@ public:
   // No copy, only move.
   Label(const Label &) = delete;
   Label &operator=(const Label &) = delete;
-  Label(Label &&that) { moveFrom(that); }
-  Label &operator=(Label &&that) {
-    reset();
-    moveFrom(that);
-    return *this;
-  }
+  Label(Label &&that) = default;
+  Label &operator=(Label &&that) = default;
 
 private:
-  void reset();
-  void moveFrom(Label &that);
+  /// Copies data of stringRef into stringArena and returns a StringRef to it.
+  static StringRef intern(StringArena &stringArena, StringRef stringRef) {
+    return StringRef(stringArena.emplace_back(stringRef.str()));
+  }
 
-  /// String-like payload.
-  union StringPayload {
-    /// String literal. Never needs to be interned.
-    StringLiteral stringLiteral;
-    /// Like a string literal, but may need to be interned before the
-    /// underlying object from which the string is borrowed is freed.
-    InternableString internableString;
-    /// An owned string, safe from all lifetime issues.
-    std::string ownedString;
+  // Moves string into stringArena and returns a StringRef to it.
+  static StringRef intern(StringArena &stringArena, std::string string) {
+    return StringRef(stringArena.emplace_back(std::move(string)));
+  }
 
-    constexpr StringPayload() : stringLiteral("") {}
-    constexpr StringPayload(StringLiteral stringLiteral)
-        : stringLiteral(stringLiteral) {}
-    constexpr StringPayload(InternableString internableString)
-        : internableString(internableString) {}
-    StringPayload(std::string &&ownedString)
-        : ownedString(std::move(ownedString)) {}
-    ~StringPayload() {}
-  } stringPayload;
+  /// Reference to string, which we are ether borrowing, or which resides in
+  /// the stringArena of a per-thread profiler.
+  StringRef stringRef;
 
-  /// Which of the above is the true payload.
+  /// How to interpret the above string reference.
   enum Tag { kLiteral = 0, kInternable = 1, kOwned = 2 };
   uint64_t tag : 2;
 
@@ -251,23 +335,24 @@ struct BeginEvent {
   Label detail;
 
   template <typename NameStr>
-  BeginEvent(uint64_t seqNum, ProfilerEventId id, ProfilerEventId parentId,
-             NameStr &&name, uint64_t nameValue = Label::kNoIntPayload)
+  BeginEvent(StringArena &stringArena, uint64_t seqNum, ProfilerEventId id,
+             ProfilerEventId parentId, NameStr &&name,
+             uint64_t nameValue = Label::kNoIntPayload)
       : seqNum(seqNum), id(id), parentId(parentId),
-        name(std::forward<NameStr>(name), nameValue) {}
+        name(stringArena, std::forward<NameStr>(name), nameValue) {}
 
   template <typename NameStr, typename DetailStr>
-  BeginEvent(uint64_t seqNum, ProfilerEventId id, ProfilerEventId parentId,
-             NameStr &&name, DetailStr &&detail,
+  BeginEvent(StringArena &stringArena, uint64_t seqNum, ProfilerEventId id,
+             ProfilerEventId parentId, NameStr &&name, DetailStr &&detail,
              uint64_t detailValue = Label::kNoIntPayload)
       : seqNum(seqNum), id(id), parentId(parentId),
-        name(std::forward<NameStr>(name)),
-        detail(std::forward<DetailStr>(detail), detailValue) {}
+        name(stringArena, std::forward<NameStr>(name)),
+        detail(stringArena, std::forward<DetailStr>(detail), detailValue) {}
 
   /// Intern the name and detail labels.
-  void intern() {
-    name.intern();
-    detail.intern();
+  void intern(StringArena &stringArena) {
+    name.intern(stringArena);
+    detail.intern(stringArena);
   }
 
   void dump() const;
@@ -301,69 +386,32 @@ struct SampleEvent {
   Label name;
 
   template <typename NameStr>
-  SampleEvent(uint64_t seqNum, uint64_t value, NameStr &&name,
-              uint64_t nameValue = Label::kNoIntPayload)
+  SampleEvent(StringArena &stringArena, uint64_t seqNum, uint64_t value,
+              NameStr &&name, uint64_t nameValue = Label::kNoIntPayload)
       : seqNum(seqNum), value(value),
-        name(std::forward<NameStr>(name), nameValue) {}
+        name(stringArena, std::forward<NameStr>(name), nameValue) {}
 
   /// Intern the name label.
-  void intern() { name.intern(); }
+  void intern(StringArena &stringArena) { name.intern(stringArena); }
 
   void dump() const;
 };
 
 //===----------------------------------------------------------------------===//
-// ProfilingDetail::EventList
+// ProfilingDetail::DebugEvent
 //===----------------------------------------------------------------------===//
 
-constexpr size_t kEventListBlockSize = 1024;
+/// Represents a debug entry.
+struct DebugEvent {
+  uint64_t seqNum;
+  TimePointType stamp = ClockType::now();
+  std::string msg;
 
-template <typename T>
-struct EventListEntry {
-  std::unique_ptr<EventListEntry> tail;
-  SmallVector<T, kEventListBlockSize> events;
+  DebugEvent(uint64_t seqNum, std::string msg)
+      : seqNum(seqNum), msg(std::move(msg)) {}
+
+  void dump() const;
 };
-
-template <typename T>
-struct EventList {
-  std::unique_ptr<EventListEntry<T>> head;
-  EventListEntry<T> *last = nullptr;
-
-  template <typename... Args>
-  const T &emplace_back(Args &&...args) {
-    if (head == nullptr) {
-      assert(last == nullptr);
-      head = std::make_unique<EventListEntry<T>>();
-      last = head.get();
-    }
-    if (last->events.size() >= kEventListBlockSize) {
-      assert(last->tail == nullptr);
-      last->tail = std::make_unique<EventListEntry<T>>();
-      last = last->tail.get();
-    }
-    return last->events.emplace_back(std::forward<Args>(args)...);
-  }
-
-  void enumerate(llvm::function_ref<void(const T &)> func) const {
-    EventListEntry<T> *curr = head.get();
-    while (curr) {
-      llvm::for_each(curr->events, func);
-      curr = curr->tail.get();
-    }
-  }
-
-  void enumerate(llvm::function_ref<void(T &)> func) {
-    EventListEntry<T> *curr = head.get();
-    while (curr) {
-      llvm::for_each(curr->events, func);
-      curr = curr->tail.get();
-    }
-  }
-};
-
-using BeginEventList = EventList<BeginEvent>;
-using EndEventList = EventList<EndEvent>;
-using SampleEventList = EventList<SampleEvent>;
 
 //===----------------------------------------------------------------------===//
 // ProfilingDetail::CompletedEntry
@@ -372,7 +420,7 @@ using SampleEventList = EventList<SampleEvent>;
 /// A completed profiling entry, built from the combination of begin, end,
 /// sampling and parent events.
 struct CompletedEntry {
-  enum Flavor { kBegin = 0, kEnd = 1, kSample = 2 };
+  enum Flavor { kBegin = 0, kEnd = 1, kSample = 2, kDebug = 3 };
   Flavor flavor = kBegin;
   uint64_t seqNum = 0;
   ProfilerEventId id = 0;
@@ -380,7 +428,7 @@ struct CompletedEntry {
   uint64_t tid = 0;
   TimePointType start;
   TimePointType end;
-  DurationType dur;
+  DurationType dur{0};
   std::string name;
   std::string detail;
   uint64_t value = 0;
@@ -401,6 +449,10 @@ struct CompletedEntry {
       : flavor(kSample), seqNum(sampleEvent.seqNum), tid(tid),
         start(sampleEvent.stamp), end(sampleEvent.stamp),
         name(sampleEvent.name.toString()), value(sampleEvent.value) {}
+
+  CompletedEntry(uint64_t tid, const DebugEvent &debugEvent)
+      : flavor(kDebug), seqNum(debugEvent.seqNum), tid(tid),
+        start(debugEvent.stamp), end(debugEvent.stamp), name(debugEvent.msg) {}
 
   /// Update this begin entry with details from end event.
   void mergeEndIntoBegin(uint64_t endTid, const EndEvent &endEvent);
@@ -429,6 +481,11 @@ struct CompletedEntry {
 // ProfilingDetail::TimeTraceThreadProfiler
 //===----------------------------------------------------------------------===//
 
+using BeginEventList = BlockList<BeginEvent>;
+using EndEventList = BlockList<EndEvent>;
+using SampleEventList = BlockList<SampleEvent>;
+using DebugEventList = BlockList<DebugEvent>;
+
 struct TimeTraceThreadProfiler {
   explicit TimeTraceThreadProfiler(uint16_t threadIndex);
 
@@ -437,11 +494,12 @@ struct TimeTraceThreadProfiler {
   ProfilerEventId begin(Args &&...args) {
     ProfilerEventId id = nextId++;
     [[maybe_unused]] const BeginEvent &event = beginEvents.emplace_back(
-        nextSeqNum++, id, /*parentId=*/(ProfilerEventId)0,
+        stringArena, nextSeqNum++, id, /*parentId=*/(ProfilerEventId)0,
         std::forward<Args>(args)...);
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
+    currentId = id;
     return id;
   }
 
@@ -451,10 +509,25 @@ struct TimeTraceThreadProfiler {
   ProfilerEventId beginWithParent(ProfilerEventId parentId, Args &&...args) {
     ProfilerEventId id = nextId++;
     [[maybe_unused]] const BeginEvent &event = beginEvents.emplace_back(
-        nextSeqNum++, id, parentId, std::forward<Args>(args)...);
+        stringArena, nextSeqNum++, id, parentId, std::forward<Args>(args)...);
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
+    currentId = id;
+    return id;
+  }
+
+  /// Begin a new timing entry, using the most recently begun event as the
+  /// parent, and return its globally unique id.
+  template <typename... Args>
+  ProfilerEventId beginWithCurrentAsParent(Args &&...args) {
+    ProfilerEventId id = nextId++;
+    [[maybe_unused]] const BeginEvent &event = beginEvents.emplace_back(
+        stringArena, nextSeqNum++, id, currentId, std::forward<Args>(args)...);
+#if TRACE_IN_REAL_TIME
+    event.dump();
+#endif
+    currentId = id;
     return id;
   }
 
@@ -486,15 +559,23 @@ struct TimeTraceThreadProfiler {
   /// Record a sampling entry.
   template <typename... Args>
   void sample(uint64_t value, Args &&...args) {
-    [[maybe_unused]] SampleEvent &event = sampleEvents.emplace_back(
-        nextSeqNum++, value, std::forward<Args>(args)...);
+    [[maybe_unused]] const SampleEvent &event = sampleEvents.emplace_back(
+        stringArena, nextSeqNum++, value, std::forward<Args>(args)...);
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
   }
 
-  // Intern all event labels.
-  void intern();
+  /// Record a debugging entry.
+  void debug(std::string msg) {
+    const DebugEvent &event =
+        debugEvents.emplace_back(nextSeqNum++, std::move(msg));
+    event.dump();
+  }
+
+  /// Intern all event labels, returning initial and final number of strings
+  /// in the string arena.
+  std::pair<size_t, size_t> intern();
 
   /// The id of the thread this profiler is running on.
   const uint64_t tid;
@@ -510,6 +591,13 @@ struct TimeTraceThreadProfiler {
   /// same start time.
   uint64_t nextSeqNum = 0;
 
+  /// Event id of the most recently begun timing event. Note that the event
+  /// may have already been ended, or may be still active and tracked
+  /// asynchronously, or may be on the stack below. This is only used by
+  /// beginWithCurrentAsParent as a cheep and cheerful way to convey
+  /// profiling context into sub-tasks.
+  ProfilerEventId currentId;
+
   /// The stack of begun but not yet ended timing events.
   SmallVector<ProfilerEventId> stack;
 
@@ -517,6 +605,10 @@ struct TimeTraceThreadProfiler {
   BeginEventList beginEvents;
   EndEventList endEvents;
   SampleEventList sampleEvents;
+  DebugEventList debugEvents;
+
+  // String arena.
+  StringArena stringArena;
 };
 
 //===----------------------------------------------------------------------===//
@@ -587,8 +679,45 @@ struct GlobalProfilerContext {
   SmallVector<std::string> inputShapes;
 };
 
-/// For internal use only. Returns true if profiling is active.
-bool timeTraceProfilerIsActive();
+//===----------------------------------------------------------------------===//
+// ProfilingDetail::DebugStream
+//===----------------------------------------------------------------------===//
+
+struct DebugStream {
+  DebugStream() = default;
+  ~DebugStream() {
+    if (auto *ctx = ThreadProfilerContext::get())
+      ctx->debug(std::move(str));
+    else
+      DebugEvent(0, std::move(str)).dump();
+  }
+
+  template <typename T>
+  llvm::raw_ostream &operator<<(const T &t) {
+    return os << t;
+  }
+
+private:
+  std::string str;
+  llvm::raw_string_ostream os{str};
+};
+
+//===----------------------------------------------------------------------===//
+// ProfilingDetail::DummyStream
+//===----------------------------------------------------------------------===//
+
+struct DummyStream {
+  DummyStream() = default;
+  ~DummyStream() = default;
+
+  template <typename T>
+  llvm::raw_ostream &operator<<(const T &t) {
+    return os;
+  }
+
+private:
+  llvm::raw_null_ostream os;
+};
 
 } // namespace ProfilingDetail
 
@@ -698,7 +827,16 @@ struct ProfilerEntry<false> {
   }
 
   template <typename... Args>
+  static ProfilerEntry createWithCurrentAsParent(Args &&...args) {
+    return {};
+  }
+
+  template <typename... Args>
   static void sample(uint64_t value, Args &&...args) {}
+
+  static ProfilingDetail::DummyStream debug() {
+    return ProfilingDetail::DummyStream();
+  }
 
   bool empty() const { return true; }
   ProfilerEventId getId() const { return 0; }
@@ -726,6 +864,14 @@ struct ProfilerEntry<true> {
     return {};
   }
 
+  template <size_t N, typename... Args>
+  static ProfilerEntry create(const char (&s)[N], Args &&...args) {
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+      return ProfilerEntry(ctx->begin(StringLiteral::withInnerNUL(s),
+                                      std::forward<Args>(args)...));
+    return {};
+  }
+
   template <typename... Args>
   static ProfilerEntry createWithParent(ProfilerEventId parentId,
                                         Args &&...args) {
@@ -736,9 +882,21 @@ struct ProfilerEntry<true> {
   }
 
   template <typename... Args>
+  static ProfilerEntry createWithCurrentAsParent(Args &&...args) {
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+      return ProfilerEntry(
+          ctx->beginWithCurrentAsParent(std::forward<Args>(args)...));
+    return {};
+  }
+
+  template <typename... Args>
   static void sample(uint64_t value, Args &&...args) {
     if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
       ctx->sample(value, std::forward<Args>(args)...);
+  }
+
+  static ProfilingDetail::DebugStream debug() {
+    return ProfilingDetail::DebugStream();
   }
 
   bool empty() const { return id == 0; }
