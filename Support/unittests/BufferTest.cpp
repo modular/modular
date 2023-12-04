@@ -57,13 +57,32 @@ TEST(BufferTest, TestWrite) {
   EXPECT_TRUE(contents == "hello") << "Actually had: " << contents;
 }
 
-TEST(BufferTest, TestReadWriteFile) {
+TEST(BufferTest, TestReadPWriteFile) {
   auto writeOr = WriteableBuffer::getFile("tmpFile", /*size=*/5, /*offset=*/0);
   EXPECT_FALSE(writeOr.isError()) << writeOr.getError();
   WriteableBufferRef write = std::move(*writeOr);
   // pwrite because we want to write to a particular offset.
   char hello[] = "hello";
   write->pwrite(hello, 5, 0);
+
+  auto wrongBufferOr = Buffer::getFile("aSillyNamedTempFileThatShouldNotExist");
+  EXPECT_TRUE(wrongBufferOr.isError()) << "No such file should exist...";
+
+  auto rightBufferOr = Buffer::getFile("tmpFile");
+  EXPECT_FALSE(rightBufferOr.isError()) << rightBufferOr.getError();
+  EXPECT_TRUE((*rightBufferOr)->getBuffer() == "hello");
+
+  // Clean up the file.
+  llvm::sys::fs::remove("tmpFile");
+}
+
+TEST(BufferTest, TestReadWriteFile) {
+  auto writeOr = WriteableBuffer::getFile("tmpFile", /*size=*/5, /*offset=*/0);
+  EXPECT_FALSE(writeOr.isError()) << writeOr.getError();
+  WriteableBufferRef write = std::move(*writeOr);
+  // We want to write to the start of the file, it'll start at offset 0.
+  char hello[] = "hello";
+  write->write(hello, 5);
 
   auto wrongBufferOr = Buffer::getFile("aSillyNamedTempFileThatShouldNotExist");
   EXPECT_TRUE(wrongBufferOr.isError()) << "No such file should exist...";

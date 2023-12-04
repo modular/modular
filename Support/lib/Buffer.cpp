@@ -88,8 +88,8 @@ const char *Buffer::getBufferStart() const {
   if (isa<AllocatedBuffer>(storage))
     return cast<AllocatedBuffer>(storage).data.data();
 
-  if (isa<mapped_file_region>(storage))
-    return cast<mapped_file_region>(storage).const_data();
+  if (isa<MappedBufferStorage>(storage))
+    return cast<MappedBufferStorage>(storage).mapping.const_data();
 
   if (isa<MemoryBufferStorage>(storage))
     return cast<MemoryBufferStorage>(storage).memBuffer->getBufferStart();
@@ -106,8 +106,8 @@ const char *Buffer::getBufferEnd() const {
     return allocStorage.data.data() + allocStorage.data.size();
   }
 
-  if (isa<mapped_file_region>(storage)) {
-    auto &mappedStorage = cast<mapped_file_region>(storage);
+  if (isa<MappedBufferStorage>(storage)) {
+    auto &mappedStorage = cast<MappedBufferStorage>(storage).mapping;
     return mappedStorage.const_data() + mappedStorage.size();
   }
 
@@ -124,8 +124,24 @@ size_t Buffer::getBufferSize() const {
   if (isa<AllocatedBuffer>(storage))
     return cast<AllocatedBuffer>(storage).data.size();
 
-  if (isa<mapped_file_region>(storage))
-    return cast<mapped_file_region>(storage).size();
+  if (isa<MappedBufferStorage>(storage))
+    return cast<MappedBufferStorage>(storage).mapping.size();
+
+  if (isa<MemoryBufferStorage>(storage))
+    return cast<MemoryBufferStorage>(storage).memBuffer->getBufferSize();
+
+  if (isa<AliasedBufferStorage>(storage))
+    return cast<AliasedBufferStorage>(storage).aliasContents.size();
+
+  llvm_unreachable("unknown storage type");
+}
+
+size_t Buffer::getBufferCapacity() const {
+  if (isa<AllocatedBuffer>(storage))
+    return cast<AllocatedBuffer>(storage).data.capacity();
+
+  if (isa<MappedBufferStorage>(storage))
+    return cast<MappedBufferStorage>(storage).mapping.size();
 
   if (isa<MemoryBufferStorage>(storage))
     return cast<MemoryBufferStorage>(storage).memBuffer->getBufferSize();
@@ -190,11 +206,38 @@ WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
 //===----------------------------------------------------------------------===//
 
 void WriteableBuffer::write_impl(const char *ptr, size_t size) {
-  assert(isa<AllocatedBuffer>(storage) &&
-         "cannot `write` to anything other than a heap-allocated buffer");
+  assert(!isa<AliasedBufferStorage>(storage) &&
+         "cannot `write` to an aliased buffer");
+  assert(!isa<MemoryBufferStorage>(storage) &&
+         "cannot `write` to an llvm::MemoryBuffer backed buffer");
 
-  auto &allocStorage = cast<AllocatedBuffer>(storage);
-  allocStorage.data.append(ptr, size);
+  if (isa<AllocatedBuffer>(storage)) {
+    auto &allocStorage = cast<AllocatedBuffer>(storage);
+    allocStorage.data.append(ptr, size);
+    return;
+  }
+
+  auto &mappedStorage = cast<MappedBufferStorage>(storage);
+  // Ensure we have the space to do the write. This means that the number of
+  // bytes we want to write must be less than the size remaining in the mapped
+  // buffer, which is exactly the total mapping size minus the already-written
+  // bytes.
+  assert(size <= mappedStorage.mapping.size() -
+                     (uintptr_t)(mappedStorage.write -
+                                 mappedStorage.mapping.data()) &&
+         "too many bytes to write to this mapping");
+  memcpy(mappedStorage.write, ptr, size);
+  // Increment the write pointer.
+  mappedStorage.write += size;
+}
+
+uint64_t WriteableBuffer::current_pos() const {
+  if (isa<MappedBufferStorage>(storage)) {
+    auto &mappedStorage = cast<MappedBufferStorage>(storage);
+    return mappedStorage.write - mappedStorage.mapping.data();
+  }
+
+  return getBufferSize();
 }
 
 // This implementation is essentially translated from the implementation of
@@ -203,13 +246,16 @@ void WriteableBuffer::pwrite_impl(const char *ptr, size_t size,
                                   uint64_t offset) {
   assert(!isa<AliasedBufferStorage>(storage) &&
          "cannot `pwrite` to an aliased buffer");
+  assert(!isa<MemoryBufferStorage>(storage) &&
+         "cannot `pwrite` to an llvm::MemoryBuffer backed buffer");
 
   // TODO: currently we don't resize the mmap'd buffer.
   assert(getBufferStart() + offset + size <= getBufferEnd() ||
          isa<AllocatedBuffer>(storage));
 
-  if (isa<mapped_file_region>(storage)) {
-    memcpy(cast<mapped_file_region>(storage).data() + offset, ptr, size);
+  if (isa<MappedBufferStorage>(storage)) {
+    memcpy(cast<MappedBufferStorage>(storage).mapping.data() + offset, ptr,
+           size);
     return;
   }
 
