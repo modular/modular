@@ -25,7 +25,7 @@ from algorithm import (
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier, WARP_SIZE, lane_id
 from gpu.memory import AddressSpace
 from gpu.host import Function, Stream
-from gpu.shuffle import warp_reduce, shuffle_down
+from gpu.shuffle import warp_reduce, shuffle_down, shuffle_idx
 from MatmulUtils import (
     GemmShape,
     MatmulConfig,
@@ -2610,6 +2610,7 @@ fn sgemm_warp_tiling_kernel[
                         C_interim.aligned_simd_store[4, 16](int(c_idx), vec)
 
 
+# Matrix-Column Vector Multiplication
 fn gemv_kernel[
     c_type: DType,
     a_type: DType,
@@ -2657,6 +2658,67 @@ fn gemv_kernel[
                 elementwise_lambda[c_type, 1](Index(warpId, 0), accum)
             else:
                 c.store(warpId, accum)
+
+
+# Row Vector-Matrix multiplication
+fn gevm_kernel[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    tile_size: Int,
+    elementwise_lambda_fn: Optional[elementwise_lambda_fn_sig_type] = None,
+](
+    c: DTypePointer[c_type],
+    a: DTypePointer[a_type],
+    b: DTypePointer[b_type],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    let warpsPerBlock = BlockDim.x() // WARP_SIZE
+    let warpId = ThreadIdx.x() // WARP_SIZE
+    var accum = SIMD[c_type, 1]()
+    let col = BlockIdx.x() * WARP_SIZE + lane_id()
+    let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    let globalWarpId = x // WARP_SIZE
+
+    let x_shared = stack_allocation[
+        tile_size,
+        c_type,
+        address_space = AddressSpace.SHARED,
+    ]()
+
+    # Every block computes warp size length of output values
+    for i in range(div_ceil(k, warpsPerBlock)):
+        var val = SIMD[c_type, 1]()
+        let row = i * warpsPerBlock + warpId
+        if lane_id() == 0:
+            val = a.load(row).cast[c_type]()
+        val = shuffle_idx(val, 0)
+        accum += val * b.load(row * n + col).cast[c_type]()
+
+    x_shared.store(lane_id() * WARP_SIZE + warpId, accum)
+    barrier()
+
+    @parameter
+    fn reduce_add[
+        type: DType,
+        width: Int,
+    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        return x + y
+
+    var total = SIMD[c_type, 1]()
+    total = x_shared.load(ThreadIdx.x()).cast[c_type]()
+    total = warp_reduce[shuffle_down, reduce_add](total)
+
+    if lane_id() == 0:
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda[c_type, 1](Index(globalWarpId, 0), total)
+        else:
+            c.store(globalWarpId, total)
 
 
 fn matmul_kernel[
@@ -2926,7 +2988,6 @@ fn _matmul_gpu_dispatch[
     let m = shape.M
     let n = shape.N
     let k = shape.K
-
     try:
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
@@ -2991,24 +3052,54 @@ fn _matmul_gpu_dispatch[
                 stream=out_chain.get_cuda_stream(),
             )
         elif n == 1:
-            alias WARPS_PER_BLOCK = 8
+            alias WARPS_PER_BLOCK = 32
             let gpu_func = Function[
                 fn (
+                    DTypePointer[c_type],
                     DTypePointer[a_type],
                     DTypePointer[b_type],
-                    DTypePointer[c_type],
                     Int,
                     Int,
                     Int,
                 ) capturing -> None, gemv_kernel[
+                    c_type,
                     a_type,
                     b_type,
-                    c_type,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
             gpu_func(
                 div_ceil(m, WARPS_PER_BLOCK),
+                WARP_SIZE * WARPS_PER_BLOCK,
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                stream=out_chain.get_cuda_stream(),
+            )
+        elif m == 1 and n % WARP_SIZE == 0 and k % 32 == 0:
+            # k should be a multiple of warps per block
+            alias WARPS_PER_BLOCK = 32
+            let gpu_func = Function[
+                fn (
+                    DTypePointer[c_type],
+                    DTypePointer[a_type],
+                    DTypePointer[b_type],
+                    Int,
+                    Int,
+                    Int,
+                ) capturing -> None, gevm_kernel[
+                    c_type,
+                    a_type,
+                    b_type,
+                    WARP_SIZE * WARPS_PER_BLOCK,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ]()
+            gpu_func(
+                div_ceil(n, WARPS_PER_BLOCK),
                 WARP_SIZE * WARPS_PER_BLOCK,
                 c.data,
                 a.data,
