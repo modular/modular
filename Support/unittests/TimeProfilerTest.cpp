@@ -62,8 +62,7 @@ TEST(TimeProfiler, Begin_End_Disabled) {
 TEST(TimeProfiler, Entry_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
-  auto entry = ProfilerEntry<true>::create(StringLiteral("event"),
-                                           StringLiteral("detail"));
+  auto entry = ProfilerEntry<true>::create("event", StringLiteral("detail"));
   std::move(entry).record();
 
   std::string json = teardownTrace(profiler);
@@ -73,8 +72,7 @@ TEST(TimeProfiler, Entry_Smoke) {
 
 TEST(TimeProfiler, Entry_Disabled) {
   // Only get the default entry if tracing is not setup.
-  auto entry = ProfilerEntry<true>::create(StringLiteral("event"),
-                                           StringLiteral("detail"));
+  auto entry = ProfilerEntry<true>::create("event", StringLiteral("detail"));
   ASSERT_TRUE(entry.empty());
   std::move(entry).record();
 }

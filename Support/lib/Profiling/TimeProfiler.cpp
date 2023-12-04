@@ -36,56 +36,15 @@ using std::chrono::time_point_cast;
 // ProfilingDetail::Label
 //===----------------------------------------------------------------------===//
 
-void ProfilingDetail::Label::intern() {
-  switch (tag) {
-  case Label::kLiteral: {
-    // Protect against dynamic library unloading.
-    std::string str = stringPayload.stringLiteral.str();
-    stringPayload.stringLiteral.~StringLiteral();
-    tag = kOwned;
-    new (&stringPayload.ownedString) std::string(std::move(str));
-    break;
-  }
-  case Label::kInternable: {
-    std::string str = stringPayload.internableString.str();
-    stringPayload.internableString.~InternableString();
-    tag = kOwned;
-    new (&stringPayload.ownedString) std::string(std::move(str));
-    break;
-  }
-  case Label::kOwned:
-    break;
-  }
-}
-
-bool ProfilingDetail::Label::empty() const {
-  if (intPayload != kNoIntPayload)
-    return false;
-  switch (tag) {
-  case Label::kLiteral:
-    return stringPayload.stringLiteral.empty();
-  case Label::kInternable:
-    return stringPayload.internableString.empty();
-  case Label::kOwned:
-    return stringPayload.ownedString.empty();
-  }
-  llvm::llvm_unreachable_internal("missing case");
+void ProfilingDetail::Label::intern(StringArena &stringArena) {
+  if (tag == kOwned || stringRef.empty())
+    return;
+  stringRef = intern(stringArena, stringRef);
+  tag = kOwned;
 }
 
 std::string ProfilingDetail::Label::toString() const {
-  std::string str;
-  switch (tag) {
-  case Label::kLiteral:
-    str = stringPayload.stringLiteral.str();
-    break;
-  case Label::kInternable:
-    str = stringPayload.internableString.str();
-    break;
-  case Label::kOwned:
-    str = stringPayload.ownedString;
-    break;
-  }
-
+  std::string str = stringRef.str();
   if (intPayload == kNoIntPayload)
     return str;
 
@@ -95,43 +54,6 @@ std::string ProfilingDetail::Label::toString() const {
   str += ":";
   str += std::to_string(intPayload);
   return str;
-}
-
-void ProfilingDetail::Label::reset() {
-  switch (tag) {
-  case Label::kLiteral:
-    stringPayload.stringLiteral.~StringLiteral();
-    break;
-  case Label::kInternable:
-    stringPayload.internableString.~InternableString();
-    break;
-  case Label::kOwned:
-    stringPayload.ownedString.~basic_string();
-    break;
-  }
-  tag = kLiteral;
-  stringPayload.stringLiteral = "";
-  intPayload = kNoIntPayload;
-}
-
-void ProfilingDetail::Label::moveFrom(Label &that) {
-  assert(tag == kLiteral && stringPayload.stringLiteral.empty());
-  stringPayload.stringLiteral.~StringLiteral();
-  tag = that.tag;
-  intPayload = that.intPayload;
-  switch (that.tag) {
-  case Label::kLiteral:
-    stringPayload.stringLiteral = that.stringPayload.stringLiteral;
-    break;
-  case Label::kInternable:
-    stringPayload.internableString = that.stringPayload.internableString;
-    break;
-  case Label::kOwned:
-    new (&stringPayload.ownedString)
-        std::string(std::move(that.stringPayload.ownedString));
-    break;
-  }
-  that.reset();
 }
 
 //===----------------------------------------------------------------------===//
@@ -181,6 +103,19 @@ void ProfilingDetail::SampleEvent::dump() const {
 }
 
 //===----------------------------------------------------------------------===//
+// ProfilingDetail::DebugEvent
+//===----------------------------------------------------------------------===//
+
+void ProfilingDetail::DebugEvent::dump() const {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  os << "PROFILE: ";
+  os << llvm::format("%8lu", llvm::get_threadid());
+  os << "  DBG  " << msg << "\n";
+  llvm::dbgs() << str;
+}
+
+//===----------------------------------------------------------------------===//
 // ProfilingDetail::CompletedEntry
 //===----------------------------------------------------------------------===//
 
@@ -225,7 +160,7 @@ void ProfilingDetail::CompletedEntry::print(llvm::json::OStream &os,
                                             TimePointType startTime,
                                             llvm::sys::Process::Pid pid,
                                             DurationType granularity) const {
-  if (flavor == kEnd)
+  if (flavor == kEnd || flavor == kDebug)
     return;
   bool isSample = flavor == kSample;
   if (!isSample && dur < granularity)
@@ -263,15 +198,16 @@ void ProfilingDetail::CompletedEntry::print(llvm::raw_pwrite_stream &os,
   case kSample:
     os << "SAM  ";
     break;
+  case kDebug:
+    os << "DBG  ";
+    break;
   }
   os << llvm::format("%10ld  ", duration_cast<microseconds>(dur).count());
   os << name;
   if (flavor == kSample)
     os << value;
-  else {
-    if (!detail.empty())
-      os << "/" << detail;
-  }
+  if (!detail.empty())
+    os << "/" << detail;
   os << "\n";
 }
 
@@ -286,9 +222,13 @@ ProfilingDetail::TimeTraceThreadProfiler::TimeTraceThreadProfiler(
   llvm::get_thread_name(threadName);
 }
 
-void ProfilingDetail::TimeTraceThreadProfiler::intern() {
-  beginEvents.enumerate([](BeginEvent &event) { event.intern(); });
-  sampleEvents.enumerate([](SampleEvent &event) { event.intern(); });
+std::pair<size_t, size_t> ProfilingDetail::TimeTraceThreadProfiler::intern() {
+  size_t initSize = stringArena.size();
+  beginEvents.enumerate(
+      [this](BeginEvent &event) { event.intern(stringArena); });
+  sampleEvents.enumerate(
+      [this](SampleEvent &event) { event.intern(stringArena); });
+  return {initSize, stringArena.size()};
 }
 
 //===----------------------------------------------------------------------===//
@@ -402,10 +342,14 @@ ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
     result.emplace_back(std::move(pair.second));
   endEntryMap.clear();
 
-  // Gather the SampleEvents.
+  // Gather the SampleEvents and DebugEvents.
   for (TimeTraceThreadProfiler &profiler : derefedProfilers) {
     profiler.sampleEvents.enumerate(
         [&profiler, &result](const SampleEvent &event) {
+          result.emplace_back(profiler.tid, event);
+        });
+    profiler.debugEvents.enumerate(
+        [&profiler, &result](const DebugEvent &event) {
           result.emplace_back(profiler.tid, event);
         });
   }
@@ -484,9 +428,8 @@ void ProfilingDetail::GlobalProfilerContext::writeJsonTrace(
     // it.
     auto hostMachineInfoOr = getHostMachineInfo();
     if (hostMachineInfoOr.isError()) {
-      llvm::errs() << "warning: time-profiler failed to "
-                      "retrieve system-info for tracefile"
-                   << "\n";
+      llvm::dbgs()
+          << "PROFILE: WARNING: unable to retrieve system-info for tracefile\n";
     } else {
       jsonOS.attributeBegin("hostMachineInfo");
       hostMachineInfoOr.takeValue().print(jsonOS);
@@ -615,15 +558,20 @@ void TimeTraceProfiler::writeJSONForTesting(llvm::raw_pwrite_stream &os) {
 void TimeTraceProfiler::intern() {
   auto *ctx = Globals::getGlobalProfilerContext();
   assert(ctx && "profiler should be initialized");
-  llvm::dbgs() << "PROFILE: INFO: Interning strings...\n";
   ProfilingDetail::TimePointType start = ProfilingDetail::ClockType::now();
   std::lock_guard<std::mutex> guard(ctx->lock);
+  size_t initStrings = 0, finalStrings = 0;
   llvm::for_each(ctx->threadProfilerContexts,
-                 [](ProfilingDetail::ThreadProfilerContext *ctx) {
-                   ctx->profiler->intern();
+                 [&initStrings,
+                  &finalStrings](ProfilingDetail::ThreadProfilerContext *ctx) {
+                   auto [init, final] = ctx->profiler->intern();
+                   initStrings += init;
+                   finalStrings += final;
                  });
   ProfilingDetail::TimePointType end = ProfilingDetail::ClockType::now();
   llvm::dbgs() << llvm::format(
-      "PROFILE: INFO: Strings interned in %ldus\n",
-      duration_cast<microseconds>(end - start).count());
+      "PROFILE: INFO: %ld strings were copied/moved during profiling. "
+      "An additional %ld strings were interned, taking %ldus.\n",
+      initStrings, finalStrings - initStrings,
+      duration_cast<microseconds>(end - start).count(), initStrings);
 }
