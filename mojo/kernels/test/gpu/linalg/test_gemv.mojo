@@ -20,17 +20,15 @@ from gpu import GridDim, BlockIdx, BlockDim, ThreadIdx, barrier, WARP_SIZE
 from gpu.sync import syncwarp
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
-from Matmul import gemv_kernel, matmul_kernel
+from Matmul import gemv_kernel, gevm_kernel, matmul_kernel
 from utils.index import Index
 from utils.list import DimList
 
 
-fn run_gemv() raises:
-    print("== run_gemv_kernel")
-    alias M: Int = 4096
-    alias N: Int = 1
-    alias K: Int = 4096
+fn run_matvec(M: Int, N: Int, K: Int) raises:
+    print("== run_matvec kernel")
 
+    let iterations = 100
     let stream = Stream()
     var a_host = Pointer[Float32].alloc(M * K)
     var b_host = Pointer[Float32].alloc(K * N)
@@ -56,6 +54,7 @@ fn run_gemv() raises:
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
+    alias WARPS_PER_BLOCK = 32
     let func_gemv = Function[
         fn (
             DTypePointer[DType.float32],
@@ -71,7 +70,21 @@ fn run_gemv() raises:
         ]
     ]()
 
-    alias WARPS_PER_BLOCK = 8
+    let func_gevm = Function[
+        fn (
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            Int,
+            Int,
+            Int,
+        ) capturing -> None, gevm_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            WARP_SIZE * WARPS_PER_BLOCK,
+        ]
+    ]()
 
     @always_inline
     @parameter
@@ -88,10 +101,37 @@ fn run_gemv() raises:
             stream=stream,
         )
 
-    var nstime = time_function[run_func_gemv](stream)
+    @always_inline
+    @parameter
+    fn run_func_gevm(stream: Stream) raises:
+        func_gevm(
+            div_ceil(N, WARPS_PER_BLOCK),
+            WARP_SIZE * WARPS_PER_BLOCK,
+            c_device,
+            a_device,
+            b_device,
+            M,
+            N,
+            K,
+            stream=stream,
+        )
+
+    var nstime = 0.0
+    var kernelType = ""
+    if N == 1:
+        for i in range(iterations):
+            nstime += time_function[run_func_gemv](stream)
+        kernelType = "GEMV"
+    elif M == 1:
+        for i in range(iterations):
+            nstime += time_function[run_func_gevm](stream)
+        kernelType = "GEVM"
+    else:
+        print("Incorrect input shape [MNK]")
+        return
     let flops = 2 * M * N * K
-    let sectime = nstime / 1000000000
-    print("GEMV KERNEL:")
+    let sectime = ((nstime / iterations) / 1000000000)
+    print(kernelType, "KERNEL:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
@@ -134,9 +174,11 @@ fn run_gemv() raises:
             stream=stream,
         )
 
-    nstime = time_function[run_func_naive](stream)
-    let sectime2 = nstime / 1000000000
-    print("NAIVE MATMUL:")
+    nstime = 0.0
+    for i in range(iterations):
+        nstime += time_function[run_func_naive](stream)
+    let sectime2 = ((nstime / iterations) / 1000000000)
+    print("SHMEM MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
@@ -161,7 +203,9 @@ fn run_gemv() raises:
     if not failed:
         print("Success 🎉: results match")
         print(
-            "Performance warp-shuffle gemv vs. naive: ", sectime2 / sectime, "x"
+            "Performance warp-shuffle matvec vs. shmem matmul: ",
+            sectime2 / sectime,
+            "x",
         )
     else:
         print("Failed ❌: results mismatch")
@@ -176,6 +220,7 @@ fn run_gemv() raises:
     _ = c_host_naive
 
     _ = func_gemv ^
+    _ = func_gevm ^
     _ = func_naive ^
     _ = stream ^
 
@@ -184,7 +229,9 @@ fn run_gemv() raises:
 def main():
     try:
         with Context() as ctx:
-            # run_matmul_kernel_10()
-            run_gemv()
+            # gemv for matrix vector multiply and gevm for vector matrix multiply
+            run_matvec(4096, 1, 4096)
+            run_matvec(1, 4096, 4096)
+
     except e:
         print("CUDA_ERROR:", e)
