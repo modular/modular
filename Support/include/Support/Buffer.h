@@ -71,6 +71,7 @@ public:
   const char *getBufferStart() const;
   const char *getBufferEnd() const;
   size_t getBufferSize() const;
+  size_t getBufferCapacity() const;
   StringRef getBuffer() const;
   llvm::MemoryBufferRef getMemBufferRef() const;
 
@@ -161,11 +162,22 @@ protected:
     }
   };
 
+  struct MappedBufferStorage {
+    /// The actual file mapping.
+    llvm::sys::fs::mapped_file_region mapping;
+    /// The current write pointer. Always starts at the beginning of the
+    /// mapping.
+    char *write;
+
+    MappedBufferStorage(llvm::sys::fs::mapped_file_region &&mapped)
+        : mapping(std::move(mapped)), write(mapping.data()) {}
+  };
+
   /// The data owned by this buffer.
   /// AllocatedBuffer is the first type so that the default constructor is an
   /// empty AllocatedBuffer.
-  SmartVariant<AllocatedBuffer, llvm::sys::fs::mapped_file_region,
-               MemoryBufferStorage, AliasedBufferStorage>
+  SmartVariant<AllocatedBuffer, MappedBufferStorage, MemoryBufferStorage,
+               AliasedBufferStorage>
       storage;
 };
 
@@ -187,7 +199,12 @@ public:
   static WriteableBufferRef get() { return WriteableBufferRef::create(); }
   /// Create a WriteableBuffer with initial size (this sets both the capacity
   /// and the number of bytes stored in the buffer to `size`). The user can also
-  /// provide an alignment for the underlying allocation.
+  /// provide an alignment for the underlying allocation. When `size` is
+  /// provided, that sets the current write pointer of the buffer to be begin()
+  /// + `size` - meaning that `write` will append and the user should use
+  /// `pwrite`. If the intent is to pre-allocate a buffer that will be
+  /// filled-in, the caller should instead indicate a capacity, with a size of
+  /// 0.
   static WriteableBufferRef get(size_t size,
                                 std::optional<size_t> alignment = {},
                                 std::optional<size_t> capacity = {}) {
@@ -203,6 +220,7 @@ public:
 
   /// Keep all the reader APIs.
   using Buffer::getBuffer;
+  using Buffer::getBufferCapacity;
   using Buffer::getBufferEnd;
   using Buffer::getBufferSize;
   using Buffer::getBufferStart;
@@ -224,7 +242,7 @@ public:
   /// Copies `size` bytes from address `ptr` to the end of the buffer (this
   /// resizes the buffer to contain getBufferSize() + `size` bytes).
   void write_impl(const char *ptr, size_t size) override;
-  uint64_t current_pos() const override { return getBufferSize(); }
+  uint64_t current_pos() const override;
   void pwrite_impl(const char *ptr, size_t size, uint64_t offset) override;
 
 private:
