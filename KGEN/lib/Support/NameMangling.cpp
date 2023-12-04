@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Support/NameMangling.h"
-#include "Support/Profiling/TimeProfiler.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/SmallString.h"
 
@@ -53,8 +53,8 @@ static constexpr auto produceEncoding() {
 }
 
 StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name) {
-  TimeTraceScope traceScope("sanitizeSymbolToAlnum",
-                            [name] { return name.str(); });
+  CompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
+                                    [name] { return name.str(); });
   // Replace contiguous sections of invalid symbols with a single '_' while
   // tallying all the invalid symbols. They are encoded and placed at the end of
   // the string.

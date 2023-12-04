@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
@@ -198,7 +199,7 @@ private:
 bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
                                const llvm::SetVector<StringAttr> &calleeDecls,
                                const ParameterUseDefGraph &topLevelGraph) {
-  TimeTraceScope<> traceScope("AttrTypeMangler::populate");
+  CompilerTimeTraceScope traceScope("AttrTypeMangler::populate");
 
   // `curScope` contains all declarations visible in the scope of the call,
   // including those defined in higher scopes. When the function is inlined,
@@ -235,7 +236,7 @@ ParamDeclAttr AttrTypeMangler::mangleDecl(ParamDeclAttr decl,
 }
 
 void AttrTypeMangler::mangleElementsIn(Operation *op, bool mangleLocs) {
-  TimeTraceScope<> traceScope("AttrTypeMangler::mangleElementsIn");
+  CompilerTimeTraceScope traceScope("AttrTypeMangler::mangleElementsIn");
   op->setAttrs(cast<DictionaryAttr>(mangleRefsIn(op->getAttrDictionary())));
   if (mangleLocs) {
     op->setLoc(cast<mlir::LocationAttr>(
@@ -260,7 +261,7 @@ void AttrTypeMangler::mangleElementsIn(Operation *op, bool mangleLocs) {
 
 void AttrTypeMangler::recursivelyMangle(Region *scope,
                                         const ParameterUseDefGraph &graph) {
-  TimeTraceScope</*Enabled=*/false> traceScope(
+  VerboseCompilerTimeTraceScope traceScope(
       "AttrTypeMangler::recursivelyMangle");
 
   const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
@@ -382,8 +383,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
                                 const llvm::SetVector<StringAttr> &calleeDecls,
                                 AttrTypeMangler::Cache &manglerCache,
                                 bool updateDebugInfo) {
-  TimeTraceScope<> traceScope("inlineGeneratorCall",
-                              [&] { return callee.getSymName().str(); });
+  CompilerTimeTraceScope traceScope("inlineGeneratorCall",
+                                    [&] { return callee.getSymName().str(); });
 
   StringAttr label = StringAttr::get(call.getContext(), "inlined_cf_scope");
 
@@ -690,7 +691,7 @@ void InliningGraphBase<DerivedT, NodeT>::complete(NodeT *node) {
 
 template <typename DerivedT, typename NodeT>
 void InliningGraphBase<DerivedT, NodeT>::process() {
-  TimeTraceScope traceScope("InliningGraphBase::process");
+  CompilerTimeTraceScope traceScope("InliningGraphBase::process");
 
   // Populate the worklist with root nodes.
   for (auto &[func, node] : this->nodes) {
@@ -1037,7 +1038,7 @@ bool InliningGraph::prepareForInlining(InliningGraphNode *node) {
 }
 
 void InliningGraph::performInlining(InliningGraphNode *caller) {
-  TimeTraceScope traceScope(
+  CompilerTimeTraceScope traceScope(
       "InliningGraph::performInlining",
       [name = caller->func.getSymName()] { return name.str(); });
 
@@ -1090,7 +1091,7 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
   if (updateAttrName)
     return;
   {
-    TimeTraceScope traceScope("optimizeFunction");
+    CompilerTimeTraceScope traceScope("optimizeFunction");
     if (failed(pms.getPassManager().run(caller->func)))
       innerPipelineFailed = true;
   }
@@ -1274,7 +1275,7 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
 } // namespace
 
 void ForceInlinePass::runOnOperation() {
-  TimeTraceScope traceScope("ForceInlinePass::runOnOperation");
+  CompilerTimeTraceScope traceScope("ForceInlinePass::runOnOperation");
 
   // Create a runtime instance if needed.
   auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
@@ -1305,7 +1306,7 @@ void ForceInlinePass::runOnOperation() {
 
   // If we need to handle debug info, do that now.
   if (updateAttrName) {
-    TimeTraceScope traceScope("updateDebugInfo");
+    CompilerTimeTraceScope traceScope("updateDebugInfo");
     LLCL::ForkJoin state(*rt);
     std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
@@ -1315,7 +1316,7 @@ void ForceInlinePass::runOnOperation() {
       state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
         updateScopeDebugInfo(func, updateAttrName);
         // Run the function pipeline here.
-        TimeTraceScope traceScope("optimizeFunction");
+        CompilerTimeTraceScope traceScope("optimizeFunction");
         if (failed(pms.getPassManager().run(func)))
           innerPipelineFailed = true;
       });

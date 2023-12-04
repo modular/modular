@@ -17,6 +17,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Support/ForkJoin.h"
@@ -842,7 +843,7 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
 //===----------------------------------------------------------------------===//
 
 void ElaboratorImpl::finalizeFunction(ImplNode *node) {
-  TimeTraceScope<> traceScope("finalizeFunction");
+  CompilerTimeTraceScope traceScope("finalizeFunction");
   // Erase everything but the entry blocks of each region.
   FuncOp func = node->func;
   func.walk<mlir::WalkOrder::PreOrder>([](Operation *op) {
@@ -932,7 +933,7 @@ void ElaboratorImpl::addDeferredFunction(OwningOpRef<FuncOp> func) {
 ErrorOrSuccess ElaboratorImpl::evaluateFunctions(ImplNode *inode,
                                                  FuncOp evaluator,
                                                  std::vector<FuncOp> options) {
-  TimeTraceScope<> traceScope("evaluateFunctions", [evaluator, options] {
+  CompilerTimeTraceScope traceScope("evaluateFunctions", [evaluator, options] {
     std::string detail;
     llvm::raw_string_ostream os(detail);
     os << "evaluator: " << FuncOp(evaluator).getSymName() << "\n";
@@ -1735,8 +1736,8 @@ LogicalResult ElaboratorImpl::processImplNode(ImplNode *inode) {
 
   LLVM_DEBUG(inode->print(logger << "Processing implementation node: ",
                           /*printBindings=*/false));
-  TimeTraceScope traceScope("processImplNode",
-                            [inode] { return inode->func.getSymName().str(); });
+  CompilerTimeTraceScope traceScope(
+      "processImplNode", [inode] { return inode->func.getSymName().str(); });
 
   while (!inode->stack.empty()) {
     ImplNode::WorkItem &item = inode->stack.back();
@@ -1777,8 +1778,9 @@ ElaborationState ElaboratorImpl::processScope(ImplNode *node,
     for (Operation *op : item.ops)
       logger << *op << "\n";
   });
-  TimeTraceScope<false> traceScope("processScope",
-                                   std::to_string(item.ops.size()) + " ops");
+  VerboseCompilerTimeTraceScope traceScope("processScope", [&item]() {
+    return std::to_string(item.ops.size()) + " ops";
+  });
 
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
@@ -1977,9 +1979,9 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     return ElaborationState::error();
   }
 
-  TimeTraceScope<> traceScope("specializeGenerator:" +
-                                  tryGettingShortName(gen.getName()).str(),
-                              gen.getName().str());
+  CompilerTimeTraceScope traceScope(
+      "specializeGenerator:" + tryGettingShortName(gen.getName()).str(),
+      gen.getName().str());
   auto genScope = logger.scope("Specializing Generator: @", gen.getName());
   logger.logOp("Generator", gen);
 
@@ -2362,7 +2364,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 
   // Process all current work.
   {
-    TimeTraceScope traceScope("doElaboration");
+    CompilerTimeTraceScope traceScope("doElaboration");
     unsigned cycleGeneration = 0;
     while (true) {
       signalWorklist();
@@ -2415,7 +2417,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   // generators - everything else we don't care about.
   DenseMap<StringAttr, StringAttr> funcsToRename;
   {
-    TimeTraceScope traceScope("eraseFuncs");
+    CompilerTimeTraceScope traceScope("eraseFuncs");
     LLCL::ForkJoin eraseState(runtime);
     auto eraseFunc = [&eraseState, this](Operation *op) {
       symtab.get().remove(op);
@@ -2430,7 +2432,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
         genInstantiations;
     for (ParamNode &node :
          llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
-      TimeTraceScope traceScope(
+      CompilerTimeTraceScope traceScope(
           "processGen", [name = node.gen.getSymName()] { return name.str(); });
       FuncOp first;
       // Erase all erroneous functions.
@@ -2478,7 +2480,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 
     // Now reorder all instantiations of each generator to be deterministic.
     for (auto &[gen, instantiations] : genInstantiations) {
-      TimeTraceScope traceScope(
+      CompilerTimeTraceScope traceScope(
           "sortInstantiations",
           [name = gen.getSymNameAttr()] { return name.str(); });
       llvm::sort(instantiations,
@@ -2508,7 +2510,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
   // unregistered operations.  It also doesn't support batch renaming.
   {
-    TimeTraceScope traceScope("replaceCallSymbols");
+    CompilerTimeTraceScope traceScope("replaceCallSymbols");
     mlir::AttrTypeReplacer renamer;
     renamer.addReplacement([&](SymbolConstantAttr cst) {
       auto it = funcsToRename.find(cst.getSymbol().getRootReference());
@@ -2520,7 +2522,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     ThreadLocalCache<mlir::AttrTypeReplacer> renamers(
         renamer, ctx->isMultithreadingEnabled() ? ctx->getNumThreads() : 1);
     mlir::parallelForEach(ctx, theModule.getOps<FuncOp>(), [&](FuncOp func) {
-      TimeTraceScope traceScope("replaceSymbolsIn", [func]() mutable {
+      CompilerTimeTraceScope traceScope("replaceSymbolsIn", [func]() mutable {
         return func.getSymName().str();
       });
       func.walk([&](Operation *op) {
@@ -2546,7 +2548,7 @@ elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
                     EvaluatorExecutorFnRef evaluatorExecutorFn,
                     ElaboratorCompileAsmFnRef compileAsmFn,
                     const ElaborateGeneratorsOptions &config) {
-  TimeTraceScope<> traceScope("elaborate-generators");
+  CompilerTimeTraceScope traceScope("elaborate-generators");
   ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
 
   // Now, construct and run the elaborator.

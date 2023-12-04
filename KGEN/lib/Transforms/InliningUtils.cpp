@@ -10,10 +10,10 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/PassManager.h"
@@ -100,7 +100,7 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
 //===----------------------------------------------------------------------===//
 
 void KGEN::foldTrivialLoop(Operation *op) {
-  TimeTraceScope traceScope("foldTrivialLoop");
+  CompilerTimeTraceScope traceScope("foldTrivialLoop");
 
   auto loop = dyn_cast<HLCF::LoopOp>(op);
   if (!loop)
@@ -167,7 +167,7 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
 }
 
 void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
-  TimeTraceScope updateScopeDebugInfo(
+  CompilerTimeTraceScope updateScopeDebugInfo(
       "updateScopeDebugInfo", [&func] { return func.getSymName().str(); });
   func.getBody()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (!isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op))

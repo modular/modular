@@ -12,6 +12,7 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Package/Package.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
@@ -109,8 +110,8 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
 
 /// Emit the IR for `theModule` to a file.
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
-  TimeTraceScope<> traceScope("emit-module",
-                              theModule.getSymName().value_or(""));
+  CompilerTimeTraceScope traceScope("emit-module",
+                                    theModule.getSymName().value_or(""));
   if (opts.emitTextualAsm) {
     auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/false, ".mlir");
     if (!outFile)
@@ -443,7 +444,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Helper to execute a func.
   auto execFunc = [&](FuncOp theFunc, StringAttr name,
                       const CommandLineFunc &clFunc) -> LogicalResult {
-    TimeTraceScope<> traceScope("execute-function", name);
+    CompilerTimeTraceScope traceScope("execute-function", name);
     // Trigger compilation so we can pull out the archive.
     ErrorOr<CompiledFunc> funcOr = engine->lookup(name);
     if (failed(funcOr))

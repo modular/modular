@@ -14,7 +14,7 @@
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ParserBase.h"
-#include "Support/Profiling/TimeProfiler.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include <deque>
@@ -574,7 +574,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 // Top-Level Decl Resolution
 
 void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
-  TimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
+  CompilerTimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
     return decl.getNameIfOperation().value_or("").str();
   });
 

@@ -17,6 +17,10 @@
 #include "mlir/IR/SymbolTable.h"
 
 namespace M::Cache {
+/// Profiler entry for compile-time cache transforms.
+using CacheProfilerEntry =
+    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 1)>;
+
 /// The Cache dialect can store a large constant - this struct defines the cache
 /// key. It can be an Attribute (indicating that we should hash the data itself)
 /// or a string (indicating we already know the hash).

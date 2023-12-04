@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/ObjectCompiler.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -68,7 +69,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(const SymbolTable &symtab,
 
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
-  TimeTraceScope<> traceScope("lower-to-llvm");
+  CompilerTimeTraceScope traceScope("lower-to-llvm");
   mgr->clear();
 
   // We only need to run the post-elaboration passes if we are searching. In

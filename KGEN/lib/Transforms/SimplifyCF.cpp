@@ -8,8 +8,8 @@
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -239,13 +239,13 @@ void SimplifyCF::runOnOperation() {
   // as jumps in this context - we only care about control flow transfers that
   // move us out of this loop.
   {
-    TimeTraceScope traceScope("cfgAnalysis");
+    CompilerTimeTraceScope traceScope("cfgAnalysis");
     walkPreorder(getOperation().getBodyRegion());
   }
 
   // Try to remove trivial loops. Process in reverse to make sure later ops are
   // visited first.
-  TimeTraceScope traceScope("eraseOps");
+  CompilerTimeTraceScope traceScope("eraseOps");
   numErasedLoops = 0;
   numErasedTry = 0;
   for (LoopOp loop : llvm::reverse(loopsInOrder))

@@ -10,8 +10,8 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "Support/MDialect/MTypeInterfaces.h"
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Types.h"
@@ -313,7 +313,7 @@ SignatureType SignatureType::getSpecializedSignature(
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
     FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
     FnEffects effects, FnMetadataAttrInterface metadata) {
-  TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
+  CompilerTimeTraceScope traceScope("SignatureType::getSpecializedSignature");
 
   // If the signature isn't parameterized, then there are no substitutions to
   // perform.

@@ -19,6 +19,7 @@
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/Support/CompilerProfiling.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -734,7 +735,7 @@ ASTDecl &SharedState::importModule(StringRef name, PackageOp currentPackage,
 SharedState::ModuleState &SharedState::importModuleState(StringRef name,
                                                          ASTDecl *context,
                                                          llvm::SMLoc loc) {
-  TimeTraceScope<> fullTimeScope(("importModule: " + name).str());
+  CompilerTimeTraceScope fullTimeScope(("importModule: " + name).str());
 
   // Handle the case where the name is comprised of multiple components.
   if (name.contains('.'))
@@ -1040,13 +1041,13 @@ void SharedState::loadModulesFromCache(
             return std::move(out).emplace();
           ASTDecl &moduleDecl = *moduleState->decl;
           FileModuleOp moduleOp = cast<FileModuleOp>(moduleDecl);
-          TimeTraceScope<> fullTimeScope(
+          CompilerTimeTraceScope fullTimeScope(
               ("loadModuleFromCache: " + moduleOp.getName()).str());
 
           // Read the cached IR.
           Block b;
           {
-            TimeTraceScope<> timeScope("readBytecodeFile");
+            CompilerTimeTraceScope timeScope("readBytecodeFile");
             auto sourceMgr = std::make_shared<llvm::SourceMgr>();
             sourceMgr->AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(
                                               (**f)->getBuffer(),
@@ -1250,7 +1251,7 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
   Block *block = parentState.decl->getDeclEndBuilder().getBlock();
   std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   {
-    TimeTraceScope<> timeScope("readBytecodeFile");
+    CompilerTimeTraceScope timeScope("readBytecodeFile");
     auto sourceMgr = std::make_shared<llvm::SourceMgr>();
     sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
     const llvm::MemoryBuffer *memoryBuf =
@@ -1464,7 +1465,7 @@ void SharedState::cacheParsedModules() {
   // If we don't have a valid cache, we can't do anything.
   if (!impl->transformCache)
     return;
-  TimeTraceScope<> timeScope("cacheParsedModules");
+  CompilerTimeTraceScope timeScope("cacheParsedModules");
 
   SmallVector<LLCL::AnyAsyncValueRef> results;
   for (auto &[decl, module] : impl->moduleStates) {
@@ -1488,7 +1489,8 @@ void SharedState::cacheParsedModules() {
             AsyncValueRef<bool> &&alreadyInCache) mutable {
           if (alreadyInCache.isError() || *alreadyInCache)
             return std::move(out).emplace();
-          TimeTraceScope<> timeScope(("Caching: " + moduleOp.getName()).str());
+          CompilerTimeTraceScope timeScope(
+              ("Caching: " + moduleOp.getName()).str());
 
           // Write the module to the cache.
           auto writeableTransformResult = WriteableBuffer::get();
