@@ -135,16 +135,18 @@ void BlobCacheBackend::delegateContains(
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
+BlobCacheBackend::find(BufferRef keyHash,
+                       std::optional<WriteableBufferRef> backingBuf,
                        std::optional<EncodedLocation> loc) {
   auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    result = result.copy(), buf = std::move(buf),
+                    result = result.copy(), backingBuf = std::move(backingBuf),
                     loc = std::move(loc)]() mutable {
     // Find it at this level.
     ErrorOr<std::optional<BufferRef>> bufOr = thisRef->findImpl(
         keyHash->getBuffer(),
-        (buf ? std::optional<WriteableBufferRef>(buf->copy()) : std::nullopt));
+        (backingBuf ? std::optional<WriteableBufferRef>(backingBuf->copy())
+                    : std::nullopt));
     if (bufOr.isError()) {
       return std::move(result).setToError(
           getError(std::move(loc), bufOr.takeError()));
@@ -156,7 +158,7 @@ BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
 
     // If we don't have it, try with delegate.
     return thisRef->delegateFind(std::move(result), std::move(keyHash),
-                                 std::move(buf), std::move(loc));
+                                 std::move(backingBuf), std::move(loc));
   });
 
   return result;
@@ -164,7 +166,8 @@ BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
 
 void BlobCacheBackend::find(
     llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> &map,
-    std::optional<WriteableBufferRef> buf, std::optional<EncodedLocation> loc) {
+    std::optional<WriteableBufferRef> backingBuf,
+    std::optional<EncodedLocation> loc) {
   for (auto &kv : map) {
     // TODO: This necessitates a copy of the string, but it's unclear that
     //       changing all the methods to take a StringRef will work the way we
@@ -172,13 +175,14 @@ void BlobCacheBackend::find(
     BufferRef keyHash = Buffer::get(kv.first());
     auto result = kv.second.copy();
     addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
-                      result = std::move(result), buf = std::move(buf),
+                      result = std::move(result),
+                      backingBuf = std::move(backingBuf),
                       loc = std::move(loc)]() mutable {
       // Find it at this level.
       ErrorOr<std::optional<BufferRef>> bufOr = thisRef->findImpl(
           keyHash->getBuffer(),
-          (buf ? std::optional<WriteableBufferRef>(buf->copy())
-               : std::nullopt));
+          (backingBuf ? std::optional<WriteableBufferRef>(backingBuf->copy())
+                      : std::nullopt));
       if (bufOr.isError()) {
         return std::move(result).setToError(
             getError(std::move(loc), bufOr.takeError()));
@@ -190,14 +194,15 @@ void BlobCacheBackend::find(
 
       // If we don't have it, try with delegate.
       return thisRef->delegateFind(std::move(result), std::move(keyHash),
-                                   std::move(buf), std::move(loc));
+                                   std::move(backingBuf), std::move(loc));
     });
   }
 }
 
 void BlobCacheBackend::delegateFind(
     AsyncValueRef<std::optional<BufferRef>> result, BufferRef keyHash,
-    std::optional<WriteableBufferRef> buf, std::optional<EncodedLocation> loc) {
+    std::optional<WriteableBufferRef> backingBuf,
+    std::optional<EncodedLocation> loc) {
   // No delegate and we don't have it, return nullopt.
   if (!delegate)
     return std::move(result).emplace(std::nullopt);
@@ -210,7 +215,8 @@ void BlobCacheBackend::delegateFind(
 
   auto itemOr = delegate->find(
       keyHash.copy(),
-      (buf ? std::optional<WriteableBufferRef>(buf->copy()) : std::nullopt),
+      (backingBuf ? std::optional<WriteableBufferRef>(backingBuf->copy())
+                  : std::nullopt),
       location.copy());
   std::move(itemOr).andThenSync(
       [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
@@ -301,34 +307,36 @@ struct InMemoryBackend : public BlobCacheBackend {
 
   ErrorOr<std::optional<BufferRef>>
   findImpl(StringRef keyHash,
-           std::optional<WriteableBufferRef> buf) const override {
+           std::optional<WriteableBufferRef> backingBuf) const override {
     std::shared_lock<std::shared_mutex> lock(mutex);
     auto found = cache.find(keyHash);
     if (found == cache.end())
       return std::nullopt;
 
     // No buffer provided, give back a ref to the buffer we have.
-    if (!buf)
+    if (!backingBuf)
       return found->second.copy();
 
     // If we were passed in a buffer...
     Buffer &foundBuf = *found->second;
     // If the buffer already contains the data, don't bother doing anything.
-    if ((*buf)->getBufferStart() == foundBuf.getBufferStart())
+    if ((*backingBuf)->getBufferStart() == foundBuf.getBufferStart())
       return found->second.copy();
 
-    if ((*buf)->getBufferCapacity() < foundBuf.getBufferSize())
+    if ((*backingBuf)->getBufferCapacity() < foundBuf.getBufferSize()) {
       return Error("Buffer passed to CAS (size " +
-                   Twine((*buf)->getBufferCapacity()) +
+                   Twine((*backingBuf)->getBufferCapacity()) +
                    ") cannot accommodate found object (size " +
                    Twine(foundBuf.getBufferSize()) + ")");
+    }
 
     // Write the contents into the buffer. The buffer may have data inside it
     // already, so we have to get the starting offset.
-    uint64_t startOffset = (*buf)->tell();
-    (*buf)->write(foundBuf.getBufferStart(), foundBuf.getBufferSize());
+    uint64_t startOffset = (*backingBuf)->tell();
+    (*backingBuf)->write(foundBuf.getBufferStart(), foundBuf.getBufferSize());
     // And return an alias to *that* buffer.
-    return Buffer::getAlias(buf->copy(), startOffset, foundBuf.getBufferSize());
+    return Buffer::getAlias(backingBuf->copy(), startOffset,
+                            foundBuf.getBufferSize());
   }
 
   ErrorOrSuccess clearImpl() override {
@@ -421,7 +429,7 @@ struct FilesystemBackend : public BlobCacheBackend {
 
   ErrorOr<std::optional<BufferRef>>
   findImpl(StringRef keyHash,
-           std::optional<WriteableBufferRef> buf) const override {
+           std::optional<WriteableBufferRef> backingBuf) const override {
     // Get the file path and open it.
     ErrorOr<std::filesystem::path> filePath = getAbsolutePathForKey(keyHash);
 
@@ -463,21 +471,21 @@ struct FilesystemBackend : public BlobCacheBackend {
       return bufOr.takeError();
 
     // No buffer provided, return the mapped thing directly.
-    if (!buf)
+    if (!backingBuf)
       return BufferRef::take(bufOr->release());
 
-    if ((*buf)->getBufferCapacity() < (*bufOr)->getBufferSize()) {
+    if ((*backingBuf)->getBufferCapacity() < (*bufOr)->getBufferSize()) {
       return Error("Buffer passed to CAS (size " +
-                   Twine((*buf)->getBufferCapacity()) +
+                   Twine((*backingBuf)->getBufferCapacity()) +
                    ") cannot accommodate found object (size " +
                    Twine((*bufOr)->getBufferSize()) + ")");
     }
 
     // Copy the file data into the buffer that was provided to us.
-    uint64_t startOffset = (*buf)->tell();
-    (*buf)->write((*bufOr)->getBufferStart(), (*bufOr)->getBufferSize());
+    uint64_t startOffset = (*backingBuf)->tell();
+    (*backingBuf)->write((*bufOr)->getBufferStart(), (*bufOr)->getBufferSize());
     // Take an alias to the provided buffer and return it.
-    return Buffer::getAlias(buf->copy(), startOffset,
+    return Buffer::getAlias(backingBuf->copy(), startOffset,
                             (*bufOr)->getBufferSize());
   }
 

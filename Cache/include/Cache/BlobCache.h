@@ -51,10 +51,11 @@ public:
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
-  /// delegates. If `buf` is provided, write into that (and return a read-only
-  /// reference to it if found).
+  /// delegates. If `backingBuf` is provided, write into that (and return a
+  /// read-only reference to it if found).
   virtual LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(BufferRef keyHash, std::optional<WriteableBufferRef> buf = std::nullopt,
+  find(BufferRef keyHash,
+       std::optional<WriteableBufferRef> backingBuf = std::nullopt,
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get all the items in `map` and emplace the AsyncValueRefs contained
@@ -62,10 +63,10 @@ public:
   /// allocated, this method will emplace them. This simply provides a default
   /// implementation - backends are expected to override this method if they
   /// wish to handle group finds differently than multiple individual finds. If
-  /// `buf` is provided, then we can return offsets to it.
+  /// `backingBuf` is provided, then we can return offsets to it.
   virtual void
   find(llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> &map,
-       std::optional<WriteableBufferRef> buf = std::nullopt,
+       std::optional<WriteableBufferRef> backingBuf = std::nullopt,
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Clear out this backend and its delegates.
@@ -90,12 +91,12 @@ protected:
     return Error("containsImpl not implemented");
   }
   /// Subclasses that don't override find should use this to provide the
-  /// implementation of getting an item from storage. If `buf` is provided,
-  /// write directly into `buf`, returning std::nullopt if the item isn't found
-  /// as usual.
+  /// implementation of getting an item from storage. If `backingBuf` is
+  /// provided, write directly into `backingBuf`, returning std::nullopt if the
+  /// item isn't found as usual.
   virtual ErrorOr<std::optional<BufferRef>>
   findImpl(StringRef keyHash,
-           std::optional<WriteableBufferRef> buf = std::nullopt) const {
+           std::optional<WriteableBufferRef> backingBuf = std::nullopt) const {
     return Error("findImpl not implemented");
   }
   /// Subclasses should use this to provide the implementation of clearing the
@@ -122,7 +123,8 @@ protected:
   /// AsyncValue. This is called by the default find, and can optionally be used
   /// by subclasses that override find.
   void delegateFind(LLCL::AsyncValueRef<std::optional<BufferRef>> result,
-                    BufferRef keyHash, std::optional<WriteableBufferRef> buf,
+                    BufferRef keyHash,
+                    std::optional<WriteableBufferRef> backingBuf,
                     std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Clear delegate cache. This is called by the default clear, and can
@@ -243,10 +245,11 @@ public:
   /// `buf`. Returns a read-only ref to the buffer that was passed in if the
   /// item is found, std::nullopt otherwise.
   LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(KeyTy key, WriteableBufferRef buf,
+  find(KeyTy key, WriteableBufferRef backingBuf,
        std::optional<EncodedLocation> loc = std::nullopt) {
     auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
-    return backendList->find(std::move(hash), std::move(buf), std::move(loc));
+    return backendList->find(std::move(hash), std::move(backingBuf),
+                             std::move(loc));
   }
 
   /// Get the items from any of the provided backends. This will attempt to
@@ -275,9 +278,9 @@ public:
   /// to the returned buffer. Every key will be found in the returned map, but
   /// the value may resolve to std::nullopt if it's not found in the cache. In
   /// case of an error, the individual entries will be set to error. All the
-  /// returned BufferRefs will be offsets into `buf`.
+  /// returned BufferRefs will be offsets into `backingBuf`.
   llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>>
-  find(ArrayRef<KeyTy> keys, WriteableBufferRef buf,
+  find(ArrayRef<KeyTy> keys, WriteableBufferRef backingBuf,
        std::optional<EncodedLocation> loc = std::nullopt) {
     llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> map;
     for (auto k : keys) {
@@ -286,7 +289,7 @@ public:
     }
 
     // Do the find, and return the map.
-    backendList->find(map, std::move(buf), std::move(loc));
+    backendList->find(map, std::move(backingBuf), std::move(loc));
     return map;
   }
 
