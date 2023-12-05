@@ -164,8 +164,7 @@ BlobCacheBackend::find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
 
 void BlobCacheBackend::find(
     llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> &map,
-    std::optional<EncodedLocation> loc) {
-  llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> out;
+    std::optional<WriteableBufferRef> buf, std::optional<EncodedLocation> loc) {
   for (auto &kv : map) {
     // TODO: This necessitates a copy of the string, but it's unclear that
     //       changing all the methods to take a StringRef will work the way we
@@ -173,11 +172,13 @@ void BlobCacheBackend::find(
     BufferRef keyHash = Buffer::get(kv.first());
     auto result = kv.second.copy();
     addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
-                      result = std::move(result),
+                      result = std::move(result), buf = std::move(buf),
                       loc = std::move(loc)]() mutable {
       // Find it at this level.
-      ErrorOr<std::optional<BufferRef>> bufOr =
-          thisRef->findImpl(keyHash->getBuffer(), std::nullopt);
+      ErrorOr<std::optional<BufferRef>> bufOr = thisRef->findImpl(
+          keyHash->getBuffer(),
+          (buf ? std::optional<WriteableBufferRef>(buf->copy())
+               : std::nullopt));
       if (bufOr.isError()) {
         return std::move(result).setToError(
             getError(std::move(loc), bufOr.takeError()));
@@ -189,7 +190,7 @@ void BlobCacheBackend::find(
 
       // If we don't have it, try with delegate.
       return thisRef->delegateFind(std::move(result), std::move(keyHash),
-                                   std::nullopt, std::move(loc));
+                                   std::move(buf), std::move(loc));
     });
   }
 }
@@ -316,16 +317,18 @@ struct InMemoryBackend : public BlobCacheBackend {
     if ((*buf)->getBufferStart() == foundBuf.getBufferStart())
       return found->second.copy();
 
-    if ((*buf)->getBufferSize() < foundBuf.getBufferSize())
+    if ((*buf)->getBufferCapacity() < foundBuf.getBufferSize())
       return Error("Buffer passed to CAS (size " +
-                   Twine((*buf)->getBufferSize()) +
+                   Twine((*buf)->getBufferCapacity()) +
                    ") cannot accommodate found object (size " +
                    Twine(foundBuf.getBufferSize()) + ")");
 
-    // Write the contents of the buffer we found to offset 0.
-    (*buf)->pwrite(foundBuf.getBufferStart(), foundBuf.getBufferSize(), 0);
-    // And return a ref to *that* buffer.
-    return buf->copy();
+    // Write the contents into the buffer. The buffer may have data inside it
+    // already, so we have to get the starting offset.
+    uint64_t startOffset = (*buf)->tell();
+    (*buf)->write(foundBuf.getBufferStart(), foundBuf.getBufferSize());
+    // And return an alias to *that* buffer.
+    return Buffer::getAlias(buf->copy(), startOffset, foundBuf.getBufferSize());
   }
 
   ErrorOrSuccess clearImpl() override {
@@ -463,17 +466,19 @@ struct FilesystemBackend : public BlobCacheBackend {
     if (!buf)
       return BufferRef::take(bufOr->release());
 
-    if ((*buf)->getBufferSize() < (*bufOr)->getBufferSize()) {
+    if ((*buf)->getBufferCapacity() < (*bufOr)->getBufferSize()) {
       return Error("Buffer passed to CAS (size " +
-                   Twine((*buf)->getBufferSize()) +
+                   Twine((*buf)->getBufferCapacity()) +
                    ") cannot accommodate found object (size " +
                    Twine((*bufOr)->getBufferSize()) + ")");
     }
 
     // Copy the file data into the buffer that was provided to us.
-    (*buf)->pwrite((*bufOr)->getBufferStart(), (*bufOr)->getBufferSize(), 0);
-    // Take a reference to the provided buffer and return it.
-    return BufferRef::copy((*buf).getPointer());
+    uint64_t startOffset = (*buf)->tell();
+    (*buf)->write((*bufOr)->getBufferStart(), (*bufOr)->getBufferSize());
+    // Take an alias to the provided buffer and return it.
+    return Buffer::getAlias(buf->copy(), startOffset,
+                            (*bufOr)->getBufferSize());
   }
 
   ErrorOrSuccess clearImpl() override {
