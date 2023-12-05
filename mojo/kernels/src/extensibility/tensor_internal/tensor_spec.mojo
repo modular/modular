@@ -13,7 +13,7 @@ from tensor import TensorSpec
 ```
 """
 
-from utils.vector import DynamicVector
+from collections.vector import DynamicVector
 
 from .tensor_shape import TensorShape, _as_rep16
 
