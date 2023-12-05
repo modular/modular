@@ -11,7 +11,7 @@
 # FIXME(26700): split this single long expression into smaller ones. Right now
 # the REPL breaks after using DynamicVector.
 
-from utils.vector import DynamicVector
+from collections.vector import DynamicVector
 
 @register_passable("trivial")
 struct Point(CollectionElement):

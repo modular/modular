@@ -110,7 +110,7 @@ let another_bool = False
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
 # CHECK: }
-from utils.vector import DynamicVector
+from collections.vector import DynamicVector
 var z = DynamicVector[Int](2)
 z.push_back(1)
 z.push_back(2)
