@@ -13,7 +13,7 @@ from runtime.llcl import OutputChainPtr
 
 from utils.index import product
 from utils.list import Dim, DimList
-from utils.vector import InlinedFixedVector
+from collections.vector import InlinedFixedVector
 
 
 struct _NDBufferVector[rank: Int, type: DType](Sized):

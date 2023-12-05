@@ -12,7 +12,7 @@ from memory.buffer import NDBuffer
 from tensor import Tensor, TensorShape
 
 from utils.index import Index
-from utils.vector import DynamicVector
+from collections.vector import DynamicVector
 
 
 @value

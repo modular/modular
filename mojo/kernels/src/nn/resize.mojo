@@ -10,7 +10,7 @@ from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-from utils.vector import InlinedFixedVector
+from collections.vector import InlinedFixedVector
 
 
 @value

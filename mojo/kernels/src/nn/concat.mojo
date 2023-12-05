@@ -21,7 +21,7 @@ from runtime.llcl import OutputChainPtr
 
 from utils.index import StaticIntTuple, product
 from utils.list import Dim, DimList
-from utils.vector import InlinedFixedVector
+from collections.vector import InlinedFixedVector
 
 from gpu.host.memory import (
     _copy_device_to_host,
