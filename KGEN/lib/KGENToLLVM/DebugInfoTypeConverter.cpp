@@ -36,7 +36,7 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype,
   // Process various builtin dtypes.
   switch (dtype) {
   case DType::kBool:
-    return buildIntFpDebugType<DIBasicBoolType>(ctx, "bool", 1, 1);
+    return buildIntFpDebugType<DIBasicBoolType>(ctx, "bool", 8, 8);
   case DType::si1:
     return buildIntFpDebugType<DIBasicSIntType>(ctx, "si1", 1, 1);
   case DType::ui1:
