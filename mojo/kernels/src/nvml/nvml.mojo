@@ -10,7 +10,7 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from memory.unsafe import Pointer
 from ._utils import _check_error
 from pathlib import Path
-from utils.vector import DynamicVector
+from collections.vector import DynamicVector
 from debug import trap
 
 # ===----------------------------------------------------------------------===#
