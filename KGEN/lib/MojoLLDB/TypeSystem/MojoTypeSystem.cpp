@@ -716,7 +716,7 @@ CompilerType MojoTypeSystem::getBuiltinScalarType(llvm::StringRef typeName,
 
   // Fortunately MLIR DTypes have the same name as KGEN DTypes, so we can use
   // the common translator.
-  if (dwarfEncoding == DW_ATE_float)
+  if (dwarfEncoding == DW_ATE_float || dwarfEncoding == DW_ATE_boolean)
     return createCompilerTypeFromDType(typeName);
 
   return {};

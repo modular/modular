@@ -10,7 +10,7 @@
 !simdTest = !pop.simd<8, ui32>
 !structTest = !kgen.struct<(scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<(pointer<scalar<bool>>, array<4, simd<8, si32>>)>)>
 
-// CHECK-DAG: ![[BASIC:.*]] = !debuginfo.basic<bool {sizeInBits = 1, alignInBits = 1, encoding = DW_ATE_boolean}>
+// CHECK-DAG: ![[BASIC:.*]] = !debuginfo.basic<bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>
 // CHECK-DAG: ![[BASIC1:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
 // CHECK-DAG: ![[UNSPECIFIED:.*]] = !debuginfo.unspecified<"void">
 // CHECK-DAG: ![[ARRAY:.*]] = !debuginfo.array<5 x !{{.*}}>
