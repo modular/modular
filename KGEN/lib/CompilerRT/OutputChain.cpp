@@ -144,26 +144,6 @@ void OutputChain::complete() {
   taskIsDone();
 }
 
-void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
-                                size_t taskId, bool useGlobalQueue) {
-  chain.getRuntime()->getWorkQueue()->addTask(
-      [parentId = this->parentEventId, taskId, resume, hdl]() mutable {
-        // Use the 'prototype' profiling entry, but augment with the task id.
-        TimeTraceScope scope(MojoProfilerEntry::createWithParent(
-            parentId, StringLiteral("task"), (uint64_t)taskId));
-        resume(hdl);
-#if MODULAR_PARANOID
-        // Sleeping here gives any await loop the chance to exit and
-        // proceed while this task is still 'active'. This can trigger
-        // bugs since the common case is for the task to have returned
-        // all the way up to the LLCL run items loop before any emplace
-        // in the task body has been acted on.
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-#endif
-      },
-      useGlobalQueue ? -1 : (int)taskId);
-}
-
 void OutputChain::taskIsDone() {
 #if MODULAR_PARANOID
   chain.getRuntime()->getWorkQueue()->taskIsDone();
