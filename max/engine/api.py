@@ -61,7 +61,9 @@ class Model:
         model._impl = _core_model
         return model
 
-    def execute(self, *args, **kwargs) -> Dict[str, np.ndarray]:
+    def execute(
+        self, *args, **kwargs
+    ) -> Dict[str, Union[np.ndarray, Dict, List, Tuple]]:
         """Executes the model with the provided input and returns outputs.
 
         For example, if the model has one input tensor named "input":
@@ -81,8 +83,8 @@ class Model:
         Returns
         -------
         Dict
-            A dictionary of output tensors, each as an :obj:`np.ndarray`
-            identified by its tensor name.
+            A dictionary of output values, each as an :obj:`np.ndarray`, :obj:`Dict`, :obj:`List` or :obj:`Tuple`
+            identified by its output name.
 
         Raises
         ------
