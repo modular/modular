@@ -142,7 +142,7 @@ from time import time_function
 from math.limit import min_finite, max_finite
 
 from memory.unsafe import DTypePointer, Pointer
-from utils.vector import DynamicVector
+from collections.vector import DynamicVector
 
 
 # ===----------------------------------------------------------------------===#
