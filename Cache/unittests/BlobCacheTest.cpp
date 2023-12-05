@@ -236,7 +236,8 @@ TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
   await(inserted);
 
   // Get a buffer to read into.
-  auto readBuf = WriteableBuffer::get(32);
+  auto readBuf = WriteableBuffer::get(/*size=*/0, /*alignment=*/std::nullopt,
+                                      /*capacity=*/32);
 
   auto found = AsyncValueRef<Chain>::allocate(runtime);
   auto zerosOr = cache->find("zeros", readBuf.copy());
@@ -247,7 +248,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
         ASSERT_FALSE(zerosOr.isError())
             << zerosOr.getDiagnostic().getMessage() << '\n';
         ASSERT_TRUE(zerosOr->has_value());
-        ASSERT_TRUE(readBuf->getBufferSize() == 32)
+        ASSERT_TRUE(readBuf->getBufferSize() == 1)
             << "output buffer size did not match expected buffer size\n";
         EXPECT_TRUE(readBuf->getBuffer()[0] == '\0')
             << "buffer returned did not match the buffer inputted\n";
@@ -407,7 +408,8 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
           .takeValue());
 
   // Get a buffer to read into.
-  auto readBuf = WriteableBuffer::get(32);
+  auto readBuf = WriteableBuffer::get(/*size=*/0, /*alignment=*/std::nullopt,
+                                      /*capacity=*/32);
   const char *readBufStart = readBuf->getBufferStart();
 
   // Check that the cache holds the new item, and it's the same data as before.
@@ -417,7 +419,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
       << zerosOr.getDiagnostic().getMessage() << '\n';
   EXPECT_TRUE(zerosOr->has_value());
 
-  ASSERT_TRUE(readBuf->getBufferSize() == 32)
+  ASSERT_TRUE(readBuf->getBufferSize() == 1)
       << "output buffer size did not match input buffer size\n";
   EXPECT_TRUE(readBuf->getBuffer()[0] == '\0')
       << "buffer returned did not match the buffer input\n";
@@ -431,7 +433,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
       << zerosOrAgain.getDiagnostic().getMessage() << '\n';
   EXPECT_TRUE(zerosOrAgain->has_value());
 
-  ASSERT_TRUE(readBuf->getBufferSize() == 32)
+  ASSERT_TRUE(readBuf->getBufferSize() == 1)
       << "output buffer size did not match input buffer size\n";
   ASSERT_TRUE(readBuf->getBufferStart() == readBufStart)
       << "read buffer pointer changed\n";

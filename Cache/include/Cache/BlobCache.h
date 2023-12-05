@@ -61,11 +61,11 @@ public:
   /// therein. The caller must ensure that the AsyncValueRef objects are
   /// allocated, this method will emplace them. This simply provides a default
   /// implementation - backends are expected to override this method if they
-  /// wish to handle group finds differently than multiple individual finds.
-  // TODO: Provide a version that can take a single writable buffer and return
-  //       aliases to it.
+  /// wish to handle group finds differently than multiple individual finds. If
+  /// `buf` is provided, then we can return offsets to it.
   virtual void
   find(llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> &map,
+       std::optional<WriteableBufferRef> buf = std::nullopt,
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Clear out this backend and its delegates.
@@ -266,7 +266,27 @@ public:
     }
 
     // Do the find, and return the map.
-    backendList->find(map, std::move(loc));
+    backendList->find(map, std::nullopt, std::move(loc));
+    return map;
+  }
+
+  /// Get the items from any of the provided backends. This will attempt to
+  /// fetch all the items in the array `keys`. Returns a map from the key's hash
+  /// to the returned buffer. Every key will be found in the returned map, but
+  /// the value may resolve to std::nullopt if it's not found in the cache. In
+  /// case of an error, the individual entries will be set to error. All the
+  /// returned BufferRefs will be offsets into `buf`.
+  llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>>
+  find(ArrayRef<KeyTy> keys, WriteableBufferRef buf,
+       std::optional<EncodedLocation> loc = std::nullopt) {
+    llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> map;
+    for (auto k : keys) {
+      map[KeyInfo::hashKey(std::forward<KeyTy>(k))] =
+          AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
+    }
+
+    // Do the find, and return the map.
+    backendList->find(map, std::move(buf), std::move(loc));
     return map;
   }
 
