@@ -15,7 +15,7 @@ from runtime.llcl import OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
-from utils.vector import UnsafeFixedVector
+from collections.vector import UnsafeFixedVector
 
 
 # CHECK-LABEL: test_elementwise_1d
