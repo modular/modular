@@ -236,25 +236,7 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask(LLCLOutputChainRef outChain,
                                                   void (*resume)(int8_t *),
                                                   int8_t *hdl, size_t taskId,
                                                   bool useGlobalQueue) {
-  unwrap(outChain).getRuntime()->getWorkQueue()->addTask(
-      [taskId, resume, hdl]() mutable {
-        // Create a tracing entry for the sub-task, using the last created
-        // trace entry as its 'parent'. That could either be the last
-        // traced item from a Mojo tracing statement, or the overall profiling
-        // entry created by the GraphRT primitive which launched the kernel.
-        TimeTraceScope scope(MojoProfilerEntry::createWithCurrentAsParent(
-            StringLiteral("task"), (uint64_t)taskId));
-        resume(hdl);
-#if MODULAR_PARANOID
-        // Sleeping here gives any await loop the chance to exit and
-        // proceed while this task is still 'active'. This can trigger
-        // bugs since the common case is for the task to have returned
-        // all the way up to the LLCL run items loop before any emplace
-        // in the task body has been acted on.
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-#endif
-      },
-      useGlobalQueue ? -1 : (int)taskId);
+  unwrap(outChain).executeAsTask(resume, hdl, taskId, useGlobalQueue);
 }
 
 /// Indicates the caller's task is done for the purposes of task overhang
