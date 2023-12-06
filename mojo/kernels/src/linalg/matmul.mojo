@@ -13,7 +13,6 @@ from sys.info import (
     has_neon_int8_dotprod,
 )
 from sys.intrinsics import PrefetchOptions, external_call
-from Gemv import gemv
 
 from algorithm import (
     sync_parallelize,
@@ -3370,60 +3369,41 @@ fn matmul[
     let n = shape.N
     let k = shape.K
 
-    if n == 1:
-        let out = Buffer[Dim(), c_type](c.data, c.dim[0]())
-        let lhs = rebind[NDBuffer[2, a_shape, a_type]](a)
-        let rhs = Buffer[Dim(), b_type](b.data, b.dim[0]())
-        gemv[
-            True,  # parallelize
-            Dim(),
-            c_type,
-            a_shape,
+    let complexity = m * n * k
+    let num_tasks = min(
+        div_ceil(complexity, get_min_task_size()),
+        num_threads if num_threads
+        > 0 else out_chain.get_runtime().parallelism_level(),
+    )
+
+    @always_inline
+    @parameter
+    fn task_func(task_id: Int):
+        let sub_matmul_config = get_partitioned_matmul[
+            a_type, b_type, c_type, PartitionHeuristic.MOJO
+        ](m, n, k, task_id, num_tasks)
+
+        if sub_matmul_config.shape[0] <= 0 or sub_matmul_config.shape[1] <= 0:
+            return
+
+        _submatmul_sequential_sync[
             a_type,
-            Dim(),
+            a_shape,
             b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transpose_a,
+            transpose_b,
+            b_packed,
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
-        ](out, lhs, rhs, out_chain)
-    else:
-        let complexity = m * n * k
-        let num_tasks = min(
-            div_ceil(complexity, get_min_task_size()),
-            num_threads if num_threads
-            > 0 else out_chain.get_runtime().parallelism_level(),
-        )
+            saturated_vnni,
+        ](c, a, b, sub_matmul_config.shape, sub_matmul_config.offset)
 
-        @always_inline
-        @parameter
-        fn task_func(task_id: Int):
-            let sub_matmul_config = get_partitioned_matmul[
-                a_type, b_type, c_type, PartitionHeuristic.MOJO
-            ](m, n, k, task_id, num_tasks)
-
-            if (
-                sub_matmul_config.shape[0] <= 0
-                or sub_matmul_config.shape[1] <= 0
-            ):
-                return
-
-            _submatmul_sequential_sync[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
-                transpose_a,
-                transpose_b,
-                b_packed,
-                elementwise_epilogue_enabled,
-                elementwise_lambda_fn,
-                saturated_vnni,
-            ](c, a, b, sub_matmul_config.shape, sub_matmul_config.offset)
-
-        # TODO (#12624): Closure captures some state on the stack so this needs
-        # to be synchronous in order to keep that state alive
-        sync_parallelize[task_func](out_chain, num_tasks)
+    # TODO (#12624): Closure captures some state on the stack so this needs
+    # to be synchronous in order to keep that state alive
+    sync_parallelize[task_func](out_chain, num_tasks)
 
 
 fn _submatmul_sequential_sync[

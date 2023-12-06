@@ -7,109 +7,100 @@
 from algorithm import unroll, async_parallelize
 from math import align_down
 from memory.buffer import Buffer, NDBuffer
-from algorithm.reduction import _reduce_generator
 
 from utils.index import Index
 from utils.list import Dim, DimList
-from MatmulUtils import elementwise_lambda_fn_sig_type
+
+
+fn dot[
+    lhs_shape: DimList, rhs_size: Dim, simd_width: Int, type: DType
+](
+    row_idx: Int,
+    vector_end_col: Int,
+    lhs: NDBuffer[2, lhs_shape, type],
+    rhs: Buffer[rhs_size, type],
+) -> SIMD[type, 1]:
+    var simd_accum = SIMD[type, simd_width](0)
+    for col_idx in range(0, vector_end_col, simd_width):
+        let row_chunk = lhs.simd_load[simd_width](Index(row_idx, col_idx))
+        let col_chunk = rhs.simd_load[simd_width](col_idx)
+        simd_accum = row_chunk.fma(col_chunk, simd_accum)
+    return simd_accum.reduce_add()
+
 
 # Parallelized version of Gemv
 
 
 fn gemv[
-    parallelize: Bool,
-    c_size: Dim,
-    c_type: DType,
-    a_shape: DimList,
-    a_type: DType,
-    b_size: Dim,
-    b_type: DType,
+    simd_width: Int,
+    out_size: Dim,
+    lhs_shape: DimList,
+    rhs_size: Dim,
+    type: DType,
 ](
-    c_buf: Buffer[c_size, c_type],
-    a_buf: NDBuffer[2, a_shape, a_type],
-    b_buf: Buffer[b_size, b_type],
-    out_chain: OutputChainPtr = OutputChainPtr(),
+    out: Buffer[out_size, type],
+    lhs: NDBuffer[2, lhs_shape, type],
+    rhs: Buffer[rhs_size, type],
+    out_chain: OutputChainPtr,
 ):
-    @parameter
-    fn null_lambda[
-        val_type: DType, width: Int
-    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
-        pass
+    let m: Int = lhs.dim[0]()
+    let n: Int = lhs.dim[1]()
 
-    gemv[
-        parallelize,
-        c_size,
-        c_type,
-        a_shape,
-        a_type,
-        b_size,
-        b_type,
-        False,
-        null_lambda,
-    ](c_buf, a_buf, b_buf, out_chain)
-
-
-fn gemv[
-    parallelize: Bool,
-    c_size: Dim,
-    c_type: DType,
-    a_shape: DimList,
-    a_type: DType,
-    b_size: Dim,
-    b_type: DType,
-    elementwise_epilogue_enabled: Bool,
-    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
-](
-    c_buf: Buffer[c_size, c_type],
-    a_buf: NDBuffer[2, a_shape, a_type],
-    b_buf: Buffer[b_size, b_type],
-    out_chain: OutputChainPtr = OutputChainPtr(),
-):
-    alias simd_width = simdwidthof[c_type]()
-
-    let M = a_buf.dim[0]()
-    let K = a_buf.dim[1]()
+    alias col_unroll_factor = 8
+    alias row_block_size = 32
+    alias col_block_size = simd_width * col_unroll_factor
+    let vector_end_col = align_down(n, col_block_size)
+    let vector_end_row = align_down(m, row_block_size)
 
     @always_inline
     @parameter
-    fn input_fn[
-        type: DType, width: Int, rank: Int
-    ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
-        return (
-            a_buf.simd_load[width](Index(idx[0], idx[1])).cast[type]()
-            * b_buf.simd_load[width](idx[1]).cast[type]()
-        ).cast[type]()
+    fn process_row_block(row_block_idx: Int):
+        let row_idx = row_block_idx * row_block_size
 
-    @always_inline
-    @parameter
-    fn output_fn[
-        out_type: DType, width: Int, r: Int
-    ](idx: StaticIntTuple[r], value: SIMD[out_type, width]):
-        @parameter
-        if elementwise_epilogue_enabled:
-            elementwise_lambda_fn[out_type, width](Index(idx[0], 0), value)
-        else:
-            c_buf.simd_store[width](idx[0], value.cast[c_type]())
+        alias simd_alignment = 64
+        let accums = Buffer[
+            row_block_size,
+            type,
+        ].aligned_stack_allocation[simd_alignment]()
+        accums.zero()
 
-    @always_inline
-    @parameter
-    fn reduce_impl[
-        ty: DType, width: Int
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return v1 + v2
+        @unroll
+        for idx in range(row_block_size):
+            accums[idx] = dot[lhs_shape, rhs_size, col_block_size, type](
+                idx, vector_end_col, lhs, rhs
+            )
 
-    _reduce_generator[
-        c_type,
-        2,
-        # single_thread_blocking_override,
-        not parallelize,
-        input_fn,
-        output_fn,
-        reduce_impl,
-    ](StaticIntTuple[2](M, K), 0, 1, out_chain)
+        @unroll
+        for idx in range(row_block_size):
+            for col_idx in range(vector_end_col, n):
+                let row = lhs.simd_load[1](Index(row_idx + idx, col_idx))
+                let col = rhs[col_idx]
+                accums[idx] += row * col
+
+        out.simd_store[row_block_size](
+            row_idx, accums.simd_load[row_block_size](0)
+        )
+
+    let row_block_count = vector_end_row // row_block_size
+    if out_chain:
+        async_parallelize[process_row_block](out_chain, row_block_count)
+    else:
+        for row_block_idx in range(row_block_count):
+            process_row_block(row_block_idx)
+
+    for row_idx in range(vector_end_row, m):
+        var out_val = dot[lhs_shape, rhs_size, col_block_size, type](
+            row_idx, vector_end_col, lhs, rhs
+        )
+        for col_idx in range(vector_end_col, n):
+            let row = lhs.simd_load[1](Index(row_idx, col_idx))
+            let col = rhs.simd_load[1](col_idx)
+            out_val += row * col
+        out[row_idx] = out_val
 
 
 fn trivial_gemv[
+    simd_width: Int,
     out_size: Dim,
     lhs_shape: DimList,
     rhs_size: Dim,
