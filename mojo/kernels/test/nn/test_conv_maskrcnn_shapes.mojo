@@ -12,7 +12,6 @@ from sys.info import simdwidthof
 
 from Conv import (
     ConvDirectNHWC,
-    ConvIm2ColNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
     pack_filter,
@@ -198,32 +197,6 @@ fn test[
                 conv_attr,
                 False,
             ].run(output, input, filter, conv_shape, conv_chain.borrow())
-    elif algorithm == ConvAlgorithm.Im2Col:
-        ConvIm2ColNHWC[
-            # Input Shape
-            DimList.create_unknown[4](),
-            # Filter Shape
-            DimList.create_unknown[4](),
-            # Output Shape
-            DimList.create_unknown[4](),
-            # Packed Shape
-            DimList.create_unknown[3](),
-            type,
-            simd_size,
-            get_conv_a_row_size(),
-            get_conv_pack_inner_size() * simd_size,
-            get_conv_tile_size[type](),
-            # Filter layout.
-            Image2DLayout.RSCF,
-            # elementwise_epilogue_enabled
-            False,
-        ].run(
-            output,
-            input,
-            filter,
-            conv_shape,
-            conv_chain.borrow(),
-        )
     conv_chain.wait()
 
     input_ptr.free()
@@ -401,5 +374,4 @@ fn test_shapes[algorithm: ConvAlgorithm](rt: Runtime):
 
 fn main():
     with Runtime() as rt:
-        test_shapes[ConvAlgorithm.Im2Col](rt)
         test_shapes[ConvAlgorithm.Direct](rt)
