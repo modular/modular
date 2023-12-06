@@ -931,6 +931,10 @@ struct TimeTraceScope {
 
   explicit TimeTraceScope(ProfilerEntry<Enabled> entry)
       : entry(std::move(entry)) {}
+  explicit TimeTraceScope(StringRef name, StringRef detail = {})
+      : entry(ProfilerEntry<Enabled>::create(name, detail)) {}
+  TimeTraceScope(StringRef name, ProfilerPrintFn printFn)
+      : entry(ProfilerEntry<Enabled>::create(name, printFn)) {}
 
   ~TimeTraceScope() { std::move(entry).record(); }
 

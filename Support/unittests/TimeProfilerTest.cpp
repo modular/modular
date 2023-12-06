@@ -34,10 +34,7 @@ namespace {
 TEST(TimeProfiler, Scope_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
-  {
-    TimeTraceScope</*Enabled=*/true> scope(
-        ProfilerEntry<true>::create("event", StringLiteral("detail")));
-  }
+  { TimeTraceScope</*Enabled=*/true> scope("event", "detail"); }
 
   std::string json = teardownTrace(profiler);
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
