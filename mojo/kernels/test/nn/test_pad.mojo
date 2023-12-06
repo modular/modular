@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import Buffer, NDBuffer
-from Pad import pad, pad_reflect
+from Pad import pad_constant, pad_reflect
 
 from utils.index import StaticIntTuple
 from utils.list import DimList
@@ -40,7 +40,7 @@ fn test_pad_1d():
     let constant = SIMD[DType.index, 1](5)
 
     # pad
-    pad(output, input, paddings.data, constant)
+    pad_constant(output, input, paddings.data, constant)
 
     # output should have form
     # [5, 1, 2, 3, 5, 5]
@@ -142,7 +142,7 @@ fn test_pad_2d():
     let constant = SIMD[DType.index, 1](6)
 
     # pad
-    pad(output, input, paddings.data, constant)
+    pad_constant(output, input, paddings.data, constant)
 
     # output should have form
     # [[6, 6, 6, 6]
@@ -297,7 +297,7 @@ fn test_pad_3d():
     let constant = SIMD[DType.index, 1](7)
 
     # pad
-    pad(output, input, paddings.data, constant)
+    pad_constant(output, input, paddings.data, constant)
 
     # output should have form
     # [[[7, 7, 7]

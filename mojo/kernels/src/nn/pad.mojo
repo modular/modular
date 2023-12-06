@@ -24,13 +24,42 @@ from utils.list import Dim, DimList
 from math import min
 
 
+@value
+@register_passable("trivial")
+struct PadMode:
+    """Represents the different available padding methods."""
+
+    alias Constant = PadMode(0)
+    """Constant pad, static value is used to fill padded regions."""
+
+    alias Reflect = PadMode(1)
+    """Reflect pad, the contents of the unpadded region is used 
+    to fill in the padded region.
+    """
+
+    var _val: Int
+    """Internal identifier which differentiates pad modes"""
+
+    fn __eq__(self, other: PadMode) -> Bool:
+        """Compares against other PadMode instance for equality.
+
+        Args:
+            other: The other PadMode instance to compare against.
+
+        Returns:
+            True if PadModes are equivalent, False otherwise.
+        """
+
+        return self._val == other._val
+
+
 fn _fill[
     type: DType
 ](dst: DTypePointer[type], value: SIMD[type, 1], count: Int):
     _ = Buffer[Dim(), type](dst, count).fill(value)
 
 
-fn pad[
+fn pad_constant[
     rank: Int,
     output_shape: DimList,
     input_shape: DimList,
@@ -64,107 +93,106 @@ fn pad[
           else constant
     """
 
-    let input_strides_buf = Buffer[rank, DType.index].stack_allocation()
-    let output_strides_buf = Buffer[rank, DType.index].stack_allocation()
-    _fill_strides(input, input_strides_buf)
-    _fill_strides(output, output_strides_buf)
-
     alias init_axis = 0
-    _pad_impl(
-        init_axis,
-        output,
-        input.data,
-        paddings,
-        constant.cast[type](),
-        output_strides_buf.data,
-        input_strides_buf.data,
-        0,  # output_offset
-        0,  # input_offset
-        False,  # pad_with_constant
-    )
+    let constant_cast = rebind[SIMD[type, 1]](constant[0])
 
-
-fn _pad_impl[
-    rank: Int,
-    output_shape: DimList,
-    type: DType,
-    paddings_type: DType,
-](
-    axis: Int,
-    output: NDBuffer[rank, output_shape, type],
-    input: DTypePointer[type],
-    paddings: DTypePointer[paddings_type],
-    constant: SIMD[type, 1],
-    output_strides: DTypePointer[DType.index],
-    input_strides: DTypePointer[DType.index],
-    output_offset: Int,
-    input_offset: Int,
-    pad_with_constant: Bool,
-):
-    """
-    Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges
-    padded with `constant` based on `paddings`.
-
-    Args:
-        axis: The axis to operate on.
-        output: The output buffer.
-        input: The input buffer.
-        paddings: The (before, after) padding sizes for each axis.
-        constant: the constant to pad output with.
-        output_strides: the stride at each output axis.
-        input_strides: the stride at each input axis.
-        output_offset: The offset at which output data starts.
-        input_offset: The offset at which input data starts.
-        pad_with_constant: whether to always pad remaining region with constant.
-    """
-
-    let axis_dim = output.dim(axis)
-    let pre_pad = int(paddings.load(2 * axis))
-    let post_pad = int(paddings.load(2 * axis + 1))
-    let non_pad = axis_dim - pre_pad - post_pad
-
-    if axis + 1 == rank:
-        # pointers
-        let pre_pad_start_ptr = output.data.offset(output_offset)
-        let non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
-        let post_pad_start_ptr = non_pad_start_ptr.offset(non_pad)
-        let input_start_ptr = input.offset(input_offset)
-
-        # setting values
-        if pad_with_constant:
-            _fill(pre_pad_start_ptr, constant.value, axis_dim)
-            return
-
-        _fill(pre_pad_start_ptr, constant.value, pre_pad)
-        memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
-        _fill(post_pad_start_ptr, constant.value, post_pad)
-        return
-
-    debug_assert(axis + 1 < rank, "axis is not within range")
-
-    let input_axis_stride = input_strides.load(axis)[0].value
-    let output_axis_stride = output_strides.load(axis)[0].value
-
-    var next_input_offset: Int = input_offset.value
-    var next_output_offset: Int = output_offset.value
-    for i in range(axis_dim):
-        let is_within_padding = (i < pre_pad) or (pre_pad + non_pad <= i)
-        let next_pad_with_constant = pad_with_constant or is_within_padding
-        _pad_impl(
-            axis + 1,
+    @parameter
+    fn pad_constant_wrapper(
+        output: DTypePointer[type],
+        input: DTypePointer[type],
+        paddings: DTypePointer[paddings_type],
+        output_shape: StaticIntTuple[rank],
+        output_strides: DTypePointer[DType.index],
+        input_strides: DTypePointer[DType.index],
+    ):
+        return _pad_constant_impl[rank, type, paddings_type](
+            init_axis,
             output,
             input,
             paddings,
-            constant,
+            constant_cast,
+            output_shape,
             output_strides,
             input_strides,
-            next_output_offset,
-            next_input_offset,
-            next_pad_with_constant,
+            0,  # output_offset
+            0,  # input_offset
+            False,  # is_fully_padded
         )
-        if not is_within_padding:
-            next_input_offset += input_axis_stride
-        next_output_offset += output_axis_stride
+
+    return _do_pad[
+        rank,
+        output_shape,
+        input_shape,
+        type,
+        paddings_type,
+        pad_constant_wrapper,
+    ](output, input, paddings)
+
+
+fn pad_reflect[
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    type: DType,
+    paddings_type: DType,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    paddings: DTypePointer[paddings_type],
+):
+    """
+    Fill `output` with values from `input`, and edges padded with reflected
+    values from the unpadded region.
+
+    Args:
+        output: The output buffer.
+        input: The input buffer.
+        paddings: Ordered (before, after) padding sizes for each axis.
+
+    Example:
+        let input = [[1, 2],
+                     [3, 4]]
+        let paddings = [2, 2, 1, 0]
+
+        Yields:
+        output = [[2, 1, 2],
+                  [4, 3, 4],
+                  [2, 1, 2],
+                  [4, 3, 4],
+                  [2, 1, 2],
+                  [4, 3, 4]]
+    """
+    alias init_axis = 0
+
+    @parameter
+    fn pad_reflect_wrapper(
+        output: DTypePointer[type],
+        input: DTypePointer[type],
+        paddings: DTypePointer[paddings_type],
+        output_shape: StaticIntTuple[rank],
+        output_strides: DTypePointer[DType.index],
+        input_strides: DTypePointer[DType.index],
+    ):
+        return _pad_reflect_impl[rank, type, paddings_type](
+            init_axis,
+            output,
+            input,
+            paddings,
+            output_shape,
+            output_strides,
+            input_strides,
+            0,  # output_offset
+            0,  # input_offset
+        )
+
+    return _do_pad[
+        rank,
+        output_shape,
+        input_shape,
+        type,
+        paddings_type,
+        pad_reflect_wrapper,
+    ](output, input, paddings)
 
 
 @always_inline
@@ -213,57 +241,125 @@ fn pad_shape[
     return output_shape
 
 
-fn pad_reflect[
+fn _do_pad[
     rank: Int,
     output_shape: DimList,
     input_shape: DimList,
     type: DType,
     paddings_type: DType,
+    pad_impl_fn: fn (
+        DTypePointer[type],
+        DTypePointer[type],
+        DTypePointer[paddings_type],
+        StaticIntTuple[rank],
+        DTypePointer[DType.index],
+        DTypePointer[DType.index],
+    ) capturing -> None,
 ](
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
     paddings: DTypePointer[paddings_type],
 ):
-    """
-    Fill `output` with values from `input`, and edges padded with reflected
-    values from the unpadded region
-
-    Args:
-        output: The output buffer.
-        input: The input buffer.
-        paddings: Ordered (before, after) padding sizes for each axis.
-
-    Example:
-        let input = [[1, 2],
-                     [3, 4]]
-        let paddings = [2, 2, 1, 0]
-
-        Yields:
-        output = [[2, 1, 2],
-                  [4, 3, 4],
-                  [2, 1, 2],
-                  [4, 3, 4],
-                  [2, 1, 2],
-                  [4, 3, 4]]
-    """
-    # TODO this recursion can add up for larger tensors, optimize in #24565
     let input_strides_buf = Buffer[rank, DType.index].stack_allocation()
     let output_strides_buf = Buffer[rank, DType.index].stack_allocation()
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
 
-    alias init_axis = 0
-    _pad_reflect_impl(
-        init_axis,
+    return pad_impl_fn(
         output.data,
         input.data,
         paddings,
         output.dynamic_shape,
         output_strides_buf.data,
         input_strides_buf.data,
-        0,  # output_offset
-        0,  # input_offset
     )
+
+
+fn _pad_constant_impl[
+    rank: Int,
+    type: DType,
+    paddings_type: DType,
+](
+    axis: Int,
+    output: DTypePointer[type],
+    input: DTypePointer[type],
+    paddings: DTypePointer[paddings_type],
+    constant: SIMD[type, 1],
+    output_shape: StaticIntTuple[rank],
+    output_strides: DTypePointer[DType.index],
+    input_strides: DTypePointer[DType.index],
+    output_offset: Int,
+    input_offset: Int,
+    pad_with_constant: Bool,
+):
+    """
+    Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges
+    padded with `constant` based on `paddings`.
+
+    Args:
+        axis: The axis to operate on.
+        output: The output buffer.
+        input: The input buffer.
+        paddings: The (before, after) padding sizes for each axis.
+        constant: the constant to pad output with.
+        output_shape: the dynamic shape of the tensor pointed to by output buffer
+        output_strides: the stride at each output axis.
+        input_strides: the stride at each input axis.
+        output_offset: The offset at which output data starts.
+        input_offset: The offset at which input data starts.
+        pad_with_constant: whether to always pad remaining region with constant.
+    """
+
+    # TODO this recursion can add up for larger tensors, optimize in #24565
+
+    let axis_dim = output_shape[axis]
+    let pre_pad = int(paddings.load(2 * axis))
+    let post_pad = int(paddings.load(2 * axis + 1))
+    let non_pad = axis_dim - pre_pad - post_pad
+
+    if axis + 1 == rank:
+        # pointers
+        let pre_pad_start_ptr = output.offset(output_offset)
+        let non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
+        let post_pad_start_ptr = non_pad_start_ptr.offset(non_pad)
+        let input_start_ptr = input.offset(input_offset)
+
+        # setting values
+        if pad_with_constant:
+            _fill(pre_pad_start_ptr, constant.value, axis_dim)
+            return
+
+        _fill(pre_pad_start_ptr, constant.value, pre_pad)
+        memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
+        _fill(post_pad_start_ptr, constant.value, post_pad)
+        return
+
+    debug_assert(axis + 1 < rank, "axis is not within range")
+
+    let input_axis_stride = input_strides.load(axis)[0].value
+    let output_axis_stride = output_strides.load(axis)[0].value
+
+    var next_input_offset: Int = input_offset.value
+    var next_output_offset: Int = output_offset.value
+    for i in range(axis_dim):
+        let is_within_padding = (i < pre_pad) or (pre_pad + non_pad <= i)
+        let next_pad_with_constant = pad_with_constant or is_within_padding
+        _pad_constant_impl(
+            axis + 1,
+            output,
+            input,
+            paddings,
+            constant,
+            output_shape,
+            output_strides,
+            input_strides,
+            next_output_offset,
+            next_input_offset,
+            next_pad_with_constant,
+        )
+        if not is_within_padding:
+            next_input_offset += input_axis_stride
+        next_output_offset += output_axis_stride
 
 
 fn _pad_reflect_impl[
@@ -296,6 +392,9 @@ fn _pad_reflect_impl[
         output_offset: The offset at which output data starts.
         input_offset: The offset at which input data starts.
     """
+
+    # TODO this recursion can add up for larger tensors, optimize in #24565
+
     let axis_dim = output_shape[axis]
     let pre_pad = int(paddings.load(2 * axis))
     let post_pad = int(paddings.load(2 * axis + 1))
