@@ -105,8 +105,8 @@ from NonMaxSuppression import (
     non_max_suppression_shape_func,
 )
 from Normalization import layer_norm
-from Pad import pad as _pad
-from Pad import pad_shape
+from Pad import pad_reflect as _pad_reflect, pad_constant as _pad_constant
+from Pad import pad_shape, PadMode
 from Pool import avg_pool as _avg_pool, max_pool, pool_shape
 from Resize import CoordinateTransformationMode, RoundMode
 from Resize import resize_linear as resize_linear_kernel
@@ -1236,6 +1236,9 @@ fn pad[
     paddings_type: DType,
     constant_type: DType,
     single_thread_blocking_override: Bool,
+    # TODO expose `mode` parameter to graph compiler
+    # /,
+    # mode: PadMode = PadMode.Constant,
 ](
     input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
@@ -1245,7 +1248,17 @@ fn pad[
 ):
     let paddings_ptr = paddings_buf.data
     let constant_simd = constant_buf[0]
-    _pad(output_buf, input_buf, paddings_ptr, constant_simd)
+
+    # TODO DELETEME
+    alias mode = PadMode.Constant
+
+    @parameter
+    if mode == PadMode.Constant:
+        _pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
+    elif mode == PadMode.Reflect:
+        _pad_reflect(output_buf, input_buf, paddings_ptr)
+    else:
+        constrained[False, "Unsupported value for PadMode"]()
 
     @parameter
     if not single_thread_blocking_override:
