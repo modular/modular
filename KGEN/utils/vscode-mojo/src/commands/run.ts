@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import * as shellescape from 'shell-escape';
 import * as vscode from 'vscode';
 
 import {MOJOContext} from '../mojoContext';
@@ -68,7 +69,7 @@ class ExecutionManager extends DisposableContext {
     // Execute the file.
     let terminal = this.getTerminalForFile(doc, config, newTerminalPerFile);
     terminal.show();
-    terminal.sendText(config.mojoDriverPath + ' ' + doc.fileName);
+    terminal.sendText(shellescape([ config.mojoDriverPath, doc.fileName ]));
 
     // Focus on the terminal if the user has configured it to do so.
     if (this.shouldTerminalFocusOnStart(doc.uri))

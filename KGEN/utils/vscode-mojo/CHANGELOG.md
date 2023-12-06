@@ -1,6 +1,15 @@
-# 0.6.0
+# Change Log
 
-## Added
+## Next version
+
+### Fixed
+
+- [#1299](https://github.com/modularml/mojo/issues/1299) - The `Run Mojo File`
+  action now supports file paths with spaces.
+
+## 0.6.0
+
+### Added
 
 - Enabled a smarter Debug Console. It will try to determine if the input is an
   LLDB command or an expression and resolve it accordingly. The user can prepend
@@ -22,7 +31,7 @@
 
 - Show local variables on the documents when debugging.
 
-## Changed
+### Changed
 
 - Enhanced the `Run or Debug Mojo File` actions, fixing bugs, improving icons
   and wording, as well as polishing the overall experience.
