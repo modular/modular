@@ -31,8 +31,8 @@ public:
     EK_RESERVED = 0, ///< This number is reserved for testing and other internal
                      ///< purposes. Users must not rely on this entitlement.
     EK_MODULAR_DEVELOPER = 1,
-    EK_UNKNOWN =
-        2, ///< This must be the max value of the currently known entitlements.
+    EK_UNKNOWN = 2, ///< This must be the max value of the currently known
+                    ///< entitlements.
   };
 
   /// Return the entitlement's kind. Useful for `classof`.
@@ -120,7 +120,9 @@ private:
 ///
 /// Providing these static methods allows the generic parsing that the base
 /// class is able to perform, which in turn, is required for setting up the
-/// EntitlementStore.
+/// EntitlementStore. Any data provided to `create` is not owned by the
+/// Entitlement, so simply taking a reference is unsafe. The Entitlement should
+/// copy any data it plans to refer to after parsing.
 
 /// When parsing an X.509 certificate, non-critical entitlements that are not
 /// recognized (i.e. the current software doesn't know the mapping from OID to
