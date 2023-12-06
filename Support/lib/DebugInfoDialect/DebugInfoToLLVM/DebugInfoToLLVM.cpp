@@ -222,11 +222,11 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
   uint32_t structAlign = 0;
   for (DIMemberType member : type.getMembers()) {
     // Compute the offset/align of the element.
-    uint64_t offsetInBits = structSize;
     uint64_t sizeInBits = member.getSizeInBits();
     uint32_t alignInBits = member.getAlignInBits();
-    if (alignInBits)
-      structSize = llvm::alignTo(structSize + sizeInBits, alignInBits);
+    uint64_t offsetInBits =
+        llvm::alignTo(structSize, std::max(1u, alignInBits));
+    structSize = offsetInBits + sizeInBits;
     structAlign = std::max(structAlign, alignInBits);
 
     elementTypes.push_back(LLVM::DIDerivedTypeAttr::get(
