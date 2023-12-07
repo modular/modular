@@ -43,6 +43,7 @@ from math import (
 from math.limit import isinf, max_or_inf, min_or_neginf
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load
+from sys.param_env import is_defined
 
 from Activations import gelu, relu, sigmoid
 from algorithm import argmax as _argmax
@@ -273,6 +274,30 @@ fn MOGGExport():
     alias _top_k_shape = top_k_shape
     alias _tile = tile
     alias _tile_shape = tile_shape
+
+
+# ===----------------------------------------------------------------------===#
+# Feature gate for EAP
+# TODO: Replace with entitlements when available.
+# ===----------------------------------------------------------------------===#
+
+alias MODULAR_RELEASE_PACKAGE_BUILD = is_defined[
+    "MODULAR_RELEASE_PACKAGE_BUILD"
+]()
+
+
+@always_inline
+fn _guard_against_gpu_target[
+    target: StringLiteral
+](out_chain: OutputChainPtr) -> Bool:
+    @parameter
+    if MODULAR_RELEASE_PACKAGE_BUILD and target == "cuda":
+        out_chain.mark_error(
+            "GPU Support is not available in the current release"
+        )
+        return True
+    else:
+        return False
 
 
 # ===----------------------------------------------------------------------===#
@@ -549,6 +574,9 @@ fn elementwise_wrapper[
             + String(";single_thread_blocking_override=")
             + single_thread_blocking_override
         )
+
+    if _guard_against_gpu_target[target](out_chain):
+        return
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
 
@@ -994,6 +1022,9 @@ fn concat[
     out_chain: OutputChainPtr,
     *variadic_ins: NDBuffer[rank, DimList.create_unknown[rank](), type],
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     let ins = variadic_list_to_vector(variadic_ins)
     _concat[rank, type, single_thread_blocking_override, target](
         output,
@@ -1185,6 +1216,9 @@ fn mean[
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     let axis = buffer_to_scalar(axis_buffer)
     _mean[
         type,
@@ -1289,6 +1323,9 @@ fn reduce_add[
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     out_chain.trace[TraceLevel.OP]("mogg.reduce_add")
 
     @always_inline
@@ -1340,6 +1377,9 @@ fn reduce_max[
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     out_chain.trace[TraceLevel.OP]("mogg.reduce_max")
 
     @always_inline
@@ -1391,6 +1431,9 @@ fn reduce_min[
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     out_chain.trace[TraceLevel.OP]("mogg.reduce_min")
 
     @always_inline
@@ -1442,6 +1485,9 @@ fn reduce_mul[
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     out_chain.trace[TraceLevel.OP]("mogg.reduce_mul")
 
     @always_inline
@@ -1498,6 +1544,9 @@ fn slice[
     steps: NDBuffer[1, DimList.create_unknown[1](), step_type],
     out_chain: OutputChainPtr,  # remove (#24946)
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+    if _guard_against_gpu_target[target](out_chain):
+        return tensor
+
     return slice_as_view(tensor, starts, ends, steps)
 
 
@@ -1647,6 +1696,9 @@ fn transpose[
     var new_shape = StaticIntTuple[rank]()
     var new_stride = StaticIntTuple[rank]()
 
+    if _guard_against_gpu_target[target](out_chain):
+        return input
+
     @always_inline
     @parameter
     fn body[i: Int]():
@@ -1767,6 +1819,9 @@ fn gather[
     output_shape: StaticIntTuple[output_rank],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     let axis = normalize_neg_index(buffer_to_scalar(axis_buffer), in_rank)
 
     @parameter
@@ -1844,6 +1899,9 @@ fn matmul[
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = packed_in_1
+
+    if _guard_against_gpu_target[target](out_chain):
+        return
 
     constrained[
         not (b_packed and transpose_b),
@@ -1933,6 +1991,9 @@ fn batched_matmul[
 ):
     alias adj_a = False
     alias adj_b = transpose_in_1
+
+    if _guard_against_gpu_target[target](out_chain):
+        return
 
     @parameter
     @always_inline
@@ -2205,6 +2266,9 @@ fn scatter_nd[
     ],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     return _scatter_nd[
         output_type,
         indices_type,
@@ -2242,6 +2306,9 @@ fn scatter_nd_add[
     ],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     @always_inline
     fn reduce_fn[
         type: DType, width: Int
@@ -2286,6 +2353,9 @@ fn scatter_nd_max[
     ],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     @always_inline
     fn reduce_fn[
         type: DType, width: Int
@@ -2330,6 +2400,9 @@ fn scatter_nd_min[
     ],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     @always_inline
     fn reduce_fn[
         type: DType, width: Int
@@ -2374,6 +2447,9 @@ fn scatter_nd_mul[
     ],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     @always_inline
     fn reduce_fn[
         type: DType, width: Int
@@ -2405,6 +2481,9 @@ fn softmax[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     _softmax[
         type,
         simdwidthof[type](),
@@ -3062,6 +3141,9 @@ fn multi_head_flash_attention[
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
     out_chain: OutputChainPtr,
 ):
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
 
     flash_attention[
@@ -3120,6 +3202,10 @@ fn no_mask_fused_attention_cpu[
     # k -- BHDS (we assume transpose = true for now)
     # v -- BHSD
     # output: BHSD
+
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     constrained[target == "cpu"]()
 
     # TODO: Unimplemented and not used
@@ -3188,6 +3274,10 @@ fn with_mask_fused_attention_cpu[
     # k -- BHDS (we assume transpose = true for now)
     # v -- BHSD
     # output: BHSD
+
+    if _guard_against_gpu_target[target](out_chain):
+        return
+
     constrained[target == "cpu"]()
 
     # TODO: Unimplemented and not used
