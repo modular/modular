@@ -20,15 +20,15 @@ struct CallOperands;
 class LITSignatureType;
 
 /// This struct indicates whether a signature can be successfully applied to a
-/// parameter binding and argument list.  If so, it keeps track of the number of
-/// implicit conversions required to make the call, and if not, it indicates the
-/// reason for the mismatch.
+/// parameter binding and argument list. If so, it keeps track of several
+/// metrics that allow comparing different candidates, and if not, it indicates
+/// the reason for the mismatch.
 struct OverloadFitness {
   OverloadFitness(OverloadFitness &&other)
       : paramBindings(other.paramBindings),
-        numImplicitConversions(other.numImplicitConversions),
         diag(other.diag ? std::optional<InflightDiag>(other.takeDiag())
-                        : std::nullopt) {}
+                        : std::nullopt),
+        payload(other.payload) {}
 
   ~OverloadFitness() {
     if (diag)
@@ -44,8 +44,11 @@ struct OverloadFitness {
   /// Return the number of implicit conversions if the candidate is valid.
   size_t getNumImplicitConversions() const {
     assert(isValid());
-    return numImplicitConversions;
+    return payload.numImplicitConversions;
   }
+
+  /// Returns whether this fitness is strictly better than another one.
+  bool isBetter(const OverloadFitness &other) const;
 
   /// Consume the diagnostic if the candidate is not valid.
   InflightDiag takeDiag() {
@@ -58,7 +61,7 @@ struct OverloadFitness {
 
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable` and the arguments specified in
-  /// `operands`.
+  /// `callOperands`.
   static OverloadFitness evaluate(LITSignatureType signature,
                                   const OverloadSet &callable,
                                   const CallOperands &callOperands,
@@ -75,16 +78,29 @@ struct OverloadFitness {
 private:
   /// For valid candidates, this defines the parameter bindings to use.
   ParameterExprArrayAttr paramBindings;
-  /// The number of implicit conversions required;
-  size_t numImplicitConversions;
   /// The diagnostic for invalid candidates, or null for valid ones.
   std::optional<InflightDiag> diag = std::nullopt;
 
+  /// Describes the metrics that can be used to compare candidates.
+  struct Payload {
+    /// The number of implicit conversions required.
+    size_t numImplicitConversions;
+    /// The number of input conventions conversions required.
+    size_t numMismatchedConventions;
+    /// Whether the candidate needs a non-materializable conversion.
+    bool hasNonmaterializableConversion;
+    /// Whether the candidate has a (non-empty) variadic argument.
+    bool passesVarArgArgument;
+    /// Whether the bindings include variadic parameters.
+    bool hasVariadicParams;
+
+    /// Return a numeric value that allows easy comparison of boolean metrics.
+    int8_t getBoolMask() const;
+  } payload;
+
   OverloadFitness(InflightDiag &&diag) : diag(std::move(diag)) {}
-  OverloadFitness(ParameterExprArrayAttr paramBindings,
-                  size_t numImplicitConversions)
-      : paramBindings(paramBindings),
-        numImplicitConversions(numImplicitConversions) {}
+  OverloadFitness(ParameterExprArrayAttr paramBindings, Payload payload)
+      : paramBindings(paramBindings), payload(payload) {}
 
   /// Calculate the minimum required and maximum allowed number of arguments
   /// from a signature.
