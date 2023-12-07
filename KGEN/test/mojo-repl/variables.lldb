@@ -12,12 +12,10 @@
 let bigValue = SIMD[DType.float32, 64]()
 
 # CHECK: (SIMD[f32, 64]) bigValue = {
-# CHECK:   (simd<64, f32>) value = {
-# CHECK:     (f32) [0] = 0
-# CHECK:     (f32) [1] = 0
-# CHECK:     (f32) [62] = 0
-# CHECK:     (f32) [63] = 0
-# CHECK:   }
+# CHECK:   (f32) [0] = 0
+# CHECK:   (f32) [1] = 0
+# CHECK:   (f32) [62] = 0
+# CHECK:   (f32) [63] = 0
 # CHECK: }
 
 # Check that we can define variables with weird names.

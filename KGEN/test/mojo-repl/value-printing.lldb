@@ -19,26 +19,22 @@ let x = 12
 let x = 4.2
 
 # CHECK:  (SIMD[si32, 8]) x = {
-# CHECK:    (simd<8, si32>) value = {
-# CHECK:      (si32) [0] = 5
-# CHECK:      (si32) [1] = 6
-# CHECK:      (si32) [2] = 7
-# CHECK:      (si32) [3] = 8
-# CHECK:      (si32) [4] = 9
-# CHECK:      (si32) [5] = 10
-# CHECK:      (si32) [6] = 11
-# CHECK:      (si32) [7] = 12
-# CHECK:    }
+# CHECK:    (si32) [0] = 5
+# CHECK:    (si32) [1] = 6
+# CHECK:    (si32) [2] = 7
+# CHECK:    (si32) [3] = 8
+# CHECK:    (si32) [4] = 9
+# CHECK:    (si32) [5] = 10
+# CHECK:    (si32) [6] = 11
+# CHECK:    (si32) [7] = 12
 # CHECK:  }
 let x = SIMD[DType.int32, 8](5, 6, 7, 8, 9, 10, 11, 12)
 
 # CHECK:  (SIMD[si64, 4]) x = {
-# CHECK:    (simd<4, si64>) value = {
-# CHECK:      (si64) [0] = 1
-# CHECK:      (si64) [1] = 2
-# CHECK:      (si64) [2] = 3
-# CHECK:      (si64) [3] = 4
-# CHECK:    }
+# CHECK:    (si64) [0] = 1
+# CHECK:    (si64) [1] = 2
+# CHECK:    (si64) [2] = 3
+# CHECK:    (si64) [3] = 4
 # CHECK:  }
 let x = SIMD[DType.int64, 4](1, 2, 3, 4)
 
@@ -46,10 +42,8 @@ let x = SIMD[DType.int64, 4](1, 2, 3, 4)
 let v = -101
 
 # CHECK: (SIMD[si8, 2]) w = {
-# CHECK:   (simd<2, si8>) value = {
-# CHECK:     (si8) [0] = -50
-# CHECK:     (si8) [1] = 31
-# CHECK:   }
+# CHECK:   (si8) [0] = -50
+# CHECK:   (si8) [1] = 31
 # CHECK: }
 let w = SIMD[DType.int8, 2](-50, 31)
 
@@ -57,20 +51,16 @@ let w = SIMD[DType.int8, 2](-50, 31)
 # CHECK: (Foo) f = {
 # CHECK:   (Int) v = -101
 # CHECK:   (SIMD[si8, 2]) w = {
-# CHECK:     (simd<2, si8>) value = {
-# CHECK:       (si8) [0] = -50
-# CHECK:       (si8) [1] = 31
-# CHECK:     }
+# CHECK:     (si8) [0] = -50
+# CHECK:     (si8) [1] = 31
 # CHECK:   }
 # CHECK:   (Bool) x = True
 # CHECK:   (StringLiteral) y = "fofofo"
 # CHECK:   (SIMD[f32, 4]) z = {
-# CHECK:     (simd<4, f32>) value = {
-# CHECK:       (f32) [0] = 1
-# CHECK:       (f32) [1] = 2
-# CHECK:       (f32) [2] = 3
-# CHECK:       (f32) [3] = 4
-# CHECK:     }
+# CHECK:     (f32) [0] = 1
+# CHECK:     (f32) [1] = 2
+# CHECK:     (f32) [2] = 3
+# CHECK:     (f32) [3] = 4
 # CHECK:   }
 # CHECK: }
 @value
@@ -108,12 +98,10 @@ let another_bool = False
 # CHECK: (Tuple[Int, SIMD[si8, 4]]) a = {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (SIMD[si8, 4]) [1] = {
-# CHECK:     (simd<4, si8>) value = {
-# CHECK:       (si8) [0] = 1
-# CHECK:       (si8) [1] = 2
-# CHECK:       (si8) [2] = 3
-# CHECK:       (si8) [3] = 0
-# CHECK:     }
+# CHECK:     (si8) [0] = 1
+# CHECK:     (si8) [1] = 2
+# CHECK:     (si8) [2] = 3
+# CHECK:     (si8) [3] = 0
 # CHECK:   }
 # CHECK: }
 a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))
