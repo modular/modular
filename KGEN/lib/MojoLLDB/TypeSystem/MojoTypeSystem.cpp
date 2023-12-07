@@ -523,6 +523,13 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
 
   if (LIT::StructDeclOp structDecl = impl->getIfStructDecl(astType))
     return llvm::range_size(structDecl.getFieldDecls());
+
+  if (auto packType = dyn_cast<PackType>(astType)) {
+    if (auto attr = dyn_cast<VariadicAttr>(packType.getVariadic()))
+      return llvm::range_size(attr.getValues());
+    return 0;
+  }
+
   return 0;
 }
 
@@ -607,6 +614,18 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
     }
     return {};
   }
+
+  if (auto packType = dyn_cast<PackType>(astType)) {
+    if (const std::optional<MojoTypeDataLayout> &layout =
+            impl->dataLayoutContext->getOrCalculate(astType)) {
+      childName = std::string(llvm::formatv("[{0}]", idx));
+      const auto &field = layout->getFields()[idx];
+      childByteOffset = field.getByteOffset();
+      childByteSize = field.getByteSize();
+      return createCompilerType(field.getConcreteType());
+    }
+    return {};
+  }
   return {};
 }
 
@@ -618,8 +637,8 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   // might not be empty.
   MojoASTTypeRef astType(type);
 
-  // Check if the name is an index of a SIMD.
-  if (isa<POP::SIMDType>(astType)) {
+  // Check if the name is an index of a SIMD or of a pack, which are 0-indexed.
+  if (isa<PackType, POP::SIMDType>(astType)) {
     unsigned long index;
     if (name.consume_front("[") && !name.consumeInteger(10, index) &&
         name.consume_front("]") && name.empty()) {
@@ -639,6 +658,7 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
     }
     return 0;
   }
+
   return 0;
 }
 
