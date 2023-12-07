@@ -513,6 +513,8 @@ debugging commands is also available as described below.
 
 Type "< path" to read in code from a text file "path".
 
+Finally, we encourage you to submit feature requests and error reports in
+https://github.com/modularml/mojo/issues.
 )";
 }
 
