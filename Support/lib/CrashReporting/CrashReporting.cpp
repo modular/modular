@@ -106,7 +106,7 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0, const char *program) {
   //     crashed state and generates a crash report)
   //   - Crash database, to put the crashes in before they are sent off
   //   - URL to upload crash reports to
-  std::filesystem::path modularHome = Config::getModularHomeDirPath();
+  std::filesystem::path modularHome = Config::getModularDataFolderPath();
   std::filesystem::path databasePath =
       getCrashDatabasePath(config, modularHome);
 

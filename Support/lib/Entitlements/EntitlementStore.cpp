@@ -695,7 +695,7 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
   // MODULAR_HOME path. This will ensure we have the keys on the filesystem at
   // all times.
   if (keysOr.isError())
-    keysOr = Keypair::generate(Config::getModularHomeDirPath());
+    keysOr = Keypair::generate(Config::getModularConfigFolderPath());
 
   // Now if it's an error, it's a real error.
   if (keysOr.isError())
@@ -897,7 +897,7 @@ ErrorOrSuccess EntitlementStore::parseCertificate(mbedtls_x509_crt *caCerts) {
 
   // Flush the certificate to a file now we know it's valid.
   auto err = writeFileUnderLock(
-      Config::getModularHomeDirPath() / "client.der",
+      Config::getModularConfigFolderPath() / "client.der",
       [&](llvm::raw_ostream &os) { os << clientCertDER->getBuffer(); });
   if (err.isError())
     return err.takeError();

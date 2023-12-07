@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
     config = std::move(*configOr);
   }
 
-  std::filesystem::path modularHome = Config::getModularHomeDirPath();
+  std::filesystem::path modularHome = Config::getModularDataFolderPath();
 
   switch (clOptions.property) {
   case Property::CrashDBPath: {
