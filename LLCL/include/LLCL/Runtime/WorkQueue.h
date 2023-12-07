@@ -229,32 +229,21 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// the first socket in the system. Generally this will ignore hyperthreading
 /// to minimize cache contention, and will avoid cross-NUMA memory traffic.
 ///
-/// If mainWillDonate is false then numThreads worker threads will
-/// be created. Arbitrary threads may then addTasks and call await, but will not
+/// Arbitrary threads may then addTasks and call await, but will not
 /// themselves contribute to processing work items. This is most appropriate for
 /// multi-threaded servers which wish to share the same work queue across
 /// multiple request threads.
 ///
-/// If mainWillDonate is true (currently the default) then only numThreads - 1
-/// worker threads will be created, on the assumption the calling thread will
-/// eventually call await and 'donate' itself to processing work items alongside
-/// the worker threads. This is most appropriate for systems driven my a single,
-/// distinguished main thread, such as a REPL or execution tool.
-///
 /// The work queue must be shutdown before being destroyed. Until shutdown has
 /// returned any number of work items may be executing, so no resources they
-/// depend on should be destroyed. If mainWillDonate is true, the calling
-/// thread must be the one to call shutdown, at which point it may (again)
-/// contribute to processing outstanding work items. Otherwise shutdown
-/// may be called from any foreign thread.
+/// depend on should be destroyed. The shutdown() is called either by the thread
+/// that created the pool or any foreign thread.
 ///
 /// If in a MODULAR_PARANOID build, the paranoid flag can be used to inject
 /// random delays into work items to attempt to tickle race conditions.
-std::unique_ptr<WorkQueue>
-createThreadPoolWorkQueue(size_t numThreads = 0, bool mainWillDonate = true,
-                          std::chrono::microseconds threadBusyWaitTime = 200us,
-                          bool paranoid = false,
-                          std::string_view poolName = "🔥 Thread");
+std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
+    size_t numThreads = 0, std::chrono::microseconds threadBusyWaitTime = 200us,
+    bool paranoid = false, std::string_view poolName = "🔥 Thread");
 
 } // namespace M::LLCL
 

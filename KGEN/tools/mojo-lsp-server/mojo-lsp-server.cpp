@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
   // thread to provide deterministic output.
   std::unique_ptr<LLCL::WorkQueue> workQueue =
       mojoTest ? LLCL::createSingleThreadWorkQueue()
-               : LLCL::createThreadPoolWorkQueue(0, /*mainWillDonate=*/false);
+               : LLCL::createThreadPoolWorkQueue(0);
 
   // Wait for the server to shutdown when testing.
   bool waitOnShutdown = mojoTest;
