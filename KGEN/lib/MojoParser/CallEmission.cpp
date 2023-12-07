@@ -128,7 +128,8 @@ InputParamBindings::verifyBindings(
   size_t defaultStart = defaultEnd - defaultParams.size();
 
   auto isVarArg = [&](size_t idx) {
-    return idx + 1 == numParams && hasParamVarArgs;
+    // The variadic argument is the last non-implicit argument.
+    return (idx + 1 == numParams - numImplicit) && hasParamVarArgs;
   };
 
   assert(paramNames.size() == numParams);
