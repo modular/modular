@@ -33,7 +33,7 @@ setup:
 
 ```shell
 # Build the Mojo driver, along with the REPL and all of its dependencies.
-$ build mojo
+$ build mojo-sdk
 
 # Launch the REPL.
 $ mojo
@@ -181,30 +181,6 @@ This issue only applies to implicit variables. Those defined with `let` and
 `var` may be freely redefined as many times as desired. If an implicit variable
 needs to be overwritten, consider using `let` or `var` to introduce the variable
 for now.
-
-### The REPL's automatic value printer shows empty values
-
-When executing expressions in the REPL, LLDB will try to dump the top-level
-variables that were created by the expression as shown below:
-
-```text
-  1> let a_number = 12345
-  2. let a_string = "Mojo"
-  3.
-($int::Int) a_number =
-($StringLiteral::StringLiteral) a_string =
-```
-
-Currently LLDB knows how to print the type of these variables but is unable to
-print the corresponding values, which is a feature the team will eventually
-work on. Once implemented, we can also provide a similar feature for the last
-dangling expression executed in a notebook cell, matching the experience of
-Python notebooks.
-
-**Workaround:**
-
-For the time being, variable inspection can only be done via `print()`. This is
-not ideal for complex types, but is acceptable for simpler ones.
 
 ### Variable lifetimes behave unexpectedly
 
@@ -376,7 +352,7 @@ please document them here!
 
 Current Mojo commands:
 
-- `:mojo help` - This command prints out a REPL help text.
+- `:mojo repl-help` - This command prints out a REPL help text.
 
 ### Testing
 
