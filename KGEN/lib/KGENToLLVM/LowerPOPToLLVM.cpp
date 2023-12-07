@@ -526,8 +526,10 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
                                    int64_t typeAllocSize, int64_t align) {
   // Hoist the alloca to the top of the given block.
   b.setInsertionPointToStart(block);
+  Location hoistedLoc = FusedLoc::get(
+      b.getContext(), {op->getLoc(), block->getParent()->getLoc()});
   Value countVal =
-      b.create<LLVM::ConstantOp>(op->getLoc(), b.getI64IntegerAttr(count));
+      b.create<LLVM::ConstantOp>(hoistedLoc, b.getI64IntegerAttr(count));
 
   unsigned addressSpace = 0;
   if (auto stackAlloc = dyn_cast<StackAllocationOp>(op);
@@ -537,7 +539,7 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
       addressSpace = addrSpaceAttr.getInt();
 
   auto ptr = b.create<LLVM::AllocaOp>(
-      op->getLoc(), LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
+      hoistedLoc, LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
       elementType, countVal, align);
 
   // Insert lifetime markers starting from the op to the end of its block.
