@@ -734,7 +734,7 @@ struct MatmulInnerLoopBPacked[
         tile_n_k: StaticIntTuple[2],
         c_bound: StaticIntTuple[2],
     ):
-        self.c_stride = c.dim(1)
+        self.c_stride = c.dim[1]()
         self.c_ptr = c.data.offset(
             global_offset.M * self.c_stride + global_offset.N
         )
@@ -930,6 +930,7 @@ struct MatmulInnerLoopBPacked[
         """
         var c_ptr = self.c_ptr.offset(tile_n_idx)
 
+        @parameter
         if self.use_i8mm:
 
             @always_inline
@@ -1052,7 +1053,7 @@ struct MatmulInnerLoopBPacked[
                 ]()
 
         # This inner kernels works with non-transposed A.
-        let K = self.a.dim(1)
+        let K = self.a.dim[1]()
         let a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
 
         # Loop over local accumulator tiles.
