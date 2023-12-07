@@ -121,9 +121,20 @@ struct PromotedStackAlloc {
 
     // Duplicate a DebugInfo::ValueOp for `newValue` if one existed before.
     // The new op is created after `op`.
+
+    // If the mutator is inlined and the original callee does not have debug
+    // info, new debuginfo should not be created. This can show up in two ways:
+    // 1. An op with a callsite loc but the callee has no debug scope.
     auto mutatorScope = extractPreInlineSubprogramScope(mutator->getLoc());
     if (!mutatorScope)
       return;
+
+    // 2. An op inside an InlinedSubprogramScope that doesn't have a debug
+    // scope.
+    if (auto subprogramParent =
+            mutator->getParentOfType<DebugInfo::InlinedSubprogramScoped>())
+      if (!subprogramParent.getSubprogramScope())
+        return;
 
     if (auto it = debugValues.find(mutatorScope); it != debugValues.end()) {
       OpBuilder b(mutator->getContext());
