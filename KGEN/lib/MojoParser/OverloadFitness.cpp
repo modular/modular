@@ -764,11 +764,8 @@ OverloadFitness::checkOneOperand(
 
 bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   // We first compare the number of implicit conversions.
-  // TODO: fix this heuristic for numMismatchedConventions.
-  size_t numConversions =
-      getNumImplicitConversions() + payload.numMismatchedConventions * 2;
-  size_t otherNumConversions = other.getNumImplicitConversions() +
-                               other.payload.numMismatchedConventions * 2;
+  size_t numConversions = getNumImplicitConversions();
+  size_t otherNumConversions = other.getNumImplicitConversions();
   if (numConversions != otherNumConversions)
     return numConversions < otherNumConversions;
 
@@ -778,8 +775,15 @@ bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   if (mask != otherMask)
     return mask < otherMask;
 
-  // If still ambiguous, we pick the one with fewer bindings.
-  return paramBindings.size() < other.paramBindings.size();
+  // If still ambiguous, we compare the number of bindings.
+  if (paramBindings.size() != other.paramBindings.size())
+    return paramBindings.size() < other.paramBindings.size();
+
+  // Otherwise these candidates are almost identical, so we try to decide based
+  // on the number of input conventions mismatches (e.g. register-passable
+  // passed in memory).
+  return payload.numMismatchedConventions <
+         other.payload.numMismatchedConventions;
 }
 
 int8_t OverloadFitness::Payload::getBoolMask() const {
