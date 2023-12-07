@@ -519,6 +519,8 @@ def ResolveCompilerPromises : Pass<"resolve-compiler-promises", "ModuleOp"> {
   let description = [{
     TODO
   }];
+
+  let dependentDialects = ["mlir::index::IndexDialect"];
 }
 
 //===----------------------------------------------------------------------===//

@@ -12,6 +12,8 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
@@ -46,11 +48,15 @@ struct CallGraphNode
   using CallGraphNodeBase::CallGraphNodeBase;
 
   std::vector<std::pair<StringAttr, Type>> requiredPromises;
+  StructType promisesStructType;
+  PointerType captureListType;
 };
 
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
-  explicit CallGraph(LLCL::Runtime &runtime, const SymbolTable &symtab)
-      : worklist(runtime), symtab(symtab) {}
+  explicit CallGraph(LLCL::Runtime &runtime, const SymbolTable &symtab,
+                     TargetInfoAttr targetInfo)
+      : worklist(runtime), symtab(symtab), targetInfo(targetInfo) {}
+  using Base = CallGraphBase<CallGraph, CallGraphNode>;
 
   /// It turns out we have to rely on propagation of the `capturing` bit on
   /// functions in the parser, where a function with a `capturing` signature in
@@ -74,6 +80,7 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
 
   LLCL::ForkJoin worklist;
   const SymbolTable symtab;
+  TargetInfoAttr targetInfo;
 };
 } // namespace
 
@@ -95,6 +102,76 @@ static void reversePostOrderWalk(Operation *op,
   walkFn(op);
 }
 
+static CallGraphNode *getClosureNode(Operation *op, CallGraph &cg) {
+  TypedAttr closureSymAttr;
+  if (auto captureListCreate = dyn_cast<CaptureListCreate>(op))
+    closureSymAttr = captureListCreate.getType().getCapturingFunc();
+  else if (auto captureListExpand = dyn_cast<CaptureListExpand>(op))
+    closureSymAttr =
+        captureListExpand.getCaptureList().getType().getCapturingFunc();
+  else if (auto captureListDestroy = dyn_cast<CaptureListDestroy>(op))
+    closureSymAttr =
+        captureListDestroy.getCaptureList().getType().getCapturingFunc();
+
+  if (!closureSymAttr)
+    return nullptr;
+  auto closure = cg.symtab.lookup<FuncOp>(
+      cast<SymbolConstantAttr>(closureSymAttr).getSymbol().getRootReference());
+
+  return &cg.nodes.find(closure)->second;
+}
+
+static void resolveCaptureListCreate(CaptureListCreate captureListCreate,
+                                     CallGraphNode *closureNode,
+                                     TargetInfoAttr targetInfo) {
+  auto captureListType = closureNode->promisesStructType;
+  std::optional<int64_t> captureListTypeSize =
+      captureListType.getTypeSize(targetInfo);
+  assert(captureListTypeSize && "invalid KGEN::CaptureListCreate");
+
+  PointerType nonePtr =
+      PointerType::get(KGEN::NoneType::get(captureListCreate->getContext()));
+
+  ImplicitLocOpBuilder b(captureListCreate->getLoc(),
+                         OpBuilder(captureListCreate));
+  // Allocate the memory for the actual capture state.
+  auto alloc = b.create<POP::AlignedAllocOp>(
+      closureNode->captureListType,
+      b.create<mlir::index::ConstantOp>(
+          targetInfo.getDataLayout().getPointerSize()),
+      b.create<mlir::index::ConstantOp>(captureListTypeSize.value()));
+
+  captureListCreate->replaceAllUsesWith(alloc);
+  captureListCreate.erase();
+}
+
+static void resolveCaptureListExpand(
+    CaptureListExpand captureListExpand, CallGraphNode *closureNode,
+    llvm::MapVector<StringAttr, SmallVector<POP::CompilerGlobalLoadOp>>
+        &requiredPromises) {
+  ImplicitLocOpBuilder b(captureListExpand->getLoc(),
+                         OpBuilder(captureListExpand));
+  b.setInsertionPoint(captureListExpand);
+  for (auto [idx, nameTypePair] :
+       llvm::enumerate(closureNode->requiredPromises)) {
+    // Extract each captured value out of the capture state and use it as
+    // input to the call of the closure.
+    auto gep = b.create<StructGEPOp>(
+        PointerType::get(
+            closureNode->promisesStructType.getElementTypes()[idx]),
+        captureListExpand.getOperand(), idx);
+    auto gepLoad = b.create<POP::LoadOp>(gep);
+    for (POP::CompilerGlobalLoadOp load :
+         requiredPromises[nameTypePair.first]) {
+      load.replaceAllUsesWith(gepLoad.getResult());
+      load.erase();
+    }
+    requiredPromises.erase(nameTypePair.first);
+  }
+
+  captureListExpand.erase();
+}
+
 void CallGraph::resolvePromises(CallGraphNode *node) {
   FuncOp func = node->func;
   CompilerTimeTraceScope traceScope("resolvePromises", [func]() mutable {
@@ -103,6 +180,7 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
 
   llvm::MapVector<StringAttr, SmallVector<POP::CompilerGlobalLoadOp>>
       requiredPromises;
+
   reversePostOrderWalk(func, [&](Operation *op) {
     // When we encounter a load, mark it as a requested promise within the
     // function.
@@ -135,6 +213,27 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
       else
         it->second = std::move(leftover);
       store.erase();
+      return;
+    }
+
+    CallGraphNode *closureNode = getClosureNode(op, *this);
+    if (auto captureListCreate = dyn_cast<CaptureListCreate>(op)) {
+      resolveCaptureListCreate(captureListCreate, closureNode, targetInfo);
+      return;
+    }
+
+    if (auto captureListExpand = dyn_cast<CaptureListExpand>(op)) {
+      resolveCaptureListExpand(captureListExpand, closureNode,
+                               requiredPromises);
+
+      return;
+    }
+
+    if (auto captureListDestroy = dyn_cast<CaptureListDestroy>(op)) {
+      ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
+      // Free the memory of the capture state.
+      b.create<POP::AlignedFreeOp>(captureListDestroy.getOperand());
+      captureListDestroy.erase();
       return;
     }
 
@@ -211,6 +310,15 @@ void CallGraph::resolvePromises(CallGraphNode *node) {
                   StringArrayAttr::get(func.getContext(), captures));
   }
 
+  if (!node->requiredPromises.empty()) {
+    SmallVector<Type> captureTypes;
+    for (Type type : llvm::make_second_range(node->requiredPromises))
+      captureTypes.emplace_back(type);
+    node->promisesStructType =
+        StructType::get(node->func->getContext(), captureTypes);
+    node->captureListType = PointerType::get(node->promisesStructType);
+  }
+
   // Now go schedule all the nodes that have been made available.
   for (CallGraphNode *node : node->callers)
     if (++node->numProcessedCalls == node->callsites.size())
@@ -268,7 +376,21 @@ void ResolveCompilerPromisesPass::runOnOperation() {
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
-  CallGraph cg(*rt, symtab);
+  CallGraph cg(*rt, symtab, getTargetInfo(getOperation()));
   cg.build(getOperation(), symtab);
   cg.run();
+
+  // update attributes and types to replace CaptureListType with the resolved
+  // capture list struct type.
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](CaptureListType captureListType) {
+    auto closure = symtab.lookup<FuncOp>(
+        cast<SymbolConstantAttr>(captureListType.getCapturingFunc())
+            .getSymbol()
+            .getRootReference());
+    CallGraphNode *closureNode = &cg.nodes.find(closure)->second;
+    return closureNode->captureListType;
+  });
+
+  replacer.recursivelyReplaceElementsIn(getOperation(), true, false, true);
 }
