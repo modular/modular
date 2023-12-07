@@ -53,7 +53,7 @@ constexpr StringRef kTelemetryUrl = "https://telemetry.modular.com:443";
 /// subject to change.
 class TelemetryContext {
 public:
-  /// This is just a copy of the OTel OwnedAttributeValue - we can use this to
+  /// This is just a copy of the OTel MetricAttributeValue - we can use this to
   /// provide resources to the telemetry context. We don't support the lists
   /// yet, we can add those as necessary.
   using AttributeValue =

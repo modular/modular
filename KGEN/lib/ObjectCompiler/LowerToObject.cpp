@@ -190,9 +190,12 @@ runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
   CompilerTimeTraceScope traceScope("llvm-codegen", module.getName());
   std::optional<M::Telemetry::Timer<uint64_t, std::chrono::milliseconds>>
       timeScope;
-  if (telemetryCtx)
+  if (telemetryCtx) {
+    llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
+        {"filename", module.getSourceFileName()}};
     timeScope = telemetryCtx->createUInt64Timer<std::chrono::milliseconds>(
-        "mojo.llvm.optimize.time", M::Telemetry::Level::L2);
+        "mojo.llvm.optimize.time", M::Telemetry::Level::L2, attrs);
+  }
   using namespace llvm;
 
   // Build up all of the passes that we want to do to the module.
