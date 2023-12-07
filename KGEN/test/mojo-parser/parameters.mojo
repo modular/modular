@@ -269,6 +269,14 @@ fn infer_implicit_params():
     # CHECK-SAME: :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!Int #lit.struct<{value = 4}>>
     implicit_params_with_others[42](one, two)
 
+fn implicit_params_with_var_params[*Ts: Int](s: TwoParams[1]): pass
+
+# CHECK-LABEL: lit.func @"test_implicit_params_with_var_params
+fn test_implicit_params_with_var_params():
+    # CHECK: %[[VAL0:.*]] = lit.call @{{.*}}::@TwoParams::@"__init__()"<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 2}>>()
+    # CHECK: call @{{.*}}::@"implicit_params_with_var_params{{.*}}"<:variadic<!Int> [], :!Int #lit.struct<{value = 2}>>(%[[VAL0]])
+    implicit_params_with_var_params(TwoParams[1, 2]())
+
 # CHECK-LABEL: lit.func @"explicit_autoparameterization
 # CHECK-SAME: "<?, [[V0:.*_v0]]: !Int, [[W0:.*_w0]]: !Int, [[W1:.*_w1]]: !Int>(
 # CHECK-SAME: %v[v]: {{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>, !lit.metatype<@{{.*}}::@TwoParams<:!Int #lit.struct<{value = 5}>, :!Int [[V0]]>>
