@@ -145,6 +145,9 @@ macro(_setup_defines)
   if (MODULAR_PARANOID)
     set(MOJO_DEFINES "-D" "MODULAR_PARANOID")
   endif()
+  if (MODULAR_RELEASE_PACKAGE_BUILD)
+    set(MOJO_DEFINES "-D" "MODULAR_RELEASE_PACKAGE_BUILD")
+  endif()
 endmacro()
 
 # Add the necessary tool dependencies to the mojo-sdk target.
