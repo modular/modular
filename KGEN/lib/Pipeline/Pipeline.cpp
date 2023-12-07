@@ -200,6 +200,8 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   }
 
   if (options.optimizationLevel >= 2) {
+    pm.addNestedPass<FuncOp>(createRaiseForLoops());
+    pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
