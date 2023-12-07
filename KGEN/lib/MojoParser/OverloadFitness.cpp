@@ -762,9 +762,36 @@ OverloadFitness::checkOneOperand(
   return {kValidType, expectedType};
 };
 
-/// Determine whether the specified signature can be invoked with the
-/// parameter bindings specified in `callable` and the arguments specified in
-/// `posOperands`.
+bool OverloadFitness::isBetter(const OverloadFitness &other) const {
+  // We first compare the number of implicit conversions.
+  // TODO: fix this heuristic for numMismatchedConventions.
+  size_t numConversions =
+      getNumImplicitConversions() + payload.numMismatchedConventions * 2;
+  size_t otherNumConversions = other.getNumImplicitConversions() +
+                               other.payload.numMismatchedConventions * 2;
+  if (numConversions != otherNumConversions)
+    return numConversions < otherNumConversions;
+
+  // If ambiguous, we compare the boolean metrics.
+  int8_t mask = payload.getBoolMask();
+  int8_t otherMask = other.payload.getBoolMask();
+  if (mask != otherMask)
+    return mask < otherMask;
+
+  // If still ambiguous, we pick the one with fewer bindings.
+  return paramBindings.size() < other.paramBindings.size();
+}
+
+int8_t OverloadFitness::Payload::getBoolMask() const {
+  // We consider exact matches of concrete types to be more specific than
+  // those needing non-materializable conversions, both of these more
+  // specific than varargs matches (for example, when overloading a
+  // `foo(Int)` and `foo(Int*)` we should pick the former if both work), and
+  // all of these more specific than matches with variadic parameters.
+  return 4 * hasNonmaterializableConversion + 2 * passesVarArgArgument +
+         1 * hasVariadicParams;
+}
+
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           const OverloadSet &callable,
                                           const CallOperands &callOperands,
@@ -1096,15 +1123,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   assert(posOperandIdx == numPosOperands &&
          "should handle argument mismatch above");
 
-  // Otherwise we succeeded!  For our payload, indicate the number of implicit
-  // conversions, whether there were (even more implicit) nonmaterializable
-  // conversions, and whether anything was passed through varargs.  We consider
-  // exact matches of concrete types to be more specific than varargs matches,
-  // and both of these more specific than matches with variadic parameters.
-  size_t payload = numMismatchedConventions * 16;
-  payload += numImplicitConversions * 8;
-  payload += (hasNonmaterializableConversion ? 4 : 0);
-  payload += (passesVarArgArgument ? 2 : 0);
-  payload += (bindingFitness.hasVariadicParams ? 1 : 0);
-  return {newBindings, payload};
+  // Otherwise we succeeded!
+  return {newBindings,
+          Payload{numImplicitConversions, numMismatchedConventions,
+                  hasNonmaterializableConversion, passesVarArgArgument,
+                  bindingFitness.hasVariadicParams}};
 }

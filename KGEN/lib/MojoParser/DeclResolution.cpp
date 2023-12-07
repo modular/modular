@@ -15,7 +15,6 @@
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/ExprNodes.h"
-#include "KGEN/MojoParser/OverloadFitness.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/StructEmitter.h"
 #include "KGEN/POPDialect/POPOps.h"

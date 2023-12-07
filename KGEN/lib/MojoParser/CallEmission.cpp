@@ -681,78 +681,61 @@ static PValue getCallee(ASTType baseType, ArrayRef<ASTDecl *> fnDecls,
   return PValue(ParamDeclRefAttr::get(decl));
 }
 
-// Assuming we have at least one valid candidate, filter the candidate list to
-// the ones with the lowest number of implicit conversions required. If there is
-// more than one candidate with minimal implicit conversions, we filter for the
-// ones with the fewest number of parameter bindings. If there is still
-// ambiguity, we filter for non-static methods.
-//
-// To aid downstream diganostics, the function returns the number of conversions
-// needed for the best candidates, and a pointer to the fitness of one of them.
-// All diagnostics from erroneous candidates are dropped.
-static std::pair<const OverloadFitness *, size_t>
+/// Return if the given fitness is valid, and drop the diagnostics otherwise.
+static bool isValid(OverloadFitness &eval) {
+  if (eval.isValid())
+    return true;
+  eval.takeDiag().abandon();
+  return false;
+}
+
+/// Assuming we have at least one valid candidate, filter the candidate list to
+/// those with the best fitness. If there is more than one candidate with
+/// maximal fitness, we filter for non-static methods.
+///
+/// To aid downstream diganostics, the function returns the fitness of the best
+/// candidate. All diagnostics from erroneous candidates are dropped.
+static const OverloadFitness *
 selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
                      MutableArrayRef<OverloadFitness> evaluations,
                      SmallVectorImpl<ASTDecl *> &newFnDecls) {
   assert(newFnDecls.empty());
-  size_t minConversions = std::numeric_limits<size_t>::max();
-  size_t minBindings = std::numeric_limits<size_t>::max();
   bool areTheBestCandidatesStatic = true;
-  const OverloadFitness *oneFitness = &evaluations[0];
-  for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
-    // Ignore failures.
-    if (!eval.isValid()) {
-      eval.takeDiag().abandon();
-      continue;
-    }
 
-    // Ignore candidates that have more conversions.
-    size_t numConversions = eval.getNumImplicitConversions();
-    if (numConversions > minConversions)
+  // Find the first valid candidate.
+  evaluations = evaluations.drop_until(isValid);
+  const OverloadFitness *bestFitness = &evaluations.front();
+
+  for (auto [candidate, eval] :
+       llvm::zip(fnDecls.take_back(evaluations.size()), evaluations)) {
+    // Ignore all subsequent failures and candidates that are definitely worse.
+    if (!isValid(eval) || bestFitness->isBetter(eval))
       continue;
 
-    // Ignore candidates that have too many bindings.
-    size_t numBindings = eval.getParamBindings().size();
-    if ((numConversions == minConversions) && (numBindings > minBindings))
-      continue;
-
-    // If we found a new floor to the number of conversions needed, or a new
-    // candidate with minimal conversions with a new floor for the number of
-    // bindings, clear the list.
-    if (numConversions < minConversions || numBindings < minBindings) {
+    // If we found a strictly better candidate, clear the list.
+    if (eval.isBetter(*bestFitness)) {
       newFnDecls.clear();
-      minConversions = numConversions;
-      minBindings = numBindings;
       areTheBestCandidatesStatic = true;
     }
 
-    auto func = cast<LIT::FuncOp>(*candidate);
-
     // If the current best candidates are not static, we ignore new static
     // candidates.
-    if (!areTheBestCandidatesStatic && func.getIsStatic())
+    bool isStatic = cast<LIT::FuncOp>(*candidate).getIsStatic();
+    if (!areTheBestCandidatesStatic && isStatic)
       continue;
 
     // If the current best candidates are static, and we just found a non-static
     // one, we clear the list.
-    if (areTheBestCandidatesStatic && !func.getIsStatic()) {
+    if (areTheBestCandidatesStatic && !isStatic) {
       newFnDecls.clear();
       areTheBestCandidatesStatic = false;
     }
 
     newFnDecls.push_back(candidate);
-    oneFitness = &eval;
+    bestFitness = &eval;
   }
 
-  // The numConversions value computed by OverloadFitness includes the number of
-  // implicit conversions required but also uses the three lowest bits to track
-  // whether a nonmaterializable conversion was needed, and if variadic
-  // conversion was used in the parameters or arguments. Among other things,
-  // this allows us to treat varargs as a less-specific match than an exact
-  // signature match (for example, when overloading a `foo(Int)` and `foo(Int*)`
-  // we should pick the former if both work). That said, we don't want to
-  // complain about the wrong number in diagnostics, so we adjust for this.
-  return {oneFitness, minConversions / 8};
+  return bestFitness;
 }
 
 PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
@@ -807,7 +790,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
 
   // Ok, we have at least one valid candidate, so filter for the best matches.
   SmallVector<ASTDecl *, 1> newFnDecls;
-  auto [oneFitness, minConversions] =
+  const OverloadFitness *bestFitness =
       selectBestCandidates(fnDecls, evaluations, newFnDecls);
 
   // Notify the listener of the updated decl references for the call now that
@@ -825,7 +808,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   if (newFnDecls.size() == 1 || (!newFnDecls.empty() && allMarkedAdaptive())) {
     // On success, wrap things up into one callee.
     InputParamBindings newBindings;
-    for (TypedAttr bind : oneFitness->getParamBindings())
+    for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
     return getCallee(baseType, newFnDecls, baseName, newBindings, expr,
                      emitter);
@@ -851,6 +834,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
           diag.attachNote(candidate.getLoc()) << "non-adaptive candidate here";
       }
     } else {
+      size_t minConversions = bestFitness->getNumImplicitConversions();
       auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
                   << baseName << "', each candidate requires " << minConversions
                   << " implicit conversion" << plural(minConversions)
