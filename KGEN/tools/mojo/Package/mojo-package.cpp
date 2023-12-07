@@ -411,6 +411,11 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
   auto regionCache =
       RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
 
+  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
+
+  llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
+      {"filename", fileLine.getFilename().str()}};
+
   // Time the compilation.
   [[maybe_unused]] auto timeScope =
       runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()

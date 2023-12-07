@@ -571,13 +571,19 @@ KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
   populateElaborateModulePasses(pm, runtime, target, build, options,
                                 packageLinkHandlerFn);
 
+  llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
+  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
+  if (fileLine)
+    attrs["filename"] = fileLine.getFilename().str();
+
   // Run the passes as a cached transform. Don't deflate the op as part of this
   // - we don't want that cost right now.
   {
+
     [[maybe_unused]] auto timeScope =
         runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
             .createUInt64Timer<std::chrono::milliseconds>(
-                "mojo.kgen.compile.time", M::Telemetry::Level::L2);
+                "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
         theModule, regionCache.copy(), transformCache.copy(),

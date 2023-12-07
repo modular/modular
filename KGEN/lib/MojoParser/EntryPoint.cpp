@@ -212,15 +212,17 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
                SmallVectorImpl<std::string> *includedFiles,
                function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
   MLIRContext *context = sharedState.getContext();
+  auto fileLoc = FileLineColLoc::get(context, moduleIdentifier, /*line=*/0,
+                                     /*column=*/0);
+  llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
+      {"filename", fileLoc.getFilename().str()}};
   [[maybe_unused]] auto timeScope =
       sharedState.runtime
           .emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
           .createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.parser.compile.time", M::Telemetry::Level::L2);
+              "mojo.parser.compile.time", M::Telemetry::Level::L2, attrs);
 
   // This is the result module we are parsing into.
-  auto fileLoc = FileLineColLoc::get(context, moduleIdentifier, /*line=*/0,
-                                     /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
   // Build the decl for the main module.

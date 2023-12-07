@@ -20,13 +20,13 @@ namespace M::Telemetry {
 
 // -------- Counter --------
 
+using MetricAttributeValue = std::variant<bool, int32_t, uint32_t, int64_t,
+                                          double, std::string, uint64_t>;
+
+using MetricAttributeMap =
+    std::unordered_map<std::string, MetricAttributeValue>;
+
 #ifndef MODULAR_ENABLE_TELEMETRY
-
-using MetricAttributeValue =
-    std::variant<bool, int32_t, int64_t, uint32_t, double, const char *,
-                 std::string, uint64_t, llvm::StringRef>;
-
-using AttributeMap = std::unordered_map<std::string, MetricAttributeValue>;
 
 template <typename T>
 class Counter {
@@ -41,22 +41,16 @@ private:
 
 #else // MODULAR_ENABLE_TELEMETRY
 
-using MetricAttributeValue = opentelemetry::common::AttributeValue;
-// The "Record" methods in OTel are very particular with the typing --
-// you need to use a KeyValueIterableView, which has a specific implementation
-// that makes some assumptions about the iterator you pass in (namely that each
-// entry has a `first` attribute you can access directly.) Needs to be an
-// unordered_map because DenseMap seems not to work with owned strings.
-using AttributeMap = std::unordered_map<std::string, MetricAttributeValue>;
-
 template <typename T>
 class Counter {
 public:
   void add(T value) {
-    auto attrs =
-        opentelemetry::common::KeyValueIterableView<decltype(attributes)>{
-            attributes};
-    counter->Add(value, attributes);
+    std::unordered_map<std::string, opentelemetry::common::AttributeValue>
+        attrs;
+    for (auto &attr : owned_attributes) {
+      std::visit([&](auto &v) { attrs[attr.first] = v; }, attr.second);
+    }
+    counter->Add(value, attrs);
   }
 
   // Allow overriding attributes and context.
@@ -75,12 +69,12 @@ private:
           const llvm::StringMap<MetricAttributeValue> &additionalAttributes)
       : counter(std::move(counter)) {
     for (auto &attr : additionalAttributes) {
-      attributes[attr.first().str()] = attr.second;
+      owned_attributes[attr.first().str()] = attr.second;
     }
   }
 
   std::unique_ptr<opentelemetry::metrics::Counter<T>> counter;
-  AttributeMap attributes;
+  MetricAttributeMap owned_attributes;
 };
 
 #endif // MODULAR_ENABLE_TELEMETRY
@@ -114,9 +108,11 @@ template <typename T>
 class Histogram {
 public:
   void record(T value) {
-    auto attrs =
-        opentelemetry::common::KeyValueIterableView<decltype(attributes)>{
-            attributes};
+    std::unordered_map<std::string, opentelemetry::common::AttributeValue>
+        attrs;
+    for (auto &attr : owned_attributes) {
+      std::visit([&](auto &v) { attrs[attr.first] = v; }, attr.second);
+    }
     histogram->Record(value, attrs, context);
   }
 
@@ -128,7 +124,6 @@ public:
 
   Histogram(Histogram &&) = default;
   Histogram &operator=(Histogram &&) = default;
-  AttributeMap attributes;
 
 private:
   friend class TelemetryContext;
@@ -137,12 +132,13 @@ private:
             const llvm::StringMap<MetricAttributeValue> &additionalAttributes)
       : histogram(std::move(histogram)) {
     for (auto &attr : additionalAttributes) {
-      attributes[attr.first().str()] = attr.second;
+      owned_attributes[attr.first().str()] = attr.second;
     }
   }
 
   std::unique_ptr<opentelemetry::metrics::Histogram<T>> histogram;
   opentelemetry::context::Context context{};
+  MetricAttributeMap owned_attributes;
 };
 
 template <typename T, typename DurationT>
@@ -157,9 +153,11 @@ public:
     if (histogram) {
       auto end = ClockType::now();
       auto duration = std::chrono::duration_cast<DurationT>(end - start);
-      auto attrs =
-          opentelemetry::common::KeyValueIterableView<decltype(attributes)>{
-              attributes};
+      std::unordered_map<std::string, opentelemetry::common::AttributeValue>
+          attrs;
+      for (auto &attr : owned_attributes) {
+        std::visit([&](auto &v) { attrs[attr.first] = v; }, attr.second);
+      }
       histogram->Record(duration.count(), attrs, context);
     }
   }
@@ -174,14 +172,18 @@ private:
         const llvm::StringMap<MetricAttributeValue> &additionalAttributes)
       : histogram(std::move(histogram)) {
     for (auto &attr : additionalAttributes) {
-      attributes[attr.first().str()] = attr.second;
+      owned_attributes[attr.first().str()] = attr.second;
     }
+
     start = ClockType::now();
   }
 
   std::unique_ptr<opentelemetry::metrics::Histogram<T>> histogram;
   opentelemetry::context::Context context{};
-  AttributeMap attributes;
+
+  // We need to take ownership of these attributes, and the expected
+  // `AttributeValue` does not work for this since those are all references.
+  std::unordered_map<std::string, MetricAttributeValue> owned_attributes;
   /// The start time.
   TimePointType start;
 };

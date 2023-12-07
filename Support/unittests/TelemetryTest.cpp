@@ -208,8 +208,8 @@ TEST(Telemetry, Histogram) {
 
   TelemetryContext ctx({}, logFileSetup.getConfig());
 
-  llvm::StringMap<MetricAttributeValue> attributes = {
-      {"TEST_ATTRIBUTE", "TEST"}};
+  std::string value = "ATTRIBUTE";
+  llvm::StringMap<MetricAttributeValue> attributes = {{"TELEMETRY", value}};
   auto hist =
       ctx.createUInt64Histogram("basic.test.histogram", Level::L0, attributes);
   hist.record(32);
@@ -260,10 +260,12 @@ TEST(Telemetry, Histogram) {
           StringRef countsLine = getLineStartingAt(countsPos);
           EXPECT_EQ(countsLine.split(':').second.trim(),
                     "[0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ]");
+        });
 
-          auto attributesPos = message.find("TEST_ATTRIBUTE: TEST");
-          EXPECT_GT(attributesPos, 0);
-          EXPECT_LT(attributesPos, message.size());
+        iterateMessages(mbuf->getBuffer(), [&](StringRef key, StringRef value) {
+          if (key == "TELEMETRY") {
+            EXPECT_EQ(value, "ATTRIBUTE");
+          }
         });
 
         EXPECT_TRUE(instrumentFound) << "expected to find histogram in file";
@@ -311,9 +313,11 @@ TEST(Telemetry, Timer) {
   TelemetryContext ctx({}, logFileSetup.getConfig());
 
   auto lambda_test = [&]() {
-    llvm::StringMap<MetricAttributeValue> attrs = {{"TELEMETRY", "ATTRIBUTE"}};
+    std::string value = "ATTRIBUTE";
+    llvm::StringMap<MetricAttributeValue> attrs = {{"TELEMETRY", value}};
     auto timer = ctx.createUInt64Timer<std::chrono::milliseconds>(
         "basic.test.timer", Level::L0, attrs);
+    value[0] = 'C';
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   };
 
@@ -346,10 +350,12 @@ TEST(Telemetry, Timer) {
           StringRef maxLine = getLineStartingAt(maxPos);
           EXPECT_NE(maxLine.split(':').second.trim().compare_numeric("100"),
                     -1);
+        });
 
-          auto attributesPos = message.find("TELEMETRY: ATTRIBUTE");
-          EXPECT_GT(attributesPos, 0);
-          EXPECT_LT(attributesPos, message.size());
+        iterateMessages(mbuf->getBuffer(), [&](StringRef key, StringRef value) {
+          if (key == "TELEMETRY") {
+            EXPECT_EQ(value, "ATTRIBUTE");
+          }
         });
 
         EXPECT_TRUE(instrumentFound) << "expected to find timer in file";
