@@ -20,6 +20,7 @@ struct MemoryOnlyInt:
     # CHECK: %1 = {{.*}}constant: {{.*}}Int = {{.*}} 1
     # CHECK: pop.store %1, %0
     self.x = 1
+  fn __del__(owned self): pass
 
   # CHECK-LABEL: lit.func @"__copyinit__
   fn __copyinit__(inout self, other: Self):
@@ -176,27 +177,21 @@ fn implicit_func_conversion():
     # CHECK: call {{.*}}func_arg_conversion{{.*}}([[ANONPTR]])
     func_arg_conversion(take_int)
 
-# CHECK-LABEL: lit.struct.decl @M
+# CHECK-LABEL: lit.struct.decl @RegPassable
 @register_passable
-struct M:
+struct RegPassable:
   var value: Int
   # CHECK-LABEL: lit.func @"__init__
-  fn __init__(value: Int) -> M:
-  # CHECK-NEXT: %0 = lit.struct.create(value=%value) : (!Int) -> !M
-    return M{value: value}
+  fn __init__(value: Int) -> Self:
+  # CHECK-NEXT:  = lit.struct.create(value=%value) : (!Int) -> !RegPassable
+    return Self{value: value}
 
-  fn __copyinit__(self) -> M:
-    # FIXME: Should generate an error.
-    pass
-
-  fn __neg__(self) -> M:
-    return M(0)
-  fn __add__(self, rhs: M) -> M:
-    return M(0)
-  fn __matmul__(self, rhs: M) -> M:
-    return M(0)
-  fn __rmatmul__(lhs, self: M) -> M:
-    return M(0)
+  fn __copyinit__(self) -> Self: pass
+  fn __del__(owned self): pass
+  fn __neg__(self) -> Self: pass
+  fn __add__(self, rhs: Self) -> Self: pass
+  fn __matmul__(self, rhs: Self) -> Self: pass
+  fn __rmatmul__(lhs, self: Self) -> Self: pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam
 # CHECK-SAME: <[[PARAM:.*]][comparator]: !lit.signature
@@ -316,16 +311,16 @@ fn reverse_operators(a: Int):
   z = Int(3).value ^ z
 
 # CHECK-LABEL: lit.func @"precedence_matmul
-fn precedence_matmul(z: M) -> M:
+fn precedence_matmul(z: RegPassable) -> RegPassable:
   # CHECK-NEXT:  %[[THREE:.*]] = kgen.param.constant: {{.*}}Int = {{.*}} 3
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = lit.call {{.*}}@M::@"__init__{{.*}}(%[[THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}(%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = kgen.param.constant: {{.*}}Int = {{.*}} 2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = lit.call {{.*}}@M::@"__init__{{.*}}(%[[TWO]])
-  # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}@M::@"__neg__{{.*}}(%[[INT_TWO]])
-  # CHECK-NEXT:  %[[MATMUL:.*]] = lit.call {{.*}}@M::@"__matmul__{{.*}}(%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}@M::@"__add__{{.*}}(%z, %[[MATMUL]])
-  # CHECK-NEXT:  lit.return %[[ADD]] : !M
-  return z + M(3) @ -M(2)
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}(%[[TWO]])
+  # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}@RegPassable::@"__neg__{{.*}}(%[[INT_TWO]])
+  # CHECK-NEXT:  %[[MATMUL:.*]] = lit.call {{.*}}@RegPassable::@"__matmul__{{.*}}(%[[INT_THREE]], %[[NEG]])
+  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}@RegPassable::@"__add__{{.*}}(%z, %[[MATMUL]])
+  # CHECK-NEXT:  lit.return %[[ADD]] : !RegPassable
+  return z + RegPassable(3) @ -RegPassable(2)
 
 # CHECK-LABEL: lit.func @"precedence_bitwise
 fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
@@ -685,7 +680,7 @@ def defTests(a: Int, b: Int, untyped) -> None:
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"basic_assignments
-def basic_assignments(a: Int, b: Int, c: M, d: M):
+def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
   # CHECK:      %a_0 = lit.varlet.decl "a" imp
   # CHECK:      %b_1 = lit.varlet.decl "b" imp
   # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
@@ -1412,11 +1407,11 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
 fn takeMemory(a: MemoryType): pass
 
 # CHECK-LABEL: lit.func @"testConds
-fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: M, i: Int) -> MemoryType:
+fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: RegPassable, i: Int) -> MemoryType:
   # Implicit conversions.
   # Mojo Issue #49: https://github.com/modularml/mojo/issues/49
 
-  # CHECK-NEXT: hlcf.if %cond -> !M {
+  # CHECK-NEXT: hlcf.if %cond -> !RegPassable {
   # CHECK-NEXT:   [[V:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%m)
   # CHECK-NEXT:   hlcf.yield [[V]]
   # CHECK-NEXT: } else {
@@ -1425,7 +1420,7 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: M, i: Int) -
   # CHECK-NEXT: }
   _ = m if cond else i
 
-  # CHECK-NEXT: hlcf.if %cond -> !M {
+  # CHECK-NEXT: hlcf.if %cond -> !RegPassable {
   # CHECK-NEXT:   [[V:%.*]] = lit.call {{.*}}__init__{{.*}}(%i)
   # CHECK-NEXT:   hlcf.yield [[V]]
   # CHECK-NEXT: } else {
@@ -1713,3 +1708,35 @@ fn reg_passable_trivial():
   let y : Int = 100
   # expected-warning @+1 {{transfer from a trivial register value has no effect and can be removed}}
   _ = y^  # Consume RValue / BValue is not, this isn't tracked.
+
+
+
+
+fn del_warnings():
+  # These copy the value before destroying it, which is pointless.
+  let m = MemoryOnlyInt()
+  m.__del__()  # expected-warning {{explicit call to '__del__' destroys a copy of the value; consider removing this call}}
+  let r = RegPassable(1)
+  r.__del__()  # expected-warning {{explicit call to '__del__' destroys a copy of the value; consider removing this call}}
+
+  # These is wierd/unneeded, but at least it does what it says.
+  MemoryOnlyInt().__del__()
+  RegPassable(1).__del__()
+
+# [QoI] Generate error for obviously self recursive functions
+# https://github.com/modularml/mojo/issues/222
+fn self_recursive():
+  self_recursive() # expected-warning {{self recursive call will cause an infinite loop}}
+
+fn self_recursive_arg(a: Int):
+  self_recursive_arg(a) # expected-warning {{self recursive call will cause an infinite loop}}
+
+  if a != 0:
+    self_recursive_arg(a-1)  # No warning
+
+fn self_recursive_param[a: Int]():
+  self_recursive_param[a]() # expected-warning {{self recursive call will cause an infinite loop}}
+
+  @parameter
+  if a != 400:
+    self_recursive_param[a+1]() # No warning

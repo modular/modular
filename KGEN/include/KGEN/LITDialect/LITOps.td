@@ -121,6 +121,10 @@ def LIT_FuncOp : LITOp<"func", [
     /// Return the full signature of this declaration, including parameters from
     /// enclosing struct declarations.
     LITSignatureType getFullSignature();
+
+    /// Return a collection of the ParamDeclAttr's that are declared on this
+    /// function and any enclosing unit, ordered as will be required by a call.
+    SmallVector<ParamDeclAttr> collectAllInputParams();
   }];
 
   let builders = [
