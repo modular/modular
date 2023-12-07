@@ -32,9 +32,8 @@ std::pair<Operation *, bool> inlineRegion(IRMapping &map,
 /// function cleans it up.
 void foldTrivialLoop(Operation *op);
 
-/// Given a function, find the top-level scopes and start processing debug info
-/// from there.
-void updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName);
+/// Starting from an inlining scope, update debug information as appropriate.
+void updateScopeDebugInfoFrom(Operation *scope, bool noDebug);
 
 /// This class manages a pass manager instance for each thread.
 class PerThreadPassManagers {

@@ -116,24 +116,24 @@ void KGEN::foldTrivialLoop(Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// updateScopeDebugInfo
+// updateScopeDebugInfoFrom
 //===----------------------------------------------------------------------===//
 
-/// Starting from an inlining scope, update debug information as appropriate and
-/// fold the scope if requested. Recurse on nested scopes.
-static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
-                                     StringAttr updateAttrName,
-                                     bool stripValues) {
-  // Unpack the bits.
-  auto value = static_cast<uint8_t>(tag.getInt());
-  auto singleExit = static_cast<bool>(value & 1);
-  auto noDebug = static_cast<bool>(value >> 1);
-
+void KGEN::updateScopeDebugInfoFrom(Operation *scope, bool noDebug) {
   // The scope operations contains the location of the call.
   Region &body = scope->getRegion(0);
   Location callLoc = scope->getLoc();
 
   bool scopeIsNotSubprogram = !isa<DebugInfo::SubprogramScoped>(scope);
+  // Whether to strip values depends on the closest surrounding subprogram.
+  // If it no longer has subprogram scope, all debug values inside should be
+  // stripped. If scope is a simple loop, this checks the caller environment.
+  // Otherwise, this checks the scope itself.
+  DebugInfo::SubprogramScoped surroundingSubprogram =
+      scopeIsNotSubprogram
+          ? scope->getParentOfType<DebugInfo::SubprogramScoped>()
+          : cast<DebugInfo::SubprogramScoped>(scope);
+  bool stripValues = !surroundingSubprogram.getSubprogramScope();
   body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Erase `debuginfo.value` operations when inlining without debug info.
     if ((noDebug || stripValues) && isa<DebugInfo::ValueOp>(op)) {
@@ -145,44 +145,14 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
     if (noDebug || scopeIsNotSubprogram)
       DebugInfo::updateInlinedLoc(op, callLoc, noDebug);
 
-    // Recurse into the body if needed and allowed.
-    if (isa<HLCF::LoopOp>(op)) {
-      if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName)) {
-        updateScopeDebugInfoFrom(op, tag, updateAttrName, stripValues);
-        return WalkResult::skip();
-      }
-    } else if (isa<LIT::AsyncExecuteOp, StageClosureOp>(op)) {
-      if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName)) {
-        updateScopeDebugInfoFrom(op, tag, updateAttrName,
-                                 isa<FileLineColLoc>(op->getLoc()));
-        return WalkResult::skip();
-      }
+    // Do not need to update locations inside explicit inlined scopes.
+    // Only recurse inside if need to strip debug values or locations.
+    if (isa<DebugInfo::InlinedSubprogramScoped>(op)) {
+      if (noDebug)
+        updateScopeDebugInfoFrom(op, noDebug);
+      return WalkResult::skip();
     }
     return WalkResult::advance();
-  });
-
-  // If this scope is a trivial control-flow scope, fold it away.
-  if (singleExit)
-    foldTrivialLoop(scope);
-}
-
-void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
-  CompilerTimeTraceScope updateScopeDebugInfo(
-      "updateScopeDebugInfo", [&func] { return func.getSymName().str(); });
-  func.getBody()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (!isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op))
-      return WalkResult::advance();
-    auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
-    if (!tag)
-      return WalkResult::advance();
-
-    // If the surrounding function lacks debug info, then debug value operations
-    // have no anchor. Erase them.
-    Location surroundingFuncLoc =
-        isa<HLCF::LoopOp>(op) ? func->getLoc() : op->getLoc();
-    updateScopeDebugInfoFrom(op, tag, updateAttrName,
-                             isa<FileLineColLoc>(surroundingFuncLoc));
-    return WalkResult::skip();
   });
 }
 

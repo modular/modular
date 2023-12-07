@@ -1002,8 +1002,9 @@ struct InliningGraphNode
 struct InliningGraph
     : public InliningGraphBase<InliningGraph, InliningGraphNode> {
   explicit InliningGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
-                         StringAttr updateAttrName)
-      : InliningGraphBase(runtime), pms(pms), updateAttrName(updateAttrName) {}
+                         bool updateDebugInfo)
+      : InliningGraphBase(runtime), pms(pms), updateDebugInfo(updateDebugInfo) {
+  }
 
   /// Inline all functions marked `always_inline`.
   bool shouldInline(InliningGraphNode *node) const {
@@ -1018,9 +1019,8 @@ struct InliningGraph
   PerThreadPassManagers &pms;
   /// Set to true if any of the inner pipelines failed.
   std::atomic<bool> innerPipelineFailed = false;
-  /// When updating debug info, defer the update by tagging scope operations
-  /// with an attribute. This is null if updates are not needed.
-  StringAttr updateAttrName;
+  /// Whether to also update debuginfo.
+  bool updateDebugInfo;
 };
 } // namespace
 
@@ -1069,27 +1069,18 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       callee->mutex.unlock_shared();
     }
 
-    // If we need to perform a debug info update, defer this until inlining is
-    // done. Doing an update here results in quadratic runtime as functions are
-    // successively inlined and updated.
-    if (updateAttrName) {
-      // We don't know where the op will end up, so tag it with an attribute.
-      // Encode information {singleExit, noDebug} as bits.
-      uint8_t value =
-          singleExit |
-          ((callee->level == InlineLevel::AlwaysNoDebug || nukeDebugInfo) << 1);
-      scope->setAttr(updateAttrName,
-                     OpBuilder(scope->getContext()).getI8IntegerAttr(value));
-    } else if (singleExit) {
-      foldTrivialLoop(scope);
+    if (updateDebugInfo) {
+      bool noDebug =
+          callee->level == InlineLevel::AlwaysNoDebug || nukeDebugInfo;
+      updateScopeDebugInfoFrom(scope, noDebug);
     }
+
+    if (singleExit)
+      foldTrivialLoop(scope);
   }
 
-  // Run the function pipeline. Make sure the verifier is off. Don't do this
-  // if debuginfo needs to be updated first. Note that `Pass::runPipeline` is
-  // not thread safe due to analysis manager nesting.
-  if (updateAttrName)
-    return;
+  // Run the function pipeline. Make sure the verifier is off. Note that
+  // `Pass::runPipeline` is not thread safe due to analysis manager nesting.
   {
     CompilerTimeTraceScope traceScope("optimizeFunction");
     if (failed(pms.getPassManager().run(caller->func)))
@@ -1285,12 +1276,8 @@ void ForceInlinePass::runOnOperation() {
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
-  StringAttr updateAttrName;
-  if (updateDebugInfo)
-    updateAttrName = StringAttr::get(&getContext(), "inliner_debuginfo_update");
-
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
-  InliningGraph graph(*rt, pms, updateAttrName);
+  InliningGraph graph(*rt, pms, updateDebugInfo);
   graph.build(getOperation(), symtab);
   graph.process();
 
@@ -1302,28 +1289,6 @@ void ForceInlinePass::runOnOperation() {
   if (graph.numProcessed != graph.nodes.size()) {
     diagnoseInliningCycle(graph);
     return signalPassFailure();
-  }
-
-  // If we need to handle debug info, do that now.
-  if (updateAttrName) {
-    CompilerTimeTraceScope traceScope("updateDebugInfo");
-    LLCL::ForkJoin state(*rt);
-    std::atomic<bool> innerPipelineFailed = false;
-    for (auto &[func, node] : graph.nodes) {
-      // Update root nodes that call `always_inline` functions.
-      if (node.shouldInline() || node.callsites.empty())
-        continue;
-      state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
-        updateScopeDebugInfo(func, updateAttrName);
-        // Run the function pipeline here.
-        CompilerTimeTraceScope traceScope("optimizeFunction");
-        if (failed(pms.getPassManager().run(func)))
-          innerPipelineFailed = true;
-      });
-    }
-    state.join();
-    if (innerPipelineFailed)
-      signalPassFailure();
   }
 
   // The symbol table is invalid now; we don't remove from it. Rebuild it.

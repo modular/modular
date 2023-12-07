@@ -68,7 +68,7 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
   // CHECK-NEXT: [[V0:%.*]]lit.async.execute <() -> index> {
   // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
-  // CHECK-NEXT: } {inliner_debuginfo_update = 3 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
+  // CHECK-NEXT: } callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
   %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %0: !pop.coroutine<() -> (index)> loc(#locAsyncCaller)
