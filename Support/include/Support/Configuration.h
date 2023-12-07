@@ -40,12 +40,8 @@ namespace M {
 ///
 /// which is at
 ///
-///   Config::getModularHomeDirPath() / ".modular"
+///   Config::getModularConfigFolderPath()
 ///
-/// which is found through the MODULAR_HOME environment variable, having
-/// `.modular` in the user's PATH, the MODULAR_DERIVED_PATH environment variable
-/// for in-tree builds, or if all else fails, just in the current working
-/// directory.
 ///
 /// If there is no file at the canonical location, that does not constitute an
 /// error, it simply means that any values in the config must be derived from
@@ -108,9 +104,26 @@ public:
   void setEnvOverride(bool newVal);
 
   /// Get the path to the canonical modular home directory.
-  static std::filesystem::path getModularHomeDirPath();
+  ///
+  /// On systems that follow the XDG Base Directory Specification, this will be
+  /// the $XDG_DATA_HOME/modular folder (typically $HOME/.local/share/modular)
+  ///
+  /// On other systems except Windows, will typically be $HOME/.modular
+  static std::filesystem::path getModularDataFolderPath();
+
+  /// Get the path to the canonical modular config folder.
+  ///
+  /// NOTE: This will be the same as the modular data folder on systems that
+  /// don't follow the XDG Base Directory Specification.
+  ///
+  /// On systems that do follow the XDG Base Directory Specification, this will
+  /// be the $XDG_CONFIG_HOME/modular folder (typically $HOME/.config/modular)
+  ///
+  /// On other systems except Windows, will typically be $HOME/.modular
+  static std::filesystem::path getModularConfigFolderPath();
 
   /// Get the path to the canonical modular config file.
+  /// Often $XDG_CONFIG_HOME/modular/modular.cfg or $HOME/.modular/modular.cfg
   static std::filesystem::path getConfigFilePath();
 
 private:

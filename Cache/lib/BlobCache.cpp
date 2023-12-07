@@ -551,7 +551,7 @@ getVersionedFilesystemBackend(LLCL::Runtime &runtime,
   std::error_code ec;
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
-    std::filesystem::path homePath = Config::getModularHomeDirPath();
+    std::filesystem::path homePath = Config::getModularDataFolderPath();
 
     // Default to the .derived directory.
     if (auto path = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {

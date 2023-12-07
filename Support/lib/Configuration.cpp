@@ -18,8 +18,13 @@
 
 using namespace M;
 
+/// Folder type for searching.
+namespace {
+enum class FolderType { Config, Data };
+}
+
 ErrorOr<Config> Config::open() {
-  std::filesystem::path homeDirPath = getModularHomeDirPath();
+  std::filesystem::path homeDirPath = getModularDataFolderPath();
 
   std::error_code ec;
   // If the modular home directory doesn't even exist, return early. We don't
@@ -364,11 +369,42 @@ ErrorOrSuccess Config::flush() {
 }
 
 /// Get the list of search paths, in order of preference.
-static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths) {
+static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
+                           FolderType type) {
 #ifndef _WIN32
-  // Add $HOME/.modular
+
+  // To support existing installs, add $HOME/.modular if it exists. If it
+  // does it always takes precedence.
   auto homeDir = llvm::sys::Process::GetEnv("HOME");
-  if (homeDir)
+  bool addedHome = false;
+  if (homeDir) {
+    auto path = std::filesystem::path(*homeDir) / ".modular";
+    if (std::filesystem::exists(path)) {
+      paths.push_back(path);
+      addedHome = true;
+    }
+  }
+
+  // Second we check for XDG_CONFIG_HOME and XDG_DATA_HOME. If they exist, we
+  // use them. We deviate from the spec here and use $HOME/.config/modular and
+  // `$HOME/.local/share/modular` as the spec says when the XDG_*_HOME variables
+  // are not set. We will instead still default to `$HOME/.modular`.
+  //
+  // BOTH of these must be set for us to use them otherwise things may break.
+  auto xdgConfigHome = llvm::sys::Process::GetEnv("XDG_CONFIG_HOME");
+  auto xdgConfigData = llvm::sys::Process::GetEnv("XDG_DATA_HOME");
+  if (xdgConfigHome && xdgConfigData) {
+    if (type == FolderType::Config) {
+      auto path = std::filesystem::path(*xdgConfigHome) / "modular";
+      paths.push_back(path);
+    } else if (type == FolderType::Data) {
+      auto path = std::filesystem::path(*xdgConfigData) / "modular";
+      paths.push_back(path);
+    }
+  }
+
+  // Lastly if we haven't added $HOME/.modular in first step, add it now.
+  if (!addedHome && homeDir)
     paths.push_back(std::filesystem::path(*homeDir) / ".modular");
 
   // Add /opt/modular
@@ -381,7 +417,7 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths) {
 #endif // _WIN32
 }
 
-std::filesystem::path Config::getModularHomeDirPath() {
+static std::filesystem::path findBestPathForType(FolderType type) {
   // If MODULAR_HOME is defined, use that.
   auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
   if (modularHome)
@@ -393,11 +429,11 @@ std::filesystem::path Config::getModularHomeDirPath() {
     return *derivedPath;
 
   // Get the list of search paths.
-  SmallVector<std::filesystem::path, 2> searchPaths;
-  getSearchPaths(searchPaths);
+  SmallVector<std::filesystem::path, 3> searchPaths;
+  getSearchPaths(searchPaths, type);
 
-  // Check each of the search paths for existence - if none of them exist return
-  // the first of the paths as MODULAR_HOME.
+  // Check each of the search paths for existence - if none of them exist
+  // return the first of the paths as MODULAR_HOME.
   auto found =
       llvm::find_if(searchPaths, [&](const std::filesystem::path &path) {
         std::error_code ec;
@@ -408,6 +444,14 @@ std::filesystem::path Config::getModularHomeDirPath() {
   if (found == searchPaths.end())
     return searchPaths.front();
   return *found;
+}
+
+std::filesystem::path Config::getModularConfigFolderPath() {
+  return findBestPathForType(FolderType::Config);
+}
+
+std::filesystem::path Config::getModularDataFolderPath() {
+  return findBestPathForType(FolderType::Data);
 }
 
 std::filesystem::path Config::getConfigFilePath() {
@@ -424,7 +468,7 @@ std::filesystem::path Config::getConfigFilePath() {
     return *configFile;
 
   // Otherwise, return where it should be placed.
-  return getModularHomeDirPath() / kModularConfigFileName.str();
+  return getModularConfigFolderPath() / kModularConfigFileName.str();
 }
 
 void Config::setEnvOverride(bool newVal) { allowEnvOverride = newVal; }
@@ -432,16 +476,16 @@ void Config::setEnvOverride(bool newVal) { allowEnvOverride = newVal; }
 std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
   // First try and find it in the home dir if we can.
   std::error_code ec;
-  if (std::filesystem::exists(Config::getModularHomeDirPath() / fileName.str(),
-                              ec)) {
+  if (std::filesystem::exists(
+          Config::getModularDataFolderPath() / fileName.str(), ec)) {
     assert(!ec && "error trying to check for file existence");
-    return Config::getModularHomeDirPath() / fileName.str();
+    return Config::getModularDataFolderPath() / fileName.str();
   }
 
   // Now we can use the search paths on the system, we didn't find it in the
   // home dir.
-  SmallVector<std::filesystem::path, 3> searchPaths;
-  getSearchPaths(searchPaths);
+  SmallVector<std::filesystem::path, 4> searchPaths;
+  getSearchPaths(searchPaths, FolderType::Config);
 #ifndef _WIN32
   // Append a path to the search paths on UNIX systems.
   searchPaths.push_back(std::filesystem::path("/etc/modular"));
