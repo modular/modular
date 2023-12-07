@@ -79,6 +79,10 @@ public:
   /// Emit any after-call actions collected during call emission.
   void emitAfterCallActions() { afterCallActions.emit(); }
 
+  /// Emit warnings about incorrect code in a direct call.
+  void emitDirectCallWarnings(LIT::CallOp call,
+                              const CallOperands &callOperands);
+
 private:
   /// The (type-checked and resolved) callee we are emitting the call to.
   CRValue callee;
@@ -755,6 +759,79 @@ static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
   return BindTypeAttr::get(PValue(coroType), typeExpr);
 }
 
+/// Emit warnings about incorrect code in a direct call.  This is invoked after
+/// the full IR for the call is emitted, so we know that it was a valid call.
+void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
+                                         const CallOperands &callOperands) {
+  SymbolConstantAttr symbol = call.getCallee();
+
+  // Figure out what is getting called.
+  ASTDecl *calleeDecl =
+      emitter.getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol());
+  if (!calleeDecl)
+    return;
+  auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
+
+  // Check to see if this is a self-recursive function call.
+  if (ASTDecl *callerDecl =
+          emitter.declScope.getNearestDeclOfType<LIT::FuncOp>()) {
+    if (calleeDecl == callerDecl) {
+      auto callerFunc = cast<LIT::FuncOp>(*callerDecl);
+
+      // We only diagnose self-recursive calls with obviously identical
+      // arguments or parameters.  Note that we don't need to check argument
+      // conventions here because you don't need to pass
+      bool allIdentical = true;
+      assert(call.getNumOperands() == callerFunc.getNumArguments() &&
+             "parameter mismatch");
+      for (auto [argValue, argDecl] :
+           llvm::zip(call.getOperands(), callerFunc.getArguments())) {
+        if (argValue != argDecl) {
+          allIdentical = false;
+          break;
+        }
+      }
+      // Compare parameters if all arguments match.
+      if (allIdentical) {
+        SmallVector<ParamDeclAttr> paramDecls =
+            callerFunc.collectAllInputParams();
+        assert(symbol.getParamValues().size() == paramDecls.size() &&
+               "parameter mismatch");
+        for (auto [paramValue, paramDecl] :
+             llvm::zip(symbol.getParamValues(), paramDecls)) {
+          auto valueRef = dyn_cast<ParamDeclRefAttr>(paramValue);
+          if (!valueRef || valueRef.getName() != paramDecl.getName()) {
+            allIdentical = false;
+            break;
+          }
+        }
+      }
+
+      if (allIdentical) {
+        emitter.emitWarning(loc)
+            << "self recursive call will cause an infinite loop"
+            << callExpr->getRange();
+        return;
+      }
+    }
+  }
+
+  // The __del__ special function takes its operand as an owning reference,
+  // and destroys it.  It is a bit silly, but you can call it directly on an
+  // RValue and it will destroy the RValue explicitly.  However, some folks
+  // will call it on a local variable (or other !RValue reference) which will
+  // actually cause a COPY of the source value, and then explicitly destroy
+  // this copy of the value.  Emit a warning in this case.
+  if (calleeFunc.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
+      callOperands.posOperands.size() == 1 && // defensive.
+      callOperands.posOperands[0].ir.getIfRValue().isNull()) {
+    emitter.emitWarning(loc) << "explicit call to '__del__' destroys a copy of "
+                                "the value; consider removing this call"
+                             << callOperands.posOperands[0].expr->getRange();
+    return;
+  }
+}
+
 CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                       const CallOperands &callOperands,
                                       ArrayRef<ParamDeclAttr> resultParams,
@@ -861,6 +938,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                           /*lifetimeParams=*/std::nullopt,
                                           resultParams, callArgs);
       callResult = call.getResult(0);
+
+      // If there are any callee-specific warnings to emit, do so after
+      // successfully emitting the call.
+      callEmitter.emitDirectCallWarnings(call, callOperands);
     } else {
       auto call = builder->create<CallParamOp>(
           loc, resultType, target.get(), resultParams,

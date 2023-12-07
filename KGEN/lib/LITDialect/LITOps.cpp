@@ -847,6 +847,13 @@ static void collectContextParameters(Operation *op,
   llvm::append_range(params, decl.getInputParams());
 }
 
+SmallVector<ParamDeclAttr> LIT::FuncOp::collectAllInputParams() {
+  SmallVector<ParamDeclAttr> result;
+  collectContextParameters(getOperation()->getParentOp(), result);
+  llvm::append_range(result, getInputParams());
+  return result;
+}
+
 LITSignatureType LIT::FuncOp::getFullSignature() {
   LITSignatureType signature = getSignature();
 
