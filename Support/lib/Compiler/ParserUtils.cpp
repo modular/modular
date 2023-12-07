@@ -10,9 +10,37 @@
 
 using namespace M;
 
+/// Returns true if all values are distinct.
+static bool allDistinct(const SmallVector<Value> &values) {
+  DenseSet<Value> unique;
+  for (auto value : values)
+    unique.insert(value);
+  return unique.size() == values.size();
+}
+
+ParseResult
+M::parseRegion(OpAsmParser &parser,
+               const SmallVector<OpAsmParser::Argument> &argumentInfo,
+               Region &region, bool isIsolatedFromAbove) {
+  return parser.parseRegion(region, argumentInfo,
+                            /*enableNameShadowing=*/isIsolatedFromAbove);
+}
+
+void M::printRegion(OpAsmPrinter &printer, const OperandRange &operands,
+                    Region &region, bool isIsolatedFromAbove) {
+  assert(operands.size() == region.getNumArguments());
+  if (isIsolatedFromAbove && allDistinct(operands)) {
+    printer.shadowRegionArgs(region, operands);
+    printer.printRegion(region, /*printEntryBlockArgs=*/false);
+  } else {
+    printer.printRegion(region, /*printEntryBlockArgs=*/false);
+  }
+}
+
 ParseResult M::parseParenOperandListWithShadowing(
     OpAsmParser &parser, OperationState &state,
-    SmallVectorImpl<OpAsmParser::Argument> &argumentInfo) {
+    SmallVectorImpl<OpAsmParser::Argument> &argumentInfo,
+    bool isIsolatedFromAbove) {
   llvm::SMLoc loc = parser.getCurrentLocation();
 
   auto parseOperandFn = [&]() -> ParseResult {
@@ -26,10 +54,14 @@ ParseResult M::parseParenOperandListWithShadowing(
                             /*allowResultNumber=*/false))
       return failure();
 
-    // Parse an optional 'as' clause to name the nested block
-    // argument. This can be used to given nested blocks a unique argument name
-    // even if the same SSA value is repeated as on operand.
-    if (succeeded(parser.parseOptionalKeyword("as"))) {
+    // Parse an 'as' clause to name the nested block arguments. This can be
+    // used to given nested blocks a unique argument name even if the same
+    // SSA value is repeated as on operand.
+    if (!isIsolatedFromAbove) {
+      if (parser.parseKeyword("as") ||
+          parser.parseOperand(arg.ssaName, /*allowResultNumber=*/false))
+        return failure();
+    } else if (succeeded(parser.parseOptionalKeyword("as"))) {
       if (parser.parseOperand(arg.ssaName, /*allowResultNumber=*/false))
         return failure();
     } else {
@@ -70,6 +102,26 @@ ParseResult M::parseParenOperandListWithShadowing(
   return success();
 }
 
+void M::printParenOperandListWithShadowing(
+    OpAsmPrinter &printer, const OperandRange &operands,
+    const Block::BlockArgListType &arguments, bool isIsolatedFromAbove) {
+  assert(operands.size() == arguments.size());
+  bool needAs = !isIsolatedFromAbove || !allDistinct(operands);
+  printer << "(";
+  bool first = true;
+  for (auto [operand, arg] : llvm::zip(operands, arguments)) {
+    if (first)
+      first = false;
+    else
+      printer << ", ";
+    printer << operand;
+    if (needAs)
+      printer << " as " << arg;
+    printer << ": " << operand.getType();
+  }
+  printer << ")";
+}
+
 ParseResult M::parseParenOperandListWithDefaultType(OpAsmParser &parser,
                                                     OperationState &state,
                                                     Type defaultType) {
@@ -99,41 +151,6 @@ ParseResult M::parseParenOperandListWithDefaultType(OpAsmParser &parser,
                                         parseOperandFn, "in operand list");
 }
 
-/// Returns true if all values are distinct.
-static bool allDistinct(const SmallVector<Value> &values) {
-  DenseSet<Value> unique;
-  for (auto value : values)
-    unique.insert(value);
-  return unique.size() == values.size();
-}
-
-ParseResult M::parseRegionWithShadowing(
-    OpAsmParser &parser, const SmallVector<OpAsmParser::Argument> &argumentInfo,
-    Region &region) {
-  return parser.parseRegion(region, argumentInfo,
-                            /*enableNameShadowing=*/true);
-}
-
-void M::printParenOperandListWithShadowing(
-    OpAsmPrinter &printer, const OperandRange &operands,
-    const Block::BlockArgListType &arguments) {
-  assert(operands.size() == arguments.size());
-  bool needAs = !allDistinct(operands);
-  printer << "(";
-  bool first = true;
-  for (auto [op, arg] : llvm::zip(operands, arguments)) {
-    if (first)
-      first = false;
-    else
-      printer << ", ";
-    printer << op;
-    if (needAs)
-      printer << " as " << arg;
-    printer << ": " << op.getType();
-  }
-  printer << ")";
-}
-
 void M::printParenOperandListWithDefaultType(OpAsmPrinter &printer,
                                              const OperandRange &operands,
                                              Type defaultType) {
@@ -145,18 +162,6 @@ void M::printParenOperandListWithDefaultType(OpAsmPrinter &printer,
   printer << '(';
   llvm::interleaveComma(operands, printer, printArg);
   printer << ')';
-}
-
-void M::printRegionWithShadowing(OpAsmPrinter &printer,
-                                 const OperandRange &operands, Region &region) {
-  assert(operands.size() == region.getNumArguments());
-  bool canShadow = allDistinct(operands);
-  if (canShadow) {
-    printer.shadowRegionArgs(region, operands);
-    printer.printRegion(region, /*printEntryBlockArgs=*/false);
-  } else {
-    printer.printRegion(region, /*printEntryBlockArgs=*/false);
-  }
 }
 
 ParseResult M::parseInOutArgsSignature(
