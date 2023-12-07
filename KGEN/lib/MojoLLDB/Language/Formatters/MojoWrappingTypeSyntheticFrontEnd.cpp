@@ -41,6 +41,8 @@ bool MojoWrappingTypeSyntheticFrontEnd::Update() {
     else
       wrappedValue = {};
   }
+  // We don't emit any user facing errors here because they are taken care of
+  // by `mojoREPLResultRefTypeSummaryProvider`.
   return false;
 }
 
