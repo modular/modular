@@ -24,8 +24,16 @@ M::KGEN::Mojo::mojoREPLResultRefTypeSyntheticFrontEndCreator(
 bool M::KGEN::Mojo::mojoREPLResultRefTypeSummaryProvider(
     ValueObject &valobj, Stream &stream,
     const TypeSummaryOptions &summaryOptions) {
-  ValueObjectSP implValue =
-      valobj.GetNonSyntheticValue()->GetChildAtIndex(0)->GetChildAtIndex(0);
+  auto nonSyntheticValue = valobj.GetNonSyntheticValue();
+  if (!nonSyntheticValue)
+    return false;
+  auto pointerValue = nonSyntheticValue->GetChildAtIndex(0);
+  if (!pointerValue)
+    return false;
+  auto implValue = pointerValue->GetChildAtIndex(0);
+  if (!implValue)
+    return false;
+
   ValueObjectSP effectiveValue = implValue->HasSyntheticValue()
                                      ? implValue->GetSyntheticValue()
                                      : implValue;

@@ -32,28 +32,26 @@ struct MojoTypeDataLayoutContext::Impl {
   std::optional<MojoTypeDataLayout>
   calculateForStruct(MojoASTTypeRef type, LIT::StructDeclOp structOp);
 
+  /// Calculate the data layout of the given pack.
+  std::optional<MojoTypeDataLayout> calculateForPack(MojoASTTypeRef typeRef,
+                                                     PackType packType);
+
+  /// Calculate the data layout of a struct-like collection of types.
+  std::optional<MojoTypeDataLayout>
+  calculateForStructLike(ArrayRef<MojoASTTypeRef> fieldTypes);
+
   DenseMap<Type, std::optional<MojoTypeDataLayout>> cache;
   MojoParserContext &context;
   TargetInfoAttr targetInfo;
 };
 
 std::optional<MojoTypeDataLayout>
-MojoTypeDataLayoutContext::Impl::calculateForStruct(
-    MojoASTTypeRef typeRef, LIT::StructDeclOp structOp) {
-  auto refType = cast<DeclRefType>(typeRef);
+MojoTypeDataLayoutContext::Impl::calculateForStructLike(
+    ArrayRef<MojoASTTypeRef> fieldTypes) {
   uint64_t size = 0, align = 1;
   MojoTypeDataLayout layout;
 
-  for (LIT::StructFieldOp field : structOp.getFieldDecls()) {
-    MojoASTTypeRef fieldType = MojoASTTypeRef(field.getTypeAttr().getValue());
-
-    // If the DeclRefType has parameters, try to evaluate and substitute them
-    // into the type.
-    if (!refType.getParamValues().empty()) {
-      fieldType =
-          context.concretizeType(typeRef, refType.getParamValues(), fieldType);
-    }
-
+  for (MojoASTTypeRef fieldType : fieldTypes) {
     auto &fieldLayout = getOrCalculate(fieldType);
     // If we cannot calculate the layout of a field, we bail because reporting
     // an incorrect size for this struct might result in miscalculating the
@@ -70,6 +68,36 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
   layout.setByteSize(llvm::alignTo(size, align));
   layout.setAlignment(align);
   return layout;
+}
+
+std::optional<MojoTypeDataLayout>
+MojoTypeDataLayoutContext::Impl::calculateForStruct(
+    MojoASTTypeRef typeRef, LIT::StructDeclOp structOp) {
+  auto refType = cast<DeclRefType>(typeRef);
+  return calculateForStructLike(llvm::map_to_vector(
+      structOp.getFieldDecls(), [&](LIT::StructFieldOp field) {
+        MojoASTTypeRef fieldType =
+            MojoASTTypeRef(field.getTypeAttr().getValue());
+        // If the DeclRefType has parameters, try to evaluate and substitute
+        // them into the type.
+        if (!refType.getParamValues().empty()) {
+          fieldType = context.concretizeType(typeRef, refType.getParamValues(),
+                                             fieldType);
+        }
+        return fieldType;
+      }));
+}
+
+std::optional<MojoTypeDataLayout>
+MojoTypeDataLayoutContext::Impl::calculateForPack(MojoASTTypeRef typeRef,
+                                                  PackType packType) {
+  auto attr = dyn_cast<VariadicAttr>(packType.getVariadic());
+  if (!attr)
+    return {};
+  return calculateForStructLike(
+      llvm::map_to_vector(attr.getValues(), [&](TypedAttr value) {
+        return MojoASTTypeRef(value);
+      }));
 }
 
 const std::optional<MojoTypeDataLayout> &
@@ -93,6 +121,10 @@ MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
       return calculateForStruct(type, structDeclOp);
     }
   }
+
+  if (auto packType = dyn_cast<KGEN::PackType>(type))
+    return calculateForPack(type, packType);
+
   std::optional<uint64_t> size =
       DataLayoutInterface::getTypeStoreSize(targetInfo, type.getMLIRType());
   std::optional<uint64_t> alignment =
