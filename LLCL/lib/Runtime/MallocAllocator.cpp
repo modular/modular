@@ -6,7 +6,6 @@
 
 #include "LLCL/Runtime/Allocator.h"
 #include "Support/AlignedAlloc.h"
-#include <sys/mman.h>
 
 using namespace M;
 using namespace M::LLCL;
