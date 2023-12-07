@@ -1693,7 +1693,7 @@ def KGEN_VariantGetOp : KGENOp<"variant.get", [Pure,
 // CaptureListCreate
 //===----------------------------------------------------------------------===//
 
-def KGEN_CaptureListCreate : KGENOp<"capture_list.create"> {
+def KGEN_CaptureListCreate : KGEN_CallOpBase<"capture_list.create"> {
   let summary = "Create a capture list for a capturing closure.";
   let description = [{
     The `kgen.capture_list.create` operation creates a capture list
@@ -1707,6 +1707,13 @@ def KGEN_CaptureListCreate : KGENOp<"capture_list.create"> {
   }];
 
   let results = (outs KGEN_CaptureListType:$result);
+
+  let extraClassDeclaration = [{
+    // Functions to satisfy CallOpInterface requirements.
+    ValueRange getOperands() { return {}; }
+    void setParamDeclsAttr(ParamDeclArrayAttr attr) {}
+  }];
+
   let assemblyFormat = "attr-dict `:` type($result)";
 }
 
