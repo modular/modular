@@ -7,6 +7,9 @@ interactive development experience. Mojo provides a powerful REPL experience
 built on top of the [LLDB debugger](https://lldb.llvm.org/), which also provides
 the debugging environment for the Mojo Language.
 
+See the `MojoLLDB.md` document for additional information for Mojo REPL
+developers.
+
 ## Getting started
 
 There are several entry points with which to experience the Mojo REPL, with the

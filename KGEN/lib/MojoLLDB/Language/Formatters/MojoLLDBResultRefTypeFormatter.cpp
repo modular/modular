@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoLLDBResultRefTypeFormatter.h"
+#include "../../Logging/Errors.h"
 #include "MojoWrappingTypeSyntheticFrontEnd.h"
 
 using namespace lldb;
@@ -24,19 +25,28 @@ M::KGEN::Mojo::mojoREPLResultRefTypeSyntheticFrontEndCreator(
 bool M::KGEN::Mojo::mojoREPLResultRefTypeSummaryProvider(
     ValueObject &valobj, Stream &stream,
     const TypeSummaryOptions &summaryOptions) {
-  auto nonSyntheticValue = valobj.GetNonSyntheticValue();
-  if (!nonSyntheticValue)
-    return false;
-  auto pointerValue = nonSyntheticValue->GetChildAtIndex(0);
-  if (!pointerValue)
-    return false;
-  auto implValue = pointerValue->GetChildAtIndex(0);
-  if (!implValue)
-    return false;
+  auto findEffectiveValue = [&]() -> ValueObjectSP {
+    auto nonSyntheticValue = valobj.GetNonSyntheticValue();
+    if (!nonSyntheticValue)
+      return {};
+    auto pointerValue = nonSyntheticValue->GetChildAtIndex(0);
+    if (!pointerValue)
+      return {};
+    auto implValue = pointerValue->GetChildAtIndex(0);
+    if (!implValue)
+      return {};
+    return implValue->HasSyntheticValue() ? implValue->GetSyntheticValue()
+                                          : implValue;
+  };
 
-  ValueObjectSP effectiveValue = implValue->HasSyntheticValue()
-                                     ? implValue->GetSyntheticValue()
-                                     : implValue;
+  ValueObjectSP effectiveValue = findEffectiveValue();
+  if (!effectiveValue) {
+    EMIT_BUG_REPORT_MESSAGE(
+        "unable to inspect the REPL resultant variable '{0}'.",
+        valobj.GetTypeName().GetCString());
+    return false;
+  }
+
   std::string dest;
   effectiveValue->GetSummaryAsCString(dest, summaryOptions);
   if (dest.empty())
