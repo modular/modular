@@ -165,6 +165,88 @@ char MojoUserExpression::ID;
 // Expression parsing and execution
 //===----------------------------------------------------------------------===//
 
+// Process cell magics within the given expression.
+static LogicalResult processMagics(DiagnosticManager &diagnosticManager,
+                                   std::string &exprText,
+                                   MojoTypeSystem &typeSystem) {
+  SmallVector<StringRef, 4> lines;
+  llvm::SplitString(exprText, lines, "\n");
+
+  // Process each line looking for a magic.
+  SmallVector<unsigned> magicPositions;
+  bool hadNonMagic = false;
+  for (StringRef line : lines) {
+    line = line.ltrim();
+    if (line.empty())
+      continue;
+    if (!line.starts_with("%")) {
+      hadNonMagic = !line.starts_with("#");
+      continue;
+    }
+    bool isCellMagic = line.starts_with("%%");
+
+    // Split the line into the magic name and the rest of the line.
+    auto [magicName, magicArgs] = line.split(' ');
+    magicName = magicName.drop_front(isCellMagic ? 2 : 1);
+    magicArgs = magicArgs.trim();
+
+    // We want to let the user know if we see a magic incorrectly placed the
+    // middle in the expression without triggering the actual expression
+    // evaluation. We don't yet support any magics that we can process in the
+    // middle of an expression, so we just error out.
+    if (hadNonMagic) {
+      const char *errorFmt =
+          "`%%{0}` can only be at the beginning of an expression.";
+      diagnosticManager.AddDiagnostic(std::make_unique<MojoDiagnostic>(
+          llvm::formatv(errorFmt, magicName).str(), eDiagnosticSeverityError,
+          false));
+      return failure();
+    }
+
+    auto reportUnknownMagic = [&, magicName = magicName] {
+      diagnosticManager.PutString(
+          eDiagnosticSeverityError,
+          llvm::formatv("unknown magic: {0}", magicName).str());
+      return failure();
+    };
+
+    if (isCellMagic) {
+      // The processing of python magic is done separately, but we
+      // can do some verification now.
+      if (magicName == "python")
+        continue;
+      return reportUnknownMagic();
+    }
+
+    // Process a change of working directory.
+    if (magicName == "cd") {
+      if (magicArgs.empty()) {
+        diagnosticManager.PutString(
+            eDiagnosticSeverityError,
+            "'%%cd' magic requires a directory argument, or '-' to pop the "
+            "directory stack");
+        return failure();
+      }
+      if (magicArgs == "-")
+        typeSystem.popWorkingDirectory();
+      else
+        typeSystem.pushWorkingDirectory(magicArgs);
+    } else {
+      return reportUnknownMagic();
+    }
+
+    // Remove the magic from the expression.
+    magicPositions.push_back(line.data() - exprText.data());
+  }
+
+  // Insert a comment at the start of each magic line so that the line numbers
+  // in the error messages are correct.
+  for (auto pos : llvm::reverse(magicPositions))
+    exprText.insert(pos, "# ");
+
+  return success();
+}
+
 bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
                                ExecutionContext &exeCtx,
                                ExecutionPolicy executionPolicy,
@@ -198,17 +280,10 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
     diagnosticManager.Clear();
   });
 
-  StringRef exprText(m_expr_text);
-
-  // We want to let the user know if `%%python\n` is incorrectly placed
-  // the middle in the expression without triggering the actual expression
-  // evaluation.
-  if (exprText.contains("\n%%python")) {
-    diagnosticManager.AddDiagnostic(std::make_unique<MojoDiagnostic>(
-        "`%%python` can only be at the beginning of an expression.",
-        eDiagnosticSeverityError, false));
+  // Process any magics used in the cell.
+  if (failed(processMagics(diagnosticManager, m_expr_text, impl->typeSystem)))
     return false;
-  }
+  StringRef exprText(m_expr_text);
 
   // If the expression starts with `%%python`, the user wants to treat this as a
   // python expression. Otherwise, it should be treated as a Mojo expression.

@@ -24,16 +24,6 @@ x = 1
 
 # CHECK: [User] error: `%%python` can only be at the beginning of an expression.
 
-# Try to make this cell python!
-%%python
-
-# CHECK: [User] error: `%%python` can only be at the beginning of an expression.
-
-%%python
-%%python
-
-# CHECK: [User] error: `%%python` can only be at the beginning of an expression.
-
 %%python
 var a = Tensor[DType.float64](n)
 

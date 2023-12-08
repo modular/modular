@@ -75,6 +75,16 @@ public:
   static llvm::StringRef getPluginNameStatic() { return "Mojo"; }
 
   //===--------------------------------------------------------------------===//
+  // Expression Parsing
+  //===--------------------------------------------------------------------===//
+
+  /// Push a new working directory to the parser context.
+  void pushWorkingDirectory(StringRef workingDirectory);
+
+  /// Pop the last working directory from the parser context.
+  void popWorkingDirectory();
+
+  //===--------------------------------------------------------------------===//
   // Dumping
   //===--------------------------------------------------------------------===//
 
