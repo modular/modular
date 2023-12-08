@@ -878,7 +878,7 @@ struct ValueMem:
 # CHECK-SAME:  %[[SELF:.*]][*""]: !kgen.pointer<!ValueMem> init_self,
 # CHECK-SAME:  %a[a]: !Int borrow,
 # CHECK-SAME:  %b[b]: !StructExample
-# CHECK-SAME: ) -> !kgen.none attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
+# CHECK-SAME: ) -> !kgen.none attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
 # CHECK-NEXT: %[[PA:.*]] = lit.struct.gep %[[SELF]][a]
 # CHECK-NEXT: pop.store %a, %[[PA]]
 # CHECK-NEXT: %[[PB:.*]] = lit.struct.gep %[[SELF]][b]
@@ -964,6 +964,16 @@ struct TraitMember[T: Copyable]:
     # CHECK: call_param{{.*}}__copyinit__
     # CHECK: lit.func @"__moveinit__
     # CHECK: call_param{{.*}}__copyinit__
+
+# CHECK: lit.func @"notSynthetic{{.*}}"(%self[self]: !kgen.pointer<!NotSynthetic> borrow_in_mem) -> !kgen.none attributes {isParametric, sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.func @"__init__{{.*}}isSynthetic
+# CHECK: lit.func @"__copyinit__{{.*}}isSynthetic
+# CHECK: lit.func @"__moveinit__{{.*}}isSynthetic
+@value
+struct NotSynthetic:
+   var member: __mlir_type.`index`
+   fn notSynthetic(self):
+      pass
 
 ##===----------------------------------------------------------------------===##
 # async/await
