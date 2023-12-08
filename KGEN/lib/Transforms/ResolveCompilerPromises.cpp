@@ -129,9 +129,6 @@ static void resolveCaptureListCreate(CaptureListCreate captureListCreate,
       captureListType.getTypeSize(targetInfo);
   assert(captureListTypeSize && "invalid KGEN::CaptureListCreate");
 
-  PointerType nonePtr =
-      PointerType::get(KGEN::NoneType::get(captureListCreate->getContext()));
-
   ImplicitLocOpBuilder b(captureListCreate->getLoc(),
                          OpBuilder(captureListCreate));
   // Allocate the memory for the actual capture state.
