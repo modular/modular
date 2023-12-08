@@ -239,6 +239,40 @@ ErrorOrSuccess Keypair::validateSignature(StringRef signedData,
   return success();
 }
 
+ErrorOr<std::string> Keypair::sign(StringRef data) {
+  // For now, we always use SHA256 because that's what TUF uses. This could
+  // easily be parametrized if we wanted to, though.
+  const mbedtls_md_info_t *mdInfo =
+      mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+
+  // We can use a static hash size here because we statically know we're using
+  // SHA256.
+  std::array<uint8_t, 32> hashOutput = {};
+  int rc =
+      mbedtls_md(mdInfo, data.bytes_begin(), data.size(), hashOutput.data());
+  if (rc != 0)
+    return Error(mbedTLSErrorToString(rc));
+
+  uint8_t numBytes = mbedtls_md_get_size(mdInfo);
+
+  // Allocate at least enough bytes for the signature.
+  std::string signature(MBEDTLS_PK_SIGNATURE_MAX_SIZE, '\0');
+
+  // Sign it - this will write the bytes directly to the string and then we'll
+  // resize it to whatever the actual signature size is.
+  size_t siglen = 0;
+  SecureRandomBytesGenerator rng;
+  rc = mbedtls_pk_sign(getRawKey(), MBEDTLS_MD_SHA256, hashOutput.data(),
+                       numBytes, (uint8_t *)signature.data(), signature.size(),
+                       &siglen, csprng, &rng);
+  if (rc != 0)
+    return Error(mbedTLSErrorToString(rc));
+
+  // Done, return the resized signature string.
+  signature.resize(siglen);
+  return std::move(signature);
+}
+
 ErrorOr<std::string> Keypair::getTUFKeyID() const {
   // See securesystemslib/keys.py:374 (format_keyval_to_metadata) to see how the
   // key ID is expected to be formatted.
