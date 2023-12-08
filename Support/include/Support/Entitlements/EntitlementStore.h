@@ -78,7 +78,7 @@ public:
 private:
   /// This will verify the client's certificate chain and flush it to disk if
   /// and only if it's valid.
-  ErrorOrSuccess verifyAndFlushClientCert();
+  ErrorOrSuccess verifyAndFlushClientCert(HTTPClient &client);
 
   /// Given a PEM buffer with one or more certificates, parse them and take any
   /// entitlements that might be encoded in the extensions and put them in the
@@ -111,6 +111,9 @@ private:
 
   /// Store the client keys. If these cannot be found, they'll be generated.
   Keypair clientKeys;
+
+  /// This is a local reference to the CRL. If we have it, it'll be PEM-encoded.
+  BufferRef crlPEM;
 };
 } // namespace M
 
