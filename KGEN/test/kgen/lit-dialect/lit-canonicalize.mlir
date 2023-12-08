@@ -115,3 +115,15 @@ kgen.func @hoist() -> !pop.coroutine<() -> ()> {
   }
   kgen.return %0 : !pop.coroutine<() -> ()>
 }
+
+// CHECK-LABEL: @no_cse_async_execute
+kgen.func @no_cse_async_execute() -> (!pop.coroutine<() -> ()>, !pop.coroutine<() -> ()>) {
+  // CHECK-COUNT-2: lit.async.execute
+  %0 = lit.async.execute <() -> ()> {
+    kgen.return
+  }
+  %1 = lit.async.execute <() -> ()> {
+    kgen.return
+  }
+  kgen.return %0, %1 : !pop.coroutine<() -> ()>, !pop.coroutine<() -> ()>
+}
