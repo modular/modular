@@ -165,8 +165,7 @@ public:
   /// is provided (in PEM format) then it's used to check if any certificates in
   /// the chain have been revoked. The CRL PEM must include the null terminating
   /// byte at the end!
-  ErrorOrSuccess verify(Keypair &clientKeys,
-                        std::optional<BufferRef> crlPEM = std::nullopt);
+  ErrorOrSuccess verify(Keypair &clientKeys, StringRef crlPEM);
 
   /// Get the PEM buffer for this certificate chain.
   StringRef getPEM() const {
@@ -256,9 +255,8 @@ Detail::CertificateChain::fromPEM(mbedtls_x509_crt_ext_cb_t cb, void *ctx,
 // Detail::CertificateChain::verify
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess
-Detail::CertificateChain::verify(Keypair &clientKeys,
-                                 std::optional<BufferRef> crlPEM) {
+ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys,
+                                                StringRef crlPEM) {
   // Find and open the root certs.
   mbedtls_x509_crt caCerts;
   mbedtls_x509_crt_init(&caCerts);
@@ -270,10 +268,9 @@ Detail::CertificateChain::verify(Keypair &clientKeys,
   mbedtls_x509_crl caCRL;
   mbedtls_x509_crl_init(&caCRL);
   auto freeCRL = llvm::make_scope_exit([&] { mbedtls_x509_crl_free(&caCRL); });
-  if (crlPEM) {
-    int rc = mbedtls_x509_crl_parse(
-        &caCRL, (const uint8_t *)(*crlPEM)->getBufferStart(),
-        (*crlPEM)->getBufferSize());
+  if (!crlPEM.empty()) {
+    int rc =
+        mbedtls_x509_crl_parse(&caCRL, crlPEM.bytes_begin(), crlPEM.size());
     if (rc != 0)
       return Error(mbedTLSErrorToString(rc));
   }
@@ -546,7 +543,7 @@ static ErrorOrSuccess generateCSR(Keypair &keys, llvm::StringRef subject,
 // EntitlementStore Constructor/Destructor
 //===----------------------------------------------------------------------===//
 
-EntitlementStore::EntitlementStore() {}
+EntitlementStore::EntitlementStore() : crlPEM(Buffer::get("")) {}
 EntitlementStore::~EntitlementStore() {}
 
 //===----------------------------------------------------------------------===//
@@ -581,7 +578,7 @@ ErrorOr<EntitlementStore> EntitlementStore::open(HTTPClient &client) {
   out.clientKeys = std::move(*privKeyOr);
 
   // Validate the certificate.
-  if (auto err = out.verifyAndFlushClientCert())
+  if (auto err = out.verifyAndFlushClientCert(client))
     return err.takeError();
 
   return out;
@@ -659,7 +656,7 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
     return err.takeError();
 
   // Validate and flush the certificate we just got.
-  if (auto err = verifyAndFlushClientCert())
+  if (auto err = verifyAndFlushClientCert(client))
     return err.takeError();
 
   return success();
@@ -669,11 +666,41 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
 // EntitlementStore::verifyAndFlushClientCert
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert() {
-  // TODO(#20699): We have to download the CRLs from the internet...which means
-  //               we need to implement caching for it so we don't break in
-  //               offline mode.
-  if (auto err = clientCert->verify(clientKeys))
+ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
+  HTTPRequest certificateRequest{"https://crl.modular.com"};
+  WriteableBufferRef crlBuf = WriteableBuffer::get(
+      /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
+  HTTPResponse response = client.executeRequest(certificateRequest, *crlBuf);
+  // We ignore failures here, for now at least, it isn't an error to fail to
+  // fetch the CRL.
+  if (response.isSuccess()) {
+    // Flush it to the filesystem.
+    auto err =
+        writeFileUnderLock(Config::getModularDataFolderPath() / "crl.pem",
+                           [&](llvm::raw_ostream &os) {
+                             os << crlBuf->Buffer::getBuffer();
+                             // Write a null-terminator explicitly - this
+                             // is required by mbedTLS' PEM parsing
+                             // functions.
+                             os << '\0';
+                           });
+    if (err.isError()) {
+      return err.takeError();
+    }
+  }
+
+  // If we got a new CRL, we'll have it on the filesystem. If we didn't, but we
+  // had an old one, then we'll be able to pull it off the filesystem. If we
+  // have nothing, then we can simply parse nothing.
+  auto crlPEMPathOr = findModularFile("crl.pem");
+  if (crlPEMPathOr) {
+    auto pemOr = Buffer::getFile(*crlPEMPathOr);
+    if (!pemOr.isError())
+      crlPEM = std::move(*pemOr);
+  }
+
+  // Verify the certificate with the CRL we fetched.
+  if (auto err = clientCert->verify(clientKeys, crlPEM->getBuffer()))
     return err.takeError();
 
   // Flush the certificate to a local file now we know it's valid.

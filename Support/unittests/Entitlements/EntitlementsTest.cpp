@@ -138,6 +138,10 @@ private:
       func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
         return issueCertificate(os, request);
       };
+    } else if (requestURL == "https://crl.modular.com") {
+      func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
+        return Error("TODO: implement an actual CRL for this test");
+      };
     }
 
     if (auto err = func(os, request)) {
