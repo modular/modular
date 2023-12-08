@@ -112,6 +112,7 @@ from Pad import (
     pad_shape,
 )
 from Pool import avg_pool as _avg_pool, max_pool, pool_shape
+from random import randn, seed
 from Resize import CoordinateTransformationMode, RoundMode
 from Resize import resize_linear as resize_linear_kernel
 from Resize import resize_nearest_neighbor
@@ -258,6 +259,7 @@ fn MOGGExport():
     alias _resize_linear = resize_linear
     alias _resize_nearest = resize_nearest
     alias _resize_shape = resize_shape
+    alias _random_shape = random_shape
     alias _round = round
     alias _roundeven = roundeven
     alias _roi_align_shape = roi_align_shape
@@ -2584,6 +2586,47 @@ fn non_maximum_suppression_shape_func[
         iou_threshold_float,
         score_threshold_float,
     )
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG mo.random.normal
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mo.random.normal")
+@export
+fn random_normal[
+    type: DType,
+    shapeType: DType,
+    rank: Int,
+](
+    shape: NDBuffer[1, DimList(rank), shapeType],
+    mean: NDBuffer[1, DimList(1), DType.float64],
+    variance: NDBuffer[1, DimList(1), DType.float64],
+    op_seed: NDBuffer[1, DimList(1), DType.int64],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    seed(op_seed[0].to_int())
+    var num_elements = 1
+    for i in range(len(shape)):
+        num_elements *= shape[i].to_int()
+    randn[type](output.data, num_elements, mean[0], variance[0])
+    out_chain.mark_ready()
+
+
+@export
+fn random_shape[
+    shapeType: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+](shape: NDBuffer[1, DimList(rank), shapeType],) -> StaticIntTuple[rank]:
+    var unrolledShape = StaticIntTuple[rank]()
+
+    @unroll
+    for i in range(rank):
+        unrolledShape[i] = int(shape[i])
+    return unrolledShape
 
 
 # ===----------------------------------------------------------------------===#
