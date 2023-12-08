@@ -106,8 +106,11 @@ from NonMaxSuppression import (
     non_max_suppression_shape_func,
 )
 from Normalization import layer_norm
-from Pad import pad_reflect as _pad_reflect, pad_constant as _pad_constant
-from Pad import pad_shape, PadMode
+from Pad import (
+    pad_reflect as _pad_reflect,
+    pad_constant as _pad_constant,
+    pad_shape,
+)
 from Pool import avg_pool as _avg_pool, max_pool, pool_shape
 from Resize import CoordinateTransformationMode, RoundMode
 from Resize import resize_linear as resize_linear_kernel
@@ -183,7 +186,7 @@ fn MOGGExport():
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _pack_conv_filter_shape = pack_conv_filter_shape
-    alias _pad = pad
+    alias _pad_constant = pad_constant
     alias _pad_shape = pad_shape
     alias _greater = greater
     alias _greater_equal = greater_equal
@@ -1259,20 +1262,19 @@ fn negative[
 
 
 # ===----------------------------------------------------------------------===#
-# Pad op
+# Pad .* op
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.pad.constant")
 @always_inline
-fn pad[
+@export
+fn pad_constant[
     rank: Int,
     type: DType,
     paddings_type: DType,
     constant_type: DType,
     single_thread_blocking_override: Bool,
-    # TODO expose `mode` parameter to graph compiler
-    # /,
-    # mode: PadMode = PadMode.Constant,
 ](
     input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
@@ -1283,16 +1285,29 @@ fn pad[
     let paddings_ptr = paddings_buf.data
     let constant_simd = constant_buf[0]
 
-    # TODO DELETEME
-    alias mode = PadMode.Constant
+    _pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
 
     @parameter
-    if mode == PadMode.Constant:
-        _pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
-    elif mode == PadMode.Reflect:
-        _pad_reflect(output_buf, input_buf, paddings_ptr)
-    else:
-        constrained[False, "Unsupported value for PadMode"]()
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
+
+
+@always_inline
+@export
+fn pad_reflect[
+    rank: Int,
+    type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
+    output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    let paddings_ptr = paddings_buf.data
+
+    _pad_reflect(output_buf, input_buf, paddings_ptr)
 
     @parameter
     if not single_thread_blocking_override:
