@@ -10,6 +10,7 @@ from memory.unsafe import DTypePointer, Pointer
 from ._utils import _check_error, _get_dylib_function
 from gpu.host.stream import Stream, _StreamImpl
 from time import now
+from debug._debug import trap
 
 
 # ===----------------------------------------------------------------------===#
@@ -91,15 +92,18 @@ struct Event:
         return Self {_event: event}
 
     @always_inline
-    fn __del__(owned self) raises:
-        if not self._event:
-            return
-        _check_error(
-            _get_dylib_function[fn (_EventImpl) -> Result]("cuEventDestroy_v2")(
-                self._event
+    fn __del__(owned self):
+        try:
+            if not self._event:
+                return
+            _check_error(
+                _get_dylib_function[fn (_EventImpl) -> Result](
+                    "cuEventDestroy_v2"
+                )(self._event)
             )
-        )
-        self._event = _EventImpl()
+            self._event = _EventImpl()
+        except e:
+            trap(e.__str__())
 
     @always_inline
     fn sync(self) raises:

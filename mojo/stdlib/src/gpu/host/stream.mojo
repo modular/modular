@@ -6,6 +6,7 @@
 """Implements CUDA stream operations."""
 
 from memory.unsafe import DTypePointer, Pointer
+from debug._debug import trap
 
 from ._utils import _check_error, _get_dylib_function
 
@@ -51,16 +52,20 @@ struct Stream[is_borrowed: Bool = False]:
 
         self.stream = stream
 
-    fn __del__(owned self) raises:
-        @parameter
-        if is_borrowed:
-            return
-        if self.stream:
-            _check_error(
-                _get_dylib_function[fn (_StreamImpl) -> Result](
-                    "cuStreamDestroy"
-                )(self.stream)
-            )
+    fn __del__(owned self):
+        try:
+
+            @parameter
+            if is_borrowed:
+                return
+            if self.stream:
+                _check_error(
+                    _get_dylib_function[fn (_StreamImpl) -> Result](
+                        "cuStreamDestroy"
+                    )(self.stream)
+                )
+        except e:
+            trap(e.__str__())
 
     fn __moveinit__(inout self, owned existing: Self):
         self.stream = existing.stream

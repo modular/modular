@@ -9,6 +9,7 @@ from memory.unsafe import DTypePointer, Pointer
 
 from .device import Device
 from ._utils import _check_error, _get_dylib_function
+from debug._debug import trap
 
 # ===----------------------------------------------------------------------===#
 # Context
@@ -46,13 +47,16 @@ struct Context:
         )
         self.ctx = ctx
 
-    fn __del__(owned self) raises:
-        if self.ctx:
-            _check_error(
-                _get_dylib_function[fn (_ContextImpl) -> Result](
-                    "cuCtxDestroy_v2"
-                )(self.ctx)
-            )
+    fn __del__(owned self):
+        try:
+            if self.ctx:
+                _check_error(
+                    _get_dylib_function[fn (_ContextImpl) -> Result](
+                        "cuCtxDestroy_v2"
+                    )(self.ctx)
+                )
+        except e:
+            trap(e.__str__())
 
     fn __enter__(owned self) -> Self:
         return self ^

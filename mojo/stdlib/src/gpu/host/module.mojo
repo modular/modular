@@ -10,6 +10,7 @@ from pathlib import Path
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, Pointer, bitcast
 from utils._optional import Optional
+from debug._debug import trap
 
 from ._utils import _check_error, _get_dylib_function
 
@@ -432,14 +433,17 @@ struct ModuleHandle:
 
         return Self {module: module}
 
-    fn __del__(owned self) raises:
-        if self.module:
-            _check_error(
-                _get_dylib_function[fn (_ModuleImpl) -> Result](
-                    "cuModuleUnload"
-                )(self.module)
-            )
-            self.module = _ModuleImpl()
+    fn __del__(owned self):
+        try:
+            if self.module:
+                _check_error(
+                    _get_dylib_function[fn (_ModuleImpl) -> Result](
+                        "cuModuleUnload"
+                    )(self.module)
+                )
+                self.module = _ModuleImpl()
+        except e:
+            trap(e.__str__())
 
     @always_inline
     fn _steal_handle(inout self) -> _ModuleImpl:
