@@ -9,7 +9,7 @@ from typing import Optional
 
 import pytest_lsp
 from lib.utils import Document, Requests, fail_if_none
-from lsprotocol.types import Location, MarkupContent, Range
+from lsprotocol.types import Location, MarkupContent, Position, Range
 from pytest_lsp import ClientServerConfig, LanguageClient
 
 
@@ -198,3 +198,14 @@ fn function[type: AnyRegType](arg: type):
     assert isinstance(definition[0], Location)
 
     assert definition == [str_definition[0], bool_definition[0]]
+
+
+async def test_module(client: LanguageClient):
+    doc = Document("foo.mojo", "")
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    # Make sure we didn't add a definition for the module itself, its location
+    # is technically the start of the document (but it's not defined inside the
+    # document).
+    assert await requests.definition(doc, Position(0, 0)) == []
