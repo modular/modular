@@ -1093,7 +1093,7 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
 // AsyncExecuteOp
 //===----------------------------------------------------------------------===//
 
-def LIT_AsyncExecuteOp : LITOp<"async.execute", [Pure, SingleBlock,
+def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
     DeclareOpInterfaceMethods<FunctionLike>,
     DebugInfo_InlinedSubprogramScoped]> {
   let summary = "Execute an async region.";
@@ -1114,7 +1114,7 @@ def LIT_AsyncExecuteOp : LITOp<"async.execute", [Pure, SingleBlock,
   }];
 
   let arguments = (ins OptionalAttr<Builtin_LocationAttr>:$callLoc);
-  let results = (outs POP_CoroutineType:$coroutine);
+  let results = (outs Res<POP_CoroutineType, "", [MemAlloc]>:$coroutine);
   let regions = (region SizedRegion<1>:$bodyRegion);
   let assemblyFormat = [{
     type($coroutine) $bodyRegion attr-dict (`callLoc` `(` $callLoc^ `)`)?
