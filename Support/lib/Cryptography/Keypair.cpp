@@ -52,8 +52,8 @@ static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
   return 0;
 }
 
-static constexpr llvm::StringLiteral privKeyFilename = "client_priv.der";
-static constexpr llvm::StringLiteral pubKeyFilename = "client_pub.der";
+static constexpr llvm::StringLiteral privKeyFilename = "client_priv.pem";
+static constexpr llvm::StringLiteral pubKeyFilename = "client_pub.pem";
 
 ErrorOr<Keypair> Keypair::generate(std::optional<std::filesystem::path> dir) {
   // Set up the keypair for generation.
@@ -82,28 +82,30 @@ ErrorOr<Keypair> Keypair::generate(std::optional<std::filesystem::path> dir) {
   // are using the elliptic curve P256 key - it should always be much less than
   // 512 bytes in size.
   std::array<uint8_t, 512> scratchBuf = {};
-  int bytesWritten = mbedtls_pk_write_key_der(
-      out.getRawKey(), scratchBuf.data(), scratchBuf.size());
-  if (bytesWritten <= 0)
-    return Error("could not write the keypair to DER");
+  rc = mbedtls_pk_write_key_pem(out.getRawKey(), scratchBuf.data(),
+                                scratchBuf.size());
+  if (rc != 0)
+    return Error("could not write the keypair to PEM");
 
   // Write the private key first.
   auto err = writeFileUnderLock(priv, [&](llvm::raw_ostream &os) {
-    os.write((const char *)scratchBuf.data() + scratchBuf.size() - bytesWritten,
-             bytesWritten);
+    const char *pemData = (const char *)scratchBuf.data();
+    // Write the null terminator - we need it at parse time.
+    os.write(pemData, strlen(pemData) + 1);
   });
   if (err)
     return err.takeError();
 
   // Then, write the public key.
-  bytesWritten = mbedtls_pk_write_pubkey_der(out.getRawKey(), scratchBuf.data(),
-                                             scratchBuf.size());
-  if (bytesWritten <= 0)
-    return Error("could not write the keypair to DER");
+  rc = mbedtls_pk_write_pubkey_pem(out.getRawKey(), scratchBuf.data(),
+                                   scratchBuf.size());
+  if (rc != 0)
+    return Error("could not write the keypair to PEM");
 
   err = writeFileUnderLock(pub.string(), [&](llvm::raw_ostream &os) {
-    os.write((const char *)scratchBuf.data() + scratchBuf.size() - bytesWritten,
-             bytesWritten);
+    const char *pemData = (const char *)scratchBuf.data();
+    // Write the null terminator - we need it at parse time.
+    os.write(pemData, strlen(pemData) + 1);
   });
   if (err)
     return err.takeError();

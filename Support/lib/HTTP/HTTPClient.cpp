@@ -120,7 +120,7 @@ ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
   curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, &blob);
   curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
 
-  auto clientKey = findModularFile("client_priv.der");
+  auto clientKey = findModularFile("client_priv.pem");
   if (!clientKey)
     return Error("could not find the client private key");
 
@@ -132,7 +132,7 @@ ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
   blob.data = (void *)(*clientKeyBufOr)->getBufferStart();
   blob.len = (*clientKeyBufOr)->getBufferSize();
   curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, &blob);
-  curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "DER");
+  curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
 
   // All done!
   authSetup = true;
