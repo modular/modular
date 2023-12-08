@@ -299,8 +299,11 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
   Symbol &symbol = *it->second;
 
   // We only add symbols to the range map if they belong to the main file.
-  if (mainDoc.containsLocation(symbol.range.Start))
-    insertRangeInMainDoc({symbol, symbol.range});
+  if (mainDoc.containsLocation(symbol.range.Start)) {
+    // Don't register modules as they don't have a proper location in the file.
+    if (!isa<FileModuleOp>(*declRef))
+      insertRangeInMainDoc({symbol, symbol.range});
+  }
   return &symbol;
 }
 
