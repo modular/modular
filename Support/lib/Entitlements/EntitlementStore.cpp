@@ -285,8 +285,12 @@ public:
   fromPEM(mbedtls_x509_crt_ext_cb_t cb, void *ctx, BufferRef pem);
 
   /// Verify that the certificate chain is valid based on the system root certs,
-  /// and that the public key is the correct pairing for `clientKeys`.
-  ErrorOrSuccess verify(Keypair &clientKeys);
+  /// and that the public key is the correct pairing for `clientKeys`. If a CRL
+  /// is provided (in PEM format) then it's used to check if any certificates in
+  /// the chain have been revoked. The CRL PEM must include the null terminating
+  /// byte at the end!
+  ErrorOrSuccess verify(Keypair &clientKeys,
+                        std::optional<BufferRef> crlPEM = std::nullopt);
 
   /// Get the PEM buffer for this certificate chain.
   StringRef getPEM() const {
@@ -376,7 +380,9 @@ Detail::CertificateChain::fromPEM(mbedtls_x509_crt_ext_cb_t cb, void *ctx,
 // Detail::CertificateChain::verify
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys) {
+ErrorOrSuccess
+Detail::CertificateChain::verify(Keypair &clientKeys,
+                                 std::optional<BufferRef> crlPEM) {
   // Find and open the root certs.
   mbedtls_x509_crt caCerts;
   mbedtls_x509_crt_init(&caCerts);
@@ -385,12 +391,16 @@ ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys) {
   if (auto err = getSystemRootCerts(&caCerts))
     return err.takeError();
 
-  // TODO(#20699): We have to download the CRLs from the internet...which means
-  //               we need to implement caching for it so we don't break in
-  //               offline mode.
   mbedtls_x509_crl caCRL;
   mbedtls_x509_crl_init(&caCRL);
   auto freeCRL = llvm::make_scope_exit([&] { mbedtls_x509_crl_free(&caCRL); });
+  if (crlPEM) {
+    int rc = mbedtls_x509_crl_parse(
+        &caCRL, (const uint8_t *)(*crlPEM)->getBufferStart(),
+        (*crlPEM)->getBufferSize());
+    if (rc != 0)
+      return Error(mbedTLSErrorToString(rc));
+  }
 
   uint32_t flags = 0;
   // We use the expected next profile mbedTLS provides, but we disallow
@@ -766,6 +776,9 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert() {
+  // TODO(#20699): We have to download the CRLs from the internet...which means
+  //               we need to implement caching for it so we don't break in
+  //               offline mode.
   if (auto err = clientCert->verify(clientKeys))
     return err.takeError();
 
