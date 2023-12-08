@@ -402,17 +402,20 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
 
   // Splat out the main body code inside of a nested def. This will allow for us
   // to redefine previous variables transparently.
-  exprOS << "  @parameter\n"
+  exprOS << "  var __mojo_repl_expr_failed = True\n"
+            "  @parameter\n"
             "  def __mojo_repl_expr_body__() -> None:\n";
 
-  exprOS << "    var __mojo_repl_expr_failed = False\n";
   // The following is the other chunk of code just written by the user.
   for (StringRef code : mainBodyCode) {
     exprOS << "    ";
     emitAndMapCode(code);
   }
-  exprOS << "    return\n"
-            "  __mojo_repl_expr_body__()\n";
+  exprOS << "    pass\n";
+
+  // If the code succeeded, reset the failure flag.
+  exprOS << "  __mojo_repl_expr_body__()\n"
+            "  __mojo_repl_expr_failed = False\n";
 
   return exprOS.str();
 }
@@ -440,12 +443,15 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
   // Grab all of the variables within the expression body and sort them by name,
   // so that we can deterministically process them.
-  ASTDecl &exprBodyDecl =
-      lookupSingleDecl(exprFnDecl, "__mojo_repl_expr_body__");
   SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
-  for (auto &[name, decls] : exprBodyDecl.getDeclsInScope())
-    if (decls.size() == 1 && isa<LetRegDeclOp, VarLetDeclOp>(*decls.front()))
-      variables.emplace_back(name, decls.front());
+  auto addVars = [&](ASTDecl &decl) {
+    for (auto &[name, decls] : decl.getDeclsInScope())
+      if (decls.size() == 1 && isa<LetRegDeclOp, VarLetDeclOp>(*decls.front()))
+        variables.emplace_back(name, decls.front());
+  };
+  addVars(exprFnDecl);
+  addVars(lookupSingleDecl(exprFnDecl, "__mojo_repl_expr_body__"));
+
   llvm::sort(variables, [](const auto &lhs, const auto &rhs) {
     return lhs.first.getValue() < rhs.first.getValue();
   });
