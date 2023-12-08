@@ -40,8 +40,8 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct CallbackContext {
-  EntitlementStore &store;
+struct MbedTLSCallbackContext {
+  llvm::DenseMap<ASN1::ObjectID, std::unique_ptr<Entitlement>> &store;
   std::optional<Error> error;
 };
 } // namespace
@@ -50,11 +50,13 @@ static constexpr int oidDecodingError = -1;
 static constexpr int nonModularOID = -2;
 static constexpr int entitlementParsingError = -3;
 
+/// Parses the extension provided and if it's a modular entitlement OID, then it
+/// parses it and places it in the map.
 static int extensionCallback(void *context, mbedtls_x509_crt const *crt,
                              mbedtls_x509_buf *oidBuf, int critical,
                              const unsigned char *dataBegin,
                              const unsigned char *dataEnd) {
-  auto *ctx = (CallbackContext *)context;
+  auto *ctx = (MbedTLSCallbackContext *)context;
 
   auto oidOr =
       ASN1::ObjectID::fromEncoded(ArrayRef<uint8_t>(oidBuf->p, oidBuf->len));
@@ -76,8 +78,11 @@ static int extensionCallback(void *context, mbedtls_x509_crt const *crt,
     return entitlementParsingError;
   }
 
-  // Add the entitlement.
-  ctx->store.addEntitlement(std::move(*entitlementOr));
+  // Add the entitlement. We use `oid` rather than the entitlement's OID because
+  // in case the entitlement is unknown, we don't want to simply drop it on the
+  // floor. This will at least save the OID, even if we don't actually parse the
+  // data or anything.
+  ctx->store[oid] = std::move(*entitlementOr);
   // Success, return 0.
   return 0;
 }
@@ -100,6 +105,20 @@ static std::string mbedTLSErrorToString(int rc) {
 #else  // MODULAR_DEBUG
   return "mbedTLS encountered an error, aborting";
 #endif // MODULAR_DEBUG
+}
+
+//===----------------------------------------------------------------------===//
+// csprng
+//===----------------------------------------------------------------------===//
+
+/// Provide the platform-specific csprng call. This is an mbedTLS-compatible
+/// adaptor to SecureRandomBytesGenerator.
+static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
+  auto *rng = (SecureRandomBytesGenerator *)ctx;
+  MutableArrayRef<uint8_t> randBuf(buf, numBytes);
+  if (auto err = rng->getRandomBytes(randBuf))
+    return 1;
+  return 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -247,17 +266,193 @@ static ErrorOrSuccess getSystemRootCerts(mbedtls_x509_crt *list) {
 }
 
 //===----------------------------------------------------------------------===//
-// csprng
+// Detail::CertificateChain
 //===----------------------------------------------------------------------===//
 
-/// Provide the platform-specific csprng call. This is an mbedTLS-compatible
-/// adaptor to SecureRandomBytesGenerator.
-static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
-  auto *rng = (SecureRandomBytesGenerator *)ctx;
-  MutableArrayRef<uint8_t> randBuf(buf, numBytes);
-  if (auto err = rng->getRandomBytes(randBuf))
-    return 1;
-  return 0;
+/// This class provides a C++ wrapper around an mbedTLS certificate chain. It
+/// encapsulates the basic certificate operations like parsing from PEM and
+/// verifying the chain of trust based on the system root certificates.
+namespace M::Detail {
+class CertificateChain {
+public:
+  CertificateChain() { mbedtls_x509_crt_init(&parsed); }
+  ~CertificateChain() { mbedtls_x509_crt_free(&parsed); }
+
+  /// Parse a CertificateChain from a PEM buffer. Apply the callback `cb` and
+  /// `ctx` to each certificate in the chain as they're being parsed. The buffer
+  /// `pem` may contain more than one certificate.
+  static ErrorOr<std::unique_ptr<CertificateChain>>
+  fromPEM(mbedtls_x509_crt_ext_cb_t cb, void *ctx, BufferRef pem);
+
+  /// Verify that the certificate chain is valid based on the system root certs,
+  /// and that the public key is the correct pairing for `clientKeys`.
+  ErrorOrSuccess verify(Keypair &clientKeys);
+
+  /// Get the PEM buffer for this certificate chain.
+  StringRef getPEM() const {
+    assert(verified && "must have a verified certificate chain");
+    return pem->getBuffer();
+  }
+
+  /// Check if the certificate chain is available for use. Note that this does
+  /// NOT necesarily mean that it's been verified!
+  bool isAvailable() const {
+    return bool(pem) && pem->getBufferSize() != 0 && parsed.version != 0;
+  }
+
+  /// Return the subject of the leaf certificate. This asserts that the
+  /// certificate has been verified.
+  ErrorOr<std::string> getSubject() const;
+
+private:
+  /// Get the leaf certificate in the chain. This is useful because that will be
+  /// the client's cert - any intermediate CAs will be higher in the chain than
+  /// the actual client cert.
+  const mbedtls_x509_crt *getLeafCertificate() const;
+
+  /// Store the PEM-encoded bytes of the client certificate chain here to be
+  /// flushed if necessary/requested.
+  BufferRef pem;
+
+  /// Store the parsed client certificate chain as well. This is absolutely
+  /// redundant with the PEM representation above, but parsing a chain of
+  /// certificates is non-trivial and having them already-parsed is valuable.
+  mbedtls_x509_crt parsed = {};
+
+  /// True if and only if the client has called `verify`. Note that this does
+  /// NOT carry over across application shutdown for any reason - the
+  /// certificates must be re-verified every time we start up.
+  bool verified = false;
+};
+} // namespace M::Detail
+
+//===----------------------------------------------------------------------===//
+// Detail::CertificateChain::fromPEM
+//===----------------------------------------------------------------------===//
+
+ErrorOr<std::unique_ptr<Detail::CertificateChain>>
+Detail::CertificateChain::fromPEM(mbedtls_x509_crt_ext_cb_t cb, void *ctx,
+                                  BufferRef pem) {
+  auto out = std::make_unique<CertificateChain>();
+  out->pem = std::move(pem);
+  // Set up the PEM context.
+  mbedtls_pem_context pemCtx;
+  mbedtls_pem_init(&pemCtx);
+  auto freePEM = llvm::make_scope_exit([&] { mbedtls_pem_free(&pemCtx); });
+
+  // Parse the chain of certificates. These will be concatenated as PEM
+  // buffers one after the other, so we simply parse until we run out of data.
+  size_t bytesConsumed = 0;
+  for (; bytesConsumed < out->pem->getBufferSize();) {
+    // Parse a single certificate first from PEM, then from DER.
+    size_t bytes = 0;
+    int rc = mbedtls_pem_read_buffer(
+        &pemCtx, "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----",
+        (const uint8_t *)out->pem->getBufferStart() + bytesConsumed,
+        /*pwd=*/nullptr,
+        /*pwdlen=*/0, &bytes);
+    if (rc != 0)
+      return Error(mbedTLSErrorToString(rc));
+
+    bytesConsumed += bytes;
+
+    size_t buflen = 0;
+    const uint8_t *derBuf = mbedtls_pem_get_buffer(&pemCtx, &buflen);
+    // Parse the client cert into the cert chain. This will also populate the
+    // store with the entitlements found in the certificate. We do need to
+    // perform a copy for any data that was previously in PEM form, because
+    // otherwise the buffer will be freed when we free the PEM buffer.
+    rc = mbedtls_x509_crt_parse_der_with_ext_cb(&out->parsed, derBuf, buflen,
+                                                /*make_copy=*/1,
+                                                /*cb=*/cb, /*p_ctx=*/ctx);
+    if (rc != 0)
+      return Error(mbedTLSErrorToString(rc));
+  }
+
+  return out;
+}
+
+//===----------------------------------------------------------------------===//
+// Detail::CertificateChain::verify
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys) {
+  // Find and open the root certs.
+  mbedtls_x509_crt caCerts;
+  mbedtls_x509_crt_init(&caCerts);
+  auto freeCACerts =
+      llvm::make_scope_exit([&] { mbedtls_x509_crt_free(&caCerts); });
+  if (auto err = getSystemRootCerts(&caCerts))
+    return err.takeError();
+
+  // TODO(#20699): We have to download the CRLs from the internet...which means
+  //               we need to implement caching for it so we don't break in
+  //               offline mode.
+  mbedtls_x509_crl caCRL;
+  mbedtls_x509_crl_init(&caCRL);
+  auto freeCRL = llvm::make_scope_exit([&] { mbedtls_x509_crl_free(&caCRL); });
+
+  uint32_t flags = 0;
+  // We use the expected next profile mbedTLS provides, but we disallow
+  // RSA-2048. This profile targets a 128-bit security level.
+  mbedtls_x509_crt_profile profile = mbedtls_x509_crt_profile_next;
+  profile.rsa_min_bitlen = 3072;
+
+  // Verify the certificate with the provided security profile. We don't
+  // provide additional callbacks, and we don't really care about the common
+  // name.
+  int rc = mbedtls_x509_crt_verify_with_profile(
+      &parsed, &caCerts, &caCRL, &profile,
+      /*cn=*/nullptr, &flags, /*f_vrfy=*/nullptr, /*p_vrfy=*/nullptr);
+  if (rc != 0)
+    return Error(mbedTLSErrorToString(rc));
+
+  const mbedtls_x509_crt *leafCert = getLeafCertificate();
+
+  // OK - we now have/can get the public key. Ensure the cert was signed by
+  // *this* private key. We do this by checking that the public key on the cert
+  // matches the private key we just parsed.
+  SecureRandomBytesGenerator rng;
+  rc = mbedtls_pk_check_pair(&leafCert->pk, clientKeys.getRawKey(), &csprng,
+                             &rng);
+  if (rc != 0)
+    return Error(mbedTLSErrorToString(rc));
+
+  verified = true;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Detail::CertificateChain::getSubject
+//===----------------------------------------------------------------------===//
+
+ErrorOr<std::string> Detail::CertificateChain::getSubject() const {
+  assert(verified && "must have a verified certificate chain");
+  // The subject is exactly the value of the ASN.1 subject for the previous
+  // certificate, which is the user ID. The subject is a linked-list of C/O/CN
+  // so we have to find the common name, which is identified by OID 2.5.4.3.
+  auto cnOr = ASN1::ObjectID::fromString("2.5.4.3");
+  if (cnOr.isError())
+    return cnOr.takeError();
+  SmallVector<uint8_t> encoded = cnOr->getEncoded();
+
+  auto *commonName = mbedtls_asn1_find_named_data(
+      &getLeafCertificate()->subject, (const char *)encoded.data(),
+      encoded.size());
+  return std::string{(const char *)commonName->val.p, commonName->val.len};
+}
+
+//===----------------------------------------------------------------------===//
+// Detail::CertificateChain::getLeafCertificate
+//===----------------------------------------------------------------------===//
+
+const mbedtls_x509_crt *Detail::CertificateChain::getLeafCertificate() const {
+  // The client cert is the leaf certificate, so walk to the end of the chain.
+  const mbedtls_x509_crt *leaf = &parsed;
+  mbedtls_x509_crt *tmp;
+  while ((tmp = leaf->next))
+    leaf = tmp;
+  return leaf;
 }
 
 //===----------------------------------------------------------------------===//
@@ -462,99 +657,151 @@ static ErrorOrSuccess generateCSR(Keypair &keys, llvm::StringRef subject,
 }
 
 //===----------------------------------------------------------------------===//
-// requestCertificate
+// EntitlementStore Constructor/Destructor
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
-                                                    BufferRef csr) {
-  HTTPRequest certificateRequest{
-      "https://auth.modular.com/user/certificates:issue"};
-  certificateRequest.method = HTTPRequest::Method::POST;
-  certificateRequest.headers.try_emplace("content-type", "application/json");
+EntitlementStore::EntitlementStore() {}
+EntitlementStore::~EntitlementStore() {}
 
-  // Set up a pem context - we'll need it for all the pem writing and parsing
-  // we're going to do in this method.
-  mbedtls_pem_context pemCtx;
+//===----------------------------------------------------------------------===//
+// EntitlementStore::open
+//===----------------------------------------------------------------------===//
 
-  // Format the client certificate as PEM, if we have it!
-  std::string pemBuf;
-  if (clientCertDER) {
-    mbedtls_pem_init(&pemCtx);
-    auto freePEMCtx =
-        llvm::make_scope_exit([&]() { mbedtls_pem_free(&pemCtx); });
-    size_t pemLen = 0;
-    int rc = mbedtls_pem_write_buffer(
-        "BEGIN CERTIFICATE", "END CERTIFICATE",
-        (const uint8_t *)clientCertDER->getBufferStart(),
-        clientCertDER->getBufferSize(), nullptr, 0, &pemLen);
-    if (pemLen == 0)
-      return Error("could not determine length of PEM buffer");
+ErrorOr<EntitlementStore> EntitlementStore::open(HTTPClient &client) {
+  EntitlementStore out;
+  // Find the client certificate. If we don't have one already, fetch one from
+  // auth.modular.com.
+  auto certOr = findModularFile("client.pem");
+  if (!certOr) {
+    if (auto err = out.authAndFetchCertificate(client))
+      return err.takeError();
+  } else {
+    // Otherwise, read the certificate.
+    auto mbufOr = Buffer::getFile(certOr->string());
+    if (mbufOr.isError())
+      return mbufOr.takeError();
 
-    pemBuf = std::string(pemLen, 0);
-    rc = mbedtls_pem_write_buffer(
-        "BEGIN CERTIFICATE", "END CERTIFICATE",
-        (const uint8_t *)clientCertDER->getBufferStart(),
-        clientCertDER->getBufferSize(), (uint8_t *)pemBuf.data(), pemLen,
-        &pemLen);
-    if (rc != 0)
-      return Error("could not pem-encode client certificate");
+    // Parse the certificate chain. This will store the cert in this class.
+    if (auto err = out.parseCertificateChain(std::move(*mbufOr)))
+      return err.takeError();
   }
 
-  // Provide the CSR and certificate as PEM-encoded blobs.
-  auto obj = llvm::json::Object(
-      {{"certificate_request", csr->getBuffer()}, {"certificate", pemBuf}});
-  llvm::json::Value val(std::move(obj));
+  // Open the keypair, this function prefers a private key.
+  auto privKeyOr = Keypair::open();
+  if (privKeyOr.isError())
+    return privKeyOr.takeError();
+  if (!privKeyOr->hasPrivateKey())
+    return Error("client keypair did not include a private key");
+  out.clientKeys = std::move(*privKeyOr);
 
-  std::string certRequestBody;
-  llvm::raw_string_ostream stream(certRequestBody);
-  stream << val;
+  // Validate the certificate.
+  if (auto err = out.verifyAndFlushClientCert())
+    return err.takeError();
 
-  certificateRequest.bodyLen = certRequestBody.size();
-  certificateRequest.body = ContainerReadCallbackAdaptor(certRequestBody);
+  return out;
+}
 
-  // Perform the request.
-  WriteableBufferRef certBuf = WriteableBuffer::get();
-  size_t certMaxSize = 4096;
-  auto certResponse =
-      client.executeRequest(certificateRequest, *certBuf,
-                            std::chrono::milliseconds::zero(), certMaxSize);
-  if (certResponse.isError())
-    return certResponse.asError();
+//===----------------------------------------------------------------------===//
+// EntitlementStore::openWithRetry
+//===----------------------------------------------------------------------===//
 
-  // Parse the JSON response now.
-  auto jsonOr = llvm::json::parse(certBuf->Buffer::getBuffer());
-  if (!jsonOr)
-    return Error(llvm::toString(jsonOr.takeError()));
+ErrorOr<EntitlementStore> EntitlementStore::openWithRetry(HTTPClient &client) {
+  // Attempt to open, if it worked then return it.
+  auto storeOr = open(client);
+  if (!storeOr.isError())
+    return std::move(storeOr);
 
-  const llvm::json::Object *parsedResponse = jsonOr->getAsObject();
-  if (!parsedResponse)
-    return Error("expected JSON object in the response");
+  // Otherwise, remove the client cert file (if it exists) and try again.
+  auto certFile = findModularFile("client.pem");
+  if (certFile) {
+    std::error_code ec;
+    std::filesystem::remove(*certFile, ec);
+  }
 
-  auto certOr = parsedResponse->getString("certificate");
-  if (!certOr)
-    return Error("expected certificate in the response");
+  return open(client);
+}
 
-  // Parse the PEM data. This will be exactly the DER form of the certificate.
-  // TODO: This will actually be multiple certificates stapled together, between
-  //       2 and 3 of them to form a chain...so PEM might be a better storage
-  //       format. Alternatively, we could have that be a separate endpoint to
-  //       decrease the amount of data sent back and forth...
-  mbedtls_pem_init(&pemCtx);
-  size_t bytesConsumed = 0;
-  int rc = mbedtls_pem_read_buffer(&pemCtx, "-----BEGIN CERTIFICATE-----",
-                                   "-----END CERTIFICATE-----",
-                                   certOr->bytes_begin(), /*pwd=*/nullptr,
-                                   /*pwdlen=*/0, &bytesConsumed);
-  if (rc != 0)
-    return Error(mbedTLSErrorToString(rc));
+//===----------------------------------------------------------------------===//
+// EntitlementStore::refresh
+//===----------------------------------------------------------------------===//
 
-  // Copy the DER buffer into a ref owned by this class. The underlying buffer
-  // *will* be freed when the context is freed, so we must perform a copy.
-  size_t derBufLen = 0;
-  const uint8_t *derBuf = mbedtls_pem_get_buffer(&pemCtx, &derBufLen);
-  clientCertDER = Buffer::get(StringRef((const char *)derBuf, derBufLen));
+ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
+  // Parse the client certificate. It is an error to 'refresh' if we don't
+  // already have one.
+  if (!clientCert->isAvailable())
+    return Error("no client certificate loaded");
 
-  // Success! We have the cert on the filesystem now, so we're done.
+  // Step 2 - We do have a client cert, so we should use it to auth to the
+  // endpoint to refresh the certificate.
+
+  // Get the subject for the client certificate.
+  auto subjectOr = clientCert->getSubject();
+  if (subjectOr.isError())
+    return subjectOr.takeError();
+
+  // Set up auth - this will read the certificate from the filesystem and use
+  // that.
+  if (auto err = client.setupAuth())
+    return err.takeError();
+
+  // This is the buffer we'll use for the CSR.
+  WriteableBufferRef buf = WriteableBuffer::get();
+  if (auto err = generateCSR(clientKeys, *subjectOr, buf.copy()))
+    return err.takeError();
+
+  // Request the new certificate. This will populate the certificate in memory,
+  // but won't verify the certificate.
+  if (auto err = requestCertificate(client, std::move(buf)))
+    return err.takeError();
+
+  // Validate and flush the certificate we just got.
+  if (auto err = verifyAndFlushClientCert())
+    return err.takeError();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// EntitlementStore::verifyAndFlushClientCert
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert() {
+  if (auto err = clientCert->verify(clientKeys))
+    return err.takeError();
+
+  // Flush the certificate to a local file now we know it's valid.
+  auto err = writeFileUnderLock(
+      Config::getModularDataFolderPath() / "client.pem",
+      [&](llvm::raw_ostream &os) { os << clientCert->getPEM(); });
+  if (err.isError())
+    return err.takeError();
+
+  // The certificate is valid, so the entitlements we parsed are also valid.
+  // Return the entitlement store.
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// EntitlementStore::parseCertificateChain
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess EntitlementStore::parseCertificateChain(BufferRef buf) {
+  // Construct a MbedTLSCallbackContext to pass to the extension callback.
+  MbedTLSCallbackContext ctx{entitlements, std::nullopt};
+
+  // Parse the certificate, providing the callback to the CertificateChain
+  // object to use while it's parsing.
+  auto chainOr = Detail::CertificateChain::fromPEM(
+      (mbedtls_x509_crt_ext_cb_t)extensionCallback, &ctx, std::move(buf));
+  if (chainOr.isError()) {
+    if (ctx.error)
+      return std::move(*ctx.error);
+
+    return chainOr.takeError();
+  }
+
+  // All done, move it to this class (for storage) and return.
+  clientCert = std::move(*chainOr);
   return success();
 }
 
@@ -624,7 +871,7 @@ private:
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// authAndFetchCertificate
+// EntitlementStore::authAndFetchCertificate
 //===----------------------------------------------------------------------===//
 
 /// This function uses the OAuth Device Authorization Flow to do initial
@@ -714,204 +961,56 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
 }
 
 //===----------------------------------------------------------------------===//
-// EntitlementStore::open
+// EntitlementStore::requestCertificate
 //===----------------------------------------------------------------------===//
 
-ErrorOr<EntitlementStore> EntitlementStore::open(HTTPClient &client) {
-  EntitlementStore out;
-  // Find the client certificate. If we don't have one already, fetch one from
-  // auth.modular.com.
-  auto certOr = findModularFile("client.der");
-  if (!certOr) {
-    if (auto err = out.authAndFetchCertificate(client))
-      return err.takeError();
-  } else {
-    // Otherwise, read the certificate.
-    auto mbufOr = Buffer::getFile(certOr->string());
-    if (mbufOr.isError())
-      return mbufOr.takeError();
-    out.clientCertDER = mbufOr.takeValue();
-  }
+ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
+                                                    BufferRef csr) {
+  HTTPRequest certificateRequest{
+      "https://auth.modular.com/user/certificates:issue"};
+  certificateRequest.method = HTTPRequest::Method::POST;
+  certificateRequest.headers.try_emplace("content-type", "application/json");
 
-  // Open the keypair, this function prefers a private key.
-  auto privKeyOr = Keypair::open();
-  if (privKeyOr.isError())
-    return privKeyOr.takeError();
-  if (!privKeyOr->hasPrivateKey())
-    return Error("client keypair did not include a private key");
-  out.clientKeys = std::move(*privKeyOr);
+  // Provide the CSR and certificate as PEM-encoded blobs.
+  StringRef clientCertChainPEMRef =
+      clientCert ? clientCert->getPEM() : StringRef();
+  auto obj = llvm::json::Object({{"certificate_request", csr->getBuffer()},
+                                 {"certificate", clientCertChainPEMRef}});
+  llvm::json::Value val(std::move(obj));
 
-  // Find and open the root certs.
-  mbedtls_x509_crt caCerts;
-  mbedtls_x509_crt_init(&caCerts);
-  auto freeCACerts =
-      llvm::make_scope_exit([&] { mbedtls_x509_crt_free(&caCerts); });
-  if (auto err = getSystemRootCerts(&caCerts))
+  std::string certRequestBody;
+  llvm::raw_string_ostream stream(certRequestBody);
+  stream << val;
+
+  certificateRequest.bodyLen = certRequestBody.size();
+  certificateRequest.body = ContainerReadCallbackAdaptor(certRequestBody);
+
+  // Perform the request.
+  WriteableBufferRef certBuf = WriteableBuffer::get();
+  size_t certMaxSize = 4096;
+  auto certResponse =
+      client.executeRequest(certificateRequest, *certBuf,
+                            std::chrono::milliseconds::zero(), certMaxSize);
+  if (certResponse.isError())
+    return certResponse.asError();
+
+  // Parse the JSON response now.
+  auto jsonOr = llvm::json::parse(certBuf->Buffer::getBuffer());
+  if (!jsonOr)
+    return Error(llvm::toString(jsonOr.takeError()));
+
+  const llvm::json::Object *parsedResponse = jsonOr->getAsObject();
+  if (!parsedResponse)
+    return Error("expected JSON object in the response");
+
+  auto certOr = parsedResponse->getString("certificate");
+  if (!certOr)
+    return Error("expected certificate in the response");
+
+  // Parse the certificate chain we just received.
+  if (auto err = parseCertificateChain(Buffer::get(*certOr)))
     return err.takeError();
 
-  // Parse the certificate now that we (presumably) have it.
-  if (auto err = out.parseCertificate(&caCerts))
-    return err.takeError();
-
-  return out;
-}
-
-//===----------------------------------------------------------------------===//
-// EntitlementStore::openWithRetry
-//===----------------------------------------------------------------------===//
-
-ErrorOr<EntitlementStore> EntitlementStore::openWithRetry(HTTPClient &client) {
-  // Attempt to open, if it worked then return it.
-  auto storeOr = open(client);
-  if (!storeOr.isError())
-    return std::move(storeOr);
-
-  // Otherwise, remove the client cert file (if it exists) and try again.
-  auto certFile = findModularFile("client.der");
-  if (certFile) {
-    std::error_code ec;
-    std::filesystem::remove(*certFile, ec);
-  }
-
-  return open(client);
-}
-
-//===----------------------------------------------------------------------===//
-// EntitlementStore::refresh
-//===----------------------------------------------------------------------===//
-
-ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
-  // Parse the client certificate. It is an error to 'refresh' if we don't
-  // already have one.
-  if (!clientCertDER || clientCertDER->getBuffer().empty())
-    return Error("could not find the client certificate");
-
-  // Step 2 - We do have a client cert, so we should use it to auth to the
-  // endpoint to refresh the certificate.
-
-  mbedtls_x509_crt existingCert;
-  mbedtls_x509_crt_init(&existingCert);
-  // Parse the DER for the certificate.
-  mbedtls_x509_crt_parse_der_nocopy(
-      &existingCert, (const uint8_t *)clientCertDER->getBufferStart(),
-      clientCertDER->getBufferSize());
-
-  // The subject is exactly the value of the ASN.1 subject for the previous
-  // certificate, which is the user ID. The subject is a linked-list of C/O/CN
-  // so we have to find the common name, which is identified by OID 2.5.4.3.
-  auto cnOr = ASN1::ObjectID::fromString("2.5.4.3");
-  if (cnOr.isError())
-    return cnOr.takeError();
-  SmallVector<uint8_t> encoded = cnOr->getEncoded();
-
-  auto *commonName = mbedtls_asn1_find_named_data(
-      &existingCert.subject, (const char *)encoded.data(), encoded.size());
-  std::string subject = {(const char *)commonName->val.p, commonName->val.len};
-
-  // Set up auth - this will read the certificate from the filesystem and use
-  // that.
-  if (auto err = client.setupAuth())
-    return err.takeError();
-
-  // This is the buffer we'll use for the CSR.
-  WriteableBufferRef buf = WriteableBuffer::get();
-  if (auto err = generateCSR(clientKeys, subject, buf.copy()))
-    return err.takeError();
-
-  // Request the new certificate. This will pre-populate the certificate in our
-  // local storage.
-  if (auto err = requestCertificate(client, std::move(buf)))
-    return err.takeError();
-
-  // Find and open the root certs.
-  mbedtls_x509_crt caCerts;
-  mbedtls_x509_crt_init(&caCerts);
-  auto freeCACerts =
-      llvm::make_scope_exit([&] { mbedtls_x509_crt_free(&caCerts); });
-  if (auto err = getSystemRootCerts(&caCerts))
-    return err.takeError();
-
-  // Refresh the entitlement store by parsing the new certificate.
-  if (auto err = parseCertificate(&caCerts))
-    return err.takeError();
-
+  // Success! We have the certificate chain now, so we're done.
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// EntitlementStore::parseCertificate
-//===----------------------------------------------------------------------===//
-
-ErrorOrSuccess EntitlementStore::parseCertificate(mbedtls_x509_crt *caCerts) {
-  // Init the certificate chain.
-  mbedtls_x509_crt cert;
-  mbedtls_x509_crt_init(&cert);
-  auto freeCert = llvm::make_scope_exit([&] { mbedtls_x509_crt_free(&cert); });
-
-  // Construct a CallbackContext to pass to the extension callback.
-  CallbackContext ctx{*this, std::nullopt};
-
-  // Parse the client cert into the cert chain. This will also populate the
-  // store with the entitlements found in the certificate.
-  int rc = mbedtls_x509_crt_parse_der_with_ext_cb(
-      &cert, (const uint8_t *)clientCertDER->getBufferStart(),
-      clientCertDER->getBufferSize(), /*make_copy=*/0,
-      /*cb=*/(mbedtls_x509_crt_ext_cb_t)extensionCallback, /*p_ctx=*/&ctx);
-  if (rc != 0) {
-    if (ctx.error)
-      return std::move(*ctx.error);
-
-    return Error(mbedTLSErrorToString(rc));
-  }
-
-  // Now the cert is parsed, verify it.
-
-  // TODO(#20699): We have to download the CRLs from the internet...which means
-  //               we need to implement caching for it so we don't break in
-  //               offline mode.
-  mbedtls_x509_crl caCRL;
-  mbedtls_x509_crl_init(&caCRL);
-  auto freeCRL = llvm::make_scope_exit([&] { mbedtls_x509_crl_free(&caCRL); });
-
-  uint32_t flags = 0;
-  // We use the expected next profile mbedTLS provides, but we disallow
-  // RSA-2048. This profile targets a 128-bit security level.
-  mbedtls_x509_crt_profile profile = mbedtls_x509_crt_profile_next;
-  profile.rsa_min_bitlen = 3072;
-
-  // Verify the certificate with the provided security profile. We don't provide
-  // additional callbacks, and we don't really care about the common name.
-  rc = mbedtls_x509_crt_verify_with_profile(
-      &cert, caCerts, &caCRL, &profile,
-      /*cn=*/nullptr, &flags, /*f_vrfy=*/nullptr, /*p_vrfy=*/nullptr);
-  if (rc != 0)
-    return Error(mbedTLSErrorToString(rc));
-
-  // OK - we now have the private key. Ensure the cert was signed by *this*
-  // private key. We do this by checking that the public key on the cert matches
-  // the private key we just parsed.
-  SecureRandomBytesGenerator rng;
-  rc = mbedtls_pk_check_pair(&cert.pk, clientKeys.getRawKey(), &csprng, &rng);
-  if (rc != 0)
-    return Error(mbedTLSErrorToString(rc));
-
-  // Flush the certificate to a file now we know it's valid.
-  auto err = writeFileUnderLock(
-      Config::getModularConfigFolderPath() / "client.der",
-      [&](llvm::raw_ostream &os) { os << clientCertDER->getBuffer(); });
-  if (err.isError())
-    return err.takeError();
-
-  // The certificate is valid, so the entitlements we parsed are also valid.
-  // Return the entitlement store.
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// EntitlementStore::addEntitlement
-//===----------------------------------------------------------------------===//
-
-void EntitlementStore::addEntitlement(
-    std::unique_ptr<Entitlement> entitlement) {
-  entitlements[entitlement->getObjectID()] = std::move(entitlement);
 }

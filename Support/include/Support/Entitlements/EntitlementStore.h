@@ -15,12 +15,15 @@
 #include "llvm/ADT/DenseMap.h"
 #include <filesystem>
 
-/// Forward declaration for the mbedtls_x509_crt struct.
-struct mbedtls_x509_crt;
-
 namespace M {
 /// Forward-declaration for a single entitlement.
 class Entitlement;
+
+/// Forward-declaration for a CertificateChain class that we will make extensive
+/// use of in the EntitlementStore.
+namespace Detail {
+class CertificateChain;
+}
 
 /// This provides a way to look up and see if a given entitlement exists in the
 /// current store.
@@ -28,7 +31,8 @@ class EntitlementStore {
 public:
   /// EntitlementStores are default-constructible. That just means they don't
   /// contain any entitlements.
-  EntitlementStore() = default;
+  EntitlementStore();
+  ~EntitlementStore();
 
   /// EntitlementStore objects are non-copyable, but they are move-able.
   EntitlementStore(const EntitlementStore &other) = delete;
@@ -71,18 +75,15 @@ public:
     return llvm::cast_if_present<EntitlementT>(found->second.get());
   }
 
-  /// Add an instance of a given entitlement to the entitlement store.
-  void addEntitlement(std::unique_ptr<Entitlement> entitlement);
-
 private:
-  /// Open the certificate that exists at the provided location. This is
-  /// identical to `EntitlementStore::open` above, but it takes the CA certs as
-  /// a parameter. The caCerts option should only be used for local testing - we
-  /// do *NOT* want users to be able to override the roots of trust, because if
-  /// they can do that, they can forge certificates with arbitrary entitlements.
-  ErrorOrSuccess parseCertificate(mbedtls_x509_crt *caCerts);
+  /// This will verify the client's certificate chain and flush it to disk if
+  /// and only if it's valid.
+  ErrorOrSuccess verifyAndFlushClientCert();
 
-  // TODO: fetch the intermediate certs too
+  /// Given a PEM buffer with one or more certificates, parse them and take any
+  /// entitlements that might be encoded in the extensions and put them in the
+  /// store.
+  ErrorOrSuccess parseCertificateChain(BufferRef pem);
 
   /// Use the OAuth Device Authorization Flow to do initial authentication and
   /// bootstrap the client certificate. Note that this does not validate the
@@ -102,9 +103,9 @@ private:
   /// time.
   llvm::DenseMap<ASN1::ObjectID, std::unique_ptr<Entitlement>> entitlements;
 
-  /// Store the DER-encoded bytes of the client certificate here to be flushed
-  /// if necessary/requested.
-  BufferRef clientCertDER;
+  /// This holds the client certificate chain. The implementation is hidden to
+  /// avoid leaking details through this abstraction.
+  std::unique_ptr<Detail::CertificateChain> clientCert;
 
   /// Store the client keys. If these cannot be found, they'll be generated.
   Keypair clientKeys;
