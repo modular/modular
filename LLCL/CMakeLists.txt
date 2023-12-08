@@ -18,3 +18,4 @@ add_subdirectory(lib/Runtime)
 add_subdirectory(lib/CompilerSupport)
 
 add_subdirectory(unittests)
+add_subdirectory(benchmarks)
