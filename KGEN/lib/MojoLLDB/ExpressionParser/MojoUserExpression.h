@@ -96,6 +96,14 @@ private:
       lldb_private::ExecutionContextScope *exeScope,
       MojoPersistentExpressionState &state);
 
+  /// Handle the execution of the expression.
+  lldb::ExpressionResults
+  DoExecute(lldb_private::DiagnosticManager &diagnosticManager,
+            lldb_private::ExecutionContext &exeCtx,
+            const lldb_private::EvaluateExpressionOptions &options,
+            lldb::UserExpressionSP &sharedPtrToMe,
+            lldb::ExpressionVariableSP &result) override;
+
   //===--------------------------------------------------------------------===//
   // Fields
   //===--------------------------------------------------------------------===//

@@ -450,8 +450,8 @@ sys.modules['{1}'] = expr_module
   mojoExprOS << "var __lldb_repl_python__ = __mojo_repl_Python()\n\n";
   mojoExprOS << "if not __lldb_repl_python__.eval(\"";
   mojoExprOS.write_escaped(wrappedPythonExpr);
-  mojoExprOS << "\"):\n  __mojo_repl_expr_failed = True\n  raise Error('The "
-                "Python expression raised an exception')\n";
+  mojoExprOS
+      << "\"):\n  raise Error('The Python expression raised an exception')\n";
 
   // If persistent results are enabled, we also import top-level symbols from
   // the python module into the mojo context.
@@ -473,4 +473,57 @@ sys.modules['{1}'] = expr_module
   impl->pythonModuleName = std::move(moduleName);
 
   return wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope, state);
+}
+
+//===----------------------------------------------------------------------===//
+// Execution
+
+lldb::ExpressionResults MojoUserExpression::DoExecute(
+    lldb_private::DiagnosticManager &diagnosticManager,
+    lldb_private::ExecutionContext &exeCtx,
+    const lldb_private::EvaluateExpressionOptions &options,
+    lldb::UserExpressionSP &sharedPtrToMe, lldb::ExpressionVariableSP &result) {
+  lldb::ExpressionResults results = JitUserExpression::DoExecute(
+      diagnosticManager, exeCtx, options, sharedPtrToMe, result);
+  auto lldbExprFailedVar = impl->persistentState.getVar(
+      lldb_private::ConstString("__mojo_repl_expr_failed"));
+  if (lldbExprFailedVar)
+    impl->persistentState.RemovePersistentVariable(lldbExprFailedVar);
+  if (results != lldb::eExpressionCompleted)
+    return results;
+
+  if (!lldbExprFailedVar)
+    llvm::report_fatal_error("Expected to find variable "
+                             "`__mojo_repl_expr_failed` in the persistent "
+                             "state.");
+
+  // Extract the value of __mojo_repl_expr_failed.
+  DataExtractor extractor(lldbExprFailedVar->GetValueBytes(),
+                          *lldbExprFailedVar->GetByteSize(),
+                          exeCtx.GetProcessRef().GetByteOrder(),
+                          exeCtx.GetProcessRef().GetAddressByteSize());
+  lldb::offset_t offset = 0;
+  lldb::offset_t addr = extractor.GetAddress(&offset);
+
+  bool exprFailed;
+  Status status = Status();
+  exeCtx.GetProcessRef().ReadMemory((lldb::addr_t)addr, &exprFailed, 1, status);
+
+  // Now that we have the value, we can check whether the expression failed or
+  // not.
+  auto expressionInstances = impl->persistentState.getExpressionInstances();
+  if (exprFailed) {
+    // The expression failed, so we won't persist any variables defined in the
+    // expression.
+    for (auto &var : expressionInstances.back()->persistentVariables)
+      impl->persistentState.RemovePersistentVariable(var);
+
+    // TODO: eventually we should put the exception into the persistent
+    // state.
+    diagnosticManager.PutString(eDiagnosticSeverityError,
+                                "Unhandled exception caught during execution");
+    return lldb::eExpressionCompleted;
+  }
+
+  return lldb::eExpressionCompleted;
 }
