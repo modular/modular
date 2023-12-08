@@ -104,7 +104,7 @@ ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
     return success();
   }
 
-  auto clientCert = findModularFile("client.der");
+  auto clientCert = findModularFile("client.pem");
   if (!clientCert)
     return Error("could not find the client certificate");
 
@@ -118,7 +118,7 @@ ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
   blob.len = (*certBufOr)->getBufferSize();
   blob.flags = CURL_BLOB_COPY;
   curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, &blob);
-  curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "DER");
+  curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
 
   auto clientKey = findModularFile("client_priv.der");
   if (!clientKey)
