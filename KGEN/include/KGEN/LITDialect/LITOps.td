@@ -71,6 +71,7 @@ def LIT_FuncOp : LITOp<"func", [
     UnitAttr:$isParametric,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
     UnitAttr:$isInherited,
+    UnitAttr:$isSynthetic,
     KGEN_ExportKindAttr:$exportKind,
     KGEN_InlineLevelAttr:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,

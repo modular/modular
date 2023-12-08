@@ -62,6 +62,7 @@ LIT::FuncOp StructEmitter::createFunction(
       prefix + DeclResolver::getMangledName(sourceName, signature).getValue());
   auto funcOp = builder.create<LIT::FuncOp>(mangledName, sourceName, signature,
                                             specialFnID);
+  funcOp.setIsSynthetic(true);
 
   // Set the attributes on the FuncOp in bulk.
   NamedAttrList attrs = funcOp->getAttrDictionary();
