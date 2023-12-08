@@ -41,7 +41,7 @@ SF(kTakeInit, "__takeinit__", 2, 2, kInvalid, kMemInit|kCannotRaise)
 // analysis when they return Self instead of taking it byref.
 SF(kInitReg,     ""         , 0, -1, kInvalid, kRegInit|kImplicitlyStaticMethod)
 SF(kCopyInitReg, ""         , 1, 1, kInvalid, kRegInit|kInstMethod|kCannotRaise)
-SF(kDel,      "__del__"     , 1, 1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult)
+SF(kDel,      "__del__"     , 1, 1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult|kCannotRaise)
 
 SF(kBool,    "__bool__"  ,  1, 1, kInvalid, kInstMethod)
 SF(kMLIRI1,  "__mlir_i1__", 1, 1, kInvalid, kInstMethod)

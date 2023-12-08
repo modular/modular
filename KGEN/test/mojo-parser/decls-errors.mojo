@@ -512,6 +512,10 @@ struct SpecialFunctions:
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
     self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
+  # expected-error @+1 {{'__del__' cannot be declared as raising an exception}}
+  fn __del__(owned self) raises:
+     pass
+
 @register_passable
 struct WrongType:
   # expected-error @+1 {{'__init__' result type must be 'WrongType'}}
