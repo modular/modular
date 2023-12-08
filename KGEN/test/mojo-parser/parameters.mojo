@@ -29,8 +29,8 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.func @"paramArith{{.*}}"<{{.*}}[x]: !Int>() -> !kgen.none
 fn paramArith[x: Int]():
-  # CHECK: lit.call @"$builtin"::@"$constrained"::@"constrained[{{.*}}$bool::Bool]()"<{{.*}}apply({{.*}}__eq__{{.*}}, {{.*}}x, {{.*}}-99{{.*}})>()
-  constrained[x == -100 + 1]()
+  # CHECK: lit.alias.decl {{.*}} = <{{.*}}apply({{.*}}__eq__{{.*}}, {{.*}}x, {{.*}}-99{{.*}})>
+  alias y = x == -100 + 1
 
 fn take_3index(a: Int, b: Int, c: Int) -> Int:
   return a
