@@ -96,6 +96,15 @@ bool ASTType::isEqualCanon(ASTType other) const {
   if (mlirType == other.mlirType)
     return true;
   // Types with the same metatype are always equal.
+  auto getMetaType = [this] {
+    if (!mlirType)
+      return Type();
+    if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
+      return paramRef.getParam().getType();
+    if (auto declRef = dyn_cast<DeclRefType>(mlirType))
+      return declRef.getMetaType();
+    return Type();
+  };
   if (getMetaType() && getMetaType() == other.getMetaType())
     return true;
   return false;

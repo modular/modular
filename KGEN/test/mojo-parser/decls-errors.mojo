@@ -658,6 +658,14 @@ fn function_with_struct():
   struct Foo: # expected-error {{struct inside a function not supported here}}
     var x: Int
 
+struct TypeGetItem:
+    fn __getitem__(inout self, key: Int): # expected-note {{function declared here}}
+        pass
+
+fn bad_metatype_access():
+    var val = TypeGetItem
+    val[1] # expected-error {{invalid call to '__getitem__': l-value of type 'TypeGetItem' cannot be converted to reference of type 'TypeGetItem}}
+
 ##===----------------------------------------------------------------------===##
 # Traits
 ##===----------------------------------------------------------------------===##
