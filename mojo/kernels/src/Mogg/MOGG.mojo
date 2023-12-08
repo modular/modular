@@ -1292,6 +1292,7 @@ fn pad_constant[
         out_chain.mark_ready()
 
 
+@mogg_register("mo.pad.reflect")
 @always_inline
 @export
 fn pad_reflect[
