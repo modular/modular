@@ -24,35 +24,6 @@ from utils.list import Dim, DimList
 from math import min
 
 
-@value
-@register_passable("trivial")
-struct PadMode:
-    """Represents the different available padding methods."""
-
-    alias Constant = PadMode(0)
-    """Constant pad, static value is used to fill padded regions."""
-
-    alias Reflect = PadMode(1)
-    """Reflect pad, the contents of the unpadded region is used 
-    to fill in the padded region.
-    """
-
-    var _val: Int
-    """Internal identifier which differentiates pad modes"""
-
-    fn __eq__(self, other: PadMode) -> Bool:
-        """Compares against other PadMode instance for equality.
-
-        Args:
-            other: The other PadMode instance to compare against.
-
-        Returns:
-            True if PadModes are equivalent, False otherwise.
-        """
-
-        return self._val == other._val
-
-
 fn _fill[
     type: DType
 ](dst: DTypePointer[type], value: SIMD[type, 1], count: Int):
