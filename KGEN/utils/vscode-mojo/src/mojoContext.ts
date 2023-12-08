@@ -9,6 +9,7 @@ import * as vscodelc from 'vscode-languageclient/node';
 
 import {activateRunCommands} from './commands/run';
 import {MojoDebugContext} from './debug/debug';
+import {MojoDecoratorContext} from './decorations';
 import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
@@ -89,6 +90,9 @@ export class MOJOContext extends DisposableContext {
 
     // Initialize the execution commands.
     this.pushSubscription(activateRunCommands(this));
+
+    // Initialize the decorations.
+    this.pushSubscription(new MojoDecoratorContext(this));
 
     loggingService.logInfo("MojoContext activated.");
   }

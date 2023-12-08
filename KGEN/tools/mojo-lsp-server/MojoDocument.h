@@ -422,9 +422,6 @@ public:
     std::vector<KGEN::Mojo::CodeCompletionResult>
     onCodeCompletion(llvm::SMLoc loc, MojoParserContext &ctx);
 
-    /// Compute inlay hints for this code block.
-    void onInlayHint(std::vector<MojoInlayHint> &inlayHints);
-
     /// Attempt to compute signature help at the given location.
     std::optional<KGEN::Mojo::SignatureHelpResult>
     onSignatureHelp(llvm::SMLoc loc, MojoParserContext &ctx);
@@ -457,8 +454,7 @@ public:
   /// module that contains `decl`. In the case of a normal text document,
   /// `curReplDecl` is null.
   void addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
-                    MojoASTDeclRef curReplDecl, unsigned bufferId,
-                    std::vector<MojoInlayHint> &inlayHints);
+                    MojoASTDeclRef curReplDecl, unsigned bufferId);
 
   /// Find the code block that contains the given location.
   CodeBlock *findContainingCodeBlock(llvm::SMLoc loc);
