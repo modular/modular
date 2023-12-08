@@ -166,6 +166,26 @@ TelemetryContext::TelemetryContext(
   options.export_interval_millis = kExportInterval;
   options.export_timeout_millis = kExportTimeout;
 
+  // Extend the histogram buckets for our timers. The default's max bucket is
+  // 10000 ms.
+  auto instrument_selector =
+      std::make_unique<opentelemetry::sdk::metrics::InstrumentSelector>(
+          opentelemetry::sdk::metrics::InstrumentType::kHistogram, ".*\\.time$",
+          "ms");
+  auto meter_selector =
+      std::make_unique<opentelemetry::sdk::metrics::MeterSelector>("", "", "");
+  auto histConfig = std::make_shared<
+      opentelemetry::sdk::metrics::HistogramAggregationConfig>();
+  histConfig->boundaries_ = {0,     50,    100,   250,   500,   750,   1000,
+                             2500,  5000,  7500,  10000, 12500, 15000, 17500,
+                             20000, 25000, 30000, 40000, 50000};
+  auto view = std::make_unique<opentelemetry::sdk::metrics::View>(
+      "", "", "", opentelemetry::sdk::metrics::AggregationType::kHistogram,
+      histConfig);
+
+  provider->AddView(std::move(instrument_selector), std::move(meter_selector),
+                    std::move(view));
+
   // Get metrics exporter config.
   StringRef httpEndpoint =
       cfg.getValue("telemetry.exporters.metrics.http_endpoint");
