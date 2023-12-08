@@ -371,7 +371,6 @@ fn reduce_boolean[
     return curr
 
 
-@always_inline
 @parameter
 fn _reduce_3D[
     simd_width: Int,
@@ -402,7 +401,6 @@ fn _reduce_3D[
     # reductions that each reduce W elements of a contiguous buffer.
     if c == 1:
 
-        @always_inline
         @parameter
         fn reduce_inner_axis():
             alias sz = input_shape.at[1]()
@@ -452,7 +450,6 @@ fn _reduce_3D[
         vectorize[usimd_width, reduce_w_chunked](c)
 
 
-@always_inline
 @parameter
 fn reduce[
     simd_width: Int,
@@ -657,7 +654,6 @@ fn _reduce_generator[
             ](shape, init_value, reduce_dim_normalized, out_chain)
 
 
-@always_inline
 fn _reduce_along_inner_dimension[
     type: DType,
     rank: Int,
@@ -799,7 +795,6 @@ fn _reduce_along_inner_dimension[
         async_parallelize[reduce_rows](out_chain, num_workers)
 
 
-@always_inline
 fn _reduce_along_outer_dimension[
     type: DType,
     rank: Int,
@@ -867,7 +862,6 @@ fn _reduce_along_outer_dimension[
 
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
-    @always_inline
     @parameter
     fn reduce_slices(i: Int):
         let start_parallel_offset = i * chunk_size
@@ -1330,7 +1324,6 @@ fn mean[
         vectorize[simd_width, normalize_floating](len(dst_1d))
 
 
-@always_inline
 @adaptive
 fn mean[
     type: DType,
@@ -1654,7 +1647,6 @@ fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline
 fn _argn[
     type: DType,
     out_type: DType,
@@ -1722,7 +1714,6 @@ fn _argn[
         input_stride = input.dynamic_stride[canonical_axis - 1]
         output_stride = output.dynamic_stride[canonical_axis - 1]
 
-    @always_inline
     @parameter
     fn task_func(task_id: Int):
         @parameter
@@ -1822,7 +1813,6 @@ fn _argn[
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline
 fn argmax[
     type: DType,
     out_type: DType,
@@ -1852,7 +1842,6 @@ fn argmax[
 
 
 @export
-@always_inline
 fn argmax[
     type: DType,
     out_type: DType,
@@ -1888,7 +1877,6 @@ fn argmax[
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline
 fn argmin[
     type: DType,
     out_type: DType,
@@ -1918,7 +1906,6 @@ fn argmin[
 
 
 @export
-@always_inline
 fn argmin[
     type: DType,
     out_type: DType,
@@ -1954,7 +1941,6 @@ fn argmin[
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline
 fn reduce_shape[
     input_rank: Int,
     input_type: DType,
@@ -2024,7 +2010,6 @@ fn _cumsum[
         dst[i] = src[i] + dst[i - 1]
 
 
-@always_inline
 fn cumsum[
     size: Dim, type: DType
 ](dst: Buffer[size, type], src: Buffer[size, type]):
