@@ -28,9 +28,9 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// CommandDebuggingHelp: mojo help debugging
+// CommandDebugHelp: mojo help debug
 //===----------------------------------------------------------------------===//
-class CommandDebuggingHelp : public SBCommandPluginInterface {
+class CommandDebugHelp : public SBCommandPluginInterface {
 public:
   bool DoExecute(SBDebugger debugger, char **command,
                  SBCommandReturnObject &result) override {
@@ -67,6 +67,5 @@ void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger) {
       "help", "Display help information about various "
               "components of the Mojo support in LLDB.");
   help.AddCommand("repl", new CommandREPLHelp(), "mojo help repl");
-  help.AddCommand("debugging", new CommandDebuggingHelp(),
-                  "mojo help debugging");
+  help.AddCommand("debug", new CommandDebugHelp(), "mojo help debug");
 }

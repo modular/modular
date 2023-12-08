@@ -352,7 +352,7 @@ please document them here!
 
 Current Mojo commands:
 
-- `:mojo repl-help` - This command prints out a REPL help text.
+- `:mojo help repl` - This command prints out a REPL help text.
 
 ### Testing
 
