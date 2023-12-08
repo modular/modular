@@ -121,6 +121,16 @@ automatically expose information written in python expressions to the Mojo
 environment. For example, any variables, functions, or imports defined within a
 python expression are directly available for access by future Mojo expressions.
 
+### `%cd`
+
+Change the current working directory.
+
+This command automatically maintains an internal list of directories you visit
+during the REPL session. Usage:
+
+- `%cd 'dir'`: change to directory `dir` and push it on the directory stack.
+- `%cd -`: pop the directory stack and change to the last visited directory.
+
 ## Limitations and Sharp Edges
 
 Mojo is still young and growing fast, and this also applies to the REPL

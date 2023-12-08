@@ -142,6 +142,9 @@ struct MojoTypeSystem::Impl {
   /// The source manager used for expression compilation.
   llvm::SourceMgr sourceMgr;
 
+  /// The current stack of working directories.
+  SmallVector<std::string> expressionWorkingDirectories;
+
   /// The main parser context used for compilation.
   std::unique_ptr<MojoParserContext> parserContext;
 
@@ -220,6 +223,46 @@ void MojoTypeSystem::Initialize() {
 
 void MojoTypeSystem::Terminate() {
   PluginManager::UnregisterPlugin(createInstance);
+}
+
+//===----------------------------------------------------------------------===//
+// Parsing
+//===----------------------------------------------------------------------===//
+
+void MojoTypeSystem::pushWorkingDirectory(StringRef workingDirectory) {
+  std::vector<std::string> currentDirs = impl->sourceMgr.getIncludeDirs();
+
+  // Update the include directories to include this new directory.
+  if (!impl->expressionWorkingDirectories.empty()) {
+    auto it =
+        llvm::find(currentDirs, impl->expressionWorkingDirectories.back());
+    assert(it != currentDirs.end() &&
+           "working directory not found in include directories");
+    *it = currentDirs.back();
+  } else {
+    currentDirs.insert(currentDirs.begin(), workingDirectory.str());
+  }
+
+  impl->expressionWorkingDirectories.push_back(workingDirectory.str());
+  impl->sourceMgr.setIncludeDirs(currentDirs);
+}
+
+void MojoTypeSystem::popWorkingDirectory() {
+  if (impl->expressionWorkingDirectories.empty())
+    return;
+  std::string dir = impl->expressionWorkingDirectories.pop_back_val();
+
+  // Update the include directories to remove this directory.
+  std::vector<std::string> currentDirs = impl->sourceMgr.getIncludeDirs();
+  auto it = llvm::find(currentDirs, dir);
+  assert(it != currentDirs.end() &&
+         "working directory not found in include directories");
+  if (impl->expressionWorkingDirectories.empty())
+    currentDirs.erase(it);
+  else
+    *it = impl->expressionWorkingDirectories.back();
+
+  impl->sourceMgr.setIncludeDirs(currentDirs);
 }
 
 //===----------------------------------------------------------------------===//
