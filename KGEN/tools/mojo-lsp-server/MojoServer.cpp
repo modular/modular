@@ -1095,7 +1095,7 @@ void MojoDocument::processDocStrings(
     MojoDocStrings &docStrings, MojoASTDeclRef decl, unsigned bufferId,
     function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl,
     MojoASTDeclRef curReplDecl) {
-  docStrings.addDocString(*this, decl, curReplDecl, bufferId, inlayHints);
+  docStrings.addDocString(*this, decl, curReplDecl, bufferId);
 
   // Traverse the child decls.
   for (const auto &childIt : decl.getChildren()) {
@@ -1309,8 +1309,8 @@ lsp::SignatureHelp MojoDocument::onSignatureHelpSync(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
-                                  MojoASTDeclRef curReplDecl, unsigned bufferId,
-                                  std::vector<MojoInlayHint> &inlayHints) {
+                                  MojoASTDeclRef curReplDecl,
+                                  unsigned bufferId) {
   // Check if the decl has a doc string with a decipherable location.
   std::optional<KGEN::LIT::DocString> docString = decl->getParsedDocString();
   if (!docString)
@@ -1388,9 +1388,6 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
 
     // Map the code block location to the main buffer.
     rangeToCodeBlock.insert(docStartLoc, docRangeEndLoc, codeBlock);
-
-    // Add inlay hints for the code block.
-    codeBlock->onInlayHint(inlayHints);
   }
 }
 
@@ -1414,23 +1411,6 @@ MojoDocStrings::CodeBlock::onCodeCompletion(llvm::SMLoc completeLoc,
   uint64_t rawCompletePos = completeLoc.getPointer() - contents.data();
   return ctx.codeCompleteREPLExpression(contents, rawCompletePos,
                                         persistentVariables, decl);
-}
-
-void MojoDocStrings::CodeBlock::onInlayHint(
-    std::vector<MojoInlayHint> &inlayHints) {
-  // Add an `>>>` inlay hint for each line in the code block. This helps to
-  // differentiate the code block from normal code.
-  SmallVector<StringRef> lines;
-  contents.split(lines, '\n');
-  for (StringRef line : lines) {
-    SMLoc loc = SMLoc::getFromPointer(line.data() +
-                                      (line.empty() ? 0 : contentsIndent));
-
-    MojoInlayHint hint(lsp::InlayHintKind::Type, ">>>", loc);
-    hint.leftIndent = line.empty() ? contentsIndent : 0;
-    hint.paddingRight = true;
-    inlayHints.emplace_back(hint);
-  }
 }
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
