@@ -69,6 +69,11 @@ public:
   //       Note that we'll need to use it when generating TUF key IDs.
   ErrorOrSuccess validateSignature(StringRef signedData, StringRef signature);
 
+  /// Sign `data` and return the signature.
+  // TODO: This currently assumes that we want to use SHA256 for all
+  //       validations, but we could pretty easily allow it to be configurable.
+  ErrorOr<std::string> sign(StringRef data);
+
   /// Return the key ID in the format that TUF would expect. This requires JSON
   /// formatting - if we end up deciding to change our TUF manifest
   /// representation we will need to change this as well. Return the string as a

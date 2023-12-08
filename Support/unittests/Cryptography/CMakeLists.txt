@@ -14,6 +14,7 @@ add_modular_unittest(
   TEST_NAME
   SupportCryptographyTests
 
+  KeypairTest.cpp
   SymmetricTest.cpp
 
   LINK_LIBS PRIVATE
