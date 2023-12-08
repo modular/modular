@@ -750,18 +750,36 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
     return subjectOr.takeError();
 
   // Set up auth - this will read the certificate from the filesystem and use
-  // that.
+  // that. This should still use the old keys for now.
   if (auto err = client.setupAuth())
     return err.takeError();
+
+  // Rotate the client's keys on each refresh.
+  auto newKeysOr = Keypair::generate(Config::getModularDataFolderPath());
+  if (newKeysOr.isError())
+    return newKeysOr.takeError();
+
+  // Swap the client keys (the current keys) with the new keys. That way
+  // `oldKeys` will point to the old keypair, and `clientKeys` will point to the
+  // new keypair for the CSR.
+  Keypair oldKeys = std::move(*newKeysOr);
+  std::swap(oldKeys, clientKeys);
 
   // This is the buffer we'll use for the CSR.
   WriteableBufferRef buf = WriteableBuffer::get();
   if (auto err = generateCSR(clientKeys, *subjectOr, buf.copy()))
     return err.takeError();
 
+  // Sign the CSR with the old keys and add that signature to the JSON blob.
+  auto sigOr = oldKeys.sign(buf->Buffer::getBuffer());
+  if (sigOr.isError())
+    return sigOr.takeError();
+  // Base-64 encode the signature.
+  std::string b64Sig = encodeURLSafeBase64(*sigOr);
+
   // Request the new certificate. This will populate the certificate in memory,
   // but won't verify the certificate.
-  if (auto err = requestCertificate(client, std::move(buf)))
+  if (auto err = requestCertificate(client, buf->Buffer::getBuffer(), b64Sig))
     return err.takeError();
 
   // Validate and flush the certificate we just got.
@@ -969,8 +987,11 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
   if (auto err = generateCSR(clientKeys, *subjectOr, csrBuf.copy()))
     return err.takeError();
 
-  // Great, now we can refresh the cert given the CSR we just generated.
-  return requestCertificate(client, std::move(csrBuf));
+  // Great, now we can refresh the cert given the CSR we just generated. Since
+  // we aren't rotating the client keypair, we don't want to pass in a signature
+  // from a previous key.
+  return requestCertificate(client, csrBuf->Buffer::getBuffer(),
+                            /*prevKeySig=*/"");
 }
 
 //===----------------------------------------------------------------------===//
@@ -978,7 +999,8 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
-                                                    BufferRef csr) {
+                                                    StringRef csr,
+                                                    StringRef prevKeySig) {
   HTTPRequest certificateRequest{
       "https://auth.modular.com/user/certificates:issue"};
   certificateRequest.method = HTTPRequest::Method::POST;
@@ -987,8 +1009,9 @@ ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
   // Provide the CSR and certificate as PEM-encoded blobs.
   StringRef clientCertChainPEMRef =
       clientCert ? clientCert->getPEM() : StringRef();
-  auto obj = llvm::json::Object({{"certificate_request", csr->getBuffer()},
-                                 {"certificate", clientCertChainPEMRef}});
+  auto obj = llvm::json::Object({{"certificate_request", csr},
+                                 {"certificate", clientCertChainPEMRef},
+                                 {"previous_key_signature", prevKeySig}});
   llvm::json::Value val(std::move(obj));
 
   std::string certRequestBody;

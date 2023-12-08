@@ -95,8 +95,10 @@ private:
   /// Takes a CSR and requests a certificate. The certificate is returned in PEM
   /// form and decoded. Once the certificate is received, it is stored to
   /// `clientCertDER`. No validation is performed at this stage to avoid parsing
-  /// the certificate into the mbedtls_x509 structure.
-  ErrorOrSuccess requestCertificate(HTTPClient &client, BufferRef csr);
+  /// the certificate into the mbedtls_x509 structure. The previous key
+  /// signature may be empty if we aren't rotating the client keypair.
+  ErrorOrSuccess requestCertificate(HTTPClient &client, StringRef csr,
+                                    StringRef prevKeySig);
 
   /// This is a map of all the entitlements we have, indexed by their OID. This
   /// means that we can only have a single instance of a given entitlement at a

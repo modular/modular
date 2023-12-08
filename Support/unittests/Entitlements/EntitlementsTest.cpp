@@ -203,6 +203,13 @@ private:
     auto csrOr = jsonObj->getString("certificate_request");
     EXPECT_TRUE(csrOr) << "didn't have a CSR";
 
+    auto prevSigOr = jsonObj->getString("previous_key_signature");
+    if (jsonObj->getString("certificate")) {
+      EXPECT_TRUE(prevSigOr) << "expected to be signed by the previous key if "
+                                "we have an old certificate";
+      // TODO: Validate the signature using the public key in the certificate.
+    }
+
     mbedtls_x509_csr csr;
     mbedtls_x509_csr_init(&csr);
 
