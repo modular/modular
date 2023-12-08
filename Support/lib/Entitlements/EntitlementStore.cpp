@@ -125,7 +125,8 @@ static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
 // getSystemRootCerts
 //===----------------------------------------------------------------------===//
 
-/// Find and parse the system certificates.
+/// Get the root certificates for this system - parse them and add them to
+/// `list`.
 static ErrorOrSuccess getSystemRootCerts(mbedtls_x509_crt *list) {
   // The first cert in the list is going to be our stored certificate. Unless
   // something highly unforseen happens, that will be the root cert that we want
@@ -137,132 +138,7 @@ static ErrorOrSuccess getSystemRootCerts(mbedtls_x509_crt *list) {
                  mbedTLSErrorToString(rc));
   }
 
-  // Each cert in the array should turn into a cert in the mbedtls CA list -
-  // it doesn't treat them as a chain, they are a list.
-#ifdef __APPLE__
-  // Pull out the trust anchor certificates from the builtin Apple security
-  // framework. We have to do a bunch of work bridging CF types and C++ types
-  // and stringifying errors.
-  CFArrayRef arr;
-  OSStatus status = SecTrustCopyAnchorCertificates(&arr);
-  if (status != errSecSuccess) {
-    CFStringRef errStr = SecCopyErrorMessageString(status, nullptr);
-    long errLen = CFStringGetLength(errStr);
-    if (errLen <= 0) {
-      return Error("unknown error string length, failed to string-ify OSStatus "
-                   "error code: " +
-                   Twine((int)status));
-    }
-    // CFStringGetLength returns the number of UTF16 code pairs, not the number
-    // of bytes.
-    errLen = CFStringGetMaximumSizeForEncoding(errLen, kCFStringEncodingUTF8);
-    std::string error;
-    error.resize(errLen);
-    if (!CFStringGetCString(errStr, error.data(), error.size(),
-                            kCFStringEncodingUTF8)) {
-      return Error("unable to convert error string to utf8, failed to "
-                   "string-ify OSStatus error code: " +
-                   Twine((int)status));
-    }
-    // OK, we were able to string-ify the error code.
-    return Error(error);
-  }
-
-  auto freeArr = llvm::make_scope_exit([&] { CFRelease(arr); });
-  // Now, iterate the CFArrayRef and pull out each cert.
-  CFIndex numCerts = CFArrayGetCount(arr);
-  if (numCerts <= 0)
-    return Error("no trusted root certs found");
-
-  size_t numCertsParsed = 0;
-  std::vector<std::string> err;
-  for (CFIndex i = 0; i < numCerts; ++i) {
-    // Pull the certificate data out of the array.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcast-qual"
-    const auto cert = (SecCertificateRef)CFArrayGetValueAtIndex(arr, i);
-#pragma clang diagnostic pop
-    CFDataRef certDER = SecCertificateCopyData(cert);
-    if (certDER == nullptr) {
-      err.push_back("could not copy data from root cert " + std::to_string(i));
-      continue;
-    }
-
-    const uint8_t *certDERBytes = CFDataGetBytePtr(certDER);
-    size_t numCertBytes = CFDataGetLength(certDER);
-
-    // Parse the DER into the mbedTLS format.
-    rc = mbedtls_x509_crt_parse_der(list, certDERBytes, numCertBytes);
-    // If parsing failed, push the error but otherwise do nothing. If it
-    // succeeded, then increment the number of certs we parsed.
-    if (rc == 0)
-      ++numCertsParsed;
-    else
-      err.push_back(mbedTLSErrorToString(rc));
-
-    CFRelease(certDER);
-  }
-
-  // We didn't parse a single certificate. Return all the errors we must have
-  // accumulated.
-  if (numCertsParsed == 0) {
-    std::string outErr;
-    llvm::raw_string_ostream errStream(outErr);
-    llvm::interleaveComma(err, errStream);
-    return Error(outErr);
-  }
-  // We parsed at least one cert, so we can say that we "got the system certs".
   return success();
-#endif // __APPLE__
-
-#ifdef __linux__
-  // Most (all?) linux distros put their ca certificates in a symlink at this
-  // path.
-  constexpr llvm::StringLiteral linuxCAPath =
-      "/etc/ssl/certs/ca-certificates.crt";
-  rc = mbedtls_x509_crt_parse_file(list, linuxCAPath.data());
-  if (rc >= 0)
-    return success();
-
-  return Error(mbedTLSErrorToString(rc));
-#endif // __linux__
-
-#ifdef _WIN32
-  HCERTSTORE hStore = CertOpenSystemStore(0, (LPCWSTR)L"ROOT");
-  if (hStore == nullptr)
-    return Error("could not open system root certificate store");
-
-  std::vector<std::string> errs;
-  size_t numCertsParsed = 0;
-  PCCERT_CONTEXT pContext = nullptr;
-  while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) !=
-         nullptr) {
-    int rc = mbedtls_x509_crt_parse_der(
-        list, (const unsigned char *)pContext->pbCertEncoded,
-        pContext->cbCertEncoded);
-    if (rc < 0)
-      errs.push_back(mbedTLSErrorToString(rc));
-    else
-      ++numCertsParsed;
-
-    // We don't need to free pContext - CertEnumCertificatesInStore frees it.
-  }
-
-  CertCloseStore(hStore, 0);
-
-  if (numCertsParsed == 0) {
-    std::string outErr;
-    llvm::raw_string_ostream errStream(outErr);
-    llvm::interleaveComma(errs, errStream);
-    return Error(outErr);
-  }
-
-  // We parsed at least one cert, so we can say that we "got the system certs".
-  return success();
-#endif // _WIN32
-
-  llvm::report_fatal_error(
-      "unsupported platform, couldn't parse any root certificates");
 }
 
 //===----------------------------------------------------------------------===//
