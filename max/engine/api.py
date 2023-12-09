@@ -105,7 +105,9 @@ class Model:
             )
         dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
         for input_name, input_value in kwargs.items():
-            if input_value.dtype != dtype_map[input_name]:
+            if dtype_map[input_name] == DType.unknown:
+                kwargs[input_name] = input_value
+            elif input_value.dtype != dtype_map[input_name]:
                 try:
                     # the default casting settings of NumPy
                     # are extremely liberal - all data conversions are allowed
@@ -182,6 +184,7 @@ class DType(Enum):
     float16 = 9
     float32 = 10
     float64 = 11
+    unknown = 12
 
     @classmethod
     def _from(cls, dtype: _DType):
@@ -219,6 +222,7 @@ class DType(Enum):
             return np.float32
         elif self == DType.float64:
             return np.float64
+        return None
 
 
 class TensorSpec:
