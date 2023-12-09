@@ -55,13 +55,13 @@ func.func @foo(%arg0: i32, %arg1: i32, %arg2: !llvm.ptr) {
   // CHECK: llvm.intr.dbg.value #[[LOCALVAR]] =
   debuginfo.value #local_variable #trivial_expr = %arg0 : i32
   // COM: This will get removed as LLVM does not support implicit pointer yet.
-  // COM: CHECK: llvm.intr.dbg.value #[[LOCALVAR_PTR]] #llvm.di_expr<[4100]>
+  // COM: CHECK: llvm.intr.dbg.value #[[LOCALVAR_PTR]] #llvm.di_expression<[DW_OP_LLVM_implicit_pointer]>
   debuginfo.value #local_variable_ptr #refof_expr = %arg1 : i32
   // COM: This will get converted to declare because local_variable1 only has one debug value.
-  // CHECK: llvm.intr.dbg.declare #[[LOCALVAR1]] #llvm.di_expr<[6]>
+  // CHECK: llvm.intr.dbg.declare #[[LOCALVAR1]] #llvm.di_expression<[DW_OP_deref]>
   debuginfo.value #local_variable1 #deref_expr = %arg2 : !llvm.ptr
   // COM: This expr will be kept as a value since #local_variable is referenced multiple times.
-  // CHECK: llvm.intr.dbg.value #[[LOCALVAR]] #llvm.di_expr<[6]>
+  // CHECK: llvm.intr.dbg.value #[[LOCALVAR]] #llvm.di_expression<[DW_OP_deref]>
   debuginfo.value #local_variable #deref_expr = %arg2 : !llvm.ptr
   return
 }
