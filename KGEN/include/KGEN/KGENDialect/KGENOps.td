@@ -1037,7 +1037,7 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
 //===----------------------------------------------------------------------===//
 
 // TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
-def Builtin_LocationAttr : Builtin_Attr<"Location", []> {}
+def Builtin_LocationAttr : Builtin_Attr<"Location", "location", []> {}
 
 def KGEN_StageClosureOp : KGENOp<"stage_closure",
   [Pure, FunctionLike, DebugInfo_InlinedSubprogramScoped]

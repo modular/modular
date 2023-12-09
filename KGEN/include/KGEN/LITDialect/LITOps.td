@@ -865,7 +865,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 //===----------------------------------------------------------------------===//
 
 // TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
-def Builtin_LocationAttr : Builtin_Attr<"Location", []> {}
+def Builtin_LocationAttr : Builtin_Attr<"Location", "location", []> {}
 
 def LIT_AliasForwardDeclOp : LITOp<"alias.fwd_decl", [ASTDeclInterface]> {
   let summary = "`alias x: T` declaration for a callee return parameter";

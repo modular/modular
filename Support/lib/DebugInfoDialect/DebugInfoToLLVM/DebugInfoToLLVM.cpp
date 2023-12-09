@@ -144,8 +144,9 @@ MetadataConverter::convertAttrImpl(DIRefOfExprAttr attr) {
   if (!prefix)
     return {};
 
-  SmallVector<uint64_t> expr(prefix.getValue());
-  expr.push_back(llvm::dwarf::DW_OP_LLVM_implicit_pointer);
+  SmallVector<LLVM::DIExpressionElemAttr> expr(prefix.getOperations());
+  expr.push_back(LLVM::DIExpressionElemAttr::get(
+      attr.getContext(), llvm::dwarf::DW_OP_LLVM_implicit_pointer, {}));
   return LLVM::DIExpressionAttr::get(attr.getContext(), expr);
 }
 
@@ -156,8 +157,9 @@ MetadataConverter::convertAttrImpl(DIDerefExprAttr attr) {
   if (!prefix)
     return {};
 
-  SmallVector<uint64_t> expr(prefix.getValue());
-  expr.push_back(llvm::dwarf::DW_OP_deref);
+  SmallVector<LLVM::DIExpressionElemAttr> expr(prefix.getOperations());
+  expr.push_back(LLVM::DIExpressionElemAttr::get(attr.getContext(),
+                                                 llvm::dwarf::DW_OP_deref, {}));
   return LLVM::DIExpressionAttr::get(attr.getContext(), expr);
 }
 
