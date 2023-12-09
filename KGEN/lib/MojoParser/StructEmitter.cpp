@@ -139,7 +139,8 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds) {
+    ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
+    std::optional<ArrayRef<StructFieldOp>> injectedFields) {
   auto structOp = cast<StructDeclOp>(structDecl);
   ASTType selfType = structDecl.getSelfType();
   bool isMemoryOnly = !structOp.isRegisterPassable();
@@ -175,7 +176,13 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     BlockArgument selfArg = body->getArgument(0);
     assert(selfArg.getType().isa<PointerType>());
     size_t idx = 1;
-    for (StructFieldOp field : structOp.getFieldDecls()) {
+    SmallVector<StructFieldOp> fields =
+        injectedFields.has_value()
+            ? llvm::map_to_vector(injectedFields.value(),
+                                  [](auto v) { return v; })
+            : llvm::map_to_vector(structOp.getFieldDecls(),
+                                  [](auto v) { return v; });
+    for (StructFieldOp field : fields) {
       // Add the block argument, get it as an RValue since it is owned.
       BlockArgument arg = body->getArgument(idx);
       CValue argVal;
@@ -496,7 +503,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       argPassingKinds.push_back(PassingKind::PosOrKw);
     }
     init = synthesizeMemberwiseInit(structDecl, argTypes, argConventions,
-                                    argNames, argPassingKinds);
+                                    argNames, argPassingKinds, {});
   }
 
   if (!valueInfo.hasDestructor()) {

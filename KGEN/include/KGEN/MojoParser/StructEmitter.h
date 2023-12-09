@@ -91,11 +91,15 @@ public:
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
-  LIT::FuncOp
-  synthesizeMemberwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
-                           ArrayRef<ValueInputConvention> argConventions,
-                           ArrayRef<StringAttr> argNames,
-                           ArrayRef<PassingKind> argPassingKinds);
+  /// The `injectedFields` argument can be specified when creating an init
+  /// method for memory-only types where not all fields are initialized, though
+  /// this requires manual modification of the returned FuncOp to initialize any
+  /// omitted fields.
+  LIT::FuncOp synthesizeMemberwiseInit(
+      ASTDecl &structDecl, ArrayRef<Type> argTypes,
+      ArrayRef<ValueInputConvention> argConventions,
+      ArrayRef<StringAttr> argNames, ArrayRef<PassingKind> argPassingKinds,
+      std::optional<ArrayRef<StructFieldOp>> injectedFields);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated. `prefix` is prepended to the mangled function name.
