@@ -141,30 +141,14 @@ fn MOGGExport():
     alias _out_chain = OutputChainPtrDef
     alias _simd_typedef = SimdTypeDef
     alias _index_typedef = IndexTypeDef
-    alias _dtype_bfloat16 = DTypeBFloat16TypeDef
-    alias _dtype_float16 = DTypeFloat16TypeDef
-    alias _dtype_float32 = DTypeFloat32TypeDef
-    alias _dtype_float64 = DTypeFloat64TypeDef
-    alias _dtype_si8 = DTypeInt8TypeDef
-    alias _dtype_si16 = DTypeInt16TypeDef
-    alias _dtype_si32 = DTypeInt32TypeDef
-    alias _dtype_si64 = DTypeInt64TypeDef
-    alias _dtype_ui32 = DTypeUInt32TypeDef
-    alias _dtype_ui16 = DTypeUInt16TypeDef
-    alias _dtype_ui8 = DTypeUInt8TypeDef
-    alias _dtype_bool = DTypeBoolTypeDef
     alias _to_buffer = to_buffer
     alias _to_buffer_list = to_buffer_list
     alias _destruct_buffer_list = destruct_buffer_list
     alias _to_shape = to_shape
-    alias _arg_max = argmax_wrapped
-    alias _arg_min = argmin_wrapped
-    alias _abs = abs_wrapped
     alias _add = add
     alias _avg_pool_shape = pool_shape
     alias _avg_pool = avg_pool
     alias _broadcast_shape = broadcast_shape
-    alias _cast = cast
     alias _ceil = ceil
     alias _concat = concat
     alias _concat_from_list = concat_from_list
@@ -198,11 +182,9 @@ fn MOGGExport():
     alias _logical_xor = logical_xor
     alias _log = log
     alias _log1p = log1p
-    alias _logsoftmax = logsoftmax
     alias _pack_b_ndbuffer = pack_b_ndbuffer
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
     alias _pack_conv_filter = pack_conv_filter
-    alias _pow = pow_wrapped
     alias _max_pool_shape = pool_shape
     alias _max_pool = max_pool
     alias _mean = mean
@@ -213,8 +195,6 @@ fn MOGGExport():
     alias _non_maximum_suppression = non_maximum_suppression
     alias _non_maximum_suppression_shape_func = non_maximum_suppression_shape_func
     alias _batched_matmul = batched_matmul
-    alias _mogg_max = mogg_max
-    alias _mogg_min = mogg_min
     alias _mod = mod
     alias _mul = mul
     alias _not_equal = not_equal
@@ -222,7 +202,6 @@ fn MOGGExport():
     alias _select = select
     alias _sigmoid = sigmoid
     alias _sin = sin
-    alias _sqrt = sqrt_wrapped
     alias _sub = sub
     alias _tanh = tanh
     alias _arange = arange
@@ -245,7 +224,6 @@ fn MOGGExport():
     alias _scatter_max = scatter_max
     alias _scatter_min = scatter_min
     alias _scatter_mul = scatter_mul
-    alias _slice = slice
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
     alias _softmax = softmax
@@ -264,14 +242,11 @@ fn MOGGExport():
     alias _roundeven = roundeven
     alias _roi_align_shape = roi_align_shape
     alias _slice_shape = slice_shape
-    alias _transpose = transpose
     alias _transpose_shape = transpose_shape
     alias _trunc = trunc
     alias _elementwise = elementwise_wrapper
     alias _get_int_from_shape = get_int_from_shape
     alias _tensor_to_shape = tensor_to_shape
-    alias _print_shape_info = print_buffer_info
-    alias _mark_output_chain_ready = mark_output_chain_ready
     alias _arg_nonzero = arg_nonzero
     alias _arg_nonzero_shape = arg_nonzero_shape
     alias _top_k = top_k
@@ -328,71 +303,85 @@ struct ABI_List:
 
 
 @mogg_register("bfloat16")
+@export
 fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.bfloat16.value
 
 
 @mogg_register("float16")
+@export
 fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.float16.value
 
 
 @mogg_register("float32")
+@export
 fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
     return DType.float32.value
 
 
 @mogg_register("float64")
+@export
 fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
     return DType.float64.value
 
 
 @mogg_register("int8")
+@export
 fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.int8.value
 
 
 @mogg_register("int16")
+@export
 fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.int16.value
 
 
 @mogg_register("int32")
+@export
 fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.int32.value
 
 
 @mogg_register("uint32")
+@export
 fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.uint32.value
 
 
 @mogg_register("int64")
+@export
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.int64.value
 
 
 @mogg_register("uint8")
+@export
 fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.uint8.value
 
 
 @mogg_register("uint16")
+@export
 fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.uint16.value
 
 
 @mogg_register("bool")
+@export
 fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
     return DType.bool.value
 
 
 @mogg_register("index")
+@export
 fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
 @mogg_register("outChain")
+@export
 fn OutputChainPtrDef(ty: OutputChainPtr) -> OutputChainPtr:
     return ty
 
@@ -925,6 +914,7 @@ fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
 @mogg_register("mo.abs")
 @mogg_elementwise
 @always_inline
+@export
 fn abs_wrapped[
     type: DType, simd_width: Int
 ](value: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -938,6 +928,7 @@ fn abs_wrapped[
 
 # Call argmax, needed as it has multiple overloads which can't be aliased
 @always_inline
+@export
 fn argmax_wrapped[
     type: DType,
     out_type: DType,
@@ -959,6 +950,7 @@ fn argmax_wrapped[
 
 # Call argmin, needed as it has multiple overloads which can't be aliased
 @always_inline
+@export
 fn argmin_wrapped[
     type: DType,
     out_type: DType,
@@ -982,6 +974,7 @@ fn argmin_wrapped[
 @mogg_register("mo.cast")
 @mogg_elementwise
 @always_inline
+@export
 fn cast[
     type: DType, new_type: DType, simd_width: Int
 ](value: SIMD[type, simd_width]) -> SIMD[new_type, simd_width]:
@@ -1144,6 +1137,7 @@ fn split[
 @mogg_register("mo.pow")
 @mogg_elementwise
 @always_inline
+@export
 fn pow_wrapped[
     type: DType, power_type: DType, simd_width: Int
 ](value: SIMD[type, simd_width], power: SIMD[power_type, simd_width]) -> SIMD[
@@ -1161,6 +1155,7 @@ fn pow_wrapped[
 @mogg_register("mo.sqrt")
 @mogg_elementwise
 @always_inline
+@export
 fn sqrt_wrapped[
     type: DType, simd_width: Int
 ](value: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -1177,6 +1172,7 @@ fn sqrt_wrapped[
 @mogg_register("mo.max")
 @mogg_elementwise
 @always_inline
+@export
 fn mogg_max[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
@@ -1188,6 +1184,7 @@ fn mogg_max[
 @mogg_register("mo.min")
 @mogg_elementwise
 @always_inline
+@export
 fn mogg_min[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
@@ -1547,6 +1544,7 @@ fn reduce_mul[
 @mogg_register("mo.slice")
 @mogg_view_op
 @always_inline
+@export
 fn slice[
     type: DType,
     start_type: DType,
@@ -1700,6 +1698,7 @@ fn calculate_unsqueeze_shape[
 @mogg_register("mo.transpose")
 @mogg_view_op
 @always_inline
+@export
 fn transpose[
     rank: Int,
     type: DType,
@@ -2515,6 +2514,7 @@ fn softmax[
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
 @mogg_register("mo.logsoftmax")
 @always_inline
+@export
 fn logsoftmax[
     rank: Int,
     type: DType,
@@ -3020,12 +3020,14 @@ fn mogg_layer_norm[
 # Helper function to mark the output chain as ready in tests.
 @mogg_register("mark_output_chain_ready")
 @always_inline
+@export
 fn mark_output_chain_ready(out_chain: OutputChainPtr):
     out_chain.mark_ready()
 
 
 # Helper function to query buffer shapes for tests.
 @mogg_register("print_shape_info")
+@export
 fn print_buffer_info[
     type: DType, rank: Int
 ](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]):
