@@ -16,7 +16,15 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu import GridDim, BlockIdx, BlockDim, ThreadIdx, barrier, WARP_SIZE
+from gpu import (
+    GridDim,
+    BlockIdx,
+    BlockDim,
+    ThreadIdx,
+    barrier,
+    WARP_SIZE,
+    lane_id,
+)
 from gpu.sync import syncwarp
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
@@ -24,7 +32,7 @@ from utils.index import Index
 from utils.list import DimList
 from random import seed
 from gpu.mma import mma
-from Matmul import matmul_kernel_naive
+from Matmul import matmul_kernel
 
 
 # Calculates c = a*b
@@ -33,7 +41,7 @@ from Matmul import matmul_kernel_naive
 # Uses indexing information from:
 # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html
 # Chapter 9.7.13.4.7. Matrix Fragments for mma.m16n8k8
-fn mma_kernel(
+fn mma_kernel_single(
     c_ptr: DTypePointer[DType.float32],
     a_ptr: DTypePointer[DType.float32],
     b_ptr: DTypePointer[DType.float32],
@@ -101,9 +109,80 @@ fn mma_kernel(
     c[Index(row_cd2_cd3, col_cd3)] = d_reg[3]
 
 
-fn run_mma(M: Int, N: Int, K: Int) raises:
-    print("== run_matvec kernel")
+# Doing Tensor core Matmul with shape m16n8k8
+fn mma_kernel(
+    c_ptr: DTypePointer[DType.float32],
+    a_ptr: DTypePointer[DType.float32],
+    b_ptr: DTypePointer[DType.float32],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    let mma_m = 16
+    let mma_n = 8
+    let mma_k = 8
 
+    var a_reg = SIMD[DType.float32, 4]()
+    var b_reg = SIMD[DType.float32, 2]()
+    var d_reg = SIMD[DType.float32, 4]()
+    let tile_loops = k // mma_k
+    let group_id = lane_id() >> 2
+    let group_lane_id = lane_id() % 4
+
+    for i in range(tile_loops):
+        let a_tile_row = BlockIdx.x() * mma_m
+        let a_tile_col = i * mma_k
+        let b_tile_row = i * mma_k
+        let b_tile_col = BlockIdx.y() * mma_n
+
+        let a0_row = group_id
+        let a0_col = group_lane_id
+        let a1_row = group_id + 8
+        let a1_col = group_lane_id
+        let a2_row = group_id
+        let a2_col = group_lane_id + 4
+        let a3_row = group_id + 8
+        let a3_col = group_lane_id + 4
+
+        let b0_row = group_lane_id
+        let b0_col = group_id
+        let b1_row = group_lane_id + 4
+        let b1_col = group_id
+
+        # Populate registers with input matrices
+        a_reg[0] = a_ptr.load((a_tile_row + a0_row) * k + (a_tile_col + a0_col))
+        a_reg[1] = a_ptr.load((a_tile_row + a1_row) * k + (a_tile_col + a1_col))
+        a_reg[2] = a_ptr.load((a_tile_row + a2_row) * k + (a_tile_col + a2_col))
+        a_reg[3] = a_ptr.load((a_tile_row + a3_row) * k + (a_tile_col + a3_col))
+        b_reg[0] = b_ptr.load((b_tile_row + b0_row) * n + (b_tile_col + b0_col))
+        b_reg[1] = b_ptr.load((b_tile_row + b1_row) * n + (b_tile_col + b1_col))
+
+        # Perform mma (d = a * b + d)
+        mma(d_reg, a_reg, b_reg, d_reg)
+
+    let c_tile_row = BlockIdx.x() * mma_m
+    let c_tile_col = BlockIdx.y() * mma_n
+
+    let c0_row = group_id
+    let c0_col = (group_lane_id * 2) + (0 & 0x1)
+    let c1_row = group_id
+    let c1_col = (group_lane_id * 2) + (1 & 0x1)
+    let c2_row = group_id + 8
+    let c2_col = (group_lane_id * 2) + (2 & 0x1)
+    let c3_row = group_id + 8
+    let c3_col = (group_lane_id * 2) + (3 & 0x1)
+
+    # Write back results
+    c_ptr.store((c_tile_row + c0_row) * n + (c_tile_col + c0_col), d_reg[0])
+    c_ptr.store((c_tile_row + c1_row) * n + (c_tile_col + c1_col), d_reg[1])
+    c_ptr.store((c_tile_row + c2_row) * n + (c_tile_col + c2_col), d_reg[2])
+    c_ptr.store((c_tile_row + c3_row) * n + (c_tile_col + c3_col), d_reg[3])
+
+
+fn run_mma(M: Int, N: Int, K: Int, errorTolerance: Float32) raises:
+    print("== run_matmul tensor core kernel")
+
+    let iterations = 100
     let stream = Stream()
     let a_host = Pointer[Float32].alloc(M * K)
     let b_host = Pointer[Float32].alloc(K * N)
@@ -140,19 +219,35 @@ fn run_mma(M: Int, N: Int, K: Int) raises:
         ) -> None, mma_kernel
     ]()
 
-    func_mma(
-        1,
-        WARP_SIZE,
-        c_device,
-        a_device,
-        b_device,
-        M,
-        N,
-        K,
-        stream=stream,
-    )
+    alias WARP_PER_BLOCK = 1
+    alias MMA_M = 16
+    alias MMA_N = 8
+    alias MMA_K = 8
 
-    synchronize()
+    @always_inline
+    @parameter
+    fn run_func_mma(stream: Stream) raises:
+        func_mma(
+            (div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
+            WARP_PER_BLOCK * WARP_SIZE,
+            c_device,
+            a_device,
+            b_device,
+            M,
+            N,
+            K,
+            stream=stream,
+        )
+
+    var nstime = 0.0
+    for i in range(iterations):
+        nstime += time_function[run_func_mma](stream)
+    let flops = 2 * M * N * K
+    let sectime = ((nstime / iterations) / 1000000000)
+    print("Basic Tensor core kernel:")
+    print(sectime, "sec")
+    print(flops * 1e-9 / sectime, " GFLOPS")
+    print()
 
     _copy_device_to_host(c_host, c_device, M * N)
 
@@ -169,29 +264,38 @@ fn run_mma(M: Int, N: Int, K: Int) raises:
             Int,
             Int,
             Int,
-        ) capturing -> None, matmul_kernel_naive[
+        ) capturing -> None, matmul_kernel[
             DType.float32, DType.float32, DType.float32, BLOCK_DIM
         ]
     ]()
 
-    func_naive(
-        (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
-        (BLOCK_DIM, BLOCK_DIM),
-        c_device,
-        a_device,
-        b_device,
-        M,
-        N,
-        K,
-        stream=stream,
-    )
+    @always_inline
+    @parameter
+    fn run_func_naive(stream: Stream) raises:
+        func_naive(
+            (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            (BLOCK_DIM, BLOCK_DIM),
+            c_device,
+            a_device,
+            b_device,
+            M,
+            N,
+            K,
+            stream=stream,
+        )
 
-    synchronize()
+    nstime = 0.0
+    for i in range(iterations):
+        nstime += time_function[run_func_naive](stream)
+    let sectime2 = ((nstime / iterations) / 1000000000)
+    print("Shmem matmul kernel:")
+    print(sectime2, "sec")
+    print(flops * 1e-9 / sectime2, " GFLOPS")
+    print()
 
     _copy_device_to_host(c_host_naive, c_device, M * N)
 
     # Check correctness.
-    let errorTolerance = 0.0001
     var failed = False
     for i in range(M * N):
         let outVal = c_host.load(i)
@@ -203,10 +307,16 @@ fn run_mma(M: Int, N: Int, K: Int) raises:
             or math.isnan(outRef)
         ):
             failed = True
+            print(i, outVal, outRef)
 
     # CHECK: Success
     if not failed:
         print("Success 🎉: Results match.")
+        print(
+            "Performance basic tensor core matmul vs. shmem matmul: ",
+            sectime2 / sectime,
+            "x",
+        )
     else:
         print("Failed ❌: results mismatch.")
 
@@ -229,7 +339,11 @@ def main():
     try:
         with Context() as ctx:
             # Run mma version of matmul, verify correctness and compare to naive.
-            run_mma(16, 8, 8)
+            run_mma(4096, 4096, 4096, 0.01)
+            run_mma(4096, 2048, 1024, 0.01)
+            run_mma(4096, 2048, 4096, 0.01)
+            run_mma(16, 32, 128, 0.01)
+            run_mma(32, 64, 32, 0.01)
 
     except e:
         print("CUDA_ERROR:", e)
