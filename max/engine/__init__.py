@@ -11,6 +11,7 @@ from .api import (
     Model,
     TensorFlowLoadOptions,
     TensorSpec,
+    TorchLoadOptions,
     version_string,
 )
 
