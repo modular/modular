@@ -17,6 +17,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/LLVMAlignToMacro.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -1574,14 +1575,14 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
   unsigned index = getIndexAttr().getInt();
   for (unsigned i = 0; i != index; ++i) {
     auto dl = cast<DataLayoutInterface>(structType.getElementTypes()[i]);
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    CHECKED_LLVM_ALIGN_TO(offset, offset, *dl.getTypeAlign(state.getTarget()));
     offset += *dl.getTypeSize(state.getTarget());
   }
 
   // Align the address to the target element.
   Type targetType = structType.getElementTypes()[index];
-  offset = llvm::alignTo(
-      offset,
+  CHECKED_LLVM_ALIGN_TO(
+      offset, offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
   state.mapResults(
       PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));

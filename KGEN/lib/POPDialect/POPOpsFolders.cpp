@@ -9,6 +9,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/AlignedAlloc.h"
+#include "Support/LLVMAlignToMacro.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
@@ -1104,10 +1105,10 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
   TypedAttr elementType = arrayType.getElementType();
   auto dl = cast<DataLayoutInterface>(
       cast<ConcreteTypeConstantAttr>(elementType).getValue());
-  int64_t addr =
-      ptr.getAddr() +
-      index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
-                                      *dl.getTypeAlign(state.getTarget())));
+  uint64_t size;
+  CHECKED_LLVM_ALIGN_TO(size, *dl.getTypeSize(state.getTarget()),
+                        *dl.getTypeAlign(state.getTarget()));
+  int64_t addr = ptr.getAddr() + index.getInt() * size;
   state.mapResults(PointerAttr::get(addr, PointerType::get(elementType)));
   return success();
 }

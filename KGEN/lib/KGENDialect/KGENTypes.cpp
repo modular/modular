@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "Support/LLVMAlignToMacro.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -804,8 +805,10 @@ LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value) const {
 // An index type as same alignment and size of a pointer type.
 std::optional<int64_t>
 KGEN::StringType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * llvm::alignTo(target.getDataLayout().getPointerSize(),
-                           target.getDataLayout().getPointerABIAlign());
+  int64_t size;
+  CHECKED_LLVM_ALIGN_TO(size, target.getDataLayout().getPointerSize(),
+                        target.getDataLayout().getPointerABIAlign());
+  return 2 * size;
 }
 
 std::optional<int64_t>
@@ -914,8 +917,10 @@ VariadicType VariadicType::get(Type elementType, Type metaType) {
 /// the size of a pointer, plus the size of the size type (which has the same
 /// size and alignment as a pointer type).
 std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * llvm::alignTo(target.getDataLayout().getPointerSize(),
-                           target.getDataLayout().getPointerABIAlign());
+  int64_t size;
+  CHECKED_LLVM_ALIGN_TO(size, target.getDataLayout().getPointerSize(),
+                        target.getDataLayout().getPointerABIAlign());
+  return 2 * size;
 }
 
 /// The alignment of the variadic type is that its pointer and size.
@@ -1025,7 +1030,8 @@ static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
         DataLayoutInterface::getTypeAllocSize(target, type);
     if (!typeAlign || !typeSize)
       return {};
-    size = llvm::alignTo(size, *typeAlign) + *typeSize;
+    CHECKED_LLVM_ALIGN_TO(size, size, *typeAlign);
+    size += *typeSize;
     strictest = std::max(strictest, *typeAlign);
   }
   return llvm::alignTo(size, strictest);
@@ -1058,7 +1064,7 @@ ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
   for (TypedAttr value : ::cast<StructAttr>(value).getValues()) {
     auto dl = ::cast<DataLayoutInterface>(value.getType());
     // Store each element spaced apart by padding according to its alignment.
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    CHECKED_LLVM_ALIGN_TO(offset, offset, *dl.getTypeAlign(state.getTarget()));
     // Ignore unknown values. Just leave the memory as-is.
     if (!::isa<UnknownAttr>(value)) {
       ErrorOrSuccess result =
@@ -1077,7 +1083,7 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
   int64_t offset = 0;
   for (Type elType : getElementTypes()) {
     auto dl = elType.cast<DataLayoutInterface>();
-    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    CHECKED_LLVM_ALIGN_TO(offset, offset, *dl.getTypeAlign(state.getTarget()));
     ErrorOr<TypedAttr> value =
         state.readAttributeFromMemory(addr + offset, elType);
     if (value.isError())
@@ -1210,7 +1216,8 @@ static std::optional<int64_t> computeVariantContentSize(VariantType type,
       return {};
     maxSize = std::max(maxSize, *typeSize);
   }
-  return llvm::alignTo(maxSize, *type.getTypeAlign(target));
+  CHECKED_LLVM_ALIGN_TO(maxSize, maxSize, *type.getTypeAlign(target));
+  return maxSize;
 }
 
 /// Get bitwidth of the integer used to represent the discriminator. The
@@ -1235,8 +1242,10 @@ std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
     return {};
   // Align to the content array element alignment. We don't expect the
   // discriminator to exceed it in size (at least a 32-bit integer).
-  return llvm::alignTo(*contentSize + getVariantDiscrSize(*this),
-                       *getTypeAlign(target));
+  int64_t size;
+  CHECKED_LLVM_ALIGN_TO(size, *contentSize + getVariantDiscrSize(*this),
+                        *getTypeAlign(target));
+  return size;
 }
 
 std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
