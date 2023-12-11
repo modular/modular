@@ -58,6 +58,29 @@ static void attachInstrumentationAttributes(llvm::Module &module,
   }
 }
 
+/// HACK HACK HACK https://github.com/modularml/modular/issues/27478
+/// Using LineTables for NVPTX backend disables optimizations in cuda JIT. Use
+/// DebugDirectives instead for equivalent performance to no-debug.
+static void adaptDebugEmissionKind(ModuleOp module, StringRef targetTriple,
+                                   DebugInfo::EmissionKind debugLevel) {
+  bool generatingPtx = targetTriple.find("nvptx") != std::string::npos;
+  if (generatingPtx && debugLevel == DebugInfo::EmissionKind::LineTablesOnly) {
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement(
+        [](DebugInfo::DICompileUnitAttr CU) -> std::optional<Attribute> {
+          if (CU.getEmissionKind() == DebugInfo::EmissionKind::LineTablesOnly) {
+            return DebugInfo::DICompileUnitAttr::get(
+                CU.getSourceLanguage(), CU.getFile(), CU.getProducer(),
+                CU.getIsOptimized(),
+                DebugInfo::EmissionKind::DebugDirectivesOnly);
+          }
+          return std::nullopt;
+        });
+    replacer.recursivelyReplaceElementsIn(module, /*replaceAttrs=*/false,
+                                          /*replaceLocs=*/true);
+  }
+}
+
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(const SymbolTable &symtab,
                                     const ExportMap &exportedSymbols,
@@ -76,6 +99,9 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   // non-search mode, we know the passes have already been run.
   if (isSearch)
     buildPostElaborationPipeline(*mgr, runtime, options);
+
+  adaptDebugEmissionKind(module, options.targetTriple,
+                         options.getDIEmissionKind());
 
   LowerToLLVMOptions llvmOptions(
       options.getDIEmissionKind(), options.debugAtLevel,
