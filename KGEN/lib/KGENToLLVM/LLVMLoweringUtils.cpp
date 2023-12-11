@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
+#include "Support/LLVMAlignToMacro.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -61,7 +62,8 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
     int64_t strictest = 1;
     for (Type type : structType.getBody()) {
       int64_t eltABIAlign = getTypeABIAlign(type);
-      size = llvm::alignTo(size, eltABIAlign) + getTypeAllocSize(type);
+      CHECKED_LLVM_ALIGN_TO(size, size, eltABIAlign);
+      size += getTypeAllocSize(type);
       strictest = std::max(strictest, eltABIAlign);
     }
     return llvm::alignTo(size, strictest) * CHAR_BIT;
@@ -337,7 +339,9 @@ static unsigned advanceStoragePtr(ItType &valueIt, unsigned &storageOffset,
 template <typename ItType>
 static void addStoragePadding(ItType &valueIt, unsigned &storageOffset,
                               unsigned &offset, unsigned alignment) {
-  unsigned padding = llvm::alignTo(offset, alignment * CHAR_BIT) - offset;
+  unsigned padding;
+  CHECKED_LLVM_ALIGN_TO(padding, offset, alignment * CHAR_BIT);
+  padding -= offset;
   for (unsigned added = 0; added != padding;)
     added += advanceStoragePtr(valueIt, storageOffset, padding - added);
   offset += padding;

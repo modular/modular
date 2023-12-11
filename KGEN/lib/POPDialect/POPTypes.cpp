@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "Support/LLVMAlignToMacro.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/STLExtras.h"
@@ -129,8 +130,9 @@ ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
                                        InterpreterState &state) const {
   auto dl = ::cast<DataLayoutInterface>(getElementAsType());
   // Store each element spaced apart by padding according to its alignment.
-  int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
-                                 *dl.getTypeAlign(state.getTarget()));
+  int64_t offset;
+  CHECKED_LLVM_ALIGN_TO(offset, *dl.getTypeSize(state.getTarget()),
+                        *dl.getTypeAlign(state.getTarget()));
   for (TypedAttr value : ::cast<POP::ArrayAttr>(value).getValues()) {
     ErrorOrSuccess result = state.writeAttributeToMemory(addr, value);
     if (result.isError())
@@ -144,8 +146,9 @@ ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
                                             InterpreterState &state) const {
   Type elemType = getElementAsType();
   auto dl = elemType.cast<DataLayoutInterface>();
-  int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
-                                 *dl.getTypeAlign(state.getTarget()));
+  int64_t offset;
+  CHECKED_LLVM_ALIGN_TO(offset, *dl.getTypeSize(state.getTarget()),
+                        *dl.getTypeAlign(state.getTarget()));
   SmallVector<TypedAttr> values;
   for (int64_t i = 0, e = *getResolvedSize(); i != e; ++i, addr += offset) {
     ErrorOr<TypedAttr> result = state.readAttributeFromMemory(addr, elemType);
