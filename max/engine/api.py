@@ -39,6 +39,19 @@ class TensorFlowLoadOptions:
 
 
 @dataclass
+class TorchLoadOptions:
+    """Configures how to load PyTorch models."""
+
+    input_specs: List["TensorSpec"] = field(default_factory=list)
+    """The tensor specifications (shape and data type) for each of the
+    model inputs. Required for lowering serialized TorchScript models which
+    have no type and shape annotations.
+    """
+
+    type: str = "torch"
+
+
+@dataclass
 class CommonLoadOptions:
     """Common options for how to load models."""
 
@@ -336,7 +349,9 @@ class InferenceSession:
     def load(
         self,
         model_path: Union[str, Path],
-        *options: Union[TensorFlowLoadOptions, CommonLoadOptions],
+        *options: Union[
+            TensorFlowLoadOptions, TorchLoadOptions, CommonLoadOptions
+        ],
         **kwargs,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
@@ -347,7 +362,7 @@ class InferenceSession:
             Path to a model. May be a TensorFlow model in the SavedModel
             format or a traceable PyTorch model.
 
-        *options: Union[TensorFlowLoadOptions, CommonLoadOptions]
+        *options: Union[TensorFlowLoadOptions, TorchLoadOptions, CommonLoadOptions]
             Load options for configuring how the model should be compiled.
 
         Returns
