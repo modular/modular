@@ -25,16 +25,16 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 HTTPContextRef HTTPContext::init() {
-  static std::atomic_flag initialized = ATOMIC_FLAG_INIT;
-  assert(!initialized.test_and_set() &&
-         "A HTTPContext can only be initialize once in a process.");
-
-  // Warm up cURL's SSL backend, resolver cache, logging, etc
-  curl_global_init(CURL_GLOBAL_ALL);
+  // Ideally this would only be called once. Failing that, multiple calls are
+  // safe but only the first call will apply. See:
+  // https://curl.se/libcurl/c/curl_global_init.html.
   return HTTPContextRef::create();
 }
 
-HTTPContext::HTTPContext() : userAgent("modular-installer/0.1") {}
+HTTPContext::HTTPContext() : userAgent("modular-installer/0.1") {
+  // Warm up cURL's SSL backend, resolver cache, logging, etc
+  curl_global_init(CURL_GLOBAL_ALL);
+}
 
 void HTTPContext::setShouldVerifyTLSPeer(bool verifyTLSPeer) {
   this->verifyTLSPeer = verifyTLSPeer;
