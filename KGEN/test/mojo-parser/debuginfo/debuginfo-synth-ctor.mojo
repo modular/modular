@@ -11,11 +11,23 @@
 # COM: of the indeterministic order in which attributes may be printed, we need
 # COM: to use CHECK-DAG and order the statements to ensure unique matchings.
 
+trait Destructable:
+    fn __del__(owned self, /):
+       ...
+
+trait Copyable:
+    fn __copyinit__(inout self, existing: Self, /):
+       ...
+
+trait Movable:
+    fn __moveinit__(inout self, owned existing: Self, /):
+       ...
+
 # CHECK-DAG: #__init___name = #debuginfo.source_name<(fn)"__init__"(#MyValueStruct_name, <"index">) from #MyValueStruct_name>
-# CHECK-DAG: #__moveinit___name = #debuginfo.source_name<(fn)"__moveinit__"(#MyValueStruct_name, #MyValueStruct_name) from #MyValueStruct_name>
+# CHECK-DAG: #__moveinit___name1 = #debuginfo.source_name<(fn)"__moveinit__"(#MyValueStruct_name, #MyValueStruct_name) from #MyValueStruct_name>
 # CHECK-DAG: #[[SP_INIT:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE:file[0-9]*]], name = #__init___name, linkageName = "__init__(${{.*}}::MyValueStruct=&,__mlir_type.index)",
-# CHECK-DAG: #[[SP_COPY:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = #__copyinit___name, linkageName = "__copyinit__(${{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)",
-# CHECK-DAG: #[[SP_MOVE:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = #__moveinit___name, linkageName = "__moveinit__(${{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)",
+# CHECK-DAG: #[[SP_COPY:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = #__copyinit___name1, linkageName = "__copyinit__(${{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)",
+# CHECK-DAG: #[[SP_MOVE:subprogram[0-9]*]] = #debuginfo.subprogram<compileUnit = {{#compile_unit[0-9]*}}, scope = #[[FILE]], name = #__moveinit___name1, linkageName = "__moveinit__(${{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)",
 # CHECK-DAG: #[[FILE]] = #debuginfo.file<"[[FILENAME:.*debuginfo-synth-ctor.mojo]]" in "/">
 
 # CHECK-DAG: lit.func @"__init__(${{.*}}::MyValueStruct=&,__mlir_type.index)"(%[[SELF:.*]][*""]:

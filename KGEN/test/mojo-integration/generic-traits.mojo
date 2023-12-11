@@ -102,14 +102,9 @@ fn like_father_like(value: Son):
     take_father(value)
 
 
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-        ...
-
-
 @value
 @register_passable
-struct SomeType(Copyable):
+struct SomeType:
     fn __del__(owned self):
         pass
 

@@ -49,6 +49,17 @@
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]
 # CHECK-NEXT:  pop.store [[V4]], %[[PTR_TO_IMPL]] : !kgen.pointer<pointer<none>>
 
+trait Destructable:
+    fn __del__(owned self, /):
+       ...
+
+trait Copyable:
+    fn __copyinit__(inout self, existing: Self, /):
+       ...
+
+trait Movable:
+    fn __moveinit__(inout self, owned existing: Self, /):
+       ...
 
 @value
 struct MemType:

@@ -623,6 +623,31 @@ ASTType SharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
   return lookupNonparameterizedNamedType("object", loc, context);
 }
 
+static ASTDecl *findBuiltinTrait(StringRef traitName, SMLoc location,
+                                 ASTDecl *parent, SharedState &shared) {
+  LookupResult lookup =
+      shared.lookupAndResolveDecl(traitName, location, *parent, true);
+  if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
+    for (ASTDecl *result : lookup.getIfSuccess()) {
+      auto trait = dyn_cast<TraitDeclOp>(result);
+      if (!trait)
+        continue;
+      return result;
+    }
+  }
+  shared.emitError(location,
+                   "builtin trait " + traitName + " is missing or overridden");
+  return nullptr;
+}
+
+ASTDecl *SharedState::lookupCopyableTrait(llvm::SMLoc loc, ASTDecl *context) {
+  return findBuiltinTrait("Copyable", loc, context, *this);
+}
+
+ASTDecl *SharedState::lookupMovableTrait(llvm::SMLoc loc, ASTDecl *context) {
+  return findBuiltinTrait("Movable", loc, context, *this);
+}
+
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
 static std::optional<std::string>

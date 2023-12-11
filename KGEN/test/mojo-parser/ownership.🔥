@@ -2,6 +2,18 @@
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 # RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
+trait Destructable:
+    fn __del__(owned self, /):
+       ...
+
+trait Copyable:
+    fn __copyinit__(inout self, existing: Self, /):
+       ...
+
+trait Movable:
+    fn __moveinit__(inout self, owned existing: Self, /):
+       ...
+
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   var x : Int
@@ -1223,7 +1235,7 @@ fn do_not_call_synth_dtors(owned x: RegisterNoDtor, owned y: MemoryNoDtor):
     # CHECK-LABEL: kgen.return
     pass
 
-# CHECK-LABEL: lit.struct.decl @RegExampleValue register_passable
+# CHECK-LABEL: lit.struct.decl @RegExampleValue(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Destructable>) register_passable
 # Compiler crashes trying to insert a destructor call
 # https://github.com/modularml/modular/issues/26410
 @value
