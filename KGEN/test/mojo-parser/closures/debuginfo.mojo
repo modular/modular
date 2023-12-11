@@ -25,6 +25,17 @@
 
 alias int = __mlir_type.index
 
+trait Destructable:
+    fn __del__(owned self, /):
+       ...
+
+trait Copyable:
+    fn __copyinit__(inout self, existing: Self, /):
+       ...
+
+trait Movable:
+    fn __moveinit__(inout self, owned existing: Self, /):
+       ...
 
 fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
     fn myclosure(n: int) escaping -> int:

@@ -865,7 +865,7 @@ struct ShadowsOuterName:
 # Struct @value decorator
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @ValueMem attributes {
+# CHECK-LABEL: lit.struct.decl @ValueMem(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
 # CHECK-SAME: moveInit = #kgen.symbol.constant<{{.*}}ValueMem::@"__moveinit__
 # CHECK-SAME: !kgen.signature<!lit.signature<({{.*}} init_self, {{.*}} owned_in_mem, |)
 @value
@@ -912,6 +912,30 @@ struct ValueMem:
 # CHECK-NEXT: pop.store %5, %3
 # CHECK-NEXT: kgen.param.constant: none
 
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
+@value
+struct ValueMemHasCopy:
+    var a: Int
+    var b: StructExample
+    fn __copyinit__(inout self, other: Self):
+       self.a = other.a
+       self.b = other.b
+
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
+@value
+struct ValueMemHasMove:
+    var a: Int
+    var b: StructExample
+    fn __moveinit__(inout self, owned other: Self):
+       self.a = other.a
+       self.b = other.b
+
+# CHECK-LABEL: lit.struct.decl @ValueRegTrivial register_passable_trivial {
+@value
+@register_passable("trivial")
+struct ValueRegTrivial:
+    var a: __mlir_type.index
+
 # CHECK-LABEL: lit.struct.decl @ValueReg
 @value
 @register_passable
@@ -939,7 +963,7 @@ struct ValueReg:
 # CHECK-NEXT: lit.return %3
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo attributes
+# CHECK-LABEL: lit.struct.decl @Foo(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes
 @value
 struct Foo:
     var a: Int

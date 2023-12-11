@@ -9,6 +9,36 @@
 alias Int = __mlir_type.index
 alias `0` = __mlir_attr.`0 : index`
 
+trait Destructable:
+    """The Destructable trait denotes a type whose value can be destroyed.
+    """
+    fn __del__(owned self, /):
+       """Del destructs.
+       """
+       ...
+
+trait Copyable:
+    """The Copyable trait denotes a type whose value can be copied.
+    """
+    fn __copyinit__(inout self, existing: Self, /):
+        """Copyinit copies.
+
+        Args:
+           existing: The value to copy.
+        """
+       ...
+
+trait Movable:
+    """The Movable trait denotes a type whose value can be moved.
+    """
+    fn __moveinit__(inout self, owned existing: Self, /):
+        """Moveinit moves.
+
+        Args:
+           existing: The value to move.
+        """
+       ...
+
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
 struct ArgStruct:
     pass

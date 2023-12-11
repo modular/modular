@@ -467,6 +467,8 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   StringAttr existingName = b.getStringAttr("other");
   LIT::FuncOp destructorFunc;
   LIT::FuncOp init;
+  SmallVector<TypeLineageAttr> parentTypes =
+      llvm::to_vector(declOp.getParentTypes());
   if (!valueInfo.hasFieldwiseInit() && generateFieldwiseInit) {
     SmallVector<Type> argTypes;
     SmallVector<ValueInputConvention> argConventions;
@@ -543,8 +545,41 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     }
   }
 
+  auto addCopyOrMoveBuiltinTrait = [&](bool isCopy) {
+    auto hasRelatedTypeLineageAttr = [&](TypeLineageAttr newTypeLineageAttr) {
+      return llvm::find_if(parentTypes, [&](TypeLineageAttr lineage) {
+               return lineage.getType() == newTypeLineageAttr.getType();
+             }) != parentTypes.end();
+    };
+    ASTDecl *traitDecl;
+    if (isCopy)
+      traitDecl = shared.lookupCopyableTrait(structDecl.getLoc(),
+                                             structDecl.getParentDecl());
+    else
+      traitDecl = shared.lookupMovableTrait(structDecl.getLoc(),
+                                            structDecl.getParentDecl());
+    TraitDeclOp targetTrait;
+    if (traitDecl)
+      targetTrait = cast<TraitDeclOp>(traitDecl);
+    if (!targetTrait)
+      return;
+
+    TypeLineageAttr targetTypeLineageAttr =
+        TypeLineageAttr::get(targetTrait.bindReference());
+    if (hasRelatedTypeLineageAttr(targetTypeLineageAttr))
+      return;
+    parentTypes.push_back(targetTypeLineageAttr);
+    // If trait was added, add parents as well.
+    for (TypeLineageAttr parentTrait : targetTrait.getParentTypes()) {
+      if (!hasRelatedTypeLineageAttr(parentTrait))
+        parentTypes.push_back(parentTrait);
+    }
+  };
+
   LIT::FuncOp copyFunc;
-  if (!valueInfo.hasCopy() && !declOp.isRegisterPassableTrivial()) {
+  if (valueInfo.hasCopy()) {
+    addCopyOrMoveBuiltinTrait(/*isCopy=*/true);
+  } else if (!declOp.isRegisterPassableTrivial()) {
     if (isMemoryOnly) {
       copyFunc = addVoidMethod(
           structDecl, "__copyinit__", {ptrToSelf, ptrToSelf},
@@ -560,16 +595,20 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
                                           SpecialFunctionKind::kCopyInitReg)
                      .first;
     }
+    addCopyOrMoveBuiltinTrait(/*isCopy=*/true);
   }
   LIT::FuncOp moveFunc;
-  if (!valueInfo.hasMove() && isMemoryOnly) {
+  if (valueInfo.hasMove()) {
+    addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
+  } else if (isMemoryOnly) {
+    addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
     moveFunc = addVoidMethod(
         structDecl, "__moveinit__", {ptrToSelf, ptrToSelf},
         {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem},
         {selfName, existingName}, {PassingKind::PosOnly, PassingKind::PosOnly},
         SpecialFunctionKind::kMoveInit);
   }
-
+  declOp.setParentTypes(parentTypes);
   return GeneratedStubs(destructorFunc, copyFunc, moveFunc, init);
 }
 

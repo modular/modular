@@ -196,6 +196,14 @@ public:
   /// otherwise emit an error and return null.
   ASTType lookupObjectType(llvm::SMLoc loc, ASTDecl &context);
 
+  /// Lookup the `Copyable` trait in the specified context and return it if
+  /// found, otherwise emit an error and return null.
+  ASTDecl *lookupCopyableTrait(llvm::SMLoc loc, ASTDecl *context);
+
+  /// Lookup the `Movable` trait in the specified context and return it if
+  /// found, otherwise emit an error and return null.
+  ASTDecl *lookupMovableTrait(llvm::SMLoc loc, ASTDecl *context);
+
   //===--------------------------------------------------------------------===//
   // Module Resolution
 

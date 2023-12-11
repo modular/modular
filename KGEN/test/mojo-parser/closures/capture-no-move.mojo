@@ -7,6 +7,17 @@
 
 # COM: Capture type cannot be moved.
 
+trait Destructable:
+    fn __del__(owned self, /):
+       ...
+
+trait Copyable:
+    fn __copyinit__(inout self, existing: Self, /):
+       ...
+
+trait Movable:
+    fn __moveinit__(inout self, owned existing: Self, /):
+       ...
 
 struct StringNoMove:
     fn __copyinit__(inout self, existing: Self):
