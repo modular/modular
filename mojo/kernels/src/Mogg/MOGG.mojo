@@ -147,18 +147,12 @@ fn MOGGExport():
     alias _to_shape = to_shape
     alias _add = add
     alias _avg_pool_shape = pool_shape
-    alias _avg_pool = avg_pool
-    alias _broadcast_shape = broadcast_shape
+    alias _cast = cast
     alias _ceil = ceil
-    alias _concat = concat
-    alias _concat_from_list = concat_from_list
     alias _concat_shape = concat_shape
     alias _concat_from_list_shape = concat_from_list_shape
     alias _conv_shape = conv_shape
-    alias _conv_transpose = conv_transpose
     alias _conv_transpose_shape = conv_transpose_shape
-    alias _cumsum = cumsum
-    alias _conv = conv
     alias _cos = cos
     alias _div = div
     alias _erf = erf
@@ -166,12 +160,9 @@ fn MOGGExport():
     alias _equal = equal
     alias _floor = floor
     alias _gather_shape = gather_shape
-    alias _gather_nd = gather_nd
-    alias _gather = gather
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _pack_conv_filter_shape = pack_conv_filter_shape
-    alias _pad_constant = pad_constant
     alias _pad_shape = pad_shape
     alias _greater = greater
     alias _greater_equal = greater_equal
@@ -187,11 +178,8 @@ fn MOGGExport():
     alias _pack_conv_filter = pack_conv_filter
     alias _max_pool_shape = pool_shape
     alias _max_pool = max_pool
-    alias _mean = mean
     alias _matrix_solve = matrix_solve
     alias _matrix_band_part = matrix_band_part
-    alias _matmul = matmul
-    alias _negative = negative
     alias _non_maximum_suppression = non_maximum_suppression
     alias _non_maximum_suppression_shape_func = non_maximum_suppression_shape_func
     alias _batched_matmul = batched_matmul
@@ -209,33 +197,14 @@ fn MOGGExport():
     alias _relu = relu
     alias _reshape = reshape
     alias _reshape_shape = reshape_shape
-    alias _calculate_squeeze_shape = calculate_squeeze_shape
-    alias _calculate_unsqueeze_shape = calculate_unsqueeze_shape
     alias _broadcast_to_shape = broadcast_to_shape
     alias _broadcast_to_tensor = broadcast_to_tensor
-    alias _scatter_nd = scatter_nd
-    alias _scatter_nd_add = scatter_nd_add
-    alias _scatter_nd_max = scatter_nd_max
-    alias _scatter_nd_min = scatter_nd_min
-    alias _scatter_nd_mul = scatter_nd_mul
-    alias _scatter = scatter
     alias _scatter_shape = scatter_shape
-    alias _scatter_add = scatter_add
-    alias _scatter_max = scatter_max
-    alias _scatter_min = scatter_min
-    alias _scatter_mul = scatter_mul
+    alias _slice = slice
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
-    alias _softmax = softmax
     alias _split_ith_output_shape = split_ith_output_shape
-    alias _split = split
     alias _reduce_shape = reduce_shape
-    alias _reduce_add = reduce_add
-    alias _reduce_max = reduce_max
-    alias _reduce_min = reduce_min
-    alias _reduce_mul = reduce_mul
-    alias _resize_linear = resize_linear
-    alias _resize_nearest = resize_nearest
     alias _resize_shape = resize_shape
     alias _random_shape = random_shape
     alias _round = round
@@ -249,8 +218,6 @@ fn MOGGExport():
     alias _tensor_to_shape = tensor_to_shape
     alias _arg_nonzero = arg_nonzero
     alias _arg_nonzero_shape = arg_nonzero_shape
-    alias _top_k = top_k
-    alias _bottom_k = bottom_k
     alias _top_k_shape = top_k_shape
     alias _tile = tile
     alias _tile_shape = tile_shape
@@ -697,7 +664,9 @@ fn buffer_to_scalar[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.broadcast_shape")
 @always_inline
+@export
 fn broadcast_shape[
     lhs_type: DType,
     rhs_type: DType,
@@ -986,7 +955,9 @@ fn cast[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.concat_from_list")
 @always_inline
+@export
 fn concat_from_list[
     type: DType,
     rank: Int,
@@ -1006,7 +977,9 @@ fn concat_from_list[
     )
 
 
+@mogg_register("mo.concat")
 @always_inline
+@export
 fn concat[
     type: DType,
     rank: Int,
@@ -1059,7 +1032,9 @@ fn concat_shape[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.avg_pool")
 @always_inline
+@export
 fn avg_pool[
     type: DType,
     int_type: DType,
@@ -1083,7 +1058,9 @@ fn avg_pool[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.cumsum")
 @always_inline
+@export
 fn cumsum[
     type: DType,
     axis_type: DType,
@@ -1107,8 +1084,10 @@ fn cumsum[
 # ===----------------------------------------------------------------------===#
 
 
-# Not targetted yet because MOGG assumes single output
+# Not targeted yet because MOGG assumes single output
+@mogg_register("mo.split")
 @always_inline
+@export
 fn split[
     type: DType,
     rank: Int,
@@ -1198,7 +1177,9 @@ fn mogg_min[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.mean")
 @always_inline
+@export
 fn mean[
     type: DType,
     index_type: DType,
@@ -1242,7 +1223,9 @@ fn mean[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.negative")
 @always_inline("nodebug")
+@export
 fn negative[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
@@ -1319,7 +1302,9 @@ fn pad_reflect[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.reduce.add")
 @always_inline
+@export
 fn reduce_add[
     type: DType,
     index_type: DType,
@@ -1373,7 +1358,9 @@ fn reduce_add[
     ](input_shape, 0, int(axis), out_chain)
 
 
+@mogg_register("mo.reduce.max")
 @always_inline
+@export
 fn reduce_max[
     type: DType,
     index_type: DType,
@@ -1427,7 +1414,9 @@ fn reduce_max[
     ](input_shape, min_or_neginf[type](), int(axis), out_chain)
 
 
+@mogg_register("mo.reduce.min")
 @always_inline
+@export
 fn reduce_min[
     type: DType,
     index_type: DType,
@@ -1481,7 +1470,9 @@ fn reduce_min[
     ](input_shape, max_or_inf[type](), int(axis), out_chain)
 
 
+@mogg_register("mo.reduce.mul")
 @always_inline
+@export
 fn reduce_mul[
     type: DType,
     index_type: DType,
@@ -1571,7 +1562,9 @@ fn slice[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.squeeze_shape")
 @always_inline
+@export
 fn calculate_squeeze_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
 ](
@@ -1637,7 +1630,9 @@ fn calculate_squeeze_shape[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.unsqueeze_shape")
 @always_inline
+@export
 fn calculate_unsqueeze_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
 ](
@@ -1808,7 +1803,9 @@ fn mogg_gather_sum[
     ](output, input, indices, 0, out_chain)
 
 
+@mogg_register("mo.gather")
 @always_inline
+@export
 fn gather[
     type: DType,
     in_rank: Int,
@@ -1890,7 +1887,9 @@ fn gather[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.matmul")
 @always_inline
+@export
 fn matmul[
     a_type: DType,
     input_0_static_shape: DimList,
@@ -2062,7 +2061,9 @@ fn batched_matmul[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.scatter")
 @always_inline
+@export
 fn scatter[
     rank: Int,
     input_type: DType,
@@ -2100,7 +2101,9 @@ fn scatter[
     )
 
 
+@mogg_register("mo.scatter.add")
 @always_inline
+@export
 fn scatter_add[
     rank: Int,
     input_type: DType,
@@ -2138,7 +2141,9 @@ fn scatter_add[
     )
 
 
+@mogg_register("mo.scatter.max")
 @always_inline
+@export
 fn scatter_max[
     rank: Int,
     input_type: DType,
@@ -2176,7 +2181,9 @@ fn scatter_max[
     )
 
 
+@mogg_register("mo.scatter.min")
 @always_inline
+@export
 fn scatter_min[
     rank: Int,
     input_type: DType,
@@ -2214,7 +2221,9 @@ fn scatter_min[
     )
 
 
+@mogg_register("mo.scatter.mul")
 @always_inline
+@export
 fn scatter_mul[
     rank: Int,
     input_type: DType,
@@ -2257,7 +2266,9 @@ fn scatter_mul[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.scatter_nd")
 @always_inline
+@export
 fn scatter_nd[
     output_rank: Int,
     updates_rank: Int,
@@ -2297,7 +2308,9 @@ fn scatter_nd[
     ](input, indices, updates, output, out_chain)
 
 
+@mogg_register("mo.scatter_nd.add")
 @always_inline
+@export
 fn scatter_nd_add[
     output_type: DType,
     indices_type: DType,
@@ -2344,7 +2357,9 @@ fn scatter_nd_add[
     ](input, indices, updates, output, out_chain)
 
 
+@mogg_register("mo.scatter_nd.max")
 @always_inline
+@export
 fn scatter_nd_max[
     output_type: DType,
     indices_type: DType,
@@ -2391,7 +2406,9 @@ fn scatter_nd_max[
     ](input, indices, updates, output, out_chain)
 
 
+@mogg_register("mo.scatter_nd.min")
 @always_inline
+@export
 fn scatter_nd_min[
     output_type: DType,
     indices_type: DType,
@@ -2438,7 +2455,9 @@ fn scatter_nd_min[
     ](input, indices, updates, output, out_chain)
 
 
+@mogg_register("mo.scatter_nd.mul")
 @always_inline
+@export
 fn scatter_nd_mul[
     output_type: DType,
     indices_type: DType,
@@ -2486,6 +2505,9 @@ fn scatter_nd_mul[
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
+@mogg_register("mo.softmax")
+@always_inline
+@export
 fn softmax[
     rank: Int,
     type: DType,
@@ -2634,6 +2656,9 @@ fn random_shape[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.resize.nearest")
+@always_inline
+@export
 fn resize_nearest[
     coordinate_transform_mode: Int,
     round_mode: Int,
@@ -2651,6 +2676,9 @@ fn resize_nearest[
     ](input, output, out_chain)
 
 
+@mogg_register("mo.resize.linear")
+@always_inline
+@export
 fn resize_linear[
     coordinate_transform_mode: Int,
     antialias: Bool,
@@ -2795,7 +2823,9 @@ fn split_ith_output_shape[
     return output_shape
 
 
+@mogg_register("mo.conv")
 @always_inline
+@export
 fn conv[
     filter_rank: Int,
     strides_rank: Int,
@@ -2894,7 +2924,9 @@ fn conv[
     ](input, filter, output, conv_info, out_chain)
 
 
+@mogg_register("mo.conv_transpose")
 @always_inline
+@export
 fn conv_transpose[
     input_type: DType,
     strides_type: DType,
@@ -3041,7 +3073,9 @@ fn print_buffer_info[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.bottom_k")
 @always_inline
+@export
 fn bottom_k[
     type: DType,
     rank: Int,
@@ -3067,7 +3101,9 @@ fn bottom_k[
     )
 
 
+@mogg_register("mo.top_k")
 @always_inline
+@export
 fn top_k[
     type: DType,
     rank: Int,
@@ -3098,7 +3134,9 @@ fn top_k[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.gather_nd")
 @always_inline
+@export
 fn gather_nd[
     type: DType,
     indices_type: DType,
