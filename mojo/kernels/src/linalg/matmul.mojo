@@ -3343,6 +3343,9 @@ fn matmul[
     ](c, a, b, out_chain, num_threads)
 
 
+from runtime.tracing import Trace, TraceLevel
+
+
 fn matmul[
     a_type: DType,
     a_shape: DimList,

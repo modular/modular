@@ -8,7 +8,7 @@
 from algorithm.functional import _elementwise_impl
 from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr
-from runtime.tracing import TraceLevel
+from runtime.tracing import TraceLevel, Trace
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
@@ -91,54 +91,54 @@ fn matrix_solve[
     constrained[a_rank == b_rank]()
     constrained[a_rank == x_rank]()
 
-    out_chain.trace[TraceLevel.OP]("mojo.matrix_solve")
+    with Trace[TraceLevel.OP]("mojo.matrix_solve") as t:
 
-    @parameter
-    if not type.is_floating_point():
-        return out_chain.mark_error[single_thread_blocking_override](
-            "Only floating point types are supported."
-        )
-
-    @parameter
-    if a_rank > 2:
-        if a.dim(0) != b.dim(0) or b.dim(0) != x.dim(0):
+        @parameter
+        if not type.is_floating_point():
             return out_chain.mark_error[single_thread_blocking_override](
-                "input and output batch sizes must match"
+                "Only floating point types are supported."
             )
 
-    alias row_dim = a_rank - 2
-    alias col_dim = a_rank - 1
+        @parameter
+        if a_rank > 2:
+            if a.dim(0) != b.dim(0) or b.dim(0) != x.dim(0):
+                return out_chain.mark_error[single_thread_blocking_override](
+                    "input and output batch sizes must match"
+                )
 
-    if x.dim(row_dim) != 3 or x.dim(col_dim) != 2:
-        return out_chain.mark_error[single_thread_blocking_override](
-            "The x matrix's shape must be (3,2)"
-        )
-    if a.dim(row_dim) != 3 or a.dim(col_dim) != 3:
-        return out_chain.mark_error[single_thread_blocking_override](
-            "The a matrix's shape must be (3,3)"
-        )
-    if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
-        return out_chain.mark_error[single_thread_blocking_override](
-            "The b matrix's shape must be (3,2)"
-        )
+        alias row_dim = a_rank - 2
+        alias col_dim = a_rank - 1
 
-    var batch_size = 1
-    for i in range(row_dim):
-        batch_size *= a.dim(i)
+        if x.dim(row_dim) != 3 or x.dim(col_dim) != 2:
+            return out_chain.mark_error[single_thread_blocking_override](
+                "The x matrix's shape must be (3,2)"
+            )
+        if a.dim(row_dim) != 3 or a.dim(col_dim) != 3:
+            return out_chain.mark_error[single_thread_blocking_override](
+                "The a matrix's shape must be (3,3)"
+            )
+        if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
+            return out_chain.mark_error[single_thread_blocking_override](
+                "The b matrix's shape must be (3,2)"
+            )
 
-    for batch in range(batch_size):
-        # Get a 2D view of the Tensor.
-        let x_view = NDBuffer[2, DimList(3, 2), type](
-            x.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
-        )
-        let a_view = NDBuffer[2, DimList(3, 3), type](
-            a.data.offset(batch * 3 * 3), StaticIntTuple[2](3, 3)
-        )
-        let b_view = NDBuffer[2, DimList(3, 2), type](
-            b.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
-        )
-        matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
+        var batch_size = 1
+        for i in range(row_dim):
+            batch_size *= a.dim(i)
 
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
+        for batch in range(batch_size):
+            # Get a 2D view of the Tensor.
+            let x_view = NDBuffer[2, DimList(3, 2), type](
+                x.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
+            )
+            let a_view = NDBuffer[2, DimList(3, 3), type](
+                a.data.offset(batch * 3 * 3), StaticIntTuple[2](3, 3)
+            )
+            let b_view = NDBuffer[2, DimList(3, 2), type](
+                b.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
+            )
+            matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
+
+        @parameter
+        if not single_thread_blocking_override:
+            out_chain.mark_ready()
