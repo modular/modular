@@ -11,7 +11,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
-#include "LLCL/Runtime/CompactRuntimePtr.h"
+#include "LLCL/Runtime/Globals/CompactRuntimeTable.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -47,10 +47,8 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profileFilename(profileFilename),
-      runtimeIndex(Detail::RuntimeTable::getSingleton().addRuntime(this)),
+      runtimeIndex(M::LLCL::Globals::addRuntime(this)),
       readyChain(createReadyChain(*this)) {
-  this->workQueue->associateRuntime(CompactRuntimePtr(runtimeIndex));
-
   // NOTE: Users can't pass in profileFilename AND activate the time
   // profiler in the caller.
   if (!profileFilename.empty())
@@ -66,7 +64,7 @@ Runtime::~Runtime() {
 
   // Clear cancellation value if present.
   restartFromCancellation();
-  Detail::RuntimeTable::getSingleton().clearRuntime(runtimeIndex);
+  M::LLCL::Globals::clearRuntime(runtimeIndex);
 
   // We're done with profiling.
   if (profiler) {

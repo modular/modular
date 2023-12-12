@@ -10,7 +10,6 @@ add_modular_library(LLCLRuntime
   STATIC OBJECT # Always generate an obj.${name} target.
 
   AsyncValue.cpp
-  CompactRuntimePtr.cpp
   DebuggingAllocators.cpp
   MallocAllocator.cpp
   Runtime.cpp
@@ -25,6 +24,6 @@ add_modular_library(LLCLRuntime
   MSupport
   MProfiling
   Threads::Threads
-)
+  )
 
 add_subdirectory(Globals)
