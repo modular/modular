@@ -15,6 +15,7 @@ add_modular_library(MSupport
   CommonCLOptions.cpp
   Configuration.cpp
   DeviceSpecs.cpp
+  DynamicLibrary.cpp
   Error.cpp
   ErrorOr.cpp
   FileSystemExtras.cpp
