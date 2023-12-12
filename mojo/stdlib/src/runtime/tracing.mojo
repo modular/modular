@@ -6,6 +6,7 @@
 """Provides tracing utilities."""
 
 from sys._build import build_info_llcl_max_profiling_level
+from utils._optional import Optional
 
 # ===----------------------------------------------------------------------===#
 # TraceCategory
@@ -144,75 +145,6 @@ fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
 
 
 # ===----------------------------------------------------------------------===#
-# trace_range_push
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn trace_range_push[
-    type: TraceType, level: TraceLevel
-](name: StringRef, detail: StringRef):
-    """Pushes a trace event onto a per-thread stack of traces.
-    Should be paired with calls to trace_range_pop().
-
-    The modular stack needs to be configured with MODULAR_LLCL_MAX_PROFILING_LEVEL
-    specifying the profiling level to profile at.
-
-    The trace events will be written to the profiling file passed to the
-    LLCL Runtime ctor.
-
-    Args:
-        name: Name of the trace event (will be copied).
-        detail: Additional details about the trace event (will be copied).
-
-    """
-
-    @parameter
-    if is_profiling_disabled[type, level]():
-        return
-
-    # Pushes the trace range from the stack. This is only enabled if the LLCL
-    # profiling is enabled.
-    __mlir_op.`pop.external_call`[
-        func = "KGEN_CompilerRT_TimeTraceProfilerBegin".value,
-        _type=None,
-    ](
-        name.data,
-        name.length.value,
-        detail.data,
-        detail.length.value,
-    )
-
-
-# ===----------------------------------------------------------------------===#
-# trace_range_pop
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn trace_range_pop[type: TraceType, level: TraceLevel]():
-    """Pops a trace event off a per-thread stack of traces.
-    Should be paired with calls to trace_range_push().
-
-    PROFILING_ON must be set to True otherwise this is a noop that will be
-    folded away.
-
-    The trace events will be written to the profiling file passed to the
-    LLCL Runtime ctor.
-    """
-
-    @parameter
-    if is_profiling_disabled[type, level]():
-        return
-    # Pop the trace range from the stack. This is only enabled if the LLCL
-    # profiling is enabled.
-    __mlir_op.`pop.external_call`[
-        func = "KGEN_CompilerRT_TimeTraceProfilerEnd".value,
-        _type=None,
-    ]()
-
-
-# ===----------------------------------------------------------------------===#
 # Trace
 # ===----------------------------------------------------------------------===#
 
@@ -223,27 +155,153 @@ struct Trace[level: TraceLevel]:
 
     alias trace_type = TraceType.MOJO
 
-    var name: StringRef
-    var detail: StringRef
+    var name: StringLiteral
+    var int_payload: Optional[Int]
+    var detail: String
+    var parent_id: Int
 
-    fn __init__(inout self, name: StringRef):
+    @always_inline
+    fn __init__(
+        inout self,
+        name: StringLiteral,
+        detail: String = "",
+        parent_id: Int = 0,
+    ):
         """Creates a Mojo trace with the given name.
 
         Args:
             name: The name that is used to identify this Mojo trace.
+            detail: Details of the trace entry.
+            parent_id: Parent to associate the trace with. Trace name will be
+                appended to parent name. 0 (default) indicates no parent.
         """
-        self = Self(name, "")
 
+        self.parent_id = parent_id
+
+        @parameter
+        if is_profiling_disabled[Self.trace_type, level]():
+            self.name = ""
+            self.detail = ""
+            self.int_payload = Optional[Int]()
+        else:
+            self.name = name
+            self.detail = detail
+            self.int_payload = Optional[Int]()
+
+    @always_inline
+    fn __init__(
+        inout self,
+        name: StringLiteral,
+        task_id: Int,
+        detail: String = "",
+        parent_id: Int = 0,
+    ):
+        """Creates a Mojo trace with the given name.
+
+        This does not start the trace range.
+
+        Args:
+            name: The name that is used to identify this Mojo trace.
+            task_id: Int that is appended to name.
+            detail: Details of the trace entry.
+            parent_id: Parent to associate the trace with. Trace name will be appended to parent name.
+        """
+
+        self.parent_id = parent_id
+
+        @parameter
+        if is_profiling_disabled[Self.trace_type, level]():
+            self.name = ""
+            self.detail = ""
+            self.int_payload = Optional[Int]()
+        else:
+            self.name = name
+            self.detail = detail
+            self.int_payload = task_id
+
+    @always_inline
     fn __enter__(self):
         """Enters the trace context.
 
-        This pushes this trace event onto a per-thread stack of traces.
-        """
-        trace_range_push[Self.trace_type, level](self.name, self.detail)
+        This pushes this trace event onto a per-thread stack of traces and starts
+        the trace range.
 
+        Note: Traces cannot currently cross async/await boundaries since they use the
+        implicit per-thread profiling stack.
+        """
+
+        @parameter
+        if is_profiling_disabled[Self.trace_type, level]():
+            return
+
+        let name = self.__str__()
+        let name_strref = name._strref_dangerous()
+        let detail_strref = self.detail._strref_dangerous()
+
+        # Pushes the trace range from the stack. This is only enabled if the LLCL
+        # profiling is enabled.
+        __mlir_op.`pop.external_call`[
+            func = "KGEN_CompilerRT_TimeTraceProfilerBegin".value,
+            _type=None,
+        ](
+            name_strref.data,
+            name_strref.length.value,
+            detail_strref.data,
+            detail_strref.length.value,
+            self.parent_id,
+        )
+        name._strref_keepalive()
+
+    @always_inline
     fn __exit__(self):
         """Exits the trace context.
 
-        This pops this trace event off a per-thread stack of traces.
+        This pops this trace event off a per-thread stack of traces and stops the
+        trace range.
+
+        Note: Traces cannot currently cross async/await boundaries since they use the
+        implicit per-thread profiling stack.
         """
-        trace_range_pop[Self.trace_type, level]()
+
+        @parameter
+        if is_profiling_disabled[Self.trace_type, level]():
+            return
+        # Pop the trace range from the stack. This is only enabled if the LLCL
+        # profiling is enabled.
+        __mlir_op.`pop.external_call`[
+            func = "KGEN_CompilerRT_TimeTraceProfilerEnd".value,
+            _type=None,
+        ]()
+
+    @always_inline
+    fn __str__(self) -> String:
+        constrained[
+            is_profiling_enabled[Self.trace_type, level](),
+            "cannot get trace string in non-profiling build",
+        ]()
+        let name = self.name + String(
+            self.int_payload.value()
+        ) if self.int_payload else self.name
+        return name
+
+    # WAR: passing detail_fn to __init__ causes internal compiler crash
+    @staticmethod
+    @always_inline
+    fn _get_detail_str[detail_fn: fn () capturing -> String]() -> String:
+        """Return the detail str when tracing is enabled and an empty string otherwise.
+        """
+
+        @parameter
+        if is_profiling_enabled[Self.trace_type, level]():
+            return detail_fn()
+        else:
+            return ""
+
+
+fn get_current_trace_id() -> Int:
+    """Get id of trace currently on the top of the per-thread stack of traces.
+    """
+    return __mlir_op.`pop.external_call`[
+        func = "KGEN_CompilerRT_TimeTraceProfilerCurrentId".value,
+        _type=Int,
+    ]()

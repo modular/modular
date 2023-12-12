@@ -520,64 +520,6 @@ struct OutputChainPtr:
         str._strref_keepalive()
 
     @always_inline
-    fn trace[level: TraceLevel](self, label: StringRef):
-        """If enabled, begin a time profile entry with label which will end
-        when this chain is completed, either by mark_ready() or mark_error().
-        """
-
-        @parameter
-        if is_mojo_profiling_disabled[level]():
-            return
-        if not self:
-            return
-        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Trace", NoneType](
-            self.ptr,
-            label.data,
-            label.length.value,
-            DTypePointer[DType.uint8].get_null(),
-            0,
-        )
-
-    @always_inline
-    fn trace[level: TraceLevel](self, label: StringRef, detail: StringRef):
-        """If enabled, begin a time profile entry with label and detail which
-        will end when this chain is completed, either by mark_ready() or
-        mark_error().
-        """
-
-        @parameter
-        if is_mojo_profiling_disabled[level]():
-            return
-        if not self:
-            return
-        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Trace", NoneType](
-            self.ptr,
-            label.data,
-            label.length.value,
-            detail.data,
-            detail.length.value,
-        )
-
-    @always_inline
-    fn trace[
-        level: TraceLevel, detail_fn: fn () capturing -> String
-    ](self, label: StringRef):
-        """If enabled, begin a time profile entry with label and detail which
-        will end when this chain is completed, either by mark_ready() or
-        mark_error().
-        """
-
-        @parameter
-        if is_mojo_profiling_disabled[level]():
-            return
-        if not self:
-            return
-
-        let str = detail_fn()
-        self.trace[level](label, str._strref_dangerous())
-        str._strref_keepalive()
-
-    @always_inline
     fn wait(self):
         """Returns only when the underlying LLCL::OutputChain is emplaced
         or set to an error. May execute arbitrary tasks while waiting.
