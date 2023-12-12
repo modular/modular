@@ -348,7 +348,7 @@ static ErrorOr<llvm::json::Value> requestDeviceCode(HTTPClient &client) {
   // Call the GetDeviceCode endpoint. This will return a JSON blob with the URL
   // the user needs to visit.
   HTTPRequest request = {
-      "https://auth.modular.com/oauth/device/code",
+      "https://auth.modular.com/v1/oauth/device/authorize",
   };
   request.method = HTTPRequest::Method::POST;
   request.headers.try_emplace("content-type", "application/json");
@@ -390,8 +390,9 @@ static ErrorOr<llvm::json::Value> requestDeviceCode(HTTPClient &client) {
 static ErrorOr<std::pair<std::string, std::string>>
 pollForOAuthTokens(HTTPClient &client, std::chrono::seconds interval,
                    llvm::StringRef deviceCode) {
-  // Now poll https://auth.modular.com/oauth/token for the token from the user.
-  HTTPRequest pollRequest = {"https://auth.modular.com/oauth/token"};
+  // Now poll https://auth.modular.com/v1/oauth/token for the token from the
+  // user.
+  HTTPRequest pollRequest = {"https://auth.modular.com/v1/oauth/token"};
   pollRequest.method = HTTPRequest::Method::POST;
   pollRequest.headers.try_emplace("content-type", "application/json");
 
@@ -652,7 +653,8 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPClient &client) {
 
   // Request the new certificate. This will populate the certificate in memory,
   // but won't verify the certificate.
-  if (auto err = requestCertificate(client, buf->Buffer::getBuffer(), b64Sig))
+  if (auto err = requestCertificate(client, buf->Buffer::getBuffer(), b64Sig,
+                                    /*isRefresh=*/true))
     return err.takeError();
 
   // Validate and flush the certificate we just got.
@@ -894,7 +896,7 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
   // we aren't rotating the client keypair, we don't want to pass in a signature
   // from a previous key.
   return requestCertificate(client, csrBuf->Buffer::getBuffer(),
-                            /*prevKeySig=*/"");
+                            /*prevKeySig=*/"", /*isRefresh=*/false);
 }
 
 //===----------------------------------------------------------------------===//
@@ -903,9 +905,12 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
 
 ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
                                                     StringRef csr,
-                                                    StringRef prevKeySig) {
-  HTTPRequest certificateRequest{
-      "https://auth.modular.com/user/certificates:issue"};
+                                                    StringRef prevKeySig,
+                                                    bool isRefresh) {
+  auto certURL =
+      isRefresh ? std::string("https://auth.modular.com/v1/certificate/renew")
+                : std::string("https://auth.modular.com/v1/certificate/issue");
+  HTTPRequest certificateRequest{certURL};
   certificateRequest.method = HTTPRequest::Method::POST;
   certificateRequest.headers.try_emplace("content-type", "application/json");
 

@@ -126,15 +126,19 @@ private:
     llvm::unique_function<ErrorOrSuccess(llvm::raw_ostream & os,
                                          const HTTPRequest &request)>
         func;
-    if (requestURL.ends_with_insensitive("/oauth/device/code")) {
+    if (requestURL.ends_with_insensitive("/oauth/device/authorize")) {
       func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
-        return oauthDeviceCode(os, request);
+        return oauthDeviceAuthorize(os, request);
       };
     } else if (requestURL.ends_with_insensitive("/oauth/token")) {
       func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
         return oauthToken(os, request);
       };
-    } else if (requestURL.ends_with_insensitive("/user/certificates:issue")) {
+    } else if (requestURL.ends_with_insensitive("/certificate/issue")) {
+      func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
+        return issueCertificate(os, request);
+      };
+    } else if (requestURL.ends_with_insensitive("/certificate/renew")) {
       func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
         return issueCertificate(os, request);
       };
@@ -156,8 +160,8 @@ private:
                         /*transportErrorMessage=*/std::nullopt};
   }
 
-  ErrorOrSuccess oauthDeviceCode(llvm::raw_ostream &os,
-                                 const HTTPRequest &request) {
+  ErrorOrSuccess oauthDeviceAuthorize(llvm::raw_ostream &os,
+                                      const HTTPRequest &request) {
     oauthRegisterCalled = true;
 
     constexpr llvm::StringLiteral response = R"({

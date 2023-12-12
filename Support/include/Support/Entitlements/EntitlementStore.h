@@ -98,7 +98,7 @@ private:
   /// the certificate into the mbedtls_x509 structure. The previous key
   /// signature may be empty if we aren't rotating the client keypair.
   ErrorOrSuccess requestCertificate(HTTPClient &client, StringRef csr,
-                                    StringRef prevKeySig);
+                                    StringRef prevKeySig, bool isRefresh);
 
   /// This is a map of all the entitlements we have, indexed by their OID. This
   /// means that we can only have a single instance of a given entitlement at a
