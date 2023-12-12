@@ -124,7 +124,15 @@ KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
 // Runtime
 //===----------------------------------------------------------------------===//
 
-/// Create an LLCL runtime and return it as a compact pointer.
+/// Returns the pointer to the runtime to which the caller's thread is
+/// associated. Returns null if the caller's thread is not managed by any
+/// runtime.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
+KGEN_CompilerRT_LLCL_GetCurrentRuntime() {
+  return wrap(CompactRuntimePtr::getCurrentRuntime().getOrNull());
+}
+
+/// Create an LLCL runtime and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
 KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
                                               const char *profileFilenamePtr,
@@ -137,19 +145,19 @@ KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
   return wrap(runtime);
 }
 
-/// Create an LLCL runtime and return it as a compact pointer.
+/// Create an LLCL runtime and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
 KGEN_CompilerRT_LLCL_CreateRuntime(ssize_t numThreads) {
   return KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(numThreads, nullptr, 0);
 }
 
-/// Given a compact pointer to an LLCL runtime, destroy it.
+/// Given a pointer to an LLCL runtime, destroy it.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_DestroyRuntime(LLCLRuntimeRef rt) {
   delete &unwrap(rt);
 }
 
-/// Given a compact pointer to an LLCL runtime, get the number of threads in it.
+/// Given a pointer to an LLCL runtime, get the number of threads in it.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint32_t
 KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef rt) {
   return unwrap(rt).getWorkQueue()->getParallelismLevel();
@@ -275,6 +283,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_ExecuteAndResume});
   funcs.push_back({"KGEN_CompilerRT_LLCL_Complete",
                    (void *)&KGEN_CompilerRT_LLCL_Complete});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_GetCurrentRuntime",
+                   (void *)&KGEN_CompilerRT_LLCL_GetCurrentRuntime});
   funcs.push_back({"KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile",
                    (void *)&KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile});
   funcs.push_back({"KGEN_CompilerRT_LLCL_CreateRuntime",

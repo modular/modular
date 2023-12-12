@@ -94,6 +94,10 @@ public:
 
   size_t getParallelismLevel() const override { return 1; }
 
+  void associateWithRuntime(CompactRuntimePtr runtime) override {
+    CompactRuntimePtr::setCurrentRuntime(runtime);
+  }
+
 private:
   /// Execute blocks of work until stopPredicate is true, setting thread
   /// affinity if requested.

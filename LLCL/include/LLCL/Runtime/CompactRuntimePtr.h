@@ -117,6 +117,15 @@ public:
     return reinterpret_cast<intptr_t>(&Detail::RuntimeTable::getSingleton());
   }
 
+  /// Returns the CompactRuntimePtr to the Runtime which is managing the
+  /// caller's thread. Returns the invalid CompactRuntimePtr if no such
+  /// runtime has been associated.
+  static CompactRuntimePtr getCurrentRuntime();
+
+  /// Associates the given CompactRuntimePtr with the current thread,
+  /// silently overwriting any existing association.
+  static void setCurrentRuntime(CompactRuntimePtr ptr);
+
 private:
   friend class Runtime;
 
