@@ -13,7 +13,6 @@ from sys.info import (
     has_neon_int8_dotprod,
 )
 from sys.intrinsics import PrefetchOptions, external_call
-from Gemv import gemv
 
 from algorithm import (
     sync_parallelize,
@@ -48,7 +47,7 @@ from MatmulUtils import (
     get_matmul_arch_factor,
 )
 from Matrix import Matrix
-from memory import memset_zero, stack_allocation, memcpy
+from memory import memset_zero, stack_allocation
 from memory.buffer import (
     Buffer,
     DynamicRankBuffer,
@@ -1967,62 +1966,52 @@ fn _pack_b_ndbuffer_impl[
     When transpose_b is True, this also un-transposes b_input as part of the layout
     transformation."""
 
-    # Matrix by vector pattern -> use gemv
-    if b_input.dim(1) == 1:
-        # For gemv no packing is necessary
-        memcpy(output_buffer.data, b_input.data, b_input.dim(0))
-        out_chain.mark_ready()
+    let k = b_input.dim(1) if transposed else b_input.dim(0)
+
+    # The config (in particular inner size and tile_k) needs to EXACTLY match the
+    # values used in the matmul algorithm consuming this packed b matrix
+
+    if is_critical_stride(k):
+        alias config = search_mm_config[a_type, b_type, c_type, True, True]()
+        let tile_n_k = _get_tile_n_k[
+            config, transposed, a_type, b_type, c_type
+        ](b_input)
+        pack_b[
+            transposed,
+            config.simd_size,
+            config.pack_inner_size,
+            a_type,
+            b_type,
+            c_type,
+            DimList.create_unknown[2](),
+            DimList.create_unknown[2](),
+        ](
+            output_buffer,
+            b_input,
+            tile_n_k[0],
+            tile_n_k[1],
+        )
     else:
-        let k = b_input.dim(1) if transposed else b_input.dim(0)
-
-        # The config (in particular inner size and tile_k) needs to EXACTLY match the
-        # values used in the matmul algorithm consuming this packed b matrix
-
-        if is_critical_stride(k):
-            alias config = search_mm_config[
-                a_type, b_type, c_type, True, True
-            ]()
-            let tile_n_k = _get_tile_n_k[
-                config, transposed, a_type, b_type, c_type
-            ](b_input)
-            pack_b[
-                transposed,
-                config.simd_size,
-                config.pack_inner_size,
-                a_type,
-                b_type,
-                c_type,
-                DimList.create_unknown[2](),
-                DimList.create_unknown[2](),
-            ](
-                output_buffer,
-                b_input,
-                tile_n_k[0],
-                tile_n_k[1],
-            )
-        else:
-            alias config2 = search_mm_config[
-                a_type, b_type, c_type, True, False
-            ]()
-            let tile_n_k = _get_tile_n_k[
-                config2, transposed, a_type, b_type, c_type
-            ](b_input)
-            pack_b[
-                transposed,
-                config2.simd_size,
-                config2.pack_inner_size,
-                a_type,
-                b_type,
-                c_type,
-                DimList.create_unknown[2](),
-                DimList.create_unknown[2](),
-            ](
-                output_buffer,
-                b_input,
-                tile_n_k[0],
-                tile_n_k[1],
-            )
-        out_chain.mark_ready()
+        alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
+        let tile_n_k = _get_tile_n_k[
+            config2, transposed, a_type, b_type, c_type
+        ](b_input)
+        pack_b[
+            transposed,
+            config2.simd_size,
+            config2.pack_inner_size,
+            a_type,
+            b_type,
+            c_type,
+            DimList.create_unknown[2](),
+            DimList.create_unknown[2](),
+        ](
+            output_buffer,
+            b_input,
+            tile_n_k[0],
+            tile_n_k[1],
+        )
+    out_chain.mark_ready()
 
 
 @always_inline
@@ -3381,51 +3370,41 @@ fn matmul[
     let n = shape.N
     let k = shape.K
 
-    # Matrix by vector pattern -> use gemv
-    if n == 1:
-        let out = Buffer[Dim(), c_type](c.data, c.dim[0]())
-        let lhs = rebind[NDBuffer[2, a_shape, a_type]](a)
-        let rhs = Buffer[Dim(), b_type](b.data, b.dim[0]())
-        gemv[parallelize=True](out, lhs, rhs, out_chain)
-    else:
-        let complexity = m * n * k
-        let num_tasks = min(
-            div_ceil(complexity, get_min_task_size()),
-            num_threads if num_threads
-            > 0 else out_chain.get_runtime().parallelism_level(),
-        )
+    let complexity = m * n * k
+    let num_tasks = min(
+        div_ceil(complexity, get_min_task_size()),
+        num_threads if num_threads
+        > 0 else out_chain.get_runtime().parallelism_level(),
+    )
 
-        @always_inline
-        @parameter
-        fn task_func(task_id: Int):
-            let sub_matmul_config = get_partitioned_matmul[
-                a_type, b_type, c_type, PartitionHeuristic.MOJO
-            ](m, n, k, task_id, num_tasks)
+    @always_inline
+    @parameter
+    fn task_func(task_id: Int):
+        let sub_matmul_config = get_partitioned_matmul[
+            a_type, b_type, c_type, PartitionHeuristic.MOJO
+        ](m, n, k, task_id, num_tasks)
 
-            if (
-                sub_matmul_config.shape[0] <= 0
-                or sub_matmul_config.shape[1] <= 0
-            ):
-                return
+        if sub_matmul_config.shape[0] <= 0 or sub_matmul_config.shape[1] <= 0:
+            return
 
-            _submatmul_sequential_sync[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
-                transpose_a,
-                transpose_b,
-                b_packed,
-                elementwise_epilogue_enabled,
-                elementwise_lambda_fn,
-                saturated_vnni,
-            ](c, a, b, sub_matmul_config.shape, sub_matmul_config.offset)
+        _submatmul_sequential_sync[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transpose_a,
+            transpose_b,
+            b_packed,
+            elementwise_epilogue_enabled,
+            elementwise_lambda_fn,
+            saturated_vnni,
+        ](c, a, b, sub_matmul_config.shape, sub_matmul_config.offset)
 
-        # TODO (#12624): Closure captures some state on the stack so this needs
-        # to be synchronous in order to keep that state alive
-        sync_parallelize[task_func](out_chain, num_tasks)
+    # TODO (#12624): Closure captures some state on the stack so this needs
+    # to be synchronous in order to keep that state alive
+    sync_parallelize[task_func](out_chain, num_tasks)
 
 
 fn _submatmul_sequential_sync[
