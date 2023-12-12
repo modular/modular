@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLCL/Runtime/TypeID.h"
+#include "LLCL/Runtime/Globals/TypeInfoTable.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -13,9 +14,9 @@
 using namespace M;
 using namespace LLCL;
 
-Detail::RawTypeID Detail::TypeInfoTable::getSlow(std::string_view typeName,
-                                                 ValueDestructorFn destructor) {
-  std::lock_guard<std::mutex> l(mu);
+Detail::RawTypeID TypeInfoTable::getSlow(std::string_view typeName,
+                                         ValueDestructorFn destructor) {
+  std::lock_guard<std::mutex> l(m);
   auto itr = ids.find(typeName);
   if (itr != ids.end())
     return itr->second;
@@ -29,9 +30,14 @@ Detail::RawTypeID Detail::TypeInfoTable::getSlow(std::string_view typeName,
   return id;
 }
 
+static ::TypeInfoTable &getSingleton() {
+  return Globals::getTypeInfoTableSingleton(
+      [] { return new TypeInfoTable(64); });
+}
+
 Detail::RawTypeID TypeID::getSlow(std::string_view typeName,
                                   ValueDestructorFn destructorFn) {
-  return Detail::TypeInfoTable::getSingleton().getSlow(typeName, destructorFn);
+  return getSingleton().getSlow(typeName, destructorFn);
 }
 
 #if MODULAR_DEBUG
@@ -44,3 +50,15 @@ void TypeID::printErrorIfNotEqual(TypeID expected, StringRef context) const {
                << expected.getTypeName() << "'\n";
 }
 #endif
+
+intptr_t TypeID::getSignature() {
+  return reinterpret_cast<intptr_t>(&getSingleton());
+}
+
+std::string_view TypeID::getTypeName() const {
+  return getSingleton().getTypeName(id);
+}
+
+ValueDestructorFn TypeID::getValueDestructor() const {
+  return getSingleton().getValueDestructor(id);
+}

@@ -114,8 +114,12 @@ TEST(RuntimeTest, MaxRuntime) {
 /// add 10 instances again which should succeed.
 TEST(RuntimeTest, MaxRuntimeUtilize) {
   std::vector<std::unique_ptr<Runtime>> allRuntimes;
-  uint8_t numRuntimes =
-      M::LLCL::Detail::RuntimeTable::getSingleton().numActiveRuntimes();
+  uint8_t numRuntimes = 0;
+  for (uint8_t i = 0; i < 255; ++i) {
+    if (M::LLCL::Globals::getRuntime(i) != nullptr) {
+      numRuntimes++;
+    }
+  }
   for (uint8_t i = 0; i < (255 - numRuntimes); ++i) {
     allRuntimes.emplace(allRuntimes.end(), createRuntime());
   }

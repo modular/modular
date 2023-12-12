@@ -7,12 +7,10 @@
 // This is a multi-threaded work queue implementation.
 //
 //===----------------------------------------------------------------------===//
-
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Atomics.h"
-#include "LLCL/Support/Chain.h"
 #include "LLCL/Support/LockFreeRingBuffer.h"
 #include "LLCL/Support/Profiling.h"
 #include "LLCL/Support/Semaphore.h"
@@ -314,14 +312,13 @@ struct WorkQueueThread {
   }
 
   /// Schedules work on to the thread local queue of this worker. If the
-  /// lockFreeRingBuffer is full, enqueue into the spill queue.
-  void addAffinityTask(WorkItem &&workItem) {
-    if (!affinityTaskList.enqueue(workItem)) {
+  /// lockFreeRignBuffer is full, enqueue into the spill queue.
+  void addAffinityTask(WorkItem &work) {
+    if (!affinityTaskList.enqueue(work)) {
       std::lock_guard<std::mutex> guard(localSpillQueueMutex);
-      localSpillQueue.emplace_back(std::move(workItem));
+      localSpillQueue.emplace_back(std::move(work));
     }
   }
-
   /// Joins the thread. Asserts that `sharedState.done` is true because
   /// otherwise the thread will never join.
   void join() {
@@ -660,8 +657,6 @@ public:
   }
 #endif
 
-  void associateRuntime(CompactRuntimePtr runtime) override;
-
 private:
   /// If the caller is a worker thread for this work queue then return the
   /// WorkQueueThread which represents it. Otherwise, if the caller is a
@@ -805,7 +800,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     // Either add to thread local lock-free queues or to its spill queue.
     // Any task with taskId >=0 always finds a place in either of these
     // two queues.
-    workThread->addAffinityTask(std::move(workItem));
+    workThread->addAffinityTask(workItem);
     // Wake up the thread just in case.
     // NOTE: This may be a spurious post() because the thread may already be
     // awake. It does not cause any harm because the worst that can happen
@@ -1013,23 +1008,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 
 bool ThreadPoolWorkQueue::callerIsForeign() const {
   return getOwningWorkQueueThread() == nullptr;
-}
-
-void ThreadPoolWorkQueue::associateRuntime(CompactRuntimePtr runtime) {
-  std::vector<AnyAsyncValueRef> chains;
-  chains.reserve(numWorkers);
-  for (size_t workerId = 0; workerId < numWorkers; ++workerId) {
-    const AnyAsyncValueRef &chain =
-        chains.emplace_back(AsyncValueRef<Chain>::allocate(runtime));
-    auto workThread = getWorkQueueThread(workerId);
-    workThread->addAffinityTask(
-        WorkItem([runtime, chain = chain.copy()]() mutable {
-          CompactRuntimePtr::setCurrentRuntime(runtime);
-          std::move(chain).emplace<Chain>();
-        }));
-    workThread->sema.post();
-  }
-  await(chains);
 }
 
 //===----------------------------------------------------------------------===//
