@@ -13,11 +13,11 @@ using namespace M;
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_TimeTraceProfilerBegin(const char *namePtr, size_t nameLen,
-                                       const char *detailPtr,
-                                       size_t detailLen) {
+                                       const char *detailPtr, size_t detailLen,
+                                       size_t parentId) {
   // NOTE: Must be always enabled.
-  ProfilerEntry<true>::createAndPush(StringRef(namePtr, nameLen),
-                                     StringRef(detailPtr, detailLen));
+  ProfilerEntry<true>::createWithParentAndPush(
+      parentId, StringRef(namePtr, nameLen), StringRef(detailPtr, detailLen));
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void

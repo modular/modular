@@ -535,6 +535,15 @@ struct TimeTraceThreadProfiler {
     stack.push_back(id);
   }
 
+  /// Begin a new timing entry, and push it onto the stack of currently
+  /// running entries. A corresponding call to endAndPop() must be made
+  /// from the same thread.
+  template <typename... Args>
+  void beginWithParentAndPush(ProfilerEventId parentId, Args &&...args) {
+    ProfilerEventId id = beginWithParent(parentId, std::forward<Args>(args)...);
+    stack.push_back(id);
+  }
+
   /// End the most recently pushed timing event.
   void endAndPop() {
     assert(!stack.empty() && "unbalanced push/pop");
@@ -869,6 +878,13 @@ struct ProfilerEntry<true> {
   static void createAndPush(Args &&...args) {
     if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
       ctx->beginAndPush(std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  static void createWithParentAndPush(ProfilerEventId parentId,
+                                      Args &&...args) {
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+      ctx->beginWithParentAndPush(parentId, std::forward<Args>(args)...);
   }
 
   template <size_t N, typename... Args>
