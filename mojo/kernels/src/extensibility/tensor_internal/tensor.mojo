@@ -39,6 +39,7 @@ print(gray_scale_image.shape().__str__())
 
 import math
 from algorithm.functional import elementwise
+from collections.vector import CollectionElement
 from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import bitcast
@@ -172,7 +173,7 @@ fn _elementwise[
     return result
 
 
-struct Tensor[dtype: DType](Stringable):
+struct Tensor[dtype: DType](Stringable, CollectionElement):
     """A tensor type which owns its underlying data and is parameterized on
     DType.
 
