@@ -16,6 +16,7 @@
 #ifndef LLCL_RUNTIME_TYPEID_H
 #define LLCL_RUNTIME_TYPEID_H
 
+#include "LLCL/Runtime/Globals/Globals.h"
 #include "LLCL/Support/ConcurrentAppendingVector.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
@@ -150,6 +151,49 @@ struct TypeIDCache {
 template <typename T>
 std::atomic<RawTypeID> TypeIDCache<T>::cachedID = kInvalidRawTypeID;
 
+//===----------------------------------------------------------------------===//
+// TypeInfoTable
+//===----------------------------------------------------------------------===//
+
+/// Pair the destructor and type name used at registration time. The latter
+/// is very handy for debugging, eg see AsyncValue::printDebug.
+struct TypeInfo {
+  std::string_view typeName;
+  ValueDestructorFn destructorFn;
+
+  TypeInfo(std::string_view typeName, ValueDestructorFn destructorFn)
+      : typeName(typeName), destructorFn(destructorFn) {}
+};
+
+/// The globally unique type info table. The string -> id mapping uses
+/// heavyweight mutex synchronization, but see TypeIDCache for how that cost is
+/// amortized. The id -> property mapping only needs atomic synchronization and
+/// is very cheap.
+class TypeInfoTable {
+public:
+  TypeInfoTable(size_t initialCapacity) : entries(initialCapacity) {}
+
+  Detail::RawTypeID getSlow(std::string_view typeName,
+                            ValueDestructorFn destructor);
+  std::string_view getTypeName(Detail::RawTypeID id) const {
+    return id == Detail::kInvalidRawTypeID ? std::string_view{"unk"}
+                                           : entries[id].typeName;
+  }
+  ValueDestructorFn getValueDestructor(Detail::RawTypeID id) const {
+    return id == Detail::kInvalidRawTypeID ? nullptr : entries[id].destructorFn;
+  }
+
+  static TypeInfoTable &getSingleton() {
+    return Globals::getTypeInfoTableSingleton(
+        [] { return new TypeInfoTable(64); });
+  }
+
+private:
+  mutable std::mutex mu; // protects ids
+  llvm::StringMap<Detail::RawTypeID> ids;
+  ConcurrentAppendingVector<TypeInfo> entries;
+};
+
 } // namespace Detail
 
 //===----------------------------------------------------------------------===//
@@ -223,7 +267,9 @@ public:
   ///
   /// (This is just the address of the underlying table info singleton, but
   /// please don't depend on that.)
-  static intptr_t getSignature();
+  static intptr_t getSignature() {
+    return reinterpret_cast<intptr_t>(&Detail::TypeInfoTable::getSingleton());
+  }
 
   inline bool operator==(const TypeID &other) const { return id == other.id; }
   inline bool operator!=(const TypeID &other) const {
@@ -231,7 +277,9 @@ public:
   }
 
   /// Returns the name for this type id, or "unk" if invalid.
-  std::string_view getTypeName() const;
+  std::string_view getTypeName() const {
+    return Detail::TypeInfoTable::getSingleton().getTypeName(id);
+  }
 
   /// Returns the destructor function for this type id, or null if invalid.
   ///
@@ -239,7 +287,9 @@ public:
   ///          will not attempt to delete the object's memory. If the object
   ///          has been new allocated then the underlying memory must be
   ///          deleted by the caller.
-  ValueDestructorFn getValueDestructor() const;
+  ValueDestructorFn getValueDestructor() const {
+    return Detail::TypeInfoTable::getSingleton().getValueDestructor(id);
+  }
 
   /// Returns the underlying index representing the type id. This is in the
   /// range [0..2^16-2].
@@ -261,38 +311,6 @@ private:
 #endif
 
   Detail::RawTypeID id = Detail::kInvalidRawTypeID;
-};
-
-/// Pair the destructor and type name used at registration time. The latter
-/// is very handy for debugging, eg see AsyncValue::printDebug.
-struct TypeInfo {
-  std::string_view typeName;
-  ValueDestructorFn destructorFn;
-
-  TypeInfo(std::string_view typeName, ValueDestructorFn destructorFn)
-      : typeName(typeName), destructorFn(destructorFn) {}
-};
-
-/// The globally unique type info table. The string -> id mapping uses
-/// heavyweight mutex synchronization, but see TypeIDCache for how that cost is
-/// amortized. The id -> property mapping only needs atomic synchronization and
-/// is very cheap.
-struct TypeInfoTable {
-  mutable std::mutex m; // protects ids
-  llvm::StringMap<Detail::RawTypeID> ids;
-  ConcurrentAppendingVector<TypeInfo> entries;
-
-  TypeInfoTable(size_t initialCapacity) : entries(initialCapacity) {}
-
-  Detail::RawTypeID getSlow(std::string_view typeName,
-                            ValueDestructorFn destructor);
-  std::string_view getTypeName(Detail::RawTypeID id) const {
-    return id == Detail::kInvalidRawTypeID ? std::string_view{"unk"}
-                                           : entries[id].typeName;
-  }
-  ValueDestructorFn getValueDestructor(Detail::RawTypeID id) const {
-    return id == Detail::kInvalidRawTypeID ? nullptr : entries[id].destructorFn;
-  }
 };
 
 } // namespace M::LLCL

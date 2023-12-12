@@ -11,22 +11,71 @@
 #ifndef LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
 #define LLCL_RUNTIME_COMPACT_RUNTIME_PTR_H
 
+#include "LLCL/Runtime/Globals/Globals.h"
+#include "llvm/ADT/SmallVector.h"
+
 #include <cassert>
 #include <cstdint>
-
-#include "LLCL/Runtime/Globals/CompactRuntimeTable.h"
+#include <mutex>
 
 namespace M::LLCL {
 
 class Runtime;
 
-// CompactRuntimePtr implements a compact pointer for a HostContext by storing
-// the instance index of the HostContext object. It is intended to be used in
-// places where saving the memory space is important, otherwise, HostContext*
-// should be used.
+namespace Detail {
+
+//===----------------------------------------------------------------------===//
+// RuntimeTable
+//===----------------------------------------------------------------------===//
+
+/// Global singleton which maintains the runtime index to runtime map.
+class RuntimeTable {
+public:
+  /// Returns runtime with given index, which must have already been added.
+  ///
+  /// CAUTION: Currently not guaranteed to see the results of {add,clear}Runtime
+  /// from other threads!
+  Runtime *getRuntime(uint8_t index) const;
+
+  /// Registers runtime and returns its unique index.
+  uint8_t addRuntime(Runtime *runtime);
+
+  /// Unregistered the runtime with the given index.
+  void clearRuntime(uint8_t index);
+
+  /// Returns the number of active runtimes.
+  size_t numActiveRuntimes() const;
+
+  /// Index representing 'no runtime'.
+  static constexpr uint8_t kInvalidIndex = 255;
+
+  static RuntimeTable &getSingleton() {
+    return Globals::getRuntimeTableSingleton(
+        []() { return new RuntimeTable(); });
+  }
+
+private:
+  RuntimeTable();
+
+  /// Protects mutation to both of the following fields.
+  mutable std::mutex mu;
+  llvm::SmallVector<uint8_t, 256> freeIndices;
+  Runtime *allRuntimes[kInvalidIndex];
+};
+
+} // namespace Detail
+
+//===----------------------------------------------------------------------===//
+// CompactRuntimePtr
+//===----------------------------------------------------------------------===//
+
+/// The `CompactRuntimePtr` type provides a pointer compressed version of
+/// `Runtime*` that fits in 8 bits.  This allows every AsyncValue to carry a
+/// backpointer to the Runtime which allocated it, and allows deallocating the
+/// memory for the AsyncValue through the Runtime's allocator.
 class CompactRuntimePtr {
 public:
-  CompactRuntimePtr() = default;
+  constexpr CompactRuntimePtr() = default;
   CompactRuntimePtr(const CompactRuntimePtr &) = default;
   CompactRuntimePtr &operator=(const CompactRuntimePtr &) = default;
 
@@ -37,35 +86,53 @@ public:
 
   Runtime *operator->() const { return get(); }
   Runtime &operator*() const { return *get(); }
-  Runtime *get() const { return M::LLCL::Globals::getRuntime(index); }
+  Runtime *get() const {
+    return Detail::RuntimeTable::getSingleton().getRuntime(index);
+  }
 
-  static intptr_t getSignature() {
-    return M::LLCL::Globals::getRuntimeSignature();
+  Runtime *getOrNull() const {
+    return index == Detail::RuntimeTable::kInvalidIndex
+               ? nullptr
+               : Detail::RuntimeTable::getSingleton().getRuntime(index);
   }
 
   /// Explicitly testing for truth value determines whether this pointer is
   /// "null".
-  explicit operator bool() const { return index != kInvalidIndex; }
+  explicit operator bool() const {
+    return index != Detail::RuntimeTable::kInvalidIndex;
+  }
 
   /// We implicitly convert to Runtime& since we are used interchangably with
   /// it.
-  operator Runtime &() const { return *get(); }
+  /*implicit*/ operator Runtime &() const { return *get(); }
 
-  /// Get an opaque token for the pointer.
-  uint8_t getAsOpaqueToken() const { return index; }
-  /// Get the pointer from an opaque token.
-  static CompactRuntimePtr getFromOpaqueToken(uint8_t token) {
-    return CompactRuntimePtr(token);
+  /// Returns a 'signature' for the CompactRuntimePtr subsystem which is
+  /// expected to be unique for the running process. This can be used to catch,
+  /// at runtime, accidental multiple definitions for Modular runtime statics
+  /// across dynamic libraries / executables.
+  ///
+  /// (This is just the address of the underlying runtime table, but
+  /// please don't depend on that.)
+  static intptr_t getSignature() {
+    return reinterpret_cast<intptr_t>(&Detail::RuntimeTable::getSingleton());
   }
 
-  static constexpr uint8_t kInvalidIndex = 255;
+  /// Returns the CompactRuntimePtr to the Runtime which is managing the
+  /// caller's thread. Returns the invalid CompactRuntimePtr if no such
+  /// runtime is known.
+  static CompactRuntimePtr getCurrentRuntime();
+
+  /// Associates the given CompactRuntimePtr with the current thread.
+  static void setCurrentRuntime(CompactRuntimePtr ptr);
 
 private:
   friend class Runtime;
+
   explicit CompactRuntimePtr(uint8_t index) : index{index} {
-    assert(index < kInvalidIndex && "Too many Runtime instances created");
+    assert(index < Detail::RuntimeTable::kInvalidIndex &&
+           "Too many Runtime instances created");
   }
-  uint8_t index = kInvalidIndex;
+  uint8_t index = Detail::RuntimeTable::kInvalidIndex;
 };
 
 } // namespace M::LLCL
