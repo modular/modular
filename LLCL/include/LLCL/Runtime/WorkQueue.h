@@ -13,6 +13,7 @@
 #define LLCL_RUNTIME_WORKQUEUE_H
 
 #include "LLCL/ForwardDecls.h"
+#include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Support/Atomics.h"
 #include "LLCL/Support/Profiling.h"
 #include "LLCL/Support/Resource.h"
@@ -210,6 +211,10 @@ public:
   /// tracked to be marked as 'free'.
   virtual void taskIsDone() = 0;
 #endif
+
+  /// Associate the given runtime with all threads managed by this work queue.
+  /// Must be called at most once.
+  virtual void associateRuntime(CompactRuntimePtr runtime) = 0;
 
 protected:
   WorkQueue() = default;
