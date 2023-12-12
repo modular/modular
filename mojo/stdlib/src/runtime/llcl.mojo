@@ -148,16 +148,7 @@ fn _destroy_global_runtime(ptr: Pointer[NoneType]):
 
 @always_inline
 fn _get_global_runtime() -> Runtime:
-    """Gets or creates the global runtime. For stand-alone Mojo the runtime
-    will be created with number of threads equal to the number of cores. When
-    Mojo is used within the Modular Execution Engine will return the runtime
-    already created for execution.
-    """
-    let current_runtime = external_call[
-        "KGEN_CompilerRT_LLCL_GetCurrentRuntime", Pointer[NoneType]
-    ]()
-    if current_runtime:
-        return current_runtime
+    """Gets or creats the global runtime."""
     return _get_global[
         "Runtime", _init_global_runtime, _destroy_global_runtime
     ]()
