@@ -13,6 +13,7 @@
 #define LLCL_RUNTIME_WORKQUEUE_H
 
 #include "LLCL/ForwardDecls.h"
+#include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Support/Atomics.h"
 #include "LLCL/Support/Profiling.h"
 #include "LLCL/Support/Resource.h"
