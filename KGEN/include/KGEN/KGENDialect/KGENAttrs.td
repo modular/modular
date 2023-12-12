@@ -984,6 +984,47 @@ def KGEN_DecoratorsAttr : ArrayOfAttr<KGENDialect, "Decorators", "decorators",
 }
 
 //===----------------------------------------------------------------------===//
+// PreservedAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_PreservedAttr : KGENAttr<"Preserved", "preserved"> {
+  let summary = "Preserved attribute that is not affected by rewrites.";
+  let description = [{
+    The `#kgen.preserved` attribute contains an attribute and isolates it from
+    all rewrites and lowerings. This is useful for keeping higher-level
+    information, like source information, around in the IR in case users need to
+    inspect them.
+
+    Example:
+
+    ```mlir
+    #kgen.preserved<!lit.signature<() -> ()>>
+    ```
+  }];
+
+  let parameters = (ins "Attribute":$value);
+  let assemblyFormat = "`<` $value `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "Attribute":$value), [{
+      return $_get(value.getContext(), value);
+   }]>
+  ];
+
+  let extraClassDeclaration = [{
+    static auto getWalkImmediateSubElementsFn() {
+      return [](auto, function_ref<void(Attribute)>,
+                      function_ref<void(Type)>) {};
+    }
+    static auto getReplaceImmediateSubElementsFn() {
+      return [](auto instance, ArrayRef<Attribute>, ArrayRef<Type>) {
+        return instance;
+      };
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ExportKindAttr
 //===----------------------------------------------------------------------===//
 

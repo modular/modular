@@ -11,7 +11,7 @@
 // CHECK: #[[DILETVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "let_value", file = #{{.*}}, line = 11> : ![[DI_INDEX_TYPE]]
 
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
-// CHECK-SAME: (%[[ARG0:.*]]: index
+// CHECK-SAME: (%[[ARG0:.*]]: index loc
 // CHECK-NEXT:    kgen.param.declare life_a: lifetime
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
 // CHECK-NEXT:    debuginfo.value #[[DIVAR]] #[[DIEXPR_DEREF]] = %[[VAR_A]] : !kgen.pointer<index>

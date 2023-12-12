@@ -301,7 +301,8 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
         ParamDeclArrayAttr::get(b.getContext(), inputParams),
         gen.getResultParamsAttr(), gen.getConstraintsAttr(),
         gen.getDecoratorsAttr(), gen.getInlineLevelAttr(),
-        gen.getExportKindAttr(), gen.getLLVMMetadata());
+        gen.getExportKindAttr(), gen.getLLVMMetadata(),
+        PreservedAttr::get(TypeAttr::get(signature)));
     result = newGen;
 
     // Move over the body.
