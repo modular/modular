@@ -539,14 +539,20 @@ fn elementwise_wrapper[
     if _guard_against_gpu_target[target](out_chain):
         return
 
-    out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
-
-    _elementwise_impl[
-        rank, simd_width, single_thread_blocking_override, func, target=target
-    ](
-        buffer.dynamic_shape,
-        out_chain,
-    )
+    with Trace[TraceLevel.OP](
+        "mojo.elementwise",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
+        _elementwise_impl[
+            rank,
+            simd_width,
+            single_thread_blocking_override,
+            func,
+            target=target,
+        ](
+            buffer.dynamic_shape,
+            out_chain,
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1203,19 +1209,20 @@ fn mean[
         return
 
     let axis = buffer_to_scalar(axis_buffer)
-    _mean[
-        type,
-        rank,
-        single_thread_blocking_override,
-        input_0_fn,
-        output_0_fn,
-        target,
-    ](
-        input_shape,
-        int(axis),
-        output_shape,
-        out_chain,
-    )
+    with Trace[TraceLevel.OP]("mojo.mean") as t:
+        _mean[
+            type,
+            rank,
+            single_thread_blocking_override,
+            input_0_fn,
+            output_0_fn,
+            target,
+        ](
+            input_shape,
+            int(axis),
+            output_shape,
+            out_chain,
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1326,8 +1333,6 @@ fn reduce_add[
     if _guard_against_gpu_target[target](out_chain):
         return
 
-    out_chain.trace[TraceLevel.OP]("mogg.reduce_add")
-
     @always_inline
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
@@ -1347,15 +1352,16 @@ fn reduce_add[
         return v1 + v2
 
     let axis = buffer_to_scalar(axis_buffer)
-    _reduce_generator[
-        type,
-        rank,
-        single_thread_blocking_override,
-        input_0_fn_wrapper,
-        output_0_fn_wrapper,
-        reduce_impl,
-        target,
-    ](input_shape, 0, int(axis), out_chain)
+    with Trace[TraceLevel.OP]("mojo.reduce_add") as t:
+        _reduce_generator[
+            type,
+            rank,
+            single_thread_blocking_override,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_impl,
+            target,
+        ](input_shape, 0, int(axis), out_chain)
 
 
 @mogg_register("mo.reduce.max")
@@ -1382,8 +1388,6 @@ fn reduce_max[
     if _guard_against_gpu_target[target](out_chain):
         return
 
-    out_chain.trace[TraceLevel.OP]("mogg.reduce_max")
-
     @always_inline
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
@@ -1403,15 +1407,16 @@ fn reduce_max[
         return max(v1, v2)
 
     let axis = buffer_to_scalar(axis_buffer)
-    _reduce_generator[
-        type,
-        rank,
-        single_thread_blocking_override,
-        input_0_fn_wrapper,
-        output_0_fn_wrapper,
-        reduce_impl,
-        target,
-    ](input_shape, min_or_neginf[type](), int(axis), out_chain)
+    with Trace[TraceLevel.OP]("mojo.reduce_max") as t:
+        _reduce_generator[
+            type,
+            rank,
+            single_thread_blocking_override,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_impl,
+            target,
+        ](input_shape, min_or_neginf[type](), int(axis), out_chain)
 
 
 @mogg_register("mo.reduce.min")
@@ -1438,8 +1443,6 @@ fn reduce_min[
     if _guard_against_gpu_target[target](out_chain):
         return
 
-    out_chain.trace[TraceLevel.OP]("mogg.reduce_min")
-
     @always_inline
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
@@ -1459,15 +1462,17 @@ fn reduce_min[
         return min(v1, v2)
 
     let axis = buffer_to_scalar(axis_buffer)
-    _reduce_generator[
-        type,
-        rank,
-        single_thread_blocking_override,
-        input_0_fn_wrapper,
-        output_0_fn_wrapper,
-        reduce_impl,
-        target,
-    ](input_shape, max_or_inf[type](), int(axis), out_chain)
+
+    with Trace[TraceLevel.OP]("mojo.reduce_min") as t:
+        _reduce_generator[
+            type,
+            rank,
+            single_thread_blocking_override,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_impl,
+            target,
+        ](input_shape, max_or_inf[type](), int(axis), out_chain)
 
 
 @mogg_register("mo.reduce.mul")
@@ -1494,8 +1499,6 @@ fn reduce_mul[
     if _guard_against_gpu_target[target](out_chain):
         return
 
-    out_chain.trace[TraceLevel.OP]("mogg.reduce_mul")
-
     @always_inline
     fn input_0_fn_wrapper[
         _type: DType, width: Int, rank: Int
@@ -1515,15 +1518,17 @@ fn reduce_mul[
         return v1 * v2
 
     let axis = buffer_to_scalar(axis_buffer)
-    _reduce_generator[
-        type,
-        rank,
-        single_thread_blocking_override,
-        input_0_fn_wrapper,
-        output_0_fn_wrapper,
-        reduce_impl,
-        target,
-    ](input_shape, 1, int(axis), out_chain)
+
+    with Trace[TraceLevel.OP]("mojo.reduce_mul") as t:
+        _reduce_generator[
+            type,
+            rank,
+            single_thread_blocking_override,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_impl,
+            target,
+        ](input_shape, 1, int(axis), out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1953,32 +1958,31 @@ fn matmul[
             + single_thread_blocking_override
         )
 
-    @parameter
-    if target == "cpu":
-        out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
-
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
-    _matmul[
-        a_type,
-        input_0_static_shape,
-        b_type,
-        input_1_static_shape,
-        c_type,
-        input_2_static_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        lambdas_have_fusion,
-        epilogue_wrapper,
-        False,  # saturated_vnni
-        single_thread_blocking_override=single_thread_blocking_override,
-        target=target,
-    ](
-        c,
-        a,
-        b,
-        out_chain,
-    )
+    with Trace[TraceLevel.OP](
+        "mojo.matmul", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+    ) as t:
+        _matmul[
+            a_type,
+            input_0_static_shape,
+            b_type,
+            input_1_static_shape,
+            c_type,
+            input_2_static_shape,
+            transpose_a,
+            transpose_b,
+            b_packed,
+            lambdas_have_fusion,
+            epilogue_wrapper,
+            False,  # saturated_vnni
+            single_thread_blocking_override=single_thread_blocking_override,
+            target=target,
+        ](
+            c,
+            a,
+            b,
+            out_chain,
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -2035,25 +2039,23 @@ fn batched_matmul[
             + single_thread_blocking_override
         )
 
-    @parameter
-    if target == "cpu":
-        out_chain.trace[TraceLevel.OP, description_fn](
-            "mojo.mogg.batched_matmul"
-        )
-
-    return _batched_matmul[
-        rank,
-        a_type,
-        b_type,
-        c_type,
-        adj_a,
-        adj_b,
-        lambdas_have_fusion,
-        epilogue_wrapper,
-        False,  # saturated_vnni
-        single_thread_blocking_override,
-        target=target,
-    ](c, a, b, out_chain)
+    with Trace[TraceLevel.OP](
+        "mojo.batched_matmul",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
+        _batched_matmul[
+            rank,
+            a_type,
+            b_type,
+            c_type,
+            adj_a,
+            adj_b,
+            lambdas_have_fusion,
+            epilogue_wrapper,
+            False,  # saturated_vnni
+            single_thread_blocking_override,
+            target=target,
+        ](c, a, b, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2934,15 +2936,16 @@ fn conv[
             + padding_str
         )
 
-    out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.conv")
-
-    conv_2d_nhwc_direct[
-        filter_rank,
-        filter_packed,
-        conv_info_static,
-        lambdas_have_fusion,
-        epilogue_wrapper,
-    ](input, filter, output, conv_info, out_chain)
+    with Trace[TraceLevel.OP](
+        "mojo.conv", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+    ) as t:
+        conv_2d_nhwc_direct[
+            filter_rank,
+            filter_packed,
+            conv_info_static,
+            lambdas_have_fusion,
+            epilogue_wrapper,
+        ](input, filter, output, conv_info, out_chain)
 
 
 @mogg_register("mo.conv_transpose")
@@ -3017,52 +3020,52 @@ fn mogg_layer_norm[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    out_chain.trace[TraceLevel.OP]("mojo.layer_norm")
-    let eps = epsilon[0]
+    with Trace[TraceLevel.OP]("mojo.layer_norm") as t:
+        let eps = epsilon[0]
 
-    alias simd_width = simdwidthof[type]()
+        alias simd_width = simdwidthof[type]()
 
-    let last_dim = shape[rank - 1]
-    let prod_all_but_last_dim = shape.flattened_length() // last_dim
-    let flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
+        let last_dim = shape[rank - 1]
+        let prod_all_but_last_dim = shape.flattened_length() // last_dim
+        let flat_shape = StaticIntTuple[2](prod_all_but_last_dim, last_dim)
 
-    let output_buf = reshape[rank, 2, type, True](output, flat_shape)
+        let output_buf = reshape[rank, 2, type, True](output, flat_shape)
 
-    let num_workers = min(
-        out_chain.get_runtime().parallelism_level(), prod_all_but_last_dim
-    )
-    let chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
-
-    @parameter
-    fn task_func(thread_id: Int):
-        let num_rows = min(
-            chunk_size, prod_all_but_last_dim - thread_id * chunk_size
+        let num_workers = min(
+            out_chain.get_runtime().parallelism_level(), prod_all_but_last_dim
         )
-        let row_idx = thread_id * chunk_size
-        let thread_starting_coord = StaticIntTuple[2](row_idx, 0)
-        let per_thread_dims = DimList(num_rows, last_dim)
-        let output_buf_view = NDBuffer[2, DimList.create_unknown[2](), type](
-            output_buf._offset(thread_starting_coord), per_thread_dims
-        )
+        let chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
 
         @parameter
-        @always_inline
-        # Translate given 2d index back to original Nd tensor
-        fn input_fn_2d[
-            return_type: DType, simd_width: Int
-        ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
-            var indices = _get_nd_indices_from_flat_index[rank](
-                row_idx + row, shape, rank - 1
+        fn task_func(thread_id: Int):
+            let num_rows = min(
+                chunk_size, prod_all_but_last_dim - thread_id * chunk_size
             )
-            indices[rank - 1] = idx
-            let input_val = input_0_fn[simd_width, rank](indices)
-            return input_val.cast[return_type]()
+            let row_idx = thread_id * chunk_size
+            let thread_starting_coord = StaticIntTuple[2](row_idx, 0)
+            let per_thread_dims = DimList(num_rows, last_dim)
+            let output_buf_view = NDBuffer[
+                2, DimList.create_unknown[2](), type
+            ](output_buf._offset(thread_starting_coord), per_thread_dims)
 
-        layer_norm[simd_width, type, input_fn_2d](
-            output_buf_view, gamma, beta, eps
-        )
+            @parameter
+            @always_inline
+            # Translate given 2d index back to original Nd tensor
+            fn input_fn_2d[
+                return_type: DType, simd_width: Int
+            ](idx: Int, row: Int) -> SIMD[return_type, simd_width]:
+                var indices = _get_nd_indices_from_flat_index[rank](
+                    row_idx + row, shape, rank - 1
+                )
+                indices[rank - 1] = idx
+                let input_val = input_0_fn[simd_width, rank](indices)
+                return input_val.cast[return_type]()
 
-    async_parallelize[task_func](out_chain, num_workers)
+            layer_norm[simd_width, type, input_fn_2d](
+                output_buf_view, gamma, beta, eps
+            )
+
+        async_parallelize[task_func](out_chain, num_workers)
 
 
 # ===----------------------------------------------------------------------===#
