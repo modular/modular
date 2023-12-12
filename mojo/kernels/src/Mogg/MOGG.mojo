@@ -2915,6 +2915,27 @@ fn conv[
     ](coords: StaticIntTuple[4], val: SIMD[_type, width]):
         output_0_fn[width, 4](coords, rebind[SIMD[output_type, width]](val))
 
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        let input_shape_str = String("input ") + input.dynamic_shape
+        let filter_shape_str = String("; filter ") + filter.dynamic_shape
+        let output_shape_str = String("; output ") + output.dynamic_shape
+        let group_str = String("; group ") + int(num_groups[0])
+        let stride_str = String("; stride ") + strides_tuple
+        let padding_str = String("; padding ") + pad_h_tuple + " " + pad_w_tuple
+
+        return (
+            input_shape_str
+            + filter_shape_str
+            + output_shape_str
+            + group_str
+            + stride_str
+            + padding_str
+        )
+
+    out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.conv")
+
     conv_2d_nhwc_direct[
         filter_rank,
         filter_packed,
