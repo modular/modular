@@ -660,6 +660,8 @@ public:
   }
 #endif
 
+  void associateWithRuntime(CompactRuntimePtr runtime) override;
+
 private:
   /// If the caller is a worker thread for this work queue then return the
   /// WorkQueueThread which represents it. Otherwise, if the caller is a
@@ -1011,6 +1013,24 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 
 bool ThreadPoolWorkQueue::callerIsForeign() const {
   return getOwningWorkQueueThread() == nullptr;
+}
+
+void ThreadPoolWorkQueue::associateWithRuntime(CompactRuntimePtr runtime) {
+  // Ask each worker to set the current runtime.
+  std::vector<AnyAsyncValueRef> chains;
+  chains.reserve(numWorkers);
+  for (size_t workerId = 0; workerId < numWorkers; ++workerId) {
+    const AnyAsyncValueRef &chain =
+        chains.emplace_back(AsyncValueRef<Chain>::allocate(runtime));
+    addTask(
+        [runtime, chain = chain.copy()]() mutable {
+          CompactRuntimePtr::setCurrentRuntime(runtime);
+          std::move(chain).emplace<Chain>();
+        },
+        workerId);
+  }
+  // Wait for all of the above to complete.
+  await(chains);
 }
 
 //===----------------------------------------------------------------------===//

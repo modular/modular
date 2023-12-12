@@ -212,6 +212,15 @@ public:
   virtual void taskIsDone() = 0;
 #endif
 
+  /// Associate all the threads managed by this work queue with the given
+  /// runtime.
+  ///
+  /// Generally must be called at most once. However for single-threaded
+  /// work queues this simply re-associates the callers thread with the given
+  /// runtime on the assumption only one such queue is active per 'main'
+  /// thread.
+  virtual void associateWithRuntime(CompactRuntimePtr runtime) = 0;
+
 protected:
   WorkQueue() = default;
   virtual void vtableAnchor();

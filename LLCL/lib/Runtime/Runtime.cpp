@@ -49,6 +49,13 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
       profileFilename(profileFilename),
       runtimeIndex(Detail::RuntimeTable::getSingleton().addRuntime(this)),
       readyChain(createReadyChain(*this)) {
+  // Tie the knot between the work queue threads (if any) and this runtime.
+  // Note that we could instead pre-allocate the current runtime's compact
+  // runtime pointer index, require the caller to pass that into the work queue
+  // creator, then adopt that index here, being careful to release the index
+  // should something go wrong. That sounds fiddly.
+  this->workQueue->associateWithRuntime(CompactRuntimePtr(runtimeIndex));
+
   // NOTE: Users can't pass in profileFilename AND activate the time
   // profiler in the caller.
   if (!profileFilename.empty())

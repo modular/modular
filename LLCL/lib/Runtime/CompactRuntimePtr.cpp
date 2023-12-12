@@ -54,3 +54,11 @@ size_t Detail::RuntimeTable::numActiveRuntimes() const {
   std::lock_guard<std::mutex> lock(mu);
   return kInvalidIndex - freeIndices.size();
 }
+
+CompactRuntimePtr CompactRuntimePtr::getCurrentRuntime() {
+  return currentRuntimeInTLS;
+}
+
+void CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr ptr) {
+  currentRuntimeInTLS = ptr;
+}
