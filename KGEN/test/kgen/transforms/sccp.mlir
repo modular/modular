@@ -383,3 +383,30 @@ kgen.generator @none_hlcf_controlflownode_donot_crash() -> index {
   kgen.return %0: index
 }
 
+// COM: This test should not fail with lattice value assertion due to early exits in the loop.
+// CHECK-LABEL: @should_continue
+kgen.func @should_continue() -> index {
+  // CHECK: [[IDX0:%.*]] = kgen.param.constant = <0>
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %0 = hlcf.loop (%arg0 = %idx0 : index, %arg1 = %idx1 : index) -> index {
+    %2 = index.cmp sgt(%arg1, %idx0)
+    hlcf.if %2 {
+      hlcf.yield
+    } else {
+      hlcf.break %arg0 : index
+    }
+    %3 = index.sub %arg1, %idx1
+    %4 = index.cmp eq(%idx1, %arg1)
+    hlcf.if %4 {
+      hlcf.continue %arg0, %3 : index, index
+    } else {
+      hlcf.yield
+    }
+    %5 = index.add %arg0, %idx1
+    hlcf.continue %5, %3 : index, index
+  }
+  // CHECK: kgen.call @f([[IDX0]]) : (index) -> index
+  %1 = kgen.call @f(%0) : (index) -> index
+  kgen.return %1: index
+}
