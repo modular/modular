@@ -1363,7 +1363,6 @@ fn mean[
         output_shape: The output shape.
         out_chain: The output chain to use.
     """
-    out_chain.trace[TraceLevel.OP]("mogg.mean")
 
     @always_inline
     fn reduce_impl[

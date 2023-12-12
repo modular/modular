@@ -28,6 +28,9 @@ from runtime.llcl import (
 
 from utils.index import StaticIntTuple
 
+from runtime import tracing
+from runtime.tracing import Trace
+
 # ===----------------------------------------------------------------------===#
 # Map
 # ===----------------------------------------------------------------------===#
@@ -286,11 +289,16 @@ fn async_parallelize[
         out_chain.mark_ready()
         return
 
+    let parent_id = tracing.get_current_trace_id()
+
     @always_inline
     @parameter
     async fn task_fn(i: Int):
         with FlushDenormals():
-            func(i)
+            with Trace[TraceLevel.OP](
+                "task:", task_id=i, parent_id=parent_id
+            ) as t:
+                func(i)
 
     var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
     for i in range(num_work_items):
