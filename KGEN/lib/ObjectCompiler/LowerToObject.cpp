@@ -111,10 +111,10 @@ public:
 
 private:
   static void runBeforePass(StringRef passID, llvm::Any &ir) {
-    M::timeTraceProfilerBegin(passID, getLLVMIRName(ir));
+    CompilerProfilerEntry::createAndPush(passID, getLLVMIRName(ir));
   }
 
-  static void runAfterPass() { M::timeTraceProfilerEnd(); }
+  static void runAfterPass() { CompilerProfilerEntry::endAndPop(); }
 };
 } // namespace
 

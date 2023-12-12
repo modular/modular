@@ -23,11 +23,13 @@ namespace M::KGEN {
 /// funneled through this entry.
 using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 
+/// ############################################
+/// ## CAUTION: About to be removed entirely! ##
+/// ############################################
+///
 /// An OutputChain represents the context for a call from the C++ runtime into
 /// a Mojo entry point, aka kernel. The kernel may be fully synchronous, or
 /// may launch sub-tasks or other asynchronous work and return.
-///
-/// TODO: Rename to MojoCallContext.
 ///
 /// It holds:
 ///  - An AnyAsyncValueRef 'chain' which the Mojo kernel can use to indicate
@@ -55,14 +57,6 @@ using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 ///
 /// The Mojo OutputChainPtr struct points to heap-allocated instances of this
 /// class.
-///
-/// NOTE: We could handle recording any profiling entry and releasing ownership
-/// of the additional refs by placing andThenSync waiters on the chain.
-/// However, the order in which andThenSync waiter are called when the chain
-/// becomes ready is difficult to control. Thus it may be that a consuming
-/// operation begins execution when the chain becomes ready *before* either
-/// the profiling entry has been recorded or the additional refs have been
-/// released. By taking responsibility here we guarantee ordering.
 struct OutputChain {
   /// Chain on which consumers are waiting. The actual representation
   /// may depend on the device executing the 'inner' kernel, if any.
@@ -107,21 +101,22 @@ struct OutputChain {
   OutputChain(AnyAsyncValueRef chain, LLCL::EncodedLocation loc)
       : chain(std::move(chain)), loc(std::move(loc)) {}
 
-  /// No implicit copying.
+  /// No copy or move.
   OutputChain(OutputChain &) = delete;
   OutputChain &operator=(const OutputChain &) = delete;
-
   OutputChain(OutputChain &&) = default;
   OutputChain &operator=(OutputChain &&) = default;
 
+  ~OutputChain();
+
   /// Return a 'fork' of this output chain:
-  ///  - The chain, location and parentId are copied, so are valid in both
-  ///    this and the result.
+  ///  - The chain and location are copied, so are valid in both this and the
+  ///    result.
   ///  - The refs and extras are moved into the result, on the assumption the
   ///    caller will create sub-tasks and take responsibility for calling
   ///    markReady/markError when they complete.
-  ///  - The profilerEntries are not moved or copied, on the assumption they
-  ///    will be recorded by recordProfilerEntries.
+  ///  - Trace entries are left behind, and will be ended when this object
+  ///    is cleaned up.
   ///
   /// Called from Mojo asynchronous kernels to prepare for executing sub-tasks.
   /// The fork result will constructed into a heap allocated object, and
@@ -193,15 +188,6 @@ struct OutputChain {
   /// always safely await and check for errors on the chain irrespective of
   /// whether the Mojo kernel is asynchronous or synchronous.
   void setToError(Error &&error);
-
-  /// Record any profiling entries if they have not been recorded already.
-  ///
-  /// Called from the C++ runtime when control returns from a Mojo kernel. If
-  /// the kernel is asynchronous then it's launched sub-tasks will continue, but
-  /// we'll stop the profiling entry now to avoid confusing traces. If the
-  /// kernel is synchronous then hopefully it's profiling entry was already
-  /// stopped, and this call is a no-op.
-  void recordProfilerEntries() &&;
 
   /// Begin executing the Mojo coroutine pointed to by hdl using the resumption
   /// pointer to by resume.
