@@ -11,7 +11,7 @@
 //
 // \code
 //   {
-//     TimeTraceScope<> scope("my_event_name");
+//     TimeTraceScope scope(ProfilerEntry<true>::create("my_event_name"));
 //     ...my code...
 //   }
 // \endcode
@@ -21,9 +21,10 @@
 // per-thread stack of profiling entries:
 //
 // \code
-//   timeTraceProfilerBegin("my_event_name");
+//   ProfilerEntry<true>::createAndPush("my_event_name");
 //   ...my code...
-//   timeTraceProfilerEnd();  // must be called on all control flow paths
+//   ProfilerEntry<true>::endAndPop();  // must be called on all control flow
+//   paths
 // \endcode
 //
 // Finally, it is also possible to manually create and complete time profiling
@@ -499,7 +500,6 @@ struct TimeTraceThreadProfiler {
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
-    currentId = id;
     return id;
   }
 
@@ -513,21 +513,6 @@ struct TimeTraceThreadProfiler {
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
-    currentId = id;
-    return id;
-  }
-
-  /// Begin a new timing entry, using the most recently begun event as the
-  /// parent, and return its globally unique id.
-  template <typename... Args>
-  ProfilerEventId beginWithCurrentAsParent(Args &&...args) {
-    ProfilerEventId id = nextId++;
-    [[maybe_unused]] const BeginEvent &event = beginEvents.emplace_back(
-        stringArena, nextSeqNum++, id, currentId, std::forward<Args>(args)...);
-#if TRACE_IN_REAL_TIME
-    event.dump();
-#endif
-    currentId = id;
     return id;
   }
 
@@ -555,6 +540,10 @@ struct TimeTraceThreadProfiler {
     assert(!stack.empty() && "unbalanced push/pop");
     end(stack.pop_back_val());
   }
+
+  /// Returns the id of the BeginEvent on the top of the stack of currently
+  /// running entries. Returns 0 if the stack is empty.
+  ProfilerEventId currentId() const { return stack.empty() ? 0 : stack.back(); }
 
   /// Record a sampling entry.
   template <typename... Args>
@@ -591,14 +580,7 @@ struct TimeTraceThreadProfiler {
   /// same start time.
   uint64_t nextSeqNum = 0;
 
-  /// Event id of the most recently begun timing event. Note that the event
-  /// may have already been ended, or may be still active and tracked
-  /// asynchronously, or may be on the stack below. This is only used by
-  /// beginWithCurrentAsParent as a cheep and cheerful way to convey
-  /// profiling context into sub-tasks.
-  ProfilerEventId currentId;
-
-  /// The stack of begun but not yet ended timing events.
+  /// The stack of pushed but not yet popped BeginEvent ids.
   SmallVector<ProfilerEventId> stack;
 
   /// Recorded events.
@@ -827,9 +809,11 @@ struct ProfilerEntry<false> {
   }
 
   template <typename... Args>
-  static ProfilerEntry createWithCurrentAsParent(Args &&...args) {
-    return {};
-  }
+  static void createAndPush(Args &&...args) {}
+
+  static void endAndPop() {}
+
+  static ProfilerEventId currentId() { return 0; }
 
   template <typename... Args>
   static void sample(uint64_t value, Args &&...args) {}
@@ -882,11 +866,27 @@ struct ProfilerEntry<true> {
   }
 
   template <typename... Args>
-  static ProfilerEntry createWithCurrentAsParent(Args &&...args) {
+  static void createAndPush(Args &&...args) {
     if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
-      return ProfilerEntry(
-          ctx->beginWithCurrentAsParent(std::forward<Args>(args)...));
-    return {};
+      ctx->beginAndPush(std::forward<Args>(args)...);
+  }
+
+  template <size_t N, typename... Args>
+  static void createAndPush(const char (&s)[N], Args &&...args) {
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+      ctx->beginAndPush(StringLiteral::withInnerNUL(s),
+                        std::forward<Args>(args)...);
+  }
+
+  static void endAndPop() {
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+      ctx->endAndPop();
+  }
+
+  static ProfilerEventId currentId() {
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+      return ctx->currentId();
+    return 0;
   }
 
   template <typename... Args>
@@ -931,10 +931,6 @@ struct TimeTraceScope {
 
   explicit TimeTraceScope(ProfilerEntry<Enabled> entry)
       : entry(std::move(entry)) {}
-  explicit TimeTraceScope(StringRef name, StringRef detail = {})
-      : entry(ProfilerEntry<Enabled>::create(name, detail)) {}
-  TimeTraceScope(StringRef name, ProfilerPrintFn printFn)
-      : entry(ProfilerEntry<Enabled>::create(name, printFn)) {}
 
   ~TimeTraceScope() { std::move(entry).record(); }
 
@@ -944,33 +940,6 @@ struct TimeTraceScope {
 // The trivial deduction guide.
 template <bool Enabled>
 TimeTraceScope(ProfilerEntry<Enabled> &&) -> TimeTraceScope<Enabled>;
-
-//===----------------------------------------------------------------------===//
-// Procedural begin/end interface
-//===----------------------------------------------------------------------===//
-
-/// Manually begin a time section, with the given name and detail.
-/// Profiler copies the string data, so the pointers can be given into
-/// temporaries. Time sections can be hierarchical; every Begin must have a
-/// matching End pair but they can nest. However if Enabled is false then
-/// methods are a no-op.
-template <bool Enabled = true>
-void timeTraceProfilerBegin(StringRef name, StringRef detail = {}) {
-  if constexpr (Enabled) {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
-      ctx->beginAndPush(name, detail);
-  }
-}
-
-/// Manually end the last time section. However if Enabled is false then
-/// the method is a no-op.
-template <bool Enabled = true>
-void timeTraceProfilerEnd() {
-  if constexpr (Enabled) {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
-      ctx->endAndPop();
-  }
-}
 
 } // namespace M
 

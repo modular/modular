@@ -34,7 +34,10 @@ namespace {
 TEST(TimeProfiler, Scope_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
-  { TimeTraceScope</*Enabled=*/true> scope("event", "detail"); }
+  {
+    TimeTraceScope</*Enabled=*/true> scope(
+        ProfilerEntry<true>::create("event", StringLiteral("detail")));
+  }
 
   std::string json = teardownTrace(profiler);
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
@@ -44,8 +47,8 @@ TEST(TimeProfiler, Scope_Smoke) {
 TEST(TimeProfiler, Begin_End_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
-  timeTraceProfilerBegin("event", "detail");
-  timeTraceProfilerEnd();
+  ProfilerEntry<true>::createAndPush("event", StringLiteral("detail"));
+  ProfilerEntry<true>::endAndPop();
 
   std::string json = teardownTrace(profiler);
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
@@ -55,8 +58,8 @@ TEST(TimeProfiler, Begin_End_Smoke) {
 TEST(TimeProfiler, Begin_End_Disabled) {
   // Nothing should be observable here. The test is really just making sure
   // we've not got a stray nullptr deref.
-  timeTraceProfilerBegin("event", "detail");
-  timeTraceProfilerEnd();
+  ProfilerEntry<true>::createAndPush("event", StringLiteral("detail"));
+  ProfilerEntry<true>::endAndPop();
 }
 
 TEST(TimeProfiler, Entry_Smoke) {

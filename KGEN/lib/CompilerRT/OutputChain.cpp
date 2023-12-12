@@ -12,15 +12,21 @@
 using namespace M;
 using namespace KGEN;
 
+OutputChain::~OutputChain() { complete(); }
+
 OutputChain OutputChain::fork() {
+  assert(!cudaStream && "cant fork for CUDA kernel launches");
   // Chain, location and parent are copied.
   OutputChain result(chain.copy(), loc.copy());
   result.parentEventId = parentEventId;
   // References and extras are moved.
   result.refs = std::move(refs);
+  refs.clear();
   result.extras = std::move(extras);
+  extras.clear();
 #if MODULAR_PARANOID
   result.uses = std::move(uses);
+  uses.clear();
 #endif
   // The profiler entries are left alone.
   return result;
@@ -115,12 +121,6 @@ void OutputChain::setToError(Error &&error) {
   chain.copy().setToError({std::move(error), std::move(loc)});
 }
 
-void OutputChain::recordProfilerEntries() && {
-  for (auto &entry : profilerEntries)
-    std::move(entry).record();
-  profilerEntries.clear();
-}
-
 void OutputChain::complete() {
   // IMPORTANT: Stop the profiling entries before doing any other work.
   // Even the innocent looking refs.clear() may trigger frees which can
@@ -148,7 +148,6 @@ void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
                                 size_t taskId, bool useGlobalQueue) {
   chain.getRuntime()->getWorkQueue()->addTask(
       [parentId = this->parentEventId, taskId, resume, hdl]() mutable {
-        // Use the 'prototype' profiling entry, but augment with the task id.
         TimeTraceScope scope(MojoProfilerEntry::createWithParent(
             parentId, StringLiteral("task"), (uint64_t)taskId));
         resume(hdl);

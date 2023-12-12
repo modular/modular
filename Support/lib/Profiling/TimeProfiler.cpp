@@ -32,6 +32,10 @@ using std::chrono::system_clock;
 using std::chrono::time_point;
 using std::chrono::time_point_cast;
 
+/// Maximum number of BeginEvent parents to include in final event entry
+/// details.
+constexpr size_t kMaxParentChain = 2;
+
 //===----------------------------------------------------------------------===//
 // ProfilingDetail::Label
 //===----------------------------------------------------------------------===//
@@ -300,17 +304,23 @@ ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
   // Prepend parent names and descriptions.
   for (auto &pair : beginEntryMap) {
     SmallVector<const CompletedEntry *> parents;
-    CompletedEntry *curr = &pair.second;
-    while (curr->parentId) {
+    CompletedEntry *orig = &pair.second;
+    CompletedEntry *curr = orig;
+    for (size_t i = 0; curr->parentId && i < kMaxParentChain; ++i) {
       auto itr = beginEntryMap.find(curr->parentId);
       if (itr == beginEntryMap.end()) {
         llvm::dbgs() << "PROFILING: WARNING: BeginEvent " << curr->id << " '"
                      << curr->name << "' has invalid parent id "
                      << curr->parentId << "\n";
-        continue;
+        break;
       }
       curr = &itr->second;
       parents.push_back(curr);
+    }
+    if (curr->parentId) {
+      llvm::dbgs() << "PROFILING: WARNING: BeginEvent " << orig->id << " '"
+                   << orig->name << "' has more than " << kMaxParentChain
+                   << " parents\n";
     }
     pair.second.prependParents(parents);
   }

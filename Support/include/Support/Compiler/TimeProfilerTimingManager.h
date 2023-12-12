@@ -18,6 +18,8 @@ namespace M {
 
 /// This class represents an MLIR timing manager that hooks into the
 /// TimeTraceProfiler functionality.
+///
+/// CAUTION: These profiling entries are always enabled at compile time.
 class TimeProfilerTimingManager : public mlir::TimingManager {
 public:
   TimeProfilerTimingManager();
