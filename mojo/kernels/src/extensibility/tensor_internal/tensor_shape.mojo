@@ -22,7 +22,7 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils.index import StaticIntTuple
 from utils.static_tuple import StaticTuple
-from collections.vector import DynamicVector
+from collections.vector import CollectionElement, DynamicVector
 
 # These representation must be kept in sync with the TensorShape file in
 # Support/include/Support/ML/TensorShape.h
@@ -697,7 +697,7 @@ fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
 # ===----------------------------------------------------------------------===#
 
 
-struct TensorShape(Stringable):
+struct TensorShape(Stringable, CollectionElement):
     """A space efficient representation of a tensor shape. This struct
     implements value semantics and owns its underlying data."""
 

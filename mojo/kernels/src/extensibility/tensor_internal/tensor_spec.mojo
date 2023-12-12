@@ -13,7 +13,7 @@ from tensor import TensorSpec
 ```
 """
 
-from collections.vector import DynamicVector
+from collections.vector import CollectionElement, DynamicVector
 
 from .tensor_shape import TensorShape, _as_rep16
 
@@ -22,7 +22,7 @@ from .tensor_shape import TensorShape, _as_rep16
 # ===----------------------------------------------------------------------===#
 
 
-struct TensorSpec(Stringable):
+struct TensorSpec(Stringable, CollectionElement):
     """A space efficient representation of a tensor shape and dtype. This struct
     implements value semantics and owns its underlying data."""
 
