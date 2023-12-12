@@ -14,7 +14,7 @@ from algorithm.reduction import (
 )
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OutputChainPtr
-from runtime.tracing import TraceLevel
+from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
 from utils.list import Dim, DimList
@@ -604,46 +604,48 @@ fn softmax[
     fn trace_information() -> String:
         return String("shape=") + String("x").join(shape)
 
-    out_chain.trace[TraceLevel.OP, trace_information]("mojo.softmax")
+    with Trace[TraceLevel.OP](
+        "mojo.softmax",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+    ) as t:
+        if shape.flattened_length() == 0:
+            return out_chain.mark_ready()
 
-    if shape.flattened_length() == 0:
-        return out_chain.mark_ready()
+        let inner_dim = output.dim[rank - 1]()
+        let outer_dim = product[rank](shape, rank - 1)
+        let num_workers = min(
+            out_chain.get_runtime().parallelism_level(), outer_dim
+        )
+        let chunk_size = div_ceil(outer_dim, num_workers)
 
-    let inner_dim = output.dim[rank - 1]()
-    let outer_dim = product[rank](shape, rank - 1)
-    let num_workers = min(
-        out_chain.get_runtime().parallelism_level(), outer_dim
-    )
-    let chunk_size = div_ceil(outer_dim, num_workers)
+        @parameter
+        @always_inline
+        fn task_func(task_id: Int):
+            let start_offset = task_id * chunk_size
+            let end_offset = min((task_id + 1) * chunk_size, outer_dim)
+            for i in range(start_offset, end_offset):
+                let buffer_offset = i * inner_dim
+                let output_buffer_view = Buffer[Dim(), type](
+                    output.data.offset(buffer_offset), inner_dim
+                )
+                var indices = _get_nd_indices_from_flat_index[rank](
+                    i, shape, rank - 1
+                )
 
-    @parameter
-    @always_inline
-    fn task_func(task_id: Int):
-        let start_offset = task_id * chunk_size
-        let end_offset = min((task_id + 1) * chunk_size, outer_dim)
-        for i in range(start_offset, end_offset):
-            let buffer_offset = i * inner_dim
-            let output_buffer_view = Buffer[Dim(), type](
-                output.data.offset(buffer_offset), inner_dim
-            )
-            var indices = _get_nd_indices_from_flat_index[rank](
-                i, shape, rank - 1
-            )
+                @parameter
+                @always_inline
+                # Given input lambda accepts N-dimensional coordinates, but the
+                # softmax base routines operate on 1D buffers. Here we wrap the
+                # given input lamda with some 1d-to-Nd translation logic.
+                fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
+                    indices[rank - 1] = idx
+                    return input_fn[_width, rank](indices)
 
-            @parameter
-            @always_inline
-            # Given input lambda accepts N-dimensional coordinates, but the
-            # softmax base routines operate on 1D buffers. Here we wrap the
-            # given input lamda with some 1d-to-Nd translation logic.
-            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
-                indices[rank - 1] = idx
-                return input_fn[_width, rank](indices)
+                softmax_3_pass[simd_width, Dim(), type, input_fn_1d](
+                    output_buffer_view, out_chain
+                )
 
-            softmax_3_pass[simd_width, Dim(), type, input_fn_1d](
-                output_buffer_view, out_chain
-            )
-
-    async_parallelize[task_func](out_chain, num_workers)
+        async_parallelize[task_func](out_chain, num_workers)
 
 
 # Softmax (no input lambda)

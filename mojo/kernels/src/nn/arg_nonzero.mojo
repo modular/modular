@@ -42,30 +42,29 @@ fn arg_nonzero[
         out_chain: The our chain to attach results to.
     """
 
-    out_chain.trace[TraceLevel.OP]("mojo.arg_nonzero")
+    with Trace[TraceLevel.OP]("mojo.arg_nonzero") as t:
+        let numel = input_buffer.dynamic_shape.flattened_length()
+        if numel == 0:
+            out_chain.mark_ready()
+            return
 
-    let numel = input_buffer.dynamic_shape.flattened_length()
-    if numel == 0:
+        var j: Int = 0
+        for i in range(numel):
+            let indices = _get_start_indices_of_nth_subvolume[rank, 0](
+                i, input_buffer.dynamic_shape
+            )
+            if input_buffer[indices] != 0:
+                var out_indices = StaticIntTuple[2]()
+                out_indices[0] = j
+                j += 1
+
+                # Write each of the output values to the output buffer.
+                @unroll
+                for k in range(rank):
+                    out_indices[1] = k
+                    output_buffer[out_indices] = indices[k]
+
         out_chain.mark_ready()
-        return
-
-    var j: Int = 0
-    for i in range(numel):
-        let indices = _get_start_indices_of_nth_subvolume[rank, 0](
-            i, input_buffer.dynamic_shape
-        )
-        if input_buffer[indices] != 0:
-            var out_indices = StaticIntTuple[2]()
-            out_indices[0] = j
-            j += 1
-
-            # Write each of the output values to the output buffer.
-            @unroll
-            for k in range(rank):
-                out_indices[1] = k
-                output_buffer[out_indices] = indices[k]
-
-    out_chain.mark_ready()
 
 
 # Where has the shape 2D shape [NumNonZeros, InputRank]

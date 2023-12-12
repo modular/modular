@@ -20,7 +20,7 @@ from memory import memset_zero, stack_allocation
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from Reshape import reshape
 from runtime.llcl import OutputChainPtr
-from runtime.tracing import TraceLevel
+from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
@@ -381,91 +381,90 @@ fn gather[
                 "gather: axis must be less than input rank"
             )
 
-    out_chain.trace[TraceLevel.OP]("mojo.gather")
+    with Trace[TraceLevel.OP]("mojo.gather") as t:
+        # Short-circuit for trivial cases, and to avoid divide-by-zero
+        let indices_len = indices_shape.flattened_length()
+        if input_shape.flattened_length() == 0 or indices_len == 0:
 
-    # Short-circuit for trivial cases, and to avoid divide-by-zero
-    let indices_len = indices_shape.flattened_length()
-    if input_shape.flattened_length() == 0 or indices_len == 0:
+            @parameter
+            if not single_thread_blocking_override:
+                out_chain.mark_ready()
+            return
 
         @parameter
-        if not single_thread_blocking_override:
-            out_chain.mark_ready()
-        return
-
-    @parameter
-    @always_inline
-    fn gather_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        # out_coords consists of 3 chunks:
-        #   out_coords[0:axis] = input coords[0:axis]
-        #   out_coords[axis:axis+indices_rank] = indices_coords
-        #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
-        # and input_coords[axis] = indices[indices_coords]
-        # Get the gather indices.
-        var indices_index = StaticIntTuple[indices_rank]()
-
-        # Get the indices of the index.
         @always_inline
-        @parameter
-        fn indices_get[unrolled_i: Int]():
-            indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
+        fn gather_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+            # out_coords consists of 3 chunks:
+            #   out_coords[0:axis] = input coords[0:axis]
+            #   out_coords[axis:axis+indices_rank] = indices_coords
+            #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
+            # and input_coords[axis] = indices[indices_coords]
+            # Get the gather indices.
+            var indices_index = StaticIntTuple[indices_rank]()
 
-        unroll[indices_rank, indices_get]()
+            # Get the indices of the index.
+            @always_inline
+            @parameter
+            fn indices_get[unrolled_i: Int]():
+                indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
 
-        # The index we are gathering.
-        let data_index = indices_fn[1, indices_rank](indices_index)
+            unroll[indices_rank, indices_get]()
 
-        # Update the indices with the new data index.
-        var data_indices = StaticIntTuple[input_rank]()
+            # The index we are gathering.
+            let data_index = indices_fn[1, indices_rank](indices_index)
 
-        let skip_factor = indices_rank - 1
+            # Update the indices with the new data index.
+            var data_indices = StaticIntTuple[input_rank]()
 
-        # Build the indices for the input. We have replaced in index in 'axis'
-        # with an index from the indices tensor.
-        @always_inline
-        @parameter
-        fn input_indices_get[unrolled_i: Int]():
-            if unrolled_i == axis.get():
-                data_indices[unrolled_i] = normalize_neg_index(
-                    data_index, input_shape[axis.get()]
-                )
-            elif unrolled_i > axis.get():
-                # Skip over any extra indices dimensions. These are essentially new dimensions.
-                data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
-            else:
-                data_indices[unrolled_i] = idx[unrolled_i]
+            let skip_factor = indices_rank - 1
 
-        unroll[input_rank, input_indices_get]()
+            # Build the indices for the input. We have replaced in index in 'axis'
+            # with an index from the indices tensor.
+            @always_inline
+            @parameter
+            fn input_indices_get[unrolled_i: Int]():
+                if unrolled_i == axis.get():
+                    data_indices[unrolled_i] = normalize_neg_index(
+                        data_index, input_shape[axis.get()]
+                    )
+                elif unrolled_i > axis.get():
+                    # Skip over any extra indices dimensions. These are essentially new dimensions.
+                    data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
+                else:
+                    data_indices[unrolled_i] = idx[unrolled_i]
 
-        # Load the the data.
-        prefetch_fn[input_rank, indices_rank](data_indices, indices_index)
-        let data = input_fn[simd_width, input_rank](data_indices)
+            unroll[input_rank, input_indices_get]()
 
-        # Store it to the original index.
-        output_fn[simd_width, rank](idx, data)
+            # Load the the data.
+            prefetch_fn[input_rank, indices_rank](data_indices, indices_index)
+            let data = input_fn[simd_width, input_rank](data_indices)
 
-    # If we are gathering on the last dimension then we have to be scalar.
-    if axis.get() == input_rank - 1:
-        _elementwise_impl[
-            output_rank,
-            1,
-            single_thread_blocking_override,
-            gather_lambda,
-            target,
-        ](
-            output_shape,
-            out_chain,
-        )
-    else:
-        _elementwise_impl[
-            output_rank,
-            simd_width,
-            single_thread_blocking_override,
-            gather_lambda,
-            target,
-        ](
-            output_shape,
-            out_chain,
-        )
+            # Store it to the original index.
+            output_fn[simd_width, rank](idx, data)
+
+        # If we are gathering on the last dimension then we have to be scalar.
+        if axis.get() == input_rank - 1:
+            _elementwise_impl[
+                output_rank,
+                1,
+                single_thread_blocking_override,
+                gather_lambda,
+                target,
+            ](
+                output_shape,
+                out_chain,
+            )
+        else:
+            _elementwise_impl[
+                output_rank,
+                simd_width,
+                single_thread_blocking_override,
+                gather_lambda,
+                target,
+            ](
+                output_shape,
+                out_chain,
+            )
 
 
 # ===----------------------------------------------------------------------===#
