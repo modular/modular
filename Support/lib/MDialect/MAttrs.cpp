@@ -1011,7 +1011,8 @@ int32_t DataLayout::getVectorABIAlign(int32_t numElts,
 
   // Otherwise, the default alignment is the power of 2 equal to or greater than
   // the size rounded up to the nearest byte.
-  return llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT));
+  return std::max(
+      1, (int32_t)llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT)));
 }
 
 //===----------------------------------------------------------------------===//
