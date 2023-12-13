@@ -215,6 +215,7 @@ fn MOGGExport():
     alias _trunc = trunc
     alias _elementwise = elementwise_wrapper
     alias _get_int_from_shape = get_int_from_shape
+    alias _shape_to_tensor = shape_to_tensor
     alias _tensor_to_shape = tensor_to_shape
     alias _arg_nonzero = arg_nonzero
     alias _arg_nonzero_shape = arg_nonzero_shape
@@ -460,6 +461,18 @@ fn get_int_from_shape[
     param_index: Int, rank: Int
 ](shape: StaticIntTuple[rank]) -> Int:
     return shape[param_index]
+
+
+@always_inline
+fn shape_to_tensor[
+    shape_rank: Int, buf_rank: Int, type: DType
+](
+    shape: StaticIntTuple[shape_rank],
+    buf: NDBuffer[buf_rank, DimList.create_unknown[buf_rank](), type],
+):
+    @unroll
+    for i in range(shape_rank):
+        buf[i] = shape[i]
 
 
 @always_inline
