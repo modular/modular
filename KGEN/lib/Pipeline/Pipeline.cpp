@@ -204,6 +204,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
+    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   }
