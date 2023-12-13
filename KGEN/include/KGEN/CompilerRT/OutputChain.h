@@ -63,21 +63,6 @@ struct OutputChain {
   AnyAsyncValueRef chain;
   /// Location to use for any errors.
   LLCL::EncodedLocation loc;
-  /// Profiler entries for the kernel execution. Each begins when trace() is
-  /// called (by the kernel.execute primitive or by Mojo trace calls), and ends
-  /// when markReady()/markError() is called by Mojo or recordProfilerEntries()
-  /// is called by the kernel.execute primitive.
-  ///
-  /// For synchronous kernels, profiling entries will capture the true
-  /// work of the kernel.
-  ///
-  /// For asynchronous kernels, profiling entries will only capture the
-  /// kernel setup.
-  SmallVector<MojoProfilerEntry> profilerEntries;
-  /// The event id of the last profiling entry begun. This may be used as
-  /// the 'parent' event for profiling entries created for executeAsTask()
-  /// sub-tasks launched from Mojo.
-  ProfilerEventId parentEventId = 0;
 #if MODULAR_PARANOID
   /// All 'uses' of 'resources' needed by this call which should be considered
   /// active while the call is in flight. This can be used to capture which
@@ -148,13 +133,6 @@ struct OutputChain {
   /// Called from the C++ runtime.
   void transfer(LLCL::GenericUniquePtr extra);
 
-  /// Adds tracing entry with name and detail.
-  ///
-  /// Called from the Mojo side.
-  void trace(StringRef name, std::optional<StringRef> detail = std::nullopt);
-  void trace(StringRef name, llvm::function_ref<std::string()> detailFn);
-  void trace(InternableString name);
-
   /// Indicate the Mojo call is complete.
   ///
   /// Called from the Mojo side.  The chain is not consumed so that we can
@@ -188,11 +166,6 @@ struct OutputChain {
   /// always safely await and check for errors on the chain irrespective of
   /// whether the Mojo kernel is asynchronous or synchronous.
   void setToError(Error &&error);
-
-  /// Begin executing the Mojo coroutine pointed to by hdl using the resumption
-  /// pointer to by resume.
-  void executeAsTask(void (*resume)(int8_t *), int8_t *hdl, size_t taskId,
-                     bool useGlobalQueue);
 
   /// Indicates the current task is done for the purposes of task overhang
   /// detections. Only needed for tasks which do not otherwise call markReady()
