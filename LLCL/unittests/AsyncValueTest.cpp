@@ -25,12 +25,14 @@ enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
-  std::unique_ptr<Runtime> createRuntime(int numThreads = 4) {
+  std::unique_ptr<Runtime> createRuntime(int numThreads = 4,
+                                         bool mainWillDonate = true) {
     std::unique_ptr<Allocator> allocator =
         createLeakCheckAllocator(createMallocAllocator());
     std::unique_ptr<WorkQueue> workQueue =
-        GetParam() == kThreadPool ? createThreadPoolWorkQueue(numThreads)
-                                  : createSingleThreadWorkQueue();
+        GetParam() == kThreadPool
+            ? createThreadPoolWorkQueue(numThreads, mainWillDonate)
+            : createSingleThreadWorkQueue();
     return std::make_unique<Runtime>(std::move(allocator),
                                      std::move(workQueue));
   }
@@ -576,7 +578,7 @@ TEST_P(AsyncValueTest, AwaitWithoutDonating) {
     // Can only observe this behaviour with the thread pool workqueue.
     return;
 
-  auto runtime = createRuntime(/*numThreads=*/4);
+  auto runtime = createRuntime(/*numThreads=*/4, /*mainWillDonate=*/false);
 
   constexpr size_t nTasks = 20;
   Semaphore canRun[nTasks];
