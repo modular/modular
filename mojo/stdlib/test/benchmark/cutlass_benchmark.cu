@@ -73,9 +73,9 @@ void CutlassSgemmNN(int M, int N, int K, float alpha, float const *A, int lda,
 template <typename TShape, typename WShape>
 void TestCutlassGemmInter(int M, int N, int K, float alpha, float beta) {
 
-  int lda = M;
-  int ldb = K;
-  int ldc = M;
+  int lda = K;
+  int ldb = N;
+  int ldc = N;
 
   float *h_a, *h_b, *h_c;
   h_a = (float *)malloc(M * K * sizeof(float));
