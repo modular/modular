@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: disabled
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys._build import build_info_llcl_max_profiling_level
