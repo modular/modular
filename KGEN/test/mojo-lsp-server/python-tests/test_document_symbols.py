@@ -4,26 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import os
-from typing import List
-
-import pytest_lsp
-from lib.utils import Document, Requests, fail_if_none
+from lib.utils import Document, Requests, fail_if_none, mojo_lsp_client
 from lsprotocol.types import SymbolKind
-from pytest_lsp import ClientServerConfig, LanguageClient
+from pytest_lsp import LanguageClient
 
-
-@pytest_lsp.fixture(
-    config=ClientServerConfig(
-        server_command=[os.environ["MOJO_LSP_SERVER"]],
-    ),
-)
-async def client(lsp_client: LanguageClient):
-    # Setup
-    await Requests(lsp_client).initialize()
-    yield
-    # Teardown
-    await lsp_client.shutdown_session()
+# This variable is required by the test runner.
+# pyright: reportUnknownVariableType=false
+client = mojo_lsp_client
 
 
 async def test_document_symbols(client: LanguageClient):

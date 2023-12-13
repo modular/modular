@@ -4,22 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import os
+from lib.utils import Document, Requests, fail_if_none, mojo_lsp_client
+from pytest_lsp import LanguageClient
 
-import pytest_lsp
-from lib.utils import Document, Requests, fail_if_none
-from pytest_lsp import ClientServerConfig, LanguageClient
-
-
-@pytest_lsp.fixture(
-    config=ClientServerConfig(
-        server_command=[os.environ["MOJO_LSP_SERVER"]],
-    ),
-)
-async def client(lsp_client: LanguageClient):
-    yield
-    # Teardown
-    await lsp_client.shutdown_session()
+# This variable is required by the test runner.
+# pyright: reportUnknownVariableType=false
+client = mojo_lsp_client
 
 
 async def test_semantic_tokens(client: LanguageClient):

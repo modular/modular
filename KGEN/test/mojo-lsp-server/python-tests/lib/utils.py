@@ -4,19 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import json
 import os
 from pathlib import Path
 from typing import Generator, List, Optional, TypeVar
 
-import lsprotocol.types as lsp_types
+import pytest_lsp
 from lsprotocol.types import (
     CompletionList,
     CompletionParams,
     DefinitionParams,
     DidOpenNotebookDocumentParams,
     DidOpenTextDocumentParams,
-    DocumentSymbol,
     DocumentSymbolParams,
     FoldingRangeParams,
     HoverParams,
@@ -34,7 +32,7 @@ from lsprotocol.types import (
     TextDocumentIdentifier,
     TextDocumentItem,
 )
-from pytest_lsp import LanguageClient, client_capabilities
+from pytest_lsp import ClientServerConfig, LanguageClient, client_capabilities
 
 T = TypeVar("T")
 
@@ -42,6 +40,31 @@ T = TypeVar("T")
 def fail_if_none(t: Optional[T]) -> T:
     assert t is not None
     return t
+
+
+# We need to use `--log=error` instead of `debug`, because when stderr is too
+# long, mojo-lsp-server hangs trying to send bytes to the test client.
+MOJO_LSP_CONFIG = ClientServerConfig(
+    server_command=[os.environ["MOJO_LSP_SERVER"], "--log=error"],
+)
+
+
+# pyright: reportUnknownMemberType=false
+@pytest_lsp.fixture(config=MOJO_LSP_CONFIG)
+async def mojo_lsp_client(
+    lsp_client: LanguageClient,
+):
+    # Setup
+    await Requests(lsp_client).initialize()
+    yield
+    # Teardown
+    # Here we should shutdown the session programmatically, but we instead don't
+    # do that, which forces pytest_lsp to kill the LSP manually. We have to do
+    # this because there's a race condition with version 0.3.1 in which
+    # pytest_lsp tries to kill the LSP even though it's already dead, which
+    # raises an Error. This only happens in smaller machines like our CI hosts.
+    #
+    # await lsp_client.shutdown_session()
 
 
 class Document:
