@@ -25,6 +25,47 @@ class DIExprAttrBase<string attrName, string attrMnemonic,
 }
 
 //===----------------------------------------------------------------------===//
+// DIAggregatesIntoExprAttr
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_DIAggregatesIntoExprAttr : DIExprAttrBase<
+    "DIAggregatesIntoExpr", "expr.agg"
+  > {
+  let summary = "DI Expression fragment-to-aggregate operator.";
+  let description = [{
+    The `debuginfo.expr.agg` attribute represents a DI Expression operator
+    that aggregates together a struct from a single field of that struct. Its
+    operands are
+      - A DI Expression of type T, and
+      - A constant index i,
+    and it has a DIStructType result where the i-th field has type T.
+
+    Example:
+
+    ```mlir
+    !m1 = !debuginfo.member<foo: T>
+    #ir_value = #debuginfo.expr.ir_value : T
+    #agg = #debuginfo.expr.agg<#ir_value, 1> : !debuginfo.ti.struct<S(!m0, !m1)>
+    ```
+  }];
+  let parameters = (ins
+    "DIExprAttr":$fieldExpr,
+    "unsigned":$fieldIndex,
+    AttributeSelfTypeParameter<"", "::M::DebugInfo::DIStructType">:$DIType
+  );
+  let assemblyFormat = "`<` $fieldExpr `,` $fieldIndex `>`";
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "DIExprAttr":$fieldExpr,
+                                        "unsigned":$fieldIndex,
+                                        "DIStructType":$type), [{
+      return get(type.getContext(), fieldExpr, fieldIndex, type);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // DIDerefExprAttr
 //===----------------------------------------------------------------------===//
 
