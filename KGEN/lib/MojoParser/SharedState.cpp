@@ -928,7 +928,14 @@ static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
       typeName, loc, context, /*searchParentScopes=*/true);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
     ASTDecl *decl = lookup.getIfSuccess().front();
-    return cast<StructDeclOp>(decl).bindReference();
+    if (auto structDecl = dyn_cast<StructDeclOp>(decl))
+      return structDecl.bindReference();
+
+    InflightDiag diag = shared.emitError(loc, "builtin '")
+                        << typeName << "' identifier does not denote a type";
+    diag.attachNote(decl->getLoc())
+        << "'" << typeName << "' identifier redeclared here";
+    return shared.getTypeCheckErrorType();
   }
 
   shared.emitError(loc, "could not find builtin '") << typeName << "' type";
