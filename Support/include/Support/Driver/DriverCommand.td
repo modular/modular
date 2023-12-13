@@ -99,5 +99,4 @@ class DriverDescription<string executable, string summary, string description,
   CommandDescription<executable, /*subcommand=*/"", summary, description,
                      usages>;
 
-
 #endif // SUPPORT_DRIVER_DRIVERCOMMAND_TD
