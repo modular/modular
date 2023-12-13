@@ -16,9 +16,8 @@ OutputChain::~OutputChain() { complete(); }
 
 OutputChain OutputChain::fork() {
   assert(!cudaStream && "cant fork for CUDA kernel launches");
-  // Chain, location and parent are copied.
+  // Chain and location are copied.
   OutputChain result(chain.copy(), loc.copy());
-  result.parentEventId = parentEventId;
   // References and extras are moved.
   result.refs = std::move(refs);
   refs.clear();
@@ -28,7 +27,6 @@ OutputChain OutputChain::fork() {
   result.uses = std::move(uses);
   uses.clear();
 #endif
-  // The profiler entries are left alone.
   return result;
 }
 
@@ -50,32 +48,6 @@ void OutputChain::transfer(SmallVector<LLCL::AnyAsyncValueRef> argRefs) {
 
 void OutputChain::transfer(LLCL::GenericUniquePtr extra) {
   extras.emplace_back(std::move(extra));
-}
-
-void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
-  if constexpr (MojoProfilerEntry::isEnabled()) {
-    const auto &entry = profilerEntries.emplace_back(
-        detail ? MojoProfilerEntry::create(name, *detail)
-               : MojoProfilerEntry::create(name));
-    parentEventId = entry.getId();
-  }
-}
-
-void OutputChain::trace(StringRef name,
-                        llvm::function_ref<std::string()> detailFn) {
-  if constexpr (MojoProfilerEntry::isEnabled()) {
-    const auto &entry =
-        profilerEntries.emplace_back(MojoProfilerEntry::create(name, detailFn));
-    parentEventId = entry.getId();
-  }
-}
-
-void OutputChain::trace(InternableString name) {
-  if constexpr (MojoProfilerEntry::isEnabled()) {
-    const auto &entry =
-        profilerEntries.emplace_back(MojoProfilerEntry::create(name));
-    parentEventId = entry.getId();
-  }
 }
 
 void OutputChain::markReady() {
@@ -122,13 +94,6 @@ void OutputChain::setToError(Error &&error) {
 }
 
 void OutputChain::complete() {
-  // IMPORTANT: Stop the profiling entries before doing any other work.
-  // Even the innocent looking refs.clear() may trigger frees which can
-  // be surprisingly expensive, and we don't want that to be included in
-  // the kernel's time.
-  for (auto &entry : profilerEntries)
-    std::move(entry).record();
-  profilerEntries.clear();
 #if MODULAR_PARANOID
   // IMPORTANT: Release uses before the refs are cleared since those refs
   // may trigger frees.
@@ -142,25 +107,6 @@ void OutputChain::complete() {
   extras.clear();
   // Record the task is done for the purposes of resource checking.
   taskIsDone();
-}
-
-void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
-                                size_t taskId, bool useGlobalQueue) {
-  chain.getRuntime()->getWorkQueue()->addTask(
-      [parentId = this->parentEventId, taskId, resume, hdl]() mutable {
-        TimeTraceScope scope(MojoProfilerEntry::createWithParent(
-            parentId, StringLiteral("task"), (uint64_t)taskId));
-        resume(hdl);
-#if MODULAR_PARANOID
-        // Sleeping here gives any await loop the chance to exit and
-        // proceed while this task is still 'active'. This can trigger
-        // bugs since the common case is for the task to have returned
-        // all the way up to the LLCL run items loop before any emplace
-        // in the task body has been acted on.
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-#endif
-      },
-      useGlobalQueue ? -1 : (int)taskId);
 }
 
 void OutputChain::taskIsDone() {
