@@ -28,7 +28,7 @@ from sys.info import (
 )
 from runtime.tracing import TraceLevel
 
-from algorithm import async_parallelize, unroll, vectorize
+from algorithm import sync_parallelize, unroll, vectorize
 from algorithm.functional import _get_num_workers
 from algorithm._gpu.reduction import reduce_launch
 from memory.buffer import Buffer, NDBuffer, prod_dims
@@ -601,7 +601,6 @@ fn _reduce_generator[
     out_chain: OutputChainPtr,
 ):
     """Reduce the given tensor using the given reduction function.
-    All free vars in func must be "async safe", see async_parallelize.
 
     Parameters:
         type: The element type we are reducing.
@@ -674,7 +673,6 @@ fn _reduce_along_inner_dimension[
     out_chain: OutputChainPtr,
 ):
     """Reduce the given tensor using the given reduction function.
-    All free vars in func must be "async safe", see async_parallelize.
 
     Parameters:
         type: The element type we are reducing.
@@ -792,7 +790,7 @@ fn _reduce_along_inner_dimension[
     if single_thread_blocking_override:
         reduce_rows_unrolled(0, parallelism_size)
     else:
-        async_parallelize[reduce_rows](out_chain, num_workers)
+        sync_parallelize[reduce_rows](out_chain, num_workers)
 
 
 fn _reduce_along_outer_dimension[
@@ -815,7 +813,6 @@ fn _reduce_along_outer_dimension[
     out_chain: OutputChainPtr,
 ):
     """Reduce the given tensor using the given reduction function.
-    All free vars in func must be "async safe", see async_parallelize.
 
     Parameters:
         type: The element type we are reducing.
@@ -898,7 +895,7 @@ fn _reduce_along_outer_dimension[
     if single_thread_blocking_override:
         reduce_slices(0)
     else:
-        async_parallelize[reduce_slices](out_chain, num_workers)
+        sync_parallelize[reduce_slices](out_chain, num_workers)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1802,7 +1799,7 @@ fn _argn[
             curr_input_offset += input_stride
 
     # TODO: Shard by dim 0.
-    async_parallelize[task_func](out_chain, 1)
+    sync_parallelize[task_func](out_chain, 1)
     # TODO: Remove after #26325
     out_chain.wait()
 
