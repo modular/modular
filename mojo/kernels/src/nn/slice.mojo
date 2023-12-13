@@ -38,6 +38,7 @@ fn slice_as_view[
     # offset of the data.
     var new_data = tensor.data
 
+    @unroll
     for i in range(rank):
         var start = int(starts[i])
         var stop = int(ends[i])
@@ -147,6 +148,8 @@ fn slice_shape[
     debug_assert(
         input_rank == step_buf.dim(0), "step indices size must equal input rank"
     )
+
+    @unroll
     for axis in range(input_rank):
         debug_assert(int(step_buf[axis]) != 0, "step must be non-zero")
 

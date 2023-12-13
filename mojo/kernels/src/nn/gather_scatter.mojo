@@ -766,21 +766,21 @@ fn gather_shape[
 
     # compute and return the output shape
     var output_shape = StaticIntTuple[output_rank]()
-    var next_out_dim = 0
 
     let input_shape = input_buf.get_shape()
-    for i in range(axis):
-        output_shape[next_out_dim] = input_shape[i]
-        next_out_dim += 1
-
     let indices_shape = indices_buf.get_shape()
-    for i in range(indices_rank):
-        output_shape[next_out_dim] = indices_shape[i]
-        next_out_dim += 1
 
-    for i in range(axis + 1, input_rank):
-        output_shape[next_out_dim] = input_shape[i]
-        next_out_dim += 1
+    # NOTE it's written this way instead of 3 separate for-loops because
+    # currently KGEN unrolling only works for strictly static bounds, but `axis`
+    # only becomes static after inlining `axis_buf`.
+    @unroll
+    for out_dim in range(output_rank):
+        if out_dim < axis:
+            output_shape[out_dim] = input_shape[out_dim]
+        elif out_dim < axis + indices_rank:
+            output_shape[out_dim] = indices_shape[out_dim - axis]
+        else:
+            output_shape[out_dim] = input_shape[out_dim - indices_rank + 1]
 
     return output_shape
 
