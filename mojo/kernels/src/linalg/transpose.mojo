@@ -10,7 +10,7 @@ from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load, strided_store
 
 from algorithm import (
-    async_parallelize,
+    sync_parallelize,
     sync_parallelize,
     tile,
     unroll,
@@ -513,7 +513,7 @@ fn parallel_memcpy[
 
         memcpy(dst_ptr.offset(begin), src_ptr.offset(begin), to_copy)
 
-    async_parallelize[_parallel_copy](out_chain, num_tasks)
+    sync_parallelize[_parallel_copy](out_chain, num_tasks)
 
 
 # ===------------------------------------------------------------------=== #
@@ -691,7 +691,7 @@ fn _transpose_2d_parallel_tiled[
                     input.data.offset(offset),
                 )
 
-    async_parallelize[_parallel_tile](out_chain, num_tasks)
+    sync_parallelize[_parallel_tile](out_chain, num_tasks)
 
 
 fn transpose_2d[
@@ -801,7 +801,7 @@ fn _transpose_4d_swap_middle_helper[
                 let out_off = l * M * N * K + n * M * K + m * K
                 memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
 
-        async_parallelize[_parallel_copy](out_chain, num_tasks)
+        sync_parallelize[_parallel_copy](out_chain, num_tasks)
 
 
 fn transpose_4d_swap_middle[

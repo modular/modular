@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import unroll, async_parallelize
+from algorithm import unroll, sync_parallelize
 from math import align_down
 from memory.buffer import Buffer, NDBuffer
 
@@ -83,7 +83,7 @@ fn gemv[
 
     let row_block_count = vector_end_row // row_block_size
     if out_chain:
-        async_parallelize[process_row_block](out_chain, row_block_count)
+        sync_parallelize[process_row_block](out_chain, row_block_count)
     else:
         for row_block_idx in range(row_block_count):
             process_row_block(row_block_idx)
