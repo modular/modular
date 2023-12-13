@@ -9,7 +9,7 @@ from sys.info import sizeof, has_neon
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import (
-    async_parallelize,
+    sync_parallelize,
     elementwise,
     unroll,
     vectorize,
@@ -199,7 +199,7 @@ fn gather_reduce[
                 tile_sizes,
             ](0, row_size)
 
-    async_parallelize[task_func](out_chain, num_tasks)
+    sync_parallelize[task_func](out_chain, num_tasks)
 
 
 fn gather[

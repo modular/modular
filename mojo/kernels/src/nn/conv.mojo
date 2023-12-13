@@ -16,7 +16,7 @@ from sys.info import (
 from sys.intrinsics import PrefetchOptions, external_call
 
 from algorithm import (
-    async_parallelize,
+    sync_parallelize,
     sync_parallelize,
     tile,
     unroll,
@@ -609,7 +609,7 @@ struct ConvDirectNHWC[
             # Finish the conv computation and sync at the end.
             let runtime = out_chain.get_runtime()
             let conv_chain = OwningOutputChainPtr(runtime)
-            async_parallelize[task_func](conv_chain.borrow(), num_tasks)
+            sync_parallelize[task_func](conv_chain.borrow(), num_tasks)
             conv_chain.wait()
 
             # Reduce from the output scratch buffer to the actual output.

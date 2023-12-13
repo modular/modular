@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import async_parallelize, vectorize_unroll
+from algorithm import sync_parallelize, vectorize_unroll
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr
