@@ -113,9 +113,11 @@ fn _async_and_then(hdl: __mlir_type.`!kgen.pointer<i8>`, chain: Pointer[Chain]):
     )
 
 
-fn _async_execute[type: AnyRegType](handle: Coroutine[type], rt: Runtime):
+fn _async_execute[
+    type: AnyRegType
+](handle: Coroutine[type]._handle_type, rt: Runtime, desired_worker_id: Int,):
     external_call["KGEN_CompilerRT_LLCL_Execute", NoneType](
-        _coro_resume_fn, handle._handle, rt.ptr
+        _coro_resume_fn, handle, rt.ptr, desired_worker_id
     )
 
 
@@ -248,12 +250,16 @@ struct Runtime:
 
     fn create_task[
         type: AnyRegType
-    ](self, owned handle: Coroutine[type]) -> Task[type]:
+    ](
+        self,
+        owned handle: Coroutine[type],
+        desired_worker_id: Int = -1,
+    ) -> Task[type]:
         """Run the coroutine as a task on the LLCL Runtime."""
         let ctx = handle.get_ctx[AsyncContext]()
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
         __get_address_as_lvalue(ctx.address).callback = AsyncContext.complete
-        _async_execute(handle, self)
+        _async_execute[type](handle._handle, self, desired_worker_id)
         return Task[type](handle ^)
 
     fn run[type: AnyRegType](self, owned handle: Coroutine[type]) -> type:
@@ -379,7 +385,7 @@ struct TaskGroup:
                 task_group: Pointer[TaskGroup].address_of(self),
             }
         )
-        _async_execute(task, self.rt)
+        _async_execute[type](task._handle, self.rt, -1)
         return task ^
 
     @staticmethod
@@ -732,14 +738,10 @@ struct AsyncTaskGroup:
         # list. Do this before scheduling the coroutine on the taskqueue.
         let hdl = coroutine._handle
         self.coroutines.add(coroutine ^)
-        external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask", NoneType
-        ](
-            self.out_chain.ptr,
-            _coro_resume_fn,
+        _async_execute[NoneType](
             hdl,
-            task_id,
-            self._use_global_queue,
+            self.out_chain.borrow().get_runtime(),
+            -1 if self._use_global_queue else task_id,
         )
 
 
