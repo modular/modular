@@ -34,9 +34,13 @@ using namespace M::LLCL;
 // Terminology:
 //  - Worker thread: a thread we create which is running a dedicated runItems
 //    loop.
-//  - Foreign thread: any thread other than a worker thread including the
-//    thread that created this pool. Foreign threads may call addTasks()
-//    and await() or even shutdown(). A foreign thread will never
+//  - Main thread: if in mainWillDonate mode, this is the thread which created
+//    the work queue. That thread may call await to donate itself to processing
+//    work items alongside the worker threads while waiting for values. That
+//    thread must also be the one to call shutdown.
+//  - Foreign thread: any thread other than a worker or main thread. Foreign
+//    threads may call addTasks and await. If not in mainWillDonate mode,
+//    a foreign thread may also call shutdown. A foreign thread will never
 //    donate itself to processing work items.
 //
 
@@ -106,9 +110,11 @@ struct SharedThreadState {
   static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
 
-  SharedThreadState(bool paranoid, size_t numWorkers)
+  SharedThreadState(bool mainWillDonate, bool paranoid, size_t numWorkers)
+      : mainWillDonate(mainWillDonate)
 #if MODULAR_PARANOID
-      : paranoid(paranoid)
+        ,
+        paranoid(paranoid)
 #endif
   {
     // Keeping numWorkers in a workerGroup a power of 2 to simplify arithmetic.
@@ -118,6 +124,14 @@ struct SharedThreadState {
                   std::log2(numWorkers / static_cast<float>(bitVectorWidth))))
             : 0;
   }
+
+  /// If true, the 'main' thread which constructed the work queue is going to
+  /// call await to donate itself as another worker alongside the
+  /// numWorkers - 1 other worker threads. That thread must eventually call
+  /// shutdown.
+  ///
+  /// Otherwise there is no 'main' thread, just 'worker' and 'foreign' threads.
+  bool mainWillDonate;
 
 #if MODULAR_PARANOID
   /// If true, try to tickle race conditions with sleeps.
@@ -210,10 +224,11 @@ struct SharedThreadState {
 namespace {
 
 /// The index of the current thread within the WorkQueueThread workers
-/// vector. Will be left zero for 'foreign' threads.
+/// vector. Will be left zero for 'main' and 'foreign' threads.
 static thread_local size_t workerIDInTLS = 0;
 
-/// Wrapper around an std::thread created for each worker thread.
+/// Wrapper around an std::thread created for each worker thread, or
+/// a placeholder for the 'main' thread.
 struct WorkQueueThread {
   /// Overall state shared by all threads.
   SharedThreadState &sharedState;
@@ -269,10 +284,12 @@ struct WorkQueueThread {
   Semaphore sema;
 
   /// The system's identifier for the thread associated with this
-  /// WorkQueueThread.
+  /// WorkQueueThread, either a 'worker' or the 'main' thread if in
+  /// mainWillDonate mode.
   uint64_t threadID = 0;
 
-  // The underlying worker thread.
+  // The underlying worker thread, or none if this WorkQueueThread represents
+  // the 'main' thread in mainWillDonate mode.
   std::optional<std::thread> thread;
 
 #if MODULAR_PARANOID
@@ -295,8 +312,16 @@ struct WorkQueueThread {
         taskList(taskList), overflowMutex(overflowMutex),
         overflowTaskList(overflowTaskList), workerID(workerID), cpuID(cpuID),
         busyWaitTime(busyWaitTime), poolName(poolName) {
-    // Start a 'worker' thread.
-    thread.emplace(&WorkQueueThread::runOnThread, this);
+    if (sharedState.mainWillDonate && workerID == 0) {
+      // We can leave workerIDInTLS as zero.
+      // Remember the caller is to be our 'main' thread, and will call
+      // await to process work items.
+      threadID = llvm::get_threadid();
+      assert(threadID && "get_threadid returned zero for the main thread");
+    } else {
+      // Start a 'worker' thread.
+      thread.emplace(&WorkQueueThread::runOnThread, this);
+    }
   }
 
   ~WorkQueueThread() {
@@ -394,6 +419,9 @@ private:
 } // namespace
 
 void WorkQueueThread::runOnThread() {
+  assert((!sharedState.mainWillDonate || workerID != 0) &&
+         "the WorkQueueThread for the main thread should not be run");
+
   // Set the current workerID in thread local storage so we can find it later
   // when re-entering.
   workerIDInTLS = workerID;
@@ -429,9 +457,18 @@ void WorkQueueThread::runItemsOnOwningThread(
     EarlyStopPredicateFn earlyStopPredicate,
     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
     StringLiteral spinningLabel, StringLiteral sleepingLabel) {
-  runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
-      earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
-      sleepingLabel);
+  if (sharedState.mainWillDonate && workerID == 0) {
+    // Temporarily set the main thread's affinity while it is processing work.
+    LLCL::runWithThreadAffinity(cpuID, [&]() {
+      runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
+          earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
+          sleepingLabel);
+    });
+  } else {
+    runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
+        earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
+        sleepingLabel);
+  }
 }
 
 template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
@@ -618,7 +655,7 @@ public:
   /// the worker threads have started and shall only be cancelled by the
   /// destructor.
   ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
-                      size_t taskListCapacity,
+                      size_t taskListCapacity, bool mainWillDonate,
                       std::chrono::microseconds threadBusyWaitTime,
                       bool paranoid, std::string_view poolName);
 
@@ -634,7 +671,13 @@ public:
 
   bool callerIsForeign() const override;
 
-  size_t getParallelismLevel() const final { return numWorkers; }
+  size_t getParallelismLevel() const final {
+    // `numWorkers` is set to the number of worker threads that are created
+    // by the work queue, plus one for the 'main' thread if in mainWillDonate
+    // mode.
+    // TODO(#1903): This is a poor heuristic for subdividing work.
+    return numWorkers;
+  }
 
 #if MODULAR_PARANOID
   void pushDefaultUse(ResourceUse use) override {
@@ -663,9 +706,9 @@ public:
   void associateWithRuntime(CompactRuntimePtr runtime) override;
 
 private:
-  /// If the caller is a worker thread for this work queue then return the
-  /// WorkQueueThread which represents it. Otherwise, if the caller is a
-  /// 'foreign' thread (including workers from other work queues)
+  /// If the caller is a worker thread or the 'main' thread for this work queue
+  /// then return the WorkQueueThread which represents it. Otherwise, if the
+  /// caller is a 'foreign' thread (including workers from other work queues)
   /// then return null.
   WorkQueueThread *getOwningWorkQueueThread() const {
     size_t workerID = workerIDInTLS;
@@ -675,11 +718,12 @@ private:
       return nullptr;
 
     WorkQueueThread *worker = workers + workerID;
+
     if (worker->threadID != llvm::get_threadid())
       // A 'foreign' thread.
       return nullptr;
 
-    // 'worker' thread associated with this work queue.
+    // Either the 'main' or a 'worker' thread associated with this work queue.
     return worker;
   }
 
@@ -689,7 +733,9 @@ private:
     return workers + workerID;
   }
 
-  /// This is the set of WorkQueueThread objects in the WorkQueue.
+  /// This is the set of WorkQueueThread objects in the WorkQueue. If in
+  /// mainWillDonate mode then the first entry will represent the 'main'
+  /// thread.
   const size_t numWorkers;
   WorkQueueThread *workers = nullptr;
 
@@ -712,9 +758,10 @@ private:
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(
     const std::vector<size_t> &cpuIDs, size_t taskListCapacity,
-    std::chrono::microseconds threadBusyWaitTime, bool paranoid,
-    std::string_view poolName)
-    : numWorkers(cpuIDs.size()), sharedState(paranoid, numWorkers),
+    bool mainWillDonate, std::chrono::microseconds threadBusyWaitTime,
+    bool paranoid, std::string_view poolName)
+    : numWorkers(cpuIDs.size()),
+      sharedState(mainWillDonate, paranoid, numWorkers),
       taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
 
@@ -723,11 +770,12 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
                         ? static_cast<size_t>(std::ceil(std::log2(
                               numWorkers / static_cast<float>(bitVectorWidth))))
                         : 0;
-
+  // Initialize each thread with its required state.
+  // Note that we're constructing the array manually since WorkQueueThreads have
+  // non-moveable atomics.
   workers = static_cast<WorkQueueThread *>(
       malloc(sizeof(WorkQueueThread) * numWorkers));
   assert(workers && "malloc of workers failed");
-
   for (size_t workerID = 0; workerID < numWorkers; ++workerID)
     new (workers + workerID) WorkQueueThread(
         sharedState, taskList, overflowMutex, overflowTaskList, workerID,
@@ -757,10 +805,27 @@ void ThreadPoolWorkQueue::shutdown() {
 
   WorkQueueThread *callingWorker = getOwningWorkQueueThread();
 
-  assert(!callingWorker && "must shutdown from a thread not in this pool");
+  if (sharedState.mainWillDonate) {
+    assert(callingWorker && callingWorker->workerID == 0 &&
+           "must shutdown from the 'main' thread in mainWillDonate mode");
+  } else {
+    assert(
+        !callingWorker &&
+        "must shutdown from a 'foreign' thread if not in mainWillDonate mode");
+  }
 
-  // the existing workers will keep processing work items until they
-  // test the lateStopPredicate.
+  if (callingWorker) {
+    // Donate this thread to help drain the work queue if there's anything left.
+    callingWorker->runItemsOnOwningThread(
+        /*earlyStopPredicate=*/[]() { return false; }, // Always loop
+        /*lateStopPredicate=*/[]() { return false; },  // Always loop
+        /*waitForTasks=*/false,
+        /*spinningLabel=*/"llcl.shutdown.spinning",
+        /*sleepingLabel=*/"llcl.shutdown.sleeping");
+  }
+  // else: the existing workers will keep processing work items until they
+  // test the lateStopPredicate. This is as good a synchronization we can
+  // guarantee if not in mainWillDonate mode.
 
   // Tell all the threads to exit.
   sharedState.doneFlag.store(true, std::memory_order_release);
@@ -891,7 +956,8 @@ void ThreadPoolWorkQueue::addLocalTask(WorkItem &&workItem) {
     workItem.use = callerWorker->useStack.back().copy();
 #endif
 
-  // Called from a worker thread. Safe to enqueue directly.
+  // Called from either a worker thread or the 'main' thread. Safe to enqueue
+  // directly.
   callerWorker->addLocalTask(std::move(workItem));
 }
 
@@ -907,14 +973,15 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))
     return;
 
-  // Figure out which WorkerThread this is being invoked from.
+  // Figure out which WorkerThread this is being invoked from. This could be
+  // one of our workers, the 'main' thread, or a 'foreign' thread.
   WorkQueueThread *awaitingWorker = getOwningWorkQueueThread();
 
   // We are done when numRemaining drops to zero.
   std::atomic<ssize_t> numRemaining = values.size();
 
   if (awaitingWorker) {
-    // The caller is a worker, so is willing to donate itself
+    // The caller is a worker or main thread, so is willing to donate itself
     // to processing work items while awaiting.
 
     // As each value becomes available, we can decrement our counts.  When done,
@@ -1038,7 +1105,7 @@ void ThreadPoolWorkQueue::associateWithRuntime(CompactRuntimePtr runtime) {
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue>
-M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
+M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
                                    std::chrono::microseconds threadBusyWaitTime,
                                    bool paranoid, std::string_view poolName) {
 
@@ -1062,8 +1129,8 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
 #endif // MODULAR_PARANOID
 
   // Using numThreads as a hint, figure out a CPU for each worker thread
-  // The CPU ids may end up as kNoAffinity, but the vector size will still guide
-  // the construction of worker threads.
+  // and the main thread. The CPU ids may end up as kNoAffinity, but the
+  // vector size will still guide the construction of worker threads.
   auto cpuIDOr = getThreadAffinityCpuIds(numThreads, kMaxWorkers);
 
   // TODO: This function should return the error back to caller.
@@ -1086,5 +1153,6 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
              << taskListCapacity << " slots.\n");
 
   return std::make_unique<ThreadPoolWorkQueue>(
-      cpuIDs, taskListCapacity, threadBusyWaitTime, paranoid, poolName);
+      cpuIDs, taskListCapacity, mainWillDonate, threadBusyWaitTime, paranoid,
+      poolName);
 }

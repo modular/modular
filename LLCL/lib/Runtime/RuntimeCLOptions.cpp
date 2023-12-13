@@ -45,9 +45,10 @@ RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
     // Let the ThreadPoolWorkQueue decide on an appropriate number of threads
     // if it is zero. It may be more sophisticated than getNumThreads().
     workQueue = createThreadPoolWorkQueue(
-        numThreads, std::chrono::microseconds(threadBusyWaitTime)
+        numThreads,
+        /*mainWillDonate=*/true, std::chrono::microseconds(threadBusyWaitTime)
 #if MODULAR_PARANOID
-                        ,
+                                     ,
         paranoid
 #endif
     );

@@ -84,7 +84,8 @@ struct MojoTypeSystem::Impl {
 
     // Configure the runtime.
     runtime = std::make_unique<LLCL::Runtime>(
-        LLCL::createMallocAllocator(), LLCL::createThreadPoolWorkQueue(0));
+        LLCL::createMallocAllocator(),
+        LLCL::createThreadPoolWorkQueue(0, /*mainWillDonate=*/false));
 
     // Compute the target information for the expression.
     compilationOptions.targetTriple = archSpec.GetTriple().str();
