@@ -204,6 +204,8 @@ fn pad_shape[
 
     # compute and return the output shape
     var output_shape = StaticIntTuple[input_rank]()
+
+    @unroll
     for axis in range(input_rank):
         let pre_pad = int(paddings_buf[axis, 0])
         let post_pad = int(paddings_buf[axis, 1])
