@@ -1107,7 +1107,7 @@ struct ConvDirectNHWC[
 
             @parameter
             if shape_output.at[3]().has_value():
-                alias F = shape_output.at[3]().get()
+                alias F = shape_output.get[3]()
                 output_ptr = output_ptr.offset(F)
             else:
                 output_ptr = output_ptr.offset(self.conv_shape.f)
@@ -1165,7 +1165,7 @@ struct ConvDirectNHWC[
 
             @parameter
             if shape_output.at[3]().has_value():
-                alias F = shape_output.at[3]().get()
+                alias F = shape_output.get[3]()
                 output_ptr = output_ptr.offset(F)
             else:
                 output_ptr = output_ptr.offset(self.conv_shape.f)
@@ -1904,8 +1904,8 @@ struct ConvDirectNHWC[
     fn _f_tile_loop_static[
         last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
-        alias WO = shape_output.at[2]().get()  # NHWC
-        alias F = shape_output.at[3]().get()  # NHWC
+        alias WO = shape_output.get[2]()  # NHWC
+        alias F = shape_output.get[3]()  # NHWC
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
             WO, F, conv_attr, simd_size
@@ -1972,14 +1972,14 @@ struct ConvDirectNHWC[
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-        alias H = shape_input.at[1]().get()  # NHWC
-        alias W = shape_input.at[2]().get()  # NHWC
-        alias C = shape_input.at[3]().get()  # NHWC
-        alias R = shape_filter.at[1]().get()  # FRSCf
-        alias S = shape_filter.at[2]().get()  # FRSCf
-        alias HO = shape_output.at[1]().get()  # NHWC
-        alias WO = shape_output.at[2]().get()  # NHWC
-        alias F = shape_output.at[3]().get()  # NHWC
+        alias H = shape_input.get[1]()  # NHWC
+        alias W = shape_input.get[2]()  # NHWC
+        alias C = shape_input.get[3]()  # NHWC
+        alias R = shape_filter.get[1]()  # FRSCf
+        alias S = shape_filter.get[2]()  # FRSCf
+        alias HO = shape_output.get[1]()  # NHWC
+        alias WO = shape_output.get[2]()  # NHWC
+        alias F = shape_output.get[3]()  # NHWC
 
         let filter_base: DTypePointer[filter_type]
 
@@ -2155,9 +2155,9 @@ struct ConvDirectNHWC[
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-        alias R = shape_filter.at[1]().get()  # FRSCf
-        alias S = shape_filter.at[2]().get()
-        alias C = shape_input.at[3]().get()  # NHWC
+        alias R = shape_filter.get[1]()  # FRSCf
+        alias S = shape_filter.get[2]()  # FRSCf
+        alias C = shape_input.get[3]()  # NHWC
         alias s_stride_in_input = conv_attr.dilations()[1] * C
         alias wo_stride_in_input = conv_attr.strides()[1] * C
         alias filter_S_stride = C * micro_kernel_f_size
@@ -2183,9 +2183,9 @@ struct ConvDirectNHWC[
                 has_residual,
             ](output_base, output_micro_tile)
 
-        alias W = shape_input.at[2]().get()  # NHWC
-        alias H = shape_input.at[1]().get()  # NHWC
-        alias WO = shape_output.at[2]().get()  # NHWC
+        alias W = shape_input.get[2]()  # NHWC
+        alias H = shape_input.get[1]()  # NHWC
+        alias WO = shape_output.get[2]()  # NHWC
         # Shift in input H when shifting 1 in filter stencil' R dimension.
         var h_shift = 0
         # h index in input image
@@ -2255,7 +2255,7 @@ struct ConvDirectNHWC[
         ](output_micro_tile, output_base)
 
         # Apply elmentwise epilogue to the
-        alias F = shape_output.at[3]().get()
+        alias F = shape_output.get[3]()  # NHWC
 
         @parameter
         if elementwise_epilogue_enabled and last_c_tile:
