@@ -281,6 +281,24 @@ bool DILocalScopeAttr::classof(Attribute attr) {
 }
 
 //===----------------------------------------------------------------------===//
+// DIAggregatesIntoExprAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+DIAggregatesIntoExprAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 DIExprAttr fieldExpr, unsigned index,
+                                 DIStructType type) {
+  if (type.getMembers().size() <= index)
+    return emitError() << "field index out of bounds for struct type: " << type;
+  if (type.getMembers()[index].getType() != fieldExpr.getDIType()) {
+    return emitError()
+           << "operand type does not match struct field type at index "
+           << index;
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // DIDerefExprAttr
 //===----------------------------------------------------------------------===//
 

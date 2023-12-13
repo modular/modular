@@ -9,6 +9,10 @@
 !ptr2index = !debuginfo.ti.ptr<!debuginfo.unresolved<index>>
 // CHECK-DAG: ![[PTR2PTR2INDEX:.*]] = !debuginfo.ti.ptr<![[PTR2INDEX]]>
 !ptr2ptr2index = !debuginfo.ti.ptr<!ptr2index>
+// CHECK-DAG: ![[STRUCTPAIR:.*]] = !debuginfo.struct
+!member0 = !debuginfo.member<first: !unresolved_index>
+!member1 = !debuginfo.member<second: !unresolved_index>
+!struct_pair = !debuginfo.struct<Pair(!member0, !member1)>
 // CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"foo.c" in "/mlir/">
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 
@@ -55,6 +59,9 @@
   subprogramFlags = Definition
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
+// CHECK: #[[AGG:.*]] = #debuginfo.expr.agg<#[[DEREF]], 1> : ![[STRUCTPAIR]]
+#agg = #debuginfo.expr.agg<#deref, 1> : !struct_pair
+
 // CHECK: #[[LEX_BLOCK:.*]] = #debuginfo.lexical_block<
 // CHECK-SAME:   scope = #[[SP]],
 // CHECK-SAME:   file = #[[FILE]],
@@ -85,5 +92,5 @@
   alignInBits = 32
 > : !unresolved_index
 
-// CHECK: module attributes {test.expr1 = #[[REF]], test.expr2 = #[[DEREF]], test.loc = #[[VAR]]}
-module attributes {test.expr1 = #ref, test.expr2 = #deref, test.loc = #local_variable} {}
+// CHECK: module attributes {test.expr1 = #[[REF]], test.expr2 = #[[DEREF]], test.expr3 = #[[AGG]], test.loc = #[[VAR]]}
+module attributes {test.expr1 = #ref, test.expr2 = #deref, test.expr3 = #agg, test.loc = #local_variable} {}
