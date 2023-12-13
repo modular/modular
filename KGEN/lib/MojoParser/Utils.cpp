@@ -96,13 +96,9 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     }
   }
 
-  auto newMetadata = FnMetadataAttr::get(
-      from.getContext(), from.getArgNames(), from.getArgPassingKinds(),
-      from.getParamNames(), from.getParamPassingKinds(),
-      to.getDefaultArguments(), to.getDefaultParameters());
   auto newSig = LITSignatureType::get(
       to.getValues(), to.getInputParamTypes(), to.getResultParamTypes(),
-      to.getInputConventions(), to.getFnEffects(), newMetadata);
+      to.getInputConventions(), to.getFnEffects(), from.getMetadata());
   return newSig == from;
 }
 
