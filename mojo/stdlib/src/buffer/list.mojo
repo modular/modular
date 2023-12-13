@@ -213,6 +213,19 @@ struct DimList(Sized):
         return len(self.value)
 
     @always_inline("nodebug")
+    fn get[i: Int](self) -> Int:
+        """Gets the static dimension value at a specified index.
+
+        Parameters:
+            i: The dimension index.
+
+        Returns:
+            The static dimension value at the specified index.
+        """
+        constrained[i >= 0, "index must be positive"]()
+        return self.value[i].get()
+
+    @always_inline("nodebug")
     fn at[i: Int](self) -> Dim:
         """Gets the dimension at a specified index.
 
@@ -222,7 +235,7 @@ struct DimList(Sized):
         Returns:
             The dimension at the specified index.
         """
-        constrained[i >= 0, "negative index"]()
+        constrained[i >= 0, "index must be positive"]()
         return self.value[i]
 
     @always_inline
