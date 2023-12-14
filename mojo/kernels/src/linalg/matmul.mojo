@@ -2990,6 +2990,8 @@ fn _matmul_gpu_dispatch[
     let n = shape.N
     let k = shape.K
     try:
+        let stream = out_chain.get_cuda_stream()
+
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
         let warp_tiled_matmul_suppoered_shape = (
@@ -3050,7 +3052,7 @@ fn _matmul_gpu_dispatch[
                 c,
                 a,
                 b,
-                stream=out_chain.get_cuda_stream(),
+                stream=stream,
             )
         elif n == 1:
             alias WARPS_PER_BLOCK = 32
@@ -3078,7 +3080,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
-                stream=out_chain.get_cuda_stream(),
+                stream=stream,
             )
         elif m == 1 and n % WARP_SIZE == 0 and k % 32 == 0:
             # k should be a multiple of warps per block
@@ -3108,7 +3110,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
-                stream=out_chain.get_cuda_stream(),
+                stream=stream,
             )
         else:
             # Tile size for tiling in shared memory.
@@ -3141,7 +3143,7 @@ fn _matmul_gpu_dispatch[
                     m,
                     n,
                     k,
-                    stream=out_chain.get_cuda_stream(),
+                    stream=stream,
                 )
             else:
                 alias BLOCK_DIM = 16
@@ -3170,7 +3172,7 @@ fn _matmul_gpu_dispatch[
                     m,
                     n,
                     k,
-                    stream=out_chain.get_cuda_stream(),
+                    stream=stream,
                 )
     except e:
         out_chain.mark_error(e)

@@ -629,6 +629,9 @@ fn batched_matmul[
     let n = b_buf_reshaped.dim(2)
 
     try:
+        let stream = out_chain.get_cuda_stream() if out_chain else Stream[
+            is_borrowed=True
+        ]()
         let gpu_func = Function[
             fn (
                 NDBuffer[3, unkown_shape, c_type],
@@ -653,9 +656,7 @@ fn batched_matmul[
             a_buf_reshaped,
             b_buf_reshaped,
             c_buf.dynamic_shape,
-            stream=out_chain.get_cuda_stream() if out_chain else Stream[
-                is_borrowed=True
-            ](),
+            stream=stream,
         )
     except e:
         out_chain.mark_error(e)
