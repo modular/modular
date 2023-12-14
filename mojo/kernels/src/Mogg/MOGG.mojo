@@ -1261,7 +1261,18 @@ fn mean[
         return
 
     let axis = buffer_to_scalar(axis_buffer)
-    with Trace[TraceLevel.OP]("mojo.mean") as t:
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            String("input_shape=") + String("x").join(input_shape),
+            String("output_shape=") + String("x").join(output_shape),
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.mean", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
+    ) as t:
         _mean[
             type,
             rank,
@@ -2972,20 +2983,28 @@ fn conv[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        let input_shape_str = String("input ") + input.dynamic_shape
-        let filter_shape_str = String("; filter ") + filter.dynamic_shape
-        let output_shape_str = String("; output ") + output.dynamic_shape
-        let group_str = String("; group ") + int(num_groups[0])
-        let stride_str = String("; stride ") + strides_tuple
-        let padding_str = String("; padding ") + pad_h_tuple + " " + pad_w_tuple
+        let input_shape_str = String("input=") + String("x").join(
+            input.dynamic_shape
+        )
+        let filter_shape_str = String("filter=") + String("x").join(
+            filter.dynamic_shape
+        )
+        let output_shape_str = String("output=") + String("x").join(
+            output.dynamic_shape
+        )
+        let group_str = String("group=") + int(num_groups[0])
+        let stride_str = String("stride=") + String("x").join(strides_tuple)
+        let padding_h_str = String("padding_h=") + String("x").join(pad_h_tuple)
+        let padding_w_str = String("padding_w=") + String("x").join(pad_w_tuple)
 
-        return (
-            input_shape_str
-            + filter_shape_str
-            + output_shape_str
-            + group_str
-            + stride_str
-            + padding_str
+        return String(";").join(
+            input_shape_str,
+            filter_shape_str,
+            output_shape_str,
+            group_str,
+            stride_str,
+            padding_h_str,
+            padding_w_str,
         )
 
     with Trace[TraceLevel.OP](
@@ -3072,7 +3091,17 @@ fn mogg_layer_norm[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    with Trace[TraceLevel.OP]("mojo.layer_norm") as t:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            String("shape=") + String("x").join(shape),
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.layer_norm",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
         let eps = epsilon[0]
 
         alias simd_width = simdwidthof[type]()
