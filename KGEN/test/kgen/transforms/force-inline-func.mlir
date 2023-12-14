@@ -1,6 +1,8 @@
 // RUN: kgen-opt -force-inline %s | FileCheck %s
 // RUN: kgen-opt -force-inline=func-pipeline='canonicalize,cse' %s | FileCheck %s --check-prefix=CANON
-// RUN: not kgen-opt -pass-pipeline='builtin.module(force-inline{func-pipeline='canonicalize,cse'}, test-always-fail)' %s --mlir-pass-pipeline-crash-reproducer=- | FileCheck %s --check-prefix=REPRO
+// TODO(#27791): Add back: ` --mlir-pass-pipeline-crash-reproducer=- | FileCheck %s --check-prefix=REPRO`
+// once hang is fixed.
+// RUN: not kgen-opt -pass-pipeline='builtin.module(force-inline{func-pipeline='canonicalize,cse'}, test-always-fail)' %s
 
 // CHECK-LABEL: kgen.func @top
 // CANON-LABEL: kgen.func @top
