@@ -56,7 +56,7 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
   uint64_t batchSize =
       options.maxBatchSize ? options.maxBatchSize : options.warmupIterations;
   bool isWarmupPhase = batchSize > 0;
-  std::chrono::milliseconds totalTime(0);
+  std::chrono::nanoseconds totalTime(0);
   std::chrono::milliseconds minRuntime = options.minRuntime;
 
   // Run the benchmark until the time elapsed is greater than the minimum time,
@@ -64,7 +64,7 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
   // the maximum runtime.
   while (true) {
     if (totalIterations >= options.maxBenchmarkIterations ||
-        totalTime >= std::chrono::duration_cast<std::chrono::milliseconds>(
+        totalTime >= std::chrono::duration_cast<std::chrono::nanoseconds>(
                          options.maxRuntime) ||
         totalTime >= minRuntime)
       break;
@@ -125,8 +125,8 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
 
         // We also need to keep track of the total runtime and number of
         // iterations.
-        totalTime += std::chrono::duration_cast<std::chrono::milliseconds>(
-            batchDuration);
+        totalTime +=
+            std::chrono::duration_cast<std::chrono::nanoseconds>(batchDuration);
         totalIterations += batchSize;
       }
     }
