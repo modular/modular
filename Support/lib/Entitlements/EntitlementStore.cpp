@@ -355,8 +355,8 @@ static ErrorOr<llvm::json::Value> requestDeviceCode(HTTPClient &client) {
 
   llvm::StringLiteral body = R"({
     "audience": "",
-    "client_id": "",
-    "scope": ["openid", "profile", "email", "offline_access", "read:user_profile", "read:org_users"],
+    "client_id": "mcl_XrMVVoDY8fK6NjpodUeXLlH2LFiZn5Ji",
+    "scope": "openid"
   })";
   request.bodyLen = body.size();
   request.body = ContainerReadCallbackAdaptor(body);
@@ -397,8 +397,8 @@ pollForOAuthTokens(HTTPClient &client, std::chrono::seconds interval,
   pollRequest.headers.try_emplace("content-type", "application/json");
 
   llvm::StringLiteral bodyFmtStr = R"({
-    "client_id": "",
-    "device_code": {0},
+    "client_id": "mcl_XrMVVoDY8fK6NjpodUeXLlH2LFiZn5Ji",
+    "device_code": "{0}",
     "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
   })";
   std::string pollRequestBody = llvm::formatv(bodyFmtStr.data(), deviceCode);
