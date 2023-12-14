@@ -54,9 +54,9 @@ static GlobalTable &getGlobalTable() {
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetGlobalOr(llvm::StringRef name, void *payload,
-                            void *(*initFn)(void *),
-                            void (*destroyFn)(void *)) {
+KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
+                                  void *(*initFn)(void *),
+                                  void (*destroyFn)(void *)) {
   static std::mutex mu; // Serialize global table mutation.
   auto &globalTable = getGlobalTable();
 
@@ -69,6 +69,9 @@ KGEN_CompilerRT_GetGlobalOr(llvm::StringRef name, void *payload,
       return it->second.value;
     }
   }
+
+  if (!initFn)
+    return nullptr;
 
   LLVM_DEBUG(
       llvm::dbgs()
@@ -93,6 +96,11 @@ KGEN_CompilerRT_GetGlobalOr(llvm::StringRef name, void *payload,
   return entry.value;
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_GetGlobalOrNull(llvm::StringRef name) {
+  return KGEN_CompilerRT_GetGlobalOrCreate(name, nullptr, nullptr, nullptr);
+}
+
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_DestroyGlobals() {
   auto &globalTable = getGlobalTable();
@@ -110,8 +118,10 @@ KGEN_CompilerRT_DestroyGlobals() {
 
 void M::KGEN::registerGlobals(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
-  funcs.push_back(
-      {"KGEN_CompilerRT_GetGlobalOr", (void *)&KGEN_CompilerRT_GetGlobalOr});
+  funcs.push_back({"KGEN_CompilerRT_GetGlobalOrCreate",
+                   (void *)&KGEN_CompilerRT_GetGlobalOrCreate});
+  funcs.push_back({"KGEN_CompilerRT_GetGlobalOrNull",
+                   (void *)&KGEN_CompilerRT_GetGlobalOrNull});
   funcs.push_back({"KGEN_CompilerRT_DestroyGlobals",
                    (void *)&KGEN_CompilerRT_DestroyGlobals});
 }

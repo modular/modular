@@ -37,6 +37,9 @@ public:
       doWork(std::move(workItem));
     }
 
+    // Remove the association established by associateWithRuntime.
+    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
+
 #if MODULAR_PARANOID
     expected = kShuttingDown;
     assert(state.compare_exchange_strong(expected, kShutdown));
