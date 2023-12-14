@@ -40,7 +40,7 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 # ===----------------------------------------------------------------------===#
 
 
-# This type is "async safe" (see _async_parallelize).
+# This type is "async safe" (see async_parallelize).
 @value
 @register_passable
 struct Buffer[
@@ -612,7 +612,7 @@ fn _compute_ndbuffer_stride[
 # ===----------------------------------------------------------------------===#
 
 
-# This type is "async safe" (see _async_parallelize).
+# This type is "async safe" (see async_parallelize).
 @value
 @register_passable("trivial")
 struct NDBuffer[
@@ -1802,7 +1802,7 @@ fn partial_simd_store[
 # ===----------------------------------------------------------------------===#
 
 
-# This type is "async safe" (see _async_parallelize).
+# This type is "async safe" (see async_parallelize).
 # This struct must match DynamicRankBuffer in Kernels/lib/MojoKernels/Kernels.cpp
 @register_passable("trivial")
 struct DynamicRankBuffer:
