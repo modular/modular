@@ -1782,13 +1782,14 @@ struct TiledMatmul[
 @always_inline
 fn pack_matmul_b_shape_func[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](b_input: NDBuffer[2, DimList.create_unknown[2](), b_type]) -> StaticIntTuple[
-    2
-]:
+](b_input: NDBuffer[2, b_shape, b_type]) -> StaticIntTuple[2]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
     argument.
 
@@ -1803,12 +1804,26 @@ fn pack_matmul_b_shape_func[
     if is_critical_stride(k):
         alias config = search_mm_config[a_type, b_type, c_type, True, True]()
         tile_n_k = _get_tile_n_k[
-            config, transpose_in_0, a_type, b_type, c_type
+            config,
+            transpose_in_0,
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
         ](b_input)
     else:
         alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
         tile_n_k = _get_tile_n_k[
-            config2, transpose_in_0, a_type, b_type, c_type
+            config2,
+            transpose_in_0,
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
         ](b_input)
 
     @parameter
@@ -1951,11 +1966,14 @@ fn pack_b[
 @always_inline
 fn _pack_b_ndbuffer_impl[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     transposed: Bool,
 ](
-    b_input: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    b_input: NDBuffer[2, b_shape, b_type],
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
     out_chain: OutputChainPtr,
 ):
@@ -1974,7 +1992,14 @@ fn _pack_b_ndbuffer_impl[
     if is_critical_stride(k):
         alias config = search_mm_config[a_type, b_type, c_type, True, True]()
         let tile_n_k = _get_tile_n_k[
-            config, transposed, a_type, b_type, c_type
+            config,
+            transposed,
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
         ](b_input)
         pack_b[
             transposed,
@@ -1983,18 +2008,20 @@ fn _pack_b_ndbuffer_impl[
             a_type,
             b_type,
             c_type,
-            DimList.create_unknown[2](),
-            DimList.create_unknown[2](),
-        ](
-            output_buffer,
-            b_input,
-            tile_n_k[0],
-            tile_n_k[1],
-        )
+            src_shape=b_shape,
+            dst_shape = DimList.create_unknown[2](),
+        ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
     else:
         alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
         let tile_n_k = _get_tile_n_k[
-            config2, transposed, a_type, b_type, c_type
+            config2,
+            transposed,
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
         ](b_input)
         pack_b[
             transposed,
@@ -2003,24 +2030,22 @@ fn _pack_b_ndbuffer_impl[
             a_type,
             b_type,
             c_type,
-            DimList.create_unknown[2](),
-            DimList.create_unknown[2](),
-        ](
-            output_buffer,
-            b_input,
-            tile_n_k[0],
-            tile_n_k[1],
-        )
+            src_shape=b_shape,
+            dst_shape = DimList.create_unknown[2](),
+        ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
     out_chain.mark_ready()
 
 
 @always_inline
 fn pack_b_ndbuffer[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
 ](
-    b_input: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    b_input: NDBuffer[2, b_shape, b_type],
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
     out_chain: OutputChainPtr,
 ):
@@ -2033,26 +2058,38 @@ fn pack_b_ndbuffer[
 
     Parameters:
         a_type: The data type of elements inside a.
+        a_shape: The shape of the A matrix.
         b_type: The data type of elements inside b.
+        b_shape: The shape of the B matrix.
         c_type: The data type of elements inside c.
+        c_shape: The shape of the C matrix.
 
     Args:
         b_input: Input buffer that contains the weight to be packed.
         output_buffer: Output buffer to store the packed weight.
         out_chain: The to signal when writes to output buffer have finished.
     """
-    _pack_b_ndbuffer_impl[a_type, b_type, c_type, False](
-        b_input, output_buffer, out_chain
-    )
+    _pack_b_ndbuffer_impl[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transposed=False,
+    ](b_input, output_buffer, out_chain)
 
 
 @always_inline
 fn pack_transposed_b_ndbuffer[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
 ](
-    b_input: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    b_input: NDBuffer[2, b_shape, b_type],
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), b_type],
     out_chain: OutputChainPtr,
 ):
@@ -2064,18 +2101,27 @@ fn pack_transposed_b_ndbuffer[
     `output_buffer`. This also un-transposes `b_input`.
 
     Parameters:
-        a_type: The data type of elements of the A matrix.
-        b_type: The data type of elements of the B matrix.
-        c_type: The data type of elements of the C matrix.
+        a_type: The data type of elements inside a.
+        a_shape: The shape of the A matrix.
+        b_type: The data type of elements inside b.
+        b_shape: The shape of the B matrix.
+        c_type: The data type of elements inside c.
+        c_shape: The shape of the C matrix.
 
     Args:
         b_input: Input buffer that contains the transposed weight to be packed.
         output_buffer: Output buffer to store the packed weight.
         out_chain: The to signal when writes to output buffer have finished.
     """
-    _pack_b_ndbuffer_impl[a_type, b_type, c_type, True](
-        b_input, output_buffer, out_chain
-    )
+    _pack_b_ndbuffer_impl[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transposed=True,
+    ](b_input, output_buffer, out_chain)
 
 
 @value

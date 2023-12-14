@@ -914,9 +914,12 @@ fn _get_tile_n_k[
     config: MatmulConfig,
     transpose_b: Bool,
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
-](b: NDBuffer[2, DimList.create_unknown[2](), b_type]) -> StaticIntTuple[2]:
+    c_shape: DimList,
+](b: NDBuffer[2, b_shape, b_type]) -> StaticIntTuple[2]:
     var tile_n_k: StaticIntTuple[2]
 
     @parameter

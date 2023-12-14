@@ -58,7 +58,14 @@ fn test_matmul[
 
     var padded_n_k = StaticIntTuple[2]()
     padded_n_k = pack_matmul_b_shape_func[
-        a_type, b_type, c_type, transpose_b, True
+        a_type,
+        DimList.create_unknown[2](),
+        b_type,
+        DimList.create_unknown[2](),
+        c_type,
+        DimList.create_unknown[2](),
+        transpose_b,
+        True,
     ](b)
 
     let padded_n = padded_n_k[1] if b_packed else n
@@ -120,7 +127,14 @@ fn test_matmul[
     with Runtime() as runtime:
         if b_packed:
             let out_chain = OwningOutputChainPtr(runtime)
-            pack_b_ndbuffer[a_type, b_type, c_type](b, bp, out_chain.borrow())
+            pack_b_ndbuffer[
+                a_type,
+                DimList.create_unknown[2](),
+                b_type,
+                DimList.create_unknown[2](),
+                c_type,
+                DimList.create_unknown[2](),
+            ](b, bp, out_chain.borrow())
             out_chain.wait()
         let out_chain = OwningOutputChainPtr(runtime)
 
