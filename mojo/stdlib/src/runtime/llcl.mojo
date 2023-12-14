@@ -15,7 +15,7 @@ from gpu.host.stream import _StreamImpl
 from memory.unsafe import DTypePointer, Pointer
 from runtime.tracing import TraceLevel, is_mojo_profiling_disabled
 
-from sys.ffi import _get_global
+from sys.ffi import _get_global, _get_global_or_null
 
 # ===----------------------------------------------------------------------===#
 # num_cores
@@ -149,11 +149,14 @@ fn _destroy_global_runtime(ptr: Pointer[NoneType]):
 
 
 @always_inline
-fn _get_global_runtime() -> Runtime:
-    """Gets or creates the global runtime. For stand-alone Mojo the runtime
-    will be created with number of threads equal to the number of cores. When
-    Mojo is used within the Modular Execution Engine will return the runtime
-    already created for execution.
+fn _get_current_or_global_runtime() -> Runtime:
+    """Returns the current runtime, or returns the Mojo singleton global
+    runtime, creating it if it does not already exist. When Mojo is used within
+    the Modular Execution Engine the current runtime will be that already
+    constructed by the execution engine. If the user has already manually
+    constructed a runtime and added tasks to it, the current runtime for those
+    tasks will be that runtime. Otherwise, the singleton runtime is used, which
+    is created with number of threads equal to the number of cores.
     """
     let current_runtime = external_call[
         "KGEN_CompilerRT_LLCL_GetCurrentRuntime", Pointer[NoneType]
@@ -163,6 +166,15 @@ fn _get_global_runtime() -> Runtime:
     return _get_global[
         "Runtime", _init_global_runtime, _destroy_global_runtime
     ]()
+
+
+@always_inline
+fn _is_global_runtime(runtime: Runtime) -> Bool:
+    """Returns True if runtime is the singleton Mojo runtime
+    (and thus should not be deleted).
+    """
+    let global_ptr = _get_global_or_null["Runtime"]()
+    return runtime.ptr == global_ptr
 
 
 # ===----------------------------------------------------------------------===#
@@ -186,7 +198,7 @@ struct Runtime:
         """Construct an LLCL Runtime with the same number of threads as
         processor cores.
         """
-        return _get_global_runtime()
+        return _get_current_or_global_runtime()
 
     fn __init__(num_threads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
@@ -234,7 +246,7 @@ struct Runtime:
         """Destroys the LLCL Runtime. Note that this must be explicitly called
         when the Runtime goes out of the context.
         """
-        if _get_global_runtime().ptr != self.ptr:
+        if not _is_global_runtime(self):
             external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](
                 self.ptr
             )

@@ -3,18 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys._build import build_info_llcl_max_profiling_level
 
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
-
-
-@always_inline
-fn _max_profiling_level_plus_one() -> Int:
-    return build_info_llcl_max_profiling_level() + 1
 
 
 fn test_tracing[level: TraceLevel]():
@@ -50,7 +44,7 @@ fn main():
 
     # CHECK-LABEL: test_tracing_disabled
     print("== test_tracing_disabled")
-    test_tracing[_max_profiling_level_plus_one()]()
+    test_tracing[TraceLevel.THREAD]()
     # CHECK-NOT: "trace event 1"
     # CHECK-NOT: "detail event 1"
     # CHECK-NOT: "trace event 2"
