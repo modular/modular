@@ -23,13 +23,15 @@ namespace M::KGEN {
 /// funneled through this entry.
 using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 
-/// ############################################
-/// ## CAUTION: About to be removed entirely! ##
-/// ############################################
+/// ########################################################
+/// ## CAUTION: About to be renamed KGEN::MojoCallContext ##
+/// ########################################################
 ///
-/// An OutputChain represents the context for a call from the C++ runtime into
-/// a Mojo entry point, aka kernel. The kernel may be fully synchronous, or
-/// may launch sub-tasks or other asynchronous work and return.
+/// An OutputChain conveys the context for a call from the C++ runtime into
+/// a Mojo entry point, aka kernel.
+///
+/// The kernel may be fully synchronous, or may launch sub-tasks or other
+/// asynchronous work and return.
 ///
 /// It holds:
 ///  - An AnyAsyncValueRef 'chain' which the Mojo kernel can use to indicate
@@ -49,11 +51,11 @@ using MojoProfilerEntry = M::ProfilerEntry<Trace::EnableTrace(Trace::kMojo, 1)>;
 ///       of the chain (such as a CUDA stream representing the kernel's GPU
 ///       computation).
 ///  - An EncodedLocation, which can be used by the markError method.
-///  - An optional MojoProfilerEntry to be recorded when the markReady
-///    or markError methods are called.
 ///  - Any number of AnyAsyncValueRefs and GenericUniquePtrs to keep C++
 ///    runtime objects alive until the markReady or markError methods are
 ///    called.
+///  - Additional target-specific context, such as a CUDA stream on which to
+///    launch all async CUDA operations.
 ///
 /// The Mojo OutputChainPtr struct points to heap-allocated instances of this
 /// class.
@@ -78,9 +80,14 @@ struct OutputChain {
   /// Other odd's 'n end's to keep alive also.
   SmallVector<LLCL::GenericUniquePtr> extras;
 
-  /// HACK HACK HACK https://github.com/modularml/modular/issues/22959
-  /// For kernel calls using cuda.kernel.execute.via_cpu only: The CUDA stream
-  /// on which launched CUDA kernels should synchronize.
+  /// For kernel calls using cuda.kernel.execute.via_cpu, the CUDA stream
+  /// to use for all launched CUDA kernels and other async operations.
+  /// The runtime currently ensures all kernel inputs are correctly
+  /// synchronized to this stream, and will ensure all users of the kernel
+  /// results will be similarly synchronized.
+  ///
+  /// Eventually stream management may be moved into Mojo and this field
+  /// can be removed.
   void *cudaStream = nullptr;
 
   OutputChain(AnyAsyncValueRef chain, LLCL::EncodedLocation loc)
@@ -173,7 +180,6 @@ struct OutputChain {
   /// has enabled task overhang detection.
   void taskIsDone();
 
-  /// HACK HACK HACK https://github.com/modularml/modular/issues/22959
   /// For kernel calls using cuda.kernel.execute.via_cpu only: Returns the
   /// CUDA CUstream handle being used to synchronize execution of the launched
   /// CUDA kernel. We'll use a void* to avoid including any CUDA headers.
