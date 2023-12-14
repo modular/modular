@@ -159,7 +159,11 @@ static SymbolConstantAttr getSpecialMemberForType(
     return attr;
 
   ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
-  auto newSig = attr.getType().getSpecializedSignature(paramValues);
+  auto newSig = attr.getType().getSpecializedSignature(
+      paramValues, []() -> InFlightDiagnostic {
+        assert(false && "getSpecializedSignature should not error here");
+        return {};
+      });
   return SymbolConstantAttr::get(attr.getSymbol(), paramValues, newSig);
 }
 
@@ -179,7 +183,12 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
             dtorSig.getSpecializedSignature(
                 {TypeConstantAttr::get(trait,
                                        AnyRegTypeType::get(type.getContext())),
-                 generic.getParam()}));
+                 generic.getParam()},
+                []() -> InFlightDiagnostic {
+                  assert(false &&
+                         "getSpecializedSignature not expected to fail here");
+                  return {};
+                }));
       }
     }
   }

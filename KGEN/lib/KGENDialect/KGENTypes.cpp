@@ -308,6 +308,14 @@ SignatureType SignatureType::getSpecializedSignature(
                                  getFnEffects(), getMetadata());
 }
 
+SignatureType
+SignatureType::getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
+                                       Location location) {
+  return getSpecializedSignature(inputParamValues, [&]() -> InFlightDiagnostic {
+    return emitError(location);
+  });
+}
+
 SignatureType SignatureType::getSpecializedSignature(
     ArrayRef<TypedAttr> inputParamValues,
     function_ref<InFlightDiagnostic()> emitErrorFn,
