@@ -7,8 +7,7 @@
 
 from math import div_ceil, min
 
-from algorithm import map, parallelize, sync_parallelize
-from algorithm.functional import _async_parallelize
+from algorithm import async_parallelize, map, parallelize, sync_parallelize
 from memory.buffer import Buffer
 from runtime.llcl import OwningOutputChainPtr, Runtime, num_cores
 
@@ -41,7 +40,7 @@ fn test_async_parallelize():
 
     with Runtime(num_work_items) as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        _async_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
+        async_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
         out_chain.wait()
 
     # CHECK-NOT: ERROR

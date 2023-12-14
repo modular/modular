@@ -236,7 +236,7 @@ fn vectorize_unroll[
 
 
 @always_inline
-fn _async_parallelize[
+fn async_parallelize[
     func: fn (Int) capturing -> None
 ](out_chain: OutputChainPtr, num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
@@ -327,7 +327,7 @@ fn sync_parallelize[
         num_work_items: Number of parallel tasks.
     """
 
-    _async_parallelize[func](out_chain, num_work_items)
+    async_parallelize[func](out_chain, num_work_items)
     out_chain.wait()
 
 
@@ -441,7 +441,7 @@ fn _parallelize_impl[
             func(i)
 
     let out_chain = OwningOutputChainPtr(rt)
-    sync_parallelize[coarse_grained_func](out_chain.borrow(), num_workers)
+    async_parallelize[coarse_grained_func](out_chain.borrow(), num_workers)
     out_chain.wait()
 
 
@@ -1131,7 +1131,7 @@ fn _elementwise_impl[
             func_wrapper,
         ](len)
 
-    sync_parallelize[task_func](out_chain, num_workers)
+    async_parallelize[task_func](out_chain, num_workers)
 
 
 @always_inline
@@ -1146,6 +1146,8 @@ fn _elementwise_impl[
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
+
+    All free vars in func must be "async safe", see async_parallelize.
 
     Parameters:
         rank: The rank of the buffer.
@@ -1235,7 +1237,7 @@ fn _elementwise_impl[
                 func_wrapper,
             ](shape[rank - 1])
 
-    sync_parallelize[task_func](out_chain, num_workers)
+    async_parallelize[task_func](out_chain, num_workers)
 
 
 @always_inline
@@ -1250,6 +1252,8 @@ fn _elementwise_impl[
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
+
+    All free vars in func must be "async safe", see async_parallelize.
 
     Parameters:
         rank: The rank of the buffer.
@@ -1536,4 +1540,4 @@ fn stencil[
                 func_wrapper,
             ](shape[rank - 1])
 
-    sync_parallelize[task_func](out_chain, num_workers)
+    async_parallelize[task_func](out_chain, num_workers)
