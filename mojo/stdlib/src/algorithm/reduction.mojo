@@ -569,11 +569,12 @@ fn _reduce_generator[
         )
 
     try:
+        let stream = out_chain.get_cuda_stream()
         reduce_launch[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, reduce_dim_normalized, init_value, out_chain.get_cuda_stream())
+        ](shape, reduce_dim_normalized, init_value, stream)
     except e:
         out_chain.mark_error(e)
 

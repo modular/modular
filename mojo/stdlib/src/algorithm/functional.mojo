@@ -1351,6 +1351,10 @@ fn _elementwise_impl[
         _elementwise_gpu_kernel[False]()
 
     try:
+        let stream = out_chain.get_cuda_stream() if out_chain else Stream[
+            is_borrowed=True
+        ]()
+
         # TODO cleanup after #26672
         alias func_type = fn () capturing -> None
         if shape[rank - 1] % simd_width == 0:
@@ -1360,9 +1364,7 @@ fn _elementwise_impl[
             gpu_func(
                 num_blocks,
                 block_size,
-                stream=out_chain.get_cuda_stream() if out_chain else Stream[
-                    is_borrowed=True
-                ](),
+                stream=stream,
             )
         else:
             let gpu_func = Function[
@@ -1371,9 +1373,7 @@ fn _elementwise_impl[
             gpu_func(
                 num_blocks,
                 block_size,
-                stream=out_chain.get_cuda_stream() if out_chain else Stream[
-                    is_borrowed=True
-                ](),
+                stream=stream,
             )
 
     except e:
