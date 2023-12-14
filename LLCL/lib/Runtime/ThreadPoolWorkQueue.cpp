@@ -844,6 +844,12 @@ void ThreadPoolWorkQueue::shutdown() {
   for (size_t i = 0; i < numWorkers; ++i)
     workers[i].join();
 
+  if (sharedState.mainWillDonate) {
+    // Remove the association for the main thread established by
+    // associateWithRuntime.
+    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
+  }
+
 #if MODULAR_PARANOID
   expected = kShuttingDown;
   assert(sharedState.state.compare_exchange_strong(expected, kShutdown) &&
