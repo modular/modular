@@ -243,7 +243,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// and return null.
     SignatureType
     getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
-      function_ref<InFlightDiagnostic()> emitErrorFn = {});
+      function_ref<InFlightDiagnostic()> emitErrorFn);
+    SignatureType
+    getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
+      Location location);
     static SignatureType
     getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
       function_ref<InFlightDiagnostic()> emitErrorFn,

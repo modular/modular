@@ -592,7 +592,8 @@ getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp, StringRef baseName,
   bindings.posBindings.erase(it, it + 2);
   for (Type type : signature.getInputParamTypes().drop_front(2))
     paramValues.push_back(UnboundAttr::get(type));
-  signature = signature.getSpecializedSignature(paramValues);
+  signature = signature.getSpecializedSignature(paramValues,
+                                                expr->getLocation(emitter));
 
   TypedAttr fnRef = ParamOperatorAttr::get(
       POC::GetTypeMethod,
@@ -913,7 +914,8 @@ PValue OverloadSet::filterOverloadSetForValueType(
       // If anything was bound, apply it to the signature so the expected
       // argument types are updated.
       if (!newBindings.empty())
-        candidateType = candidateType.getSpecializedSignature(newBindings);
+        candidateType = candidateType.getSpecializedSignature(
+            newBindings, expr->getLocation(emitter));
     }
 
     return functionType.isEqualCanon(candidateType) ||

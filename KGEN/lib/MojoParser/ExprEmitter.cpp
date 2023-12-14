@@ -1029,7 +1029,8 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
         evaluator.addInputValue(fnParams.back());
         bindings.addPrechecked(fnParams.back());
       }
-      sig = sig.getSpecializedSignature(fnParams);
+      sig =
+          sig.getSpecializedSignature(fnParams, value.expr->getLocation(*this));
 
       // Grab the matching function.
       OverloadSet ov(name, typeFuncs, std::move(bindings), value.expr,

@@ -750,6 +750,21 @@ struct InheritsTwice(Father, Father):
     fn foo(self):
         pass
 
+
+# https://github.com/modularml/mojo/issues/1399
+# Parser crash when trait implementation parameters don't match the definition
+# expected-note @below {{trait 'TraitWithIntParamOnMethod' declared here}}
+trait TraitWithIntParamOnMethod:
+  # expected-note @below {{no 'f' candidates have type 'fn[Int](self = UseTraitWithIntParamOnMethod) -> None'}}
+  fn f[n: Int](self):
+    ...
+# expected-error @below {{caller input parameter #0 has type }}
+# expected-error @below {{struct 'UseTraitWithIntParamOnMethod' does not implement all requirements for 'TraitWithIntParamOnMethod'}}
+struct UseTraitWithIntParamOnMethod(TraitWithIntParamOnMethod):
+  # expected-note @below {{candidate declared here with type 'fn[Bool](self = UseTraitWithIntParamOnMethod) -> None'}}
+  fn f[n: Bool](self):
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Class
 ##===----------------------------------------------------------------------===##
