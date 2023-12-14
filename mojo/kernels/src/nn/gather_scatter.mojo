@@ -556,14 +556,14 @@ fn scatter_nd_generator[
 
     @parameter
     if target == "cuda":
+        let stream = out_chain.get_cuda_stream()
         try:
-            # TODO: Make it async? Didn't work because of out_chain.get_cuda_stream() argument.
             # TODO: Does it matter if output.data or output_flat.data (and data)?
             _copy_device_to_device_async(
                 output.data,
                 data.data,
                 data.num_elements(),
-                out_chain.get_cuda_stream(),
+                stream,
             )
         except e:
             out_chain.mark_error(e)

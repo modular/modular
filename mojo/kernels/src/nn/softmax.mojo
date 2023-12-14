@@ -787,7 +787,6 @@ fn softmax[
 
     alias BLOCK_SIZE = 128
     try:
-        # HACK HACK HACK (#25473)
         let stream = out_chain.get_cuda_stream() if out_chain else Stream[
             is_borrowed=True
         ]()

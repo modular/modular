@@ -363,6 +363,8 @@ fn flash_attention[
         return out_chain.mark_error("32bits index overflow.")
 
     try:
+        let stream = out_chain.get_cuda_stream()
+
         # Use fast kernel for context encoding benchmark.
         if seq_len == num_keys and seq_len % 128 == 0:
             let func = Function[
@@ -404,7 +406,7 @@ fn flash_attention[
                 scale,
                 batch_size,
                 seq_len,
-                stream=out_chain.get_cuda_stream(),
+                stream=stream,
             )
         # Slow path for token generation for now and context encoding with
         # seq_len % 128 != 0.
@@ -450,7 +452,7 @@ fn flash_attention[
                 batch_size,
                 seq_len,
                 num_keys,
-                stream=out_chain.get_cuda_stream(),
+                stream=stream,
             )
 
     except e:
