@@ -487,24 +487,41 @@ fn get_partitioned_matmul[
     heuristic: PartitionHeuristic,
     critical_stride: Bool,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    # TODO: Add oneDNN/MLAS partition heuristic and use the parameter if below.
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+
+    alias a_row_size = get_matmul_a_row_size[
+        a_type, b_type, c_type, critical_stride
+    ]()
+    alias pack_inner_size = get_matmul_pack_inner_size[
+        a_type, b_type, c_type, critical_stride
+    ]() * simdwidthof[DType.float32]()
+
     @parameter
     if heuristic == PartitionHeuristic.MOJO:
-        return get_partitioned_matmul_mojo[
-            get_matmul_a_row_size[a_type, b_type, c_type, critical_stride](),
-            get_matmul_pack_inner_size[
-                a_type, b_type, c_type, critical_stride
-            ]()
-            * simdwidthof[DType.float32](),
-        ](m, n, k, task_id, num_tasks)
+
+        @parameter
+        if use_i8mm:
+            # i8mm needs to have even partitions in m.
+            # Only the last range is allowed to be odd.
+            var partition = get_partitioned_matmul_mojo[
+                a_row_size, pack_inner_size
+            ](m // 2, n, k, task_id, num_tasks)
+
+            let t0 = 2 * partition.offset[0]
+            var t1 = 2 * partition.shape[0]
+            if t0 + t1 == m - 1:
+                t1 = m - t0
+            partition.offset[0] = t0
+            partition.shape[0] = t1
+            return partition
+        else:
+            return get_partitioned_matmul_mojo[a_row_size, pack_inner_size](
+                m, n, k, task_id, num_tasks
+            )
     else:
-        return get_partitioned_matmul_im2col[
-            get_matmul_a_row_size[a_type, b_type, c_type, critical_stride](),
-            get_matmul_pack_inner_size[
-                a_type, b_type, c_type, critical_stride
-            ]()
-            * simdwidthof[DType.float32](),
-        ](m, n, k, task_id, num_tasks)
+        return get_partitioned_matmul_im2col[a_row_size, pack_inner_size](
+            m, n, k, task_id, num_tasks
+        )
 
 
 fn get_partitioned_matmul_mojo[

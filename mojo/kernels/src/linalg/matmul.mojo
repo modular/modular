@@ -15,6 +15,7 @@ from sys.info import (
 from sys.intrinsics import PrefetchOptions, external_call
 
 from algorithm import (
+    parallelize,
     sync_parallelize,
     tile,
     unroll,
@@ -1361,7 +1362,7 @@ struct MatmulInnerLoopBPacked[
         # This inner kernels works with non-transposed A.
         let K = self.a.dim(1)
         let a_ptr = self.a.data.offset(
-            self.global_offset.M * K + self.global_offset.K + kl
+            self.global_offset.M * K + self.global_offset.K + 2 * kl
         )
 
         # Prefetch B matrix.
@@ -1382,11 +1383,7 @@ struct MatmulInnerLoopBPacked[
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
-                let t0 = a_ptr.offset((2 * idx0 + 0) * K).simd_load[8]()
-                let t1 = a_ptr.offset((2 * idx0 + 1) * K).simd_load[
-                    8
-                ]() if not single_row_i8mm else SIMD[a_type, 8](0)
-                let a_val = t0.join(t1)
+                let a_val = a_ptr.simd_load[16](2 * idx0 * K)
                 let b_val = b_ptr.offset(16 * idx1).aligned_simd_load[
                     16, alignment
                 ]()
@@ -3428,6 +3425,63 @@ fn matmul[
         > 0 else out_chain.get_runtime().parallelism_level(),
     )
 
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    alias simd_size = simdwidthof[c_type]()
+    alias alignment = alignof[SIMD[c_type, simd_size]]()
+    let kh = align_up(k, 8)
+    let mh = align_up(m, 2)
+    var a_packed_ptr = DTypePointer[a_type]()
+    if use_i8mm:
+        a_packed_ptr = DTypePointer[a_type].aligned_alloc(alignment, mh * kh)
+    let a_packed_shape = Index(mh, kh)
+    let a_packed = NDBuffer[2, a_shape, a_type](
+        a_packed_ptr.address, a_packed_shape
+    )
+
+    @always_inline
+    @parameter
+    fn packA_i8mm(t0: Int, t1: Int):
+        let t1l = align_down(t1, 2)
+        let kl = align_down(k, 8)
+        for j in range(t0, t1l, 2):
+            for l in range(0, k, 8):
+                let t0 = a.data.simd_load[8]((j + 0) * k + l)
+                let t1 = a.data.simd_load[8]((j + 1) * k + l)
+                a_packed_ptr.simd_store[8](kh * j + 2 * l + 0, t0)
+                a_packed_ptr.simd_store[8](kh * j + 2 * l + 8, t1)
+            let t0 = partial_simd_load[a_type, 8](
+                a.data.offset((j + 0) * k + kl), 0, k - kl, 0
+            )
+            let t1 = partial_simd_load[a_type, 8](
+                a.data.offset((j + 1) * k + kl), 0, k - kl, 0
+            )
+            partial_simd_store(
+                a_packed_ptr.offset(kh * j + 2 * kl + 0), 0, k - kl, t0
+            )
+            partial_simd_store(
+                a_packed_ptr.offset(kh * j + 2 * kl + 8), 0, k - kl, t1
+            )
+        for j in range(t1l, t1):
+            for l in range(0, k, 8):
+                let t0 = a.data.simd_load[8]((j + 0) * k + l)
+                a_packed_ptr.simd_store[8](kh * j + 2 * l + 0, t0)
+            let t0 = partial_simd_load[a_type, 8](
+                a.data.offset((j + 0) * k + kl), 0, k - kl, 0
+            )
+            partial_simd_store(
+                a_packed_ptr.offset(kh * j + 2 * kl + 0), 0, k - kl, t0
+            )
+
+    @always_inline
+    @parameter
+    fn pack_task_func(task_id: Int):
+        let sub_matmul_config = get_partitioned_matmul[
+            a_type, b_type, c_type, PartitionHeuristic.MOJO
+        ](m, 1, k, task_id, num_tasks)
+        let t0 = sub_matmul_config.offset[0]
+        let t1 = t0 + sub_matmul_config.shape[0]
+        packA_i8mm(t0, t1)
+
     @always_inline
     @parameter
     fn task_func(task_id: Int):
@@ -3438,6 +3492,10 @@ fn matmul[
         if sub_matmul_config.shape[0] <= 0 or sub_matmul_config.shape[1] <= 0:
             return
 
+        if use_i8mm and m >= n:
+            let t0 = sub_matmul_config.offset[0]
+            let t1 = t0 + sub_matmul_config.shape[0]
+            packA_i8mm(t0, t1)
         _submatmul_sequential_sync[
             a_type,
             a_shape,
@@ -3451,11 +3509,24 @@ fn matmul[
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
             saturated_vnni,
-        ](c, a, b, sub_matmul_config.shape, sub_matmul_config.offset)
+        ](
+            c,
+            a_packed if use_i8mm else a,
+            b,
+            sub_matmul_config.shape,
+            sub_matmul_config.offset,
+        )
+
+    # i8mm partition needs to be optimized as a function of m, n and k
+    # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
+    # See issue 27734
+    if use_i8mm and m < n:
+        parallelize[pack_task_func](num_tasks)
 
     # TODO (#12624): Closure captures some state on the stack so this needs
     # to be synchronous in order to keep that state alive
     sync_parallelize[task_func](out_chain, num_tasks)
+    a_packed_ptr.free()
 
 
 fn _submatmul_sequential_sync[
