@@ -316,11 +316,10 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
       type.getContext(), builder.getI64IntegerAttr(type.getElementCount()),
       /*lowerBound=*/nullptr, /*upperBound=*/nullptr, /*stride=*/nullptr);
   return LLVM::DICompositeTypeAttr::get(
-      type.getContext(), llvm::dwarf::DW_TAG_array_type,
-      StringAttr::get(type.getContext()), nullptr, /*line=*/0,
-      /*scope=*/nullptr, convertType(type.getElementType()),
-      LLVM::DIFlags::Vector, type.getSizeInBits(),
-      /*alignInBits=*/0, element);
+      type.getContext(), llvm::dwarf::DW_TAG_array_type, type.getName(),
+      nullptr, /*line=*/0, /*scope=*/nullptr,
+      convertType(type.getElementType()), LLVM::DIFlags::Vector,
+      type.getSizeInBits(), /*alignInBits=*/0, element);
 }
 
 //===----------------------------------------------------------------------===//

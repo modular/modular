@@ -21,7 +21,7 @@
 // CHECK-DAG: #[[ARRAY:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[I32]], sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !array = !debuginfo.unresolved<!llvm.array<10 x i32>>
 
-// CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[OPAQUE_PTR]], flags = Vector, sizeInBits = {{.*}}, elements = #llvm.di_subrange<count = 10 : i64>>
+// CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, baseType = #[[OPAQUE_PTR]], flags = Vector, sizeInBits = {{.*}}, elements = #llvm.di_subrange<count = 10 : i64>>
 !vector = !debuginfo.unresolved<!llvm.vec<10 x ptr>>
 
 // CHECK-DAG: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[VOID]], #[[OPAQUE_PTR]], #[[STRUCT]], #[[NAMED_STRUCT]], #[[ARRAY]], #[[VECTOR]]>
