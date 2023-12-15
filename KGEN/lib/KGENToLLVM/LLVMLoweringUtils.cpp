@@ -62,6 +62,11 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
     int64_t strictest = 1;
     for (Type type : structType.getBody()) {
       int64_t eltABIAlign = getTypeABIAlign(type);
+      // TODO(#26118): Remove this check once the align bug is found.
+      if (eltABIAlign == 0) {
+        type.dump();
+        target.dump();
+      }
       CHECKED_LLVM_ALIGN_TO(size, size, eltABIAlign);
       size += getTypeAllocSize(type);
       strictest = std::max(strictest, eltABIAlign);
