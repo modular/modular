@@ -3441,36 +3441,35 @@ fn matmul[
     @always_inline
     @parameter
     fn packA_i8mm(t0: Int, t1: Int):
-        let t1l = align_down(t1, 2)
         let kl = align_down(k, 8)
+
+        @always_inline
+        @parameter
+        fn packA_helper[nrow: Int](j: Int):
+            for l in range(0, k, 8):
+
+                @unroll
+                for idx in range(nrow):
+                    let t0 = a.data.simd_load[8]((j + idx) * k + l)
+                    a_packed_ptr.simd_store[8](kh * j + 2 * l + 8 * idx, t0)
+
+            @unroll
+            for idx in range(nrow):
+                let t0 = partial_simd_load[a_type, 8](
+                    a.data.offset((j + idx) * k + kl), 0, k - kl, 0
+                )
+                partial_simd_store(
+                    a_packed_ptr.offset(kh * j + 2 * kl + 8 * idx),
+                    0,
+                    k - kl,
+                    t0,
+                )
+
+        let t1l = align_down(t1, 2)
         for j in range(t0, t1l, 2):
-            for l in range(0, k, 8):
-                let t0 = a.data.simd_load[8]((j + 0) * k + l)
-                let t1 = a.data.simd_load[8]((j + 1) * k + l)
-                a_packed_ptr.simd_store[8](kh * j + 2 * l + 0, t0)
-                a_packed_ptr.simd_store[8](kh * j + 2 * l + 8, t1)
-            let t0 = partial_simd_load[a_type, 8](
-                a.data.offset((j + 0) * k + kl), 0, k - kl, 0
-            )
-            let t1 = partial_simd_load[a_type, 8](
-                a.data.offset((j + 1) * k + kl), 0, k - kl, 0
-            )
-            partial_simd_store(
-                a_packed_ptr.offset(kh * j + 2 * kl + 0), 0, k - kl, t0
-            )
-            partial_simd_store(
-                a_packed_ptr.offset(kh * j + 2 * kl + 8), 0, k - kl, t1
-            )
+            packA_helper[2](j)
         for j in range(t1l, t1):
-            for l in range(0, k, 8):
-                let t0 = a.data.simd_load[8]((j + 0) * k + l)
-                a_packed_ptr.simd_store[8](kh * j + 2 * l + 0, t0)
-            let t0 = partial_simd_load[a_type, 8](
-                a.data.offset((j + 0) * k + kl), 0, k - kl, 0
-            )
-            partial_simd_store(
-                a_packed_ptr.offset(kh * j + 2 * kl + 0), 0, k - kl, t0
-            )
+            packA_helper[1](j)
 
     @always_inline
     @parameter
