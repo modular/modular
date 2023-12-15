@@ -330,12 +330,9 @@ ErrorOr<std::string> Detail::CertificateChain::getSubject() const {
 //===----------------------------------------------------------------------===//
 
 const mbedtls_x509_crt *Detail::CertificateChain::getLeafCertificate() const {
-  // The client cert is the leaf certificate, so walk to the end of the chain.
-  const mbedtls_x509_crt *leaf = &parsed;
-  mbedtls_x509_crt *tmp;
-  while ((tmp = leaf->next))
-    leaf = tmp;
-  return leaf;
+  // The client cert is the leaf certificate, so grab it from the
+  // start of the chain.
+  return &parsed;
 }
 
 //===----------------------------------------------------------------------===//
