@@ -98,7 +98,10 @@ public:
   size_t getParallelismLevel() const override { return 1; }
 
   void associateWithRuntime(CompactRuntimePtr runtime) override {
+    // TODO(#27927): Re-enable once ThreadPoolWorkQueue hangs understood.
+#if 0
     CompactRuntimePtr::setCurrentRuntime(runtime);
+#endif
   }
 
 private:

@@ -1089,6 +1089,8 @@ bool ThreadPoolWorkQueue::callerIsForeign() const {
 }
 
 void ThreadPoolWorkQueue::associateWithRuntime(CompactRuntimePtr runtime) {
+  // TODO(#27927): Re-enable once ThreadPoolWorkQueue hangs understood.
+#if 0
   // Ask each worker to set the current runtime.
   std::vector<AnyAsyncValueRef> chains;
   chains.reserve(numWorkers);
@@ -1104,6 +1106,7 @@ void ThreadPoolWorkQueue::associateWithRuntime(CompactRuntimePtr runtime) {
   }
   // Wait for all of the above to complete.
   await(chains);
+#endif
 }
 
 //===----------------------------------------------------------------------===//
