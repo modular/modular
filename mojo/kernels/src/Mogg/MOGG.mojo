@@ -519,6 +519,9 @@ fn destruct_buffer_list[
     list._del_old()
 
 
+# TODO(#27757): All calls with concrete body functions are as if annotated with
+#               @mogg_register("mo.original_op")
+#               @mogg_will_become_async
 @always_inline
 fn elementwise_wrapper[
     trace_description: StringLiteral,
@@ -2681,6 +2684,9 @@ fn non_maximum_suppression_shape_func[
 
 
 @mogg_register("mo.random.normal")
+# TODO(#27757): This kernel does not really need to be async, but we need
+#               something to test the temporary async simulation support.
+@mogg_will_become_async
 @export
 fn random_normal[
     type: DType,
