@@ -16,8 +16,10 @@
 // CHECK-DAG: ![[ARRAY:.*]] = !debuginfo.array<5 x !{{.*}}>
 // CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<m0: ![[BASIC1]]>
 // CHECK-DAG: ![[MEMBER1:.*]] = !debuginfo.member<m1: !{{.*}}>
-// CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[BASIC]] {sizeInBits = 64, alignInBits = 64}>
-// CHECK-DAG: ![[PTR1:.*]] = !debuginfo.ptr<![[UNSPECIFIED]] {sizeInBits = 64, alignInBits = 64}>
+// CHECK-DAG: ![[VECTOR_BASIC:.*]] = !debuginfo.vector<1 x ![[BASIC]]>
+// CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[VECTOR_BASIC]] {sizeInBits = 64, alignInBits = 64}>
+// CHECK-DAG: ![[VECTOR_UNSPECIFIED:.*]] = !debuginfo.vector<1 x ![[UNSPECIFIED]]>
+// CHECK-DAG: ![[PTR1:.*]] = !debuginfo.ptr<![[VECTOR_UNSPECIFIED]] {sizeInBits = 64, alignInBits = 64}>
 // CHECK-DAG: ![[SUBROUTINE:.*]] = !debuginfo.subroutine<() -> (![[BASIC1]], ![[BASIC1]]): DW_CC_normal>
 // CHECK-DAG: ![[VECTOR:.*]] = !debuginfo.vector<8 x ![[BASIC]]>
 // CHECK-DAG: ![[VECTOR1:.*]] = !debuginfo.vector<8 x !{{.*}}>
@@ -25,7 +27,7 @@
 // CHECK-DAG: ![[ARRAY1:.*]] = !debuginfo.array<4 x ![[VECTOR]]>
 // CHECK-DAG: ![[ARRAY2:.*]] = !debuginfo.array<4 x ![[VECTOR2]]>
 // CHECK-DAG: ![[MEMBER24:.*]] = !debuginfo.member<m0: ![[PTR]]>
-// CHECK-DAG: ![[MEMBER22:.*]] = !debuginfo.member<m0: ![[BASIC]]>
+// CHECK-DAG: ![[MEMBER22:.*]] = !debuginfo.member<m0: ![[VECTOR_BASIC]]>
 // CHECK-DAG: ![[PTR2:.*]] = !debuginfo.ptr<![[SUBROUTINE]] {sizeInBits = 64, alignInBits = 64}>
 // CHECK-DAG: ![[ARRAY3:.*]] = !debuginfo.array<3 x ![[ARRAY1]]>
 // CHECK-DAG: ![[ARRAY4:.*]] = !debuginfo.array<5 x ![[ARRAY2]]>
@@ -43,7 +45,7 @@
 
 // CHECK-DAG: ![[NONE:.*]] = !debuginfo.struct<"!kgen.none"()>
 
-// CHECK-DAG: !debuginfo.subroutine<(![[ARRAY5]], ![[PTR2]], ![[STRUCT]], ![[PTR]], ![[PTR1]], ![[BASIC]], ![[VECTOR1]], ![[STRUCT2]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
+// CHECK-DAG: !debuginfo.subroutine<(![[ARRAY5]], ![[PTR2]], ![[STRUCT]], ![[PTR]], ![[PTR1]], ![[VECTOR_BASIC]], ![[VECTOR1]], ![[STRUCT2]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(
   !debuginfo.unresolved<!arrayTest>,
