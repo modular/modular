@@ -10,10 +10,16 @@
 
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101
-# CHECK:   f32 = 24.125
+# CHECK:   f32 = {
+# CHECK:     [0] = 24.125
+# CHECK:   }
 # CHECK:   another_int = 101
-# CHECK:   float16 = 25.125
-# CHECK:   uint8 = 123
+# CHECK:   float16 = {
+# CHECK:     [0] = 25.125
+# CHECK:   }
+# CHECK:   uint8 = {
+# CHECK:     [0] = 123
+# CHECK:   }
 # CHECK:   simd = {
 # CHECK:     [0] = -0.125
 # CHECK:     [1] = -1.5
@@ -21,23 +27,37 @@
 # CHECK:     [3] = 5.7266
 # CHECK:   }
 # CHECK:   none = None
-# CHECK:   uint16 = 123
-# CHECK:   int32 = 485
-# CHECK: }
-# CHECK: (AStruct) a_struct = {
-# CHECK:   int = 12
-# CHECK:   tuple = {
-# CHECK:     m0 = 1
-# CHECK:     m1 = 87
-# CHECK:     m2 = 123.125
+# CHECK:   uint16 = {
+# CHECK:     [0] = 123
+# CHECK:   }
+# CHECK:   int32 = {
+# CHECK:     [0] = 485
 # CHECK:   }
 # CHECK: }
-# CHECK: (f32) another_float = 4.125
+# CHECK: (AStruct) a_struct = {
+# CHECK:   int = {
+# CHECK:     [0] = 12
+# CHECK:   }
+# CHECK:   tuple = {
+# CHECK:     m0 = 1
+# CHECK:     m1 = {
+# CHECK:       [0] = 87
+# CHECK:     }
+# CHECK:     m2 = {
+# CHECK:       [0] = 123.125
+# CHECK:     }
+# CHECK:   }
+# CHECK: }
+# CHECK: (scalar<f32>) another_float = {
+# CHECK:   [0] = 4.125
+# CHECK: }
 # CHECK: (string) a_string_literal = "fofofo"
 # CHECK: (pack) a_list = {
-# CHECK:     m0 = 1
-# CHECK:     m1 = 2.125
-# CHECK:     m2 = 3
+# CHECK:   m0 = 1
+# CHECK:   m1 = {
+# CHECK:     [0] = 2.125
+# CHECK:   }
+# CHECK:   m2 = 3
 # CHECK: }
 # CHECK: (simd<4, f16>) a_simd = {
 # CHECK:   [0] = 1.125
@@ -73,6 +93,10 @@
 # CHECK: (si64) a_var_index = 48
 # CHECK: (si64) a_let_index = 48
 # CHECK: (si64) an_int = 123
-# CHECK: (f64) a_literal_float = 3.125
-# CHECK: (f32) a_float = 3.125
+# CHECK: (scalar<f64>) a_literal_float = {
+# CHECK:   [0] = 3.125
+# CHECK: }
+# CHECK: (scalar<f32>) a_float = {
+# CHECK:   [0] = 3.125
+# CHECK: }
 # CHECK: (si64) ^ uncommon name = 1123123

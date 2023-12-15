@@ -186,9 +186,6 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {
   DIType baseType = buildDebugTypeFromDType(type.getContext(),
                                             type.getResolvedDType()->getValue(),
                                             tc.getIndexTypeBitwidth());
-
-  if (size == 1)
-    return baseType;
   return DIVectorType::get(baseType, size);
 }
 

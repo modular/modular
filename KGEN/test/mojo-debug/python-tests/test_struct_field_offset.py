@@ -17,6 +17,6 @@ class TestSample(LLDBTestBase):
             struct = ctx.frame.FindVariable("p")
             assert struct.GetNumChildren() == 2
             first = struct.GetChildAtIndex(0)
-            assert first.GetValueAsSigned(-1) == 42
+            assert first.GetChildAtIndex(0).GetValueAsSigned(-1) == 42
             second = struct.GetChildAtIndex(1)
-            assert second.GetValueAsSigned(-1) == 3735928559
+            assert second.GetChildAtIndex(0).GetValueAsSigned(-1) == 3735928559
