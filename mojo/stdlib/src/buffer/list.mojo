@@ -135,6 +135,22 @@ struct Dim(Intable):
             return Dim()
         return Dim(self.get() * rhs.get())
 
+    @always_inline
+    fn __floordiv__(self, rhs: Dim) -> Dim:
+        """Divide two dimensions and round towards negative infinite.
+
+        If either are unknown, the result is unknown as well.
+
+        Args:
+            rhs: The other dimension.
+
+        Returns:
+            The floor division of the two dimensions.
+        """
+        if not self or not rhs:
+            return Dim()
+        return Dim(self.get() // rhs.get())
+
     @always_inline("nodebug")
     fn __int__(self) -> Int:
         return self.value.value()

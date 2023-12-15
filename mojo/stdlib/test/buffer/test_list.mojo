@@ -35,6 +35,16 @@ fn test_dim():
     # CHECK: False
     print(dim1.is_multiple[4]())
 
+    let dim2 = dim0 // 2
+    # CHECK: True
+    print(dim2.has_value())
+    # CHECK: 4
+    print(dim2.value.value())
+
+    let dim3 = dim1 // Dim()
+    # CHECK: False
+    print(dim3.has_value())
+
 
 # CHECK-LABEL: test_opt_param_int
 fn test_opt_param_int():
