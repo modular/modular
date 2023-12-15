@@ -287,14 +287,14 @@ fn _concat[
 
 @always_inline
 fn _concat_inner[
-    rank: Int, type: DType, axis: Int
+    rank: Int,
+    type: DType,
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     inputs: InlinedFixedVector[
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ],
 ):
-    constrained[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         let buffer_len = inputs[i].size()
@@ -344,8 +344,16 @@ fn _concat_serial[
 ):
     _check_input_consistency[rank, type](axis, inputs)
 
-    if axis == 0:
-        _concat_inner[rank, type, 0](output, inputs)
+    var all_outer_dims_singleton = True
+    for i in range(axis):
+        if inputs[0].dim(i) == 1:
+            continue
+
+        all_outer_dims_singleton = False
+        break
+
+    if all_outer_dims_singleton:
+        _concat_inner[rank, type](output, inputs)
         return
 
     _concat[rank, type](output, axis, inputs)
