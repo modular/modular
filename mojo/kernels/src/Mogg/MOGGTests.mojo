@@ -236,6 +236,24 @@ fn test_unary_kernel_shape_func[
     return data.get_shape()
 
 
+@mogg_register("test_custom_op_params")
+@always_inline
+@export
+fn test_unary_kernel_params[
+    type: DType,
+    rank: Int,
+    extra_param: Int,
+    extra_param2: StringLiteral,
+](
+    tensor1: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    print(extra_param)
+    print(extra_param2)
+    out_chain.mark_ready()
+
+
 @mogg_register("tf.Identity")
 @mogg_register("torch.aten.abs")
 @mogg_register("monnx.abs_v13")
