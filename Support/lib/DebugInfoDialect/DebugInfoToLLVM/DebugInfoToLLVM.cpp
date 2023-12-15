@@ -507,11 +507,12 @@ static void convertDbgValueToAddr(ModuleOp module) {
 
       // Build a new allocation to store the intermediate value.
       OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
+      Location prologueLoc = UnknownLoc::get(op->getContext());
       auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
-          op.getLoc(), allocBuilder.getI32Type(), 1);
+          prologueLoc, allocBuilder.getI32Type(), 1);
 
       auto allocaOp = allocBuilder.create<LLVM::AllocaOp>(
-          op.getLoc(), LLVM::LLVMPointerType::get(value.getContext()),
+          prologueLoc, LLVM::LLVMPointerType::get(value.getContext()),
           value.getType(), allocSize, 0);
 
       // Replace the old dbg.value with a dbg.declare.
