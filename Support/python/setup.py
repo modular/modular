@@ -57,6 +57,8 @@ setup(
             "opentelemetry-sdk>=1.18.0",
             "opentelemetry-exporter-otlp>=1.18.0",
             "boto3>=1.26.102",
+            # `psutil` is needed for setting `--timeout` for llvm-lit.
+            "psutil>=5.9.0",
         ],
     },
     classifiers=[
