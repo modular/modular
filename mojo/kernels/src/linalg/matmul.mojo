@@ -15,7 +15,6 @@ from sys.info import (
 from sys.intrinsics import PrefetchOptions, external_call
 
 from algorithm import (
-    parallelize,
     sync_parallelize,
     tile,
     unroll,
@@ -3520,7 +3519,11 @@ fn matmul[
     # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
     # See issue 27734
     if use_i8mm and m < n:
-        parallelize[pack_task_func](num_tasks)
+        let runtime = out_chain.get_runtime()
+        let pack_chain = OwningOutputChainPtr(runtime)
+        sync_parallelize[pack_task_func](pack_chain.borrow(), num_tasks)
+        # Ensure that pack_chain is not destructed until sync_parallelize is finished.
+        _ = pack_chain ^
 
     # TODO (#12624): Closure captures some state on the stack so this needs
     # to be synchronous in order to keep that state alive
