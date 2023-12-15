@@ -26,6 +26,9 @@ namespace {
 // kernel.
 constexpr StringLiteral registerDecorator =
     "$utils::$_annotations::mogg_register";
+// TODO(#27757): Temporary as transition to Mojo async/await.
+constexpr StringLiteral willBecomeAsyncDecorator =
+    "$utils::$_annotations::mogg_will_become_async";
 constexpr StringLiteral registerOverrideDecorator =
     "$utils::$_annotations::mogg_register_override";
 constexpr StringLiteral experimentalDecorator =
@@ -84,6 +87,10 @@ private:
     /// attached.
     TypedAttr experimentalAttr;
 
+    /// If true, indicates the kernel will be implemented by an 'async' Mojo
+    /// function.
+    bool isAsync = false;
+
     /// When cloning the kernel we want to preserve the decorators unrelated to
     /// mogg.
     SmallVector<TypedAttr> nonMOGGDecorators;
@@ -102,7 +109,12 @@ private:
       } else if (decoratorName.startswith(registerDecorator) ||
                  decoratorName.startswith(registerOverrideDecorator)) {
         metadata.moggRegister = decorator;
-
+        // Drop the mogg decorator
+        attrsToCopy.pop_back();
+      } else if (decoratorName.startswith(willBecomeAsyncDecorator)) {
+        // TODO(#27757): Temporary while transition to Mojo async/await.
+        // Eventually this will be implied by the generator op's signature.
+        metadata.isAsync = true;
         // Drop the mogg decorator
         attrsToCopy.pop_back();
       }
