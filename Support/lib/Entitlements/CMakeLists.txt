@@ -7,7 +7,9 @@
 include(AddMbedTLS)
 
 # TODO: Figure out a way to make this safer - we do NOT want dev certs in production.
-set(MODULAR_ROOT_CERTIFICATE "dev" CACHE STRING "The root certificate to use. Options are {dev, staging, prod}. `dev` certificates MUST NOT be used in production.")
+if(NOT MODULAR_ROOT_CERTIFICATE)
+  set(MODULAR_ROOT_CERTIFICATE "dev" CACHE STRING "The root certificate to use. Options are {dev, staging, prod}. `dev` certificates MUST NOT be used in production.")
+endif()
 
 if (${MODULAR_ROOT_CERTIFICATE} STREQUAL "dev")
   # This certificate and key were generated with:
@@ -19,6 +21,9 @@ if (${MODULAR_ROOT_CERTIFICATE} STREQUAL "dev")
   file(READ RootCertificates/dev/cert.pem CERTIFICATE_PEM)
   file(READ RootCertificates/dev/key.pem KEY_PEM)
   message(STATUS "DO NOT SHIP THIS BUILD! You are using the dev certificate for the modular entitlements library. DO NOT SHIP THIS BUILD!")
+elseif (${MODULAR_ROOT_CERTIFICATE} STREQUAL "staging")
+  file(READ RootCertificates/staging/cert.pem CERTIFICATE_PEM)
+  message(STATUS "DO NOT SHIP THIS BUILD! You are using the staging certificate for the modular entitlements library. DO NOT SHIP THIS BUILD!")
 else ()
   message(FATAL_ERROR "Unknown value for MODULAR_ROOT_CERTIFICATE: ${MODULAR_ROOT_CERTIFICATE}, expected one of {dev, staging, prod}")
 endif ()
