@@ -353,21 +353,24 @@ def DebugInfo_DIVectorType : DIType<"DIVector", "vector"> {
 
     ```mlir
     !debuginfo.vector<10 x !elementType>
+    !debuginfo.vector<"pop.simd": 10 x !elementType>
     ```
   }];
   let parameters = (ins
     "DIType":$elementType,
-    "uint64_t":$elementCount
+    "uint64_t":$elementCount,
+    OptionalParameter<"StringAttr">:$name
   );
 
   let builders = [
     TypeBuilderWithInferredContext<(ins
-      "DIType":$elementType, "uint64_t":$elementCount
+      "DIType":$elementType, "uint64_t":$elementCount, CArg<"StringAttr", "{}">:$name
     ), [{
-      return $_get(elementType.getContext(), elementType, elementCount);
+      return $_get(elementType.getContext(), elementType, elementCount, name);
     }]>
   ];
-  let assemblyFormat = "`<` $elementCount `x` custom<DIType>($elementType) `>`";
+  let assemblyFormat =
+    "`<` $elementCount `x` custom<DIType>($elementType) (` ` `{` struct($name)^ `}`)? `>`";
 }
 
 #endif // DEBUGINFOTYPES_TD

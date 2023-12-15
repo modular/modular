@@ -16,14 +16,14 @@
 // CHECK-DAG: ![[ARRAY:.*]] = !debuginfo.array<5 x !{{.*}}>
 // CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<m0: ![[BASIC1]]>
 // CHECK-DAG: ![[MEMBER1:.*]] = !debuginfo.member<m1: !{{.*}}>
-// CHECK-DAG: ![[VECTOR_BASIC:.*]] = !debuginfo.vector<1 x ![[BASIC]]>
+// CHECK-DAG: ![[VECTOR_BASIC:.*]] = !debuginfo.vector<1 x ![[BASIC]] {name = "!pop.scalar<bool>"}>
 // CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[VECTOR_BASIC]] {sizeInBits = 64, alignInBits = 64}>
-// CHECK-DAG: ![[VECTOR_UNSPECIFIED:.*]] = !debuginfo.vector<1 x ![[UNSPECIFIED]]>
+// CHECK-DAG: ![[VECTOR_UNSPECIFIED:.*]] = !debuginfo.vector<1 x ![[UNSPECIFIED]] {name = "!pop.scalar<invalid>"}>
 // CHECK-DAG: ![[PTR1:.*]] = !debuginfo.ptr<![[VECTOR_UNSPECIFIED]] {sizeInBits = 64, alignInBits = 64}>
 // CHECK-DAG: ![[SUBROUTINE:.*]] = !debuginfo.subroutine<() -> (![[BASIC1]], ![[BASIC1]]): DW_CC_normal>
-// CHECK-DAG: ![[VECTOR:.*]] = !debuginfo.vector<8 x ![[BASIC]]>
-// CHECK-DAG: ![[VECTOR1:.*]] = !debuginfo.vector<8 x !{{.*}}>
-// CHECK-DAG: ![[VECTOR2:.*]] = !debuginfo.vector<8 x !{{.*}}>
+// CHECK-DAG: ![[VECTOR:.*]] = !debuginfo.vector<8 x ![[BASIC]] {name = "!pop.simd<8, bool>"}>
+// CHECK-DAG: ![[VECTOR1:.*]] = !debuginfo.vector<8 x !{{.*}} {name = "!pop.simd<8, ui32>"}>
+// CHECK-DAG: ![[VECTOR2:.*]] = !debuginfo.vector<8 x !{{.*}} {name = "!pop.simd<8, si32>"}>
 // CHECK-DAG: ![[ARRAY1:.*]] = !debuginfo.array<4 x ![[VECTOR]]>
 // CHECK-DAG: ![[ARRAY2:.*]] = !debuginfo.array<4 x ![[VECTOR2]]>
 // CHECK-DAG: ![[MEMBER24:.*]] = !debuginfo.member<m0: ![[PTR]]>

@@ -24,13 +24,16 @@
 // CHECK-DAG: #[[UNSPECIFIED:.*]] =  #llvm.di_basic_type<tag = DW_TAG_unspecified_type, name = "void">
 !unspecifiedType = !debuginfo.unspecified<"void">
 
-// CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[BASIC]], flags = Vector, sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
+// CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, baseType = #[[BASIC]], flags = Vector, sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !vectorType = !debuginfo.vector<10 x !f32Type>
 
-// CHECK: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[BASIC]], #[[ARRAY]], #[[PTR]], #[[STRUCT]], #[[UNRESOLVED]], #[[UNSPECIFIED]], #[[VECTOR]]>
+// CHECK-DAG: #[[NAMEDVECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "test.op", baseType = #[[BASIC]], flags = Vector, sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
+!namedVectorType = !debuginfo.vector<10 x !f32Type {name = "test.op"}>
+
+// CHECK: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[BASIC]], #[[ARRAY]], #[[PTR]], #[[STRUCT]], #[[UNRESOLVED]], #[[UNSPECIFIED]], #[[VECTOR]], #[[NAMEDVECTOR]]>
 !subroutineType = !debuginfo.subroutine<(
   !arrayType, !pointerType, !structType,
-  !unresolvedType, !unspecifiedType, !vectorType
+  !unresolvedType, !unspecifiedType, !vectorType, !namedVectorType
 ) -> (!f32Type): DW_CC_normal>
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">

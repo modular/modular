@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
+#include "mlir/Support/DebugStringHelper.h"
 
 using namespace M;
 using namespace KGEN;
@@ -186,7 +187,9 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {
   DIType baseType = buildDebugTypeFromDType(type.getContext(),
                                             type.getResolvedDType()->getValue(),
                                             tc.getIndexTypeBitwidth());
-  return DIVectorType::get(baseType, size);
+  return DIVectorType::get(
+      baseType, size,
+      StringAttr::get(type.getContext(), mlir::debugString(type)));
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(StructType type) {
