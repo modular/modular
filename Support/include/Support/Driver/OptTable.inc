@@ -48,7 +48,8 @@ static constexpr const llvm::StringLiteral PrefixTable_init[] =
 static constexpr const llvm::ArrayRef<llvm::StringLiteral>
     PrefixTable(PrefixTable_init, std::size(PrefixTable_init) - 1);
 
-using namespace llvm::opt;
+using llvm::opt::DefaultVis;
+using llvm::opt::HelpHidden;
 static constexpr llvm::opt::OptTable::Info InfoTable[] = {
 #define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,         \
               VISIBILITY, PARAM, HELPTEXT, METAVAR, VALUES)                    \
