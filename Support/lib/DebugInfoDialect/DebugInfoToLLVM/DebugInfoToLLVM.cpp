@@ -57,6 +57,7 @@ private:
   LLVM::DIScopeAttr convertAttrImpl(DIScopeAttr attr);
   LLVM::DISubprogramAttr convertAttrImpl(DISubprogramAttr attr);
 
+  LLVM::DIExpressionAttr convertAttrImpl(DIAggregatesIntoExprAttr attr);
   LLVM::DIExpressionAttr convertAttrImpl(DIRefOfExprAttr attr);
   LLVM::DIExpressionAttr convertAttrImpl(DIDerefExprAttr attr);
   LLVM::DIExpressionAttr convertAttrImpl(DIIRValueExprAttr attr);
@@ -88,9 +89,9 @@ Attribute MetadataConverter::convertAttrImpl(DIAttr attr) {
 
   Attribute result =
       TypeSwitch<DIAttr, Attribute>(attr)
-          .Case<DICompileUnitAttr, DIDerefExprAttr, DIFileAttr,
-                DIIRValueExprAttr, DILexicalBlockAttr, DILocalVariableAttr,
-                DIRefOfExprAttr, DISubprogramAttr>(
+          .Case<DIAggregatesIntoExprAttr, DICompileUnitAttr, DIDerefExprAttr,
+                DIFileAttr, DIIRValueExprAttr, DILexicalBlockAttr,
+                DILocalVariableAttr, DIRefOfExprAttr, DISubprogramAttr>(
               [&](auto attr) { return convertAttrImpl(attr); });
   return convertedAttrs[attr] = result;
 }
@@ -136,6 +137,38 @@ MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
 
 //===----------------------------------------------------------------------===//
 // DIExpression Attributes
+
+LLVM::DIExpressionAttr
+MetadataConverter::convertAttrImpl(DIAggregatesIntoExprAttr attr) {
+  auto prefix = llvm::dyn_cast_or_null<LLVM::DIExpressionAttr>(
+      convertAttr(cast<DIAttr>(attr.getFieldExpr())));
+  if (!prefix)
+    return {};
+
+  auto llvmStructType =
+      cast<LLVM::DICompositeTypeAttr>(convertType(attr.getDIType()));
+  uint64_t prefixSize = 0;
+  for (LLVM::DINodeAttr member :
+       llvmStructType.getElements().take_front(attr.getFieldIndex())) {
+    auto memberType = cast<LLVM::DIDerivedTypeAttr>(member);
+    uint64_t sizeInBits = memberType.getSizeInBits();
+    uint32_t alignInBits = memberType.getAlignInBits();
+    prefixSize =
+        llvm::alignTo(prefixSize, std::max(1u, alignInBits)) + sizeInBits;
+  }
+
+  auto targetMember = cast<LLVM::DIDerivedTypeAttr>(
+      llvmStructType.getElements()[attr.getFieldIndex()]);
+  uint64_t fieldSize = targetMember.getSizeInBits();
+  if (uint32_t fieldAlignment = targetMember.getAlignInBits())
+    prefixSize = llvm::alignTo(prefixSize, fieldAlignment);
+
+  SmallVector<LLVM::DIExpressionElemAttr> expr(prefix.getOperations());
+  expr.push_back(LLVM::DIExpressionElemAttr::get(
+      attr.getContext(), llvm::dwarf::DW_OP_LLVM_fragment,
+      {prefixSize, fieldSize}));
+  return LLVM::DIExpressionAttr::get(attr.getContext(), expr);
+}
 
 LLVM::DIExpressionAttr
 MetadataConverter::convertAttrImpl(DIRefOfExprAttr attr) {

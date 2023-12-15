@@ -47,9 +47,25 @@
   alignInBits = 64
 > : !debuginfo.ptr<i32 {sizeInBits = 64, alignInBits = 64}>
 
+// CHECK-DAG: #[[STRUCT_TYPE:.*]] = #llvm.di_composite_type<{{.*}}name = "MyStruct",{{.*}}sizeInBits = 64, alignInBits = 32
+!struct = !debuginfo.struct<MyStruct(
+            !debuginfo.member<first: !debuginfo.unresolved<i8>>,
+            !debuginfo.member<second: !debuginfo.unresolved<i32>>
+          )>
+// CHECK-DAG: #[[LOCALVAR_STRUCT:.*]] = #llvm.di_local_variable<{{.*}}name = "foostruct"{{.*}}type = #[[STRUCT_TYPE]]
+#local_variable_struct = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foostruct",
+  file = #file,
+  line = 10,
+  arg = 0,
+  alignInBits = 64
+> : !struct
+
 #trivial_expr = #debuginfo.expr.irvalue : !debuginfo.unresolved<i32>
 #refof_expr = #debuginfo.expr.refof<#trivial_expr> : !debuginfo.ptr<i32 {sizeInBits = 64, alignInBits = 64}>
 #deref_expr = #debuginfo.expr.deref<#debuginfo.expr.irvalue : !debuginfo.ptr<i32 {sizeInBits = 64, alignInBits = 64}>> : !debuginfo.unresolved<i32>
+#agg_expr = #debuginfo.expr.agg<#deref_expr, 1> : !struct
 
 func.func @foo(%arg0: i32, %arg1: i32, %arg2: !llvm.ptr) {
   // CHECK: llvm.intr.dbg.value #[[LOCALVAR]] =
@@ -63,5 +79,7 @@ func.func @foo(%arg0: i32, %arg1: i32, %arg2: !llvm.ptr) {
   // COM: This expr will be kept as a value since #local_variable is referenced multiple times.
   // CHECK: llvm.intr.dbg.value #[[LOCALVAR]] #llvm.di_expression<[DW_OP_deref]>
   debuginfo.value #local_variable #deref_expr = %arg2 : !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #[[LOCALVAR_STRUCT]] #llvm.di_expression<[DW_OP_deref, DW_OP_LLVM_fragment(32, 32)]>
+  debuginfo.value #local_variable_struct #agg_expr = %arg2 : !llvm.ptr
   return
 }
