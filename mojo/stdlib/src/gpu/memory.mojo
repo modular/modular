@@ -140,6 +140,30 @@ fn async_copy[
 
 
 @always_inline
+fn async_copy_commit_group():
+    """Commits all prior initiated but uncommitted cp.async instructions into
+    a cp.async-group.
+    """
+    llvm_intrinsic["llvm.nvvm.cp.async.commit.group", NoneType]()
+
+
+@always_inline
+fn async_copy_wait_group(n: Int32):
+    """Wait for the completion of `n` or asynchronous copy operations.
+
+    Args:
+        n: The number of pending cp.async-groups.
+    """
+    llvm_intrinsic["llvm.nvvm.cp.async.wait.group", NoneType](n)
+
+
+@always_inline
+fn async_copy_wait_all():
+    """Wait for the completion of all commited cp.async-groups."""
+    llvm_intrinsic["llvm.nvvm.cp.async.wait.all", NoneType]()
+
+
+@always_inline
 fn _copy_device_to_device[
     type: AnyRegType
 ](device_dest: Pointer[type], device_src: Pointer[type], count: Int,) raises:
