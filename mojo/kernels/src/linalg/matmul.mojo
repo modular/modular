@@ -65,6 +65,7 @@ from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 from utils._optional import Optional
 from algorithm.functional import tile_and_unswitch
+from Gemv import gemv
 
 
 @closure
@@ -1980,56 +1981,66 @@ fn _pack_b_ndbuffer_impl[
     When transpose_b is True, this also un-transposes b_input as part of the layout
     transformation."""
 
-    let k = b_input.dim(1) if transposed else b_input.dim(0)
-
-    # The config (in particular inner size and tile_k) needs to EXACTLY match the
-    # values used in the matmul algorithm consuming this packed b matrix
-
-    if is_critical_stride(k):
-        alias config = search_mm_config[a_type, b_type, c_type, True, True]()
-        let tile_n_k = _get_tile_n_k[
-            config,
-            transposed,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-        ](b_input)
-        pack_b[
-            transposed,
-            config.simd_size,
-            config.pack_inner_size,
-            a_type,
-            b_type,
-            c_type,
-            src_shape=b_shape,
-            dst_shape = DimList.create_unknown[2](),
-        ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
+    # Matrix by vector pattern -> use gemv
+    if b_input.dim(1) == 1:
+        # For gemv no packing is necessary
+        memcpy(output_buffer.data, b_input.data, b_input.dim(0))
+        out_chain.mark_ready()
     else:
-        alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
-        let tile_n_k = _get_tile_n_k[
-            config2,
-            transposed,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-        ](b_input)
-        pack_b[
-            transposed,
-            config2.simd_size,
-            config2.pack_inner_size,
-            a_type,
-            b_type,
-            c_type,
-            src_shape=b_shape,
-            dst_shape = DimList.create_unknown[2](),
-        ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
-    out_chain.mark_ready()
+        let k = b_input.dim(1) if transposed else b_input.dim(0)
+
+        # The config (in particular inner size and tile_k) needs to EXACTLY match the
+        # values used in the matmul algorithm consuming this packed b matrix
+
+        if is_critical_stride(k):
+            alias config = search_mm_config[
+                a_type, b_type, c_type, True, True
+            ]()
+            let tile_n_k = _get_tile_n_k[
+                config,
+                transposed,
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+            ](b_input)
+            pack_b[
+                transposed,
+                config.simd_size,
+                config.pack_inner_size,
+                a_type,
+                b_type,
+                c_type,
+                src_shape=b_shape,
+                dst_shape = DimList.create_unknown[2](),
+            ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
+        else:
+            alias config2 = search_mm_config[
+                a_type, b_type, c_type, True, False
+            ]()
+            let tile_n_k = _get_tile_n_k[
+                config2,
+                transposed,
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+            ](b_input)
+            pack_b[
+                transposed,
+                config2.simd_size,
+                config2.pack_inner_size,
+                a_type,
+                b_type,
+                c_type,
+                src_shape=b_shape,
+                dst_shape = DimList.create_unknown[2](),
+            ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
+        out_chain.mark_ready()
 
 
 @always_inline
@@ -3417,118 +3428,140 @@ fn matmul[
     let n = shape.N
     let k = shape.K
 
-    let complexity = m * n * k
-    let num_tasks = min(
-        div_ceil(complexity, get_min_task_size()),
-        num_threads if num_threads
-        > 0 else out_chain.get_runtime().parallelism_level(),
-    )
+    # Matrix by vector pattern -> use gemv
+    if n == 1:
+        let out = Buffer[Dim(), c_type](c.data, c.dim[0]())
+        let lhs = rebind[NDBuffer[2, a_shape, a_type]](a)
+        let rhs = Buffer[Dim(), b_type](b.data, b.dim[0]())
+        gemv[
+            parallelize=True,
+            c_size = Dim(),
+            c_type=c_type,
+            a_shape=a_shape,
+            a_type=a_type,
+            b_size = Dim(),
+            b_type=b_type,
+            elementwise_epilogue_enabled=elementwise_epilogue_enabled,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](out, lhs, rhs, out_chain)
+    else:
+        let complexity = m * n * k
+        let num_tasks = min(
+            div_ceil(complexity, get_min_task_size()),
+            num_threads if num_threads
+            > 0 else out_chain.get_runtime().parallelism_level(),
+        )
 
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-    alias simd_size = simdwidthof[c_type]()
-    alias alignment = alignof[SIMD[c_type, simd_size]]()
-    let kh = align_up(k, 8)
-    let mh = align_up(m, 2)
-    var a_packed_ptr = DTypePointer[a_type]()
-    if use_i8mm:
-        a_packed_ptr = DTypePointer[a_type].aligned_alloc(alignment, mh * kh)
-    let a_packed_shape = Index(mh, kh)
-    let a_packed = NDBuffer[2, a_shape, a_type](
-        a_packed_ptr.address, a_packed_shape
-    )
-
-    @always_inline
-    @parameter
-    fn packA_i8mm(t0: Int, t1: Int):
-        let kl = align_down(k, 8)
+        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+        alias simd_size = simdwidthof[c_type]()
+        alias alignment = alignof[SIMD[c_type, simd_size]]()
+        let kh = align_up(k, 8)
+        let mh = align_up(m, 2)
+        var a_packed_ptr = DTypePointer[a_type]()
+        if use_i8mm:
+            a_packed_ptr = DTypePointer[a_type].aligned_alloc(
+                alignment, mh * kh
+            )
+        let a_packed_shape = Index(mh, kh)
+        let a_packed = NDBuffer[2, a_shape, a_type](
+            a_packed_ptr.address, a_packed_shape
+        )
 
         @always_inline
         @parameter
-        fn packA_helper[nrow: Int](j: Int):
-            for l in range(0, k, 8):
+        fn packA_i8mm(t0: Int, t1: Int):
+            let kl = align_down(k, 8)
+
+            @always_inline
+            @parameter
+            fn packA_helper[nrow: Int](j: Int):
+                for l in range(0, k, 8):
+
+                    @unroll
+                    for idx in range(nrow):
+                        let t0 = a.data.simd_load[8]((j + idx) * k + l)
+                        a_packed_ptr.simd_store[8](kh * j + 2 * l + 8 * idx, t0)
 
                 @unroll
                 for idx in range(nrow):
-                    let t0 = a.data.simd_load[8]((j + idx) * k + l)
-                    a_packed_ptr.simd_store[8](kh * j + 2 * l + 8 * idx, t0)
+                    let t0 = partial_simd_load[a_type, 8](
+                        a.data.offset((j + idx) * k + kl), 0, k - kl, 0
+                    )
+                    partial_simd_store(
+                        a_packed_ptr.offset(kh * j + 2 * kl + 8 * idx),
+                        0,
+                        k - kl,
+                        t0,
+                    )
 
-            @unroll
-            for idx in range(nrow):
-                let t0 = partial_simd_load[a_type, 8](
-                    a.data.offset((j + idx) * k + kl), 0, k - kl, 0
-                )
-                partial_simd_store(
-                    a_packed_ptr.offset(kh * j + 2 * kl + 8 * idx),
-                    0,
-                    k - kl,
-                    t0,
-                )
+            let t1l = align_down(t1, 2)
+            for j in range(t0, t1l, 2):
+                packA_helper[2](j)
+            for j in range(t1l, t1):
+                packA_helper[1](j)
 
-        let t1l = align_down(t1, 2)
-        for j in range(t0, t1l, 2):
-            packA_helper[2](j)
-        for j in range(t1l, t1):
-            packA_helper[1](j)
-
-    @always_inline
-    @parameter
-    fn pack_task_func(task_id: Int):
-        let sub_matmul_config = get_partitioned_matmul[
-            a_type, b_type, c_type, PartitionHeuristic.MOJO
-        ](m, 1, k, task_id, num_tasks)
-        let t0 = sub_matmul_config.offset[0]
-        let t1 = t0 + sub_matmul_config.shape[0]
-        packA_i8mm(t0, t1)
-
-    @always_inline
-    @parameter
-    fn task_func(task_id: Int):
-        let sub_matmul_config = get_partitioned_matmul[
-            a_type, b_type, c_type, PartitionHeuristic.MOJO
-        ](m, n, k, task_id, num_tasks)
-
-        if sub_matmul_config.shape[0] <= 0 or sub_matmul_config.shape[1] <= 0:
-            return
-
-        if use_i8mm and m >= n:
+        @always_inline
+        @parameter
+        fn pack_task_func(task_id: Int):
+            let sub_matmul_config = get_partitioned_matmul[
+                a_type, b_type, c_type, PartitionHeuristic.MOJO
+            ](m, 1, k, task_id, num_tasks)
             let t0 = sub_matmul_config.offset[0]
             let t1 = t0 + sub_matmul_config.shape[0]
             packA_i8mm(t0, t1)
-        _submatmul_sequential_sync[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_a,
-            transpose_b,
-            b_packed,
-            elementwise_epilogue_enabled,
-            elementwise_lambda_fn,
-            saturated_vnni,
-        ](
-            c,
-            a_packed if use_i8mm else a,
-            b,
-            sub_matmul_config.shape,
-            sub_matmul_config.offset,
-        )
 
-    # i8mm partition needs to be optimized as a function of m, n and k
-    # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
-    # See issue 27734
-    if use_i8mm and m < n:
-        let runtime = out_chain.get_runtime()
-        let pack_chain = OwningOutputChainPtr(runtime)
-        sync_parallelize[pack_task_func](pack_chain.borrow(), num_tasks)
-        # Ensure that pack_chain is not destructed until sync_parallelize is finished.
-        _ = pack_chain ^
+        @always_inline
+        @parameter
+        fn task_func(task_id: Int):
+            let sub_matmul_config = get_partitioned_matmul[
+                a_type, b_type, c_type, PartitionHeuristic.MOJO
+            ](m, n, k, task_id, num_tasks)
 
-    # TODO (#12624): Closure captures some state on the stack so this needs
-    # to be synchronous in order to keep that state alive
-    sync_parallelize[task_func](out_chain, num_tasks)
-    a_packed_ptr.free()
+            if (
+                sub_matmul_config.shape[0] <= 0
+                or sub_matmul_config.shape[1] <= 0
+            ):
+                return
+
+            if use_i8mm and m >= n:
+                let t0 = sub_matmul_config.offset[0]
+                let t1 = t0 + sub_matmul_config.shape[0]
+                packA_i8mm(t0, t1)
+            _submatmul_sequential_sync[
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+                transpose_a,
+                transpose_b,
+                b_packed,
+                elementwise_epilogue_enabled,
+                elementwise_lambda_fn,
+                saturated_vnni,
+            ](
+                c,
+                a_packed if use_i8mm else a,
+                b,
+                sub_matmul_config.shape,
+                sub_matmul_config.offset,
+            )
+
+        # i8mm partition needs to be optimized as a function of m, n and k
+        # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
+        # See issue 27734
+        if use_i8mm and m < n:
+            let runtime = out_chain.get_runtime()
+            let pack_chain = OwningOutputChainPtr(runtime)
+            sync_parallelize[pack_task_func](pack_chain.borrow(), num_tasks)
+            # Ensure that pack_chain is not destructed until sync_parallelize is finished.
+            _ = pack_chain ^
+
+        # TODO (#12624): Closure captures some state on the stack so this needs
+        # to be synchronous in order to keep that state alive
+        sync_parallelize[task_func](out_chain, num_tasks)
+        a_packed_ptr.free()
 
 
 fn _submatmul_sequential_sync[
