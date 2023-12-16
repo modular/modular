@@ -909,8 +909,8 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     alias T = DefaultParams[1]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@DefaultParams<
-    # CHECK-SAME:   :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-SAME:   :!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>{{.*}}{isSynthetic}
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     _ = DefaultParams[1]()
@@ -918,8 +918,8 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     alias U = DefaultParams[2, 3]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@DefaultParams<
-    # CHECK-SAME:   :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-SAME:   :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>{{.*}}{isSynthetic}
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 3}>, :!StringLiteral #lit.struct<{value: string = "woof"}>
     _ = DefaultParams[2, 3]()
@@ -927,8 +927,8 @@ fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
     # CHECK-SAME: :!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     alias S = DefaultParams[4, 5, "meow"]
-    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@DefaultParams<
-    # CHECK-SAME:   :!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
+    # CHECK-NEXT: %[[INIT:.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@DefaultParams<
+    # CHECK-SAME:   :!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>{{.*}}{isSynthetic}
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}::DefaultParams[a, b, msg]=&)"<:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 5}>, :!StringLiteral #lit.struct<{value: string = "meow"}>
     _ = DefaultParams[4, 5, "meow"]()
@@ -945,8 +945,8 @@ fn test_default_param_struct_all_default():
     # CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<(!kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
     alias T = AllDefaultParams[]
 
-    # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@AllDefaultParams<
-    # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot(:!lit.signature<(!kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+    # CHECK: %[[INIT:.*]] = lit.varlet.decl {{.*}} : !lit.ref<mut @{{.*}}::@AllDefaultParams<
+    # CHECK-SAME:   :!Int #lit.struct<{value = 0}>, :!MemoryOnlyType apply_result_slot(:!lit.signature<(!kgen.pointer<!MemoryOnlyType> init_self, |) -> !kgen.none> @{{.*}}::@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>{{.*}}{isSynthetic}
     # CHECK-NEXT: lit.ref.to_pointer %[[INIT]]
     # CHECK: %1 = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}::AllDefaultParams[x, v]=&)"<:!Int #lit.struct<{value = 0}>, :!MemoryOnlyType
     _ = AllDefaultParams[]()
@@ -1029,17 +1029,17 @@ struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3]: pass
 
 # CHECK-LABEL: lit.func @"test_struct_kw_params()"
 fn test_struct_kw_params():
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 3}>
+    # CHECK: lit.varlet.decl {{.*}} var : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 3}>{{.*}} {isSynthetic}
     _ = KwParamStruct[5, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} var : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>{{.*}} {isSynthetic}
     _ = KwParamStruct[5, b=7, c=9]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} var : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 9}>{{.*}} {isSynthetic}
     _ = KwParamStruct[5, c=9]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} var : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>{{.*}} {isSynthetic}
     _ = KwParamStruct[5, c=9, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} var : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>{{.*}} {isSynthetic}
     _ = KwParamStruct[a=5, c=9, b=7]()
-    # CHECK: lit.varlet.decl {{.*}} synth : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>
+    # CHECK: lit.varlet.decl {{.*}} var : !lit.ref<mut @{{.*}}::@KwParamStruct<:!Int #lit.struct<{value = 5}>, :!Int #lit.struct<{value = 7}>, :!Int #lit.struct<{value = 9}>{{.*}} {isSynthetic}
     _ = KwParamStruct[c=9, b=7, a=5]()
 
 ##===----------------------------------------------------------------------===##

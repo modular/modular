@@ -184,7 +184,7 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
     } else if (auto varDecl = dyn_cast<VarLetDeclOp>(op)) {
       StringAttr varName = varDecl.getNameAttr();
       auto varType = varDecl.getType().getAsPointerType();
-      bool isSynth = varDecl.getKind() == VarLetDeclKind::Synthesized;
+      bool isSynth = varDecl.isSynthetic();
 
       // Declare the lifetime used in the result type.
       b.create<ParamDeclareOp>(varDecl.getLoc(), varDecl.getParamDecl(),

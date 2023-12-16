@@ -83,7 +83,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%2, %a)
   let v2 : MemoryOnlyPair = a
 
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} synth
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} {isSynthetic}
   # CHECK-NEXT: [[TMPPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[TMPPTR]], %a)
   _ = a
@@ -1103,7 +1103,7 @@ fn takeInOutInt(inout a: Int): pass
 
  # CHECK-LABEL: lit.func @"testWritebacks
 fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
-  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" synth
+  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" {{.*}} {isSynthetic}
   # CHECK-NEXT: %[[ANONPTR:.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: %[[V0:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])

@@ -352,7 +352,7 @@ struct MyList:
 fn for_range_loop():
     let my_list = MyList()
 
-    # CHECK: %$RANGE = lit.varlet.decl "$RANGE" synth
+    # CHECK: %$RANGE = lit.varlet.decl "$RANGE" {{.*}}{isSynthetic}
     # CHECK: [[RANGEPTR:%.*]] = lit.ref.to_pointer %$RANGE
     # CHECK: [[LISTPTR:%.*]] = lit.ref.to_pointer %my_list
     # CHECK: [[ITER:.*]] = lit.call @{{.*}}__iter__{{.*}}([[RANGEPTR]], [[LISTPTR]])

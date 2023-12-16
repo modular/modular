@@ -541,12 +541,10 @@ public:
   // Var/let emission helpers.
 
   /// Helper to emit a VarLetDeclOp with a uniquely generated lifetime name.
-  VarLetDeclOp
-  emitVarLetDecl(const Twine &name, Type type, Location loc,
-                 VarLetDeclKind kind = VarLetDeclKind::Synthesized);
-  VarLetDeclOp
-  emitVarLetDecl(StringAttr name, Type type, Location loc,
-                 VarLetDeclKind kind = VarLetDeclKind::Synthesized);
+  VarLetDeclOp emitVarLetDecl(const Twine &name, Type type, Location loc,
+                              VarLetDeclKind kind, bool isSynthetic);
+  VarLetDeclOp emitVarLetDecl(StringAttr name, Type type, Location loc,
+                              VarLetDeclKind kind, bool isSynthetic);
 };
 
 } // namespace M::KGEN::LIT

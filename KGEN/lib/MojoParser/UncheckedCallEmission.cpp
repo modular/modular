@@ -307,7 +307,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       // TODO(references): drop this cast eventually.
       expectedType = cast<PointerType>(expectedType).getElementType();
       auto resultTmp =
-          emitter.emitVarLetDecl("__call_result_tmp__", expectedType, loc);
+          emitter.emitVarLetDecl("__call_result_tmp__", expectedType, loc,
+                                 VarLetDeclKind::Var, /*isSynthetic=*/true);
       argumentValues.push_back({XLValue(resultTmp), callExpr});
       continue;
     }
@@ -504,7 +505,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
       VarLetDeclOp varOp =
-          emitter.emitVarLetDecl("__generic_arg__", srValue.getType(), argLoc);
+          emitter.emitVarLetDecl("__generic_arg__", srValue.getType(), argLoc,
+                                 VarLetDeclKind::Var, /*isSynthetic=*/true);
       auto ptr = emitter.builder->create<RefToPointerOp>(argLoc, varOp);
       emitter.builder->create<POP::StoreOp>(argLoc, srValue, ptr);
       return MRValue(ptr);
