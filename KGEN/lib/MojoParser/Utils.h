@@ -27,6 +27,7 @@ namespace M::KGEN::LIT {
 class ASTType;
 class LITSignatureType;
 class SharedState;
+enum class SpecialFunctionKind : uint8_t;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other. This is typically used to generate an "s" suffix, but can also be
@@ -64,6 +65,15 @@ void emitUnexpectedKeywords(InflightDiag &diag,
 void emitPosOnlyPassedByKw(InflightDiag &diag,
                            SmallVectorImpl<StringRef> &&names,
                            StringRef argOrParam);
+
+/// Certain special methods have type-specific restrictions or need special
+/// handling. This function returns true if a given method can be synthesized
+/// for a type with the given passability; if so an appropriate entry is added
+/// to the given array of special function kinds.
+bool canSynthesizeIfMissing(
+    StringRef name, bool rpTrivial, bool regPassable,
+    std::optional<std::reference_wrapper<SmallVectorImpl<SpecialFunctionKind>>>
+        specialFns = std::nullopt);
 
 } // namespace M::KGEN::LIT
 

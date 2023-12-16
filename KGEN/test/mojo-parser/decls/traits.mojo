@@ -627,3 +627,27 @@ fn converted_metatype_struct_element(x: Collection[Item]):
 struct TraitMember[T: Movable]:
     # CHECK: lit.func @"__del__
     var value: T
+
+
+# COM: Misleading error about thunk functions when: (issue mojo-#1402)
+#      the test has
+#      - a struct conforms to a trait, e.g. Movable
+#      - the struct has a field of another type with parameter as itself, e.g MyPointer[Self]
+#      - the field struct type's parameter should conform to Movable
+
+# CHECK-LABEL: lit.struct.decl @MyPointer
+@value
+struct MyPointer[T: Destructable]:
+    pass
+    # CHECK: lit.func @"__init__
+    # CHECK: lit.func @"`thunk___del__
+
+# CHECK-LABEL: lit.struct.decl @HasMyPointerSelf
+struct HasMyPointerSelf(Destructable):
+    # CHECK: lit.struct.field x : !kgen.declref<{{.*}}@MyPointer<:trait<{{.*}}@Destructable>
+    var x: MyPointer[Self]
+    # CHECK: lit.func @"`thunk___del__
+
+    fn __moveinit__(inout self, owned existing: Self, /):
+        pass
+
