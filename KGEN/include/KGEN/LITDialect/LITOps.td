@@ -943,6 +943,7 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
 
   let arguments = (ins StrAttr:$name, LIT_VarLetDeclKindAttr:$kind,
                        KGEN_ParamDeclAttr:$paramDecl,
+                       UnitAttr:$isSynthetic,
                        OptionalAttr<LIT_DocStringAttr>:$docString);
   let results = (outs LIT_RefType:$result);
 
@@ -952,7 +953,8 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
 
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
-                   "StringRef":$lifetimeName, "VarLetDeclKind":$kind)>
+                   "StringRef":$lifetimeName,
+                   "VarLetDeclKind":$kind,"bool":$isSynthetic)>
   ];
 }
 

@@ -356,7 +356,9 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
   return XLValue(emitter.emitVarLetDecl("anonymous*", slotType,
-                                        emitter.translateLocation(loc)));
+                                        emitter.translateLocation(loc),
+                                        VarLetDeclKind::Var,
+                                        /*isSynthetic=*/true));
 }
 
 /// Return an MLValue for this destination of the specified type that we can
@@ -728,7 +730,8 @@ XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
   // We model this as an immutable let value with a separately stored
   // initializer.
   VarLetDeclOp var = emitVarLetDecl("anonymous*", pvalue.getType(),
-                                    translateLocation(value.expr->getLoc()));
+                                    translateLocation(value.expr->getLoc()),
+                                    VarLetDeclKind::Var, /*isSynthetic=*/true);
   if (!emitPValueToXLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
   return XRValue(var);
@@ -1914,7 +1917,9 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // store(tmp -> base)
   auto loc = expr->getLocation(emitter);
   ASTType rvalueType = baseVal.ir->elementType;
-  Value tmpDecl = emitter.emitVarLetDecl("__store_tmp__", rvalueType, loc);
+  Value tmpDecl =
+      emitter.emitVarLetDecl("__store_tmp__", rvalueType, loc,
+                             VarLetDeclKind::Var, /*isSynthetic=*/true);
 
   // Load the entire base LValue into tmpDecl.
   ValueDest tmpValueDest(XLValue(tmpDecl), EC_AttributeRefBase);
@@ -2078,15 +2083,17 @@ void GlobalDLValue::emitStore(ASTExprAnd<CValue> value,
 // Var/let emission helpers.
 
 VarLetDeclOp ExprEmitter::emitVarLetDecl(const Twine &name, Type type,
-                                         Location loc, VarLetDeclKind kind) {
+                                         Location loc, VarLetDeclKind kind,
+                                         bool isSynthetic) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name);
   return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       kind);
+                                       kind, isSynthetic);
 }
 
 VarLetDeclOp ExprEmitter::emitVarLetDecl(StringAttr name, Type type,
-                                         Location loc, VarLetDeclKind kind) {
+                                         Location loc, VarLetDeclKind kind,
+                                         bool isSynthetic) {
   StringAttr lifetimeAttr = declScope.getAnonymousLifetimeFor(name.strref());
   return builder->create<VarLetDeclOp>(loc, type, name.str(), lifetimeAttr,
-                                       kind);
+                                       kind, isSynthetic);
 }

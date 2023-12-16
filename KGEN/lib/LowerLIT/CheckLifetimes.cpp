@@ -2456,13 +2456,15 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
           !info.value)
         continue;
 
-      auto checkVarLet = [&](auto varLet) {
+      auto checkVarLet = [&](VarLetDeclOp varLet) {
         if (varLet.getKind() != VarLetDeclKind::Var)
           return;
-        mlir::emitWarning(varLet.getLoc())
-            << "'" << varLet.getName()
-            << "' was declared as a 'var' but never mutated, consider "
-               "switching to a 'let'";
+        if (!varLet.isSynthetic()) {
+          mlir::emitWarning(varLet.getLoc())
+              << "'" << varLet.getName()
+              << "' was declared as a 'var' but never mutated, consider "
+                 "switching to a 'let'";
+        }
       };
 
       if (auto varLet = info.value.getDefiningOp<VarLetDeclOp>())

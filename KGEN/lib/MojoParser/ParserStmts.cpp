@@ -1034,7 +1034,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   VarLetDeclOp varDeclOp = getEmitter().emitVarLetDecl(
-      target, getUnresolvedType(), forLoc, VarLetDeclKind::Implicit);
+      target, getUnresolvedType(), forLoc, VarLetDeclKind::Implicit,
+      /*isSynthetic=*/false);
 
   // If there is a failure before we parse the for loop body, we still
   // want to call the parser on it so that it builds an ASTDecl node
@@ -1060,7 +1061,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   // Emit a call to __iter__ into a var with an inferred type.
   VarLetDeclOp rangeRef =
-      getEmitter().emitVarLetDecl("$RANGE", getUnresolvedType(), forLoc);
+      getEmitter().emitVarLetDecl("$RANGE", getUnresolvedType(), forLoc,
+                                  VarLetDeclKind::Var, /*isSynthetic=*/true);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert,
@@ -1183,7 +1185,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
         // reassignment.
         VarLetDeclOp varDecl = getEmitter().emitVarLetDecl(
             errName, errVal.getType(), errVal.getLoc(),
-            VarLetDeclKind::Implicit);
+            VarLetDeclKind::Implicit, /*isSynthetic=*/false);
         decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
         builder.create<RefStoreOp>(errVal.getLoc(), errVal, varDecl);
       } else {
@@ -1311,7 +1313,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     } else {
       targetDecl = getEmitter().emitVarLetDecl(
           name, getUnresolvedType(), shared.translateLocation(targetLoc),
-          VarLetDeclKind::Implicit);
+          VarLetDeclKind::Implicit, /*isSynthetic=*/false);
       enterDest = ValueDest(targetDecl, EC_WithContextMgr);
       addDecl = true;
     }
@@ -1482,7 +1484,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     builder.setInsertionPoint(tryOp);
 
     excVar =
-        getEmitter().emitVarLetDecl("__with_exc__", builder.getI1Type(), loc);
+        getEmitter().emitVarLetDecl("__with_exc__", builder.getI1Type(), loc,
+                                    VarLetDeclKind::Var, /*isSynthetic=*/true);
     builder.create<RefStoreOp>(
         loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
   }
@@ -1975,7 +1978,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
     VarLetDeclKind declKind = isVar ? VarLetDeclKind::Var : VarLetDeclKind::Let;
-    declOp = getEmitter().emitVarLetDecl(name, unresolvedType, loc, declKind);
+    declOp = getEmitter().emitVarLetDecl(name, unresolvedType, loc, declKind,
+                                         /*isSynthetic=*/false);
     delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
