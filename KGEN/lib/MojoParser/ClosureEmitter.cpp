@@ -73,6 +73,7 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
                                         PassingKind::PosOnly);
 
   StructDeclOp declOp = b.create<StructDeclOp>(location, nameAttr);
+  declOp.setIsSynthetic(true);
   addFieldsToStruct(declOp, fields, location);
 
   // Set attributes in bulk.
