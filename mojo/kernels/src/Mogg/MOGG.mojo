@@ -178,7 +178,7 @@ fn MOGGExport():
     alias _pack_conv_filter = pack_conv_filter
     alias _max_pool_shape = pool_shape
     alias _max_pool = max_pool
-    alias _matrix_solve = matrix_solve
+    alias _matrix_solve = mogg_matrix_solve
     alias _matrix_band_part = matrix_band_part
     alias _non_maximum_suppression = non_maximum_suppression
     alias _non_maximum_suppression_shape_func = non_maximum_suppression_shape_func
@@ -931,7 +931,10 @@ fn argmax_wrapped[
     output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
     out_chain: OutputChainPtr,
 ):
-    return _argmax(input, axis_buf, output, out_chain)
+    try:
+        _argmax(input, axis_buf, output, out_chain)
+    except e:
+        out_chain.mark_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -953,7 +956,10 @@ fn argmin_wrapped[
     output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
     out_chain: OutputChainPtr,
 ):
-    return _argmin(input, axis_buf, output, out_chain)
+    try:
+        _argmin(input, axis_buf, output, out_chain)
+    except e:
+        out_chain.mark_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1276,19 +1282,22 @@ fn mean[
     with Trace[TraceLevel.OP](
         "mojo.mean", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
     ) as t:
-        _mean[
-            type,
-            rank,
-            single_thread_blocking_override,
-            input_0_fn,
-            output_0_fn,
-            target,
-        ](
-            input_shape,
-            int(axis),
-            output_shape,
-            out_chain,
-        )
+        try:
+            _mean[
+                type,
+                rank,
+                single_thread_blocking_override,
+                input_0_fn,
+                output_0_fn,
+                target,
+            ](
+                input_shape,
+                int(axis),
+                output_shape,
+                out_chain,
+            )
+        except e:
+            out_chain.mark_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1419,15 +1428,18 @@ fn reduce_add[
 
     let axis = buffer_to_scalar(axis_buffer)
     with Trace[TraceLevel.OP]("mojo.reduce_add") as t:
-        _reduce_generator[
-            type,
-            rank,
-            single_thread_blocking_override,
-            input_0_fn_wrapper,
-            output_0_fn_wrapper,
-            reduce_impl,
-            target,
-        ](input_shape, 0, int(axis), out_chain)
+        try:
+            _reduce_generator[
+                type,
+                rank,
+                single_thread_blocking_override,
+                input_0_fn_wrapper,
+                output_0_fn_wrapper,
+                reduce_impl,
+                target,
+            ](input_shape, 0, int(axis), out_chain)
+        except e:
+            out_chain.mark_error(e)
 
 
 @mogg_register("mo.reduce.max")
@@ -1474,15 +1486,18 @@ fn reduce_max[
 
     let axis = buffer_to_scalar(axis_buffer)
     with Trace[TraceLevel.OP]("mojo.reduce_max") as t:
-        _reduce_generator[
-            type,
-            rank,
-            single_thread_blocking_override,
-            input_0_fn_wrapper,
-            output_0_fn_wrapper,
-            reduce_impl,
-            target,
-        ](input_shape, min_or_neginf[type](), int(axis), out_chain)
+        try:
+            _reduce_generator[
+                type,
+                rank,
+                single_thread_blocking_override,
+                input_0_fn_wrapper,
+                output_0_fn_wrapper,
+                reduce_impl,
+                target,
+            ](input_shape, min_or_neginf[type](), int(axis), out_chain)
+        except e:
+            out_chain.mark_error(e)
 
 
 @mogg_register("mo.reduce.min")
@@ -1530,15 +1545,18 @@ fn reduce_min[
     let axis = buffer_to_scalar(axis_buffer)
 
     with Trace[TraceLevel.OP]("mojo.reduce_min") as t:
-        _reduce_generator[
-            type,
-            rank,
-            single_thread_blocking_override,
-            input_0_fn_wrapper,
-            output_0_fn_wrapper,
-            reduce_impl,
-            target,
-        ](input_shape, max_or_inf[type](), int(axis), out_chain)
+        try:
+            _reduce_generator[
+                type,
+                rank,
+                single_thread_blocking_override,
+                input_0_fn_wrapper,
+                output_0_fn_wrapper,
+                reduce_impl,
+                target,
+            ](input_shape, max_or_inf[type](), int(axis), out_chain)
+        except e:
+            out_chain.mark_error(e)
 
 
 @mogg_register("mo.reduce.mul")
@@ -1586,15 +1604,18 @@ fn reduce_mul[
     let axis = buffer_to_scalar(axis_buffer)
 
     with Trace[TraceLevel.OP]("mojo.reduce_mul") as t:
-        _reduce_generator[
-            type,
-            rank,
-            single_thread_blocking_override,
-            input_0_fn_wrapper,
-            output_0_fn_wrapper,
-            reduce_impl,
-            target,
-        ](input_shape, 1, int(axis), out_chain)
+        try:
+            _reduce_generator[
+                type,
+                rank,
+                single_thread_blocking_override,
+                input_0_fn_wrapper,
+                output_0_fn_wrapper,
+                reduce_impl,
+                target,
+            ](input_shape, 1, int(axis), out_chain)
+        except e:
+            out_chain.mark_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2592,14 +2613,17 @@ fn softmax[
     if _guard_against_gpu_target[target](out_chain):
         return
 
-    _softmax[
-        type,
-        simdwidthof[type](),
-        rank,
-        DimList.create_unknown[rank](),
-        input_0_fn,
-        target,
-    ](shape, output, rank - 1, out_chain)
+    try:
+        _softmax[
+            type,
+            simdwidthof[type](),
+            rank,
+            DimList.create_unknown[rank](),
+            input_0_fn,
+            target,
+        ](shape, output, rank - 1, out_chain)
+    except e:
+        out_chain.mark_error(e)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
@@ -2617,13 +2641,16 @@ fn logsoftmax[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    _logsoftmax[
-        type,
-        simdwidthof[type](),
-        rank,
-        DimList.create_unknown[rank](),
-        input_0_fn,
-    ](shape, output, rank - 1, out_chain)
+    try:
+        _logsoftmax[
+            type,
+            simdwidthof[type](),
+            rank,
+            DimList.create_unknown[rank](),
+            input_0_fn,
+        ](shape, output, rank - 1, out_chain)
+    except e:
+        out_chain.mark_error(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -3357,21 +3384,24 @@ fn multi_head_flash_attention[
 
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
 
-    flash_attention[
-        rank,
-        input_0_static_shape,
-        input_1_static_shape,
-        input_2_static_shape,
-        input_3_static_shape,
-        DimList.create_unknown[rank](),
-        q_type,
-        k_type,
-        v_type,
-        mask_type,
-        output_type,
-        True,
-        target,
-    ](output, q, k, v, mask, scale[0], out_chain)
+    try:
+        flash_attention[
+            rank,
+            input_0_static_shape,
+            input_1_static_shape,
+            input_2_static_shape,
+            input_3_static_shape,
+            DimList.create_unknown[rank](),
+            q_type,
+            k_type,
+            v_type,
+            mask_type,
+            output_type,
+            True,
+            target,
+        ](output, q, k, v, mask, scale[0], out_chain)
+    except e:
+        out_chain.mark_error(e)
 
 
 @mogg_register("no_mask_fused_attention_cpu")
@@ -3425,22 +3455,25 @@ fn no_mask_fused_attention_cpu[
     let mask = NDBuffer[2, mask_shape, mask_type]()
     let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
     let causal_mask: Float32 = 0
-    cpu_fused_attention_impl[
-        rank,
-        input_0_static_shape,
-        input_1_static_shape,
-        input_2_static_shape,
-        mask_shape,
-        DimList.create_unknown[rank](),
-        q_type,
-        k_type,
-        v_type,
-        mask_type,
-        output_type,
-        False,  # transpose_k
-        False,  # add_attn_mask
-        False,  # add_causal_mask
-    ](output, q, k, v, mask, scale_f32, causal_mask, out_chain)
+    try:
+        cpu_fused_attention_impl[
+            rank,
+            input_0_static_shape,
+            input_1_static_shape,
+            input_2_static_shape,
+            mask_shape,
+            DimList.create_unknown[rank](),
+            q_type,
+            k_type,
+            v_type,
+            mask_type,
+            output_type,
+            False,  # transpose_k
+            False,  # add_attn_mask
+            False,  # add_causal_mask
+        ](output, q, k, v, mask, scale_f32, causal_mask, out_chain)
+    except e:
+        out_chain.mark_error(e)
 
 
 @mogg_register("with_mask_fused_attention_cpu")
@@ -3494,22 +3527,25 @@ fn with_mask_fused_attention_cpu[
     # TODO: Unimplemented and not used
     let scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
     let causal_mask: Float32 = 0
-    cpu_fused_attention_impl[
-        rank,
-        input_0_static_shape,
-        input_1_static_shape,
-        input_2_static_shape,
-        input_3_static_shape,
-        DimList.create_unknown[rank](),
-        q_type,
-        k_type,
-        v_type,
-        attn_mask_type,
-        output_type,
-        False,  # transpose_k
-        True,  # add_attn_mask
-        False,  # add_causal_mask
-    ](output, q, k, v, attn_mask, scale_f32, causal_mask, out_chain)
+    try:
+        cpu_fused_attention_impl[
+            rank,
+            input_0_static_shape,
+            input_1_static_shape,
+            input_2_static_shape,
+            input_3_static_shape,
+            DimList.create_unknown[rank](),
+            q_type,
+            k_type,
+            v_type,
+            attn_mask_type,
+            output_type,
+            False,  # transpose_k
+            True,  # add_attn_mask
+            False,  # add_causal_mask
+        ](output, q, k, v, attn_mask, scale_f32, causal_mask, out_chain)
+    except e:
+        out_chain.mark_error(e)
 
 
 # # ===----------------------------------------------------------------------===#
@@ -3712,3 +3748,24 @@ fn qmatmul_Af32_BTQ4symG32_Cf32_shape_func[
     b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
 ) -> StaticIntTuple[2]:
     return StaticIntTuple[2](a.dim[0](), b.dim[0]())
+
+
+@always_inline
+fn mogg_matrix_solve[
+    type: DType,
+    x_rank: Int,
+    a_rank: Int,
+    b_rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
+    b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
+    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    try:
+        matrix_solve[
+            type, x_rank, a_rank, b_rank, single_thread_blocking_override
+        ](a, b, x, out_chain)
+    except e:
+        out_chain.mark_error(e)
