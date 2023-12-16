@@ -49,7 +49,7 @@ from Activations import gelu, relu, sigmoid
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
 from algorithm import (
-    async_parallelize,
+    sync_parallelize,
     reduce_shape,
     unroll,
     vectorize,
@@ -1875,6 +1875,7 @@ fn mogg_gather_sum[
 
 
 @mogg_register("mo.gather")
+@mogg_will_become_async
 @always_inline
 @export
 fn gather[
@@ -3152,7 +3153,7 @@ fn mogg_layer_norm[
                 output_buf_view, gamma, beta, eps
             )
 
-        async_parallelize[task_func](out_chain, num_workers)
+        sync_parallelize[task_func](out_chain, num_workers)
 
 
 # ===----------------------------------------------------------------------===#
