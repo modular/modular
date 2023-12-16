@@ -7,7 +7,7 @@
 from math import max, factorial, div_ceil, min
 from time import now
 from utils.index import StaticIntTuple
-from algorithm import parallelize, async_parallelize
+from algorithm import parallelize, sync_parallelize
 from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
 from collections.vector import UnsafeFixedVector
 
@@ -80,7 +80,7 @@ fn main():
 
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        async_parallelize[_do_parallel](out_chain.borrow(), core_count)
+        sync_parallelize[_do_parallel](out_chain.borrow(), core_count)
         out_chain.wait()
 
     var max_flips = max_vals[0]
