@@ -274,6 +274,11 @@ struct Trace[level: TraceLevel]:
         ]()
 
     @always_inline
+    fn __exit__(self, e: Error) -> Bool:
+        self.__exit__()
+        return not e
+
+    @always_inline
     fn __str__(self) -> String:
         constrained[
             is_profiling_enabled[Self.trace_type, level](),
