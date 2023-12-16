@@ -44,8 +44,27 @@ class TorchLoadOptions:
 
     input_specs: List["TensorSpec"] = field(default_factory=list)
     """The tensor specifications (shape and data type) for each of the
-    model inputs. Required for lowering serialized TorchScript models which
-    have no type and shape annotations.
+    model inputs. This is required when loading serialized TorchScript models
+    because they do not include type and shape annotations.
+
+    For example:
+
+    .. code-block:: python
+
+        session = engine.InferenceSession()
+        torch_options = engine.TorchLoadOptions()
+        torch_options.input_specs = [
+            engine.TensorSpec(
+                shape=[1, 16], dtype=engine.DType.int32, name="attention_mask"
+            ),
+            engine.TensorSpec(
+                shape=[1, 3, 224, 224], dtype=engine.DType.float32, name="pixel_values"
+            ),
+            engine.TensorSpec(
+                shape=[1, 16], dtype=engine.DType.int32, name="input_ids"
+            ),
+        ]
+        model = session.load("clip-vit.torchscript", torch_options)
     """
 
     type: str = "torch"
@@ -56,7 +75,7 @@ class CommonLoadOptions:
     """Common options for how to load models."""
 
     custom_ops_path: str = field(default="")
-    """The path from which to load custom ops."""
+    """The path to your custom ops. (This feature is coming soon.)"""
 
 
 class Model:
@@ -77,7 +96,7 @@ class Model:
     def execute(
         self, *args, **kwargs
     ) -> Dict[str, Union[np.ndarray, Dict, List, Tuple]]:
-        """Executes the model with the provided input and returns outputs.
+        """Executes the model with the provided input and returns the outputs.
 
         For example, if the model has one input tensor named "input":
 
@@ -88,16 +107,19 @@ class Model:
 
         Parameters
         ----------
+        ``args``
+            Currently not supported. You must specify inputs using ``kwargs``.
         ``kwargs``
-            The input tensors, each specified with the approprite tensor name
-            as a keyword and passed as an :obj:`np.ndarray`. You can find the
-            model's tensor names with :obj:`~Model.input_metadata`.
+            The input tensors, each specified with the appropriate tensor name
+            as a keyword and its value as an :obj:`np.ndarray`. You can find the
+            tensor names to use as keywords from :obj:`~Model.input_metadata`.
 
         Returns
         -------
         Dict
-            A dictionary of output values, each as an :obj:`np.ndarray`, :obj:`Dict`, :obj:`List` or :obj:`Tuple`
-            identified by its output name.
+            A dictionary of output values, each as an :obj:`np.ndarray`,
+            :obj:`Dict`, :obj:`List`, or :obj:`Tuple` identified by its output
+            name.
 
         Raises
         ------
@@ -243,7 +265,7 @@ class TensorSpec:
     Defines the properties of a tensor, including its name, shape and data type.
 
     For usage examples, see :obj:`Model.input_metadata` and
-    :obj:`Model.output_metadata`.
+    :obj:`TorchLoadOptions`.
     """
 
     _impl: _TensorSpec
@@ -322,6 +344,10 @@ class InferenceSession:
     num_threads: Optional[int]
         Number of threads to use for the inference session. This parameter
         defaults to the number of physical cores on your machine.
+    device: str
+        The name of the secondary device on which to compile and execute the
+        model (such as a GPU, instead of the host CPU).
+        (This feature is coming soon.)
     """
 
     _impl: _InferenceSession
@@ -360,7 +386,7 @@ class InferenceSession:
         ----------
         model_path: Union[str, pathlib.Path]
             Path to a model. May be a TensorFlow model in the SavedModel
-            format or a traceable PyTorch model.
+            format, a serialized TorchScript model, or an ONNX model.
 
         *options: Union[TensorFlowLoadOptions, TorchLoadOptions, CommonLoadOptions]
             Load options for configuring how the model should be compiled.
