@@ -154,7 +154,7 @@ fn test_transpose_16x16():
 
 
 # CHECK-LABEL: test_transpose_2d_identity
-fn test_transpose_2d_identity():
+fn test_transpose_2d_identity() raises:
     print("== test_transpose_2d_identity")
 
     alias in_shape = DimList(3, 3)
@@ -216,7 +216,7 @@ fn test_transpose_2d_identity():
 
 
 # CHECK-LABEL: test_transpose_2d
-fn test_transpose_2d():
+fn test_transpose_2d() raises:
     print("== test_transpose_2d")
 
     alias in_shape = DimList(3, 3)
@@ -278,7 +278,7 @@ fn test_transpose_2d():
 
 
 # CHECK-LABEL: test_transpose_3d_identity
-fn test_transpose_3d_identity():
+fn test_transpose_3d_identity() raises:
     print("== test_transpose_3d_identity")
 
     alias in_shape = DimList(2, 2, 3)
@@ -353,7 +353,7 @@ fn test_transpose_3d_identity():
 
 
 # CHECK-LABEL: test_transpose_3d
-fn test_transpose_3d():
+fn test_transpose_3d() raises:
     print("== test_transpose_3d")
 
     alias in_shape = DimList(2, 2, 3)
@@ -430,7 +430,7 @@ fn test_transpose_3d():
 
 
 # CHECK-LABEL: test_transpose_si64
-fn test_transpose_si64():
+fn test_transpose_si64() raises:
     print("== test_transpose_si64")
 
     alias in_shape = DimList(2, 2, 3)
@@ -631,7 +631,7 @@ fn test_simplify_perm():
     print(rank)
 
 
-fn main():
+fn main() raises:
     test_transpose_4x4()
     test_transpose_8x8()
     test_transpose_16x16()

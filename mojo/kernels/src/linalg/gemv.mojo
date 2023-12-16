@@ -102,14 +102,17 @@ fn gemv[
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    _reduce_generator[
-        type=c_type,
-        rank=2,
-        single_thread_blocking_override = not parallelize,
-        input_0_fn=input_fn,
-        output_0_fn=output_fn,
-        reduce_function=reduce_impl,
-    ](StaticIntTuple[2](M, K), 0, 1, out_chain)
+    try:
+        _reduce_generator[
+            type=c_type,
+            rank=2,
+            single_thread_blocking_override = not parallelize,
+            input_0_fn=input_fn,
+            output_0_fn=output_fn,
+            reduce_function=reduce_impl,
+        ](StaticIntTuple[2](M, K), 0, 1, out_chain)
+    except e:
+        trap(e)
 
 
 fn naive_gemv[

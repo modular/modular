@@ -3228,7 +3228,7 @@ fn _matmul_gpu_dispatch[
                     stream=stream,
                 )
     except e:
-        out_chain.mark_error(e)
+        trap(e)
 
 
 @always_inline

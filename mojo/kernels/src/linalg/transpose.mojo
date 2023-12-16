@@ -958,7 +958,7 @@ fn _copy_with_strides[
     input_offset: Int,
     output_offset: Int,
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Copy data from `input` to `output`, starting at corresponding offsets,
     based on given strides.
@@ -974,7 +974,7 @@ fn _copy_with_strides[
         out_chain: The output chain.
     """
     if axis + 1 > rank and out_chain:
-        return out_chain.mark_error("out of range")
+        raise Error("out of range")
 
     let axis_dim = output.dim(axis)
     let input_axis_stride: Int = input_strides.load(axis)[0].value
@@ -1045,7 +1045,7 @@ fn _copy_with_strides[
 
         @always_inline
         @parameter
-        fn _parallel_copy(thread_id: Int):
+        fn _parallel_copy(thread_id: Int) raises:
             var next_input_offset = (
                 thread_id * work_block_size * input_axis_stride + input_offset
             )
@@ -1085,7 +1085,7 @@ fn transpose_strided[
     input: NDBuffer[rank, input_shape, type],
     perms: DTypePointer[DType.index],
     out_chain: OutputChainPtr,
-):
+) raises:
     # Compute `permuted_input_strides`
     let input_strides = DTypePointer[DType.index].alloc(rank)
     let permuted_input_strides = DTypePointer[DType.index].alloc(rank)
@@ -1135,7 +1135,7 @@ fn transpose[
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
     perms: DTypePointer[DType.index],
-):
+) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in
     `output`.
@@ -1170,7 +1170,7 @@ fn transpose[
     input: NDBuffer[rank, input_shape, type],
     perms: DTypePointer[DType.index],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in
     `output`.

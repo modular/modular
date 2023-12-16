@@ -83,7 +83,7 @@ fn matrix_solve[
     b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
     x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     A specialized matrix solver for batch_sizex3x3 matrix LHS
     and batch_sizex3x2 RHS.
@@ -91,37 +91,27 @@ fn matrix_solve[
     constrained[a_rank == b_rank]()
     constrained[a_rank == x_rank]()
 
+    @parameter
+    if not type.is_floating_point():
+        raise Error("Only floating point types are supported.")
+
+    @parameter
+    if a_rank > 2:
+        if a.dim(0) != b.dim(0) or b.dim(0) != x.dim(0):
+            raise Error("input and output batch sizes must match")
+
+    alias row_dim = a_rank - 2
+    alias col_dim = a_rank - 1
+
+    if a.dim(row_dim) != 3 or a.dim(col_dim) != 3:
+        raise Error("The a matrix's shape must be (3,3)")
+
+    if x.dim(row_dim) != 3 or x.dim(col_dim) != 2:
+        raise Error("The x matrix's shape must be (3,2)")
+    if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
+        raise Error("The b matrix's shape must be (3,2)")
+
     with Trace[TraceLevel.OP]("mojo.matrix_solve") as t:
-
-        @parameter
-        if not type.is_floating_point():
-            return out_chain.mark_error[single_thread_blocking_override](
-                "Only floating point types are supported."
-            )
-
-        @parameter
-        if a_rank > 2:
-            if a.dim(0) != b.dim(0) or b.dim(0) != x.dim(0):
-                return out_chain.mark_error[single_thread_blocking_override](
-                    "input and output batch sizes must match"
-                )
-
-        alias row_dim = a_rank - 2
-        alias col_dim = a_rank - 1
-
-        if x.dim(row_dim) != 3 or x.dim(col_dim) != 2:
-            return out_chain.mark_error[single_thread_blocking_override](
-                "The x matrix's shape must be (3,2)"
-            )
-        if a.dim(row_dim) != 3 or a.dim(col_dim) != 3:
-            return out_chain.mark_error[single_thread_blocking_override](
-                "The a matrix's shape must be (3,3)"
-            )
-        if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
-            return out_chain.mark_error[single_thread_blocking_override](
-                "The b matrix's shape must be (3,2)"
-            )
-
         var batch_size = 1
         for i in range(row_dim):
             batch_size *= a.dim(i)

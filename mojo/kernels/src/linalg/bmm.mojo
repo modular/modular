@@ -149,15 +149,18 @@ fn _small_batched_matmul[
             ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
                 return v1 + v2
 
-            _reduce_generator[
-                c_type,
-                1,
-                # single_thread_blocking_override,
-                True,
-                input_fn,
-                output_fn,
-                reduce_impl,
-            ](a_view.dynamic_shape, 0, 0, out_chain)
+            try:
+                _reduce_generator[
+                    c_type,
+                    1,
+                    # single_thread_blocking_override,
+                    True,
+                    input_fn,
+                    output_fn,
+                    reduce_impl,
+                ](a_view.dynamic_shape, 0, 0, out_chain)
+            except e:
+                trap(e)
 
     else:
         for batch in range(B):
