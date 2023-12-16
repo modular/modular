@@ -1007,6 +1007,14 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
     selfParams.assign({TypeConstantAttr::get(type, anyRegTypeType), typeValue});
   }
 
+  StructDeclOp structDeclOp = dyn_cast<StructDeclOp>(typeDecl);
+  bool rpTrivial = false;
+  bool regPassable = false;
+  if (structDeclOp) {
+    rpTrivial = structDeclOp.isRegisterPassable();
+    regPassable = structDeclOp.isRegisterPassableTrivial();
+  }
+
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
@@ -1039,6 +1047,12 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
       PValue result = ov.filterOverloadSetForValueType(
           sig, /*emitDiagnosticOnFailure=*/false, *this);
       if (!result) {
+        // Don't error out if name is for the thunk functions that will be
+        // synthesized when conformance check happens.
+        if (canSynthesizeIfMissing(name, /*rpTrivial=*/rpTrivial,
+                                   /*regPassable=*/regPassable))
+          continue;
+
         // The struct does not conform to the trait. Just silently return, since
         // an error has already been emitted.
         dest.resetForError();

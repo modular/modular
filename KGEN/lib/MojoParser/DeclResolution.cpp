@@ -2448,39 +2448,6 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
   // These are the special methods that need to be synthesized.
   SmallVector<SpecialFunctionKind> specialFns;
 
-  // Certain special methods have type-specific restrictions or need special
-  // handling. This functor returns true if a type is allowed to conform to a
-  // trait despite missing the method.
-  auto canSynthesizeIfMissing = [&](StringRef name) {
-    // Allow types that lack `__del__` to conform. A no-op destructor will be
-    // synthesized for them.
-    if (name == "__del__") {
-      specialFns.push_back(SpecialFunctionKind::kDel);
-      return true;
-    }
-    // Trivial types are not allowed to have explicit `__copyinit__` methods, so
-    // if the trait requires them, consider them automatically satisfied by
-    // trivial types.
-    if (rpTrivial && (name == "__copyinit__")) {
-      specialFns.push_back(SpecialFunctionKind::kCopyInit);
-      return true;
-    }
-    // All register-passable types are not allowed to have move or take
-    // constructors, so permit them to conform.
-    if (regPassable) {
-      if (name == "__moveinit__") {
-        specialFns.push_back(SpecialFunctionKind::kMoveInit);
-        return true;
-      }
-      // FIXME(#26060): Register-passable types should define `__takeinit__`.
-      if (name == "__takeinit__") {
-        specialFns.push_back(SpecialFunctionKind::kTakeInit);
-        return true;
-      }
-    }
-    return false;
-  };
-
   for (TypeLineageAttr parent : structDeclOp.getParentTypes()) {
     auto trait = dyn_cast<TraitType>(parent.getType());
     if (!trait)
@@ -2513,7 +2480,8 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
 
         ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
         if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
-          if (canSynthesizeIfMissing(name))
+          if (canSynthesizeIfMissing(name, /*rpTrivial=*/rpTrivial,
+                                     /*regPassable=*/regPassable, specialFns))
             continue;
           diag.attachNote(traitFn.getLoc())
               << "required function '" + name.str() + "' is not implemented";
