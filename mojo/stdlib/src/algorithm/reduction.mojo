@@ -296,14 +296,17 @@ fn reduce[
         return reduce_fn(acc, val)
 
     let shape = Index(len(src))
-    _reduce_generator[
-        type,
-        1,
-        True,
-        input_fn,
-        output_fn,
-        reduce_fn_wrapper,
-    ](shape, rebind[Scalar[type]](init), 0, OutputChainPtr())
+    try:
+        _reduce_generator[
+            type,
+            1,
+            True,
+            input_fn,
+            output_fn,
+            reduce_fn_wrapper,
+        ](shape, rebind[Scalar[type]](init), 0, OutputChainPtr())
+    except e:
+        trap(e)
     return rebind[Scalar[acc_type]](out)
 
 
@@ -540,7 +543,7 @@ fn _reduce_generator[
     init_value: Scalar[type],
     reduce_dim: Int,
     out_chain: OutputChainPtr,
-):
+) raises:
     constrained[target == "cuda", "only valid on GPUs"]()
 
     let reduce_dim_normalized = (
@@ -548,19 +551,14 @@ fn _reduce_generator[
     ) if reduce_dim < 0 else reduce_dim
 
     if reduce_dim_normalized != rank - 1:
-        return out_chain.mark_error(
-            "GPU reduction currently limited to inner axis."
-        )
+        raise Error("GPU reduction currently limited to inner axis.")
 
-    try:
-        let stream = out_chain.get_cuda_stream()
-        reduce_launch[
-            input_0_fn,
-            output_0_fn,
-            reduce_function,
-        ](shape, reduce_dim_normalized, init_value, stream)
-    except e:
-        out_chain.mark_error(e)
+    let stream = out_chain.get_cuda_stream()
+    reduce_launch[
+        input_0_fn,
+        output_0_fn,
+        reduce_function,
+    ](shape, reduce_dim_normalized, init_value, stream)
 
 
 @always_inline
@@ -584,7 +582,7 @@ fn _reduce_generator[
     init_value: Scalar[type],
     reduce_dim: Int,
     out_chain: OutputChainPtr,
-):
+) raises:
     """Reduce the given tensor using the given reduction function.
 
     Parameters:
@@ -1284,7 +1282,7 @@ fn mean[
     reduce_dim: Int,
     output_shape: StaticIntTuple[rank],
     out_chain: OutputChainPtr,
-):
+) raises:
     """Computes the mean across the input and output shape.
 
     This performs the mean computation on the domain specified by `input_shape`,
@@ -1426,14 +1424,17 @@ fn variance[
 
     let shape = StaticIntTuple[1](len(src))
     let init = Scalar[type](0)
-    _reduce_generator[
-        type,
-        1,
-        True,
-        input_fn,
-        output_fn,
-        reduce_fn_wrapper,
-    ](shape, rebind[Scalar[type]](init), 0, OutputChainPtr())
+    try:
+        _reduce_generator[
+            type,
+            1,
+            True,
+            input_fn,
+            output_fn,
+            reduce_fn_wrapper,
+        ](shape, rebind[Scalar[type]](init), 0, OutputChainPtr())
+    except e:
+        trap(e)
     return out / (len(src) - correction)
 
 
@@ -1598,7 +1599,7 @@ fn _argn[
     axis: Int,
     output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
@@ -1621,25 +1622,19 @@ fn _argn[
     if canonical_axis < 0:
         canonical_axis += rank
     if not 0 <= canonical_axis < rank:
-        out_chain.mark_error("axis must be between [0, <input rank>)")
-        return
+        raise Error("axis must be between [0, <input rank>)")
 
     # TODO: Generalize to mid axis.
     if canonical_axis != rank - 1:
-        out_chain.mark_error("axis other than innermost not supported yet")
-        return
+        raise Error("axis other than innermost not supported yet")
 
     @unroll
     for subaxis in range(rank):
         if subaxis == canonical_axis:
             if output.dim(subaxis) != 1:
-                out_chain.mark_error("expected axis to have size 1 in output")
-                return
+                raise Error("expected axis to have size 1 in output")
         elif input.dim(subaxis) != output.dim(subaxis):
-            out_chain.mark_error(
-                "input and output dims must match aside from 'axis'"
-            )
-            return
+            raise Error("input and output dims must match aside from 'axis'")
 
     let axis_size = input.dim(canonical_axis)
     let input_start_ptr = input.data
@@ -1765,7 +1760,7 @@ fn argmax[
     axis: Int,
     output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Finds the indices of the maximum element along the specified axis.
 
@@ -1795,7 +1790,7 @@ fn argmax[
     axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Finds the indices of the maximum element along the specified axis.
 
@@ -1829,7 +1824,7 @@ fn argmin[
     axis: Int,
     output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Finds the indices of the maximum element along the specified axis.
 
@@ -1859,7 +1854,7 @@ fn argmin[
     axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Finds the indices of the minimum element along the specified axis.
 

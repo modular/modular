@@ -15,6 +15,7 @@ from algorithm import map
 from math import div_ceil, max, min
 from math._numerics import FlushDenormals
 from sys.info import triple_is_nvidia_cuda, sizeof
+from debug import trap
 
 from gpu import GridDim, BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Dim, Function, Stream, Device
@@ -239,6 +240,28 @@ fn vectorize_unroll[
 fn _async_parallelize[
     func: fn (Int) capturing -> None
 ](out_chain: OutputChainPtr, num_work_items: Int):
+    """Same behavior as _async_parallelize overload but func does not raise.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        out_chain: Out chain onto which to signal completion.
+        num_work_items: Number of parallel tasks.
+    """
+
+    @parameter
+    @always_inline
+    fn fn_wrapper(i: Int) raises:
+        func(i)
+
+    _async_parallelize[fn_wrapper](out_chain, num_work_items)
+
+
+@always_inline
+fn _async_parallelize[
+    func: fn (Int) raises capturing -> None
+](out_chain: OutputChainPtr, num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     returns immediately. The out_chain will be marked as ready only when all
     sub-tasks have completed.
@@ -285,7 +308,10 @@ fn _async_parallelize[
     # appropriate when the runtime has more than 1 thread.
     if num_work_items == 1 and out_chain.get_runtime().parallelism_level() == 1:
         with FlushDenormals():
-            func(0)
+            try:
+                func(0)
+            except e:
+                return out_chain.mark_error(e)
         out_chain.mark_ready()
         return
 
@@ -298,7 +324,10 @@ fn _async_parallelize[
             with Trace[TraceLevel.OP](
                 "task:", task_id=i, parent_id=parent_id
             ) as t:
-                func(i)
+                try:
+                    func(i)
+                except e:
+                    out_chain.mark_error(e)
 
     var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
     for i in range(num_work_items):
@@ -309,6 +338,28 @@ fn _async_parallelize[
 @always_inline
 fn sync_parallelize[
     func: fn (Int) capturing -> None
+](out_chain: OutputChainPtr, num_work_items: Int):
+    """Same behavior as sync_parallelize overload but func does not raise.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        out_chain: Out chain onto which to signal completion.
+        num_work_items: Number of parallel tasks.
+    """
+
+    @always_inline
+    @parameter
+    fn func_wrapper(i: Int) raises:
+        func(i)
+
+    sync_parallelize[func_wrapper](out_chain, num_work_items)
+
+
+@always_inline
+fn sync_parallelize[
+    func: fn (Int) raises capturing -> None
 ](out_chain: OutputChainPtr, num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel.
     Marks out_chain as ready and returns only when all sub-tasks have
@@ -1277,10 +1328,7 @@ fn _elementwise_impl[
         sm_count = Device().multiprocessor_count()
         threads_per_sm = Device().max_threads_per_sm()
     except e:
-        if out_chain:
-            out_chain.mark_error(e)
-        else:
-            print(e)
+        trap(e)
         return
 
     # split between packed and tail regions of input
@@ -1373,10 +1421,7 @@ fn _elementwise_impl[
             )
 
     except e:
-        if out_chain:
-            out_chain.mark_error(e)
-        else:
-            print(e)
+        trap(e)
 
 
 # ===----------------------------------------------------------------------===#

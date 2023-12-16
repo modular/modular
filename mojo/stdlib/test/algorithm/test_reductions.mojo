@@ -292,7 +292,7 @@ fn test_index_of_first_one():
 
 
 # CHECK-LABEL: test_argn
-fn test_argn():
+fn test_argn() raises:
     print("== test_argn")
 
     alias size = 93
@@ -336,7 +336,7 @@ fn test_argn():
 
 
 # CHECK-LABEL: test_argn_2
-fn test_argn_2():
+fn test_argn_2() raises:
     print("== test_argn_2")
 
     alias batch_size = 4
@@ -394,7 +394,7 @@ fn test_argn_2():
 
 
 # CHECK-LABEL: test_argn_2_test_2
-fn test_argn_2_test_2():
+fn test_argn_2_test_2() raises:
     print("== test_argn_2_test_2")
 
     alias batch_size = 2
@@ -450,7 +450,7 @@ fn test_argn_2_test_2():
 
 
 # CHECK-LABEL: test_argn_2_neg_axis
-fn test_argn_2_neg_axis():
+fn test_argn_2_neg_axis() raises:
     print("== test_argn_2_neg_axis")
 
     alias batch_size = 2
@@ -506,7 +506,7 @@ fn test_argn_2_neg_axis():
 
 
 # CHECK-LABEL: test_argn_test_zeros
-fn test_argn_test_zeros():
+fn test_argn_test_zeros() raises:
     print("== test_argn_test_zeros")
 
     alias batch_size = 1
@@ -558,7 +558,7 @@ fn test_argn_test_zeros():
 
 
 # CHECK-LABEL: test_argn_test_identity
-fn test_argn_test_identity():
+fn test_argn_test_identity() raises:
     print("== test_argn_test_identity")
 
     alias batch_size = 3
@@ -621,7 +621,7 @@ fn test_argn_test_identity():
 
 
 # CHECK-LABEL: test_argn_3d_identity
-fn test_argn_3d_identity():
+fn test_argn_3d_identity() raises:
     print("== test_argn_3d_identity")
 
     alias batch_size = 2
@@ -688,7 +688,7 @@ fn test_argn_3d_identity():
                 print("argmin = ", output[Index(i, j, 0)])
 
 
-fn test_argn_less_than_simd():
+fn test_argn_less_than_simd() raises:
     print("== test_argn_less_than_simd")
 
     alias batch_size = 2
@@ -750,7 +750,7 @@ fn test_argn_less_than_simd():
 
 
 # CHECK-LABEL: test_argn_simd_edge_case
-fn test_argn_simd_index_order():
+fn test_argn_simd_index_order() raises:
     print("== test_argn_simd_edge_case")
 
     # Checks the case where the maximal value is found in two simd_chunks, where
@@ -856,7 +856,7 @@ fn test_cumsum():
         print_no_newline(cumsum_out2[i], ",")
 
 
-fn main():
+fn main() raises:
     test_reductions()
     test_product()
     test_mean_variance()
