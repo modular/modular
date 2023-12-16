@@ -7,7 +7,7 @@
 from math import div_ceil, exp, identity, log, max, min, mul, reciprocal, sub
 from math.limit import min_or_neginf, neginf
 
-from algorithm import async_parallelize, vectorize_unroll
+from algorithm import sync_parallelize, vectorize_unroll
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
@@ -542,7 +542,7 @@ fn logsoftmax[
                 output_buffer_view, out_chain
             )
 
-    async_parallelize[task_func](out_chain, num_workers)
+    sync_parallelize[task_func](out_chain, num_workers)
 
 
 fn logsoftmax[
@@ -645,7 +645,7 @@ fn softmax[
                     output_buffer_view, out_chain
                 )
 
-        async_parallelize[task_func](out_chain, num_workers)
+        sync_parallelize[task_func](out_chain, num_workers)
 
 
 # Softmax (no input lambda)
