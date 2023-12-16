@@ -77,7 +77,7 @@ fn fused_attention[
     scale: Float32,
     causal_mask_value: Float32,
     out_chain: OutputChainPtr,
-):
+) raises:
     """Multi-head Attention with fusion.
     Compute:
         (1) P = Bmm(Q, K), P is also called "score";
@@ -311,7 +311,7 @@ fn flash_attention[
     mask: NDBuffer[3, mask_shape, mask_type],
     scale: Float32,
     out_chain: OutputChainPtr,
-):
+) raises:
     """Flash attention 2 algorithm.
     Compute:
         (1) Transpose (Q) BSHD -> BHSD;
@@ -360,7 +360,7 @@ fn flash_attention[
     let use_32bit_indexing = qtile_num_rows * depth < max_uint32 and ktile_num_rows * depth < max_uint32 and qtile_num_rows * ktile_num_rows < max_uint32 and batch_size * seq_len * seq_len < max_uint32
 
     if not use_32bit_indexing:
-        return out_chain.mark_error("32bits index overflow.")
+        raise Error("32bits index overflow.")
 
     try:
         let stream = out_chain.get_cuda_stream()
@@ -456,7 +456,7 @@ fn flash_attention[
             )
 
     except e:
-        out_chain.mark_error(e)
+        trap(e)
 
 
 @parameter
@@ -1372,21 +1372,39 @@ fn _naive_attention_with_transpose[
 
     with Runtime() as rt:
         var chain = OwningOutputChainPtr(rt)
-        transpose[
-            4, DimList.create_unknown[4](), DimList.create_unknown[4](), type
-        ](qt, q, q_perm.data, chain.borrow())
+        try:
+            transpose[
+                4,
+                DimList.create_unknown[4](),
+                DimList.create_unknown[4](),
+                type,
+            ](qt, q, q_perm.data, chain.borrow())
+        except e:
+            trap(e)
         chain.wait()
 
         chain = OwningOutputChainPtr(rt)
-        transpose[
-            4, DimList.create_unknown[4](), DimList.create_unknown[4](), type
-        ](kt, k, k_perm.data, chain.borrow())
+        try:
+            transpose[
+                4,
+                DimList.create_unknown[4](),
+                DimList.create_unknown[4](),
+                type,
+            ](kt, k, k_perm.data, chain.borrow())
+        except e:
+            trap(e)
         chain.wait()
 
         chain = OwningOutputChainPtr(rt)
-        transpose[
-            4, DimList.create_unknown[4](), DimList.create_unknown[4](), type
-        ](vt, v, q_perm.data, chain.borrow())
+        try:
+            transpose[
+                4,
+                DimList.create_unknown[4](),
+                DimList.create_unknown[4](),
+                type,
+            ](vt, v, q_perm.data, chain.borrow())
+        except e:
+            trap(e)
         chain.wait()
 
         chain = OwningOutputChainPtr(rt)
@@ -1402,9 +1420,15 @@ fn _naive_attention_with_transpose[
         chain.wait()
 
         chain = OwningOutputChainPtr(rt)
-        transpose[
-            4, DimList.create_unknown[4](), DimList.create_unknown[4](), type
-        ](output, ot, o_perm.data, chain.borrow())
+        try:
+            transpose[
+                4,
+                DimList.create_unknown[4](),
+                DimList.create_unknown[4](),
+                type,
+            ](output, ot, o_perm.data, chain.borrow())
+        except e:
+            trap(e)
         chain.wait()
 
     qt_ptr.free()
@@ -1472,12 +1496,15 @@ fn _naive_attention[
     chain.wait()
 
     chain = OwningOutputChainPtr(rt)
-    softmax[type, simd_size, 4, DimList.create_unknown[4]()](
-        score,
-        score,
-        3,
-        chain.borrow(),
-    )
+    try:
+        softmax[type, simd_size, 4, DimList.create_unknown[4]()](
+            score,
+            score,
+            3,
+            chain.borrow(),
+        )
+    except e:
+        trap(e)
     chain.wait()
 
     batched_matmul[4, type, type, type, False, False](

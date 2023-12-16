@@ -15,12 +15,12 @@ from utils.list import Dim, DimList
 
 
 # CHECK-LABEL: test_logsoftmax
-fn test_logsoftmax():
+fn test_logsoftmax() raises:
     print("== test_logsoftmax")
     alias type = DType.float32
     alias simd_width = simdwidthof[type]()
 
-    fn logsoftmax_test_nd[rank: Int, shape: DimList]():
+    fn logsoftmax_test_nd[rank: Int, shape: DimList]() raises:
         let in_buf = NDBuffer[rank, shape, type].stack_allocation()
         let out_buf = NDBuffer[rank, shape, type].stack_allocation()
         let in_buf_flat = in_buf.flatten()
@@ -88,6 +88,6 @@ fn test_softmax_2pass():
     # CHECK-NEXT: 0.63640{{[0-9]+}}
 
 
-fn main():
+fn main() raises:
     test_logsoftmax()
     test_softmax_2pass()

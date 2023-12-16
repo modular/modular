@@ -356,9 +356,12 @@ fn _softmax_3_pass_base[
         max_buff[0] = val.reduce_max().cast[type]()
 
     # Generate fused input-reduction
-    _reduce_generator[type, 1, True, input_fn, output_fn, reduce_impl](
-        StaticIntTuple[1](len(output)), min_or_neginf[type](), 0, out_chain
-    )
+    try:
+        _reduce_generator[type, 1, True, input_fn, output_fn, reduce_impl](
+            StaticIntTuple[1](len(output)), min_or_neginf[type](), 0, out_chain
+        )
+    except e:
+        trap(e)
 
     let max_val = max_buff[0]
 
@@ -498,12 +501,11 @@ fn logsoftmax[
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
     out_chain: OutputChainPtr,
-):
+) raises:
     # TODO: Add rowwise generator to de-duplicate partioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
-        out_chain.mark_error("logsoftmax not supported on non-inner axis yet")
-        return
+        raise Error("logsoftmax not supported on non-inner axis yet")
 
     if shape.flattened_length() == 0:
         return out_chain.mark_ready()
@@ -555,7 +557,7 @@ fn logsoftmax[
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
     out_chain: OutputChainPtr,
-):
+) raises:
     @parameter
     @always_inline
     fn input_fn[
@@ -590,14 +592,12 @@ fn softmax[
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
     out_chain: OutputChainPtr,
-):
+) raises:
     constrained[target == "cpu", "cpu softmax"]()
     # TODO: Add rowwise generator to de-duplicate partioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
-        return out_chain.mark_error(
-            "softmax not supported on non-inner axis yet"
-        )
+        raise Error("softmax not supported on non-inner axis yet")
 
     @always_inline
     @parameter
@@ -659,7 +659,7 @@ fn softmax[
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
     out_chain: OutputChainPtr,
-):
+) raises:
     @parameter
     @always_inline
     fn input_fn[
@@ -771,11 +771,9 @@ fn softmax[
     output: NDBuffer[rank, static_shape, type],
     axis: Int,
     out_chain: OutputChainPtr,
-):
+) raises:
     if axis != rank - 1:
-        return out_chain.mark_error(
-            "softmax not supported on non-inner axis yet"
-        )
+        raise Error("softmax not supported on non-inner axis yet")
 
     constrained[target == "cuda", "cuda softmax"]()
 
@@ -786,29 +784,26 @@ fn softmax[
         return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
 
     alias BLOCK_SIZE = 128
-    try:
-        let stream = out_chain.get_cuda_stream() if out_chain else Stream[
-            is_borrowed=True
-        ]()
+    let stream = out_chain.get_cuda_stream() if out_chain else Stream[
+        is_borrowed=True
+    ]()
 
-        let func = Function[
-            fn (
-                StaticIntTuple[rank],
-                NDBuffer[rank, DimList.create_unknown[rank](), type],
-                Int,
-            ) capturing -> None, softmax_kernel[
-                BLOCK_SIZE,
-                input_fn_wrapper,
-                type,
-                rank,
-            ]
-        ]()
+    let func = Function[
+        fn (
+            StaticIntTuple[rank],
+            NDBuffer[rank, DimList.create_unknown[rank](), type],
+            Int,
+        ) capturing -> None, softmax_kernel[
+            BLOCK_SIZE,
+            input_fn_wrapper,
+            type,
+            rank,
+        ]
+    ]()
 
-        let num_rows = shape.flattened_length() // shape[axis]
-        let sm_count = Device()._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
-        alias sm_overprovision_factor = 32  # tunable
-        let num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+    let num_rows = shape.flattened_length() // shape[axis]
+    let sm_count = Device()._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    alias sm_overprovision_factor = 32  # tunable
+    let num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
-        func((num_blocks,), (BLOCK_SIZE,), shape, output, axis, stream=stream)
-    except e:
-        out_chain.mark_error(e)
+    func((num_blocks,), (BLOCK_SIZE,), shape, output, axis, stream=stream)

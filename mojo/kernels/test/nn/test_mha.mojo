@@ -75,7 +75,7 @@ alias type = DType.float32
 
 
 # CHECK-LABEL: test_mha
-fn test():
+fn test() raises:
     print("test_mha")
 
     # Query, key, value dimensions.
@@ -124,7 +124,7 @@ fn test():
 
     @parameter
     @always_inline
-    fn test_body[transpose_key: Bool]():
+    fn test_body[transpose_key: Bool]() raises:
         let k_shape = Index(
             batch_size, num_heads, seq_len, depth
         ) if transpose_key else Index(batch_size, num_heads, depth, seq_len)
