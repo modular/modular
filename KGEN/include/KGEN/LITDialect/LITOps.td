@@ -430,6 +430,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_DecoratorsAttr:$decorators,
     TypeLineageArrayAttr:$parentTypes,
+    UnitAttr:$isSynthetic,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
     OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
