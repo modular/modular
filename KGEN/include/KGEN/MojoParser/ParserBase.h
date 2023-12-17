@@ -75,7 +75,7 @@ public:
   /// line.
   SMLoc getTokenLocOrEndOfPreviousLineIfOnNewLine() const {
     SMLoc loc = getToken().getLoc();
-    if (getToken().getIndentation().has_value())
+    if (getToken().isStartOfLine())
       return lexer.findEndOfPreviousLine(loc);
     return loc;
   }

@@ -118,7 +118,7 @@ ParserBase::parseDecorators(ssize_t indentation) {
 
   llvm::SMLoc atLoc;
   while (consumeIf(Token::at, &atLoc)) {
-    if (getToken().getIndentation().has_value()) {
+    if (getToken().isStartOfLine()) {
       emitError(atLoc, "missing decorator expression after '@'");
       skipUntilIndentation(indentation, /*stopOnSemicolon=*/false,
                            stopOnStatement);
@@ -131,7 +131,7 @@ ParserBase::parseDecorators(ssize_t indentation) {
       break;
     result.push_back({decoratorExpr, cursor});
 
-    if (!getToken().getIndentation().has_value() ||
+    if (!getToken().isStartOfLine() ||
         ssize_t(getToken().getIndentation().value()) > indentation) {
       emitTokenError("unexpected tokens after decorator, each need to be on "
                      "their own line");
@@ -303,42 +303,43 @@ ParseResult StmtParser::parseSuite(ssize_t curIndent) {
       stmtListOnly = true;
 
       // Continue if we see a semicolon that isn't at the end of the line.
-    } while (consumeIf(Token::semi) &&
-             !getToken().getIndentation().has_value());
+    } while (consumeIf(Token::semi) && !getToken().isStartOfLine());
     return success();
   };
 
   // If this suite is on the same line as the enclosing entity, just parse a
   // single stmt_list.
-  auto indent = getToken().getIndentation();
-  if (!indent.has_value())
+  if (!getToken().isStartOfLine())
     return parseStmtListOrCompound(
         /*stmtListOnly=*/true,
         /*stmtIndent=*/std::numeric_limits<size_t>::max());
 
+  ssize_t indent = getToken().getIndentation().value();
+
   // If there is a newline, then parse a list of statements which can be either
   // a statement list or a compound_stmt.  Parse all the statements that are
   // more nested than this suite, and reject it if there are none.
-  if (ssize_t(*indent) <= curIndent) {
+  if (indent <= curIndent) {
     emitError(getTokenLocOrEndOfPreviousLineIfOnNewLine())
         << "expected body statements; use 'pass' if none is required";
     return success();
   }
 
   // The first statement sets the expected indentation level for the whole body.
-  auto bodyIndent = ssize_t(*indent);
+  auto bodyIndent = indent;
   SMLoc bodyIndentLoc = getToken().getLoc();
   while (getToken().isNot(Token::eof)) {
-    auto indent = getToken().getIndentation();
-    if (!indent.has_value())
+    if (!getToken().isStartOfLine())
       return emitTokenError("statements must start at the beginning of a line");
 
+    indent = getToken().getIndentation().value();
+
     // If the indentation is less than we expect, then the suite is done.
-    if (ssize_t(*indent) < bodyIndent)
+    if (indent < bodyIndent)
       break;
 
     // Diagnose cases where the indentation is too great.
-    if (ssize_t(*indent) > bodyIndent) {
+    if (indent > bodyIndent) {
       auto diag = emitError(getToken().getLoc())
                   << "statement has excess indentation";
       diag.attachNote(bodyIndentLoc)
@@ -347,7 +348,7 @@ ParseResult StmtParser::parseSuite(ssize_t curIndent) {
       bodyIndentLoc = getToken().getLoc();
     }
 
-    if (parseStmtListOrCompound(/*stmtListOnly=*/false, *indent))
+    if (parseStmtListOrCompound(/*stmtListOnly=*/false, indent))
       return failure();
   }
   return success();
@@ -538,7 +539,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     // If the next token isn't indented, but is the start of a statement, then
     // these decorators are incorrectly on the same line as the statement.
     // Reject with a specific error message and ignore the whole thing.
-    if (!getToken().getIndentation() && stopOnStatement()) {
+    if (!getToken().isStartOfLine() && stopOnStatement()) {
       emitError(startCursor.getToken().getLoc())
           << "decorators must be on their own line, not ahead of a statement";
       // Skip the body of the statement entirely.
@@ -550,8 +551,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     // floating decorator not necessarily attached to it.  Ignore the
     // decorators and let the outer level of the parser keep finding stuff.
     // This leads to better error recovery.
-    if (getToken().getIndentation() &&
-        *getToken().getIndentation() < stmtIndent) {
+    if (getToken().isStartOfLine() &&
+        getToken().getIndentation().value() < stmtIndent) {
       emitError(startCursor.getToken().getLoc())
           << "orphaned decorator not associated with a declaration or "
              "statement";
