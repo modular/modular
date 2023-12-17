@@ -42,16 +42,13 @@ fn gemm_naive[
 
 
 fn test_matmul[
-    m: Int,
-    n: Int,
-    k: Int,
     transpose_b: Bool,
     b_packed: Bool,
     a_type: DType,
     b_type: DType,
     c_type: DType,
     saturated: Bool,
-]() -> Int:
+](m: Int, n: Int, k: Int) -> Int:
     let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
     let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
@@ -175,72 +172,61 @@ alias M = 123
 alias N = 143
 alias K = 71
 
+alias test_range = False
+
+
+fn test_matmul[bPacked: Bool, saturated: Bool]() -> Int:
+    # b_packed = False is not supported with i8mm yet
+    var errors: Int = 0
+    if test_range:
+        for m in range(64):
+            for n in range(64):
+                for k in range(64):
+                    errors += test_matmul[
+                        False,  # transpose_b
+                        bPacked,  # b_packed
+                        DType.uint8,
+                        DType.int8,
+                        DType.int32,
+                        saturated=saturated,
+                    ](m, n, k)
+    else:
+        errors += test_matmul[
+            False,  # transpose_b
+            bPacked,  # b_packed
+            DType.uint8,
+            DType.int8,
+            DType.int32,
+            saturated=saturated,
+        ](M, N, K)
+
+    return errors
+
 
 fn test_matmul_vnni():
     print("== test_matmul_vnni")
-    # b_packed = False is not supported with i8mm yet
-    let errors = test_matmul[
-        M,
-        N,
-        K,
-        False,  # transpose_b
-        False,  # b_packed
-        DType.uint8,
-        DType.int8,
-        DType.int32,
-        saturated=False,
-    ]()
+    let errors = test_matmul[False, False]()
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_bpacked():
     print("== test_matmul_vnni_bpacked")
-    let errors = test_matmul[
-        M,
-        N,
-        K,
-        False,  # transpose_b
-        True,  # b_packed
-        DType.uint8,
-        DType.int8,
-        DType.int32,
-        saturated=False,
-    ]()
+    let errors = test_matmul[True, False]()
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_saturated():
     print("== test_matmul_vnni_saturated")
-    let errors = test_matmul[
-        M,
-        N,
-        K,
-        False,  # transpose_b
-        False,  # b_packed
-        DType.uint8,
-        DType.int8,
-        DType.int32,
-        saturated=True,
-    ]() if has_avx2() else 0
+    let errors = test_matmul[False, True]() if has_avx2() else 0
     # CHECK: 0
     print(errors)
 
 
 fn test_matmul_vnni_bpacked_saturated():
     print("== test_matmul_vnni_bpacked_saturated")
-    let errors = test_matmul[
-        M,
-        N,
-        K,
-        False,  # transpose_b
-        True,  # b_packed
-        DType.uint8,
-        DType.int8,
-        DType.int32,
-        saturated=True,
-    ]() if has_avx2() else 0
+    let errors = test_matmul[True, True]() if has_avx2() else 0
     # CHECK: 0
     print(errors)
 
