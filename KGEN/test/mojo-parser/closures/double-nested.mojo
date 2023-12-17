@@ -18,10 +18,10 @@ struct MemType:
         return MemType()
 
 
-# CHECK: %anonymous2A = lit.varlet.decl "anonymous*" synth
+# CHECK: %anonymous2A = lit.varlet.decl "anonymous*"
 # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
 # CHECK-NEXT: [[V1:%.*]] = lit.call {{.*}}CI_$[[F]]_{{.*}}"::@"__init__{{.*}}([[ANONPTR]], %m)
-# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" synth
+# CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*"
 # CHECK-NEXT: [[ANONPTR_1:%.*]] = lit.ref.to_pointer %anonymous2A_0
 # CHECK-NEXT:  = lit.call {{.*}}CW_{{.*}}__init__{{.*}}([[ANONPTR_1]], [[ANONPTR]])
 # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: none
