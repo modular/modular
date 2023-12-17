@@ -391,11 +391,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
             << FixIt::insertBeforeToken(args[selfArgNumber].loc, "owned ");
         args[selfArgNumber].convention = ParsedArgument::kConventionOwned;
       }
-    } else if (!fnInfo.allowsByRefSelfInstMethod() &&
-               args[selfArgNumber].convention !=
-                   ParsedArgument::kConventionBorrowed)
-      emitErrorLoc(args[selfArgNumber].loc,
-                   "self argument cannot be passed by reference");
+    }
   }
 
   ASTType declaredResultType =
@@ -435,6 +431,12 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
   case SpecialFunctionKind::kMLIRI1:
     if (!resultType.mlirType.isSignlessInteger(1))
       emitError() << name << " result type must be __mlir_type.i1";
+    break;
+  case SpecialFunctionKind::kCopyInitReg:
+    // Check that these are defined correctly.
+    if (args[0].convention != ParsedArgument::kConventionBorrowed)
+      emitErrorLoc(args[selfArgNumber].loc,
+                   "self argument cannot be passed by reference");
     break;
   case SpecialFunctionKind::kInit:
   case SpecialFunctionKind::kCopyInit:
