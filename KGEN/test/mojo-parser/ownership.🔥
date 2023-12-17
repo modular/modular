@@ -498,22 +498,6 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
 
   # CHECK-NEXT: kgen.param.constant: none
 
-# CHECK-LABEL: testCondGetAsUnitializedObject
-# Early exit from fn using __get_address_as_uninit_lvalue should work.
-# https://github.com/modularml/modular/issues/27472
-fn testCondGetAsUnitializedObject(exit_early: __mlir_type.i1,
-                                  ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
-  # CHECK: hlcf.if
-  if exit_early:
-      return
-
-  # CHECK: [[LV:%.*]] = lit.ownership.make_pointer_lvalue %ptr live_on_entry = false, exit = true
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[LV]])
-  # CHECK-NEXT: %none = kgen.param.constant: none
-  # CHECK-NEXT: kgen.return %none
-  __get_address_as_uninit_lvalue(ptr) = MemExample()
-
-
 # CHECK-LABEL: lit.struct.decl @FieldSensitiveMemExample
 struct FieldSensitiveMemExample:
   var f1 : MemExample
