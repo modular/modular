@@ -51,6 +51,9 @@ public:
     return size_t(indentation);
   }
 
+  /// Return true if the token is the first on a line.
+  bool isStartOfLine() const { return indentation != -1; }
+
   // Token classification.
   Kind getKind() const { return kind; }
   bool is(Kind K) const { return kind == K; }

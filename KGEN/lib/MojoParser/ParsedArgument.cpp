@@ -319,8 +319,19 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
     } else if (spelling == "escaping") {
       handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
     } else {
+      // If this isn't a known effect, then it could be an error like a missing
+      // colon at the end of a function declaration.  If so, emit a nice error
+      // and recover cleanly.
+      if (p.getToken().isStartOfLine() && kind == ArgListKind::kArgList) {
+        // Otherwise maybe it was misspelled, just eat it.
+        p.emitError(p.getTokenLocOrEndOfPreviousLineIfOnNewLine(),
+                    "missing ':' at end of function signature");
+        return failure();
+      }
+
+      // Otherwise maybe it was misspelled, just eat it.
       p.emitError(loc, "unknown function effect '")
-          << spelling << "', expected 'raises' or 'capturing'";
+          << spelling << "', expected 'raises', 'capturing', or 'escaping'";
     }
 
     p.consumeIdentifier();

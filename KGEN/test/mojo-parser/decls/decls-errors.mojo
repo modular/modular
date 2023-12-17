@@ -28,6 +28,11 @@ fn missingColon()  # expected-error {{expected ':' in function definition}}
 
   var x = 1 # expected-error {{could not find builtin 'IntLiteral' type}}
 
+# Missing colon after fn definition complains about function effects
+# https://github.com/modularml/modular/issues/23359
+def missingColon2() # expected-error {{missing ':' at end of function signature}}
+  func()
+
 # expected-error @below {{expected parameter name}}
 # expected-error @below {{unexpected token in expression}}
 fn missingArgumentName(*: Int): pass
@@ -118,7 +123,6 @@ struct MemType:
 # expected-error @below {{TODO: async functions do not support memory-only results yet}}
 async fn async_mem_result() -> MemType:
   pass
-
 
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
