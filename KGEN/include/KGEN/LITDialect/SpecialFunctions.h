@@ -47,42 +47,33 @@ public:
     /// This must be an instance method of a type.
     kInstMethod = 1 << 1,
 
-    /// On a method of struct, the self may be passed OwnedInReg or ByRef.  This
-    /// is true for in-place operators like += / __iadd__.  This implies an
-    /// instance method.
-    kAllowByRefSelfInstMethod = (1 << 2) | kInstMethod,
-
     /// On a method of a struct, the self must be passed as Owned argument
     /// convention.
-    kRequiresOwnedSelfInstMethod = (1 << 3) | kInstMethod,
+    kRequiresOwnedSelfInstMethod = (1 << 2) | kInstMethod,
 
     /// This is true when this represents a "reversed" operator like __radd__.
-    kReversedOperator = 1 << 4,
+    kReversedOperator = 1 << 3,
 
     /// This is true when the operation is supposed to return None.
-    kNoneResult = 1 << 5,
+    kNoneResult = 1 << 4,
 
     /// This method must return Self.
-    kSelfResult = 1 << 6,
+    kSelfResult = 1 << 5,
 
     /// This method is a struct initializer.
-    kInitializer = 1 << 7,
+    kInitializer = 1 << 6,
 
     /// This method cannot be declared to raise an error.
-    kCannotRaise = 1 << 8,
+    kCannotRaise = 1 << 7,
 
     /// Set of flags used for initializers that set up self by-reference.
-    kMemInit = kInitializer | kAllowByRefSelfInstMethod | kNoneResult,
+    kMemInit = kInitializer | kNoneResult,
     /// Set of flags used for initializers that return self in a register.
     kRegInit = kInitializer | kSelfResult,
   };
 
   /// Return true if this is any kind of instance method.
   bool isInstMethod() const { return (flags & kInstMethod) != 0; }
-
-  bool allowsByRefSelfInstMethod() const {
-    return (flags & kAllowByRefSelfInstMethod) == kAllowByRefSelfInstMethod;
-  }
 
   bool requiresOwnedSelfInstMethod() const {
     return (flags & kRequiresOwnedSelfInstMethod) ==

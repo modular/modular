@@ -377,6 +377,17 @@ fn orvalueInferType():
 fn kernel[x: Int]():
     pass
 
+# https://github.com/modularml/mojo/issues/1152
+# Allow mutable self argument when overloading operators using dunder methods
+struct MutatingAdd:
+  fn __add__(inout self, x: MutatingAdd): pass
+
+# CHECK-LABEL: lit.func @"testMutatingAdd
+fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
+  # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%a, %b)
+  a + b
+
+
 ##===----------------------------------------------------------------------===##
 # Conventions
 ##===----------------------------------------------------------------------===##
@@ -403,7 +414,6 @@ fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
 struct RPStructWithInit:
     var x: Int
     var y: Int
-
 
 @register_passable("trivial")
 struct RPStructWithInitTrivial:
