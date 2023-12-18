@@ -8,7 +8,6 @@
 
 from aiengine import (
     InferenceSession,
-    EngineDType,
     EngineTensorSpec,
 )
 from tensor import TensorSpec

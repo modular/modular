@@ -8,7 +8,6 @@
 
 from aiengine import (
     get_version,
-    EngineDType,
     InferenceSession,
 )
 
@@ -28,18 +27,6 @@ fn test_session() raises:
     let session = InferenceSession()
 
 
-fn test_dtype() raises:
-    # CHECK: test_dtype
-    print("====test_dtype")
-
-    # CHECK: True
-    print(EngineDType(DType.int8) == EngineDType.int8)
-
-    # CHECK: True
-    print(EngineDType(DType.int8).to_dtype() == DType.int8)
-
-
 fn main() raises:
     test_engine_version()
     test_session()
-    test_dtype()
