@@ -433,10 +433,10 @@ struct OutputChainPtr:
     used by the Modular C++ runtime to coordinate execution with Mojo kernels.
 
     Pure CPU kernels which accept an OutputChainPtr argument are expected to
-    call mark_ready(), mark_error(), or fork() before returning.
+    call mark_ready(), _mark_error_old(), or fork() before returning.
 
     CPU kernels which launch non-CPU kernels (eg a CUDA kernel) must accept
-    an OuptputChainPtr, and must either call mark_error() before returning,
+    an OuptputChainPtr, and must either call _mark_error_old() before returning,
     or use a device-specific mechanism to coordinate execution back to the
     C++ runtime.
     """
@@ -495,7 +495,7 @@ struct OutputChainPtr:
         ](self.ptr)
 
     @always_inline
-    fn mark_error[
+    fn _mark_error_old[
         single_thread_blocking_override: Bool
     ](self, message: StringLiteral):
         """Marks the output chain as having an error with a message.
@@ -504,20 +504,20 @@ struct OutputChainPtr:
 
         @parameter
         if not single_thread_blocking_override:
-            self.mark_error(message)
+            self._mark_error_old(message)
 
     @always_inline
-    fn mark_error[single_thread_blocking_override: Bool](self, err: Error):
+    fn _mark_error_old[single_thread_blocking_override: Bool](self, err: Error):
         """Marks the output chain as having an error.
         The underlying LLCL::OutputChain is not moved.
         """
 
         @parameter
         if not single_thread_blocking_override:
-            self.mark_error(err)
+            self._mark_error_old(err)
 
     @always_inline
-    fn mark_error(self, message: StringLiteral):
+    fn _mark_error_old(self, message: StringLiteral):
         """Marks the output chain as having an error with a message.
         The underlying LLCL::OutputChain is not moved.
         """
@@ -531,7 +531,7 @@ struct OutputChainPtr:
         )
 
     @always_inline
-    fn mark_error(self, err: Error):
+    fn _mark_error_old(self, err: Error):
         """Marks the output chain as having an error.
         The underlying LLCL::OutputChain is not moved.
         """
@@ -621,7 +621,7 @@ struct OwningOutputChainPtr:
     fn task_is_done(self):
         """Indicates the caller's task is done for the purposes of task overhang
         detection. Only needed for tasks which signal their completion by some
-        mechanism other than mark_ready() or mark_error(). Is a no-op unless
+        mechanism other than mark_ready() or _mark_error_old(). Is a no-op unless
         task overhang detection is enabled in the build.
         """
         external_call[
@@ -690,7 +690,7 @@ struct AsyncTaskGroup:
 
     # Number of tasks still in flight.
     var counter: Atomic[DType.index]
-    # Output chain to mark_ready/mark_error when last task completed.
+    # Output chain to mark_ready/_mark_error_old when last task completed.
     # This will be 'forked' on construction to guarantee the correct lifetime.
     var out_chain: OwningOutputChainPtr
     # Vector holding co-routines.
