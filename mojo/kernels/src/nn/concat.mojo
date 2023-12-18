@@ -1326,11 +1326,11 @@ fn concat[
             )
 
         else:
-            return out_chain.mark_error(
+            return out_chain._mark_error_old(
                 "Unsupported concat with num_inputs > 32"
             )
     except e:
-        return out_chain.mark_error(e)
+        return out_chain._mark_error_old(e)
 
 
 fn _concat_inner_most_single_dim[

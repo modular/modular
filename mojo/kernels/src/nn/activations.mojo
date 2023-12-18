@@ -52,7 +52,7 @@ struct ActivationType:
         elif self == ActivationType.GELU:
             func[ActivationType.GELU]()
         else:
-            out_chain.mark_error("Unsupported activation function.")
+            out_chain._mark_error_old("Unsupported activation function.")
 
 
 @always_inline

@@ -351,7 +351,7 @@ fn gather[
     @parameter
     if not single_thread_blocking_override:
         if axis.get() < 0:
-            return out_chain.mark_error(
+            return out_chain._mark_error_old(
                 "gather kernel does not support negative axis"
             )
 
@@ -359,25 +359,25 @@ fn gather[
         # replaced by the shape of the indices
         for i in range(axis.get()):
             if output_shape[i] != input_shape[i]:
-                return out_chain.mark_error(
+                return out_chain._mark_error_old(
                     "gather: output_shape[0:axis] does not match"
                     " input_shape[0:axis]"
                 )
         for i in range(axis.get(), axis.get() + indices_rank):
             if output_shape[i] != indices_shape[i - axis.get()]:
-                return out_chain.mark_error(
+                return out_chain._mark_error_old(
                     "gather: output_shape[axis:axis+indices_rank] does not"
                     " match indices_shape"
                 )
         for i in range(axis.get() + indices_rank, output_rank):
             if output_shape[i] != input_shape[i - indices_rank + 1]:
-                return out_chain.mark_error(
+                return out_chain._mark_error_old(
                     "gather: output_shape[axis + indices_rank:] does not match"
                     " input_shape[axis:]"
                 )
 
         if axis.get() >= input_rank:
-            return out_chain.mark_error(
+            return out_chain._mark_error_old(
                 "gather: axis must be less than input rank"
             )
 
@@ -525,7 +525,7 @@ fn scatter_nd_generator[
         out_chain: The OutputChainPtr used to mark competion or error of the task.
     """
     if data.get_shape() != output.get_shape():
-        return out_chain.mark_error(
+        return out_chain._mark_error_old(
             "Input and output shapes in scatter_nd must be the same."
         )
 
@@ -533,7 +533,7 @@ fn scatter_nd_generator[
         len(updates.get_shape())
         != data_rank + indices_rank - indices.get_shape()[indices_rank - 1] - 1
     ):
-        return out_chain.mark_error(
+        return out_chain._mark_error_old(
             "updates rank must be: data_rank + indices_rank -"
             " indices_shape[-1] - 1"
         )
@@ -566,7 +566,7 @@ fn scatter_nd_generator[
                 stream,
             )
         except e:
-            out_chain.mark_error(e)
+            out_chain._mark_error_old(e)
 
     @parameter
     if target != "cuda":
@@ -815,17 +815,17 @@ fn scatter_elements[
     ]()
 
     if input.get_shape() != output.get_shape():
-        return out_chain.mark_error(
+        return out_chain._mark_error_old(
             "input and output shape in scatter_elements must be the same"
         )
 
     if indices.get_shape() != updates.get_shape():
-        return out_chain.mark_error(
+        return out_chain._mark_error_old(
             "inidices and updates shape in scatter_elements must be the same"
         )
 
     if not (-rank <= _axis < rank):
-        return out_chain.mark_error(
+        return out_chain._mark_error_old(
             "axis in scatter_elements must be in the range [-rank, rank)"
         )
 
@@ -941,12 +941,12 @@ fn gather_elements[
     ]()
 
     if indices.get_shape() != output.get_shape():
-        return out_chain.mark_error(
+        return out_chain._mark_error_old(
             "indices and output shape in gather_elements must be the same"
         )
 
     if not (-rank <= _axis < rank):
-        return out_chain.mark_error(
+        return out_chain._mark_error_old(
             "axis in gather_elements must be in the range [-rank, rank)"
         )
 

@@ -148,12 +148,12 @@ fn split[
     # check inputs have same rank and same dims except for axis dim
     for i in range(len(outputs)):
         if outputs[0].get_rank() != outputs[i].get_rank():
-            return out_chain.mark_error(
+            return out_chain._mark_error_old(
                 "all split inputs must have the same rank"
             )
         for j in range(outputs[i].get_rank()):
             if j != axis and outputs[0].dim(j) != outputs[i].dim(j):
-                return out_chain.mark_error(
+                return out_chain._mark_error_old(
                     "all split outputs must have the same dimensions in the"
                     " non-split axes"
                 )

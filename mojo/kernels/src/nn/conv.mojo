@@ -482,13 +482,13 @@ struct ConvDirectNHWC[
             ]()
 
         if conv_shape.num_groups > 1 and not filter_packed:
-            out_chain.mark_error("grouped conv requires packed filter")
+            out_chain._mark_error_old("grouped conv requires packed filter")
         if conv_shape.c % conv_shape.num_groups != 0:
-            out_chain.mark_error(
+            out_chain._mark_error_old(
                 "channel count must be divisible by group count"
             )
         if conv_shape.f % conv_shape.num_groups != 0:
-            out_chain.mark_error(
+            out_chain._mark_error_old(
                 "filter count must be divisible by group count"
             )
 
@@ -503,12 +503,12 @@ struct ConvDirectNHWC[
         ] * num_partitions[3]
 
         if num_partitions[1] > 1 and conv_shape.num_groups > 1:
-            out_chain.mark_error(
+            out_chain._mark_error_old(
                 "can't partition on C when num_groups > 1",
             )
 
         if num_partitions[2] > 1 and conv_shape.num_groups > 1:
-            out_chain.mark_error(
+            out_chain._mark_error_old(
                 "can't partition on F when num_groups > 1",
             )
 
