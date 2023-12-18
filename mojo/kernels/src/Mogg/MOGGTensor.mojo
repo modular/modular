@@ -126,7 +126,7 @@ struct Tensor[
         fn _default_output[
             _w: Int, _t: DType, _v: DimList
         ](i: IntList[_v], value: SIMD[_t, _w]):
-            self._simd_store_internal[_w](i, rebind[SIMD[type, _w]](value))
+            self._simd_store_internal(i, rebind[SIMD[type, _w]](value))
 
         # This should return a rebind but until that works we just call this nop.
         Tensor[
@@ -171,25 +171,24 @@ struct Tensor[
         return flat_index
 
     @always_inline
-    fn simd_store[
-        width: Int,
-    ](self, index: IntList, val: SIMD[type, width]):
+    fn store(self, index: IntList, value: SIMD):
         # Nop function to preserve symbol.
         self._output_fusion_hook()
 
+        let val = rebind[SIMD[type, value.size]](value)
+
         @parameter
-        if MOGG_output_lambda:
-            alias func = MOGG_output_lambda.value()
-            func[width, type, index.static_values](index, val)
+        if Self.MOGG_output_lambda:
+            alias func = Self.MOGG_output_lambda.value()
+            func[val.size, type, index.static_values](index, val)
         else:
             self._simd_store_internal(index, val)
 
     @always_inline
-    fn _simd_store_internal[
-        width: Int,
-    ](self, index: IntList, val: SIMD[type, width]):
+    fn _simd_store_internal(self, index: IntList, val: SIMD):
         let flat_index = self._compute_flat_index(index)
-        self.data.simd_store[width](flat_index, val)
+        let value = rebind[SIMD[type, val.size]](val)
+        self.data.simd_store[val.size](flat_index, value)
 
     @always_inline
     fn simd_load[
@@ -258,8 +257,10 @@ struct Tensor[
     @no_inline
     fn for_each[
         simd_width: Int,
-        func: fn[width: Int] (IntList) capturing -> None,
-    ](self):
+        func: fn[_width: Int, _t: DType] (IntList) capturing -> SIMD[
+            _t, _width
+        ],
+    ](inout self):
         let rank = len(self.shape)
         let total_size: Int = self.shape.nelems()
         let inner_loop = self.shape[len(self.shape) - 1]
@@ -272,11 +273,12 @@ struct Tensor[
 
             @always_inline
             @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
+            fn func_wrapper[width: Int](idx: Int):
                 # The inner most dimension is vectorized, so we set it
                 # to the index offset.
                 indices._unsafe_set_dim(rank - 1, idx)
-                func[simd_width, indices.static_values](indices)
+                let out = func[width, Self.type, indices.static_values](indices)
+                self.store(indices, out)
 
             # We vectorize over the innermost dimension.
             vectorize_unroll[

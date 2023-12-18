@@ -92,9 +92,9 @@ fn my_add(
 
     @parameter
     @always_inline
-    fn func[width: Int](i: IntList):
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
-        out.simd_store[width](i, x.simd_load[width](i) + i2)
+        return rebind[SIMD[_t, width]](x.simd_load[width](i) + i2)
 
     out.for_each[1, func]()
     return out ^
@@ -110,9 +110,9 @@ fn my_sub(
 
     @parameter
     @always_inline
-    fn func[width: Int](i: IntList):
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
-        out.simd_store[width](i, x.simd_load[width](i) - i2)
+        return rebind[SIMD[_t, width]](x.simd_load[width](i) - i2)
 
     out.for_each[1, func]()
     return out ^
