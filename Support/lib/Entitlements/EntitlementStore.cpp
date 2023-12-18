@@ -361,6 +361,9 @@ static ErrorOr<llvm::json::Value> requestDeviceCode(HTTPClient &client) {
   // Get the JSON object back.
   size_t maxSize = 1024;
   WriteableBufferRef responseBuf = WriteableBuffer::get();
+  // This request is to an endpoint that requires no auth.
+  client.noAuthNeeded();
+  // Execute the request!
   auto response = client.executeRequest(
       request, *responseBuf, std::chrono::milliseconds::zero(), maxSize);
   if (response.isError())
@@ -541,8 +544,62 @@ static ErrorOrSuccess generateCSR(Keypair &keys, llvm::StringRef subject,
 // EntitlementStore Constructor/Destructor
 //===----------------------------------------------------------------------===//
 
-EntitlementStore::EntitlementStore() : crlPEM(Buffer::get("")) {}
+EntitlementStore::EntitlementStore()
+    : clientCert(nullptr), crlPEM(Buffer::get("")) {}
 EntitlementStore::~EntitlementStore() {}
+EntitlementStore::EntitlementStore(M::EntitlementStore &&other) = default;
+
+//===----------------------------------------------------------------------===//
+// EntitlementStore::getUserID
+//===----------------------------------------------------------------------===//
+
+ErrorOr<std::string>
+EntitlementStore::getUserID(std::optional<Config> cfg) const {
+  if (clientCert) {
+    auto subjOr = clientCert->getSubject();
+    if (subjOr.isError())
+      return subjOr.takeError();
+
+    return subjOr.takeValue();
+  }
+
+  // If we don't have a client cert, then use modular.cfg.
+  // TODO(#27787): Phase this out as we roll out entitlements.
+  Config config;
+  if (!cfg) {
+    auto cfgOr = Config::open();
+    if (cfgOr.isError())
+      return cfgOr.takeError();
+    config = cfgOr.takeValue();
+  } else {
+    config = std::move(*cfg);
+  }
+
+  // Get the user ID.
+  StringRef val = config.getValue("user.id");
+  if (val.empty())
+    return Error("no user ID found in modular.cfg");
+
+  return val.str();
+}
+
+//===----------------------------------------------------------------------===//
+// EntitlementStore::alwaysOpen
+//===----------------------------------------------------------------------===//
+
+EntitlementStore EntitlementStore::alwaysOpen(HTTPClient *client,
+                                              llvm::raw_ostream &warnStream) {
+  if (!client)
+    return {}; // Empty entitlement store.
+
+  auto storeOr = EntitlementStore::open(*client);
+  if (storeOr.isError()) {
+    warnStream << "WARNING: " << storeOr.getError() << "\n";
+    return {}; // Empty entitlement store.
+  }
+
+  return storeOr.takeValue();
+}
 
 //===----------------------------------------------------------------------===//
 // EntitlementStore::open

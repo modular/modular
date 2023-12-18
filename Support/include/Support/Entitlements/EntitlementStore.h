@@ -36,7 +36,21 @@ public:
 
   /// EntitlementStore objects are non-copyable, but they are move-able.
   EntitlementStore(const EntitlementStore &other) = delete;
-  EntitlementStore(EntitlementStore &&other) = default;
+  EntitlementStore(EntitlementStore &&other);
+
+  /// Get the current user ID. Clients should use this rather than reading
+  /// `modular.cfg` or any other alternative if they want to find the current
+  /// user's ID for e.g. telemetry. This may return an error if we don't have
+  /// access to any kind of user ID.
+  ErrorOr<std::string>
+  getUserID(std::optional<Config> cfg = std::nullopt) const;
+
+  /// Always open an EntitlementStore, and simply default to an empty
+  /// EntitlementStore if we don't have the required infrastructure or the
+  /// opening fails. This will print a warning to `warnStream` there was an
+  /// actual error in opening the EntitlementStore.
+  static EntitlementStore alwaysOpen(HTTPClient *client,
+                                     llvm::raw_ostream &warnStream);
 
   /// Open the entitlements store. If the client certificate exists, that one
   /// will be used. Otherwise, we drop into the OAuth Device Authorization Flow
