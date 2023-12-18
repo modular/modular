@@ -1285,11 +1285,10 @@ fn mean[
         try:
             _mean[
                 type,
-                rank,
-                single_thread_blocking_override,
                 input_0_fn,
                 output_0_fn,
-                target,
+                target=target,
+                single_thread_blocking_override=single_thread_blocking_override,
             ](
                 input_shape,
                 int(axis),
@@ -1430,14 +1429,12 @@ fn reduce_add[
     with Trace[TraceLevel.OP]("mojo.reduce_add") as t:
         try:
             _reduce_generator[
-                type,
-                rank,
-                single_thread_blocking_override,
                 input_0_fn_wrapper,
                 output_0_fn_wrapper,
                 reduce_impl,
-                target,
-            ](input_shape, 0, int(axis), out_chain)
+                target=target,
+                single_thread_blocking_override=single_thread_blocking_override,
+            ](input_shape, Scalar[type](0), int(axis), out_chain)
         except e:
             out_chain._mark_error_old(e)
 
@@ -1488,13 +1485,11 @@ fn reduce_max[
     with Trace[TraceLevel.OP]("mojo.reduce_max") as t:
         try:
             _reduce_generator[
-                type,
-                rank,
-                single_thread_blocking_override,
                 input_0_fn_wrapper,
                 output_0_fn_wrapper,
                 reduce_impl,
-                target,
+                target=target,
+                single_thread_blocking_override=single_thread_blocking_override,
             ](input_shape, min_or_neginf[type](), int(axis), out_chain)
         except e:
             out_chain._mark_error_old(e)
@@ -1547,13 +1542,11 @@ fn reduce_min[
     with Trace[TraceLevel.OP]("mojo.reduce_min") as t:
         try:
             _reduce_generator[
-                type,
-                rank,
-                single_thread_blocking_override,
                 input_0_fn_wrapper,
                 output_0_fn_wrapper,
                 reduce_impl,
-                target,
+                target=target,
+                single_thread_blocking_override=single_thread_blocking_override,
             ](input_shape, max_or_inf[type](), int(axis), out_chain)
         except e:
             out_chain._mark_error_old(e)
@@ -1606,14 +1599,12 @@ fn reduce_mul[
     with Trace[TraceLevel.OP]("mojo.reduce_mul") as t:
         try:
             _reduce_generator[
-                type,
-                rank,
-                single_thread_blocking_override,
                 input_0_fn_wrapper,
                 output_0_fn_wrapper,
                 reduce_impl,
-                target,
-            ](input_shape, 1, int(axis), out_chain)
+                target=target,
+                single_thread_blocking_override=single_thread_blocking_override,
+            ](input_shape, Scalar[type](1), int(axis), out_chain)
         except e:
             out_chain._mark_error_old(e)
 
