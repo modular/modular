@@ -651,3 +651,9 @@ struct HasMyPointerSelf(Destructable):
     fn __moveinit__(inout self, owned existing: Self, /):
         pass
 
+# Parser crash
+# https://github.com/modularml/modular/issues/27897
+# CHECK-LABEL: lit.func @"check_trait_conversion_bymem_result_alias_crash
+fn retMemory[T: TraitForReg](value: T) -> MemoryOnlySpecial: pass
+fn check_trait_conversion_bymem_result_alias_crash(x: RegTraitType) -> MemoryOnlySpecial:
+   return retMemory(x)

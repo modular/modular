@@ -483,6 +483,13 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
           continue;
         }
       }
+
+      // Otherwise, this may be a scalar value being passed through a borrowed
+      // convention (e.g. for trait-bound value).  These will get anonymous
+      // memory locations so they'll never alias.
+      if (value.ir.isSValue() || value.ir.getIfPValue())
+        continue;
+
       llvm_unreachable("Unknown value kind for memory convention");
     }
   }

@@ -344,6 +344,21 @@ struct VariantValueStorage {
   Storage &getStorage() { return storage; }
   const Storage &getStorage() const { return storage; }
 
+  // Return true if this is one of the scalar representation.
+  bool isSValue() const {
+    return isa<SRValue>(storage) || isa<SBValue>(storage);
+  }
+  // Return true if this is one of the memory representation.
+  bool isMValue() const {
+    return isa<MBValue>(storage) || isa<MBValue>(storage) ||
+           isa<MLValue>(storage);
+  }
+  // Return true if this is one of the reference representation.
+  bool isXValue() const {
+    return isa<XBValue>(storage) || isa<XBValue>(storage) ||
+           isa<XLValue>(storage);
+  }
+
 protected:
   Storage storage;
 };
