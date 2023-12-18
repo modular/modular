@@ -104,13 +104,16 @@ fn gemv[
 
     try:
         _reduce_generator[
-            type=c_type,
-            rank=2,
+            input_fn,
+            output_fn,
+            reduce_impl,
             single_thread_blocking_override = not parallelize,
-            input_0_fn=input_fn,
-            output_0_fn=output_fn,
-            reduce_function=reduce_impl,
-        ](StaticIntTuple[2](M, K), 0, 1, out_chain)
+        ](
+            Index(M, K),
+            init=Scalar[c_type](0),
+            reduce_dim=1,
+            out_chain=out_chain,
+        )
     except e:
         trap(e)
 

@@ -151,14 +151,16 @@ fn _small_batched_matmul[
 
             try:
                 _reduce_generator[
-                    c_type,
-                    1,
-                    # single_thread_blocking_override,
-                    True,
                     input_fn,
                     output_fn,
                     reduce_impl,
-                ](a_view.dynamic_shape, 0, 0, out_chain)
+                    single_thread_blocking_override=True,
+                ](
+                    a_view.dynamic_shape,
+                    init=Scalar[c_type](0),
+                    reduce_dim=0,
+                    out_chain=out_chain,
+                )
             except e:
                 trap(e)
 
