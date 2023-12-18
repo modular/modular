@@ -8,6 +8,7 @@
 #define SUPPORT_TELEMETRY_H
 
 #include "Support/Configuration.h"
+#include "Support/Entitlements/EntitlementStore.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Instruments.h"
@@ -63,14 +64,24 @@ public:
                    ArrayRef<uint64_t>, ArrayRef<uint8_t>>;
 
   /// Construct a TelemetryContext with additional resource strings. These will
-  /// be added to the OTel resources that are attached to every log message.
+  /// be added to the OTel resources that are attached to every log message. The
+  /// TelemetryContext does not currently, but will soon require an
+  /// EntitlementStore in order to find the user ID from the secure location.
   /// NOTE: `config` parameter is only used by tests right now, to isolate
   /// telemetry test config from Modular's centralized config.
-  TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {},
+  TelemetryContext(const EntitlementStore &entitlementStore,
+                   const llvm::StringMap<AttributeValue> &resources = {},
                    std::optional<Config> config = std::nullopt);
 
+  TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {},
+                   std::optional<Config> config = std::nullopt)
+      : TelemetryContext(EntitlementStore::alwaysOpen(nullptr, llvm::errs()),
+                         resources, std::move(config)) {}
+
   /// Construct a TelemetryContext from a config.
-  TelemetryContext(Config config) : TelemetryContext({}, std::move(config)){};
+  TelemetryContext(Config config)
+      : TelemetryContext(EntitlementStore::alwaysOpen(nullptr, llvm::errs()),
+                         {}, std::move(config)){};
 
   ~TelemetryContext();
 

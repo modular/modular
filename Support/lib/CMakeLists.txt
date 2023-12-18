@@ -60,9 +60,11 @@ add_subdirectory(ML)
 add_subdirectory(Compiler)
 add_subdirectory(DebugInfoDialect)
 add_subdirectory(Globals)
-add_subdirectory(Telemetry)
 add_subdirectory(CUDA)
 add_subdirectory(Profiling)
 
 # Entitlements is a composite, it requires ASN1, Cryptography, and HTTP.
 add_subdirectory(Entitlements)
+
+# Telemetry requires Entitlements.
+add_subdirectory(Telemetry)
