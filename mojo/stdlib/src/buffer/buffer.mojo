@@ -1982,7 +1982,7 @@ struct DynamicRankBuffer:
             out_chain: The output chain.
         """
         if self.rank <= 0 or self.rank > _MAX_RANK:
-            out_chain.mark_error(
+            out_chain._mark_error_old(
                 "invalid rank, the rank bust be positive and less than or"
                 " equal to 8"
             )
