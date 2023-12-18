@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Base64.h"
+#include "llvm/ADT/StringRef.h"
 
 #include "gtest/gtest.h"
 
@@ -41,6 +42,7 @@ TEST(Base64, Padding) {
 
   for (auto str : {f, fo, foo, foob, fooba, foobar}) {
     decodedOr = decodeURLSafeBase64(str);
-    EXPECT_FALSE(decodedOr.isError()) << str << ": " << decodedOr.getError();
+    EXPECT_FALSE(decodedOr.isError())
+        << std::string(str) << ": " << decodedOr.getError();
   }
 }

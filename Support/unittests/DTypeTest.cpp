@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/DType.h"
+#include "llvm/ADT/StringRef.h"
 
 #include "gtest/gtest.h"
 

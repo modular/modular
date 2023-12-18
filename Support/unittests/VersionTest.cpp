@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Version.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "gtest/gtest.h"
 
@@ -21,7 +23,7 @@ TEST(Version, Parsing) {
   EXPECT_FALSE(v1PatchOr.isError()) << v1PatchOr.getError();
   EXPECT_TRUE(v1PatchOr->getMajor() == 1 && v1PatchOr->getMinor() == 0 &&
               v1PatchOr->getPatch() == 0 && v1PatchOr->getLabel() == "abcd")
-      << *v1PatchOr;
+      << v1PatchOr->toString();
 
   v1PatchOr = Version::parse("1.0.0-abcd-123j.sdlkfj");
   EXPECT_FALSE(v1PatchOr.isError()) << v1PatchOr.getError();
@@ -29,7 +31,7 @@ TEST(Version, Parsing) {
   EXPECT_TRUE(v1PatchOr->getMajor() == 1 && v1PatchOr->getMinor() == 0 &&
               v1PatchOr->getPatch() == 0 &&
               v1PatchOr->getLabel() == "abcd-123j.sdlkfj")
-      << *v1PatchOr;
+      << v1PatchOr->toString();
 }
 
 /// Check that the precedence operator works the way we expect it to. This test

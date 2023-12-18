@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Buffer.h"
+#include "llvm/ADT/StringRef.h"
 
 #include "gtest/gtest.h"
 
@@ -35,12 +36,12 @@ TEST(BufferTest, TestWrite) {
   *buffer << "hello";
   auto contents =
       StringRef(buffer->getBuffer().data(), buffer->getBuffer().size());
-  EXPECT_TRUE(contents == "hello") << "Actually had: " << contents;
+  EXPECT_TRUE(contents == "hello") << "Actually had: " << std::string(contents);
 
   auto buffer2 = std::move(buffer);
   contents =
       StringRef(buffer2->getBuffer().data(), buffer2->getBuffer().size());
-  EXPECT_TRUE(contents == "hello") << "Actually had: " << contents;
+  EXPECT_TRUE(contents == "hello") << "Actually had: " << std::string(contents);
 
   auto buffer3 = buffer2.copy();
   EXPECT_TRUE(buffer3->getBufferStart() == buffer2->getBufferStart());
@@ -51,10 +52,10 @@ TEST(BufferTest, TestWrite) {
   memcpy(buffer4->getBufferStart(), data, initialSize);
   *buffer4 << "hello";
   contents = StringRef(buffer4->getBufferStart(), initialSize);
-  EXPECT_TRUE(contents == data) << "Actually had: " << contents;
+  EXPECT_TRUE(contents == data) << "Actually had: " << std::string(contents);
   contents = StringRef(buffer4->getBufferStart() + initialSize,
                        buffer4->getBufferSize() - initialSize);
-  EXPECT_TRUE(contents == "hello") << "Actually had: " << contents;
+  EXPECT_TRUE(contents == "hello") << "Actually had: " << std::string(contents);
 }
 
 TEST(BufferTest, TestReadPWriteFile) {
@@ -126,7 +127,7 @@ TEST(BufferTest, MemoryBufferConversion) {
     EXPECT_TRUE(memoryBuffer == nullptr);
   }
   EXPECT_TRUE(buffer->getBuffer() == "goodbye")
-      << "Actually had: " << buffer->getBuffer();
+      << "Actually had: " << std::string(buffer->getBuffer());
 
 #ifdef MODULAR_DEBUG
   std::unique_ptr<llvm::MemoryBuffer> memoryBuffer;
