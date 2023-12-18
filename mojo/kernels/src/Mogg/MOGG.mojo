@@ -240,7 +240,7 @@ fn _guard_against_gpu_target[
 ](out_chain: OutputChainPtr) -> Bool:
     @parameter
     if MODULAR_RELEASE_PACKAGE_BUILD and target == "cuda":
-        out_chain.mark_error(
+        out_chain._mark_error_old(
             "GPU Support is not available in the current release"
         )
         return True
@@ -934,7 +934,7 @@ fn argmax_wrapped[
     try:
         _argmax(input, axis_buf, output, out_chain)
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -959,7 +959,7 @@ fn argmin_wrapped[
     try:
         _argmin(input, axis_buf, output, out_chain)
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1297,7 +1297,7 @@ fn mean[
                 out_chain,
             )
         except e:
-            out_chain.mark_error(e)
+            out_chain._mark_error_old(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1439,7 +1439,7 @@ fn reduce_add[
                 target,
             ](input_shape, 0, int(axis), out_chain)
         except e:
-            out_chain.mark_error(e)
+            out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.reduce.max")
@@ -1497,7 +1497,7 @@ fn reduce_max[
                 target,
             ](input_shape, min_or_neginf[type](), int(axis), out_chain)
         except e:
-            out_chain.mark_error(e)
+            out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.reduce.min")
@@ -1556,7 +1556,7 @@ fn reduce_min[
                 target,
             ](input_shape, max_or_inf[type](), int(axis), out_chain)
         except e:
-            out_chain.mark_error(e)
+            out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.reduce.mul")
@@ -1615,7 +1615,7 @@ fn reduce_mul[
                 target,
             ](input_shape, 1, int(axis), out_chain)
         except e:
-            out_chain.mark_error(e)
+            out_chain._mark_error_old(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2623,7 +2623,7 @@ fn softmax[
             target,
         ](shape, output, rank - 1, out_chain)
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
@@ -2650,7 +2650,7 @@ fn logsoftmax[
             input_0_fn,
         ](shape, output, rank - 1, out_chain)
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2973,13 +2973,13 @@ fn conv[
     ]()
 
     if strides.size() != 2:
-        return out_chain.mark_error("2 values expected in strides input")
+        return out_chain._mark_error_old("2 values expected in strides input")
 
     if dilation.size() != 2:
-        return out_chain.mark_error("2 values expected in dilation input")
+        return out_chain._mark_error_old("2 values expected in dilation input")
 
     if paddings.size() != 4:
-        return out_chain.mark_error("4 values expected in paddings input")
+        return out_chain._mark_error_old("4 values expected in paddings input")
 
     let strides_flat = strides.flatten()
     let dilation_flat = dilation.flatten()
@@ -2988,7 +2988,9 @@ fn conv[
     let strides_tuple = Index(strides_flat[0], strides_flat[1])
     let dilation_tuple = Index(dilation_flat[0], dilation_flat[1])
     if dilation_tuple != Index(1, 1):
-        return out_chain.mark_error("Non-unit dilation is not supported yet.")
+        return out_chain._mark_error_old(
+            "Non-unit dilation is not supported yet."
+        )
 
     let pad_h_tuple = Index(paddings_flat[0], paddings_flat[1])
     let pad_w_tuple = Index(paddings_flat[2], paddings_flat[3])
@@ -3082,16 +3084,16 @@ fn conv_transpose[
     ]()
 
     if strides.size() != 2:
-        return out_chain.mark_error("2 values expected in strides input")
+        return out_chain._mark_error_old("2 values expected in strides input")
 
     if dilation.size() != 2:
-        return out_chain.mark_error("2 values expected in dilation input")
+        return out_chain._mark_error_old("2 values expected in dilation input")
 
     if output_paddings.size() != 2:
-        return out_chain.mark_error("2 values expected in output_paddings")
+        return out_chain._mark_error_old("2 values expected in output_paddings")
 
     if paddings.size() != 4:
-        return out_chain.mark_error("4 values expected in paddings input")
+        return out_chain._mark_error_old("4 values expected in paddings input")
 
     conv_transpose_impl[
         4,
@@ -3401,7 +3403,7 @@ fn multi_head_flash_attention[
             target,
         ](output, q, k, v, mask, scale[0], out_chain)
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("no_mask_fused_attention_cpu")
@@ -3473,7 +3475,7 @@ fn no_mask_fused_attention_cpu[
             False,  # add_causal_mask
         ](output, q, k, v, mask, scale_f32, causal_mask, out_chain)
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("with_mask_fused_attention_cpu")
@@ -3545,7 +3547,7 @@ fn with_mask_fused_attention_cpu[
             False,  # add_causal_mask
         ](output, q, k, v, attn_mask, scale_f32, causal_mask, out_chain)
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
 
 
 # # ===----------------------------------------------------------------------===#
@@ -3768,4 +3770,4 @@ fn mogg_matrix_solve[
             type, x_rank, a_rank, b_rank, single_thread_blocking_override
         ](a, b, x, out_chain)
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
