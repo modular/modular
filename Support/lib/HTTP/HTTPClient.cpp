@@ -83,17 +83,25 @@ HTTPClient::~HTTPClient() {
   }
 }
 
+/// Clean out any auth settings we may have set already.
+static void cleanupAuth(void *curl) {
+  curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+  curl_easy_setopt(curl, CURLOPT_XOAUTH2_BEARER, nullptr);
+  curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, nullptr);
+  curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
+  curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, nullptr);
+  curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
+}
+
+void HTTPClient::noAuthNeeded() {
+  cleanupAuth(curl);
+  authSetup = true;
+}
+
 ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
   // Clean out anything we already had. This means just resetting to the
   // defaults so that we don't accidentally use an outdated token, for example.
-  if (authSetup) {
-    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
-    curl_easy_setopt(curl, CURLOPT_XOAUTH2_BEARER, nullptr);
-    curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, nullptr);
-    curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
-    curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, nullptr);
-    curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
-  }
+  cleanupAuth(curl);
 
   // Short-circuit if we're using bearer token authorization. This way, libcurl
   // will add the headers *for* us.
@@ -113,7 +121,7 @@ ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
     return certBufOr.takeError();
 
   // Set the client certificate on the context.
-  curl_blob blob;
+  curl_blob blob = {};
   blob.data = (void *)(*certBufOr)->getBufferStart();
   blob.len = (*certBufOr)->getBufferSize();
   blob.flags = CURL_BLOB_COPY;

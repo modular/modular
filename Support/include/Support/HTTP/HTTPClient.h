@@ -192,7 +192,7 @@ public:
   /// This function just sets authSetup to `true` for the case where we don't
   /// actually need to set up auth. This should *ONLY* be used if you can
   /// articulate *why* this is being used.
-  void noAuthNeeded() { authSetup = true; }
+  void noAuthNeeded();
 
   /// Set up the auth for this HTTP client. This can be set as often as desired.
   /// If no token is provided, we will use the default client certificate and
