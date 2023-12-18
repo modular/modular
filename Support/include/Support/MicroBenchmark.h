@@ -12,8 +12,8 @@
 #ifndef SUPPORT_MICRO_BENCHMARK_H
 #define SUPPORT_MICRO_BENCHMARK_H
 
-#include "LLVMForwardDecls.h"
 #include "Support/ErrorOr.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/Support/Compiler.h"
