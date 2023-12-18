@@ -7,7 +7,7 @@
 add_subdirectory(GraphCompiler/Conversion)
 add_subdirectory(GraphCompiler/Matchers)
 add_subdirectory(GraphCompiler/MODialect)
-add_subdirectory(BenchmarkCLI)
+add_subdirectory(EngineCLI)
 
 if (TARGET modular-pybind-ext)
   add_subdirectory(API)
