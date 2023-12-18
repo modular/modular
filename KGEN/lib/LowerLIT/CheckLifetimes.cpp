@@ -638,8 +638,17 @@ ValueRef ValueSet::getValueRef(Value value) const {
     }
 
   // If this is a RefToPointerOp get the underlying ref.
+  // TODO(references): Remove this.
   if (auto refToPointer = value.getDefiningOp<RefToPointerOp>())
     return getValueRef(refToPointer.getRef());
+
+  // If this is a RefToPointerOp get the underlying ref.
+  // TODO(references): Remove this: it is only used for pointer->ref conversion.
+  if (auto pointerToRef =
+          value.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
+    if (pointerToRef.getNumOperands() == 1)
+      return getValueRef(pointerToRef.getOperand(0));
+  }
 
   // If this is a RebindOp get the underlying ref.
   if (auto rebind = value.getDefiningOp<RebindOp>())

@@ -19,12 +19,9 @@ struct MemExample:
   var x : Int
   fn __init__(inout self): self.x = 42; pass
   fn noop(self): pass
-
-  fn __moveinit__(inout self, owned existing: Self):
-    self.x = existing.x
-
-  fn __copyinit__(inout self, existing: Self):
-    self.x = existing.x
+  fn __moveinit__(inout self, owned existing: Self): self.x = existing.x
+  fn __copyinit__(inout self, existing: Self): self.x = existing.x
+  fn __bool__(self) -> Bool: return True
 
   # Destructor should not recurse.
   # CHECK-LABEL: lit.func @"__del__
@@ -1289,3 +1286,15 @@ fn propagate_reg_error() raises:
    # CHECK-NEXT: kgen.variant.create %none, 1
    # CHECK-NEXT: kgen.return
     _ = may_throw()
+
+
+# [Bug] __result__ is uninitialized
+# https://github.com/modularml/modular/issues/27792
+# CHECK-LABEL: lit.func @"test_or
+fn test_or(a: MemExample) -> MemExample:
+  # CHECK: hlcf.if {{.*}} {
+  # CHECK:   lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %a)
+  # CHECK: } else {
+  # CHECK:   lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %a)
+  # CHECK: }
+  return a or a
