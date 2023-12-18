@@ -395,7 +395,9 @@ fn parallelize[func: fn (Int) capturing -> None]():
     Parameters:
         func: The function to invoke.
     """
-    return parallelize[func](num_cores())
+    let num_work_items = num_cores()
+    with Runtime() as rt:
+        _parallelize_impl[func](rt, num_work_items, num_work_items)
 
 
 @always_inline
