@@ -1554,18 +1554,33 @@ fn _argn[
             raise Error("input and output dims must match aside from 'axis'")
 
     let axis_size = input.dim(canonical_axis)
-    let input_start_ptr = input.data
-    let output_start_ptr = output.data
     let input_stride: Int
     let output_stride: Int
+    let num_workers: Int
+    let chunk_size: Int
+    var parallel_size = 1
 
     @parameter
     if rank == 1:
         input_stride = input.num_elements()
         output_stride = output.num_elements()
+        num_workers = 1
+        chunk_size = 1
     else:
         input_stride = input.dynamic_stride[canonical_axis - 1]
         output_stride = output.dynamic_stride[canonical_axis - 1]
+
+        for i in range(canonical_axis):
+            parallel_size *= input.dim(i)
+
+        # don't over-schedule if parallel_size < _get_num_workers output
+        num_workers = _min(
+            _get_num_workers(
+                input.dynamic_shape.flattened_length(), out_chain.get_runtime()
+            ),
+            parallel_size,
+        )
+        chunk_size = div_ceil(parallel_size, num_workers)
 
     @parameter
     fn task_func(task_id: Int):
@@ -1595,12 +1610,14 @@ fn _argn[
             else:
                 return a > b
 
-        # iterate over flattened axis
-        var curr_input_offset = 0
-        var curr_output_offset = 0
-        while curr_input_offset < input.num_elements():
-            let input_dim_ptr = input_start_ptr.offset(curr_input_offset)
-            let output_dim_ptr = output_start_ptr.offset(curr_output_offset)
+        # iterate over flattened axes
+        let start = task_id * chunk_size
+        let end = _min((task_id + 1) * chunk_size, parallel_size)
+        for i in range(start, end):
+            var input_offset = i * input_stride
+            var output_offset = i * output_stride
+            let input_dim_ptr = input.data.offset(input_offset)
+            let output_dim_ptr = output.data.offset(output_offset)
             var global_val: Scalar[type]
 
             # initialize limits
@@ -1652,15 +1669,9 @@ fn _argn[
                     global_indices, max_or_inf[out_type]()
                 )
                 idx = min_indices.reduce_min()
-
             output_dim_ptr.store(idx)
-            curr_output_offset += output_stride
-            curr_input_offset += input_stride
 
-    # TODO: Shard by dim 0.
-    sync_parallelize[task_func](out_chain, 1)
-    # TODO: Remove after #26325
-    out_chain.wait()
+    sync_parallelize[task_func](out_chain, parallel_size)
 
 
 # ===----------------------------------------------------------------------===#

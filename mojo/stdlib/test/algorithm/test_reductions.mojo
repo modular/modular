@@ -763,7 +763,6 @@ fn test_argn_simd_index_order() raises:
     #   [0, 0, 1, 0, 0, 1, 0, 0, 0]
     #   <--------->  <-------->  <>
     #          ^        ^
-    print(simdwidthof[DType.int32]())
     alias size = 17
 
     let vector = NDBuffer[1, DimList(size), DType.int32].stack_allocation()
@@ -805,6 +804,105 @@ fn test_argn_simd_index_order() raises:
         out_chain_1.wait()
         # CHECK: argmin = 4
         print("argmin = ", output[0])
+
+
+# CHECK-LABEL: test_argn_parallelize
+fn test_argn_parallelize() raises:
+    print("== test_argn_parallelize")
+
+    # Checks argn's performance when the size of the NDBuffer exceeds the threshold to enable parallelism
+    alias batch_size = 8
+    alias hidden_dim = 16384
+
+    let input_ptr = DTypePointer[DType.float32].alloc(batch_size * hidden_dim)
+    let input = NDBuffer[2, DimList(batch_size, hidden_dim), DType.float32](
+        input_ptr
+    )
+    input.fill(0)
+
+    let output = NDBuffer[
+        2, DimList(batch_size, 1), DType.index
+    ].stack_allocation()
+
+    input[Index(0, 10)] = 100
+    input[Index(0, 100)] = -100
+    input[Index(1, 20)] = -100
+    input[Index(1, 200)] = 100
+    input[Index(2, 30)] = 100
+    input[Index(2, 300)] = -100
+    input[Index(3, 40)] = -100
+    input[Index(3, 400)] = 100
+    input[Index(4, 10)] = 100
+    input[Index(4, 100)] = -100
+    input[Index(5, 20)] = 100
+    input[Index(5, 200)] = -100
+    input[Index(6, 30)] = 100
+    input[Index(6, 300)] = -100
+    input[Index(7, 40)] = -100
+    input[Index(7, 400)] = 100
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                input
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+
+        # CHECK: argmax = 10
+        print("argmax = ", output[Index(0, 0)])
+        # CHECK: argmax = 200
+        print("argmax = ", output[Index(1, 0)])
+        # CHECK: argmax = 30
+        print("argmax = ", output[Index(2, 0)])
+        # CHECK: argmax = 400
+        print("argmax = ", output[Index(3, 0)])
+        # CHECK: argmax = 10
+        print("argmax = ", output[Index(4, 0)])
+        # CHECK: argmax = 20
+        print("argmax = ", output[Index(5, 0)])
+        # CHECK: argmax = 30
+        print("argmax = ", output[Index(6, 0)])
+        # CHECK: argmax = 400
+        print("argmax = ", output[Index(7, 0)])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                input
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+
+        # CHECK: argmin = 100
+        print("argmin = ", output[Index(0, 0)])
+        # CHECK: argmin = 20
+        print("argmin = ", output[Index(1, 0)])
+        # CHECK: argmin = 300
+        print("argmin = ", output[Index(2, 0)])
+        # CHECK: argmin = 40
+        print("argmin = ", output[Index(3, 0)])
+        # CHECK: argmin = 100
+        print("argmin = ", output[Index(4, 0)])
+        # CHECK: argmin = 200
+        print("argmin = ", output[Index(5, 0)])
+        # CHECK: argmin = 300
+        print("argmin = ", output[Index(6, 0)])
+        # CHECK: argmin = 40
+        print("argmin = ", output[Index(7, 0)])
+
+    input_ptr.free()
 
 
 # CHECK-LABEL: test_cumsum
@@ -877,4 +975,5 @@ fn main() raises:
     test_argn_3d_identity()
     test_argn_less_than_simd()
     test_argn_simd_index_order()
+    test_argn_parallelize()
     test_cumsum()
