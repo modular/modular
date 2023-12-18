@@ -88,44 +88,47 @@ fn test_mean_variance():
     print(variance(vector, 1))
 
 
-fn test_3d_reductions():
-    print("== test_3d_reductions")
+@always_inline
+@parameter
+fn _test_3d_reductions[
+    input_shape: DimList,
+    output_shape: DimList,
+    reduce_axis: Int,
+]():
+    print("== test_3d_reductions reduce_axis=", reduce_axis)
     alias simd_width = 4
+    let input = NDBuffer[3, input_shape, DType.float32].stack_allocation()
+    let output = NDBuffer[3, output_shape, DType.float32].stack_allocation()
+    output.fill(0)
 
-    @always_inline
-    @parameter
-    fn _test_3d_reductions[
-        input_shape: DimList,
-        output_shape: DimList,
-        reduce_axis: Int,
-    ]():
-        let input = NDBuffer[3, input_shape, DType.float32].stack_allocation()
-        let output = NDBuffer[3, output_shape, DType.float32].stack_allocation()
-        output.fill(0)
+    for i in range(input.size()):
+        input.flatten()[i] = i
 
-        for i in range(input.size()):
-            input.flatten()[i] = i
+    sum[reduce_axis](input, output)
 
-        sum[
-            3,
-            input_shape,
-            output_shape,
-            DType.float32,
-            reduce_axis,
-        ](input, output)
+    for i in range(output.size()):
+        print(output.flatten()[i])
 
-        for i in range(output.size()):
-            print(output.flatten()[i])
 
-    # CHECK: 6.0
+# CHECK-LABEL: test_3d_reductions reduce_axis= 0
+fn test_3d_reductions_axis_0():
+    # CHECK: 8.0
+    # CHECK-NEXT: 10.0
+    # CHECK-NEXT: 12.0
+    # CHECK-NEXT: 14.0
+    # CHECK-NEXT: 16.0
+    # CHECK-NEXT: 18.0
+    # CHECK-NEXT: 20.0
     # CHECK-NEXT: 22.0
-    # CHECK-NEXT: 38.0
-    # CHECK-NEXT: 54.0
     _test_3d_reductions[
         DimList(2, 2, 4),
-        DimList(2, 2, 1),
-        2,
+        DimList(1, 2, 4),
+        0,
     ]()
+
+
+# CHECK-LABEL: test_3d_reductions reduce_axis= 1
+fn test_3d_reductions_axis_1():
     # CHECK: 4.0
     # CHECK-NEXT: 6.0
     # CHECK-NEXT: 8.0
@@ -139,18 +142,18 @@ fn test_3d_reductions():
         DimList(2, 1, 4),
         1,
     ]()
-    # CHECK: 8.0
-    # CHECK-NEXT: 10.0
-    # CHECK-NEXT: 12.0
-    # CHECK-NEXT: 14.0
-    # CHECK-NEXT: 16.0
-    # CHECK-NEXT: 18.0
-    # CHECK-NEXT: 20.0
+
+
+# CHECK-LABEL: test_3d_reductions reduce_axis= 2
+fn test_3d_reductions_axis_2():
+    # CHECK: 6.0
     # CHECK-NEXT: 22.0
+    # CHECK-NEXT: 38.0
+    # CHECK-NEXT: 54.0
     _test_3d_reductions[
         DimList(2, 2, 4),
-        DimList(1, 2, 4),
-        0,
+        DimList(2, 2, 1),
+        2,
     ]()
 
 
@@ -860,7 +863,9 @@ fn main() raises:
     test_reductions()
     test_product()
     test_mean_variance()
-    test_3d_reductions()
+    test_3d_reductions_axis_0()
+    test_3d_reductions_axis_1()
+    test_3d_reductions_axis_2()
     test_boolean()
     test_index_of_first_one()
     test_argn()

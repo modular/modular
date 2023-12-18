@@ -247,21 +247,14 @@ fn map_reduce[
 @always_inline
 @parameter
 fn reduce[
-    type: DType,
-    acc_type: DType,
     reduce_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
-    ) capturing -> SIMD[acc_type, width],
-    /,
-    simd_width: Int = simdwidthof[acc_type](),
-](src: Buffer[_, type], init: Scalar[acc_type]) -> Scalar[acc_type]:
+    ) capturing -> SIMD[acc_type, width]
+](src: Buffer, init: Scalar) -> Scalar[init.element_type]:
     """Computes a custom reduction of buffer elements.
 
     Parameters:
-        type: The buffer elements dtype.
-        acc_type: The dtype of the reduction accumulator.
         reduce_fn: The lambda implementing the reduction.
-        simd_width: The vector width for the computation.
         : Ignore.
 
     Args:
@@ -279,14 +272,14 @@ fn reduce[
     ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
         return rebind[SIMD[_type, width]](src.simd_load[width](idx[0]))
 
-    var out: Scalar[type] = 0
+    var out: Scalar[init.element_type] = 0
 
     @always_inline
     @parameter
     fn output_fn[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-        out = rebind[Scalar[type]](value)
+        out = rebind[Scalar[init.element_type]](value)
 
     @always_inline
     @parameter
@@ -296,38 +289,31 @@ fn reduce[
         return reduce_fn(acc, val)
 
     let shape = Index(len(src))
+
     try:
         _reduce_generator[
-            type,
-            1,
-            True,
             input_fn,
             output_fn,
             reduce_fn_wrapper,
-        ](shape, rebind[Scalar[type]](init), 0, OutputChainPtr())
+            single_thread_blocking_override=True,
+        ](shape, init=init, reduce_dim=0, out_chain=OutputChainPtr())
     except e:
         trap(e)
-    return rebind[Scalar[acc_type]](out)
+    return out
 
 
 @always_inline
 @parameter
 fn reduce_boolean[
-    simd_width: Int,
-    size: Dim,
-    type: DType,
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) capturing -> Bool,
     continue_fn: fn (Bool) capturing -> Bool,
-](src: Buffer[size, type], init: Bool) -> Bool:
+](src: Buffer, init: Bool) -> Bool:
     """Computes a bool reduction of buffer elements. The reduction will early
     exit if the `continue_fn` returns False.
 
     Parameters:
-        simd_width: The vector width for the computation.
-        size: The buffer size.
-        type: The buffer elements dtype.
         reduce_fn: A boolean reduction function. This function is used to reduce
           a vector to a scalar. E.g. when we got `8xfloat32` vector and want to
           reduce it to a `bool`.
@@ -335,6 +321,7 @@ fn reduce_boolean[
           processing the rest of the iterations. This takes the result of the
           reduce_fn and returns True to continue processing and False to early
           exit.
+        : Ignore.
 
     Args:
         src: The input buffer.
@@ -343,6 +330,7 @@ fn reduce_boolean[
     Returns:
         The computed reduction value.
     """
+    alias simd_width = simdwidthof[src.type]()
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
@@ -352,19 +340,17 @@ fn reduce_boolean[
     let vector_end = align_down(length, simd_width)
     var curr = init
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
-        curr = reduce_fn[type, unrolled_simd_width](
-            src.simd_load[unrolled_simd_width](i)
-        )
+        curr = reduce_fn(src.simd_load[unrolled_simd_width](i))
         if not continue_fn(curr):
             return curr
 
     for i in range(unrolled_vector_end, vector_end, simd_width):
-        curr = reduce_fn[type, simd_width](src.simd_load[simd_width](i))
+        curr = reduce_fn(src.simd_load[simd_width](i))
         if not continue_fn(curr):
             return curr
 
     for i in range(vector_end, length):
-        curr = reduce_fn[type, 1](src[i])
+        curr = reduce_fn(src[i])
         if not continue_fn(curr):
             return curr
     return curr
@@ -372,20 +358,14 @@ fn reduce_boolean[
 
 @parameter
 fn _reduce_3D[
-    type: DType,
-    acc_type: DType,
     map_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
-    /,
-    simd_width: Int = simdwidthof[acc_type](),
-](
-    src: NDBuffer[_, _, type],
-    dst: NDBuffer[_, _, acc_type],
-    init: Scalar[acc_type],
-):
+](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]):
     """Performs a reduction across axis 1 of a 3D input buffer."""
+
+    alias simd_width = simdwidthof[dst.type]()
 
     let h = src.dim[0]()
     let w = src.dim[1]()
@@ -401,13 +381,10 @@ fn _reduce_3D[
             # TODO: parallelize
             for i in range(h):
                 let offset = src._offset(StaticIntTuple[src.rank](i, 0, 0))
-                let input = Buffer[sz, type](offset, w)
-                let val = reduce[
-                    type,
-                    acc_type,
-                    map_fn,
-                    simd_width=simd_width,
-                ](input, init)
+                let input = Buffer[
+                    sz, src.type, address_space = src.address_space
+                ](offset, w)
+                let val = reduce[map_fn](input, init)
                 dst[StaticIntTuple[dst.rank](i, 0)] = val
 
         reduce_inner_axis()
@@ -425,40 +402,32 @@ fn _reduce_3D[
         constrained[unroll_factor > 0, "unroll_factor must be > 0"]()
         return unroll_factor
 
-    alias unroll_factor = get_unroll_factor[simd_width, sizeof[type]()]()
+    alias unroll_factor = get_unroll_factor[simd_width, sizeof[dst.type]()]()
     alias usimd_width = unroll_factor * simd_width
     for i in range(h):
 
         @always_inline
         @parameter
         fn reduce_w_chunked[simd_width: Int](idx: Int):
-            var accum = SIMD[acc_type, simd_width].splat(init)
+            var accum = SIMD[init.element_type, simd_width].splat(init)
             for j in range(w):
                 let chunk = src.simd_load[simd_width](
                     StaticIntTuple[src.rank](i, j, idx)
                 )
                 accum = map_fn(accum, chunk)
-            dst.simd_store[simd_width](StaticIntTuple[dst.rank](i, idx), accum)
+            dst.simd_store(StaticIntTuple[dst.rank](i, idx), accum)
 
         vectorize[usimd_width, reduce_w_chunked](c)
 
 
 @parameter
 fn reduce[
-    type: DType,
-    acc_type: DType,
     map_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
     reduce_axis: Int,
-    /,
-    simd_width: Int = simdwidthof[acc_type](),
-](
-    src: NDBuffer[_, _, type],
-    dst: NDBuffer[_, _, acc_type],
-    init: Scalar[acc_type],
-):
+](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]):
     """Performs a reduction across reduce_axis of an NDBuffer (src) and stores
     the result in an NDBuffer (dst).
 
@@ -470,8 +439,6 @@ fn reduce[
     where H=prod(D1,...,Di-1), W = Di, and C = prod(Di+1,...,Dn).
 
     Parameters:
-        type: The buffer elements dtype.
-        acc_type: The dtype of the reduction accumulator.
         map_fn: A mapping function. This function is used when to combine
           (accumulate) two chunks of input data: e.g. we load two 8xfloat32 vectors
           of elements and need to reduce them to a single 8xfloat32 vector.
@@ -479,7 +446,6 @@ fn reduce[
           vector to a scalar. E.g. when we got 8xfloat32 vector and want to reduce
           it to 1xfloat32.
         reduce_axis: The axis to reduce across.
-        simd_width: The vector width for the computation.
         : Ignore.
 
     Args:
@@ -497,22 +463,19 @@ fn reduce[
     alias c_static = src.shape.product_range[reduce_axis + 1, src.rank]()
 
     alias input_3d_shape = DimList(h_static, w_static, c_static)
-    alias output_3d_shape = DimList(h_static, c_static)
+    alias output_2d_shape = DimList(h_static, c_static)
 
-    let input_3d = NDBuffer[3, input_3d_shape, type](
-        src.data, StaticIntTuple[3](h_dynamic, w_dynamic, c_dynamic)
-    )
-    let output_3d = NDBuffer[2, output_3d_shape, acc_type](
-        dst.data, StaticIntTuple[2](h_dynamic, c_dynamic)
+    let input_3d = NDBuffer[
+        3, input_3d_shape, src.type, address_space = src.address_space
+    ](src.data, Index(h_dynamic, w_dynamic, c_dynamic))
+    let output_2d = NDBuffer[
+        2, output_2d_shape, dst.type, address_space = dst.address_space
+    ](
+        dst.data,
+        Index(h_dynamic, c_dynamic),
     )
 
-    _reduce_3D[
-        type,
-        acc_type,
-        map_fn,
-        reduce_fn,
-        simd_width=simd_width,
-    ](input_3d, output_3d, init)
+    _reduce_3D[map_fn, reduce_fn](input_3d, output_2d, init)
 
 
 # ===----------------------------------------------------------------------===#
@@ -525,9 +488,6 @@ fn reduce[
 @always_inline
 @adaptive
 fn _reduce_generator[
-    type: DType,
-    rank: Int,
-    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -537,36 +497,55 @@ fn _reduce_generator[
     reduce_function: fn[ty: DType, width: Int] (
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
+    /,
+    single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[rank],
-    init_value: Scalar[type],
+    shape: StaticIntTuple,
+    init: Scalar,
     reduce_dim: Int,
     out_chain: OutputChainPtr,
 ) raises:
+    """Reduce the given tensor using the given reduction function.
+
+    Constraints:
+        Target must be "cuda".
+
+    Parameters:
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to storing to the output tensor.
+        reduce_function: The lambda implementing the reduction.
+        single_thread_blocking_override: If True, then reduction is run
+          synchronously using a single thread.
+        target: The target to run on.
+        : Ignore.
+
+    Args:
+        shape: The shape of the tensor we are reducing.
+        init: The value to start the reduction from.
+        reduce_dim: The dimension we are reducing.
+        out_chain: The our chain to attach results to.
+    """
     constrained[target == "cuda", "only valid on GPUs"]()
 
     let reduce_dim_normalized = (
-        rank + reduce_dim
+        len(shape) + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
 
-    if reduce_dim_normalized != rank - 1:
-        raise Error("GPU reduction currently limited to inner axis.")
+    if reduce_dim_normalized != len(shape) - 1:
+        raise "GPU reduction currently limited to inner axis."
 
     let stream = out_chain.get_cuda_stream()
     reduce_launch[
         input_0_fn,
         output_0_fn,
         reduce_function,
-    ](shape, reduce_dim_normalized, init_value, stream)
+    ](shape, reduce_dim_normalized, init, stream)
 
 
 @always_inline
 @adaptive
 fn _reduce_generator[
-    type: DType,
-    rank: Int,
-    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -576,70 +555,69 @@ fn _reduce_generator[
     reduce_function: fn[ty: DType, width: Int] (
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
+    /,
+    single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    shape: StaticIntTuple[rank],
-    init_value: Scalar[type],
+    shape: StaticIntTuple,
+    init: Scalar,
     reduce_dim: Int,
     out_chain: OutputChainPtr,
 ) raises:
     """Reduce the given tensor using the given reduction function.
 
+    Constraints:
+        Target must be "cpu".
+
     Parameters:
-        type: The element type we are reducing.
-        rank: The rank of the tensor.
-        single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
+        single_thread_blocking_override: If True, then reduction is run
+          synchronously using a single thread.
         target: The target to run on.
+        : Ignore.
 
     Args:
         shape: The shape of the tensor we are reducing.
-        init_value: The value to start the reduction from.
+        init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
         out_chain: The our chain to attach results to.
     """
     constrained[target == "cpu", "only valid on CPUs"]()
+
+    alias rank = shape.size
+
     let reduce_dim_normalized = (
         rank + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
 
     @parameter
-    if rank == 1:
+    if shape.size == 1:
         _reduce_along_inner_dimension[
-            type,
-            rank,
-            single_thread_blocking_override,
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init_value, reduce_dim_normalized, out_chain)
+            single_thread_blocking_override=single_thread_blocking_override,
+        ](shape, init, reduce_dim_normalized, out_chain)
     else:
         if rank - 1 == reduce_dim_normalized:
             _reduce_along_inner_dimension[
-                type,
-                rank,
-                single_thread_blocking_override,
                 input_0_fn,
                 output_0_fn,
                 reduce_function,
-            ](shape, init_value, reduce_dim_normalized, out_chain)
+                single_thread_blocking_override=single_thread_blocking_override,
+            ](shape, init, reduce_dim_normalized, out_chain)
         else:
             _reduce_along_outer_dimension[
-                type,
-                rank,
-                single_thread_blocking_override,
                 input_0_fn,
                 output_0_fn,
                 reduce_function,
-            ](shape, init_value, reduce_dim_normalized, out_chain)
+                single_thread_blocking_override=single_thread_blocking_override,
+            ](shape, init, reduce_dim_normalized, out_chain)
 
 
 fn _reduce_along_inner_dimension[
-    type: DType,
-    rank: Int,
-    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -649,21 +627,24 @@ fn _reduce_along_inner_dimension[
     reduce_function: fn[ty: DType, width: Int] (
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
+    /,
+    single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[rank],
-    init_value: Scalar[type],
+    shape: StaticIntTuple,
+    init_value: Scalar,
     reduce_dim: Int,
     out_chain: OutputChainPtr,
 ):
     """Reduce the given tensor using the given reduction function.
 
     Parameters:
-        type: The element type we are reducing.
-        rank: The rank of the tensor.
-        single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
+        single_thread_blocking_override: If True, then reduction is run
+          synchronously using a single thread.
+        : Ignore.
+
     Args:
         shape: The shape of the tensor we are reducing
         init_value: The value to start the reduction from.
@@ -695,7 +676,7 @@ fn _reduce_along_inner_dimension[
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
     alias unroll_factor = 8
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[init_value.element_type]()
     alias unrolled_simd_width = simd_width * unroll_factor
 
     @always_inline
@@ -716,22 +697,24 @@ fn _reduce_along_inner_dimension[
                 flat_index, shape, reduce_dim
             )
 
-            var acc_unrolled_simd = SIMD[type, unrolled_simd_width].splat(
-                init_value
-            )
+            var acc_unrolled_simd = SIMD[
+                init_value.element_type, unrolled_simd_width
+            ].splat(init_value)
 
             @always_inline
             @parameter
             fn reduce_helper_fn[
                 width: Int
-            ](start: Int, finish: Int, init: SIMD[type, width]) -> SIMD[
-                type, width
+            ](start: Int, finish: Int, init: SIMD[_, width]) -> SIMD[
+                init.type, width
             ]:
                 var acc = init
                 for idx in range(start, finish, width):
                     indices[reduce_dim] = idx
-                    let load_value = input_0_fn[type, width, rank](indices)
-                    acc = reduce_function[type, width](load_value, acc)
+                    let load_value = input_0_fn[init.type, width, shape.size](
+                        indices
+                    )
+                    acc = reduce_function(load_value, acc)
                 return acc
 
             # Loop over unroll_factor*simd_width chunks.
@@ -755,7 +738,7 @@ fn _reduce_along_inner_dimension[
 
             # Store the result back to the output.
             indices[reduce_dim] = 0
-            output_0_fn[type, 1, rank](indices, acc_scalar)
+            output_0_fn(indices, acc_scalar)
 
     @always_inline
     @parameter
@@ -777,9 +760,6 @@ fn _reduce_along_inner_dimension[
 
 
 fn _reduce_along_outer_dimension[
-    type: DType,
-    rank: Int,
-    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -789,30 +769,35 @@ fn _reduce_along_outer_dimension[
     reduce_function: fn[ty: DType, width: Int] (
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
+    /,
+    single_thread_blocking_override: Bool = False,
 ](
-    shape: StaticIntTuple[rank],
-    init_value: Scalar[type],
+    shape: StaticIntTuple,
+    init: Scalar,
     reduce_dim: Int,
     out_chain: OutputChainPtr,
 ):
     """Reduce the given tensor using the given reduction function.
 
     Parameters:
-        type: The element type we are reducing.
-        rank: The rank of the tensor.
-        single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
+        single_thread_blocking_override: If True, then reduction is run
+          synchronously using a single thread.
+        : Ignore.
+
     Args:
         shape: The shape of the tensor we are reducing
-        init_value: The value to start the reduction from.
+        init: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
         out_chain: The chain to attach results to.
     """
+    alias rank = shape.size
+    alias type = init.element_type
+
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
-
     alias simd_width = simdwidthof[type]()
 
     let total_size: Int = shape.flattened_length()
@@ -857,20 +842,20 @@ fn _reduce_along_outer_dimension[
             @always_inline
             @parameter
             fn reduce_chunk[simd_width: Int](inner_dim_idx: Int):
-                var acc_simd = SIMD[type, simd_width].splat(init_value)
+                var acc_simd = SIMD[init.element_type, simd_width].splat(init)
                 let reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
                 var indices = _get_nd_indices_from_flat_index(
                     reduce_vector_idx, shape, reduce_dim
                 )
                 for reduce_dim_idx in range(reduce_dim_size):
                     indices[reduce_dim] = reduce_dim_idx
-                    let load_value = input_0_fn[type, simd_width, rank](indices)
-                    acc_simd = reduce_function[type, simd_width](
-                        load_value, acc_simd
-                    )
+                    let load_value = input_0_fn[
+                        init.type, simd_width, shape.size
+                    ](indices)
+                    acc_simd = reduce_function(load_value, acc_simd)
                 # Store the result back to the output.
                 indices[reduce_dim] = 0
-                output_0_fn[type, simd_width, rank](indices, acc_simd)
+                output_0_fn(indices, acc_simd)
 
             vectorize[simd_width, reduce_chunk](inner_dim)
 
@@ -912,12 +897,11 @@ fn _simd_max_elementwise[
     return x.max(y.cast[acc_type]())
 
 
-fn max[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
+fn max(src: Buffer) -> Scalar[src.type]:
     """Computes the max element in a buffer.
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -925,39 +909,23 @@ fn max[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
     Returns:
         The maximum of the buffer elements.
     """
-    return reduce[type, type, _simd_max_elementwise](src, src[0])
+    return reduce[_simd_max_elementwise](src, min_or_neginf[src.type]())
 
 
-fn max[
-    rank: Int,
-    input_shape: DimList,
-    output_shape: DimList,
-    type: DType,
-    reduce_axis: Int,
-](
-    src: NDBuffer[rank, input_shape, type],
-    dst: NDBuffer[rank, output_shape, type],
-):
+fn max[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
     """Computes the max across reduce_axis of an NDBuffer.
 
     Parameters:
-        rank: The rank of the input/output buffers.
-        input_shape: The input buffer shape.
-        output_shape: The output buffer shape.
-        type: The buffer elements dtype.
         reduce_axis: The axis to reduce across.
+        : Ignore.
 
     Args:
         src: The input buffer.
         dst: The output buffer.
     """
-    return reduce[
-        type,
-        type,
-        _simd_max_elementwise,
-        _simd_max,
-        reduce_axis,
-    ](src, dst, min_or_neginf[type]())
+    return reduce[_simd_max_elementwise, _simd_max, reduce_axis](
+        src, dst, min_or_neginf[src.type]()
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -988,12 +956,11 @@ fn _simd_min_elementwise[
     return x.min(y.cast[acc_type]())
 
 
-fn min[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
+fn min(src: Buffer) -> Scalar[src.type]:
     """Computes the min element in a buffer.
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -1001,34 +968,22 @@ fn min[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
     Returns:
         The minimum of the buffer elements.
     """
-    return reduce[type, type, _simd_min_elementwise](src, src[0])
+    return reduce[_simd_min_elementwise](src, max_or_inf[src.type]())
 
 
-fn min[
-    rank: Int,
-    input_shape: DimList,
-    output_shape: DimList,
-    type: DType,
-    reduce_axis: Int,
-](
-    src: NDBuffer[rank, input_shape, type],
-    dst: NDBuffer[rank, output_shape, type],
-):
+fn min[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
     """Computes the min across reduce_axis of an NDBuffer.
 
     Parameters:
-        rank: The rank of the input/output buffers.
-        input_shape: The input buffer shape.
-        output_shape: The output buffer shape.
-        type: The buffer elements dtype.
         reduce_axis: The axis to reduce across.
+        : Ignore.
 
     Args:
         src: The input buffer.
         dst: The output buffer.
     """
-    return reduce[type, type, _simd_min_elementwise, _simd_min, reduce_axis](
-        src, dst, max_or_inf[type]()
+    return reduce[_simd_min_elementwise, _simd_min, reduce_axis](
+        src, dst, max_or_inf[src.type]()
     )
 
 
@@ -1060,12 +1015,11 @@ fn _simd_sum_elementwise[
     return x + y.cast[acc_type]()
 
 
-fn sum[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
+fn sum(src: Buffer) -> Scalar[src.type]:
     """Computes the sum of buffer elements.
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -1073,34 +1027,22 @@ fn sum[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
     Returns:
         The sum of the buffer elements.
     """
-    return reduce[type, type, _simd_sum_elementwise](src, 0)
+    return reduce[_simd_sum_elementwise](src, Scalar[src.type](0))
 
 
-fn sum[
-    rank: Int,
-    input_shape: DimList,
-    output_shape: DimList,
-    type: DType,
-    reduce_axis: Int,
-](
-    src: NDBuffer[rank, input_shape, type],
-    dst: NDBuffer[rank, output_shape, type],
-):
+fn sum[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
     """Computes the sum across reduce_axis of an NDBuffer.
 
     Parameters:
-        rank: The rank of the input/output buffers.
-        input_shape: The input buffer shape.
-        output_shape: The output buffer shape.
-        type: The buffer elements dtype.
         reduce_axis: The axis to reduce across.
+        : Ignore.
 
     Args:
         src: The input buffer.
         dst: The output buffer.
     """
-    return reduce[type, type, _simd_sum_elementwise, _simd_sum, reduce_axis](
-        src, dst, 0
+    return reduce[_simd_sum_elementwise, _simd_sum, reduce_axis=reduce_axis](
+        src, dst, Scalar[src.type](0)
     )
 
 
@@ -1132,12 +1074,11 @@ fn _simd_product_elementwise[
     return x * y.cast[acc_type]()
 
 
-fn product[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
+fn product(src: Buffer) -> Scalar[src.type]:
     """Computes the product of the buffer elements.
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -1145,35 +1086,25 @@ fn product[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
     Returns:
         The product of the buffer elements.
     """
-    return reduce[type, type, _simd_product_elementwise](src, 1)
+    return reduce[_simd_product_elementwise](src, Scalar[src.type](1))
 
 
 fn product[
-    rank: Int,
-    input_shape: DimList,
-    output_shape: DimList,
-    type: DType,
-    reduce_axis: Int,
-](
-    src: NDBuffer[rank, input_shape, type],
-    dst: NDBuffer[rank, output_shape, type],
-):
+    reduce_axis: Int
+](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
     """Computes the product across reduce_axis of an NDBuffer.
 
     Parameters:
-        rank: The rank of the input/output buffers.
-        input_shape: The input buffer shape.
-        output_shape: The output buffer shape.
-        type: The buffer elements dtype.
         reduce_axis: The axis to reduce across.
+        : Product.
 
     Args:
         src: The input buffer.
         dst: The output buffer.
     """
-    return reduce[
-        type, type, _simd_product_elementwise, _simd_product, reduce_axis
-    ](src, dst, 1)
+    return reduce[_simd_product_elementwise, _simd_product, reduce_axis](
+        src, dst, Scalar[src.type](1)
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1182,13 +1113,11 @@ fn product[
 
 
 @adaptive
-fn mean[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
+fn mean(src: Buffer) -> Scalar[src.type]:
     """Computes the mean value of the elements in a buffer.
 
     Parameters:
-        size: The size of the input buffer..
-        type: The type of the elements of the input buffer and output SIMD
-              vector.
+        : Ignore.
 
     Args:
         src: The buffer of elements for which the mean is computed.
@@ -1203,63 +1132,49 @@ fn mean[size: Dim, type: DType](src: Buffer[size, type]) -> Scalar[type]:
     let buffer_len = len(src)
 
     @parameter
-    if type.is_integral():
+    if src.type.is_integral():
         return total // buffer_len
     else:
         return total / buffer_len
 
 
-@adaptive
-fn mean[
-    rank: Int,
-    input_shape: DimList,
-    output_shape: DimList,
-    type: DType,
-    reduce_axis: Int,
-](
-    src: NDBuffer[rank, input_shape, type],
-    dst: NDBuffer[rank, output_shape, type],
-):
+fn mean[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.rank, _, src.type]):
     """Computes the mean across reduce_axis of an NDBuffer.
 
     Parameters:
-        rank: The rank of the input/output buffers.
-        input_shape: The input buffer shape.
-        output_shape: The output buffer shape.
-        type: The buffer elements dtype.
         reduce_axis: The axis to reduce across.
+        : Ignore.
 
     Args:
         src: The input buffer.
         dst: The output buffer.
     """
-
-    alias simd_width = simdwidthof[type]()
-    sum[rank, input_shape, output_shape, type, reduce_axis](src, dst)
+    alias simd_width = simdwidthof[dst.type]()
+    sum[reduce_axis](src, dst)
 
     let n = src.dim[reduce_axis]()
     let dst_1d = dst.flatten()
 
     @parameter
-    if type.is_integral():
+    if dst.type.is_integral():
 
         @always_inline
         @parameter
         fn normalize_integral[simd_width: Int](idx: Int):
             let elem = dst_1d.simd_load[simd_width](idx)
             let to_store = elem // n
-            dst_1d.simd_store[simd_width](idx, to_store)
+            dst_1d.simd_store(idx, to_store)
 
         vectorize[simd_width, normalize_integral](len(dst_1d))
     else:
-        let n_recip = Scalar[type](1) / n
+        let n_recip = Scalar[dst.type](1) / n
 
         @always_inline
         @parameter
         fn normalize_floating[simd_width: Int](idx: Int):
             let elem = dst_1d.simd_load[simd_width](idx)
             let to_store = elem * n_recip
-            dst_1d.simd_store[simd_width](idx, to_store)
+            dst_1d.simd_store(idx, to_store)
 
         vectorize[simd_width, normalize_floating](len(dst_1d))
 
@@ -1267,8 +1182,6 @@ fn mean[
 @adaptive
 fn mean[
     type: DType,
-    rank: Int,
-    single_thread_blocking_override: Bool,
     input_fn: fn[width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -1276,11 +1189,12 @@ fn mean[
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     /,
+    single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
 ](
-    input_shape: StaticIntTuple[rank],
+    input_shape: StaticIntTuple,
     reduce_dim: Int,
-    output_shape: StaticIntTuple[rank],
+    output_shape: StaticIntTuple[input_shape.size],
     out_chain: OutputChainPtr,
 ) raises:
     """Computes the mean across the input and output shape.
@@ -1291,11 +1205,12 @@ fn mean[
 
     Parameters:
         type: The type of the input and output.
-        rank: The rank of the domain.
-        single_thread_blocking_override: Whether the operation is performed async.
         input_fn: The function to load the input.
         output_fn: The function to store the output.
-        target: The target architecture.
+        single_thread_blocking_override: If True, then reduction is run
+          synchronously using a single thread.
+        target: The target to run on.
+        : Ignore.
 
     Args:
         input_shape: The input shape.
@@ -1331,14 +1246,17 @@ fn mean[
             output_fn[width, rank](indices, rebind[SIMD[type, width]](mean_val))
 
         _reduce_generator[
-            type,
-            rank,
-            single_thread_blocking_override,
             input_fn_wrapper,
             wrapped_output_mul,
             reduce_impl,
-            target,
-        ](input_shape, 0, reduce_dim, out_chain)
+            single_thread_blocking_override=single_thread_blocking_override,
+            target=target,
+        ](
+            input_shape,
+            init=Scalar[type](0),
+            reduce_dim=reduce_dim,
+            out_chain=out_chain,
+        )
 
     else:
         # For ints just a normal divide.
@@ -1353,13 +1271,17 @@ fn mean[
             output_fn[width, rank](indices, rebind[SIMD[type, width]](mean_val))
 
         _reduce_generator[
-            type,
-            rank,
-            single_thread_blocking_override,
             input_fn_wrapper,
             wrapped_output_div,
             reduce_impl,
-        ](input_shape, 0, reduce_dim, out_chain)
+            single_thread_blocking_override=single_thread_blocking_override,
+            target=target,
+        ](
+            input_shape,
+            init=Scalar[type](0),
+            reduce_dim=reduce_dim,
+            out_chain=out_chain,
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1367,13 +1289,9 @@ fn mean[
 # ===----------------------------------------------------------------------===#
 
 
-fn variance[
-    size: Dim, type: DType
-](
-    src: Buffer[size, type],
-    mean_value: Scalar[type],
-    correction: Int = 1,
-) -> Scalar[type]:
+fn variance(
+    src: Buffer, mean_value: Scalar[src.type], correction: Int = 1
+) -> Scalar[src.type]:
     """Given a mean, computes the variance of elements in a buffer.
 
     The mean value is used to avoid a second pass over the data:
@@ -1383,8 +1301,7 @@ fn variance[
     ```
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -1394,6 +1311,7 @@ fn variance[
     Returns:
         The variance value of the elements in a buffer.
     """
+
     debug_assert(len(src) > 1, "input length must be greater than 1")
 
     @always_inline
@@ -1401,19 +1319,21 @@ fn variance[
     fn input_fn[
         _type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
-        let mean_simd = SIMD[type, width].splat(mean_value).cast[_type]()
+        let mean_simd = SIMD[mean_value.type, width].splat(mean_value).cast[
+            _type
+        ]()
         let x = src.simd_load[width](idx[0])
         let diff = x.cast[_type]() - mean_simd
         return rebind[SIMD[_type, width]](diff * diff)
 
-    var out: Scalar[type] = 0
+    var out: Scalar[src.type] = 0
 
     @always_inline
     @parameter
     fn output_fn[
         _type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank], value: SIMD[_type, width]):
-        out = rebind[Scalar[type]](value)
+        out = rebind[Scalar[src.type]](value)
 
     @always_inline
     @parameter
@@ -1423,16 +1343,19 @@ fn variance[
         return acc + val
 
     let shape = StaticIntTuple[1](len(src))
-    let init = Scalar[type](0)
+
     try:
         _reduce_generator[
-            type,
-            1,
-            True,
             input_fn,
             output_fn,
             reduce_fn_wrapper,
-        ](shape, rebind[Scalar[type]](init), 0, OutputChainPtr())
+            single_thread_blocking_override=True,
+        ](
+            shape,
+            init=Scalar[mean_value.type](0),
+            reduce_dim=0,
+            out_chain=OutputChainPtr(),
+        )
     except e:
         trap(e)
     return out / (len(src) - correction)
@@ -1498,9 +1421,7 @@ fn all_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
         return val
 
     alias simd_width = simdwidthof[type]()
-    return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
-        src, False
-    )
+    return reduce_boolean[_reduce_fn, _continue_fn](src, False)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1538,9 +1459,7 @@ fn any_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
         return not val
 
     alias simd_width = simdwidthof[type]()
-    return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
-        src, False
-    )
+    return reduce_boolean[_reduce_fn, _continue_fn](src, False)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1579,9 +1498,7 @@ fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
         return val
 
     alias simd_width = simdwidthof[type]()
-    return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
-        src, True
-    )
+    return reduce_boolean[_reduce_fn, _continue_fn](src, True)
 
 
 # ===----------------------------------------------------------------------===#
