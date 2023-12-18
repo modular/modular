@@ -42,3 +42,10 @@ defm foo : CommandOption<["--", "-"], "foo", FirstOptionGroup,
   HelpText<"Takes a foo and does something with it.">>;
 def : Joined<["-"], "F">, Group<FirstOptionGroup>, Index<1>,
   MetaVarName<"ALSO-FOO">, Alias<foo>;
+
+// Values do not make their way into Markdown output.
+// CHECK: #### `--bar <BAR>`
+// CHECK: Takes a bar and does something with it.
+defm bar : CommandOptionWithValues<["--", "-"], "bar", FirstOptionGroup,
+  Index<2>, MetaVarName<"BAR">,
+  HelpText<"Takes a bar and does something with it.">, Values<"a,b,c">>;
