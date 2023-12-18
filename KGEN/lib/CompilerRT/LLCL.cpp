@@ -189,6 +189,12 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime(LLCLOutputChainRef outChain) {
   return wrap(unwrap(outChain).getRuntime().get());
 }
 
+/// Returns is the chain is an error or not.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT bool
+KGEN_CompilerRT_LLCL_OutputChainPtr_IsError(LLCLOutputChainRef outChain) {
+  return unwrap(outChain).chain.isError();
+}
+
 /// Emplaces outChain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady(LLCLOutputChainRef outChain) {
@@ -285,6 +291,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_ParallelismLevel});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_IsError",
+                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_IsError});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError",
