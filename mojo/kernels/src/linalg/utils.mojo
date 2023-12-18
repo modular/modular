@@ -504,7 +504,7 @@ fn get_partitioned_matmul[
             # i8mm needs to have even partitions in m.
             # Only the last range is allowed to be odd.
             var partition = get_partitioned_matmul_mojo[
-                a_row_size, pack_inner_size
+                a_row_size, pack_inner_size, use_i8mm
             ](m // 2, n, k, task_id, num_tasks)
 
             let t0 = 2 * partition.offset[0]
@@ -525,23 +525,21 @@ fn get_partitioned_matmul[
 
 
 fn get_partitioned_matmul_mojo[
-    micro_kernel_m: Int,
-    micro_kernel_n: Int,
+    micro_kernel_m: Int, micro_kernel_n: Int, use_i8mm: Bool = False
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     if num_tasks >= 32:
-        return get_partitioned_matmul_mojo_v2[micro_kernel_m, micro_kernel_n](
-            m, n, k, task_id, num_tasks
-        )
+        return get_partitioned_matmul_mojo_v2[
+            micro_kernel_m, micro_kernel_n, use_i8mm
+        ](m, n, k, task_id, num_tasks)
     else:
-        return get_partitioned_matmul_mojo_v1[micro_kernel_m, micro_kernel_n](
-            m, n, k, task_id, num_tasks
-        )
+        return get_partitioned_matmul_mojo_v1[
+            micro_kernel_m, micro_kernel_n, use_i8mm
+        ](m, n, k, task_id, num_tasks)
 
 
 # New partition scheme being developed. Currently only used for 32 or more threads
 fn get_partitioned_matmul_mojo_v2[
-    micro_kernel_m: Int,
-    micro_kernel_n: Int,
+    micro_kernel_m: Int, micro_kernel_n: Int, use_i8mm: Bool
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     let h = align_up(m, micro_kernel_m) // micro_kernel_m
     let w = align_up(n, micro_kernel_n) // micro_kernel_n
@@ -550,7 +548,16 @@ fn get_partitioned_matmul_mojo_v2[
     var threadsm = 1
     var threadsn = 1
 
-    if m > n and h >= max_threads:
+    var partition_m: Bool = False
+
+    @parameter
+    if use_i8mm:
+        if 2 * m > n and h >= max_threads:
+            partition_m = True
+    else:
+        if m > n and h >= max_threads:
+            partition_m = True
+    if partition_m:
         threadsm = max_threads
     # 2D partitioning does not seem to help when m * k per core is too small.
     # 4096 is an empirical value from looking at several shapes.
@@ -587,8 +594,7 @@ fn get_partitioned_matmul_mojo_v2[
 
 
 fn get_partitioned_matmul_mojo_v1[
-    micro_kernel_m: Int,
-    micro_kernel_n: Int,
+    micro_kernel_m: Int, micro_kernel_n: Int, use_i8mm: Bool
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     # Based on current performance measurement of DLRM. Row-wise Partition
     # leads to better performance for (m == n and k < m). The reason is not
@@ -596,7 +602,18 @@ fn get_partitioned_matmul_mojo_v1[
     # decide tile shape.
     # TODO: generalize if condition once we can configure cache and tiling
     # parameters based on hardwared spec and thread count.
-    if m > n or (m == n and k <= m):
+
+    var partition_m: Bool = False
+
+    @parameter
+    if use_i8mm:
+        if 2 * m >= n:
+            partition_m = True
+    else:
+        if m > n or (m == n and k <= m):
+            partition_m = True
+
+    if partition_m:
         let row_range = partition_work(task_id, num_tasks, m, micro_kernel_m)
         return SubMatmulConfig(
             StaticIntTuple[3](row_range[0], 0, 0),
