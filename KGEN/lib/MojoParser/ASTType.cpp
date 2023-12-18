@@ -45,6 +45,7 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
   mlirType = ParamRefType::get(typeParamExpr);
 }
 
+// FIXME(#27974): ASTType::getMetaType is broken
 Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
@@ -96,7 +97,9 @@ bool ASTType::isEqualCanon(ASTType other) const {
   if (mlirType == other.mlirType)
     return true;
   // Types with the same metatype are always equal.
-  auto getMetaType = [this] {
+  // FIXME(#27974): ASTType::getMetaType is broken.  We shouldn't have to
+  // replicate it here.
+  auto getMetaType = [](Type mlirType) {
     if (!mlirType)
       return Type();
     if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
@@ -105,8 +108,9 @@ bool ASTType::isEqualCanon(ASTType other) const {
       return declRef.getMetaType();
     return Type();
   };
-  if (getMetaType() && getMetaType() == other.getMetaType())
-    return true;
+  if (auto meta = getMetaType(mlirType))
+    if (meta == getMetaType(other.mlirType))
+      return true;
   return false;
 }
 
