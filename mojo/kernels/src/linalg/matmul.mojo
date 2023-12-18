@@ -3281,7 +3281,7 @@ fn matmul[
     @parameter
     if single_thread_blocking_override:
         # Any error thrown by this kernel will get swallowed by this chain.
-        # (It doesn't presently have any mark_error's)
+        # (It doesn't presently have any _mark_error_old's)
         let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
         matmul[
             a_type,

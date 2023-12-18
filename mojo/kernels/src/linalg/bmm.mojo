@@ -260,7 +260,7 @@ fn batched_matmul[
     @parameter
     if single_thread_blocking_override and target == "cpu":
         # Any error thrown by this kernel will get swallowed by this chain.
-        # (It doesn't presently have any mark_error's)
+        # (It doesn't presently have any _mark_error_old's)
         let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
         batched_matmul[
             rank,
@@ -662,7 +662,7 @@ fn batched_matmul[
             stream=stream,
         )
     except e:
-        out_chain.mark_error(e)
+        out_chain._mark_error_old(e)
 
 
 @always_inline
