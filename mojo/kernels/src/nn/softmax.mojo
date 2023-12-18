@@ -357,8 +357,16 @@ fn _softmax_3_pass_base[
 
     # Generate fused input-reduction
     try:
-        _reduce_generator[type, 1, True, input_fn, output_fn, reduce_impl](
-            StaticIntTuple[1](len(output)), min_or_neginf[type](), 0, out_chain
+        _reduce_generator[
+            input_fn,
+            output_fn,
+            reduce_impl,
+            single_thread_blocking_override=True,
+        ](
+            StaticIntTuple[1](len(output)),
+            init=min_or_neginf[type](),
+            reduce_dim=0,
+            out_chain=out_chain,
         )
     except e:
         trap(e)
