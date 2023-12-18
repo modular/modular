@@ -16,6 +16,7 @@ if(MODULAR_ENABLE_TELEMETRY)
 
     LINK_LIBS PUBLIC
     MSupport
+    MSupportEntitlements
     MArchTarget
     opentelemetry_metrics
     opentelemetry_logs

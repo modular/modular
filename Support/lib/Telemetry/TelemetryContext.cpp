@@ -91,6 +91,7 @@ static void configureInternalLogging(Config &cfg) {
 #endif // MODULAR_ENABLE_TELEMETRY
 
 TelemetryContext::TelemetryContext(
+    const EntitlementStore &entitlementStore,
     const llvm::StringMap<TelemetryContext::AttributeValue> &resources,
     std::optional<Config> config) {
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -148,10 +149,11 @@ TelemetryContext::TelemetryContext(
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() { configureInternalLogging(cfg); });
 
-  // Get the user ID out of the config.
-  StringRef uuid = cfg.getValue("user.id");
-  if (!uuid.empty())
-    attrs.SetAttribute("enduser.id", uuid);
+  // Get the user ID out of the EntitlementStore.
+  auto store = EntitlementStore::alwaysOpen(nullptr, llvm::errs());
+  auto userIDOr = store.getUserID(std::move(config));
+  if (!userIDOr.isError())
+    attrs.SetAttribute("enduser.id", *userIDOr);
 
   // Get the resource object we can give to OTel.
   auto otelResources = Resource::Create(attrs).Merge(Resource::GetDefault());

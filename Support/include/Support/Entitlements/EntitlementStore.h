@@ -121,7 +121,7 @@ private:
 
   /// This holds the client certificate chain. The implementation is hidden to
   /// avoid leaking details through this abstraction.
-  std::unique_ptr<Detail::CertificateChain> clientCert;
+  std::unique_ptr<M::Detail::CertificateChain> clientCert;
 
   /// Store the client keys. If these cannot be found, they'll be generated.
   Keypair clientKeys;

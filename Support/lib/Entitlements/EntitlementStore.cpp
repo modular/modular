@@ -726,6 +726,8 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
   HTTPRequest certificateRequest{"https://crl.modular.com"};
   WriteableBufferRef crlBuf = WriteableBuffer::get(
       /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
+  // The CRL isn't behind any kind of auth - that's allowed to be public.
+  client.noAuthNeeded();
   HTTPResponse response = client.executeRequest(certificateRequest, *crlBuf);
   // We ignore failures here, for now at least, it isn't an error to fail to
   // fetch the CRL.
