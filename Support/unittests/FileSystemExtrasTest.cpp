@@ -33,7 +33,7 @@ TEST(FileSystemExtras, Append) {
       auto err = appendFileUnderLock(tmpFileOr->getPath(),
                                      [thread](llvm::raw_ostream &os) {
                                        for (int i = 0; i < numValues; ++i)
-                                         os << thread << ",";
+                                         os << std::to_string(thread) << ",";
                                        os << "\n";
                                      });
       ASSERT_FALSE(err.isError()) << err.getError();

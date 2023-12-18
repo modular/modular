@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MicroBenchmark.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

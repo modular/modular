@@ -7,11 +7,19 @@
 #include "Support/JSON.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 
 #include "llvm/Support/JSON.h"
 #include "gtest/gtest.h"
 
 using namespace M;
+
+std::string convertToString(const llvm::Error &err) {
+  std::string canonical;
+  llvm::raw_string_ostream stream(canonical);
+  stream << err;
+  return canonical;
+}
 
 /// Check the test JSON from RFC8785. This checks that we have a reasonable sort
 /// order. Note that the last two differ from the RFC because we sort in UTF-8.
@@ -30,7 +38,7 @@ TEST(JSONTest, CheckRFCTestVector) {
       "Letter Dalet With Dagesh\",\"\xf0\x9f\x98\x80\":\"Emoji: Grinning "
       "Face\"}";
   llvm::Expected<llvm::json::Value> testJSON = llvm::json::parse(testVector);
-  ASSERT_TRUE(bool(testJSON)) << testJSON.takeError();
+  ASSERT_TRUE(bool(testJSON)) << convertToString(testJSON.takeError());
 
   std::string canonical;
   llvm::raw_string_ostream stream(canonical);
@@ -92,7 +100,7 @@ TEST(JSONTest, TestNested) {
       "\"spec_version\":\"1.0.0\"}}";
   // clang-format on
   llvm::Expected<llvm::json::Value> testJSON = llvm::json::parse(testVector);
-  ASSERT_TRUE(bool(testJSON)) << testJSON.takeError();
+  ASSERT_TRUE(bool(testJSON)) << convertToString(testJSON.takeError());
 
   std::string canonical;
   llvm::raw_string_ostream stream(canonical);
@@ -106,7 +114,7 @@ TEST(JSONTest, TestJSONControlChars) {
   llvm::StringRef correct =
       "{\"before\":\"hasbackspace\b\",\"hello\":\"newline\n\"}";
   llvm::Expected<llvm::json::Value> testJSON = llvm::json::parse(testVector);
-  ASSERT_TRUE(bool(testJSON)) << testJSON.takeError();
+  ASSERT_TRUE(bool(testJSON)) << convertToString(testJSON.takeError());
 
   std::string canonical;
   llvm::raw_string_ostream stream(canonical);
