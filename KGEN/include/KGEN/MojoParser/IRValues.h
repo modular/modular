@@ -382,8 +382,8 @@ struct VariantCRValue {
 
   /// If this value is a PValue for a type, then return the type.
   ASTType getIfTypeValue() const {
-    if (auto mValue = getIfPValue())
-      return mValue.getIfTypeValue();
+    if (auto value = getIfPValue())
+      return value.getIfTypeValue();
     return {};
   }
 
