@@ -2090,21 +2090,13 @@ fn _collapse_batch_dim(input: DynamicRankBuffer) -> DynamicRankBuffer:
 
 
 @always_inline
-fn prod_dims[
-    start_dim: Int,
-    end_dim: Int,
-    rank: Int,
-    shape: DimList,
-    type: DType,
-](x: NDBuffer[rank, shape, type]) -> Int:
+fn prod_dims[start_dim: Int, end_dim: Int](x: NDBuffer) -> Int:
     """Computes the product of a slice of the given buffer's dimensions.
 
     Parameters:
         start_dim: The index at which to begin computing the product.
         end_dim: The index at which to stop computing the product.
-        rank: The rank of the NDBuffer.
-        shape: The shape of the NDBuffer.
-        type: The element-type of the NDBuffer.
+        : Ignore.
 
     Args:
         x: The NDBuffer whose dimensions will be multiplied.
@@ -2115,8 +2107,11 @@ fn prod_dims[
 
     var product: Int = 1
 
-    @unroll
-    for idx in range(start_dim, end_dim):
-        product *= x.dim(idx)
+    @parameter
+    @always_inline
+    fn loop[idx: Int]():
+        product *= x.dim[start_dim + idx]()
+
+    unroll[end_dim - start_dim, loop]()
 
     return product
