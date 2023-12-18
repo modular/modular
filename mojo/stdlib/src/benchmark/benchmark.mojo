@@ -650,6 +650,15 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
     Args:
       val: The value to not optimize away.
     """
+
+    @parameter
+    if simd_width > 1:
+        for i in range(simd_width):
+            # TODO(#27998): Remove the temporary variable.
+            var tmp = val[i]
+            keep(tmp)
+        return
+
     var tmp = val
     let tmp_ptr = Pointer.address_of(tmp)
 

@@ -89,8 +89,7 @@ fn test_keep():
     keep(33)
 
     var val = SIMD[DType.index, 4](1, 2, 3, 4)
-    # FIXME(#25915): This overload is broken but was previously dead code.
-    # keep(val)
+    keep(val)
 
     let ptr = Pointer.address_of(val)
     keep(ptr)
