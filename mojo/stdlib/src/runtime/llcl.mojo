@@ -469,6 +469,15 @@ struct OutputChainPtr:
         return self.ptr != Self.ptr_type()
 
     @always_inline
+    fn is_error(self) -> Bool:
+        """Check if the output chain is an error or not."""
+        return external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_IsError", Bool
+        ](
+            self.ptr,
+        )
+
+    @always_inline
     fn fork(self) -> OwningOutputChainPtr:
         """Returns a pointer to a fresh heap-allocated LLCL::OutputChain
         containing a 'fork' of this.

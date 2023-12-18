@@ -142,6 +142,19 @@ fn test_runtime_asynctaskgroup():
         print(Int(completed.value.value))
 
 
+# CHECK-LABEL: test_is_error
+fn test_is_error():
+    print("== test_is_error")
+
+    with Runtime(1) as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        out_chain.borrow()._mark_error_old("error")
+        # CHECK: True
+        print(out_chain.borrow().is_error())
+        # convince mojo that the chain lives till here
+        out_chain.wait()
+
+
 fn main():
     test_sync_coro()
     test_sync_raising_coro()
@@ -149,3 +162,4 @@ fn main():
     test_runtime_taskgroup()
     test_global_same_runtime()
     test_runtime_asynctaskgroup()
+    test_is_error()
