@@ -817,6 +817,43 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
   return emitPValueToMRValue({value.ir.getIfPValue(), value.expr}, context);
 }
 
+/// This helper emits the specified value as an XBValue which has
+/// memory-only representation, materializing PValues as needed. This
+/// returns null if emission fails.
+XBValue ExprEmitter::emitXBValue(ASTExprAnd<AnyValue> value,
+                                 ExprContext context) {
+  BValue bValue = emitBValue(value, context);
+  if (!bValue)
+    return {};
+
+  if (auto xb = bValue.getIfXBValue())
+    return xb;
+
+  // Emit PValues to memory and promote to borrow.
+  if (auto pValue = bValue.getIfPValue())
+    return emitPValueToXRValue({pValue, value.expr}, context);
+
+  // Decay MBValue to XBValue on demand.
+  // TODO(references): Remove MBValue.
+  if (auto ptr = bValue.getIfMBValue()) {
+    // HACK: force convert to reference.
+    auto destTy = RefType::getRefForPointerHACK(
+        cast<PointerType>(ptr.getType().mlirType), /*isMut=*/false);
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    auto castOp = builder->create<mlir::UnrealizedConversionCastOp>(
+        ptr.getLoc(), destTy, ptr);
+    return XBValue(castOp.getResult(0));
+  }
+
+  // Reject SBValue.
+  emitError(value.expr->getLoc(),
+            "cannot form reference to borrowed register value");
+  return {};
+}
+
 PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
                                ASTType resultType) {
   if (!value)

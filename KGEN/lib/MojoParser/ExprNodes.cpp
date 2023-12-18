@@ -2999,9 +2999,15 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
+  // Emit the subexpression.
+  AnyValue subExprValue = emitter.emitExpr(subExpr, dest.getContext());
+  if (!subExprValue)
+    return {};
+
   // __get_lvalue_as_address(someMLValue) returns a !kgen.pointer.
   if (kind == kGetLValueAsAddress) {
-    LValue result = emitter.emitExprLValue(subExpr, dest.getContext());
+    ValueDest lValueDest(dest.getContext());
+    LValue result = emitter.emitLValue({subExprValue, subExpr}, lValueDest);
     if (!result)
       return {};
     if (XLValue resultRef = result.getIfXLValue())
@@ -3024,9 +3030,20 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
 
+  // __get_bvalue_as_address(someMBValue) returns an immutable !lit.ref.
+  if (kind == kGetBValueAsRef) {
+    XBValue result =
+        emitter.emitXBValue({subExprValue, subExpr}, dest.getContext());
+    if (!result)
+      return {};
+    // Return the XBValue as an SRValue since the ref itself is the result.
+    return emitter.emitResult(SRValue(result), this, dest);
+  }
+
   // __get_address_as_lvalue and __get_address_as_uninit_lvalue and
   // __get_address_as_owned_value all take a !kgen.pointer.
-  CRValue exprRVal = emitter.emitExprCRValue(subExpr, dest.getContext());
+  CRValue exprRVal =
+      emitter.emitCRValue({subExprValue, subExpr}, dest.getContext());
   if (!exprRVal)
     return {};
 

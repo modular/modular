@@ -400,6 +400,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_mutref:
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
+  case Token::kw___get_bvalue_as_ref:
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
     return true;
@@ -560,6 +561,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
+  case Token::kw___get_bvalue_as_ref:
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
     if (failed(parseAddressConvert(result)))
@@ -1120,6 +1122,9 @@ ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
     break;
   case Token::kw___get_lvalue_as_address:
     nodeKind = ExprNode::kGetLValueAsAddress;
+    break;
+  case Token::kw___get_bvalue_as_ref:
+    nodeKind = ExprNode::kGetBValueAsRef;
     break;
   case Token::kw___get_address_as_owned_value:
     nodeKind = ExprNode::kGetAddressAsOwned;
