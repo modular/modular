@@ -3181,12 +3181,14 @@ fn mogg_layer_norm[
 # ===----------------------------------------------------------------------===#
 
 
-# Helper function to mark the output chain as ready in tests.
 @mogg_register("mark_output_chain_ready")
 @always_inline
 @export
 fn mark_output_chain_ready(out_chain: OutputChainPtr):
-    out_chain.mark_ready()
+    """Mark output chain as ready. If chain is already an error, the error is
+    kept."""
+    if not out_chain.is_error():
+        out_chain.mark_ready()
 
 
 # Helper function to query buffer shapes for tests.
@@ -3198,6 +3200,20 @@ fn print_buffer_info[
     print("Rank:", rank)
     print("Shape:", buffer.dynamic_shape)
     print("Strides:", buffer.dynamic_stride)
+
+
+# Test helper to throw an error
+@mogg_register("mo.test.return_error")
+@always_inline
+@export
+fn return_error[
+    type: DType,
+    rank: Int,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    out_chain._mark_error_old("This is an error")
 
 
 # ===----------------------------------------------------------------------===#
