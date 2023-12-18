@@ -42,6 +42,26 @@ multiclass CommandOption<list<string> prefixes, string name, OptionGroup group,
                    Index<0>, Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
 }
 
+/// Like CommandOption, but also accepts Values.
+multiclass CommandOptionWithValues<list<string> prefixes, string name,
+                                   OptionGroup group, Index i, MetaVarName meta,
+                                   HelpText help, Values values> {
+  def NAME : Separate<prefixes, name>,
+             Group<group>,
+             Index<i.index>,
+             MetaVarName<meta.MetaVarName>,
+             HelpText<help.HelpText>,
+             Values<values.Values>;
+
+  // The `=` alias is the first alias, at index 0. However, since it's hidden,
+  // it will not occupy the first spot in the list of aliases.
+  def NAME #_eq : Joined<prefixes, name #"=">,
+                  Group<group>,
+                  Index<0>,
+                  Alias<!cast<Separate>(NAME)>,
+                  Flags<[HelpHidden]>;
+}
+
 // A collection of information related to a command's input, which is used to
 // generate usage strings for a command.
 class UsageInfo<string optName, string inName, bit varIn> {

@@ -65,6 +65,15 @@ def : Flag<["--"], "bazzest">, Group<FirstOptionGroup>, Index<2>, Alias<bar>;
 def : Flag<["--"], "baz">, Group<FirstOptionGroup>, Index<0>, Alias<bar>;
 def : Flag<["--"], "bazzer">, Group<FirstOptionGroup>, Index<1>, Alias<bar>;
 
+// Values do not make their way into man output.
+// CHECK: \fB\-\-valued\fR \fIVALUE\fR
+// CHECK-NEXT: .RS 4
+// CHECK-NEXT: Values example.
+// CHECK-NEXT: .RE
+// CHECK-NEXT: .sp
+defm valued : CommandOptionWithValues<["--", "-"], "valued", FirstOptionGroup,
+  Index<3>, MetaVarName<"VALUE">, HelpText<"Values example.">, Values<"a,b,c">>;
+
 // CHECK: .SS "Second Options"
 // CHECK-NEXT: Another \-\- potentially less useful \-\- set of options.
 // CHECK-NEXT: .sp
