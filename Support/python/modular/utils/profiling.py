@@ -18,7 +18,7 @@ from pathlib import Path
 from re import sub
 
 from modular.utils.logging import warning
-from modular.utils.typing import Any, Dict, List, Optional
+from modular.utils.typing import Any, Callable, Dict, List, Optional
 
 EventDict = Dict[str, Any]
 TraceDict = Dict[str, Any]
@@ -165,6 +165,15 @@ class TimeTrace:
         self.trace["traceEvents"] = list(filter(__include, self.events))
         return self
 
+    def annotate(
+        self, func: Callable[[EventDict], Dict[str, Any]]
+    ) -> "TimeTrace":
+        """Apply a function and inline outputs into 'args'."""
+        for ev in self.trace["traceEvents"]:
+            for k, v in (func(ev) or {}).items():
+                ev["args"][k] = v
+        return self
+
     def filter_events(
         self,
         include_fragments: Optional[List[str]] = None,
@@ -299,3 +308,36 @@ class TimeTrace:
             start_time = runs[0]["ts"]
             end_time = runs[-1]["ts"] + runs[-1]["dur"]
         return (start_time, end_time)
+
+    @staticmethod
+    def parse_details(as_str: str) -> Dict[str, str]:
+        """Parse the details string into a (possibly empty) dict."""
+        if as_str is None:
+            return {}
+
+        detail_part, _, task_part = as_str.partition(" (")
+
+        # drop type info from shapes
+        detail_part = detail_part.replace("xf32", "")
+        items = [x.split("=") for x in detail_part.split(";") if len(x) > 0]
+
+        if "task_id" in task_part:
+            items.append(["task_id", task_part.split(" ")[1].rstrip(")")])
+
+        return {kv[0]: kv[1] for kv in items if len(kv) == 2}
+
+    @staticmethod
+    def parse_name(event_name: str) -> Dict[str, Any]:
+        """Parse the kernel name to extract the kernel type."""
+        # tasks have the format /task:{id}
+        parent_name = event_name.split("/")[0]
+        toks = parent_name.split(".")
+
+        if toks[0] == "mojo":
+            kernel_type = toks[-1]
+        elif parent_name.startswith("__gen__PDEF"):
+            kernel_type = "param_def"
+        else:
+            kernel_type = None
+
+        return {"kernel_type": kernel_type, "task": "/task" in event_name}
