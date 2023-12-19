@@ -4,9 +4,10 @@
 #
 ##===----------------------------------------------------------------------===##
 
-# For the tests, we only allow the dev root certificate and key.
-file(READ ${CMAKE_SOURCE_DIR}/Support/lib/Entitlements/RootCertificates/dev/cert.pem CERTIFICATE_PEM)
-file(READ ${CMAKE_SOURCE_DIR}/Support/lib/Entitlements/RootCertificates/dev/key.pem KEY_PEM)
+# For the tests, we only allow the local root certificate and key.
+file(READ ${CMAKE_SOURCE_DIR}/Support/lib/Entitlements/RootCertificates/local/cert.pem CERTIFICATE_PEM)
+file(READ ${CMAKE_SOURCE_DIR}/Support/lib/Entitlements/RootCertificates/local/key.pem KEY_PEM)
+file(READ ${CMAKE_SOURCE_DIR}/Support/lib/Entitlements/RootCertificates/local/endpoint.txt AUTH_URL)
 
 configure_file(${CMAKE_SOURCE_DIR}/Support/lib/Entitlements/RootCertificates/RootCert.inc.in ${CMAKE_CURRENT_BINARY_DIR}/RootCertificates/RootCert.inc @ONLY)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/RootCertificates)
