@@ -664,7 +664,7 @@ fn batched_matmul[
             stream=stream,
         )
     except e:
-        out_chain._mark_error_old(e)
+        trap(e)
 
 
 @always_inline
