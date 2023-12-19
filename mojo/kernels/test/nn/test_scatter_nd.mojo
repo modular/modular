@@ -23,7 +23,7 @@ fn test_case[
     indices_vals: VariadicList[SIMD[DType.int64, 1]],
     updates_vals: VariadicList[SIMD[type, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
-):
+) raises:
     @always_inline
     @parameter
     fn use_update[
@@ -57,7 +57,7 @@ fn test_case[
     indices_vals: VariadicList[SIMD[DType.int64, 1]],
     updates_vals: VariadicList[SIMD[type, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
-):
+) raises:
     var data = Tensor[type](input_shape)
     linear_fill(data, data_vals)
     var indices = Tensor[DType.int64](indices_shape)
@@ -95,8 +95,8 @@ fn test_case[
             print(i)
 
 
-fn main():
-    fn test_scatternd():
+fn main() raises:
+    fn test_scatternd() raises:
         print("== test_scatternd")
         let data = VariadicList[Float32](
             1,
@@ -283,7 +283,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_scatternd()
 
-    fn test_scatternd_add():
+    fn test_scatternd_add() raises:
         print("== test_scatternd_add")
         let data = VariadicList[Float32](
             1,
@@ -476,7 +476,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_scatternd_add()
 
-    fn test_scatternd_max():
+    fn test_scatternd_max() raises:
         print("== test_scatternd_max")
         let data = VariadicList[Float32](
             1,
@@ -669,7 +669,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_scatternd_max()
 
-    fn test_scatternd_min():
+    fn test_scatternd_min() raises:
         print("== test_scatternd_min")
         let data = VariadicList[Float32](
             1,
@@ -862,7 +862,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_scatternd_min()
 
-    fn test_scatternd_multiply():
+    fn test_scatternd_multiply() raises:
         print("== test_scatternd_multiply")
         let data = VariadicList[Float32](
             1,

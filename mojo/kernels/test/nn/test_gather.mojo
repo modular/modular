@@ -21,12 +21,12 @@ from utils.list import DimList
 
 
 # CHECK-LABEL: test_gather
-fn test_gather():
+fn test_gather() raises:
     print("== test_gather")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]():
+    fn _test_gather[indices_type: DType]() raises:
         alias num_rows = 16
         alias row_size = 4
 
@@ -93,12 +93,12 @@ fn test_gather():
     _test_gather[DType.int64]()
 
 
-fn test_gather_3d():
+fn test_gather_3d() raises:
     print("== test_gather_3d\n")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]():
+    fn _test_gather[indices_type: DType]() raises:
         alias num_rows = 16
         alias row_size = 4
 
@@ -162,12 +162,12 @@ fn test_gather_3d():
 
 
 # CHECK-LABEL: test_gather_empty_indices
-fn test_gather_empty_indices():
+fn test_gather_empty_indices() raises:
     print("== test_gather_empty_indices")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]():
+    fn _test_gather[indices_type: DType]() raises:
         alias num_rows = 16
         alias row_size = 4
         alias input_size = 64
@@ -220,7 +220,7 @@ fn test_gather_empty_indices():
     _test_gather[DType.int64]()
 
 
-fn main():
+fn main() raises:
     test_gather()
     test_gather_3d()
     test_gather_empty_indices()

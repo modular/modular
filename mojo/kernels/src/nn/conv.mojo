@@ -437,7 +437,7 @@ struct ConvDirectNHWC[
         filter: NDBuffer[filter_rank, shape_filter, filter_type],
         conv_shape: ConvShape,
         out_chain: OutputChainPtr,
-    ):
+    ) raises:
         Self.run(
             output,
             input,
@@ -455,7 +455,7 @@ struct ConvDirectNHWC[
         conv_shape: ConvShape,
         elementwise_epilogue_fn: elementwise_epilogue_type,
         out_chain: OutputChainPtr,
-    ):
+    ) raises:
         alias simd_size = simdwidthof[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
             shape_output.at[2](),
@@ -482,15 +482,11 @@ struct ConvDirectNHWC[
             ]()
 
         if conv_shape.num_groups > 1 and not filter_packed:
-            out_chain._mark_error_old("grouped conv requires packed filter")
+            raise Error("grouped conv requires packed filter")
         if conv_shape.c % conv_shape.num_groups != 0:
-            out_chain._mark_error_old(
-                "channel count must be divisible by group count"
-            )
+            raise Error("channel count must be divisible by group count")
         if conv_shape.f % conv_shape.num_groups != 0:
-            out_chain._mark_error_old(
-                "filter count must be divisible by group count"
-            )
+            raise Error("filter count must be divisible by group count")
 
         # Number of partitions in n_ho_wo, c, f dimensions.
         let num_threads = out_chain.get_runtime().parallelism_level()
@@ -503,14 +499,10 @@ struct ConvDirectNHWC[
         ] * num_partitions[3]
 
         if num_partitions[1] > 1 and conv_shape.num_groups > 1:
-            out_chain._mark_error_old(
-                "can't partition on C when num_groups > 1",
-            )
+            trap("can't partition on C when num_groups > 1")
 
         if num_partitions[2] > 1 and conv_shape.num_groups > 1:
-            out_chain._mark_error_old(
-                "can't partition on F when num_groups > 1",
-            )
+            trap("can't partition on F when num_groups > 1")
 
         # Wrap the pointer inside NDBuffer so it can be properly captured by async closure.
         var output_ptr = output.data
@@ -2697,7 +2689,7 @@ fn conv_2d_nhwc_direct[
     output: NDBuffer[4, output_shape, output_type],
     conv_info: ConvInfo[conv_info_static],
     out_chain: OutputChainPtr,
-):
+) raises:
     constrained[
         input_type == filter_type and input_type == output_type,
         "conv input/output/filter types must be the same",

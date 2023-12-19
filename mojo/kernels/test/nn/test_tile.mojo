@@ -15,7 +15,7 @@ from Tile import tile
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
-fn test_tile_eg1():
+fn test_tile_eg1() raises:
     print("== test_tile_eg1")
     alias rank = 2
     alias type = DType.float32
@@ -78,7 +78,7 @@ fn test_tile_eg1():
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
-fn test_tile_eg2():
+fn test_tile_eg2() raises:
     print("== test_tile_eg2")
     alias rank = 2
     alias type = DType.float32
@@ -139,7 +139,7 @@ fn test_tile_eg2():
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
-fn test_tile_eg3():
+fn test_tile_eg3() raises:
     print("== test_tile_eg3")
     alias rank = 2
     alias type = DType.float32
@@ -204,7 +204,7 @@ fn test_tile_eg3():
 # CHECK: 2.0 ,3.0 ,
 # CHECK: 4.0 ,5.0 ,
 # CHECK: 6.0 ,7.0 ,
-fn test_tile_eg4():
+fn test_tile_eg4() raises:
     print("== test_tile_eg4")
     alias rank = 3
     alias type = DType.float32
@@ -277,7 +277,7 @@ fn test_tile_eg4():
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,
-fn test_tile_eg5():
+fn test_tile_eg5() raises:
     print("== test_tile_eg5")
     alias rank = 3
     alias type = DType.float32
@@ -344,7 +344,7 @@ fn test_tile_eg5():
 # CHECK-LABEL: test_tile_eg6
 # CHECK: 1.0 ,2.0 ,1.0 ,2.0 ,
 # CHECK: 3.0 ,4.0 ,3.0 ,4.0 ,
-fn test_tile_eg6():
+fn test_tile_eg6() raises:
     print("== test_tile_eg6")
     alias rank = 2
     alias type = DType.float32
@@ -405,7 +405,7 @@ fn test_tile_eg6():
 # CHECK: 3.0 ,4.0 ,
 # CHECK: 1.0 ,2.0 ,
 # CHECK: 3.0 ,4.0 ,
-fn test_tile_eg7():
+fn test_tile_eg7() raises:
     print("== test_tile_eg7")
     alias rank = 2
     alias type = DType.float32
@@ -466,7 +466,7 @@ fn test_tile_eg7():
 # CHECK: 1.0 ,2.0 ,3.0 ,4.0 ,
 # CHECK: 1.0 ,2.0 ,3.0 ,4.0 ,
 # CHECK: 1.0 ,2.0 ,3.0 ,4.0 ,
-fn test_tile_eg8():
+fn test_tile_eg8() raises:
     print("== test_tile_eg8")
     alias rank = 2
     alias type = DType.float32
@@ -543,7 +543,7 @@ fn test_tile_eg8():
 # CHECK: 6.0 ,7.0 ,
 # CHECK: 4.0 ,5.0 ,
 # CHECK: 6.0 ,7.0 ,
-fn test_tile_eg9():
+fn test_tile_eg9() raises:
     print("== test_tile_eg9")
     alias rank = 3
     alias type = DType.float32
@@ -637,7 +637,7 @@ fn test_tile_eg9():
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
 # CHECK: 4.0 ,5.0 ,4.0 ,5.0 ,4.0 ,5.0 ,
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
-fn test_tile_eg10():
+fn test_tile_eg10() raises:
     print("== test_tile_eg10")
     alias rank = 3
     alias type = DType.float32
@@ -738,7 +738,7 @@ fn test_tile_eg10():
 # CHECK: 10.0 ,11.0 ,
 # CHECK: 8.0 ,9.0 ,
 # CHECK: 10.0 ,11.0 ,
-fn test_tile_eg11():
+fn test_tile_eg11() raises:
     print("== test_tile_eg11")
     alias rank = 3
     alias type = DType.float32
@@ -817,7 +817,7 @@ fn test_tile_eg11():
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
-fn test_tile_eg12():
+fn test_tile_eg12() raises:
     print("== test_tile_eg12")
     alias rank = 4
     alias type = DType.float32
@@ -902,7 +902,7 @@ fn test_tile_eg12():
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
 # CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
-fn test_tile_eg13():
+fn test_tile_eg13() raises:
     print("== test_tile_eg13")
     alias rank = 4
     alias type = DType.float32
@@ -1018,7 +1018,7 @@ fn test_tile_eg13():
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
 # CHECK: 12.0 ,13.0 ,12.0 ,13.0 ,12.0 ,13.0 ,
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
-fn test_tile_eg14():
+fn test_tile_eg14() raises:
     print("== test_tile_eg14")
     alias rank = 4
     alias type = DType.float32
@@ -1101,7 +1101,7 @@ fn test_tile_eg14():
     print()
 
 
-fn main():
+fn main() raises:
     test_tile_eg1()
     test_tile_eg2()
     test_tile_eg3()

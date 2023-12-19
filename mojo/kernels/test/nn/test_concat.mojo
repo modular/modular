@@ -19,7 +19,7 @@ from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 
 
-fn test_concat():
+fn test_concat() raises:
     print("== test_concat")
 
     alias type = DType.float32
@@ -191,7 +191,7 @@ fn test_concat_inner():
         print(output.flatten()[i])
 
 
-fn main():
+fn main() raises:
     test_concat()
     test_concat_parallel()
     test_concat_inner()

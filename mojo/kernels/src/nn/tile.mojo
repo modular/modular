@@ -31,7 +31,7 @@ fn tile[
     ],
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Implements the `Tile` operator from the ONNX spec. This behaves like Numpy
     tile, but without broadcast.
@@ -52,18 +52,18 @@ fn tile[
     """
 
     if rank > 4:
-        return out_chain._mark_error_old(
+        raise Error(
             "Currently only inputs of up to three dimensions are supported."
         )
 
     if rank_repeats != 1 or type_repeats != DType.int64:
-        return out_chain._mark_error_old(
+        raise Error(
             "Rank of repeats tensor needs to be one-dimensional and of int64"
             " type."
         )
 
     if rank != repeats.dim(0):
-        return out_chain._mark_error_old(
+        raise Error(
             "Length of repeats tensor should be equal to the rank of the input"
             " tensor."
         )

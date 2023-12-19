@@ -56,7 +56,7 @@ fn test[
     pad_h: StaticIntTuple[2],
     pad_w: StaticIntTuple[2],
     rt: Runtime,
-):
+) raises:
     print("== test_conv")
 
     # fmt: off
@@ -229,7 +229,7 @@ fn test[
     print("Succeed")
 
 
-fn test_shapes[algorithm: ConvAlgorithm](rt: Runtime):
+fn test_shapes[algorithm: ConvAlgorithm](rt: Runtime) raises:
     """This test uses shapes in Models/mask_rcnn_inception_resnetv2_backbone.yaml.
     The original shapes are too large for unit test so the batch size is reduced
     to 2. The shapes with strides > 1 are chosen for #17704.
@@ -372,6 +372,6 @@ fn test_shapes[algorithm: ConvAlgorithm](rt: Runtime):
     )
 
 
-fn main():
+fn main() raises:
     with Runtime() as rt:
         test_shapes[ConvAlgorithm.Direct](rt)

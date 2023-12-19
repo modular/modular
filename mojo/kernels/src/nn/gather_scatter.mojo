@@ -218,7 +218,7 @@ fn gather[
         indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
     out_chain: OutputChainPtr,
-):
+) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
@@ -340,7 +340,7 @@ fn gather[
     indices_shape: StaticIntTuple[indices_rank],
     output_shape: StaticIntTuple[output_rank],
     out_chain: OutputChainPtr,
-):
+) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
@@ -348,38 +348,32 @@ fn gather[
     """
 
     # Disable error checking in trivial kernels.
-    @parameter
-    if not single_thread_blocking_override:
-        if axis.get() < 0:
-            return out_chain._mark_error_old(
-                "gather kernel does not support negative axis"
+    if axis.get() < 0:
+        raise Error("gather kernel does not support negative axis")
+
+    # The output shape has the same shape as the input, with the indexed-axis
+    # replaced by the shape of the indices
+    for i in range(axis.get()):
+        if output_shape[i] != input_shape[i]:
+            raise Error(
+                "gather: output_shape[0:axis] does not match"
+                " input_shape[0:axis]"
+            )
+    for i in range(axis.get(), axis.get() + indices_rank):
+        if output_shape[i] != indices_shape[i - axis.get()]:
+            raise Error(
+                "gather: output_shape[axis:axis+indices_rank] does not"
+                " match indices_shape"
+            )
+    for i in range(axis.get() + indices_rank, output_rank):
+        if output_shape[i] != input_shape[i - indices_rank + 1]:
+            raise Error(
+                "gather: output_shape[axis + indices_rank:] does not match"
+                " input_shape[axis:]"
             )
 
-        # The output shape has the same shape as the input, with the indexed-axis
-        # replaced by the shape of the indices
-        for i in range(axis.get()):
-            if output_shape[i] != input_shape[i]:
-                return out_chain._mark_error_old(
-                    "gather: output_shape[0:axis] does not match"
-                    " input_shape[0:axis]"
-                )
-        for i in range(axis.get(), axis.get() + indices_rank):
-            if output_shape[i] != indices_shape[i - axis.get()]:
-                return out_chain._mark_error_old(
-                    "gather: output_shape[axis:axis+indices_rank] does not"
-                    " match indices_shape"
-                )
-        for i in range(axis.get() + indices_rank, output_rank):
-            if output_shape[i] != input_shape[i - indices_rank + 1]:
-                return out_chain._mark_error_old(
-                    "gather: output_shape[axis + indices_rank:] does not match"
-                    " input_shape[axis:]"
-                )
-
-        if axis.get() >= input_rank:
-            return out_chain._mark_error_old(
-                "gather: axis must be less than input rank"
-            )
+    if axis.get() >= input_rank:
+        raise Error("gather: axis must be less than input rank")
 
     with Trace[TraceLevel.OP]("mojo.gather") as t:
         # Short-circuit for trivial cases, and to avoid divide-by-zero
@@ -499,7 +493,7 @@ fn scatter_nd_generator[
         data_rank, DimList.create_unknown[data_rank](), output_type
     ],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
 
@@ -525,15 +519,13 @@ fn scatter_nd_generator[
         out_chain: The OutputChainPtr used to mark competion or error of the task.
     """
     if data.get_shape() != output.get_shape():
-        return out_chain._mark_error_old(
-            "Input and output shapes in scatter_nd must be the same."
-        )
+        raise Error("Input and output shapes in scatter_nd must be the same.")
 
     if (
         len(updates.get_shape())
         != data_rank + indices_rank - indices.get_shape()[indices_rank - 1] - 1
     ):
-        return out_chain._mark_error_old(
+        raise Error(
             "updates rank must be: data_rank + indices_rank -"
             " indices_shape[-1] - 1"
         )
@@ -566,7 +558,7 @@ fn scatter_nd_generator[
                 stream,
             )
         except e:
-            out_chain._mark_error_old(e)
+            trap(e)
 
     @parameter
     if target != "cuda":
@@ -689,7 +681,7 @@ fn scatter_nd[
         data_rank, DimList.create_unknown[data_rank](), output_type
     ],
     out_chain: OutputChainPtr,
-):
+) raises:
     """Scatter_nd operation without any reduction."""
 
     scatter_nd_generator[
@@ -805,7 +797,7 @@ fn scatter_elements[
     _axis: Int,
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
     """
@@ -815,17 +807,17 @@ fn scatter_elements[
     ]()
 
     if input.get_shape() != output.get_shape():
-        return out_chain._mark_error_old(
+        raise Error(
             "input and output shape in scatter_elements must be the same"
         )
 
     if indices.get_shape() != updates.get_shape():
-        return out_chain._mark_error_old(
+        raise Error(
             "inidices and updates shape in scatter_elements must be the same"
         )
 
     if not (-rank <= _axis < rank):
-        return out_chain._mark_error_old(
+        raise Error(
             "axis in scatter_elements must be in the range [-rank, rank)"
         )
 
@@ -931,7 +923,7 @@ fn gather_elements[
     _axis: Int,
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     out_chain: OutputChainPtr,
-):
+) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
     """
@@ -941,12 +933,12 @@ fn gather_elements[
     ]()
 
     if indices.get_shape() != output.get_shape():
-        return out_chain._mark_error_old(
+        raise Error(
             "indices and output shape in gather_elements must be the same"
         )
 
     if not (-rank <= _axis < rank):
-        return out_chain._mark_error_old(
+        raise Error(
             "axis in gather_elements must be in the range [-rank, rank)"
         )
 

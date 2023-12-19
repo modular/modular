@@ -23,7 +23,7 @@ fn test_case[
     indices_vals: VariadicList[SIMD[DType.int32, 1]],
     updates_vals: VariadicList[SIMD[type, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
-):
+) raises:
     @always_inline
     @parameter
     fn use_update[
@@ -57,7 +57,7 @@ fn test_case[
     indices_vals: VariadicList[SIMD[DType.int32, 1]],
     updates_vals: VariadicList[SIMD[type, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
-):
+) raises:
     var data = Tensor[type](input_shape)
     linear_fill(data, data_vals)
     var indices = Tensor[DType.int32](indices_shape)
@@ -91,8 +91,8 @@ fn test_case[
             print(i)
 
 
-fn main():
-    fn test_scatter_ax0():
+fn main() raises:
+    fn test_scatter_ax0() raises:
         print("== test_scatter_ax0")
         let data = VariadicList[Float32](0, 0, 0, 0, 0, 0, 0, 0, 0)
         let indices = VariadicList[Int32](1, 0, 2, 0, 2, 1)
@@ -114,7 +114,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_scatter_ax0()
 
-    fn test_scatter_ax1():
+    fn test_scatter_ax1() raises:
         print("== test_scatter_ax1")
         let data = VariadicList[Float32](1, 2, 3, 4, 5)
         let indices = VariadicList[Int32](1, 3)
@@ -134,7 +134,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_scatter_ax1()
 
-    fn test_scatter_neg_indices():
+    fn test_scatter_neg_indices() raises:
         print("== test_scatter_neg_indices")
         let data = VariadicList[Float32](1, 2, 3, 4, 5)
         let indices = VariadicList[Int32](1, -3)
@@ -154,7 +154,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_scatter_neg_indices()
 
-    fn test_scatter_reduce_max():
+    fn test_scatter_reduce_max() raises:
         print("== test_scatter_reduce_max")
         let data = VariadicList[Float32](1, 2, 3, 4, 5)
         let indices = VariadicList[Int32](1, 1)

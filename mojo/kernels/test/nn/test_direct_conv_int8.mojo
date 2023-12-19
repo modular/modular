@@ -52,7 +52,7 @@ fn test[
     pad_h: StaticIntTuple[2],
     pad_w: StaticIntTuple[2],
     rt: Runtime,
-):
+) raises:
     print("== test_direct_conv")
 
     # fmt: off
@@ -235,7 +235,7 @@ fn test[
     print("Succeed")
 
 
-fn main():
+fn main() raises:
     """It only includes shapes where F is multiple simd_size."""
     with Runtime() as rt:
         # likely partition in n_ho_wo or sequential

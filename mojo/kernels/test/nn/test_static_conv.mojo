@@ -40,7 +40,7 @@ fn test[
     dilation: StaticIntTuple[2],
     pad_h: StaticIntTuple[2],
     pad_w: StaticIntTuple[2],
-](rt: Runtime):
+](rt: Runtime) raises:
     # Skip architectures other than avx512 for now.
     # TODO: tune on other architectures and enable testing.
     @parameter
@@ -235,7 +235,7 @@ fn test[
     print("Succeed")
 
 
-fn main():
+fn main() raises:
     with Runtime() as rt:
         test[
             1,  # N

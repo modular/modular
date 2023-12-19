@@ -22,7 +22,7 @@ fn test_case[
     data_vals: VariadicList[SIMD[type, 1]],
     indices_vals: VariadicList[SIMD[DType.int32, 1]],
     output_ref_vals: VariadicList[SIMD[type, 1]],
-):
+) raises:
     var data = Tensor[type](input_shape)
     linear_fill(data, data_vals)
     var indices = Tensor[DType.int32](indices_shape)
@@ -52,8 +52,8 @@ fn test_case[
             print(i)
 
 
-fn main():
-    fn test_gather_ax1():
+fn main() raises:
+    fn test_gather_ax1() raises:
         print("== test_gather_ax1")
         let data = VariadicList[Float32](1, 2, 3, 4)
         let indices = VariadicList[Int32](0, 0, 1, 0)
@@ -71,7 +71,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_gather_ax1()
 
-    fn test_gather_ax0():
+    fn test_gather_ax0() raises:
         print("== test_gather_ax0")
         let data = VariadicList[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
         let indices = VariadicList[Int32](1, 2, 0, 2, 0, 0)
@@ -89,7 +89,7 @@ fn main():
     # CHECK-NOT: FAIL
     test_gather_ax0()
 
-    fn test_gather_neg_indices():
+    fn test_gather_neg_indices() raises:
         print("== test_gather_neg_indices")
         let data = VariadicList[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
         let indices = VariadicList[Int32](-1, -2, 0, -2, 0, 0)
