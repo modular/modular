@@ -11,6 +11,8 @@ from utils.index import Index
 from utils.list import Dim, DimList
 from MatmulUtils import elementwise_lambda_fn_sig_type
 
+from runtime.llcl import OutputChainPtr
+
 # Parallelized version of Gemv
 
 
