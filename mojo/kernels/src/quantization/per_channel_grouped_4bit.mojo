@@ -8,6 +8,7 @@ from sys.info import sizeof, alignof
 from memory.unsafe import bitcast
 from memory.buffer import NDBuffer, prod_dims
 from math import is_power_of_2
+from runtime.llcl import OutputChainPtr
 
 
 @always_inline
