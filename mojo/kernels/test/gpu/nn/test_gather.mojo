@@ -10,7 +10,7 @@ from sys.info import simdwidthof
 
 from GatherScatter import gather
 from memory.buffer import NDBuffer
-from runtime.llcl import OwningOutputChainPtr, Runtime
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
 from utils.index import StaticIntTuple, Index
 from utils.list import DimList
