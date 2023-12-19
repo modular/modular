@@ -44,7 +44,7 @@ struct ActivationType:
     @always_inline
     fn dispatch[
         func: fn[act: ActivationType] () capturing -> None
-    ](self, out_chain: OutputChainPtr):
+    ](self) raises:
         if self == ActivationType.IDENTITY:
             func[ActivationType.IDENTITY]()
         elif self == ActivationType.RELU:
@@ -52,7 +52,7 @@ struct ActivationType:
         elif self == ActivationType.GELU:
             func[ActivationType.GELU]()
         else:
-            out_chain._mark_error_old("Unsupported activation function.")
+            raise Error("Unsupported activation function.")
 
 
 @always_inline

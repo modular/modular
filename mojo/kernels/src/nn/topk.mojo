@@ -12,6 +12,7 @@ from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from algorithm.sort import _quicksort, partition, sort
 from memory.buffer import NDBuffer
+from runtime.llcl import OutputChainPtr
 
 
 fn top_k_shape[
