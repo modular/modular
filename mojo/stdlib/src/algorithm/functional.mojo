@@ -311,7 +311,7 @@ fn _async_parallelize[
             try:
                 func(0)
             except e:
-                return out_chain._mark_error_old(e)
+                trap(e)
         out_chain.mark_ready()
         return
 
@@ -327,7 +327,7 @@ fn _async_parallelize[
                 try:
                     func(i)
                 except e:
-                    out_chain._mark_error_old(e)
+                    trap(e)
 
     var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
     for i in range(num_work_items):
