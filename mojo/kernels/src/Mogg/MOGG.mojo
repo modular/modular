@@ -1000,9 +1000,12 @@ fn concat_from_list[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    _concat[rank, type, single_thread_blocking_override](
-        output, normalize_neg_index(axis[0], rank), inputs, out_chain
-    )
+    try:
+        _concat[rank, type, single_thread_blocking_override](
+            output, normalize_neg_index(axis[0], rank), inputs, out_chain
+        )
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.concat")
@@ -1025,12 +1028,15 @@ fn concat[
         return
 
     let ins = variadic_list_to_vector(variadic_ins)
-    _concat[rank, type, single_thread_blocking_override, target](
-        output,
-        normalize_neg_index(buffer_to_scalar(axis), rank),
-        ins,
-        out_chain,
-    )
+    try:
+        _concat[rank, type, single_thread_blocking_override, target](
+            output,
+            normalize_neg_index(buffer_to_scalar(axis), rank),
+            ins,
+            out_chain,
+        )
+    except e:
+        out_chain._mark_error_old(e)
     ins._del_old()
 
 
@@ -1169,9 +1175,12 @@ fn split[
     *variadic_outs: NDBuffer[rank, DimList.create_unknown[rank](), type],
 ):
     # NOTE: Synchronous, so stack allocated variadic list is safe
-    _split[type, rank](
-        input, normalize_neg_index(axis[0], rank), variadic_outs, out_chain
-    )
+    try:
+        _split[type, rank](
+            input, normalize_neg_index(axis[0], rank), variadic_outs, out_chain
+        )
+    except e:
+        out_chain._mark_error_old(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1943,27 +1952,30 @@ fn gather[
             rebind[StaticIntTuple[indices_rank]](coords)
         )
 
-    _gather[
-        type,
-        in_rank,
-        indices_type,
-        indices_rank,
-        output_rank,
-        simd_width,
-        single_thread_blocking_override,
-        input_0_fn,
-        load_indices,
-        output_0_fn,
-        no_prefetch,
-        Dim(),
-        target,
-    ](
-        OptionalParamInt[Dim()](axis),
-        input_shape,
-        indices.dynamic_shape,
-        output_shape,
-        out_chain,
-    )
+    try:
+        _gather[
+            type,
+            in_rank,
+            indices_type,
+            indices_rank,
+            output_rank,
+            simd_width,
+            single_thread_blocking_override,
+            input_0_fn,
+            load_indices,
+            output_0_fn,
+            no_prefetch,
+            Dim(),
+            target,
+        ](
+            OptionalParamInt[Dim()](axis),
+            input_shape,
+            indices.dynamic_shape,
+            output_shape,
+            out_chain,
+        )
+    except e:
+        out_chain._mark_error_old(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2172,14 +2184,17 @@ fn scatter[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return rhs  # always return the latest update element
 
-    return scatter_elements[reduce_func](
-        input,
-        indices,
-        updates,
-        normalize_neg_index(axis[0], rank),
-        output,
-        out_chain,
-    )
+    try:
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(axis[0], rank),
+            output,
+            out_chain,
+        )
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.scatter.add")
@@ -2212,14 +2227,17 @@ fn scatter_add[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs + rhs
 
-    return scatter_elements[reduce_func](
-        input,
-        indices,
-        updates,
-        normalize_neg_index(axis[0], rank),
-        output,
-        out_chain,
-    )
+    try:
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(axis[0], rank),
+            output,
+            out_chain,
+        )
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.scatter.max")
@@ -2252,14 +2270,17 @@ fn scatter_max[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.max(rhs)
 
-    return scatter_elements[reduce_func](
-        input,
-        indices,
-        updates,
-        normalize_neg_index(axis[0], rank),
-        output,
-        out_chain,
-    )
+    try:
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(axis[0], rank),
+            output,
+            out_chain,
+        )
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.scatter.min")
@@ -2292,14 +2313,17 @@ fn scatter_min[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.min(rhs)
 
-    return scatter_elements[reduce_func](
-        input,
-        indices,
-        updates,
-        normalize_neg_index(axis[0], rank),
-        output,
-        out_chain,
-    )
+    try:
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(axis[0], rank),
+            output,
+            out_chain,
+        )
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.scatter.mul")
@@ -2332,14 +2356,17 @@ fn scatter_mul[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs * rhs
 
-    return scatter_elements[reduce_func](
-        input,
-        indices,
-        updates,
-        normalize_neg_index(axis[0], rank),
-        output,
-        out_chain,
-    )
+    try:
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(axis[0], rank),
+            output,
+            out_chain,
+        )
+    except e:
+        out_chain._mark_error_old(e)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2378,15 +2405,18 @@ fn scatter_nd[
     if _guard_against_gpu_target[target](out_chain):
         return
 
-    return _scatter_nd[
-        output_type,
-        indices_type,
-        output_rank,
-        indices_rank,
-        updates_rank,
-        single_thread_blocking_override,
-        target,
-    ](input, indices, updates, output, out_chain)
+    try:
+        _scatter_nd[
+            output_type,
+            indices_type,
+            output_rank,
+            indices_rank,
+            updates_rank,
+            single_thread_blocking_override,
+            target,
+        ](input, indices, updates, output, out_chain)
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.scatter_nd.add")
@@ -2426,16 +2456,19 @@ fn scatter_nd_add[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs + rhs
 
-    scatter_nd_generator[
-        output_type,
-        indices_type,
-        output_rank,
-        indices_rank,
-        updates_rank,
-        single_thread_blocking_override,
-        target,
-        reduce_fn=reduce_fn,
-    ](input, indices, updates, output, out_chain)
+    try:
+        scatter_nd_generator[
+            output_type,
+            indices_type,
+            output_rank,
+            indices_rank,
+            updates_rank,
+            single_thread_blocking_override,
+            target,
+            reduce_fn=reduce_fn,
+        ](input, indices, updates, output, out_chain)
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.scatter_nd.max")
@@ -2475,16 +2508,19 @@ fn scatter_nd_max[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.max(rhs)
 
-    scatter_nd_generator[
-        output_type,
-        indices_type,
-        output_rank,
-        indices_rank,
-        updates_rank,
-        single_thread_blocking_override,
-        target,
-        reduce_fn=reduce_fn,
-    ](input, indices, updates, output, out_chain)
+    try:
+        scatter_nd_generator[
+            output_type,
+            indices_type,
+            output_rank,
+            indices_rank,
+            updates_rank,
+            single_thread_blocking_override,
+            target,
+            reduce_fn=reduce_fn,
+        ](input, indices, updates, output, out_chain)
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.scatter_nd.min")
@@ -2524,16 +2560,19 @@ fn scatter_nd_min[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs.min(rhs)
 
-    scatter_nd_generator[
-        output_type,
-        indices_type,
-        output_rank,
-        indices_rank,
-        updates_rank,
-        single_thread_blocking_override,
-        target,
-        reduce_fn=reduce_fn,
-    ](input, indices, updates, output, out_chain)
+    try:
+        scatter_nd_generator[
+            output_type,
+            indices_type,
+            output_rank,
+            indices_rank,
+            updates_rank,
+            single_thread_blocking_override,
+            target,
+            reduce_fn=reduce_fn,
+        ](input, indices, updates, output, out_chain)
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.scatter_nd.mul")
@@ -2573,16 +2612,19 @@ fn scatter_nd_mul[
     ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
         return lhs * rhs
 
-    scatter_nd_generator[
-        output_type,
-        indices_type,
-        output_rank,
-        indices_rank,
-        updates_rank,
-        single_thread_blocking_override,
-        target,
-        reduce_fn=reduce_fn,
-    ](input, indices, updates, output, out_chain)
+    try:
+        scatter_nd_generator[
+            output_type,
+            indices_type,
+            output_rank,
+            indices_rank,
+            updates_rank,
+            single_thread_blocking_override,
+            target,
+            reduce_fn=reduce_fn,
+        ](input, indices, updates, output, out_chain)
+    except e:
+        out_chain._mark_error_old(e)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
@@ -3037,13 +3079,16 @@ fn conv[
     with Trace[TraceLevel.OP](
         "mojo.conv", Trace[TraceLevel.OP]._get_detail_str[description_fn]()
     ) as t:
-        conv_2d_nhwc_direct[
-            filter_rank,
-            filter_packed,
-            conv_info_static,
-            lambdas_have_fusion,
-            epilogue_wrapper,
-        ](input, filter, output, conv_info, out_chain)
+        try:
+            conv_2d_nhwc_direct[
+                filter_rank,
+                filter_packed,
+                conv_info_static,
+                lambdas_have_fusion,
+                epilogue_wrapper,
+            ](input, filter, output, conv_info, out_chain)
+        except e:
+            out_chain._mark_error_old(e)
 
 
 @mogg_register("mo.conv_transpose")
@@ -3743,7 +3788,10 @@ fn qmatmul_Af32_BTQ4symG32_Cf32[
     c: NDBuffer[2, DimList.create_unknown[2](), type],
     out_chain: OutputChainPtr,
 ):
-    return matmul_int4[32](a, b, c, out_chain)
+    try:
+        matmul_int4[32](a, b, c, out_chain)
+    except e:
+        out_chain._mark_error_old(e)
 
 
 @mogg_register_shape_func("qmatmul_Af32_BTQ4symG32_Cf32")
