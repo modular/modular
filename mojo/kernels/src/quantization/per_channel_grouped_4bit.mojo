@@ -710,7 +710,7 @@ fn matmul_int4[
     b: NDBuffer[2, DimList.create_unknown[2](), DType.uint8],
     c: NDBuffer[2, DimList.create_unknown[2](), type],
     out_chain: OutputChainPtr,
-):
+) raises:
     alias block_size = sizeof[Q4sym[group_size, type]]()
 
     let M = a.dim[0]()
@@ -719,7 +719,7 @@ fn matmul_int4[
     let k_groups = K // group_size
 
     if b.dim[1]() % block_size != 0:
-        return out_chain._mark_error_old("unexpected b shape")
+        raise Error("unexpected b shape")
 
     let a_quant_base_ptr = DTypePointer[DType.int8].alloc(M * K)
     let a_scale_base_ptr = DTypePointer[DType.float32].alloc(M * k_groups)
