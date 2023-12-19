@@ -130,8 +130,9 @@ M::ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
     auto sizeLenOr = readSmallFileFromDirFD(
         cacheDirIndexFD, "size", "cache index " + llvm::Twine(index) + " size",
         sizeBuf, sizeof(sizeBuf));
+    // The file might not exist on certian VMs (like multipass on Mac)
     if (sizeLenOr.isError())
-      return sizeLenOr.takeError();
+      continue;
     auto sizeLen = std::move(*sizeLenOr);
     StringRef levelStr = StringRef(levelBuf, levelLen).trim();
     StringRef typeStr = StringRef(typeBuf, typeLen).trim();
