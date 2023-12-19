@@ -172,6 +172,9 @@ public:
   static ErrorOr<std::unique_ptr<Entitlement>> create(bool critical,
                                                       ArrayRef<uint8_t> data);
 };
+
+/// Register all the entitlements declared here.
+void registerAllEntitlements();
 } // namespace M
 
 #endif // SUPPORT_ENTITLEMENTS_ENTITLEMENT_H
