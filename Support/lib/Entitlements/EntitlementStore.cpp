@@ -345,7 +345,7 @@ static ErrorOr<llvm::json::Value> requestDeviceCode(HTTPClient &client) {
   // Call the GetDeviceCode endpoint. This will return a JSON blob with the URL
   // the user needs to visit.
   HTTPRequest request = {
-      "https://auth.modular.com/v1/oauth/device/authorize",
+      modularAuthURL + "/v1/oauth/device/authorize",
   };
   request.method = HTTPRequest::Method::POST;
   request.headers.try_emplace("content-type", "application/json");
@@ -390,9 +390,9 @@ static ErrorOr<llvm::json::Value> requestDeviceCode(HTTPClient &client) {
 static ErrorOr<std::pair<std::string, std::string>>
 pollForOAuthTokens(HTTPClient &client, std::chrono::seconds interval,
                    llvm::StringRef deviceCode) {
-  // Now poll https://auth.modular.com/v1/oauth/token for the token from the
+  // Now poll `modularAuthURL`/v1/oauth/token for the token from the
   // user.
-  HTTPRequest pollRequest = {"https://auth.modular.com/v1/oauth/token"};
+  HTTPRequest pollRequest = {modularAuthURL + "/v1/oauth/token"};
   pollRequest.method = HTTPRequest::Method::POST;
   pollRequest.headers.try_emplace("content-type", "application/json");
 
@@ -966,9 +966,8 @@ ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
                                                     StringRef csr,
                                                     StringRef prevKeySig,
                                                     bool isRefresh) {
-  auto certURL =
-      isRefresh ? std::string("https://auth.modular.com/v1/certificate/renew")
-                : std::string("https://auth.modular.com/v1/certificate/issue");
+  auto certURL = isRefresh ? modularAuthURL + "/v1/certificate/renew"
+                           : modularAuthURL + "/v1/certificate/issue";
   HTTPRequest certificateRequest{certURL};
   certificateRequest.method = HTTPRequest::Method::POST;
   certificateRequest.headers.try_emplace("content-type", "application/json");
