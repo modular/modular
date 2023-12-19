@@ -1967,7 +1967,7 @@ struct DynamicRankBuffer:
     @always_inline
     fn rank_dispatch[
         func: fn[rank: Int] () capturing -> None
-    ](self, out_chain: OutputChainPtr):
+    ](self, out_chain: OutputChainPtr) raises:
         """Dispatches the function call based on buffer rank.
 
         Constraints:
@@ -1982,11 +1982,10 @@ struct DynamicRankBuffer:
             out_chain: The output chain.
         """
         if self.rank <= 0 or self.rank > _MAX_RANK:
-            out_chain._mark_error_old(
+            raise Error(
                 "invalid rank, the rank bust be positive and less than or"
                 " equal to 8"
             )
-            return
 
         if self.rank == 1:
             func[1]()
