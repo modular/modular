@@ -55,7 +55,10 @@ struct BuilderRegistry {
 /// Get the static builder registry.
 static BuilderRegistry *getRegistry() {
   static auto *registry = new BuilderRegistry{
-      std::mutex(), std::vector<BuilderTy>(Entitlement::EK_UNKNOWN)};
+      std::mutex(),
+      // EK_UNKNOWN is a valid entitlement kind, so we'll end up indexing this
+      // vector with `EK_UNKNOWN`, so size needs to be EK_UNKNOWN + 1.
+      std::vector<BuilderTy>((size_t)Entitlement::EK_UNKNOWN + 1)};
   return registry;
 }
 
@@ -119,4 +122,9 @@ void Entitlement::registerBuilder(Entitlement::Kind k,
   BuilderRegistry *registry = getRegistry();
   std::lock_guard<std::mutex> lock(registry->m);
   (registry->builders)[k] = std::move(builder);
+}
+
+void M::registerAllEntitlements() {
+  Entitlement::registerEntitlement<UnknownEntitlement>();
+  Entitlement::registerEntitlement<ModularDeveloperEntitlement>();
 }

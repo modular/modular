@@ -606,6 +606,9 @@ EntitlementStore EntitlementStore::alwaysOpen(HTTPClient *client,
 //===----------------------------------------------------------------------===//
 
 ErrorOr<EntitlementStore> EntitlementStore::open(HTTPClient &client) {
+  // Register all the entitlements we have.
+  registerAllEntitlements();
+
   EntitlementStore out;
   // Find the client certificate. If we don't have one already, fetch one from
   // auth.modular.com.
