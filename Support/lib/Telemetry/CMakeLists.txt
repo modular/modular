@@ -40,5 +40,8 @@ else()
     TelemetryContext.cpp
     FileMetricExporter.cpp
     FileLogExporter.cpp
+
+    LINK_LIBS PUBLIC
+    MSupportEntitlements
     )
 endif()
