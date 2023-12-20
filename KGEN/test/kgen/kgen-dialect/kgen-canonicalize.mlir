@@ -349,3 +349,16 @@ kgen.func @variant_create_get(%a: i32) -> i32 {
   // CHECK: return %arg0
   kgen.return %1 : i32
 }
+
+kgen.func @closure_callee(%arg0: index, %arg1: i32) -> i64 {
+  kgen.unreachable
+}
+
+// CHECK-LABEL: @call_create_closure
+kgen.func @call_create_closure(%arg0: index, %arg1: i32) -> i64 {
+  // CHECK-NEXT: %0 = kgen.call @closure_callee(%arg0, %arg1)
+  %0 = kgen.create_closure[(index, i32) -> i64: @closure_callee](%arg0)
+  %1 = kgen.call_signature %0(%arg1) : (i32) capturing -> i64
+  // CHECK-NEXT: return %0
+  kgen.return %1 : i64
+}

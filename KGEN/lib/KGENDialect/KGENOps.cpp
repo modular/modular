@@ -914,6 +914,23 @@ OpFoldResult UndefOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// CallSignatureOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult CallSignatureOp::canonicalize(CallSignatureOp op,
+                                            PatternRewriter &b) {
+  auto create = op.getCallee().getDefiningOp<CreateClosureOp>();
+  if (!create)
+    return b.notifyMatchFailure(op.getLoc(), "callee op is not create closure");
+  // Replace this with a direct call.
+  SmallVector<Value> args = llvm::to_vector(create.getCaptures());
+  llvm::append_range(args, op.getArguments());
+  b.replaceOpWithNewOp<CallParamOp>(op, op.getResultTypes(), create.getCallee(),
+                                    create.getParamDeclsAttr(), args);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // StageClosureOp
 //===----------------------------------------------------------------------===//
 

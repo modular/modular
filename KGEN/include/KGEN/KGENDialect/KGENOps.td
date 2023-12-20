@@ -1031,6 +1031,8 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
   let assemblyFormat = [{
     $callee `(` $arguments `)` `:` custom<Signature>(type($callee)) attr-dict
   }];
+
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1079,7 +1081,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
 //===----------------------------------------------------------------------===//
 
 def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
-    [DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "Create a closure from variables and a function.";
   let description = [{
     The `kgen.create_closure` operation represents the instantiation of
