@@ -21,6 +21,7 @@ class Elaborator;
 class FuncOp;
 struct ImplNode;
 struct ParamNode;
+struct ExpansionGraph;
 
 //===----------------------------------------------------------------------===//
 // IREvaluator
@@ -274,9 +275,13 @@ private:
 struct ParamNode {
   /// Create an expansion tree node to represent a generator instantiation.
   ParamNode(LLCL::Runtime &runtime, GeneratorOp gen,
-            ParameterExprArrayAttr vals, size_t depth)
+            ParameterExprArrayAttr vals, size_t depth,
+            ExpansionGraph *expansionGraph)
       : gen(gen), inputParams(vals), depth(depth),
-        paramCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
+        paramCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)),
+        expansionGraph(expansionGraph), isError(false) {
+    assert(expansionGraph && "Expansion graph cannot be null");
+  }
 
   /// Return the first concrete node in the subtree rooted on `this`. This is
   /// often called from a node that is either concrete, or only has one
@@ -332,9 +337,6 @@ struct ParamNode {
   /// The number of in-progress implementations.
   std::atomic<size_t> numActive = 0;
 
-  /// The chain to signal when this parameter node is done processing.
-  LLCL::AsyncValueRef<LLCL::Chain> paramCh;
-
   /// The current state of the node. This flag is used to break recursion.
   ParamNodeState state;
 
@@ -349,6 +351,49 @@ struct ParamNode {
   /// flag, we set a generation number.
   uint32_t cycleGeneration = 0;
   enum { VISITED, DONE } cycleState;
+
+  /// Add a waiter to the runtime and report task completion to
+  /// ParamNodeRuntime.
+  void andThenAsync(AsyncValue::Waiter &&waiter);
+
+  /// Add a waiter to the runtime.
+  void andThenSync(AsyncValue::Waiter &&waiter);
+
+  /// Construct the async value. This will notify waiters.
+  void emplace();
+
+  /// Construct the async value to error state. This is used when we want to
+  /// abandon uncompleted tasks.
+  void setToError();
+
+  /// An async value is ready if the underlying async value is in Active or
+  /// Error state.
+  bool isReady() const { return paramCh.isReady(); }
+
+  /// An async value is ready if the underlying async value is in Active or
+  /// Error state.
+  bool getIsError() const { return isError; }
+
+  /// Make explicit copy of this AsyncValueRef, increasing the AsyncValue's
+  /// refcount by one.
+  AsyncValueRef<Chain> copy() const;
+
+private:
+  /// The chain to signal when this parameter node is done processing.
+  LLCL::AsyncValueRef<LLCL::Chain> paramCh;
+
+  /// Mutex to prevent race on emplace.
+  mutable std::mutex mu;
+
+  /// The runtime manages the set of tasks kicked off in a given process. The
+  /// ParamNode alerts the runtime upon creation and completion of tasks so that
+  /// the runtime can sync tasks.
+  ExpansionGraph *expansionGraph;
+
+  /// True if we have set the async value to error. Stored as a separate flag
+  /// because the async value may have been deallocated after setting it to
+  /// error.
+  bool isError = false;
 };
 
 } // namespace M::KGEN

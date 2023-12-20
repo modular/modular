@@ -21,6 +21,7 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Support/ForkJoin.h"
+#include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/MDialect/MAttrs.h"
@@ -159,6 +160,33 @@ void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   }
 }
 
+void ParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
+  expansionGraph->didAddTask();
+  paramCh.andThenAsync([waiter = std::move(waiter), this]() mutable {
+    waiter();
+    expansionGraph->didCompleteTask();
+  });
+}
+
+void ParamNode::andThenSync(AsyncValue::Waiter &&waiter) {
+  paramCh.andThenSync(std::forward<AsyncValue::Waiter>(waiter));
+}
+
+void ParamNode::emplace() {
+  std::lock_guard<std::mutex> guard(mu);
+  if (!isReady())
+    paramCh.copy().emplace();
+}
+
+AsyncValueRef<Chain> ParamNode::copy() const { return paramCh.copy(); }
+
+void ParamNode::setToError() {
+  std::lock_guard<std::mutex> guard(mu);
+  isError = true;
+  if (!isReady())
+    paramCh.copy().emplace();
+}
+
 void ParamNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   os << "ImplNode <" << gen.getSymName() << ">";
   auto _ = os.scope(" {\n", "}\n");
@@ -178,46 +206,56 @@ void ParamNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
   }
 }
 
-namespace {
-/// This struct represents the expansion of a callgraph during elaboration.
-struct ExpansionGraph {
-  ExpansionGraph(LLCL::Runtime &runtime)
-      : worklistCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
-
-  /// Map from generator instantiation to expansion tree node.
-  Shared<DenseMap<std::pair<ParameterExprArrayAttr, GeneratorOp>,
-                  std::unique_ptr<ParamNode>>>
-      nodes;
-
-  /// Map from concrete function to implementation node.
-  Shared<DenseMap<FuncOp, ImplNode *>> concreteNodes;
-
-  /// The current number of tasks scheduled anywhere in the elaborator on the
-  /// worklist.
-  std::atomic<size_t> numWorkItems = 1;
-  /// This chain is signalled when all active work items have completed. This is
-  /// used to starve the workqueue before running evaluators, because evaluation
-  /// cannot be reliably performed while the compiler is doing work on other
-  /// threads.
-  LLCL::AsyncValueRef<LLCL::Chain> worklistCh;
-
-  /// Concrete functions added directly to the expansion graph.
-  std::vector<std::unique_ptr<ImplNode>> elaboratedNodes;
-
-  /// Get or create the node for a generator instantiation.
-  ParamNode *getOrCreate(LLCL::Runtime &runtime, ParameterExprArrayAttr values,
-                         GeneratorOp gen, size_t depth) {
-    // TODO: Split this into `get` and `create` methods, so that some can be
-    // read-only accesses.
-    return nodes.modify([&](auto &map) {
-      std::unique_ptr<ParamNode> &n = map[{values, gen}];
-      if (!n)
-        n = std::make_unique<ParamNode>(runtime, gen, values, depth);
-      return n.get();
-    });
+ExpansionGraph::~ExpansionGraph() {
+  {
+    std::lock_guard<std::mutex> guard(quiesceMu);
+    // If we have outstanding tasks at destruction time, construct the chain to
+    // trigger waiter completion.
+    if (numOutstandingResources > 0) {
+      for (auto &[key, node] : nodes.get())
+        node->setToError();
+    }
   }
-};
-} // namespace
+  LLCL::await(quiesce());
+}
+
+ParamNode *ExpansionGraph::getOrCreate(LLCL::Runtime &runtime,
+                                       ParameterExprArrayAttr values,
+                                       GeneratorOp gen, size_t depth) {
+  // TODO: Split this into `get` and `create` methods, so that some can be
+  // read-only accesses.
+  return nodes.modify([&](auto &map) {
+    std::unique_ptr<ParamNode> &n = map[{values, gen}];
+    if (!n)
+      n = std::make_unique<ParamNode>(runtime, gen, values, depth, this);
+    return n.get();
+  });
+}
+
+void ExpansionGraph::didCompleteTask() {
+  std::lock_guard<std::mutex> guard(quiesceMu);
+  assert(numOutstandingResources > 0 &&
+         "mismatched didAddTask/didCompleteTask calls");
+  if (--numOutstandingResources == 0 && quiesceChain)
+    std::move(quiesceChain).emplace();
+}
+
+void ExpansionGraph::didAddTask() {
+  std::lock_guard<std::mutex> guard(quiesceMu);
+  assert(!quiesceChain && "cannot create new task using a "
+                          "runtime which is being quiesced");
+  ++numOutstandingResources;
+}
+
+AsyncValueRef<Chain> ExpansionGraph::quiesce() {
+  std::lock_guard<std::mutex> guard(quiesceMu);
+  assert(!quiesceChain && "already waiting for ParamNodeRuntime to quiesce");
+  quiesceChain =
+      numOutstandingResources == 0
+          ? AsyncValueRef<Chain>::createReady(worklistCh.getRuntime())
+          : AsyncValueRef<Chain>::allocate(worklistCh.getRuntime());
+  return quiesceChain.copy();
+}
 
 ErrorTreeOr<ImplNode *> ParamNode::getFirstConcreteNode() {
   if (impls.empty())
@@ -660,7 +698,9 @@ private:
   /// Signal the worklist to tell it a job has completed or has been taken off
   /// the workqueue.
   void signalWorklist() {
-    assert(g.numWorkItems > 0);
+    std::lock_guard<std::mutex> guard(g.worklistMu);
+    if (g.numWorkItems <= 0)
+      return;
     if (g.numWorkItems.fetch_sub(1) == 1)
       g.worklistCh.copy().emplace();
   }
@@ -829,7 +869,7 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
     // will immediately decrement `numDependencies`.
     if (genNode->state.addWaiter()) {
       ++result->numDependencies;
-      genNode->paramCh.andThenAsync(
+      genNode->andThenAsync(
           [this, inode = result] { completeImplNodeProcessing(inode); });
     }
   }
@@ -1273,7 +1313,7 @@ ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
     parent->dependencies.emplace_back(user, calleeNode);
     if (calleeNode->state.addWaiter()) {
       ++parent->numDependencies;
-      calleeNode->paramCh.andThenAsync(
+      calleeNode->andThenAsync(
           [this, parent] { completeImplNodeProcessing(parent); });
     }
     return ElaborationState::advance();
@@ -1644,6 +1684,11 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 //===----------------------------------------------------------------------===//
 
 void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
+  ParamNode *p = inode->parent;
+  // This waiter was triggered in an error scenario. No further action is needed
+  // because we are destroying the tree.
+  if (p->getIsError())
+    return;
   // If the node resulted in an error or all outstanding dependencies are
   // done, complete node processing. Otherwise, if the node has an error state,
   // it could end up completing early. Avoid double-completion by using a flag.
@@ -1699,11 +1744,10 @@ void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
 
   // If this is the last implementation node for its parent parameter node to
   // complete, then the parameter node is done.
-  ParamNode *p = inode->parent;
   assert(p->numActive > 0 && "node already done?");
   if (--p->numActive == 0) {
     g.numWorkItems.fetch_add(p->state.markDone());
-    p->paramCh.copy().emplace();
+    p->emplace();
   }
   signalWorklist();
 }
@@ -1937,8 +1981,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     // intra-node parallelism) while correctly handling recursion.
     if (addWaiter) {
       if (genNode->state.addWaiter()) {
-        genNode->paramCh.andThenSync(
-            [inode, this] { scheduleImplNode(inode); });
+        genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
         return ElaborationState::skipNode();
       }
       // Raced with node completion.
@@ -1975,7 +2018,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     // add its waiter count before emplacing its completion chain.
     genNode->constraintError = constraintResult->takeError();
     g.numWorkItems.fetch_add(genNode->state.markDone());
-    genNode->paramCh.copy().emplace();
+    genNode->emplace();
     return ElaborationState::error();
   }
 
@@ -2133,7 +2176,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   if (addWaiter) {
     [[maybe_unused]] bool added = genNode->state.addWaiter();
     assert(added);
-    genNode->paramCh.andThenSync([inode, this] { scheduleImplNode(inode); });
+    genNode->andThenSync([inode, this] { scheduleImplNode(inode); });
   }
   assert(genNode->numActive == 0 && "expected first implementation");
   initialScheduleImplNode(newFuncNode);
@@ -2359,7 +2402,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     // generator. Emit as many errors as possible.
     g.numWorkItems.fetch_add(1);
     scheduleImplNode(root);
-    primaryChs.push_back(genNode->paramCh.copy());
+    primaryChs.push_back(genNode->copy());
   }
 
   // Process all current work.
