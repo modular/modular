@@ -17,9 +17,9 @@ from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 
 
-fn test_model_compilation() raises:
-    # CHECK: test_model_compilation
-    print("====test_model_compilation")
+fn test_model_metadata() raises:
+    # CHECK: test_model_metadata
+    print("====test_model_metadata")
 
     let args = argv()
 
@@ -32,7 +32,7 @@ fn test_model_compilation() raises:
     let model_path = args[1]
 
     let session = InferenceSession(device="cuda")
-    let compiled_model = session.compile_model(model_path)
+    let compiled_model = session.load_model(model_path)
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
@@ -94,5 +94,5 @@ fn test_model() raises:
 
 
 fn main() raises:
-    test_model_compilation()
+    test_model_metadata()
     test_model()

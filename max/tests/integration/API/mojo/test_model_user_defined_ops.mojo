@@ -17,15 +17,13 @@ from tensor import Tensor, TensorShape
 from test_utils import linear_fill
 
 
-fn test_model_compilation() raises:
+fn test_model_metadata() raises:
     let args = argv()
     let model_path = args[1]
     let user_defined_ops_path = args[2]
 
     let session = InferenceSession()
-    let compiled_model = session.compile_model(
-        model_path, user_defined_ops_path
-    )
+    let compiled_model = session.load_model(model_path, user_defined_ops_path)
     # CHECK: 1
     print(compiled_model.num_model_inputs())
 
@@ -84,5 +82,5 @@ fn test_model() raises:
 
 
 fn main() raises:
-    test_model_compilation()
+    test_model_metadata()
     test_model()
