@@ -379,10 +379,24 @@ struct ConvertKGENUndef : public ConvertPOPToLLVMPattern<UndefOp> {
 struct ConvertKGENRebind : public ConvertPOPToLLVMPattern<RebindOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
-  LogicalResult matchAndRewrite(RebindOp op, RebindOpAdaptor adaptor,
-                                ConversionPatternRewriter &b) const override {
-    return mlir::emitError(
-        op.getLoc(), "invalid rebind between two unequal, unparametric types");
+  LogicalResult
+  matchAndRewrite(RebindOp op, RebindOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Get llvm types to compare because something like
+    // !kgen.pointer<index> is same as !kgen.pointer<scalar<index>> when lowered
+    // to llvm and should be allowed.
+    Type resultType = getTypeConverter()->convertType(op.getType());
+    Type inputType = getTypeConverter()->convertType(op.getInput().getType());
+    rewriter.replaceOp(op, op.getInput());
+
+    if (resultType != inputType) {
+      std::string str;
+      llvm::raw_string_ostream os(str);
+      os << op.getInput().getType() << " to " << op.getType();
+      return emitError(op.getLoc(),
+                       "invalid rebind between two unequal types: " + str);
+    }
+    return success();
   }
 };
 
