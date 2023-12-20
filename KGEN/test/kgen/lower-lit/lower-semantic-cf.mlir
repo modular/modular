@@ -778,3 +778,44 @@ lit.trait.decl @Trait {
     lit.trait_func
   }
 }
+
+// CHECK-LABEL: lit.func @loop_with_cond_raise
+// Crash handling exception
+// https://github.com/modularml/modular/issues/27937
+// Checking the loop body clobbered the "can raise" flag for the try block.
+lit.func @loop_with_cond_raise(%cond: i1) {
+  lit.try {
+    hlcf.if %cond {
+      %0 = lit.struct.create() : () -> !kgen.declref<@Error>
+      lit.raise %0 : <@Error>
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+
+    lit.loop cond {
+      lit.loop.condition %cond: i1
+    } body {
+      hlcf.if %cond {
+        hlcf.yield
+      } else {
+        hlcf.break
+      }
+      lit.loop.continue
+    } else {
+      lit.loop.yield
+    }
+    lit.try.yield
+  // CHECK: } except (
+  } except (%err: !kgen.declref<@Error>) {
+    // CHECK-NEXT: kgen.return
+    lit.return
+    kgen.unreachable
+  } else {
+    lit.try.yield
+  } finally {
+    lit.try.yield
+  }
+  lit.return
+  lit.end_func
+}

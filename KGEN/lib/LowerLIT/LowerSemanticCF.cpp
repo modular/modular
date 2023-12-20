@@ -317,7 +317,7 @@ static StringAttr getOrSetParentLoopLabel(HLCF::LoopOp loop,
 /// Lower a LIT::LoopOp to HLCF::LoopOp.
 /// Return true if the lowering should stop traversing the rest of the
 /// operations.
-static bool lowerLITLoop(LIT::LoopOp loopOp, bool &doesRaise,
+static bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
                          int64_t loopLevel) {
   // Lower loop conditions.
   Block &condBlock = loopOp.getCondRegion().front();
@@ -399,9 +399,11 @@ static bool lowerLITLoop(LIT::LoopOp loopOp, bool &doesRaise,
   }
 
   // Process the new HLCF::LoopOp specially to propagate up the break flag.
-  bool loopBodyBreaks = false, loopBodyFallThroughs = false;
-  lowerSemanticCFForBlock(*newBody, doesRaise, loopBodyBreaks,
+  bool loopBodyRaises = false, loopBodyBreaks = false,
+       loopBodyFallThroughs = false;
+  lowerSemanticCFForBlock(*newBody, loopBodyRaises, loopBodyBreaks,
                           loopBodyFallThroughs, loopLevel);
+  enclosingBlockDoesRaise |= loopBodyRaises;
 
   // If the loop body never breaks, then the code after it is unreachable.
   if (!loopBodyBreaks) {
