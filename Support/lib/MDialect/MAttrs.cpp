@@ -902,10 +902,10 @@ ErrorOrSuccess DataLayout::parse() {
       case 'i':
         setABIAlignment(intAbiAlign, size, abiAlign);
         break;
-      case 'v':
+      case 'f':
         setABIAlignment(fpAbiAlign, size, abiAlign);
         break;
-      case 'f':
+      case 'v':
         setABIAlignment(vecAbiAlign, size, abiAlign);
         break;
       default:
@@ -981,6 +981,8 @@ int32_t DataLayout::getIntegerABIAlign(int32_t bitwidth) const {
 }
 
 int32_t DataLayout::getFloatABIAlign(int32_t bitwidth) const {
+  assert(bitwidth != 0 && "Zero bit float");
+
   // Binary search for a corresponding entry by float bitwidth.
   auto it = llvm::partition_point(
       fpAbiAlign, [&](const std::pair<int32_t, int32_t> &entry) {
@@ -988,12 +990,12 @@ int32_t DataLayout::getFloatABIAlign(int32_t bitwidth) const {
       });
 
   // If we found an entry, use it.
-  if (it != intAbiAlign.end() && it->first == bitwidth)
+  if (it != fpAbiAlign.end() && it->first == bitwidth)
     return it->second;
 
   // Otherwise, the default alignment is the power of 2 equal to or greater than
   // the size rounded up to the nearest byte.
-  return llvm::PowerOf2Ceil(bitwidth / CHAR_BIT);
+  return llvm::PowerOf2Ceil(llvm::divideCeil(bitwidth, CHAR_BIT));
 }
 
 int32_t DataLayout::getVectorABIAlign(int32_t numElts,
@@ -1006,13 +1008,12 @@ int32_t DataLayout::getVectorABIAlign(int32_t numElts,
       });
 
   // If we found an entry for the alignment of a vector of this size, use it.
-  if (it != intAbiAlign.end() && it->first == size)
+  if (it != vecAbiAlign.end() && it->first == size)
     return it->second;
 
   // Otherwise, the default alignment is the power of 2 equal to or greater than
   // the size rounded up to the nearest byte.
-  return std::max(
-      1, (int32_t)llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT)));
+  return llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT));
 }
 
 //===----------------------------------------------------------------------===//

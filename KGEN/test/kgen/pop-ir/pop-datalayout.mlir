@@ -85,6 +85,24 @@ kgen.generator @pop_sizeof_alignof<N, T:regtype, DT:dtype>() {
   kgen.return
 }
 
+// CHECK-LABEL: @simd_normal()
+kgen.generator @simd_normal() {
+  // FIXME: get_alignof isn't implemented in terms of DataLayout::getFloatABIAlign.
+  // FIXME: get_sizeof doesn't round up to alignment either.
+  // https://github.com/modularml/modular/issues/28137
+
+  // CHECK-NEXT: <16>
+  kgen.param.constant = <get_alignof(simd<4, si32>, #kgen.target<triple="", arch="", features="", data_layout="p:32:32-v128:256", simd_bit_width=128>)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant = <get_alignof(simd<2, si32>, #kgen.target<triple="", arch="", features="", data_layout="p:32:32-v64:64-v128:256", simd_bit_width=128>)>
+  // CHECK-NEXT: <4>
+  kgen.param.constant = <get_alignof(f32, #kgen.target<triple="", arch="", features="", data_layout="p:32:32", simd_bit_width=128>)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant = <get_alignof(f32, #kgen.target<triple="", arch="", features="", data_layout="p:32:32-f32:64:64", simd_bit_width=128>)>
+  // CHECK-NEXT: <4>
+  kgen.param.constant = <get_alignof(f32, #kgen.target<triple="", arch="", features="", data_layout="p:32:32-f32:32:32", simd_bit_width=128>)>
+  kgen.return
+}
 
 // CHECK-LABEL: @simd_bitpacked()
 kgen.generator @simd_bitpacked() {
