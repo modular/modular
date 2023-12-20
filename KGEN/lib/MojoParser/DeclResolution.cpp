@@ -1508,10 +1508,9 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
 
   op.getCtor().push_back(new Block);
   emitter.builder = OpBuilder::atBlockBegin(&op.getCtor().front());
-  if (!initExpr->emitIR(dest, emitter)) {
-    dest.resetForError();
+  if (!emitter.emitExpr(initExpr, dest))
     return failure();
-  }
+
   assert(!isa<UnresolvedType>(op.getType()) &&
          "RValue emission should have inferred var type");
 

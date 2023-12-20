@@ -1325,13 +1325,16 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     emitError(callExpr->getLoc(), "invalid indirect call: callee has ")
         << calleeSig.getNumResultParams() << " unbound result parameter"
         << plural(calleeSig.getNumResultParams()) << callExpr->getRange();
+    dest.resetForError();
     return {};
   }
 
   // If we have a function pointer, resolve it to an RValue.
   CRValue calleeRV = emitCRValue({callee, callExpr}, EC_CallCalleeValue);
-  if (!calleeRV)
+  if (!calleeRV) {
+    dest.resetForError();
     return {};
+  }
 
   // Check to see if we can apply these operands to the callee signature.
   OverloadSet bindings{"callee", /*fnDecls=*/{}, InputParamBindings(), callExpr,
@@ -1343,6 +1346,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     // If not, diagnose it with an error.
     emitError(callExpr->getLoc(), "invalid indirect call: ")
         << fitness.takeDiag();
+    dest.resetForError();
     return {};
   }
 
@@ -1373,10 +1377,11 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
   CValue selfVal = posOperands[0].ir.getIfCValue();
   SmallVector<ASTExprAnd<AnyValue>> updatedPosOperands;
   if (!selfVal) {
-    ValueDest selfDest(EC_CallArgValue);
-    selfVal = emitCValue(posOperands[0], selfDest);
-    if (!selfVal)
+    selfVal = emitCValue(posOperands[0], EC_CallArgValue);
+    if (!selfVal) {
+      dest.resetForError();
       return {};
+    }
     // We can't mutate posOperands because it's an ArrayRef.  If something
     // changed, recurse with a temporary buffer.
     updatedPosOperands.append(posOperands.begin(), posOperands.end());
@@ -1419,8 +1424,10 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
           nmTarget, CallOperands({{selfVal, posOperands[0].expr}}), callNode,
           CallSyntax::kImplicitConvert, selfDest,
           /*allowImplicitConversion=*/true);
-      if (!convertedSelf)
+      if (!convertedSelf) {
+        dest.resetForError();
         return {};
+      }
       updatedPosOperands.clear();
       updatedPosOperands.append(posOperands.begin(), posOperands.end());
       updatedPosOperands[0].ir = convertedSelf;
@@ -1433,8 +1440,10 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
   if (!callee)
     callee = OverloadSet::lookup(type, methodName, operands, callNode, syntax,
                                  *this, emitNoMethodError);
-  if (!callee)
+  if (!callee) {
+    dest.resetForError();
     return {};
+  }
 
   return emitIndirectCall(callee, operands, dest, callNode);
 }
