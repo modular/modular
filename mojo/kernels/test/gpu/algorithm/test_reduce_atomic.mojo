@@ -61,12 +61,12 @@ fn run_reduce() raises:
     ](verbose=True)
 
     func(
+        stream,
         (div_ceil(n, BLOCK_SIZE),),
         (BLOCK_SIZE,),
         res_device,
         vec_device,
         n,
-        stream=stream,
     )
 
     var res = SIMD[DType.float32, 1](0)

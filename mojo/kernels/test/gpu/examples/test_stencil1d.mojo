@@ -124,6 +124,7 @@ fn run_stencil1d[smem: Bool]() raises:
 
     for i in range(iterations):
         func(
+            stream,
             (div_ceil(m, BLOCK_DIM)),
             (BLOCK_DIM),
             a_device,
@@ -132,7 +133,6 @@ fn run_stencil1d[smem: Bool]() raises:
             coeff0,
             coeff1,
             coeff2,
-            stream=stream,
         )
         synchronize()
 

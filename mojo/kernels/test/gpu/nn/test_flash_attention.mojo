@@ -147,6 +147,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
             fn run_func(stream: Stream) raises:
                 for i in range(nrun):
                     func(
+                        stream,
                         # grid
                         (
                             div_ceil(seq_len, q_tile_num_rows),
@@ -163,7 +164,6 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                         scale,
                         batch_size,
                         seq_len,
-                        stream=stream,
                     )
 
             # Warmup
@@ -175,6 +175,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
 
         else:
             func(
+                stream,
                 # grid
                 (div_ceil(seq_len, q_tile_num_rows), num_heads, batch_size),
                 # block
@@ -187,7 +188,6 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                 scale,
                 batch_size,
                 seq_len,
-                stream=stream,
             )
 
     else:
@@ -215,6 +215,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
         ]()
 
         func(
+            stream,
             # grid
             (div_ceil(seq_len, q_tile_num_rows), num_heads, batch_size),
             # block
@@ -228,7 +229,6 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
             batch_size,
             seq_len,
             num_keys,
-            stream=stream,
         )
 
     synchronize()

@@ -74,13 +74,13 @@ fn run_binary_add(capture: Float32) raises:
 
     let block_dim = 32
     func(
+        stream,
         (length // block_dim),
         (block_dim),
         in0_device,
         in1_device,
         out_device,
         length,
-        stream=stream,
     )
     # CHECK: number of captures: 1
     print("number of captures:", func._impl.num_captures)

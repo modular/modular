@@ -185,6 +185,7 @@ fn run_matmul() raises:
     ]()
 
     func(
+        stream,
         (div_ceil(N, tile_size), div_ceil(M, tile_size)),
         (tile_size, tile_size),
         a_device,
@@ -193,7 +194,6 @@ fn run_matmul() raises:
         M,
         N,
         K,
-        stream=stream,
     )
     synchronize()
 

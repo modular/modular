@@ -246,6 +246,7 @@ fn scatter_nd[
     ]()
 
     func(
+        stream,
         (div_ceil(num_indices, MAX_THREADS_PER_BLOCK)),
         (MAX_THREADS_PER_BLOCK),
         output_device,
@@ -255,7 +256,6 @@ fn scatter_nd[
         num_indices,
         last_shape_of_indices,
         num_updates_elements,
-        stream=stream,
     )
     synchronize()
 

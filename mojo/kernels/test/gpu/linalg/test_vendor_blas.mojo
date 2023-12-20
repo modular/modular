@@ -110,6 +110,7 @@ fn run_matmul() raises:
     ](debug=True)
 
     func(
+        stream,
         (div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
         (BLOCK_DIM, BLOCK_DIM),
         a_device,
@@ -118,7 +119,6 @@ fn run_matmul() raises:
         m,
         n,
         k,
-        stream=stream,
     )
     synchronize()
 

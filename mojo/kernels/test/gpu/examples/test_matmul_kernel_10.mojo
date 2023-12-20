@@ -211,12 +211,12 @@ fn run_matmul_kernel_10() raises:
     @parameter
     fn run_func(stream: Stream) raises:
         func(
+            stream,
             (div_ceil(N, K10_BN), div_ceil(M, K10_BM)),
             (K10_NUM_THREADS,),
             c_buffer,
             a_buffer,
             b_buffer,
-            stream=stream,
         )
 
     var nstime = time_function[run_func](stream)
@@ -249,6 +249,7 @@ fn run_matmul_kernel_10() raises:
     @parameter
     fn run_func_naive(stream: Stream) raises:
         func_naive(
+            stream,
             (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
             (BLOCK_DIM, BLOCK_DIM),
             a_device,
@@ -257,7 +258,6 @@ fn run_matmul_kernel_10() raises:
             M,
             N,
             K,
-            stream=stream,
         )
 
     nstime = time_function[run_func_naive](stream)

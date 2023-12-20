@@ -125,6 +125,7 @@ fn test_concat_4_inputs_rank5() raises:
     @parameter
     fn run_concat_inner_most_single_dim(stream: Stream) raises:
         func(
+            stream,
             (d0 * d1 * d2 * d3 * d4 // B_SIZE),
             (B_SIZE),
             output_device,
@@ -134,7 +135,6 @@ fn test_concat_4_inputs_rank5() raises:
                 input_2_device,
                 input_3_device,
             ),
-            stream=stream,
         )
 
     var nstime_kernel = time_function[run_concat_inner_most_single_dim](stream)

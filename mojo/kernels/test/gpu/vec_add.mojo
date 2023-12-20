@@ -71,13 +71,13 @@ fn run_vec_add() raises:
     @parameter
     fn run_func(stream: Stream) raises:
         func(
+            stream,
             (length // block_dim),
             (block_dim),
             in0_device,
             in1_device,
             out_device,
             length,
-            stream,
         )
 
     let report = benchmark.run[run_func](max_iters=1000)

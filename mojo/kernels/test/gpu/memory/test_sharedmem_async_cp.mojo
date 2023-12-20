@@ -61,9 +61,8 @@ fn run_copy_via_shared() raises:
         ) -> None, copy_via_shared
     ]()
 
-    copy_via_shared_gpu(
-        (1,), (16,), in_data, out_data, stream=gpu_host.Stream()
-    )
+    let stream = gpu_host.Stream()
+    copy_via_shared_gpu(stream, (1,), (16,), in_data, out_data)
 
     # CHECK: 1.0
     # CHECK: 2.0

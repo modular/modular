@@ -224,6 +224,7 @@ fn run_mma_fp32_tf32(
     @parameter
     fn run_func_mma(stream: Stream) raises:
         func_mma(
+            stream,
             (div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
             WARP_PER_BLOCK * WARP_SIZE,
             c_device,
@@ -232,7 +233,6 @@ fn run_mma_fp32_tf32(
             M,
             N,
             K,
-            stream=stream,
         )
 
     var nstime = 0.0
@@ -269,6 +269,7 @@ fn run_mma_fp32_tf32(
     @parameter
     fn run_func_naive(stream: Stream) raises:
         func_naive(
+            stream,
             (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
             (BLOCK_DIM, BLOCK_DIM),
             c_device_ref,
@@ -277,7 +278,6 @@ fn run_mma_fp32_tf32(
             M,
             N,
             K,
-            stream=stream,
         )
 
     nstime = 0.0
@@ -398,6 +398,7 @@ fn run_mma_fp32_fp16(
     @parameter
     fn run_func_mma(stream: Stream) raises:
         func_mma(
+            stream,
             (div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
             WARP_PER_BLOCK * WARP_SIZE,
             c_device,
@@ -406,7 +407,6 @@ fn run_mma_fp32_fp16(
             M,
             N,
             K,
-            stream=stream,
         )
 
     var nstime = 0.0
@@ -443,6 +443,7 @@ fn run_mma_fp32_fp16(
     @parameter
     fn run_func_naive(stream: Stream) raises:
         func_naive(
+            stream,
             (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
             (BLOCK_DIM, BLOCK_DIM),
             c_device_ref,
@@ -451,7 +452,6 @@ fn run_mma_fp32_fp16(
             M,
             N,
             K,
-            stream=stream,
         )
 
     nstime = 0.0
@@ -572,6 +572,7 @@ fn run_mma_fp16_fp16(
     @parameter
     fn run_func_mma(stream: Stream) raises:
         func_mma(
+            stream,
             (div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
             WARP_PER_BLOCK * WARP_SIZE,
             c_device,
@@ -580,7 +581,6 @@ fn run_mma_fp16_fp16(
             M,
             N,
             K,
-            stream=stream,
         )
 
     var nstime = 0.0
@@ -617,6 +617,7 @@ fn run_mma_fp16_fp16(
     @parameter
     fn run_func_naive(stream: Stream) raises:
         func_naive(
+            stream,
             (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
             (BLOCK_DIM, BLOCK_DIM),
             c_device_ref,
@@ -625,7 +626,6 @@ fn run_mma_fp16_fp16(
             M,
             N,
             K,
-            stream=stream,
         )
 
     nstime = 0.0

@@ -99,17 +99,18 @@ fn run_mandelbrot() raises:
 
     @always_inline
     @parameter
-    fn run_mandelbrot() raises:
+    fn run_mandelbrot(stream: Stream) raises:
         func(
+            stream,
             (div_ceil(height, BLOCK_SIZE),),
             (BLOCK_SIZE,),
             NDBuffer[2, DimList(height, width), int_type](out_device),
-            stream=stream,
         )
 
-    run_mandelbrot()  # Warmup
+    run_mandelbrot(stream)  # Warmup
     print(
-        "Computation took:", time_function[run_mandelbrot]() / 1_000_000_000.0
+        "Computation took:",
+        time_function[run_mandelbrot](stream) / 1_000_000_000.0,
     )
 
     _copy_device_to_host(out_host.data(), out_device, width * height)

@@ -90,6 +90,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     @parameter
     fn run_func_gemv(stream: Stream) raises:
         func_gemv(
+            stream,
             div_ceil(M, WARPS_PER_BLOCK),
             WARP_SIZE * WARPS_PER_BLOCK,
             c_device,
@@ -98,13 +99,13 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
             M,
             N,
             K,
-            stream=stream,
         )
 
     @always_inline
     @parameter
     fn run_func_gevm(stream: Stream) raises:
         func_gevm(
+            stream,
             div_ceil(N, WARPS_PER_BLOCK),
             WARP_SIZE * WARPS_PER_BLOCK,
             c_device,
@@ -113,7 +114,6 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
             M,
             N,
             K,
-            stream=stream,
         )
 
     var nstime = 0.0
@@ -163,6 +163,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     @parameter
     fn run_func_naive(stream: Stream) raises:
         func_naive(
+            stream,
             (div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
             (BLOCK_DIM, BLOCK_DIM),
             c_device,
@@ -171,7 +172,6 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
             M,
             N,
             K,
-            stream=stream,
         )
 
     nstime = 0.0
