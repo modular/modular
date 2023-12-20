@@ -142,8 +142,8 @@ def testLValuesRvalues() -> None:
   var nc1 = NonCopyable()
   let nc2 = NonCopyable()
 
-  let nc3 = nc1 # expected-error {{value of type 'NonCopyable' cannot be copied into its destination}}
-  let nc4 = nc2 # expected-error {{value of type 'NonCopyable' cannot be copied into its destination}}
+  let nc3 = nc1 # expected-error {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
+  let nc4 = nc2 # expected-error {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
 
   let mpPair = MemoryOnlyPair()
 

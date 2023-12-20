@@ -726,7 +726,7 @@ fn invalid_trait_bind():
     trait_fn[NoTraits]() # expected-error {{cannot bind type 'NoTraits' to trait 'CFMTrait'}}
 
 fn non_copyable_trait[T: CFMTrait](value: T):
-    let copy = value # expected-error {{value of type 'T' cannot be copied into its destination}}
+    let copy = value # expected-error {{'T' is not copyable because it has no '__copyinit__'}}
 
 
 fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}

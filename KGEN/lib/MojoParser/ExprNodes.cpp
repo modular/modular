@@ -2447,75 +2447,66 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
     return emitter.emitErrorForDynamicValueInParameter(
         this, "cannot transfer a value in this context");
 
-  // If this is a value we can track the lifetime of, then we can end that
-  // value's lifetime to make a new RValue, otherwise return null.
-  auto handleLifetimeEnd = [&](Value v, bool isRegister) -> AnyValue {
-    // Lifetime checking needs to understand this value or field.
-    if (!LifetimeTrackable::findUnderlyingValueFromField(v))
-      return {};
-
-    // If the input is already an owned RValue, then there is no need to
-    // transfer from the temporary.
-    if (argValue.getIfRValue())
-      emitter.emitWarning(getLoc())
-          << "transfer from an owned value has no effect and can be removed"
-          << FixIt::remove(getLoc());
-    else if (argValue.getIfSBValue() &&
-             ASTType(v.getType()).isTrivial(getLoc(), emitter.shared)) {
-      // We don't support transfering from register-passable trivial BValues,
-      // since this won't end the lifetime CheckLifetimes doesn't
-      emitter.emitWarning(getLoc()) << "transfer from a trivial register "
-                                       "value has no effect and can be removed"
-                                    << FixIt::remove(getLoc());
-    }
-
-    // TODO(references) swap OwnershipEndLifetimeOp to reference.
-    if (isa<RefType>(v.getType()))
-      v = emitter.builder->create<RefToPointerOp>(getLocation(emitter), v);
-
-    auto newVal = emitter.builder->create<OwnershipEndLifetimeOp>(
-        getLocation(emitter), v, isRegister);
-    if (isRegister)
-      return emitter.emitResult(SRValue(newVal), this, dest);
-    return emitter.emitResult(MRValue(newVal), this, dest);
-  };
-
   // The transfer expression expects the result to be a ownable value that it
   // can launder into an RValue.
-  if (auto ptr = argValue.getIfMLValue()) {
-    if (auto result = handleLifetimeEnd(ptr, /*isRegister=*/false))
-      return result;
-    // TODO: When we support explicit move operations and have an lvalue, we
-    // can invoke it.
-  }
-  if (auto ref = argValue.getIfXLValue()) {
-    if (auto result = handleLifetimeEnd(ref, /*isRegister=*/false))
-      return result;
-    // TODO: When we support explicit move operations and have an lvalue, we
-    // can invoke it.
-  }
-  if (auto mb = argValue.getIfMBValue())
-    if (auto result = handleLifetimeEnd(mb, /*isRegister=*/false))
-      return result;
-  if (auto mr = argValue.getIfMRValue())
-    if (auto result = handleLifetimeEnd(mr, /*isRegister=*/false))
-      return result;
-  if (auto mb = argValue.getIfXBValue())
-    if (auto result = handleLifetimeEnd(mb, /*isRegister=*/false))
-      return result;
-  if (auto mr = argValue.getIfXRValue())
-    if (auto result = handleLifetimeEnd(mr, /*isRegister=*/false))
-      return result;
-  if (auto sb = argValue.getIfSBValue())
-    if (auto result = handleLifetimeEnd(sb, /*isRegister=*/true))
-      return result;
-  if (auto sr = argValue.getIfSRValue())
-    if (auto result = handleLifetimeEnd(sr, /*isRegister=*/true))
-      return result;
+  Value value;
+  bool isRegister = false;
+  if (auto ptr = argValue.getIfMLValue())
+    value = ptr;
+  else if (auto ref = argValue.getIfXLValue())
+    value = ref;
+  else if (auto mb = argValue.getIfMBValue())
+    value = mb;
+  else if (auto mr = argValue.getIfMRValue())
+    value = mr;
+  else if (auto mb = argValue.getIfXBValue())
+    value = mb;
+  else if (auto xr = argValue.getIfXRValue())
+    value = xr;
+  else if (auto sb = argValue.getIfSBValue())
+    value = sb, isRegister = true;
+  else if (auto sr = argValue.getIfSRValue())
+    value = sr, isRegister = true;
 
-  emitter.emitError(getLoc(),
-                    "expression does not designate a value with a lifetime");
-  return {};
+  // Lifetime checking needs to understand this value or field.
+  if (!value || !LifetimeTrackable::findUnderlyingValueFromField(value)) {
+    emitter.emitError(getLoc(),
+                      "expression does not designate a value with a lifetime");
+    return {};
+  }
+
+  // Since this a value we can track the lifetime of, we can end that value's
+  // lifetime to make a new RValue.
+
+  // If the input is already an owned RValue, then there is no need to
+  // transfer from the temporary.
+  if (argValue.getIfRValue()) {
+    emitter.emitWarning(getLoc())
+        << "transfer from an owned value has no effect and can be removed"
+        << FixIt::remove(getLoc());
+    return emitter.emitResult(argValue, this, dest);
+  }
+  if (argValue.getIfSBValue() &&
+      ASTType(value.getType()).isTrivial(getLoc(), emitter.shared)) {
+    // We don't support transfering from register-passable trivial BValues,
+    // since this won't end the lifetime CheckLifetimes doesn't
+    emitter.emitWarning(getLoc()) << "transfer from a trivial register "
+                                     "value has no effect and can be removed"
+                                  << FixIt::remove(getLoc());
+    return emitter.emitResult(argValue, this, dest);
+  }
+
+  auto loc = getLocation(emitter);
+
+  // TODO(references) swap OwnershipEndLifetimeOp to reference.
+  if (isa<RefType>(value.getType()))
+    value = emitter.builder->create<RefToPointerOp>(loc, value);
+
+  auto newVal =
+      emitter.builder->create<OwnershipEndLifetimeOp>(loc, value, isRegister);
+  if (isRegister)
+    return emitter.emitResult(SRValue(newVal), this, dest);
+  return emitter.emitResult(MRValue(newVal), this, dest);
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
