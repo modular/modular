@@ -10,8 +10,7 @@ from sys.info import simdwidthof
 
 from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
-    get_matmul_a_row_size,
-    get_matmul_pack_inner_size,
+    get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
     get_matmul_arch_factor,
     use_vnni_fn,
@@ -27,10 +26,11 @@ alias b_type = DType.int8
 alias c_type = DType.int32
 
 alias simd_size: Int = simdwidthof[c_type]()
-alias a_row_size: Int = get_matmul_a_row_size[a_type, b_type, c_type, False]()
-alias pack_inner_size: Int = get_matmul_pack_inner_size[
-    a_type, b_type, c_type, False
-]()
+alias kernel_shape = get_matmul_kernel_shape[a_type, b_type, c_type, False]()
+alias a_row_size = kernel_shape.a_row_size
+alias pack_inner_size = kernel_shape.pack_inner_size
+alias tile_inner_size: Int = pack_inner_size * simd_size
+
 alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
 
 alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
@@ -41,8 +41,6 @@ alias M: Int = 64
 alias N: Int = 64
 alias K: Int = 256
 alias KH = align_up(K, factor)
-
-alias tile_inner_size: Int = pack_inner_size * simd_size
 
 
 @export(ABI="C")

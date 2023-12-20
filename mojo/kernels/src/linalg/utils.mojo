@@ -12,6 +12,7 @@ from sys.info import (
     has_neon,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
+    is_neoverse_n1,
     os_is_macos,
     simdwidthof,
     sizeof,
@@ -80,6 +81,19 @@ struct MatmulDataType:
 
     # The data type of the operands (matrix A and B).
     var value_type: DType
+
+
+@value
+@register_passable("trivial")
+struct MicroKernelShape:
+    """Record describing the inner kernel shape"""
+
+    var a_row_size: Int
+
+    var pack_inner_size: Int
+
+    fn __init__(height: Int, width: Int) -> MicroKernelShape:
+        return MicroKernelShape {a_row_size: height, pack_inner_size: width}
 
 
 @register_passable("trivial")
@@ -301,50 +315,55 @@ fn calculate_tile_n_k[
 
 
 # The number of registers used for the inner kernel is:
-#   x86:  a_row_size*pack_inner_size + 1*pack_inner_size + 1
-#   neon: a_row_size*pack_inner_size + 4*pack_inner_size + 1
-# AVX512 has 32 registers and AVX has 16.
+#   a_row_size*pack_inner_size + 1*pack_inner_size + 1
+fn get_matmul_kernel_shape_x86() -> MicroKernelShape:
+    @parameter
+    if has_avx512f():
+        return MicroKernelShape(6, 4)
+    else:
+        return MicroKernelShape(4, 3)
+
+
+fn get_matmul_kernel_shape_ARM[
+    a_type: DType, b_type: DType, c_type: DType, critical_stride: Bool
+]() -> MicroKernelShape:
+    @parameter
+    if is_neoverse_n1():
+
+        @parameter
+        if critical_stride:
+            return MicroKernelShape(4, 4)
+        else:
+            return MicroKernelShape(8, 2)
+    else:
+        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+
+        @parameter
+        if use_i8mm:
+            return MicroKernelShape(4, 6)
+        elif critical_stride:
+            return MicroKernelShape(4, 4)
+        else:
+            return MicroKernelShape(8, 2)
+
+
+# AVX512 and Neon have 32 registers and AVX has 16.
 # The largest kernel for AVX is 4x3 which needs 16 registers and gives the best result.
-# For AVX512 a 5x4, 5x5, or 6x4 kernel can be used, 5x4 gives the best result.
-# For the Graviton 2 a 5x3 kernel gives the best result.
-fn get_matmul_a_row_size[
+# For AVX512 a 5x4, 5x5, or 6x4 kernel can be used, 6x4 gives the best result.
+# For the Graviton 2 a 8x2 kernel gives the best result in most cases.
+# For the Graviton 3 a 6x4 or 4x6 kernel gives the best result.
+fn get_matmul_kernel_shape[
     a_type: DType, b_type: DType, c_type: DType, critical_stride: Bool
-]() -> Int:
+]() -> MicroKernelShape:
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
     @parameter
     if has_neon():
-
-        @parameter
-        if use_i8mm:
-            return 4
-        elif critical_stride:
-            return 4
-        else:
-            return 8
-    elif has_avx512f():
-        return 6
-    return 4
-
-
-fn get_matmul_pack_inner_size[
-    a_type: DType, b_type: DType, c_type: DType, critical_stride: Bool
-]() -> Int:
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-
-    @parameter
-    if has_neon():
-
-        @parameter
-        if use_i8mm:
-            return 6
-        elif critical_stride:
-            return 4
-        else:
-            return 2
-    elif has_avx512f():
-        return 4
-    return 3
+        return get_matmul_kernel_shape_x86()
+    else:
+        return get_matmul_kernel_shape_ARM[
+            a_type, b_type, c_type, critical_stride
+        ]()
 
 
 fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
@@ -400,14 +419,11 @@ fn get_matmul_num_tasks[
     # support partition in k dim yet. E.x. 32x32x1024 uses 16 threads by min
     # task complexity but we only want it to use <= 4 threads for now since
     # M and N are very small.
-    let max_row_tasks = div_ceil(
-        m, 2 * get_matmul_a_row_size[a_type, b_type, c_type, critical_stride]()
-    )
-    let max_col_tasks = div_ceil(
-        n,
-        get_matmul_pack_inner_size[a_type, b_type, c_type, critical_stride]()
-        * simd_size,
-    )
+    alias kernel_shape = get_matmul_kernel_shape[
+        a_type, b_type, c_type, critical_stride
+    ]()
+    let max_row_tasks = div_ceil(m, 2 * kernel_shape.a_row_size)
+    let max_col_tasks = div_ceil(n, kernel_shape.pack_inner_size * simd_size)
     num_tasks = min(num_tasks, max_row_tasks * max_col_tasks)
 
     return num_tasks
@@ -487,14 +503,16 @@ fn get_partitioned_matmul[
     heuristic: PartitionHeuristic,
     critical_stride: Bool,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-
-    alias a_row_size = get_matmul_a_row_size[
+    alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, critical_stride
     ]()
-    alias pack_inner_size = get_matmul_pack_inner_size[
-        a_type, b_type, c_type, critical_stride
-    ]() * simdwidthof[DType.float32]()
+
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+
+    alias a_row_size = kernel_shape.a_row_size
+    alias pack_inner_size = kernel_shape.pack_inner_size * simdwidthof[
+        DType.float32
+    ]()
 
     @parameter
     if heuristic == PartitionHeuristic.MOJO:
@@ -757,13 +775,9 @@ fn search_mm_config[
     critical_stride: Bool,
     saturated_vnni: Bool,
 ]() -> MatmulConfig:
-    alias a_row_size = get_matmul_a_row_size[
+    alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, critical_stride
     ]()
-    alias pack_inner_size = get_matmul_pack_inner_size[
-        a_type, b_type, c_type, critical_stride
-    ]()
-
     # We can fork on a_row_size and pack_inner_size independently to get a cross-product:
     #     __mlir_op.`kgen.param.fork`[
     #         paramDecl=__mlir_attr.`#kgen<param.decl result_hidden1 : index>`,
@@ -787,8 +801,8 @@ fn search_mm_config[
         a_type,
         b_type,
         c_type,
-        a_row_size,
-        pack_inner_size,
+        kernel_shape.a_row_size,
+        kernel_shape.pack_inner_size,
         saturated_vnni,
     ]()
     # FIXME: The 8,2 config is giving erroneous results.
