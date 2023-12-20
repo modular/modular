@@ -2685,7 +2685,7 @@ fn gemv_kernel[
     if warpId < m:
         # Every warp processes a single row of the resultant vector
         for i in range(div_ceil(k, WARP_SIZE)):
-            let idx = i * WARP_SIZE + lane_id()
+            let idx = i * WARP_SIZE + int(lane_id())
             var val = SIMD[c_type, 1]()
             if idx < k:
                 val = (
@@ -2732,7 +2732,7 @@ fn gevm_kernel[
     let warpsPerBlock = BlockDim.x() // WARP_SIZE
     let warpId = ThreadIdx.x() // WARP_SIZE
     var accum = SIMD[c_type, 1]()
-    let col = BlockIdx.x() * WARP_SIZE + lane_id()
+    let col = BlockIdx.x() * WARP_SIZE + int(lane_id())
     let x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     let globalWarpId = x // WARP_SIZE
 
@@ -2751,7 +2751,7 @@ fn gevm_kernel[
         val = shuffle_idx(val, 0)
         accum += val * b.load(row * n + col).cast[c_type]()
 
-    x_shared.store(lane_id() * WARP_SIZE + warpId, accum)
+    x_shared.store(int(lane_id()) * WARP_SIZE + warpId, accum)
     barrier()
 
     @parameter
