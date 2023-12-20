@@ -702,10 +702,9 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
     ValueDest resultDest(MLValue(decl.getArgument(0)), EC_ReturnValue);
-    if (!operandExpr->emitIR(resultDest, emitter)) {
-      resultDest.resetForError();
+    if (!emitter.emitExpr(operandExpr, resultDest))
       return success();
-    }
+
     resultValue = emitter.emitSRValue(
         {PValue(shared.getNoneAttr()), operandExpr}, EC_ReturnValue);
 
@@ -1283,70 +1282,13 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       useLexicalScope = false;
   }
 
-  // FIXME: This needs to parse this as a target expression and then handle it
-  // like a destructuring pattern.
-  VarLetDeclOp targetDecl;
-  bool addDecl = false;
-  SMLoc targetLoc;
-  SMLoc asLoc;
-  ValueDest enterDest(EC_WithContextMgr);
-  if (consumeIf(Token::kw_as, &asLoc)) {
-    StringAttr name = StringAttr::get(getContext(), getToken().getSpelling());
-    if (parseIdentifier("expected identifier for target in 'with'", &targetLoc))
-      return failure();
-    ArrayRef<ASTDecl *> decls = curDeclScope->lookupInCurrentScope(name);
-    if (!useLexicalScope && !decls.empty()) {
-      SMLoc declLoc = decls[0]->getLoc();
-      AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls,
-                                                        EC_WithContextMgr);
-      if (auto slval = emitted.getIfMLValue()) {
-        enterDest = ValueDest(slval, EC_WithContextMgr);
-      } else if (auto ref = emitted.getIfXLValue()) {
-        enterDest = ValueDest(ref, EC_WithContextMgr);
-      } else {
-        (emitError(targetLoc)
-         << name
-         << " is not a valid mutable variable for `with ... as` to target")
-                .attachNote(declLoc)
-            << name << " declared here";
-        return failure();
-      }
-    } else {
-      targetDecl = getEmitter().emitVarLetDecl(
-          name, getUnresolvedType(), shared.translateLocation(targetLoc),
-          VarLetDeclKind::Implicit, /*isSynthetic=*/false);
-      enterDest = ValueDest(targetDecl, EC_WithContextMgr);
-      addDecl = true;
-    }
-  }
-  CValue contextCV = getEmitter().emitExprCValue(contextExp, EC_WithContextMgr);
-
-  if (parseToken(Token::colon, "expected ':' after 'with' expression")) {
-    enterDest.resetForError();
-    return failure();
-  }
-
-  // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
-  // result to a named TARGET vardecl, inferring its type.
-  CValue enterResult = getEmitter().emitNamedMethodCall(
-      "__enter__", CallOperands({{contextCV, contextExp}}), enterDest,
-      CallSyntax::kMethodCall, contextExp);
-  if (!enterResult)
-    enterDest.resetForError();
-
-  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-  if (useLexicalScope)
-    pushChildScope(scopeGuard, keepDecl);
-
-  // Inject the target into our scope if asked for.
-  if (addDecl) {
-    auto &targetDeclResolved = getDeclResolver().addFullyResolvedDecl(
-        targetDecl.getOperation(), targetDecl.getNameAttr(), targetLoc,
-        curDeclScope);
-    if (!enterResult)
-      targetDeclResolved.hasReferenceError = true;
-  }
+  // Emit the context manager expression into a var with an inferred type.
+  VarLetDeclOp contextMgrDecl = getEmitter().emitVarLetDecl(
+      "$CONTEXTMGR", getUnresolvedType(),
+      shared.translateLocation(contextExp->getLoc()), VarLetDeclKind::Var,
+      /*isSynthetic=*/true);
+  ValueDest contextMgrDest(contextMgrDecl, EC_WithContextMgr);
+  (void)getEmitter().emitExpr(contextExp, contextMgrDest);
 
   // Determine if the context manager has an __exit__ method.  If not, that is
   // fine, we silently just don't call it.  This mode of supporting context
@@ -1366,14 +1308,129 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // familiar to Pythonistas.
 
   // In erroneous code, ASTDecl may be missing, e.g. a 'with' on an MLIR type.
-  // This will already have been diagnosed when the __enter__ was emitted.
-  ASTDecl *contextDecl = contextCV.getRValueType().getDecl(shared);
-  bool hasExitMethod =
-      contextDecl && !contextDecl->lookupInCurrentScope("__exit__").empty();
+  ASTType contextRVType = XLValue(contextMgrDecl).getRValueType();
+  ASTDecl *contextDecl = contextRVType.getDecl(shared);
+  bool hasExitMethod = true;
+  if (contextDecl) {
+    auto loc = contextExp->getLoc();
+    hasExitMethod = shared
+                        .lookupAndResolveDecl("__exit__", loc, *contextDecl,
+                                              /*searchParentScopes*/ false)
+                        .isSuccess();
+  }
 
   // Determine whether we're in a region that is allowed to raise.  If so,
   // generate logic to deal with it.
   bool inExceptRegion = findOpProcessingRaise(builder.getInsertionBlock());
+
+  // FIXME: This needs to parse this as a target expression and then handle it
+  // like a destructuring pattern.
+  VarLetDeclOp targetDecl;
+  bool addDecl = false;
+  SMLoc targetLoc;
+  SMLoc asLoc;
+  ValueDest enterDest(EC_WithContextMgr);
+  if (consumeIf(Token::kw_as, &asLoc)) {
+    StringAttr name;
+    if (parseIdentifier(name, "expected identifier for target in 'with'",
+                        &targetLoc))
+      return failure();
+    ArrayRef<ASTDecl *> decls = curDeclScope->lookupInCurrentScope(name);
+    if (!useLexicalScope && !decls.empty()) {
+      SMLoc declLoc = decls[0]->getLoc();
+      AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls,
+                                                        EC_WithContextMgr);
+      if (auto slval = emitted.getIfMLValue()) {
+        enterDest = ValueDest(slval, EC_WithContextMgr);
+      } else if (auto ref = emitted.getIfXLValue()) {
+        enterDest = ValueDest(ref, EC_WithContextMgr);
+      } else {
+        auto diag =
+            emitError(targetLoc)
+            << name
+            << " is not a valid mutable variable for `with ... as` to target";
+        diag.attachNote(declLoc) << name << " declared here";
+        return failure();
+      }
+    } else {
+      targetDecl = getEmitter().emitVarLetDecl(
+          name, getUnresolvedType(), shared.translateLocation(targetLoc),
+          VarLetDeclKind::Implicit, /*isSynthetic=*/false);
+      enterDest = ValueDest(targetDecl, EC_WithContextMgr);
+      addDecl = true;
+    }
+  }
+
+  if (parseToken(Token::colon, "expected ':' after 'with' expression")) {
+    enterDest.resetForError();
+    return failure();
+  }
+
+  // We are about to generate the call to __enter__ but need to decide how to
+  // pass the context expression, either as an LValue referring to the bound
+  // variable, or as a transfered RValue if it takes it owned (enabling some
+  // advanced use cases with unique context managers).
+  AnyValue contextVal = XLValue(contextMgrDecl);
+
+  // Interrogate the caller to see what convention the first argument to the
+  // __enter__ method is.  Be careful about invalid cases - the errors will get
+  // diagnosed when emitting the method call.
+  // FIXME: Lookup doesn't need ExprEmitter!
+  auto tmpEmitter = getEmitter();
+  if (PValue enterMethod = OverloadSet::lookup(
+          contextRVType, "__enter__", CallOperands({{contextVal, contextExp}}),
+          contextExp, CallSyntax::kMethodCall, tmpEmitter)) {
+    // If there is no exit method, we can pass the argument as an RValue so the
+    // enter method can consume the value... unless __enter__ takes self byref.
+    if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());
+        signature && !signature.getInputConventions().empty()) {
+      auto firstArgConvention = signature.getInputConventions()[0];
+      if (firstArgConvention != ValueInputConvention::ByRef && !hasExitMethod)
+        contextVal = XRValue(contextMgrDecl);
+
+      // One error that people hit is defining a context manager with both an
+      // owned enter method and an exit method.  This will generate a terrible
+      // error message in check lifetimes, so cut that off here.
+      if ((firstArgConvention == ValueInputConvention::OwnedInReg ||
+           firstArgConvention == ValueInputConvention::OwnedInMem) &&
+          hasExitMethod) {
+        auto diag =
+            emitError(contextExp->getLoc(), "context manager of type ")
+            << contextRVType
+            << " defines a consuming __enter__ method as well as an __exit__ "
+               "method; either remove 'owned' from its '__enter__' method or "
+               "remove the '__exit__' method"
+            << contextExp->getRange();
+        diag.attachNote(contextDecl->getLoc())
+            << contextRVType << " declared here";
+
+        // Make the emission work even if the type isn't copyable.
+        contextVal = XRValue(contextMgrDecl);
+      }
+    }
+  }
+
+  // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
+  // result to a named TARGET vardecl, inferring its type.
+  CValue enterResult = getEmitter().emitNamedMethodCall(
+      "__enter__", CallOperands({{contextVal, contextExp}}), enterDest,
+      CallSyntax::kMethodCall, contextExp);
+  if (!enterResult)
+    enterDest.resetForError();
+
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  if (useLexicalScope)
+    pushChildScope(scopeGuard, keepDecl);
+
+  // Inject the target into our scope if asked for.
+  if (addDecl) {
+    auto &targetDeclResolved = getDeclResolver().addFullyResolvedDecl(
+        targetDecl.getOperation(), targetDecl.getNameAttr(), targetLoc,
+        curDeclScope);
+    if (!enterResult)
+      targetDeclResolved.hasReferenceError = true;
+  }
 
   // Lookup the error type if we're in an exception region.
   ASTType errorType;
@@ -1423,8 +1480,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     if (hasExitMethod) {
       ValueDest exitDest(EC_WithExitResult);
       (void)getEmitter().emitNamedMethodCall(
-          "__exit__", CallOperands({{contextCV, contextExp}}), exitDest,
-          CallSyntax::kMethodCall, contextExp);
+          "__exit__", CallOperands({{XLValue(contextMgrDecl), contextExp}}),
+          exitDest, CallSyntax::kMethodCall, contextExp);
     } else if (auto targetBV = getEmitter().emitBValue(
                    {enterResult, contextExp}, ExprContext::EC_WithContextMgr)) {
       // If the target value has no __exit__ method, we need it to be
@@ -1483,7 +1540,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     // Insert the flag and initialize it to 'True'.
     OpBuilder::InsertionGuard g(builder);
     builder.setInsertionPoint(tryOp);
-
     excVar =
         getEmitter().emitVarLetDecl("__with_exc__", builder.getI1Type(), loc,
                                     VarLetDeclKind::Var, /*isSynthetic=*/true);
@@ -1523,7 +1579,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   ValueDest exitResultDest(EC_WithExitResult);
   CValue exitResult = getEmitter().emitNamedMethodCall(
       "__exit__",
-      CallOperands({{contextCV, contextExp}, {errorVal, contextExp}}),
+      CallOperands(
+          {{XLValue(contextMgrDecl), contextExp}, {errorVal, contextExp}}),
       exitResultDest, CallSyntax::kMethodCall, contextExp);
   RValue exitI1RVal =
       getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
@@ -2057,10 +2114,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
       dest = ValueDest(varOp, exprContext);
     }
 
-    if (!initExpr->emitIR(dest, emitter)) {
-      dest.resetForError();
+    if (!emitter.emitExpr(initExpr, dest))
       return declParseError();
-    }
 
     assert(!isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
            "RValue emission should have inferred var type");
