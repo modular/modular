@@ -51,9 +51,7 @@ fn mma_kernel_fp32_tf32(
     alias mma_n = 8
     alias mma_k = 8
 
-    var a_reg = SIMD[DType.float32, 4]()
-    var b_reg = SIMD[DType.float32, 2]()
-    var d_reg = SIMD[DType.float32, 4]()
+    var d_reg = SIMD[DType.float32, 4](0)
     let tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -62,11 +60,11 @@ fn mma_kernel_fp32_tf32(
         let b_tile_row = i * mma_k
         let b_tile_col = BlockIdx.y() * mma_n
 
-        load_matrix_a[mma_m, mma_n, mma_k](
-            a_reg, a_ptr, a_tile_row, a_tile_col, k
+        let a_reg = load_matrix_a[mma_m, mma_n, mma_k](
+            a_ptr, a_tile_row, a_tile_col, k
         )
-        load_matrix_b[mma_m, mma_n, mma_k](
-            b_reg, b_ptr, b_tile_row, b_tile_col, n
+        let b_reg = load_matrix_b[mma_m, mma_n, mma_k](
+            b_ptr, b_tile_row, b_tile_col, n
         )
 
         # Perform mma (d = a * b + d)
@@ -92,9 +90,7 @@ fn mma_kernel_fp32_fp16(
     alias mma_n = 8
     alias mma_k = 8
 
-    var a_reg = SIMD[DType.float16, 4]()
-    var b_reg = SIMD[DType.float16, 2]()
-    var d_reg = SIMD[DType.float32, 4]()
+    var d_reg = SIMD[DType.float32, 4](0)
     let tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -103,11 +99,11 @@ fn mma_kernel_fp32_fp16(
         let b_tile_row = i * mma_k
         let b_tile_col = BlockIdx.y() * mma_n
 
-        load_matrix_a[mma_m, mma_n, mma_k](
-            a_reg, a_ptr, a_tile_row, a_tile_col, k
+        let a_reg = load_matrix_a[mma_m, mma_n, mma_k](
+            a_ptr, a_tile_row, a_tile_col, k
         )
-        load_matrix_b[mma_m, mma_n, mma_k](
-            b_reg, b_ptr, b_tile_row, b_tile_col, n
+        let b_reg = load_matrix_b[mma_m, mma_n, mma_k](
+            b_ptr, b_tile_row, b_tile_col, n
         )
 
         # Perform mma (d = a * b + d)
@@ -133,9 +129,7 @@ fn mma_kernel_fp16_fp16(
     alias mma_n = 8
     alias mma_k = 8
 
-    var a_reg = SIMD[DType.float16, 4]()
-    var b_reg = SIMD[DType.float16, 2]()
-    var d_reg = SIMD[DType.float16, 4]()
+    var d_reg = SIMD[DType.float16, 4](0)
     let tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -144,11 +138,11 @@ fn mma_kernel_fp16_fp16(
         let b_tile_row = i * mma_k
         let b_tile_col = BlockIdx.y() * mma_n
 
-        load_matrix_a[mma_m, mma_n, mma_k](
-            a_reg, a_ptr, a_tile_row, a_tile_col, k
+        let a_reg = load_matrix_a[mma_m, mma_n, mma_k](
+            a_ptr, a_tile_row, a_tile_col, k
         )
-        load_matrix_b[mma_m, mma_n, mma_k](
-            b_reg, b_ptr, b_tile_row, b_tile_col, n
+        let b_reg = load_matrix_b[mma_m, mma_n, mma_k](
+            b_ptr, b_tile_row, b_tile_col, n
         )
 
         # Perform mma (d = a * b + d)
