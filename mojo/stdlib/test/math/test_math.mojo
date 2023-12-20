@@ -17,6 +17,8 @@ from math import (
     rotate_right,
     sin,
 )
+from math.math import _boole
+from testing import assert_equal
 from math.limit import inf, isfinite, isinf, neginf
 
 from complex import ComplexFloat32
@@ -303,7 +305,12 @@ fn test_rotate_bits():
     print(rotate_bits_right[6](SIMD[type, 1](96)))
 
 
-fn main():
+def test_boole():
+    assert_equal(_boole(True), 1)
+    assert_equal(_boole(False), 0)
+
+
+def main():
     test_inf()
     test_nan()
     test_sin()
@@ -312,3 +319,4 @@ fn main():
     test_factorial()
     test_rotate()
     test_rotate_bits()
+    test_boole()
