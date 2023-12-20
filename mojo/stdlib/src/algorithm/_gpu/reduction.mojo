@@ -169,10 +169,10 @@ fn reduce_launch[
     let num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
     func(
+        stream,
         (num_blocks,),
         (BLOCK_SIZE,),
         shape,
         axis,
         init,
-        stream=stream,
     )

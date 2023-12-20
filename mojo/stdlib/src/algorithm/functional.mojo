@@ -1408,18 +1408,18 @@ fn _elementwise_impl[
                 func_type, rebind[func_type](_invoke_without_edge_case)
             ]()
             gpu_func(
+                stream,
                 num_blocks,
                 block_size,
-                stream=stream,
             )
         else:
             let gpu_func = Function[
                 func_type, rebind[func_type](_invoke_with_edge_case)
             ]()
             gpu_func(
+                stream,
                 num_blocks,
                 block_size,
-                stream=stream,
             )
 
     except e:
