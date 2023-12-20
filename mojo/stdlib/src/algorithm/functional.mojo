@@ -21,6 +21,9 @@ from gpu import GridDim, BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Dim, Function, Stream, Device
 from runtime.llcl import (
     AsyncTaskGroupPtr,
+    TaskGroup,
+    TaskGroupTask,
+    TaskGroupTaskList,
     OutputChainPtr,
     OwningOutputChainPtr,
     Runtime,
@@ -237,105 +240,6 @@ fn vectorize_unroll[
 
 
 @always_inline
-fn _async_parallelize[
-    func: fn (Int) capturing -> None
-](out_chain: OutputChainPtr, num_work_items: Int):
-    """Same behavior as _async_parallelize overload but func does not raise.
-
-    Parameters:
-        func: The function to invoke.
-
-    Args:
-        out_chain: Out chain onto which to signal completion.
-        num_work_items: Number of parallel tasks.
-    """
-
-    @parameter
-    @always_inline
-    fn fn_wrapper(i: Int) raises:
-        func(i)
-
-    _async_parallelize[fn_wrapper](out_chain, num_work_items)
-
-
-@always_inline
-fn _async_parallelize[
-    func: fn (Int) raises capturing -> None
-](out_chain: OutputChainPtr, num_work_items: Int):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
-    returns immediately. The out_chain will be marked as ready only when all
-    sub-tasks have completed.
-
-    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
-    mark out_chain as ready when all functions have returned. This function
-    will return when the sub-tasks have been scheduled but not necessarily
-    completed. The runtime may execute the sub-tasks in any order and with any
-    degree of concurrency.
-
-    All free variables in func must be "async safe". Currently this means:
-     - The variable must be bound by a by-val function argument (ie no &),
-       or let binding.
-     - The variable's type must be "async safe", ie is marked as
-       @register_passable and any internal pointers are to memory with
-       lifetime at least until out_chain is ready. In practice, this means
-       only pointers to buffers held alive by the runtime.
-    Consider using sync_parallelize if this requirement is too onerous.
-
-    If num_work_items is 0 then the out_chain is marked as ready
-    before async_parallelize returns. If num_work_items is 1 then func(0) may
-    still be executed as a sub-task.
-
-    Parameters:
-        func: The function to invoke.
-
-    Args:
-        out_chain: Out chain onto which to signal completion.
-        num_work_items: Number of parallel tasks.
-    """
-
-    # We have no tasks, so do nothing.
-    if num_work_items == 0:
-        # No-op
-        out_chain.mark_ready()
-        return
-
-    # If there is a single task, consider executing it in the host thread.
-    # If the runtime has only 1 thread, executing inline is guaranteed to
-    # reduce launch overhead by executing immediately.
-    # If the runtime has more than 1 thread, executing inline may be suboptimal
-    # since it may block other kernel launches that can then execute in parallel.
-    # TODO (#14524): Add heuristic to determine when inlining the func is
-    # appropriate when the runtime has more than 1 thread.
-    if num_work_items == 1 and out_chain.get_runtime().parallelism_level() == 1:
-        with FlushDenormals():
-            try:
-                func(0)
-            except e:
-                trap(e)
-        out_chain.mark_ready()
-        return
-
-    let parent_id = tracing.get_current_trace_id()
-
-    @always_inline
-    @parameter
-    async fn task_fn(i: Int):
-        with FlushDenormals():
-            with Trace[TraceLevel.OP](
-                "task:", task_id=i, parent_id=parent_id
-            ) as t:
-                try:
-                    func(i)
-                except e:
-                    trap(e)
-
-    var atg = AsyncTaskGroupPtr(num_work_items, out_chain)
-    for i in range(num_work_items):
-        let coroutine: Coroutine[NoneType] = task_fn(i)
-        atg.add_task(coroutine ^)
-
-
-@always_inline
 fn sync_parallelize[
     func: fn (Int) capturing -> None
 ](out_chain: OutputChainPtr, num_work_items: Int):
@@ -377,9 +281,50 @@ fn sync_parallelize[
         out_chain: Out chain onto which to signal completion.
         num_work_items: Number of parallel tasks.
     """
+    # We have no tasks, so do nothing.
+    if num_work_items == 0:
+        # No-op
+        out_chain.mark_ready()
+        return
 
-    _async_parallelize[func](out_chain, num_work_items)
-    out_chain.wait()
+    let parent_id = tracing.get_current_trace_id()
+
+    @parameter
+    @always_inline
+    fn func_wrapped(i: Int):
+        with FlushDenormals():
+            with Trace[TraceLevel.OP](
+                "task:", task_id=i, parent_id=parent_id
+            ) as t:
+                try:
+                    func(i)
+                except e:
+                    trap(e)
+
+    if num_work_items == 1:
+        func_wrapped(0)
+        out_chain.mark_ready()
+        return
+
+    @always_inline
+    @parameter
+    async fn task_fn(i: Int):
+        func_wrapped(i)
+
+    let rt = out_chain.get_runtime()  # Runtime()
+    var tasks = TaskGroupTaskList[NoneType](num_work_items - 1)
+    var tg = TaskGroup(rt)
+    for i in range(num_work_items - 1):
+        let task = tg.create_task[NoneType](task_fn(i))
+        tasks.add(task ^)
+
+    # execute Nth task inline
+    func_wrapped(num_work_items - 1)
+
+    tg.wait()
+    _ = tasks ^
+
+    out_chain.mark_ready()
 
 
 @always_inline
