@@ -70,6 +70,16 @@ enum class QuotingType;
   }                                                                            \
   }
 
+#define LLVM_FWD_YAML_IS_FLOW_SEQUENCE_VECTOR(Type)                            \
+  namespace llvm {                                                             \
+  namespace yaml {                                                             \
+  template <>                                                                  \
+  struct SequenceElementTraits<Type, void> {                                   \
+    static const bool flow = true;                                             \
+  };                                                                           \
+  }                                                                            \
+  }
+
 #define LLVM_FWD_YAML_IS_SEQUENCE_VECTOR(Type)                                 \
   namespace llvm {                                                             \
   namespace yaml {                                                             \
