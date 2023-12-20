@@ -679,6 +679,8 @@ fn fail_register_raises(str: StringRef) raises -> Int:
 ##===----------------------------------------------------------------------===##
 
 struct ExampleCM:
+  fn __copyinit__(inout self, existing: Self): pass
+
   fn __enter__(self) -> Int:
     return 42
   fn __exit__(self):
@@ -686,13 +688,26 @@ struct ExampleCM:
   fn __exit__(self, err: Error) -> Bool:
     return True # Raise
 
+# Cannot use mutating __enter__
+# https://github.com/modularml/modular/issues/27371
+struct MutatingCM:
+  fn __init__(inout self): pass
+  fn __enter__(inout self) -> Int:
+    return 42
+  fn __exit__(inout self):
+    pass # normal
+
 fn noop(a: Int): pass
 
 
 # CHECK-LABEL: lit.func @"testWithNonRaising
 fn testWithNonRaising(a: ExampleCM):
+  # CHECK-NEXT: $CONTEXTMGR = lit.varlet.decl "$CONTEXTMGR"
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[CTXPTR]], %a)
   # CHECK-NEXT: %val = lit.varlet.decl {{.*}} imp
-  # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%a)
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer
+  # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
   # CHECK-NEXT: lit.ref.store [[TARGET]], %val
   # CHECK-NEXT: lit.try
   with a as val:
@@ -700,23 +715,42 @@ fn testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL]])
     noop(val)
   # CHECK: finally
-  # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}(%a)
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer
+  # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[CTXPTR]])
 
   # Test a with with no target.
 
-  # CHECK: lit.call {{.*}}__enter__{{.*}}(%a)
+  # CHECK: %$CONTEXTMGR_0 = lit.varlet.decl "$CONTEXTMGR"
+  # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[CTXPTR]], %a)
+  # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
+  # CHECK: lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
   # CHECK-NEXT: lit.try
   with a:
     # CHECK-NEXT: kgen.param.constant: {{.*}}42
     # CHECK-NEXT: lit.call {{.*}}noop
     noop(42)
   # CHECK: finally
-  # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}(%a)
+  # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
+  # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[CTXPTR]])
+
+  # CHECK: %$CONTEXTMGR_1 = lit.varlet.decl "$CONTEXTMGR"{{.*}}!MutatingCM
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_1
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[CTXPTR]])
+  # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_1
+  # CHECK-NEXT: lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
+  with MutatingCM() as val:
+    # CHECK: lit.call {{.*}}noop
+    noop(val)
+  # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_1
+  # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[CTXPTR]])
 
 # CHECK-LABEL: lit.func @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:
-  # CHECK-NEXT: %val = lit.varlet.decl {{.*}} imp
-  # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%a)
+  # CHECK: %$CONTEXTMGR = lit.varlet.decl
+  # CHECK: %val = lit.varlet.decl {{.*}} imp
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
+  # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
   # CHECK-NEXT: lit.ref.store [[TARGET]], %val
   # CHECK: lit.ref.store %true, %__with_exc__
   # CHECK-NEXT: lit.try
@@ -739,7 +773,8 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT: lit.try.yield
   # CHECK-NEXT: } except (%arg0: !Error) {
   # CHECK:        lit.ref.store %false, %__with_exc__
-  # CHECK-NEXT:   [[EXIT_RESULT:%.*]] = lit.call {{.*}}__exit__{{.*}}(%a, %arg0)
+  # CHECK-NEXT:   [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
+  # CHECK-NEXT:   [[EXIT_RESULT:%.*]] = lit.call {{.*}}__exit__{{.*}}([[CTXPTR]], %arg0)
   # CHECK-NEXT:   [[SUCCESS:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[EXIT_RESULT]])
   # CHECK-NEXT:   hlcf.if [[SUCCESS]] {
   # CHECK-NEXT:     hlcf.yield
@@ -754,14 +789,17 @@ fn testWithRaising(a: ExampleCM) raises:
   # CHECK:    } finally {
   # CHECK-NEXT: %[[EXC:.*]] = lit.ref.load %__with_exc__
   # CHECK-NEXT: hlcf.if %[[EXC]]
-  # CHECK-NEXT:   call {{.*}}__exit__{{.*}}(%a)
+  # CHECK-NEXT:   [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
+  # CHECK-NEXT:   call {{.*}}__exit__{{.*}}([[CTXPTR]])
 
 # CHECK-LABEL: lit.func @"testWithInTry
 fn testWithInTry(a: ExampleCM):
   # CHECK: lit.try {
   try:
+     # CHECK: %$CONTEXTMGR = lit.varlet.decl
      # CHECK: %cm = lit.varlet.decl "cm"
-     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%a)
+     # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
+     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
      # CHECK-NEXT: lit.ref.store [[TARGET]], %cm
      # CHECK: lit.ref.store %true, %__with_exc__
      # CHECK: lit.try {
@@ -785,7 +823,7 @@ fn testWithScoping(a: ExampleCM):
     # CHECK: %withDecl = lit.varlet.decl "withDecl" imp
     noop(withDecl)
   with a as withDecl:
-    # CHECK: %withDecl_0 = lit.varlet.decl "withDecl" imp
+    # CHECK: = lit.varlet.decl "withDecl" imp
     noop(withDecl)
 
 # CHECK-LABEL: lit.func @"testWithInDef
@@ -828,12 +866,9 @@ struct CMWithoutExit:
 
 # CHECK-LABEL: lit.func @"testCMWithoutExit
 fn testCMWithoutExit():
-  # CHECK-NEXT: %a = lit.varlet.decl "a"
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
+  # CHECK: [[APTR:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[CTXPTR]])
   # CHECK-NEXT: lit.try {
   # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
@@ -849,14 +884,15 @@ fn testCMWithoutExit():
   with CMWithoutExit() as a:
     a.method()
 
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a"
-  # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A_1
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
+  # CHECK: %$CONTEXTMGR_0 = lit.varlet.decl "$CONTEXTMGR"
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CTXPTR]])
+  # CHECK: %a_1 = lit.varlet.decl "a"
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_1
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[CTXPTR]])
   # CHECK-NEXT: lit.try {
-  # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a_0
+  # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a_1
   # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
   # CHECK-NEXT:   lit.try.yield
   # CHECK-NEXT: } except (%arg0: i1) {
@@ -880,12 +916,13 @@ fn testCMWithoutExit():
 # CHECK-LABEL: lit.func @"testCMWithoutExitEarlyReturn
 # https://github.com/modularml/modular/issues/23693
 fn testCMWithoutExitEarlyReturn():
-  # CHECK-NEXT: %a = lit.varlet.decl "a"
-  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[ANONPTR]])
+  # CHECK: %$CONTEXTMGR = lit.varlet.decl "$CONTEXTMGR"
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CTXPTR]])
+  # CHECK: %a = lit.varlet.decl "a"
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[ANONPTR]])
+  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[APTR]], [[CTXPTR]])
   # CHECK-NEXT: lit.try {
   # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])

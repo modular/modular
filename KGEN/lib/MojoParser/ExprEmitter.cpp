@@ -1269,13 +1269,18 @@ CValue ExprEmitter::emitCResult(CValue value, const ExprNode *expr,
   return result.getIfCValue();
 }
 
-AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ExprContext context,
-                               ASTType resultType) {
-  ValueDest dest(resultType, context);
+/// Emit the specified expression into the specified destination.
+AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ValueDest &dest) {
   if (auto result = expr->emitIR(dest, *this))
     return result;
   dest.resetForError();
   return {};
+}
+
+AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ExprContext context,
+                               ASTType resultType) {
+  ValueDest dest(resultType, context);
+  return emitExpr(expr, dest);
 }
 
 RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,

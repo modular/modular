@@ -173,6 +173,7 @@ fn spurious_for_loop_variable_unknown_decl():
 ##===----------------------------------------------------------------------===##
 
 struct ExampleCM:
+  fn __moveinit__(inout self, owned other: Self): pass
   fn __enter__(self) -> Int:
     return 42
   fn __exit__(self):
@@ -180,11 +181,11 @@ struct ExampleCM:
   fn __exit__(self, err: Error) -> Bool:
     return True # Raise
 
-def withUsingImmutableVariable(a: ExampleCM):
+def withUsingImmutableVariable(owned a: ExampleCM):
   # expected-note @below {{'x' declared here}}
   let x = 77
   # expected-error @below {{'x' is not a valid mutable variable for `with ... as` to target}}
-  with a as x:
+  with a^ as x:
     pass
 
 # External Issue #529 https://github.com/modularml/mojo/issues/529
@@ -211,6 +212,27 @@ def useBadContextManagerExit():
   # expected-error @below {{invalid call to '__exit__'}}
   with HasBadContextManagerExit(5) as bad:
       _ = bad.x
+
+# Poor error when with context managers that take ownership in enter
+# https://github.com/modularml/modular/issues/23100
+struct BadCM: # expected-note {{'BadCM' declared here}}
+  fn __init__(inout self): pass
+
+  fn __enter__(owned self) -> Int:
+    return 42
+  fn __exit__(self):
+    pass # normal
+  fn __exit__(self, err: Error) -> Bool:
+    return True # Raise
+
+fn noop(a: Int): pass
+
+fn testBadCM():
+  # expected-error @+1 {{context manager of type 'BadCM' defines a consuming __enter__ method as well as an __exit__ method; either remove 'owned' from its '__enter__' method or remove the '__exit__' method}}
+  with BadCM():
+    pass
+
+
 
 ##===----------------------------------------------------------------------===##
 # Raise

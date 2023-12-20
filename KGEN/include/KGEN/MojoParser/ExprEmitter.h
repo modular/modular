@@ -422,6 +422,9 @@ public:
   AnyValue emitResult(AnyValue value, const ExprNode *expr, ValueDest &dest);
   CValue emitCResult(CValue value, const ExprNode *expr, ValueDest &dest);
 
+  /// Emit the specified expression into the specified destination.
+  AnyValue emitExpr(const ExprNode *expr, ValueDest &dest);
+
   /// Emit the specified node with the indicated expression context and an
   /// optional contextual type.
   AnyValue emitExpr(const ExprNode *expr, ExprContext context,
