@@ -104,16 +104,13 @@ fn destructors(owned arg0: MemExample):
 
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem3
   # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime [[PTR]]
-  # CHECK-NEXT: [[T2:%.*]] = lit.ownership.end_lifetime [[T1]]
-  # CHECK-NEXT: [[T3:%.*]] = lit.ownership.end_lifetime [[T2]]
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[T3]])
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[T1]])
   consume(mem3^^^)
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous
   # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANONPTR]])
-  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime [[ANONPTR]]
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[T1]])
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[ANONPTR]])
   consume(MemExample()^)
 
 

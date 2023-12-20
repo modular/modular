@@ -1394,8 +1394,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
             << " can only be moved, but source value can only be copied"
             << value.expr->getRange();
       } else {
-        emitError(exprLoc, "value of type ")
-            << valueType << " cannot be copied into its destination"
+        emitError(exprLoc)
+            << valueType << " is not copyable because it has no '__copyinit__'"
             << value.expr->getRange();
       }
       return {};
@@ -1488,8 +1488,21 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   SMLoc exprLoc = value.expr->getLoc();
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
-  // isn't movable, then copy it into the destination.
+  // has no __moveinit__, then copy it into the destination.
   if (!valueType.isMovableFrom(value, shared)) {
+    // If the value isn't either copy or movable from the source, but the source
+    // value is an RValue, then this is because the type isn't implementing
+    // either the copy or move init.  Complain precisely, instead of just
+    // complaining about copying.
+    if (!valueType.isCopyable(exprLoc, shared) && value.ir.getIfRValue() &&
+        !value.ir.getIfPValue()) {
+      emitError(exprLoc) << valueType
+                         << " is not copyable or movable because it has no "
+                            "'__copyinit__' or '__moveinit__' member"
+                         << value.expr->getRange();
+      return {};
+    }
+
     ValueDest dest(destLV, context);
     auto result = emitCopyOfValue(value, dest);
     assert((!result || result.getIfBValue()) &&
