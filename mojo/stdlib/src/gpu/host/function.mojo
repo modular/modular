@@ -22,6 +22,40 @@ from .stream import Stream, _StreamImpl
 # FunctionHandle
 # ===----------------------------------------------------------------------===#
 
+
+fn _alignto(value: Int, align: Int) -> Int:
+    return (value + align - 1) // align * align
+
+
+struct AnyRegTuple[*Ts: AnyRegType]:
+    alias _type = __mlir_type[
+        `!kgen.pack<:variadic<`, AnyRegType, `> `, Ts, `>`
+    ]
+    var storage: Self._type
+
+    fn __init__(inout self, value: Self._type):
+        self.storage = value
+
+    @staticmethod
+    fn _offset[i: Int]() -> Int:
+        constrained[i >= 0, "index must be positive"]()
+
+        @parameter
+        if i == 0:
+            return 0
+        else:
+            return _alignto(
+                Self._offset[i - 1]()
+                + _alignto(sizeof[Ts[i - 1]](), alignof[Ts[i - 1]]()),
+                alignof[Ts[i]](),
+            )
+
+    fn get[i: Int, T: AnyRegType](inout self) -> T:
+        alias offset = Self._offset[i]()
+        let addr = Pointer.address_of(self).bitcast[Int8]().offset(offset)
+        return addr.bitcast[T]().load()
+
+
 alias _populate_fn_type = fn (Pointer[Pointer[NoneType]]) capturing -> None
 
 
@@ -42,505 +76,33 @@ struct FunctionHandle:
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()
 
-    @always_inline
-    fn _call_impl[
-        num_captures: Int, populate: _populate_fn_type
-    ](self, grid_dim: Dim, block_dim: Dim, /, stream: Stream) raises:
-        let args = stack_allocation[num_captures + 0, Pointer[NoneType]]()
-        populate(args)
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
-    @always_inline
-    fn _call_impl[
-        num_captures: Int, populate: _populate_fn_type, T0: AnyRegType
-    ](self, grid_dim: Dim, block_dim: Dim, arg0: T0, /, stream: Stream) raises:
-        var _arg0 = arg0
-
-        let args = stack_allocation[num_captures + 1, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
+    # TODO: Move the stream argument at the end when When Mojo will support both vararg and keyword only arguments
     @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
+        *Ts: AnyRegType,
+    ](self, stream: Stream, grid_dim: Dim, block_dim: Dim, *args: *Ts) raises:
+        let values = AnyRegTuple(args)
+        alias types = VariadicList(Ts)
 
-        let args = stack_allocation[num_captures + 2, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
+        var args_stack = stack_allocation[
+            num_captures + len(VariadicList(Ts)), Pointer[NoneType]
+        ]()
+        populate(args_stack)
 
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
+        @parameter
+        @always_inline
+        fn append[i: Int]():
+            alias T = types[i]
+            var _val = values.get[i, T]()
+            args_stack.store(
+                num_captures + i, Pointer.address_of(_val).bitcast[NoneType]()
+            )
 
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
-        var _arg2 = arg2
+        unroll[len(types), append]()
 
-        let args = stack_allocation[num_captures + 3, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
-        var _arg2 = arg2
-        var _arg3 = arg3
-
-        let args = stack_allocation[num_captures + 4, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
-        var _arg2 = arg2
-        var _arg3 = arg3
-        var _arg4 = arg4
-
-        let args = stack_allocation[num_captures + 5, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
-        var _arg2 = arg2
-        var _arg3 = arg3
-        var _arg4 = arg4
-        var _arg5 = arg5
-
-        let args = stack_allocation[num_captures + 6, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-        T6: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        arg6: T6,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
-        var _arg2 = arg2
-        var _arg3 = arg3
-        var _arg4 = arg4
-        var _arg5 = arg5
-        var _arg6 = arg6
-
-        let args = stack_allocation[num_captures + 7, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 6, Pointer.address_of(_arg6).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-        T6: AnyRegType,
-        T7: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        arg6: T6,
-        arg7: T7,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
-        var _arg2 = arg2
-        var _arg3 = arg3
-        var _arg4 = arg4
-        var _arg5 = arg5
-        var _arg6 = arg6
-        var _arg7 = arg7
-
-        let args = stack_allocation[num_captures + 8, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 6, Pointer.address_of(_arg6).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 7, Pointer.address_of(_arg7).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-        T6: AnyRegType,
-        T7: AnyRegType,
-        T8: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        arg6: T6,
-        arg7: T7,
-        arg8: T8,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
-        var _arg2 = arg2
-        var _arg3 = arg3
-        var _arg4 = arg4
-        var _arg5 = arg5
-        var _arg6 = arg6
-        var _arg7 = arg7
-        var _arg8 = arg8
-
-        let args = stack_allocation[num_captures + 9, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 6, Pointer.address_of(_arg6).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 7, Pointer.address_of(_arg7).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 8, Pointer.address_of(_arg8).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
-
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-        T6: AnyRegType,
-        T7: AnyRegType,
-        T8: AnyRegType,
-        T9: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        arg6: T6,
-        arg7: T7,
-        arg8: T8,
-        arg9: T9,
-        /,
-        stream: Stream,
-    ) raises:
-        var _arg0 = arg0
-        var _arg1 = arg1
-        var _arg2 = arg2
-        var _arg3 = arg3
-        var _arg4 = arg4
-        var _arg5 = arg5
-        var _arg6 = arg6
-        var _arg7 = arg7
-        var _arg8 = arg8
-        var _arg9 = arg9
-
-        let args = stack_allocation[num_captures + 10, Pointer[NoneType]]()
-        populate(args)
-        args.store(
-            num_captures + 0, Pointer.address_of(_arg0).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 1, Pointer.address_of(_arg1).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 2, Pointer.address_of(_arg2).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 3, Pointer.address_of(_arg3).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 4, Pointer.address_of(_arg4).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 5, Pointer.address_of(_arg5).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 6, Pointer.address_of(_arg6).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 7, Pointer.address_of(_arg7).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 8, Pointer.address_of(_arg8).bitcast[NoneType]()
-        )
-        args.store(
-            num_captures + 9, Pointer.address_of(_arg9).bitcast[NoneType]()
-        )
-
-        self.__call_impl(grid_dim, block_dim, args, stream=stream)
+        self.__call_impl(grid_dim, block_dim, args_stack, stream=stream)
 
     @always_inline
     fn __call_impl(
@@ -794,319 +356,73 @@ struct Function[func_type: AnyRegType, func: func_type]:
     fn __bool__(self) -> Bool:
         return self.info.__bool__()
 
-    @closure
-    @always_inline
-    fn __call__(
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](grid_dim, block_dim, stream=stream)
-
+    # TODO: Move the stream argument at the end when When Mojo will support both vararg and keyword only arguments
     @closure
     @always_inline
     fn __call__[
-        T0: AnyRegType
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](grid_dim, block_dim, arg0, stream=stream)
+        *Ts: AnyRegType
+    ](self, stream: Stream, grid_dim: Dim, block_dim: Dim, *args: *Ts) raises:
+        let values = AnyRegTuple(args)
+        alias types = VariadicList(Ts)
+        alias num_captures = Self._impl.num_captures
+        alias populate = Self._impl.populate
 
-    @closure
-    @always_inline
-    fn __call__[
-        T0: AnyRegType, T1: AnyRegType
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](grid_dim, block_dim, arg0, arg1, stream=stream)
+        var args_stack = stack_allocation[
+            num_captures + len(VariadicList(Ts)), Pointer[NoneType]
+        ]()
+        populate(args_stack)
 
-    @closure
-    @always_inline
-    fn __call__[
-        T0: AnyRegType, T1: AnyRegType, T2: AnyRegType
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](grid_dim, block_dim, arg0, arg1, arg2, stream=stream)
+        @parameter
+        @always_inline
+        fn append[i: Int]():
+            alias T = types[i]
+            var _val = values.get[i, T]()
+            args_stack.store(
+                num_captures + i, Pointer.address_of(_val).bitcast[NoneType]()
+            )
 
-    @closure
-    @always_inline
-    fn __call__[
-        T0: AnyRegType, T1: AnyRegType, T2: AnyRegType, T3: AnyRegType
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](grid_dim, block_dim, arg0, arg1, arg2, arg3, stream=stream)
+        unroll[len(types), append]()
 
-    @closure
-    @always_inline
-    fn __call__[
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](grid_dim, block_dim, arg0, arg1, arg2, arg3, arg4, stream=stream)
-
-    @closure
-    @always_inline
-    fn __call__[
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](
-            grid_dim,
-            block_dim,
-            arg0,
-            arg1,
-            arg2,
-            arg3,
-            arg4,
-            arg5,
-            stream=stream,
+        self.info.func_handle.__call_impl(
+            grid_dim, block_dim, args_stack, stream=stream
         )
 
+        # self.info.func_handle._call_impl[
+        #     Self._impl.num_captures, Self._impl.populate
+        # ](stream, grid_dim, block_dim, AnyRegTuple(args))
+
+    # Convenience method omitting the stream parameter
     @closure
     @always_inline
     fn __call__[
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-        T6: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        arg6: T6,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](
-            grid_dim,
-            block_dim,
-            arg0,
-            arg1,
-            arg2,
-            arg3,
-            arg4,
-            arg5,
-            arg6,
-            stream=stream,
+        *Ts: AnyRegType
+    ](self, grid_dim: Dim, block_dim: Dim, *args: *Ts) raises:
+        let stream: Stream = _StreamImpl()
+        let values = AnyRegTuple(args)
+        alias types = VariadicList(Ts)
+        alias num_captures = Self._impl.num_captures
+        alias populate = Self._impl.populate
+
+        var args_stack = stack_allocation[
+            num_captures + len(VariadicList(Ts)), Pointer[NoneType]
+        ]()
+        populate(args_stack)
+
+        @parameter
+        @always_inline
+        fn append[i: Int]():
+            alias T = types[i]
+            var _val = values.get[i, T]()
+            args_stack.store(
+                num_captures + i, Pointer.address_of(_val).bitcast[NoneType]()
+            )
+
+        unroll[len(types), append]()
+
+        self.info.func_handle.__call_impl(
+            grid_dim, block_dim, args_stack, stream=stream
         )
 
-    @closure
-    @always_inline
-    fn __call__[
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-        T6: AnyRegType,
-        T7: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        arg6: T6,
-        arg7: T7,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](
-            grid_dim,
-            block_dim,
-            arg0,
-            arg1,
-            arg2,
-            arg3,
-            arg4,
-            arg5,
-            arg6,
-            arg7,
-            stream=stream,
-        )
-
-    @closure
-    @always_inline
-    fn __call__[
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-        T6: AnyRegType,
-        T7: AnyRegType,
-        T8: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        arg6: T6,
-        arg7: T7,
-        arg8: T8,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](
-            grid_dim,
-            block_dim,
-            arg0,
-            arg1,
-            arg2,
-            arg3,
-            arg4,
-            arg5,
-            arg6,
-            arg7,
-            arg8,
-            stream=stream,
-        )
-
-    @closure
-    @always_inline
-    fn __call__[
-        T0: AnyRegType,
-        T1: AnyRegType,
-        T2: AnyRegType,
-        T3: AnyRegType,
-        T4: AnyRegType,
-        T5: AnyRegType,
-        T6: AnyRegType,
-        T7: AnyRegType,
-        T8: AnyRegType,
-        T9: AnyRegType,
-    ](
-        self,
-        grid_dim: Dim,
-        block_dim: Dim,
-        arg0: T0,
-        arg1: T1,
-        arg2: T2,
-        arg3: T3,
-        arg4: T4,
-        arg5: T5,
-        arg6: T6,
-        arg7: T7,
-        arg8: T8,
-        arg9: T9,
-        /,
-        stream: Stream = _StreamImpl(),
-    ) raises:
-        self.info.func_handle._call_impl[
-            Self._impl.num_captures, Self._impl.populate
-        ](
-            grid_dim,
-            block_dim,
-            arg0,
-            arg1,
-            arg2,
-            arg3,
-            arg4,
-            arg5,
-            arg6,
-            arg7,
-            arg8,
-            arg9,
-            stream=stream,
-        )
+        # self.info.func_handle._call_impl[
+        #     Self._impl.num_captures, Self._impl.populate
+        # ](stream, grid_dim, block_dim, AnyRegTuple(args))
