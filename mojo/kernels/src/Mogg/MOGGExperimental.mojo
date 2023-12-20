@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from Activations import relu
 from algorithm.functional import _elementwise_impl
+from math import sqrt
 from utils._annotations import *
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
@@ -81,7 +83,7 @@ fn to_tensor[
 @mogg_register_override("mo.add", 1000)
 @mogg_kgen_experiment_kernel()
 @export
-fn my_add(
+fn my_add_with_fusion(
     x: Tensor, y: Tensor
 ) -> Tensor[x.type, x.static_shape, x.static_strides]:
     var out = empty_tensor[x.type](x.shape, x.strides)
@@ -103,7 +105,7 @@ fn my_add(
 @mogg_register_override("mo.sub", 1000)
 @mogg_kgen_experiment_kernel()
 @export
-fn my_sub(
+fn my_sub_without_fusion(
     x: Tensor, y: Tensor
 ) -> Tensor[x.type, x.static_shape, x.static_strides]:
     var out = empty_tensor[x.type](x.shape, x.strides)
@@ -113,6 +115,43 @@ fn my_sub(
     fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
         let i2 = rebind[SIMD[x.type, width]](y.simd_load[width](i))
         return rebind[SIMD[_t, width]](x.simd_load[width](i) - i2)
+
+    out.for_each[1, func]()
+    return out ^
+
+
+@mogg_register_override("mo.relu", 1000)
+@mogg_kgen_experiment_kernel()
+@export
+fn unary_op_with_fusion(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape, x.static_strides]:
+    var out = empty_tensor[x.type](x.shape, x.strides)
+
+    x.enable_fusion()
+    out.enable_fusion()
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return relu(rebind[SIMD[_t, width]](x.simd_load[width](i)))
+
+    out.for_each[1, func]()
+    return out ^
+
+
+@mogg_register_override("mo.sqrt", 1000)
+@mogg_kgen_experiment_kernel()
+@export
+fn unary_op_without_fusion(
+    x: Tensor,
+) -> Tensor[x.type, x.static_shape, x.static_strides]:
+    var out = empty_tensor[x.type](x.shape, x.strides)
+
+    @parameter
+    @always_inline
+    fn func[width: Int, _t: DType](i: IntList) -> SIMD[_t, width]:
+        return sqrt(rebind[SIMD[_t, width]](x.simd_load[width](i)))
 
     out.for_each[1, func]()
     return out ^
