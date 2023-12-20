@@ -1361,9 +1361,7 @@ fn variance(
     return out / (len(src) - correction)
 
 
-fn variance[
-    size: Dim, type: DType
-](src: Buffer[size, type], correction: Int = 1) -> Scalar[type]:
+fn variance(src: Buffer, correction: Int = 1) -> Scalar[src.type]:
     """Computes the variance value of the elements in a buffer.
 
     ```
@@ -1371,8 +1369,7 @@ fn variance[
     ```
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -1391,12 +1388,11 @@ fn variance[
 # ===----------------------------------------------------------------------===#
 
 
-fn all_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
+fn all_true(src: Buffer) -> Bool:
     """Returns True if all the elements in a buffer are True and False otherwise.
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -1420,7 +1416,6 @@ fn all_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     fn _continue_fn(val: Bool) -> Bool:
         return val
 
-    alias simd_width = simdwidthof[type]()
     return reduce_boolean[_reduce_fn, _continue_fn](src, False)
 
 
@@ -1429,12 +1424,11 @@ fn all_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
 # ===----------------------------------------------------------------------===#
 
 
-fn any_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
+fn any_true(src: Buffer) -> Bool:
     """Returns True if any the elements in a buffer are True and False otherwise.
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -1458,7 +1452,6 @@ fn any_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     fn _continue_fn(val: Bool) -> Bool:
         return not val
 
-    alias simd_width = simdwidthof[type]()
     return reduce_boolean[_reduce_fn, _continue_fn](src, False)
 
 
@@ -1467,13 +1460,12 @@ fn any_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
 # ===----------------------------------------------------------------------===#
 
 
-fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
+fn none_true(src: Buffer) -> Bool:
     """Returns True if none of the elements in a buffer are True and False
     otherwise.
 
     Parameters:
-        size: The buffer size.
-        type: The buffer elements dtype.
+        : Ignore.
 
     Args:
         src: The buffer.
@@ -1497,7 +1489,6 @@ fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     fn _continue_fn(val: Bool) -> Bool:
         return val
 
-    alias simd_width = simdwidthof[type]()
     return reduce_boolean[_reduce_fn, _continue_fn](src, True)
 
 
@@ -1507,25 +1498,20 @@ fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
 
 
 fn _argn[
-    type: DType,
-    out_type: DType,
-    rank: Int,
-    is_max: Bool,
+    is_max: Bool
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input: NDBuffer,
     axis: Int,
-    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    output: NDBuffer,
     out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
     Parameters:
-        type: Type of the input tensor.
-        out_type: Type of the output tensor.
-        rank: The rank of the input / output.
         is_max: If True compute then compute argmax, otherwise compute the
                 argmin.
+        : Ignore.
 
     Args:
         input: The input tensor.
@@ -1533,7 +1519,8 @@ fn _argn[
         output: The output tensor.
         out_chain: The chain to attach results to.
     """
-    alias simd_width = simdwidthof[type]()
+    alias rank = input.rank
+    alias simd_width = simdwidthof[input.type]()
 
     var canonical_axis = axis
     if canonical_axis < 0:
@@ -1618,24 +1605,24 @@ fn _argn[
             var output_offset = i * output_stride
             let input_dim_ptr = input.data.offset(input_offset)
             let output_dim_ptr = output.data.offset(output_offset)
-            var global_val: Scalar[type]
+            var global_val: Scalar[input.type]
 
             # initialize limits
             @parameter
             if is_max:
-                global_val = min_or_neginf[type]()
+                global_val = min_or_neginf[input.type]()
             else:
-                global_val = max_or_inf[type]()
+                global_val = max_or_inf[input.type]()
 
             # initialize vector of maximal/minimal values
-            var global_values: SIMD[type, simd_width]
+            var global_values: SIMD[input.type, simd_width]
             if axis_size < simd_width:
                 global_values = global_val
             else:
                 global_values = input_dim_ptr.simd_load[simd_width]()
 
             # iterate over values evenly divisible by simd_width
-            var indices = iota[out_type, simd_width]()
+            var indices = iota[output.type, simd_width]()
             var global_indices = indices
             let last_simd_index = (axis_size // simd_width) * simd_width
             for j in range(simd_width, last_simd_index, simd_width):
@@ -1653,7 +1640,7 @@ fn _argn[
                 global_val = global_values.reduce_min()
 
             # Check trailing indices.
-            var idx = Scalar[out_type](0)
+            var idx = Scalar[output.type](0)
             var found_min: Bool = False
             for j in range(last_simd_index, axis_size, 1):
                 let elem = input_dim_ptr.load(j)
@@ -1666,7 +1653,7 @@ fn _argn[
             if not found_min:
                 var matching = global_values == global_val
                 var min_indices = matching.select(
-                    global_indices, max_or_inf[out_type]()
+                    global_indices, max_or_inf[output.type]()
                 )
                 idx = min_indices.reduce_min()
             output_dim_ptr.store(idx)
@@ -1679,23 +1666,17 @@ fn _argn[
 # ===----------------------------------------------------------------------===#
 
 
-fn argmax[
-    type: DType,
-    out_type: DType,
-    rank: Int,
-](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+fn argmax(
+    input: NDBuffer,
     axis: Int,
-    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    output: NDBuffer,
     out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
 
     Parameters:
-        type: Type of the input tensor.
-        out_type: Type of the output tensor.
-        rank: The rank of the input / output.
+        : Ignore.
 
     Args:
         input: The input tensor.
@@ -1704,29 +1685,20 @@ fn argmax[
         out_chain: The chain to attach results to.
     """
 
-    _argn[type, out_type, rank, True](input, axis, output, out_chain)
+    _argn[is_max=True](input, axis, output, out_chain)
 
 
-@export
-fn argmax[
-    type: DType,
-    out_type: DType,
-    axis_type: DType,
-    rank: Int,
-](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+fn argmax(
+    input: NDBuffer,
+    axis_buf: NDBuffer,
+    output: NDBuffer,
     out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
 
     Parameters:
-        type: Type of the input tensor.
-        out_type: Type of the output tensor.
-        axis_type: Type of the axis tensor.
-        rank: The rank of the input / output.
+        : Ignore.
 
     Args:
         input: The input tensor.
@@ -1743,23 +1715,17 @@ fn argmax[
 # ===----------------------------------------------------------------------===#
 
 
-fn argmin[
-    type: DType,
-    out_type: DType,
-    rank: Int,
-](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+fn argmin(
+    input: NDBuffer,
     axis: Int,
-    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    output: NDBuffer,
     out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
 
     Parameters:
-        type: Type of the input tensor.
-        out_type: Type of the output tensor.
-        rank: The rank of the input / output.
+        : Ignore.
 
     Args:
         input: The input tensor.
@@ -1768,29 +1734,20 @@ fn argmin[
         out_chain: The chain to attach results to.
     """
 
-    _argn[type, out_type, rank, False](input, axis, output, out_chain)
+    _argn[is_max=False](input, axis, output, out_chain)
 
 
-@export
-fn argmin[
-    type: DType,
-    out_type: DType,
-    axis_type: DType,
-    rank: Int,
-](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+fn argmin(
+    input: NDBuffer,
+    axis_buf: NDBuffer,
+    output: NDBuffer,
     out_chain: OutputChainPtr,
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
 
     Parameters:
-        type: Type of the input tensor.
-        out_type: Type of the output tensor.
-        axis_type: Type of the axis tensor.
-        rank: The rank of the input / output.
+        : Ignore.
 
     Args:
         input: The input tensor.
