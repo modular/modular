@@ -359,11 +359,11 @@ fn get_matmul_kernel_shape[
 
     @parameter
     if has_neon():
-        return get_matmul_kernel_shape_x86()
-    else:
         return get_matmul_kernel_shape_ARM[
             a_type, b_type, c_type, critical_stride
         ]()
+    else:
+        return get_matmul_kernel_shape_x86()
 
 
 fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
