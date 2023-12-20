@@ -315,12 +315,6 @@ static void lowerInputConventions(Operation &op) {
         return lowerCallOp(callOp);
       if (auto callOp = dyn_cast<CallSignatureOp>(op))
         return lowerCallSignatureOp(callOp);
-      // While we are here, kill any leftover rebinds that are made redundant
-      // from type lowering only (i.e. weren't killed by elaborator).
-      if (auto rebind = dyn_cast<RebindOp>(op)) {
-        rebind.replaceAllUsesWith(rebind.getInput());
-        rebind.erase();
-      }
     });
 
     // We must do this in a second pass, otherwise ops like kgen.call_signature
