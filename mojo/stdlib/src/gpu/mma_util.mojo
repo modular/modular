@@ -14,12 +14,8 @@ PTX documentation => https://docs.nvidia.com/cuda/parallel-thread-execution/inde
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    inout a: SIMD[DType.float32, 4],
-    a_ptr: DTypePointer[DType.float32],
-    tile_row: Int,
-    tile_col: Int,
-    ldm: Int,
-):
+    a_ptr: DTypePointer[DType.float32], tile_row: Int, tile_col: Int, ldm: Int
+) -> SIMD[DType.float32, 4]:
     constrained[m == 16 and n == 8 and k == 8]()
     let group_id = lane_id() >> 2
     let group_lane_id = lane_id() % 4
@@ -29,10 +25,12 @@ fn load_matrix_a[
     let a13_row = group_id + 8
     let a23_col = group_lane_id + 4
 
-    a[0] = a_ptr.load((tile_row + a02_row) * ldm + (tile_col + a01_col))
-    a[1] = a_ptr.load((tile_row + a13_row) * ldm + (tile_col + a01_col))
-    a[2] = a_ptr.load((tile_row + a02_row) * ldm + (tile_col + a23_col))
-    a[3] = a_ptr.load((tile_row + a13_row) * ldm + (tile_col + a23_col))
+    return SIMD[DType.float32, 4](
+        a_ptr[(tile_row + a02_row) * ldm + (tile_col + a01_col)],
+        a_ptr[(tile_row + a13_row) * ldm + (tile_col + a01_col)],
+        a_ptr[(tile_row + a02_row) * ldm + (tile_col + a23_col)],
+        a_ptr[(tile_row + a13_row) * ldm + (tile_col + a23_col)],
+    )
 
 
 @adaptive
@@ -40,12 +38,8 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    inout a: SIMD[DType.float16, 4],
-    a_ptr: DTypePointer[DType.float16],
-    tile_row: Int,
-    tile_col: Int,
-    ldm: Int,
-):
+    a_ptr: DTypePointer[DType.float16], tile_row: Int, tile_col: Int, ldm: Int
+) -> SIMD[DType.float16, 4]:
     constrained[m == 16 and n == 8 and k == 8]()
     let group_id = lane_id() >> 2
     let group_lane_id = lane_id() % 4
@@ -57,22 +51,20 @@ fn load_matrix_a[
     let a2_col = (group_lane_id * 2) + (2 & 0x1)
     let a3_col = (group_lane_id * 2) + (3 & 0x1)
 
-    a[0] = a_ptr.load((tile_row + a01_row) * ldm + (tile_col + a0_col))
-    a[1] = a_ptr.load((tile_row + a01_row) * ldm + (tile_col + a1_col))
-    a[2] = a_ptr.load((tile_row + a23_row) * ldm + (tile_col + a2_col))
-    a[3] = a_ptr.load((tile_row + a23_row) * ldm + (tile_col + a3_col))
+    return SIMD[DType.float16, 4](
+        a_ptr[(tile_row + a01_row) * ldm + (tile_col + a0_col)],
+        a_ptr[(tile_row + a01_row) * ldm + (tile_col + a1_col)],
+        a_ptr[(tile_row + a23_row) * ldm + (tile_col + a2_col)],
+        a_ptr[(tile_row + a23_row) * ldm + (tile_col + a3_col)],
+    )
 
 
 @always_inline
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    inout b: SIMD[DType.float32, 2],
-    b_ptr: DTypePointer[DType.float32],
-    tile_row: Int,
-    tile_col: Int,
-    ldm: Int,
-):
+    b_ptr: DTypePointer[DType.float32], tile_row: Int, tile_col: Int, ldm: Int
+) -> SIMD[DType.float32, 2]:
     constrained[m == 16 and n == 8 and k == 8]()
     let group_id = lane_id() >> 2
     let group_lane_id = lane_id() % 4
@@ -81,8 +73,10 @@ fn load_matrix_b[
     let b01_col = group_id
     let b1_row = group_lane_id + 4
 
-    b[0] = b_ptr.load((tile_row + b0_row) * ldm + (tile_col + b01_col))
-    b[1] = b_ptr.load((tile_row + b1_row) * ldm + (tile_col + b01_col))
+    return SIMD[DType.float32, 2](
+        b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
+        b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
+    )
 
 
 @adaptive
@@ -90,12 +84,8 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    inout b: SIMD[DType.float16, 2],
-    b_ptr: DTypePointer[DType.float16],
-    tile_row: Int,
-    tile_col: Int,
-    ldm: Int,
-):
+    b_ptr: DTypePointer[DType.float16], tile_row: Int, tile_col: Int, ldm: Int
+) -> SIMD[DType.float16, 2]:
     constrained[m == 16 and n == 8 and k == 8]()
     let group_id = lane_id() >> 2
     let group_lane_id = lane_id() % 4
@@ -104,8 +94,10 @@ fn load_matrix_b[
     let b01_col = group_id
     let b1_row = (group_lane_id * 2) + (1 & 0x1)
 
-    b[0] = b_ptr.load((tile_row + b0_row) * ldm + (tile_col + b01_col))
-    b[1] = b_ptr.load((tile_row + b1_row) * ldm + (tile_col + b01_col))
+    return SIMD[DType.float16, 2](
+        b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
+        b_ptr[(tile_row + b1_row) * ldm + (tile_col + b01_col)],
+    )
 
 
 @adaptive
