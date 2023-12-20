@@ -93,6 +93,63 @@ protected:
   ElaborateGeneratorsOptions config;
 };
 
+//===----------------------------------------------------------------------===//
+// ExpansionGraph
+//===----------------------------------------------------------------------===//
+
+/// This struct represents the expansion of a callgraph during elaboration.
+struct ExpansionGraph {
+  ExpansionGraph(LLCL::Runtime &runtime)
+      : worklistCh(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
+
+  virtual ~ExpansionGraph();
+
+  /// Increment the task count.
+  void didAddTask();
+
+  /// Decrement the task count.
+  void didCompleteTask();
+
+  /// Wait on all outstanding tasks.
+  AsyncValueRef<Chain> quiesce();
+
+  /// Map from generator instantiation to expansion tree node.
+  Shared<DenseMap<std::pair<ParameterExprArrayAttr, GeneratorOp>,
+                  std::unique_ptr<ParamNode>>>
+      nodes;
+
+  /// Map from concrete function to implementation node.
+  Shared<DenseMap<FuncOp, ImplNode *>> concreteNodes;
+
+  /// The current number of tasks scheduled anywhere in the elaborator on the
+  /// worklist.
+  std::atomic<size_t> numWorkItems = 1;
+  /// This chain is signalled when all active work items have completed. This is
+  /// used to starve the workqueue before running evaluators, because evaluation
+  /// cannot be reliably performed while the compiler is doing work on other
+  /// threads.
+  LLCL::AsyncValueRef<LLCL::Chain> worklistCh;
+
+  /// Concrete functions added directly to the expansion graph.
+  std::vector<std::unique_ptr<ImplNode>> elaboratedNodes;
+
+  /// Protect access to quiesceChain.
+  mutable std::mutex quiesceMu;
+
+  /// Protect access to worklistChain.
+  mutable std::mutex worklistMu;
+
+  /// Number of outstanding resources created from this runtime.
+  size_t numOutstandingResources = 0;
+
+  /// If quiesce() has been called, the chain it returned. Otherwise null.
+  mutable AsyncValueRef<Chain> quiesceChain;
+
+  /// Get or create the node for a generator instantiation.
+  ParamNode *getOrCreate(LLCL::Runtime &runtime, ParameterExprArrayAttr values,
+                         GeneratorOp gen, size_t depth);
+};
+
 } // namespace M::KGEN
 
 #endif // KGEN_ELABORATOR_ELABORATOR_H
