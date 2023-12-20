@@ -161,12 +161,14 @@ struct GridDim:
 
 
 @always_inline("nodebug")
-fn lane_id() -> Int:
+fn lane_id() -> UInt32:
     """Returns the lane ID of the current thread.
 
     Returns: The lane ID of the the current thread.
     """
-    return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.laneid", Int32]())
+    return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.laneid", Int32]().cast[
+        DType.uint32
+    ]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -175,9 +177,11 @@ fn lane_id() -> Int:
 
 
 @always_inline("nodebug")
-fn sm_id() -> Int:
+fn sm_id() -> UInt32:
     """Returns the SM ID of the current thread.
 
     Returns: The SM ID of the the current thread.
     """
-    return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.smid", Int32]())
+    return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.smid", Int32]().cast[
+        DType.uint32
+    ]()
