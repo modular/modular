@@ -811,8 +811,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // In-order to allow parameter expressions which technically include a runtime
   // reference, i.e `x.static_field` we allow some values which would otherwise
   // produce a value in a parameter context to still propagate up.
-  ValueDest baseDest(EC_AttributeRefBase);
-  AnyValue baseAnyVal = base->emitIR(baseDest, emitter);
+  AnyValue baseAnyVal = emitter.emitExpr(base, EC_AttributeRefBase);
   if (!baseAnyVal)
     return {};
 
@@ -822,7 +821,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(overloads->getAdaptiveSet(emitter), this, dest);
 
   // Otherwise must have a concrete type.
-  CValue baseVal = emitter.emitCValue({baseAnyVal, this}, baseDest);
+  CValue baseVal = emitter.emitCValue({baseAnyVal, this}, EC_AttributeRefBase);
   if (!baseVal)
     return {};
 
@@ -1294,9 +1293,9 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                         "unpacked arguments are not supported yet");
       return {};
     }
-    ValueDest operandDest(EC_CallArgValue);
+
     ASTExprAnd<AnyValue> exprAndVal = {
-        operand.value->emitIR(operandDest, emitter), operand.value};
+        emitter.emitExpr(operand.value, EC_CallArgValue), operand.value};
     if (!exprAndVal)
       return {};
     if (operand.isPositional()) {
@@ -1559,8 +1558,7 @@ static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
 
 AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
-  ValueDest baseDest(EC_SubscriptBase);
-  auto baseAnyValue = base->emitIR(baseDest, emitter);
+  auto baseAnyValue = emitter.emitExpr(base, EC_SubscriptBase);
   if (!baseAnyValue)
     return {};
 
@@ -1574,7 +1572,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Otherwise, this must be a concrete node to be able to further subscript it.
-  CValue baseValue = emitter.emitCValue({baseAnyValue, base}, baseDest);
+  CValue baseValue = emitter.emitCValue({baseAnyValue, base}, EC_SubscriptBase);
   if (!baseValue)
     return {};
 
@@ -1634,8 +1632,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>> kwOperands;
   for (const Operand &operand : operands) {
     ExprNode *expr = operand.value;
-    ValueDest indexDest(EC_Subscript);
-    AnyValue exprVal = expr->emitIR(indexDest, emitter);
+    AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
     if (!exprVal)
       return {};
 
@@ -1780,7 +1777,7 @@ AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
 }
 
 AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  return subExpr->emitIR(dest, emitter);
+  return emitter.emitExpr(subExpr, dest);
 }
 
 /// Both tuple literals and list literals are emitted as heterogenous sequences,
@@ -2147,11 +2144,9 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
   // required to enable the 'implicit declaration' behavior in a def and to
   // support patterns.
   ValueDest assignDest(lhs, EC_Assignment);
-  auto resultValue = rhs->emitIR(assignDest, emitter);
-  if (!resultValue) {
-    assignDest.resetForError();
+  auto resultValue = emitter.emitExpr(rhs, assignDest);
+  if (!resultValue)
     return {};
-  }
 
   // To support the walrus operator and chained assignment like `x = y = 1`, the
   /// assignment operation returns a borrowed version of the dest value.
@@ -2524,8 +2519,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  ValueDest subDest(EC_OperatorOperandValue);
-  auto exprRep = subExpr->emitIR(subDest, emitter);
+  auto exprRep = emitter.emitExpr(subExpr, EC_OperatorOperandValue);
   if (!exprRep)
     return {};
 
@@ -2564,6 +2558,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   Kind kindToEmit = kind;
   if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
+    ValueDest subDest(EC_OperatorOperandValue);
     argValue.ir =
         emitter.emitNamedMethodCall("__bool__", CallOperands(argValue), subDest,
                                     CallSyntax::kImplicitConvert, this);

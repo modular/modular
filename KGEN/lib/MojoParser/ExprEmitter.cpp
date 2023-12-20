@@ -1132,8 +1132,10 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
 
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
                                  ValueDest &dest) {
-  if (!value)
+  if (!value) {
+    dest.resetForError();
     return {};
+  }
   ExprContext context = dest.getContext();
 
   // Attempt to further specialize the result value.
@@ -1166,8 +1168,10 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           dest.resolveImpliedType(expr->getLoc(), rvalueType, *this)) {
     // If converting to a TypeCheckError type, then there is an
     // already-diagnosed error about this expression.
-    if (requiredType.isTypeCheckErrorType())
+    if (requiredType.isTypeCheckErrorType()) {
+      dest.resetForError();
       return {};
+    }
 
     if (!requiredType.isEqualCanon(rvalueType)) {
       if (canZeroCostConvert(shared, rvalueType, requiredType)) {
@@ -1249,8 +1253,10 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
                                           /*allowIncompatibleTypes=*/true,
                                           /*requireMLValue=*/false, *this);
-  if (!destLV)
+  if (!destLV) {
+    dest.resetForError();
     return {};
+  }
 
   // This will have completely resolved all the ValueDest possibilities.
   assert(!dest.isSpecified() || isa<LValueBufferTaken>(dest.representation));

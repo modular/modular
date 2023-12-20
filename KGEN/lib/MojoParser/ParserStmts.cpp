@@ -1050,10 +1050,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   });
 
   // retrieve the iterator object from the sequence expression
-  auto tmpEmitter = getEmitter();
-  ValueDest seqDest(EC_ForIterator);
-  ASTExprAnd<AnyValue> loadedSeq = {seqExpr->emitIR(seqDest, tmpEmitter),
-                                    seqExpr};
+  ASTExprAnd<AnyValue> loadedSeq = {
+      getEmitter().emitExpr(seqExpr, EC_ForIterator), seqExpr};
   if (!loadedSeq.ir)
     return {};
   if (parseToken(Token::colon, "expected ':' after expression"))
@@ -1067,7 +1065,6 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert,
                                         seqExpr)) {
-    rangeDest.resetForError();
     varDeclOp.getResult().setType(
         RefType::get(/*isMut*/ true, shared.getTypeCheckErrorType(),
                      varDeclOp.getType().getLifetime()));
@@ -1110,10 +1107,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   ValueDest ivarDest(varDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
           "__next__", CallOperands({{XLValue(rangeRef), seqExpr}}), ivarDest,
-          CallSyntax::kImplicitConvert, seqExpr)) {
-    ivarDest.resetForError();
+          CallSyntax::kImplicitConvert, seqExpr))
     return {};
-  }
 
   avoidDroppingDeclOnFail.release();
   if (failed(parseLocalScopeSuite(curIndent,
@@ -1415,8 +1410,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   CValue enterResult = getEmitter().emitNamedMethodCall(
       "__enter__", CallOperands({{contextVal, contextExp}}), enterDest,
       CallSyntax::kMethodCall, contextExp);
-  if (!enterResult)
-    enterDest.resetForError();
 
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);

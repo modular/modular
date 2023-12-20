@@ -855,8 +855,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // We first emit all the arguments.
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>> argumentValuesOr =
       callEmitter.emitArgValues(callOperands);
-  if (failed(argumentValuesOr))
+  if (failed(argumentValuesOr)) {
+    dest.resetForError();
     return {};
+  }
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues = *argumentValuesOr;
 
   // Folding into PValue can fail for a number of reasons, in which case we
@@ -887,7 +889,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // restoring the builder so that it is NOT forced to be in the parameter
     // context.  In particular, dest may cause a call to set the paramCallResult
     // into a DLValue.
-    return emitCResult(paramCallResult, callExpr, dest);
+    CValue result = emitCResult(paramCallResult, callExpr, dest);
+    if (!result)
+      dest.resetForError();
+    return result;
   }
 
   Location loc = translateLocation(callExpr->getLoc());
@@ -933,8 +938,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
           callArgs);
       ASTType coroType = getBoundCoroutineType(
           shared, declScope, callExpr->getLoc(), sig, resultType);
-      if (!coroType)
+      if (!coroType) {
+        dest.resetForError();
         return {};
+      }
       ValueDest ctorDest(dest.getContext());
       // Emit the implicit conversion.
       callResult =
