@@ -1440,11 +1440,11 @@ fn _concat_gpu[
             ]()
 
             return func(
+                stream,
                 (output.num_elements() // block_size),
                 (block_size),
                 output,
                 inputs,
-                stream=stream,
             )
 
     # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])

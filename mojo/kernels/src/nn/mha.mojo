@@ -390,6 +390,7 @@ fn flash_attention[
             ]()
 
             func(
+                stream,
                 # grid
                 (
                     div_ceil(int(seq_len), 32),
@@ -406,7 +407,6 @@ fn flash_attention[
                 scale,
                 batch_size,
                 seq_len,
-                stream=stream,
             )
         # Slow path for token generation for now and context encoding with
         # seq_len % 128 != 0.
@@ -435,6 +435,7 @@ fn flash_attention[
             ]()
 
             func(
+                stream,
                 # grid
                 (
                     div_ceil(int(seq_len), 32),
@@ -452,7 +453,6 @@ fn flash_attention[
                 batch_size,
                 seq_len,
                 num_keys,
-                stream=stream,
             )
 
     except e:

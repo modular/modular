@@ -814,4 +814,4 @@ fn softmax[
     alias sm_overprovision_factor = 32  # tunable
     let num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
-    func((num_blocks,), (BLOCK_SIZE,), shape, output, axis, stream=stream)
+    func(stream, (num_blocks,), (BLOCK_SIZE,), shape, output, axis)
