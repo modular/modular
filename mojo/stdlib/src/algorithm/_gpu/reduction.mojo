@@ -42,20 +42,17 @@ fn block_reduce[
         address_space = AddressSpace.SHARED,
     ]()
 
-    let lane = lane_id()
     let warp = ThreadIdx.x() // WARP_SIZE
 
     let warp_accum = warp_reduce[shuffle_down, reduce_fn](val)
 
-    if lane == 0:
-        shared.store(
-            warp, warp_accum
-        )  # bank conflict for sub 4 byte data elems
+    if lane_id() == 0:
+        shared[warp] = warp_accum  # bank conflict for sub 4 byte data elems
 
     barrier()
 
     return warp_reduce[shuffle_down, reduce_fn](
-        shared.load(lane) if ThreadIdx.x()
+        shared[lane_id()] if ThreadIdx.x()
         < (BlockDim.x() // WARP_SIZE) else init
     )
 
