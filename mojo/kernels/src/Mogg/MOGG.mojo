@@ -918,17 +918,21 @@ fn abs_wrapped[
 
 
 # Call argmax, needed as it has multiple overloads which can't be aliased
+@mogg_register("mo.arg_max")
 @always_inline
 @export
 fn argmax_wrapped[
     type: DType,
-    out_type: DType,
+    input_0_static_shape: DimList,
     axis_type: DType,
+    input_1_static_shape: DimList,
+    out_type: DType,
+    input_2_static_shape: DimList,
     rank: Int,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    input: NDBuffer[rank, input_0_static_shape, type],
+    axis_buf: NDBuffer[1, input_1_static_shape, axis_type],
+    output: NDBuffer[rank, input_2_static_shape, out_type],
     out_chain: OutputChainPtr,
 ):
     try:
@@ -943,17 +947,21 @@ fn argmax_wrapped[
 
 
 # Call argmin, needed as it has multiple overloads which can't be aliased
+@mogg_register("mo.arg_min")
 @always_inline
 @export
 fn argmin_wrapped[
     type: DType,
-    out_type: DType,
+    input_0_static_shape: DimList,
     axis_type: DType,
+    input_1_static_shape: DimList,
+    out_type: DType,
+    input_2_static_shape: DimList,
     rank: Int,
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    input: NDBuffer[rank, input_0_static_shape, type],
+    axis_buf: NDBuffer[1, input_1_static_shape, axis_type],
+    output: NDBuffer[rank, input_2_static_shape, out_type],
     out_chain: OutputChainPtr,
 ):
     try:
