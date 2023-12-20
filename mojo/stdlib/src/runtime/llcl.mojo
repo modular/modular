@@ -341,6 +341,7 @@ struct TaskGroupContext:
     var task_group: Pointer[TaskGroup]
 
 
+@register_passable
 struct TaskGroupTask[type: AnyRegType]:
     """A task that belongs to a taskgroup. This object retains ownership of the
     underlying coroutine handle, which can be used to query the results of the
@@ -349,8 +350,8 @@ struct TaskGroupTask[type: AnyRegType]:
 
     var handle: Coroutine[type]
 
-    fn __init__(inout self, owned handle: Coroutine[type]):
-        self.handle = handle ^
+    fn __init__(owned handle: Coroutine[type]) -> Self:
+        return Self {handle: handle ^}
 
     fn get(self) -> type:
         """Get the task's result value. This should only be called once the
@@ -686,6 +687,29 @@ struct CoroutineList[type: AnyRegType](Sized):
         return self.size
 
     fn destroy(inout self):
+        for i in range(self.size):
+            _ = __get_address_as_owned_value(self.data.offset(i).address)
+        self.data.free()
+
+
+struct TaskGroupTaskList[type: AnyRegType](Sized):
+    var data: Pointer[TaskGroupTask[type]]
+    var size: Int
+
+    fn __init__(inout self, num_work_items: Int):
+        self.data = Pointer[TaskGroupTask[type]].alloc(num_work_items)
+        self.size = 0
+
+    fn add(inout self, owned hdl: TaskGroupTask[type]):
+        __get_address_as_uninit_lvalue(self.data.offset(self.size).address) = (
+            hdl ^
+        )
+        self.size += 1
+
+    fn __len__(self) -> Int:
+        return self.size
+
+    fn __del__(owned self):
         for i in range(self.size):
             _ = __get_address_as_owned_value(self.data.offset(i).address)
         self.data.free()
