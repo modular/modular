@@ -655,13 +655,13 @@ fn batched_matmul[
             ]
         ]()
         gpu_func(
+            stream,
             (div_ceil(n, BLOCK_DIM), div_ceil(m, BLOCK_DIM), batch_size),
             (BLOCK_DIM, BLOCK_DIM, 1),
             c_buf_reshaped,
             a_buf_reshaped,
             b_buf_reshaped,
             c_buf.dynamic_shape,
-            stream=stream,
         )
     except e:
         trap(e)
