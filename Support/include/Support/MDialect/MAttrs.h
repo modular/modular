@@ -75,13 +75,13 @@ public:
     return numElts * eltBitWidth;
   }
 
-  /// Get the ABI alignment of an integer type.
+  /// Get the ABI alignment of an integer type in bytes.
   int32_t getIntegerABIAlign(int32_t bitwidth) const;
-  /// Get the ABI alignment of float type.
+  /// Get the ABI alignment of float type in bytes.
   int32_t getFloatABIAlign(int32_t bitwidth) const;
-  /// Get the ABI alignment of a vector type.
+  /// Get the ABI alignment of a vector type in bytes.
   int32_t getVectorABIAlign(int32_t numElts, int32_t eltBitWidth) const;
-  /// Get the default address space pointer ABI alignment.
+  /// Get the default address space pointer ABI alignment in bytes.
   int32_t getPointerABIAlign() const { return ptrAbiAlign; }
 
   /// Attempt to parse a data layout from the specification string. Returns an
@@ -99,11 +99,14 @@ private:
   /// Parse the data layout from its string specification.
   ErrorOrSuccess parse();
 
-  /// The list of alignment entries for integers.
+  /// The list of alignment entries for integers; the key is the datatype size
+  /// in BITS, the value is the alignment in BYTES.
   SmallVector<std::pair<int32_t, int32_t>> intAbiAlign;
-  /// The list of alignment entries for floats.
+  /// The list of alignment entries for floats; the key is the datatype size in
+  /// BITS, the value is the alignment in BYTES.
   SmallVector<std::pair<int32_t, int32_t>> fpAbiAlign;
-  /// The list of alignment entries for vectors.
+  /// The list of alignment entries for vectors; the key is the datatype size in
+  /// BITS, the value is the alignment in BYTES.
   SmallVector<std::pair<int32_t, int32_t>> vecAbiAlign;
   /// The pointer width.
   int32_t ptrWidth;
