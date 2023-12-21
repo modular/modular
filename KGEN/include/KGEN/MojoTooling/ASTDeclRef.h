@@ -52,9 +52,6 @@ public:
   /// returns an invalid `MojoASTTypeRef`.
   MojoASTTypeRef getType() const;
 
-  /// Get the mangled name of this declaration if available.
-  std::optional<StringAttr> getMangledName() const;
-
   /// Get the name of this declaration if available.
   std::optional<StringRef> getName() const;
 

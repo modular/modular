@@ -43,7 +43,7 @@ struct `weird()struct[]`:
     pass
 
 
-fn use_weird() -> `weird()struct[]`:
+fn `use()weird[]`() -> `weird()struct[]`:
     return `weird()struct[]`()
 
 

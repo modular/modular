@@ -117,7 +117,7 @@ def LIT_FuncOp : LITOp<"func", [
     bool isExternal() { return getPreCompiledModuleRef().has_value(); }
 
     /// Return the decl name of the function.
-    StringAttr getDeclName() { return getSymNameAttr(); }
+    StringAttr getDeclName() { return getSourceNameAttr(); }
 
     /// Return the full signature of this declaration, including parameters from
     /// enclosing struct declarations.
@@ -306,7 +306,7 @@ def FileModuleOp : LITOp<"file_module", [
 
   let extraClassDeclaration = [{
     /// Return the decl name of the file.
-    StringAttr getDeclName() { return getSymNameAttr(); }
+    StringAttr getDeclName() { return getSourceNameAttr(); }
   }];
 
   let builders = [
@@ -360,7 +360,7 @@ def PackageOp : LITOp<"package", [
 
   let extraClassDeclaration = [{
     /// Return the decl name of the package.
-    StringAttr getDeclName() { return getSymNameAttr(); }
+    StringAttr getDeclName() { return getSourceNameAttr(); }
   }];
 
   let builders = [

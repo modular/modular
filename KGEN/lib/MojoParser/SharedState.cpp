@@ -330,9 +330,6 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   addMagicMLIRDecl("__mlir_type", MagicMLIRTypeType::get(context));
 }
 
-/// Set the symbol for the specified declaration (known to be an operation)
-/// into the MLIR symbol table for its container.  If the symbol is already
-/// declared in the same MLIR scope, then return the conflicting operation.
 Operation *SharedState::setResolvedDeclSymbol(Operation *declOp) {
   assert(declOp && "Cannot set a symbol for non-operation decl");
 
@@ -365,6 +362,12 @@ Operation *SharedState::setResolvedDeclSymbol(Operation *declOp) {
   assert(newName == SymbolTable::getSymbolName(declOp) &&
          "symbol table insertion changed the name");
   return existingOp;
+}
+
+Operation *SharedState::lookupSymbolIn(ASTDecl *container, StringAttr name) {
+  Operation *tableOp = container->getIfOperation();
+  assert(tableOp && "decl is not an operation");
+  return impl->symbolTables.getSymbolTable(tableOp).lookup(name);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1121,7 +1124,10 @@ void SharedState::loadModulesFromCache(
           FileModuleOp cachedModuleOp = cast<FileModuleOp>(b.front());
           cachedModuleOp->moveAfter(moduleOp);
           moduleDecl.setIRValue(DeclIRValue(cachedModuleOp));
-          moduleOp->erase();
+          SymbolTable &symtab =
+              impl->symbolTables.getSymbolTable(moduleOp->getParentOp());
+          symtab.erase(moduleOp);
+          symtab.insert(cachedModuleOp);
 
           // Mark the module as imported from cache.
           moduleState->decl->loadedFromBytecode = true;
@@ -1558,34 +1564,31 @@ void SharedState::cacheParsedModules() {
 }
 
 /// Function used to look up and resolve a decl with the given mangled name.
-static ASTDecl *lookupAndResolveMangledDecl(
-    SharedState &shared, StringRef baseName, StringRef mangledSymbol, SMLoc loc,
-    ASTDecl &container,
-    DeclResolvedness howResolved = DeclResolvedness::fully) {
+static ASTDecl *lookupAndResolveMangledDecl(SharedState &shared,
+                                            StringAttr leafRef, SMLoc loc,
+                                            ASTDecl &container,
+                                            DeclResolvedness howResolved) {
+  // Find the operation in the symbol table of its container.
+  auto declOp = shared.lookupSymbolIn<ASTDeclInterface>(&container, leafRef);
+  if (!declOp)
+    return nullptr;
+  // Retrieve the proper decl name.
+  StringAttr name = declOp.getDeclName();
+  // Perform the lookup.
   LookupResult result = shared.lookupAndResolveDecl(
-      baseName, loc, container, /*searchParentScopes=*/false);
-  if (!result.isSuccess())
-    return nullptr;
-
-  // Functor used to emit an error if we couldn't find the symbol.
-  auto emitLookupError = [&] {
-    shared.emitError(loc, "unable to find '") << baseName << "' symbol";
-    return nullptr;
-  };
+      name, loc, container, /*searchParentScopes=*/false);
 
   // Find the entry that matches the full symbol name.
-  for (ASTDecl *resultDecl : result.getIfSuccess()) {
-    auto symbolOp = dyn_cast_if_present<mlir::SymbolOpInterface>(
-        resultDecl->getIfOperation());
-    if (!symbolOp || symbolOp.getName() != mangledSymbol)
+  for (ASTDecl *decl : result.getIfSuccess()) {
+    if (decl->getIfOperation() != declOp)
       continue;
-
-    // Resolve the decl now that we've found it.
-    if (failed(shared.declResolver->resolve(*resultDecl, howResolved, loc)))
+    if (failed(shared.declResolver->resolve(*decl, howResolved, loc)))
       return nullptr;
-    return resultDecl;
+    return decl;
   }
-  return emitLookupError();
+  llvm::report_fatal_error(
+      "expected decl in symbol table to appear in lookup: " + name.getValue());
+  return nullptr;
 }
 
 /// Builds an attribute/type walker to resolve references originating from
@@ -1605,12 +1608,13 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
            "expected all references to be bound to a module/package");
     ASTDecl *decl = &shared.importModule(moduleName.drop_front(),
                                          /*currentPackage=*/nullptr, loc);
-    if (decl->hasReferenceError)
+    if (decl->hasReferenceError ||
+        failed(shared.declResolver->resolveFully(*decl, loc)))
       return {};
     ArrayRef<FlatSymbolRefAttr> nestedRefs = symbol.getNestedReferences();
     for (FlatSymbolRefAttr name : nestedRefs.drop_back()) {
-      if (!(decl = lookupAndResolveMangledDecl(shared, name.getValue(),
-                                               name.getValue(), loc, *decl)))
+      if (!(decl = lookupAndResolveMangledDecl(shared, name.getAttr(), loc,
+                                               *decl, DeclResolvedness::fully)))
         return {};
     }
     return decl;
@@ -1620,16 +1624,11 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
     ASTDecl *moduleDecl = resolveParents(funcRef.getSymbol());
     if (!moduleDecl)
       return WalkResult::interrupt();
-    // The function reference itself is mangled.
-    FlatSymbolRefAttr leaf = funcRef.getSymbol().getNestedReferences().back();
-    StringRef baseName = leaf.getValue().split('(').first.split('[').first;
-    // Drop the thunk prefix if it's there.
-    // FIXME(#25950): Use source name here.
-    baseName.consume_front("`thunk_");
-    if (!lookupAndResolveMangledDecl(shared, baseName, leaf.getValue(), loc,
-                                     *moduleDecl, DeclResolvedness::signature))
-      return WalkResult::interrupt();
-    return WalkResult::advance();
+    if (lookupAndResolveMangledDecl(shared,
+                                    funcRef.getSymbol().getLeafReference(), loc,
+                                    *moduleDecl, DeclResolvedness::fully))
+      return WalkResult::advance();
+    return WalkResult::interrupt();
   });
 
   auto visitTypeRef = [=, &shared](auto typeRef) -> WalkResult {
@@ -1637,9 +1636,8 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
     if (!moduleDecl)
       return WalkResult::interrupt();
     // Resolve the base type.
-    FlatSymbolRefAttr leaf = typeRef.getSymbol().getNestedReferences().back();
-    if (!lookupAndResolveMangledDecl(shared, leaf.getValue(), leaf.getValue(),
-                                     loc, *moduleDecl,
+    StringAttr leaf = typeRef.getSymbol().getLeafReference();
+    if (!lookupAndResolveMangledDecl(shared, leaf, loc, *moduleDecl,
                                      DeclResolvedness::signature))
       return WalkResult::interrupt();
     return WalkResult::advance();
@@ -1782,15 +1780,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   for (Region &region : declOp->getRegions()) {
     for (Operation &op : region.getOps()) {
       TypeSwitch<Operation *>(&op)
-          .Case([&](LIT::FuncOp op) {
-            // The mangled name may include the input parameter signature.
-            StringRef baseFuncName =
-                op.getName().split('(').first.split('[').first;
-            // Drop the thunk prefix if it's there.
-            // FIXME(#25950): Use source name here.
-            baseFuncName.consume_front("`thunk_");
-            addDeclForOp(op, StringAttr::get(getContext(), baseFuncName));
-          })
+          .Case([&](LIT::FuncOp op) { addDeclForOp(op, op.getDeclName()); })
           .Case([&](UnresolvedImportOp op) {
             addDeclForOp(op, op.getImportNameAttr());
           })
