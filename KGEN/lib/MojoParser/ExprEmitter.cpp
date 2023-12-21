@@ -640,7 +640,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
     if (!signature.getInputParamTypes().empty()) {
-      InputParamBindings paramBindings;
+      InputParamBindings paramBindings(*this);
       auto [bindingAttr, _] = paramBindings.verifyBindings(signature, *this);
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
@@ -933,7 +933,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
   auto callee = OverloadSet::lookup(requiredType, "__init__", value.expr,
-                                    CallSyntax::kImplicitConvert, shared,
+                                    CallSyntax::kImplicitConvert, *this,
                                     /*no error emission on failure */ {});
 
   // If there are no viable candidates for the implicit conversion, we fail.
@@ -1071,7 +1071,7 @@ AnyValue ExprEmitter::emitMetaTypeConversion(TraitType trait, ASTType type,
       LITSignatureType sig = traitFn.getFullSignature();
       ParameterEvaluator evaluator(selfParams);
       auto bindings =
-          InputParamBindings::getForDeclaredType(ASTType(typeValue));
+          InputParamBindings::getForDeclaredType(ASTType(typeValue), *this);
       for (Type type : sig.getInputParamTypes().drop_front(2)) {
         fnParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
         evaluator.addInputValue(fnParams.back());
@@ -1635,7 +1635,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
 
   // Build up a InputParamBindings set to validate and check the bindings. Skip
   // unbound values.
-  InputParamBindings paramBindings;
+  InputParamBindings paramBindings(*this);
   for (TypedAttr binding : type.getParamBindings())
     if (!isa<UnboundAttr>(binding))
       paramBindings.addPrechecked(binding);
@@ -1850,8 +1850,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   // Functions form an address, and may be overloaded.
   if (auto firstCandidate = dyn_cast<LIT::FuncOp>(decls[0])) {
     // Form an overload set value with all the candidates.
-    auto result = ORValue::create(spelling, decls, InputParamBindings(), expr,
-                                  CallSyntax::kDirectCall);
+    auto result = ORValue::create(spelling, decls, InputParamBindings(*this),
+                                  expr, CallSyntax::kDirectCall);
     return emitResult(result, expr, dest);
   }
 
@@ -2086,7 +2086,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   // For the dynamic case we'd use __get_item__.
   auto getDecl =
       OverloadSet::lookup(elementType, "get", expr, CallSyntax::kTupleGetItem,
-                          emitter.shared, /*errorHandler*/ {});
+                          emitter, /*errorHandler*/ {});
 
   if (getDecl.isNull()) {
     emitError() << "expected Tuple to have one get method";

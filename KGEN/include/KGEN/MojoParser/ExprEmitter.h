@@ -251,10 +251,9 @@ public:
         declScope(declScope), varDeclCursor(varDeclCursor) {}
 
   /// Create an ExprEmitter for a parameter context.
-  ExprEmitter(SharedState &shared, ASTDecl &declScope, ExprContext paramContext,
-              std::optional<OpBuilder> varDeclCursor = {})
+  ExprEmitter(SharedState &shared, ASTDecl &declScope, ExprContext paramContext)
       : SharedStateUser(shared), builder({}), paramContext(paramContext),
-        declScope(declScope), varDeclCursor(varDeclCursor) {}
+        declScope(declScope) {}
 
   //===--------------------------------------------------------------------===//
   // Emitter State.

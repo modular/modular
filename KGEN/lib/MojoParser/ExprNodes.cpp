@@ -722,16 +722,14 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
                        SmallDenseMap<StringAttr, FuncOperand> &&kwOperands =
                            SmallDenseMap<StringAttr, FuncOperand>()) {
   // If there is no getter at all, then this is not a subscriptable type.
-  auto getter =
-      OverloadSet::lookup(baseType, getterName, node, syntax, emitter.shared,
-                          /*no error on failure*/ {});
+  auto getter = OverloadSet::lookup(baseType, getterName, node, syntax, emitter,
+                                    /*no error on failure*/ {});
 
   // Check for the presence of a setitem but don't provide index values because
   // we don't know what the ultimate element type is.  It may be overloaded and
   // we don't know which candidate to pick until it is actually invoked.
-  auto setter =
-      OverloadSet::lookup(baseType, setterName, node, syntax, emitter.shared,
-                          /*no error on failure*/ {});
+  auto setter = OverloadSet::lookup(baseType, setterName, node, syntax, emitter,
+                                    /*no error on failure*/ {});
 
   if (getter.isNull() && setter.isNull()) {
     lookupError();
@@ -940,10 +938,10 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
     // Build an overload set of all matching function declarations.
-    auto result =
-        ORValue::create(spelling, memberDecls,
-                        InputParamBindings::getForDeclaredType(baseRVType),
-                        this, CallSyntax::kDirectCall);
+    auto result = ORValue::create(
+        spelling, memberDecls,
+        InputParamBindings::getForDeclaredType(baseRVType, emitter), this,
+        CallSyntax::kDirectCall);
     result->baseType = baseVal.getRValueType();
     if (auto pValue = baseVal.getIfPValue())
       if (LIT::isTypeExpr(pValue))
@@ -1330,7 +1328,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Check to see if we can invoke an __init__ method to convert it.
     auto callee =
         OverloadSet::lookup(calledType, "__init__", this, CallSyntax::kTypeCall,
-                            emitter.shared, /*errorHandler=*/{});
+                            emitter, /*errorHandler=*/{});
     emitter.shared.notifyListenerOnCall(callee.fnDecls, rparenLoc, operands);
     return emitter.emitConstructorCall(calledType, callee, operands, this,
                                        CallSyntax::kTypeCall, dest);
@@ -1396,7 +1394,7 @@ static PValue substituteParametersIntoUserDefinedType(
       typeDecl, subscript.rsquareLoc, subscript.operands);
 
   // Build up a InputParamBindings set to validate and check the bindings.
-  InputParamBindings paramBindings;
+  InputParamBindings paramBindings(emitter);
   for (const Operand &operand : subscript.operands) {
     auto indexVal = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
     if (!indexVal)
