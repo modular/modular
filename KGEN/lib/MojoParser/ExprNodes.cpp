@@ -1410,7 +1410,7 @@ static PValue substituteParametersIntoUserDefinedType(
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
   ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
-      structOp, metaType.getSignature(), emitter, subscript.getLoc(),
+      structOp, metaType.getSignature(), subscript.getLoc(),
       /*allowPartiallyBound=*/true);
   if (!bindingValuesAttr)
     return {};
@@ -1422,11 +1422,9 @@ static PValue substituteParametersIntoUserDefinedType(
 /// Returns the next expected parameter type for a function candidate given a
 /// set of bindings.
 static Type getNextParamType(ASTDecl *fnDecl,
-                             const InputParamBindings &inputParamBindings,
-                             ExprEmitter &emitter) {
+                             const InputParamBindings &inputParamBindings) {
   LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-  const auto &[_, fitness] =
-      inputParamBindings.verifyBindings(signature, emitter);
+  const auto &[_, fitness] = inputParamBindings.verifyBindings(signature);
   return fitness.lastExpectedType;
 }
 
@@ -1448,11 +1446,11 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     // use it for parameter type inference.
     ASTType paramType;
     if (operand.isPositional() && !value->fnDecls.empty()) {
-      paramType = getNextParamType(value->fnDecls[0], value->inputParamBindings,
-                                   emitter);
+      paramType =
+          getNextParamType(value->fnDecls[0], value->inputParamBindings);
       auto hasDifferentNextParam = [&](ASTDecl *decl) {
         return !paramType.isEqualCanon(
-            getNextParamType(decl, value->inputParamBindings, emitter));
+            getNextParamType(decl, value->inputParamBindings));
       };
       if (paramType && value->fnDecls.size() != 1 &&
           llvm::any_of(value->fnDecls, hasDifferentNextParam))

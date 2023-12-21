@@ -139,7 +139,6 @@ public:
   /// given expression location.
   ParameterExprArrayAttr verifyBindings(StructDeclOp structOp,
                                         TypeSignatureType sig,
-                                        ExprEmitter &emitter,
                                         llvm::SMLoc exprLoc,
                                         bool allowPartiallyBound) const;
 
@@ -167,14 +166,13 @@ public:
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match  no diagnostics will be emitted.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig, ExprEmitter &emitter) const;
+  verifyBindings(LITSignatureType sig) const;
 
   /// Verify the parameter bindings for the given signature. If the signature
   /// doesn't match, the provided DiagEmitter will be used to emit diagnostics.
   /// An optional hook can be provided to infer parameters.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig, ExprEmitter &emitter,
-                 const DiagEmitter &diagEmitter,
+  verifyBindings(LITSignatureType sig, const DiagEmitter &diagEmitter,
                  ParameterInferenceHookTy parameterInferenceHook = {},
                  bool isPackVarArg = false) const;
 
@@ -182,7 +180,6 @@ public:
   /// doesn't match, diagnostics will be emitted using the given baseName and
   /// locations.
   ParameterExprArrayAttr verifyBindings(LITSignatureType sig,
-                                        ExprEmitter &emitter,
                                         StringRef baseName, Location opLoc,
                                         llvm::SMLoc exprLoc) const;
 
@@ -196,10 +193,9 @@ private:
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       ArrayRef<Type> expectedParamTypes, ArrayRef<StringAttr> paramNames,
       ArrayRef<PassingKind> paramPassingKinds,
-      ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-      bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
-      bool isPackVarArg, const DiagEmitter &diagEmitter,
-      bool allowPartiallyBound = false) const;
+      ArrayRef<TypedAttr> defaultParams, bool hasParamVarArgs,
+      ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
+      const DiagEmitter &diagEmitter, bool allowPartiallyBound = false) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -211,9 +207,9 @@ private:
   verifyBindings(ArrayRef<Type> expectedParamTypes,
                  ArrayRef<StringAttr> paramNames,
                  ArrayRef<PassingKind> paramPassingKinds,
-                 ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
-                 bool hasParamVarArgs, StringRef baseName, Location opLoc,
-                 llvm::SMLoc exprLoc, bool allowPartiallyBound = false) const;
+                 ArrayRef<TypedAttr> defaultParams, bool hasParamVarArgs,
+                 StringRef baseName, Location opLoc, llvm::SMLoc exprLoc,
+                 bool allowPartiallyBound = false) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call

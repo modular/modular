@@ -905,7 +905,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   };
   auto [newBindings, bindingFitness] =
       callable.inputParamBindings.verifyBindings(
-          signature, emitter, bindingDiag, parameterInferenceHook,
+          signature, bindingDiag, parameterInferenceHook,
           /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
 
   // If there is an error, we just forward the diagnostics.
