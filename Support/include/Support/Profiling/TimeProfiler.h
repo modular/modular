@@ -210,7 +210,7 @@ using StringArena = BlockList<std::string>;
 class Label {
 public:
   static constexpr int kIntPayloadBits = 62;
-  static constexpr uint64_t kNoIntPayload = (1ul << kIntPayloadBits) - 1;
+  static constexpr uint64_t kNoIntPayload = (1ull << kIntPayloadBits) - 1;
 
   /*implicit*/
   constexpr Label(uint64_t value = kNoIntPayload)
