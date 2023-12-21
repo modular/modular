@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import div_ceil, iota, max, min, sqrt, neginf, exp
+from math import div_ceil, iota, max, min, sqrt, neginf, exp, align_down
 from algorithm import (
     elementwise,
     unroll,
@@ -548,7 +548,7 @@ fn _fill[
     len: Int, type: DType, address_space: _AddressSpace
 ](ptr: DTypePointer[type, address_space], val: Scalar[type]):
     alias simd_width = simdwidthof[val.type]()
-    alias vector_end = (len // simd_width) * simd_width
+    alias vector_end = align_down(len, simd_width)
 
     @unroll
     for i in range(0, vector_end, simd_width):

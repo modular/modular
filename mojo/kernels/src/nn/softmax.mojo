@@ -4,7 +4,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, exp, identity, log, max, min, mul, reciprocal, sub
+from math import (
+    div_ceil,
+    exp,
+    identity,
+    log,
+    max,
+    min,
+    mul,
+    reciprocal,
+    sub,
+    align_down,
+)
 from math.limit import min_or_neginf, neginf
 
 from algorithm import sync_parallelize, vectorize_unroll
@@ -99,8 +110,8 @@ fn _softmax_2_pass_step1[
     # scope, we therefore replicate the logic of Functional.vectorize here.
     # In the future (once we have non-isolated-from-above regions) we can
     # just reuse the Functional.vectorize code.
-    let lengt = len(input)
-    let vector_end = (lengt // simd_width) * simd_width
+    let length = len(input)
+    let vector_end = align_down(length, simd_width)
 
     for i in range(0, vector_end, simd_width):
         let simd_elem = input.simd_load[simd_width](i)
@@ -115,7 +126,7 @@ fn _softmax_2_pass_step1[
     var running_max = running_max_vec.reduce_max()
     var running_sum = running_sum_vec.reduce_add()
 
-    for i in range(vector_end, lengt):
+    for i in range(vector_end, length):
         let elem = input[i]
         let new_max = running_max.max(elem)
         running_sum = running_sum * exp(running_max - new_max) + exp(
