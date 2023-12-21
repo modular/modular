@@ -242,7 +242,7 @@ struct PackMatrixRows[
                 else:
                     # Not skipping col bound, need to to a partial fill of
                     #  the transpose buffer row.
-                    row_data = partial_simd_load[type, simd_size](
+                    row_data = partial_simd_load[simd_size](
                         self.original_matrix._offset(row_global_index),
                         0,  # no left bound.
                         read_bound[1],
@@ -438,11 +438,11 @@ struct PackMatrixCols[
             elif col_idx < self.valid_data_dim[1]:
                 # Starting point within bound but cannot load a whole
                 #  vector. Do a partial load.
-                data = partial_simd_load[type, simd_size](
+                data = partial_simd_load[simd_size](
                     self.original_matrix._offset(global_idx),
                     0,
                     self.valid_data_dim[1] - col_idx,
-                    SIMD[type, 1](0),
+                    0,
                 )
 
             # map to packed index
@@ -834,25 +834,21 @@ struct MatmulInnerLoopBPacked[
                 if skip_boundary_check or (
                     idx1 * 2 + 2 <= self.c_bound[1] - tile_n_idx
                 ):
-                    let t0 = c_ptr.offset(
+                    let t0 = c_ptr.simd_load[2](
                         self.c_stride * (2 * idx0 + 0) + 2 * idx1
-                    ).simd_load[2]()
-                    let t1 = c_ptr.offset(
-                        self.c_stride * (2 * idx0 + 1) + 2 * idx1
-                    ).simd_load[2]() if not single_row_i8mm else SIMD[
-                        c_type, 2
-                    ](
-                        0
                     )
+                    let t1 = c_ptr.simd_load[2](
+                        self.c_stride * (2 * idx0 + 1) + 2 * idx1
+                    ) if not single_row_i8mm else SIMD[c_type, 2](0)
                     c_data = rebind[SIMD[c_type, simd_size]](t0.join(t1))
                 elif idx1 * 2 <= self.c_bound[1]:
-                    let t0 = partial_simd_load[c_type, 2](
+                    let t0 = partial_simd_load[2](
                         c_ptr.offset(self.c_stride * (2 * idx0 + 0) + 2 * idx1),
                         0,
                         self.c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
                     )
-                    let t1 = partial_simd_load[c_type, 2](
+                    let t1 = partial_simd_load[2](
                         c_ptr.offset(self.c_stride * (2 * idx0 + 1) + 2 * idx1),
                         0,
                         self.c_bound[1] - tile_n_idx - idx1 * 2,
@@ -889,11 +885,11 @@ struct MatmulInnerLoopBPacked[
                 idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
             ):
                 # Use simd load if all within bound
-                c_data = c_ptr.offset(idx1 * simd_size).simd_load[simd_size]()
+                c_data = c_ptr.simd_load[simd_size](idx1 * simd_size)
             elif idx1 * simd_size <= self.c_bound[1]:
                 # Use partial load if row inbound but col not
                 #  in simd bound.
-                c_data = partial_simd_load[c_type, simd_size](
+                c_data = partial_simd_load[simd_size](
                     c_ptr.offset(idx1 * simd_size),
                     0,
                     self.c_bound[1] - tile_n_idx - idx1 * simd_size,
@@ -901,10 +897,10 @@ struct MatmulInnerLoopBPacked[
                 )
             else:
                 # Fill zero if row out of bound
-                c_data = SIMD[c_type, simd_size](0)
+                c_data = 0
 
             # Store data to local buffer.
-            c_local.simd_store[simd_size](Index(idx0, idx1 * simd_size), c_data)
+            c_local.simd_store(Index(idx0, idx1 * simd_size), c_data)
 
             @parameter
             if idx1 == pack_inner_size // simd_size - 1:
@@ -1149,7 +1145,7 @@ struct MatmulInnerLoopBPacked[
             for idx1 in range(pack_inner_size // simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
                 let a_val = bitcast[c_type, 1](
-                    partial_simd_load[a_type, 4](
+                    partial_simd_load[4](
                         a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
                     )
                 ) if (is_tail and has_avx512f()) else a_ptr.offset(
@@ -3485,7 +3481,7 @@ fn matmul[
 
                 @unroll
                 for idx in range(nrow):
-                    let t0 = partial_simd_load[a_type, 8](
+                    let t0 = partial_simd_load[8](
                         a.data.offset((j + idx) * k + kl), 0, k - kl, 0
                     )
                     partial_simd_store(
