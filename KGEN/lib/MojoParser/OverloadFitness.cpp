@@ -242,7 +242,7 @@ LogicalResult ParameterInferenceState::checkOneOperand(
     }
     // Consider the types of ORValues with single candidates.
     if (ORValue orValue = value.getIfORValue())
-      if (PValue pValue = orValue->emitAsPValue())
+      if (PValue pValue = orValue->getIfPValue())
         matchTypes(pValue.getType(), expectedType);
     return success();
   case ValueInputConvention::None:
@@ -565,7 +565,7 @@ static ASTType getRValueType(ASTExprAnd<AnyValue> operand) {
   if (auto cValue = value.getIfCValue())
     return cValue.getRValueType();
   // Otherwise, try to narrow an overload set to a PValue.
-  if (auto pValue = value.getIfORValue()->emitAsPValue())
+  if (auto pValue = value.getIfORValue()->getIfPValue())
     return pValue.getType();
   return ASTType();
 }
@@ -710,10 +710,14 @@ OverloadFitness::checkOneOperand(
     // right type.
     CValue argVal;
     if (auto orValue = operand.ir.getIfORValue()) {
-      // Try to refine the ORValue into a PValue.
-      argVal = orValue->emitAsPValue(&emitter, expectedType);
-      if (!argVal)
-        return {kWrongType, expectedType};
+      if (!orValue->baseValue) { // Cannot merge base value.
+        // Try to refine the ORValue into a PValue.
+        // FIXME: This will emit diagnostics and can generate IR because of
+        // param.fork with adaptive sets!
+        argVal = orValue->getDirectSymbol(&emitter, expectedType);
+        if (!argVal)
+          return {kWrongType, expectedType};
+      }
     } else {
       argVal = operand.ir.getIfCValue();
       assert(argVal && "we handled ORValue above");
