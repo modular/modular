@@ -64,6 +64,10 @@ public:
     ASTType getType() const { return value.getType(); }
   };
 
+  /// This is the scope that any references are resolved against.
+  ASTDecl &declScope;
+  SharedState &shared;
+
   /// This contains a list of bound input parameters given positionally.
   SmallVector<Binding> posBindings;
 
@@ -78,10 +82,17 @@ public:
   /// overload set on a method.
   size_t numCtadParams = 0;
 
+  /// Initialize InputParamBindings with a declscope to perform lookups against
+  /// and a notion of shared context.
+  InputParamBindings(ExprEmitter &emitter);
+  InputParamBindings(ASTDecl &declScope, SharedState &shared)
+      : declScope(declScope), shared(shared) {}
+
   /// Create a (possibly partially unbound) set of bindings for the given type.
   /// This can be used to initialize the binding set for methods. If the given
   /// type is not a parametric user defined type, this returns empty bindings.
-  static InputParamBindings getForDeclaredType(ASTType type);
+  static InputParamBindings getForDeclaredType(ASTType type,
+                                               ExprEmitter &emitter);
 
   /// Return whether there are any bindings given.
   bool empty() const { return posBindings.empty() && kwBindings.empty(); }
@@ -317,7 +328,7 @@ public:
   /// not emit an error on failure.
   static OverloadSet lookup(ASTType type, StringRef methodName,
                             const ExprNode *callExpr, CallSyntax syntax,
-                            SharedState &shared,
+                            ExprEmitter &emitter,
                             function_ref<void()> errorHandler = {});
 
   /// Lookup of a named method on the specified type, filtered to match a
@@ -388,8 +399,8 @@ public:
   PValue getAdaptiveSet(ExprEmitter &emitter);
 
 private:
-  OverloadSet(const ExprNode *expr, CallSyntax syntax)
-      : expr(expr), syntax(syntax) {}
+  OverloadSet(const ExprNode *expr, CallSyntax syntax, ExprEmitter &emitter)
+      : inputParamBindings(emitter), expr(expr), syntax(syntax) {}
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

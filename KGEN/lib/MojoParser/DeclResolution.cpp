@@ -2103,7 +2103,7 @@ static void processRegisterPassableDecorator(
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
 static std::pair<LITSignatureType, InputParamBindings>
-getTraitFunctionSignature(SharedState &shared, LIT::FuncOp traitFn,
+getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
                           ASTType structSelfType) {
   LITSignatureType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
@@ -2117,8 +2117,8 @@ getTraitFunctionSignature(SharedState &shared, LIT::FuncOp traitFn,
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, anyRegTypeType));
   ParameterEvaluator evaluator(params);
-  auto bindings =
-      InputParamBindings::getForDeclaredType(structSelfType.getMetaType());
+  auto bindings = InputParamBindings::getForDeclaredType(
+      structSelfType.getMetaType(), emitter);
   for (Type type : inputParamTypes.drop_front(2)) {
     params.push_back(UnboundAttr::get(type));
     evaluator.addInputValue(params.back());
@@ -2492,7 +2492,7 @@ static LogicalResult verifyConformance(ASTDecl &structDecl,
         }
 
         auto [newSignature, bindings] =
-            getTraitFunctionSignature(shared, traitFn, selfType);
+            getTraitFunctionSignature(emitter, traitFn, selfType);
         // Match against the transformed calling convention if the struct is
         // register-passable.
         LITSignatureType traitSignature = newSignature;

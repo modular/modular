@@ -36,8 +36,12 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-InputParamBindings InputParamBindings::getForDeclaredType(ASTType type) {
-  InputParamBindings inputParamBindings;
+InputParamBindings::InputParamBindings(ExprEmitter &emitter)
+    : InputParamBindings(emitter.declScope, emitter.shared) {}
+
+InputParamBindings
+InputParamBindings::getForDeclaredType(ASTType type, ExprEmitter &emitter) {
+  InputParamBindings inputParamBindings(emitter);
   ArrayRef<Type> inputParams = type.getInputParameters();
   inputParamBindings.numCtadParams = inputParams.size();
   inputParamBindings.defaultTypeParams = type.getDefaultParameters();
@@ -809,7 +813,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   };
   if (newFnDecls.size() == 1 || (!newFnDecls.empty() && allMarkedAdaptive())) {
     // On success, wrap things up into one callee.
-    InputParamBindings newBindings;
+    InputParamBindings newBindings(emitter);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
     return getCallee(baseType, newFnDecls, baseName, newBindings, expr,
@@ -953,7 +957,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
 
-    InputParamBindings newBindings;
+    InputParamBindings newBindings(emitter);
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
     return getCallee(baseType, validCandidates, baseName, newBindings, expr,
@@ -1020,33 +1024,35 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
 /// failure.
 OverloadSet OverloadSet::lookup(ASTType type, StringRef methodName,
                                 const ExprNode *expr, CallSyntax syntax,
-                                SharedState &shared,
+                                ExprEmitter &emitter,
                                 function_ref<void()> errorHandler) {
+
   // If this is a previously-reported error, ignore and don't report an
   // additional error.
   if (type.isTypeCheckErrorType())
-    return OverloadSet(expr, syntax);
+    return OverloadSet(expr, syntax, emitter);
 
   SMLoc callLoc = expr->getLoc();
 
   // First perform a lookup to see if there are any candidates.
-  auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type,
-                                                  /*searchParentScopes=*/false);
+  auto lookupResult =
+      emitter.shared.lookupAndResolveDecl(methodName, callLoc, type,
+                                          /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
   if (resultDecls.empty()) {
     if (!lookupResult.isErroneous() && errorHandler) // Already diagnosed?
       errorHandler();
-    return OverloadSet(expr, syntax);
+    return OverloadSet(expr, syntax, emitter);
   }
 
   // If we find a vardecl or any other thing, then fail because it cannot be
   // called.
   if (!isa<LIT::FuncOp>(*resultDecls[0]))
-    return OverloadSet(expr, syntax);
+    return OverloadSet(expr, syntax, emitter);
 
   OverloadSet result(methodName, resultDecls,
-                     InputParamBindings::getForDeclaredType(type), expr,
-                     syntax);
+                     InputParamBindings::getForDeclaredType(type, emitter),
+                     expr, syntax);
   result.baseType = type;
   return result;
 }
@@ -1063,7 +1069,7 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
   bool shouldPrintError = bool(errorHandler);
   auto doLookup = [&](ASTType type, bool shouldPrintError) -> PValue {
     auto ovSet = OverloadSet::lookup(type, methodName, callExpr, syntax,
-                                     emitter.shared, errorHandler);
+                                     emitter, errorHandler);
 
     // If the core lookup failed, don't filter.
     if (ovSet.isNull())
@@ -1338,8 +1344,8 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
   }
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*fnDecls=*/{}, InputParamBindings(), callExpr,
-                       CallSyntax::kIndirectCall};
+  OverloadSet bindings{"callee", /*fnDecls=*/{}, InputParamBindings(*this),
+                       callExpr, CallSyntax::kIndirectCall};
   auto fitness =
       OverloadFitness::evaluate(calleeSig, bindings, callOperands,
                                 /*allowImplicitConversions=*/true, *this);
@@ -1459,7 +1465,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     return {};
 
   // Check to see if we can invoke an __init__ method to convert it.
-  auto callee = OverloadSet::lookup(type, "__init__", expr, syntax, shared);
+  auto callee = OverloadSet::lookup(type, "__init__", expr, syntax, *this);
   return emitConstructorCall(type, callee, callOperands, expr, syntax, dest,
                              allowImplicitConversion);
 }
