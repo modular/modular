@@ -75,22 +75,9 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
         .Case<GlobalVarDeclOp, LetRegDeclOp, StructDeclOp, StructFieldOp,
               VarLetDeclOp>([](auto op) { return op.getName(); })
-        .Case([&](FuncOp op) -> std::optional<StringRef> {
-          // If not fully resolved, the function may not have a name set yet.
-          StringAttr name =
-              op->getAttrOfType<StringAttr>(op.getSymNameAttrName());
-          if (!name)
-            return std::nullopt;
-          // The demangler should not fail with FuncOp names.
-          return MangledSymbol::demangle(name, /*parseSignature=*/false)
-              ->identifier;
-        })
-        .Case<FileModuleOp, PackageOp>([](auto op) {
-          // We remove the leading $.
-          StringRef fullName = op.getName();
-          fullName.consume_front("$");
-          return fullName;
-        })
+        .Case([&](FuncOp op) { return op.getSourceName(); })
+        .Case<FileModuleOp, PackageOp>(
+            [](auto op) { return op.getSourceName(); })
         .Case([](AliasDeclOp op) {
           return demangleParameterName(op.getParamDecl().getName());
         })
