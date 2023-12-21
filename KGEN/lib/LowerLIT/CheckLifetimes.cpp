@@ -1930,6 +1930,42 @@ void DestructorInsertion::checkDef(Value value, Operation &op) {
   valueSet.getValueRef(value).markBits(consumedValues, false);
 }
 
+/// If the specified valueRef corresponds to a trivial value or subfield, clear
+/// the bits associated with it in 'bits'.  This is recursive, because valueRef
+/// may refer to a subfield of the overall value.
+static void clearTrivialFields(ValueRef valueRef, Type valueType,
+                               BitVector &bits, ValueSet &valueSet) {
+  // If all the bits are already clear, we're done.
+  if (valueRef.isAllMissing(bits))
+    return;
+
+  // If this value is trivial then clear the bits and we're done!
+  if (valueSet.typeDeclInfo.isRegisterPassableTrivial(valueType)) {
+    valueRef.markBits(bits, false);
+    return;
+  }
+
+  DeclRefType valueDRType = dyn_cast<DeclRefType>(valueType);
+  if (!valueDRType) // Trait values are not trivial.
+    return;
+
+  // Otherwise, this may be a subfield of an overall value.  Zoom in to see if
+  // valueRef is referring to a trivial subfield of the overall object.
+  unsigned nextBit = 0;
+  for (auto field : valueSet.typeDeclInfo.getStructDeclForType(valueDRType)
+                        .getFieldDecls()) {
+    unsigned numBits =
+        valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
+    // If this field has consumed bits, and if has trivial type, force it
+    // back to being non-consumed.  This can allow the proper correctness
+    // check to work and make the error diagnostic more accurate.
+    ValueRef subFieldBits = valueRef.getSubfield(nextBit, numBits);
+    clearTrivialFields(subFieldBits, field.getReboundType(valueDRType), bits,
+                       valueSet);
+    nextBit += numBits;
+  }
+}
+
 /// Recursive version of destroyValueIfNeeded invoked when we know that we are
 /// inserting destructors.
 void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
@@ -1949,21 +1985,10 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     return;
 
   // Get the type for the value so we can poke at it.
-  Type type = valueRef.getValueType(value);
-
-  // If this is a generic type, then emit a generic destructor call. The
-  // language guarantees that a destructor is generic for every generic type.
-  if (auto generic = dyn_cast<ParamRefType>(type)) {
-    if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
-      emitDestructorCallAt(value, valueRef, builder, opWithUse);
-      valueRef.markBits(consumedValues, true);
-      return;
-    }
-  }
-
-  // If trivial, then we don't have any work to do.
-  auto valueType = dyn_cast<DeclRefType>(type);
+  // If a generic type or trivial, then emit a destructor call (or nothing).
+  auto valueType = dyn_cast<DeclRefType>(valueRef.getValueType(value));
   if (!valueType) {
+    emitDestructorCallAt(value, valueRef, builder, opWithUse);
     valueRef.markBits(consumedValues, true);
     return;
   }
@@ -1971,52 +1996,29 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   // If the entire value needs to be destroyed, then emit a destructor for the
   // whole value.
   if (!consumedValues.test(valueRef.endBit - 1)) {
-    // Trivial types don't have __del__ methods.
-    if (valueSet.typeDeclInfo.isRegisterPassableTrivial(valueType)) {
-      valueRef.markBits(consumedValues, true);
-      return;
-    }
+    // Trivial types don't have __del__ methods and can't be tracked, so if this
+    // is referring to one of them, make sure to clear the bits so we don't
+    // think they need to be destroyed.
+    clearTrivialFields(valueRef, valueType, consumedValues, valueSet);
 
     // If a field of a value we must destroy is already destroyed, then we have
     // an error, because we cannot run the destructor on the whole object if one
     // of the fields is missing.
     if (!valueRef.isAllMissing(consumedValues)) {
-      // Be careful about trivial fields: they don't have correctly tracked
-      // lifetimes, and should never be reported as the error for why a value
-      // is early destructed.
-      unsigned nextBit = 0;
-      for (auto field : valueSet.typeDeclInfo.getStructDeclForType(valueType)
-                            .getFieldDecls()) {
-        unsigned numBits =
-            valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
-        // If this field has consumed bits, and if has trivial type, force it
-        // back to being non-consumed.  This can allow the proper correctness
-        // check to work and make the error diagnostic more accurate.
-        ValueRef subFieldBits = valueRef.getSubfield(nextBit, numBits);
-        if (!subFieldBits.isAllMissing(consumedValues) &&
-            valueSet.typeDeclInfo.isRegisterPassableTrivial(
-                field.getReboundType(valueType)))
-          subFieldBits.markBits(consumedValues, false);
-        nextBit += numBits;
-      }
+      ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+      if (valueEntry.hasErrorDiagnosed)
+        return; // Only report one error per symbolic value.
+      valueEntry.hasErrorDiagnosed = true;
 
-      if (!valueRef.isAllMissing(consumedValues)) {
-        ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
-        if (valueEntry.hasErrorDiagnosed)
-          return; // Only report one error per symbolic value.
-        valueEntry.hasErrorDiagnosed = true;
-
-        auto diag = mlir::emitError(builder.getLoc(), "field ");
-        auto aliveValues = consumedValues;
-        aliveValues.flip();
-        // If some fields are present and others are missing, complain about the
-        // first whole field that is missing.
-        addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
-        diag << " destroyed out of the middle of a value, preventing the "
-                "overall "
-                "value from being destroyed";
-        valueRef.markBits(consumedValues, false);
-      }
+      auto diag = mlir::emitError(builder.getLoc(), "field ");
+      auto aliveValues = consumedValues;
+      aliveValues.flip();
+      // If some fields are present and others are missing, complain about the
+      // first whole field that is missing.
+      addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
+      diag << " destroyed out of the middle of a value, preventing the "
+              "overall value from being destroyed";
+      valueRef.markBits(consumedValues, false);
     }
 
     // Ok, everything looks good - actually emit the dtor call here.
