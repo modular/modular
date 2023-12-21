@@ -14,7 +14,7 @@ from algorithm import map_reduce
 
 from math import all_true as _all_true
 from math import any_true as _any_true
-from math import div_ceil, iota
+from math import div_ceil, iota, align_down
 from math import min as _min
 from math import none_true as _none_true
 from math import align_down
@@ -1624,7 +1624,7 @@ fn _argn[
             # iterate over values evenly divisible by simd_width
             var indices = iota[output.type, simd_width]()
             var global_indices = indices
-            let last_simd_index = (axis_size // simd_width) * simd_width
+            let last_simd_index = align_down(axis_size, simd_width)
             for j in range(simd_width, last_simd_index, simd_width):
                 let curr_values = input_dim_ptr.simd_load[simd_width](j)
                 indices += simd_width

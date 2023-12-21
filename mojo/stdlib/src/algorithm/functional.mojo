@@ -12,7 +12,7 @@ from algorithm import map
 ```
 """
 
-from math import div_ceil, max, min
+from math import div_ceil, max, min, align_down
 from math._numerics import FlushDenormals
 from sys.info import triple_is_nvidia_cuda, sizeof
 from debug import trap
@@ -206,7 +206,7 @@ fn vectorize_unroll[
     let vector_end_unrolled_simd = (
         size // unrolled_simd_width
     ) * unrolled_simd_width
-    let vector_end_simd = (size // simd_width) * simd_width
+    let vector_end_simd = align_down(size, simd_width)
 
     @always_inline
     @parameter
