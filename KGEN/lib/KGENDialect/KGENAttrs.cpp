@@ -1851,13 +1851,6 @@ static Attribute simplifyBuildInfoGetField(SmallVectorImpl<TypedAttr> &operands,
                            resultType);
   }
 
-  Builder builder(buildInfo.getContext());
-  if (field == "llcl_max_profiling_level") {
-    resultType = builder.getIndexType();
-    return builder.getIndexAttr(
-        buildInfo.getBuildInfo().getLLCLMaxProfilingLevel());
-  }
-
   return {};
 }
 

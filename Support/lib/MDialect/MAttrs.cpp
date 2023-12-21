@@ -1349,8 +1349,7 @@ BuildInfoAttr M::lookupBuildInfo(Operation *from) {
 BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
   BuildInfo buildInfo = getBuildInfo();
   return BuildInfoAttr::get(ctx, buildInfo.buildType,
-                            buildInfo.kernelsBuildType,
-                            buildInfo.llclMaxProfilingLevel);
+                            buildInfo.kernelsBuildType);
 }
 
 //===----------------------------------------------------------------------===//

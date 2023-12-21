@@ -148,6 +148,7 @@ macro(_setup_defines)
   if (MODULAR_RELEASE_PACKAGE_BUILD)
     set(MOJO_DEFINES "-D" "MODULAR_RELEASE_PACKAGE_BUILD")
   endif()
+  set(MOJO_DEFINES "-D" "MODULAR_LLCL_MAX_PROFILING_LEVEL=${MODULAR_LLCL_MAX_PROFILING_LEVEL}")
 endmacro()
 
 # Add the necessary tool dependencies to the mojo-sdk target.

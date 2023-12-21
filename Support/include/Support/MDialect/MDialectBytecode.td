@@ -97,8 +97,7 @@ def TargetInfoAttr : DialectAttribute<(attr
 
 def BuildInfoAttr : DialectAttribute<(attr
   String:$buildType,
-  String:$kernelsBuildType,
-  SignedVarInt:$lLCLMaxProfilingLevel
+  String:$kernelsBuildType
 )>;
 
 def MDialectAttributes : DialectAttributes<"M"> {
