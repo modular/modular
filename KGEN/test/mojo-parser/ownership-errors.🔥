@@ -374,3 +374,16 @@ fn inout_restored_at_throw(inout x: MemExample, err: Error) raises:
    # error is thrown.
    _ = x^
    raise err # expected-error {{use of uninitialized value 'x'}}
+
+# Invalid error field 'w.x.y' destroyed out of the middle of a value, preventing the overall value from being destroyed
+# https://github.com/modularml/mojo/issues/1535
+@value
+struct NestedInt:
+    var y: Int
+@value
+struct WrapperNestedInt:
+    var x: NestedInt
+fn testWrapperNestedInt():
+    var w = WrapperNestedInt(NestedInt(0))
+    for i in range(0, 1):
+        w.x.y = 0
