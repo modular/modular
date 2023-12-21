@@ -64,7 +64,3 @@ struct Context:
     fn __moveinit__(inout self, owned existing: Self):
         self.ctx = existing.ctx
         existing.ctx = _ContextImpl()
-
-    fn __takeinit__(inout self, inout existing: Self):
-        self.ctx = existing.ctx
-        existing.ctx = _ContextImpl()

@@ -71,10 +71,6 @@ struct Stream[is_borrowed: Bool = False]:
         self.stream = existing.stream
         existing.stream = _StreamImpl()
 
-    fn __takeinit__(inout self, inout existing: Self):
-        self.stream = existing.stream
-        existing.stream = _StreamImpl()
-
     fn synchronize(inout self) raises:
         if self.stream:
             _check_error(
