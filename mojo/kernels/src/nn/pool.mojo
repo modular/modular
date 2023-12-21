@@ -10,7 +10,7 @@ from sys.info import simdwidthof
 
 from algorithm import elementwise, stencil
 from Image import Image2DLayout, ImageData, ImageShape
-from memory.buffer import NDBuffer, partial_simd_load, partial_simd_store
+from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr
 from ShapeFuncUtils import get_sliding_window_out_dim
 

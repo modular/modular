@@ -1087,7 +1087,7 @@ struct ConvDirectNHWC[
                     )
                     output_micro_tile.simd_store[simd_size](
                         Index(i, j * simd_size),
-                        partial_simd_load[output_type, simd_size](
+                        partial_simd_load[simd_size](
                             output_ptr.offset(j * simd_size), 0, residual, 0.0
                         ),
                     )
@@ -1182,13 +1182,13 @@ struct ConvDirectNHWC[
                 self.conv_shape.f // simd_size
             ) * simd_size
             # TODO: Follow #20211 to optimize it for NEON.
-            filter_vec = partial_simd_load[filter_type, simd_size](
+            filter_vec = partial_simd_load[simd_size](
                 filter_ptr, 0, residual, 0.0
             )
         # It's always safe to load a full vector from packed filter because
         # the filter is padded to multiple simd_size during pre-packing.
         else:
-            filter_vec = filter_ptr.offset(offset).simd_load[simd_size]()
+            filter_vec = filter_ptr.simd_load[simd_size](offset)
 
         return filter_vec
 
@@ -2531,10 +2531,10 @@ fn pack_filter[
                         )
                         # Load remainder elements and pad with zero to
                         # to fill a simd vector.
-                        let filter_vec = partial_simd_load[type, simd_size](
+                        let filter_vec = partial_simd_load[simd_size](
                             filter_ptr, 0, residual, 0.0
                         )
-                        packed_filter_ptr.simd_store[simd_size](filter_vec)
+                        packed_filter_ptr.simd_store(filter_vec)
                         # Hence, packed filter is incremented by simd_size
                         packed_filter_ptr = packed_filter_ptr.offset(simd_size)
 
