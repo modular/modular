@@ -68,30 +68,6 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
       .Default({});
 }
 
-std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
-  auto getFromOp = [](Operation *op) -> std::optional<StringAttr> {
-    if (auto interface = dyn_cast_if_present<ASTDeclInterface>(op))
-      return interface.getDeclName();
-    return std::nullopt;
-  };
-
-  // We first try to get the name from the operation. Then we try to match the
-  // decl with a function argument. Finally, as a last resort, we extract the
-  // defining Op from the IR to fetch the name.
-  if (auto name = getFromOp(decl->getIfOperation()))
-    return name;
-
-  if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
-    auto func = cast<FuncOp>(*decl->getParentDecl());
-    return func.getSignature().getArgName(bbArg.getArgNumber());
-  }
-
-  if (auto paramRef = getIfParameter(*this))
-    return demangleIfNeeded(paramRef).getName();
-
-  return getFromOp(getDefiningOpFromIR(*this));
-}
-
 std::optional<StringRef> MojoASTDeclRef::getName() const {
   auto getFromOp = [&](Operation *op) -> std::optional<StringRef> {
     if (!op)

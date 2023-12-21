@@ -219,8 +219,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
                                             callMemberSignatureType);
 
   ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
-      declOp.getOperation(), declOp.getDeclName(), moduleDecl.getLoc(),
-      &moduleDecl);
+      &*declOp, name, moduleDecl.getLoc(), &moduleDecl);
   for (StructFieldOp field : declOp.getFieldDecls())
     shared.declResolver->addFullyResolvedDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
@@ -432,8 +431,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Register the struct and its fields as fully resolved decls.
   ASTDecl &structDecl = shared.declResolver->addFullyResolvedDecl(
-      declOp.getOperation(), declOp.getDeclName(), moduleDecl.getLoc(),
-      &moduleDecl);
+      declOp.getOperation(), implName, moduleDecl.getLoc(), &moduleDecl);
   for (StructFieldOp field : declOp.getFieldDecls()) {
     shared.declResolver->addFullyResolvedDecl(&*field, field.getNameAttr(),
                                               structDecl.getLoc(), &structDecl);
@@ -776,8 +774,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       builder.create<POP::PointerBitcastOp>(opaquePtrType, target);
   builder.create<POP::StoreOp>(erasedType, ptrToImpl);
   auto generateName = [&](StringRef prefix) {
-    return (closureWrapper.getDeclName().strref() + prefix +
-            closureImpl.getDeclName().strref())
+    return (closureWrapper.getSymName() + prefix + closureImpl.getSymName())
         .str();
   };
   TopLevelTypes topLevelTypes = collectTopLevelFunctionTypes(closureWrapper);
