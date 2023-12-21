@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo -debug-level full -D CURRENT_DIR=%S %s | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 
 from BatchedMatmul import batched_matmul
