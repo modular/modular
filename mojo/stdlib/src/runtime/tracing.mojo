@@ -5,8 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 """Provides tracing utilities."""
 
-from sys._build import build_info_llcl_max_profiling_level
-from utils._optional import Optional
+from sys.param_env import is_defined, env_get_int
+from collections.optional import Optional
+
+
+fn build_info_llcl_max_profiling_level() -> Optional[Int]:
+    if not is_defined["MODULAR_LLCL_MAX_PROFILING_LEVEL"]():
+        return None
+    return env_get_int["MODULAR_LLCL_MAX_PROFILING_LEVEL"]()
+
 
 # ===----------------------------------------------------------------------===#
 # TraceCategory
@@ -113,14 +120,11 @@ fn is_profiling_enabled[type: TraceType, level: TraceLevel]() -> Bool:
     """Returns True if the profiling is enabled for that specific type and
     level and False otherwise."""
     alias kProfilingTypeWidthBits = 3
-    alias MODULAR_LLCL_MAX_PROFILING_LEVEL = (
-        build_info_llcl_max_profiling_level()
-    )
+    alias max_profiling_level = build_info_llcl_max_profiling_level()
+    if not max_profiling_level:
+        return False
     return level <= (
-        (
-            MODULAR_LLCL_MAX_PROFILING_LEVEL
-            >> (type.value * kProfilingTypeWidthBits)
-        )
+        (max_profiling_level.value() >> (type.value * kProfilingTypeWidthBits))
         & ((1 << kProfilingTypeWidthBits) - 1)
     )
 

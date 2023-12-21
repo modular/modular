@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from sys._build import build_info_llcl_max_profiling_level
-
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
