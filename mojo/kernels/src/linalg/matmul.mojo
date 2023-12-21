@@ -3474,7 +3474,8 @@ fn matmul[
 
             @always_inline
             @parameter
-            fn packA_helper[nrow: Int](j: Int):
+            fn packA_helper[nrow: Int](offset: Int):
+                let j = t0 + offset
                 for l in range(0, k, 8):
 
                     @unroll
@@ -3494,11 +3495,7 @@ fn matmul[
                         t0,
                     )
 
-            let t1l = align_down(t1, 2)
-            for j in range(t0, t1l, 2):
-                packA_helper[2](j)
-            for j in range(t1l, t1):
-                packA_helper[1](j)
+            vectorize[2, packA_helper](t1 - t0)
 
         @always_inline
         @parameter
