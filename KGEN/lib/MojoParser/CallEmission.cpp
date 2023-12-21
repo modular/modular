@@ -862,7 +862,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   std::optional<InflightDiag> diag;
   return filterOverloadSetForValueType(
       functionType, emitter, [&](SMLoc loc) -> InflightDiag & {
-        return diag.emplace(emitter.emitError(loc));
+        return diag.emplace(getShared().emitError(loc));
       });
 }
 
@@ -921,7 +921,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     }
 
     return functionType.isEqualCanon(candidateType) ||
-           canZeroCostConvert(emitter.shared, candidateType, functionType);
+           canZeroCostConvert(getShared(), candidateType, functionType);
   };
 
   // Evaluate the fitness of each candidate in our overload set.
@@ -936,7 +936,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   // Notify the listener of the updated decl references for the call now that
   // invalid candidates have been filtered out.
   if (!validCandidates.empty())
-    emitter.shared.notifyListenerOnRef(validCandidates, baseName, expr, syntax);
+    getShared().notifyListenerOnRef(validCandidates, baseName, expr, syntax);
 
   // If we have exactly one viable candidate, then we succeed.
   auto allMarkedAdaptive = [&]() -> bool {
@@ -986,7 +986,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
 /// Resolve the callee into either a single PValue callee (if there's only one
 /// decl provided) or a variadic that contains all the possible adaptive
 /// overloads.
-PValue OverloadSet::getAdaptiveSet(ExprEmitter &emitter) {
+PValue OverloadSet::getAdaptiveSet() {
   return ::getAdaptiveSet(baseType, fnDecls, baseName, inputParamBindings,
                           expr);
 }
@@ -995,10 +995,10 @@ PValue OverloadSet::getAdaptiveSet(ExprEmitter &emitter) {
 /// the resultant LITSymbolConstant attr or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parameters specified.  They can be bound later.
-TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
+TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
-    auto diag = emitter.emitError(
+    auto diag = getShared().emitError(
                     expr->getLoc(),
                     "cannot form a reference to overloaded declaration of '")
                 << baseName << "'" << expr->getRange();
@@ -1092,6 +1092,10 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
   return doLookup(type, shouldPrintError);
 }
 
+/// Try to resolve the overload set to a single function candidate, using the
+/// expected type if provided or using current bindings if an emitter is
+/// provided.  This emits errors if 'emitter' is non-null, but does not if it
+/// is null.
 PValue OverloadSet::getDirectSymbol(ExprEmitter *emitter,
                                     ASTType expectedType) const {
   // Verify that the target has no result parameters.  We have no way to bind
@@ -1111,33 +1115,43 @@ PValue OverloadSet::getDirectSymbol(ExprEmitter *emitter,
     // This is an unbound function. Just return a reference.
     if (inputParamBindings.empty())
       return cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference();
+
+    // TODO - We should be able to bind parameters to a function, e.g. something
+    // like this:
+    //    foo(someFunction[42])
+    // where someFunction is an overloaded function.  However, we can't do this
+    // now because getBoundConstantAttr can produce an error, and this function
+    // is used during overload resolution of foo, where it can't emit
+    // diagnostics.
     if (!emitter)
       return {};
+
     // Bind the parameters.
-    return getBoundConstantAttr(*emitter);
+    return getBoundConstantAttr();
   }
+
+  // We need an emitter to resolve overload sets.
+  if (!emitter)
+    return {};
 
   // With an emitter and an expected type, the overload set can definitely be
   // resolved to a single candidate or not.
-  if (expectedType && emitter) {
+  if (expectedType) {
     return filterOverloadSetForValueType(
         expectedType, /*emitDiagnosticOnFailure=*/true, *emitter);
   }
-  // Otherwise, emit the bind if possible.
-  if (!emitter)
-    return {};
-  return getBoundConstantAttr(*emitter);
+  // Otherwise, emit the "cannot form a reference to overloaded decl" error.
+  return getBoundConstantAttr();
 }
 
-PValue OverloadSet::emitAsPValue(ExprEmitter *emitter,
-                                 ASTType expectedType) const {
+PValue OverloadSet::getIfPValue() const {
   // Overload sets with base values cannot be emitted as PValues since they
   // depend on a dynamic value.
   // TODO: A conversion can be emitted if the base value is a PValue.
   if (baseValue)
     return {};
 
-  return getDirectSymbol(emitter, expectedType);
+  return getDirectSymbol(/*emitter=*/nullptr, /*expectedType*/ ASTType());
 }
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity

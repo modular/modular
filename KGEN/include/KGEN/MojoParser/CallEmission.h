@@ -341,11 +341,13 @@ public:
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
+  SharedState &getShared() const { return inputParamBindings.shared; }
+
   /// Perform substitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null. This allows producing a reference to a parameterized
   /// function without the parameters specified.  They can be bound later.
-  TypedAttr getBoundConstantAttr(ExprEmitter &emitter) const;
+  TypedAttr getBoundConstantAttr() const;
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
@@ -358,12 +360,12 @@ public:
 
   /// Try to resolve the overload set to a single function candidate, using the
   /// expected type if provided or using current bindings if an emitter is
-  /// provided.
+  /// provided.  This emits errors if 'emitter' is non-null, but does not if it
+  /// is null.
   PValue getDirectSymbol(ExprEmitter *emitter, ASTType expectedType) const;
 
   /// Try to emit the overload set as a PValue.
-  PValue emitAsPValue(ExprEmitter *emitter = nullptr,
-                      ASTType expectedType = {}) const;
+  PValue getIfPValue() const;
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.
@@ -392,7 +394,7 @@ public:
   /// Resolve the callee into either a single PValue callee (if there's only one
   /// decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
-  PValue getAdaptiveSet(ExprEmitter &emitter);
+  PValue getAdaptiveSet();
 
 private:
   OverloadSet(const ExprNode *expr, CallSyntax syntax, ExprEmitter &emitter)

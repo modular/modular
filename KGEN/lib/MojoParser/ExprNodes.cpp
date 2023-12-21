@@ -780,7 +780,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     // parameter types.  We should use something like
     // `filterOverloadSetForValueType` or use a dummy value to filter the
     // overload set.
-    auto directSymbolAttr = setter.getBoundConstantAttr(emitter);
+    auto directSymbolAttr = setter.getBoundConstantAttr();
     if (!directSymbolAttr)
       return {}; // Getter invalid.
     auto sigType = cast<SignatureType>(directSymbolAttr.getType());
@@ -818,7 +818,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle __adaptive_set.
   if (auto overloads = baseAnyVal.getIfORValue())
     if (spelling == "__adaptive_set")
-      return emitter.emitResult(overloads->getAdaptiveSet(emitter), this, dest);
+      return emitter.emitResult(overloads->getAdaptiveSet(), this, dest);
 
   // Otherwise must have a concrete type.
   CValue baseVal = emitter.emitCValue({baseAnyVal, this}, EC_AttributeRefBase);
