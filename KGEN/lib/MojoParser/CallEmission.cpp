@@ -1018,14 +1018,14 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
 /// On failure, this returns a null OverloadSet and invokes errorHandler if
 /// the problem hasn't already been diagnosed. This does not emit an error on
 /// failure.
-OverloadSet::OverloadSet(ASTType type, StringRef methodName,
-                         const ExprNode *expr, CallSyntax syntax,
-                         SharedState &shared, function_ref<void()> errorHandler)
-    : expr(expr), syntax(syntax) {
+OverloadSet OverloadSet::lookup(ASTType type, StringRef methodName,
+                                const ExprNode *expr, CallSyntax syntax,
+                                SharedState &shared,
+                                function_ref<void()> errorHandler) {
   // If this is a previously-reported error, ignore and don't report an
   // additional error.
   if (type.isTypeCheckErrorType())
-    return;
+    return OverloadSet(expr, syntax);
 
   SMLoc callLoc = expr->getLoc();
 
@@ -1036,18 +1036,19 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
   if (resultDecls.empty()) {
     if (!lookupResult.isErroneous() && errorHandler) // Already diagnosed?
       errorHandler();
-    return;
+    return OverloadSet(expr, syntax);
   }
 
   // If we find a vardecl or any other thing, then fail because it cannot be
   // called.
   if (!isa<LIT::FuncOp>(*resultDecls[0]))
-    return;
+    return OverloadSet(expr, syntax);
 
-  *this =
-      OverloadSet(methodName, resultDecls,
-                  InputParamBindings::getForDeclaredType(type), expr, syntax);
-  baseType = type;
+  OverloadSet result(methodName, resultDecls,
+                     InputParamBindings::getForDeclaredType(type), expr,
+                     syntax);
+  result.baseType = type;
+  return result;
 }
 
 /// Lookup of a named named method on the specified type, filtered to match a
@@ -1061,8 +1062,8 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
   ASTType nmTarget = type.getNonmaterializableTarget(emitter.shared);
   bool shouldPrintError = bool(errorHandler);
   auto doLookup = [&](ASTType type, bool shouldPrintError) -> PValue {
-    OverloadSet ovSet(type, methodName, callExpr, syntax, emitter.shared,
-                      errorHandler);
+    auto ovSet = OverloadSet::lookup(type, methodName, callExpr, syntax,
+                                     emitter.shared, errorHandler);
 
     // If the core lookup failed, don't filter.
     if (ovSet.isNull())
@@ -1458,7 +1459,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     return {};
 
   // Check to see if we can invoke an __init__ method to convert it.
-  OverloadSet callee(type, "__init__", expr, syntax, shared);
+  auto callee = OverloadSet::lookup(type, "__init__", expr, syntax, shared);
   return emitConstructorCall(type, callee, callOperands, expr, syntax, dest,
                              allowImplicitConversion);
 }

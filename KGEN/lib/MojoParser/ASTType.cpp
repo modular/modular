@@ -263,10 +263,7 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
   else
     return false;
 
-  return shared
-      .lookupAndResolveDecl(initName, value.expr->getLoc(), *typeDecl,
-                            /*searchParentScopes=*/false)
-      .isSuccess();
+  return shared.typeHasMember(*typeDecl, initName, value.expr->getLoc());
 }
 
 /// Given a PointerType, return the element as an ASTType.  This aborts

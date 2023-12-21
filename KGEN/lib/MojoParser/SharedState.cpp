@@ -464,6 +464,22 @@ struct SharedState::ModuleState {
 // Name Lookup
 //===----------------------------------------------------------------------===//
 
+/// Return true if the specified type has a declared member with the specified
+/// name.
+bool SharedState::typeHasMember(ASTType type, StringRef name, llvm::SMLoc loc) {
+  ASTDecl *typeDecl = type.getDecl(*this);
+  if (!typeDecl) // MLIR types have no methods.
+    return false;
+  return typeHasMember(*typeDecl, name, loc);
+}
+
+bool SharedState::typeHasMember(ASTDecl &typeDecl, StringRef name,
+                                llvm::SMLoc loc) {
+  return lookupAndResolveDecl(name, loc, typeDecl,
+                              /*searchParentScopes=*/false)
+      .isSuccess();
+}
+
 /// Perform a name lookup in the specified scope and return the named
 /// declaration as a LookupResult.
 auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,

@@ -1515,22 +1515,15 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
          "RValue emission should have inferred var type");
 
   // Emit the destructor call, if present, into the destructor function.
-  OverloadSet dtorFn(ASTType(op.getType()), "__del__", initExpr,
-                     CallSyntax::kDestructor, shared,
-                     /*no error on failure*/ {});
   op.getDtor().push_back(new Block);
-  if (!dtorFn.isNull()) {
+  if (shared.typeHasMember(ASTType(op.getType()), "__del__",
+                           initExpr->getLoc())) {
     emitter.builder = OpBuilder::atBlockBegin(&op.getDtor().front());
     MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
-    PValue callee = dtorFn.filterOverloadSet(
-        CallOperands({{owned, initExpr}}), /*allowImplicitConversions=*/true,
-        /*emitDiagnosticOnFailure=*/true, emitter);
-    if (!callee)
-      return failure();
     ValueDest dest(EC_Destructor);
-    if (!emitter.emitIndirectCall(callee, CallOperands({{owned, initExpr}}),
-                                  dest, initExpr))
-      return failure();
+    (void)emitter.emitNamedMethodCall("__del__",
+                                      CallOperands({{owned, initExpr}}), dest,
+                                      CallSyntax::kDestructor, initExpr);
   }
 
   // Run signature decorators, if any.
@@ -2333,12 +2326,12 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
 
   // If the callee is async, then await the result.
   if (memSig.isAsync()) {
-    // FIXME: Need async optimizations to make this zero-cost.
-    OverloadSet await(callResult.getRValueType(), "__await__", &node,
-                      CallSyntax::kMethodCall, shared);
-    assert(!await.isNull() && "async call result must be awaitable");
     ValueDest dest(EC_Trait);
-    callResult = await.emitCall(FuncOperand{callResult, &node}, dest, emitter);
+    callResult =
+        emitter.emitNamedMethodCall("__await__", FuncOperand{callResult, &node},
+                                    dest, CallSyntax::kMethodCall, &node);
+    if (!callResult)
+      return;
   }
 
   // Emit the function return. It's just a none return if the function has a

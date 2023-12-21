@@ -430,16 +430,12 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 
   // If the expression returned an unawaited value, then the expression should
   // be awaited. Check for an '__await__' function.
-  if (valueType.getDecl(shared)) {
-    OverloadSet await(valueType, "__await__", expr, CallSyntax::kMethodCall,
-                      shared, /*no error on failure*/ {});
-    if (!await.isNull()) {
-      auto loc = expr->getRange().getStart();
-      shared.emitWarning(expr->getLoc())
-          << "awaitable " << valueType << " value was never awaited"
-          << expr->getRange() << FixIt::insertBeforeToken(loc, "await ");
-      return;
-    }
+  if (shared.typeHasMember(valueType, "__await__", expr->getLoc())) {
+    shared.emitWarning(expr->getLoc())
+        << "awaitable " << valueType << " value was never awaited"
+        << expr->getRange()
+        << FixIt::insertBeforeToken(expr->getRangeStart(), "await ");
+    return;
   }
 
   // Otherwise emit a warning, and suggest assigning to _.
@@ -1304,15 +1300,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // In erroneous code, ASTDecl may be missing, e.g. a 'with' on an MLIR type.
   ASTType contextRVType = XLValue(contextMgrDecl).getRValueType();
-  ASTDecl *contextDecl = contextRVType.getDecl(shared);
-  bool hasExitMethod = true;
-  if (contextDecl) {
-    auto loc = contextExp->getLoc();
-    hasExitMethod = shared
-                        .lookupAndResolveDecl("__exit__", loc, *contextDecl,
-                                              /*searchParentScopes*/ false)
-                        .isSuccess();
-  }
+  bool hasExitMethod =
+      shared.typeHasMember(contextRVType, "__exit__", contextExp->getLoc());
 
   // Determine whether we're in a region that is allowed to raise.  If so,
   // generate logic to deal with it.
@@ -1396,8 +1385,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
                "method; either remove 'owned' from its '__enter__' method or "
                "remove the '__exit__' method"
             << contextExp->getRange();
-        diag.attachNote(contextDecl->getLoc())
-            << contextRVType << " declared here";
+        if (ASTDecl *contextDecl = contextRVType.getDecl(shared))
+          diag.attachNote(contextDecl->getLoc())
+              << contextRVType << " declared here";
 
         // Make the emission work even if the type isn't copyable.
         contextVal = XRValue(contextMgrDecl);

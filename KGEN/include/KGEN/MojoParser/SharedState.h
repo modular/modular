@@ -176,6 +176,11 @@ public:
   //===--------------------------------------------------------------------===//
   // Name Lookup
 
+  /// Return true if the specified type has a declared member with the specified
+  /// name.
+  bool typeHasMember(ASTType type, StringRef name, llvm::SMLoc loc);
+  bool typeHasMember(ASTDecl &type, StringRef name, llvm::SMLoc loc);
+
   /// Perform a name lookup in the current scope and return the named
   /// declaration as a LookupResult.  If `searchParentScopes` is true, parent
   /// scopes are searched as well, as in unqualified name lookup.
