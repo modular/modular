@@ -894,7 +894,9 @@ ValueRef UninitializedValueScan::checkDef(Value value, Operation &op) {
     if (info.isLet && !info.hasErrorDiagnosed) {
       auto diag =
           mlir::emitError(op.getLoc(), "invalid mutation of immutable value ");
-      addBadValueNameToDiag(valueRef, everMutatedValues, valueSet, diag);
+      BitVector mutatedBits(everMutatedValues.size(), true);
+      valueRef.markBits(mutatedBits, false);
+      addBadValueNameToDiag(valueRef, mutatedBits, valueSet, diag);
       diag.attachNote(info.value.getLoc())
           << "'" << info.getName().str() << "' declared here";
       info.hasErrorDiagnosed = true;

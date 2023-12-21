@@ -25,8 +25,8 @@ struct MemExample:
         pass
 
 
-fn use(x: MemExample):
-    pass
+fn use(x: MemExample): pass
+fn use_inout(inout x: MemExample): pass
 
 
 @register_passable
@@ -93,6 +93,10 @@ fn field_sensitive():
     b.x = 1
     b.y = 2
     use(b)  # Ok
+
+fn invalid_mutation():
+  let x = MemExample() # expected-note {{'x' declared here}}
+  use_inout(x) # expected-error {{invalid mutation of immutable value 'x'}}
 
 
 # Issue #12859, bad location info
