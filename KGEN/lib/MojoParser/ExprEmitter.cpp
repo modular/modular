@@ -1572,23 +1572,10 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return MBValue(destPtr);
   }
 
-  // If that doesn't work, then we fall back to __takeinit__ which will force
-  // an extra destructor to get run, but still works.
-  if (shared.typeHasMember(valueType, "__takeinit__", value.expr->getLoc())) {
-    // `__takeinit__(inout self, inout existing: Self)`.
-    ASTExprAnd<AnyValue> operands[] = {
-        ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
-    ValueDest takeDest(context);
-    if (!emitNamedMethodCall("__takeinit__", {operands}, takeDest,
-                             CallSyntax::kImplicitConvert, value.expr))
-      return {};
-    return MBValue(destPtr);
-  }
-
   // Otherwise, we have to move this thing but don't have a move constructor!
   emitError(value.expr->getLoc())
       << "cannot transfer value into destination, because " << valueType
-      << " doesn't implement `__moveinit__` or `__takeinit__`";
+      << " doesn't implement `__moveinit__`";
   return {};
 }
 

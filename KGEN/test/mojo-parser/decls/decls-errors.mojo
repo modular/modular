@@ -537,9 +537,6 @@ struct WrongType:
   # expected-error @+1 {{'__moveinit__' is not supported for @register_passable types, they are always movable by copying a register}}
   fn __moveinit__(owned self) -> Self: pass
 
-  # expected-error @+1 {{'__takeinit__' is not supported for @register_passable types, they are always movable by copying a register}}
-  fn __takeinit__(inout self) -> Self: pass
-
 
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]' but actually has type 'Int'}}

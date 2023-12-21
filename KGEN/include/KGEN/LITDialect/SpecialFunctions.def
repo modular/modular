@@ -34,7 +34,6 @@ SF(kNew,      "__new__"     , 0, -1, kInvalid, kImplicitlyStaticMethod|kSelfResu
 SF(kInit,     "__init__"    , 0, -1, kInvalid, kMemInit)
 SF(kCopyInit, "__copyinit__", 2, 2, kInvalid, kMemInit|kCannotRaise)
 SF(kMoveInit, "__moveinit__", 2, 2, kInvalid, kMemInit|kCannotRaise)
-SF(kTakeInit, "__takeinit__", 2, 2, kInvalid, kMemInit|kCannotRaise)
 
 // These are the register-passable forms of init methods, these have the same
 // name (eg __init__) as normal init methods but are detected by semantic

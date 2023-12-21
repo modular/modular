@@ -232,8 +232,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
   if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
     return true;
 
-  return !typeDecl->lookupInCurrentScope("__moveinit__").empty() ||
-         !typeDecl->lookupInCurrentScope("__takeinit__").empty();
+  return !typeDecl->lookupInCurrentScope("__moveinit__").empty();
 }
 
 /// Return true if this type is movable, either because it is trivial, a
@@ -255,15 +254,10 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
 
   // Check all the available candidate to see if we have one that cooperates
   // with this value kind.
-  StringRef initName;
-  if (value.ir.getIfLValue())
-    initName = "__takeinit__";
-  else if (value.ir.getIfRValue())
-    initName = "__moveinit__";
-  else
+  if (!value.ir.getIfRValue())
     return false;
 
-  return shared.typeHasMember(*typeDecl, initName, value.expr->getLoc());
+  return shared.typeHasMember(*typeDecl, "__moveinit__", value.expr->getLoc());
 }
 
 /// Given a PointerType, return the element as an ASTType.  This aborts
