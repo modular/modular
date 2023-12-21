@@ -2245,30 +2245,25 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     }
   }
 
-  // Otherwise, try to promote to a __moveinit__/__takeinit__ call if present.
+  // Otherwise, try to promote to a __moveinit__ call if present.
   SymbolConstantAttr moveCtor =
       valueSet.typeDeclInfo.getMoveInitForType(destroyedType);
   if (!moveCtor)
     return failure();
 
-  // moveCtor has two forms: __takeinit__ destructively steals from a live
-  // object without destroying it, and __moveinit__ takes and destroys it.  The
-  // former takes the operand as inout, the later as owned convention.
+  // moveCtor must have __moveinit__(inout self, owned: Self) type.
   auto moveSig = cast<SignatureType>(moveCtor.getType());
   assert(moveSig.getNumInputs() == 2);
+  assert(moveSig.getInputConvention(1) == ValueInputConvention::OwnedInMem);
+
   // TODO(references): reenable this assert when RefToPointerOp is removed.
   // assert(moveSig.getValueInputs()[0] == value.getType() &&
   //       moveSig.getValueInputs()[1] == value.getType());
 
   // Transform the copy into a move.
   copyInitCall.setCalleeAttr(moveCtor);
-
-  // If this is __moveinit__, then we don't need a dtor call.  If it is
-  // __takeinit__, then we need to destroy the husk of the object stolen from.
-  if (moveSig.getInputConvention(1) == ValueInputConvention::OwnedInMem)
-    return success();
-  // We succeeded at the transform, but still need to del.
-  return failure();
+  // Since we changed the copy to a __moveinit__, we don't need a dtor call.
+  return success();
 }
 
 /// Emit one destructor call for one entire value or field.  This should only be

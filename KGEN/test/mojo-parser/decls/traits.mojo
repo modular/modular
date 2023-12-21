@@ -423,13 +423,9 @@ fn generic_fn_return_type():
     # CHECK: call {{.*}}@NoDtor::@"method
     c.method()
 
-trait Takeable:
-    fn __takeinit__(inout self, inout existing: Self, /):
-        ...
-
 # CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
 @register_passable("trivial")
-struct RegTrivialSpecial(Destructable, Copyable, Movable, Takeable):
+struct RegTrivialSpecial(Destructable, Copyable, Movable):
     pass
     # CHECK: lit.func @"`thunk___del__
     # CHECK-SAME: %0[{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
@@ -445,12 +441,9 @@ struct RegTrivialSpecial(Destructable, Copyable, Movable, Takeable):
     # CHECK-NEXT: [[V:%.*]] = lit.load.consume %1
     # CHECK-NEXT: pop.store [[V]], %0
 
-    # CHECK: lit.func @"`thunk___takeinit__
-    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} byref,
-
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 @register_passable
-struct RegSpecial(Destructable, Copyable, Movable, Takeable):
+struct RegSpecial(Destructable, Copyable, Movable):
     fn __copyinit__(existing: Self) -> Self:
         return Self {}
 
@@ -463,18 +456,12 @@ struct RegSpecial(Destructable, Copyable, Movable, Takeable):
     # CHECK-NEXT: [[V:%.*]] = lit.load.consume %1
     # CHECK-NEXT: pop.store [[V]], %0
 
-    # CHECK: lit.func @"`thunk___takeinit__
-    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} byref,
-
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
-struct MemoryOnlySpecial(Destructable, Copyable, Movable, Takeable):
+struct MemoryOnlySpecial(Destructable, Copyable, Movable):
     fn __copyinit__(inout self, existing: Self):
         pass
 
     fn __moveinit__(inout self, owned existing: Self):
-        pass
-
-    fn __takeinit__(inout self, inout existing: Self):
         pass
 
     # CHECK: lit.func @"`thunk___del__

@@ -177,18 +177,11 @@ bool LIT::canSynthesizeIfMissing(
     addSpecialFn(SpecialFunctionKind::kCopyInit);
     return true;
   }
-  // All register-passable types are not allowed to have move or take
-  // constructors, so permit them to conform.
-  if (regPassable) {
-    if (name == "__moveinit__") {
-      addSpecialFn(SpecialFunctionKind::kMoveInit);
-      return true;
-    }
-    // FIXME(#26060): Register-passable types should define `__takeinit__`.
-    if (name == "__takeinit__") {
-      addSpecialFn(SpecialFunctionKind::kTakeInit);
-      return true;
-    }
+  // All register-passable types are not allowed to have move  constructors, so
+  // permit them to conform.
+  if (regPassable && name == "__moveinit__") {
+    addSpecialFn(SpecialFunctionKind::kMoveInit);
+    return true;
   }
   return false;
 }

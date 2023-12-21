@@ -883,44 +883,12 @@ struct MemoryUniqueMovable:
     # CHECK-NEXT: kgen.return
 
 
-# This type is movable by taking.
-# CHECK-LABEL: lit.struct.decl @MemoryDestroyMovable
-struct MemoryDestroyMovable:
-  var state: MemExample
-
-  fn __init__(inout self): self.state = MemExample()
-
-  # CHECK: lit.func @"__takeinit__
-  fn __takeinit__(inout self, inout other: Self):
-    # Take 'other's state which could be interesting.
-    # CHECK-NEXT: %0 = lit.struct.gep %other[state]
-    # CHECK-NEXT: %1 = lit.ownership.end_lifetime %0
-    # CHECK-NEXT: %2 = lit.struct.gep %self[state]
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%2, %1)
-    self.state = other.state^
-
-    # Replace it with a default initialized one that can be destructed.
-    # CHECK-NEXT: %4 = lit.struct.gep %other[state]
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%4)
-    other.state = MemExample()
-
-    # CHECK-NEXT: kgen.param.constant: none
-    # CHECK-NEXT: kgen.return
-
-  fn __del__(owned self): pass
-
-# This type is copyable/moveable/takeable.
+# This type is copyable/moveable.
 # CHECK-LABEL: lit.struct.decl @MemoryMovableCopyable
 struct MemoryMovableCopyable:
   var state: MemExample
 
   fn __init__(inout self): self.state = MemExample()
-
-  fn __takeinit__(inout self, inout existing: Self):
-    # Take 'existing's state which could be interesting.
-    self.state = existing.state^
-    # Replace it with a default initialized one that can be destructed.
-    existing.state = MemExample()
 
   fn __moveinit__(inout self, owned existing: Self):
     # Mercilessly steal 'existing's state which could be interesting.
@@ -936,14 +904,6 @@ fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
   return a^
-
-# CHECK-LABEL: lit.func @"result_mem2
-fn result_mem2(owned a: MemoryDestroyMovable) -> MemoryDestroyMovable:
-  # CHECK-NEXT: lit.call {{.*}}__takeinit__{{.*}}(%__result__, %a){{.*}}init_self{{.*}} byref
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
-  # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
-  return a
 
 # CHECK-LABEL: lit.func @"result_mem3
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
