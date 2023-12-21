@@ -1825,23 +1825,18 @@ fn _static_log2[n: Int]() -> Int:
 
 
 @always_inline
-fn _cumsum[
-    size: Dim, type: DType
-](dst: Buffer[size, type], src: Buffer[size, type]):
+fn _cumsum_small(dst: Buffer, src: Buffer[dst.size, dst.type]):
     dst[0] = src[0]
     for i in range(1, len(dst)):
         dst[i] = src[i] + dst[i - 1]
 
 
-fn cumsum[
-    size: Dim, type: DType
-](dst: Buffer[size, type], src: Buffer[size, type]):
+fn cumsum(dst: Buffer, src: Buffer[dst.size, dst.type]):
     """Computes the cumulative sum of all elements in a buffer.
        dst[i] = src[i] + src[i-1] + ... + src[0].
 
     Parameters:
-        size: The size of the input and output buffers.
-        type: The type of the elements of the input and output buffers.
+        : Ignore.
 
     Args:
         dst: The buffer that stores the result of cumulative sum operation.
@@ -1851,34 +1846,31 @@ fn cumsum[
     debug_assert(len(src) != 0, "Input must not be empty")
     debug_assert(len(dst) != 0, "Output must not be empty")
 
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[dst.type]()
 
     # For length less than simd_width do serial cumulative sum.
     # Similarly, for the case when simd_width == 2 serial should be faster.
     if len(dst) < simd_width or simd_width == 2:
-        return _cumsum[size, type](dst, src)
+        return _cumsum_small(dst, src)
 
     # Stores the offset (i.e., last value of previous simd_width-elements chunk,
     # replicated across all simd lanes, to be added to all elements of next
     # chunk.
-    var offset = SIMD[type, simd_width]()
+    var offset = SIMD[dst.type, simd_width](0)
 
     # Divide the buffer size to div_size chunks of simd_width elements,
     # to calculate using SIMD and do remaining (tail) serially.
-    let div_size = (len(dst) // simd_width) * simd_width
+    let div_size = align_down(len(dst), simd_width)
 
     # Number of inner-loop iterations (for shift previous result and add).
     alias rep = _static_log2[simd_width]()
 
     for i in range(0, div_size, simd_width):
         var x_simd = src.simd_load[simd_width](i)
-        var y_simd = SIMD[type, simd_width]()
 
         @parameter
         fn loop_body[idx: Int]():
-            alias a = 2**idx
-            y_simd = x_simd.shift_right[a]()
-            x_simd = x_simd + y_simd
+            x_simd += x_simd.shift_right[2**idx]()
 
         unroll[rep, loop_body]()
         dst.simd_store(i, x_simd)
@@ -1901,8 +1893,7 @@ fn cumsum[
     # offset used in iteration 0: 0, 0, 0, 0
     # offset used in iteration 1: 10, 10, 10, 10
     for i in range(0, div_size, simd_width):
-        var x_simd = dst.simd_load[simd_width](i)
-        x_simd += offset
+        let x_simd = dst.simd_load[simd_width](i) + offset
         dst.simd_store(i, x_simd)
         offset = offset.splat(x_simd[simd_width - 1])
 
