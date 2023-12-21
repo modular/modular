@@ -1719,13 +1719,14 @@ struct NDBuffer[
         return res
 
 
+@always_inline
 fn partial_simd_load[
-    type: DType, width: Int
+    width: Int, type: DType
 ](
     storage: DTypePointer[type],
     lbound: Int,
     rbound: Int,
-    pad_value: SIMD[type, 1],
+    pad_value: Scalar[type],
 ) -> SIMD[type, width]:
     """Loads a vector with dynamic bound.
 
@@ -1738,8 +1739,8 @@ fn partial_simd_load[
         partial_simd_load[4](addr0,1,3) #gives [0 42 43 0]
 
     Parameters:
-        type: The underlying dtype of computation.
         width: The system simd vector size.
+        type: The underlying dtype of computation.
 
     Args:
         storage: Pointer to the address to perform load.
@@ -1759,6 +1760,7 @@ fn partial_simd_load[
     return masked_load[type, width](storage, mask, pad_value)
 
 
+@always_inline
 fn partial_simd_store[
     type: DType, width: Int
 ](
@@ -1794,7 +1796,7 @@ fn partial_simd_store[
     let incr = iota[DType.int32, width]()
     let mask = (incr >= effective_lbound) & (incr < effective_rbound)
 
-    return masked_store[type, width](data, storage, mask)
+    return masked_store(data, storage, mask)
 
 
 # ===----------------------------------------------------------------------===#

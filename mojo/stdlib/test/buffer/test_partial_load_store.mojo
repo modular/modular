@@ -54,7 +54,7 @@ fn test_partial_load_store():
         write_buffer[idx] = 0
 
     # Test partial load:
-    let partial_load_data = partial_simd_load[DType.index, 4](
+    let partial_load_data = partial_simd_load[4](
         read_buffer.data.offset(1),
         1,
         3,
@@ -88,7 +88,7 @@ fn test_partial_load_store():
     ](write_data)
 
     # Test partial load:
-    let nd_partial_load_data = partial_simd_load[DType.index, 4](
+    let nd_partial_load_data = partial_simd_load[4](
         read_nd_buffer._offset(StaticIntTuple[2](3, 2)),
         0,
         2,
