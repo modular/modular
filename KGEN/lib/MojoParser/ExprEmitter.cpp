@@ -932,9 +932,9 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
-  OverloadSet callee(requiredType, "__init__", value.expr,
-                     CallSyntax::kImplicitConvert, shared,
-                     /*no error emission on failure */ {});
+  auto callee = OverloadSet::lookup(requiredType, "__init__", value.expr,
+                                    CallSyntax::kImplicitConvert, shared,
+                                    /*no error emission on failure */ {});
 
   // If there are no viable candidates for the implicit conversion, we fail.
   if (!callee)
@@ -1561,10 +1561,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // Otherwise, assign with a move constructor.  We own the CRValue, so prefer
   // to use __moveinit__ if present.
-  if (OverloadSet(valueType, "__moveinit__", value.expr,
-                  CallSyntax::kImplicitConvert, shared,
-                  [&]() { /*no error*/ })) {
-
+  if (shared.typeHasMember(valueType, "__moveinit__", value.expr->getLoc())) {
     // `__moveinit__(inout self, owned existing: Self)`.
     ASTExprAnd<AnyValue> operands[] = {
         ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
@@ -1577,9 +1574,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // If that doesn't work, then we fall back to __takeinit__ which will force
   // an extra destructor to get run, but still works.
-  if (OverloadSet(valueType, "__takeinit__", value.expr,
-                  CallSyntax::kImplicitConvert, shared,
-                  [&]() { /*no error*/ })) {
+  if (shared.typeHasMember(valueType, "__takeinit__", value.expr->getLoc())) {
     // `__takeinit__(inout self, inout existing: Self)`.
     ASTExprAnd<AnyValue> operands[] = {
         ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
@@ -1675,9 +1670,8 @@ CRValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
 
   // Check for the presence of a __mlir_i1__ method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
-  if (!OverloadSet(valueRValueType, "__mlir_i1__", value.expr,
-                   CallSyntax::kImplicitConvert, shared,
-                   [&]() { /*no error*/ })) {
+  if (!shared.typeHasMember(valueRValueType, "__mlir_i1__",
+                            value.expr->getLoc())) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __mlir_i1__.
     ValueDest boolDest(context);
@@ -2090,8 +2084,9 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   // FIXME(Issue #14946): The Tuple.get's T parameter shouldn't exist!
   //   https://github.com/modularml/modular/issues/14946
   // For the dynamic case we'd use __get_item__.
-  OverloadSet getDecl(elementType, "get", expr, CallSyntax::kTupleGetItem,
-                      emitter.shared, /*errorHandler*/ {});
+  auto getDecl =
+      OverloadSet::lookup(elementType, "get", expr, CallSyntax::kTupleGetItem,
+                          emitter.shared, /*errorHandler*/ {});
 
   if (getDecl.isNull()) {
     emitError() << "expected Tuple to have one get method";

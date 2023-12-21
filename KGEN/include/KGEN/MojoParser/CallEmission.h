@@ -308,15 +308,17 @@ public:
               InputParamBindings &&inputParamBindings, const ExprNode *expr,
               CallSyntax syntax);
 
-  /// Form an OverloadSet with a lookup of a named method on the specified type.
-  /// If successful, this provides a non-null OverloadSet.
+  /// Form an OverloadSet with a lookup of a named method on the specified type,
+  /// but without the candidate set filtered with operands.   If successful,
+  /// this provides a non-null OverloadSet.
   ///
   /// On failure, this returns a null OverloadSet and invokes errorHandler if
   /// the problem hasn't already been diagnosed and it is non-null. This does
   /// not emit an error on failure.
-  OverloadSet(ASTType type, StringRef methodName, const ExprNode *callExpr,
-              CallSyntax syntax, SharedState &shared,
-              function_ref<void()> errorHandler = {});
+  static OverloadSet lookup(ASTType type, StringRef methodName,
+                            const ExprNode *callExpr, CallSyntax syntax,
+                            SharedState &shared,
+                            function_ref<void()> errorHandler = {});
 
   /// Lookup of a named method on the specified type, filtered to match a
   /// concrete operand set. If successful, this provides a non-null PValue for a
@@ -384,6 +386,10 @@ public:
   /// decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
   PValue getAdaptiveSet(ExprEmitter &emitter);
+
+private:
+  OverloadSet(const ExprNode *expr, CallSyntax syntax)
+      : expr(expr), syntax(syntax) {}
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

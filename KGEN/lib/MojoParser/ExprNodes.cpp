@@ -722,14 +722,16 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
                        SmallDenseMap<StringAttr, FuncOperand> &&kwOperands =
                            SmallDenseMap<StringAttr, FuncOperand>()) {
   // If there is no getter at all, then this is not a subscriptable type.
-  OverloadSet getter(baseType, getterName, node, syntax, emitter.shared,
-                     /*no error on failure*/ {});
+  auto getter =
+      OverloadSet::lookup(baseType, getterName, node, syntax, emitter.shared,
+                          /*no error on failure*/ {});
 
   // Check for the presence of a setitem but don't provide index values because
   // we don't know what the ultimate element type is.  It may be overloaded and
   // we don't know which candidate to pick until it is actually invoked.
-  OverloadSet setter(baseType, setterName, node, syntax, emitter.shared,
-                     /*no error on failure*/ {});
+  auto setter =
+      OverloadSet::lookup(baseType, setterName, node, syntax, emitter.shared,
+                          /*no error on failure*/ {});
 
   if (getter.isNull() && setter.isNull()) {
     lookupError();
@@ -1326,8 +1328,9 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
 
     // Check to see if we can invoke an __init__ method to convert it.
-    OverloadSet callee(calledType, "__init__", this, CallSyntax::kTypeCall,
-                       emitter.shared, /*errorHandler=*/{});
+    auto callee =
+        OverloadSet::lookup(calledType, "__init__", this, CallSyntax::kTypeCall,
+                            emitter.shared, /*errorHandler=*/{});
     emitter.shared.notifyListenerOnCall(callee.fnDecls, rparenLoc, operands);
     return emitter.emitConstructorCall(calledType, callee, operands, this,
                                        CallSyntax::kTypeCall, dest);
