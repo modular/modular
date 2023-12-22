@@ -20,7 +20,6 @@ from debug import trap
 from gpu import GridDim, BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Dim, Function, Stream, Device
 from runtime.llcl import (
-    AsyncTaskGroupPtr,
     TaskGroup,
     TaskGroupTask,
     TaskGroupTaskList,
@@ -1024,7 +1023,6 @@ fn elementwise[
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         elementwise[rank, simd_width, func](shape, out_chain.borrow())
-
         _ = out_chain ^
 
 
