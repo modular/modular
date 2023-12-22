@@ -3486,7 +3486,8 @@ fn no_mask_fused_attention_cpu[
     q: NDBuffer[rank, input_0_static_shape, q_type],
     k: NDBuffer[rank, input_1_static_shape, k_type],
     v: NDBuffer[rank, input_2_static_shape, v_type],
-    scale: NDBuffer[0, input_3_static_shape, scale_type],
+    # TODO(28121): This should be rank 0, but only works with rank 1
+    scale: NDBuffer[1, input_3_static_shape, scale_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
     out_chain: OutputChainPtr,
 ):
@@ -3561,7 +3562,8 @@ fn with_mask_fused_attention_cpu[
     k: NDBuffer[rank, input_1_static_shape, k_type],
     v: NDBuffer[rank, input_2_static_shape, v_type],
     attn_mask: NDBuffer[2, input_3_static_shape, attn_mask_type],
-    scale: NDBuffer[0, input_4_static_shape, scale_type],
+    # TODO(28121): This should be rank 0, but only works with rank 1
+    scale: NDBuffer[1, input_4_static_shape, scale_type],
     output: NDBuffer[rank, DimList.create_unknown[rank](), output_type],
     out_chain: OutputChainPtr,
 ):
