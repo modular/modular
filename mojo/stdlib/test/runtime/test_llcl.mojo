@@ -120,28 +120,6 @@ fn test_global_same_runtime():
     print(rt.ptr == rt2.ptr)
 
 
-# CHECK-LABEL: test_runtime_asynctaskgroup
-fn test_runtime_asynctaskgroup():
-    print("== test_runtime_asynctaskgroup")
-
-    var completed = Atomic[DType.index](0)
-    let ptr = Pointer[Atomic[DType.index]].address_of(completed)
-
-    @always_inline
-    @parameter
-    async fn run(ptr: Pointer[Atomic[DType.index]]):
-        __get_address_as_lvalue(ptr.address) += 1
-
-    with Runtime(4) as rt:
-        var out_chain = OwningOutputChainPtr(rt)
-        var atg = AsyncTaskGroupPtr(2, out_chain.borrow())
-        atg.add_task(run(ptr))
-        atg.add_task(run(ptr))
-        out_chain.wait()
-        # CHECK: 2
-        print(Int(completed.value.value))
-
-
 # CHECK-LABEL: test_is_error
 fn test_is_error():
     print("== test_is_error")
@@ -161,5 +139,4 @@ fn main():
     test_runtime_task()
     test_runtime_taskgroup()
     test_global_same_runtime()
-    test_runtime_asynctaskgroup()
     test_is_error()

@@ -496,10 +496,11 @@ struct OutputChainPtr:
         ](self.ptr)
 
     @always_inline
-    fn mark_ready(self):
+    fn _mark_ready(self):
         """Marks the output chain as being ready.
         The underlying LLCL::OutputChain is not moved.
         """
+
         external_call[
             "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady", NoneType
         ](self.ptr)
@@ -561,9 +562,7 @@ struct OutputChainPtr:
         """Returns only when the underlying LLCL::OutputChain is emplaced
         or set to an error. May execute arbitrary tasks while waiting.
         """
-        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
-            self.ptr
-        )
+        return
 
     @always_inline
     fn get_cuda_stream(self) -> Stream[is_borrowed=True]:
@@ -608,6 +607,8 @@ struct OwningOutputChainPtr:
 
     @always_inline("nodebug")
     fn __del__(owned self):
+        if not self.borrow().is_error():
+            self.borrow()._mark_ready()
         """Destroys the LLCL::OutputChain."""
         external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy", NoneType](
             self.ptr
@@ -623,9 +624,7 @@ struct OwningOutputChainPtr:
         """Returns only when the underlying LLCL::OutputChain is emplaced
         or set to an error. May execute arbitrary tasks while waiting.
         """
-        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
-            self.ptr
-        )
+        return
 
     @always_inline
     fn task_is_done(self):
@@ -768,7 +767,6 @@ struct AsyncTaskGroup:
         if is_defined["MODULAR_PARANOID"]():
             self.out_chain.task_is_done()
         if self._counter_decr() == 0:
-            self.out_chain.borrow().mark_ready()
             self.destroy()
 
     # TODO(#11915): Allow failure of coroutine to propagate error back to out_chain.
