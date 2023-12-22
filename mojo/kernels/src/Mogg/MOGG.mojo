@@ -747,8 +747,6 @@ fn broadcast_shape_impl[
         elif rhs_dim != 1:
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
-    out_chain.mark_ready()
-
 
 @mogg_register("mo.static.broadcast_to")
 @mogg_view_op
@@ -1157,7 +1155,6 @@ fn cumsum[
     _cumsum[rank, type, exclusive == 1, reverse == 1](
         output, input, normalize_neg_index(axis[0], rank)
     )
-    out_chain.mark_ready()
 
 
 # ===----------------------------------------------------------------------===#
@@ -1367,10 +1364,6 @@ fn pad_constant[
 
     _pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
 
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
-
 
 @mogg_register("mo.pad.reflect")
 @always_inline
@@ -1389,10 +1382,6 @@ fn pad_reflect[
     let paddings_ptr = paddings_buf.data
 
     _pad_reflect(output_buf, input_buf, paddings_ptr)
-
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
 
 
 # ===----------------------------------------------------------------------===#
@@ -2774,7 +2763,6 @@ fn random_normal[
     for i in range(len(shape)):
         num_elements *= shape[i].to_int()
     randn[type](output.data, num_elements, mean[0], variance[0])
-    out_chain.mark_ready()
 
 
 @export
@@ -2887,7 +2875,6 @@ fn roi_align[
         spatial_scale[0],
         sampling_ratio[0],
     )
-    out_chain.mark_ready()
 
 
 fn roi_align_shape[
@@ -3240,8 +3227,7 @@ fn mogg_layer_norm[
 fn mark_output_chain_ready(out_chain: OutputChainPtr):
     """Mark output chain as ready. If chain is already an error, the error is
     kept."""
-    if not out_chain.is_error():
-        out_chain.mark_ready()
+    pass
 
 
 # Helper function to query buffer shapes for tests.
@@ -3357,8 +3343,6 @@ fn gather_nd[
     _gather_nd[
         type, indices_type, data_rank, indices_rank, output_rank, batch_dims
     ](data, indices, output)
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
 
 
 # Wrappers that take `num_groups` as a parameter.
@@ -3646,10 +3630,6 @@ fn quantize_Q4sym_g8[
         input, output, input.dynamic_shape
     )
 
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
-
 
 @mogg_register_shape_func("quantize_Q4symG8")
 @always_inline
@@ -3680,10 +3660,6 @@ fn dequantize_Q4sym_g8[
         input, output, output.dynamic_shape
     )
 
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
-
 
 ######
 # Q4 -- group size 16
@@ -3701,10 +3677,6 @@ fn quantize_Q4sym_g16[
     Q4sym[16, input_type].quantize_and_write_to_tensor(
         input, output, input.dynamic_shape
     )
-
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
 
 
 @mogg_register_shape_func("quantize_Q4symG16")
@@ -3736,10 +3708,6 @@ fn dequantize_Q4sym_g16[
         input, output, output.dynamic_shape
     )
 
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
-
 
 ######
 # Q4 -- group size 32
@@ -3757,10 +3725,6 @@ fn quantize_Q4sym_g32[
     Q4sym[32, input_type].quantize_and_write_to_tensor(
         input, output, input.dynamic_shape
     )
-
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
 
 
 @mogg_register_shape_func("quantize_Q4symG32")
@@ -3791,10 +3755,6 @@ fn dequantize_Q4sym_g32[
     Q4sym[32, output_type].dequantize_and_write_to_tensor(
         input, output, output.dynamic_shape
     )
-
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
 
 
 @mogg_register("qmatmul_Af32_BTQ4symG32_Cf32")

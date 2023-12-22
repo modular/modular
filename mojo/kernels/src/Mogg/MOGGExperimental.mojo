@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Activations import relu
-from algorithm.functional import _elementwise_impl
 from math import sqrt
 from utils._annotations import *
 from MOGGIntList import IntList

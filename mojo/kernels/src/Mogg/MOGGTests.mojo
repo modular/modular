@@ -98,7 +98,6 @@ fn test_3D_in_out_lambda[
                 func_wrapper,
             ](tensor1.dim[2]())
 
-    out_chain.mark_ready()
     return output
 
 
@@ -219,9 +218,6 @@ fn test_unary_kernel[
 ):
     print("World!")
 
-    if not single_thread_blocking_override:
-        out_chain.mark_ready()
-
 
 @mogg_register_shape_func("test_custom_op")
 @always_inline
@@ -251,7 +247,6 @@ fn test_unary_kernel_params[
 ):
     print(extra_param)
     print(extra_param2)
-    out_chain.mark_ready()
 
 
 @mogg_register("tf.Identity")
