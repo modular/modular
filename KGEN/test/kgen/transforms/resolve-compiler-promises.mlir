@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -verify-parameters -resolve-compiler-promises -verify-parameters -o %t
+// RUN: kgen-opt %s -split-input-file -verify-parameters -resolve-compiler-promises -canonicalize -verify-parameters -o %t
 // RUN: cat %t | FileCheck %s --check-prefix=GONE
 // RUN: cat %t | FileCheck %s
 
@@ -45,11 +45,11 @@ kgen.func @inner() capturing {
 }
 
 // CHECK-LABEL: kgen.func @make_a_closure(%arg0: index)
-kgen.func @make_a_closure(%arg0: index) {
+kgen.func @make_a_closure(%arg0: index) -> !kgen.signature<()capturing -> ()> {
   pop.compiler.global_store "foobar", %arg0 : index
   // CHECK: create_closure[(index) capturing -> (): @capturing](%arg0)
-  kgen.create_closure[() capturing -> (): @capturing]()
-  kgen.return
+  %0 = kgen.create_closure[() capturing -> (): @capturing]()
+  kgen.return %0: !kgen.signature<()capturing -> ()>
 }
 
 // CHECK-LABEL: kgen.func @capturing(%arg0: index) capturing
@@ -145,13 +145,12 @@ kgen.func @my_capture() capturing {
 }
 
 // CHECK-LABEL: kgen.func @capture_list_create()
-kgen.func @capture_list_create() {
+kgen.func @capture_list_create() -> !capture_list_type {
   // CHECK-NOT: kgen.capture_list.create
-  // CHECK:      [[IDX8_0:%.*]] = index.constant 8
-  // CHECK-NEXT: [[IDX8_1:%.*]] = index.constant 8
-  // CHECK-NEXT: [[V0:%.*]] = pop.aligned_alloc [[IDX8_0]], [[IDX8_1]] : <struct<(index)>>
+  // CHECK-NEXT: [[IDX8:%.*]] = index.constant 8
+  // CHECK-NEXT: [[V0:%.*]] = pop.aligned_alloc [[IDX8]], [[IDX8]] : <struct<(index)>>
   %capture_list = kgen.capture_list.create : !capture_list_type
-  kgen.return
+  kgen.return %capture_list: !capture_list_type
 }
 
 // CHECK-LABEL: kgen.func @capture_list_expand(%arg0: !kgen.pointer<struct<(index)>>) {
