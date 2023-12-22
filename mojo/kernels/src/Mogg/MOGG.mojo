@@ -3379,7 +3379,12 @@ fn pack_conv_filter[
 @always_inline
 fn pack_conv_filter_shape[
     filter_type: DType,
-    WO: Int,
+    input_shape: DimList,
+    filter_shape: DimList,
+    output_shape: DimList,
+    strides: DimList,
+    dilations: DimList,
+    paddings: DimList,
     num_groups: Int,
     single_thread_blocking_override: Bool,
 ](
@@ -3390,7 +3395,12 @@ fn pack_conv_filter_shape[
 
     Parameters:
         filter_type: Type of the filter.
-        WO: Width dimension of the convolution output (-1 if unknown at compile time).
+        input_shape: NHWC layout.
+        filter_shape: Filter shape.
+        output_shape: NHWC layout.
+        strides: Should be rank 1 size 2.
+        dilations: Should be rank 1 size 2.
+        paddings: Should be rank 1 size 4.
         num_groups: The number of groups in the convolution.
         single_thread_blocking_override: Whether this function can block.
 
@@ -3402,13 +3412,13 @@ fn pack_conv_filter_shape[
     """
 
     @parameter
-    if WO == -1:
+    if output_shape.all_known[4]():
         return _pack_conv_filter_shape[
-            filter_type, single_thread_blocking_override
+            filter_type, output_shape.get[2](), single_thread_blocking_override
         ](filter_buf, num_groups)
     else:
         return _pack_conv_filter_shape[
-            filter_type, WO, single_thread_blocking_override
+            filter_type, single_thread_blocking_override
         ](filter_buf, num_groups)
 
 
