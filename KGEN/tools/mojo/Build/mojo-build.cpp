@@ -369,10 +369,10 @@ static int build(const State &state) {
 
   // Initialize the LLCL runtime. We don't allow users to configure runtime
   // options, such as the allocator or the work queue threading model.
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createRuntime();
 
-  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx =
+      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
@@ -382,7 +382,7 @@ static int build(const State &state) {
   // Lower the input file to an MLIR module.
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
-      state, args, options, &context, runtime,
+      state, args, options, &context, *runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_parsing_stdlib,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
@@ -394,7 +394,7 @@ static int build(const State &state) {
   // Compile the module to a static archive.
   BufferRef archive;
   if (std::optional<int> exitCode = compileModuleToArchive(
-          state, runtime, context, options, **moduleOp, target, archive))
+          state, *runtime, context, options, **moduleOp, target, archive))
     return *exitCode;
 
   // Link an executable from the archive.

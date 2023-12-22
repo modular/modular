@@ -11,51 +11,43 @@ using namespace M::LLCL;
 
 std::unique_ptr<Runtime>
 RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
-  // Create the allocator based on command line settings.
-  std::unique_ptr<Allocator> allocator;
+  RuntimeOptions runtimeOptions;
   switch (allocatorType) {
   case AllocatorType::kMalloc:
-    allocator = createMallocAllocator();
     break;
   case AllocatorType::kLeakChecker:
-    allocator = createLeakCheckAllocator(createMallocAllocator());
+    runtimeOptions.leakCheckedAllocator = true;
     break;
   case AllocatorType::kProfiler:
-    allocator = createProfilingAllocator(createMallocAllocator());
+    runtimeOptions.profilingAllocator = true;
     break;
   case AllocatorType::kUseAfterFree:
-#ifdef HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
-    allocator = createUseAfterFreeAllocator();
+#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+    runtimeOptions.useAfterFreeAllocator = true;
 #else
     llvm::errs() << "The use-after-free allocator is not available for this "
                     "target. Using the leak-checker runtime instead.";
-    allocator = createLeakCheckAllocator(createMallocAllocator());
+    runtimeOptions.leakCheckedAllocator = true;
 #endif
     break;
   }
-  // Create the WorkQueue based on command line settings.
-  std::unique_ptr<WorkQueue> workQueue;
   switch (getWorkQueueType()) {
   case WorkQueueType::kDefault:
     assert(0 && "should be resolved");
   case WorkQueueType::kSingleThread:
-    workQueue = createSingleThreadWorkQueue();
+    runtimeOptions.singleThreaded = true;
     break;
   case WorkQueueType::kThreadPool:
-    // Let the ThreadPoolWorkQueue decide on an appropriate number of threads
-    // if it is zero. It may be more sophisticated than getNumThreads().
-    workQueue = createThreadPoolWorkQueue(
-        numThreads,
-        /*mainWillDonate=*/true, std::chrono::microseconds(threadBusyWaitTime)
+    runtimeOptions.numThreads = numThreads;
+    runtimeOptions.threadBusyWaitTime =
+        std::chrono::microseconds(threadBusyWaitTime);
 #if MODULAR_PARANOID
-                                     ,
-        paranoid
+    runtimeOptions.paranoid = paranoid;
 #endif
-    );
     break;
   }
-  return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue),
-                                   profileName);
+  runtimeOptions.profileFilename = profileName;
+  return LLCL::createRuntime(runtimeOptions);
 }
 
 std::unique_ptr<Runtime> RuntimeCLOptions::createRuntime() const {

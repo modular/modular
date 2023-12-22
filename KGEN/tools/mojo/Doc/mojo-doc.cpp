@@ -76,10 +76,10 @@ static int doc(const State &state) {
 
   // We don't allow users to configure LLCL runtime options, such as the
   // allocator or the work queue threading model.
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createRuntime();
 
-  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx =
+      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
@@ -102,7 +102,7 @@ static int doc(const State &state) {
   mlir::MLIRContext context(registry);
 
   CompilationOptions compilationOptions;
-  LIT::ParserConfig parserConfig(&context, runtime, compilationOptions);
+  LIT::ParserConfig parserConfig(&context, *runtime, compilationOptions);
   parserConfig.warnMissingDocStrings =
       args.hasArg(options::OPT_warn_missing_dog_strings);
   if (args.hasArg(options::OPT_parsing_stdlib))

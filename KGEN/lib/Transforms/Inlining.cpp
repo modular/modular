@@ -903,9 +903,10 @@ void InlineParametricPass::runOnOperation() {
                         std::move(substTrivialFuncs));
 
   // Create a runtime instance if needed.
-  auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
-      runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
+  auto rt =
+      ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
+        return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug()).release();
+      });
 
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
@@ -1269,10 +1270,10 @@ void ForceInlinePass::runOnOperation() {
   CompilerTimeTraceScope traceScope("ForceInlinePass::runOnOperation");
 
   // Create a runtime instance if needed.
-  auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
-      runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
-
+  auto rt =
+      ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
+        return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug()).release();
+      });
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 

@@ -36,20 +36,20 @@ struct StringKeyInfo {
 
 class BlobCacheTest : public testing::Test {
 protected:
-  LLCL::Runtime runtime;
+  std::unique_ptr<LLCL::Runtime> runtime;
   RCRef<BlobCache<StringKeyInfo>> cache;
   BlobCacheTest()
-      : runtime(createLeakCheckAllocator(createMallocAllocator()),
-                createThreadPoolWorkQueue()),
+      : runtime(
+            createRuntime(LLCL::RuntimeOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
-            getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
+            getLocalDefaultBackendChain(*runtime, STRINGIFY(CACHE_TEST_DIR))
                 .takeValue())) {}
 };
 
 } // namespace
 
 TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
-  auto done = AsyncValueRef<Chain>::allocate(runtime);
+  auto done = AsyncValueRef<Chain>::allocate(*runtime);
   auto contains = cache->contains("does not exist");
   std::move(contains).andThenSync(
       [done = done.copy()](AsyncValueRef<bool> contains) mutable {
@@ -63,7 +63,7 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
 }
 
 TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
-  auto done = AsyncValueRef<Chain>::allocate(runtime);
+  auto done = AsyncValueRef<Chain>::allocate(*runtime);
   auto dneOr = cache->find("does not exist");
   std::move(dneOr).andThenSync(
       [done =
@@ -78,7 +78,7 @@ TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
 }
 
 TEST_F(BlobCacheTest, ContainItemWhenInserted) {
-  auto done = AsyncValueRef<Chain>::allocate(runtime);
+  auto done = AsyncValueRef<Chain>::allocate(*runtime);
 
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
@@ -115,7 +115,7 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto inserted = AsyncValueRef<Chain>::allocate(runtime);
+  auto inserted = AsyncValueRef<Chain>::allocate(*runtime);
   AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
   std::move(insertOr).andThenSync(
       [cache = cache.copy(), inserted = inserted.copy()](
@@ -136,7 +136,7 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
       });
   await(inserted);
 
-  auto found = AsyncValueRef<Chain>::allocate(runtime);
+  auto found = AsyncValueRef<Chain>::allocate(*runtime);
   auto zerosOr = cache->find("zeros");
   std::move(zerosOr).andThenSync(
       [zerosBuf = zerosBuf.copy(), found = found.copy()](
@@ -163,7 +163,7 @@ TEST_F(BlobCacheTest, FindItemWithMultiAPI) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto inserted = AsyncValueRef<Chain>::allocate(runtime);
+  auto inserted = AsyncValueRef<Chain>::allocate(*runtime);
   AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
   std::move(insertOr).andThenSync(
       [cache = cache.copy(), inserted = inserted.copy()](
@@ -184,7 +184,7 @@ TEST_F(BlobCacheTest, FindItemWithMultiAPI) {
       });
   await(inserted);
 
-  auto found = AsyncValueRef<Chain>::allocate(runtime);
+  auto found = AsyncValueRef<Chain>::allocate(*runtime);
   auto zerosOr = cache->find(ArrayRef<StringRef>{"zeros"});
   ASSERT_TRUE(zerosOr.contains(StringKeyInfo::hashKey("zeros")))
       << "did not have the expected key";
@@ -214,7 +214,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto inserted = AsyncValueRef<Chain>::allocate(runtime);
+  auto inserted = AsyncValueRef<Chain>::allocate(*runtime);
   AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
   std::move(insertOr).andThenSync(
       [cache = cache.copy(), inserted = inserted.copy()](
@@ -239,7 +239,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
   auto readBuf = WriteableBuffer::get(/*size=*/0, /*alignment=*/std::nullopt,
                                       /*capacity=*/32);
 
-  auto found = AsyncValueRef<Chain>::allocate(runtime);
+  auto found = AsyncValueRef<Chain>::allocate(*runtime);
   auto zerosOr = cache->find("zeros", readBuf.copy());
   std::move(zerosOr).andThenSync(
       [zerosBuf = zerosBuf.copy(), readBuf = std::move(readBuf),
@@ -275,7 +275,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
         zerosDataBuf->write(0);
         BufferRef zerosBuf = std::move(zerosDataBuf);
 
-        auto inserted = AsyncValueRef<Chain>::allocate(runtime);
+        auto inserted = AsyncValueRef<Chain>::allocate(*runtime);
         AsyncValueRef<std::string> insertOr =
             cache->insert(key, zerosBuf.copy());
         std::move(insertOr).andThenSync(
@@ -300,7 +300,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
         // Use await to make the sequencing easier to follow.
         await(inserted);
 
-        auto found = AsyncValueRef<Chain>::allocate(runtime);
+        auto found = AsyncValueRef<Chain>::allocate(*runtime);
         auto zerosOr = cache->find(key);
         std::move(zerosOr).andThenSync(
             [zerosBuf = zerosBuf.copy(), found = found.copy()](
@@ -325,7 +325,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
     for (auto &thread : threads)
       thread.join();
 
-    auto cleared = AsyncValueRef<Chain>::allocate(runtime);
+    auto cleared = AsyncValueRef<Chain>::allocate(*runtime);
     auto clearOr = cache->clear();
     std::move(clearOr).andThenSync([this, cache = cache.copy(),
                                     cleared = cleared.copy()](
@@ -335,7 +335,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
 
       std::vector<AnyAsyncValueRef> chains;
       for (int j = 0; j < numThreads; ++j) {
-        auto checkedContains = AsyncValueRef<Chain>::allocate(runtime);
+        auto checkedContains = AsyncValueRef<Chain>::allocate(*runtime);
         chains.emplace_back(checkedContains.copy());
         std::string key = "zeros" + std::to_string(j);
         auto contains = cache->contains(key);
@@ -373,7 +373,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
-      getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
+      getLocalDefaultBackendChain(*runtime, STRINGIFY(CACHE_TEST_DIR))
           .takeValue());
 
   // Check that the cache holds the new item, and it's the same data as before.
@@ -404,7 +404,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
-      getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
+      getLocalDefaultBackendChain(*runtime, STRINGIFY(CACHE_TEST_DIR))
           .takeValue());
 
   // Get a buffer to read into.
@@ -454,10 +454,10 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
 
   // Upon creating a new cache, all of the old versions on the filesystem
   // should be deleted.
-  LLCL::Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
-                        createThreadPoolWorkQueue());
+  std::unique_ptr<LLCL::Runtime> runtime =
+      LLCL::createRuntime(LLCL::RuntimeOptions().withLeakCheckedAllocator());
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
-      getLocalDefaultBackendChain(runtime, cacheDir).takeValue());
+      getLocalDefaultBackendChain(*runtime, cacheDir).takeValue());
   ASSERT_TRUE(!std::filesystem::exists(tempDirectory, ec))
       << "expected the temp directory to be deleted by cacheDir creation\n";
 }
@@ -492,9 +492,7 @@ static LLCL::EncodedLocation unknownLoc() {
 }
 
 static std::unique_ptr<Runtime> makeRuntime() {
-  return std::make_unique<Runtime>(
-      createLeakCheckAllocator(createMallocAllocator()),
-      createThreadPoolWorkQueue());
+  return LLCL::createRuntime(LLCL::RuntimeOptions().withLeakCheckedAllocator());
 }
 
 static RCRef<BlobCacheBackend> makeFilesytemBackend(Runtime &runtime) {

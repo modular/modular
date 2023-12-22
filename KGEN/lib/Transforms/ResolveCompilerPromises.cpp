@@ -367,9 +367,10 @@ void CallGraph::run() {
 void ResolveCompilerPromisesPass::runOnOperation() {
   CompilerTimeTraceScope traceScope(
       "ResolveCompilerPromisesPass::runOnOperation");
-  auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
-      runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
+  auto rt =
+      ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
+        return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug()).release();
+      });
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 

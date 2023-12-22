@@ -83,9 +83,8 @@ struct MojoTypeSystem::Impl {
     mlirContext.appendDialectRegistry(registry);
 
     // Configure the runtime.
-    runtime = std::make_unique<LLCL::Runtime>(
-        LLCL::createMallocAllocator(),
-        LLCL::createThreadPoolWorkQueue(0, /*mainWillDonate=*/false));
+    runtime =
+        LLCL::createRuntime(LLCL::RuntimeOptions().withMainWillNotDonate());
 
     // Compute the target information for the expression.
     compilationOptions.targetTriple = archSpec.GetTriple().str();

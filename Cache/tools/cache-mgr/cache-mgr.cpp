@@ -157,15 +157,14 @@ int main(int argc, char **argv) {
   CLOptions clOptions(argc, argv);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
-                  createThreadPoolWorkQueue());
+  std::unique_ptr<Runtime> runtime = createRuntime();
 
   auto backendPathOr = clOptions.getBackendPath();
   if (backendPathOr.isError())
     return clOptions.reportError(backendPathOr.getError());
 
-  auto backendChainOr =
-      getDefaultBackendChain(runtime, *backendPathOr, clOptions.backendVersion);
+  auto backendChainOr = getDefaultBackendChain(*runtime, *backendPathOr,
+                                               clOptions.backendVersion);
   if (backendChainOr.isError())
     return clOptions.reportError(backendChainOr.getError());
 
@@ -186,7 +185,7 @@ int main(int argc, char **argv) {
     std::string keyToFind =
         key.empty() ? BinaryBlobCacheKey::hashKey(*hash) : key;
     auto result = cache->find(keyToFind);
-    auto outCh = AsyncValueRef<BufferRef>::allocate(runtime);
+    auto outCh = AsyncValueRef<BufferRef>::allocate(*runtime);
     std::move(result).andThenSync(
         [outCh = outCh.copy(), input = Buffer::get(*hash)](
             AsyncValueRef<std::optional<BufferRef>> &&found) mutable {
@@ -222,7 +221,7 @@ int main(int argc, char **argv) {
         key.empty() ? BinaryBlobCacheKey::hashKey((*bufOr).copy()) : key;
     AsyncValueRef<std::string> outCh =
         putObjectsIntoCache(keyToWrite, (*bufOr).copy(), clOptions.input, cache,
-                            runtime, clOptions.outputHex);
+                            *runtime, clOptions.outputHex);
     await(outCh);
     if (outCh.isError()) {
       operationResult.getUnderlyingStorage().emplace<EncodedDiagnostic>(

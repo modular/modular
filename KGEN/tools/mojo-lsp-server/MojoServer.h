@@ -28,7 +28,7 @@ using OnResultFn = llvm::unique_function<void(T)>;
 /// separate from the logic that involves LSP server/client communication.
 class MojoServer {
 public:
-  MojoServer(std::unique_ptr<LLCL::WorkQueue> workQueue, bool waitOnShutdown,
+  MojoServer(bool singleThreaded, bool waitOnShutdown,
              SendDiagnosticsFn sendDiagnosticsFn, bool parseStdlib);
   ~MojoServer();
 

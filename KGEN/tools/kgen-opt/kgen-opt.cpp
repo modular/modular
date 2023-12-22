@@ -314,16 +314,15 @@ int main(int argc, char **argv) {
   KGEN::MOGGPreElab::registerSliceMOGGFuncs();
 
   // Register passes that require a runtime.
-  LLCL::Runtime runtime(
-      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createThreadPoolWorkQueue());
+  std::unique_ptr<LLCL::Runtime> runtime =
+      LLCL::createRuntime(LLCL::RuntimeOptions().withLeakCheckedAllocator());
   mlir::registerPass(
-      [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
-  mlir::registerPass([&] { return KGEN::createForceInline(runtime); });
-  mlir::registerPass([&] { return KGEN::createInlineParametric(runtime); });
-  mlir::registerPass([&] { return KGEN::createAutomaticInline(runtime); });
+      [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(*runtime); });
+  mlir::registerPass([&] { return KGEN::createForceInline(*runtime); });
+  mlir::registerPass([&] { return KGEN::createInlineParametric(*runtime); });
+  mlir::registerPass([&] { return KGEN::createAutomaticInline(*runtime); });
   mlir::registerPass(
-      [&] { return KGEN::createResolveCompilerPromises(runtime); });
+      [&] { return KGEN::createResolveCompilerPromises(*runtime); });
 
   // Register passes that require other arguments.
   mlir::registerPass([&] {

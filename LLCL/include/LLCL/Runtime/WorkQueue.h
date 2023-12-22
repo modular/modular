@@ -187,6 +187,9 @@ public:
   /// to be called from the same thread which created the WorkQueue.
   virtual void shutdown() = 0;
 
+  /// Returns the runtime for which this work queue is processing work items.
+  virtual CompactRuntimePtr getRuntime() const = 0;
+
 #if MODULAR_PARANOID
   /// Pushes use onto this thread's internal 'use stack'. When a task or local
   /// task is added with a null use in its WorkItem (the default),
@@ -212,15 +215,6 @@ public:
   virtual void taskIsDone() = 0;
 #endif
 
-  /// Associate all the threads managed by this work queue with the given
-  /// runtime.
-  ///
-  /// Generally must be called at most once. However for single-threaded
-  /// work queues this simply re-associates the callers thread with the given
-  /// runtime on the assumption only one such queue is active per 'main'
-  /// thread.
-  virtual void associateWithRuntime(CompactRuntimePtr runtime) = 0;
-
 protected:
   WorkQueue() = default;
   virtual void vtableAnchor();
@@ -230,7 +224,8 @@ protected:
 
 /// Creates a thread pool that only uses the host donor thread, involving no
 /// synchronization.
-std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
+std::unique_ptr<WorkQueue>
+createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr);
 
 /// Creates a thread pool able to distribute the execution of work items
 /// across numThreads.
@@ -261,10 +256,10 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// If in a MODULAR_PARANOID build, the paranoid flag can be used to inject
 /// random delays into work items to attempt to tickle race conditions.
 std::unique_ptr<WorkQueue>
-createThreadPoolWorkQueue(size_t numThreads = 0, bool mainWillDonate = true,
-                          std::chrono::microseconds threadBusyWaitTime = 200us,
-                          bool paranoid = false,
-                          std::string_view poolName = "🔥 Thread");
+createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, size_t numThreads,
+                          bool mainWillDonate,
+                          std::chrono::microseconds threadBusyWaitTime,
+                          std::string_view poolName, bool paranoid);
 
 } // namespace M::LLCL
 

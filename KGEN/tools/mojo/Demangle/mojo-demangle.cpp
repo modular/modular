@@ -64,11 +64,11 @@ static int demangle(const State &state) {
 
   // Initialize the LLCL runtime. We don't allow users to configure runtime
   // options, such as the allocator or the work queue threading model.
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createRuntime();
 
   // Initialize telemetry.
-  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx =
+      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args);
 
   // Initialize the MLIR context with all of KGEN's dialects.

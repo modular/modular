@@ -78,6 +78,15 @@ struct ConditionallyOwnedPointer {
                                      /*shouldDelete=*/true);
   }
 
+  /// Take ownership of ptr. This overload allows the user to allocate a
+  /// different type than `T` with the restriction that `U *` must be derived
+  /// from `T *`.
+  template <typename U>
+  static ConditionallyOwnedPointer take(U *ptr) {
+    static_assert(std::is_base_of_v<T, U>, "`U` must be derived from `T`");
+    return ConditionallyOwnedPointer(ptr, /*shouldDelete=*/true);
+  }
+
   /// Borrow the provided `T *`.
   static ConditionallyOwnedPointer borrow(T *ptr) {
     return ConditionallyOwnedPointer(ptr, /*shouldDelete=*/false);
@@ -106,6 +115,16 @@ struct ConditionallyOwnedPointer {
       return borrow(ptr);
 
     return allocate(std::forward<Args>(args)...);
+  }
+
+  /// If `ptr` is provided, do not allocate a new pointer and borrow it.
+  /// Otherwise, take ownership of the result of calling createFn.
+  static ConditionallyOwnedPointer takeIfNeeded(T *ptr,
+                                                std::function<T *()> createFn) {
+    if (ptr)
+      return borrow(ptr);
+
+    return take(createFn());
   }
 
   /// Only delete the pointer if it's owned by this class.

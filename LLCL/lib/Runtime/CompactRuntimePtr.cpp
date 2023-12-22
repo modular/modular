@@ -24,21 +24,27 @@ Detail::RuntimeTable::RuntimeTable() {
 }
 
 Runtime *Detail::RuntimeTable::getRuntime(uint8_t index) const {
-  /// CAUTION: Not using mutex, may not see side effects from other threads!
   assert(index != kInvalidIndex && "invalid Runtime index");
   assert(allRuntimes[index] != nullptr &&
          "no Runtime has been registered for index");
+  // NOTE: We are assuming the mutex lock will force all writes to allRuntimes
+  // to be flushed.
   return allRuntimes[index];
 }
 
-uint8_t Detail::RuntimeTable::addRuntime(Runtime *runtime) {
+uint8_t Detail::RuntimeTable::reserveIndex() {
   std::lock_guard<std::mutex> lock(mu);
   assert(!freeIndices.empty() && "too many Runtimes are currently active");
   auto index = freeIndices.pop_back_val();
   assert(allRuntimes[index] == nullptr &&
          "index is still occupied by a Runtime");
-  allRuntimes[index] = runtime;
   return index;
+}
+
+void Detail::RuntimeTable::setRuntime(uint8_t index, Runtime *runtime) {
+  // NOTE: Take the lock to ensure writes to allRuntimes are flushed.
+  std::lock_guard<std::mutex> lock(mu);
+  allRuntimes[index] = runtime;
 }
 
 void Detail::RuntimeTable::clearRuntime(uint8_t index) {

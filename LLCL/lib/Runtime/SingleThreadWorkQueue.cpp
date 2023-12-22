@@ -24,27 +24,10 @@ namespace {
 /// threads.
 class SingleThreadWorkQueue : public WorkQueue {
 public:
-  SingleThreadWorkQueue() {}
+  SingleThreadWorkQueue(CompactRuntimePtr runtimePtr)
+      : runtimePtr(runtimePtr) {}
 
-  void shutdown() override {
-#if MODULAR_PARANOID
-    WorkQueueState expected = kReady;
-    assert(state.compare_exchange_strong(expected, kShuttingDown));
-#endif
-
-    // Complete any work that's still in-flight.
-    while (auto workItem = workItems.dequeue()) {
-      doWork(std::move(workItem));
-    }
-
-    // Remove the association established by associateWithRuntime.
-    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
-
-#if MODULAR_PARANOID
-    expected = kShuttingDown;
-    assert(state.compare_exchange_strong(expected, kShutdown));
-#endif
-  }
+  void shutdown() override;
 
   ~SingleThreadWorkQueue() override {
     // Note we can't assert state == kShutdown since queue may be created
@@ -97,12 +80,7 @@ public:
 
   size_t getParallelismLevel() const override { return 1; }
 
-  void associateWithRuntime(CompactRuntimePtr runtime) override {
-    // TODO(#27927): Re-enable once ThreadPoolWorkQueue hangs understood.
-#if 0
-    CompactRuntimePtr::setCurrentRuntime(runtime);
-#endif
-  }
+  CompactRuntimePtr getRuntime() const override { return runtimePtr; }
 
 private:
   /// Execute blocks of work until stopPredicate is true, setting thread
@@ -130,6 +108,9 @@ private:
       workItem.task();
     }
 
+    // Clear the
+    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
+
 #if MODULAR_PARANOID
     {
       // Pop current use. It may already have been reset.
@@ -153,6 +134,8 @@ private:
 
   /// Pending work items.
   ConcurrentQueue<WorkItem> workItems;
+  /// The runtime for which we are processing work.
+  CompactRuntimePtr runtimePtr;
 
 #if MODULAR_PARANOID
   /// Protects useStack
@@ -162,6 +145,28 @@ private:
 #endif
 };
 } // namespace
+
+void SingleThreadWorkQueue::shutdown() {
+#if MODULAR_PARANOID
+  WorkQueueState expected = kReady;
+  assert(state.compare_exchange_strong(expected, kShuttingDown));
+#endif
+
+  // The work functions should see our runtime as the 'current' runtime.
+  CompactRuntimePtr::setCurrentRuntime(runtimePtr);
+
+  // Complete any work that's still in-flight.
+  while (auto workItem = workItems.dequeue()) {
+    doWork(std::move(workItem));
+  }
+
+  CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
+
+#if MODULAR_PARANOID
+  expected = kShuttingDown;
+  assert(state.compare_exchange_strong(expected, kShutdown));
+#endif
+}
 
 void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 #if MODULAR_PARANOID
@@ -191,7 +196,12 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 
 template <typename StopPredicateFn>
 void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
+  // The work functions should see our runtime as the 'current' runtime.
+  CompactRuntimePtr::setCurrentRuntime(runtimePtr);
+
   runUntilImpl(stopPredicate);
+
+  CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
 }
 
 /// Time to sleep while waiting for work in the work queue.
@@ -224,6 +234,7 @@ void SingleThreadWorkQueue::runUntilImpl(StopPredicateFn stopPredicate) {
   }
 }
 
-std::unique_ptr<WorkQueue> M::LLCL::createSingleThreadWorkQueue() {
-  return std::make_unique<SingleThreadWorkQueue>();
+std::unique_ptr<WorkQueue>
+M::LLCL::createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
+  return std::make_unique<SingleThreadWorkQueue>(runtimePtr);
 }
