@@ -12,6 +12,9 @@ from complex import ComplexSIMD
 ```
 """
 
+from builtin.io import _snprintf_kgen_scalar
+from builtin.string import _calc_initial_buffer_size, _vec_fmt
+
 from math import sqrt
 
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
@@ -41,7 +44,59 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         Returns:
             A string representation.
         """
-        return self
+
+        # Reserve space for opening and closing brackets, plus each element and
+        # its trailing commas.
+        var buf = String._buffer_type()
+        var initial_buffer_size = 2
+        for i in range(size):
+            initial_buffer_size += (
+                _calc_initial_buffer_size(self.re[i])
+                + _calc_initial_buffer_size(self.im[i])
+                + 4  # for the ' + i' suffix on the imaginary
+                + 2
+            )
+        buf.reserve(initial_buffer_size)
+
+        # Print an opening `[`.
+        @parameter
+        if size > 1:
+            buf.size += _vec_fmt(buf.data, 2, "[")
+        # Print each element.
+        for i in range(size):
+            let re = self.re[i]
+            let im = self.im[i]
+            # Print separators between each element.
+            if i != 0:
+                buf.size += _vec_fmt(buf.data + buf.size, 3, ", ")
+
+            buf.size += _snprintf_kgen_scalar[type](
+                rebind[Pointer[Int8]](buf.data + buf.size),
+                _calc_initial_buffer_size(re),
+                re.value,
+            )
+
+            if im != 0:
+                buf.size += _vec_fmt(buf.data + buf.size, 4, " + ")
+                buf.size += _snprintf_kgen_scalar[type](
+                    rebind[Pointer[Int8]](buf.data + buf.size),
+                    _calc_initial_buffer_size(im),
+                    im.value,
+                )
+                buf.size += _vec_fmt(buf.data + buf.size, 2, "i")
+
+            debug_assert(
+                buf.size <= initial_buffer_size,
+                "the buffer size exceed the initial buffer size",
+            )
+
+        # Print a closing `]`.
+        @parameter
+        if size > 1:
+            buf.size += _vec_fmt(buf.data + buf.size, 2, "]")
+
+        buf.size += 1  # for the null terminator.
+        return String(buf)
 
     @always_inline
     fn __add__(self, rhs: Self) -> Self:
