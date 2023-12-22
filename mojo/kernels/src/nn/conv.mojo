@@ -63,7 +63,7 @@ from memory.buffer import (
     partial_simd_store,
 )
 from memory.unsafe import DTypePointer
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import OutputChainPtr
 from ShapeFuncUtils import get_sliding_window_out_dim
 
 from utils.index import Index, StaticIntTuple
@@ -598,11 +598,7 @@ struct ConvDirectNHWC[
             instance._n_loop()
 
         if num_partitions[1] > 1:
-            # Finish the conv computation and sync at the end.
-            let runtime = out_chain.get_runtime()
-            let conv_chain = OwningOutputChainPtr(runtime)
-            sync_parallelize[task_func](conv_chain.borrow(), num_tasks)
-            conv_chain.wait()
+            sync_parallelize[task_func](out_chain, num_tasks)
 
             # Reduce from the output scratch buffer to the actual output.
             @parameter

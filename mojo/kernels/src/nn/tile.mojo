@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
+from runtime.llcl import OutputChainPtr, Runtime
 
 # TODO: This implementation supports up to 4 dimensions.
 

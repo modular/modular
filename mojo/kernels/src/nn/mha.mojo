@@ -211,7 +211,6 @@ fn fused_attention[
     @always_inline
     @parameter
     fn bmm_query_key[fuse_softmax: Bool]():
-        let score_chain = OwningOutputChainPtr(rt)
         batched_matmul[
             rank,
             q_type,
@@ -229,18 +228,15 @@ fn fused_attention[
             rebind[NDBuffer[rank, DimList.create_unknown[rank](), q_type]](q),
             rebind[NDBuffer[rank, DimList.create_unknown[rank](), k_type]](k),
             softmax_closure,
-            score_chain.borrow(),
+            out_chain,
         )
-        score_chain.wait()
 
     unswitch[bmm_query_key](softmax_fusable)
 
     if not softmax_fusable:
-        let softmax_chain = OwningOutputChainPtr(rt)
         softmax[score_type, simd_size, rank, DimList.create_unknown[rank]()](
-            score, score, rank - 1, softmax_chain.borrow()
+            score, score, rank - 1, out_chain
         )
-        softmax_chain.wait()
 
     @closure
     @always_inline
@@ -1371,7 +1367,7 @@ fn _naive_attention_with_transpose[
     o_perm[3] = 3
 
     with Runtime() as rt:
-        var chain = OwningOutputChainPtr(rt)
+        let chain = OwningOutputChainPtr(rt)
         try:
             transpose[
                 4,
@@ -1381,9 +1377,7 @@ fn _naive_attention_with_transpose[
             ](qt, q, q_perm.data, chain.borrow())
         except e:
             trap(e)
-        chain.wait()
 
-        chain = OwningOutputChainPtr(rt)
         try:
             transpose[
                 4,
@@ -1393,9 +1387,7 @@ fn _naive_attention_with_transpose[
             ](kt, k, k_perm.data, chain.borrow())
         except e:
             trap(e)
-        chain.wait()
 
-        chain = OwningOutputChainPtr(rt)
         try:
             transpose[
                 4,
@@ -1405,9 +1397,7 @@ fn _naive_attention_with_transpose[
             ](vt, v, q_perm.data, chain.borrow())
         except e:
             trap(e)
-        chain.wait()
 
-        chain = OwningOutputChainPtr(rt)
         _naive_attention[type, transpose_k](
             rebind[NDBuffer[4, DimList.create_unknown[4](), type]](ot),
             rebind[NDBuffer[4, DimList.create_unknown[4](), type]](qt),
@@ -1417,9 +1407,6 @@ fn _naive_attention_with_transpose[
             scale,
             chain.borrow(),
         )
-        chain.wait()
-
-        chain = OwningOutputChainPtr(rt)
         try:
             transpose[
                 4,
@@ -1429,7 +1416,7 @@ fn _naive_attention_with_transpose[
             ](output, ot, o_perm.data, chain.borrow())
         except e:
             trap(e)
-        chain.wait()
+        _ = chain ^
 
     qt_ptr.free()
     kt_ptr.free()
@@ -1468,16 +1455,12 @@ fn _naive_attention[
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
 
-    let rt = out_chain.get_runtime()
-
-    var chain = OwningOutputChainPtr(rt)
     batched_matmul[4, type, type, type, False, transpose_k](
         score,
         rebind[NDBuffer[4, DimList.create_unknown[4](), type]](q),
         rebind[NDBuffer[4, DimList.create_unknown[4](), type]](k),
-        chain.borrow(),
+        out_chain,
     )
-    chain.wait()
 
     @parameter
     @always_inline
@@ -1489,24 +1472,17 @@ fn _naive_attention[
         )
         score.simd_store[width](rebind[StaticIntTuple[4]](coords), vec)
 
-    chain = OwningOutputChainPtr(rt)
-    elementwise[4, simd_size, scale_and_mask](
-        score.dynamic_shape, chain.borrow()
-    )
+    elementwise[4, simd_size, scale_and_mask](score.dynamic_shape, out_chain)
 
-    _ = chain ^
-
-    chain = OwningOutputChainPtr(rt)
     try:
         softmax[type, simd_size, 4, DimList.create_unknown[4]()](
             score,
             score,
             3,
-            chain.borrow(),
+            out_chain,
         )
     except e:
         trap(e)
-    chain.wait()
 
     batched_matmul[4, type, type, type, False, False](
         rebind[NDBuffer[4, DimList.create_unknown[4](), type]](output),
