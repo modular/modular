@@ -56,7 +56,7 @@ from memory.buffer import (
     partial_simd_store,
 )
 from memory.unsafe import DTypePointer, bitcast
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import OutputChainPtr
 from Transpose import transpose_inplace
 from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 from Neon import _neon_matmul, _neon_dotprod
@@ -3275,9 +3275,6 @@ fn matmul[
 
     @parameter
     if single_thread_blocking_override:
-        # Any error thrown by this kernel will get swallowed by this chain.
-        # (It doesn't presently have any _mark_error_old's)
-        let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
         matmul[
             a_type,
             a_shape,
@@ -3291,8 +3288,7 @@ fn matmul[
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
             saturated_vnni,
-        ](c, a, b, new_chain.borrow(), num_threads)
-        new_chain.wait()
+        ](c, a, b, out_chain, num_threads)
     else:
         matmul[
             a_type,
@@ -3544,11 +3540,8 @@ fn matmul[
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
         # See issue 27734
         if use_i8mm and m < n:
-            let runtime = out_chain.get_runtime()
-            let pack_chain = OwningOutputChainPtr(runtime)
-            sync_parallelize[pack_task_func](pack_chain.borrow(), num_tasks)
+            sync_parallelize[pack_task_func](out_chain, num_tasks)
             # Ensure that pack_chain is not destructed until sync_parallelize is finished.
-            _ = pack_chain ^
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive

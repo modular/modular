@@ -25,7 +25,7 @@ from MatmulUtils import (
 )
 from memory import memset_zero
 from memory.buffer import NDBuffer
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import OutputChainPtr
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
@@ -263,7 +263,6 @@ fn batched_matmul[
     if single_thread_blocking_override and target == "cpu":
         # Any error thrown by this kernel will get swallowed by this chain.
         # (It doesn't presently have any _mark_error_old's)
-        let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
         batched_matmul[
             rank,
             a_type,
@@ -276,8 +275,7 @@ fn batched_matmul[
             rowwise_epilogue_enabled=False,
             saturated_vnni=saturated_vnni,
             target=target,
-        ](c_buf, a_buf, b_buf, null_rowwise_epilogue, new_chain.borrow())
-        new_chain.wait()
+        ](c_buf, a_buf, b_buf, null_rowwise_epilogue, out_chain)
     else:
         batched_matmul[
             rank,
