@@ -68,7 +68,8 @@ static void genSubcommandsSection(raw_ostream &os,
 
   os << "## Commands\n\n";
   for (const llvm::Record *sub : subcommands)
-    os << '`' << sub->getValueAsString("subcommand") << "` — "
+    os << "[`" << sub->getValueAsString("subcommand") << "`]("
+       << sub->getValueAsString("subcommand") << ".md) — "
        << sub->getValueAsString("summary") << "\n\n";
 }
 

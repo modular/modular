@@ -24,7 +24,7 @@ def : CommandDescription<
   ]>;
 
 // CHECK: ## Commands
-// CHECK: `subcommand` — Test that subcommands are output in Markdown
+// CHECK: [`subcommand`](subcommand.md) — Test that subcommands are output in Markdown
 def : CommandDescription<
   "driver-tblgen-test", "subcommand",
   "Test that subcommands are output in Markdown.",
