@@ -76,16 +76,15 @@ func.func private @someFunc() {
 )";
 
 TEST(CachedTransformTest, CacheHits) {
-  Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
-                  createSingleThreadWorkQueue());
+  std::unique_ptr<Runtime> runtime = createRuntime(RuntimeOptions().forDebug());
   std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
   auto regionBackendChainOr =
-      getLocalDefaultBackendChain(runtime, cacheTestPath / "region");
+      getLocalDefaultBackendChain(*runtime, cacheTestPath / "region");
   EXPECT_FALSE(failed(regionBackendChainOr));
   auto regionCache = RCRef<BlobCache<RegionCacheKey>>::create(
       regionBackendChainOr.takeValue());
   auto transformBackendChainOr =
-      getLocalDefaultBackendChain(runtime, cacheTestPath / "xform");
+      getLocalDefaultBackendChain(*runtime, cacheTestPath / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
   auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());
@@ -102,7 +101,7 @@ TEST(CachedTransformTest, CacheHits) {
   pm.addNestedPass<func::FuncOp>(std::make_unique<TestPass>(&actuallyRun));
 
   auto readyChain =
-      AsyncValueRef<LogicalResult>::createReady(runtime, mlir::success());
+      AsyncValueRef<LogicalResult>::createReady(*runtime, mlir::success());
 
   // Parse the source string
   mlir::OwningOpRef<ModuleOp> module1 =

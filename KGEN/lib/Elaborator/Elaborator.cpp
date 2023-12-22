@@ -2662,10 +2662,11 @@ public:
   }
 
   void runOnOperation() override {
-    auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
-        runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-        LLCL::createSingleThreadWorkQueue());
-
+    auto rt =
+        ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
+          return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug())
+              .release();
+        });
     ModuleOp theModule = getOperation();
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();

@@ -40,11 +40,13 @@ class WorkQueue;
 /// context objects. This is also the natural unit for task cancellation.
 class Runtime final {
 public:
-  /// Construct runtime with allocator and workQueue.
+  /// Construct runtime with the already reserved runtimePtr, and already
+  /// created allocator and workQueue. The work queue must have been constructed
+  /// with the same runtimePtr.
   ///
   /// If profileFilename is non-empty then time profiling will be activated
-  /// and the profile JSON will be written to files with that prefix.
-  Runtime(std::unique_ptr<Allocator> allocator,
+  /// and the profile JSON and text will be written to files with that prefix.
+  Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
           std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {});
   ~Runtime();
 
@@ -183,6 +185,61 @@ private:
   friend void checkUniqueRuntime(const Runtime &runtime);
   friend void checkKnownCallingThread(const Runtime &runtime);
 };
+
+/// Collects all the options which influence a runtime.
+struct RuntimeOptions {
+  size_t numThreads = 0;
+  bool singleThreaded = false;
+  StringRef profileFilename = {};
+  bool mainWillDonate = true;
+  std::chrono::microseconds threadBusyWaitTime = 200us;
+  std::string_view poolName = "🔥 Thread";
+  bool paranoid = false;
+  bool leakCheckedAllocator = false;
+  bool profilingAllocator = false;
+  bool useAfterFreeAllocator = false;
+
+  RuntimeOptions &forDebug() {
+    singleThreaded = true;
+    leakCheckedAllocator = true;
+    return *this;
+  }
+
+  RuntimeOptions &withMainWillNotDonate(bool mainWillNotDonate = true) {
+    this->mainWillDonate = !mainWillNotDonate;
+    return *this;
+  }
+
+  RuntimeOptions &
+  withLeakCheckedAllocator(bool newLeakCheckedAllocator = true) {
+    leakCheckedAllocator = newLeakCheckedAllocator;
+    return *this;
+  }
+
+  RuntimeOptions &withProfilingAllocator(bool newProfilingAllocator = true) {
+    profilingAllocator = newProfilingAllocator;
+    return *this;
+  }
+
+  RuntimeOptions &withSingleThreaded(bool newSingleThreaded = true) {
+    singleThreaded = newSingleThreaded;
+    return *this;
+  }
+
+  RuntimeOptions &withNumThreads(size_t newNumThreads) {
+    numThreads = newNumThreads;
+    return *this;
+  }
+
+  RuntimeOptions &withProfileFilename(StringRef newProfileFilename) {
+    profileFilename = newProfileFilename;
+    return *this;
+  }
+};
+
+/// Creates a runtime with the given options.
+std::unique_ptr<Runtime>
+createRuntime(const RuntimeOptions &options = RuntimeOptions());
 
 /// In debug builds, assert the given runtime's 'signature' agrees with what
 /// the host's idea of signature for its dynamic library / executable.

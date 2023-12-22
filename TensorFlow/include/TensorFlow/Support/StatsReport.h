@@ -28,8 +28,7 @@ namespace M::TF {
 struct StatsReport {
   explicit StatsReport(llvm::StringRef name)
       : name(name), numTotalOps(0), numFallbackOps(0) {
-    runtime = std::make_unique<LLCL::Runtime>(
-        LLCL::createMallocAllocator(), LLCL::createThreadPoolWorkQueue());
+    runtime = LLCL::createRuntime();
     runtime->emplaceContext<Telemetry::TelemetryContext>();
   }
 

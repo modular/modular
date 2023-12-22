@@ -155,10 +155,11 @@ KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
                                               ssize_t profileFilenameLen) {
   StringRef profileFilename{profileFilenamePtr,
                             static_cast<size_t>(profileFilenameLen)};
-  auto *runtime =
-      new Runtime(createLeakCheckAllocator(createMallocAllocator()),
-                  createThreadPoolWorkQueue(numThreads), profileFilename);
-  return wrap(runtime);
+  std::unique_ptr<Runtime> runtime =
+      createRuntime(RuntimeOptions()
+                        .withNumThreads(numThreads)
+                        .withProfileFilename(profileFilename));
+  return wrap(runtime.release());
 }
 
 /// Create an LLCL runtime and return its pointer.

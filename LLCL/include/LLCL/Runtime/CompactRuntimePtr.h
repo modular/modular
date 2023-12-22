@@ -31,14 +31,16 @@ namespace Detail {
 /// Global singleton which maintains the runtime index to runtime map.
 class RuntimeTable {
 public:
-  /// Returns runtime with given index, which must have already been added.
-  ///
-  /// CAUTION: Currently not guaranteed to see the results of {add,clear}Runtime
-  /// from other threads!
+  /// Returns runtime with given index, which must have already been added or
+  /// registered.
   Runtime *getRuntime(uint8_t index) const;
 
-  /// Registers runtime and returns its unique index.
-  uint8_t addRuntime(Runtime *runtime);
+  /// Reserves an index for a runtime, returning the index. The actual runtime
+  /// must be set by setRuntime() below once known.
+  uint8_t reserveIndex();
+
+  /// Sets the runtime for the already reserved index.
+  void setRuntime(uint8_t index, Runtime *runtime);
 
   /// Unregistered the runtime with the given index.
   void clearRuntime(uint8_t index);
@@ -79,6 +81,11 @@ public:
   CompactRuntimePtr(const CompactRuntimePtr &) = default;
   CompactRuntimePtr &operator=(const CompactRuntimePtr &) = default;
 
+  static CompactRuntimePtr reserve() {
+    return CompactRuntimePtr(
+        Detail::RuntimeTable::getSingleton().reserveIndex());
+  }
+
   // Implicitly convert Runtime* to CompactRuntimePtr.
   /*implicit*/ CompactRuntimePtr(Runtime *runtime);
   /*implicit*/ CompactRuntimePtr(Runtime &runtime)
@@ -101,6 +108,8 @@ public:
   explicit operator bool() const {
     return index != Detail::RuntimeTable::kInvalidIndex;
   }
+
+  bool operator==(CompactRuntimePtr that) const { return index == that.index; }
 
   /// We implicitly convert to Runtime& since we are used interchangably with
   /// it.

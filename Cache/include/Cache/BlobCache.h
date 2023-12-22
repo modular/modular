@@ -379,10 +379,11 @@ public:
     auto uriOr = URI::parse(cacheDir);
     if (uriOr.isError())
       return uriOr.takeError();
-    ownedRuntime = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
-        optExistingRuntime,
-        LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-        LLCL::createSingleThreadWorkQueue());
+    ownedRuntime = ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
+        optExistingRuntime, []() {
+          return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug())
+              .release();
+        });
     auto backendList =
         getDefaultBackendChain(*ownedRuntime, *uriOr, std::move(version));
     if (backendList.isError())

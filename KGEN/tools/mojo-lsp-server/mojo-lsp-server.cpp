@@ -92,12 +92,6 @@ int main(int argc, char **argv) {
     prettyPrint = true;
   }
 
-  // Create the work queue used for processing files. When testing, use a single
-  // thread to provide deterministic output.
-  std::unique_ptr<LLCL::WorkQueue> workQueue =
-      mojoTest ? LLCL::createSingleThreadWorkQueue()
-               : LLCL::createThreadPoolWorkQueue(0, /*mainWillDonate=*/false);
-
   // Wait for the server to shutdown when testing.
   bool waitOnShutdown = mojoTest;
 
@@ -126,6 +120,7 @@ int main(int argc, char **argv) {
   }
 
   // Start the server.
-  return failed(runMojoLSPServer(transport, std::move(workQueue),
+  // When testing we use a single thread to provide deterministic output.
+  return failed(runMojoLSPServer(transport, /*singleThreaded=*/mojoTest,
                                  waitOnShutdown, parseStdlib));
 }

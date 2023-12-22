@@ -545,10 +545,9 @@ static int package(const State &state) {
   if (auto err = parsePackageArgs(state, args, sourceMgr, packageArgs))
     return state.reportError(err.getError());
 
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
-
-  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createRuntime();
+  auto &telemetryCtx =
+      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
@@ -571,7 +570,7 @@ static int package(const State &state) {
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &packageArgs.ctx);
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
+      state, args, packageArgs.compileOptions, &packageArgs.ctx, *runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_parsing_stdlib,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
@@ -586,7 +585,7 @@ static int package(const State &state) {
 
   // Build the package from the inputs we just parsed, and write the output to
   // `out`.
-  auto builtOrErr = buildPackage(packageArgs, **module, packageOp, runtime);
+  auto builtOrErr = buildPackage(packageArgs, **module, packageOp, *runtime);
   if (failed(builtOrErr))
     return state.reportError(builtOrErr.getError());
   auto [builtModule, builtPackage] = builtOrErr.takeValue();

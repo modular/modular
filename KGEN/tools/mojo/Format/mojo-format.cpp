@@ -57,11 +57,11 @@ static int format(const State &state) {
 
   // Initialize the LLCL runtime. We don't allow users to configure runtime
   // options, such as the allocator or the work queue threading model.
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
+  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createRuntime();
 
   // Initialize telemetry.
-  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx =
+      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args);
 
   // Check that the inputs are all valid Mojo/Python files, or directories.

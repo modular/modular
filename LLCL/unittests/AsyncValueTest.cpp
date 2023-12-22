@@ -27,14 +27,12 @@ class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
   std::unique_ptr<Runtime> createRuntime(int numThreads = 4,
                                          bool mainWillDonate = true) {
-    std::unique_ptr<Allocator> allocator =
-        createLeakCheckAllocator(createMallocAllocator());
-    std::unique_ptr<WorkQueue> workQueue =
-        GetParam() == kThreadPool
-            ? createThreadPoolWorkQueue(numThreads, mainWillDonate)
-            : createSingleThreadWorkQueue();
-    return std::make_unique<Runtime>(std::move(allocator),
-                                     std::move(workQueue));
+    RuntimeOptions runtimeOptions;
+    runtimeOptions.leakCheckedAllocator = true;
+    runtimeOptions.singleThreaded = GetParam() == kSingleThread;
+    runtimeOptions.numThreads = numThreads;
+    runtimeOptions.mainWillDonate = mainWillDonate;
+    return M::LLCL::createRuntime(runtimeOptions);
   }
 };
 

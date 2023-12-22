@@ -41,20 +41,19 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 // Runtime
 //===----------------------------------------------------------------------===//
 
-Runtime::Runtime(std::unique_ptr<Allocator> allocator,
+Runtime::Runtime(CompactRuntimePtr runtimePtr,
+                 std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
                  StringRef profileFilename)
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
-      profileFilename(profileFilename),
-      runtimeIndex(Detail::RuntimeTable::getSingleton().addRuntime(this)),
+      profileFilename(profileFilename), runtimeIndex(runtimePtr.index),
       readyChain(createReadyChain(*this)) {
-  // Tie the knot between the work queue threads (if any) and this runtime.
-  // Note that we could instead pre-allocate the current runtime's compact
-  // runtime pointer index, require the caller to pass that into the work queue
-  // creator, then adopt that index here, being careful to release the index
-  // should something go wrong. That sounds fiddly.
-  this->workQueue->associateWithRuntime(CompactRuntimePtr(runtimeIndex));
+  assert(this->workQueue->getRuntime() == runtimePtr &&
+         "mismatched CompactRuntimePtrs");
+
+  // Establish association of runtime to runtime index.
+  Detail::RuntimeTable::getSingleton().setRuntime(runtimePtr.index, this);
 
   // NOTE: Users can't pass in profileFilename AND activate the time
   // profiler in the caller.
@@ -71,6 +70,8 @@ Runtime::~Runtime() {
 
   // Clear cancellation value if present.
   restartFromCancellation();
+
+  // Remove association of runtime to runtime index.
   Detail::RuntimeTable::getSingleton().clearRuntime(runtimeIndex);
 
   // We're done with profiling.
@@ -107,4 +108,28 @@ void Runtime::restartFromCancellation() {
   AsyncValue *value = cancelValue.exchange(nullptr, std::memory_order_acq_rel);
   // Deallocate the value.
   AnyAsyncValueRef::take(value);
+}
+
+std::unique_ptr<Runtime> M::LLCL::createRuntime(const RuntimeOptions &options) {
+  CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
+#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+  std::unique_ptr<Allocator> allocator = options.useAfterFreeAllocator
+                                             ? createUseAfterFreeAllocator()
+                                             : createMallocAllocator();
+#else
+  std::unique_ptr<Allocator> allocator = createMallocAllocator();
+#endif
+  if (options.leakCheckedAllocator)
+    allocator = createLeakCheckAllocator(std::move(allocator));
+  if (options.profilingAllocator)
+    allocator = createProfilingAllocator(std::move(allocator));
+  std::unique_ptr<WorkQueue> workQueue =
+      options.singleThreaded
+          ? createSingleThreadWorkQueue(runtimePtr)
+          : createThreadPoolWorkQueue(
+                runtimePtr, options.numThreads, options.mainWillDonate,
+                options.threadBusyWaitTime, options.poolName, options.paranoid);
+  return std::make_unique<Runtime>(runtimePtr, std::move(allocator),
+                                   std::move(workQueue),
+                                   options.profileFilename);
 }

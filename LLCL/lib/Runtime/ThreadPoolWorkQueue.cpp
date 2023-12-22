@@ -110,8 +110,9 @@ struct SharedThreadState {
   static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
 
-  SharedThreadState(bool mainWillDonate, bool paranoid, size_t numWorkers)
-      : mainWillDonate(mainWillDonate)
+  SharedThreadState(CompactRuntimePtr runtimePtr, bool mainWillDonate,
+                    bool paranoid, size_t numWorkers)
+      : runtimePtr(runtimePtr), mainWillDonate(mainWillDonate)
 #if MODULAR_PARANOID
         ,
         paranoid(paranoid)
@@ -124,6 +125,10 @@ struct SharedThreadState {
                   std::log2(numWorkers / static_cast<float>(bitVectorWidth))))
             : 0;
   }
+
+  /// The runtime on behalf of which the 'worker' and 'main' threads are doing
+  /// work.
+  CompactRuntimePtr runtimePtr;
 
   /// If true, the 'main' thread which constructed the work queue is going to
   /// call await to donate itself as another worker alongside the
@@ -426,6 +431,9 @@ void WorkQueueThread::runOnThread() {
   // when re-entering.
   workerIDInTLS = workerID;
 
+  // Set the current runtime in thread local storage.
+  CompactRuntimePtr::setCurrentRuntime(sharedState.runtimePtr);
+
   // Capture the worker's thread id so we can distinguish worker threads
   // from different work queues.
   threadID = llvm::get_threadid();
@@ -458,12 +466,18 @@ void WorkQueueThread::runItemsOnOwningThread(
     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
     StringLiteral spinningLabel, StringLiteral sleepingLabel) {
   if (sharedState.mainWillDonate && workerID == 0) {
+    // The work functions run by the 'main' thread should see our runtime as
+    // the 'current' runtime.
+    CompactRuntimePtr::setCurrentRuntime(sharedState.runtimePtr);
+
     // Temporarily set the main thread's affinity while it is processing work.
     LLCL::runWithThreadAffinity(cpuID, [&]() {
       runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
           earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
           sleepingLabel);
     });
+
+    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
   } else {
     runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
         earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
@@ -654,7 +668,8 @@ public:
   /// thread per entry in cpuIDs. By the time the constructor finishes, all
   /// the worker threads have started and shall only be cancelled by the
   /// destructor.
-  ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
+  ThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
+                      const std::vector<size_t> &cpuIDs,
                       size_t taskListCapacity, bool mainWillDonate,
                       std::chrono::microseconds threadBusyWaitTime,
                       bool paranoid, std::string_view poolName);
@@ -662,6 +677,10 @@ public:
   ~ThreadPoolWorkQueue() override;
 
   void shutdown() override;
+
+  CompactRuntimePtr getRuntime() const override {
+    return sharedState.runtimePtr;
+  }
 
   void addTask(WorkItem &&workItem, int taskId = -1) override;
 
@@ -702,8 +721,6 @@ public:
       callerWorker->useStack.back().reset();
   }
 #endif
-
-  void associateWithRuntime(CompactRuntimePtr runtime) override;
 
 private:
   /// If the caller is a worker thread or the 'main' thread for this work queue
@@ -757,11 +774,12 @@ private:
 } // namespace
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(
-    const std::vector<size_t> &cpuIDs, size_t taskListCapacity,
-    bool mainWillDonate, std::chrono::microseconds threadBusyWaitTime,
-    bool paranoid, std::string_view poolName)
+    CompactRuntimePtr runtimePtr, const std::vector<size_t> &cpuIDs,
+    size_t taskListCapacity, bool mainWillDonate,
+    std::chrono::microseconds threadBusyWaitTime, bool paranoid,
+    std::string_view poolName)
     : numWorkers(cpuIDs.size()),
-      sharedState(mainWillDonate, paranoid, numWorkers),
+      sharedState(runtimePtr, mainWillDonate, paranoid, numWorkers),
       taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
 
@@ -843,12 +861,6 @@ void ThreadPoolWorkQueue::shutdown() {
   // Join all the threads when they shut down cleanly.
   for (size_t i = 0; i < numWorkers; ++i)
     workers[i].join();
-
-  if (sharedState.mainWillDonate) {
-    // Remove the association for the main thread established by
-    // associateWithRuntime.
-    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr());
-  }
 
 #if MODULAR_PARANOID
   expected = kShuttingDown;
@@ -1088,35 +1100,15 @@ bool ThreadPoolWorkQueue::callerIsForeign() const {
   return getOwningWorkQueueThread() == nullptr;
 }
 
-void ThreadPoolWorkQueue::associateWithRuntime(CompactRuntimePtr runtime) {
-  // TODO(#27927): Re-enable once ThreadPoolWorkQueue hangs understood.
-#if 0
-  // Ask each worker to set the current runtime.
-  std::vector<AnyAsyncValueRef> chains;
-  chains.reserve(numWorkers);
-  for (size_t workerId = 0; workerId < numWorkers; ++workerId) {
-    const AnyAsyncValueRef &chain =
-        chains.emplace_back(AsyncValueRef<Chain>::allocate(runtime));
-    addTask(
-        [runtime, chain = chain.copy()]() mutable {
-          CompactRuntimePtr::setCurrentRuntime(runtime);
-          std::move(chain).emplace<Chain>();
-        },
-        workerId);
-  }
-  // Wait for all of the above to complete.
-  await(chains);
-#endif
-}
-
 //===----------------------------------------------------------------------===//
 // createThreadPoolWorkQueue entrypoint
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue>
-M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
+M::LLCL::createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
+                                   size_t numThreads, bool mainWillDonate,
                                    std::chrono::microseconds threadBusyWaitTime,
-                                   bool paranoid, std::string_view poolName) {
+                                   std::string_view poolName, bool paranoid) {
 
 #if MODULAR_PARANOID
 #ifdef NDEBUG
@@ -1156,12 +1148,12 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
         << "), possibly since ignoring hyperthreading and other sockets.\n");
 
   size_t taskListCapacity =
-      std::max(kMinTaskListCapacity, numThreads * kTaskListSlotsPerThread);
+      std::max(kMinTaskListCapacity, cpuIDs.size() * kTaskListSlotsPerThread);
   LLVM_DEBUG(llvm::dbgs()
              << "createThreadPoolWorkQueue: Task list has capacity of at least "
              << taskListCapacity << " slots.\n");
 
   return std::make_unique<ThreadPoolWorkQueue>(
-      cpuIDs, taskListCapacity, mainWillDonate, threadBusyWaitTime, paranoid,
-      poolName);
+      runtimePtr, cpuIDs, taskListCapacity, mainWillDonate, threadBusyWaitTime,
+      paranoid, poolName);
 }

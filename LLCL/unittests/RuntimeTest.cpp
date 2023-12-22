@@ -36,11 +36,7 @@ struct ContextC {
 };
 
 std::unique_ptr<Runtime> createRuntime() {
-  std::unique_ptr<Allocator> allocator =
-      createLeakCheckAllocator(createMallocAllocator());
-  std::unique_ptr<WorkQueue> workQueue = createSingleThreadWorkQueue();
-  return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue),
-                                   /*profileFilename=*/"");
+  return LLCL::createRuntime(LLCL::RuntimeOptions().forDebug());
 }
 
 TEST(RuntimeTest, Contexts) {

@@ -1751,10 +1751,10 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 struct MojoServer::Impl {
-  Impl(std::unique_ptr<LLCL::WorkQueue> workQueue, bool waitOnShutdown,
+  Impl(bool singleThreaded, bool waitOnShutdown,
        SendDiagnosticsFn sendDiagnosticsFn, bool parseStdlib)
-      : runtime(std::make_unique<LLCL::Runtime>(LLCL::createMallocAllocator(),
-                                                std::move(workQueue))),
+      : runtime(LLCL::createRuntime(
+            LLCL::RuntimeOptions().withSingleThreaded(singleThreaded))),
         waitOnShutdown(waitOnShutdown),
         sendDiagnosticsFn(std::move(sendDiagnosticsFn)),
         parseStdlib(parseStdlib) {}
@@ -1819,10 +1819,9 @@ struct MojoServer::Impl {
 // MojoServer
 //===----------------------------------------------------------------------===//
 
-MojoServer::MojoServer(std::unique_ptr<LLCL::WorkQueue> workQueue,
-                       bool waitOnShutdown, SendDiagnosticsFn sendDiagnosticsFn,
-                       bool parseStdlib)
-    : impl(std::make_unique<Impl>(std::move(workQueue), waitOnShutdown,
+MojoServer::MojoServer(bool singleThreaded, bool waitOnShutdown,
+                       SendDiagnosticsFn sendDiagnosticsFn, bool parseStdlib)
+    : impl(std::make_unique<Impl>(singleThreaded, waitOnShutdown,
                                   std::move(sendDiagnosticsFn), parseStdlib)) {}
 MojoServer::~MojoServer() { shutdown(); }
 

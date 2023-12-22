@@ -23,10 +23,9 @@ int main(int argc, char **argv) {
                   Cache::CacheDialect>();
   mlir::registerCanonicalizer();
 
-  Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
-                  createSingleThreadWorkQueue());
+  std::unique_ptr<Runtime> runtime = createRuntime(RuntimeOptions().forDebug());
 
-  Cache::registerCachePasses(runtime);
+  Cache::registerCachePasses(*runtime);
 
   return failed(mlir::MlirOptMain(argc, argv, "cache-opt", registry));
 }
