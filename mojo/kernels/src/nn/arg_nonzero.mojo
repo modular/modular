@@ -45,7 +45,6 @@ fn arg_nonzero[
     with Trace[TraceLevel.OP]("mojo.arg_nonzero") as t:
         let numel = input_buffer.dynamic_shape.flattened_length()
         if numel == 0:
-            out_chain.mark_ready()
             return
 
         var j: Int = 0
@@ -63,8 +62,6 @@ fn arg_nonzero[
                 for k in range(rank):
                     out_indices[1] = k
                     output_buffer[out_indices] = indices[k]
-
-        out_chain.mark_ready()
 
 
 # Where has the shape 2D shape [NumNonZeros, InputRank]

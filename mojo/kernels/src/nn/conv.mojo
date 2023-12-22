@@ -2560,7 +2560,6 @@ fn pack_conv_filter[
         out_chain: Chain to signal when writes to `packed_filter` have finished.
     """
     pack_filter(filter, packed_filter, num_groups)
-    out_chain.mark_ready()
 
 
 @always_inline

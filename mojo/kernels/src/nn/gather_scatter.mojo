@@ -379,10 +379,6 @@ fn gather[
         # Short-circuit for trivial cases, and to avoid divide-by-zero
         let indices_len = indices_shape.flattened_length()
         if input_shape.flattened_length() == 0 or indices_len == 0:
-
-            @parameter
-            if not single_thread_blocking_override:
-                out_chain.mark_ready()
             return
 
         @parameter
@@ -652,12 +648,6 @@ fn scatter_nd_generator[
         update_func,
         target,
     ](iter_shape, out_chain)
-
-    @parameter
-    if single_thread_blocking_override or target == "cuda":
-        return
-    else:
-        out_chain.wait()
 
 
 @always_inline

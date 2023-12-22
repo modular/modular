@@ -72,7 +72,8 @@ fn test_gather() raises:
                 indices.make_dims_unknown(),
                 out_chain.borrow(),
             )
-            out_chain.wait()
+
+            _ = out_chain ^
 
         print(output[StaticIntTuple[2](0, 0)])
         print(output[StaticIntTuple[2](1, 0)])
@@ -142,7 +143,8 @@ fn test_gather_3d() raises:
                 indices.make_dims_unknown(),
                 out_chain.borrow(),
             )
-            out_chain.wait()
+
+            _ = out_chain ^
 
         print(output[StaticIntTuple[4](0, 0, 0, 0)])
         print(output[StaticIntTuple[4](2, 0, 0, 0)])
@@ -214,7 +216,8 @@ fn test_gather_empty_indices() raises:
                 indices.make_dims_unknown(),
                 out_chain.borrow(),
             )
-            out_chain.wait()
+
+            _ = out_chain ^
 
     _test_gather[DType.int32]()
     _test_gather[DType.int64]()

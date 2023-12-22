@@ -39,7 +39,7 @@ fn print_elements[
             out_chain.borrow(),
         )
 
-        out_chain.wait()
+        _ = out_chain ^
 
 
 # slice_dim
@@ -143,7 +143,8 @@ fn test_slice[
                 step_tensor,
                 out_chain.borrow(),
             )
-            out_chain.wait()
+
+            _ = out_chain ^
 
             print_elements[dtype, outer_rank](
                 rebind[

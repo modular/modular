@@ -39,8 +39,7 @@ fn print_elements[
             rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
             out_chain.borrow(),
         )
-
-        out_chain.wait()
+        _ = out_chain ^
 
 
 # slice_dim
@@ -98,7 +97,7 @@ fn test_arange[
             rebind[StaticIntTuple[1]](out_tensor.dynamic_shape),
             out_chain.borrow(),
         )
-        out_chain.wait()
+        _ = out_chain ^
 
         print_elements[dtype, 1](out_tensor)
 

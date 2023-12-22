@@ -9,8 +9,8 @@ from sys import external_call
 from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
 
-from algorithm import sync_parallelize
 from algorithm.functional import (
+    sync_parallelize,
     _elementwise_impl,
     _get_start_indices_of_nth_subvolume,
 )

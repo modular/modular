@@ -121,7 +121,6 @@ fn conv_transpose[
                                         tmp
                                         + input[n, i, j, c] * kernel[r, s, f, c]
                                     )
-    out_chain.mark_ready()
 
 
 @always_inline

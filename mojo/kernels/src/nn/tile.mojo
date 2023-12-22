@@ -205,8 +205,6 @@ fn tile[
             )
             memcpy[type](dst_ptr, src_ptr, count)
 
-    out_chain.mark_ready()
-
 
 @always_inline
 fn tile_shape[

@@ -18,7 +18,10 @@ from math import (
 )
 from math.limit import min_or_neginf, neginf
 
-from algorithm import sync_parallelize, vectorize_unroll
+from algorithm import (
+    sync_parallelize,
+    vectorize_unroll,
+)
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
@@ -527,7 +530,7 @@ fn logsoftmax[
         raise Error("logsoftmax not supported on non-inner axis yet")
 
     if shape.flattened_length() == 0:
-        return out_chain.mark_ready()
+        return
 
     let inner_dim = output.dim[rank - 1]()
     let outer_dim = product[rank](shape, rank - 1)
@@ -628,7 +631,7 @@ fn softmax[
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
     ) as t:
         if shape.flattened_length() == 0:
-            return out_chain.mark_ready()
+            return
 
         let inner_dim = output.dim[rank - 1]()
         let outer_dim = product[rank](shape, rank - 1)

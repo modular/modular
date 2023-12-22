@@ -1493,7 +1493,8 @@ fn _naive_attention[
     elementwise[4, simd_size, scale_and_mask](
         score.dynamic_shape, chain.borrow()
     )
-    chain.wait()
+
+    _ = chain ^
 
     chain = OwningOutputChainPtr(rt)
     try:

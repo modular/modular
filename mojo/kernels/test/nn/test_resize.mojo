@@ -30,7 +30,8 @@ fn test_case_nearest[
             output._to_ndbuffer[rank](),
             out_chain.borrow(),
         )
-        out_chain.wait()
+
+        _ = out_chain ^
 
     for i in range(output.num_elements()):
         print_no_newline(output._to_buffer()[i])

@@ -7,7 +7,6 @@
 from math import abs, ceil, div_ceil, iota
 from sys.info import simdwidthof
 
-from algorithm.functional import _elementwise_impl
 from memory.buffer import NDBuffer
 from utils._annotations import *
 from runtime.llcl import OutputChainPtr

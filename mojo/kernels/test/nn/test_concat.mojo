@@ -63,7 +63,8 @@ fn test_concat() raises:
         concat[rank, type, False](
             output_dyn, concat_axis, input_vec, out_chain.borrow()
         )
-        out_chain.wait()
+
+        _ = out_chain ^
         input_vec._del_old()
 
     # CHECK: == test_concat
@@ -124,7 +125,8 @@ fn test_concat_parallel():
         _concat_parallel[rank, type](
             output_dyn, concat_axis, input_vec, out_chain.borrow()
         )
-        out_chain.wait()
+
+        _ = out_chain ^
         input_vec._del_old()
 
     # CHECK: == test_concat_parallel

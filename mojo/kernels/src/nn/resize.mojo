@@ -339,5 +339,3 @@ fn _resize[
     tmp_buffer1.free()
     tmp_buffer2.free()
     resize_dims._del_old()
-
-    out_chain.mark_ready()

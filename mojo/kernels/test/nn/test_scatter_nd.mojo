@@ -80,7 +80,8 @@ fn test_case[
             output._to_ndbuffer[3](),
             out_chain.borrow(),
         )
-        out_chain.wait()
+
+        _ = out_chain ^
 
     _ = data
     _ = indices
