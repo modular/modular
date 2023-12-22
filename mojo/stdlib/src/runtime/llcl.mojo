@@ -479,16 +479,6 @@ struct OutputChainPtr:
         )
 
     @always_inline
-    fn fork(self) -> OwningOutputChainPtr:
-        """Returns a pointer to a fresh heap-allocated LLCL::OutputChain
-        containing a 'fork' of this.
-        """
-        return external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork",
-            OwningOutputChainPtr,
-        ](self.ptr)
-
-    @always_inline
     fn get_runtime(self) -> Runtime:
         """Returns the runtime managing the output chain."""
         return external_call[
@@ -496,18 +486,8 @@ struct OutputChainPtr:
         ](self.ptr)
 
     @always_inline
-    fn _mark_ready(self):
-        """Marks the output chain as being ready.
-        The underlying LLCL::OutputChain is not moved.
-        """
-
-        external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady", NoneType
-        ](self.ptr)
-
-    @always_inline
     fn _mark_error_old[
-        single_thread_blocking_override: Bool
+        single_thread_blocking_override: Bool = False
     ](self, message: StringLiteral):
         """Marks the output chain as having an error with a message.
         The underlying LLCL::OutputChain is not moved.
@@ -515,47 +495,33 @@ struct OutputChainPtr:
 
         @parameter
         if not single_thread_blocking_override:
-            self._mark_error_old(message)
+            let strref = StringRef(message)
+            external_call[
+                "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
+            ](
+                self.ptr,
+                strref.data,
+                strref.length,
+            )
 
     @always_inline
-    fn _mark_error_old[single_thread_blocking_override: Bool](self, err: Error):
+    fn _mark_error_old[
+        single_thread_blocking_override: Bool = False
+    ](self, err: Error):
         """Marks the output chain as having an error.
         The underlying LLCL::OutputChain is not moved.
         """
-
-        @parameter
         if not single_thread_blocking_override:
-            self._mark_error_old(err)
-
-    @always_inline
-    fn _mark_error_old(self, message: StringLiteral):
-        """Marks the output chain as having an error with a message.
-        The underlying LLCL::OutputChain is not moved.
-        """
-        let strref = StringRef(message)
-        external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
-        ](
-            self.ptr,
-            strref.data,
-            strref.length,
-        )
-
-    @always_inline
-    fn _mark_error_old(self, err: Error):
-        """Marks the output chain as having an error.
-        The underlying LLCL::OutputChain is not moved.
-        """
-        let str = err.__str__()
-        let strref = str._strref_dangerous()
-        external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
-        ](
-            self.ptr,
-            strref.data,
-            strref.length,
-        )
-        str._strref_keepalive()
+            let str = err.__str__()
+            let strref = str._strref_dangerous()
+            external_call[
+                "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
+            ](
+                self.ptr,
+                strref.data,
+                strref.length,
+            )
+            str._strref_keepalive()
 
     @always_inline
     fn wait(self):
@@ -608,7 +574,9 @@ struct OwningOutputChainPtr:
     @always_inline("nodebug")
     fn __del__(owned self):
         if not self.borrow().is_error():
-            self.borrow()._mark_ready()
+            external_call[
+                "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady", NoneType
+            ](self.ptr)
         """Destroys the LLCL::OutputChain."""
         external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy", NoneType](
             self.ptr
@@ -625,70 +593,6 @@ struct OwningOutputChainPtr:
         or set to an error. May execute arbitrary tasks while waiting.
         """
         return
-
-    @always_inline
-    fn task_is_done(self):
-        """Indicates the caller's task is done for the purposes of task overhang
-        detection. Only needed for tasks which signal their completion by some
-        mechanism other than mark_ready() or _mark_error_old(). Is a no-op unless
-        task overhang detection is enabled in the build.
-        """
-        external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone", NoneType
-        ](self.ptr)
-
-    @always_inline
-    fn assert_ready(self):
-        """Asserts that the underlying LLCL::OutputChain is ready.
-
-        FOR USE IN TESTS ONLY.
-        """
-        external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_AssertReady", NoneType
-        ](self.ptr)
-
-
-# ===----------------------------------------------------------------------===#
-# AsyncTaskGroup and AsyncTaskGroupPtr
-# ===----------------------------------------------------------------------===#
-
-
-struct AsyncTaskGroupContext:
-    alias tg_callback_fn_type = fn (inout AsyncTaskGroup) -> None
-
-    var callback: Self.tg_callback_fn_type
-    var async_task_group_ptr: Pointer[AsyncTaskGroup]
-
-    fn __init__(
-        inout self,
-        callback: Self.tg_callback_fn_type,
-        async_task_group_ptr: Pointer[AsyncTaskGroup],
-    ):
-        self.callback = callback
-        self.async_task_group_ptr = async_task_group_ptr
-
-
-struct CoroutineList[type: AnyRegType](Sized):
-    var data: Pointer[Coroutine[type]]
-    var size: Int
-
-    fn __init__(inout self, num_work_items: Int):
-        self.data = Pointer[Coroutine[type]].alloc(num_work_items)
-        self.size = 0
-
-    fn add(inout self, owned hdl: Coroutine[type]):
-        __get_address_as_uninit_lvalue(self.data.offset(self.size).address) = (
-            hdl ^
-        )
-        self.size += 1
-
-    fn __len__(self) -> Int:
-        return self.size
-
-    fn destroy(inout self):
-        for i in range(self.size):
-            _ = __get_address_as_owned_value(self.data.offset(i).address)
-        self.data.free()
 
 
 struct TaskGroupTaskList[type: AnyRegType](Sized):
@@ -712,99 +616,3 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
         for i in range(self.size):
             _ = __get_address_as_owned_value(self.data.offset(i).address)
         self.data.free()
-
-
-struct AsyncTaskGroup:
-    """The target of an AsyncTaskGroupPtr. Holds exactly num_work_items
-    Coroutines representing tasks. When all tasks are complete out_chain
-    is marked as ready and this object is deleted.
-    """
-
-    # Number of tasks still in flight.
-    var counter: Atomic[DType.index]
-    # Output chain to mark_ready/_mark_error_old when last task completed.
-    # This will be 'forked' on construction to guarantee the correct lifetime.
-    var out_chain: OwningOutputChainPtr
-    # Vector holding co-routines.
-    var coroutines: CoroutineList[NoneType]
-    # Bool to indicate whether we use the monolithic Queue for scheduling
-    # this AsyncTaskGroup or thread local queues.
-    var _use_global_queue: Bool
-
-    @always_inline
-    fn __init__(inout self, num_work_items: Int, out_chain: OutputChainPtr):
-        self.counter = num_work_items
-        self.out_chain = out_chain.fork()
-        self.coroutines = num_work_items
-        # We choose to keep tasks not perfectly parallelizable to the
-        # monolithic queue for better load balancing. Only push tasks which
-        # occupy all the cores to taskId affinitized queues.
-        self._use_global_queue = (
-            num_work_items != out_chain.get_runtime().parallelism_level()
-        )
-
-    # This destroy's self when all the references are gone.
-    @always_inline
-    fn destroy(inout self):
-        self.coroutines.destroy()
-
-        # Replace the out_chain owned by this value with a null one, so the old
-        # value is destroyed.
-        self.out_chain = OwningOutputChainPtr()
-        let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
-        self_ptr.free()
-
-    @always_inline
-    fn _counter_decr(inout self) -> Int:
-        let prev: Int = self.counter.fetch_sub(1).value
-        return prev - 1
-
-    fn _task_complete(inout self):
-        # Indicate the current task is done for the purpose of task overhang
-        # detection. Is a no-op unless task overhang detection is enabled in
-        # the build.
-        @parameter
-        if is_defined["MODULAR_PARANOID"]():
-            self.out_chain.task_is_done()
-        if self._counter_decr() == 0:
-            self.destroy()
-
-    # TODO(#11915): Allow failure of coroutine to propagate error back to out_chain.
-    fn add_task(inout self, owned coroutine: Coroutine[NoneType]):
-        let ctx_ptr = coroutine.get_ctx[AsyncTaskGroupContext]()
-        let self_ptr = Pointer[AsyncTaskGroup].address_of(self)
-        __get_address_as_uninit_lvalue(ctx_ptr.address) = AsyncTaskGroupContext(
-            Self._task_complete, self_ptr
-        )
-        let task_id = len(self.coroutines)
-        # Take a copy of the handle reference, then move the coroutine onto the
-        # list. Do this before scheduling the coroutine on the taskqueue.
-        let hdl = coroutine._handle
-        self.coroutines.add(coroutine ^)
-        _async_execute[NoneType](
-            hdl,
-            self.out_chain.borrow().get_runtime(),
-            -1 if self._use_global_queue else task_id,
-        )
-
-
-struct AsyncTaskGroupPtr:
-    """Holds a pointer to a dynamically allocated AsyncTaskGroup. Exactly
-    num_work_items Coroutines representing tasks may be added. When all such
-    tasks are complete the given out_chain is marked as ready, and the
-    AsyncTaskGroup deletes itself. This type is only intended to be used
-    locally in order to add tasks, and should never be stored.
-    """
-
-    var ptr: Pointer[AsyncTaskGroup]
-
-    @always_inline
-    fn __init__(inout self, num_work_items: Int, out_chain: OutputChainPtr):
-        self.ptr = Pointer[AsyncTaskGroup].alloc(1)
-        __get_address_as_uninit_lvalue(self.ptr.address) = AsyncTaskGroup(
-            num_work_items, out_chain
-        )
-
-    @always_inline
-    fn add_task(inout self, owned coroutine: Coroutine[NoneType]):
-        __get_address_as_lvalue(self.ptr.address).add_task(coroutine ^)

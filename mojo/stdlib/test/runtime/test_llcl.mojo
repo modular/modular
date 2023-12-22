@@ -10,7 +10,6 @@ from os.atomic import Atomic
 from memory import stack_allocation
 from memory.unsafe import Pointer
 from runtime.llcl import (
-    AsyncTaskGroupPtr,
     OwningOutputChainPtr,
     Runtime,
     TaskGroup,
