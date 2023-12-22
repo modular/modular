@@ -73,7 +73,8 @@ fn test_elementwise[
                 rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
                 out_chain.borrow(),
             )
-            out_chain.wait()
+
+            _ = out_chain ^
 
     for i2 in range(min(numelems, 64)):
         if out_buffer.data.offset(i2).load() != 2 * (i2 + 1):

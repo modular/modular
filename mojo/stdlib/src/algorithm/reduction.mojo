@@ -28,7 +28,11 @@ from sys.info import (
 )
 from runtime.tracing import TraceLevel
 
-from algorithm import sync_parallelize, unroll, vectorize
+from algorithm import (
+    sync_parallelize,
+    unroll,
+    vectorize,
+)
 from algorithm.functional import _get_num_workers
 from algorithm._gpu.reduction import reduce_launch
 from memory.buffer import Buffer, NDBuffer, prod_dims
@@ -655,10 +659,6 @@ fn _reduce_along_inner_dimension[
     # the dimensions we split across.
     let total_size: Int = shape.flattened_length()
     if total_size == 0:
-
-        @parameter
-        if not single_thread_blocking_override:
-            out_chain.mark_ready()
         return
 
     let reduce_dim_size = shape[reduce_dim]
@@ -802,10 +802,6 @@ fn _reduce_along_outer_dimension[
 
     let total_size: Int = shape.flattened_length()
     if total_size == 0:
-
-        @parameter
-        if not single_thread_blocking_override:
-            out_chain.mark_ready()
         return
 
     let reduce_dim_size = shape[reduce_dim]

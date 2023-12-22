@@ -46,7 +46,8 @@ fn test_elementwise_1d():
         elementwise[1, simdwidthof[DType.float32](), func](
             StaticIntTuple[1](num_elements), out_chain.borrow()
         )
-        out_chain.wait()
+
+        _ = out_chain ^
 
         # CHECK: 2.051446{{[0-9]+}}
         print(vector[0])

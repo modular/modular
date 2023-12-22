@@ -284,7 +284,6 @@ fn sync_parallelize[
     # We have no tasks, so do nothing.
     if num_work_items == 0:
         # No-op
-        out_chain.mark_ready()
         return
 
     let parent_id = tracing.get_current_trace_id()
@@ -303,7 +302,6 @@ fn sync_parallelize[
 
     if num_work_items == 1:
         func_wrapped(0)
-        out_chain.mark_ready()
         return
 
     @always_inline
@@ -323,8 +321,6 @@ fn sync_parallelize[
 
     tg.wait()
     _ = tasks ^
-
-    out_chain.mark_ready()
 
 
 @always_inline
@@ -1028,7 +1024,8 @@ fn elementwise[
     with Runtime() as rt:
         let out_chain = OwningOutputChainPtr(rt)
         elementwise[rank, simd_width, func](shape, out_chain.borrow())
-        out_chain.wait()
+
+        _ = out_chain ^
 
 
 @always_inline

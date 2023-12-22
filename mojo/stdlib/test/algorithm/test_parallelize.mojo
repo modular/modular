@@ -79,7 +79,7 @@ fn test_sync_parallelize():
     with Runtime(num_work_items) as rt:
         let out_chain = OwningOutputChainPtr(rt)
         sync_parallelize[parallel_fn](out_chain.borrow(), num_work_items)
-        out_chain.assert_ready()
+        _ = out_chain ^
 
     # CHECK-NOT: ERROR
     for i in range(len(vector)):
