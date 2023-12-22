@@ -116,6 +116,7 @@ fn gemv[
             reduce_dim=1,
             out_chain=out_chain,
         )
+
     except e:
         trap(e)
 

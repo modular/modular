@@ -1981,7 +1981,7 @@ fn _pack_b_ndbuffer_impl[
     if b_input.dim(1) == 1:
         # For gemv no packing is necessary
         memcpy(output_buffer.data, b_input.data, b_input.dim(0))
-        out_chain.mark_ready()
+
     else:
         let k = b_input.dim(1) if transposed else b_input.dim(0)
 
@@ -2036,7 +2036,6 @@ fn _pack_b_ndbuffer_impl[
                 src_shape=b_shape,
                 dst_shape = DimList.create_unknown[2](),
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
-        out_chain.mark_ready()
 
 
 @always_inline
@@ -2946,7 +2945,7 @@ fn matmul[
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
     # single_thread_blocking_override should not be allowed, but the graph
-    # compiler has a special case that does not insert the out_chain.mark_ready()
+    # compiler has a special case that does not insert the
     # on the GPU
     # constrained[
     #     not single_thread_blocking_override,

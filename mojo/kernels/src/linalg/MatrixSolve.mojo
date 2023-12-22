@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Matrix Solve functions."""
 
-from algorithm.functional import _elementwise_impl
 from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr
 from runtime.tracing import TraceLevel, Trace
@@ -128,7 +127,3 @@ fn matrix_solve[
                 b.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
             )
             matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
-
-        @parameter
-        if not single_thread_blocking_override:
-            out_chain.mark_ready()

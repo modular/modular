@@ -737,8 +737,7 @@ fn transpose_2d[
             offset,
             out_chain,
         )
-        if out_chain:
-            out_chain.mark_ready()
+
         return
 
 
@@ -776,8 +775,6 @@ fn _transpose_4d_swap_middle_helper[
                     let in_off = l * M * N * K + m * N * K + n * K
                     let out_off = l * M * N * K + n * M * K + m * K
                     memcpy(dst_ptr.offset(out_off), src_ptr.offset(in_off), K)
-        if out_chain:
-            out_chain.mark_ready()
         return
     else:
         let num_threads = out_chain.get_runtime().parallelism_level()
@@ -898,8 +895,6 @@ fn transpose_3d_swap_inner[
             out_chain,
         )
         offset += step
-    if out_chain:
-        out_chain.mark_ready()
 
 
 fn transpose_trivial_memcpy[
@@ -923,8 +918,7 @@ fn transpose_trivial_memcpy[
 
     if not out_chain or total_size <= min_work_for_parallel:
         memcpy(dst_ptr, src_ptr, total_size)
-        if out_chain:
-            out_chain.mark_ready()
+
     else:
         let work_units = div_ceil(total_size, min_work_per_task)
         let num_tasks = min(
@@ -1000,8 +994,6 @@ fn _copy_with_strides[
 
             vectorize[simdwidthof[type](), _copy](axis_dim)
 
-        if out_chain:
-            out_chain.mark_ready()
         return
 
     let next_axis = axis + 1
@@ -1032,8 +1024,7 @@ fn _copy_with_strides[
             )
             next_input_offset += input_axis_stride
             next_output_offset += output_axis_stride
-        if out_chain:
-            out_chain.mark_ready()
+
     else:
         let num_threads = out_chain.get_runtime().parallelism_level()
         let num_tasks = min(
