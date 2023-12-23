@@ -605,16 +605,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                         StringType::get(p.getContext())))
       return failure();
     return success();
-  case (uint32_t)POC::BuildInfoGetField:
-    // Parse the BuildInfoGetField -- the first operand is a BuildInfoType, the
-    // second a StringType.
-    if (parseParamValue(p, operands.emplace_back(),
-                        BuildInfoType::get(p.getContext())) ||
-        p.parseComma() ||
-        parseParamValue(p, operands.emplace_back(),
-                        StringType::get(p.getContext())))
-      return failure();
-    return success();
   case (uint32_t)POC::GetSizeOf:
   case (uint32_t)POC::GetAlignOf:
     if (parseParamValue(p, operands.emplace_back(),

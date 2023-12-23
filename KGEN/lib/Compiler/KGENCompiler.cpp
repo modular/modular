@@ -340,8 +340,7 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   mlir::PassManager pm(target.getContext());
   pm.addPass(createElaborateGenerators(
-      runtime, target, BuildInfoAttr::getForCurrentBuild(target.getContext()),
-      elaboratorOptions,
+      runtime, target, elaboratorOptions,
       [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
@@ -424,11 +423,10 @@ compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 
 void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    BuildInfoAttr build, const CompilationOptions &options,
-    EvaluatorExecutorFn evaluatorExecutorFn,
+    const CompilationOptions &options, EvaluatorExecutorFn evaluatorExecutorFn,
     PackageLinkHandlerFn packageLinkHandlerFn) {
   buildElaborateModulePipeline(
-      pm, runtime, target, build, options, std::move(evaluatorExecutorFn),
+      pm, runtime, target, options, std::move(evaluatorExecutorFn),
       /*compileAsmFn=*/
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
@@ -442,10 +440,10 @@ void KGEN::populateElaborateModulePasses(
 
 void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    BuildInfoAttr build, const CompilationOptions &options,
+    const CompilationOptions &options,
     PackageLinkHandlerFn packageLinkHandlerFn) {
   populateElaborateModulePasses(
-      pm, runtime, target, build, options,
+      pm, runtime, target, options,
       /*evaluatorExecutorFn=*/
       [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
@@ -533,15 +531,14 @@ char KGENCompilerLayer::ID;
 
 KGENCompilerLayer::KGENCompilerLayer(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    BuildInfoAttr build, const CompilationOptions &options,
-    ObjectCompilerLayer &base,
+    const CompilationOptions &options, ObjectCompilerLayer &base,
     RCRef<Cache::BlobCacheBackend> transformCacheBackend,
     RCRef<Cache::BlobCacheBackend> regionCacheBackend,
     llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
     MaterializationLayer::AddToSearchOrderFn add)
     : llvm::RTTIExtends<KGENCompilerLayer, MaterializationLayer>(
           sess, dl, std::move(add)),
-      pm(pm), runtime(runtime), target(target), build(build), options(options),
+      pm(pm), runtime(runtime), target(target), options(options),
       baseLayer(base) {
   // Construct the caches.
   transformCache =
@@ -563,12 +560,12 @@ KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
   llvm::orc::ResourceTrackerSP resourceTracker =
       dylib->getDefaultResourceTracker();
 
-  // Set the target and build info now, so it's included in the cache key.
+  // Set the target now, so it's included in the cache key.
   setTargetInfo(theModule, target);
-  setBuildInfo(theModule, build);
+
   // Populate the passes.
   buildGenerateLibraryPipeline(pm, runtime, options);
-  populateElaborateModulePasses(pm, runtime, target, build, options,
+  populateElaborateModulePasses(pm, runtime, target, options,
                                 packageLinkHandlerFn);
 
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
@@ -639,7 +636,7 @@ std::unique_ptr<Pass>
 KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
   CompilationOptions options;
   return createElaborateGenerators(
-      runtime, /*target=*/{}, /*build=*/{}, /*options=*/{},
+      runtime, /*target=*/{}, /*options=*/{},
       [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
@@ -659,7 +656,6 @@ KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
                                 ExecutionEngineOptions executionEngineOptions,
                                 bool isJIT, TargetInfoAttr target,
                                 bool isSearch) {
-  MLIRContext *ctx = pm.getContext();
 
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions, isJIT);
@@ -687,11 +683,8 @@ KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
   if (cacheBackends.isError())
     return cacheBackends.takeError();
 
-  // Get the build info from the current build.
-  BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(ctx);
-
-  engine->addLayer<KGENCompilerLayer>(
-      pm, runtime, target, build, compilationOptions, objLayer,
-      std::move(cacheBackends->first), std::move(cacheBackends->second));
+  engine->addLayer<KGENCompilerLayer>(pm, runtime, target, compilationOptions,
+                                      objLayer, std::move(cacheBackends->first),
+                                      std::move(cacheBackends->second));
   return std::move(engine);
 }

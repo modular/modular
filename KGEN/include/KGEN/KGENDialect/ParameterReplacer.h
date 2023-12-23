@@ -53,8 +53,7 @@ protected:
         return value;
     } else {
       if (isa<NoneAttr, IntegerAttr, FloatAttr, DTypeConstantAttr,
-              IntLiteralAttr, TargetParamAttr, BuildInfoParamAttr, MLIROpAttr>(
-              value))
+              IntLiteralAttr, TargetParamAttr, MLIROpAttr>(value))
         return value;
     }
 

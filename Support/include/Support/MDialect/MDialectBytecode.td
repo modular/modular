@@ -95,11 +95,6 @@ def TargetInfoAttr : DialectAttribute<(attr
   String:$tune_cpu
 )>;
 
-def BuildInfoAttr : DialectAttribute<(attr
-  String:$buildType,
-  String:$kernelsBuildType
-)>;
-
 def MDialectAttributes : DialectAttributes<"M"> {
   let elems = [
     StringArrayAttr,
@@ -108,8 +103,7 @@ def MDialectAttributes : DialectAttributes<"M"> {
     ArrayElementsAttr,
     AlignedBytesAttr,
     MultiLineStringAttr,
-    TargetInfoAttr,
-    BuildInfoAttr
+    TargetInfoAttr
   ];
 }
 

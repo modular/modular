@@ -155,7 +155,7 @@ ErrorOr<PackageArchiveAttr> M::KGEN::createPackageArchive(
 /// symbols, or if unsuccessful this returns an error.
 static ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
 elaborateBytecode(ModuleOp packageModule, PackageLinkOp packageLink,
-                  TargetInfoAttr targetInfo, BuildInfoAttr buildInfo,
+                  TargetInfoAttr targetInfo,
                   const CompilationOptions &compileOptions,
                   LLCL::Runtime &runtime) {
   // Run elaboration passes on the pre-elaborated module.
@@ -168,9 +168,8 @@ elaborateBytecode(ModuleOp packageModule, PackageLinkOp packageLink,
       RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
 
   setTargetInfo(packageModule, targetInfo);
-  setBuildInfo(packageModule, buildInfo);
   mlir::PassManager elaboratePM(packageModule->getContext());
-  populateElaborateModulePasses(elaboratePM, runtime, targetInfo, buildInfo,
+  populateElaborateModulePasses(elaboratePM, runtime, targetInfo,
                                 compileOptions);
   LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
       packageModule, regionCache.copy(), transformCache.copy(),
@@ -199,8 +198,7 @@ elaborateBytecode(ModuleOp packageModule, PackageLinkOp packageLink,
 /// attributes set.
 ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
     PackageLinkOp packageLink, TargetInfoAttr targetInfo,
-    BuildInfoAttr buildInfo, const CompilationOptions &compileOptions,
-    LLCL::Runtime &runtime) {
+    const CompilationOptions &compileOptions, LLCL::Runtime &runtime) {
   // Load the pre-elaborated bytecode, which contains the package module.
   // We'll run the elaborator on this bytecode module.
   mlir::AsmResourceBlob *blob =
@@ -224,7 +222,7 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
   // Elaborate the bytecode for the given target, and set the resulting bytecode
   // as an attribute on the package_link op.
   auto elaborateOr = elaborateBytecode(packageModule, packageLink, targetInfo,
-                                       buildInfo, compileOptions, runtime);
+                                       compileOptions, runtime);
   if (elaborateOr.isError())
     return elaborateOr.takeError();
   auto [bytecodeResource, symtab, exportedSymbols] = elaborateOr.takeValue();
@@ -253,13 +251,11 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::loadAndElaborateBytecode(
 void M::KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                             LLCL::Runtime &runtime,
                                             TargetInfoAttr target,
-                                            BuildInfoAttr build,
                                             const CompilationOptions &options) {
   populateElaborateModulePasses(
-      pm, runtime, target, build, options,
-      [=, &runtime](PackageLinkOp packageLink, TargetInfoAttr targetInfo,
-                    BuildInfoAttr buildInfo) {
-        return loadAndElaborateBytecode(packageLink, targetInfo, buildInfo,
-                                        options, runtime);
+      pm, runtime, target, options,
+      [=, &runtime](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
+        return loadAndElaborateBytecode(packageLink, targetInfo, options,
+                                        runtime);
       });
 }

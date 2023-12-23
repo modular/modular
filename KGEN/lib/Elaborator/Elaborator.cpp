@@ -2623,11 +2623,10 @@ public:
   ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &options = {},
                           LLCL::Runtime *runtime = nullptr,
                           TargetInfoAttr target = nullptr,
-                          BuildInfoAttr build = nullptr,
                           EvaluatorExecutorFn evaluatorExecutorFn = {},
                           ElaboratorCompileAsmFn compileAsmFn = {})
       : ElaborateGeneratorsBase(options), runtime(runtime), target(target),
-        build(build), evaluatorExecutorFn(std::move(evaluatorExecutorFn)),
+        evaluatorExecutorFn(std::move(evaluatorExecutorFn)),
         compileAsmFn(std::move(compileAsmFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
@@ -2640,10 +2639,6 @@ public:
         return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
       target = targetOr.takeValue();
     }
-
-    // Default to the host build if one was not specified
-    if (!build)
-      build = BuildInfoAttr::getForCurrentBuild(ctx);
 
     // Default the evaluator to selecting the first specialization.
     if (!evaluatorExecutorFn) {
@@ -2707,10 +2702,6 @@ public:
       target = targetInfo;
     else
       setTargetInfo(theModule, target);
-    if (BuildInfoAttr buildInfo = getBuildInfo(theModule))
-      build = buildInfo;
-    else
-      setBuildInfo(theModule, build);
 
     // If the module is missing an environment attribute, set an empty one.
     if (!theModule->hasAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())) {
@@ -2732,8 +2723,6 @@ private:
   LLCL::Runtime *runtime;
   /// The compilation target.
   TargetInfoAttr target;
-  /// The build target.
-  BuildInfoAttr build;
   /// The functor used for evaluating generator specializations.
   EvaluatorExecutorFn evaluatorExecutorFn;
   /// The functor used to compile a module to assembly.
@@ -2743,11 +2732,10 @@ private:
 
 std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
-                                BuildInfoAttr build,
                                 const ElaborateGeneratorsOptions &options,
                                 EvaluatorExecutorFn evaluatorExecutorFn,
                                 ElaboratorCompileAsmFn compileAsmFn) {
   return std::make_unique<ElaborateGeneratorsPass>(
-      options, &runtime, target, build, std::move(evaluatorExecutorFn),
+      options, &runtime, target, std::move(evaluatorExecutorFn),
       std::move(compileAsmFn));
 }

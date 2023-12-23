@@ -144,13 +144,12 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
     return;
 
   // Build the compilation pipeline.
-  BuildInfoAttr buildInfo = BuildInfoAttr::getForCurrentBuild(ctx);
   fullCompilationPM =
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
   buildGenerateLibraryPipeline(*fullCompilationPM, typeSystem->getRuntime(),
                                *compilationOptions);
   populateElaborateModulePasses(
-      *fullCompilationPM, typeSystem->getRuntime(), targetInfo, buildInfo,
+      *fullCompilationPM, typeSystem->getRuntime(), targetInfo,
       compilationOptions,
       /*evaluatorExecutorFn=*/
       [&](KGEN::FuncOp evaluator, const SymbolTable &symtab,
@@ -162,15 +161,13 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
 // FIXME(#26419): workaround for error missing symbol __dso_handle on arm64 mac
 #if __APPLE__
       /*packageLinkHandlerFn=*/
-      [](PackageLinkOp packageLink, TargetInfoAttr targetInfo,
-         BuildInfoAttr buildInfo) {
+      [](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
         return packageLink.getPreElaborationModuleAttr();
       }
 #else
       /*packageLinkHandlerFn=*/
-      [this](PackageLinkOp packageLink, TargetInfoAttr targetInfo,
-             BuildInfoAttr buildInfo) {
-        return loadAndElaborateBytecode(packageLink, targetInfo, buildInfo,
+      [this](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
+        return loadAndElaborateBytecode(packageLink, targetInfo,
                                         compilationOptions,
                                         typeSystem->getRuntime());
       }
@@ -753,7 +750,6 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   if (failed(mlir::verify(*module)))
     return returnErrorCleanup();
   setTargetInfo(*module, impl->typeSystem->GetTargetInfo());
-  setBuildInfo(*module, BuildInfoAttr::getForCurrentBuild(ctx));
 
   // Ensure the expression function in the cloned module gets exported.
   auto clonedExprFn = cast<LIT::FuncOp>(mapping.lookup(&*exprFn));

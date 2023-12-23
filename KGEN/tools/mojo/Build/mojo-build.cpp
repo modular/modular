@@ -144,10 +144,8 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
   // post-elaboration phase, because before that phase we don't have flat
   // symbols.
   auto packageLinkHandlerFn = [&](PackageLinkOp packageLink,
-                                  TargetInfoAttr targetInfo,
-                                  BuildInfoAttr buildInfo) {
-    return loadAndElaborateBytecode(packageLink, targetInfo, buildInfo, options,
-                                    runtime);
+                                  TargetInfoAttr targetInfo) {
+    return loadAndElaborateBytecode(packageLink, targetInfo, options, runtime);
   };
   if (ErrorOrSuccess err =
           compilerLayer.add("exec", moduleOp, packageLinkHandlerFn))

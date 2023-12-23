@@ -327,7 +327,7 @@ int main(int argc, char **argv) {
   // Register passes that require other arguments.
   mlir::registerPass([&] {
     return KGEN::createMaterializePackages(
-        [](KGEN::PackageLinkOp packageLink, TargetInfoAttr, BuildInfoAttr) {
+        [](KGEN::PackageLinkOp packageLink, TargetInfoAttr) {
           return packageLink.getPreElaborationModuleAttr();
         });
   });

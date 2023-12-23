@@ -335,11 +335,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // This currently compiles the module, so we don't need to try to look
   // anything up.
   auto packageLinkHandlerFn = [&](PackageLinkOp packageLink,
-                                  TargetInfoAttr targetInfo,
-                                  BuildInfoAttr buildInfo) {
-    return loadAndElaborateBytecode(packageLink, targetInfo, buildInfo,
-                                    clOptions.getCompilationOptions(),
-                                    *runtime);
+                                  TargetInfoAttr targetInfo) {
+    return loadAndElaborateBytecode(
+        packageLink, targetInfo, clOptions.getCompilationOptions(), *runtime);
   };
   if (ErrorOrSuccess err =
           compileLayer.add("exec", *theModule, packageLinkHandlerFn))

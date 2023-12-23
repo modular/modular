@@ -846,7 +846,7 @@ kgen.generator @root() {
 
 // COM: Check that `elaborate-generators` attaches the host target info.
 
-// CHECK: module attributes {M.build_info = #M.build_info<{{.*}}>, M.target_info = #M.target<{{.*}}>}
+// CHECK: module attributes {M.target_info = #M.target<{{.*}}>}
 
 kgen.generator @some_func() {
   kgen.return

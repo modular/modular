@@ -401,7 +401,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 static ErrorOr<std::tuple<DenseResourceElementsAttr, SymbolTable, ExportMap>>
 elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
                  const CompilationOptions &options, LLCL::Runtime &runtime,
-                 BuildInfoAttr build, TargetInfoAttr target, EnvAttr env) {
+                 TargetInfoAttr target, EnvAttr env) {
   // Build the backends used for caching compilation.
   auto cacheBackends = getMojoCacheBackends(runtime);
   if (cacheBackends.isError())
@@ -444,9 +444,9 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
 
   // Elaborate the module for the given target.
   setTargetInfo(theModule, target);
-  setBuildInfo(theModule, build);
+
   mlir::PassManager elaboratePM(theModule.getContext());
-  populateElaborateModulePasses(elaboratePM, runtime, target, build, options);
+  populateElaborateModulePasses(elaboratePM, runtime, target, options);
   if (auto err = runPipeline(elaboratePM))
     return err.takeError();
 
@@ -480,7 +480,6 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   // Set up the package builder.
   PackageBuilder packageBuilder(parsedPackageOp, packageArgs.target,
                                 packageArgs.env, packageArgs.compileOptions);
-  mlir::MLIRContext *ctx = packageBuilder.getContext();
   const CompilationOptions &compilationOptions = packageArgs.compileOptions;
 
   // For now we implicilty export everything in the package, so add exports to
@@ -494,7 +493,6 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   // Elaborate the package, attaching the generated IR along the way.
   auto elaboratedOr =
       elaboratePackage(theModule, packageBuilder, compilationOptions, runtime,
-                       BuildInfoAttr::getForCurrentBuild(ctx),
                        packageArgs.target, packageArgs.env);
   if (failed(elaboratedOr)) {
     return Error(
