@@ -133,6 +133,9 @@ KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
 /// setting its token value.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
+#if MODULAR_PARANOID
+  unwrap(chain).getRuntime()->getWorkQueue()->taskIsDone();
+#endif
   unwrap(chain).copy().emplace();
 }
 
@@ -196,7 +199,6 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_IsError(LLCLOutputChainRef outChain) {
   return unwrap(outChain).chain.isError();
 }
 
-/// Emplaces outChain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady(LLCLOutputChainRef outChain) {
   unwrap(outChain).markReady();
@@ -219,38 +221,11 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty(LLCLRuntimeRef rt) {
   return wrap(new OutputChain(std::move(chain), std::move(loc)));
 }
 
-/// Returns a fresh OutputChain who's contents is copied from outChain.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLOutputChainRef
-KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork(LLCLOutputChainRef outChain) {
-  return wrap(new OutputChain(unwrap(outChain).fork()));
-}
-
 /// Destroys outChain, which must be the result of a CreateEmpty or
 /// CreateMoved.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy(LLCLOutputChainRef outChain) {
   delete &unwrap(outChain);
-}
-
-/// Processes work items until outChain is ready.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_OutputChainPtr_Await(LLCLOutputChainRef outChain) {
-  unwrap(outChain).await();
-}
-
-/// Assert fail if outChain is not ready.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_OutputChainPtr_AssertReady(LLCLOutputChainRef outChain) {
-  unwrap(outChain).assertReady();
-}
-
-/// Indicates the caller's task is done for the purposes of task overhang
-/// detection.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone(LLCLOutputChainRef outChain) {
-#if MODULAR_PARANOID
-  unwrap(outChain).taskIsDone();
-#endif
 }
 
 /// Returns the CUstream handle held by the OutputChain's underlying
@@ -300,16 +275,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Await",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Await});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_AssertReady",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_AssertReady});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_GetCUDAStream});
 }
