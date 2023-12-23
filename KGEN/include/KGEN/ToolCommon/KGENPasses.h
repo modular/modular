@@ -33,7 +33,6 @@ class LLVMFuncOp;
 } // namespace mlir
 
 namespace M {
-class BuildInfoAttr;
 class TargetInfoAttr;
 
 namespace HLCF {
@@ -109,7 +108,6 @@ using ElaboratorCompileAsmFn = std::function<ErrorOr<CrossDeviceFunction>(
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
 createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
-                          BuildInfoAttr build,
                           const ElaborateGeneratorsOptions &options = {},
                           EvaluatorExecutorFn evaluatorExecutorFn = {},
                           ElaboratorCompileAsmFn compileAsmFn = {});
@@ -245,12 +243,12 @@ void buildGenerateLibraryPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 /// into the module that is importing the package (i.e.: the module that
 /// contains the `kgen.package_link` op).
 using PackageLinkHandlerFn = std::function<ErrorOr<DenseResourceElementsAttr>(
-    PackageLinkOp, TargetInfoAttr, BuildInfoAttr)>;
+    PackageLinkOp, TargetInfoAttr)>;
 
 /// This populates the passes to produce a fully concrete KGEN module. That
 /// means it runs the elaborator and any dependent passes.
 void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
-                                  TargetInfoAttr target, BuildInfoAttr build,
+                                  TargetInfoAttr target,
                                   const CompilationOptions &options,
                                   EvaluatorExecutorFn evaluatorExecutorFn,
                                   ElaboratorCompileAsmFn compileAsmFn,

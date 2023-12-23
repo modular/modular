@@ -142,13 +142,21 @@ endmacro()
 # This function reads the cmake configuration and constructs the `-D` flags it
 # needs to pass in to Mojo and KGEN.
 macro(_setup_defines)
+  string(TOLOWER ${CMAKE_BUILD_TYPE} build_type)
+  string(TOLOWER ${MODULAR_KERNELS_BUILD_TYPE} kernels_build_type)
+  set(MOJO_DEFINES)
   if (MODULAR_PARANOID)
-    set(MOJO_DEFINES "-D" "MODULAR_PARANOID")
+    list(APPEND MOJO_DEFINES "-D" "MODULAR_PARANOID")
   endif()
   if (MODULAR_RELEASE_PACKAGE_BUILD)
-    set(MOJO_DEFINES "-D" "MODULAR_RELEASE_PACKAGE_BUILD")
+    list(APPEND MOJO_DEFINES "-D" "MODULAR_RELEASE_PACKAGE_BUILD")
   endif()
-  set(MOJO_DEFINES "-D" "MODULAR_LLCL_MAX_PROFILING_LEVEL=${MODULAR_LLCL_MAX_PROFILING_LEVEL}")
+  list(APPEND MOJO_DEFINES
+    "-D" "MODULAR_LLCL_MAX_PROFILING_LEVEL=${MODULAR_LLCL_MAX_PROFILING_LEVEL}")
+  list(APPEND MOJO_DEFINES
+    "-D" "BUILD_TYPE=${build_type}")
+  list(APPEND MOJO_DEFINES
+    "-D" "KERNELS_BUILD_TYPE=${kernels_build_type}")
 endmacro()
 
 # Add the necessary tool dependencies to the mojo-sdk target.

@@ -31,13 +31,13 @@ namespace M::KGEN {
 /// defaults for elaboration handlers.
 void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
-                                   TargetInfoAttr target, BuildInfoAttr build,
+                                   TargetInfoAttr target,
                                    const CompilationOptions &options,
                                    EvaluatorExecutorFn evaluatorExecutorFn,
                                    PackageLinkHandlerFn packageLinkHandlerFn);
 void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
-                                   TargetInfoAttr target, BuildInfoAttr build,
+                                   TargetInfoAttr target,
                                    const CompilationOptions &options,
                                    PackageLinkHandlerFn packageLinkHandlerFn);
 
@@ -68,8 +68,7 @@ public:
   static char ID;
 
   KGENCompilerLayer(mlir::PassManager &pm, LLCL::Runtime &runtime,
-                    TargetInfoAttr target, BuildInfoAttr build,
-                    const CompilationOptions &options,
+                    TargetInfoAttr target, const CompilationOptions &options,
                     ObjectCompilerLayer &base,
                     RCRef<Cache::BlobCacheBackend> transformCacheBackend,
                     RCRef<Cache::BlobCacheBackend> regionCacheBackend,
@@ -102,7 +101,6 @@ private:
   mlir::PassManager &pm;
   LLCL::Runtime &runtime;
   TargetInfoAttr target;
-  BuildInfoAttr build;
   CompilationOptions options;
   ObjectCompilerLayer &baseLayer;
 

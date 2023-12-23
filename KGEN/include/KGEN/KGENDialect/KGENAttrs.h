@@ -24,7 +24,6 @@ class OperationName;
 } // namespace mlir
 
 namespace M {
-class BuildInfoAttr;
 class TargetInfoAttr;
 
 namespace KGEN {

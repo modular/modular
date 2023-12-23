@@ -98,7 +98,7 @@ public:
   LogicalResult initialize(MLIRContext *context) override {
     if (!packageLinkHandlerFn)
       packageLinkHandlerFn = [](PackageLinkOp packageLink,
-                                TargetInfoAttr targetInfo, BuildInfoAttr) {
+                                TargetInfoAttr targetInfo) {
         packageLink.emitError("package link could not be handled for target ")
             << targetInfo.getTripleStr();
         return Error("package link handler is null");
@@ -135,7 +135,6 @@ void MaterializePackagesPass::runOnOperation() {
     }
 
     TargetInfoAttr target = lookupTargetInfo(theModule);
-    BuildInfoAttr build = lookupBuildInfo(theModule);
 
     // Get the target on the module. If we don't have a target or if the target
     // doesn't match, check for a pre-elaborated module that we can then compile
@@ -165,7 +164,7 @@ void MaterializePackagesPass::runOnOperation() {
       // the package module bytecode that is to be imported into the module
       // currently being built.
       ErrorOr<DenseResourceElementsAttr> bytecodeOr =
-          packageLinkHandlerFn(packageLink, target, build);
+          packageLinkHandlerFn(packageLink, target);
       if (bytecodeOr.isError()) {
         packageLink.emitError(bytecodeOr.getError());
         return signalPassFailure();

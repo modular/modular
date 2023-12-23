@@ -444,35 +444,6 @@ def M_DeviceSpecCollectionAttr : MAttr<"DeviceSpecCollection", "device_spec_coll
 }
 
 //===----------------------------------------------------------------------===//
-// BuildInfoAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_BuildInfoAttr : MAttr<"BuildInfo", "build_info"> {
-  let summary = "Build configuration attribute.";
-  let description = [{
-    The `#M.build_info` attribute represents a compilation build configuration.
-    It contains information how the compiler was built (in debug mode, with
-    debug symbols, etc.).
-
-    Example:
-
-    ```mlir
-    #M.build<type="debug", kernels_type="debug">
-    ```
-  }];
-
-  let parameters = (ins StringRefParameter<"">:$buildType,
-                        StringRefParameter<"">:$kernelsBuildType);
-
-  let assemblyFormat = "`<` struct(params) `>`";
-
-  let extraClassDeclaration = [{
-    /// Get the build configuration attribute for the current build.
-    static BuildInfoAttr getForCurrentBuild(MLIRContext *ctx);
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // InOutSignatureAttr
 //===----------------------------------------------------------------------===//
 

@@ -189,10 +189,6 @@ def TargetParamAttr : DialectAttribute<(attr
   ConcreteAttribute<"TargetInfoAttr">:$target
 )>;
 
-def BuildInfoParamAttr : DialectAttribute<(attr
-  ConcreteAttribute<"BuildInfoAttr">:$buildInfo
-)>;
-
 def EnvAttr : DialectAttribute<(attr
   ConcreteAttribute<"DictionaryAttr">:$values
 )>;
@@ -280,7 +276,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     IntLiteralAttr,
     SymbolConstantAttr,
     TargetParamAttr,
-    BuildInfoParamAttr,
     EnvAttr,
     ParamOperatorAttr,
     MLIROpAttr,

@@ -43,7 +43,6 @@ ErrorOr<PackageArchiveAttr> createPackageArchive(
 /// static archive. If successful, an archive will be set on the given op.
 ErrorOr<DenseResourceElementsAttr>
 loadAndElaborateBytecode(PackageLinkOp packageLink, TargetInfoAttr targetInfo,
-                         BuildInfoAttr buildInfo,
                          const CompilationOptions &compileOptions,
                          LLCL::Runtime &runtime);
 
@@ -52,7 +51,7 @@ loadAndElaborateBytecode(PackageLinkOp packageLink, TargetInfoAttr targetInfo,
 /// KGENCompiler, but with a default handler for package link ops.
 void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
-                                   TargetInfoAttr target, BuildInfoAttr build,
+                                   TargetInfoAttr target,
                                    const CompilationOptions &options);
 } // namespace M::KGEN
 

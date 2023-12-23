@@ -578,62 +578,6 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
 }
 
 //===----------------------------------------------------------------------===//
-// BuildInfoParamAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_BuildInfoParamAttr : KGEN_ExprAttr<"BuildInfoParam", "build_info"> {
-  let summary = "Build configuration parameter attribute.";
-  let description = [{
-    The `#kgen.build_info` is an contains the build configuration information.
-
-    There are two textual formats that represent this attribute:
-
-    ```mlir
-    #kgen<build_info host>
-    #kgen.build_info<type="debug">
-    ```
-
-    `#kgen<build_info>` is sugar for the build parameter corresponding to the
-    build configuration of the modular codebase. It will be fully resolved when
-    printed, and therefore it will NOT be printed as `kgen<build_info>`.
-
-    Example:
-
-    ```mlir
-    kgen.generator @build_is_debug()
-      constraints <[
-        eq(:string build_info_get_field(#kgen<build_info host>, "type"),
-                   "debug"),
-        "Must be built in release mode!"]> {
-      kgen.return
-    }
-
-    kgen.generator @build_is_debug()
-      constraints <[
-        eq(:string build_info_get_field(#kgen.build_info<type="debug">, "type"),
-                   "release"),
-        "Must be built in release mode!"]> {
-      kgen.return
-    }
-    ```
-  }];
-
-  let parameters = (ins "BuildInfoAttr":$buildInfo);
-  let hasCustomAssemblyFormat = 1;
-
-  let builders =[
-    AttrBuilderWithInferredContext<(ins "BuildInfoAttr":$buildInfo), [{
-      return get(buildInfo.getContext(), buildInfo);
-    }]>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Get the type of the attribute. It is also BuildInfoType.
-    Type getType() const;
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // StructAttr
 //===----------------------------------------------------------------------===//
 

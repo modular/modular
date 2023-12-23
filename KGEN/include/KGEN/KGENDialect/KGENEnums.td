@@ -49,28 +49,27 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"CurrentTarget", 17, "current_target">,
   I32EnumAttrCase<"TargetHasFeature", 18, "target_has_feature">,
   I32EnumAttrCase<"TargetGetField", 19, "target_get_field">,
-  I32EnumAttrCase<"BuildInfoGetField", 20, "build_info_get_field">,
 
   // Environment variables.
-  I32EnumAttrCase<"GetEnv", 21, "get_env">,
+  I32EnumAttrCase<"GetEnv", 20, "get_env">,
 
   // Unary type expressions.
-  I32EnumAttrCase<"GetSizeOf", 22, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 23, "get_alignof">,
+  I32EnumAttrCase<"GetSizeOf", 21, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 22, "get_alignof">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 24, "bind_signature">,
-  I32EnumAttrCase<"Apply", 25, "apply">,
-  I32EnumAttrCase<"ApplyResultSlot", 26, "apply_result_slot">,
-  I32EnumAttrCase<"Rebind", 27, "rebind">,
+  I32EnumAttrCase<"BindSignature", 23, "bind_signature">,
+  I32EnumAttrCase<"Apply", 24, "apply">,
+  I32EnumAttrCase<"ApplyResultSlot", 25, "apply_result_slot">,
+  I32EnumAttrCase<"Rebind", 26, "rebind">,
 
   // Evaluator.
-  I32EnumAttrCase<"GetAllImpls", 28, "get_all_impls">,
-  I32EnumAttrCase<"VariadicGet", 29, "variadic_get">,
-  I32EnumAttrCase<"CompileAssembly", 30, "compile_assembly">,
-  I32EnumAttrCase<"GetLinkageName", 31, "get_linkage_name">,
+  I32EnumAttrCase<"GetAllImpls", 27, "get_all_impls">,
+  I32EnumAttrCase<"VariadicGet", 28, "variadic_get">,
+  I32EnumAttrCase<"CompileAssembly", 29, "compile_assembly">,
+  I32EnumAttrCase<"GetLinkageName", 30, "get_linkage_name">,
 
-  I32EnumAttrCase<"GetTypeMethod", 32, "get_type_method">
+  I32EnumAttrCase<"GetTypeMethod", 31, "get_type_method">
 ]>;
 
 //===----------------------------------------------------------------------===//
