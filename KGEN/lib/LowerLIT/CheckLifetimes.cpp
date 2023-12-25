@@ -1000,7 +1000,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
       operands = callSig.getArguments();
     }
 
-    assert(isa<CreateClosureOp>(op) ||
+    assert(isa<CreateClosureOp>(op) || isa<CaptureListCreate>(op) ||
            signature.getInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getInputConventions(), operands)) {
@@ -1474,7 +1474,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     if (signature.hasOwnedRegisterResult())
       checkDef(op.getResult(0), op);
 
-    assert(isa<CreateClosureOp>(op) ||
+    assert(isa<CreateClosureOp>(op) || isa<CaptureListCreate>(op) ||
            signature.getInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getInputConventions(), operands)) {

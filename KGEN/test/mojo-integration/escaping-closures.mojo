@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo -debug-level full %s 2 3 | FileCheck %s
+from sys import argv
 
 
 @value
@@ -152,6 +153,19 @@ fn deep_runtime_capture(
         raise Error("unreachable")
 
 
+fn takeClosure(formatter: fn (v: Int) escaping -> Int, value: Int):
+    print(formatter(value))
+
+
+fn makeEscapingClosure[
+    parametricClosure: fn (v: Int) capturing -> Int
+](x: Int) -> fn (v: Int) escaping -> Int:
+    fn formatter(v: Int) escaping -> Int:
+        return parametricClosure(x + v)
+
+    return formatter
+
+
 fn main():
     let x = 2
     let c = makes_escaping_closure(x.value)
@@ -194,3 +208,17 @@ fn main():
         print(deep_runtime_capture(v1, True)(v2)(v3))
     except:
         pass
+
+    try:
+        let x = atol(argv()[1])
+        let y = atol(argv()[2])
+
+        @parameter
+        fn formatter(v: Int) -> Int:
+            return x + v
+
+        let f = makeEscapingClosure[formatter](y)
+        takeClosure(f, y)
+    except e:
+        # CHECK: 8
+        print(e)
