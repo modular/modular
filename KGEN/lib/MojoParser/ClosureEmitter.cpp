@@ -176,8 +176,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // function ptr fields
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
 
-  auto dtorMetadata = FnMetadataAttr::get(
-      ctx, {selfName}, {PassingKind::PosOnly}, /*numImplicitLifetimeDecls=*/0);
+  auto dtorMetadata =
+      FnMetadataAttr::get(ctx, {selfName}, {PassingKind::PosOnly});
   auto dtorSig = SignatureType::get(b.getFunctionType(opaquePtrType, noneType),
                                     ValueInputConvention::OwnedInReg,
                                     /*effects=*/{}, dtorMetadata);
@@ -189,8 +189,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       noneType);
   auto metadata =
       FnMetadataAttr::get(ctx, {ptrToImplName, otherName},
-                          {PassingKind::PosOnly, PassingKind::PosOnly},
-                          /*numImplicitLifetimeDecls=*/0);
+                          {PassingKind::PosOnly, PassingKind::PosOnly});
   auto cpySignatureType =
       SignatureType::get(fnType,
                          {ValueInputConvention::BorrowedInReg,
@@ -203,8 +202,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       paramValues, translateLocation(nestedFunctionOrTypeLocation));
   auto sigMetadata =
       FnMetadataAttr::get(ctx, dependentSignatureType.getArgNames(),
-                          dependentSignatureType.getArgPassingKinds(),
-                          dependentSignatureType.getNumImplicitLifetimeDecls());
+                          dependentSignatureType.getArgPassingKinds());
   Type resultType = dependentSignatureType.getValueResults().front();
   FunctionType functionType =
       b.getFunctionType(dependentSignatureType.getValueInputs(), resultType);

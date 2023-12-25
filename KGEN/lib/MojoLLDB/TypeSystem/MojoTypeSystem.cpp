@@ -877,7 +877,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(llvm::StringRef mangledName) {
   auto fnType = builder.getFunctionType({}, {NoneType::get(getMLIRContext())});
   // We might need to fill in the full signature when expression evaluation is
   // needed. We don't need it for now.
-  auto metadata = LIT::FnMetadataAttr::get(getMLIRContext(), {}, {}, 0);
+  auto metadata = LIT::FnMetadataAttr::get(getMLIRContext(), {}, {});
   auto signature = LIT::LITSignatureType::get(fnType, {}, {}, {}, {}, metadata);
 
   // FIXME(23810): We need to support nested functions.

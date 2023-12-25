@@ -86,8 +86,7 @@ public:
   static bool classof(Type type);
 
   static LITSignatureType get(MLIRContext *ctx, TypeRange inputs,
-                              TypeRange results,
-                              size_t numImplicitLifetimeDecls);
+                              TypeRange results);
   static LITSignatureType get(FunctionType values,
                               ArrayRef<Type> inputParamTypes,
                               ArrayRef<Type> resultParamTypes,
