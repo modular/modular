@@ -480,6 +480,14 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   LIT::FuncOp initFunc = synthesizeMemberwiseInit(
       structDecl, initSigTypes, initSigConventions, initSigNames,
       initSigPassingKinds, normalCaptureFieldDecls);
+  if (!paramCaptureListTypes.empty()) {
+    LITSignatureType oldSig = initFunc.getSignature();
+    LITSignatureType capturingInitSymbol = LITSignatureType::get(
+        oldSig.getValues(), oldSig.getInputParamTypes(),
+        oldSig.getResultParamTypes(), oldSig.getInputConventions(),
+        oldSig.getFnEffects().setCapturing(true), oldSig.getMetadata());
+    initFunc.setSignature(capturingInitSymbol);
+  }
   auto builder =
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
   for (auto [clType, fieldDecl] :

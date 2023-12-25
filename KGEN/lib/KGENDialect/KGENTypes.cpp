@@ -1328,6 +1328,16 @@ static void printCaptureListType(AsmPrinter &p, TypedAttr capturingFunc) {
   printParamValue(p, capturingFunc, capturingFunc.getType());
 }
 
+std::optional<int64_t>
+CaptureListType::getTypeSize(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerSize();
+}
+
+std::optional<int64_t>
+CaptureListType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

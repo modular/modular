@@ -144,11 +144,13 @@ kgen.func @my_capture() capturing {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @capture_list_create()
+// CHECK-LABEL: kgen.func @capture_list_create(%arg0: index) -> !kgen.pointer<struct<(index)>>
 kgen.func @capture_list_create() -> !capture_list_type {
   // CHECK-NOT: kgen.capture_list.create
-  // CHECK-NEXT: [[IDX8:%.*]] = index.constant 8
-  // CHECK-NEXT: [[V0:%.*]] = pop.aligned_alloc [[IDX8]], [[IDX8]] : <struct<(index)>>
+  // CHECK:      [[IDX8:%.*]] = index.constant 8
+  // CHECK: [[V0:%.*]] = pop.aligned_alloc{{.*}}[[IDX8]]
+  // CHECK-NEXT: [[V1:%.*]] = kgen.struct.gep [[V0]][0] : <struct<(index)>>
+  // CHECK-NEXT: pop.store %arg0, [[V1]] : !kgen.pointer<index>
   %capture_list = kgen.capture_list.create : !capture_list_type
   kgen.return %capture_list: !capture_list_type
 }
