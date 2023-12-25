@@ -63,7 +63,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     OptionalArrayRefParameter<"PassingKind">:$paramPassingKinds,
     OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
     OptionalArrayRefParameter<"TypedAttr">:$defaultParameters,
-    "unsigned":$numImplicitLifetimeDecls
+    "size_t":$numImplicitLifetimeDecls
   );
   let assemblyFormat = [{
     `<` `[` (`]`) : ($argNames^          `]`)? `,`
@@ -78,18 +78,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
   let builders = [
     AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames,
-                     "ArrayRef<PassingKind>":$argPassingKinds)>,
-    AttrBuilder<(ins
-        "ArrayRef<StringAttr>":$argNames,
-        "ArrayRef<PassingKind>":$argPassingKinds,
-        "ArrayRef<StringAttr>":$paramNames,
-        "ArrayRef<PassingKind>":$paramPassingKinds,
-        "ArrayRef<TypedAttr>":$defaultArguments,
-        "ArrayRef<TypedAttr>":$defaultParameters), [{
-      return $_get($_ctxt, argNames, argPassingKinds, paramNames,
-                   paramPassingKinds, defaultArguments, defaultParameters,
-                   /*numLifetimeDecls=*/0);
-    }]>
+                     "ArrayRef<PassingKind>":$argPassingKinds,
+                     "size_t":$numImplicitLifetimeDecls)>
   ];
 
   let extraClassDeclaration = [{

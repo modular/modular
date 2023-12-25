@@ -966,7 +966,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     }
   } else {
     auto call = builder->create<CallSignatureOp>(
-        loc, resultType, callee.getIfSRValue(), callArgs);
+        loc, resultType, callee.getIfSRValue(),
+        /*implicitLifetimes=*/ArrayRef<TypedAttr>(), callArgs);
     callResult = call.getResult(0);
   }
 

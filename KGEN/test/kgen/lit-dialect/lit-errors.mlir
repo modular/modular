@@ -427,10 +427,10 @@ lit.func @f() -> !kgen.none {
 
 // -----
 
-// expected-error @below {{'lit.call' op operation has 2 bindings for implicit lifetime parameters, but callee expected 1}}
+// expected-error @below {{2 lifetimes specified, but signature expected 1}}
 lit.call @calls[a, b]() : !lit.signature<[1]() -> ()>
 
 // -----
 
-// expected-error @+2 {{custom op 'lit.call' implicit lifetime reference at depth 0 has an out-of-range index: 1 >= 1}}
+// expected-error @+1 {{custom op 'lit.call' implicit lifetime reference at depth 0 has an out-of-range index: 1 >= 1}}
 lit.call @calls[a]() : !lit.signature<[1](!lit.ref<mut index, *[0,1]>) -> ()>

@@ -176,8 +176,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // function ptr fields
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
 
-  auto dtorMetadata =
-      FnMetadataAttr::get(ctx, {selfName}, {PassingKind::PosOnly});
+  auto dtorMetadata = FnMetadataAttr::get(
+      ctx, {selfName}, {PassingKind::PosOnly}, /*numImplicitLifetimeDecls=*/0);
   auto dtorSig = SignatureType::get(b.getFunctionType(opaquePtrType, noneType),
                                     ValueInputConvention::OwnedInReg,
                                     /*effects=*/{}, dtorMetadata);
@@ -189,7 +189,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       noneType);
   auto metadata =
       FnMetadataAttr::get(ctx, {ptrToImplName, otherName},
-                          {PassingKind::PosOnly, PassingKind::PosOnly});
+                          {PassingKind::PosOnly, PassingKind::PosOnly},
+                          /*numImplicitLifetimeDecls=*/0);
   auto cpySignatureType =
       SignatureType::get(fnType,
                          {ValueInputConvention::BorrowedInReg,
@@ -202,7 +203,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       paramValues, translateLocation(nestedFunctionOrTypeLocation));
   auto sigMetadata =
       FnMetadataAttr::get(ctx, dependentSignatureType.getArgNames(),
-                          dependentSignatureType.getArgPassingKinds());
+                          dependentSignatureType.getArgPassingKinds(),
+                          dependentSignatureType.getNumImplicitLifetimeDecls());
   Type resultType = dependentSignatureType.getValueResults().front();
   FunctionType functionType =
       b.getFunctionType(dependentSignatureType.getValueInputs(), resultType);
@@ -283,7 +285,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         noneType,
         builder.create<POP::LoadOp>(
             builder.create<StructGEPOp>(dtorSelf, dtor)),
-        dtorImpl);
+        /*implicitLifetimes=*/ArrayRef<TypedAttr>(), dtorImpl);
   }
 
   // Populate the copy constructor.
@@ -309,6 +311,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     auto ptrToImpl = builder.create<StructGEPOp>(copySelf, impl);
     auto loadedFuncPtr = builder.create<POP::LoadOp>(funcPtrPtr);
     builder.create<CallSignatureOp>(noneType, loadedFuncPtr,
+                                    /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
                                     ValueRange{ptrToImpl, loadedExistingImpl});
   }
   if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
@@ -373,7 +376,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         builder.create<StructGEPOp>(PointerType::get(callMemberSignatureType),
                                     callMember.getNameAttr(), callSelf);
     auto callResult = builder.create<CallSignatureOp>(
-        resultType, builder.create<POP::LoadOp>(getCallMember), arguments);
+        resultType, builder.create<POP::LoadOp>(getCallMember),
+        /*implicitLifetimes=*/ArrayRef<TypedAttr>(), arguments);
     ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
     builder.create<LIT::EndFuncOp>();
   }
@@ -945,7 +949,10 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     SymbolConstantAttr typedSymbol =
         createTypedSymbol(symbol, topLevelInputParams);
     Value result =
-        builder.create<CallOp>(resultType, typedSymbol, args).getResult(0);
+        builder
+            .create<CallOp>(resultType, typedSymbol,
+                            /*implicitLifetimes=*/ArrayRef<TypedAttr>(), args)
+            .getResult(0);
     ExprEmitter::emitNormalReturn(builder, result, topLevelCall);
     builder.create<LIT::EndFuncOp>();
   }

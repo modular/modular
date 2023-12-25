@@ -2318,10 +2318,12 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   // Emit the call to the destructor.
   if (auto directDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
     builder.create<LIT::CallOp>(signature.getValueResults()[0], directDtor,
+                                /*implicitLifetimes*/ ArrayRef<TypedAttr>(),
                                 valueToDestroy);
   } else {
     builder.create<LIT::CallParamOp>(signature.getValueResults()[0], dtor,
-                                     std::nullopt, std::nullopt,
+                                     /*paramDecls=*/std::nullopt,
+                                     /*implicitLifetimes=*/std::nullopt,
                                      valueToDestroy);
   }
 }

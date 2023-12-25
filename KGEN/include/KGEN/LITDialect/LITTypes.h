@@ -50,23 +50,49 @@ public:
   /// Get the function parameter passing kinds (e.g. keyword-only).
   ArrayRef<PassingKind> getParamPassingKinds();
 
+  /// Get the number of implicit lifetime decls this function type carries.
+  size_t getNumImplicitLifetimeDecls();
+
   /// LIT-level signatures always have one result type.
   Type getResultType() { return getValueResults().front(); }
 
   /// Return this signature with the input parameters dropped.
   LITSignatureType dropParamValues();
 
+  /// Substitute the specified implicit lifetime references into the specified
+  /// type, replacing them with `values` if they are at depth 0, or decrementing
+  /// their depth if not.  This invokes 'emitError' on error.
+  static Type
+  substituteImplicitLifetimes(Type value, ArrayRef<TypedAttr> values,
+                              function_ref<InFlightDiagnostic()> emitError);
+
+  /// Invoke substituteImplicitLifetimes on the values FunctionType from this
+  /// signature.
+  FunctionType substituteImplicitLifetimesIntoValues(
+      ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError);
+
+  /// This method replaces direct uses of NAMED implicit lifetime declarations
+  /// with index-based references corresponding to the signature.  lifetimeDecls
+  /// specifies the names of the implicit lifetime decls.
+  SignatureType
+  replaceImplicitLifetimesWithIndexes(ArrayRef<ParamDeclAttr> lifetimeDecls);
+
+  // Determine how many implicit lifetimes a signature with the specified input
+  // values should have.
+  static size_t countImplicitLifetimes(ArrayRef<ValueInputConvention> convs);
+
   /// A `SignatureType` is a LIT signature if it contains function metadata.
   static bool classof(SignatureType type);
   static bool classof(Type type);
 
-  static LITSignatureType get(MLIRContext *ctx, TypeRange inputs = {},
-                              TypeRange results = {});
+  static LITSignatureType get(MLIRContext *ctx, TypeRange inputs,
+                              TypeRange results,
+                              size_t numImplicitLifetimeDecls);
   static LITSignatureType get(FunctionType values,
                               ArrayRef<Type> inputParamTypes,
                               ArrayRef<Type> resultParamTypes,
                               ArrayRef<ValueInputConvention> convs,
-                              FnEffects effects, Attribute metadata);
+                              FnEffects effects, FnMetadataAttr metadata);
 };
 } // namespace M::KGEN::LIT
 

@@ -385,7 +385,7 @@ REPLResultRefType REPLResultRefType::get(Type elementType) {
 static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
-  unsigned numLifetimeDecls = 0;
+  size_t numLifetimeDecls = 0;
   if (succeeded(p.parseOptionalLSquare()))
     if (p.parseInteger(numLifetimeDecls) || p.parseRSquare())
       return failure();
@@ -563,13 +563,93 @@ ArrayRef<PassingKind> LITSignatureType::getParamPassingKinds() {
   return getMetadata().getParamPassingKinds();
 }
 
+/// Get the number of implicit lifetime decls this function type carries.
+size_t LITSignatureType::getNumImplicitLifetimeDecls() {
+  return getMetadata().getNumImplicitLifetimeDecls();
+}
+
 LITSignatureType LITSignatureType::dropParamValues() {
   auto metadata =
       FnMetadataAttr::get(getContext(), getArgNames(), getArgPassingKinds(),
                           /*paramNames=*/{}, /*paramPassingKinds=*/{},
-                          getDefaultArguments(), /*defaultParameters=*/{});
+                          getDefaultArguments(), /*defaultParameters=*/{},
+                          /*numImplicitLifetimeDecls=*/0);
   return get(getValues(), /*inputParamTypes=*/{}, getResultParamTypes(),
              getInputConventions(), getFnEffects(), metadata);
+}
+
+FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
+    ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
+  return cast_or_null<FunctionType>(
+      substituteImplicitLifetimes(getValues(), values, emitError));
+}
+
+/// Substitute implicit lifetime references in an attribute or type.
+Type LITSignatureType::substituteImplicitLifetimes(
+    Type value, ArrayRef<TypedAttr> values,
+    function_ref<InFlightDiagnostic()> emitError) {
+  struct Substitutor : IndexParameterReplacer<Substitutor> {
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      // If we are substituting the signature directly, subtract 1.
+      if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
+          ref && ref.getDepth() == depth) {
+        // Verify if requested.
+        if (ref.getIndex() >= values.size()) {
+          emitError() << "implicit lifetime reference at depth " << depth
+                      << " has an out-of-range index: " << ref.getIndex()
+                      << " >= " << values.size();
+          hadError = true;
+          return ref;
+        }
+        return values[ref.getIndex()];
+      }
+      return nullptr;
+    }
+
+    ArrayRef<TypedAttr> values;
+    function_ref<InFlightDiagnostic()> emitError;
+    bool hadError = false;
+  } substitutor;
+  substitutor.values = values;
+  substitutor.emitError = emitError;
+  Type result = substitutor.replace(value);
+  return substitutor.hadError ? Type() : result;
+}
+
+/// This method replaces direct uses of NAMED implicit lifetime declarations
+/// with index-based references corresponding to the signature. `lifetimeDecls`
+/// specifies the names of the implicit lifetime decls.
+SignatureType LITSignatureType::replaceImplicitLifetimesWithIndexes(
+    ArrayRef<ParamDeclAttr> lifetimeDecls) {
+  assert(lifetimeDecls.size() == getNumImplicitLifetimeDecls() &&
+         "Incorrect number of lifetime decls");
+
+  // If there are no implicit lifetimes, then this is a noop.
+  if (lifetimeDecls.empty())
+    return *this;
+
+  // Replace named implicit lifetime parameter references with index-based
+  // references in the signature.
+  struct LifetimeDeclRemapper : IndexParameterReplacer<LifetimeDeclRemapper> {
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      if (auto ref = ::dyn_cast<ParamDeclRefAttr>(attr)) {
+        if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
+          // Subtract 1 because we're replacing the signature directly.
+          size_t index = it->second;
+          return ImplicitLifetimeRefAttr::get(attr.getContext(), depth - 1,
+                                              index);
+        }
+      }
+      return nullptr;
+    }
+
+    DenseMap<StringAttr, size_t> mapping;
+  } remapper;
+  for (auto [i, decl] : llvm::enumerate(lifetimeDecls))
+    remapper.mapping.try_emplace(decl.getName(), i);
+  return remapper.replace(*this);
 }
 
 bool LITSignatureType::classof(SignatureType type) {
@@ -582,14 +662,31 @@ bool LITSignatureType::classof(Type type) {
   return false;
 }
 
+// Determine how many implicit lifetimes a signature with the specified input
+// values should have.
+size_t
+LITSignatureType::countImplicitLifetimes(ArrayRef<ValueInputConvention> convs) {
+  size_t result = 0;
+  for (auto conv : convs)
+#if 0 // TODO(clattner / references)
+    if (conv == ValueInputConvention::ByRefResult)
+      ++result;
+#else
+    (void)conv;
+#endif
+    return result;
+}
+
 LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
-                                       TypeRange results) {
+                                       TypeRange results,
+                                       size_t numImplicitLifetimeDecls) {
   auto funcType = FunctionType::get(ctx, inputs, results);
 
   size_t numInputs = funcType.getNumInputs();
   SmallVector<StringAttr> argNames(numInputs, StringAttr::get(ctx));
   SmallVector<PassingKind> argPassingKinds(numInputs, PassingKind::PosOnly);
-  auto metadata = FnMetadataAttr::get(ctx, argNames, argPassingKinds);
+  auto metadata = FnMetadataAttr::get(ctx, argNames, argPassingKinds,
+                                      numImplicitLifetimeDecls);
   return LITSignatureType::get(funcType, /*inputParamTypes=*/{},
                                /*resultParamTypes=*/{},
                                /*convs=*/{}, /*effects=*/{}, metadata);
@@ -599,8 +696,11 @@ LITSignatureType LITSignatureType::get(FunctionType values,
                                        ArrayRef<Type> inputParamTypes,
                                        ArrayRef<Type> resultParamTypes,
                                        ArrayRef<ValueInputConvention> convs,
-                                       FnEffects effects, Attribute metadata) {
+                                       FnEffects effects,
+                                       FnMetadataAttr metadata) {
   assert(metadata && "LITSignatureType must have non-null metadata");
+  assert(countImplicitLifetimes(convs) ==
+         metadata.getNumImplicitLifetimeDecls());
   return SignatureType::get(values, inputParamTypes, resultParamTypes, convs,
                             effects, metadata);
 }
