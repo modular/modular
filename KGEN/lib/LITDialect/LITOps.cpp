@@ -81,8 +81,12 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
 Type LIT::getSignatureUserResultType(SignatureType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
   // If this function is a memory only type, return the by-ref result.
-  if (sigType.hasMemoryOnlyResult())
-    return cast<PointerType>(argTypes.front()).getElementType();
+  if (sigType.hasMemoryOnlyResult()) {
+    // TODO(clattner / references) remove memory only pointer result types.
+    if (auto ptr = dyn_cast<PointerType>(argTypes.front()))
+      return ptr.getElementType();
+    return cast<RefType>(argTypes.front()).getElementAsType();
+  }
 
   // Otherwise it is the normal result.
   if (sigType.isThrows())
@@ -194,41 +198,6 @@ static void printLifetimeParams(AsmPrinter &p, Operation *op,
   p << ']';
 }
 
-/// Substitute implicit lifetime references in an attribute or type.
-static FunctionType
-substituteImplicitLifetimes(FunctionType value, ArrayRef<TypedAttr> values,
-                            function_ref<InFlightDiagnostic()> emitError) {
-  struct Substitutor : IndexParameterReplacer<Substitutor> {
-    Type tryReplace(Type, size_t) { return {}; }
-    Attribute tryReplace(Attribute attr, size_t depth) {
-      // If we are substituting the signature directly, subtract 1.
-      if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
-          ref && ref.getDepth() == depth) {
-        // Verify if requested.
-        if (ref.getIndex() >= values.size()) {
-          emitError() << "implicit lifetime reference at depth " << depth
-                      << " has an out-of-range index: " << ref.getIndex()
-                      << " >= " << values.size();
-          hadError = true;
-          return ref;
-        }
-        return values[ref.getIndex()];
-      }
-      return nullptr;
-    }
-
-    ArrayRef<TypedAttr> values;
-    function_ref<InFlightDiagnostic()> emitError;
-    bool hadError = false;
-  } substitutor;
-  substitutor.values = values;
-  substitutor.emitError = emitError;
-  FunctionType result = substitutor.replace(value);
-  if (substitutor.hadError)
-    return {};
-  return result;
-}
-
 /// Infer call operation operand and result types from the signature,
 /// substituting implicit lifetime parameters.
 template <typename CalleeT>
@@ -236,18 +205,29 @@ static ParseResult
 parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
                  SmallVectorImpl<Type> &resultTypes, CalleeT callee,
                  ArrayRef<TypedAttr> implicitLifetimes) {
-  Type calleeType;
+  SignatureType calleeType;
   if constexpr (std::is_same_v<Type, CalleeT>)
-    calleeType = callee;
+    calleeType = cast<SignatureType>(callee);
   else
-    calleeType = callee.getType();
+    calleeType = cast<SignatureType>(callee.getType());
 
-  llvm::SMLoc loc = p.getCurrentLocation();
-  FunctionType values = substituteImplicitLifetimes(
-      cast<SignatureType>(calleeType).getValues(), implicitLifetimes,
-      [&] { return p.emitError(loc); });
-  if (!values)
-    return failure();
+  FunctionType values;
+  if (implicitLifetimes.empty()) {
+    values = calleeType.getValues();
+  } else {
+    auto calleeLITType = cast<LITSignatureType>(calleeType);
+    if (calleeLITType.getNumImplicitLifetimeDecls() != implicitLifetimes.size())
+      return p.emitError(p.getNameLoc())
+             << implicitLifetimes.size()
+             << " lifetimes specified, but signature expected "
+             << calleeLITType.getNumImplicitLifetimeDecls();
+
+    values = calleeLITType.substituteImplicitLifetimesIntoValues(
+        implicitLifetimes, [&] { return p.emitError(p.getNameLoc()); });
+    if (!values)
+      return failure();
+  }
+
   llvm::append_range(operandTypes, values.getInputs());
   llvm::append_range(resultTypes, values.getResults());
   return success();
@@ -315,9 +295,8 @@ static LogicalResult verifyLifetimeParams(OpT op, LITSignatureType sig) {
 template <typename OpT>
 static LogicalResult verifyCallOp(OpT op, LITSignatureType sig,
                                   ValueRange operands, TypeRange results) {
-  FunctionType values =
-      substituteImplicitLifetimes(sig.getValues(), op.getImplicitLifetimes(),
-                                  [&] { return op.emitOpError(); });
+  FunctionType values = sig.substituteImplicitLifetimesIntoValues(
+      op.getImplicitLifetimes(), [&] { return op.emitOpError(); });
   if (!values)
     return failure();
 
@@ -569,25 +548,7 @@ static ParseResult parseLITFunctionSignature(
 
   // Replace named implicit lifetime parameter references with index-based
   // references in the signature.
-  struct LifetimeDeclRemapper : IndexParameterReplacer<LifetimeDeclRemapper> {
-    Type tryReplace(Type, size_t) { return {}; }
-    Attribute tryReplace(Attribute attr, size_t depth) {
-      if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
-        if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
-          // Subtract 1 because we're replacing the signature directly.
-          size_t index = it->second;
-          return ImplicitLifetimeRefAttr::get(attr.getContext(), depth - 1,
-                                              index);
-        }
-      }
-      return nullptr;
-    }
-
-    DenseMap<StringAttr, size_t> mapping;
-  } remapper;
-  for (auto [i, decl] : llvm::enumerate(lifetimeDecls))
-    remapper.mapping.try_emplace(decl.getName(), i);
-  signature = remapper.replace(signature);
+  signature = signature.replaceImplicitLifetimesWithIndexes(lifetimeDecls);
 
   // Prepend the lifetime declarations.
   llvm::append_range(lifetimeDecls, inputParams);
@@ -809,6 +770,16 @@ LogicalResult LIT::FuncOp::verify() {
     }
   }
 
+  // Verify the correct number of input parameters.
+  if (getSignature().getNumInputParams() +
+          getSignature().getNumImplicitLifetimeDecls() !=
+      getInputParams().size())
+    return emitOpError("incorrect number of input params: have ")
+           << getInputParams().size() << ", but expected "
+           << getSignature().getNumImplicitLifetimeDecls()
+           << " implicit lifetimes and " << getSignature().getNumInputParams()
+           << " input params";
+
   return success();
 }
 
@@ -875,8 +846,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   // representation.  This makes sure that the error case doesn't break
   // invariants (that functions always have a single result).
   auto errorType = builder.getType<TypeCheckErrorType>();
-  auto signatureType =
-      LITSignatureType::get(ctx, ArrayRef<Type>(), {errorType});
+  auto signatureType = LITSignatureType::get(ctx, ArrayRef<Type>(), {errorType},
+                                             /*numImplicitLifetimeDecls=*/0);
 
   auto emptyParamNames = StringArrayAttr::get(ctx, {});
   auto emptyParamDecls = ParamDeclArrayAttr::get(ctx, {});

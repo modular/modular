@@ -39,12 +39,14 @@ void LITDialect::registerAttributes() {
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context,
                                    ArrayRef<StringAttr> argNames,
-                                   ArrayRef<PassingKind> argPassingKinds) {
+                                   ArrayRef<PassingKind> argPassingKinds,
+                                   size_t numImplicitLifetimeDecls) {
   return get(context, argNames, argPassingKinds,
              /*paramNames=*/ArrayRef<StringAttr>(),
              /*paramPassingKinds=*/ArrayRef<PassingKind>(),
              /*defaultArguments=*/ArrayRef<TypedAttr>(),
-             /*defaultParameters=*/ArrayRef<TypedAttr>());
+             /*defaultParameters=*/ArrayRef<TypedAttr>(),
+             numImplicitLifetimeDecls);
 }
 
 FnMetadataAttr
@@ -53,7 +55,8 @@ FnMetadataAttr::cloneWith(ArrayRef<StringAttr> argNames,
   ArrayRef<TypedAttr> defaultArgs = getDefaultArguments();
   assert(argNames.size() >= defaultArgs.size());
   return get(getContext(), argNames, argPassingKinds, getParamNames(),
-             getParamPassingKinds(), defaultArgs, getDefaultParameters());
+             getParamPassingKinds(), defaultArgs, getDefaultParameters(),
+             getNumImplicitLifetimeDecls());
 }
 
 size_t FnMetadataAttr::getNumImplicitParams() const {
@@ -65,7 +68,7 @@ LogicalResult FnMetadataAttr::verify(
     ArrayRef<PassingKind> argPassingKinds, ArrayRef<StringAttr> paramNames,
     ArrayRef<PassingKind> paramPassingKinds,
     ArrayRef<TypedAttr> defaultArguments, ArrayRef<TypedAttr> defaultParameters,
-    unsigned numLifetimeDecls) {
+    size_t numLifetimeDecls) {
   if (argNames.size() != argPassingKinds.size()) {
     return emitError()
            << "number of argument names and passing kinds must match";
@@ -95,7 +98,8 @@ FnMetadataAttr::getWithBoundArgs(size_t numBound) const {
     newDefaultArgs = newDefaultArgs.take_back(numArgs);
 
   return get(getContext(), newArgNames, newArgPassingKind, getParamNames(),
-             getParamPassingKinds(), newDefaultArgs, getDefaultParameters());
+             getParamPassingKinds(), newDefaultArgs, getDefaultParameters(),
+             getNumImplicitLifetimeDecls());
 }
 
 FnMetadataAttrInterface
@@ -116,7 +120,8 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   }
 
   return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
-             newParamPassingKinds, getDefaultArguments(), newDefaultParams);
+             newParamPassingKinds, getDefaultArguments(), newDefaultParams,
+             getNumImplicitLifetimeDecls());
 }
 
 FnMetadataAttrInterface
@@ -127,7 +132,8 @@ FnMetadataAttr::prependPosParams(size_t numNewParams) const {
   SmallVector<PassingKind> newPassingKinds(numNewParams, PassingKind::PosOnly);
   llvm::append_range(newPassingKinds, getParamPassingKinds());
   return get(getContext(), getArgNames(), getArgPassingKinds(), newParamNames,
-             newPassingKinds, getDefaultArguments(), getDefaultParameters());
+             newPassingKinds, getDefaultArguments(), getDefaultParameters(),
+             getNumImplicitLifetimeDecls());
 }
 
 LogicalResult FnMetadataAttr::verifySignature(

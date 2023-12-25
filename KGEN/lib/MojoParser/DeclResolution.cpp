@@ -937,9 +937,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
 
   // Compute the signature of the function.
-  auto metadata = FnMetadataAttr::get(
-      builder.getContext(), argNames, argPassingKinds, paramNames,
-      paramPassingKinds, argDefaults, paramDefaults);
+  auto metadata =
+      FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
+                          paramNames, paramPassingKinds, argDefaults,
+                          paramDefaults, /*implicitLifetimeDecls=*/0);
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects, metadata, silenceErrors(getContext()));
@@ -2198,7 +2199,8 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
           traitSig.getArgNames().drop_front(replacedResult),
           traitSig.getArgPassingKinds().drop_front(replacedResult),
           traitSig.getParamNames(), traitSig.getParamPassingKinds(),
-          traitSig.getDefaultArguments(), traitSig.getDefaultParameters()));
+          traitSig.getDefaultArguments(), traitSig.getDefaultParameters(),
+          traitSig.getNumImplicitLifetimeDecls()));
 }
 
 /// Synthesize a single stub for a register-passable type to meet a conformance

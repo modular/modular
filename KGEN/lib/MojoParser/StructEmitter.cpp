@@ -48,10 +48,13 @@ LIT::FuncOp StructEmitter::createFunction(
         StringAttr::get(getContext(), demangleParameterName(p.getName())));
   }
 
+  size_t numImplicitLifetimeDecls =
+      LITSignatureType::countImplicitLifetimes(argConventions);
   auto metadata =
       FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
                           parameterNames, paramPassingKinds,
-                          /*defaultArguments=*/{}, /*defaultParameters=*/{});
+                          /*defaultArguments=*/{}, /*defaultParameters=*/{},
+                          numImplicitLifetimeDecls);
   FunctionType functionType = builder.getFunctionType(argTypes, {resultType});
   Location location = shared.translateLocation(loc);
   LITSignatureType signature = SignatureType::remapToSignature(

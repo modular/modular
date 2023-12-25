@@ -2951,7 +2951,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
-                          paramPassingKinds, argDefaults, paramDefaults),
+                          paramPassingKinds, argDefaults, paramDefaults,
+                          /*implicitLifetimeDecls=*/0),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");

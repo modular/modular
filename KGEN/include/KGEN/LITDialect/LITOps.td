@@ -177,8 +177,9 @@ def LIT_CallOp : LITOp<"call", [
 
   let builders = [
     OpBuilder<(ins "TypeRange":$results, "SymbolConstantAttr":$callee,
+                   "ArrayRef<TypedAttr>":$implicitLifetimesValues,
                    "ValueRange":$operands), [{
-      build($_builder, $_state, results, callee, /*implicitLifetimes=*/{},
+      build($_builder, $_state, results, callee, implicitLifetimesValues,
             /*paramDecls=*/ArrayRef<ParamDeclAttr>(), operands);
     }]>
   ];
@@ -264,14 +265,6 @@ def LIT_CallSignatureOp : LITOp<"call_signature"> {
     custom<CallOpTypes>(type($arguments), type($results), ref(type($callee)),
                         ref($implicitLifetimes))
   }];
-
-  let builders = [
-    OpBuilder<(ins "TypeRange":$results, "Value":$callee,
-                   "ValueRange":$args), [{
-      build($_builder, $_state, results, callee,
-            /*implicitLifetimes=*/ArrayRef<TypedAttr>(), args);
-    }]>
-  ];
 
   let hasVerifier = 1;
 }
