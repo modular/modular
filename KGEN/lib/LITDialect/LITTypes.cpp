@@ -668,25 +668,19 @@ size_t
 LITSignatureType::countImplicitLifetimes(ArrayRef<ValueInputConvention> convs) {
   size_t result = 0;
   for (auto conv : convs)
-#if 0 // TODO(clattner / references)
-    if (conv == ValueInputConvention::ByRefResult)
+    if (isArgumentPassedWithImplicitLifetime(conv))
       ++result;
-#else
-    (void)conv;
-#endif
-    return result;
+  return result;
 }
 
 LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
-                                       TypeRange results,
-                                       size_t numImplicitLifetimeDecls) {
+                                       TypeRange results) {
   auto funcType = FunctionType::get(ctx, inputs, results);
 
   size_t numInputs = funcType.getNumInputs();
   SmallVector<StringAttr> argNames(numInputs, StringAttr::get(ctx));
   SmallVector<PassingKind> argPassingKinds(numInputs, PassingKind::PosOnly);
-  auto metadata = FnMetadataAttr::get(ctx, argNames, argPassingKinds,
-                                      numImplicitLifetimeDecls);
+  auto metadata = FnMetadataAttr::get(ctx, argNames, argPassingKinds);
   return LITSignatureType::get(funcType, /*inputParamTypes=*/{},
                                /*resultParamTypes=*/{},
                                /*convs=*/{}, /*effects=*/{}, metadata);
