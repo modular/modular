@@ -87,7 +87,7 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
     if (auto ptr = dyn_cast<PointerType>(type))
       type = ptr.getElementType();
     else if (auto ref = dyn_cast<RefType>(type))
-      type = ref.getElementAsType();
+      type = ref.getElementType();
   }
   if (succeeded(p.parseOptionalEqual()))
     return parseParamValue(p, defaultVal, type);

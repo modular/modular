@@ -311,28 +311,27 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
 RefType RefType::get(bool isMutable, TypedAttr elementType,
                      TypedAttr lifetime) {
   auto *ctx = elementType.getContext();
-  return get(ctx, isMutable, elementType, lifetime);
+  return get(ctx, isMutable, ParamRefType::get(elementType), lifetime);
 }
 
 RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime) {
-  auto typeExpr = TypeConstantAttr::get(
-      elementType, AnyRegTypeType::get(elementType.getContext()));
-  return get(isMutable, typeExpr, lifetime);
-}
-
-Type RefType::getElementAsType() {
-  TypedAttr elemType = getElementType();
-  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(elemType))
-    return typeCst.getValue();
-  assert(LIT::isTypeExpr(elemType) &&
-         "parameter expr must be a type expression");
-  return ParamRefType::get(elemType);
+  return get(elementType.getContext(), isMutable, elementType, lifetime);
 }
 
 /// Return the pointer type that corresponds to this reference type, ignoring
 /// the lifetime and the mutability.
 PointerType RefType::getAsPointerType() {
   return PointerType::get(getElementType());
+}
+
+/// Return this RefType but with a different element type.
+RefType RefType::getWithElementReplaced(Type newElement) {
+  return get(getIsMutable(), newElement, getLifetime());
+}
+
+/// Return this RefType but with a different lifetime.
+RefType RefType::getWithLifetimeReplaced(TypedAttr newLifetime) {
+  return get(getIsMutable(), getElementType(), newLifetime);
 }
 
 /// Given the specified pointer type, return a reference type of the same

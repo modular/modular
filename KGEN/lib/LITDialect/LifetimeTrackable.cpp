@@ -262,6 +262,6 @@ Type LifetimeTrackable::getTypeOrPointeeType(Type type, bool isIndirect) {
 
   // TODO(references): Remove support for raw pointers.
   if (auto refType = dyn_cast<RefType>(type))
-    return refType.getElementAsType();
+    return refType.getElementType();
   return llvm::cast<PointerType>(type).getElementType();
 }

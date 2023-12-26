@@ -201,7 +201,7 @@ LogicalResult FnMetadataAttr::verifySignature(
           if (auto ptr = ::dyn_cast<PointerType>(expected))
             expected = ptr.getElementType();
           else
-            expected = ::cast<RefType>(expected).getElementAsType();
+            expected = ::cast<RefType>(expected).getElementType();
         }
       }
 

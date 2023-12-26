@@ -85,7 +85,7 @@ Type LIT::getSignatureUserResultType(SignatureType sigType,
     // TODO(clattner / references) remove memory only pointer result types.
     if (auto ptr = dyn_cast<PointerType>(argTypes.front()))
       return ptr.getElementType();
-    return cast<RefType>(argTypes.front()).getElementAsType();
+    return cast<RefType>(argTypes.front()).getElementType();
   }
 
   // Otherwise it is the normal result.
@@ -1383,19 +1383,18 @@ void LIT::StructGEPOp::build(OpBuilder &builder, OperationState &result,
 
 LogicalResult
 RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  Type structType = getContainer().getType().getElementAsType();
+  Type structType = getContainer().getType().getElementType();
   return verifyStructFieldAndType(symbolTable, *this,
                                   cast<DeclRefType>(structType), getFieldAttr(),
-                                  getResult().getType().getElementAsType());
+                                  getResult().getType().getElementType());
 }
 
 void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
                            Value structBasePtr, StructFieldOp field) {
   auto refType = cast<RefType>(structBasePtr.getType());
-  Type eltType = refType.getElementAsType();
-  auto structType = field.getReboundType(cast<DeclRefType>(eltType));
+  auto eltType = cast<DeclRefType>(refType.getElementType());
   build(builder, result,
-        RefType::get(refType.getIsMutable(), structType, refType.getLifetime()),
+        refType.getWithElementReplaced(field.getReboundType(eltType)),
         field.getNameAttr(), structBasePtr);
 }
 

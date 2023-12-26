@@ -645,7 +645,7 @@ static Value lowerStructOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
 static Value lowerStructOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
                            StructOperationLowerer &lowerer) {
   auto structType =
-      cast<DeclRefType>(op.getContainer().getType().getElementAsType());
+      cast<DeclRefType>(op.getContainer().getType().getElementType());
   int64_t index = lowerer.getField(op.getFieldAttr(), structType);
 
   // Check to see if we need to flatten this.  A flattened gep is a noop.
