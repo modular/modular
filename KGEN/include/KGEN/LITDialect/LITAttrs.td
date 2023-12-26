@@ -78,7 +78,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
   let builders = [
     AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames,
-                     "ArrayRef<PassingKind>":$argPassingKinds)>
+                     "ArrayRef<PassingKind>":$argPassingKinds,
+                     "size_t":$numImplicitLifetimeDecls)>
   ];
 
   let extraClassDeclaration = [{

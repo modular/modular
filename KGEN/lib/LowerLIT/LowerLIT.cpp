@@ -570,7 +570,8 @@ orderAndLowerGlobalVariables(ModuleOp module,
 
     // Outline the constructor and destructor into functions.
     auto sig = LITSignatureType::get(b.getContext(), /*inputs=*/TypeRange{},
-                                     /*results=*/TypeRange{});
+                                     /*results=*/TypeRange{},
+                                     /*numImplicitLifetimeDecls=*/0);
     auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
       b.setInsertionPoint(op);
       auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, StringAttr(), sig);

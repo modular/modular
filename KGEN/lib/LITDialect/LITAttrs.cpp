@@ -39,13 +39,14 @@ void LITDialect::registerAttributes() {
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context,
                                    ArrayRef<StringAttr> argNames,
-                                   ArrayRef<PassingKind> argPassingKinds) {
+                                   ArrayRef<PassingKind> argPassingKinds,
+                                   size_t numImplicitLifetimeDecls) {
   return get(context, argNames, argPassingKinds,
              /*paramNames=*/ArrayRef<StringAttr>(),
              /*paramPassingKinds=*/ArrayRef<PassingKind>(),
              /*defaultArguments=*/ArrayRef<TypedAttr>(),
              /*defaultParameters=*/ArrayRef<TypedAttr>(),
-             /*numImplicitLifetimeDecls=*/0);
+             numImplicitLifetimeDecls);
 }
 
 FnMetadataAttr
