@@ -2100,7 +2100,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     if (!emitter.emitExpr(initExpr, dest))
       return declParseError();
 
-    assert(!isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
+    assert(!isa<UnresolvedType>(varOp.getType().getElementType()) &&
            "RValue emission should have inferred var type");
 
   } else if (parsedType) {
@@ -2117,7 +2117,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // if this was a non-parameteric register-passable `let` declaration with
   // an initializer.  We don't care about the address being available and
   // this produces smaller IR.
-  ASTType inferredRValueType = ASTType(varOp.getType().getElementAsType());
+  ASTType inferredRValueType = ASTType(varOp.getType().getElementType());
   if (varOp->hasOneUse() && varOp.getKind() == VarLetDeclKind::Let &&
       inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared)) {
     // Check if the single use is a store. Otherwise, the register-passable

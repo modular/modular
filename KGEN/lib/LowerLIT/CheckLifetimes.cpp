@@ -599,11 +599,11 @@ ValueRef ValueSet::getValueRef(Value value) const {
       return {};
 
     // Figure out what subset of elements we have indexed to.
-    auto containerType = structGER.getContainer().getType().getElementAsType();
+    auto containerType = structGER.getContainer().getType().getElementType();
     unsigned fieldOffset = typeDeclInfo.getFieldIndex(
         cast<DeclRefType>(containerType), structGER.getFieldAttr());
     unsigned startBit = baseVal.startBit + fieldOffset;
-    auto resultType = structGER.getType().getElementAsType();
+    auto resultType = structGER.getType().getElementType();
     return ValueRef{baseVal.valueId, startBit,
                     startBit + typeDeclInfo.getNumFieldsInType(resultType),
                     /*isIndirect=*/true};
@@ -2301,7 +2301,7 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   // var).  If so, it needs to be loaded to invoke the destructor.
   Value valueToDestroy = value;
   if (auto ref = dyn_cast<RefType>(valueToDestroy.getType())) {
-    if (signature.getValueInputs()[0] == ref.getElementAsType())
+    if (signature.getValueInputs()[0] == ref.getElementType())
       valueToDestroy = builder.create<RefLoadOp>(valueToDestroy);
     else
       // TODO(references): pass references to destructors, not pointers.

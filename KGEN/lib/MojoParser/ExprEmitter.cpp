@@ -277,7 +277,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     ASTType materializedType = nmTarget ? nmTarget : resultType;
 
     if (auto varOp = dyn_cast<VarLetDeclOp>(opDest)) {
-      assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
+      assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(RefType::get(/*isMut*/ true, materializedType,
                                              varOp.getType().getLifetime()));

@@ -281,28 +281,35 @@ def LIT_RefType : LITType<"Ref", "ref"> {
   }];
 
   let parameters = (ins "bool":$isMutable,
-                        "TypedAttr":$elementType, "TypedAttr":$lifetime);
+                        "Type":$elementType, "TypedAttr":$lifetime);
   let assemblyFormat = [{
-    `<` custom<MutFlag>($isMutable) `` custom<TypeParamValue>($elementType) `,`
+    `<` custom<MutFlag>($isMutable) `` custom<ParamType>($elementType) `,`
         custom<LifetimeParamValue>($lifetime) `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "bool":$isMutable,
-                                        "TypedAttr":$elementType,
+                                        "Type":$elementType,
                                         "TypedAttr":$lifetime)>,
     TypeBuilderWithInferredContext<(ins "bool":$isMutable,
-                                        "Type":$elementType,
+                                        "TypedAttr":$elementType,
                                         "TypedAttr":$lifetime)>,
   ];
 
   let extraClassDeclaration = [{
-    /// Return the elementType attribute as a type.
-    Type getElementAsType();
+    /// Get the element type as the provided type.
+    template <typename ElTy>
+    ElTy getElementAs() { return getElementType().cast<ElTy>(); }
 
     /// Return the pointer type that corresponds to this reference type,
     /// ignoring the lifetime and the mutability.
     PointerType getAsPointerType();
+
+    /// Return this RefType but with a different element type.
+    RefType getWithElementReplaced(Type newElement);
+
+    /// Return this RefType but with a different lifetime.
+    RefType getWithLifetimeReplaced(TypedAttr newLifetime);
 
     /// Given the specified pointer type, return a reference type of the same
     /// element but with a hacked lifetime.
@@ -313,12 +320,12 @@ def LIT_RefType : LITType<"Ref", "ref"> {
 
 class ReferenceElementType<string lhs, string rhs> : TypesMatchWith<
     "reference element type", lhs, rhs,
-    "$_self.cast<RefType>().getElementAsType()">;
+    "$_self.cast<RefType>().getElementType()">;
 
 class RefOf<Type type> : ConfinedType<LIT_RefType,
     [CPred<"$_self.cast<::M::KGEN::LIT::RefType>().getElementType()">,
      SubstLeaves<"$_self",
-      "$_self.cast<::M::KGEN::LIT::RefType>().getElementAsType()",
+      "$_self.cast<::M::KGEN::LIT::RefType>().getElementType()",
       type.predicate>],
     "reference to " # type.summary> {
   let cppClassName = "::M::KGEN::LIT::RefType";

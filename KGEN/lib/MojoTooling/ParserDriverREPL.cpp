@@ -534,7 +534,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // Handle memory based decls.
     if (auto letOp = dyn_cast<LIT::VarLetDeclOp>(*decl)) {
       if (Value field = checkInsertPersistentVar(
-              letOp, letOp.getNameAttr(), letOp.getType().getElementAsType())) {
+              letOp, letOp.getNameAttr(), letOp.getType().getElementType())) {
         decl->setIRValue(MRValue(field));
 
         // In order to use the pointer as a reference we force cast.
