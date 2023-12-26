@@ -846,8 +846,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   // representation.  This makes sure that the error case doesn't break
   // invariants (that functions always have a single result).
   auto errorType = builder.getType<TypeCheckErrorType>();
-  auto signatureType =
-      LITSignatureType::get(ctx, ArrayRef<Type>(), {errorType});
+  auto signatureType = LITSignatureType::get(ctx, ArrayRef<Type>(), {errorType},
+                                             /*numImplicitLifetimeDecls=*/0);
 
   auto emptyParamNames = StringArrayAttr::get(ctx, {});
   auto emptyParamDecls = ParamDeclArrayAttr::get(ctx, {});
