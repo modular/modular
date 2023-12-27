@@ -77,6 +77,12 @@ public:
   SignatureType
   replaceImplicitLifetimesWithIndexes(ArrayRef<ParamDeclAttr> lifetimeDecls);
 
+  /// This method replaces direct uses of NAMED implicit lifetime declarations
+  /// with index-based references.  lifetimeDecls specifies the names of the
+  /// implicit lifetime decls to replace.
+  static Type replaceImplicitLifetimesWithIndexes(
+      Type type, ArrayRef<ParamDeclAttr> lifetimeDecls, size_t indexOffset = 0);
+
   // Determine how many implicit lifetimes a signature with the specified input
   // values should have.
   static size_t countImplicitLifetimes(ArrayRef<ValueInputConvention> convs);

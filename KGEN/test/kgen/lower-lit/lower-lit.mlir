@@ -1,5 +1,8 @@
 // RUN: kgen-opt -lower-lit -split-input-file -verify-diagnostics %s | FileCheck %s
 
+// FIXME(https://github.com/modularml/modular/issues/28335): This file contains
+// many busted examples that don't pass -verify-parameters.  :-(
+
 //===----------------------------------------------------------------------===//
 // Functions
 //===----------------------------------------------------------------------===//
@@ -526,4 +529,43 @@ lit.func @extern() attributes {preCompiledModuleRef = @module, preElaborationNam
 // CHECK-SAME: LLVMMetadata = {llvm.someattr = 3 : index}
 lit.func @metadata() attributes {LLVMMetadata = {llvm.someattr = 3 : index}} {
   kgen.return
+}
+
+//===----------------------------------------------------------------------===//
+// Implicit lifetimes.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// Verify that the lifetimes get correctly removed and the IR is correct.
+
+!Mem = !kgen.declref<@Mem, !lit.metatype<@Mem>>
+lit.struct.decl @Mem   {
+  lit.func @"__init__($test::Mem=&)"(%self[self]: !kgen.pointer<!Mem> init_self, |) -> !kgen.none attributes {isParametric, sourceName = "__init__", specialFnKind = 2 : i8} {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
+}
+
+// CHECK-LABEL: kgen.generator @getThing
+// CHECK-SAME:(%arg0: !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> byref_result)
+lit.func @getThing[*"`abc"](%res[res]: !lit.ref<mut !Mem, *"`abc"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "getThing", specialFnKind = 0 : i8} {
+  // CHECK-NEXT: kgen.param.declare *"`abc": lifetime = <#lit.lifetime>
+  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> to !lit.ref<mut @Mem : metatype<@Mem>, *"`abc">
+  %0 = lit.ref.to_pointer %res : <mut !Mem, *"`abc">
+  %1 = lit.call @Mem::@"__init__($test::Mem=&)"(%0) : !lit.signature<("self": !kgen.pointer<!Mem> init_self, |) -> !kgen.none>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// CHECK-LABEL: kgen.generator @callThing
+// CHECK-SAME: (%arg0: !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> byref_result)
+lit.func @callThing[*"`__result__"](%__result__[__result__]: !lit.ref<mut !Mem, *"`__result__"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
+  // CHECK-NEXT: kgen.param.declare *"`__result__": lifetime = <#lit.lifetime>
+  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> to !lit.ref<mut @Mem : metatype<@Mem>, *"`__result__">
+  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<mut @Mem : metatype<@Mem>, *"`__result__"> to !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]>
+  // CHECK-NEXT: kgen.call @getThing(%1)
+  %0 = lit.call @getThing[*"`__result__"](%__result__) : !lit.signature<[1]("__result__": !lit.ref<mut !Mem, *[0,0]> byref_result, |) -> !kgen.none>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
 }

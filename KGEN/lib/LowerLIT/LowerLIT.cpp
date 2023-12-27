@@ -135,6 +135,32 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
   func.erase();
 }
 
+/// Insert a cast of the specified value to the specified type, when `forceCast`
+/// is true, this inserts a cast even when the types agree.
+static Value castValue(Value v, Type ty, Location loc, OpBuilder &b,
+                       bool forceCast = false) {
+  if (v.getType() == ty && !forceCast)
+    return v;
+  return b.create<mlir::UnrealizedConversionCastOp>(loc, ArrayRef<Type>(ty), v)
+      .getResult(0);
+}
+
+/// The lit.call family takes implicit lifetime param values as well as their
+/// normal operands, and these are dropped at the KGEN level. Insert a cast for
+/// each mismatching operands to the expected type without them.
+static SmallVector<Value> castCallOperands(OperandRange operands,
+                                           SignatureType calleeType,
+                                           Location loc, OpBuilder &b) {
+  SmallVector<Value> newOperands;
+  assert(operands.size() == calleeType.getValues().getInputs().size() &&
+         "Argument count mismatch");
+  for (auto [operand, expectedType] :
+       llvm::zip(operands, calleeType.getValues().getInputs())) {
+    newOperands.push_back(castValue(operand, expectedType, loc, b));
+  }
+  return newOperands;
+}
+
 void LITLowerer::lowerLITOps(LIT::FuncOp func) {
   // Check if we are building debug info for source variables.
   DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
@@ -161,16 +187,28 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       b.replaceOpWithNewOp<POP::StoreOp>(storeBorrow, storeBorrow.getArg(),
                                          storeBorrow.getPtr());
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
-      b.replaceOpWithNewOp<KGEN::CallOp>(
-          call, call.getResultTypes(), call.getCallee(),
-          call.getParamDeclsAttr(), call.getOperands());
+      // The implicit lifetimes we're about to drop are probably used in the
+      // input arguments, insert a cast to the expected type without them.
+      auto calleeType = cast<SignatureType>(call.getCallee().getType());
+      auto newOperands =
+          castCallOperands(call.getOperands(), calleeType, call.getLoc(), b);
+      b.replaceOpWithNewOp<KGEN::CallOp>(call, call.getResultTypes(),
+                                         call.getCallee(),
+                                         call.getParamDeclsAttr(), newOperands);
     } else if (auto call = dyn_cast<LIT::CallParamOp>(op)) {
+      auto calleeType = cast<SignatureType>(call.getCallee().getType());
+      auto newOperands =
+          castCallOperands(call.getOperands(), calleeType, call.getLoc(), b);
       b.replaceOpWithNewOp<KGEN::CallParamOp>(
           call, call.getResultTypes(), call.getCallee(),
-          call.getParamDeclsAttr(), call.getOperands());
+          call.getParamDeclsAttr(), newOperands);
     } else if (auto call = dyn_cast<LIT::CallSignatureOp>(op)) {
+      auto calleeType = cast<SignatureType>(call.getCallee().getType());
+      // Cast the arguments, but not the callee.
+      auto newOperands =
+          castCallOperands(call.getArguments(), calleeType, call.getLoc(), b);
       b.replaceOpWithNewOp<KGEN::CallSignatureOp>(
-          call, call.getResultTypes(), call.getCallee(), call.getArguments());
+          call, call.getResultTypes(), call.getCallee(), newOperands);
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       call.setImplicitLifetimes({});
     } else if (auto letDecl = dyn_cast<LetRegDeclOp>(op)) {
@@ -260,12 +298,24 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
 
   lowerLITOps(gen);
 
+  OpBuilder b(gen->getContext());
+  auto lifetimeAttr = b.getAttr<LifetimeAttr>();
   LITSignatureType signature = gen.getSignature();
   SmallVector<ParamDeclAttr> inputParams;
   ArrayRef<ParamDeclAttr> genParams = gen.getInputParams();
   // Drop the implicit lifetime decls and append the rest.
-  genParams =
-      genParams.drop_front(genParams.size() - signature.getNumInputParams());
+  ArrayRef<ParamDeclAttr> implicitLifetimes =
+      genParams.take_front(signature.getNumImplicitLifetimeDecls());
+  genParams = genParams.drop_front(implicitLifetimes.size());
+
+  // Switch the function type on the decl to the FunctionType used in the
+  // signature, which has the implicit lifetimes represented with indices.  We
+  // cannot use the FunctionType from the signature directly, because that would
+  // drop ALL named input parameters.
+  auto newFunctionType =
+      cast<FunctionType>(LITSignatureType::replaceImplicitLifetimesWithIndexes(
+          gen.getFunctionType(), implicitLifetimes));
+  auto newFunctionTypeAttr = TypeAttr::get(newFunctionType);
 
   // Prepend the parameters from the parent decl if present.
   if (!parentInputParams.empty()) {
@@ -277,13 +327,12 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
   }
   llvm::append_range(inputParams, genParams);
 
-  OpBuilder b(gen->getContext());
   Operation *result;
   if (gen.isExternal()) {
     // Replace external functions with `kgen.extern.generator` ops.
     result = b.create<ExternGeneratorOp>(
         gen.getLoc(), gen.getPreElaborationNameAttr(), TypeAttr::get(signature),
-        gen.getFunctionTypeAttr(),
+        newFunctionTypeAttr,
         ParamDeclArrayAttr::get(b.getContext(), inputParams),
         gen.getResultParamsAttr(), gen.getExportKindAttr(),
         gen.getPreCompiledModuleRefAttr(), gen.getLinkageNameAttr());
@@ -297,7 +346,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
     // Directly lower since these operations are exactly identical right now.
     auto newGen = b.create<GeneratorOp>(
         gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
-        gen.getFunctionTypeAttr(),
+        newFunctionTypeAttr,
         ParamDeclArrayAttr::get(b.getContext(), inputParams),
         gen.getResultParamsAttr(), gen.getConstraintsAttr(),
         gen.getDecoratorsAttr(), gen.getInlineLevelAttr(),
@@ -309,6 +358,32 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
     auto *bodyBlock = gen.getBody();
     gen.getBodyRegion().getBlocks().remove(bodyBlock);
     newGen.getBodyRegion().push_back(bodyBlock);
+
+    // Insert dummy declarations of the implicitLifetimes that have been
+    // dropped, so any references to them in the body are valid.
+    b.setInsertionPointToStart(bodyBlock);
+    for (auto decl : implicitLifetimes) {
+      assert(isa<LifetimeType>(decl.getType()) &&
+             "Implicit lifetimes should all have lifetime type");
+      b.create<ParamDeclareOp>(gen.getLoc(), decl, lifetimeAttr);
+    }
+
+    // Fix up the BBArgs in the entry block to use the correct types, which have
+    // implicit lifetimes stripped off of them.
+    for (auto [arg, newType] :
+         llvm::zip(bodyBlock->getArguments(), newFunctionType.getInputs())) {
+      if (arg.getType() == newType)
+        continue;
+      // We're going to change the type of the argument, but all the uses expect
+      // a value that uses the dummy lifetimes that we just inserted, so insert
+      // a cast to the original type.
+      Value casted =
+          castValue(arg, arg.getType(), newGen.getLoc(), b, /*forceCast=*/true);
+      arg.replaceAllUsesWith(casted);
+      arg.setType(newType);
+      // RAUW will change the cast as well, fix it back.
+      casted.getDefiningOp()->setOperand(0, arg);
+    }
   }
 
   // Move over the symbol, and we're done.
