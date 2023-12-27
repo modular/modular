@@ -617,38 +617,52 @@ Type LITSignatureType::substituteImplicitLifetimes(
 }
 
 /// This method replaces direct uses of NAMED implicit lifetime declarations
-/// with index-based references corresponding to the signature. `lifetimeDecls`
-/// specifies the names of the implicit lifetime decls.
-SignatureType LITSignatureType::replaceImplicitLifetimesWithIndexes(
-    ArrayRef<ParamDeclAttr> lifetimeDecls) {
-  assert(lifetimeDecls.size() == getNumImplicitLifetimeDecls() &&
-         "Incorrect number of lifetime decls");
+/// with index-based references.  lifetimeDecls specifies the names of the
+/// implicit lifetime decls to replace.
+///
+/// If indexOffset is subtracted from depth when set.
+Type LITSignatureType::replaceImplicitLifetimesWithIndexes(
+    Type origType, ArrayRef<ParamDeclAttr> lifetimeDecls, size_t indexOffset) {
 
   // If there are no implicit lifetimes, then this is a noop.
   if (lifetimeDecls.empty())
-    return *this;
+    return origType;
 
   // Replace named implicit lifetime parameter references with index-based
   // references in the signature.
   struct LifetimeDeclRemapper : IndexParameterReplacer<LifetimeDeclRemapper> {
+    LifetimeDeclRemapper(size_t indexOffset) : indexOffset(indexOffset) {}
+
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
       if (auto ref = ::dyn_cast<ParamDeclRefAttr>(attr)) {
         if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
           // Subtract 1 because we're replacing the signature directly.
           size_t index = it->second;
-          return ImplicitLifetimeRefAttr::get(attr.getContext(), depth - 1,
-                                              index);
+          return ImplicitLifetimeRefAttr::get(attr.getContext(),
+                                              depth - indexOffset, index);
         }
       }
       return nullptr;
     }
 
+    size_t indexOffset;
     DenseMap<StringAttr, size_t> mapping;
-  } remapper;
+  } remapper(indexOffset);
   for (auto [i, decl] : llvm::enumerate(lifetimeDecls))
     remapper.mapping.try_emplace(decl.getName(), i);
-  return remapper.replace(*this);
+  return remapper.replace(origType);
+}
+
+/// This method replaces direct uses of NAMED implicit lifetime declarations
+/// with index-based references corresponding to the signature. `lifetimeDecls`
+/// specifies the names of the implicit lifetime decls.
+SignatureType LITSignatureType::replaceImplicitLifetimesWithIndexes(
+    ArrayRef<ParamDeclAttr> lifetimeDecls) {
+  assert(lifetimeDecls.size() == getNumImplicitLifetimeDecls() &&
+         "Incorrect number of lifetime decls");
+  return ::cast<SignatureType>(
+      replaceImplicitLifetimesWithIndexes(*this, lifetimeDecls, 1));
 }
 
 bool LITSignatureType::classof(SignatureType type) {

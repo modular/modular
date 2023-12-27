@@ -447,6 +447,22 @@ void SignatureType::print(AsmPrinter &printer) const {
   printer << '>';
 }
 
+bool SignatureType::hasAddress(ValueInputConvention conv) {
+  switch (conv) {
+  case ValueInputConvention::None:
+  case ValueInputConvention::OwnedInReg:
+  case ValueInputConvention::BorrowedInReg:
+    return false;
+  case ValueInputConvention::OwnedInMem:
+  case ValueInputConvention::BorrowedInMem:
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::ByRefResult:
+  case ValueInputConvention::InitSelf:
+    return true;
+  }
+  llvm_unreachable("invalid value input convention");
+}
+
 LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       ArrayRef<Type> inputParamTypes,
@@ -487,10 +503,18 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
       }
       type = variadic.getElementAsType();
     }
-    // Verify argument conventions.
+    // Verify argument conventions.  Before lit lowering, they need to be
+    // !lit.ref type, after lowering, they should have !kgen.pointer type.
     if (hasAddress(conv)) {
       if (::isa<PointerType>(type))
         break;
+      // TODO: During LowerLIT, we strip off the metadata, but later we lower
+      // references to pointers.  This means that LowerLIT needs a
+      // kgen.signature (without LIT attribute) with references.  Accept
+      // !lit.ref until we can sort this out.
+      if (type.getDialect().getNamespace() == "lit")
+        break;
+
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)
              << "' in signature type should be a `!kgen.pointer` but got: "
@@ -538,22 +562,6 @@ std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
 std::optional<int64_t>
 SignatureType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
-}
-
-bool SignatureType::hasAddress(ValueInputConvention conv) {
-  switch (conv) {
-  case ValueInputConvention::None:
-  case ValueInputConvention::OwnedInReg:
-  case ValueInputConvention::BorrowedInReg:
-    return false;
-  case ValueInputConvention::OwnedInMem:
-  case ValueInputConvention::BorrowedInMem:
-  case ValueInputConvention::ByRef:
-  case ValueInputConvention::ByRefResult:
-  case ValueInputConvention::InitSelf:
-    return true;
-  }
-  llvm_unreachable("invalid value input convention");
 }
 
 SignatureType SignatureType::remapToSignature(
