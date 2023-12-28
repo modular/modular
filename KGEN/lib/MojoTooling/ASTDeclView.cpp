@@ -661,7 +661,10 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
             convention == ValueInputConvention::OwnedInReg));
 
   // Grab the types of the parameters to the function.
-  for (ParamDeclAttr param : funcOp.getInputParams())
+  size_t numImplicitLifetimes =
+      funcOp.getSignature().getNumImplicitLifetimeDecls();
+  for (ParamDeclAttr param :
+       funcOp.getInputParams().drop_front(numImplicitLifetimes))
     parameters.push_back(
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
                           generateTypeString(param.getType(), selfType)));

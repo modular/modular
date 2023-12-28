@@ -129,8 +129,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   let mpFloat : MemoryOnlyFloat64 = v2.x
 
   # CHECK: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
-  # CHECK: [[TMPPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-  # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMPPTR]]
+  # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}(%anonymous2A
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
 
   # Memory-only default argument with memory-only result.
@@ -140,16 +139,17 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[TMPPTR]], %[[C42]])
   _ = MemoryOnlyInt()
 
+  # CHECK-NEXT: %30 = lit.ref.to_pointer %regX
   # CHECK-NEXT: %31 = lit.ref.to_pointer %regX
-  # CHECK-NEXT: %32 = lit.ref.to_pointer %regX
-  # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [%31, %32]
+  # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [%30, %31]
   # CHECK-NEXT: lit.call @{{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
-  # CHECK-NEXT: lit.ownership.use %31 : !kgen.pointer<!MemoryOnlyInt>
-  # CHECK-NEXT: lit.ownership.use %32
+  # CHECK-NEXT: lit.ownership.use %30 : !kgen.pointer<!MemoryOnlyInt>
+  # CHECK-NEXT: lit.ownership.use %31
 
-  # CHECK-NEXT: %35 = lit.ref.to_pointer %v2
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%__result__, %35)
+  # CHECK-NEXT: [[RESULTPTR:%.*]] = lit.ref.to_pointer %__result__
+  # CHECK-NEXT: [[TMP:%.*]] = lit.ref.to_pointer %v2
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[RESULTPTR]], [[TMP]])
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: none = <#kgen.none>
   # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
@@ -1033,15 +1033,14 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %0)
   arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "anonymous*"
+  # CHECK: lit.call {{.*}}__getitem__{{.*}}(%anonymous2A, %arr, %x)
   # CHECK: [[ANON:%.*]] = lit.ref.to_pointer %anonymous2A
-  # CHECK: lit.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = arr[x]
 
   # CHECK: [[ANON:%.*]] = lit.varlet.decl "__store_tmp__"
   # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__
-  # CHECK: [[ANONPTR:%.*]] = lit.ref.to_pointer [[ANON]]
-  # CHECK: lit.call {{.*}}__getitem__{{.*}}([[ANONPTR]], %arr, %x)
+  # CHECK: lit.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[ANON]][x]
   # CHECK: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
   # CHECK: lit.ref.store %[[C1:.*]], [[XP]]
@@ -1058,8 +1057,7 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
 
   # CHECK: [[STORETMP:%.*]] = lit.varlet.decl "__store_tmp__"
   # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__
-  # CHECK: [[STORETMPPTR:%.*]] = lit.ref.to_pointer [[STORETMP]]
-  # CHECK: lit.call {{.*}}__getitem__{{.*}}([[STORETMPPTR]], %arr, %x)
+  # CHECK: lit.call {{.*}}__getitem__{{.*}}([[STORETMP]], %arr, %x)
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
   # CHECK: lit.ref.store {{.*}}, [[XP]]
   # CHECK: [[STORETMPPTR:%.*]] = lit.ref.to_pointer [[STORETMP]]
@@ -1104,36 +1102,38 @@ fn takeInOutInt(inout a: Int): pass
  # CHECK-LABEL: lit.func @"testWritebacks
 fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" {{.*}} {isSynthetic}
-  # CHECK-NEXT: %[[ANONPTR:.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: %[[V0:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
-  # CHECK-NEXT: pop.store %[[V1]], %[[ANONPTR]]
+  # CHECK-NEXT: lit.ref.store %[[V1]], %anonymous2A
+  # CHECK-NEXT: %[[ANONPTR:.*]] = lit.ref.to_pointer %anonymous2A
   # CHECK-NEXT: %[[V2:.*]] = lit.call {{.*}}takeInOutInt{{.*}}(%[[ANONPTR]])
   # CHECK-NEXT: %[[V3:.*]] = {{.*}}constant{{.*}} = 0
-  # CHECK-NEXT: %[[V4:.*]] = pop.load %[[ANONPTR]]
+  # CHECK-NEXT: %[[V4:.*]] = lit.ref.load %anonymous2A
   # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
   takeInOutInt(a[0]);
 
   # CHECK: %anonymous2A_0 = lit.varlet.decl
-  # CHECK-NEXT: %[[ANONPTR_0:.*]] = lit.ref.to_pointer %anonymous2A_0
   # CHECK: %anonymous2A_1 = lit.varlet.decl {{.*}}!IndexArray
-  # CHECK-NEXT: %[[ANONPTR_1:.*]] = lit.ref.to_pointer %anonymous2A_1
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%[[ANONPTR_1]], %b, %[[C1]])
+  # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%anonymous2A_1, %b, %[[C1]])
+  # CHECK-NEXT: %[[ANONPTR_1:.*]] = lit.ref.to_pointer %anonymous2A_1
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2
   # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[ANONPTR_1]], %[[C2]])
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
+  # CHECK-NEXT: %[[ANONPTR_1:.*]] = lit.ref.to_pointer %anonymous2A_1
   # CHECK-NEXT: %[[V6:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[ANONPTR_1]])
-  # CHECK-NEXT: pop.store %[[V5]], %[[ANONPTR_0]]
+  # CHECK-NEXT: lit.ref.store %[[V5]], %anonymous2A_0
+  # CHECK-NEXT: %[[ANONPTR_0:.*]] = lit.ref.to_pointer %anonymous2A_0
   # CHECK-NEXT: %[[V7:.*]] = lit.call {{.*}}takeInOutInt{{.*}}(%[[ANONPTR_0]])
   # CHECK-NEXT: %anonymous2A_2 = lit.varlet.decl
-  # CHECK-NEXT: %[[ANONPTR_2:.*]] = lit.ref.to_pointer %anonymous2A_2
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[V8:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[ANONPTR_2]], %b, %[[C1]])
+  # CHECK-NEXT: %[[V8:.*]] = lit.call {{.*}}__getitem__{{.*}}(%anonymous2A_2, %b, %[[C1]])
+  # CHECK-NEXT: %[[ANONPTR_2:.*]] = lit.ref.to_pointer %anonymous2A_2
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2
-  # CHECK-NEXT: %[[V9:.*]] = pop.load %[[ANONPTR_0]]
+  # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %anonymous2A_0
   # CHECK-NEXT: %[[V10:.*]] = lit.call {{.*}}__setitem__{{.*}}(%[[ANONPTR_2]], %[[C2]], %[[V9]])
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
+  # CHECK-NEXT: %[[ANONPTR_2:.*]] = lit.ref.to_pointer %anonymous2A_2
   # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[ANONPTR_2]])
   takeInOutInt(b[1][2])
 
@@ -1358,7 +1358,7 @@ struct MemType: pass
 
 # CHECK-LABEL: lit.func @"function_types
 # CHECK-SAME: %{{.*}}[float0]: {{.*}}(!Int borrow, |) -> !Int
-# CHECK-SAME: %{{.*}}[float1]: {{.*}}("__result__": !kgen.pointer<!MemoryType> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem, |) -> !kgen.none
+# CHECK-SAME: %{{.*}}[float1]: {{.*}}("__result__": !lit.ref<mut !MemoryType, {{.*}}> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float2]: {{.*}}(!RegType, |) ownedresult -> !RegType
 # CHECK-SAME: %{{.*}}[float3]: {{.*}}(!kgen.pointer<!MemoryType> owned_in_mem, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float4]: {{.*}}(!kgen.pointer<!Int> byref, |) -> !kgen.none
@@ -1473,13 +1473,12 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: RegPassable,
   # CHECK-NEXT: lit.call {{.*}}takeMemory{{.*}}([[ANONPTR]])
   takeMemory(a if cond else b)
 
-  # CHECK-NEXT: [[RESREF:%.*]] = builtin.unrealized_conversion_cast %__result__
   # CHECK-NEXT: hlcf.if %cond {
-  # CHECK-NEXT:   [[RESPTR:%.*]] = lit.ref.to_pointer [[RESREF:%.*]]
+  # CHECK-NEXT:   [[RESPTR:%.*]] = lit.ref.to_pointer %__result__
   # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[RESPTR]], %a)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[RESPTR:%.*]] = lit.ref.to_pointer [[RESREF:%.*]]
+  # CHECK-NEXT:   [[RESPTR:%.*]] = lit.ref.to_pointer %__result__
   # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[RESPTR]], %b)
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
@@ -1713,8 +1712,7 @@ fn getUnmovable(a: Unmovable) -> Unmovable:
 # CHECK-LABEL: lit.func @"testUnmovable
 fn testUnmovable(a: Unmovable):
    # CHECK-NEXT: %x = lit.varlet.decl "x"
-   # CHECK-NEXT: %0 = lit.ref.to_pointer %x
-   # CHECK-NEXT: lit.call {{.*}}(%0, %a)
+   # CHECK-NEXT: lit.call {{.*}}(%x, %a)
    var x : Unmovable = getUnmovable(a)
 
 # Issue 23233 https://github.com/modularml/modular/issues/23233

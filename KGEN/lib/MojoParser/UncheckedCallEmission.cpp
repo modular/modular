@@ -64,7 +64,8 @@ public:
   /// slot.
   Value emitPreemittedArgumentAsDynamicValue(
       ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
-      ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
+      ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+      SmallVectorImpl<TypedAttr> &implicitLifetimes);
 
   /// If this is a call to a @always_inline function (and there's only one
   /// possible callee), this method tries to fold the entire function body into
@@ -107,7 +108,7 @@ private:
 
     // The first entry of this is a ValueDest for a DLValue that we can invoke
     // for the setter.
-    SmallVector<std::pair<ValueDest, MLValue>> lvalueWritebacks;
+    SmallVector<std::pair<ValueDest, XLValue>> lvalueWritebacks;
 
     /// This is a list of values that we need to keep alive across the duration
     /// of the call.  They will get lit.ownership.use operations at the end of
@@ -153,7 +154,7 @@ void CallEmitter::AfterCallActions::emit() {
   // destroyed when they are emitted into.
   while (!lvalueWritebacks.empty()) {
     auto [dest, lValue] = lvalueWritebacks.pop_back_val();
-    if (!callEmitter.emitter.emitResult(MRValue(lValue), callEmitter.callExpr,
+    if (!callEmitter.emitter.emitResult(XRValue(lValue), callEmitter.callExpr,
                                         dest))
       dest.resetForError();
   }
@@ -249,9 +250,13 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // If not all remaining operands are compile-time values, use an operation to
   // create a variadic or pack sequence.
   SmallVector<Value> args;
+  SmallVector<TypedAttr> implicitLifetimes;
   for (auto &operand : remainingOperands) {
-    Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention,
-                                                        argumentValues);
+    Value argVal = emitPreemittedArgumentAsDynamicValue(
+        operand, convention, argumentValues, implicitLifetimes);
+    // TODO(references): figure out variadic packs of memory types.
+    assert(implicitLifetimes.empty() &&
+           "Cannot handle implicit lifetimes on variadics yet");
     if (!argVal)
       return failure();
     args.push_back(argVal);
@@ -304,8 +309,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
       assert(passingKind == PassingKind::PosOnly);
 
-      // TODO(references): drop this cast eventually.
-      expectedType = cast<PointerType>(expectedType).getElementType();
+      expectedType = cast<RefType>(expectedType).getElementType();
       auto resultTmp =
           emitter.emitVarLetDecl("__call_result_tmp__", expectedType, loc,
                                  VarLetDeclKind::Var, /*isSynthetic=*/true);
@@ -315,9 +319,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // Memory-only result slots are allocated automatically by the apply
     // operator.
-    if (!builder && llvm::is_contained({ValueInputConvention::ByRefResult,
-                                        ValueInputConvention::InitSelf},
-                                       convention))
+    if (!builder && (convention == ValueInputConvention::ByRefResult ||
+                     convention == ValueInputConvention::InitSelf))
       continue;
 
     // If we ran out of operands, fulfill this with a keyword argument, default
@@ -500,7 +503,22 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
-    ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
+    ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+    SmallVectorImpl<TypedAttr> &implicitLifetimes) {
+
+  // Given a legacy pointer, get it to a reference.
+  // TODO(references) remove this when MLValues go away.
+  auto hackPointerToRef = [&](Value pointer) -> XLValue {
+    // HACK: force convert to reference.
+    auto destTy = RefType::getRefForPointerHACK(
+        cast<PointerType>(pointer.getType()), /*mut=*/true);
+    return emitter.builder
+        ->create<mlir::UnrealizedConversionCastOp>(
+            emitter.translateLocation(argValAndExpr.expr->getLoc()), destTy,
+            pointer)
+        .getResult(0);
+  };
+
   Value arg;
   switch (convention) {
   case ValueInputConvention::OwnedInReg:
@@ -574,17 +592,14 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Promote PValue's if needed.
     return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::ByRefResult: {
-    Value tmpSlotAddr = argValAndExpr.ir.getIfMLValue();
-    if (!tmpSlotAddr) {
-      if (auto ref = argValAndExpr.ir.getIfXLValue()) {
-        // Decay reference to pointer.
-        tmpSlotAddr = emitter.builder->create<RefToPointerOp>(
-            argValAndExpr.expr->getLocation(emitter), ref);
-      }
+    XLValue resultSlotRef = argValAndExpr.ir.getIfXLValue();
+    if (!resultSlotRef) {
+      if (auto ptr = argValAndExpr.ir.getIfMLValue())
+        resultSlotRef = hackPointerToRef(ptr);
     }
 
-    assert(tmpSlotAddr && "byref_result value start in a temp slot");
-    auto rvalueType = ASTType(tmpSlotAddr.getType()).getReferenceElementType();
+    assert(resultSlotRef && "byref_result value start in a temp slot");
+    auto rvalueType = resultSlotRef.getRValueType();
 
     // Often the result of the call will be directly assigned into a
     // user-defined var or other location with existing storage.  In these
@@ -595,16 +610,23 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // In these cases we really do need a temporary+copy in the var slot.
     // At this point we've got enough information about the arguments to make
     // that assessment in a correct way.
-    if (!isSafeToUseValueDestForDirectResult(rvalueType, argumentValues))
-      return tmpSlotAddr;
+    if (isSafeToUseValueDestForDirectResult(rvalueType, argumentValues)) {
+      // Okay it is safe to use, so remove the temporary allocation we aren't
+      // going to use.
+      if (auto cast = // TODO(references): MLValue remove this
+          resultSlotRef.getDefiningOp<mlir::UnrealizedConversionCastOp>())
+        cast->erase();
+      assert(argValAndExpr.ir.getIfXLValue());
+      argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDeclOp>()->erase();
+      // Use the preferred location of the destination slot.
+      resultSlotRef =
+          dest.getXLValueForResult(callExpr->getLoc(), rvalueType, emitter);
+    }
 
-    // Okay it is safe to use, so remove the temporary allocation we aren't
-    // going to use.
-    assert(argValAndExpr.ir.getIfXLValue());
-    cast<OpResult>(tmpSlotAddr).getOwner()->erase(); // Ref2Ptr.
-    argValAndExpr.ir.getIfXLValue().getDefiningOp<VarLetDeclOp>()->erase();
-    // Get the MLValue of the destination slot.
-    return dest.getMLValueForResult(callExpr->getLoc(), rvalueType, emitter);
+    // Remember the implicit lifetime for this argument.
+    implicitLifetimes.push_back(
+        cast<RefType>(resultSlotRef.getType()).getLifetime());
+    return resultSlotRef;
   }
   case ValueInputConvention::ByRef:
   case ValueInputConvention::InitSelf: {
@@ -618,24 +640,25 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // Decay reference to pointer.
       return emitter.builder->create<RefToPointerOp>(
           emitter.translateLocation(argValAndExpr.expr->getLoc()), ref);
-      return ref;
     }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.
     ValueDest dlvBuffer(lv, EC_CallArgValue);
-    MLValue slvBuffer = dlvBuffer.getMLValueForResult(
+    XLValue mlvBuffer = dlvBuffer.getXLValueForResult(
         argValAndExpr.expr->getLoc(), lv.getRValueType(), emitter);
     // Emit the 'get' into the buffer.
-    ValueDest bufferDest(slvBuffer, EC_CallArgValue);
+    ValueDest bufferDest(mlvBuffer, EC_CallArgValue);
     if (!emitter.emitLoadOfLValue({lv, argValAndExpr.expr}, bufferDest)) {
       bufferDest.resetForError();
       dlvBuffer.resetForError();
       return {};
     }
     afterCallActions.lvalueWritebacks.push_back(
-        {std::move(dlvBuffer), slvBuffer});
-    return slvBuffer;
+        {std::move(dlvBuffer), mlvBuffer});
+    // Decay reference to pointer for inout/initself.
+    return emitter.builder->create<RefToPointerOp>(
+        emitter.translateLocation(argValAndExpr.expr->getLoc()), mlvBuffer);
   }
   case ValueInputConvention::None:
     llvm_unreachable("none convention not permitted in lit");
@@ -728,10 +751,10 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   bool hasResultSlot =
       calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
-  Type resultType =
-      hasResultSlot
-          ? ASTType(calleeSig.getValueInputs().front()).getPointerElementType()
-          : ASTType(calleeSig.getValueResults().front());
+  Type resultType = hasResultSlot
+                        ? ASTType(calleeSig.getValueInputs().front())
+                              .getReferenceElementType()
+                        : ASTType(calleeSig.getValueResults().front());
   TypedAttr result = ParamOperatorAttr::get(
       hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands, resultType);
   return result;
@@ -900,6 +923,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   SmallVector<Value> callArgs;
   SmallVector<Value, 1> byRefResults;
+  SmallVector<TypedAttr> implicitLifetimes;
   for (auto [argIdx, argValAndExpr, conventionX, calleeArgType] :
        llvm::enumerate(argumentValues, calleeSig.getInputConventions(),
                        calleeSig.getValueInputs())) {
@@ -913,11 +937,26 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       convention = ValueInputConvention::OwnedInReg;
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
-        argValAndExpr, convention, argumentValues);
+        argValAndExpr, convention, argumentValues, implicitLifetimes);
     if (!arg)
       return {};
-    if (arg.getType() != calleeArgType)
-      arg = builder->create<RebindOp>(loc, calleeArgType, arg);
+
+    // Make sure the parameters of an argument line up by emitting a rebind
+    // operation.
+    if (arg.getType() != calleeArgType) {
+      // If the types disagree, one reason may be implicit lifetimes.  Try
+      // substituting them out.
+      Type adjustedCalleeArgType = calleeArgType;
+      if (!implicitLifetimes.empty()) {
+        adjustedCalleeArgType = LITSignatureType::substituteImplicitLifetimes(
+            calleeArgType, implicitLifetimes,
+            [&]() -> InFlightDiagnostic { llvm_unreachable("bad call"); });
+      }
+
+      // Check to see if they are equal now.
+      if (arg.getType() != adjustedCalleeArgType)
+        arg = builder->create<RebindOp>(loc, adjustedCalleeArgType, arg);
+    }
     if (conventionX == ValueInputConvention::ByRefResult ||
         conventionX == ValueInputConvention::InitSelf)
       byRefResults.push_back(arg);
@@ -934,7 +973,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       auto call = builder->create<AsyncCallOp>(
           loc,
           POP::CoroutineType::get(getContext(), resultType, sig.isThrows()),
-          target.get(), resultParams, /*lifetimeParams=*/std::nullopt,
+          target.get(), resultParams, /*lifetimeParams=*/implicitLifetimes,
           callArgs);
       ASTType coroType = getBoundCoroutineType(
           shared, declScope, callExpr->getLoc(), sig, resultType);
@@ -951,7 +990,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
       auto call = builder->create<CallOp>(loc, resultType, symbol,
-                                          /*lifetimeParams=*/std::nullopt,
+                                          /*lifetimeParams=*/implicitLifetimes,
                                           resultParams, callArgs);
       callResult = call.getResult(0);
 
@@ -961,13 +1000,12 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     } else {
       auto call = builder->create<CallParamOp>(
           loc, resultType, target.get(), resultParams,
-          /*lifetimeParams=*/std::nullopt, callArgs);
+          /*lifetimeParams=*/implicitLifetimes, callArgs);
       callResult = call.getResult(0);
     }
   } else {
     auto call = builder->create<CallSignatureOp>(
-        loc, resultType, callee.getIfSRValue(),
-        /*implicitLifetimes=*/ArrayRef<TypedAttr>(), callArgs);
+        loc, resultType, callee.getIfSRValue(), implicitLifetimes, callArgs);
     callResult = call.getResult(0);
   }
 
@@ -1016,7 +1054,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // Re-emit the value in case a conversion was required or if the result was
     // a dynamic-lvalue.  In both case we will have emitted into a temporary
     // slot and 'dest' will have the ultimate location to write to.
-    return emitCResult(MRValue(callArgs[0]), callExpr, dest);
+    return emitCResult(XRValue(callArgs[0]), callExpr, dest);
   }
 
   // Otherwise, register-passable results are the call result which may need to

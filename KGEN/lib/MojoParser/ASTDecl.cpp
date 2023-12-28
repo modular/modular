@@ -48,16 +48,21 @@ void ASTDecl::takeDecls(ASTDecl &src) {
   declsInScope = std::move(src.declsInScope);
 }
 
-StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName) {
+StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName,
+                                            bool dontRenameOutermost) {
   // Find the enclosing isolated from above decl that will scope parameter
   // names.
   ASTDecl *outermostFuncScope = nullptr;
+  ASTDecl *innermostFuncScope = nullptr;
   ASTDecl *scope = this;
   while (scope) {
     // If we see a function scope, remember it but see if we are nested in some
     // other function.
-    if (isa<LIT::FuncOp>(*scope))
+    if (isa<LIT::FuncOp>(*scope)) {
+      if (!innermostFuncScope)
+        innermostFuncScope = scope;
       outermostFuncScope = scope;
+    }
 
     // If we found the file module, then we're at the top level, just use it.
     if (isa<FileModuleOp>(*scope)) {
@@ -71,6 +76,12 @@ StringAttr ASTDecl::getAnonymousLifetimeFor(const Twine &valueName) {
     scope = scope->getParentDecl();
   }
   assert(outermostFuncScope && "couldn't find an enclosing function");
+
+  // If this is a declaration in the outermost function, then we don't need to
+  // unique it - there are no other names it could conflict with.
+  if (innermostFuncScope == outermostFuncScope && dontRenameOutermost)
+    return StringAttr::get(outermostFuncScope->getContext(), "`" + valueName);
+
   return StringAttr::get(
       outermostFuncScope->getContext(),
       "`" + valueName + Twine(outermostFuncScope->anonymousLifetimeCounter++));

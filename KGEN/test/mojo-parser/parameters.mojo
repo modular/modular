@@ -350,8 +350,8 @@ fn callMemoryValueParam():
     # CHECK: [[MVALUE:%.*]] = lit.varlet.decl "anonymous*"
     # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType = <{{.*}}copy>
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
-    # CHECK: %5 = lit.ref.to_pointer %anonymous2A_0
-    # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, %5)
+    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %anonymous2A_0
+    # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, [[PTR]])
     _ = passMemoryValue(copy)
 
     # CHECK: call {{.*}}memoryParam{{.*}}<:!MemoryType apply_result_slot({{.*}}__init__{{.*}}value = 22

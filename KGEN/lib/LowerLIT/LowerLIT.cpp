@@ -119,22 +119,6 @@ static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
   handleVariantOp->erase();
 }
 
-void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
-  // Process a nested function by lowering it straight to a
-  // `kgen.param.declare.region`. Nested functions are denoted with an
-  // parameter declaration on the function declaration.
-  ParamDeclAttr decl = func.getParamDeclAttr();
-  assert(decl && "expected nested function to declare a parameter");
-
-  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
-  auto region = b.create<ParamDeclareRegionOp>(
-      decl, func.getSignature(), func.getFunctionType(), func.getInputParams(),
-      func.getResultParams(), ArrayRef<ConstraintAttr>(),
-      /*isolated=*/false, func.getInlineLevel());
-  region.getBodyRegion().takeBody(func.getBodyRegion());
-  func.erase();
-}
-
 /// Insert a cast of the specified value to the specified type, when `forceCast`
 /// is true, this inserts a cast even when the types agree.
 static Value castValue(Value v, Type ty, Location loc, OpBuilder &b,
@@ -283,6 +267,63 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
   return mangled.mangled;
 }
 
+/// This processes the specified function, extracting implicit lifetimes and
+/// substituting them into the function type.  This returns the set of implicit
+/// lifetimes, the set of normal input parameters, and the modified function
+/// type.
+static std::tuple<ArrayRef<ParamDeclAttr>, ArrayRef<ParamDeclAttr>,
+                  FunctionType>
+extractImplicitLifetimeParams(LIT::FuncOp func) {
+  ArrayRef<ParamDeclAttr> inputParams = func.getInputParams();
+  // Drop the implicit lifetime decls and append the rest.
+  size_t numImplicitLifetimes =
+      func.getSignature().getNumImplicitLifetimeDecls();
+  ArrayRef<ParamDeclAttr> implicitLifetimes =
+      inputParams.take_front(numImplicitLifetimes);
+  inputParams = inputParams.drop_front(implicitLifetimes.size());
+
+  // Switch the function type on the decl to the FunctionType used in the
+  // signature, which has the implicit lifetimes represented with indices.  We
+  // cannot use the FunctionType from the signature directly, because that would
+  // drop ALL named input parameters.
+  auto newFunctionType =
+      cast<FunctionType>(LITSignatureType::replaceImplicitLifetimesWithIndexes(
+          func.getFunctionType(), implicitLifetimes));
+  return {implicitLifetimes, inputParams, newFunctionType};
+}
+
+/// When a function is rewritten, its implicit lifetimes are dropped and the
+/// function arguments change type.  Adapt the body for these changes.
+static void rewriteImplicitLifetimeDeclsAndArgs(
+    Block *bodyBlock, ArrayRef<ParamDeclAttr> implicitLifetimes,
+    FunctionType newFunctionType, Location loc) {
+  ImplicitLocOpBuilder b(loc, bodyBlock, bodyBlock->begin());
+
+  // Insert dummy declarations of the implicitLifetimes that have been
+  // dropped, so any references to them in the body are valid.
+  for (auto decl : implicitLifetimes) {
+    assert(isa<LifetimeType>(decl.getType()) &&
+           "Implicit lifetimes should all have lifetime type");
+    b.create<ParamDeclareOp>(decl, b.getAttr<LifetimeAttr>());
+  }
+
+  // Fix up the BBArgs in the entry block to use the correct types, which have
+  // implicit lifetimes stripped off of them.
+  for (auto [arg, newType] :
+       llvm::zip(bodyBlock->getArguments(), newFunctionType.getInputs())) {
+    if (arg.getType() == newType)
+      continue;
+    // We're going to change the type of the argument, but all the uses expect
+    // a value that uses the dummy lifetimes that we just inserted, so insert
+    // a cast to the original type.
+    Value casted = castValue(arg, arg.getType(), loc, b, /*forceCast=*/true);
+    arg.replaceAllUsesWith(casted);
+    arg.setType(newType);
+    // RAUW will change the cast as well, fix it back.
+    casted.getDefiningOp()->setOperand(0, arg);
+  }
+}
+
 LogicalResult
 LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
                          const Twine &parentPrefix,
@@ -299,25 +340,15 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
   lowerLITOps(gen);
 
   OpBuilder b(gen->getContext());
-  auto lifetimeAttr = b.getAttr<LifetimeAttr>();
   LITSignatureType signature = gen.getSignature();
-  SmallVector<ParamDeclAttr> inputParams;
-  ArrayRef<ParamDeclAttr> genParams = gen.getInputParams();
-  // Drop the implicit lifetime decls and append the rest.
-  ArrayRef<ParamDeclAttr> implicitLifetimes =
-      genParams.take_front(signature.getNumImplicitLifetimeDecls());
-  genParams = genParams.drop_front(implicitLifetimes.size());
 
-  // Switch the function type on the decl to the FunctionType used in the
-  // signature, which has the implicit lifetimes represented with indices.  We
-  // cannot use the FunctionType from the signature directly, because that would
-  // drop ALL named input parameters.
-  auto newFunctionType =
-      cast<FunctionType>(LITSignatureType::replaceImplicitLifetimesWithIndexes(
-          gen.getFunctionType(), implicitLifetimes));
+  auto [implicitLifetimes, genParams, newFunctionType] =
+      extractImplicitLifetimeParams(gen);
+
   auto newFunctionTypeAttr = TypeAttr::get(newFunctionType);
 
   // Prepend the parameters from the parent decl if present.
+  SmallVector<ParamDeclAttr> inputParams;
   if (!parentInputParams.empty()) {
     // Concat the parent and generator input parameter decls.
     llvm::append_range(inputParams, parentInputParams);
@@ -355,35 +386,11 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
     result = newGen;
 
     // Move over the body.
-    auto *bodyBlock = gen.getBody();
-    gen.getBodyRegion().getBlocks().remove(bodyBlock);
-    newGen.getBodyRegion().push_back(bodyBlock);
+    newGen.getBodyRegion().takeBody(gen.getBodyRegion());
 
-    // Insert dummy declarations of the implicitLifetimes that have been
-    // dropped, so any references to them in the body are valid.
-    b.setInsertionPointToStart(bodyBlock);
-    for (auto decl : implicitLifetimes) {
-      assert(isa<LifetimeType>(decl.getType()) &&
-             "Implicit lifetimes should all have lifetime type");
-      b.create<ParamDeclareOp>(gen.getLoc(), decl, lifetimeAttr);
-    }
-
-    // Fix up the BBArgs in the entry block to use the correct types, which have
-    // implicit lifetimes stripped off of them.
-    for (auto [arg, newType] :
-         llvm::zip(bodyBlock->getArguments(), newFunctionType.getInputs())) {
-      if (arg.getType() == newType)
-        continue;
-      // We're going to change the type of the argument, but all the uses expect
-      // a value that uses the dummy lifetimes that we just inserted, so insert
-      // a cast to the original type.
-      Value casted =
-          castValue(arg, arg.getType(), newGen.getLoc(), b, /*forceCast=*/true);
-      arg.replaceAllUsesWith(casted);
-      arg.setType(newType);
-      // RAUW will change the cast as well, fix it back.
-      casted.getDefiningOp()->setOperand(0, arg);
-    }
+    // Revise the inputs for implicit lifetimes.
+    rewriteImplicitLifetimeDeclsAndArgs(newGen.getBody(), implicitLifetimes,
+                                        newFunctionType, gen.getLoc());
   }
 
   // Move over the symbol, and we're done.
@@ -393,6 +400,31 @@ LITLowerer::lowerLITFunc(LIT::FuncOp gen, Block::iterator symTableIt,
   gen.erase();
 
   return success();
+}
+
+void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
+  // Process a nested function by lowering it straight to a
+  // `kgen.param.declare.region`. Nested functions are denoted with an
+  // parameter declaration on the function declaration.
+  ParamDeclAttr decl = func.getParamDeclAttr();
+  assert(decl && "expected nested function to declare a parameter");
+
+  ImplicitLocOpBuilder b(func.getLoc(), func);
+
+  // The new param.declare.region will drop implicit lifetimes.
+  auto [implicitLifetimes, inputParams, newFunctionType] =
+      extractImplicitLifetimeParams(func);
+
+  auto region = b.create<ParamDeclareRegionOp>(
+      decl, func.getSignature(), newFunctionType, inputParams,
+      func.getResultParams(), ArrayRef<ConstraintAttr>(),
+      /*isolated=*/false, func.getInlineLevel());
+  region.getBodyRegion().takeBody(func.getBodyRegion());
+
+  // Revise the inputs for implicit lifetimes.
+  rewriteImplicitLifetimeDeclsAndArgs(region.getBody(), implicitLifetimes,
+                                      newFunctionType, func.getLoc());
+  func.erase();
 }
 
 LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,

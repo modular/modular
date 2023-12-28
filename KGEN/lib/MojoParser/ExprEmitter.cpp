@@ -352,7 +352,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       slotType = requiredType;
   }
 
-  // We model this as an immutable let value with a separately stored
+  // We model this as an mutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
   return XLValue(emitter.emitVarLetDecl("anonymous*", slotType,
@@ -751,6 +751,15 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
     emitError(expr->getLoc()) << "cannot load non-register passable type into "
                                  "SSA register (compiler bug, please report!)";
     return {};
+  }
+
+  // TODO(references): switch LoadConsumeOp to take reference.
+  if (auto xrValue = value.getIfXRValue()) {
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(expr);
+      return {};
+    }
+    value = MRValue(builder->create<RefToPointerOp>(xrValue.getLoc(), xrValue));
   }
 
   // If we have a value in memory, use a LoadConsumeOp to load it.
@@ -1378,6 +1387,16 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
                                CallSyntax::kImplicitConvert, value.expr);
 
   case TypeConvention::MemoryOnly:
+#if 0 // TODO(lifetimes): Use this when initself uses references.
+    // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
+    XLValue destBuffer = dest.getXLValueForResult(exprLoc, valueType, *this);
+    if (!destBuffer)
+      return {};
+
+    if (auto pValue = value.ir.getIfPValue())
+      return emitPValueToXLValue({pValue, value.expr}, destBuffer,
+                                 dest.context);
+#else
     // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
     MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)
@@ -1386,6 +1405,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     if (auto pValue = value.ir.getIfPValue())
       return emitPValueToMLValue({pValue, value.expr}, destBuffer,
                                  dest.context);
+#endif
 
     if (!valueType.isCopyable(exprLoc, shared)) {
       if (valueType.isMovableFrom(value, shared)) {
@@ -1408,7 +1428,11 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
     // If we required an implicit conversion, make sure it happens.
+#if 0 // TODO(lifetimes): Use this when initself uses references.
+    return emitCResult(XRValue(destBuffer), value.expr, dest);
+#else
     return emitCResult(MRValue(destBuffer), value.expr, dest);
+#endif
   }
 
   // Otherwise we can emit a direct use/load for trivial types.

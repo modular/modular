@@ -892,7 +892,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types and KGEN conventions.  This also introduces
   // implicit lifetime parameters for borrows/inout/owned arguments.
-  computeArgumentConventions(shared, inputParamDecls, args, argTypes);
+  SmallVector<ParamDeclAttr> implicitLifetimeDecls;
+  computeArgumentConventions(shared, args, argTypes, implicitLifetimeDecls,
+                             decl);
 
   // Now that we've processed the signature, bail if we had a missing colon.
   if (missingColon)
@@ -930,17 +932,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   auto inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(inputParamDecls);
   auto resultParamsAttr = builder.getAttr<ParamDeclArrayAttr>(resultParamDecls);
 
-  attrs.set(funcOp.getInputParamsAttrName(), inputParamsAttr);
-  attrs.set(funcOp.getResultParamsAttrName(), resultParamsAttr);
+  // Compute the signature of the function.
   FunctionType functionType =
       builder.getFunctionType(argTypes, {resultType.mlirType});
-  attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
-
-  // Compute the signature of the function.
   auto metadata =
       FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
                           paramNames, paramPassingKinds, argDefaults,
-                          paramDefaults, /*implicitLifetimeDecls=*/0);
+                          paramDefaults, implicitLifetimeDecls.size());
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects, metadata, silenceErrors(getContext()));
@@ -954,6 +952,24 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         "TODO: async functions do not support memory-only results yet");
   }
 
+  // The implicitLifetimeDecls don't affect the signature, but they do get
+  // prepended onto the inputParamDecls list.
+  if (!implicitLifetimeDecls.empty()) {
+    SmallVector<ParamDeclAttr> mergedInputParams(implicitLifetimeDecls.begin(),
+                                                 implicitLifetimeDecls.end());
+    mergedInputParams.append(inputParamDecls.begin(), inputParamDecls.end());
+    inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(mergedInputParams);
+  }
+
+  attrs.set(funcOp.getInputParamsAttrName(), inputParamsAttr);
+  attrs.set(funcOp.getResultParamsAttrName(), resultParamsAttr);
+  attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
+
+  // Now that the FunctionType is set to the pretty type that includes implicit
+  // lifetimes, we strip off the named lifetime decl references and replace them
+  // with indices.
+  signature =
+      signature.replaceImplicitLifetimesWithIndexes(implicitLifetimeDecls);
   attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
 
   // Set the symbol to the mangled name and check for redefinition.
@@ -1141,12 +1157,12 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
     // automatically.
     auto objType = shared.lookupObjectType(funcDecl.getLoc(), funcDecl);
     if (objType &&
-        objType.isEqualCanon(cast<PointerType>(func.getArgument(0).getType())
-                                 .getElementType())) {
+        objType.isEqualCanon(
+            cast<RefType>(func.getArgument(0).getType()).getElementType())) {
       // Emit `object()` into the memory type return slot.
       ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
       emitter.builder = b;
-      ValueDest resultDest(MLValue(func.getArgument(0)), EC_ReturnValue);
+      ValueDest resultDest(XLValue(func.getArgument(0)), EC_ReturnValue);
       // Create a dummy node to pass down.
       SyntheticNode locExpr(funcDecl.getLoc());
       CValue result = emitter.emitConstructorCall(
@@ -1202,6 +1218,11 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       } else if (auto lv = argDecl.getIfMLValue()) {
         if (lv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
+#if 0 // TODO(references)
+      } else if (auto lv = argDecl.getIfXLValue()) {
+        if (lv.getRValueType().isTypeCheckErrorType())
+          argDecl.hasReferenceError = true;
+#endif
       } else if (auto bv = argDecl.getIfBValue()) {
         if (bv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
@@ -1233,14 +1254,15 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     switch (convention) {
     // Arguments passed by-reference can be directly used.
     case ValueInputConvention::ByRef:
-    case ValueInputConvention::ByRefResult:
     case ValueInputConvention::InitSelf:
     case ValueInputConvention::OwnedInMem:
       // OwnedInMem passes ownership of the argument into the callee so we
       // can directly mutate it if we want to.
       argIRValue = MLValue(bbArg);
       break;
-
+    case ValueInputConvention::ByRefResult:
+      argIRValue = XLValue(bbArg);
+      break;
     case ValueInputConvention::OwnedInReg:
       argIRValue = makeArgLValueVarSlot(SRValue(bbArg), argName, decl, builder,
                                         argDecl.getLoc(), shared);
@@ -2141,17 +2163,28 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
   bool replacedResult = false;
   Type resultType = traitSig.getResultType();
   FnEffects fnEffects = traitSig.getFnEffects();
+  size_t numImplicitLifetimeDecls = traitSig.getNumImplicitLifetimeDecls();
 
   for (auto [type, conv] :
        llvm::zip(traitSig.getValueInputs(), traitSig.getInputConventions())) {
     // Check for a `Self`-type result.
     if (conv == ValueInputConvention::ByRefResult ||
         conv == ValueInputConvention::InitSelf) {
-      if (cast<PointerType>(type).getElementType() != selfType) {
+      if (ASTType(type).getReferenceElementType().mlirType != selfType) {
         argTypes.push_back(type);
         conventions.push_back(conv);
         continue;
       }
+
+      // The reference for self will be removed, so the implicit lifetime for it
+      // goes away as well.
+      if (isa<RefType>(type)) {
+        assert(conv == ValueInputConvention::ByRefResult &&
+               "check initself and then remove this if, since it should always "
+               "be a reference");
+        --numImplicitLifetimeDecls;
+      }
+
       replacedResult = true;
       // Make sure to set the `ownedresult` bit if the type is not trivial.
       if (!trivial)
@@ -2200,7 +2233,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
           traitSig.getArgPassingKinds().drop_front(replacedResult),
           traitSig.getParamNames(), traitSig.getParamPassingKinds(),
           traitSig.getDefaultArguments(), traitSig.getDefaultParameters(),
-          traitSig.getNumImplicitLifetimeDecls()));
+          numImplicitLifetimeDecls));
 }
 
 /// Synthesize a single stub for a register-passable type to meet a conformance
@@ -2224,6 +2257,23 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   for (auto [i, type] : llvm::enumerate(memSig.getResultParamTypes())) {
     resultParamDecls.push_back(
         ParamDeclAttr::get(b.getStringAttr("o" + Twine(i)), type));
+  }
+
+  // createFunction will generate a function for us, but wants a set of input
+  // types that have symbolic names for the argument lifetimes, not indexed
+  // ones.
+  SmallVector<Type> inputTypes;
+  for (auto [conv, type, argName] :
+       llvm::zip(memSig.getInputConventions(), memSig.getValueInputs(),
+                 memSig.getArgNames())) {
+    if (!isArgumentPassedWithImplicitLifetime(conv)) {
+      inputTypes.push_back(type);
+      continue;
+    }
+
+    // The input convention will have an index type, so replace it with a
+    // ParamDeclRefAttr to a named lifetime, so createFunction can do it's
+    // thing.
   }
 
   // Synthesize the method inside the struct.
@@ -2300,9 +2350,13 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
 
   // Allocate the value dest for the call. Set the value dest to the result
   // slot, if there is one, otherwise provide the expected rvalue type.
-  ValueDest dest = hasResultSlot
-                       ? ValueDest(MLValue(thunk.getArgument(0)), EC_Trait)
-                       : ValueDest(EC_Trait);
+  ValueDest dest(EC_Trait);
+  if (hasResultSlot) {
+    if (memSig.hasMemoryOnlyResult())
+      dest = ValueDest(XLValue(thunk.getArgument(0)), EC_Trait);
+    else // TODO(references): eliminate this 'if'.
+      dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
+  }
   CValue callResult = emitter.emitCallUnchecked(
       PValue(callee), CallOperands(posOperands, &kwOperands), callResultParams,
       dest, &node);

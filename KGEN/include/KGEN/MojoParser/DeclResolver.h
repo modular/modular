@@ -213,8 +213,10 @@ public:
   /// conventions of the arguments. This function also ensures that self
   /// arguments are marked as positional-only.
   static void computeArgumentConventions(
-      SharedState &shared, SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
-      MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes);
+      SharedState &shared, MutableArrayRef<ParsedArgument> args,
+      MutableArrayRef<Type> argTypes,
+      SmallVectorImpl<ParamDeclAttr> &implicitLifetimeDecls,
+      ASTDecl &declScope);
 
   /// Given a signature type that may contain references to parameter
   /// declarations in a parent context, isolate it by creating a signatuer with

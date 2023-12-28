@@ -196,7 +196,10 @@ public:
   /// Create an anonymous lifetime name for the specified value name that cannot
   /// collide with any other parameters.  This is done by prepending a ` and
   /// postpending a unique ID.
-  StringAttr getAnonymousLifetimeFor(const Twine &valueName);
+  ///
+  /// If `dontRenameOutermost` is true, this only renames for nested functions.
+  StringAttr getAnonymousLifetimeFor(const Twine &valueName,
+                                     bool dontRenameOutermost = false);
 
   /// Move the children decls of `src` into this decl. This is useful when a
   /// temporary decl needs to be created for parsing subexpressions but whose

@@ -552,11 +552,25 @@ lit.struct.decl @Mem   {
 lit.func @getThing[*"`abc"](%res[res]: !lit.ref<mut !Mem, *"`abc"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "getThing", specialFnKind = 0 : i8} {
   // CHECK-NEXT: kgen.param.declare *"`abc": lifetime = <#lit.lifetime>
   // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> to !lit.ref<mut @Mem : metatype<@Mem>, *"`abc">
-  %0 = lit.ref.to_pointer %res : <mut !Mem, *"`abc">
-  %1 = lit.call @Mem::@"__init__($test::Mem=&)"(%0) : !lit.signature<("self": !kgen.pointer<!Mem> init_self, |) -> !kgen.none>
+
+  // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> byref_result) capturing
+  lit.func localTest[*"`__result__0"](%__result___0[__result__]: !lit.ref<mut !Mem, *"`__result__0"> byref_result, |) capturing -> !kgen.none attributes {sourceName = "localTest", specialFnKind = 0 : i8} {
+    // CHECK-NEXT: kgen.param.declare *"`__result__0": lifetime
+    // CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %arg1 : !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> to !lit.ref<mut @Mem : metatype<@Mem>, *"`__result__0">
+    // CHECK-NEXT: %4 = lit.ref.to_pointer %3
+    %1 = lit.ref.to_pointer %__result___0 : <mut !Mem, *"`__result__0">
+    %2 = lit.call @"$test"::@Mem::@"__init__($test::Mem=&)"(%1) : !lit.signature<("self": !kgen.pointer<!Mem> init_self, |) -> !kgen.none>
+    %none_1 = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none_1 : !kgen.none
+  }
+  // CHECK: }
+  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
+  // CHECK-NEXT: %2 = kgen.call_param[(!lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> byref_result) capturing -> !kgen.none: localTest](%1)
+  %0 = lit.call_param[!lit.signature<[1]("__result__": !lit.ref<mut !Mem, *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][*"`abc"](%res)
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
+
 
 // CHECK-LABEL: kgen.generator @callThing
 // CHECK-SAME: (%arg0: !lit.ref<mut @Mem : metatype<@Mem>, *[0,0]> byref_result)

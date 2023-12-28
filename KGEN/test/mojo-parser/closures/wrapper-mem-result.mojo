@@ -18,7 +18,7 @@ struct MemType:
 # CHECK-NEXT:    lit.struct.field field0 : !kgen.pointer<none>
 # CHECK-NEXT:    lit.struct.field dtor : {{.*}}<("self": !kgen.pointer<none>, |) -> !kgen.none>
 # CHECK-NEXT:    lit.struct.field copy : {{.*}}<("ptrToImpl": !kgen.pointer<pointer<none>> borrow, "other": !kgen.pointer<none> borrow, |) -> !kgen.none>
-# CHECK-NEXT:    lit.struct.field call : {{.*}}<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<none> borrow, |) -> !kgen.none>
+# CHECK-NEXT:    lit.struct.field call : {{.*}}<[1](!lit.ref<mut !MemType, *[0,0]> byref_result, !kgen.pointer<none> borrow, |) -> !kgen.none>
 
 # CHECK-LABEL:   lit.func @"__del__
 # CHECK-NEXT:      [[PTR_TO_IMPL:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
