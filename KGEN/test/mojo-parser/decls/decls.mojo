@@ -916,12 +916,14 @@ struct ValueMem:
 # CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> owned_in_mem, |)
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %other[a]
-# CHECK-NEXT: %2 = lit.load.consume %1
-# CHECK-NEXT: pop.store %2, %0
-# CHECK-NEXT: %3 = lit.struct.gep %self[b]
-# CHECK-NEXT: %4 = lit.struct.gep %other[b]
-# CHECK-NEXT: %5 = lit.load.consume %4
-# CHECK-NEXT: pop.store %5, %3
+# CHECK-NEXT: %2 = builtin.unrealized_conversion_cast %1
+# CHECK-NEXT: %3 = lit.load.consume %2
+# CHECK-NEXT: pop.store %3, %0
+# CHECK-NEXT: %4 = lit.struct.gep %self[b]
+# CHECK-NEXT: %5 = lit.struct.gep %other[b]
+# CHECK-NEXT: %6 = builtin.unrealized_conversion_cast %5
+# CHECK-NEXT: %7 = lit.load.consume %6
+# CHECK-NEXT: pop.store %7, %4
 # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
@@ -1254,8 +1256,9 @@ struct DtorRegType:
 # CHECK-LABEL: lit.globalvar.decl @reg_dtor
 # CHECK: }, {
 # CHECK-NEXT: %0 = lit.globalvar.ref {{.*}}@reg_dtor
-# CHECK-NEXT: %1 = lit.load.consume %0
-# CHECK-NEXT: %2 = lit.call {{.*}}__del__{{.*}}(%1)
+# CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
+# CHECK-NEXT: %2 = lit.load.consume %1
+# CHECK-NEXT:  = lit.call {{.*}}__del__{{.*}}(%2)
 var reg_dtor = DtorRegType()
 
 @value

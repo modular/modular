@@ -58,9 +58,9 @@ fn test_owned(owned x: RegPassable):
     # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XPTR2]])
     owned_generic(x)
 
-    # CHECK: %[[XPTR3:.*]] = lit.ref.to_pointer %[[XVAR]]
-    # CHECK: %[[XMOVED:.*]] = lit.ownership.end_lifetime %[[XPTR3]] : !kgen.pointer<!RegPassable> {isReg = false}
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XMOVED]])
+    # CHECK: %[[XMOVED:.*]] = lit.ownership.end_lifetime %[[XVAR]]
+    # CHECK: %[[XPTR3:.*]] = lit.ref.to_pointer %[[XMOVED]]
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XPTR3]])
     owned_generic(x ^)
 
 

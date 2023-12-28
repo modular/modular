@@ -753,23 +753,19 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
     return {};
   }
 
-  // TODO(references): switch LoadConsumeOp to take reference.
+  if (auto mrValue = value.getIfMRValue()) {
+    value = XRValue(emitXBValue({MBValue(mrValue), anyValue.expr}, context));
+    if (!value)
+      return {};
+  }
+  // If we have a value in memory, use a LoadConsumeOp to load it.
   if (auto xrValue = value.getIfXRValue()) {
     if (!builder) {
       emitErrorForDynamicValueInParameter(expr);
       return {};
     }
-    value = MRValue(builder->create<RefToPointerOp>(xrValue.getLoc(), xrValue));
-  }
-
-  // If we have a value in memory, use a LoadConsumeOp to load it.
-  if (auto mrValue = value.getIfMRValue()) {
-    if (!builder) {
-      emitErrorForDynamicValueInParameter(expr);
-      return {};
-    }
     Value result =
-        builder->create<LoadConsumeOp>(expr->getLocation(*this), mrValue);
+        builder->create<LoadConsumeOp>(expr->getLocation(*this), xrValue);
     return SRValue(result);
   }
 

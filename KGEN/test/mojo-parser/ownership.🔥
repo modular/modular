@@ -102,9 +102,9 @@ fn destructors(owned arg0: MemExample):
 
   # Test pointless transfers from RValues.
 
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem3
-  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime [[PTR]]
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[T1]])
+  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime %mem3
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[T1]]
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[PTR]])
   consume(mem3^^^)
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous
@@ -320,9 +320,9 @@ fn chris_lifetime_example(a: Bool, b: Bool):
                 return
     # CHECK: except
     except:
-        # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %x
-        # CHECK: %[[DEAD:.*]] = lit.ownership.end_lifetime [[PTR]]
-        # CHECK: __del__{{.*}}(%[[DEAD]])
+        # CHECK: [[DEAD:%.*]] = lit.ownership.end_lifetime %x
+        # CHECK: [[PTR:%.*]] = lit.ref.to_pointer [[DEAD]]
+        # CHECK: __del__{{.*}}([[PTR]])
         _ = x^
     # CHECK: else
         # CHECK-NEXT: lit.try.yield
@@ -445,22 +445,29 @@ fn testPointerGEP(ptr: __mlir_type[`!kgen.pointer<`, Complicated, `>`]) -> Int:
 fn testTakePointeeAsOwned(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
                           i1ptr: __mlir_type.`!kgen.pointer<i1>`):
   # This should run the destructor.
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end_lifetime %ptr
+  # CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %ptr
+  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.end_lifetime %0
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
   _ = __get_address_as_owned_value(ptr)
 
   # This should run the destructor and not get omitted.
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end_lifetime %ptr
+  # CHECK-NEXT: %4 = builtin.unrealized_conversion_cast %ptr
+  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.end_lifetime %4
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
   _ = __get_address_as_owned_value(ptr)
 
   # The RValue can be consumed directly.
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end_lifetime %ptr
+  # CHECK-NEXT: %8 = builtin.unrealized_conversion_cast %ptr
+  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.end_lifetime %8
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[PTR]])
   consume(__get_address_as_owned_value(ptr))
 
   # i1 doesn't have ownership but should still work for generality.
-  # CHECK-NEXT: [[I1VAL:%.*]] = lit.load.consume %i1ptr
+  # CHECK-NEXT: %12 = builtin.unrealized_conversion_cast %i1ptr
+  # CHECK-NEXT: [[I1VAL:%.*]] = lit.load.consume %12
   # CHECK-NEXT: %ownedI1 = lit.letreg.decl "ownedI1" = [[I1VAL]]
   let ownedI1 = __get_address_as_owned_value(i1ptr)
 
@@ -473,19 +480,25 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
   # Overwriting the value in a __get_address_as_lvalue forces it to be destroyed
   # before the overwrite.
 
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.make_pointer_lvalue %ptr live_on_entry = true, exit = true
+  # CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %ptr
+  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.make_ref_lvalue %0 live_on_entry = true, exit = true
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[PTR]])
   __get_address_as_lvalue(ptr) = MemExample()
 
   # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
   # the memory, because it is uninit.
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.make_pointer_lvalue %ptr live_on_entry = false, exit = true
+  # CHECK-NEXT: %6 = builtin.unrealized_conversion_cast %ptr
+  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.make_ref_lvalue %6 live_on_entry = false, exit = true
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[PTR]])
   __get_address_as_uninit_lvalue(ptr) = MemExample()
 
   # i1 doesn't have ownership but should still work for generality.
-  # CHECK-NEXT: [[I1VAL:%.*]] = pop.load %i1ptr
+  # CHECK-NEXT: %10 = builtin.unrealized_conversion_cast %i1ptr
+  # CHECK-NEXT: [[I1VAL:%.*]] = lit.ref.load %10
   # CHECK-NEXT: %i1Val = lit.letreg.decl "i1Val" = [[I1VAL]]
   let i1Val = __get_address_as_lvalue(i1ptr)
 
@@ -500,8 +513,10 @@ fn testCondGetAsUnitializedObject(exit_early: __mlir_type.i1,
   if exit_early:
       return
 
-  # CHECK: [[LV:%.*]] = lit.ownership.make_pointer_lvalue %ptr live_on_entry = false, exit = true
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[LV]])
+  # CHECK: %0 = builtin.unrealized_conversion_cast %ptr
+  # CHECK-NEXT: [[LV:%.*]] = lit.ownership.make_ref_lvalue %0 live_on_entry = false, exit = true
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[LV]]
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[PTR]])
   # CHECK-NEXT: %none = kgen.param.constant: none
   # CHECK-NEXT: kgen.return %none
   __get_address_as_uninit_lvalue(ptr) = MemExample()
@@ -691,8 +706,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
 
   # CHECK-NEXT: hlcf.if %cond
   if (cond):
-    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example2
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end_lifetime [[PTR]]
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end_lifetime %example2
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume [[TMP]]
     # CHECK-NEXT: kgen.return [[TMP2]]
     return example2^
@@ -723,9 +737,9 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   consumeMem(example)
 
   # This does consume example, so no copy needed.
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
-  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime [[PTR]]
-  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[CONSUME]])
+  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime %example
+  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer [[CONSUME]]
+  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[PTR]])
   consumeMem(example^)
 
   # CHECK-NEXT: %example2 = lit.varlet.decl
@@ -733,10 +747,10 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[PTR]])
   let example2 = MemExample()
 
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example2
-  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime [[PTR]]
-  # CHECK-NEXT: %13 = lit.ref.to_pointer %__result__
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%13, [[CONSUME]])
+  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime %example2
+  # CHECK-NEXT: %12 = lit.ref.to_pointer %__result__
+  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer [[CONSUME]]
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%12, [[PTR]])
   # CHECK-NEXT: kgen.param.constant: none
   return example2^
 
@@ -788,9 +802,8 @@ fn bigreg_test():
   # CHECK-NEXT: lit.ref.store [[INITVAL]], %varThing
   var varThing = BigRegExample()
 
-  # CHECK-NEXT: %1 = lit.ref.struct.ger %varThing[a]
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %1
-  # CHECK-NEXT: [[LIFEEND:%.*]] = lit.ownership.end_lifetime [[PTR]]
+  # CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %varThing[a]
+  # CHECK-NEXT: [[LIFEEND:%.*]] = lit.ownership.end_lifetime [[FIELD]]
   # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[LIFEEND]]
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[AVAL]])
   consume(varThing.a^)
@@ -836,9 +849,8 @@ struct ExoticDelExample:
       # This side we manually consume for c.
 
       # CHECK-NEXT: [[CREF:%.*]] = lit.ref.struct.ger %self_0[c]
-      # CHECK-NEXT: [[CPTR:%.*]] = lit.ref.to_pointer [[CREF]]
-      # CHECK-NEXT: [[CPTR2:%.*]] = lit.ownership.end_lifetime [[CPTR]]
-      # CHECK-NEXT: [[CVAL:%.*]] = lit.load.consume [[CPTR2]]
+      # CHECK-NEXT: [[CREF2:%.*]] = lit.ownership.end_lifetime [[CREF]]
+      # CHECK-NEXT: [[CVAL:%.*]] = lit.load.consume [[CREF2]]
       # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[CVAL]])
       # CHECK-NEXT: hlcf.yield
       consume(self.c^)
@@ -930,8 +942,7 @@ struct RegMovableCopyable:
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end_lifetime [[APTR]]
+  # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end_lifetime %a
   # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
   # CHECK-NEXT: kgen.return [[AVAL]]
   return a^
@@ -948,9 +959,8 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
-  # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end_lifetime [[APTR]]
-  # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[APTR2]]
+  # CHECK-NEXT: [[AREF:%.*]] = lit.ownership.end_lifetime %a_0
+  # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
   # CHECK-NEXT: kgen.return [[A]]
   return a^
 
@@ -959,9 +969,8 @@ fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl "a" imp
   # CHECK-NEXT: lit.ref.store %a, %a_0
 
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end_lifetime [[APTR]]
-  # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[APTR2]]
+  # CHECK-NEXT: [[AREF:%.*]] = lit.ownership.end_lifetime %a
+  # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
   # CHECK-NEXT: %x = lit.letreg.decl "x" = [[A]]
   let x = a^
 

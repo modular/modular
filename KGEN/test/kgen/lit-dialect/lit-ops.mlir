@@ -449,7 +449,7 @@ lit.func @lit_loop() {
 
 // -----
 
-lit.func @load_consume(%arg0 : !kgen.pointer<index>) -> index {
-  %0 = lit.load.consume %arg0 : !kgen.pointer<index>
+lit.func @load_consume(%arg0 : !lit.ref<mut index, #lit.lifetime>) -> index {
+  %0 = lit.load.consume %arg0 : !lit.ref<mut index, #lit.lifetime>
   kgen.return %0 : index
 }

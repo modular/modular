@@ -57,7 +57,8 @@ trait Movable:
 
 # CHECK: lit.func @"_CW_{{.*}}_dtor_`_CI_{{.*}}"(%self[self]: !kgen.pointer<none>, |) -> !kgen.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
-# CHECK-NEXT: lit.ownership.end_lifetime %0
+# CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
+# CHECK-NEXT: lit.ownership.end_lifetime %1
 # CHECK-NEXT: pop.aligned_free %0
 
 # CHECK: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}"[{{.*}}](%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none

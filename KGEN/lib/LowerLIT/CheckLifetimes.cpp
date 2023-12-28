@@ -1067,8 +1067,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
   }
 
-  // OwnershipMakePointerLValue is a def if liveOnEntry.
-  if (auto makePointer = dyn_cast<OwnershipMakePointerLValue>(op)) {
+  // OwnershipMakeRefLValue is a def if liveOnEntry.
+  if (auto makePointer = dyn_cast<OwnershipMakeRefLValue>(op)) {
     // Operand use already checked above.
     checkDef(makePointer.getOperand(), op);
     if (makePointer.getLiveOnEntry())
@@ -1546,8 +1546,8 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
-  // OwnershipMakePointerLValue is a def if liveOnEntry.
-  if (auto makePointer = dyn_cast<OwnershipMakePointerLValue>(op)) {
+  // OwnershipMakeRefLValue is a def if liveOnEntry.
+  if (auto makePointer = dyn_cast<OwnershipMakeRefLValue>(op)) {
     checkUse(makePointer.getOperand(), op);
     if (makePointer.getLiveOnEntry())
       checkUse(makePointer.getResult(), op);

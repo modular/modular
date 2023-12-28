@@ -40,11 +40,12 @@ trait Movable:
 # CHECK-DAG:   %[[VAL0]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
 # CHECK-DAG:   %[[VAL1]] = lit.struct.gep %other[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
 
-# CHECK-DAG: lit.func @"__moveinit__(${{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)"
-# CHECK-DAG:   %[[VAL3:.*]] = lit.load.consume %[[VAL4:.*]] : !kgen.pointer<index> loc(#[[MOVE_LOC:loc[0-9]*]])
-# CHECK-DAG:   pop.store %[[VAL3]], %[[VAL5:.*]] : !kgen.pointer<index> loc(#[[MOVE_LOC]])
-# CHECK-DAG:   %[[VAL5]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
-# CHECK-DAG:   %[[VAL4]] = lit.struct.gep %other[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
+# CHECK-DAG: lit.func @"__moveinit__{{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)"
+# CHECK-DAG:   [[VAL5:%.*]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC:loc[0-9]*]])
+# CHECK-DAG:   [[VAL4:%.*]] = lit.struct.gep %other[value]
+# CHECK-DAG:   %2 = builtin.unrealized_conversion_cast [[VAL4]]
+# CHECK-DAG:   [[VAL3:%.*]] = lit.load.consume %2
+# CHECK-DAG:   pop.store [[VAL3]], [[VAL5:.*]] : !kgen.pointer<index> loc(#[[MOVE_LOC]])
 
 # CHECK-DAG: #[[INIT_LOC]] = loc(fused<#[[SP_INIT]]>[#[[DEC_LOC:loc[0-9]*]]])
 # CHECK-DAG: #[[COPY_LOC]] = loc(fused<#[[SP_COPY]]>[#[[DEC_LOC]]])
