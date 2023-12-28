@@ -67,7 +67,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
 
   // The lit.ownership.make_pointer_lvalue op takes an address and projects to a
   // liveness tracked indirect value.
-  if (auto makePointer = v.getDefiningOp<OwnershipMakePointerLValue>()) {
+  if (auto makePointer = v.getDefiningOp<OwnershipMakeRefLValue>()) {
     // Don't track values that are uninitialized on entry at all.  They are free
     // reign and don't need to be initialized on all paths to be used properly.
     startsUninit = !makePointer.getLiveOnEntry();

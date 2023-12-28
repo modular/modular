@@ -399,8 +399,9 @@ trait OwnedArguments:
 struct NoDtor(OwnedArguments, DefaultConstructible):
     # CHECK-LABEL: lit.func @"`thunk_take
     fn take(owned self, owned x: RegTraitType):
-        # CHECK-NEXT: %0 = lit.load.consume %self
-        # CHECK-NEXT: lit.call {{.*}}take{{.*}}(%0, %x)
+        # CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %self
+        # CHECK-NEXT: %1 = lit.load.consume %0
+        # CHECK-NEXT: lit.call {{.*}}take{{.*}}(%1, %x)
         pass
 
     fn __init__() -> Self:
@@ -437,9 +438,8 @@ struct RegTrivialSpecial(Destructable, Copyable, Movable):
     # CHECK-NEXT: [[V:%.*]] = pop.load %1
     # CHECK-NEXT: pop.store [[V]], %0
 
-    # CHECK: lit.func @"`thunk___moveinit__
-    # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} owned_in_mem
-    # CHECK-NEXT: [[V:%.*]] = lit.load.consume %1
+    # CHECK: lit.func @"`thunk___moveinit__{{.*}}%0[{{.*}} init_self, %1[{{.*}} owned_in_mem
+    # CHECK: [[V:%.*]] = lit.load.consume
     # CHECK-NEXT: pop.store [[V]], %0
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
@@ -454,7 +454,8 @@ struct RegSpecial(Destructable, Copyable, Movable):
 
     # CHECK: lit.func @"`thunk___moveinit__
     # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} owned_in_mem
-    # CHECK-NEXT: [[V:%.*]] = lit.load.consume %1
+    # CHECK-NEXT: unrealized
+    # CHECK-NEXT: [[V:%.*]] = lit.load.consume %2
     # CHECK-NEXT: pop.store [[V]], %0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial

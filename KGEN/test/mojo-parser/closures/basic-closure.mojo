@@ -60,11 +60,13 @@ fn use(y: MemType, z: Int, u: __mlir_type.index):
 # CHECK-NEXT:   [[W2:%.*]] = lit.call @{{.*}}__moveinit__{{.*}}"([[W0]], [[W1]])
 # CHECK-NEXT:   [[W3:%.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT:   [[W4:%.*]] = lit.struct.gep %other[field1] : <!Int>
-# CHECK-NEXT:   [[W5:%.*]] = lit.load.consume [[W4]] : !kgen.pointer<!Int>
+# CHECK-NEXT:   %5 = builtin.unrealized_conversion_cast [[W4]]
+# CHECK-NEXT:   [[W5:%.*]] = lit.load.consume %5
 # CHECK-NEXT:   pop.store [[W5]], [[W3]] : !kgen.pointer<!Int>
 # CHECK-NEXT:   [[W6:%.*]] = lit.struct.gep %self[field2] : <index>
 # CHECK-NEXT:   [[W7:%.*]] = lit.struct.gep %other[field2] : <index>
-# CHECK-NEXT:   [[W8:%.*]] = lit.load.consume [[W7]] : !kgen.pointer<index>
+# CHECK-NEXT:   %9 = builtin.unrealized_conversion_cast [[W7]]
+# CHECK-NEXT:   [[W8:%.*]] = lit.load.consume %9
 # CHECK-NEXT:   pop.store [[W8]], [[W6]] : !kgen.pointer<index>
 # CHECK-NEXT:   [[W9:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:   lit.ownership.mark_destroyed %other

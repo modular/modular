@@ -2496,16 +2496,14 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   }
 
   auto loc = getLocation(emitter);
-
-  // TODO(references) swap OwnershipEndLifetimeOp to reference.
-  if (isa<RefType>(value.getType()))
-    value = emitter.builder->create<RefToPointerOp>(loc, value);
-
   auto newVal =
       emitter.builder->create<OwnershipEndLifetimeOp>(loc, value, isRegister);
   if (isRegister)
     return emitter.emitResult(SRValue(newVal), this, dest);
-  return emitter.emitResult(MRValue(newVal), this, dest);
+  // TODO(references): remove MRValue
+  if (isa<PointerType>(newVal.getType()))
+    return emitter.emitResult(MRValue(newVal), this, dest);
+  return emitter.emitResult(XRValue(newVal), this, dest);
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -3057,6 +3055,14 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   auto pointeeType = ASTType(pointerType).getPointerElementType();
   bool needsLifetime = isa<DeclRefType>(pointeeType.mlirType);
 
+  // TODO(references) switch these to take a ref.
+  // HACK: force convert to reference.
+  auto destTy = RefType::getRefForPointerHACK(pointerType, /*isMut=*/true);
+  exprVal = emitter.builder
+                ->create<mlir::UnrealizedConversionCastOp>(getLocation(emitter),
+                                                           destTy, exprVal)
+                .getResult(0);
+
   /// __get_address_as_owned_value(pop_pointer) # returns RValue
   if (kind == ExprNode::kGetAddressAsOwned) {
     // Make sure to take ownership of the address and create a new lifetime
@@ -3064,16 +3070,16 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     if (needsLifetime)
       exprVal = emitter.builder->create<OwnershipEndLifetimeOp>(
           getLocation(emitter), exprVal, /*isRegister=*/false);
-    return emitter.emitResult(MRValue(exprVal), this, dest);
+    return emitter.emitResult(XRValue(exprVal), this, dest);
   }
 
   // These both return an MLValue with different ownership semantics.
   // __get_address_as_lvalue(ptr) & __get_address_as_uninit_lvalue(ptr)
   assert(kind == kGetAddressAsLValue || kind == kGetAddressAsUninitLValue);
   if (needsLifetime)
-    exprVal = emitter.builder->create<OwnershipMakePointerLValue>(
+    exprVal = emitter.builder->create<OwnershipMakeRefLValue>(
         getLocation(emitter), exprVal,
         /*isLiveOnEntry=*/kind == kGetAddressAsLValue, /*isLiveOnExit=*/true);
 
-  return emitter.emitResult(MLValue(exprVal), this, dest);
+  return emitter.emitResult(XLValue(exprVal), this, dest);
 }

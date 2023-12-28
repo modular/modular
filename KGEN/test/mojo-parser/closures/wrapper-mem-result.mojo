@@ -69,21 +69,25 @@ struct MemType:
 # CHECK-NEXT:      lit.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
 
 # CHECK-LABEL:  lit.func @"__moveinit__
-# CHECK-NEXT:     [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
-# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.struct.gep %other[field0] : <pointer<none>>
-# CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]] : !kgen.pointer<pointer<none>>
-# CHECK-NEXT:     pop.store [[mov_loaded_existing_impl]], [[M0]] : !kgen.pointer<pointer<none>>
+# CHECK-NEXT:     [[M0:%.*]] = lit.struct.gep %self[field0]
+# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.struct.gep %other[field0]
+# CHECK-NEXT:     %2 = builtin.unrealized_conversion_cast [[mov_existing_impl]]
+# CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume %2
+# CHECK-NEXT:     pop.store [[mov_loaded_existing_impl]], [[M0]]
 # CHECK-NEXT:     [[M1:%.*]] = lit.struct.gep %self[dtor]
 # CHECK-NEXT:     [[M2:%.*]] = lit.struct.gep %other[dtor]
-# CHECK-NEXT:     [[M3:%.*]] = lit.load.consume [[M2]]
+# CHECK-NEXT:     %6 = builtin.unrealized_conversion_cast [[M2]]
+# CHECK-NEXT:     [[M3:%.*]] = lit.load.consume %6
 # CHECK-NEXT:     pop.store [[M3]], [[M1]]
 # CHECK-NEXT:     [[M4:%.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT:     [[M5:%.*]] = lit.struct.gep %other[copy]
-# CHECK-NEXT:     [[M6:%.*]] = lit.load.consume [[M5]]
+# CHECK-NEXT:     %10 = builtin.unrealized_conversion_cast [[M5]]
+# CHECK-NEXT:     [[M6:%.*]] = lit.load.consume %10
 # CHECK-NEXT:     pop.store [[M6]], [[M4]]
 # CHECK-NEXT:     [[M7:%.*]] = lit.struct.gep %self[call]
 # CHECK-NEXT:     [[M8:%.*]] = lit.struct.gep %other[call]
-# CHECK-NEXT:     [[M9:%.*]] = lit.load.consume [[M8]]
+# CHECK-NEXT:     %14 = builtin.unrealized_conversion_cast [[M8]]
+# CHECK-NEXT:     [[M9:%.*]] = lit.load.consume %14
 # CHECK-NEXT:     pop.store [[M9]], [[M7]]
 # CHECK-NEXT:     %pointer = kgen.param.constant: pointer<none> = <0>
 # CHECK-NEXT:     [[V0:%.*]] = lit.struct.gep %other[field0] : <pointer<none>>

@@ -1540,7 +1540,7 @@ def LIT_StoreBorrowOp : LITOp<"store.borrow",
 //===----------------------------------------------------------------------===//
 
 def LIT_LoadConsumeOp : LITOp<"load.consume",
-                              [PointerElementType<"ptr", "result">]> {
+                              [ReferenceElementType<"ref", "result">]> {
   let summary = "consuming pointer load operation";
   let description = [{
     Loads the data at the given pointer like `pop.load`, but consumes the
@@ -1551,13 +1551,13 @@ def LIT_LoadConsumeOp : LITOp<"load.consume",
     Example:
 
     ```mlir
-    %0 = lit.load.consume %ptr0 : !kgen.pointer<scalar<f32>>
+    %0 = lit.load.consume %ref : !lit.ref<scalar<f32>, #lifetime>
     ```
   }];
 
-  let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr);
+  let arguments = (ins Arg<LIT_RefType, "", [MemRead]>:$ref);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$ptr attr-dict `:` qualified(type($ptr))";
+  let assemblyFormat = "$ref attr-dict `:` qualified(type($ref))";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1625,31 +1625,31 @@ def LIT_OwnershipEndLifetimeOp : LITOp<"ownership.end_lifetime",
 
 
 //===----------------------------------------------------------------------===//
-// OwnershipMakePointerLValue
+// OwnershipMakeRefLValue
 //===----------------------------------------------------------------------===//
 
-def LIT_OwnershipMakePointerLValue : LITOp<"ownership.make_pointer_lvalue",
-                                        [AllTypesMatch<["ptr", "valuePtr"]>]> {
-  let summary = "Project a pointer address as an tracked LValue";
+def LIT_OwnershipMakeRefLValue : LITOp<"ownership.make_ref_lvalue",
+                                        [AllTypesMatch<["ref", "valueRef"]>]> {
+  let summary = "Project a reference as a tracked LValue";
   let description = [{
-    This op projects a !kgen.pointer value as an LValue, whose value is
+    This op projects a `!lit.ref` value as an LValue, whose value is
     initialized on entry (or not) based on the first property, and initialized
     after last use (or not) depending on the second one.
 
     This works with memory values.
 
     ```mlir
-    %1 = lit.ownership.make_pointer_lvalue %0 : !kgen.pointer<@MyStruct>
+    %1 = lit.ownership.make_ref_lvalue %0 : !lit.ref<mut @MyStruct, #lifetime>
     ```
   }];
 
-  let arguments = (ins PointerOf<KGEN_DeclRefType>:$ptr,
+  let arguments = (ins RefOf<KGEN_DeclRefType>:$ref,
                        BoolAttr:$liveOnEntry,
                        BoolAttr:$liveOnExit);
-  let results = (outs PointerOf<KGEN_DeclRefType>:$valuePtr);
+  let results = (outs RefOf<KGEN_DeclRefType>:$valueRef);
   let assemblyFormat = [{
-    $ptr `live_on_entry``=`$liveOnEntry`,` `exit``=`$liveOnExit
-    `:` type($ptr) attr-dict
+    $ref `live_on_entry``=`$liveOnEntry`,` `exit``=`$liveOnExit
+    `:` type($ref) attr-dict
   }];
 }
 

@@ -890,8 +890,14 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     // Cast the opaque pointer back to the closure impl type.
     Value implPtr = builder.create<POP::PointerBitcastOp>(
         closureImplTopLevelType, body->getArgument(0));
-    builder.create<OwnershipEndLifetimeOp>(builder.getLoc(), implPtr,
-                                           /*isRegister=*/false);
+    //  TODO(references)
+    auto destTy =
+        RefType::getRefForPointerHACK(closureImplTopLevelType, /*isMut=*/false);
+    auto castOp =
+        builder.create<mlir::UnrealizedConversionCastOp>(destTy, implPtr)
+            .getResult(0);
+
+    builder.create<OwnershipEndLifetimeOp>(castOp, /*isRegister=*/false);
 
     // Free the memory we allocated on the heap to store the closure.
     builder.create<POP::AlignedFreeOp>(implPtr);

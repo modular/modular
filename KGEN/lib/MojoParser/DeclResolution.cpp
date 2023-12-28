@@ -2457,9 +2457,16 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // In every case, the implementation is a load+store.
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
     Value value;
-    if (kind == SpecialFunctionKind::kMoveInit)
-      value = b.create<LIT::LoadConsumeOp>(func.getArgument(1));
-    else
+    if (kind == SpecialFunctionKind::kMoveInit) {
+      // TODO: byref references
+      auto ptrType = cast<PointerType>(func.getArgument(1).getType());
+      // HACK: force convert to reference.
+      auto destTy = RefType::getRefForPointerHACK(ptrType, /*isMut=*/false);
+      auto castOp = b.create<mlir::UnrealizedConversionCastOp>(
+                         destTy, func.getArgument(1))
+                        .getResult(0);
+      value = b.create<LIT::LoadConsumeOp>(castOp);
+    } else
       value = b.create<POP::LoadOp>(func.getArgument(1));
     b.create<POP::StoreOp>(value, func.getArgument(0));
   }
