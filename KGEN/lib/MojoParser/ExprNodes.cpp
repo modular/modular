@@ -2916,9 +2916,9 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       isDef, resultLoc);
   if (!resultType)
     return {};
-
-  DeclResolver::computeArgumentConventions(emitter.shared, inputParamDecls,
-                                           args, argTypes);
+  SmallVector<ParamDeclAttr> implicitLifetimeDecls;
+  DeclResolver::computeArgumentConventions(emitter.shared, args, argTypes,
+                                           implicitLifetimeDecls, dummyScope);
 
   Builder b(emitter.getContext());
   SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
@@ -2947,17 +2947,24 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       b.getFunctionType(argTypes, {resultType.mlirType});
 
   // Compute the signature of the function.
-  auto signature = SignatureType::remapToSignature(
+  LITSignatureType signature = SignatureType::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
       effects,
       FnMetadataAttr::get(b.getContext(), argNames, argPassingKinds, paramNames,
                           paramPassingKinds, argDefaults, paramDefaults,
-                          /*implicitLifetimeDecls=*/0),
+                          implicitLifetimeDecls.size()),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");
     return {};
   }
+
+  // The parsed SignatureType is set to the pretty type that includes implicit
+  // lifetimes, we strip off the named lifetime decl references and replace them
+  // with indices.
+  signature =
+      signature.replaceImplicitLifetimesWithIndexes(implicitLifetimeDecls);
+
   if (effects.isEscaping()) {
     // Create a self contained signature type that represents the closure.
     auto [capturedRefs, wrapperSig] =

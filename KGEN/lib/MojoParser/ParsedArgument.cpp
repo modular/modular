@@ -701,8 +701,9 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 }
 
 void DeclResolver::computeArgumentConventions(
-    SharedState &shared, SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
-    MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes) {
+    SharedState &shared, MutableArrayRef<ParsedArgument> args,
+    MutableArrayRef<Type> argTypes,
+    SmallVectorImpl<ParamDeclAttr> &implicitLifetimeDecls, ASTDecl &declScope) {
   MLIRContext *ctx = shared.getContext();
 
   for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
@@ -743,28 +744,28 @@ void DeclResolver::computeArgumentConventions(
     if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
         arg.kgenConvention != ValueInputConvention::BorrowedInReg) {
 
-      // Values passed by memory need an associated lifetime parameter, and need
-      // to be passed by reference.  Fun fact: explicit ref/mutref arguments
-      // have register conventions, so they won't get these.
-      if (false &&
-          // FIXME: This is currently disabled because it causes literally
-          // everything to explode.  We'll need to stage stuff in more
-          // aggressively before going down this path and we don't want to
-          // hork useExperimentalLifetimes beyond testing ability.
-          shared.useExperimentalLifetimes()) {
+      // Values passed by memory need an associated lifetime parameter, and
+      // need to be passed by reference.  Fun fact: explicit ref/mutref
+      // arguments have register conventions, so they won't get these.
+      // TODO(references) turn this on for everything!
+      if (isArgumentPassedWithImplicitLifetime(arg.kgenConvention)) {
         // Given a memory argument named "foo" we give the implicit lifetime a
         // name of "`foo".  We do this because of Rust precedent, but also
         // because you can't spell this identifier in Mojo, even with backticks!
         StringAttr lifetimeName;
-        if (arg.name)
-          lifetimeName = StringAttr::get(ctx, "`" + arg.name.str());
-        else // Used by function types, for example.
-          lifetimeName = StringAttr::get(ctx, "`" + llvm::utostr(i));
+        if (arg.name) {
+          lifetimeName = declScope.getAnonymousLifetimeFor(
+              arg.name.str(), /*dontRenameOutermost=*/true);
+        } else { // Used by function types, for example.
+          lifetimeName = declScope.getAnonymousLifetimeFor(
+              Twine(llvm::utostr(i)) + "_unnamed",
+              /*dontRenameOutermost=*/true);
+        }
+
         auto lifetimeDecl =
             ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
-        inputParamDecls.push_back(lifetimeDecl);
+        implicitLifetimeDecls.push_back(lifetimeDecl);
 
-        // The parameter implicitly gets a reference type.
         bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
         argType = RefType::get(
             isMutable, argType,

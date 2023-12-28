@@ -122,6 +122,14 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
       return;
     }
 
+  // Handle RefType.
+  if (auto actual = dyn_cast<RefType>(actualType))
+    if (auto expected = dyn_cast<RefType>(expectedType)) {
+      matchTypes(actual.getElementType(), expected.getElementType());
+      matchParams(actual.getLifetime(), expected.getLifetime());
+      return;
+    }
+
   // Handle PointerType.
   if (auto actual = dyn_cast<PointerType>(actualType))
     if (auto expected = dyn_cast<PointerType>(expectedType))

@@ -361,8 +361,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value callSelf = hasResultSlot ? callMethod.getBody()->getArgument(1)
                                    : callMethod.getBody()->getArgument(0);
     SmallVector<Value> arguments;
-    if (hasResultSlot)
-      arguments.push_back(callMethod.getBody()->getArgument(0));
+    SmallVector<TypedAttr> implicitLifetimes;
+    if (hasResultSlot) {
+      Value destArg = callMethod.getBody()->getArgument(0);
+      arguments.push_back(destArg);
+      implicitLifetimes.push_back(
+          cast<RefType>(destArg.getType()).getLifetime());
+    }
 
     arguments.push_back(builder.create<POP::LoadOp>(
         builder.create<StructGEPOp>(callSelf, impl)));
@@ -377,7 +382,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
                                     callMember.getNameAttr(), callSelf);
     auto callResult = builder.create<CallSignatureOp>(
         resultType, builder.create<POP::LoadOp>(getCallMember),
-        /*implicitLifetimes=*/ArrayRef<TypedAttr>(), arguments);
+        implicitLifetimes, arguments);
     ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
     builder.create<LIT::EndFuncOp>();
   }
@@ -552,8 +557,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Move by ref result argument to front before self argument.
   bool hasByRefReturn = wrapperSig.hasMemoryOnlyResult();
   if (hasByRefReturn) {
-    callInputTypes.push_back(wrapperSig.getValueInputs()[0]);
-    callConventions.push_back(wrapperSig.getInputConvention(0));
+    assert(wrapperSig.getInputConvention(0) ==
+           ValueInputConvention::ByRefResult);
+    callInputTypes.push_back(nestedFn.getFunctionType().getInput(0));
+    // wrapperSig.getValueInputs()[0]);
+    callConventions.push_back(ValueInputConvention::ByRefResult);
     callNames.push_back(StringAttr::get(ctx));
     callPassingKinds.push_back(PassingKind::PosOnly);
   }
@@ -591,7 +599,6 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // Take the body of the nested function.
-  IRMapping mapping;
   callFunc.getBody()->erase();
   callFunc.getBodyRegion().takeBody(nestedFn.getBodyRegion());
   Location callFuncLocation = callFunc.getLoc();
@@ -939,8 +946,13 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     SymbolConstantAttr symbol =
         closureImpl->getAttrOfType<SymbolConstantAttr>(callMethodAttr);
     SmallVector<Value> args;
-    if (hasMemoryOnlyResult)
-      args.push_back(topLevelCall.getArgument(0));
+    SmallVector<TypedAttr> implicitLifetimes;
+    if (hasMemoryOnlyResult) {
+      Value destArg = topLevelCall.getArgument(0);
+      args.push_back(destArg);
+      implicitLifetimes.push_back(
+          cast<RefType>(destArg.getType()).getLifetime());
+    }
     args.push_back(implPtr);
     for (unsigned i = hasMemoryOnlyResult + 1,
                   e = closureSignature.getNumInputs();
@@ -948,10 +960,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       args.push_back(topLevelCall.getArgument(i));
     SymbolConstantAttr typedSymbol =
         createTypedSymbol(symbol, topLevelInputParams);
+
     Value result =
-        builder
-            .create<CallOp>(resultType, typedSymbol,
-                            /*implicitLifetimes=*/ArrayRef<TypedAttr>(), args)
+        builder.create<CallOp>(resultType, typedSymbol, implicitLifetimes, args)
             .getResult(0);
     ExprEmitter::emitNormalReturn(builder, result, topLevelCall);
     builder.create<LIT::EndFuncOp>();

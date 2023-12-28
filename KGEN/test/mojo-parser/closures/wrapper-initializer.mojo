@@ -24,7 +24,7 @@ trait Movable:
 
 # CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!wrapper> init_self, %impl[impl]: !kgen.pointer<!escaping0_> owned_in_mem, |)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
-# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<(!kgen.pointer<!MemType> byref_result, !kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[1](!lit.ref<mut !MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
 
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
@@ -60,9 +60,9 @@ trait Movable:
 # CHECK-NEXT: lit.ownership.end_lifetime %0
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}"[{{.*}}](%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
-# CHECK-NEXT: %[[A1:.*]] = lit.call @{{.*}}@"__call__{{.*}}"(%[[RES]], %[[A0]], %n)
+# CHECK-NEXT: %[[A1:.*]] = lit.call @{{.*}}@"__call__{{.*}}"[{{.*}}](%[[RES]], %[[A0]], %n)
 # CHECK-NEXT: lit.return %[[A1]] : !kgen.none
 # CHECK-NEXT: lit.end_func
 

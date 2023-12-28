@@ -338,8 +338,7 @@ struct CallSignatureOpConversion
       SmallVector<Type> wrapperFnArgTypes;
       wrapperFnArgTypes.push_back(pointerType);
 
-      auto calleeFuncTy =
-          callee.getType().dyn_cast<SignatureType>().getValues();
+      auto calleeFuncTy = callee.getType().cast<SignatureType>().getValues();
       for (Type argTy : calleeFuncTy.getInputs()) {
         Type ty = convertType(argTy);
         if (!ty)

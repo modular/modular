@@ -42,24 +42,68 @@ LIT::FuncOp StructEmitter::createFunction(
       TypeConvention::RegisterPassableTrivial)
     fnEffects.setOwnedRegisterResult();
 
+  // This starts with implicit lifetimes and then gets explicitly declared input
+  // params.
+  SmallVector<ParamDeclAttr> fullInputParams;
+
+  // The caller specifies all the input types, which means that all the input
+  // reference types that carry implicit lifetimes will already have them
+  // specified with names, so dig those out and use them as input parameters.
+  // If the caller provided indexed inputs, rewrite them to named inputs as our
+  // body will expect.
+  SmallVector<Type> adjustedArgTypes;
+  for (auto [argNo, argType, argConv] :
+       llvm::enumerate(argTypes, argConventions)) {
+    adjustedArgTypes.push_back(argType);
+    if (!isArgumentPassedWithImplicitLifetime(argConv))
+      continue;
+
+    // Dig out the lifetime decl.
+    auto refArgType = cast<RefType>(argType);
+    auto lifetimeAttr = refArgType.getLifetime();
+    // If this has an indexed value, synthesize a decl.
+    ParamDeclAttr decl;
+    if (isa<ImplicitLifetimeRefAttr>(lifetimeAttr)) {
+      auto lifetimeName = StringAttr::get(
+          shared.getContext(), "`" + llvm::utostr(argNo) + "_unnamed");
+      decl = ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
+
+      // Replace the argument type with a named reference.
+      auto newLifetime = ParamDeclRefAttr::get(lifetimeName, decl.getType());
+      adjustedArgTypes.back() = refArgType.getWithLifetimeReplaced(newLifetime);
+    } else {
+      // If this is a reference to a named one already, just reuse the name.
+      auto lifetimeRef = cast<ParamDeclRefAttr>(lifetimeAttr);
+      assert(isa<LifetimeType>(lifetimeRef.getType()) &&
+             "lifetimes should have LifetimeType");
+      decl = ParamDeclAttr::get(lifetimeRef.getName(), lifetimeRef.getType());
+    }
+    fullInputParams.push_back(decl);
+  }
+  size_t numImplicitLifetimeDecls = fullInputParams.size();
+
   SmallVector<StringAttr> parameterNames;
   for (ParamDeclAttr p : inputParams) {
     parameterNames.push_back(
         StringAttr::get(getContext(), demangleParameterName(p.getName())));
   }
 
-  size_t numImplicitLifetimeDecls =
-      LITSignatureType::countImplicitLifetimes(argConventions);
   auto metadata =
       FnMetadataAttr::get(builder.getContext(), argNames, argPassingKinds,
                           parameterNames, paramPassingKinds,
                           /*defaultArguments=*/{}, /*defaultParameters=*/{},
                           numImplicitLifetimeDecls);
-  FunctionType functionType = builder.getFunctionType(argTypes, {resultType});
+  FunctionType functionType =
+      builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
   LITSignatureType signature = SignatureType::remapToSignature(
       inputParams, resultParams, functionType, argConventions, fnEffects,
       metadata, [&] { return mlir::emitError(location); });
+  // Strip off the named lifetime decl references and replace them with indices.
+  // We keep the named parameters in the ParamDeclAttr list on the FuncOp and
+  // in the BBArgs.
+  signature = signature.replaceImplicitLifetimesWithIndexes(fullInputParams);
+
   StringAttr sourceName = builder.getStringAttr(name);
   StringAttr mangledName = builder.getStringAttr(
       prefix + DeclResolver::getMangledName(sourceName, signature).getValue());
@@ -69,14 +113,16 @@ LIT::FuncOp StructEmitter::createFunction(
 
   // Set the attributes on the FuncOp in bulk.
   NamedAttrList attrs = funcOp->getAttrDictionary();
-  if (!inputParams.empty()) {
+
+  // Figure out the full set of parameter declarations, this is the implicit
+  // lifetimes + explicit parameter declarations.
+  fullInputParams.append(inputParams.begin(), inputParams.end());
+  if (!fullInputParams.empty())
     attrs.set(funcOp.getInputParamsAttrName(),
-              builder.getAttr<ParamDeclArrayAttr>(inputParams));
-  }
-  if (!resultParams.empty()) {
+              builder.getAttr<ParamDeclArrayAttr>(fullInputParams));
+  if (!resultParams.empty())
     attrs.set(funcOp.getResultParamsAttrName(),
               builder.getAttr<ParamDeclArrayAttr>(resultParams));
-  }
   attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
 
@@ -84,9 +130,9 @@ LIT::FuncOp StructEmitter::createFunction(
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   shared.setLocationDebugScope(diScopeGuard, funcOp);
   if (!funcOp.getBody())
-    funcOp.getBodyRegion().push_back(new Block);
-  for (Type param : argTypes)
-    funcOp.getBody()->addArgument(param, funcOp.getLoc());
+    funcOp.getBodyRegion().push_back(new Block());
+  for (Type argType : adjustedArgTypes)
+    funcOp.getBody()->addArgument(argType, funcOp.getLoc());
 
   return funcOp;
 }

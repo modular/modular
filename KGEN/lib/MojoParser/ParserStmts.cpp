@@ -697,7 +697,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   SignatureType declSig = decl.getSignature();
   if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
-    ValueDest resultDest(MLValue(decl.getArgument(0)), EC_ReturnValue);
+    ValueDest resultDest(XLValue(decl.getArgument(0)), EC_ReturnValue);
     if (!emitter.emitExpr(operandExpr, resultDest))
       return success();
 

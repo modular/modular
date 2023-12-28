@@ -209,8 +209,10 @@ void OutlineClosuresPass::runOnOperation() {
         // symbol at the beginning of the vector.
         SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
         llvm::append_range(partialBindings, capturedParamValues);
-        for (ParamDeclAttr decl : regionDecl.getInputParams())
-          partialBindings.push_back(UnboundAttr::get(decl.getType()));
+
+        // Ignore implicit lifetimes which .
+        for (Type paramType : regionDecl.getSignature().getInputParamTypes())
+          partialBindings.push_back(UnboundAttr::get(paramType));
         LLVM_DEBUG(llvm::dbgs() << "Partial bindings: [\n\t";
                    llvm::interleave(partialBindings, llvm::dbgs(), ",\n\t");
                    llvm::dbgs() << "\n]\n");

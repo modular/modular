@@ -544,8 +544,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << " -> ";
     Type resultType = sig.getValueResults().front();
     if (inMemResult) {
-      ASTType(cast<PointerType>(inMemResult).getElementType())
-          .print(os, forDiag);
+      ASTType(cast<RefType>(inMemResult).getElementType()).print(os, forDiag);
     } else if (isa<KGEN::NoneType>(resultType)) {
       os << "None";
     } else if (sig.isThrows()) {

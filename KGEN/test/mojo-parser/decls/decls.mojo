@@ -677,13 +677,15 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 def implicit_return_obj():
     # CHECK: if
     if False:
-        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
+        # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %__result__
+        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}[[PTR]]
         # CHECK: kgen.variant.create
         # CHECK: return
         return
     # CHECK: else
     else:
-        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
+        # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %__result__
+        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}[[PTR]]
         # CHECK: kgen.variant.create
         # CHECK: return
         return 5
@@ -1337,3 +1339,22 @@ fn decorated_fn():
 @decorator_arg(2)
 struct DecoratedStruct:
     pass
+
+##===----------------------------------------------------------------------===##
+# Implicit lifetimes for result slots.
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"getThing()"
+# CHECK-SAME: [*"`__result__"](%__result__[__result__]:
+fn getThing() -> MyStruct:
+   # result slot parameter should get a different name to avoid conflict.
+   # CHECK: lit.func *"localTest()"
+   # CHECK-SAME: [*"`__result__0"](%__result___0[__result__]:
+   fn localTest() -> MyStruct:
+     return MyStruct()
+   return localTest()
+
+# CHECK-LABEL: lit.func @"callThing()"
+# CHECK-SAME: [*"`__result__"](%__result__[__result__]:
+fn callThing() -> MyStruct:
+  return getThing()

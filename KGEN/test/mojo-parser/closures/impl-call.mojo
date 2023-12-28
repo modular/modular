@@ -47,9 +47,9 @@ struct MemType:
 # CHECK-NEXT: lit.return %[[W5]] : index
 # CHECK-NEXT: lit.end_func
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%[[RES:.*]][{{.*}}]: !kgen.pointer<!MemType> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, |, %y[y]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK: lit.func @"__call__{{.*}}_CI_{{.*}}"[{{.*}}](%0[{{.*}}]: !lit.ref<mut !MemType,{{.*}}> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<{{.*}}> borrow_in_mem, |, %y[y]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %[[SELF]][field0] : <!MemType>
-# CHECK-NEXT: %[[W2:.*]] = lit.call @{{.*}}__add__{{.*}}(%[[RES]], %[[W0]], %y)
+# CHECK-NEXT: %[[W2:.*]] = lit.call @{{.*}}__add__{{.*}}(%0, %[[W0]], %y)
 # CHECK-NEXT: %[[W4:.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %[[W4]] : !kgen.none
 # CHECK-NEXT: lit.end_func

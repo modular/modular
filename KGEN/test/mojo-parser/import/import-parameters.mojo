@@ -16,7 +16,7 @@ fn reference_params_through_imported_struct():
 
 # CHECK-LABEL: lit.func @"ref_param_in_arg
 # CHECK-SAME: <?, [[X:.*]]>(
-# CHECK-SAME: pointer<{{.*}}ParameterizedType<[[X]]>{{.*}}> byref_result
+# CHECK-SAME: lit.ref<mut {{.*}}ParameterizedType<[[X]]>{{.*}}> byref_result
 fn ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
     # CHECK: lit.alias.fwd_decl "{{.*}}fn_type"
     # CHECK-SAME: signature<<?, index>("x":

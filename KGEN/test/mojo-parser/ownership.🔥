@@ -395,8 +395,7 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
 # CHECK-LABEL: lit.func @"indirect_call
 fn indirect_call[detail_fn: fn() -> MemExample]():
        # CHECK: %mem = lit.varlet.decl
-       # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem
-       # CHECK-NEXT: lit.call_param{{.*}}([[PTR]])
+       # CHECK-NEXT: lit.call_param{{.*}}(%mem)
        let mem = detail_fn()
        # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem
        # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
@@ -622,13 +621,13 @@ fn test_result_optimization():
   # Direct reuse of the result slot forces a temporary.
 
   # CHECK: %__call_result_tmp__ = lit.varlet.decl
-  # CHECK-NEXT: %2 = lit.ref.to_pointer %__call_result_tmp__
-    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
-  # CHECK-NEXT: lit.call @"$ownership{{.*}}(%2, [[PTR]])
+  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
+  # CHECK-NEXT: lit.call @"$ownership{{.*}}(%__call_result_tmp__, [[PTR]])
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[PTR]])
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[PTR]], %2)
+  # CHECK-NEXT: %7 = lit.ref.to_pointer %__call_result_tmp__
+  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[PTR]], %7)
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %__call_result_tmp__
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[PTR]])
   example = use_and_return(example)
@@ -636,14 +635,14 @@ fn test_result_optimization():
   # Aliased reuse of part of the result slot forces a temporary.
 
   # CHECK-NEXT: %__call_result_tmp___0 = lit.varlet.decl
-  # CHECK-NEXT: [[PTR2:%.*]] = lit.ref.to_pointer %__call_result_tmp___0
   # CHECK-NEXT: [[F1:%.*]] = lit.ref.struct.ger %example[f1]
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
-  # CHECK-NEXT: lit.call @"$ownership"::@"use_and_return2{{.*}}([[PTR2]], [[PTR]])
+  # CHECK-NEXT: lit.call @"$ownership"::@"use_and_return2{{.*}}(%__call_result_tmp___0, [[PTR]])
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.struct.gep [[PTR]][f1]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1_2]])
   # CHECK-NEXT: [[PTR3:%.*]] = lit.ref.to_pointer [[F1]]
+  # CHECK-NEXT: [[PTR2:%.*]] = lit.ref.to_pointer %__call_result_tmp___0
   # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}([[PTR3]], [[PTR2]])
 
   example.mutate()
@@ -736,7 +735,8 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
 
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example2
   # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime [[PTR]]
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])
+  # CHECK-NEXT: %13 = lit.ref.to_pointer %__result__
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%13, [[CONSUME]])
   # CHECK-NEXT: kgen.param.constant: none
   return example2^
 
@@ -900,7 +900,8 @@ struct MemoryMovableCopyable:
 # CHECK-LABEL: lit.func @"result_mem1
 fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
   # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %0)
+  # CHECK-NEXT: %1 = lit.ref.to_pointer %__result__
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %0)
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
   return a^
@@ -908,7 +909,8 @@ fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
 # CHECK-LABEL: lit.func @"result_mem3
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
   # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %0){{.*}}init_self{{.*}} owned_in_mem
+  # CHECK-NEXT: %1 = lit.ref.to_pointer %__result__
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %0){{.*}}init_self{{.*}} owned_in_mem
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
   return a^
