@@ -23,10 +23,6 @@ from .stream import Stream, _StreamImpl
 # ===----------------------------------------------------------------------===#
 
 
-fn _alignto(value: Int, align: Int) -> Int:
-    return (value + align - 1) // align * align
-
-
 struct AnyRegTuple[*Ts: AnyRegType]:
     alias _type = __mlir_type[
         `!kgen.pack<:variadic<`, AnyRegType, `> `, Ts, `>`
@@ -37,6 +33,10 @@ struct AnyRegTuple[*Ts: AnyRegType]:
         self.storage = value
 
     @staticmethod
+    fn _alignto(value: Int, align: Int) -> Int:
+        return (value + align - 1) // align * align
+
+    @staticmethod
     fn _offset[i: Int]() -> Int:
         constrained[i >= 0, "index must be positive"]()
 
@@ -44,9 +44,9 @@ struct AnyRegTuple[*Ts: AnyRegType]:
         if i == 0:
             return 0
         else:
-            return _alignto(
+            return Self._alignto(
                 Self._offset[i - 1]()
-                + _alignto(sizeof[Ts[i - 1]](), alignof[Ts[i - 1]]()),
+                + Self._alignto(sizeof[Ts[i - 1]](), alignof[Ts[i - 1]]()),
                 alignof[Ts[i]](),
             )
 
@@ -83,7 +83,24 @@ struct FunctionHandle:
         populate: _populate_fn_type,
         *Ts: AnyRegType,
     ](self, stream: Stream, grid_dim: Dim, block_dim: Dim, *args: *Ts) raises:
-        let values = AnyRegTuple(args)
+        var values = AnyRegTuple(args)
+
+        self._call_impl[num_captures, populate](
+            stream, grid_dim, block_dim, values
+        )
+
+    @always_inline
+    fn _call_impl[
+        num_captures: Int,
+        populate: _populate_fn_type,
+        *Ts: AnyRegType,
+    ](
+        self,
+        stream: Stream,
+        grid_dim: Dim,
+        block_dim: Dim,
+        inout values: AnyRegTuple[Ts],
+    ) raises:
         alias types = VariadicList(Ts)
 
         var args_stack = stack_allocation[
@@ -362,34 +379,14 @@ struct Function[func_type: AnyRegType, func: func_type]:
     fn __call__[
         *Ts: AnyRegType
     ](self, stream: Stream, grid_dim: Dim, block_dim: Dim, *args: *Ts) raises:
-        let values = AnyRegTuple(args)
-        alias types = VariadicList(Ts)
         alias num_captures = Self._impl.num_captures
         alias populate = Self._impl.populate
 
-        var args_stack = stack_allocation[
-            num_captures + len(VariadicList(Ts)), Pointer[NoneType]
-        ]()
-        populate(args_stack)
+        var values = AnyRegTuple(args)
 
-        @parameter
-        @always_inline
-        fn append[i: Int]():
-            alias T = types[i]
-            var _val = values.get[i, T]()
-            args_stack.store(
-                num_captures + i, Pointer.address_of(_val).bitcast[NoneType]()
-            )
-
-        unroll[len(types), append]()
-
-        self.info.func_handle.__call_impl(
-            grid_dim, block_dim, args_stack, stream=stream
+        self.info.func_handle._call_impl[num_captures, populate](
+            stream, grid_dim, block_dim, values
         )
-
-        # self.info.func_handle._call_impl[
-        #     Self._impl.num_captures, Self._impl.populate
-        # ](stream, grid_dim, block_dim, AnyRegTuple(args))
 
     # Convenience method omitting the stream parameter
     @closure
@@ -398,31 +395,11 @@ struct Function[func_type: AnyRegType, func: func_type]:
         *Ts: AnyRegType
     ](self, grid_dim: Dim, block_dim: Dim, *args: *Ts) raises:
         let stream: Stream = _StreamImpl()
-        let values = AnyRegTuple(args)
-        alias types = VariadicList(Ts)
         alias num_captures = Self._impl.num_captures
         alias populate = Self._impl.populate
 
-        var args_stack = stack_allocation[
-            num_captures + len(VariadicList(Ts)), Pointer[NoneType]
-        ]()
-        populate(args_stack)
+        var values = AnyRegTuple(args)
 
-        @parameter
-        @always_inline
-        fn append[i: Int]():
-            alias T = types[i]
-            var _val = values.get[i, T]()
-            args_stack.store(
-                num_captures + i, Pointer.address_of(_val).bitcast[NoneType]()
-            )
-
-        unroll[len(types), append]()
-
-        self.info.func_handle.__call_impl(
-            grid_dim, block_dim, args_stack, stream=stream
+        self.info.func_handle._call_impl[num_captures, populate](
+            stream, grid_dim, block_dim, values
         )
-
-        # self.info.func_handle._call_impl[
-        #     Self._impl.num_captures, Self._impl.populate
-        # ](stream, grid_dim, block_dim, AnyRegTuple(args))
