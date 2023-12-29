@@ -203,12 +203,6 @@ public:
                             bool allowIncompatibleTypes, bool requireMLValue,
                             ExprEmitter &emitter);
 
-  /// Return an MLValue for this destination of the specified type that we can
-  /// initialize.  This uses and consumes the destination if it matches the type
-  /// of the value dest.
-  MLValue getMLValueForResult(SMLoc loc, ASTType resultType,
-                              ExprEmitter &emitter);
-
   /// Return an XLValue for this destination of the specified type that we can
   /// initialize.  This uses and consumes the destination if it matches the type
   /// of the value dest.

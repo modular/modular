@@ -361,37 +361,6 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                         /*isSynthetic=*/true));
 }
 
-/// Return an MLValue for this destination of the specified type that we can
-/// initialize. This uses and consumes the destination if it matches the type
-/// of the value dest. If the underlying value is a DLValue, attempt to coerce
-/// it to an MLValue if possible.
-/// TODO(references): remove this.
-MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
-                                       ExprEmitter &emitter) {
-  // Save the operation if it is one so we can query the type of DLValue.
-  auto *op = dyn_cast<Operation *>(representation);
-
-  LValue lv =
-      getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
-                         /*requireMLValue=*/true, emitter);
-
-  // Only a GlobalDLValue is possible at the moment.
-  if (lv.getIfDLValue()) {
-    // Get an MLValue by taking the address of the global.
-    auto global = cast<GlobalVarDeclOp>(op);
-    lv = MLValue(emitter.builder->create<GlobalVarRefOp>(
-        emitter.translateLocation(loc), global));
-  }
-
-  // Decay XLValue to MLValue on demand.
-  if (auto ref = lv.getIfXLValue())
-    lv = MLValue(emitter.builder->create<RefToPointerOp>(
-        emitter.translateLocation(loc), ref));
-
-  assert(!lv || lv.getIfMLValue());
-  return lv.getIfMLValue();
-}
-
 /// Return an XLValue for this destination of the specified type that we can
 /// initialize. This uses and consumes the destination if it matches the type
 /// of the value dest. If the underlying value is a DLValue, attempt to coerce
@@ -732,7 +701,7 @@ XRValue ExprEmitter::emitPValueToXRValue(ASTExprAnd<PValue> value,
   VarLetDeclOp var = emitVarLetDecl("anonymous*", pvalue.getType(),
                                     translateLocation(value.expr->getLoc()),
                                     VarLetDeclKind::Var, /*isSynthetic=*/true);
-  if (!emitPValueToXLValue({pvalue, value.expr}, MLValue(var), context))
+  if (!emitPValueToXLValue({pvalue, value.expr}, XLValue(var), context))
     return {};
   return XRValue(var);
 }
@@ -1185,9 +1154,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         if (isa<MLValue, MRValue, MBValue>(cValue.getStorage())) {
           requiredType = PointerType::get(requiredType);
         } else if (isa<XLValue, XRValue, XBValue>(cValue.getStorage())) {
-          auto ref = cast<RefType>(cValue.getType());
-          requiredType =
-              RefType::get(ref.getIsMutable(), requiredType, ref.getLifetime());
+          requiredType = cast<RefType>(cValue.getType())
+                             .getWithElementReplaced(requiredType);
         }
         value = rebindValue(value, requiredType, expr->getLoc(), *this);
         return emitCValue({value, expr}, dest);
@@ -1383,7 +1351,6 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
                                CallSyntax::kImplicitConvert, value.expr);
 
   case TypeConvention::MemoryOnly:
-#if 0 // TODO(lifetimes): Use this when initself uses references.
     // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
     XLValue destBuffer = dest.getXLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)
@@ -1392,16 +1359,6 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     if (auto pValue = value.ir.getIfPValue())
       return emitPValueToXLValue({pValue, value.expr}, destBuffer,
                                  dest.context);
-#else
-    // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
-    MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
-    if (!destBuffer)
-      return {};
-
-    if (auto pValue = value.ir.getIfPValue())
-      return emitPValueToMLValue({pValue, value.expr}, destBuffer,
-                                 dest.context);
-#endif
 
     if (!valueType.isCopyable(exprLoc, shared)) {
       if (valueType.isMovableFrom(value, shared)) {
@@ -1424,11 +1381,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
     // If we required an implicit conversion, make sure it happens.
-#if 0 // TODO(lifetimes): Use this when initself uses references.
     return emitCResult(XRValue(destBuffer), value.expr, dest);
-#else
-    return emitCResult(MRValue(destBuffer), value.expr, dest);
-#endif
   }
 
   // Otherwise we can emit a direct use/load for trivial types.
@@ -1564,32 +1517,38 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return emitPValueToXLValue({pvalue, value.expr}, valRef, context);
   }
 
-  // If we have a reference destination, convert to a pointer.
-  // TODO(references): make this the primary path.
-  if (auto ref = destLV.getIfXLValue()) {
+  // If we have a pointer destination, convert to a reference
+  // TODO(references): drop this.
+  if (auto ptr = destLV.getIfMLValue()) {
     if (!builder) {
       emitErrorForDynamicValueInParameter(value.expr);
       return {};
     }
-    destLV = MLValue(builder->create<RefToPointerOp>(
-        translateLocation(value.expr->getLoc()), ref));
+    // HACK: force convert to reference.
+    auto destTy = RefType::getRefForPointerHACK(
+        cast<PointerType>(ptr.getType().mlirType), /*isMut=*/true);
+    destLV =
+        XLValue(builder
+                    ->create<mlir::UnrealizedConversionCastOp>(
+                        translateLocation(value.expr->getLoc()), destTy, ptr)
+                    .getResult(0));
   }
 
-  // Otherwise we have an MLValue destination.
-  MLValue destPtr = destLV.getIfMLValue();
-  assert(destPtr && "No other known LValue");
+  // Otherwise we have an XLValue destination.
+  XLValue destRef = destLV.getIfXLValue();
+  assert(destRef && "No other known LValue");
 
   // Otherwise, assign with a move constructor.  We own the CRValue, so prefer
   // to use __moveinit__ if present.
   if (shared.typeHasMember(valueType, "__moveinit__", value.expr->getLoc())) {
     // `__moveinit__(inout self, owned existing: Self)`.
     ASTExprAnd<AnyValue> operands[] = {
-        ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
+        ASTExprAnd<AnyValue>{destRef, value.expr}, value};
     ValueDest moveDest(context);
     if (!emitNamedMethodCall("__moveinit__", {operands}, moveDest,
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
-    return MBValue(destPtr);
+    return XBValue(destRef);
   }
 
   // Otherwise, we have to move this thing but don't have a move constructor!
@@ -1919,6 +1878,8 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   } else if (auto bvalue = decl.getIfBValue()) {
     value = bvalue;
   } else if (auto lvalue = decl.getIfMLValue()) {
+    value = lvalue;
+  } else if (auto lvalue = decl.getIfXLValue()) {
     value = lvalue;
   } else {
     emitError(expr->getLoc(), "use of declaration '")

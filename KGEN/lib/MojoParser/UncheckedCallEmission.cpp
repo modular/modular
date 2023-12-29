@@ -593,6 +593,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::ByRefResult: {
     XLValue resultSlotRef = argValAndExpr.ir.getIfXLValue();
+    // TODO(lifetimes): remove this.
     if (!resultSlotRef) {
       if (auto ptr = argValAndExpr.ir.getIfMLValue())
         resultSlotRef = hackPointerToRef(ptr);
@@ -634,12 +635,26 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // dynamic/computed.
     LValue lv = argValAndExpr.ir.getIfLValue();
     assert(lv && "type checking ensures we will have an lvalue");
-    if (auto sl = lv.getIfMLValue())
-      return sl;
-    if (auto ref = lv.getIfXLValue()) {
-      // Decay reference to pointer.
-      return emitter.builder->create<RefToPointerOp>(
-          emitter.translateLocation(argValAndExpr.expr->getLoc()), ref);
+
+    if (convention == ValueInputConvention::ByRef) {
+      assert(!isArgumentPassedWithImplicitLifetime(convention) &&
+             "TODO: remove this");
+      if (auto sl = lv.getIfMLValue())
+        return sl;
+      if (auto ref = lv.getIfXLValue()) {
+        // Decay reference to pointer.
+        return emitter.builder->create<RefToPointerOp>(
+            emitter.translateLocation(argValAndExpr.expr->getLoc()), ref);
+      }
+    } else {
+      if (auto ptr = lv.getIfMLValue())
+        lv = hackPointerToRef(ptr);
+
+      if (auto ref = lv.getIfXLValue()) {
+        // Remember the implicit lifetime for this argument.
+        implicitLifetimes.push_back(cast<RefType>(ref.getType()).getLifetime());
+        return ref;
+      }
     }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
@@ -656,9 +671,19 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     }
     afterCallActions.lvalueWritebacks.push_back(
         {std::move(dlvBuffer), mlvBuffer});
-    // Decay reference to pointer for inout/initself.
-    return emitter.builder->create<RefToPointerOp>(
-        emitter.translateLocation(argValAndExpr.expr->getLoc()), mlvBuffer);
+
+    if (convention == ValueInputConvention::ByRef) {
+      assert(!isArgumentPassedWithImplicitLifetime(convention) &&
+             "TODO: remove this");
+      // Decay reference to pointer for inout.
+      return emitter.builder->create<RefToPointerOp>(
+          emitter.translateLocation(argValAndExpr.expr->getLoc()), mlvBuffer);
+    }
+
+    // Remember the implicit lifetime for this argument.
+    implicitLifetimes.push_back(
+        cast<RefType>(mlvBuffer.getType()).getLifetime());
+    return mlvBuffer;
   }
   case ValueInputConvention::None:
     llvm_unreachable("none convention not permitted in lit");

@@ -113,11 +113,14 @@ class MRValue : public Value {
 public:
   using Value::Value;
   using Value::operator=;
-  MRValue(Value v) : Value(v) {}
+  MRValue(Value v) : Value(v) { check(); }
 
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getPointerElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
+
+private:
+  void check() const;
 };
 
 /// Instances of XRValue model a dynamic value stored into memory whose address
@@ -169,11 +172,14 @@ class MBValue : public Value {
 public:
   using Value::Value;
   using Value::operator=;
-  MBValue(Value v) : Value(v) {}
+  MBValue(Value v) : Value(v) { check(); }
 
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getPointerElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
+
+private:
+  void check() const;
 };
 
 /// Instances of SBValue model a borrowed reference to a dynamic value stored
@@ -194,11 +200,14 @@ public:
 class MLValue : public Value {
 public:
   using Value::Value;
-  MLValue(Value v) : Value(v) {}
+  MLValue(Value v) : Value(v) { check(); }
 
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getPointerElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
+
+private:
+  void check() const;
 };
 
 /// Instances of XLValue model a loadable/storable address as an SSA value with

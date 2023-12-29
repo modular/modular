@@ -640,8 +640,8 @@ fn call_raising():
     # CHECK: }
     let x = fail("hello world")
     # CHECK: %y = lit.varlet.decl "y"
-    # CHECK: [[YPTR:%.*]] = lit.ref.to_pointer %y
-    # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], [[YPTR]]
+    # CHECK: lit.call @{{.*}}__init__{{.*}}(%y)
+    # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], %y
     # CHECK:   [[VAR2:%.*]] = kgen.variant.get [[ERR]]
     # CHECK:   lit.yield [[VAR2]] : !kgen.none
     # CHECK: } else {
@@ -701,9 +701,8 @@ fn noop(a: Int): pass
 
 # CHECK-LABEL: lit.func @"testWithNonRaising
 fn testWithNonRaising(a: ExampleCM):
-  # CHECK-NEXT: $CONTEXTMGR = lit.varlet.decl "$CONTEXTMGR"
-  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[CTXPTR]], %a)
+  # CHECK-NEXT: %$CONTEXTMGR = lit.varlet.decl "$CONTEXTMGR"
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%$CONTEXTMGR, %a)
   # CHECK-NEXT: %val = lit.varlet.decl {{.*}} imp
   # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer
   # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
@@ -720,8 +719,7 @@ fn testWithNonRaising(a: ExampleCM):
   # Test a with with no target.
 
   # CHECK: %$CONTEXTMGR_0 = lit.varlet.decl "$CONTEXTMGR"
-  # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[CTXPTR]], %a)
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%$CONTEXTMGR_0, %a)
   # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
   # CHECK: lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
   # CHECK-NEXT: lit.try
@@ -734,8 +732,7 @@ fn testWithNonRaising(a: ExampleCM):
   # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[CTXPTR]])
 
   # CHECK: %$CONTEXTMGR_1 = lit.varlet.decl "$CONTEXTMGR"{{.*}}!MutatingCM
-  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_1
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[CTXPTR]])
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%$CONTEXTMGR_1)
   # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_1
   # CHECK-NEXT: lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
   with MutatingCM() as val:
@@ -885,8 +882,7 @@ fn testCMWithoutExit():
     a.method()
 
   # CHECK: %$CONTEXTMGR_0 = lit.varlet.decl "$CONTEXTMGR"
-  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CTXPTR]])
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR_0)
   # CHECK: %a_1 = lit.varlet.decl "a"
   # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
   # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a_1, [[CTXPTR]])
@@ -916,8 +912,7 @@ fn testCMWithoutExit():
 # https://github.com/modularml/modular/issues/23693
 fn testCMWithoutExitEarlyReturn():
   # CHECK: %$CONTEXTMGR = lit.varlet.decl "$CONTEXTMGR"
-  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CTXPTR]])
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR)
   # CHECK: %a = lit.varlet.decl "a"
   # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
   # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, [[CTXPTR]])

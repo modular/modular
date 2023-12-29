@@ -1628,9 +1628,16 @@ void DestructorInsertion::checkOp(Operation &op) {
             continue;
           if (fieldValueRef.isIndirect &&
               original.test(fieldValueRef.startBit)) {
-            destroyValueIfNeeded(builder.create<LIT::StructGEPOp>(
-                                     op.getLoc(), topLevelValue, field),
-                                 fieldValueRef, builder, &op);
+            Value subValue;
+            // TODO(references): remove support for pointers.
+            if (isa<PointerType>(topLevelValue.getType()))
+              subValue = builder.create<LIT::StructGEPOp>(op.getLoc(),
+                                                          topLevelValue, field);
+            else
+              subValue = builder.create<LIT::RefStructGEROp>(
+                  op.getLoc(), topLevelValue, field);
+
+            destroyValueIfNeeded(subValue, fieldValueRef, builder, &op);
           }
         }
 
@@ -2068,10 +2075,10 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
 // TODO: In the presence of returned references / lifetimes, we will
 // need to be more careful here.
 static bool mightPointTo(Value p1, Value p2) {
-  assert(isa<PointerType>(p2.getType()));
+  assert((isa<PointerType, RefType>(p2.getType())));
   // If the value is an integer or other random thing, then it can't point to
   // anything.
-  if (!isa<PointerType>(p1.getType()))
+  if (!isa<PointerType, RefType>(p1.getType()))
     return false;
 
   Value underlyingP1 = LifetimeTrackable::findUnderlyingValueFromField(p1);
@@ -2109,6 +2116,13 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
   for (OpOperand &operand : copyInitCall.getOperand(0).getUses()) {
     auto user = dyn_cast<LIT::CallOp>(operand.getOwner());
 
+    // TODO(lifetimes): ignore a RefToPointer that is converting the allocation
+    // to a pointer to pass into another call.
+    if (auto refToPtr = dyn_cast<RefToPointerOp>(operand.getOwner())) {
+      if (refToPtr->hasOneUse())
+        user = dyn_cast<LIT::CallOp>(*refToPtr->getUsers().begin());
+    }
+
     // Don't handle control flow or other weird cases that are not calls.
     if (!user || user->getBlock() != tmpBlock)
       return false;
@@ -2140,8 +2154,12 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       // disallow regions because we don't recurse into them.
       if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
             return mightPointTo(v, srcPointer);
-          }))
-        return false;
+          })) {
+        // TODO(lifetimes): Ignore noop conversions from pointer to ref.
+        // mightPointTo will look thorugh them.
+        if (!isa<RefToPointerOp, mlir::UnrealizedConversionCastOp>(*it))
+          return false;
+      }
 
       // If we found the user, then we succeed.  Otherwise keep scanning.
       if (&*it == user.getOperation())
@@ -2226,22 +2244,26 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // implicit ones.  This is a policy decision, and we should look into
   // the impact on debug information, but generally one wouldn't want debug
   // information to block optimizations.
-  if (auto refToPtr =
-          copyInitCall.getOperand(0).getDefiningOp<RefToPointerOp>()) {
-    if (VarLetDeclOp tmpDecl =
-            refToPtr.getOperand().getDefiningOp<VarLetDeclOp>()) {
-      assert((copyInitCall.getOperand(0).getType() == value.getType() ||
-              copyInitCall.getOperand(1).getDefiningOp<RefToPointerOp>()) &&
-             copyInitCall.use_empty() && "something strange");
+  if (VarLetDeclOp tmpDecl =
+          copyInitCall.getOperand(0).getDefiningOp<VarLetDeclOp>()) {
+    if (canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
+      // Insert a declaration of the lifetime for the tmp we're eliding, we know
+      // that VarLetDeclOp's always declare a unique lifetime.
+      auto refType = cast<RefType>(tmpDecl.getType());
+      auto param = cast<ParamDeclRefAttr>(refType.getLifetime());
 
-      if (tmpDecl->hasOneUse() &&
-          canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
-        refToPtr.getResult().replaceAllUsesWith(copyInitCall.getOperand(1));
-        opsToRemove.push_back(copyInitCall);
-        opsToRemove.push_back(refToPtr);
-        opsToRemove.push_back(tmpDecl);
-        return success();
-      }
+      ImplicitLocOpBuilder builder(copyInitCall.getLoc(), copyInitCall);
+      builder.create<ParamDeclareOp>(
+          ParamDeclAttr::get(param.getName(), param.getType()),
+          builder.getAttr<LifetimeAttr>());
+      auto pointerCasted = builder.create<mlir::UnrealizedConversionCastOp>(
+          ArrayRef<Type>(tmpDecl.getType()),
+          ArrayRef<Value>(copyInitCall.getOperand(1)));
+
+      tmpDecl.getResult().replaceAllUsesWith(pointerCasted.getResult(0));
+      opsToRemove.push_back(copyInitCall);
+      opsToRemove.push_back(tmpDecl);
+      return success();
     }
   }
 

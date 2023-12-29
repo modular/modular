@@ -5,32 +5,33 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen-translate %s -import-mojo --mojo-disable-builtins | FileCheck %s
 
-# CHECK: lit.func @"__copyinit__{{.*}}(%self[self]: !kgen.pointer<!wrapper> init_self, %other[other]: !kgen.pointer<!wrapper> borrow_in_mem, |) -> !kgen.none
-# CHECK-NEXT:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
+# CHECK: lit.func @"__copyinit__{{.*}}(%self[self]: !lit.ref<mut !wrapper, {{.*}}> init_self, %other[other]: !kgen.pointer<!wrapper> borrow_in_mem, |) -> !kgen.none
+# CHECK-NEXT:   [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
-# CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[M0]]
-# CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:   lit.ref.store [[loaded_existing_impl]], [[M0]]
+# CHECK-NEXT:   [[M1:%.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %other[dtor]
 # CHECK-NEXT:   [[M3:%.*]] = pop.load [[M2]]
-# CHECK-NEXT:   pop.store [[M3]], [[M1]]
-# CHECK-NEXT:   [[M4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:   lit.ref.store [[M3]], [[M1]]
+# CHECK-NEXT:   [[M4:%.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT:   [[M5:%.*]] = lit.struct.gep %other[copy]
 # CHECK-NEXT:   [[M6:%.*]] = pop.load [[M5]]
-# CHECK-NEXT:   pop.store [[M6]], [[M4]]
-# CHECK-NEXT:   [[M7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:   lit.ref.store [[M6]], [[M4]]
+# CHECK-NEXT:   [[M7:%.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT:   [[M8:%.*]] = lit.struct.gep %other[call]
 # CHECK-NEXT:   [[M9:%.*]] = pop.load [[M8]]
-# CHECK-NEXT:   pop.store [[M9]], [[M7]]
+# CHECK-NEXT:   lit.ref.store [[M9]], [[M7]]
 # CHECK-NEXT:   kgen.param.constant: none
 # CHECK-NEXT:   [[W0:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:   [[W1:%.*]] = pop.load [[W0]] : !kgen.pointer<pointer<none>>
-# CHECK-NEXT:   [[W2:%.*]] = lit.struct.gep %self[copy]
-# CHECK-NEXT:   [[W3:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
-# CHECK-NEXT:   [[W4:%.*]] = pop.load [[W2]]
+# CHECK-NEXT:   [[W2:%.*]] = lit.ref.struct.ger %self[copy]
+# CHECK-NEXT:   [[W3:%.*]] = lit.ref.struct.ger %self[field0]
+# CHECK-NEXT:   [[W4:%.*]] = lit.ref.load [[W2]]
 
 # Call the copy constructor member with the uninitialized self and the untyped existing impl.
-# CHECK-NEXT:  [[W5:%.*]] = lit.call_signature [[W4]]([[W3]], [[W1]])
+# CHECK-NEXT:  [[PTR:%.*]] = lit.ref.to_pointer [[W3]]
+# CHECK-NEXT:  [[W5:%.*]] = lit.call_signature [[W4]]([[PTR]], [[W1]])
 # CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_func
 
@@ -43,7 +44,8 @@
 # CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(
 # CHECK-NEXT:  [[V0:%.*]] = pop.aligned_alloc %index_0, %index
 # CHECK-NEXT:  [[V1:%.*]] = pop.pointer.bitcast %other
-# CHECK-NEXT:  [[V2:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[V0]], [[V1]])
+# CHECK-NEXT:  %2 = builtin.unrealized_conversion_cast [[V0]]
+# CHECK-NEXT:  [[V2:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%2, [[V1]])
 
 # Store the address of the heap allocated memory into the self.
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]

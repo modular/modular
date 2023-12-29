@@ -16,8 +16,8 @@
 
 # CHECK: lit.func @"__init__
 # CHECK: [[CLIST:%.*]] = kgen.capture_list.create : <!lit.signature<() capturing -> !Int> : [[PARAMNAME]]>
-# CHECK: [[GEP:%.*]] = lit.struct.gep %self[field1]
-# CHECK: pop.store [[CLIST]], [[GEP]]
+# CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[field1]
+# CHECK: lit.ref.store [[CLIST]], [[GEP]]
 
 # CHECK: lit.func @"__call__
 # CHECK: [[GEP:%.*]] = lit.struct.gep {{.*}}[field1]

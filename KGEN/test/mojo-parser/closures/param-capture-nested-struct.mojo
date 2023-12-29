@@ -12,7 +12,8 @@
 # CHECK-SAME: <[[A:.*]]: !Int, |>
 
 # COM: Check that the closure impl parameter is bound to the struct parameter:
-# CHECK: lit.call @"${{.*}}"::@"`_CI_{{.*}}"::@"__init__{{.*}}"<:!Int [[ALoc:.*]]_A>(%0, %self) : !lit.signature<("self": !kgen.pointer<@"${{.*}}"::@"`_CI_{{.*}}"<:!Int [[ALoc]]_A>
+# CHECK: lit.call @"${{.*}}"::@"`_CI_{{.*}}"::@"__init__{{.*}}<:!Int [[ALoc:.*]]_A>(%anonymous2A, %self)
+# CHECK-SAME: !lit.signature<[1]("self": !lit.ref<mut @"${{.*}}"::@"`_CI_{{.*}}<:!Int [[ALoc]]_A>
 
 
 @value
