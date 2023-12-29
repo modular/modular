@@ -20,7 +20,7 @@
 # CHECK-NEXT:    %2 = lit.ref.to_pointer %anonymous2A_0
 # CHECK-NEXT:    %3 = lit.call {{.*}}CW{{.*}}__init__{{.*}}(%2, %0)
 # CHECK-NEXT:    %4 = lit.ref.to_pointer %__result__
-# CHECK-NEXT:     = lit.call {{.*}}CW{{.*}}__copyinit__{{.*}}(%4, %2) {{.*}}
+# CHECK-NEXT:     = lit.call {{.*}}CW{{.*}}__moveinit__{{.*}}(%4, %2) {{.*}}
 
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
 
