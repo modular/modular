@@ -56,10 +56,8 @@ public:
   CRValue getIfRValue() const;
   BValue getIfBValue() const;
   PValue getIfPValue() const { return dyn_cast_or_null<PValue>(irValue); }
-
-  /// If this declaration is defined by its value (e.g. a parameter value or an
-  /// SSA value) then return it.
   MLValue getIfMLValue() const { return dyn_cast_or_null<MLValue>(irValue); }
+  XLValue getIfXLValue() const { return dyn_cast_or_null<XLValue>(irValue); }
 
   /// If the IRValue is an Operation*, return it, otherwise return null.
   Operation *getIfOperation() const {

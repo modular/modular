@@ -29,6 +29,7 @@ class SharedState;
 template <typename ValueType>
 struct ASTExprAnd;
 enum class TypeConvention : uint32_t;
+class RefType;
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
@@ -161,6 +162,10 @@ public:
   /// TODO(16040): Remove demangleParams flag when symbol names are name-erased.
   void print(raw_ostream &os, bool forDiag = false,
              bool demangleParams = false) const;
+
+  /// Create and return a reference type with 'this' as the underlying element
+  /// type an implicit lifetime reference with the specified arg name.
+  RefType getRefForArgument(const Twine &argName, bool isMut);
 };
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
 

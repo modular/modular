@@ -224,8 +224,10 @@ struct MyStruct:
 # CHECK-LABEL: lit.func @"test_static_overload()"
 fn test_static_overload():
     var a = MyStruct()
-    # CHECK: %2 = lit.ref.to_pointer %a
-    # CHECK: lit.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%2) : !lit.signature<("self": !kgen.pointer<!MyStruct> byref) -> !kgen.none>
+    # CHECK-NEXT: %a = lit.varlet.decl
+    # CHECK-NEXT: lit.call{{.*}}__init__{{.*}}(%a)
+    # CHECK-NEXT: %1 = lit.ref.to_pointer %a
+    # CHECK-NEXT: lit.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%1)
     a.foo()
 
 
@@ -575,11 +577,11 @@ fn callVariadic[p: Int](x: Int):
 
     # CHECK: @"parameterizedVariadic{{.*}}"<:regtype !Int>
     parameterizedVariadic(1, 2)
-    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"<:regtype !Int>
+    # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"{{.*}}<:regtype !Int>
     _ = ParameterizedStruct(3)
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS:.*]]]=&)"<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS:.*]]]=&)"{{.*}}<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
     _ = VarArgsParameterizedStruct[4, 5]()
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS]]]=&)"<:variadic<!Int> []>
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS]]]=&)"{{.*}}<:variadic<!Int> []>
     _ = VarArgsParameterizedStruct()
 
 
@@ -677,15 +679,13 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 def implicit_return_obj():
     # CHECK: if
     if False:
-        # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %__result__
-        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}[[PTR]]
+        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
         # CHECK: kgen.variant.create
         # CHECK: return
         return
     # CHECK: else
     else:
-        # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %__result__
-        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}[[PTR]]
+        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
         # CHECK: kgen.variant.create
         # CHECK: return
         return 5
@@ -785,15 +785,15 @@ struct StructWithInit:
     var y: Int
 
     # CHECK: lit.func @"__init__($decls::StructWithInit=&,{{.*}}$int::Int)"
-    # CHECK-SAME: (%self[self]: !kgen.pointer<!StructWithInit> init_self,
+    # CHECK-SAME: (%self[self]: !lit.ref<mut !StructWithInit, {{.*}}> init_self,
     fn __init__(inout self, a: Int):
-        # CHECK: %0 = lit.struct.gep %self[x]
-        # CHECK: pop.store %a, %0
+        # CHECK: %0 = lit.ref.struct.ger %self[x]
+        # CHECK: lit.ref.store %a, %0
         self.x = a
-        # CHECK: [[XP:%.*]] = lit.struct.gep %self[x]
-        # CHECK: [[YP:%.*]] = lit.struct.gep %self[y]
-        # CHECK: [[XT:%.*]] = pop.load [[XP]]
-        # CHECK: pop.store [[XT]], [[YP]]
+        # CHECK: [[XP:%.*]] = lit.ref.struct.ger %self[x]
+        # CHECK: [[YP:%.*]] = lit.ref.struct.ger %self[y]
+        # CHECK: [[XT:%.*]] = lit.ref.load [[XP]]
+        # CHECK: lit.ref.store [[XT]], [[YP]]
         self.y = self.x
         # CHECK-NEXT: kgen.param.constant: none
         # CHECK-NEXT: lit.return
@@ -801,7 +801,7 @@ struct StructWithInit:
 
     # Not very useful, but this form also works, so test it.
     # CHECK: lit.func @"__init__
-    # CHECK-SAME: (%self[self]: !kgen.pointer<!StructWithInit> init_self,
+    # CHECK-SAME: (%self[self]: !lit.ref<mut !StructWithInit, {{.*}}> init_self,
     fn __init__(inout self, a: Int, b: Int):
         # CHECK: hlcf.if
         if a == b:
@@ -809,10 +809,10 @@ struct StructWithInit:
             self = StructWithInit(a)
         else:
 
-            # CHECK: [[XP:%.*]] = lit.struct.gep %self[x]
-            # CHECK: pop.store %a, [[XP]]
-            # CHECK: [[YP:%.*]] = lit.struct.gep %self[y]
-            # CHECK: pop.store %b, [[YP]]
+            # CHECK: [[XP:%.*]] = lit.ref.struct.ger %self[x]
+            # CHECK: lit.ref.store %a, [[XP]]
+            # CHECK: [[YP:%.*]] = lit.ref.struct.ger %self[y]
+            # CHECK: lit.ref.store %b, [[YP]]
             self.x = a
             self.y = b
 
@@ -879,7 +879,7 @@ struct ShadowsOuterName:
 
 # CHECK-LABEL: lit.struct.decl @ValueMem(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
 # CHECK-SAME: moveInit = #kgen.symbol.constant<{{.*}}ValueMem::@"__moveinit__
-# CHECK-SAME: !kgen.signature<!lit.signature<({{.*}} init_self, {{.*}} owned_in_mem, |)
+# CHECK-SAME: !kgen.signature<!lit.signature<[1]({{.*}} init_self, {{.*}} owned_in_mem, |)
 @value
 struct ValueMem:
     var a: Int  # Trivial
@@ -887,43 +887,43 @@ struct ValueMem:
 
 
 # CHECK: lit.func @"__init__(
-# CHECK-SAME:  %[[SELF:.*]][*""]: !kgen.pointer<!ValueMem> init_self,
+# CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<mut !ValueMem, {{.*}}> init_self,
 # CHECK-SAME:  %a[a]: !Int borrow,
 # CHECK-SAME:  %b[b]: !StructExample
 # CHECK-SAME: ) -> !kgen.none attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
-# CHECK-NEXT: %[[PA:.*]] = lit.struct.gep %[[SELF]][a]
-# CHECK-NEXT: pop.store %a, %[[PA]]
-# CHECK-NEXT: %[[PB:.*]] = lit.struct.gep %[[SELF]][b]
-# CHECK-NEXT: pop.store %b, %[[PB]]
+# CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %[[SELF]][a]
+# CHECK-NEXT: lit.ref.store %a, %[[PA]]
+# CHECK-NEXT: %[[PB:.*]] = lit.ref.struct.ger %[[SELF]][b]
+# CHECK-NEXT: lit.ref.store %b, %[[PB]]
 # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK: lit.func @"__copyinit__(
-# CHECK-SAME:  %self[self]: !kgen.pointer<!ValueMem> init_self,
+# CHECK-SAME:  %self[self]: !lit.ref<mut !ValueMem, {{.*}}> init_self,
 # CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> borrow_in_mem, |)
-# CHECK-NEXT: %0 = lit.struct.gep %self[a]
+# CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %other[a]
 # CHECK-NEXT: %2 = pop.load %1
-# CHECK-NEXT: pop.store %2, %0
-# CHECK-NEXT: %3 = lit.struct.gep %self[b]
+# CHECK-NEXT: lit.ref.store %2, %0
+# CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: %4 = lit.struct.gep %other[b]
 # CHECK-NEXT: %5 = pop.load %4
 # CHECK-NEXT: %6 = lit.call {{.*}}__copyinit__{{.*}}(%5)
-# CHECK-NEXT: pop.store %6, %3
+# CHECK-NEXT: lit.ref.store %6, %3
 # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK: lit.func @"__moveinit__(
-# CHECK-SAME:  %self[self]: !kgen.pointer<!ValueMem> init_self,
+# CHECK-SAME:  %self[self]: !lit.ref<mut !ValueMem, {{.*}}> init_self,
 # CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> owned_in_mem, |)
-# CHECK-NEXT: %0 = lit.struct.gep %self[a]
+# CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %other[a]
 # CHECK-NEXT: %2 = builtin.unrealized_conversion_cast %1
 # CHECK-NEXT: %3 = lit.load.consume %2
-# CHECK-NEXT: pop.store %3, %0
-# CHECK-NEXT: %4 = lit.struct.gep %self[b]
+# CHECK-NEXT: lit.ref.store %3, %0
+# CHECK-NEXT: %4 = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: %5 = lit.struct.gep %other[b]
 # CHECK-NEXT: %6 = builtin.unrealized_conversion_cast %5
 # CHECK-NEXT: %7 = lit.load.consume %6
-# CHECK-NEXT: pop.store %7, %4
+# CHECK-NEXT: lit.ref.store %7, %4
 # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
@@ -984,7 +984,7 @@ struct Foo:
     var self: Int
 
 
-# CHECK: lit.func @"__init__({{.*}})"(%[[SELFARG:.*]][*""]: !kgen.pointer<!Foo> init_self, |, %a[a]: !Int borrow, %self[self]: !Int borrow)
+# CHECK: lit.func @"__init__{{.*}}(%[[SELFARG:.*]][*""]: !lit.ref<mut !Foo, {{.*}}> init_self, |, %a[a]: !Int borrow, %self[self]: !Int borrow)
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg
 @value
@@ -1061,8 +1061,8 @@ struct Awaitable:
 
 # CHECK-LABEL: lit.func @"awaitable()"
 fn awaitable() -> Int:
-    # CHECK: %2 = lit.ref.to_pointer %aw
-    # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable&)"(%2)
+    # CHECK: %1 = lit.ref.to_pointer %aw
+    # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable&)"(%1)
     var aw = Awaitable()
     return await aw
 
@@ -1238,14 +1238,16 @@ struct MemType: pass
 
 # CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}}
 # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
-# CHECK-NEXT: %0 = lit.ref.to_pointer %anonymous2A
-# CHECK-NEXT: %1 = lit.call {{.*}}__init__{{.*}}(%0)
+# CHECK-NEXT: %0 = lit.call {{.*}}__init__{{.*}}(%anonymous2A)
 # CHECK-NEXT: [[GLOBAL:%.*]] = lit.globalvar.ref
-# CHECK-NEXT: = lit.call {{.*}}__moveinit__{{.*}}([[GLOBAL]], %0) :
+# CHECK-NEXT: [[GLOBALREF:%.*]] = builtin.unrealized_conversion_cast [[GLOBAL]]
+# CHECK-NEXT: %3 = lit.ref.to_pointer %anonymous2A
+# CHECK-NEXT: = lit.call {{.*}}__moveinit__{{.*}}([[GLOBALREF]], %3) :
 let mem_global: MemType = MemType()
 # CHECK-LABEL: lit.globalvar.decl @mem_global_implicit {{.*}} isVar
 # CHECK-NEXT: %0 = lit.globalvar.ref
-# CHECK-NEXT: %1 = lit.call {{.*}}__init__{{.*}}(%0)
+# CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
+# CHECK-NEXT:  = lit.call {{.*}}__init__{{.*}}(%1)
 var mem_global_implicit = MemType()
 
 @value
@@ -1290,9 +1292,9 @@ fn refGlobals():
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
     # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<mut !MemType
-    # CHECK-NEXT: %9 = lit.ref.to_pointer %anonymous2A
-    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%9, [[MEM_REF]])
-    # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%9)
+    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF]])
+    # CHECK-NEXT: %10 = lit.ref.to_pointer %anonymous2A
+    # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%10)
     copyGlobalMem(mem_global)
 
 # CHECK: lit.globalvar.decl export @exported_alias {{.*}} {linkageName = "exported_global"}

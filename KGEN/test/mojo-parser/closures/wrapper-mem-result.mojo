@@ -44,51 +44,52 @@ struct MemType:
 # CHECK-NEXT:      lit.end_func
 
 # CHECK-LABEL:   lit.func @"__copyinit__
-# CHECK-NEXT:      [[P0:%.*]] = lit.struct.gep %self[field0]
+# CHECK-NEXT:      [[P0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      [[existing_impl:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:      [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
-# CHECK-NEXT:      pop.store [[loaded_existing_impl]], [[P0]]
-# CHECK-NEXT:      [[P1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:      lit.ref.store [[loaded_existing_impl]], [[P0]]
+# CHECK-NEXT:      [[P1:%.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT:      [[P2:%.*]] = lit.struct.gep %other[dtor]
 # CHECK-NEXT:      [[P3:%.*]] = pop.load [[P2]]
-# CHECK-NEXT:      pop.store [[P3]], [[P1]]
-# CHECK-NEXT:      [[P4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:      lit.ref.store [[P3]], [[P1]]
+# CHECK-NEXT:      [[P4:%.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT:      [[P5:%.*]] = lit.struct.gep %other[copy]
 # CHECK-NEXT:      [[P6:%.*]] = pop.load [[P5]]
-# CHECK-NEXT:      pop.store [[P6]], [[P4]]
-# CHECK-NEXT:      [[P7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:      lit.ref.store [[P6]], [[P4]]
+# CHECK-NEXT:      [[P7:%.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT:      [[P8:%.*]] = lit.struct.gep %other[call]
 # CHECK-NEXT:      [[P9:%.*]] = pop.load [[P8]]
-# CHECK-NEXT:      pop.store [[P9]], [[P7]]
+# CHECK-NEXT:      lit.ref.store [[P9]], [[P7]]
 # CHECK-NEXT:      kgen.param.constant: none
 # CHECK-NEXT:      [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:      [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !kgen.pointer<pointer<none>>
-# CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.struct.gep %self[copy]
-# CHECK-NEXT:      [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
-# CHECK-NEXT:      [[COPY:%.*]] = pop.load [[COPY_PTR]]
+# CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.ref.struct.ger %self[copy]
+# CHECK-NEXT:      [[SELF_IMPL_REF:%.*]] = lit.ref.struct.ger %self[field0]
+# CHECK-NEXT:      [[COPY:%.*]] = lit.ref.load [[COPY_PTR]]
+# CHECK-NEXT:      [[SELF_IMPL_PTR:%.*]] = lit.ref.to_pointer [[SELF_IMPL_REF]]
 # CHECK-NEXT:      lit.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
 
 # CHECK-LABEL:  lit.func @"__moveinit__
-# CHECK-NEXT:     [[M0:%.*]] = lit.struct.gep %self[field0]
+# CHECK-NEXT:     [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.struct.gep %other[field0]
 # CHECK-NEXT:     %2 = builtin.unrealized_conversion_cast [[mov_existing_impl]]
 # CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume %2
-# CHECK-NEXT:     pop.store [[mov_loaded_existing_impl]], [[M0]]
-# CHECK-NEXT:     [[M1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:     lit.ref.store [[mov_loaded_existing_impl]], [[M0]]
+# CHECK-NEXT:     [[M1:%.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT:     [[M2:%.*]] = lit.struct.gep %other[dtor]
 # CHECK-NEXT:     %6 = builtin.unrealized_conversion_cast [[M2]]
 # CHECK-NEXT:     [[M3:%.*]] = lit.load.consume %6
-# CHECK-NEXT:     pop.store [[M3]], [[M1]]
-# CHECK-NEXT:     [[M4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:     lit.ref.store [[M3]], [[M1]]
+# CHECK-NEXT:     [[M4:%.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT:     [[M5:%.*]] = lit.struct.gep %other[copy]
 # CHECK-NEXT:     %10 = builtin.unrealized_conversion_cast [[M5]]
 # CHECK-NEXT:     [[M6:%.*]] = lit.load.consume %10
-# CHECK-NEXT:     pop.store [[M6]], [[M4]]
-# CHECK-NEXT:     [[M7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:     lit.ref.store [[M6]], [[M4]]
+# CHECK-NEXT:     [[M7:%.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT:     [[M8:%.*]] = lit.struct.gep %other[call]
 # CHECK-NEXT:     %14 = builtin.unrealized_conversion_cast [[M8]]
 # CHECK-NEXT:     [[M9:%.*]] = lit.load.consume %14
-# CHECK-NEXT:     pop.store [[M9]], [[M7]]
+# CHECK-NEXT:     lit.ref.store [[M9]], [[M7]]
 # CHECK-NEXT:     %pointer = kgen.param.constant: pointer<none> = <0>
 # CHECK-NEXT:     [[V0:%.*]] = lit.struct.gep %other[field0] : <pointer<none>>
 # CHECK-NEXT:     pop.store %pointer, [[V0]] : !kgen.pointer<pointer<none>>

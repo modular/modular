@@ -449,7 +449,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
                   << name << " must be passed as mutable reference";
       if (args[0].convention == ParsedArgument::kConventionUnspec)
-        diag << FixIt::insertAfterToken(selfArgLoc, "&", shared.diags);
+        diag << FixIt::insertBeforeToken(selfArgLoc, "inout ");
     }
 
     // Regardless force it to init_self so recovery follows the fix-it.
@@ -639,7 +639,7 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   return {std::move(captured), unbound};
 }
 
-static MRValue emitClosureInstance(SignatureType closureSignature,
+static XRValue emitClosureInstance(SignatureType closureSignature,
                                    SharedState &shared, ASTDecl &nestedFnDecl,
                                    SMLoc loc) {
   LIT::FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
@@ -733,10 +733,11 @@ static MRValue emitClosureInstance(SignatureType closureSignature,
       ASTType(closureWrapperType), closureWrapperInitArgs, &node,
       CallSyntax::kTypeCall, closureWrapperDest,
       /*allowImplicitConversion=*/false);
+
   if (!closureWrapperInstance)
     return {};
-  assert(closureWrapperInstance.getIfMRValue());
-  return closureWrapperInstance.getIfMRValue();
+  assert(closureWrapperInstance.getIfXRValue());
+  return closureWrapperInstance.getIfXRValue();
 }
 
 PassingKind ParsedArgument::mapToPassingKind(KWArgHandling handling) {
@@ -1072,9 +1073,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
               funcOp.getLoc(),
               "escaping closures cannot have input or result parameters yet");
         if (auto closure =
-                emitClosureInstance(signature, shared, decl, decl.getLoc()))
-          decl.irValue = closure;
-        else
+                emitClosureInstance(signature, shared, decl, decl.getLoc())) {
+          // TODO(lifetimes): Add a XRValue representation to ASTDecl
+          auto closureRef = b.create<RefToPointerOp>(closure.getLoc(), closure);
+          decl.irValue = MRValue(closureRef);
+        } else
           return failure();
       } else {
         decl.irValue = SBValue(b.create<CreateClosureOp>(
@@ -1220,11 +1223,9 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       } else if (auto lv = argDecl.getIfMLValue()) {
         if (lv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
-#if 0 // TODO(references)
       } else if (auto lv = argDecl.getIfXLValue()) {
         if (lv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
-#endif
       } else if (auto bv = argDecl.getIfBValue()) {
         if (bv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
@@ -1256,12 +1257,12 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     switch (convention) {
     // Arguments passed by-reference can be directly used.
     case ValueInputConvention::ByRef:
-    case ValueInputConvention::InitSelf:
     case ValueInputConvention::OwnedInMem:
       // OwnedInMem passes ownership of the argument into the callee so we
       // can directly mutate it if we want to.
       argIRValue = MLValue(bbArg);
       break;
+    case ValueInputConvention::InitSelf:
     case ValueInputConvention::ByRefResult:
       argIRValue = XLValue(bbArg);
       break;
@@ -2178,14 +2179,8 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
         continue;
       }
 
-      // The reference for self will be removed, so the implicit lifetime for it
-      // goes away as well.
-      if (isa<RefType>(type)) {
-        assert(conv == ValueInputConvention::ByRefResult &&
-               "check initself and then remove this if, since it should always "
-               "be a reference");
-        --numImplicitLifetimeDecls;
-      }
+      // We'll be dropping the reference, so we'll drop the implicit lifetime.
+      --numImplicitLifetimeDecls;
 
       replacedResult = true;
       // Make sure to set the `ownedresult` bit if the type is not trivial.
@@ -2353,12 +2348,9 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // Allocate the value dest for the call. Set the value dest to the result
   // slot, if there is one, otherwise provide the expected rvalue type.
   ValueDest dest(EC_Trait);
-  if (hasResultSlot) {
-    if (memSig.hasMemoryOnlyResult())
-      dest = ValueDest(XLValue(thunk.getArgument(0)), EC_Trait);
-    else // TODO(references): eliminate this 'if'.
-      dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
-  }
+  if (hasResultSlot)
+    dest = ValueDest(XLValue(thunk.getArgument(0)), EC_Trait);
+
   CValue callResult = emitter.emitCallUnchecked(
       PValue(callee), CallOperands(posOperands, &kwOperands), callResultParams,
       dest, &node);
@@ -2421,6 +2413,9 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
                                       SpecialFunctionKind kind) {
   StructEmitter gen(shared);
   auto selfPtrType = PointerType::get(structDecl.getSelfType());
+
+  auto selfRefType =
+      structDecl.getSelfType().getRefForArgument("self", /*isMut=*/true);
   auto empty = StringAttr::get(shared.getContext());
 
   // Synthesize the required special method. Importantly, don't mark the struct
@@ -2451,7 +2446,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     }
     StringRef name = SpecialFunctionInfo::get(kind).name;
     auto [ctor, decl] = gen.synthesizeMethodInStruct(
-        name, {selfPtrType, selfPtrType},
+        name, {selfRefType, selfPtrType},
         {ValueInputConvention::InitSelf, otherConv}, {empty, empty},
         {PassingKind::PosOnly, PassingKind::PosOnly}, shared.getNoneType(),
         structDecl, kind, FnEffects(), "`thunk_");
@@ -2470,7 +2465,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
       value = b.create<LIT::LoadConsumeOp>(castOp);
     } else
       value = b.create<POP::LoadOp>(func.getArgument(1));
-    b.create<POP::StoreOp>(value, func.getArgument(0));
+    b.create<RefStoreOp>(value, func.getArgument(0));
   }
   func.setInlineLevel(InlineLevel::AlwaysNoDebug);
   auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());

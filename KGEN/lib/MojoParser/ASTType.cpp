@@ -613,3 +613,10 @@ void M::addToDiagnostic(ASTType type, InflightDiag &diag) {
 
 /// Print to standard error with newline after it, for use in a debugger.
 void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
+
+RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
+  auto ctx = mlirType.getContext();
+  auto selfLifetime = ParamDeclRefAttr::get(StringAttr::get(ctx, "`" + argName),
+                                            LifetimeType::get(ctx));
+  return RefType::get(isMut, mlirType, selfLifetime);
+}

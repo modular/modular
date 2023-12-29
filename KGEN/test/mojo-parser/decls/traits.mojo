@@ -223,9 +223,8 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__[__result__]: !lit.ref<mut :trait<{{.*}}@Copyable> [[T]], {{.*}}> byref_result, |,
 # CHECK-SAME: %value[value]: !kgen.pointer<:trait<{{.*}}@Copyable> [[T]]> borrow_in_mem)
 fn copy_me[T: Copyable](value: T) -> T:
-    # CHECK-NEXT: %0 = lit.ref.to_pointer %__result__
-    # CHECK-NEXT: call_param[!lit.signature<("self": {{.*}}[[T]]> init_self, "existing": {{.*}}[[T]]> borrow_in_mem, |) -> !kgen.none>:
-    # CHECK-SAME: get_type_method({{.*}} [[T]], "__copyinit__")](%0, %value)
+    # CHECK-NEXT: call_param[!lit.signature<[1]("self": {{.*}}[[T]], {{.*}}> init_self, "existing": {{.*}}[[T]]> borrow_in_mem, |) -> !kgen.none>:
+    # CHECK-SAME: get_type_method({{.*}} [[T]], "__copyinit__")]{{.*}}(%__result__, %value)
     return value
 
 # CHECK-LABEL: lit.func @"move_me
@@ -234,8 +233,7 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-SAME: @Movable> [[T]]> owned_in_mem
 fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: %0 = lit.ownership.end_lifetime %value
-    # CHECK-NEXT: %1 = lit.ref.to_pointer %__result__
-    # CHECK-NEXT: call_param[{{.*}}get_type_method({{.*}} [[T]], "__moveinit__")](%1, %0)
+    # CHECK-NEXT: call_param[{{.*}}get_type_method({{.*}} [[T]], "__moveinit__")]{{.*}}(%__result__, %0)
     return value ^
 
 # COM: Just check that conformance checking succeeds.
@@ -255,14 +253,14 @@ trait TraitForReg:
 @register_passable
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.func @"`thunk___init__
-    # CHECK-SAME: %self[self]: !kgen.pointer<!RegTraitType> init_self, |, %x[x]: index borrow) -> !kgen.none
+    # CHECK-SAME: %self[self]: !lit.ref<mut !RegTraitType, {{.*}}> init_self, |, %x[x]: index borrow) -> !kgen.none
     fn __init__(x: Int) -> Self:
         # CHECK: %0 = lit.call {{.*}}@RegTraitType{{.*}}__init__{{.*}}(%x)
         # CHECK: store %0, %self
         pass
 
     # CHECK-LABEL: lit.func @"`thunk___copyinit__
-    # CHECK-SAME: %self[self]: !kgen.pointer<!RegTraitType> init_self, |, %arg[existing]: !kgen.pointer<!RegTraitType> borrow_in_mem) -> !kgen.none
+    # CHECK-SAME: %self[self]: !lit.ref<mut !RegTraitType, {{.*}}> init_self, |, %arg[existing]: !kgen.pointer<!RegTraitType> borrow_in_mem) -> !kgen.none
     fn __copyinit__(existing: Self) -> Self:
         # CHECK: %0 = pop.load %arg
         # CHECK: %1 = lit.call {{.*}}@RegTraitType{{.*}}__copyinit__{{.*}}(%0)
@@ -436,11 +434,11 @@ struct RegTrivialSpecial(Destructable, Copyable, Movable):
     # CHECK: lit.func @"`thunk___copyinit__
     # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} borrow_in_mem
     # CHECK-NEXT: [[V:%.*]] = pop.load %1
-    # CHECK-NEXT: pop.store [[V]], %0
+    # CHECK-NEXT: lit.ref.store [[V]], %0
 
     # CHECK: lit.func @"`thunk___moveinit__{{.*}}%0[{{.*}} init_self, %1[{{.*}} owned_in_mem
     # CHECK: [[V:%.*]] = lit.load.consume
-    # CHECK-NEXT: pop.store [[V]], %0
+    # CHECK-NEXT: lit.ref.store [[V]], %0
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 @register_passable
@@ -456,7 +454,7 @@ struct RegSpecial(Destructable, Copyable, Movable):
     # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} owned_in_mem
     # CHECK-NEXT: unrealized
     # CHECK-NEXT: [[V:%.*]] = lit.load.consume %2
-    # CHECK-NEXT: pop.store [[V]], %0
+    # CHECK-NEXT: lit.ref.store [[V]], %0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
 struct MemoryOnlySpecial(Destructable, Copyable, Movable):

@@ -1634,7 +1634,6 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   auto firstArgRVType =
       ASTType(calleeSig.getValueInputs()[0]).getReferenceElementType();
 
-#if 0 // TODO(lifetimes): Use when initself uses references
   // For an initialization of a memory-only type, we need to replace the
   // destination buffer with the actual destination lvalue to use.
   XLValue destXLValue =
@@ -1653,24 +1652,4 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   // if the expected type and the actual type differ.  This can happen when the
   // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
   return emitCResult(XRValue(destXLValue), expr, dest);
-#else
-  // For an initialization of a memory-only type, we need to replace the
-  // destination buffer with the actual destination lvalue to use.
-  MLValue destMLValue =
-      dest.getMLValueForResult(expr->getLoc(), firstArgRVType, *this);
-  posOperandsWithSelf[0].ir = destMLValue;
-  if (!destMLValue)
-    return {};
-
-  // Emit the call, but not into 'dest', typically init will return None.
-  ValueDest indirectDest(dest.getContext());
-  CValue result = emitIndirectCall(calleeFn, operands, indirectDest, expr);
-  if (!result)
-    return {};
-
-  // Now that we've emitted the result into the result buffer, emit a conversion
-  // if the expected type and the actual type differ.  This can happen when the
-  // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
-  return emitCResult(MRValue(destMLValue), expr, dest);
-#endif
 }

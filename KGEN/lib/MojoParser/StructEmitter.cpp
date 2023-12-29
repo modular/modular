@@ -223,7 +223,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   // self.
   if (isMemoryOnly) {
     BlockArgument selfArg = body->getArgument(0);
-    assert(selfArg.getType().isa<PointerType>());
+    assert(selfArg.getType().isa<RefType>());
     size_t idx = 1;
     SmallVector<StructFieldOp> fields =
         injectedFields.has_value()
@@ -261,9 +261,9 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
       }
 
       // Project self to the right field and store the RValue.
-      auto fieldPtr = builder.create<StructGEPOp>(selfArg, field);
+      auto fieldRef = builder.create<RefStructGEROp>(selfArg, field);
       SyntheticNode srcExpr(structDecl.getLoc());
-      emitter.emitStoreToLValue({argVal, &srcExpr}, MLValue(fieldPtr),
+      emitter.emitStoreToLValue({argVal, &srcExpr}, XLValue(fieldRef),
                                 EC_AttributeRefBase);
       ++idx;
     }
@@ -322,13 +322,12 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
     Value copySelf = func.getBody()->getArgument(0);
     Value copyExisting = func.getBody()->getArgument(1);
     for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
-      auto targetFieldOp = b.create<StructGEPOp>(copySelf, fieldOp);
+      auto targetFieldOp = b.create<RefStructGEROp>(copySelf, fieldOp);
       auto srcFieldOp = b.create<StructGEPOp>(copyExisting, fieldOp);
       CValue src =
           isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
-      MLValue destination(targetFieldOp);
       SyntheticNode srcExpr(location);
-      emitter.emitStoreToLValue({src, &srcExpr}, destination,
+      emitter.emitStoreToLValue({src, &srcExpr}, XLValue(targetFieldOp),
                                 EC_AttributeRefBase);
     }
     return success();
@@ -512,6 +511,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
   Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
   Type ptrToSelf = PointerType::get(selfType);
+  Type refToSelf = ASTType(selfType).getRefForArgument("self", /*isMut=*/true);
   StringAttr selfName = b.getStringAttr("self");
   StringAttr existingName = b.getStringAttr("other");
   LIT::FuncOp destructorFunc;
@@ -524,7 +524,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     SmallVector<StringAttr> argNames;
     SmallVector<PassingKind> argPassingKinds;
     if (isMemoryOnly) {
-      argTypes.push_back(PointerType::get(selfType));
+      argTypes.push_back(refToSelf);
       argConventions.push_back(ValueInputConvention::InitSelf);
       argNames.push_back(StringAttr::get(shared.getContext()));
       argPassingKinds.push_back(PassingKind::PosOnly);
@@ -631,7 +631,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   } else if (!declOp.isRegisterPassableTrivial()) {
     if (isMemoryOnly) {
       copyFunc = addVoidMethod(
-          structDecl, "__copyinit__", {ptrToSelf, ptrToSelf},
+          structDecl, "__copyinit__", {refToSelf, ptrToSelf},
           {ValueInputConvention::InitSelf, ValueInputConvention::BorrowedInMem},
           {selfName, existingName},
           {PassingKind::PosOnly, PassingKind::PosOnly},
@@ -652,7 +652,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   } else if (isMemoryOnly) {
     addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
     moveFunc = addVoidMethod(
-        structDecl, "__moveinit__", {ptrToSelf, ptrToSelf},
+        structDecl, "__moveinit__", {refToSelf, ptrToSelf},
         {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem},
         {selfName, existingName}, {PassingKind::PosOnly, PassingKind::PosOnly},
         SpecialFunctionKind::kMoveInit);

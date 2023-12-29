@@ -22,18 +22,18 @@ trait Movable:
 # CHECK-SAME: destructor =
 # CHECK-SAME: moveInit =
 
-# CHECK: lit.func @"__init__{{.*}}"(%self[self]: !kgen.pointer<!wrapper> init_self, %impl[impl]: !kgen.pointer<!escaping0_> owned_in_mem, |)
-# CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
+# CHECK-LABEL: lit.func @"__init__{{.*}}(%self[self]: !lit.ref<mut !wrapper, *"`self"> init_self, %impl[impl]: !kgen.pointer<!escaping0_> owned_in_mem, |)
+# CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[1](!lit.ref<mut !MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
-# CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
+# CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]
 
-# CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT: %[[V5:.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT: %[[V6:.*]] = kgen.create_closure[{{.*}}]()
-# CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !kgen.pointer<!lit.signature<("self": !kgen.pointer<none>, |) -> !kgen.none>
+# CHECK-NEXT: lit.ref.store %[[V6]], %[[V5]]
 
-# CHECK-NEXT: %[[V9:.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT: %[[V9:.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT: %[[V10:.*]] = kgen.create_closure[{{.*}}]()
-# CHECK-NEXT: pop.store %[[V10]], %[[V9]]
+# CHECK-NEXT: lit.ref.store %[[V10]], %[[V9]]
 
 # Allocate memory on heap
 # CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(!escaping0_, current_target())>
@@ -41,12 +41,13 @@ trait Movable:
 # CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index : <!escaping0_>
 
 # Copy source (stack) into target (heap)
-# CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%[[V0]], %impl)
+# CHECK-NEXT:  %[[V0REF:.*]] = builtin.unrealized_conversion_cast %[[V0]]
+# CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%[[V0REF]], %impl)
 
 # Store heap pointer in ClosureWrapper field
-# CHECK-NEXT:  %[[V2:.*]] = lit.struct.gep %self[field0]
+# CHECK-NEXT:  %[[V2:.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !kgen.pointer<!escaping0_> to !kgen.pointer<none>
-# CHECK-NEXT:  pop.store %[[V3]], %[[V2]] : !kgen.pointer<pointer<none>>
+# CHECK-NEXT:  lit.ref.store %[[V3]], %[[V2]]
 
 # CHECK-NEXT:  %[[V4:.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:  lit.return %[[V4]] : !kgen.none
@@ -55,13 +56,15 @@ trait Movable:
 
 # CHECK: lit.struct.decl @MemType
 
-# CHECK: lit.func @"_CW_{{.*}}_dtor_`_CI_{{.*}}"(%self[self]: !kgen.pointer<none>, |) -> !kgen.none
+# CHECK-LABEL: lit.func @"_CW_{{.*}}_dtor_`_CI_{{.*}}"(%self[self]: !kgen.pointer<none>, |) -> !kgen.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
 # CHECK-NEXT: lit.ownership.end_lifetime %1
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}"[{{.*}}](%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result, %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
+# CHECK-LABEL: lit.func @"_CW_{{.*}}_call_`_CI_{{.*}}[*"`0_unnamed"]
+# CHECK-SAME: (%[[RES:.*]][{{.*}}]: !lit.ref<mut !MemType, {{.*}}> byref_result,
+# CHECK-SAME: %[[SELF:.*]][{{.*}}]: !kgen.pointer<none> borrow, |, %n[n]: !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %[[SELF]]
 # CHECK-NEXT: %[[A1:.*]] = lit.call @{{.*}}@"__call__{{.*}}"[{{.*}}](%[[RES]], %[[A0]], %n)
 # CHECK-NEXT: lit.return %[[A1]] : !kgen.none

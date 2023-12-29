@@ -229,6 +229,10 @@ ASTType BValue::getRValueType() const {
   return type;
 }
 
+// TODO(lifetimes): remove pedantic checks.
+void MRValue::check() const { assert(::isa<PointerType>(Value::getType())); }
+void MLValue::check() const { assert(::isa<PointerType>(Value::getType())); }
+void MBValue::check() const { assert(::isa<PointerType>(Value::getType())); }
 void XRValue::check() const { assert(::isa<RefType>(Value::getType())); }
 void XLValue::check() const { assert(::isa<RefType>(Value::getType())); }
 void XBValue::check() const { assert(::isa<RefType>(Value::getType())); }

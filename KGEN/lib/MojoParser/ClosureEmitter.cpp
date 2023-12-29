@@ -307,12 +307,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value copyExisting = copyCtr.getBody()->getArgument(1);
     Value existingImpl = builder.create<StructGEPOp>(copyExisting, impl);
     auto loadedExistingImpl = builder.create<POP::LoadOp>(existingImpl);
-    auto funcPtrPtr = builder.create<StructGEPOp>(copySelf, copy);
-    auto ptrToImpl = builder.create<StructGEPOp>(copySelf, impl);
-    auto loadedFuncPtr = builder.create<POP::LoadOp>(funcPtrPtr);
+    auto funcPtrRef = builder.create<RefStructGEROp>(copySelf, copy);
+    Value refToImpl = builder.create<RefStructGEROp>(copySelf, impl);
+    auto loadedFuncPtr = builder.create<RefLoadOp>(funcPtrRef);
+    refToImpl = builder.create<RefToPointerOp>(refToImpl);
     builder.create<CallSignatureOp>(noneType, loadedFuncPtr,
                                     /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
-                                    ValueRange{ptrToImpl, loadedExistingImpl});
+                                    ValueRange{refToImpl, loadedExistingImpl});
   }
   if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     return {};
@@ -457,14 +458,16 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Build the init method. This only needs the captured arguments. Populate the
   // function argument information.
-  auto implPtrType =
-      PointerType::get(ASTDecl::computeSelfTypeForStruct(declOp));
+  auto structSelfType = ASTDecl::computeSelfTypeForStruct(declOp);
+  auto implRefType =
+      ASTType(structSelfType).getRefForArgument("self", /*isMut=*/true);
+
   // All arguments as positional-only.
   SmallVector<PassingKind> initSigPassingKinds(1 + captures.size(),
                                                PassingKind::PosOnly);
   // Fill the types and conventions based on the register-passabilities.
   SmallVector<StringAttr> initSigNames{selfName};
-  SmallVector<Type> initSigTypes{implPtrType};
+  SmallVector<Type> initSigTypes{implRefType};
   SmallVector<ValueInputConvention> initSigConventions{
       ValueInputConvention::InitSelf};
   unsigned fieldNameIdx = 0;
@@ -503,8 +506,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
        llvm::zip(paramCaptureListTypes, paramClosureCaptureFieldDecls)) {
     auto selfArg = initFunc.getArgument(0);
     auto captureList = builder.create<CaptureListCreate>(clType);
-    Value target = builder.create<StructGEPOp>(selfArg, fieldDecl);
-    builder.create<POP::StoreOp>(captureList, target);
+    Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
+    builder.create<RefStoreOp>(captureList, target);
   }
 
   LIT::FuncOp copyCtr = stubs->getCopyConstructor();
@@ -568,6 +571,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Currently Closure Impls are not register passable, so use BorrowedInMem
   // convention.
+  auto implPtrType = PointerType::get(structSelfType);
   callInputTypes.push_back(implPtrType);
   callConventions.push_back(ValueInputConvention::BorrowedInMem);
   callNames.push_back(StringAttr::get(ctx));
@@ -753,8 +757,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // Create unique names for parameters.
   if (auto init = findInitInStruct(closureWrapper, closureImplType))
     return init;
-  Type wrapperType = makeClosureImplSelfType(closureWrapper, wrapperParams);
-  SmallVector<Type> argTypes{PointerType::get(wrapperType), closureImplType};
+  ASTType wrapperType = makeClosureImplSelfType(closureWrapper, wrapperParams);
+  SmallVector<Type> argTypes{
+      wrapperType.getRefForArgument("self", /*mut=*/true), closureImplType};
 
   // Then build all other information needed for the __init__ signature.
   SmallVector<ValueInputConvention> argConventions{
@@ -787,11 +792,10 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(0);
-  Value ptrToImpl = builder.create<LIT::StructGEPOp>(
-      PointerType::get(opaquePtrType), implField.getNameAttr(), self);
+  Value refToImpl = builder.create<RefStructGEROp>(self, implField);
   Value erasedType =
       builder.create<POP::PointerBitcastOp>(opaquePtrType, target);
-  builder.create<POP::StoreOp>(erasedType, ptrToImpl);
+  builder.create<RefStoreOp>(erasedType, refToImpl);
   auto generateName = [&](StringRef prefix) {
     return (closureWrapper.getSymName() + prefix + closureImpl.getSymName())
         .str();
@@ -800,15 +804,17 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   auto setMember = [&](LIT::FuncOp topLevelFunc, StringAttr fieldName,
                        Type fieldType) {
     builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
-    auto funcMember = builder.create<StructGEPOp>(
-        PointerType::get(fieldType), fieldName, init.getBody()->getArgument(0));
+    auto selfVal = init.getBody()->getArgument(0);
+    auto funcMember = builder.create<RefStructGEROp>(
+        cast<RefType>(selfVal.getType()).getWithElementReplaced(fieldType),
+        fieldName, selfVal);
     TypedAttr funcSymbol = topLevelFunc.getBoundReference(
         ParameterExprArrayAttr::get(ctx, totalInputParams));
     if (funcSymbol.getType() != fieldType)
       funcSymbol = ParamOperatorAttr::get(POC::Rebind, funcSymbol, fieldType);
     auto createClosure =
         builder.create<CreateClosureOp>(funcSymbol, ValueRange());
-    builder.create<POP::StoreOp>(createClosure, funcMember);
+    builder.create<RefStoreOp>(createClosure, funcMember);
   };
 
   // Create the top level copy constructor.
