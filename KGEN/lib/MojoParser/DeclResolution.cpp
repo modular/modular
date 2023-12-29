@@ -639,9 +639,9 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   return {std::move(captured), unbound};
 }
 
-static Value emitClosureInstance(SignatureType closureSignature,
-                                 SharedState &shared, ASTDecl &nestedFnDecl,
-                                 SMLoc loc) {
+static MRValue emitClosureInstance(SignatureType closureSignature,
+                                   SharedState &shared, ASTDecl &nestedFnDecl,
+                                   SMLoc loc) {
   LIT::FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
   auto parentFn = nestedFn->getParentOfType<LIT::FuncOp>();
   assert(parentFn && "expected nested function to have a parent FuncOp");
@@ -733,7 +733,9 @@ static Value emitClosureInstance(SignatureType closureSignature,
       ASTType(closureWrapperType), closureWrapperInitArgs, &node,
       CallSyntax::kTypeCall, closureWrapperDest,
       /*allowImplicitConversion=*/false);
-
+  if (!closureWrapperInstance)
+    return {};
+  assert(closureWrapperInstance.getIfMRValue());
   return closureWrapperInstance.getIfMRValue();
 }
 
@@ -1071,7 +1073,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
               "escaping closures cannot have input or result parameters yet");
         if (auto closure =
                 emitClosureInstance(signature, shared, decl, decl.getLoc()))
-          decl.irValue = MBValue(closure);
+          decl.irValue = closure;
         else
           return failure();
       } else {
