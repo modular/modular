@@ -278,6 +278,45 @@ def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LifetimeUnionAttr
+//===----------------------------------------------------------------------===//
+
+def LifetimeUnionAttr : LITTypedAttr<"LifetimeUnion", "lifetime.union"> {
+  let summary = "A !lit.lifetime.union set";
+  let description = [{
+    This attribute represents a set of symbolic lifetime attributes.  It is
+    canonicalized on construction, and always has !lit.lifetime type.
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$operands);
+  let assemblyFormat = "`<` $operands `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser.
+    AttrBuilder<(ins
+      "ArrayRef<TypedAttr>":$operands,
+      "mlir::Type":$type
+    ), "", "TypedAttr">,
+
+    // The standard builder that infers lifetime type.
+    AttrBuilder<(ins
+      "ArrayRef<TypedAttr>":$operands
+    ), "", "TypedAttr">
+  ];
+
+   let extraClassDeclaration = [{
+    Type getType() const;
+    size_t getNumOperands() const {
+      return getOperands().size();
+    }
+    TypedAttr getOperand(size_t i) const {
+      return getOperands()[i];
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ImplicitLifetimeRefAttr
 //===----------------------------------------------------------------------===//
 

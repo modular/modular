@@ -1167,7 +1167,7 @@ static Attribute simplifyAssocOp(
   // `(add x, (add y, z))` => `(add x, y, z)`.
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
     if (auto subexpr = dyn_castPE(opcode, operands[i])) {
-      std::swap(operands[i], operands.back());
+      operands[i] = operands.back();
       operands.pop_back();
       --e;
       --i;
