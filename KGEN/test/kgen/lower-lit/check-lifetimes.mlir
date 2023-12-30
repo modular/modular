@@ -45,7 +45,7 @@ lit.file_module @check_lifetimes {
 
     // b.a = 42
     // CHECK-NEXT: %0 = lit.ref.struct.ger %b[a]
-    %b_a = lit.ref.struct.ger %b[a] : <mut index, #lit.lifetime> from <mut @check_lifetimes::@Struct, #lit.lifetime>
+    %b_a = lit.ref.struct.ger %b[a] : <mut index, #lit.lifetime> from @check_lifetimes::@Struct
     %idx42 = index.constant 42
     lit.ref.store %idx42, %b_a : !lit.ref<mut index, #lit.lifetime>
 
@@ -82,7 +82,7 @@ lit.file_module @check_lifetimes {
         !lit.signature<(!kgen.pointer<@check_lifetimes::@Struct> byref_result,
          !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none>
 
-    %0 = lit.ref.struct.ger %c[a] : !lit.ref<mut index, *"life"> from !lit.ref<mut @check_lifetimes::@Struct, *"life">
+    %0 = lit.ref.struct.ger %c[a] : <mut index, *"life"> from @check_lifetimes::@Struct
     lit.ref.load %0 : !lit.ref<mut index, *"life">
 
     kgen.return
@@ -166,7 +166,7 @@ lit.func @verify_callee_destroys(%c: i1) -> !kgen.none {
         %10 = kgen.variant.get %5, 0 : <@Error, none>
         lit.try.raise %10 : !kgen.declref<@Error>
       }
-      %7 = lit.ref.struct.ger %s[a] : !lit.ref<mut index, *"SLife"> from !lit.ref<mut @S, *"SLife">
+      %7 = lit.ref.struct.ger %s[a] : <mut index, *"SLife"> from @S
       // CHECK:  = lit.ref.load
       // CHECK-NEXT: lit.call @S::@__del__[SLife](%s)
       %8 = lit.ref.load %7 : !lit.ref<mut index, *"SLife">
@@ -216,16 +216,16 @@ lit.struct.decl @DestructSome attributes {
                      %takeMe: !lit.ref<mut @S, #lit.lifetime> owned_in_mem,
                      %reg: index
                      ) throws -> !kgen.variant<@Error, none> {
-    %0 = lit.ref.struct.ger %self[a] : <mut @S, #lit.lifetime> from <mut @DestructSome, #lit.lifetime>
+    %0 = lit.ref.struct.ger %self[a] : <mut @S, #lit.lifetime> from @DestructSome
     %1 = lit.call @S::@__copyinit__(%0, %x) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none>
 
-    %100 = lit.ref.struct.ger %self[register] : <mut index, #lit.lifetime> from <mut @DestructSome, #lit.lifetime>
+    %100 = lit.ref.struct.ger %self[register] : <mut index, #lit.lifetime> from @DestructSome
     lit.ref.store %reg, %100 : !lit.ref<mut index, #lit.lifetime>
 
-    %103 = lit.ref.struct.ger %self[stole] : <mut @S, #lit.lifetime> from <mut @DestructSome, #lit.lifetime>
+    %103 = lit.ref.struct.ger %self[stole] : <mut @S, #lit.lifetime> from @DestructSome
     %104 = lit.call @S::@__moveinit__(%103, %takeMe) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !lit.ref<mut @S, #lit.lifetime> owned_in_mem) -> !kgen.none>
 
-    %105 = lit.ref.struct.ger %self[byinit] : <mut @S, #lit.lifetime> from <mut @DestructSome, #lit.lifetime>
+    %105 = lit.ref.struct.ger %self[byinit] : <mut @S, #lit.lifetime> from @DestructSome
     %106 = lit.call @S::@__init__(%105) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self) -> !kgen.none>
     // CHECK: hlcf.if %cond {
     // CHECK-NEXT: [[VAR0:%.*]] = lit.call @Error::@__init__()
@@ -247,7 +247,7 @@ lit.struct.decl @DestructSome attributes {
     } else {
       hlcf.yield
     }
-    %2 = lit.ref.struct.ger %self[uninitialized] : <mut @S, #lit.lifetime> from <mut @DestructSome, #lit.lifetime>
+    %2 = lit.ref.struct.ger %self[uninitialized] : <mut @S, #lit.lifetime> from @DestructSome
     %3 = lit.call @S::@"__copyinit__"(%2, %y) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none>
     %none = kgen.param.constant: none = <#kgen.none>
     %14 = kgen.variant.create %none, 1 : <@Error, none>
@@ -312,16 +312,16 @@ lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@De
                      %reg: index
                      ) throws -> !kgen.variant<@Error, none> {
 
-    %0 = lit.ref.struct.ger %self[a] : <mut @S, #lit.lifetime> from <mut @DestructFull, #lit.lifetime>
+    %0 = lit.ref.struct.ger %self[a] : <mut @S, #lit.lifetime> from @DestructFull
     %1 = lit.call @S::@__copyinit__(%0, %x) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none>
 
-    %100 = lit.ref.struct.ger %self[register] : <mut index, #lit.lifetime> from <mut @DestructFull, #lit.lifetime>
+    %100 = lit.ref.struct.ger %self[register] : <mut index, #lit.lifetime> from @DestructFull
     lit.ref.store %reg, %100 : !lit.ref<mut index, #lit.lifetime>
 
-    %103 = lit.ref.struct.ger %self[stole] : <mut @S, #lit.lifetime> from <mut @DestructFull, #lit.lifetime>
+    %103 = lit.ref.struct.ger %self[stole] : <mut @S, #lit.lifetime> from @DestructFull
     %104 = lit.call @S::@__moveinit__(%103, %takeMe) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !lit.ref<mut @S, #lit.lifetime> owned_in_mem) -> !kgen.none>
 
-    %2 = lit.ref.struct.ger %self[uninitialized] : <mut @S, #lit.lifetime> from <mut @DestructFull, #lit.lifetime>
+    %2 = lit.ref.struct.ger %self[uninitialized] : <mut @S, #lit.lifetime> from @DestructFull
     %3 = lit.call @S::@"__copyinit__"(%2, %y) : !lit.signature<(!lit.ref<mut @S, #lit.lifetime> init_self, !kgen.pointer<@S> borrow_in_mem) -> !kgen.none>
     hlcf.if %cond {
       %12 = lit.call @Error::@__init__() : !lit.signature<() ownedresult -> !kgen.declref<@Error>>

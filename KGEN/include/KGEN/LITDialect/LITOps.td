@@ -1819,7 +1819,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
   let results = (outs LIT_RefType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
-    type($result) `from` type($container)
+    custom<StructGERTypes>(type($result), type($container))
   }];
 
   let builders = [
