@@ -1404,6 +1404,35 @@ void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
         field.getNameAttr(), structBasePtr);
 }
 
+static ParseResult parseStructGERTypes(AsmParser &p, Type &fieldType,
+                                       Type &containerType) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  // parse: 'type' from 'type'
+  fieldType = RefType::parse(p);
+  if (!fieldType || p.parseKeyword("from") || parseParamType(p, containerType))
+    return failure();
+  auto fieldRefType = dyn_cast<RefType>(fieldType);
+  if (!fieldRefType)
+    return p.emitError(loc, "expected '!lit.ref' type in !lit.struct.ger");
+
+  // The container type gets wrapped with the same mutability and lifetime as
+  // the result element.
+  containerType = fieldRefType.getWithElementReplaced(containerType);
+  return success();
+}
+
+static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
+                                RefType containerType) {
+  fieldType.print(p);
+  p << " from ";
+  if (auto refType = dyn_cast<RefType>(containerType))
+    printParamType(p, refType.getElementType());
+  else {
+    p << "<<ERROR NOT REF CONTAINER>>";
+    p.printType(containerType);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // TraitDeclOp
 //===----------------------------------------------------------------------===//

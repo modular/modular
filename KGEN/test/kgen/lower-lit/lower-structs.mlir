@@ -214,7 +214,7 @@ lit.struct.decl @PairStruct {
 kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime>
   (%arg0: !lit.ref<mut @PairStruct, l>, %arg1: si32) -> si32 {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>>
-  %0 = lit.ref.struct.ger %arg0[x] : !lit.ref<mut si32, l> from !lit.ref<mut @PairStruct, l>
+  %0 = lit.ref.struct.ger %arg0[x] : <mut si32, l> from @PairStruct
 
   // CHECK-NEXT: pop.store %arg1, %0
   lit.ref.store %arg1, %0 : !lit.ref<mut si32, l>
