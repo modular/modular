@@ -70,7 +70,7 @@ LIT::FuncOp StructEmitter::createFunction(
 
       // Replace the argument type with a named reference.
       auto newLifetime = ParamDeclRefAttr::get(lifetimeName, decl.getType());
-      adjustedArgTypes.back() = refArgType.getWithLifetimeReplaced(newLifetime);
+      adjustedArgTypes.back() = refArgType.getWithLifetime(newLifetime);
     } else {
       // If this is a reference to a named one already, just reuse the name.
       auto lifetimeRef = cast<ParamDeclRefAttr>(lifetimeAttr);

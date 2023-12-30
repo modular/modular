@@ -229,6 +229,17 @@ ASTType BValue::getRValueType() const {
   return type;
 }
 
+/// Given an XValue, return the underlying reference.
+Value VariantValueStorageBase::getXValueReference() const {
+  if (auto lvalue = dyn_cast<XLValue>(storage))
+    return lvalue;
+  if (auto rvalue = dyn_cast<XRValue>(storage))
+    return rvalue;
+  if (auto bvalue = dyn_cast<XBValue>(storage))
+    return bvalue;
+  llvm_unreachable("invalid use of non-XValue");
+}
+
 // TODO(lifetimes): remove pedantic checks.
 void MRValue::check() const { assert(::isa<PointerType>(Value::getType())); }
 void MLValue::check() const { assert(::isa<PointerType>(Value::getType())); }

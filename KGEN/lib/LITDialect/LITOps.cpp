@@ -1399,8 +1399,7 @@ void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
                            Value structBasePtr, StructFieldOp field) {
   auto refType = cast<RefType>(structBasePtr.getType());
   auto eltType = cast<DeclRefType>(refType.getElementType());
-  build(builder, result,
-        refType.getWithElementReplaced(field.getReboundType(eltType)),
+  build(builder, result, refType.getWithElement(field.getReboundType(eltType)),
         field.getNameAttr(), structBasePtr);
 }
 
@@ -1417,7 +1416,7 @@ static ParseResult parseStructGERTypes(AsmParser &p, Type &fieldType,
 
   // The container type gets wrapped with the same mutability and lifetime as
   // the result element.
-  containerType = fieldRefType.getWithElementReplaced(containerType);
+  containerType = fieldRefType.getWithElement(containerType);
   return success();
 }
 

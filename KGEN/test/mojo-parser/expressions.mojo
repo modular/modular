@@ -1273,10 +1273,11 @@ fn bvalue_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt):
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
   # CHECK-NEXT: [[MV:%.*]] = builtin.unrealized_conversion_cast %a
-  # CHECK-NEXT: %ref1 = lit.letreg.decl "ref1" = [[MV]]
-  let ref1 : __mlir_type[`!lit.ref<mut `,MemoryOnlyInt,`, #lit.lifetime>`] = __get_bvalue_as_ref(a)
+  # CHECK-NEXT: [[MIV:%.*]] = kgen.rebind [[MV]]
+  # CHECK-NEXT: %ref1 = lit.letreg.decl "ref1" = [[MIV]]
+  let ref1 = __get_ref_from_value(a)
   # CHECK-NEXT: %ref2 = lit.letreg.decl "ref2" = %b
-  let ref2 = __get_bvalue_as_ref(b)
+  let ref2 = __get_ref_from_value(b)
 
   # CHECK-NEXT: [[MV:%.*]] = lit.ref.to_pointer %ref1
   # CHECK-NEXT: %ptr1 = lit.letreg.decl "ptr1" = [[MV]]
@@ -1285,12 +1286,12 @@ fn bvalue_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt):
   # CHECK-NEXT: %localLet = lit.varlet.decl "localLet"
   let localLet = MemoryOnlyInt()
   # CHECK: %ref3 = lit.letreg.decl "ref3" = %localLet
-  let ref3 = __get_bvalue_as_ref(localLet)
+  let ref3 = __get_ref_from_value(localLet)
 
   # CHECK-NEXT: %localVar = lit.varlet.decl "localVar"
   var localVar = MemoryOnlyInt()
   # CHECK: %ref4 = lit.letreg.decl "ref4" = %localVar
-  let ref4 = __get_bvalue_as_ref(localVar)
+  let ref4 = __get_ref_from_value(localVar)
 
 
 

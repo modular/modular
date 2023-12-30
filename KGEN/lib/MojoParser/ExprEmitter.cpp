@@ -1163,8 +1163,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         if (isa<MLValue, MRValue, MBValue>(cValue.getStorage())) {
           requiredType = PointerType::get(requiredType);
         } else if (isa<XLValue, XRValue, XBValue>(cValue.getStorage())) {
-          requiredType = cast<RefType>(cValue.getType())
-                             .getWithElementReplaced(requiredType);
+          requiredType =
+              cast<RefType>(cValue.getType()).getWithElement(requiredType);
         }
         value = rebindValue(value, requiredType, expr->getLoc(), *this);
         return emitCValue({value, expr}, dest);
@@ -1415,12 +1415,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return emitCResult(SRValue(result), value.expr, dest);
   }
 
-  address = value.ir.getIfXBValue();
-  if (!address)
-    address = value.ir.getIfXRValue();
-  if (!address)
-    address = value.ir.getIfXLValue();
-  assert(address && "Unknown BValue/RValue/MLValue");
+  address = value.ir.getXValueReference();
+  assert(address && "Unknown value");
   Value result =
       builder->create<RefLoadOp>(value.expr->getLocation(*this), address);
   return emitCResult(SRValue(result), value.expr, dest);

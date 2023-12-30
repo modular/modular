@@ -460,18 +460,8 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
           continue;
         return false;
       }
-      if (auto ref = value.ir.getIfXLValue()) {
-        if (ptrGuaranteedNoAlias(ref))
-          continue;
-        return false;
-      }
-      if (auto ref = value.ir.getIfXBValue()) {
-        if (ptrGuaranteedNoAlias(ref))
-          continue;
-        return false;
-      }
-      if (auto ref = value.ir.getIfXRValue()) {
-        if (ptrGuaranteedNoAlias(ref))
+      if (value.ir.isXValue()) {
+        if (ptrGuaranteedNoAlias(value.ir.getXValueReference()))
           continue;
         return false;
       }

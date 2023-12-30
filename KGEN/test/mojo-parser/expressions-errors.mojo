@@ -519,3 +519,7 @@ fn compare_mem_result():
 fn return_metatype_problem() -> CopyAndInitMemType:
   # expected-error @+1 {{cannot implicitly convert 'CopyAndInitMemType' value to 'CopyAndInitMemType' in return value}}
   return CopyAndInitMemType
+
+fn test_bad_ref(a: Int):
+  # expected-error @+1 {{cannot get a reference to a register value}}
+  _ = __get_ref_from_value(a)
