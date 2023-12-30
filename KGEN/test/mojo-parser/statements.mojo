@@ -733,13 +733,12 @@ fn testWithNonRaising(a: ExampleCM):
 
   # CHECK: %$CONTEXTMGR_1 = lit.varlet.decl "$CONTEXTMGR"{{.*}}!MutatingCM
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%$CONTEXTMGR_1)
-  # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_1
-  # CHECK-NEXT: lit.call {{.*}}__enter__{{.*}}([[CTXPTR]])
+  # CHECK-NEXT: %val_2 = lit.varlet.decl "val"
+  # CHECK-NEXT: lit.call {{.*}}__enter__{{.*}}(%$CONTEXTMGR_1)
   with MutatingCM() as val:
     # CHECK: lit.call {{.*}}noop
     noop(val)
-  # CHECK: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_1
-  # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[CTXPTR]])
+  # CHECK: lit.call {{.*}}__exit__{{.*}}(%$CONTEXTMGR_1)
 
 # CHECK-LABEL: lit.func @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:

@@ -1880,8 +1880,6 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     value = rvalue;
   } else if (auto bvalue = decl.getIfBValue()) {
     value = bvalue;
-  } else if (auto lvalue = decl.getIfMLValue()) {
-    value = lvalue;
   } else if (auto lvalue = decl.getIfXLValue()) {
     value = lvalue;
   } else {

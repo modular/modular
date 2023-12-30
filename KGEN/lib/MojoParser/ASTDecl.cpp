@@ -95,7 +95,7 @@ void ASTDecl::dump() const {
         op->print(llvm::errs(), mlir::OpPrintingFlags().printGenericOpForm());
         llvm::errs() << "\n";
       })
-      .Case<PValue, SRValue, XRValue, SBValue, MBValue, MLValue, XLValue>(
+      .Case<PValue, SRValue, XRValue, SBValue, MBValue, XLValue>(
           [](auto v) { v.dump(); })
       .Default([](DeclIRValue v) { llvm::errs() << "<null decl>\n"; });
 }
@@ -109,9 +109,7 @@ MLIRContext *ASTDecl::getContext() const {
     return dr.getContext();
   if (auto value = dyn_cast_or_null<XLValue>(irValue))
     return value.getContext();
-  if (auto value = dyn_cast_or_null<XRValue>(irValue))
-    return value.getContext();
-  return cast<MLValue>(irValue).getContext();
+  return cast<XRValue>(irValue).getContext();
 }
 
 /// If this is an RValue, return it otherwise return null.

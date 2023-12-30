@@ -640,25 +640,14 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     LValue lv = argValAndExpr.ir.getIfLValue();
     assert(lv && "type checking ensures we will have an lvalue");
 
-    if (convention == ValueInputConvention::ByRef) {
-      assert(!isArgumentPassedWithImplicitLifetime(convention) &&
-             "TODO: remove this");
-      if (auto sl = lv.getIfMLValue())
-        return sl;
-      if (auto ref = lv.getIfXLValue()) {
-        // Decay reference to pointer.
-        return emitter.builder->create<RefToPointerOp>(
-            emitter.translateLocation(argValAndExpr.expr->getLoc()), ref);
-      }
-    } else {
-      if (auto ptr = lv.getIfMLValue())
-        lv = hackPointerToRef(ptr);
+    // TODO(references): remove MLValue
+    if (auto ptr = lv.getIfMLValue())
+      lv = hackPointerToRef(ptr);
 
-      if (auto ref = lv.getIfXLValue()) {
-        // Remember the implicit lifetime for this argument.
-        implicitLifetimes.push_back(cast<RefType>(ref.getType()).getLifetime());
-        return ref;
-      }
+    if (auto ref = lv.getIfXLValue()) {
+      // Remember the implicit lifetime for this argument.
+      implicitLifetimes.push_back(cast<RefType>(ref.getType()).getLifetime());
+      return ref;
     }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
@@ -675,14 +664,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     }
     afterCallActions.lvalueWritebacks.push_back(
         {std::move(dlvBuffer), mlvBuffer});
-
-    if (convention == ValueInputConvention::ByRef) {
-      assert(!isArgumentPassedWithImplicitLifetime(convention) &&
-             "TODO: remove this");
-      // Decay reference to pointer for inout.
-      return emitter.builder->create<RefToPointerOp>(
-          emitter.translateLocation(argValAndExpr.expr->getLoc()), mlvBuffer);
-    }
 
     // Remember the implicit lifetime for this argument.
     implicitLifetimes.push_back(
@@ -844,7 +825,7 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
       // conventions here because you don't need to pass
       bool allIdentical = true;
       assert(call.getNumOperands() == callerFunc.getNumArguments() &&
-             "parameter mismatch");
+             "argument mismatch");
       for (auto [argValue, argDecl] :
            llvm::zip(call.getOperands(), callerFunc.getArguments())) {
         if (argValue != argDecl) {
@@ -852,10 +833,10 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
           break;
         }
       }
-      // Compare parameters if all arguments match.
+      // Check to see if all parameters match.
       if (allIdentical) {
         SmallVector<ParamDeclAttr> paramDecls =
-            callerFunc.collectAllInputParams();
+            callerFunc.collectAllInputParams(/*includeImplLifetimes=*/false);
         assert(symbol.getParamValues().size() == paramDecls.size() &&
                "parameter mismatch");
         for (auto [paramValue, paramDecl] :

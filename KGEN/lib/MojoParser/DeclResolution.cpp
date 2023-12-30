@@ -1218,9 +1218,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       if (auto rv = argDecl.getIfRValue()) {
         if (rv.getType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
-      } else if (auto lv = argDecl.getIfMLValue()) {
-        if (lv.getRValueType().isTypeCheckErrorType())
-          argDecl.hasReferenceError = true;
       } else if (auto lv = argDecl.getIfXLValue()) {
         if (lv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
@@ -1253,10 +1250,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     DeclIRValue argIRValue;
     switch (convention) {
-    // Arguments passed by-reference can be directly used.
     case ValueInputConvention::ByRef:
-      argIRValue = MLValue(bbArg);
-      break;
     case ValueInputConvention::InitSelf:
     case ValueInputConvention::ByRefResult:
     case ValueInputConvention::OwnedInMem:
@@ -2320,7 +2314,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     AnyValue value;
     switch (conv) {
     case ValueInputConvention::ByRef:
-      value = MLValue(arg);
+      value = XLValue(arg);
       break;
     case ValueInputConvention::OwnedInMem:
       value = XRValue(arg);

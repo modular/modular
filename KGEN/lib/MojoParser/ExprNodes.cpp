@@ -3001,6 +3001,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     LValue result = emitter.emitLValue({subExprValue, subExpr}, lValueDest);
     if (!result)
       return {};
+
     if (XLValue resultRef = result.getIfXLValue())
       result = MLValue(emitter.builder->create<RefToPointerOp>(
           getLocation(emitter), resultRef));
@@ -3013,6 +3014,8 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
       return {};
     }
     // Emit an intrinsic so the compiler knows the value is mutable.
+    // TODO(references): Remove ownership.def_lvalue when we have mutability
+    // in the reference types.
     emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
                                                   resultPtr);
 

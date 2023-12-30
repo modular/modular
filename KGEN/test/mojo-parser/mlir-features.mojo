@@ -116,17 +116,18 @@ struct MyPointer[elType: __mlir_type.`!kgen.anyregtype`]:
         return MyPointer[elType] {value: value}
 
 
-# CHECK-LABEL: getAddressOf{{.*}}"<
-# CHECK-SAME: [[T:.*_T]][T]: regtype>(%arg[arg]: !kgen.pointer<[[T]]> byref)
+# CHECK-LABEL: getAddressOf{{.*}}"[*"`arg"]<
+# CHECK-SAME: [[T:.*_T]][T]: regtype>(%arg[arg]: !lit.ref<mut [[T]], {{.*}}> byref)
 fn getAddressOf[
     T: __mlir_type.`!kgen.anyregtype`
 ](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type = MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
-    # CHECK-NEXT: lit.ownership.def_lvalue %arg
-    # CHECK-NEXT: %0 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:regtype [[T]]>(%arg)
-    # CHECK-NEXT: lit.return %0
+    # CHECK-NEXT: %0 = lit.ref.to_pointer %arg
+    # CHECK-NEXT: lit.ownership.def_lvalue %0
+    # CHECK-NEXT: %1 = lit.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:regtype [[T]]>(%0)
+    # CHECK-NEXT: lit.return %1
 
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"

@@ -477,15 +477,14 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
 
     // The variable was persisted, insert a new field into the state struct.
     std::string newFieldName = ("__new_repl_var_" + name.strref()).str();
-    structBuilder.create<LIT::StructFieldOp>(varOp->getLoc(), newFieldName,
-                                             PointerType::get(type));
+    auto newField = structBuilder.create<LIT::StructFieldOp>(
+        varOp->getLoc(), newFieldName, PointerType::get(type));
 
     // Materialize a reference to the variable within the function.
     mlir::ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
-    Value fieldGep = builder.create<LIT::StructGEPOp>(
-        varOp->getLoc(), PointerType::get(PointerType::get(type)), newFieldName,
-        structValue);
-    Value fieldLoad = builder.create<POP::LoadOp>(varOp->getLoc(), fieldGep);
+    Value fieldGep = builder.create<LIT::RefStructGEROp>(varOp->getLoc(),
+                                                         structValue, newField);
+    Value fieldLoad = builder.create<RefLoadOp>(varOp->getLoc(), fieldGep);
 
     // TODO: Whenever we have globals, we should be able to use a global
     // variable for the address and ensure it gets preserved. For now, we just
