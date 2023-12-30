@@ -226,8 +226,7 @@ fn test_static_overload():
     var a = MyStruct()
     # CHECK-NEXT: %a = lit.varlet.decl
     # CHECK-NEXT: lit.call{{.*}}__init__{{.*}}(%a)
-    # CHECK-NEXT: %1 = lit.ref.to_pointer %a
-    # CHECK-NEXT: lit.call @{{.*}}@MyStruct::@"foo({{.*}}::MyStruct&)"(%1)
+    # CHECK-NEXT: lit.call @{{.*}}foo{{.*}}(%a)
     a.foo()
 
 
@@ -386,8 +385,7 @@ struct MutatingAdd:
 
 # CHECK-LABEL: lit.func @"testMutatingAdd
 fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
-  # CHECK-NEXT: %0 = lit.ref.to_pointer %a
-  # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%0, %b)
+  # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%a, %b)
   a + b
 
 
@@ -838,7 +836,7 @@ struct StructExample:
         StructExample.static(4)
         pass
 
-    # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self[self]: !kgen.pointer<!StructExample> byref) -> !kgen.none
+    # CHECK: lit.func @"mutatingMethod{{.*}}(%self[self]: !lit.ref<mut !StructExample, {{.*}}> byref) -> !kgen.none
     fn mutatingMethod(inout self):
         pass
 
@@ -1060,8 +1058,7 @@ struct Awaitable:
 
 # CHECK-LABEL: lit.func @"awaitable()"
 fn awaitable() -> Int:
-    # CHECK: %1 = lit.ref.to_pointer %aw
-    # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable&)"(%1)
+    # CHECK: call {{.*}}@Awaitable::@"__await__{{.*}}(%aw)
     var aw = Awaitable()
     return await aw
 
@@ -1287,7 +1284,8 @@ fn refGlobals():
     # CHECK-NEXT: call {{.*}}borrowGlobalReg{{.*}}([[VALUE]])
     borrowGlobalReg(reg_global)
     # CHECK: [[REG_REF:%.*]] = lit.globalvar.ref {{.*}}@reg_global
-    # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}([[REG_REF]])
+    # CHECK-NEXT: %7 = builtin.unrealized_conversion_cast [[REG_REF]]
+    # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}(%7)
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
     # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<mut !MemType

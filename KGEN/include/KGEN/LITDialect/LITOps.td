@@ -125,7 +125,7 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return a collection of the ParamDeclAttr's that are declared on this
     /// function and any enclosing unit, ordered as will be required by a call.
-    SmallVector<ParamDeclAttr> collectAllInputParams();
+    SmallVector<ParamDeclAttr> collectAllInputParams(bool includeImplLifetimes);
   }];
 
   let builders = [

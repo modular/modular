@@ -24,11 +24,11 @@ enum class EmissionKind : uint8_t { ASM, LLVM };
 /// Return true if the specified input convention is passed with an implicit
 /// lifetime.
 inline bool isArgumentPassedWithImplicitLifetime(ValueInputConvention conv) {
-  if (conv == ValueInputConvention::ByRefResult ||
-      conv == ValueInputConvention::InitSelf ||
-      conv == ValueInputConvention::OwnedInMem)
-    return true;
-  return false;
+  return conv != ValueInputConvention::OwnedInReg &&
+         conv != ValueInputConvention::BorrowedInReg &&
+         // FIXME: Switch borrowed args to references.
+         // TODO: Switch this to SignatureType::hasAddress.
+         conv != ValueInputConvention::BorrowedInMem;
 }
 
 //===----------------------------------------------------------------------===//

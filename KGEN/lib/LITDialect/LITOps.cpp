@@ -818,10 +818,16 @@ static void collectContextParameters(Operation *op,
   llvm::append_range(params, decl.getInputParams());
 }
 
-SmallVector<ParamDeclAttr> LIT::FuncOp::collectAllInputParams() {
+SmallVector<ParamDeclAttr>
+LIT::FuncOp::collectAllInputParams(bool includeImplLifetimes) {
   SmallVector<ParamDeclAttr> result;
   collectContextParameters(getOperation()->getParentOp(), result);
-  llvm::append_range(result, getInputParams());
+
+  auto inputParams = getInputParams();
+  if (!includeImplLifetimes)
+    inputParams =
+        inputParams.drop_front(getSignature().getNumImplicitLifetimeDecls());
+  llvm::append_range(result, inputParams);
   return result;
 }
 

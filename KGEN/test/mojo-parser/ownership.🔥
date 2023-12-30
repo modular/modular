@@ -494,32 +494,30 @@ struct FieldSensitiveMemExample:
 
   # CHECK-LABEL: lit.func @"mutate
   fn mutate(inout self):
-    # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
-    # CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
-    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%1)
+    # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
+    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
 
-    # CHECK-NEXT: %3 = lit.struct.gep %self[f1]
-    # CHECK-NEXT: %4 = builtin.unrealized_conversion_cast %3
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%4)
+    # CHECK-NEXT: %2 = lit.ref.struct.ger %self[f1]
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%2)
     self.f1 = MemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
  # CHECK-LABEL: lit.func @"mutate2
   fn mutate2(inout self):
     # Disable the dtor of 'f1' before we overwrite it to show we can do this.
-    # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
-    # CHECK-NEXT: lit.ownership.def_lvalue %0
-    # CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
-    # CHECK-NEXT: lit.ownership.mark_destroyed %1
+    # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
+    # CHECK-NEXT: %1 = lit.ref.to_pointer [[F1R]]
+    # CHECK-NEXT: lit.ownership.def_lvalue %1
+    # CHECK-NEXT: %2 = builtin.unrealized_conversion_cast %1
+    # CHECK-NEXT: lit.ownership.mark_destroyed %2
     __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
       __mlir_op.`builtin.unrealized_conversion_cast`[
           _type= __mlir_type[`!lit.ref<mut `, MemExample, `, #lit.lifetime>`]](
        __get_lvalue_as_address(self.f1))
     )
 
-    # CHECK-NEXT: %2 = lit.struct.gep %self[f1]
-    # CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %2
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%3)
+    # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[F1R]])
     self.f1 = MemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
@@ -554,8 +552,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
 fn regpassable_owned_args_mutable(owned x: RegExample):
   # CHECK-NEXT: %x_0 = lit.varlet.decl "x" imp
   # CHECK-NEXT: lit.ref.store %x, %x_0
-  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
-  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}([[XPTR]])
+  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x_0)
   x.mutate()
 
   # CHECK-NEXT: [[X:%.*]] = lit.ref.load %x_0
@@ -564,8 +561,7 @@ fn regpassable_owned_args_mutable(owned x: RegExample):
   # CHECK-NEXT: lit.ref.store [[X]], %x_0
   x = RegExample()
 
-  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
-  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}([[XPTR]])
+  # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x_0)
   x.mutate()
   # CHECK-NEXT: [[X:%.*]] = lit.ref.load %x_0
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[X]])
@@ -611,8 +607,7 @@ fn test_result_optimization():
   # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}([[F1]], %__call_result_tmp___0)
 
   example.mutate()
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
-  # CHECK-NEXT: lit.call @{{.*}}@"mutate{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}@"mutate{{.*}}(%example)
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
 
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>

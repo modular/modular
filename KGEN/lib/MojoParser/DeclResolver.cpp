@@ -113,7 +113,7 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
   if (auto rv = decl->getIfRValue()) {
     if (rv.getType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
-  } else if (auto lv = decl->getIfMLValue()) {
+  } else if (auto lv = decl->getIfXLValue()) {
     if (lv.getRValueType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
   } else if (auto bv = decl->getIfBValue()) {

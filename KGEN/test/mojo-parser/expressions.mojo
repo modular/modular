@@ -73,34 +73,38 @@ fn inferred_function_with_memory_result[
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.varlet.decl {{.*}} var : !lit.ref<mut !MemoryOnlyPair,
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v1, %a)
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[PTR]])
   var v1 = a
 
   # CHECK-NEXT: %v2 = lit.varlet.decl "v2" let
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v2, %a)
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v2, [[PTR]])
   let v2 : MemoryOnlyPair = a
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} {isSynthetic}
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %a)
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[PTR]])
   _ = a
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
   # CHECK-NEXT: %regX = lit.varlet.decl {{.*}} let
-  # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%regX, [[AX]])
+  # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[AX]]
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%regX, [[PTR]])
   let regX = a.x
 
-  # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
-  # CHECK-NEXT:  %6 = builtin.unrealized_conversion_cast %5
-  # CHECK-NEXT: %7 = lit.ref.to_pointer %regX
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%6, %7)
+  # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %regX
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[AX]], [[PTR]])
   a.x = regX
 
   # Pass memory only things by value as arguments.
 
   # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.varlet.decl {{.*}}!MemoryOnlyPair
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPPAIR]], %a)
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
+  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPPAIR]], [[PTR]])
   # CHECK-NEXT: [[TMPINT:%.*]] = lit.varlet.decl {{.*}}!MemoryOnlyInt
   # CHECK: [[REGXPTR:%.*]] = lit.ref.to_pointer %regX
   # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPINT]], [[REGXPTR]])
@@ -131,13 +135,13 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[TMP]], %[[C42]])
   _ = MemoryOnlyInt()
 
-  # CHECK-NEXT: %23 = lit.ref.to_pointer %regX
-  # CHECK-NEXT: %24 = lit.ref.to_pointer %regX
-  # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [%23, %24]
+  # CHECK-NEXT: %27 = lit.ref.to_pointer %regX
+  # CHECK-NEXT: %28 = lit.ref.to_pointer %regX
+  # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [%27, %28]
   # CHECK-NEXT: lit.call @{{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
-  # CHECK-NEXT: lit.ownership.use %23 : !kgen.pointer<!MemoryOnlyInt>
-  # CHECK-NEXT: lit.ownership.use %24
+  # CHECK-NEXT: lit.ownership.use %27 : !kgen.pointer<!MemoryOnlyInt>
+  # CHECK-NEXT: lit.ownership.use %28
 
   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.to_pointer %v2
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%__result__, [[TMP]])
@@ -602,9 +606,8 @@ fn patterns():
   var someInt : Int
   (someInt) += someInt
   # CHECK: %someInt = lit.varlet.decl "someInt" var
-  # CHECK:  %1 = lit.ref.to_pointer %someInt
-  # CHECK:  %2 = lit.ref.load %someInt
-  # CHECK:   = lit.call {{.*}}Int::@"__iadd__{{.*}}(%1, %2)
+  # CHECK:  %1 = lit.ref.load %someInt
+  # CHECK:   = lit.call {{.*}}Int::@"__iadd__{{.*}}(%someInt, %1)
 
   # Discard pattern with different types.
   (_) = someInt
@@ -613,29 +616,27 @@ fn patterns():
   (_) = 1.0
 
   # CHECK: %someFloat32 = lit.varlet.decl "someFloat32" var
-  # CHECK: %5 = lit.ref.to_pointer %someFloat32
   # CHECK: [[Float32:%.*]] = lit.ref.load %someFloat32
-  # CHECK: {{%.*}} = lit.call {{.*}}__iadd__{{.*}}(%5, [[Float32]])
+  # CHECK: {{%.*}} = lit.call {{.*}}__iadd__{{.*}}(%someFloat32, [[Float32]])
   var someFloat32 : Float32
   (someFloat32) += someFloat32
 
   # CHECK: %someSIMD = lit.varlet.decl "someSIMD" var
-  # CHECK: %8 = lit.ref.to_pointer %someSIMD
   # CHECK: [[SIMD:%.*]] = lit.ref.load %someSIMD
-  # CHECK: {{%.*}} = lit.call @"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%8, [[SIMD]])
+  # CHECK: {{%.*}} = lit.call @"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}$int::Int,{{.*}}$int::Int&)"(%a[a]: !Int borrow, %b[b]: !kgen.pointer<!Int> byref) -> !kgen.none
+# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}$int::Int,{{.*}}$int::Int&)"{{.*}}(%a[a]: !Int borrow, %b[b]: !lit.ref<mut !Int, {{.*}}> byref) -> !kgen.none
 fn byval_byref_function(a: Int, inout b: Int):
-  # CHECK-NEXT: pop.store %a, %b
+  # CHECK-NEXT: lit.ref.store %a, %b
   b = a
 
   # CHECK-NEXT: %x = lit.varlet.decl "x" var
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
-  # CHECK: %0 = pop.load %b
+  # CHECK: %0 = lit.ref.load %b
   # CHECK: = lit.call @{{.*}}::@"byval_byref_function{{.*}}(%0, %b)
   byval_byref_function(b, b)
 
@@ -671,49 +672,38 @@ def defTests(a: Int, b: Int, untyped) -> None:
 def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
   # CHECK:      %a_0 = lit.varlet.decl "a" imp
   # CHECK:      %b_1 = lit.varlet.decl "b" imp
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__iadd__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__iadd__{{.*}}(%a_0, [[LOAD_B]])
   a += b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__isub__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__isub__{{.*}}(%a_0, [[LOAD_B]])
   a -= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__imul__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__imul__{{.*}}(%a_0, [[LOAD_B]])
   a *= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ifloordiv__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ifloordiv__{{.*}}(%a_0, [[LOAD_B]])
   a //= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__imod__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__imod__{{.*}}(%a_0, [[LOAD_B]])
   a %= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ipow__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ipow__{{.*}}(%a_0, [[LOAD_B]])
   a **= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__irshift__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__irshift__{{.*}}(%a_0, [[LOAD_B]])
   a >>= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ilshift__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ilshift__{{.*}}(%a_0, [[LOAD_B]])
   a <<= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__iand__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__iand__{{.*}}(%a_0, [[LOAD_B]])
   a &= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ixor__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ixor__{{.*}}(%a_0, [[LOAD_B]])
   a ^= b
-  # CHECK:      [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK:      [[LOAD_B:%.*]] = lit.ref.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ior__({{.*}}$int::Int&,{{.*}}$int::Int)"([[APTR]], [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}Int::@"__ior__{{.*}}(%a_0, [[LOAD_B]])
   a |= b
 
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}value = 4
@@ -1089,8 +1079,7 @@ fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
   # CHECK-NEXT: %[[V0:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
   # CHECK-NEXT: lit.ref.store %[[V1]], %anonymous2A
-  # CHECK-NEXT: %[[ANONPTR:.*]] = lit.ref.to_pointer %anonymous2A
-  # CHECK-NEXT: %[[V2:.*]] = lit.call {{.*}}takeInOutInt{{.*}}(%[[ANONPTR]])
+  # CHECK-NEXT: %[[V2:.*]] = lit.call {{.*}}takeInOutInt{{.*}}(%anonymous2A)
   # CHECK-NEXT: %[[V3:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V4:.*]] = lit.ref.load %anonymous2A
   # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
@@ -1100,25 +1089,22 @@ fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
   # CHECK: %anonymous2A_1 = lit.varlet.decl {{.*}}!IndexArray
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
   # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%anonymous2A_1, %b, %[[C1]])
-  # CHECK-NEXT: %[[ANONPTR_1:.*]] = lit.ref.to_pointer %anonymous2A_1
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2
-  # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[ANONPTR_1]], %[[C2]])
+  # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__getitem__{{.*}}(%anonymous2A_1, %[[C2]])
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[ANONPTR_1:.*]] = lit.ref.to_pointer %anonymous2A_1
-  # CHECK-NEXT: %[[V6:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[ANONPTR_1]])
+  # CHECK-NEXT: %11 = lit.ref.to_pointer %anonymous2A_1
+  # CHECK-NEXT: %[[V6:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %11)
   # CHECK-NEXT: lit.ref.store %[[V5]], %anonymous2A_0
-  # CHECK-NEXT: %[[ANONPTR_0:.*]] = lit.ref.to_pointer %anonymous2A_0
-  # CHECK-NEXT: %[[V7:.*]] = lit.call {{.*}}takeInOutInt{{.*}}(%[[ANONPTR_0]])
+  # CHECK-NEXT: %[[V7:.*]] = lit.call {{.*}}takeInOutInt{{.*}}(%anonymous2A_0)
   # CHECK-NEXT: %anonymous2A_2 = lit.varlet.decl
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
   # CHECK-NEXT: %[[V8:.*]] = lit.call {{.*}}__getitem__{{.*}}(%anonymous2A_2, %b, %[[C1]])
-  # CHECK-NEXT: %[[ANONPTR_2:.*]] = lit.ref.to_pointer %anonymous2A_2
   # CHECK-NEXT: %[[C2:.*]] = {{.*}}constant{{.*}} = 2
   # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %anonymous2A_0
-  # CHECK-NEXT: %[[V10:.*]] = lit.call {{.*}}__setitem__{{.*}}(%[[ANONPTR_2]], %[[C2]], %[[V9]])
+  # CHECK-NEXT: %[[V10:.*]] = lit.call {{.*}}__setitem__{{.*}}(%anonymous2A_2, %[[C2]], %[[V9]])
   # CHECK-NEXT: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK-NEXT: %[[ANONPTR_2:.*]] = lit.ref.to_pointer %anonymous2A_2
-  # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[ANONPTR_2]])
+  # CHECK-NEXT: %20 = lit.ref.to_pointer %anonymous2A_2
+  # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %20)
   takeInOutInt(b[1][2])
 
 
@@ -1289,9 +1275,8 @@ fn bvalue_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt):
   # CHECK-NEXT: [[MV:%.*]] = builtin.unrealized_conversion_cast %a
   # CHECK-NEXT: %ref1 = lit.letreg.decl "ref1" = [[MV]]
   let ref1 : __mlir_type[`!lit.ref<mut `,MemoryOnlyInt,`, #lit.lifetime>`] = __get_bvalue_as_ref(a)
-  # CHECK-NEXT: [[MV:%.*]] = builtin.unrealized_conversion_cast %b
-  # CHECK-NEXT: %ref2 = lit.letreg.decl "ref2" = [[MV]]
-  let ref2 : __mlir_type[`!lit.ref<mut `,MemoryOnlyInt,`, #lit.lifetime>`] = __get_bvalue_as_ref(b)
+  # CHECK-NEXT: %ref2 = lit.letreg.decl "ref2" = %b
+  let ref2 = __get_bvalue_as_ref(b)
 
   # CHECK-NEXT: [[MV:%.*]] = lit.ref.to_pointer %ref1
   # CHECK-NEXT: %ptr1 = lit.letreg.decl "ptr1" = [[MV]]
@@ -1345,7 +1330,7 @@ struct MemType: pass
 # CHECK-SAME: %{{.*}}[float1]: {{.*}}("__result__": !lit.ref<mut !MemoryType, {{.*}}> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float2]: {{.*}}(!RegType, |) ownedresult -> !RegType
 # CHECK-SAME: %{{.*}}[float3]: {{.*}}(!lit.ref<mut !MemoryType, *[0,0]> owned_in_mem, |) -> !kgen.none
-# CHECK-SAME: %{{.*}}[float4]: {{.*}}(!kgen.pointer<!Int> byref, |) -> !kgen.none
+# CHECK-SAME: %{{.*}}[float4]: {{.*}}(!lit.ref<mut !Int, *[0,0]> byref, |) -> !kgen.none
 # CHECK-SAME: %{{.*}}[float5]: {{.*}}(!Int borrow, |) throws -> !kgen.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float6]: {{.*}}(!Int borrow, |) throws|async|capturing -> !kgen.variant<!Error, none>
 # CHECK-SAME: %{{.*}}[float7]: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !kgen.variant<!Error, none>
@@ -1745,3 +1730,6 @@ fn self_recursive_param[a: Int]():
   @parameter
   if a != 400:
     self_recursive_param[a+1]() # No warning
+
+fn self_recursive_impl_lifetime(inout a: MemoryOnlyInt):
+  self_recursive_impl_lifetime(a) # expected-warning {{self recursive call will cause an infinite loop}}

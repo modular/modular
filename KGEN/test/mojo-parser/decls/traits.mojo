@@ -33,11 +33,11 @@ trait Trait:
     # CHECK-NEXT: lit.trait_func
     fn f0(self: Self): ...
 
-    # CHECK: lit.func @"f1(T&)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) -> !kgen.none
+    # CHECK: lit.func @"f1(T&)"{{.*}}(%self[self]: !lit.ref<mut :!kgen.paramref<MT> T, {{.*}}> byref) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
     fn f1(inout self: Self): ...
 
-    # CHECK: lit.func @"f2(T&)"(%self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) -> !kgen.none attributes
+    # CHECK: lit.func @"f2(T&)"{{.*}}(%self[self]: !lit.ref<mut :!kgen.paramref<MT> T, {{.*}}> byref) -> !kgen.none attributes
     # CHECK-NEXT: lit.trait_func
     fn f2(inout self: Self):
         pass
@@ -47,7 +47,7 @@ trait Trait:
     def f3(self: Self):
         pass
 
-    # CHECK: lit.func @"f4(,T&)"[{{.*}}](%__result__[__result__]: !lit.ref<mut !object, {{.*}}> byref_result, |, %self[self]: !kgen.pointer<:!kgen.paramref<MT> T> byref) throws -> !kgen.variant<!Error, none>
+    # CHECK: lit.func @"f4(,T&)"[{{.*}}](%__result__[__result__]: !lit.ref<mut !object, {{.*}}> byref_result, |, %self[self]: !lit.ref<mut :!kgen.paramref<MT> T, {{.*}}> byref) throws -> !kgen.variant<!Error, none>
     # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
