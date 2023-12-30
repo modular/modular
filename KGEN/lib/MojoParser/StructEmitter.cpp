@@ -245,11 +245,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
         argVal = SBValue(arg);
         break;
       case ValueInputConvention::OwnedInMem:
-        // FIXME(references): This won't be right for first-class references.
-        if (isa<RefType>(arg.getType()))
-          argVal = XRValue(arg);
-        else
-          argVal = MRValue(arg);
+        argVal = XRValue(arg);
         break;
       case ValueInputConvention::BorrowedInMem:
         // FIXME(references): This won't be right for first-class references.
@@ -296,10 +292,10 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 }
 
 /// Given a function of the form
-/// "lit.func __copyinit__(%target: !kgen.pointer<@MyStruct>, %existing:
-/// !kgen.pointer<@MyStruct>), populate the method with the following:
-/// %targetField0Ptr = lit.struct.get %self[field0]
-/// %sourceField0Ptr = lit.struct.get %existing[field0]
+/// "lit.func __copyinit__(%target: !lit.ref<mut @MyStruct, ...>, %existing:
+/// !lit.ref<@MyStruct, ...>), populate the method with the following:
+/// %targetField0Ptr = lit.ref.struct.ger %self[field0]
+/// %sourceField0Ptr = lit.ref.struct.ger %existing[field0]
 /// copyinit_of_type_of_field0(%targetField0, %field
 LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
                                               bool isMove) {
@@ -323,9 +319,13 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
     Value copyExisting = func.getBody()->getArgument(1);
     for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
       auto targetFieldOp = b.create<RefStructGEROp>(copySelf, fieldOp);
-      auto srcFieldOp = b.create<StructGEPOp>(copyExisting, fieldOp);
+      Value srcFieldOp;
+      if (isMove)
+        srcFieldOp = b.create<RefStructGEROp>(copyExisting, fieldOp);
+      else // TODO: Drop this.
+        srcFieldOp = b.create<StructGEPOp>(copyExisting, fieldOp);
       CValue src =
-          isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
+          isMove ? CValue(XRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
       SyntheticNode srcExpr(location);
       emitter.emitStoreToLValue({src, &srcExpr}, XLValue(targetFieldOp),
                                 EC_AttributeRefBase);
@@ -538,7 +538,8 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       ValueInputConvention conv;
       switch (fieldType.getRegisterPassability(structDecl.getLoc(), shared)) {
       case TypeConvention::MemoryOnly:
-        fieldType = PointerType::get(fieldType);
+        fieldType = fieldType.getRefForArgument(fieldOp.getName().str(),
+                                                /*isMut=*/true);
         conv = ValueInputConvention::OwnedInMem;
         break;
       case TypeConvention::RegisterPassable:
@@ -589,7 +590,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     // from the type checking logic.
     if (needsDtor && isMemoryOnly) {
       destructorFunc = addVoidMethod(
-          structDecl, "__del__", ptrToSelf, ValueInputConvention::OwnedInMem,
+          structDecl, "__del__", refToSelf, ValueInputConvention::OwnedInMem,
           selfName, PassingKind::PosOnly, SpecialFunctionKind::kDel);
     }
   }
@@ -651,8 +652,10 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
   } else if (isMemoryOnly) {
     addCopyOrMoveBuiltinTrait(/*isCopy=*/false);
+    Type refToExisting =
+        ASTType(selfType).getRefForArgument("existing", /*isMut=*/true);
     moveFunc = addVoidMethod(
-        structDecl, "__moveinit__", {refToSelf, ptrToSelf},
+        structDecl, "__moveinit__", {refToSelf, refToExisting},
         {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem},
         {selfName, existingName}, {PassingKind::PosOnly, PassingKind::PosOnly},
         SpecialFunctionKind::kMoveInit);

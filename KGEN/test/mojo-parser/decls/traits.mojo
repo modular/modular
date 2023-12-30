@@ -42,7 +42,7 @@ trait Trait:
     fn f2(inout self: Self):
         pass
 
-    # CHECK: lit.func @"f3(,T)"[{{.*}}](%__result__[__result__]: !lit.ref<mut !object, {{.*}}> byref_result, |, %self[self]: !kgen.pointer<:!kgen.paramref<MT> T> owned_in_mem) throws -> !kgen.variant<!Error, none>
+    # CHECK: lit.func @"f3(,T)"[{{.*}}](%__result__[__result__]: !lit.ref<mut !object, {{.*}}> byref_result, |, %self[self]: !lit.ref<mut :!kgen.paramref<MT> T, {{.*}}> owned_in_mem) throws -> !kgen.variant<!Error, none>
     # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass
@@ -230,7 +230,7 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-LABEL: lit.func @"move_me
 # CHECK-SAME: <[[T:.*]][T]
 # CHECK-SAME: @Movable> [[T]], {{.*}}> byref_result
-# CHECK-SAME: @Movable> [[T]]> owned_in_mem
+# CHECK-SAME: @Movable> [[T]], {{.*}}> owned_in_mem
 fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: %0 = lit.ownership.end_lifetime %value
     # CHECK-NEXT: call_param[{{.*}}get_type_method({{.*}} [[T]], "__moveinit__")]{{.*}}(%__result__, %0)
@@ -397,9 +397,8 @@ trait OwnedArguments:
 struct NoDtor(OwnedArguments, DefaultConstructible):
     # CHECK-LABEL: lit.func @"`thunk_take
     fn take(owned self, owned x: RegTraitType):
-        # CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %self
-        # CHECK-NEXT: %1 = lit.load.consume %0
-        # CHECK-NEXT: lit.call {{.*}}take{{.*}}(%1, %x)
+        # CHECK-NEXT: %0 = lit.load.consume %self
+        # CHECK-NEXT: lit.call {{.*}}take{{.*}}(%0, %x)
         pass
 
     fn __init__() -> Self:
@@ -452,8 +451,7 @@ struct RegSpecial(Destructable, Copyable, Movable):
 
     # CHECK: lit.func @"`thunk___moveinit__
     # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} owned_in_mem
-    # CHECK-NEXT: unrealized
-    # CHECK-NEXT: [[V:%.*]] = lit.load.consume %2
+    # CHECK-NEXT: [[V:%.*]] = lit.load.consume %1
     # CHECK-NEXT: lit.ref.store [[V]], %0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial

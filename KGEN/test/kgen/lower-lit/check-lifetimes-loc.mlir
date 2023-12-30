@@ -7,17 +7,17 @@
 #loc = loc("foo.mlir":43:25)
 #loc1 = loc(fused<#subprogram>[#loc])
 
-lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> : !lit.signature<(!kgen.pointer<@S> owned_in_mem) -> !kgen.none>} {
+lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<mut @S, *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
 lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !lit.signature<(!kgen.pointer<@HasMemFields> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : !kgen.declref<@S>
 
-  lit.func @__del__(%self: !kgen.pointer<@HasMemFields> loc(#loc) owned_in_mem) -> !kgen.none {
-    // CHECK-DAG: %[[VAR0:.*]] = lit.struct.gep %self[a] : <@S> from <@HasMemFields> loc(#[[LOC]])
-    // CHECK-DAG: %[[VAR1:.*]] = lit.call @S::@__del__(%[[VAR0]])
-    lit.ownership.mark_destroyed %self : !kgen.pointer<@HasMemFields> loc(#loc1)
+  lit.func @__del__[dtorlife](%self: !lit.ref<mut @HasMemFields, dtorlife> loc(#loc) owned_in_mem) -> !kgen.none {
+    // CHECK-DAG: %[[VAR0:.*]] = lit.ref.struct.ger %self[a]
+    // CHECK-DAG: %[[VAR1:.*]] = lit.call @S::@__del__[dtorlife](%[[VAR0]])
+    lit.ownership.mark_destroyed %self : !lit.ref<mut @HasMemFields, dtorlife> loc(#loc1)
     %none = kgen.param.constant: none = <#kgen.none> loc(#loc1)
     // CHECK-DAG: kgen.return %{{.*}} : !kgen.none loc(#[[LOC]])
     kgen.return %none : !kgen.none loc(#loc1)

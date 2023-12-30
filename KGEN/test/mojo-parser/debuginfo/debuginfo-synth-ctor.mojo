@@ -42,9 +42,8 @@ trait Movable:
 
 # CHECK-DAG: lit.func @"__moveinit__{{.*}}::MyValueStruct=&,${{.*}}::MyValueStruct)"
 # CHECK-DAG:   [[VAL5:%.*]] = lit.ref.struct.ger %self[value] : {{.*}} loc(#[[MOVE_LOC:loc[0-9]*]])
-# CHECK-DAG:   [[VAL4:%.*]] = lit.struct.gep %other[value]
-# CHECK-DAG:   %2 = builtin.unrealized_conversion_cast [[VAL4]]
-# CHECK-DAG:   [[VAL3:%.*]] = lit.load.consume %2
+# CHECK-DAG:   [[VAL4:%.*]] = lit.ref.struct.ger %other[value]
+# CHECK-DAG:   [[VAL3:%.*]] = lit.load.consume [[VAL4]]
 # CHECK-DAG:   lit.ref.store [[VAL3]], [[VAL5:.*]] : {{.*}} loc(#[[MOVE_LOC]])
 
 # CHECK-DAG: #[[INIT_LOC]] = loc(fused<#[[SP_INIT]]>[#[[DEC_LOC:loc[0-9]*]]])

@@ -20,9 +20,8 @@
 
 # COM: Check that the closure wrapper parameter is bound to the struct parameter:
 # CHECK-NEXT:  %anonymous2A_0 = lit.varlet.decl
-# CHECK-NEXT: %1 = lit.ref.to_pointer %anonymous2A
-# CHECK-NEXT: lit.call @"${{.*}}"::@"_CW_{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]]_B, :!Int [[ALoc:.*]]_A>(%anonymous2A_0, %1)
-# CHECK-SAME: !lit.signature<[1]("self": !lit.ref<mut @"${{.*}}"::@"_CW_{{.*}}"<:!Int [[BLoc]]_B, :!Int [[ALoc]]_A>
+# CHECK-NEXT: lit.call @"${{.*}}"::@"_CW_{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]]_B, :!Int [[ALoc:.*]]_A>(%anonymous2A_0, %anonymous2A)
+# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<mut @"${{.*}}"::@"_CW_{{.*}}"<:!Int [[BLoc]]_B, :!Int [[ALoc]]_A>
 
 
 @value

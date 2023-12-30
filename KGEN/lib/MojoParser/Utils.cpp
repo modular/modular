@@ -86,10 +86,12 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     return false;
 
   // Allow signature types to be converted for free if they differ only in
-  // argument or parameter names.
-  if (from.getArgNames().size() != to.getInputConventions().size())
+  // argument names, parameter names, or implicit lifetimes.
+  if (from.getArgNames().size() != to.getArgNames().size())
     return false;
-  if (from.getParamNames().size() != to.getNumInputParams())
+  if (from.getNumInputParams() != to.getNumInputParams())
+    return false;
+  if (from.getInputConventions() != to.getInputConventions())
     return false;
 
   // Pos-or-kw arguments can be passed positionally.
@@ -102,10 +104,29 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     }
   }
 
-  auto newSig = LITSignatureType::get(
-      to.getValues(), to.getInputParamTypes(), to.getResultParamTypes(),
-      to.getInputConventions(), to.getFnEffects(), from.getMetadata());
-  return newSig == from;
+  // Result types, and input/result parameter types must match exactly.
+  if (from.getValueResults() != to.getValueResults() ||
+      from.getInputParamTypes() != to.getInputParamTypes() ||
+      from.getResultParamTypes() != to.getResultParamTypes() ||
+      from.getFnEffects() != to.getFnEffects())
+    return false;
+
+  // The input argument types may have different implicit lifetimes.
+  for (auto [fromTy, toTy, conv] :
+       llvm::zip(from.getValueInputs(), to.getValueInputs(),
+                 from.getInputConventions())) {
+    Type fromTyCmp = fromTy;
+    Type toTyCmp = toTy;
+    if (SignatureType::hasAddress(conv)) {
+      fromTyCmp = ASTType(fromTyCmp).getReferenceElementType();
+      toTyCmp = ASTType(toTyCmp).getReferenceElementType();
+    }
+    if (fromTyCmp != toTyCmp)
+      return false;
+  }
+
+  // Otherwise, everything seems compatible.
+  return true;
 }
 
 void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
@@ -173,7 +194,7 @@ bool LIT::canSynthesizeIfMissing(
   // Trivial types are not allowed to have explicit `__copyinit__` methods, so
   // if the trait requires them, consider them automatically satisfied by
   // trivial types.
-  if (rpTrivial && (name == "__copyinit__")) {
+  if (rpTrivial && name == "__copyinit__") {
     addSpecialFn(SpecialFunctionKind::kCopyInit);
     return true;
   }

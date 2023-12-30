@@ -747,39 +747,46 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   return emitPValueToSRValue({pValue, expr}, context);
 }
 
-MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
+XRValue ExprEmitter::emitXRValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
-  if (auto mr = value.ir.getIfMRValue())
-    return mr;
+  if (auto xr = value.ir.getIfXRValue())
+    return xr;
 
-  // Decay XRValues to MRValues on demand.
-  if (Value ref = value.ir.getIfXRValue()) {
+  // Cast MRValues to XRValues on demand.
+  if (Value ptr = value.ir.getIfMRValue()) {
     if (!builder) {
       emitErrorForDynamicValueInParameter(value.expr);
       return {};
     }
-    return MRValue(builder->create<RefToPointerOp>(
-        translateLocation(value.expr->getLoc()), ref));
+
+    // HACK: force convert to reference.
+    auto destTy = RefType::getRefForPointerHACK(
+        cast<PointerType>(ptr.getType()), /*isMut=*/true);
+    auto castOp = builder->create<mlir::UnrealizedConversionCastOp>(
+        ptr.getLoc(), destTy, ptr);
+    return XRValue(castOp.getResult(0));
   }
 
-  assert(value.ir.getIfPValue() && "expected a PValue if not an MRValue");
-  return emitPValueToMRValue({value.ir.getIfPValue(), value.expr}, context);
+  if (auto pv = value.ir.getIfPValue())
+    return emitPValueToXRValue({pv, value.expr}, context);
+  llvm_unreachable("unknown XRValue");
 }
 
 MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
-  if (auto ref = value.ir.getIfXRValue()) {
-    value.ir = emitMRValue(value, context);
-    if (!value.ir)
-      return {};
-  } else if (auto ref = value.ir.getIfXBValue()) {
+  if (value.ir.isXValue()) {
     if (!builder) {
       emitErrorForDynamicValueInParameter(value.expr);
       return {};
     }
+  }
+
+  if (auto ref = value.ir.getIfXRValue())
     return MBValue(
         builder->create<RefToPointerOp>(value.expr->getLocation(*this), ref));
-  }
+  if (auto ref = value.ir.getIfXBValue())
+    return MBValue(
+        builder->create<RefToPointerOp>(value.expr->getLocation(*this), ref));
 
   if (auto mb = value.ir.getIfMBValue())
     return mb;
@@ -787,8 +794,10 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
   if (auto mr = value.ir.getIfMRValue())
     return MBValue(mr);
 
-  assert(value.ir.getIfPValue() && "expected a PValue if not an MRValue");
-  return emitPValueToMRValue({value.ir.getIfPValue(), value.expr}, context);
+  if (auto pv = value.ir.getIfPValue())
+    return MBValue(emitPValueToMRValue({pv, value.expr}, context));
+
+  llvm_unreachable("unknown MBValue");
 }
 
 /// This helper emits the specified value as an XBValue which has
@@ -812,7 +821,7 @@ XBValue ExprEmitter::emitXBValue(ASTExprAnd<AnyValue> value,
   if (auto ptr = bValue.getIfMBValue()) {
     // HACK: force convert to reference.
     auto destTy = RefType::getRefForPointerHACK(
-        cast<PointerType>(ptr.getType().mlirType), /*isMut=*/false);
+        cast<PointerType>(ptr.getType().mlirType), /*isMut=*/true);
     if (!builder) {
       emitErrorForDynamicValueInParameter(value.expr);
       return {};
@@ -1722,13 +1731,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
         if (isa<DebugInfo::ValueOp>(user))
           continue;
         assert(!storedMem && "Should only have a single store");
-        if (auto storeOp = dyn_cast<POP::StoreOp>(user))
-          storedMem = storeOp.getPtr();
-        else {
-          auto store = cast<LIT::RefStoreOp>(user);
-          // TODO(references): Make OwnershipMarkDestroyedOp take a ref.
-          storedMem = MLValue(builder.create<RefToPointerOp>(store.getRef()));
-        }
+        storedMem = cast<LIT::RefStoreOp>(user).getRef();
       }
       // If we found it, then ownership has already transfered to the memory
       // object, so track it instead of the argument.

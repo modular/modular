@@ -21,8 +21,8 @@ struct MemType:
 # CHECK-NEXT:    lit.struct.field call : {{.*}}<[1](!lit.ref<mut !MemType, *[0,0]> byref_result, !kgen.pointer<none> borrow, |) -> !kgen.none>
 
 # CHECK-LABEL:   lit.func @"__del__
-# CHECK-NEXT:      [[PTR_TO_IMPL:%.*]] = lit.struct.gep %self[field0] : <pointer<none>>
-# CHECK-NEXT:      [[OPAQUE_IMPL:%.*]] = pop.load [[PTR_TO_IMPL]] : !kgen.pointer<pointer<none>>
+# CHECK-NEXT:      [[REF_TO_IMPL:%.*]] = lit.ref.struct.ger %self[field0]
+# CHECK-NEXT:      [[OPAQUE_IMPL:%.*]] = lit.ref.load [[REF_TO_IMPL]]
 # CHECK-NEXT:      %index0 = kgen.param.constant = <0>
 # CHECK-NEXT:      [[SCALAR_IMPL:%.*]] = pop.pointer_to_index [[OPAQUE_IMPL]] : !kgen.pointer<none> to !pop.scalar<index>
 # CHECK-NEXT:      [[INDEX_IMPL:%.*]] = pop.cast_to_builtin [[SCALAR_IMPL]] : !pop.scalar<index> to index
@@ -35,8 +35,8 @@ struct MemType:
 # CHECK-NEXT:      } else {
 # CHECK-NEXT:        hlcf.yield
 # CHECK-NEXT:      }
-# CHECK-NEXT:      [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
-# CHECK-NEXT:      [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
+# CHECK-NEXT:      [[DTOR_PTR:%.*]] = lit.ref.struct.ger %self[dtor]
+# CHECK-NEXT:      [[DTOR:%.*]] = lit.ref.load [[DTOR_PTR]]
 # CHECK-NEXT:      lit.call_signature [[DTOR]]([[OPAQUE_IMPL]])
 # CHECK-NEXT:      kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:      lit.ownership.mark_destroyed %self
@@ -71,28 +71,24 @@ struct MemType:
 
 # CHECK-LABEL:  lit.func @"__moveinit__
 # CHECK-NEXT:     [[M0:%.*]] = lit.ref.struct.ger %self[field0]
-# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.struct.gep %other[field0]
-# CHECK-NEXT:     %2 = builtin.unrealized_conversion_cast [[mov_existing_impl]]
-# CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume %2
+# CHECK-NEXT:     [[mov_existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
+# CHECK-NEXT:     [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]]
 # CHECK-NEXT:     lit.ref.store [[mov_loaded_existing_impl]], [[M0]]
 # CHECK-NEXT:     [[M1:%.*]] = lit.ref.struct.ger %self[dtor]
-# CHECK-NEXT:     [[M2:%.*]] = lit.struct.gep %other[dtor]
-# CHECK-NEXT:     %6 = builtin.unrealized_conversion_cast [[M2]]
-# CHECK-NEXT:     [[M3:%.*]] = lit.load.consume %6
+# CHECK-NEXT:     [[M2:%.*]] = lit.ref.struct.ger %other[dtor]
+# CHECK-NEXT:     [[M3:%.*]] = lit.load.consume [[M2]]
 # CHECK-NEXT:     lit.ref.store [[M3]], [[M1]]
 # CHECK-NEXT:     [[M4:%.*]] = lit.ref.struct.ger %self[copy]
-# CHECK-NEXT:     [[M5:%.*]] = lit.struct.gep %other[copy]
-# CHECK-NEXT:     %10 = builtin.unrealized_conversion_cast [[M5]]
-# CHECK-NEXT:     [[M6:%.*]] = lit.load.consume %10
+# CHECK-NEXT:     [[M5:%.*]] = lit.ref.struct.ger %other[copy]
+# CHECK-NEXT:     [[M6:%.*]] = lit.load.consume [[M5]]
 # CHECK-NEXT:     lit.ref.store [[M6]], [[M4]]
 # CHECK-NEXT:     [[M7:%.*]] = lit.ref.struct.ger %self[call]
-# CHECK-NEXT:     [[M8:%.*]] = lit.struct.gep %other[call]
-# CHECK-NEXT:     %14 = builtin.unrealized_conversion_cast [[M8]]
-# CHECK-NEXT:     [[M9:%.*]] = lit.load.consume %14
+# CHECK-NEXT:     [[M8:%.*]] = lit.ref.struct.ger %other[call]
+# CHECK-NEXT:     [[M9:%.*]] = lit.load.consume [[M8]]
 # CHECK-NEXT:     lit.ref.store [[M9]], [[M7]]
 # CHECK-NEXT:     %pointer = kgen.param.constant: pointer<none> = <0>
-# CHECK-NEXT:     [[V0:%.*]] = lit.struct.gep %other[field0] : <pointer<none>>
-# CHECK-NEXT:     pop.store %pointer, [[V0]] : !kgen.pointer<pointer<none>>
+# CHECK-NEXT:     [[V0:%.*]] = lit.ref.struct.ger %other[field0]
+# CHECK-NEXT:     lit.ref.store %pointer, [[V0]]
 # CHECK-NEXT:     [[V3:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:     lit.ownership.mark_destroyed %other
 

@@ -527,7 +527,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         actualType = cast<VariadicType>(actualType.mlirType).getElementType();
       if (convention != ValueInputConvention::OwnedInReg &&
           convention != ValueInputConvention::BorrowedInReg) {
-        actualType = cast<PointerType>(actualType.mlirType).getElementType();
+        actualType = actualType.getReferenceElementType();
       }
       actualType.print(os, forDiag);
 

@@ -251,8 +251,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         destructor.getLoc(), destructor.getBody());
     Value dtorSelf = destructor.getBody()->getArgument(0);
     // Return early if the impl is null.
-    Value dtorImpl = builder.create<POP::LoadOp>(
-        builder.create<StructGEPOp>(dtorSelf, impl));
+    Value dtorImpl = builder.create<RefLoadOp>(
+        builder.create<RefStructGEROp>(dtorSelf, impl));
     Type scalarIndex = POP::SIMDType::get(
         1,
         DTypeConstantAttr::get(ctx, KGENDType(KGENDType::ExtraCases::index)));
@@ -283,8 +283,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     builder.restoreInsertionPoint(insertionPoint);
     builder.create<CallSignatureOp>(
         noneType,
-        builder.create<POP::LoadOp>(
-            builder.create<StructGEPOp>(dtorSelf, dtor)),
+        builder.create<RefLoadOp>(
+            builder.create<RefStructGEROp>(dtorSelf, dtor)),
         /*implicitLifetimes=*/ArrayRef<TypedAttr>(), dtorImpl);
   }
 
@@ -328,12 +328,12 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         shared.translateLocation(moveCtrDecl->getLoc());
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
         translatedLocation, moveCtr.getBody());
-    Value copyExisting = moveCtr.getBody()->getArgument(1);
+    Value moveExisting = moveCtr.getBody()->getArgument(1);
     auto opaquePointerTypeAttr = M::PointerAttr::get(ctx, 0, opaquePtrType);
     Value nullPtr =
         builder.create<ParamConstantOp>(opaquePtrType, opaquePointerTypeAttr);
-    builder.create<POP::StoreOp>(
-        nullPtr, builder.create<StructGEPOp>(copyExisting, impl));
+    builder.create<RefStoreOp>(
+        nullPtr, builder.create<RefStructGEROp>(moveExisting, impl));
   }
   if (failed(populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
     return {};
@@ -482,7 +482,12 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     } else {
       initSigConventions.push_back(move ? ValueInputConvention::OwnedInMem
                                         : ValueInputConvention::BorrowedInMem);
-      initSigTypes.push_back(PointerType::get(rvalueType));
+      // TODO(references): make unconditional
+      if (move)
+        initSigTypes.push_back(rvalueType.getRefForArgument(
+            initSigNames.back().str(), /*isMut=*/true));
+      else
+        initSigTypes.push_back(PointerType::get(rvalueType));
     }
   }
 
@@ -536,8 +541,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
         ImplicitLocOpBuilder::atBlockBegin(dtor.getLoc(), dtor.getBody());
     auto selfArg = dtor.getArgument(0);
     for (auto fieldDecl : paramClosureCaptureFieldDecls) {
-      Value target = builder.create<StructGEPOp>(selfArg, fieldDecl);
-      target = builder.create<POP::LoadOp>(target);
+      Value target = builder.create<RefStructGEROp>(selfArg, fieldDecl);
+      target = builder.create<RefLoadOp>(target);
       builder.create<CaptureListDestroy>(target);
     }
     declOp.setDestructorAttr(dtor.getBoundSymbolRef());
@@ -748,18 +753,20 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   }
 
   // Bind the impl struct to the declared parameters.
-  auto closureImplType =
-      PointerType::get(makeClosureImplSelfType(closureImpl, totalInputParams));
+  ASTType closureImplType =
+      makeClosureImplSelfType(closureImpl, totalInputParams);
+  auto closureImplRefType =
+      closureImplType.getRefForArgument("existing", /*mut=*/true);
 
   SmallVector<PassingKind> paramPassingKinds(
       closureImpl.getInputParams().size(), PassingKind::PosOnly);
 
   // Create unique names for parameters.
-  if (auto init = findInitInStruct(closureWrapper, closureImplType))
+  if (auto init = findInitInStruct(closureWrapper, closureImplRefType))
     return init;
   ASTType wrapperType = makeClosureImplSelfType(closureWrapper, wrapperParams);
   SmallVector<Type> argTypes{
-      wrapperType.getRefForArgument("self", /*mut=*/true), closureImplType};
+      wrapperType.getRefForArgument("self", /*mut=*/true), closureImplRefType};
 
   // Then build all other information needed for the __init__ signature.
   SmallVector<ValueInputConvention> argConventions{
@@ -782,13 +789,13 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
 
   // Allocate memory on heap and copy argument into allocated memory.
-  Value target = allocateHeapMemory(closureImplType, builder);
+  Value target = allocateHeapMemory(PointerType::get(closureImplType), builder);
   Value source = init.getBody()->getArgument(1);
 
   // Copy the contents of the injected impl into the heap memory.
   ExprEmitter emitter(shared, moduleDecl, builder);
   ValueDest implDest(MLValue(target), EC_Assignment);
-  emitter.emitResult(MRValue(source), &node, implDest);
+  emitter.emitResult(XRValue(source), &node, implDest);
 
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(0);
@@ -898,7 +905,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
         closureImplTopLevelType, body->getArgument(0));
     //  TODO(references)
     auto destTy =
-        RefType::getRefForPointerHACK(closureImplTopLevelType, /*isMut=*/false);
+        RefType::getRefForPointerHACK(closureImplTopLevelType, /*isMut=*/true);
     auto castOp =
         builder.create<mlir::UnrealizedConversionCastOp>(destTy, implPtr)
             .getResult(0);

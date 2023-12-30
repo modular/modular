@@ -1991,6 +1991,10 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   if (valueRef.isAllPresent(consumedValues))
     return;
 
+  // If we have a RefToPointerOp, look through it to insert fewer casts.
+  if (auto refToPointer = value.getDefiningOp<RefToPointerOp>())
+    value = refToPointer.getOperand();
+
   // Get the type for the value so we can poke at it.
   // If a generic type or trivial, then emit a destructor call (or nothing).
   auto valueType = dyn_cast<DeclRefType>(valueRef.getValueType(value));
@@ -2040,18 +2044,15 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   LIT::StructDeclOp structDecl =
       valueSet.typeDeclInfo.getStructDeclForType(valueType);
 
-  // Convert lit.ref into pointers until
-  // TODO(references): pass references to destructors, not pointeres.
-  if (isa<RefType>(value.getType()))
-    value = builder.create<RefToPointerOp>(value);
-
   unsigned nextBit = 0;
   for (auto field : structDecl.getFieldDecls()) {
     Operation *fieldVal;
-    if (valueRef.isIndirect)
+    if (!valueRef.isIndirect)
+      fieldVal = builder.create<LIT::StructExtractOp>(value, field);
+    else if (isa<PointerType>(value.getType())) // TODO(references): remove ptrs
       fieldVal = builder.create<LIT::StructGEPOp>(value, field);
     else
-      fieldVal = builder.create<LIT::StructExtractOp>(value, field);
+      fieldVal = builder.create<RefStructGEROp>(value, field);
 
     unsigned numBits =
         valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
@@ -2278,7 +2279,17 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   assert(moveSig.getNumInputs() == 2);
   assert(moveSig.getInputConvention(1) == ValueInputConvention::OwnedInMem);
 
-  // TODO(references): reenable this assert when RefToPointerOp is removed.
+  /// ---
+  assert(isa<PointerType>(copyInitCall.getOperand(1).getType()) &&
+         "TODO(references): copyinit and moveinit use different signatures");
+  auto refValue = cast<RefType>(value.getType());
+  copyInitCall.setOperand(1, value);
+
+  // Update lifetimes while copyinit takes pointer source.
+  assert(copyInitCall.getImplicitLifetimes().size() == 1);
+  copyInitCall.setImplicitLifetimes(
+      {copyInitCall.getImplicitLifetimes()[0], refValue.getLifetime()});
+  // TODO(references): enable this
   // assert(moveSig.getValueInputs()[0] == value.getType() &&
   //       moveSig.getValueInputs()[1] == value.getType());
 
@@ -2314,6 +2325,17 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   if (succeeded(elideCopyDestroyPair(value, destroyedType, opWithUse)))
     return;
 
+  // If the input value is a pointer, cast it.
+  // TODO(references): remove this.
+  if (auto ptr = dyn_cast<PointerType>(value.getType())) {
+    // HACK: force convert to reference.
+    auto destTy = RefType::getRefForPointerHACK(ptr, /*isMut=*/true);
+    value = builder
+                .create<mlir::UnrealizedConversionCastOp>(
+                    ArrayRef<Type>(destTy), ArrayRef<Value>(value))
+                .getResult(0);
+  }
+
   auto signature = cast<SignatureType>(dtor.getType());
   assert(signature.getNumResults() == 1 &&
          "dtor should have one result (none type)");
@@ -2322,31 +2344,30 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   // We may have a @register_passable value indirect (e.g. because it is in a
   // var).  If so, it needs to be loaded to invoke the destructor.
   Value valueToDestroy = value;
-  if (auto ref = dyn_cast<RefType>(valueToDestroy.getType())) {
+  if (auto ref = dyn_cast<RefType>(valueToDestroy.getType()))
     if (signature.getValueInputs()[0] == ref.getElementType())
       valueToDestroy = builder.create<RefLoadOp>(valueToDestroy);
-    else
-      // TODO(references): pass references to destructors, not pointers.
-      valueToDestroy = builder.create<RefToPointerOp>(valueToDestroy);
+
+  // If the dtor takes a reference, then this the dtor for a memory type.  Bind
+  // the implicit lifetime of __del__'s self to the lifetime of the reference we
+  // have.
+  SmallVector<TypedAttr> implicitLifetimes;
+  if (auto delSelfTy = dyn_cast<RefType>(signature.getValueInputs()[0])) {
+    auto argRef = cast<RefType>(valueToDestroy.getType());
+    implicitLifetimes.push_back(argRef.getLifetime());
+    assert(delSelfTy.getElementType() == argRef.getElementType());
+  } else {
+    assert(signature.getValueInputs()[0] == valueToDestroy.getType());
   }
-
-  // TODO(references): remove this when pointers are gone.
-  if (valueToDestroy.getType() != signature.getValueInputs()[0])
-    valueToDestroy = builder.create<POP::LoadOp>(valueToDestroy,
-                                                 /*align*/ std::nullopt);
-
-  assert(signature.getValueInputs()[0] == valueToDestroy.getType());
 
   // Emit the call to the destructor.
   if (auto directDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
     builder.create<LIT::CallOp>(signature.getValueResults()[0], directDtor,
-                                /*implicitLifetimes*/ ArrayRef<TypedAttr>(),
-                                valueToDestroy);
+                                implicitLifetimes, valueToDestroy);
   } else {
     builder.create<LIT::CallParamOp>(signature.getValueResults()[0], dtor,
                                      /*paramDecls=*/std::nullopt,
-                                     /*implicitLifetimes=*/std::nullopt,
-                                     valueToDestroy);
+                                     implicitLifetimes, valueToDestroy);
   }
 }
 

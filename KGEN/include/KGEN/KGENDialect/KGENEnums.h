@@ -25,7 +25,8 @@ enum class EmissionKind : uint8_t { ASM, LLVM };
 /// lifetime.
 inline bool isArgumentPassedWithImplicitLifetime(ValueInputConvention conv) {
   if (conv == ValueInputConvention::ByRefResult ||
-      conv == ValueInputConvention::InitSelf)
+      conv == ValueInputConvention::InitSelf ||
+      conv == ValueInputConvention::OwnedInMem)
     return true;
   return false;
 }
