@@ -25,7 +25,8 @@ struct MemExample:
 
   # Destructor should not recurse.
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT:    lit.call {{.*}}noop{{.*}}(%self)
+  # CHECK-NEXT:    %0 = lit.ref.to_pointer %self
+  # CHECK-NEXT:    lit.call {{.*}}noop{{.*}}(%0)
   # CHECK-NEXT:    %none = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT:    lit.ownership.mark_destroyed %self
   # CHECK-NEXT:    kgen.return %none : !kgen.none
@@ -47,8 +48,7 @@ struct RegExample:
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
   # CHECK-NEXT: lit.ref.store %self, %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
-  # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
-  # CHECK-NEXT: lit.ownership.mark_destroyed [[SELFPTR]]
+  # CHECK-NEXT: lit.ownership.mark_destroyed %self_0
   # CHECK-NEXT: kgen.return
   fn __del__(owned self):
     pass
@@ -59,15 +59,14 @@ struct RegExample:
 fn consume(owned a: RegExample): pass
 
 # CHECK-LABEL: lit.func @"destructors
-# CHECK-SAME: (%arg0[arg0]: !kgen.pointer<!MemExample> owned_in_mem)
+# CHECK-SAME: (%arg0[arg0]: !lit.ref<mut !MemExample, {{.*}}> owned_in_mem)
 fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%arg0)
 
   # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1" var
   var mem1 = MemExample() # expected-warning {{consider switching to a 'let'}}
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem1)
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem1
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
 
   var mem2 = MemExample()
   # CHECK-NEXT: %mem2 = lit.varlet.decl "mem2" var
@@ -75,8 +74,7 @@ fn destructors(owned arg0: MemExample):
   mem2.noop()
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem2
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[PTR]])
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem2
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
 
   mem2 = MemExample()
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem2)
@@ -89,8 +87,7 @@ fn destructors(owned arg0: MemExample):
   mem2.noop()
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem2
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[PTR]])
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem2
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
 
   # CHECK-NEXT:  %mem3 = lit.varlet.decl "mem3"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem3)
@@ -99,14 +96,12 @@ fn destructors(owned arg0: MemExample):
   # Test pointless transfers from RValues.
 
   # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime %mem3
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[T1]]
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[T1]])
   consume(mem3^^^)
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%anonymous2A)
-  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[ANONPTR]])
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}(%anonymous2A)
   consume(MemExample()^)
 
 
@@ -117,22 +112,19 @@ fn if_examples(cond: __mlir_type.i1):
 
   # CHECK-NEXT: %b = lit.varlet.decl
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
   var b = MemExample()
 
   # CHECK: hlcf.if %cond {
   if cond:
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
-    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
     a = MemExample()
   # CHECK-NEXT: hlcf.yield
   # CHECK-NEXT: } else {
   else:
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
     b = MemExample()
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
@@ -142,8 +134,7 @@ fn if_examples(cond: __mlir_type.i1):
   var c = MemExample()
   # CHECK: hlcf.if %cond {
   if cond:
-    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
     c = MemExample()
   # CHECK-NEXT:   hlcf.yield
@@ -155,8 +146,7 @@ fn if_examples(cond: __mlir_type.i1):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
   # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
   c.noop()
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
   # CHECK-NEXT:  %d = lit.varlet.decl "d"
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
@@ -176,8 +166,7 @@ fn if_examples(cond: __mlir_type.i1):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %d
   # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
   d.noop()
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %d
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
 
 # CHECK-LABEL: lit.func @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
@@ -199,8 +188,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
   a.noop()  # ok
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
 
   # CHECK-NEXT: %b = lit.varlet.decl
   var b : MemExample
@@ -208,8 +196,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   try:
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
     b = MemExample()
-    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
     raise err
   # CHECK: } except (%arg0:
   # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
@@ -222,8 +209,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
 
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
   b = MemExample()
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
 
   # CHECK-NEXT: %c = lit.varlet.decl
   let c : MemExample
@@ -244,8 +230,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
   # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
   c.noop()
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
   # CHECK-NEXT: %d = lit.varlet.decl
   let d : MemExample
@@ -271,8 +256,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %d
   # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
   d.noop()
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %d
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
 
 # CHECK-LABEL: lit.func @"chris_lifetime_example
 fn chris_lifetime_example(a: Bool, b: Bool):
@@ -289,8 +273,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
                 raise Error()
         # CHECK: except
             # CHECK: hlcf.if
-                # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %x
-                # CHECK-NEXT: __del__{{.*}}([[PTR]])
+                # CHECK-NEXT: __del__{{.*}}(%x)
                 # CHECK: return
             # CHECK: else
             # CHECK: lit.try.raise
@@ -304,8 +287,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
     # CHECK: except
     except:
         # CHECK: [[DEAD:%.*]] = lit.ownership.end_lifetime %x
-        # CHECK: [[PTR:%.*]] = lit.ref.to_pointer [[DEAD]]
-        # CHECK: __del__{{.*}}([[PTR]])
+        # CHECK: __del__{{.*}}([[DEAD]])
         _ = x^
     # CHECK: else
         # CHECK-NEXT: lit.try.yield
@@ -340,10 +322,8 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
       # CHECK-NEXT: hlcf.break
       break
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   [[PTR:%.*]] = lit.ref.to_pointer %a
-    # CHECK-NEXT:   lit.call @{{.*}}__del__{{.*}}([[PTR]])
-    # CHECK-NEXT:   [[PTR:%.*]] = lit.ref.to_pointer %c
-    # CHECK-NEXT:   lit.call @{{.*}}__del__{{.*}}([[PTR]])
+    # CHECK-NEXT:   lit.call @{{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT:   lit.call @{{.*}}__del__{{.*}}(%c)
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: }
 
@@ -355,20 +335,17 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
   a.noop()
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
 
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
   # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
   b.noop()
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %b
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
 
   # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
   # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
   c.noop()
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %c
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
 
 
 # CHECK-LABEL: lit.func @"indirect_call
@@ -379,8 +356,7 @@ fn indirect_call[detail_fn: fn() -> MemExample]():
        # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem
        # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[PTR]])
        mem.noop()
-       # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %mem
-       # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[PTR]])
+       # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%mem)
 
 fn somethingThatRaises() raises: pass
 
@@ -405,8 +381,7 @@ fn test_parameterized():
   # CHECK: %x = lit.varlet.decl "x"
   let x = Parameterized[4]()
   # CHECK: lit.call {{.*}}@"__init__{{.*}}(%x)
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %x
-  # CHECK: lit.call {{.*}}__del__{{.*}}"<:!Int #lit.struct<{value = 4}>>([[PTR]])
+  # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int #lit.struct<{value = 4}>>(%x)
 
 struct Complicated:
   var a: MemExample
@@ -425,27 +400,24 @@ fn testTakePointeeAsOwned(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
   # This should run the destructor.
   # CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %ptr
   # CHECK-NEXT: [[REF:%.*]] = lit.ownership.end_lifetime %0
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF]])
   _ = __get_address_as_owned_value(ptr)
 
   # This should run the destructor and not get omitted.
-  # CHECK-NEXT: %4 = builtin.unrealized_conversion_cast %ptr
-  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.end_lifetime %4
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %ptr
+  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.end_lifetime %3
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF]])
   _ = __get_address_as_owned_value(ptr)
 
   # The RValue can be consumed directly.
-  # CHECK-NEXT: %8 = builtin.unrealized_conversion_cast %ptr
-  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.end_lifetime %8
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[PTR]])
+  # CHECK-NEXT: %6 = builtin.unrealized_conversion_cast %ptr
+  # CHECK-NEXT: [[REF:%.*]] = lit.ownership.end_lifetime %6
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[REF]])
   consume(__get_address_as_owned_value(ptr))
 
   # i1 doesn't have ownership but should still work for generality.
-  # CHECK-NEXT: %12 = builtin.unrealized_conversion_cast %i1ptr
-  # CHECK-NEXT: [[I1VAL:%.*]] = lit.load.consume %12
+  # CHECK-NEXT: %9 = builtin.unrealized_conversion_cast %i1ptr
+  # CHECK-NEXT: [[I1VAL:%.*]] = lit.load.consume %9
   # CHECK-NEXT: %ownedI1 = lit.letreg.decl "ownedI1" = [[I1VAL]]
   let ownedI1 = __get_address_as_owned_value(i1ptr)
 
@@ -460,8 +432,7 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
 
   # CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %ptr
   # CHECK-NEXT: [[REF:%.*]] = lit.ownership.make_ref_lvalue %0 live_on_entry = true, exit = true
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[REF]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
   __get_address_as_lvalue(ptr) = MemExample()
 
@@ -524,11 +495,12 @@ struct FieldSensitiveMemExample:
   # CHECK-LABEL: lit.func @"mutate
   fn mutate(inout self):
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
-    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
+    # CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
+    # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%1)
 
-    # CHECK-NEXT: %2 = lit.struct.gep %self[f1]
-    # CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %2
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%3)
+    # CHECK-NEXT: %3 = lit.struct.gep %self[f1]
+    # CHECK-NEXT: %4 = builtin.unrealized_conversion_cast %3
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%4)
     self.f1 = MemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
@@ -537,22 +509,25 @@ struct FieldSensitiveMemExample:
     # Disable the dtor of 'f1' before we overwrite it to show we can do this.
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
     # CHECK-NEXT: lit.ownership.def_lvalue %0
-    # CHECK-NEXT: lit.ownership.mark_destroyed %0
+    # CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
+    # CHECK-NEXT: lit.ownership.mark_destroyed %1
     __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-       __get_lvalue_as_address(self.f1)
+      __mlir_op.`builtin.unrealized_conversion_cast`[
+          _type= __mlir_type[`!lit.ref<mut `, MemExample, `, #lit.lifetime>`]](
+       __get_lvalue_as_address(self.f1))
     )
 
-    # CHECK-NEXT: %1 = lit.struct.gep %self[f1]
-    # CHECK-NEXT: %2 = builtin.unrealized_conversion_cast %1
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%2)
+    # CHECK-NEXT: %2 = lit.struct.gep %self[f1]
+    # CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %2
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%3)
     self.f1 = MemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
+  # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
-  # CHECK-NEXT: %2 = lit.struct.gep %self[f2]
+  # CHECK-NEXT: %2 = lit.ref.struct.ger %self[f2]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%2)
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
@@ -560,15 +535,19 @@ struct FieldSensitiveMemExample:
 # This disables the destructor of 'x' which causes the fields to be destroyed.
 # CHECK-LABEL: lit.func @"disableDtor
 fn disableDtor(owned x: FieldSensitiveMemExample):
-  # CHECK-NEXT: lit.ownership.def_lvalue %x
-  # CHECK-NEXT: %0 = lit.struct.gep %x[f1]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
-  # CHECK-NEXT: %2 = lit.struct.gep %x[f2]
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%2)
-  # CHECK-NEXT: lit.ownership.mark_destroyed %x
+  # CHECK-NEXT: %0 = lit.ref.to_pointer %x
+  # CHECK-NEXT: lit.ownership.def_lvalue %0
+  # CHECK-NEXT: %1 = lit.ref.struct.ger %x[f1]
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%1)
+  # CHECK-NEXT: %3 = lit.ref.struct.ger %x[f2]
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%3)
+  # CHECK-NEXT: %5 = builtin.unrealized_conversion_cast %0
+  # CHECK-NEXT: lit.ownership.mark_destroyed %5
   # CHECK-NEXT: kgen.param.constant: none
   __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-     __get_lvalue_as_address(x)
+    __mlir_op.`builtin.unrealized_conversion_cast`[
+          _type= __mlir_type[`!lit.ref<mut `, FieldSensitiveMemExample, `, #lit.lifetime>`]](
+       __get_lvalue_as_address(x))
   )
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
@@ -614,12 +593,10 @@ fn test_result_optimization():
   # CHECK: %__call_result_tmp__ = lit.varlet.decl
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: lit.call @"$ownership{{.*}}(%__call_result_tmp__, [[PTR]])
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[PTR]])
-  # CHECK-NEXT: %5 = lit.ref.to_pointer %__call_result_tmp__
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}(%example, %5)
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %__call_result_tmp__
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
+  # CHECK-NEXT: %4 = lit.ref.to_pointer %__call_result_tmp__
+  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}(%example, %4)
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%__call_result_tmp__)
   example = use_and_return(example)
 
   # Aliased reuse of part of the result slot forces a temporary.
@@ -629,16 +606,14 @@ fn test_result_optimization():
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: lit.call @"$ownership"::@"use_and_return2{{.*}}(%__call_result_tmp___0, [[PTR]])
   example.f1 = use_and_return2(example)
-  # CHECK-NEXT: [[F1_2:%.*]] = lit.struct.gep [[PTR]][f1]
+  # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger %example[f1]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1_2]])
-  # CHECK-NEXT: [[PTR2:%.*]] = lit.ref.to_pointer %__call_result_tmp___0
-  # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}([[F1]], [[PTR2]])
+  # CHECK-NEXT: lit.call @{{.*}}@"__moveinit__{{.*}}([[F1]], %__call_result_tmp___0)
 
   example.mutate()
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: lit.call @{{.*}}@"mutate{{.*}}([[PTR]])
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
-  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%example)
 
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
@@ -705,14 +680,12 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl
   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %example
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[PTR]])
-  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[ANONPTR]])
+  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}(%anonymous2A)
   consumeMem(example)
 
   # This does consume example, so no copy needed.
   # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime %example
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer [[CONSUME]]
-  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[PTR]])
+  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[CONSUME]])
   consumeMem(example^)
 
   # CHECK-NEXT: %example2 = lit.varlet.decl
@@ -720,8 +693,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   let example2 = MemExample()
 
   # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime %example2
-  # CHECK: [[PTR:%.*]] = lit.ref.to_pointer [[CONSUME]]
-  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, [[PTR]])
+  # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])
   # CHECK-NEXT: kgen.param.constant: none
   return example2^
 
@@ -753,16 +725,14 @@ struct BigRegExample:
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
   # CHECK-NEXT: lit.ref.store %self, %self_0
 
-  # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
-  # CHECK-NEXT: [[APTR:%.*]] = lit.struct.gep [[SELFPTR]][a]
-  # CHECK-NEXT: [[AVAL:%.*]] = pop.load [[APTR]]
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.struct.ger %self_0[a]
+  # CHECK-NEXT: [[AVAL:%.*]] = lit.ref.load [[APTR]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AVAL]])
-  # CHECK-NEXT: [[BPTR:%.*]] = lit.struct.gep [[SELFPTR]][b]
-  # CHECK-NEXT: [[BVAL:%.*]] = pop.load [[BPTR]]
+  # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self_0[b]
+  # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.load [[BPTR]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BVAL]])
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
-  # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
-  # CHECK-NEXT: lit.ownership.mark_destroyed [[SELFPTR]]
+  # CHECK-NEXT: lit.ownership.mark_destroyed %self_0
   # CHECK-NEXT: kgen.return
 
 
@@ -805,11 +775,10 @@ struct ExoticDelExample:
   fn __del__(owned self):
     # CHECK-NEXT: %self_0 = lit.varlet.decl "self" imp
     # CHECK-NEXT: lit.ref.store %self, %self_0
-    # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
 
     # self.b gets destroyed ASAP since it isn't used.
-    # CHECK-NEXT: [[BPTR:%.*]] = lit.struct.gep [[SELFPTR]][b]
-    # CHECK-NEXT: [[BVAL:%.*]] = pop.load [[BPTR]]
+    # CHECK-NEXT: [[BPTR:%.*]] = lit.ref.struct.ger %self_0[b]
+    # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.load [[BPTR]]
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BVAL]])
 
     # Test the condition
@@ -828,16 +797,14 @@ struct ExoticDelExample:
 
     # CHECK-NEXT: } else {
     # Destroy C automatically on the else side.
-    # CHECK-NEXT:  [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
-    # CHECK-NEXT:  [[CPTR:%.*]] = lit.struct.gep [[SELFPTR2]][c]
-    # CHECK-NEXT:  [[CVAL:%.*]] = pop.load [[CPTR]]
+    # CHECK-NEXT:  [[CPTR:%.*]] = lit.ref.struct.ger %self_0[c]
+    # CHECK-NEXT:  [[CVAL:%.*]] = lit.ref.load [[CPTR]]
     # CHECK-NEXT:  lit.call {{.*}}__del__{{.*}}([[CVAL]])
     # CHECK-NEXT:  hlcf.yield
     # CHECK-NEXT:}
 
     # CHECK-NEXT: = kgen.param.constant: none = <#kgen.none>
-    # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
-    # CHECK-NEXT:lit.ownership.mark_destroyed [[SELFPTR]]
+    # CHECK-NEXT:lit.ownership.mark_destroyed %self_0
     # CHECK-NEXT:kgen.return
 
 ##===----------------------------------------------------------------------===##
@@ -855,7 +822,7 @@ struct MemoryUniqueMovable:
   fn __moveinit__(inout self, owned other: Self):
     # Mercilessly steal 'other's state which could be interesting.
 
-    # CHECK-NEXT: %0 = lit.struct.gep %other[state]
+    # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
     # CHECK-NEXT: %1 = lit.ownership.end_lifetime %0
     # CHECK-NEXT: %2 = lit.ref.struct.ger %self[state]
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%2, %1)
@@ -952,8 +919,8 @@ fn takeOwnedInt(owned x: Int): pass
 
 # CHECK-LABEL: lit.func @"passFieldToOwnedInt
 fn passFieldToOwnedInt(owned a: MemExample):
-  # CHECK-NEXT: %0 = lit.struct.gep %a[x]
-  # CHECK-NEXT: %1 = pop.load %0
+  # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
+  # CHECK-NEXT: %1 = lit.ref.load %0
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT: lit.call {{.*}}takeOwnedInt{{.*}}(%1)
   takeOwnedInt(a.x)
@@ -1001,10 +968,8 @@ fn optimizeCopyElision():
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[PTR]])
   # CHECK-NEXT: %6 = lit.ref.to_pointer %x
   # CHECK-NEXT: kgen.param.declare
-  # CHECK-NEXT: %7 = builtin.unrealized_conversion_cast %6
-  # CHECK-NEXT: [[ANONPTR:%.*]] = lit.ref.to_pointer %anonymous2A
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer %7
-  # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANONPTR]], [[PTR]])
+  # CHECK-NEXT: [[PTR:%.*]] = builtin.unrealized_conversion_cast %6
+  # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}(%anonymous2A, [[PTR]])
   takeTwo(x, x)
 
   # CHECK-NEXT: kgen.param.constant: none
@@ -1021,23 +986,22 @@ fn optimizeCopyToMove():
    m1.noop()
 
    # CHECK: %m2 = lit.varlet.decl
-   # CHECK: [[PTR2:%.*]] = lit.ref.to_pointer %m1
-   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, [[PTR2]])
+   # CHECK-NEXT:  = lit.ref.to_pointer %m1
+   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
    var m2 = m1                   # expected-warning {{never mutated}}
    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %m2
    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[PTR]])
    m2.noop()
 
    # CHECK: %m3 = lit.varlet.decl
-   # CHECK: [[PTR2:%.*]] = lit.ref.to_pointer %m2
-   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, [[PTR2]])
+   # CHECK-NEXT: lit.ref.to_pointer %m2
+   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
    var m3 = m2                   # expected-warning {{never mutated}}
 
    # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %m3
    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[PTR]])
    m3.noop()
-   # CHECK: [[PTR:%.*]] = lit.ref.to_pointer %m3
-   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[PTR]])
+   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m3)
 
    # All the copyinit's should be removed.
 
@@ -1199,8 +1163,7 @@ struct RegExampleValue:
   # CHECK-NEXT: %self_0 = lit.varlet.decl "self"
   # CHECK-NEXT: lit.ref.store %self, %self_0
   # CHECK: kgen.param.constant: none
-  # CHECK: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
-  # CHECK: lit.ownership.mark_destroyed [[SELFPTR]]
+  # CHECK: lit.ownership.mark_destroyed %self_0
 
 
 

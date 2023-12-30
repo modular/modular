@@ -53,14 +53,12 @@ fn test_owned(owned x: RegPassable):
     # CHECK: %[[XREF:.*]] = lit.ref.load %[[XVAR]]
     # CHECK: %[[XCOPY:.*]] = lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}"(%[[XREF]])
     # CHECK: %[[XVAR2:.*]] = lit.varlet.decl
-    # CHECK: %[[XPTR2:.*]] = lit.ref.to_pointer %[[XVAR2]]
-    # CHECK: pop.store %[[XCOPY]], %[[XPTR2]] : !kgen.pointer<!RegPassable>
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XPTR2]])
+    # CHECK: lit.ref.store %[[XCOPY]], %[[XVAR2]]
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<:type !RegPassable>(%[[XVAR2]])
     owned_generic(x)
 
     # CHECK: %[[XMOVED:.*]] = lit.ownership.end_lifetime %[[XVAR]]
-    # CHECK: %[[XPTR3:.*]] = lit.ref.to_pointer %[[XMOVED]]
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XPTR3]])
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<:type !RegPassable>(%[[XMOVED]])
     owned_generic(x ^)
 
 
@@ -74,9 +72,8 @@ fn test_borrowed(borrowed x: RegPassable):
 
     # CHECK: %[[XCOPY:.*]] = lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}"(%x)
     # CHECK: %[[XVAR:.*]] = lit.varlet.decl
-    # CHECK: %[[XPTR:.*]] = lit.ref.to_pointer %[[XVAR]]
-    # CHECK: pop.store %[[XCOPY]], %[[XPTR]] : !kgen.pointer<!RegPassable>
-    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}"<:type !RegPassable>(%[[XPTR]])
+    # CHECK: lit.ref.store %[[XCOPY]], %[[XVAR]]
+    # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<:type !RegPassable>(%[[XVAR]])
     owned_generic(x)
 
 

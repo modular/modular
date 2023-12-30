@@ -3021,7 +3021,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
 
-  // __get_bvalue_as_address(someMBValue) returns an immutable !lit.ref.
+  // __get_bvalue_as_ref(someMBValue) returns an immutable !lit.ref.
   if (kind == kGetBValueAsRef) {
     XBValue result =
         emitter.emitXBValue({subExprValue, subExpr}, dest.getContext());

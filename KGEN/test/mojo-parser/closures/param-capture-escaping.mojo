@@ -10,8 +10,8 @@
 # CHECK-NEXT: lit.struct.field field1 : !kgen.capture_list<!lit.signature<() capturing -> !Int> : [[PARAMNAME]]>
 
 # CHECK: lit.func @"__del__
-# CHECK: [[GEP:%.*]] = lit.struct.gep %self[field1]
-# CHECK: [[CLIST:%.*]] = pop.load [[GEP]]
+# CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[field1]
+# CHECK: [[CLIST:%.*]] = lit.ref.load [[GEP]]
 # CHECK: kgen.capture_list.destroy [[CLIST]]
 
 # CHECK: lit.func @"__init__

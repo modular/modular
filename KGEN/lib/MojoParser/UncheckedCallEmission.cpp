@@ -236,7 +236,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       // If dealing with a memory-only type, remove the pointer.
       if (convention == ValueInputConvention::OwnedInMem ||
           convention == ValueInputConvention::BorrowedInMem)
-        varElType = cast<PointerType>(varElType).getElementType();
+        varElType = ASTType(varElType).getReferenceElementType();
       auto newVarType = VariadicType::get(
           varElType, AnyRegTypeType::get(emitter.getContext()));
       attr = VariadicAttr::get(args, newVarType);
@@ -525,20 +525,24 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Promote PValue's if needed.
     return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::OwnedInMem: {
-    // Promote SRValue to MRValue (in case of calling a generic function).
+    // Promote SRValue to XRValue (in case of calling a generic function).
+    XRValue result;
     if (SRValue srValue = argValAndExpr.ir.getIfSRValue()) {
       const ExprNode *expr = argValAndExpr.expr;
       Location argLoc = expr->getLocation(emitter);
       VarLetDeclOp varOp =
           emitter.emitVarLetDecl("__generic_arg__", srValue.getType(), argLoc,
                                  VarLetDeclKind::Var, /*isSynthetic=*/true);
-      auto ptr = emitter.builder->create<RefToPointerOp>(argLoc, varOp);
-      emitter.builder->create<POP::StoreOp>(argLoc, srValue, ptr);
-      return MRValue(ptr);
+      emitter.builder->create<RefStoreOp>(argLoc, srValue, varOp);
+      result = XRValue(varOp);
+    } else {
+      // Promote PValue's if needed.
+      result = emitter.emitXRValue(argValAndExpr, EC_CallArgValue);
     }
-
-    // Promote PValue's if needed.
-    return emitter.emitMRValue(argValAndExpr, EC_CallArgValue);
+    if (result)
+      implicitLifetimes.push_back(
+          cast<RefType>(result.getType()).getLifetime());
+    return result;
   }
   case ValueInputConvention::BorrowedInReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())

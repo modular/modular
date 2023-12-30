@@ -23,8 +23,7 @@ fn makes_escaping_closure(m: MemType, w: Int):
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
     # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[IMPL]], [[A]], %w)
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.varlet.decl "anonymous*" {{.*}}{isSynthetic}
-    # CHECK-NEXT: [[IMPL_PTR:%.*]] = lit.ref.to_pointer [[IMPL]]
-    # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[WRAPPER]], [[IMPL_PTR]])
+    # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[WRAPPER]], [[IMPL]])
     var a = w
 
     fn myclosure_with_reg_types(x: Int) escaping -> Int:

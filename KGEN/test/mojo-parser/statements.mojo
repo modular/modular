@@ -864,8 +864,7 @@ struct CMWithoutExit:
 fn testCMWithoutExit():
   # CHECK: %$CONTEXTMGR = lit.varlet.decl "$CONTEXTMGR"
   # CHECK: %a = lit.varlet.decl
-  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, [[CTXPTR]])
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, %$CONTEXTMGR)
   # CHECK-NEXT: lit.try {
   # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
@@ -884,8 +883,7 @@ fn testCMWithoutExit():
   # CHECK: %$CONTEXTMGR_0 = lit.varlet.decl "$CONTEXTMGR"
   # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR_0)
   # CHECK: %a_1 = lit.varlet.decl "a"
-  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR_0
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a_1, [[CTXPTR]])
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a_1, %$CONTEXTMGR_0)
   # CHECK-NEXT: lit.try {
   # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a_1
   # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])
@@ -914,8 +912,7 @@ fn testCMWithoutExitEarlyReturn():
   # CHECK: %$CONTEXTMGR = lit.varlet.decl "$CONTEXTMGR"
   # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR)
   # CHECK: %a = lit.varlet.decl "a"
-  # CHECK-NEXT: [[CTXPTR:%.*]] = lit.ref.to_pointer %$CONTEXTMGR
-  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, [[CTXPTR]])
+  # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%a, %$CONTEXTMGR)
   # CHECK-NEXT: lit.try {
   # CHECK-NEXT:   [[APTR1:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[APTR1]])

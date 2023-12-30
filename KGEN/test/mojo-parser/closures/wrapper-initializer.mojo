@@ -22,7 +22,7 @@ trait Movable:
 # CHECK-SAME: destructor =
 # CHECK-SAME: moveInit =
 
-# CHECK-LABEL: lit.func @"__init__{{.*}}(%self[self]: !lit.ref<mut !wrapper, *"`self"> init_self, %impl[impl]: !kgen.pointer<!escaping0_> owned_in_mem, |)
+# CHECK-LABEL: lit.func @"__init__{{.*}}(%self[self]: !lit.ref<mut !wrapper, *"`self"> init_self, %impl[impl]: !lit.ref<mut !escaping0_, {{.*}}> owned_in_mem, |)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[1](!lit.ref<mut !MemType, {{.*}}> byref_result, !kgen.pointer<none> borrow, |, "n": !kgen.pointer<!MemType> borrow_in_mem) -> !kgen.none
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]

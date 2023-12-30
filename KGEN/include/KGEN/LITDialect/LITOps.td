@@ -1673,7 +1673,7 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
     CheckLifetimes isn't field sensitive for register passable values.
   }];
 
-  let arguments = (ins PointerType:$value);
+  let arguments = (ins LIT_RefType:$value);
   let results = (outs);
   let assemblyFormat = "$value `:` type($value) attr-dict";
 }

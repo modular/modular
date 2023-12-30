@@ -1257,13 +1257,13 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     switch (convention) {
     // Arguments passed by-reference can be directly used.
     case ValueInputConvention::ByRef:
-    case ValueInputConvention::OwnedInMem:
-      // OwnedInMem passes ownership of the argument into the callee so we
-      // can directly mutate it if we want to.
       argIRValue = MLValue(bbArg);
       break;
     case ValueInputConvention::InitSelf:
     case ValueInputConvention::ByRefResult:
+    case ValueInputConvention::OwnedInMem:
+      // OwnedInMem passes ownership of the argument into the callee so we
+      // can directly mutate it if we want to.
       argIRValue = XLValue(bbArg);
       break;
     case ValueInputConvention::OwnedInReg:
@@ -1937,7 +1937,7 @@ static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
   // The argument is always owned.
   ValueInputConvention convention = ValueInputConvention::OwnedInReg;
   if (!selfType.isRegisterPassable(structDecl.getLoc(), resolver.shared)) {
-    selfType = PointerType::get(selfType);
+    selfType = selfType.getRefForArgument("self", /*isMut*/ true);
     convention = ValueInputConvention::OwnedInMem;
   }
 
@@ -2204,11 +2204,18 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     // Check for a `Self`-type argument. It would always be in-memory.
     if (conv == ValueInputConvention::OwnedInMem ||
         conv == ValueInputConvention::BorrowedInMem) {
-      if (cast<PointerType>(type).getElementType() != selfType) {
+      if (ASTType(type).getReferenceElementType().mlirType != selfType) {
         argTypes.push_back(type);
         conventions.push_back(conv);
         continue;
       }
+
+      // We'll be dropping the reference, so we'll drop the implicit lifetime.
+      if (conv == ValueInputConvention::OwnedInMem)
+        --numImplicitLifetimeDecls;
+      else
+        assert(!isa<RefType>(type) && "TODO: more references");
+
       // Unwrap the pointer type and update the convention.
       argTypes.push_back(selfType);
       conventions.push_back(conv == ValueInputConvention::OwnedInMem
@@ -2318,7 +2325,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       value = MLValue(arg);
       break;
     case ValueInputConvention::OwnedInMem:
-      value = MRValue(arg);
+      value = XRValue(arg);
       break;
     case ValueInputConvention::OwnedInReg:
       value = SRValue(arg);
@@ -2412,8 +2419,6 @@ static void synthesizeRegisterTraitStubs(
 static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
                                       SpecialFunctionKind kind) {
   StructEmitter gen(shared);
-  auto selfPtrType = PointerType::get(structDecl.getSelfType());
-
   auto selfRefType =
       structDecl.getSelfType().getRefForArgument("self", /*isMut=*/true);
   auto empty = StringAttr::get(shared.getContext());
@@ -2427,7 +2432,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // want check lifetimes to insert a call to the real destructor here, if it
     // has one.
     auto [dtor, decl] = gen.synthesizeMethodInStruct(
-        "__del__", selfPtrType, ValueInputConvention::OwnedInMem, empty,
+        "__del__", selfRefType, ValueInputConvention::OwnedInMem, empty,
         PassingKind::PosOnly, shared.getNoneType(), structDecl, kind,
         FnEffects(), "`thunk_");
     func = dtor;
@@ -2445,8 +2450,15 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
       llvm_unreachable("unexpected special function kind to synthesize");
     }
     StringRef name = SpecialFunctionInfo::get(kind).name;
+    Type existingType;
+    if (kind == SpecialFunctionKind::kMoveInit)
+      existingType = structDecl.getSelfType().getRefForArgument("existing",
+                                                                /*isMut=*/true);
+    else // FIXME: Eliminate when 'borrowed' moves.
+      existingType = PointerType::get(structDecl.getSelfType());
+
     auto [ctor, decl] = gen.synthesizeMethodInStruct(
-        name, {selfRefType, selfPtrType},
+        name, {selfRefType, existingType},
         {ValueInputConvention::InitSelf, otherConv}, {empty, empty},
         {PassingKind::PosOnly, PassingKind::PosOnly}, shared.getNoneType(),
         structDecl, kind, FnEffects(), "`thunk_");
@@ -2454,16 +2466,9 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // In every case, the implementation is a load+store.
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
     Value value;
-    if (kind == SpecialFunctionKind::kMoveInit) {
-      // TODO: byref references
-      auto ptrType = cast<PointerType>(func.getArgument(1).getType());
-      // HACK: force convert to reference.
-      auto destTy = RefType::getRefForPointerHACK(ptrType, /*isMut=*/false);
-      auto castOp = b.create<mlir::UnrealizedConversionCastOp>(
-                         destTy, func.getArgument(1))
-                        .getResult(0);
-      value = b.create<LIT::LoadConsumeOp>(castOp);
-    } else
+    if (kind == SpecialFunctionKind::kMoveInit)
+      value = b.create<LIT::LoadConsumeOp>(func.getArgument(1));
+    else
       value = b.create<POP::LoadOp>(func.getArgument(1));
     b.create<RefStoreOp>(value, func.getArgument(0));
   }

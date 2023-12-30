@@ -386,7 +386,8 @@ struct MutatingAdd:
 
 # CHECK-LABEL: lit.func @"testMutatingAdd
 fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
-  # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%a, %b)
+  # CHECK-NEXT: %0 = lit.ref.to_pointer %a
+  # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%0, %b)
   a + b
 
 
@@ -395,20 +396,20 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"ownedConventionMem
-# CHECK-SAME: (%a[a]: !kgen.pointer<!StructWithInit> owned_in_mem,
+# CHECK-SAME: (%a[a]: !lit.ref<mut !StructWithInit, {{.*}}> owned_in_mem,
 # CHECK-SAME:  %b[b]: !kgen.pointer<!StructWithInit> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
-    # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
-    # CHECK: %1 = pop.load [[AX]]
+    # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
+    # CHECK: %1 = lit.ref.load [[AX]]
     _ = a.x
     # CHECK: [[BY:%.*]] = lit.struct.gep %b[y]
     # CHECK: = pop.load [[BY]]
     _ = b.y
 
     # It is ok to mutate owned values.
-    # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
+    # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}} = 4
-    # CHECK-NEXT: pop.store [[FOUR]], [[AX]]
+    # CHECK-NEXT: lit.ref.store [[FOUR]], [[AX]]
     a.x = 4
 
 
@@ -879,7 +880,7 @@ struct ShadowsOuterName:
 
 # CHECK-LABEL: lit.struct.decl @ValueMem(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
 # CHECK-SAME: moveInit = #kgen.symbol.constant<{{.*}}ValueMem::@"__moveinit__
-# CHECK-SAME: !kgen.signature<!lit.signature<[1]({{.*}} init_self, {{.*}} owned_in_mem, |)
+# CHECK-SAME: !kgen.signature<!lit.signature<[2]({{.*}} init_self, {{.*}} owned_in_mem, |)
 @value
 struct ValueMem:
     var a: Int  # Trivial
@@ -913,17 +914,15 @@ struct ValueMem:
 
 # CHECK: lit.func @"__moveinit__(
 # CHECK-SAME:  %self[self]: !lit.ref<mut !ValueMem, {{.*}}> init_self,
-# CHECK-SAME:  %other[other]: !kgen.pointer<!ValueMem> owned_in_mem, |)
+# CHECK-SAME:  %other[other]: !lit.ref<mut !ValueMem, {{.*}}> owned_in_mem, |)
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
-# CHECK-NEXT: %1 = lit.struct.gep %other[a]
-# CHECK-NEXT: %2 = builtin.unrealized_conversion_cast %1
-# CHECK-NEXT: %3 = lit.load.consume %2
-# CHECK-NEXT: lit.ref.store %3, %0
-# CHECK-NEXT: %4 = lit.ref.struct.ger %self[b]
-# CHECK-NEXT: %5 = lit.struct.gep %other[b]
-# CHECK-NEXT: %6 = builtin.unrealized_conversion_cast %5
-# CHECK-NEXT: %7 = lit.load.consume %6
-# CHECK-NEXT: lit.ref.store %7, %4
+# CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
+# CHECK-NEXT: %2 = lit.load.consume %1
+# CHECK-NEXT: lit.ref.store %2, %0
+# CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
+# CHECK-NEXT: %4 = lit.ref.struct.ger %other[b]
+# CHECK-NEXT: %5 = lit.load.consume %4
+# CHECK-NEXT: lit.ref.store %5, %3
 # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(trait<@{{.*}}::@Copyable>, trait<@{{.*}}::@Movable>) attributes {
@@ -1241,8 +1240,7 @@ struct MemType: pass
 # CHECK-NEXT: %0 = lit.call {{.*}}__init__{{.*}}(%anonymous2A)
 # CHECK-NEXT: [[GLOBAL:%.*]] = lit.globalvar.ref
 # CHECK-NEXT: [[GLOBALREF:%.*]] = builtin.unrealized_conversion_cast [[GLOBAL]]
-# CHECK-NEXT: %3 = lit.ref.to_pointer %anonymous2A
-# CHECK-NEXT: = lit.call {{.*}}__moveinit__{{.*}}([[GLOBALREF]], %3) :
+# CHECK-NEXT: = lit.call {{.*}}__moveinit__{{.*}}([[GLOBALREF]], %anonymous2A) :
 let mem_global: MemType = MemType()
 # CHECK-LABEL: lit.globalvar.decl @mem_global_implicit {{.*}} isVar
 # CHECK-NEXT: %0 = lit.globalvar.ref
@@ -1270,7 +1268,8 @@ struct DtorMemType:
 # CHECK-label: lit.globalvar.decl @mem_dtor : !kgen.declref<@"$decls"::@DtorMemType> {
 # CHECK: }, {
 # CHECK-NEXT: %0 = lit.globalvar.ref
-# CHECK-NEXT: %1 = lit.call {{.*}}__del__{{.*}}(%0)
+# CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
+# CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%1)
 var mem_dtor = DtorMemType()
 
 fn borrowGlobalInt(x: Int): pass
@@ -1293,8 +1292,7 @@ fn refGlobals():
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
     # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} : !lit.ref<mut !MemType
     # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF]])
-    # CHECK-NEXT: %10 = lit.ref.to_pointer %anonymous2A
-    # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%10)
+    # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
     copyGlobalMem(mem_global)
 
 # CHECK: lit.globalvar.decl export @exported_alias {{.*}} {linkageName = "exported_global"}
