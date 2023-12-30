@@ -330,25 +330,18 @@ private:
 };
 raw_ostream &operator<<(raw_ostream &os, ORValue value);
 
-template <typename DerivedType>
-struct VariantValueStorage {
+struct VariantValueStorageBase {
   /// These are all the forms of storage we can have.
   using Storage = SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
                                XRValue, ORValue, SBValue, MBValue, XBValue,
                                DLValue, MLValue, XLValue>;
 
-  VariantValueStorage()
+  VariantValueStorageBase()
       : storage(NullRepresentation()) {} // All are default constructible.
 
   bool isNull() const { return isa<NullRepresentation>(storage); }
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
-
-  static DerivedType getFromStorage(const Storage &storage) {
-    DerivedType result;
-    result.storage = storage;
-    return result;
-  }
 
   Storage &getStorage() { return storage; }
   const Storage &getStorage() const { return storage; }
@@ -359,17 +352,29 @@ struct VariantValueStorage {
   }
   // Return true if this is one of the memory representation.
   bool isMValue() const {
-    return isa<MBValue>(storage) || isa<MBValue>(storage) ||
+    return isa<MBValue>(storage) || isa<MRValue>(storage) ||
            isa<MLValue>(storage);
   }
   // Return true if this is one of the reference representation.
   bool isXValue() const {
-    return isa<XBValue>(storage) || isa<XBValue>(storage) ||
+    return isa<XBValue>(storage) || isa<XRValue>(storage) ||
            isa<XLValue>(storage);
   }
 
+  /// Given an XValue, return the underlying reference.
+  Value getXValueReference() const;
+
 protected:
   Storage storage;
+};
+
+template <typename DerivedType>
+struct VariantValueStorage : public VariantValueStorageBase {
+  static DerivedType getFromStorage(const Storage &storage) {
+    DerivedType result;
+    result.storage = storage;
+    return result;
+  }
 };
 
 template <typename DerivedType>

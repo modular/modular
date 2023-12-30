@@ -2452,16 +2452,12 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   bool isRegister = false;
   if (auto ptr = argValue.getIfMLValue())
     value = ptr;
-  else if (auto ref = argValue.getIfXLValue())
-    value = ref;
+  else if (argValue.isXValue())
+    value = argValue.getXValueReference();
   else if (auto mb = argValue.getIfMBValue())
     value = mb;
   else if (auto mr = argValue.getIfMRValue())
     value = mr;
-  else if (auto mb = argValue.getIfXBValue())
-    value = mb;
-  else if (auto xr = argValue.getIfXRValue())
-    value = xr;
   else if (auto sb = argValue.getIfSBValue())
     value = sb, isRegister = true;
   else if (auto sr = argValue.getIfSRValue())
@@ -3024,14 +3020,47 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
 
-  // __get_bvalue_as_ref(someMBValue) returns an immutable !lit.ref.
-  if (kind == kGetBValueAsRef) {
-    XBValue result =
-        emitter.emitXBValue({subExprValue, subExpr}, dest.getContext());
-    if (!result)
+  // __get_ref_from_value(someValue) returns a !lit.ref for something with a
+  // reference representation.
+  if (kind == kGetRefFromValue) {
+    // TODO(references): remove support for MBValue.
+    if (subExprValue.getIfMBValue() || subExprValue.getIfPValue()) {
+      subExprValue =
+          emitter.emitXBValue({subExprValue, subExpr}, dest.getContext());
+      if (!subExprValue)
+        return {};
+    }
+    if (subExprValue.isMValue()) {
+      emitter.emitError(getLoc(), "unsupported value type") << getRange();
       return {};
+    }
+    if (subExprValue.isSValue()) {
+      emitter.emitError(getLoc(), "cannot get a reference to a register value")
+          << getRange();
+      return {};
+    }
+    assert(subExprValue.isXValue() && "Unknown value type");
+
+    Value refValue = subExprValue.getXValueReference();
+    // If this is a BValue, make sure the reference is non-mutable since we're
+    // exposing it to the user.
+    if (subExprValue.getIfXBValue()) {
+      auto refType = cast<RefType>(refValue.getType());
+      if (refType.getIsMutable()) {
+        if (!emitter.builder) {
+          emitter.emitErrorForDynamicValueInParameter(this);
+          return {};
+        }
+
+        // TODO: Use a nice lit.lifetime.upcast op?
+        refValue = emitter.builder->create<RebindOp>(
+            emitter.translateLocation(getLoc()),
+            refType.getWithMutability(false), refValue);
+      }
+    }
+
     // Return the XBValue as an SRValue since the ref itself is the result.
-    return emitter.emitResult(SRValue(result), this, dest);
+    return emitter.emitResult(SRValue(refValue), this, dest);
   }
 
   // __get_address_as_lvalue and __get_address_as_uninit_lvalue and

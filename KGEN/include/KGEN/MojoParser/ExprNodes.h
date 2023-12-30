@@ -612,7 +612,7 @@ struct FunctionTypeNode final : public ExprNode {
 };
 
 /// __get_lvalue_as_address(someMLValue)      # returns pop.pointer
-/// __get_bvalue_as_ref(someMXValue)          # returns lit.ref
+/// __get_ref_from_value(someMemValue)        # returns lit.ref
 /// __get_address_as_lvalue(pop_pointer)      # returns MLValue
 /// __get_address_as_owned_value(pop_pointer) # returns RValue
 struct AddressConvertNode final : public ExprNode {

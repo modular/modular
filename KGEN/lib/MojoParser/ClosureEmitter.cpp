@@ -813,8 +813,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
     auto selfVal = init.getBody()->getArgument(0);
     auto funcMember = builder.create<RefStructGEROp>(
-        cast<RefType>(selfVal.getType()).getWithElementReplaced(fieldType),
-        fieldName, selfVal);
+        cast<RefType>(selfVal.getType()).getWithElement(fieldType), fieldName,
+        selfVal);
     TypedAttr funcSymbol = topLevelFunc.getBoundReference(
         ParameterExprArrayAttr::get(ctx, totalInputParams));
     if (funcSymbol.getType() != fieldType)
@@ -993,20 +993,16 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 Value Capture::getMlirValue() const {
   if (auto v = value.getIfMLValue())
     return v;
-  if (auto v = value.getIfXLValue())
-    return v;
-  if (auto v = value.getIfXBValue())
-    return v;
   if (auto v = value.getIfMBValue())
     return v;
   if (auto v = value.getIfSBValue())
-    return v;
-  if (auto v = value.getIfXRValue())
     return v;
   if (auto v = value.getIfMRValue())
     return v;
   if (auto v = value.getIfSRValue())
     return v;
+  if (value.isXValue())
+    return value.getXValueReference();
 
   return {};
 }

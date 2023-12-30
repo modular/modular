@@ -306,10 +306,13 @@ def LIT_RefType : LITType<"Ref", "ref"> {
     PointerType getAsPointerType();
 
     /// Return this RefType but with a different element type.
-    RefType getWithElementReplaced(Type newElement);
+    RefType getWithElement(Type newElement);
 
     /// Return this RefType but with a different lifetime.
-    RefType getWithLifetimeReplaced(TypedAttr newLifetime);
+    RefType getWithLifetime(TypedAttr newLifetime);
+
+    /// Return this RefType but with a different mutability.
+    RefType getWithMutability(bool isMut);
 
     /// Given the specified pointer type, return a reference type of the same
     /// element but with a hacked lifetime.

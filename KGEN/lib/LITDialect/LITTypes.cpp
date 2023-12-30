@@ -357,13 +357,18 @@ PointerType RefType::getAsPointerType() {
 }
 
 /// Return this RefType but with a different element type.
-RefType RefType::getWithElementReplaced(Type newElement) {
+RefType RefType::getWithElement(Type newElement) {
   return get(getIsMutable(), newElement, getLifetime());
 }
 
 /// Return this RefType but with a different lifetime.
-RefType RefType::getWithLifetimeReplaced(TypedAttr newLifetime) {
+RefType RefType::getWithLifetime(TypedAttr newLifetime) {
   return get(getIsMutable(), getElementType(), newLifetime);
+}
+
+/// Return this RefType but with a different mutability.
+RefType RefType::getWithMutability(bool isMut) {
+  return get(isMut, getElementType(), getLifetime());
 }
 
 /// Given the specified pointer type, return a reference type of the same
