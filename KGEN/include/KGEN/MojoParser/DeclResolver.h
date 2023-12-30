@@ -47,8 +47,8 @@ enum class PassingKind : uint32_t;
 /// This stores declaration references (e.g. vardecls, structdecls, funcdecls)
 /// as operations.  It stores RValues for parameters and SSA values as an
 /// RValue.
-using DeclIRValue = PointerUnion<Operation *, PValue, SRValue, MRValue, SBValue,
-                                 MBValue, MLValue, XLValue>;
+using DeclIRValue = PointerUnion<Operation *, PValue, SRValue, SBValue, MBValue,
+                                 MLValue, XRValue, XLValue>;
 
 class DeclResolver : public SharedStateUser {
 public:
