@@ -1,92 +1,92 @@
 // RUN: kgen-opt %s -split-input-file -check-lifetimes -verify-diagnostics | FileCheck %s
 
-lit.file_module @check_lifetimes {
-  // struct Struct:
-  lit.struct.decl @Struct {
-    //   var a: __mlir_type.index
-    lit.struct.field a : index
 
-    //   fn __init__(inout self: Self):
-    //     self.a = 1
-    lit.func @"__init__check_lifetimes:Struct=&)"(%self: !kgen.pointer<@check_lifetimes::@Struct> init_self) -> !kgen.none attributes {isStatic} {
-      %0 = lit.struct.gep %self[a] : <index> from <@check_lifetimes::@Struct>
-      %idx1 = index.constant 1
-      pop.store %idx1, %0 : !kgen.pointer<index>
+// struct Struct:
+lit.struct.decl @Struct attributes {
+  destructor = #kgen.symbol.constant<@Struct::@__del__> : !lit.signature<[1](!lit.ref<mut @Struct, *[0,0]> owned_in_mem) -> !kgen.none>}
+{
+  //   var a: __mlir_type.index
+  lit.struct.field a : index
 
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
-
-    // fn __copyinit__(inout self, existing: Self):
-    lit.func @__copyinit__(
-        %self: !kgen.pointer<@check_lifetimes::@Struct> init_self,
-        %existing: !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none {
-      %0 = lit.struct.gep %existing[a] : <index> from <@check_lifetimes::@Struct>
-      %1 = pop.load %0 : !kgen.pointer<index>
-      %2 = lit.struct.gep %self[a] : <index> from <@check_lifetimes::@Struct>
-      pop.store %1, %2 : !kgen.pointer<index>
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
-
-    // fn __del__(owned self): pass
-    lit.func @__del__[dellife](%self: !lit.ref<mut @check_lifetimes::@Struct, dellife> owned_in_mem) -> !kgen.none {
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
-  }
-
-  // fn useDtor(a: Struct, owned b: Struct):
-
-  // CHECK-LABEL: lit.func @useDtor
-  lit.func @useDtor(
-    %a: !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem,
-    %b: !lit.ref<mut @check_lifetimes::@Struct, #lit.lifetime> owned_in_mem) -> !kgen.none {
-
-    // b.a = 42
-    // CHECK-NEXT: %0 = lit.ref.struct.ger %b[a]
-    %b_a = lit.ref.struct.ger %b[a] : <mut index, #lit.lifetime> from @check_lifetimes::@Struct
-    %idx42 = index.constant 42
-    lit.ref.store %idx42, %b_a : !lit.ref<mut index, #lit.lifetime>
-
-
-    // var c = Struct()
-    // expected-warning @+1 {{'c' was declared as a 'var' but never mutated, consider switching to a 'let'}}
-    %c = lit.varlet.decl "c" var : !lit.ref<mut @check_lifetimes::@Struct, *"life">
-    %1 = lit.ref.to_pointer %c : !lit.ref<mut @check_lifetimes::@Struct, *"life">
-    %0 = lit.call @check_lifetimes::@Struct::@"__init__check_lifetimes:Struct=&)"(%1) : !lit.signature<(!kgen.pointer<@check_lifetimes::@Struct> byref_result) -> !kgen.none>
+  //   fn __init__(inout self: Self):
+  //     self.a = 1
+  lit.func @__init__[selflife](%self: !lit.ref<mut @Struct, selflife> init_self) -> !kgen.none attributes {isStatic} {
+    %0 = lit.ref.struct.ger %self[a] : <mut index, selflife> from @Struct
+    %idx1 = index.constant 1
+    lit.ref.store %idx1, %0 : !lit.ref<mut index, selflife>
 
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
 
-  // fn indirectCall(a: Struct):
-  lit.func @indirectCall(%a: !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) {
-    // @noncapturing fn byrefResultFn(x: Struct) -> Struct:
-    lit.func byrefResultFn(
-        %result: !kgen.pointer<@check_lifetimes::@Struct> byref_result,
-        %x: !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) {
-      lit.call @check_lifetimes::@Struct::@__copyinit__(%result, %x)
-          : !lit.signature<(!kgen.pointer<@check_lifetimes::@Struct> byref_result,
-                            !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none>
-      kgen.return
-    }
+  // fn __copyinit__(inout self, existing: Self):
+  lit.func @__copyinit__[selflife](
+      %self: !lit.ref<mut @Struct, selflife> init_self,
+      %existing: !kgen.pointer<@Struct> borrow_in_mem) -> !kgen.none {
+    %0 = lit.struct.gep %existing[a] : <index> from <@Struct>
+    %1 = pop.load %0 : !kgen.pointer<index>
+    %2 = lit.ref.struct.ger %self[a] : <mut index, selflife> from @Struct
+    lit.ref.store %1, %2 : !lit.ref<mut index, selflife>
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
 
-    // var c = byrefResultFn(x)
-    %callee = kgen.create_closure[!lit.signature<(
-        !kgen.pointer<@check_lifetimes::@Struct> byref_result,
-        !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none>: byrefResultFn]()
-    %c = lit.varlet.decl "c" var : !lit.ref<mut @check_lifetimes::@Struct, *"life">
-    %1 = lit.ref.to_pointer %c : !lit.ref<mut @check_lifetimes::@Struct, *"life">
-    lit.call_signature %callee(%1, %a) :
-        !lit.signature<(!kgen.pointer<@check_lifetimes::@Struct> byref_result,
-         !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> !kgen.none>
+  // fn __del__(owned self): pass
+  lit.func @__del__[dellife](%self: !lit.ref<mut @Struct, dellife> owned_in_mem) -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
+}
 
-    %0 = lit.ref.struct.ger %c[a] : <mut index, *"life"> from @check_lifetimes::@Struct
-    lit.ref.load %0 : !lit.ref<mut index, *"life">
+// fn useDtor(a: Struct, owned b: Struct):
 
+// CHECK-LABEL: lit.func @useDtor
+lit.func @useDtor(
+  %a: !kgen.pointer<@Struct> borrow_in_mem,
+  %b: !lit.ref<mut @Struct, #lit.lifetime> owned_in_mem) -> !kgen.none {
+
+  // b.a = 42
+  // CHECK-NEXT: %0 = lit.ref.struct.ger %b[a]
+  %b_a = lit.ref.struct.ger %b[a] : <mut index, #lit.lifetime> from @Struct
+  %idx42 = index.constant 42
+  lit.ref.store %idx42, %b_a : !lit.ref<mut index, #lit.lifetime>
+
+
+  // var c = Struct()
+  // expected-warning @+1 {{'c' was declared as a 'var' but never mutated, consider switching to a 'let'}}
+  %c = lit.varlet.decl "c" var : !lit.ref<mut @Struct, *"life">
+  %0 = lit.call @Struct::@__init__[life](%c) : !lit.signature<[1](!lit.ref<mut @Struct, *[0,0]> init_self) -> !kgen.none>
+
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// fn indirectCall(a: Struct):
+lit.func @indirectCall(%a: !kgen.pointer<@Struct> borrow_in_mem) {
+  // @noncapturing fn byrefResultFn(x: Struct) -> Struct:
+  lit.func byrefResultFn(
+      %result: !kgen.pointer<@Struct> byref_result,
+      %x: !kgen.pointer<@Struct> borrow_in_mem) {
+    lit.call @Struct::@__copyinit__(%result, %x)
+        : !lit.signature<(!kgen.pointer<@Struct> byref_result,
+                          !kgen.pointer<@Struct> borrow_in_mem) -> !kgen.none>
     kgen.return
   }
+
+  // var c = byrefResultFn(x)
+  %callee = kgen.create_closure[!lit.signature<(
+      !kgen.pointer<@Struct> byref_result,
+      !kgen.pointer<@Struct> borrow_in_mem) -> !kgen.none>: byrefResultFn]()
+  %c = lit.varlet.decl "c" var : !lit.ref<mut @Struct, *"life">
+  %1 = lit.ref.to_pointer %c : !lit.ref<mut @Struct, *"life">
+  lit.call_signature %callee(%1, %a) :
+      !lit.signature<(!kgen.pointer<@Struct> byref_result,
+        !kgen.pointer<@Struct> borrow_in_mem) -> !kgen.none>
+
+  %0 = lit.ref.struct.ger %c[a] : <mut index, *"life"> from @Struct
+  lit.ref.load %0 : !lit.ref<mut index, *"life">
+
+  kgen.return
 }
 
 // -----
