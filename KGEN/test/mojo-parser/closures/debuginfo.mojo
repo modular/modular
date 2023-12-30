@@ -17,9 +17,7 @@
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m)
 # CHECK-NEXT:    %anonymous2A_0 = lit.varlet.decl "anonymous*" var : !lit.ref<mut !wrapper
 # CHECK-NEXT:    %1 = lit.call {{.*}}CW{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A)
-# CHECK-NEXT:    %2 = lit.ref.to_pointer %anonymous2A_0
-# CHECK-NEXT:    %3 = builtin.unrealized_conversion_cast %2
-# CHECK-NEXT:     = lit.call {{.*}}CW{{.*}}__moveinit__{{.*}}(%__result__, %3) {{.*}}
+# CHECK-NEXT:     = lit.call {{.*}}CW{{.*}}__moveinit__{{.*}}(%__result__, %anonymous2A_0)
 
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
 

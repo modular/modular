@@ -375,12 +375,8 @@ InputParamBindings::verifyBindings(
                                                fitness.numImplicitConversions,
                                                emitter, evaluator);
       if (!pValue)
-        if (diagEmitter.emitPosType) {
+        if (diagEmitter.emitPosType)
           diagEmitter.emitPosType(index, binding, expectedType);
-          pValue = emitSingleParameterValue(binding, expectedType,
-                                            fitness.numImplicitConversions,
-                                            emitter, evaluator);
-        }
       return pValue;
     };
 

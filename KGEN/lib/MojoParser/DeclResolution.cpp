@@ -1074,9 +1074,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
               "escaping closures cannot have input or result parameters yet");
         if (auto closure =
                 emitClosureInstance(signature, shared, decl, decl.getLoc())) {
-          // TODO(lifetimes): Add a XRValue representation to ASTDecl
-          auto closureRef = b.create<RefToPointerOp>(closure.getLoc(), closure);
-          decl.irValue = MRValue(closureRef);
+          decl.irValue = XRValue(closure);
         } else
           return failure();
       } else {
