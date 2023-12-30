@@ -278,6 +278,7 @@ LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 OptionalParseResult LifetimeType::parseValue(AsmParser &p,
                                              TypedAttr &result) const {
+  // Handle names, and index references.
   if (succeeded(p.parseOptionalStar())) {
     std::string str;
     // Resolve ambiguity with *"...".
@@ -293,6 +294,23 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
     result = ImplicitLifetimeRefAttr::get(p.getContext(), depth, index);
     return mlir::success();
   }
+
+  // Handle unions as comma separated elements in braces.
+  if (succeeded(p.parseOptionalLBrace())) {
+    SmallVector<TypedAttr> elements;
+    if (p.parseCommaSeparatedList(
+            AsmParser::Delimiter::None,
+            [&]() {
+              elements.push_back({});
+              return KGEN::parseParamValue(p, elements.back(), *this);
+            },
+            "in lifetime union") ||
+        p.parseRBrace())
+      return failure();
+    result = LifetimeUnionAttr::get(p.getContext(), elements);
+    return mlir::success();
+  }
+
   return std::nullopt;
 }
 
@@ -301,6 +319,20 @@ LogicalResult LifetimeType::printValue(AsmPrinter &p, TypedAttr value) const {
     p << "*[" << ref.getDepth() << ',' << ref.getIndex() << ']';
     return success();
   }
+
+  if (auto unionAttr = ::dyn_cast<LifetimeUnionAttr>(value)) {
+    // We know unions always have >1 element.
+    p << "{";
+    printParamValue(p, unionAttr.getOperand(0));
+    for (auto operand : unionAttr.getOperands().drop_front()) {
+      p << ", ";
+      printParamValue(p, operand);
+    }
+
+    p << "}";
+    return success();
+  }
+
   return failure();
 }
 

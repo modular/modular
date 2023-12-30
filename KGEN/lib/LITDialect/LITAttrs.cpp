@@ -376,6 +376,78 @@ TypedAttr BindTypeAttr::get(MLIRContext *ctx, TypedAttr typeValue,
 Type LifetimeAttr::getType() const { return LifetimeType::get(getContext()); }
 
 //===----------------------------------------------------------------------===//
+// LifetimeUnionAttr
+//===----------------------------------------------------------------------===//
+
+Type LifetimeUnionAttr::getType() const {
+  return LifetimeType::get(getContext());
+}
+
+TypedAttr LifetimeUnionAttr::get(MLIRContext *context,
+                                 ArrayRef<TypedAttr> operands) {
+  return get(context, operands, LifetimeType::get(context));
+}
+
+TypedAttr LifetimeUnionAttr::get(MLIRContext *context,
+                                 ArrayRef<TypedAttr> operandsIn, Type type) {
+  assert(::isa<LifetimeType>(type) &&
+         "#lit.lifetime.union always has !lit.lifetime type");
+
+  // Canonicalize the operands, sorting by name/index and eliminating raw
+  // #lit.lifetime members.
+  SmallVector<TypedAttr> operands(operandsIn);
+
+  // Preprocess operands.
+  for (size_t i = 0, e = operands.size(); i != e; ++i) {
+    assert(::isa<LifetimeType>(operands[i].getType()) &&
+           "all members of a lifetime union must have !lit.lifetime type");
+    // Drop #lit.lifetime, they carry no information.
+    if (::isa<LifetimeAttr>(operands[i])) {
+      operands[i] = operands.back();
+      operands.pop_back();
+      --e, --i;
+      continue;
+    }
+
+    // Flatten any of the same operation into the operand list:
+    // `(union x, (union y, z))` => `(union x, y, z)`.
+    if (auto subexpr = ::dyn_cast<LifetimeUnionAttr>(operands[i])) {
+      operands[i] = operands.back();
+      operands.pop_back();
+      operands.append(subexpr.getOperands().begin(),
+                      subexpr.getOperands().end());
+      // No need to check these operands, they've already been checked when
+      // the subunion was formed.
+      --e, --i;
+      continue;
+    }
+  }
+
+  // Impose an ordering on the operands, sorting by name where possible - but
+  // predictably ordered w.r.t. each other.
+  llvm::stable_sort(operands, ParameterAttr::compare);
+
+  // Remove duplicates which will now be sorted next to each other.
+  if (operands.size() > 1) {
+    for (size_t i = 0, e = operands.size() - 1; i != e; ++i) {
+      if (operands[i] != operands[i + 1])
+        continue;
+
+      operands.erase(operands.begin() + i + 1);
+      --e, --i;
+    }
+  }
+
+  // If no results, return a plain lifetime attr.
+  if (operands.empty())
+    return LifetimeAttr::get(context);
+  if (operands.size() == 1)
+    return operands[0];
+
+  return LifetimeUnionAttr::Base::get(context, operands);
+}
+
+//===----------------------------------------------------------------------===//
 // ImplicitLifetimeRefAttr
 //===----------------------------------------------------------------------===//
 

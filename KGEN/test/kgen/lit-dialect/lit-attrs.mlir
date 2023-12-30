@@ -112,3 +112,38 @@ kgen.generator @unpacked<T: type>() {
   %c = kgen.param.constant: !lit.unpacked<:type T> = <#lit.unpacked<?>>
   kgen.return
 }
+
+// CHECK-LABEL: @lifetime_union
+kgen.generator @lifetime_union<x: !lit.lifetime, y: !lit.lifetime>() {
+  // CHECK-NEXT: %a = lit.varlet.decl
+  %a = lit.varlet.decl "a" imp : !lit.ref<mut index, z>
+
+  // CHECK-NEXT: "a"() {a = #lit.lifetime : !lit.lifetime} : () -> ()
+  "a"() {a = #lit.lifetime.union<#lit.lifetime> : !lit.lifetime} : () -> ()
+  // CHECK-NEXT: "b"() {a = #kgen.param.decl.ref<"x"> : !lit.lifetime}
+  "b"() {a = #lit.lifetime.union<#lit.lifetime,
+                                 #kgen.param.decl.ref<"x"> :!lit.lifetime>
+        : !lit.lifetime} : () -> ()
+  // CHECK-NEXT: "c"() {a = #lit.lifetime.union<#kgen.param.decl.ref<"x"> : !lit.lifetime, #kgen.param.decl.ref<"y"> : !lit.lifetime> : !lit.lifetime} : () -> ()
+  "c"() {a = #lit.lifetime.union<#lit.lifetime,
+                                 #kgen.param.decl.ref<"x"> :!lit.lifetime,
+                                 #kgen.param.decl.ref<"y"> :!lit.lifetime>
+        : !lit.lifetime} : () -> ()
+
+  // CHECK-NEXT: kgen.param.declare nothing: lifetime = <#lit.lifetime>
+  kgen.param.declare nothing: !lit.lifetime = <#lit.lifetime>
+  // CHECK-NEXT:  kgen.param.declare nothing_2: lifetime = <#lit.lifetime>
+  kgen.param.declare nothing_2: !lit.lifetime = <{#lit.lifetime, #lit.lifetime}>
+  // CHECK-NEXT: kgen.param.declare x_ref: lifetime = <x>
+  kgen.param.declare x_ref: !lit.lifetime = <x>
+  // CHECK-NEXT: kgen.param.declare x_ref2: lifetime = <x>
+  kgen.param.declare x_ref2: !lit.lifetime = <*"x">
+  // CHECK-NEXT: kgen.param.declare x_or_y_ref: lifetime = <{x, y}>
+  kgen.param.declare x_or_y_ref: !lit.lifetime = <{x, y, x}>
+  // CHECK-NEXT: kgen.param.declare y_ref: lifetime = <y>
+  kgen.param.declare y_ref: !lit.lifetime = <{y, #lit.lifetime}>
+  // CHECK-NEXT: kgen.param.declare xyz_ref: lifetime = <{x, y, z}>
+  kgen.param.declare xyz_ref: !lit.lifetime = <{{x, y}, {z, y}}>
+
+  kgen.return
+}
