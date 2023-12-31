@@ -500,6 +500,7 @@ def testInExpr(x, y):
 struct CopyAndInitMemType:
   fn __init__(inout self): pass
   fn __copyinit__(inout self, other: Self): pass
+  # expected-note @+1 {{function declared here}}
   fn __le__(self, other: Self) -> Self: return self
   fn __mlir_i1__(self) -> __mlir_type.i1: pass
 
@@ -520,6 +521,13 @@ fn return_metatype_problem() -> CopyAndInitMemType:
   # expected-error @+1 {{cannot implicitly convert 'CopyAndInitMemType' value to 'CopyAndInitMemType' in return value}}
   return CopyAndInitMemType
 
-fn test_bad_ref(a: Int):
+fn test_bad_ref(a: Int, b: CopyAndInitMemType):
   # expected-error @+1 {{cannot get a reference to a register value}}
   _ = __get_ref_from_value(a)
+
+  let bref = __get_ref_from_value(b) # ok
+  # expected-error @+1 {{expression must be mutable in assignment}}
+  __get_value_from_ref(bref) = CopyAndInitMemType()
+
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'ref[#lit.lifetime] CopyAndInitMemType' to 'CopyAndInitMemType'}}
+  _ = b <= bref

@@ -59,12 +59,13 @@ public:
     kSynthetic,      // There is no source corresponding to the IR.
 
     // Address conversions
+    kGetRefFromValue,          // __get_ref_from_value(x): like `&x` in C.
+    kGetValueFromRef,          // __get_value_from_ref(x): like `*x` in C.
     kGetLValueAsAddress,       // __get_lvalue_as_address(x)
-    kGetRefFromValue,          // __get_ref_from_value(x)
     kGetAddressAsLValue,       // __get_address_as_lvalue(x)
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
-    kFirstAddressConvert = kGetLValueAsAddress,
+    kFirstAddressConvert = kGetRefFromValue,
     kLastAddressConvert = kGetAddressAsOwned,
 
     // Prefix and Postfix unary expressions.

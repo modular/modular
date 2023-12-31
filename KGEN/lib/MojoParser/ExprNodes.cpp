@@ -3063,6 +3063,24 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return emitter.emitResult(SRValue(refValue), this, dest);
   }
 
+  // __get_value_from_ref(someRef) returns a LValue/BValue for a reference.
+  if (kind == kGetValueFromRef) {
+    SRValue ref = emitter.emitSRValue({subExprValue, subExpr},
+                                      ExprContext::EC_ValueFromRef);
+    if (!ref)
+      return {};
+
+    auto refType = dyn_cast<RefType>(ref.getType().mlirType);
+    if (!refType) {
+      emitter.emitError(getLoc(), "operand must have reference type, not ")
+          << ref.getType() << getRange();
+      return {};
+    }
+    auto result =
+        refType.getIsMutable() ? AnyValue(XLValue(ref)) : XBValue(ref);
+    return emitter.emitResult(result, this, dest);
+  }
+
   // __get_address_as_lvalue and __get_address_as_uninit_lvalue and
   // __get_address_as_owned_value all take a !kgen.pointer.
   CRValue exprRVal =
