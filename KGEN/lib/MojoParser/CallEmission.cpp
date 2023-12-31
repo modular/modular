@@ -9,11 +9,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/CallEmission.h"
+
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/OverloadFitness.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "Utils.h"
+#include "MojoUtils.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"

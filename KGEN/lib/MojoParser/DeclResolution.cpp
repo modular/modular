@@ -18,9 +18,10 @@
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/StructEmitter.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "MojoUtils.h"
 #include "ParsedArgument.h"
+
 #include "Support/Compiler/OperationUtils.h"
-#include "Utils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/Support/SourceMgr.h"

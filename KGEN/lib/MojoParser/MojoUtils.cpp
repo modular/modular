@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Utils.h"
+#include "MojoUtils.h"
 
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -80,6 +80,24 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     return false;
   }
 
+  // Check reference downcasting.
+  if (auto fromRef = dyn_cast<RefType>(fromType))
+    if (auto toRef = dyn_cast<RefType>(toType)) {
+      // Element types have to be exactly equal.
+      if (!ASTType(fromRef.getElementType())
+               .isEqualCanon(toRef.getElementType()))
+        return false;
+      // We can convert from mutable to immutable, but not the other way.
+      if (fromRef.getIsMutable() != toRef.getIsMutable() &&
+          toRef.getIsMutable())
+        return false;
+      // We can convert lifetimes to a superset of lifetimes.
+      auto toLifetime = toRef.getLifetime();
+      auto lifetimeUnion = LifetimeUnionAttr::get(
+          toRef.getContext(), {toLifetime, fromRef.getLifetime()});
+      return toLifetime == lifetimeUnion;
+    }
+
   auto from = dyn_cast<LITSignatureType>(fromType);
   auto to = dyn_cast<LITSignatureType>(toType);
   if (!from || !to)
@@ -121,12 +139,56 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
       fromTyCmp = ASTType(fromTyCmp).getReferenceElementType();
       toTyCmp = ASTType(toTyCmp).getReferenceElementType();
     }
-    if (fromTyCmp != toTyCmp)
+    if (!ASTType(fromTyCmp).isEqualCanon(toTyCmp))
       return false;
   }
 
   // Otherwise, everything seems compatible.
   return true;
+}
+
+/// Returns a type if there is a shared supertype for the two specified types,
+/// e.g. two derived classes may have the same base class even if neither is
+/// convertible to the other.  This returns null if there is no common type.
+///
+/// This is the implementation logic of getZeroCostCommonType and shouldn't be
+/// called directly.
+static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
+                                         ASTType type2) {
+  // Check reference downcasting.
+  if (auto type1Ref = dyn_cast<RefType>(type1))
+    if (auto type2Ref = dyn_cast<RefType>(type2)) {
+      // Element types have to be exactly equal.
+      auto eltType = type1Ref.getElementType();
+      if (!ASTType(eltType).isEqualCanon(type2Ref.getElementType()))
+        return {};
+
+      // If so, we can form a common type with a subset of their mutability and
+      // a union of their lifetimes.
+      auto lifetime = LifetimeUnionAttr::get(
+          type1Ref.getContext(),
+          {type1Ref.getLifetime(), type2Ref.getLifetime()});
+      return RefType::get(type1Ref.getIsMutable() & type2Ref.getIsMutable(),
+                          eltType, lifetime);
+    }
+
+  // No common type found.
+  return {};
+}
+
+/// Returns a type if there is a shared supertype for the two specified types,
+/// e.g. two derived classes may have the same base class even if neither is
+/// convertible to the other.  This returns null if there is no common type.
+ASTType LIT::getZeroCostCommonType(SharedState &shared, ASTType type1,
+                                   ASTType type2) {
+  if (auto result = getZeroCostCommonTypeImpl(shared, type1, type2)) {
+    // Make sure we can always convert to the common type!
+    assert(canZeroCostConvert(shared, type1, result) &&
+           canZeroCostConvert(shared, type2, result) &&
+           "cannot convert to common type?");
+    return result;
+  }
+  return {};
 }
 
 void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,

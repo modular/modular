@@ -9,15 +9,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/OverloadFitness.h"
-#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "Utils.h"
+#include "MojoUtils.h"
 
 #include "KGEN/LITDialect/LITOps.h"
-
+#include "KGEN/LITDialect/LITUtils.h"
 #include "llvm/ADT/StringSet.h"
 
 #define DEBUG_TYPE "LITEXPRCALLS"
