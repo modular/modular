@@ -1268,8 +1268,8 @@ fn lvalue_utilities(inout a: Int):
   __get_address_as_lvalue(addr) = 42
   let val = __get_address_as_lvalue(addr)
 
-# CHECK-LABEL: lit.func @"bvalue_utilities
-fn bvalue_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt):
+# CHECK-LABEL: lit.func @"ref_utilities
+fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt):
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
   # CHECK-NEXT: [[MV:%.*]] = builtin.unrealized_conversion_cast %a
@@ -1293,7 +1293,8 @@ fn bvalue_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt):
   # CHECK: %ref4 = lit.letreg.decl "ref4" = %localVar
   let ref4 = __get_ref_from_value(localVar)
 
-
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%ref2, %a)
+  __get_value_from_ref(ref2) = a
 
 struct CallableStruct:
     var value: Int
