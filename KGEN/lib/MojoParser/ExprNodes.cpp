@@ -15,8 +15,8 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "MojoUtils.h"
 #include "ParsedArgument.h"
-#include "Utils.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -2227,6 +2227,19 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
   if (!lhsConvertibleToRHS && rhsConvertibleToLHS) {
     rhs = convert({rhs, rhsExpr}, lhsType, /*isLHS*/ false);
     return failure(!rhs);
+  }
+
+  // If neither is convertible to the other, check to see if there is a common
+  // type, and convert both of them to it if so.
+  if (!lhsConvertibleToRHS && !rhsConvertibleToLHS) {
+    if (auto commonType =
+            getZeroCostCommonType(emitter.shared, lhsType, rhsType)) {
+      lhs = convert({lhs, lhsExpr}, commonType, /*isLHS*/ true);
+      if (!lhs)
+        return failure();
+      rhs = convert({rhs, rhsExpr}, commonType, /*isLHS*/ false);
+      return failure(!rhs);
+    }
   }
 
   // Otherwise we have an error.  If we have no source location, we just return

@@ -1269,7 +1269,9 @@ fn lvalue_utilities(inout a: Int):
   let val = __get_address_as_lvalue(addr)
 
 # CHECK-LABEL: lit.func @"ref_utilities
-fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt):
+fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
+                 inout c: MemoryOnlyInt,
+                 cond: __mlir_type.i1):
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
   # CHECK-NEXT: [[MV:%.*]] = builtin.unrealized_conversion_cast %a
@@ -1295,6 +1297,24 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt):
 
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%ref2, %a)
   __get_value_from_ref(ref2) = a
+
+  # CHECK-NEXT: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, {*"`b", *"`c"}> {
+  # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, *"`b"> {
+  # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref1
+  # CHECK-NEXT:     hlcf.yield [[TMP]]
+  # CHECK-NEXT:   } else {
+  # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref2
+  # CHECK-NEXT:     hlcf.yield [[TMP]]
+  # CHECK-NEXT:   }
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[COMMONINNER]]
+  # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, *"`b"> to !lit.ref<!MemoryOnlyInt, {*"`b", *"`c"}>
+  # CHECK-NEXT:    hlcf.yield [[TMP]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %c
+  # CHECK-NEXT:   hlcf.yield [[TMP:%.*]]
+  # CHECK-NEXT: }
+  # CHECK-NEXT: %ref5 = lit.letreg.decl "ref5" = [[COMMON]]
+  let ref5 = ref1 if cond else ref2 if cond else __get_ref_from_value(c)
 
 struct CallableStruct:
     var value: Int

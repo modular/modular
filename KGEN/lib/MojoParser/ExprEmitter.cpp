@@ -14,7 +14,7 @@
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "Utils.h"
+#include "MojoUtils.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"

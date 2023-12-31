@@ -18,6 +18,7 @@ add_modular_library(MojoParser
   ExprNodes.cpp
   IRValues.cpp
   Lexer.cpp
+  MojoUtils.cpp
   OverloadFitness.cpp
   ParsedArgument.cpp
   ParserBase.cpp
@@ -27,7 +28,6 @@ add_modular_library(MojoParser
   SharedState.cpp
   StructEmitter.cpp
   UncheckedCallEmission.cpp
-  Utils.cpp
 
   DEPENDS
   KGENVersion
