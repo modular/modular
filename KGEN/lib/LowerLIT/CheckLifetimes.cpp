@@ -476,7 +476,11 @@ struct ValueSet {
 
   /// Given a pointer or value that is being accessed by an operation, return
   /// the ValueRef for the object being tracked or null if untracked.
-  ValueRef getValueRef(Value value) const;
+  ///
+  /// 'isDeref' indicates that this is an indirect use of the specified value,
+  /// which matters in the case of references.  When false, this is a use of a
+  /// possibly-owned register value.
+  ValueRef getValueRef(Value value, bool isDeref) const;
 
   /// Return the total number of bits we need to track in the bitvector.
   unsigned getNumTotalBits() const {
@@ -568,7 +572,17 @@ void ValueSet::dump() const {
 
 /// Given a pointer that is being accessed indirectly by an operation, return
 /// the value number being referenced, or zero if not tracked.
-ValueRef ValueSet::getValueRef(Value value) const {
+///
+/// 'isDeref' indicates that this is an indirect use of the specified value,
+/// which matters in the case of references.  When false, this is a use of a
+/// possibly-owned register value.
+ValueRef ValueSet::getValueRef(Value value, bool isDeref) const {
+  // If this is testing a reference value (not the dereference value) then it is
+  // ignored: references can be passed around and used with the contents being
+  // liveness tracked, the ultimate accesses are what matter.
+  if (!isDeref && isa<RefType>(value.getType()))
+    return {};
+
   // If this is a value we're tracking, return it.
   auto it = valueInfoIndex.find(value);
   if (it != valueInfoIndex.end())
@@ -577,7 +591,7 @@ ValueRef ValueSet::getValueRef(Value value) const {
   // If this is a GEP, check the base and focus in on a field of it.
   // TODO(references) remove this.
   if (auto structGEP = value.getDefiningOp<LIT::StructGEPOp>()) {
-    ValueRef baseVal = getValueRef(structGEP.getContainer());
+    ValueRef baseVal = getValueRef(structGEP.getContainer(), isDeref);
     if (!baseVal || !baseVal.isIndirect)
       return {};
 
@@ -594,7 +608,7 @@ ValueRef ValueSet::getValueRef(Value value) const {
 
   // If this is a GER, check the base and focus in on a field of it.
   if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
-    ValueRef baseVal = getValueRef(structGER.getContainer());
+    ValueRef baseVal = getValueRef(structGER.getContainer(), isDeref);
     if (!baseVal || !baseVal.isIndirect)
       return {};
 
@@ -612,7 +626,7 @@ ValueRef ValueSet::getValueRef(Value value) const {
   // If this is a load from a lifetime tracked indirect value, then this is a
   // borrow of that value.
   if (auto load = value.getDefiningOp<POP::LoadOp>())
-    if (auto valueRef = getValueRef(load.getPtr())) {
+    if (auto valueRef = getValueRef(load.getPtr(), /*isDeref=*/true)) {
       if (valueRef.isIndirect) {
         // The parser doesn't emit all the lifetime stuff for trivial types,
         // so don't track them either.
@@ -625,7 +639,7 @@ ValueRef ValueSet::getValueRef(Value value) const {
     }
 
   if (auto load = value.getDefiningOp<RefLoadOp>())
-    if (auto valueRef = getValueRef(load.getRef())) {
+    if (auto valueRef = getValueRef(load.getRef(), /*isDeref=*/true)) {
       if (valueRef.isIndirect) {
         // The parser doesn't emit all the lifetime stuff for trivial types,
         // so don't track them either.
@@ -640,19 +654,19 @@ ValueRef ValueSet::getValueRef(Value value) const {
   // If this is a RefToPointerOp get the underlying ref.
   // TODO(references): Remove this.
   if (auto refToPointer = value.getDefiningOp<RefToPointerOp>())
-    return getValueRef(refToPointer.getRef());
+    return getValueRef(refToPointer.getRef(), /*isDeref=*/isDeref);
 
   // If this is a RefToPointerOp get the underlying ref.
   // TODO(references): Remove this: it is only used for pointer->ref conversion.
   if (auto pointerToRef =
           value.getDefiningOp<mlir::UnrealizedConversionCastOp>()) {
     if (pointerToRef.getNumOperands() == 1)
-      return getValueRef(pointerToRef.getOperand(0));
+      return getValueRef(pointerToRef.getOperand(0), /*isDeref=*/isDeref);
   }
 
   // If this is a RebindOp get the underlying ref.
   if (auto rebind = value.getDefiningOp<RebindOp>())
-    return getValueRef(rebind.getOperand());
+    return getValueRef(rebind.getOperand(), /*isDeref=*/isDeref);
 
   // Otherwise, we don't know what this is.
   return ValueRef();
@@ -676,9 +690,9 @@ struct UninitializedValueScan {
 
 private:
   void checkOp(Operation &op);
-  ValueRef checkUse(Value value, Operation &op);
-  ValueRef checkDef(Value value, Operation &op);
-  ValueRef checkConsume(Value value, Operation &op);
+  void checkUse(Value value, Operation &op, bool isDeref);
+  void checkDef(Value value, Operation &op, bool isDeref);
+  void checkConsume(Value value, Operation &op, bool isDeref);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -820,21 +834,22 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
   diag << "'";
 }
 
-// Verify that the specified ValueRef is live at this point, diagnosing an
-// error at the specified operation if not.
-ValueRef UninitializedValueScan::checkUse(Value value, Operation &op) {
-  ValueRef valueRef = valueSet.getValueRef(value);
+/// Verify that the specified ValueRef is live at this point, diagnosing an
+/// error at the specified operation if not.
+void UninitializedValueScan::checkUse(Value value, Operation &op,
+                                      bool isDeref) {
+  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
   if (!valueRef)
-    return valueRef;
+    return;
 
   // If the value is live then all is good.
   if (valueRef.isAllPresent(liveValues))
-    return valueRef;
+    return;
 
   // Ok, it isn't, gear up to see how to best report the error.
   ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
   if (valueEntry.hasErrorDiagnosed)
-    return valueRef; // Only report one error per symbolic value.
+    return; // Only report one error per symbolic value.
   valueEntry.hasErrorDiagnosed = true;
 
   // If the fields are all valid except for the whole-object bit, then the user
@@ -850,7 +865,7 @@ ValueRef UninitializedValueScan::checkUse(Value value, Operation &op) {
                    "but without calling an '__init__' method";
     diag.attachNote(valueEntry.value.getLoc())
         << "'" << valueEntry.getName().str() << "' declared here";
-    return valueRef;
+    return;
   }
 
   // Specialize diagnostics for returns because it can be confusing why they are
@@ -876,14 +891,13 @@ ValueRef UninitializedValueScan::checkUse(Value value, Operation &op) {
   }
   diag.attachNote(valueEntry.value.getLoc())
       << "'" << valueEntry.getName().str() << "' declared here";
-
-  return valueRef;
 }
 
-ValueRef UninitializedValueScan::checkDef(Value value, Operation &op) {
-  ValueRef valueRef = valueSet.getValueRef(value);
+void UninitializedValueScan::checkDef(Value value, Operation &op,
+                                      bool isDeref) {
+  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
   if (!valueRef)
-    return valueRef;
+    return;
 
   // If we are overwriting a value that has already been specified, then the
   // underlying value must be declared a 'var' and not a 'let'.
@@ -911,13 +925,13 @@ ValueRef UninitializedValueScan::checkDef(Value value, Operation &op) {
   // uninitialized.
   valueRef.markBits(liveValues, true);
   valueRef.markBits(everMutatedValues, true);
-  return valueRef;
 }
 
-ValueRef UninitializedValueScan::checkConsume(Value value, Operation &op) {
-  ValueRef valueRef = valueSet.getValueRef(value);
+void UninitializedValueScan::checkConsume(Value value, Operation &op,
+                                          bool isDeref) {
+  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
   if (!valueRef)
-    return valueRef;
+    return;
 
   // If tracked, marks its value as dead.
   if (!valueSet.typeDeclInfo.isRegisterPassableTrivial(
@@ -926,7 +940,6 @@ ValueRef UninitializedValueScan::checkConsume(Value value, Operation &op) {
 
   // Mark the value as mutated.
   valueRef.markBits(everMutatedValues, true);
-  return valueRef;
 }
 
 void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
@@ -974,15 +987,15 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // TODO(references): Remove POP::StoreOp.
   if (isa<LIT::RefStoreOp, POP::StoreOp, OwnershipDefLValueOp>(op)) {
     // Mark the pointer as being mutated.
-    checkDef(op.getOperands().back(), op);
+    checkDef(op.getOperands().back(), op, /*isDeref=*/true);
     return;
   }
 
   // A load is a use of whatever fields are being referenced.
-  if (isa<POP::LoadOp, RefLoadOp, LoadConsumeOp>(op)) {
-    checkUse(op.getOperand(0), op);
+  if (isa<POP::LoadOp, RefLoadOp, LoadConsumeOp, OwnershipUseOp>(op)) {
+    checkUse(op.getOperand(0), op, /*isDeref=*/true);
     if (isa<LoadConsumeOp>(op))
-      checkDef(op.getResult(0), op);
+      checkDef(op.getResult(0), op, /*isDeref=*/false);
     return;
   }
 
@@ -1004,23 +1017,25 @@ void UninitializedValueScan::checkOp(Operation &op) {
            signature.getInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getInputConventions(), operands)) {
+      bool isIndirect = SignatureType::hasAddress(convention);
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::OwnedInMem:
-        checkUse(operand, op); // Live -> dead
-        checkConsume(operand, op);
+        checkUse(operand, op, /*isDeref=*/isIndirect); // Live -> dead
+        checkConsume(operand, op, /*isDeref=*/isIndirect);
         break;
       case ValueInputConvention::BorrowedInMem:
       case ValueInputConvention::BorrowedInReg:
-        checkUse(operand, op); // Live -> live
+        checkUse(operand, op, /*isDeref=*/isIndirect); // Live -> live
         break;
       case ValueInputConvention::ByRef:
-        checkUse(operand, op); // Life -> Live
-        checkDef(operand, op);
+        checkUse(operand, op, /*isDeref=*/true); // Life -> Live
+        checkDef(operand, op, /*isDeref=*/true);
         break;
       case ValueInputConvention::ByRefResult:
       case ValueInputConvention::InitSelf:
-        checkDef(operand, op); // This call defines the by-ref result.
+        // This call defines the by-ref result.
+        checkDef(operand, op, /*isDeref=*/true);
         break;
       case ValueInputConvention::None:
         llvm_unreachable("none convention not permitted in lit");
@@ -1030,7 +1045,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     // If the result is defining an owned register value, then we treat this as
     // a definition.
     if (signature.hasOwnedRegisterResult())
-      checkDef(op.getResult(0), op);
+      checkDef(op.getResult(0), op, /*isDeref=*/false);
 
     return;
   }
@@ -1038,7 +1053,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // The lit.ownership.mark_destroyed op consumes the whole object bit of a
   // value only, but not its fields.
   if (auto markDestroyed = dyn_cast<LIT::OwnershipMarkDestroyedOp>(op)) {
-    if (auto valueRef = valueSet.getValueRef(markDestroyed.getValue())) {
+    if (auto valueRef =
+            valueSet.getValueRef(markDestroyed.getValue(), /*isDeref=*/true)) {
       valueRef = valueRef.getSubfield(valueRef.getNumBits() - 1, 1);
       // If the consumed bit is live then all is good, otherwise there is an
       // error and it will be diagnosed below.
@@ -1047,32 +1063,34 @@ void UninitializedValueScan::checkOp(Operation &op) {
     }
   }
 
-  // If this operation has a direct use of a value we are tracking, consider
-  // it a use that must be initialized.  This notably includes LoadOp.
-  for (Value operand : op.getOperands())
-    checkUse(operand, op);
-
-  // lit.letreg.decl defines its own value after using its operand.
-  if (isa<LetRegDeclOp>(op)) {
-    // Operand use already checked above.
-    checkDef(op.getResult(0), op);
+  // OwnershipMakeRefLValue is a def if liveOnEntry.
+  if (auto makePointer = dyn_cast<OwnershipMakeRefLValue>(op)) {
+    checkUse(makePointer.getOperand(), op, /*isDeref=*/true);
+    checkDef(makePointer.getOperand(), op, /*isDeref=*/true);
+    if (makePointer.getLiveOnEntry())
+      checkDef(makePointer.getResult(), op, /*isDeref=*/true);
     return;
   }
 
   // lit.ownership.end_lifetime consumes its operand then defines its result.
   if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
-    // Operand use already checked above.
-    checkConsume(ownershipEnd.getOperand(), op);
-    checkDef(ownershipEnd.getResult(), op);
+    bool isIndirect = !ownershipEnd.getIsReg();
+    checkUse(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
+    checkConsume(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
+    checkDef(ownershipEnd.getResult(), op, /*isDeref=*/isIndirect);
     return;
   }
 
-  // OwnershipMakeRefLValue is a def if liveOnEntry.
-  if (auto makePointer = dyn_cast<OwnershipMakeRefLValue>(op)) {
+  // If this operation has a direct use of a value we are tracking, consider
+  // it a use that must be initialized.
+  for (Value operand : op.getOperands())
+    checkUse(operand, op, /*isDeref=*/false);
+
+  // lit.letreg.decl defines its own value after using its operand.
+  if (isa<LetRegDeclOp>(op)) {
     // Operand use already checked above.
-    checkDef(makePointer.getOperand(), op);
-    if (makePointer.getLiveOnEntry())
-      checkDef(makePointer.getResult(), op);
+    checkDef(op.getResult(0), op, /*isDeref=*/false);
+    return;
   }
 
   // If this is a kgen.return then we have an exit from the function
@@ -1092,7 +1110,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
         continue;
 
       // Otherwise, it must be live at return/raise.
-      checkUse(valueInfo.value, op);
+      checkUse(valueInfo.value, op, /*isDeref=*/valueInfo.isIndirect);
     }
 
     // Indicate that all values are live after the return so that an early
@@ -1146,7 +1164,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     // HandleVariant defines an owned value as its result, it is produced by an
     // enclosing lit.yield.
     if (isa<HandleVariantOp>(op))
-      checkDef(op.getResult(0), op);
+      checkDef(op.getResult(0), op, /*isDeref=*/false);
     return;
   }
 
@@ -1215,7 +1233,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
 
     // The live-ins to the except block are the exceptSet.
     for (Value arg : tryOp.getExceptRegion().getArguments())
-      if (ValueRef ref = valueSet.getValueRef(arg))
+      if (ValueRef ref = valueSet.getValueRef(arg, /*isDeref=*/true))
         ref.markBits(exceptSet, true);
     liveValues = std::move(exceptSet);
     everMutatedValues = std::move(exceptEverMutatedSet);
@@ -1266,11 +1284,11 @@ struct DestructorInsertion {
 
 private:
   void checkOp(Operation &op);
-  void markConsumed(Value value, Operation &op);
-  void checkUse(Value value, Operation &op);
+  void markConsumed(Value value, Operation &op, bool isDeref);
+  void checkUse(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
-                Operation *opWithUse);
-  void checkDef(Value value, Operation &op);
+                Operation *opWithUse, bool isDeref);
+  void checkDef(Value value, Operation &op, bool isDeref);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
   void destroyValueIfNeeded(Value value, ValueRef valueRef,
@@ -1418,7 +1436,8 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
       Operation *op = result.getOwner();
       mlir::ImplicitLocOpBuilder builder(result.getLoc(), op->getBlock(),
                                          ++op->getIterator());
-      checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr);
+      checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr,
+               /*isDeref=*/true);
       continue;
     }
 
@@ -1431,7 +1450,7 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
       loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
     mlir::ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
-    checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr);
+    checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr, /*isDeref=*/true);
   }
 }
 
@@ -1472,27 +1491,29 @@ void DestructorInsertion::checkOp(Operation &op) {
 
     // If the result is defining an owned register value, treat it as a def.
     if (signature.hasOwnedRegisterResult())
-      checkDef(op.getResult(0), op);
+      checkDef(op.getResult(0), op, /*isDeref=*/false);
 
     assert(isa<CreateClosureOp>(op) || isa<CaptureListCreate>(op) ||
            signature.getInputConventions().size() == operands.size());
     for (auto [convention, operand] :
          llvm::zip(signature.getInputConventions(), operands)) {
+      bool isIndirect = SignatureType::hasAddress(convention);
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::OwnedInMem:
         // This consumes the value, so it isn't dead going upwards.
-        valueSet.getValueRef(operand).markBits(consumedValues, true);
+        valueSet.getValueRef(operand, /*isDeref=*/isIndirect)
+            .markBits(consumedValues, true);
         break;
       case ValueInputConvention::BorrowedInReg:
       case ValueInputConvention::BorrowedInMem:
       case ValueInputConvention::ByRef:
-        checkUse(operand, op);
+        checkUse(operand, op, /*isDeref=*/isIndirect);
         break;
       case ValueInputConvention::ByRefResult:
       case ValueInputConvention::InitSelf:
         // This defines the memory it writes to.
-        checkDef(operand, op);
+        checkDef(operand, op, /*isDeref=*/isIndirect);
         break;
       case ValueInputConvention::None:
         llvm_unreachable("none convention not permitted in lit");
@@ -1504,24 +1525,24 @@ void DestructorInsertion::checkOp(Operation &op) {
   // LetReg takes ownership of its operand value and defines its own value.
   if (auto letReg = dyn_cast<LetRegDeclOp>(op)) {
     // This defines the result value.  Emit a destructor if unused.
-    checkDef(letReg, op);
+    checkDef(letReg, op, /*isDeref=*/false);
     // This consumes its input.
-    markConsumed(letReg.getOperand(), op);
+    markConsumed(letReg.getOperand(), op, /*isDeref=*/false);
     return;
   }
 
   // A store consumes a value and overwrites the destination.
   // TODO(references): Remove POP::StoreOp.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
-    markConsumed(storeOp.getArg(), op);
-    checkDef(storeOp.getPtr(), op);
+    markConsumed(storeOp.getArg(), op, /*isDeref=*/false);
+    checkDef(storeOp.getPtr(), op, /*isDeref=*/true);
     return;
   }
 
   // A store consumes a value and overwrites the destination.
   if (auto storeOp = dyn_cast<LIT::RefStoreOp>(op)) {
-    markConsumed(storeOp.getArg(), op);
-    checkDef(storeOp.getRef(), op);
+    markConsumed(storeOp.getArg(), op, /*isDeref=*/false);
+    checkDef(storeOp.getRef(), op, /*isDeref=*/true);
     return;
   }
 
@@ -1530,27 +1551,33 @@ void DestructorInsertion::checkOp(Operation &op) {
   // to model a /borrow/ of the underlying value, so they don't define a new
   // value.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
-    checkUse(loadOp.getPtr(), op);
+    checkUse(loadOp.getPtr(), op, /*isDeref=*/true);
     return;
   }
-  if (auto loadOp = dyn_cast<RefLoadOp>(op)) {
-    checkUse(loadOp.getRef(), op);
+  if (isa<RefLoadOp, OwnershipUseOp>(op)) {
+    checkUse(op.getOperand(0), op, /*isDeref=*/true);
     return;
   }
 
   // These operations consume their operands and define a result.
-  if (isa<LoadConsumeOp, OwnershipEndLifetimeOp, LIT::StructCreateOp>(op)) {
-    checkDef(op.getResult(0), op);
+  if (isa<LoadConsumeOp, LIT::StructCreateOp>(op)) {
+    checkDef(op.getResult(0), op, /*isDeref=*/false);
+    bool isIndirect = !isa<LIT::StructCreateOp>(op);
     for (auto operand : op.getOperands())
-      markConsumed(operand, op);
+      markConsumed(operand, op, /*isDeref=*/isIndirect);
     return;
+  }
+  if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
+    bool isIndirect = !ownershipEnd.getIsReg();
+    checkDef(op.getResult(0), op, /*isDeref=*/isIndirect);
+    markConsumed(ownershipEnd.getOperand(), op, /*isDeref=*/isIndirect);
   }
 
   // OwnershipMakeRefLValue is a def if liveOnEntry.
   if (auto makePointer = dyn_cast<OwnershipMakeRefLValue>(op)) {
-    checkUse(makePointer.getOperand(), op);
+    checkUse(makePointer.getOperand(), op, /*isDeref=*/true);
     if (makePointer.getLiveOnEntry())
-      checkUse(makePointer.getResult(), op);
+      checkUse(makePointer.getResult(), op, /*isDeref=*/true);
   }
 
   // A return consumes all the live-out values from the function.
@@ -1564,13 +1591,13 @@ void DestructorInsertion::checkOp(Operation &op) {
 
     // If the result operand is ownedresult, then consume it.
     if (functionSignature.hasOwnedRegisterResult())
-      markConsumed(op.getOperand(0), op);
+      markConsumed(op.getOperand(0), op, /*isDeref=*/false);
     return;
   }
 
   // A yield from a HandleVariantOp consumes the operand.
   if (isa<YieldOp>(op)) {
-    markConsumed(op.getOperand(0), op);
+    markConsumed(op.getOperand(0), op, /*isDeref=*/false);
     return;
   }
 
@@ -1584,7 +1611,8 @@ void DestructorInsertion::checkOp(Operation &op) {
       // for partial initialization.
       if (!valueInfo.endsUninit && valueInfo.startsUninit) {
         Value topLevelValue = valueInfo.value;
-        ValueRef topLevelValueRef = valueSet.getValueRef(valueInfo.value);
+        ValueRef topLevelValueRef =
+            valueSet.getValueRef(valueInfo.value, /*isDeref=*/true);
         BitVector original = consumedValues;
         // Pretend for a moment that the top level value has not been consumed.
         // Otherwise, we cannot generate destructor calls.
@@ -1654,7 +1682,7 @@ void DestructorInsertion::checkOp(Operation &op) {
     auto createVariant =
         cast<VariantCreateOp>(errorReturn.getVariant().getDefiningOp());
     auto error = createVariant.getOperand();
-    markConsumed(error, op);
+    markConsumed(error, op, /*isDeref=*/false);
     return;
   }
   // A unreachable consumes nothing.  Nothing needs to be destroyed here!
@@ -1687,7 +1715,8 @@ void DestructorInsertion::checkOp(Operation &op) {
   // value only, but not its fields.    This ensures the sub-fields are
   // destroyed but the full object is not.  It is used in destructors primarily.
   if (auto markDestroyed = dyn_cast<LIT::OwnershipMarkDestroyedOp>(op)) {
-    if (auto valueRef = valueSet.getValueRef(markDestroyed.getValue()))
+    if (auto valueRef =
+            valueSet.getValueRef(markDestroyed.getValue(), /*isDeref=*/true))
       consumedValues.set(valueRef.endBit - 1);
     return;
   }
@@ -1695,18 +1724,19 @@ void DestructorInsertion::checkOp(Operation &op) {
   if (auto handleVariantOp = dyn_cast<HandleVariantOp>(op)) {
     // The result of HandleVariantOp is always a definition of an owned value
     // that is produced by the enclosed lit.yield operation.
-    checkDef(op.getResult(0), op);
+    checkDef(op.getResult(0), op, /*isDeref=*/false);
 
     BitVector expectedConsumptionInThenNotElse(consumedValues.size());
     for (Value maybeInitValue : handleVariantOp.getMaybeInitializedValues()) {
       // For each of the initialized values, is this the last reference?
       // If so, generate a destructor call after this op.
-      checkUse(maybeInitValue, op);
+      checkUse(maybeInitValue, op, /*isDeref=*/true);
 
       // To prevent destructor calls from being generated for uninitialized
       // values in the else block, we mark the exempt values in an expectation
       // bit vector.
-      ValueRef uninitValueRef = valueSet.getValueRef(maybeInitValue);
+      ValueRef uninitValueRef =
+          valueSet.getValueRef(maybeInitValue, /*isDeref=*/true);
       uninitValueRef.markBits(expectedConsumptionInThenNotElse, true);
     }
     checkIfLikeOp(op, expectedConsumptionInThenNotElse);
@@ -1735,7 +1765,8 @@ void DestructorInsertion::checkOp(Operation &op) {
     // The except block initializes its block arguments, so if these are tracked
     // we must mark them as consumed.
     for (Value blockArg : tryOp.getExceptRegion().getArguments())
-      if (ValueRef valueRef = valueSet.getValueRef(blockArg)) {
+      if (ValueRef valueRef =
+              valueSet.getValueRef(blockArg, /*isDeref=*/false)) {
         if (!exceptSets.consumedValues[valueRef.startBit]) {
           // There were no references to the owned arguments, so generate a
           // destructor at beginning of the block.
@@ -1812,16 +1843,22 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
+  if (isa<OwnershipDefLValueOp>(op)) {
+    checkUse(op.getOperand(0), op, /*isDeref=*/true);
+    return;
+  }
+
   // Otherwise this some other operation that using a SSA value.  If this is the
   // last use of the value, make sure we destroy it when done.
   for (Value operand : op.getOperands())
-    checkUse(operand, op);
+    checkUse(operand, op, /*isDeref=*/false);
 }
 
 // When the specified value is consumed by an operation we know it doesn't need
 // to be destroyed above this point.
-void DestructorInsertion::markConsumed(Value value, Operation &op) {
-  ValueRef valueRef = valueSet.getValueRef(value);
+void DestructorInsertion::markConsumed(Value value, Operation &op,
+                                       bool isDeref) {
+  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
   if (!valueRef)
     return;
 
@@ -1872,11 +1909,11 @@ void DestructorInsertion::markConsumed(Value value, Operation &op) {
 
 /// This operation uses whatever fields are being referenced.  Iff this is the
 /// /last/ use of a value, emit a destructor of the overall value.
-void DestructorInsertion::checkUse(Value value, Operation &op) {
+void DestructorInsertion::checkUse(Value value, Operation &op, bool isDeref) {
   // If needed, emit the destructor immediately after the specified operation.
   auto insertPt = std::next(Block::iterator(&op));
   mlir::ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
-  checkUse(value, builder, /*opWithUse=*/&op);
+  checkUse(value, builder, /*opWithUse=*/&op, isDeref);
 }
 
 /// Check a use of a value.  Iff this is the /last/ use of the value, emit a
@@ -1885,8 +1922,8 @@ void DestructorInsertion::checkUse(Value value, Operation &op) {
 /// but this is null at the start of block/function for example.
 void DestructorInsertion::checkUse(Value value,
                                    mlir::ImplicitLocOpBuilder &builder,
-                                   Operation *opWithUse) {
-  ValueRef valueRef = valueSet.getValueRef(value);
+                                   Operation *opWithUse, bool isDeref) {
+  ValueRef valueRef = valueSet.getValueRef(value, isDeref);
   if (!valueRef)
     return;
 
@@ -1923,18 +1960,18 @@ void DestructorInsertion::checkUse(Value value,
 
 /// This operation defines the specified value.  If the value is dead on
 /// arrival, emit a destructor of the value.
-void DestructorInsertion::checkDef(Value value, Operation &op) {
+void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
   // If there is no use of the value we are defining, emit a dtor after the op.
   // This happens when we have things like:
   //
   //   init(&aggregate)
   //   ...
   //   aggregate.field1 = newValue  <<-- we are here
-  checkUse(value, op);
+  checkUse(value, op, isDeref);
 
   // This call defines the result, so anything above it is either dead or
   // needs a destructor if live.
-  valueSet.getValueRef(value).markBits(consumedValues, false);
+  valueSet.getValueRef(value, isDeref).markBits(consumedValues, false);
 }
 
 /// If the specified valueRef corresponds to a trivial value or subfield, clear
