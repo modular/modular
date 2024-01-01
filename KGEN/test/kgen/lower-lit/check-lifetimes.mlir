@@ -89,6 +89,29 @@ lit.func @indirectCall(%a: !kgen.pointer<@Struct> borrow_in_mem) {
   kgen.return
 }
 
+// Some tests with non-trivial lifetimes references
+// CHECK-LABEL: lit.func @references1
+// CHECK-NOT: __del__
+lit.func @references1[alife](%a: !lit.ref<mut @Struct, alife> owned_in_mem,
+                             %cond: i1) {
+  // CHECK-NEXT: lit.call @Struct::@__del__[alife](%a)
+
+  %x = lit.varlet.decl "x" let : !lit.ref<mut @Struct, xlife>
+   // CHECK: lit.call @Struct::@__init__[xlife](%x)
+  lit.call @Struct::@__init__[xlife](%x) : !lit.signature<[1](!lit.ref<mut @Struct, *[0,0]> init_self) -> !kgen.none>
+  // CHECK-NEXT: lit.call @Struct::@__del__[xlife](%x)
+
+  %x1 = kgen.rebind %x : !lit.ref<mut @Struct, xlife> to !lit.ref<mut @Struct, {xlife,alife}>
+  %a1 = kgen.rebind %a : !lit.ref<mut @Struct, alife> to !lit.ref<mut @Struct, {xlife,alife}>
+
+  %z = pop.select %cond, %x1, %a1 : !lit.ref<mut @Struct, {xlife,alife}>
+
+  // This load is a use of both x and a
+  // CHECK: lit.ref.load
+  %result = lit.ref.load %z : !lit.ref<mut @Struct, {xlife,alife}>
+  kgen.return
+}
+
 // -----
 
 lit.struct.decl @Error {

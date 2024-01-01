@@ -13,7 +13,9 @@ alias Lifetime = __mlir_type.`!lit.lifetime`
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
-  pass
+  fn __init__(inout self): pass
+  fn __del__(owned self): pass
+  fn noop(self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<
 # CHECK-SAME: [[LT:.*_lt]][lt]: lifetime>(%a[a]: !lit.ref<!MemExample, [[LT]]> borrow)
@@ -36,3 +38,28 @@ fn implicit_inout(inout a: MemExample):
 # CHECK-LABEL: lit.func @"implicit_owned
 fn implicit_owned(owned a: MemExample):
   pass
+
+##===----------------------------------------------------------------------===##
+# Conditional lifetimes
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"testConditional
+fn testConditional(cond: __mlir_type.i1):
+  # CHECK-NOT: __del__
+
+  # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
+  let a = MemExample()
+  # CHECK: lit.call @{{.*}}__del__{{.*}}(%a)
+
+  # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
+  let b = MemExample()
+  # CHECK: lit.call @{{.*}}__del__{{.*}}(%b)
+
+  let aref = __get_ref_from_value(a)
+  let bref = __get_ref_from_value(b)
+
+  # CHECK: %cref = lit.letreg.decl "cref"
+  let cref = aref if cond else bref
+
+  # TODO: __get_value_from_ref(cref).noop()
+  # TODO: HECK: lit.call @{{.*}}noop
