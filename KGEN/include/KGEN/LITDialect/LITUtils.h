@@ -141,7 +141,7 @@ public:
 
   /// Try to parse a single optional '*' or '|', and emit an error if a
   /// duplicate is found or a '|' comes after a '*'.
-  OptionalParseResult parseOptionalStarSlash(llvm::SMLoc loc);
+  OptionalParseResult parseOptionalStarSlash();
 
   /// Populate the parameter passing kinds.
   void populatePassingKinds(SmallVectorImpl<PassingKind> &kinds) const;
