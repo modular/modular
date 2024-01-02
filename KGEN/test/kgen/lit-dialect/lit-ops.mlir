@@ -100,6 +100,10 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
 lit.struct.decl @CrazyParams<*"`m": lifetime> {
 }
 
+lit.struct.decl @LifetimeRef<b: lifetime> {
+  lit.struct.field b : !lit.signature<(!lit.ref<@A, *(0,1)>) -> ()>
+}
+
 // -----
 
 // CHECK-LABEL: lit.struct.decl @A<N>

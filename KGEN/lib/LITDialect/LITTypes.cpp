@@ -287,12 +287,29 @@ OptionalParseResult LifetimeType::parseValue(AsmParser &p,
       return mlir::success();
     }
 
+    // Try to parse *(0,0) as an index reference.
+    if (succeeded(p.parseOptionalLParen())) {
+      size_t depth, index;
+      if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
+          p.parseRParen())
+        return failure();
+      bool isResult = succeeded(p.parseOptionalStar());
+      result = ParamIndexRefAttr::get(depth, isResult, index, *this);
+      return mlir::success();
+    }
+
+    // *[x,y] is an implicit lifetime ref.
     size_t depth, index;
-    if (p.parseLSquare() || p.parseInteger(depth) || p.parseComma() ||
-        p.parseInteger(index) || p.parseRSquare())
-      return failure();
-    result = ImplicitLifetimeRefAttr::get(p.getContext(), depth, index);
-    return mlir::success();
+    if (succeeded(p.parseOptionalLSquare())) {
+      if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
+          p.parseRSquare())
+        return failure();
+      result = ImplicitLifetimeRefAttr::get(p.getContext(), depth, index);
+      return mlir::success();
+    }
+    // We don't support *?
+    p.emitError(p.getCurrentLocation(), "unknown lifetime value");
+    return failure();
   }
 
   // Handle unions as comma separated elements in braces.
