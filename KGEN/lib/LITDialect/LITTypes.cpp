@@ -441,8 +441,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
   PassingKindParser passingKindParser(p);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
-    if (OptionalParseResult res =
-            passingKindParser.parseOptionalStarSlash(p.getCurrentLocation());
+    if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
       return res.value();
 

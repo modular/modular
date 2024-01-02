@@ -486,8 +486,7 @@ static ParseResult parseLITFunctionSignature(
 
   PassingKindParser ssParser(p);
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
-    if (OptionalParseResult res =
-            ssParser.parseOptionalStarSlash(p.getCurrentLocation());
+    if (OptionalParseResult res = ssParser.parseOptionalStarSlash();
         res.has_value())
       return res.value();
 

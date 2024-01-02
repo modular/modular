@@ -144,8 +144,7 @@ LIT::parseOptionalParameterSpec(AsmParser &p,
   auto parseWithDefault =
       [&](SmallVectorImpl<ParamDeclAttr> &decls) -> ParseResult {
     llvm::SMLoc loc = p.getCurrentLocation();
-
-    if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash(loc);
+    if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
       return res.value();
 
@@ -221,8 +220,7 @@ ParseResult LIT::parseOptionalParamSignature(
   // Parse the input parameter types and optional default values.
   PassingKindParser passingKindPrinter(p);
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
-    if (OptionalParseResult res =
-            passingKindPrinter.parseOptionalStarSlash(p.getCurrentLocation());
+    if (OptionalParseResult res = passingKindPrinter.parseOptionalStarSlash();
         res.has_value())
       return res.value();
 
@@ -312,7 +310,9 @@ size_t LIT::countNumImplicitKinds(ArrayRef<PassingKind> kinds) {
 // PassingKindParser / PassingKindPrinter
 //===----------------------------------------------------------------------===//
 
-OptionalParseResult PassingKindParser::parseOptionalStarSlash(llvm::SMLoc loc) {
+OptionalParseResult PassingKindParser::parseOptionalStarSlash() {
+  llvm::SMLoc loc = parser.getCurrentLocation();
+
   if (succeeded(parser.parseOptionalVerticalBar())) {
     if (foundSlash)
       return parser.emitError(loc, "only one '|' allowed in signature");
@@ -324,7 +324,20 @@ OptionalParseResult PassingKindParser::parseOptionalStarSlash(llvm::SMLoc loc) {
     foundSlash = true;
     return mlir::success();
   }
-  if (succeeded(parser.parseOptionalStar())) {
+
+  // We want to allow a standalone * in the signature to represent information
+  // about a signature list, but we don't want to interfere with *"fo o" escaped
+  // name parsing.  Do a bit of grotty lookahead to make sure we're ok to
+  // consume a star.  While grotty, this cannot overrun the end of the file
+  // because the MLIR asmparser guarantees the buffer is always NUL terminated.
+  // This doesn't support whitespace/comments etc between the star and quote
+  // though.
+  loc = parser.getCurrentLocation();
+  bool ignoreStar = false;
+  if (loc.getPointer()[0] == '*' && loc.getPointer()[1] == '"')
+    ignoreStar = true;
+
+  if (!ignoreStar && succeeded(parser.parseOptionalStar())) {
     if (foundStar)
       return parser.emitError(loc, "only one '*' allowed in signature");
     if (foundImplicit) {
@@ -334,6 +347,8 @@ OptionalParseResult PassingKindParser::parseOptionalStarSlash(llvm::SMLoc loc) {
     numPosOrKw = idx - numPosOnly;
     return mlir::success();
   }
+
+  loc = parser.getCurrentLocation();
   if (succeeded(parser.parseOptionalQuestion())) {
     if (foundImplicit)
       return parser.emitError(loc, "only one '?' allowed in signature");
