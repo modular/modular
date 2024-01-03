@@ -28,9 +28,9 @@ class Index<int i> {
   int index = i;
 }
 
-/// This multiclass defines two option records: one that accepts an `=` suffix,
-/// and one that doesn't. In other words, given the option name `foo` and the
-/// metavar name `FOO`, this defines both `--foo <FOO>` and `--foo=<FOO>`
+// This multiclass defines two option records: one that accepts an `=` suffix,
+// and one that doesn't. In other words, given the option name `foo` and the
+// metavar name `FOO`, this defines both `--foo <FOO>` and `--foo=<FOO>`
 multiclass CommandOption<list<string> prefixes, string name, OptionGroup group,
                          Index i, MetaVarName meta, HelpText help> {
   def NAME : Separate<prefixes, name>, Group<group>, Index<i.index>,
@@ -42,7 +42,7 @@ multiclass CommandOption<list<string> prefixes, string name, OptionGroup group,
                    Index<0>, Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
 }
 
-/// Like CommandOption, but also accepts Values.
+// Like CommandOption, but also accepts Values.
 multiclass CommandOptionWithValues<list<string> prefixes, string name,
                                    OptionGroup group, Index i, MetaVarName meta,
                                    HelpText help, Values values> {
