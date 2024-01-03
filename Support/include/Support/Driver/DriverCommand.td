@@ -14,16 +14,16 @@
 
 include "llvm/Option/OptParser.td"
 
-// This mix-in record can be used to order option groups, options, and their
-// aliases relative to one another.
+// This mix-in record is used to specify the order in which option groups,
+// options, and their aliases appear in documentation.
 // * Option groups are sorted in ascending index order.
 // * Within each option group, options are sorted in ascending index order.
 // * Among an option's aliases, aliases are sorted in ascending index order.
-// * Wihtin any of these groupings, if two records have the same index, the
-//   order is non-deterministic, and a warning is emitted.
-// * Records without an index are placed in a non-deterministic order (based on
-//   TableGen record ID) after records with an index. Warnings are emitted for
-//   records without an index.
+// * Wihtin any of these groupings, if two records have the same index, an error
+//   is emitted.
+// * Errors are also emitted for records that do not have an index, even if that
+//   record is "hidden" from documentation (a hidden option or option group, for
+//   example).
 class Index<int i> {
   int index = i;
 }
@@ -36,8 +36,8 @@ multiclass CommandOption<list<string> prefixes, string name, OptionGroup group,
   def NAME : Separate<prefixes, name>, Group<group>, Index<i.index>,
              MetaVarName<meta.MetaVarName>, HelpText<help.HelpText>;
 
-  // The `=` alias is the first alias, at index 0. However, since it's hidden,
-  // it will not occupy the first spot in the list of aliases.
+  // The `=` alias is the first alias, at index 0. (However, since it's hidden,
+  // it will not be displayed in the list of aliases.)
   def NAME # _eq : Joined<prefixes, name # "=">, Group<group>,
                    Index<0>, Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
 }
